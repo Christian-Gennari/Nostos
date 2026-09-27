@@ -56,11 +56,29 @@ public sealed class BookTextExtractionTests
         var continuationLocator = Assert.IsType<EpubBookTextSourceLocator>(continuation.SourceSegments.Single().Locator);
 
         Assert.Equal(0, firstLocator.SpineIndex);
-        Assert.EndsWith("chapter-1.xhtml", firstLocator.ResourceHref);
+        Assert.Equal("chapter-1.xhtml", firstLocator.ResourceHref);
         Assert.Equal(2, continuationLocator.SpineIndex);
-        Assert.EndsWith("chapter-2b.xhtml", continuationLocator.ResourceHref);
+        Assert.Equal("chapter-2b.xhtml", continuationLocator.ResourceHref);
         Assert.Null(continuationLocator.Cfi);
         Assert.NotNull(continuationLocator.StartTextOffset);
+    }
+
+    [Fact]
+    public async Task Epub_extractor_keeps_root_opf_manifest_href_canonical()
+    {
+        var fixture = BookTextFixtureFactory.CreateEpub(rootPackage: true);
+        var extractor = new EpubBookTextExtractor();
+
+        await using var source = new MemoryStream(fixture.Bytes);
+        var document = await extractor.ExtractAsync(source);
+
+        var chapter = document.Blocks.First(block =>
+            block.Text.Contains("Chapter One", StringComparison.Ordinal));
+        var locator = Assert.IsType<EpubBookTextSourceLocator>(
+            chapter.SourceSegments.Single().Locator);
+
+        Assert.Equal(0, locator.SpineIndex);
+        Assert.Equal("chapter-1.xhtml", locator.ResourceHref);
     }
 
     [Fact]

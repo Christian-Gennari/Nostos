@@ -12,6 +12,10 @@
   </div>
 </div>
 
+@if (sourceNavigationMessage(); as sourceMessage) {
+  <p class="source-navigation-status" role="status" aria-live="polite">{{ sourceMessage }}</p>
+}
+
 <!-- Held mounted and released by a class rather than an @if: the page is already
      rendered underneath, so revealing it is a fade + defocus instead of a blink. -->
 <div class="loading-overlay" [class.is-hidden]="!loading()" [attr.aria-hidden]="!loading()">

@@ -132,3 +132,20 @@
   gap: 0.625rem;
   margin-top: 1rem;
 }
+
+
+.source-navigation-status {
+  position: absolute;
+  left: 50%;
+  bottom: 1rem;
+  z-index: 25;
+  max-width: min(32rem, calc(100% - 2rem));
+  margin: 0;
+  padding: 0.45rem 0.65rem;
+  transform: translateX(-50%);
+  background: var(--bg-surface);
+  color: var(--color-danger);
+  font-size: 0.78rem;
+  line-height: 1.45;
+  text-align: center;
+}

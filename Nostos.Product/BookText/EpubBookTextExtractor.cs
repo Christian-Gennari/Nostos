@@ -100,7 +100,7 @@ public sealed class EpubBookTextExtractor : IBookTextExtractor
                             TextLength: text.Length,
                             Locator: new EpubBookTextSourceLocator(
                                 SpineIndex: spineIndex,
-                                ResourceHref: resourcePath,
+                                ResourceHref: href,
                                 Cfi: null,
                                 StartTextOffset: resourceOffset,
                                 EndTextOffset: resourceOffset + text.Length)),

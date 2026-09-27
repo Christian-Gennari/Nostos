@@ -10,10 +10,12 @@ import {
   findTocItemForHref,
   marginInsetPercent,
   progressLabel,
+  resolveGroundedEpubResourceHref,
   spinePercentFrom,
   typographyCss,
 } from './epub-reader.component';
 import { EpubAnnotationManager } from './epub-annotation-manager';
+import type { ReaderSourceTarget } from '../reader.interface';
 
 vi.mock('epubjs', () => ({ default: vi.fn() }));
 
@@ -78,6 +80,9 @@ describe('EpubReader highlight-mode lifecycle (issue #16)', () => {
         locationFromCfi: () => 0,
       },
       navigation: { toc: [] },
+      spine: {
+        spineItems: [{ href: 'chapter-2.xhtml', index: 2 }],
+      },
       destroy: vi.fn(() => log.push('book-destroy')),
     };
     return { book, rendition, emit: book.emit };
@@ -141,6 +146,56 @@ describe('EpubReader highlight-mode lifecycle (issue #16)', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(lastRendition.display).toHaveBeenCalledWith('epubcfi(/6/8!/4/2:0)');
+  });
+
+
+  it('routes a legacy archive-root locator through the resolved epub.js spine href', async () => {
+    await setupComponent();
+    lastRendition.display.mockImplementation((target?: string) => {
+      log.push('display');
+      return target === 'OEBPS/chapter-2.xhtml'
+        ? Promise.reject(new Error('No Section Found'))
+        : Promise.resolve();
+    });
+
+    await fixture.componentInstance.goToSource({
+      type: 'epub',
+      epubResourceHref: 'OEBPS/chapter-2.xhtml',
+      epubSpineIndex: 2,
+      epubTextOffset: null,
+      excerpt: 'Legacy grounded passage',
+    });
+    fixture.detectChanges();
+
+    expect(lastRendition.display).toHaveBeenCalledWith('OEBPS/chapter-2.xhtml');
+    expect(lastRendition.display).toHaveBeenCalledWith('chapter-2.xhtml');
+    expect(fixture.componentInstance.sourceNavigationMessage()).toBeNull();
+  });
+
+  it('shows a calm visible state when a grounded EPUB resource cannot be resolved', async () => {
+    await setupComponent();
+    lastRendition.display.mockImplementation((target?: string) => {
+      log.push('display');
+      return target === 'missing.xhtml'
+        ? Promise.reject(new Error('No Section Found'))
+        : Promise.resolve();
+    });
+
+    await fixture.componentInstance.goToSource({
+      type: 'epub',
+      epubResourceHref: 'missing.xhtml',
+      epubSpineIndex: 7,
+      epubTextOffset: 12,
+      excerpt: 'Missing grounded passage',
+    });
+    fixture.detectChanges();
+
+    const status = fixture.nativeElement.querySelector(
+      '.source-navigation-status',
+    ) as HTMLElement | null;
+    expect(status).not.toBeNull();
+    expect(status!.textContent).toContain("Couldn't locate this passage in the EPUB.");
+    expect(fixture.componentInstance.errorMessage()).toBeNull();
   });
 
   it('initializes the annotation manager before rendition.display()', async () => {
@@ -892,5 +947,486 @@ describe('findTocItemForHref', () => {
     expect(findTocItemForHref(toc, 'nope.xhtml')).toBeNull();
     expect(findTocItemForHref(toc, null)).toBeNull();
     expect(findTocItemForHref([], 'ch1.xhtml')).toBeNull();
+  });
+});
+
+
+describe('resolveGroundedEpubResourceHref', () => {
+  const nestedSpine = [
+    { href: 'xhtml/chapter015.html', index: 14 },
+    { href: 'xhtml/chapter016.html', index: 15 },
+  ];
+
+  it('keeps a canonical root-OPF manifest href exact', () => {
+    expect(
+      resolveGroundedEpubResourceHref('xhtml/chapter015.html', 14, nestedSpine),
+    ).toBe('xhtml/chapter015.html');
+  });
+
+  it('resolves a legacy archive-root href for a nested OPF to the exact spine item', () => {
+    expect(
+      resolveGroundedEpubResourceHref(
+        'TheIdeaofJustice/xhtml/chapter015.html',
+        14,
+        nestedSpine,
+      ),
+    ).toBe('xhtml/chapter015.html');
+  });
+
+  it('accepts the new canonical nested-OPF locator without adding the package directory', () => {
+    expect(
+      resolveGroundedEpubResourceHref('xhtml/chapter016.html', 15, nestedSpine),
+    ).toBe('xhtml/chapter016.html');
+  });
+
+  it('fails closed when a suffix could refer to more than one spine resource', () => {
+    const ambiguous = [
+      { href: 'volume1/xhtml/chapter01.html', index: 1 },
+      { href: 'volume2/xhtml/chapter01.html', index: 2 },
+    ];
+
+    expect(
+      resolveGroundedEpubResourceHref('xhtml/chapter01.html', null, ambiguous),
+    ).toBeNull();
+  });
+
+  it('fails closed when the structural path matches but the grounded spine index disagrees', () => {
+    expect(
+      resolveGroundedEpubResourceHref(
+        'TheIdeaofJustice/xhtml/chapter015.html',
+        99,
+        nestedSpine,
+      ),
+    ).toBeNull();
+  });
+
+  it('returns null for a missing resource instead of guessing', () => {
+    expect(
+      resolveGroundedEpubResourceHref('unknown/missing.xhtml', null, nestedSpine),
+    ).toBeNull();
+  });
+});
+
+/**
+ * PR #582. A resolved `rendition.display(cfi)` is not a settled display:
+ * epub.js re-lays-out once the container size is known and then re-displays
+ * the view's last seen location (`Rendition.onResized`). On the reported book
+ * (*The Idea of Justice*, spine 22, offset 9202) the stale re-display arrived
+ * 23 ms after the grounded CFI and silently won: the reader ended at the
+ * section start and that position was persisted as reading progress. These
+ * specs reproduce that shape with the fake rendition — display the grounded
+ * target, then fire the resize/reflow that reports the stale location — and
+ * assert the reader stays on (or is returned to) the target, that exactly one
+ * controlled retry is used, and that progress writes are held until the target
+ * is confirmed.
+ */
+describe('EpubReader grounded-source settle protection (PR #582)', () => {
+  const TARGET_CFI = 'epubcfi(/6/46!/4/36[the0002422]/2[p326]/1:0)';
+  const STALE_CFI = 'epubcfi(/6/46!/4/2[the0002366]/1:0)';
+  const NEW_TARGET_CFI = 'epubcfi(/6/48!/4/2:0)';
+  const USER_CFI = 'epubcfi(/6/50[user]!/4/1:0)';
+  const HREF = 'xhtml/chapter015.html';
+  const OPENING_CFI = 'epubcfi(/6/2[cover]!/4/1:0)';
+
+  let fixture: ComponentFixture<EpubReader>;
+  let contents: any;
+  let rendition: any;
+  let listeners: Record<string, Array<(...args: unknown[]) => void>>;
+  let resizeObservers: Array<() => void>;
+  /** What the fake rendition reports as the active location. */
+  let liveCfi: string;
+  /** Where the re-derived target range would sit; null = no measurable layout. */
+  let rangeRect: DOMRect | null;
+
+  const rect = (left: number, top: number, right: number, bottom: number) =>
+    ({ left, top, right, bottom, width: right - left, height: bottom - top }) as DOMRect;
+  const pageRect = () => rect(0, 0, 800, 600);
+  /** The passage's first character inside the visible page box. */
+  const onPage = () => rect(96, 48, 140, 72);
+  /** The "one page short" shape measured from the defect: past the right edge. */
+  const offPage = () => rect(880, 48, 940, 72);
+
+  const notesService = {
+    list: vi.fn(() => of([])),
+    create: vi.fn(() => of({ id: 'n1' } as never)),
+  };
+  const booksService = {
+    getLocations: vi.fn(() => of({ locations: null })),
+    saveLocations: vi.fn(() => of(null)),
+    updateProgress: vi.fn((_bookId: string, _location: string, _percentage: number) => of(null)),
+    get: vi.fn(() => of({ lastLocation: null })),
+  };
+
+  const groundedTarget = (overrides: Partial<ReaderSourceTarget> = {}): ReaderSourceTarget => ({
+    type: 'epub',
+    epubCfi: TARGET_CFI,
+    epubResourceHref: HREF,
+    epubSpineIndex: 22,
+    epubTextOffset: 4,
+    excerpt: 'The cited passage begins here',
+    ...overrides,
+  });
+
+  const makeRange = () =>
+    ({
+      setStart: vi.fn(),
+      collapse: vi.fn(),
+      // jsdom has no Range geometry: absence means "cannot measure" to the
+      // component, which then falls back to the reported location.
+      getBoundingClientRect: rangeRect ? () => rangeRect as DOMRect : undefined,
+    }) as unknown as Range;
+
+  const displayCallsFor = (cfi: string) =>
+    rendition.display.mock.calls.filter(([target]: [string?]) => target === cfi).length;
+
+  const emitRelocated = (cfi: string) => {
+    liveCfi = cfi;
+    (listeners['relocated'] ?? []).forEach((callback) =>
+      callback({ start: { cfi, href: HREF, index: 22 } }),
+    );
+  };
+
+  const emitResized = () => {
+    (listeners['resized'] ?? []).forEach((callback) => callback());
+  };
+
+  const progressWritesWith = (cfi: string) =>
+    booksService.updateProgress.mock.calls.filter(([, location]) => location === cfi);
+
+  beforeEach(async () => {
+    localStorage.clear();
+    listeners = {};
+    resizeObservers = [];
+    liveCfi = OPENING_CFI;
+    rangeRect = null;
+
+    const doc = document.implementation.createHTMLDocument('chapter');
+    doc.body.innerHTML =
+      '<p>The cited passage begins here and continues to the end of the paragraph.</p>' +
+      '<p>A following paragraph stays put.</p>';
+    vi.spyOn(doc, 'createRange').mockImplementation(() => makeRange());
+
+    const frame = { getBoundingClientRect: () => pageRect() };
+    contents = {
+      document: doc,
+      window: { frameElement: frame },
+      section: { href: HREF },
+      range: vi.fn(() => makeRange()),
+      cfiFromRange: vi.fn(() => TARGET_CFI),
+    };
+
+    rendition = {
+      hooks: { content: { register: vi.fn() } },
+      themes: { register: vi.fn(), select: vi.fn(), fontSize: vi.fn() },
+      on: vi.fn((type: string, callback: (...args: unknown[]) => void) => {
+        (listeners[type] ??= []).push(callback);
+      }),
+      off: vi.fn((type: string, callback: (...args: unknown[]) => void) => {
+        listeners[type] = (listeners[type] ?? []).filter((entry) => entry !== callback);
+      }),
+      annotations: { highlight: vi.fn(), add: vi.fn(), remove: vi.fn() },
+      getContents: vi.fn(() => [contents]),
+      views: vi.fn(() => []),
+      getRange: vi.fn(),
+      display: vi.fn(() => Promise.resolve()),
+      resize: vi.fn(),
+      next: vi.fn(),
+      prev: vi.fn(),
+      currentLocation: vi.fn(() => ({ start: { cfi: liveCfi, href: HREF, index: 22 } })),
+    };
+
+    const book = {
+      renderTo: vi.fn(() => rendition),
+      ready: Promise.resolve({ navigation: { toc: [] } }),
+      on: vi.fn(),
+      off: vi.fn(),
+      locations: {
+        load: vi.fn(),
+        generate: vi.fn(() => Promise.resolve()),
+        save: vi.fn(),
+        length: () => 0,
+        percentageFromCfi: () => 0,
+        locationFromCfi: () => 0,
+      },
+      navigation: { toc: [] },
+      spine: { spineItems: [{ href: HREF, index: 22 }] },
+      destroy: vi.fn(),
+    };
+
+    vi.mocked(ePub).mockImplementation(() => book as never);
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(callback: () => void) {
+          resizeObservers.push(callback);
+        }
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+
+    await TestBed.configureTestingModule({
+      imports: [EpubReader],
+      providers: [
+        { provide: NotesService, useValue: notesService },
+        { provide: BooksService, useValue: booksService },
+      ],
+    }).compileComponents();
+
+    vi.useFakeTimers({
+      toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'],
+    });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    localStorage.clear();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  async function openReader() {
+    fixture = TestBed.createComponent(EpubReader);
+    fixture.componentRef.setInput('bookId', 'book-1');
+    fixture.detectChanges();
+    // Settle `book.ready`, the opening display, and the service subscriptions.
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(0);
+    // Flush the opening progress write so later assertions only see new ones.
+    await vi.advanceTimersByTimeAsync(1100);
+    booksService.updateProgress.mockClear();
+
+    const page = fixture.nativeElement.querySelector('#epub-page') as HTMLElement;
+    Object.defineProperty(page, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => pageRect(),
+    });
+  }
+
+  it('confirms a grounded target that stays in the reading view and persists it', async () => {
+    await openReader();
+    rangeRect = onPage();
+
+    await fixture.componentInstance.goToSource(groundedTarget());
+
+    expect(displayCallsFor(TARGET_CFI)).toBe(1);
+
+    // Settle quiet → verify (in view) → confirm; then the debounced write.
+    await vi.advanceTimersByTimeAsync(400);
+    await vi.advanceTimersByTimeAsync(1100);
+
+    expect(fixture.componentInstance.sourceNavigationMessage()).toBeNull();
+    expect(booksService.updateProgress).toHaveBeenCalledWith(
+      'book-1',
+      TARGET_CFI,
+      expect.any(Number),
+    );
+    expect(progressWritesWith(STALE_CFI)).toEqual([]);
+  });
+
+  it('reasserts the target once when the reflow re-displays the stale section start', async () => {
+    await openReader();
+    rangeRect = onPage();
+    await fixture.componentInstance.goToSource(groundedTarget());
+    expect(displayCallsFor(TARGET_CFI)).toBe(1);
+
+    // The initial settle: a resize re-lays-out and re-displays the section
+    // start (the measured defect), moving the target out of view.
+    rangeRect = offPage();
+    emitRelocated(STALE_CFI);
+    emitResized();
+
+    expect(progressWritesWith(STALE_CFI)).toEqual([]);
+
+    await vi.advanceTimersByTimeAsync(400); // quiet → verify → displaced
+    expect(displayCallsFor(TARGET_CFI)).toBe(2); // exactly one controlled retry
+
+    rangeRect = onPage(); // the retry landed on the target again
+    await vi.advanceTimersByTimeAsync(400); // verify → confirmed
+    await vi.advanceTimersByTimeAsync(1100); // debounced confirmed write
+
+    expect(fixture.componentInstance.sourceNavigationMessage()).toBeNull();
+    expect(booksService.updateProgress).toHaveBeenCalledWith(
+      'book-1',
+      TARGET_CFI,
+      expect.any(Number),
+    );
+    expect(progressWritesWith(STALE_CFI)).toEqual([]);
+  });
+
+  it('protects a stored-CFI locator through the rendition location when there is no geometry', async () => {
+    await openReader();
+    rangeRect = null; // no measurable layout: only the CFI can vouch for the target
+
+    await fixture.componentInstance.goToSource(
+      groundedTarget({ epubTextOffset: null, epubCfi: TARGET_CFI }),
+    );
+    expect(displayCallsFor(TARGET_CFI)).toBe(1);
+
+    // Displaced: the rendition still reports the section start.
+    liveCfi = STALE_CFI;
+    await vi.advanceTimersByTimeAsync(400);
+    expect(displayCallsFor(TARGET_CFI)).toBe(2);
+
+    liveCfi = TARGET_CFI; // the retry landed on target
+    await vi.advanceTimersByTimeAsync(400);
+    await vi.advanceTimersByTimeAsync(1100);
+
+    expect(fixture.componentInstance.sourceNavigationMessage()).toBeNull();
+    expect(booksService.updateProgress).toHaveBeenCalledWith(
+      'book-1',
+      TARGET_CFI,
+      expect.any(Number),
+    );
+    expect(progressWritesWith(STALE_CFI)).toEqual([]);
+  });
+
+  it('holds progress writes closed while settling and persists only the confirmed target', async () => {
+    await openReader();
+    rangeRect = onPage();
+    await fixture.componentInstance.goToSource(groundedTarget());
+
+    // epub.js's reflow reports the stale location while the target is being
+    // protected: it must not become a reading-progress write.
+    emitRelocated(STALE_CFI);
+    await vi.advanceTimersByTimeAsync(999); // quiet fired at 400; write debounce pending
+    expect(booksService.updateProgress).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(500); // confirmed at 400 + 1000 ms debounce
+    expect(booksService.updateProgress).toHaveBeenCalledWith(
+      'book-1',
+      TARGET_CFI,
+      expect.any(Number),
+    );
+    expect(progressWritesWith(STALE_CFI)).toEqual([]);
+  });
+
+  it('lets a manual page turn cancel the pending settle and the reassert', async () => {
+    await openReader();
+    rangeRect = offPage();
+    await fixture.componentInstance.goToSource(groundedTarget());
+    expect(displayCallsFor(TARGET_CFI)).toBe(1);
+
+    emitResized(); // settle in flight
+    fixture.componentInstance.next();
+
+    expect(rendition.next).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(displayCallsFor(TARGET_CFI)).toBe(1); // no delayed reassert
+    expect(fixture.componentInstance.sourceNavigationMessage()).toBeNull();
+
+    // Normal persistence resumes for the reader's own navigation.
+    emitRelocated(USER_CFI);
+    await vi.advanceTimersByTimeAsync(1100);
+    expect(booksService.updateProgress).toHaveBeenCalledWith(
+      'book-1',
+      USER_CFI,
+      expect.any(Number),
+    );
+  });
+
+  it('does not let an older settle override a newer grounded navigation', async () => {
+    await openReader();
+    rangeRect = offPage();
+    await fixture.componentInstance.goToSource(groundedTarget());
+    expect(displayCallsFor(TARGET_CFI)).toBe(1);
+
+    // The first navigation is still settling when a new grounded target lands.
+    emitResized();
+    rangeRect = onPage();
+    await fixture.componentInstance.goToSource(
+      groundedTarget({ epubCfi: NEW_TARGET_CFI, epubTextOffset: null, epubSpineIndex: 23 }),
+    );
+
+    await vi.advanceTimersByTimeAsync(5000);
+
+    expect(displayCallsFor(TARGET_CFI)).toBe(1); // the superseded settle never reasserted it
+    expect(displayCallsFor(NEW_TARGET_CFI)).toBe(1);
+    expect(fixture.componentInstance.sourceNavigationMessage()).toBeNull();
+    expect(booksService.updateProgress).toHaveBeenCalledWith(
+      'book-1',
+      NEW_TARGET_CFI,
+      expect.any(Number),
+    );
+  });
+
+  it('restarts the settle window on rendition resizes and on the reader resize stream', async () => {
+    await openReader();
+    rangeRect = offPage();
+    await fixture.componentInstance.goToSource(groundedTarget());
+    expect(displayCallsFor(TARGET_CFI)).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(300);
+    emitResized(); // epub.js re-layout at t=300 restarts the quiet window
+    await vi.advanceTimersByTimeAsync(300); // t=600: would be a verdict without the restart
+    expect(displayCallsFor(TARGET_CFI)).toBe(1);
+
+    resizeObservers.forEach((callback) => callback()); // reader resize stream at t=600
+    await vi.advanceTimersByTimeAsync(300); // t=900
+    expect(displayCallsFor(TARGET_CFI)).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(100); // t=1000 = last restart + quiet window
+    expect(displayCallsFor(TARGET_CFI)).toBe(2); // displaced → one reassert
+
+    rangeRect = onPage();
+    await vi.advanceTimersByTimeAsync(400);
+    await vi.advanceTimersByTimeAsync(1100);
+    expect(fixture.componentInstance.sourceNavigationMessage()).toBeNull();
+    expect(booksService.updateProgress).toHaveBeenCalledWith(
+      'book-1',
+      TARGET_CFI,
+      expect.any(Number),
+    );
+  });
+
+  it('reaches a verdict at the bounded deadline even when resizes never stop', async () => {
+    await openReader();
+    rangeRect = offPage();
+    await fixture.componentInstance.goToSource(groundedTarget());
+    expect(displayCallsFor(TARGET_CFI)).toBe(1);
+
+    // Resizes every 300 ms: the quiet window never elapses on its own, so the
+    // bounded deadline is what must produce the (single) verdict.
+    for (let step = 0; step < 7; step++) {
+      await vi.advanceTimersByTimeAsync(300);
+      emitResized();
+    }
+    // t≈2100 — the 2000 ms deadline fired mid-stream.
+    expect(displayCallsFor(TARGET_CFI)).toBe(2);
+    expect(fixture.componentInstance.sourceNavigationMessage()).toBeNull();
+
+    await vi.advanceTimersByTimeAsync(3000); // stop the churn: the retry fails closed
+    expect(displayCallsFor(TARGET_CFI)).toBe(2);
+    expect(fixture.componentInstance.sourceNavigationMessage()).toBe(
+      "Couldn't locate this passage in the EPUB.",
+    );
+  });
+
+  it('fails closed with the existing message after exactly one controlled retry', async () => {
+    await openReader();
+    rangeRect = offPage(); // the passage never makes it onto the visible page
+    await fixture.componentInstance.goToSource(groundedTarget());
+    expect(displayCallsFor(TARGET_CFI)).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(400); // verdict → reassert
+    expect(displayCallsFor(TARGET_CFI)).toBe(2);
+    expect(fixture.componentInstance.sourceNavigationMessage()).toBeNull();
+
+    await vi.advanceTimersByTimeAsync(400); // verdict → fail closed
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.sourceNavigationMessage()).toBe(
+      "Couldn't locate this passage in the EPUB.",
+    );
+    const status = fixture.nativeElement.querySelector(
+      '.source-navigation-status',
+    ) as HTMLElement | null;
+    expect(status).not.toBeNull();
+    expect(status!.textContent).toContain("Couldn't locate this passage in the EPUB.");
+
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(displayCallsFor(TARGET_CFI)).toBe(2); // no further retries
+    expect(progressWritesWith(STALE_CFI)).toEqual([]);
   });
 });
