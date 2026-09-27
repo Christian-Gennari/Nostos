@@ -479,6 +479,50 @@ describe('AssistantService voice transcript alignment', () => {
     ]);
   });
 
+  it('retries an uncertain continuation answer with the same TurnId and one visible user turn', () => {
+    fake.set({ bookFormat: 'physical' });
+    service.open();
+    service.updateDraft('A thought I cannot place');
+    service.submit();
+
+    http.expectOne('/api/assistant/turn').flush(
+      turn({
+        anchorPrompt: {
+          kind: 'physical_page',
+          question: 'What page are you on?',
+          continuationId: 'cont-page-retry',
+        },
+      }),
+    );
+
+    service.updateDraft('247');
+    service.submit();
+    const firstAnswer = http.expectOne('/api/assistant/turn');
+    const firstBody = firstAnswer.request.body;
+    expect(firstBody.message).toBe('247');
+    expect(firstBody.continuationId).toBe('cont-page-retry');
+    firstAnswer.error(new ProgressEvent('error'));
+
+    expect(service.draft()).toBe('247');
+    expect(
+      service.entries().filter((entry) => entry.kind === 'user' && entry.text === '247'),
+    ).toHaveLength(1);
+
+    service.submit();
+    const retry = http.expectOne('/api/assistant/turn');
+    expect(retry.request.body.turnId).toBe(firstBody.turnId);
+    expect(retry.request.body.idempotencyKey).toBe(firstBody.idempotencyKey);
+    expect(retry.request.body.continuationId).toBe(firstBody.continuationId);
+    expect(retry.request.body.history).toEqual(firstBody.history);
+    expect(
+      service.entries().filter((entry) => entry.kind === 'user' && entry.text === '247'),
+    ).toHaveLength(1);
+
+    retry.flush(turn({ acknowledgement: 'Saved to The Magic Mountain.', capturedNoteId: 'n1' }));
+    expect(service.pendingAnchor()).toBeNull();
+    expect(service.capturedNoteId()).toBe('n1');
+  });
+
   it('allocates a new TurnId when the user changes an uncertain draft', () => {
     service.updateDraft('First delivery');
     service.submit();
