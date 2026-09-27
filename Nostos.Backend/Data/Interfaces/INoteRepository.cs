@@ -61,4 +61,15 @@ public interface INoteRepository
     /// </summary>
     Task<int> CountWithoutConceptsAsync();
 
+    /// <summary>Total canonical notes visible in the current persistence scope.</summary>
+    Task<int> CountAsync();
+
+    /// <summary>
+    /// Bounded structural note counts by book for whole-knowledge overview.
+    /// </summary>
+    Task<IReadOnlyList<NoteBookCount>> GetBookCountsAsync(int limit);
+
 }
+
+public sealed record NoteBookCount(Guid BookId, string BookTitle, int NoteCount);
+
