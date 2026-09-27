@@ -5,6 +5,7 @@ using Nostos.Backend.Data;
 using Nostos.Backend.Data.Interfaces;
 using Nostos.Backend.Data.Models;
 using Nostos.Backend.Mapping;
+using Nostos.Backend.Search;
 using Nostos.Backend.Services.Ai;
 using Nostos.Shared.Dtos;
 
@@ -83,11 +84,66 @@ public sealed class NoteService : INoteService
         return new NoteSearchPageDto(notes.Select(n => ByText(n, null)).ToList(), total, skip, take);
     }
 
-    public async Task<IReadOnlyList<NoteSearchHitDto>> SearchAsync(string query, int limit, CancellationToken ct = default)
+    public Task<IReadOnlyList<NoteSearchHitDto>> SearchAsync(
+        string query,
+        int limit,
+        CancellationToken ct = default) =>
+        SearchAsync(query, limit, bookIds: null, ct);
+
+    public async Task<IReadOnlyList<NoteSearchHitDto>> SearchAsync(
+        string query,
+        int limit,
+        IReadOnlyList<Guid>? bookIds,
+        CancellationToken ct = default)
     {
-        var hits = await _notes.SearchByTextAsync(query, Clamp(limit));
-        var term = query.Trim();
-        return hits.Select(n => ByText(n, term)).ToList();
+        var take = Clamp(limit);
+        var variants = LexicalQueryPlanner.Build(query);
+        if (variants.Count == 0)
+            return [];
+
+        // Keep enough candidates per variant for deterministic fusion without
+        // letting one broad token expand into an unbounded note scan.
+        var candidateLimit = Math.Clamp(take * 3, 20, 60);
+        var fused = new Dictionary<Guid, NoteFusionCandidate>();
+
+        foreach (var variant in variants)
+        {
+            var hits = await _notes.SearchByTextAsync(variant.Text, candidateLimit, bookIds);
+            for (var rank = 0; rank < hits.Count; rank++)
+            {
+                var note = hits[rank];
+                var score = (variant.Weight * 100) + Math.Max(0, candidateLimit - rank);
+
+                if (!fused.TryGetValue(note.Id, out var current))
+                {
+                    fused[note.Id] = new NoteFusionCandidate(
+                        note,
+                        score,
+                        variant.Text,
+                        MatchedVariants: 1);
+                    continue;
+                }
+
+                fused[note.Id] = current with
+                {
+                    Score = current.Score + score,
+                    MatchedVariants = current.MatchedVariants + 1,
+                    // Prefer the more specific variant for the snippet.
+                    SnippetTerm = variant.Weight > SpecificityWeight(current.SnippetTerm, variants)
+                        ? variant.Text
+                        : current.SnippetTerm,
+                };
+            }
+        }
+
+        return fused.Values
+            .OrderByDescending(candidate => candidate.MatchedVariants)
+            .ThenByDescending(candidate => candidate.Score)
+            .ThenByDescending(candidate => candidate.Note.CreatedAt)
+            .ThenBy(candidate => candidate.Note.Id)
+            .Take(take)
+            .Select(candidate => ByText(candidate.Note, candidate.SnippetTerm))
+            .ToList();
     }
 
     // ------------------------------------------------------------------
@@ -494,6 +550,18 @@ public sealed class NoteService : INoteService
     private static NoteCommandResult<NoteDto> Deserialize(string json) =>
         JsonSerializer.Deserialize<NoteCommandResult<NoteDto>>(json, ReceiptJson)
         ?? throw new InvalidOperationException("Stored note command receipt is invalid.");
+
+    private static int SpecificityWeight(
+        string term,
+        IReadOnlyList<LexicalQueryVariant> variants) =>
+        variants.FirstOrDefault(
+            variant => string.Equals(variant.Text, term, StringComparison.OrdinalIgnoreCase))?.Weight ?? 0;
+
+    private sealed record NoteFusionCandidate(
+        NoteModel Note,
+        int Score,
+        string SnippetTerm,
+        int MatchedVariants);
 
     private static NoteSearchHitDto ByText(NoteModel n, string? term) => new(
         n.Id,
