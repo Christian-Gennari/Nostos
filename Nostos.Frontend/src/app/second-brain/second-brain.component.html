@@ -1092,10 +1092,10 @@
         <div class="brain-note-panel-concepts">
           @if (note.conceptNames.length > 0) {
             @for (name of note.conceptNames; track name) {
-            <span class="brain-note-concept-tag">{{ name }}</span>
+            <span appBadge tone="success" [dot]="true">{{ name }}</span>
             }
           } @else {
-            <span class="brain-note-panel-empty-concepts">Belongs to no concept</span>
+            <span class="brain-note-panel-empty-concepts">No concepts linked</span>
           }
         </div>
         <div class="brain-note-panel-actions">
