@@ -13,6 +13,11 @@ public interface INoteService
     Task<IReadOnlyList<NoteDto>> GetByBookAsync(Guid bookId, CancellationToken ct = default);
     Task<NoteSearchPageDto> GetUnlinkedAsync(int limit, int offset, CancellationToken ct = default);
     Task<IReadOnlyList<NoteSearchHitDto>> SearchAsync(string query, int limit, CancellationToken ct = default);
+    Task<IReadOnlyList<NoteSearchHitDto>> SearchAsync(
+        string query,
+        int limit,
+        IReadOnlyList<Guid>? bookIds,
+        CancellationToken ct = default);
 
     Task<NoteCommandResult<NoteDto>> CreateAsync(
         Guid bookId, CreateNoteDto dto, string? clientId = null, string? idempotencyKey = null,
