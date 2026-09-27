@@ -225,11 +225,36 @@ export class AssistantComponent {
   }
 
   canOpenEvidence(evidence: AssistantEvidenceReferenceDto): boolean {
+    if (!this.router) return false;
+    if (evidence.handle.kind === 'note') return !!evidence.handle.noteId;
+    if (evidence.handle.kind === 'concept') return !!evidence.handle.conceptId;
     return !!evidence.handle.bookId
       && !!evidence.locators?.some((locator) => locator.type === 'pdf' || locator.type === 'epub');
   }
 
   openEvidence(evidence: AssistantEvidenceReferenceDto): void {
+    if (!this.router) return;
+
+    if (evidence.handle.kind === 'note' && evidence.handle.noteId) {
+      void this.router.navigate(
+        ['/second-brain'],
+        { queryParams: { noteId: evidence.handle.noteId } },
+      ).then((navigated) => {
+        if (navigated && this.isPhoneViewport()) this.close();
+      });
+      return;
+    }
+
+    if (evidence.handle.kind === 'concept' && evidence.handle.conceptId) {
+      void this.router.navigate(
+        ['/second-brain'],
+        { queryParams: { conceptId: evidence.handle.conceptId } },
+      ).then((navigated) => {
+        if (navigated && this.isPhoneViewport()) this.close();
+      });
+      return;
+    }
+
     const bookId = evidence.handle.bookId;
     const locator = evidence.locators?.[0];
     if (!bookId || !locator) return;
