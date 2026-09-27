@@ -21,6 +21,13 @@ internal sealed class AssistantPlanExecutor(
         CancellationToken ct = default)
     {
         var outcome = plans.Approve(planId, approvalToken);
+        if (outcome.TerminalResponse is { } terminal)
+        {
+            // Lost-response retry: replay execution truth without making the
+            // consumed destructive plan executable again.
+            return terminal;
+        }
+
         if (!outcome.Approved || outcome.Plan is null)
         {
             return new AssistantPlanApproveResponse(
@@ -68,11 +75,17 @@ internal sealed class AssistantPlanExecutor(
 
         var success = results.Count > 0 && results.All(r => r.Success);
         var failure = results.LastOrDefault(r => !r.Success);
-        return new AssistantPlanApproveResponse(
+        var response = new AssistantPlanApproveResponse(
             success,
             success ? null : failure?.ErrorCode,
             success ? null : failure?.ErrorMessage,
             results);
+
+        // The plan was already consumed before execution. Keep only this
+        // short-lived terminal result so an ambiguous HTTP response can be
+        // reported truthfully without executing destructive work twice.
+        plans.RecordTerminal(plan, response);
+        return response;
     }
 
 
