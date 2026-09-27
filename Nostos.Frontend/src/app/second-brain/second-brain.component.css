@@ -2211,8 +2211,11 @@
 
 .note-row-item,
 .brain-note-panel-close {
+  border: none;
   background: transparent;
   color: var(--color-text-muted);
+  cursor: pointer;
+  border-radius: var(--radius-md);
   flex-shrink: 0;
 }
 
@@ -2227,7 +2230,9 @@
 }
 
 .note-row-item:hover,
-
+.brain-note-panel-close:hover {
+  background: var(--bg-hover);
+}
 
 .note-row-item:focus-visible,
 .brain-note-panel-close:focus-visible {
