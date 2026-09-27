@@ -123,9 +123,10 @@ public sealed class AssistantContextPacker(AssistantOptions options)
     {
         var hasContext = entry.Context is not null;
         var hasEvidence = entry.Evidence is { Count: > 0 };
+        var hasEvidenceHandles = entry.EvidenceHandles is { Count: > 0 };
         var hasActions = entry.Actions is { Count: > 0 };
         var hasCapturedNote = !string.IsNullOrWhiteSpace(entry.CapturedNoteId);
-        if (!hasContext && !hasEvidence && !hasActions && !hasCapturedNote)
+        if (!hasContext && !hasEvidence && !hasEvidenceHandles && !hasActions && !hasCapturedNote)
         {
             return entry.Text;
         }
@@ -134,7 +135,10 @@ public sealed class AssistantContextPacker(AssistantOptions options)
             new
             {
                 context = entry.Context,
+                // Legacy #561 imported-book identities remain readable for
+                // restored sessions. New #565 turns use exact #562 handles.
                 evidence = hasEvidence ? entry.Evidence : null,
+                evidenceHandles = hasEvidenceHandles ? entry.EvidenceHandles : null,
                 actions = hasActions ? entry.Actions : null,
                 capturedNoteId = hasCapturedNote ? entry.CapturedNoteId : null,
             },

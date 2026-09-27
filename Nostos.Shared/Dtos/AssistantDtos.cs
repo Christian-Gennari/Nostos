@@ -66,7 +66,11 @@ public sealed record AssistantHistoryMessageDto(
     IReadOnlyList<string>? Actions = null,
     // APPENDED (#561): identity of a note captured by this turn, when one exists.
     // It helps resolve later "that note" references but carries no write authority.
-    string? CapturedNoteId = null);
+    string? CapturedNoteId = null,
+    // APPENDED (#565): exact #562 evidence handles associated with the historical
+    // turn. These are inert references only; any later use must re-read canonical
+    // Nostos state through knowledge_read_evidence.
+    IReadOnlyList<AssistantEvidenceHandleDto>? EvidenceHandles = null);
 
 /// <summary>
 /// Compact application snapshot attached to an older user turn. Current
@@ -155,7 +159,37 @@ public sealed record AssistantTurnResponse(
     // APPENDED (#560): deterministic continuation failures are turn results,
     // not provider failures. They are typed so a stale/wrong continuation never
     // falls back to guessing or mutation.
-    AssistantTurnErrorDto? Error = null);
+    AssistantTurnErrorDto? Error = null,
+    // APPENDED (#565): canonical evidence found/used by this exact turn. Stable
+    // handles are authoritative; excerpt/labels are bounded display data only.
+    IReadOnlyList<AssistantEvidenceReferenceDto>? Evidence = null);
+
+/// <summary>
+/// A stable #562 reference to canonical evidence. It grants no write authority.
+/// Book-text handles include the exact source revision + extractor + ordinal so
+/// a later turn can fail closed rather than trusting a stale excerpt.
+/// </summary>
+public sealed record AssistantEvidenceHandleDto(
+    string Kind,
+    Guid? NoteId = null,
+    Guid? ConceptId = null,
+    Guid? BookId = null,
+    string? SourceSha256 = null,
+    string? ExtractorVersion = null,
+    int? Ordinal = null);
+
+/// <summary>
+/// Bounded presentation data paired with a canonical evidence handle. This is a
+/// source/evidence relationship for the turn, not a claim-level citation.
+/// </summary>
+public sealed record AssistantEvidenceReferenceDto(
+    AssistantEvidenceHandleDto Handle,
+    string Label,
+    string? Excerpt = null,
+    string? BookTitle = null,
+    string? BookAuthor = null,
+    string? Format = null,
+    IReadOnlyList<AssistantSourceLocatorDto>? Locators = null);
 
 /// <summary>
 /// One grounded imported-book passage surfaced by Ask Nostos. The excerpt is

@@ -42,6 +42,8 @@ export interface AssistantEntry {
   meta: string | null;
   sources?: AssistantSourceReferenceDto[];
   suggestions?: AssistantSuggestionDto[];
+  /** Inert historical truth owned by this exact TurnId. */
+  artifacts?: AssistantTurnArtifact[];
 }
 
 export interface AssistantSourceLocatorDto {
@@ -64,6 +66,46 @@ export interface AssistantSourceReferenceDto {
   excerpt: string;
   locators: AssistantSourceLocatorDto[];
 }
+
+/** Exact #562 identity for canonical evidence; never mutation authority. */
+export interface AssistantEvidenceHandleDto {
+  kind: 'note' | 'concept' | 'book_text' | string;
+  noteId?: string | null;
+  conceptId?: string | null;
+  bookId?: string | null;
+  sourceSha256?: string | null;
+  extractorVersion?: string | null;
+  ordinal?: number | null;
+}
+
+/** Bounded display data paired with the canonical handle. */
+export interface AssistantEvidenceReferenceDto {
+  handle: AssistantEvidenceHandleDto;
+  label: string;
+  excerpt?: string | null;
+  bookTitle?: string | null;
+  bookAuthor?: string | null;
+  format?: string | null;
+  locators?: AssistantSourceLocatorDto[] | null;
+}
+
+/**
+ * Historical turn outcomes. These values are inert: restoring them never
+ * executes a capability, replays a capture, or approves a plan.
+ */
+export type AssistantTurnArtifact =
+  | { kind: 'evidence'; evidence: AssistantEvidenceReferenceDto }
+  | { kind: 'capture'; noteId: string; acknowledgement: string | null; state: 'saved' }
+  | { kind: 'action'; capability: string; state: 'completed' }
+  | { kind: 'failure'; code: string; message: string; retryable: boolean; state: 'failed' | 'cancelled' }
+  | { kind: 'proposal'; proposal: AssistantSuggestionDto }
+  | {
+      kind: 'destructive-result';
+      planId: string;
+      summary: string;
+      outcome: 'applied' | 'refused' | 'failed' | 'superseded';
+      capabilities: string[];
+    };
 
 /** Compact application snapshot from when an older user turn occurred. */
 export interface AssistantHistoricalContextDto {
@@ -92,6 +134,8 @@ export interface AssistantHistoryMessage {
   text: string;
   context?: AssistantHistoricalContextDto | null;
   evidence?: AssistantHistoricalEvidenceDto[];
+  /** Exact canonical handles for #565 turns; excerpts stay out of history. */
+  evidenceHandles?: AssistantEvidenceHandleDto[];
   actions?: string[];
   capturedNoteId?: string | null;
 }
@@ -196,6 +240,8 @@ export interface AssistantTurnResponse {
   sources?: AssistantSourceReferenceDto[];
   /** Server-known deterministic refusal, e.g. stale continuation. */
   error?: AssistantTurnErrorDto | null;
+  /** Canonical material found/used by this turn, with exact #562 handles. */
+  evidence?: AssistantEvidenceReferenceDto[];
 }
 
 /** The turn request the bridge accepts. */
@@ -318,8 +364,10 @@ interface AssistantConversationEvent extends AssistantEntry {
   historyEvidence: AssistantHistoricalEvidenceDto[];
   /** Canonical immediate actions reported as completed by the backend. */
   historyActions: string[];
-  /** Captured note identity when this turn created one. */
+  /** Captured note identity when this turn created one (legacy v1 restore fallback). */
   historyCapturedNoteId: string | null;
+  /** Durable, inert results for this exact TurnId. */
+  artifacts: AssistantTurnArtifact[];
 }
 
 interface PreparedAssistantTurn {
@@ -341,6 +389,8 @@ interface PersistedAssistantSession {
   pendingAnchor: AssistantAnchorPrompt | null;
   pendingContinuationContext: AssistantContext | null;
   pendingPlan: AssistantPendingPlanDto | null;
+  /** Turn that proposed the currently active destructive plan. */
+  pendingPlanTurnId: string | null;
   suggestions: AssistantSuggestionDto[];
   capturedNoteId: string | null;
   /**
@@ -396,6 +446,8 @@ export class AssistantService {
   readonly suggestions = signal<AssistantSuggestionDto[]>([]);
   /** The destructive plan (if any) waiting for explicit approval. */
   readonly pendingPlan = signal<AssistantPendingPlanDto | null>(null);
+  /** Exact TurnId that produced the active server-held destructive proposal. */
+  readonly pendingPlanTurnId = signal<string | null>(null);
   /**
    * Natural "yes / go ahead" is accepted only on the immediate confirmation
    * turn. Any intervening ordinary message disarms this shortcut so a later,
@@ -444,23 +496,40 @@ export class AssistantService {
       })),
   );
 
-  /** Enriched wire history; the public transcript/history view stays text-only. */
-  private readonly contextualHistory = computed<AssistantHistoryMessage[]>(() =>
-    this.eventLedger()
+  /** Enriched wire history; historical artifacts are reduced to inert reference metadata. */
+  private readonly contextualHistory = computed<AssistantHistoryMessage[]>(() => {
+    const ledger = this.eventLedger();
+    return ledger
       .filter((event) => event.remember && event.delivery !== 'retryable')
-      .map((event) => ({
-        role: event.kind === 'user' ? 'user' : 'assistant',
-        text: event.text,
-        ...(event.kind === 'user' && event.historyContext
-          ? { context: event.historyContext }
-          : {}),
-        ...(event.historyEvidence.length > 0 ? { evidence: event.historyEvidence } : {}),
-        ...(event.historyActions.length > 0 ? { actions: event.historyActions } : {}),
-        ...(event.historyCapturedNoteId
-          ? { capturedNoteId: event.historyCapturedNoteId }
-          : {}),
-      })),
-  );
+      .map((event) => {
+        const turnArtifacts = ledger
+          .filter((candidate) => candidate.turnId === event.turnId)
+          .flatMap((candidate) => candidate.artifacts ?? []);
+        const facts = historyFactsFromArtifacts(turnArtifacts);
+        return {
+          role: event.kind === 'user' ? 'user' as const : 'assistant' as const,
+          text: event.text,
+          ...(event.kind === 'user' && event.historyContext
+            ? { context: event.historyContext }
+            : {}),
+          // Turn facts travel once, on the historical user root. Assistant
+          // prose stays text-only, which keeps repeated session payloads bounded.
+          ...(event.kind === 'user' && event.historyEvidence.length > 0
+            ? { evidence: event.historyEvidence }
+            : {}),
+          ...(event.kind === 'user' && facts.evidenceHandles.length > 0
+            ? { evidenceHandles: facts.evidenceHandles }
+            : {}),
+          ...(event.kind === 'user'
+            && (facts.actions.length > 0 ? facts.actions : event.historyActions).length > 0
+            ? { actions: facts.actions.length > 0 ? facts.actions : event.historyActions }
+            : {}),
+          ...(event.kind === 'user' && (facts.capturedNoteId ?? event.historyCapturedNoteId)
+            ? { capturedNoteId: facts.capturedNoteId ?? event.historyCapturedNoteId }
+            : {}),
+        };
+      });
+  });
 
   /**
    * The note the last turn captured, if any (issue #262 §8). Its raw transcript
@@ -532,11 +601,18 @@ export class AssistantService {
       this.conversationId.set(parsed.conversationId);
       const restoredEvents = parsed.eventLedger
         .filter(isRestorableConversationEvent)
-        .map((event) =>
-          event.delivery === 'sending'
-            ? { ...event, delivery: 'retryable' as const, meta: 'Delivery uncertain' }
-            : event,
-        );
+        .map((event) => ({
+          ...event,
+          // Artifacts are inert data. Proposal buttons are active UI state and
+          // intentionally do not survive a page reload.
+          artifacts: Array.isArray(event.artifacts)
+            ? event.artifacts.filter(isAssistantTurnArtifact)
+            : [],
+          suggestions: [],
+          ...(event.delivery === 'sending'
+            ? { delivery: 'retryable' as const, meta: 'Delivery uncertain' }
+            : {}),
+        }));
       this.eventLedger.set(restoredEvents);
 
       this.pendingAnchor.set(isAnchorPrompt(parsed.pendingAnchor) ? parsed.pendingAnchor : null);
@@ -546,7 +622,12 @@ export class AssistantService {
           : null,
       );
       this.pendingPlan.set(isPendingPlan(parsed.pendingPlan) ? parsed.pendingPlan : null);
-      this.suggestions.set(Array.isArray(parsed.suggestions) ? parsed.suggestions : []);
+      this.pendingPlanTurnId.set(
+        this.pendingPlan() && typeof parsed.pendingPlanTurnId === 'string'
+          ? parsed.pendingPlanTurnId
+          : null,
+      );
+      this.suggestions.set([]);
       this.capturedNoteId.set(
         typeof parsed.capturedNoteId === 'string' ? parsed.capturedNoteId : null,
       );
@@ -595,7 +676,9 @@ export class AssistantService {
       pendingAnchor: this.pendingAnchor(),
       pendingContinuationContext: this.pendingContinuationContext(),
       pendingPlan: this.pendingPlan(),
-      suggestions: this.suggestions(),
+      pendingPlanTurnId: this.pendingPlanTurnId(),
+      // Proposal artifacts persist; executable chips do not.
+      suggestions: [],
       capturedNoteId: this.capturedNoteId(),
       retryableTurn: this.retryableTurn(),
     };
@@ -646,6 +729,7 @@ export class AssistantService {
     this.pendingAnchor.set(null);
     this.pendingContinuationContext.set(null);
     this.pendingPlan.set(null);
+    this.pendingPlanTurnId.set(null);
     this.directPlanApprovalArmed.set(false);
     this.suggestions.set([]);
     this.lastTurn.set(null);
@@ -748,10 +832,19 @@ export class AssistantService {
         'complete',
         toHistoricalContext(this.context()),
       );
+      const planTurnId = this.pendingPlanTurnId() ?? turnId;
       this.pendingPlan.set(null);
+      this.pendingPlanTurnId.set(null);
       this.directPlanApprovalArmed.set(false);
       const reply = 'Okay. I won\'t make that change.';
-      this.pushEntry(turnId, 'assistant', reply, null, 'Cancelled');
+      this.pushEntry(planTurnId, 'assistant', reply, null, 'Cancelled');
+      this.upsertTurnArtifact(planTurnId, {
+        kind: 'destructive-result',
+        planId: plan.planId,
+        summary: plan.summary,
+        outcome: 'refused',
+        capabilities: plan.steps.map((step) => step.capability),
+      });
       this.persistSession();
       return;
     }
@@ -774,7 +867,11 @@ export class AssistantService {
       );
       this.directPlanApprovalArmed.set(false);
       this.persistSession();
-      this.approvePlan(plan.planId, plan.approvalToken, turnId);
+      this.approvePlan(
+        plan.planId,
+        plan.approvalToken,
+        this.pendingPlanTurnId() ?? turnId,
+      );
       return;
     }
 
@@ -936,7 +1033,11 @@ export class AssistantService {
    * terminal receipt, so retrying the exact plan id + token after a lost HTTP
    * response reports the original result without executing it twice.
    */
-  approvePlan(planId: string, approvalToken: string, turnId = createId()): void {
+  approvePlan(
+    planId: string,
+    approvalToken: string,
+    turnId = this.pendingPlanTurnId() ?? createId(),
+  ): void {
     if (!planId || !approvalToken || this.sending()) return;
 
     const plan = this.pendingPlan();
@@ -948,8 +1049,10 @@ export class AssistantService {
         next: (response) => {
           this.sending.set(false);
           this.lastError.set(null);
+          const capabilities = (plan?.steps ?? response.steps).map((step) => step.capability);
           if (response.success) {
             this.pendingPlan.set(null);
+            this.pendingPlanTurnId.set(null);
             const replies = response.steps
               .map((step) => {
                 if (!step.data || typeof step.data !== 'object') return null;
@@ -960,6 +1063,13 @@ export class AssistantService {
             const executionReply =
               replies.length > 0 ? replies.join(' ') : (plan?.summary ?? 'Plan applied.');
             this.pushEntry(turnId, 'assistant', executionReply, null, 'Applied');
+            this.upsertTurnArtifact(turnId, {
+              kind: 'destructive-result',
+              planId,
+              summary: plan?.summary ?? executionReply,
+              outcome: 'applied',
+              capabilities,
+            });
           } else {
             const failureReply =
               response.errorMessage ?? plan?.summary ?? 'The plan could not be applied.';
@@ -971,12 +1081,34 @@ export class AssistantService {
               null,
               response.errorCode ?? 'Refused',
             );
+            this.upsertTurnArtifact(turnId, {
+              kind: 'destructive-result',
+              planId,
+              summary: plan?.summary ?? failureReply,
+              outcome: 'failed',
+              capabilities,
+            });
+            this.upsertTurnArtifact(turnId, {
+              kind: 'failure',
+              code: response.errorCode ?? 'assistant_plan_refused',
+              message: failureReply,
+              retryable: false,
+              state: 'failed',
+            });
           }
           this.persistSession();
         },
         error: () => {
           this.sending.set(false);
-          this.lastError.set('The plan could not be applied. It is still waiting for approval.');
+          const message = 'The plan could not be applied. It is still waiting for approval.';
+          this.lastError.set(message);
+          this.upsertTurnArtifact(turnId, {
+            kind: 'failure',
+            code: 'assistant_network_error',
+            message,
+            retryable: true,
+            state: 'failed',
+          });
           this.persistSession();
         },
       });
@@ -1329,6 +1461,14 @@ export class AssistantService {
       this.updateUserDelivery(turn.userEntryId, 'complete', null);
     }
 
+    this.replaceTurnArtifacts(
+      turn.turnId,
+      artifactsFromTurnResponse(response, {
+        code,
+        message,
+        retryable: failure?.retryable ?? false,
+      }),
+    );
     this.finishTurnUi(turn.turnId);
     this.persistSession();
     this.turnFinished.next({ turnId: turn.turnId, response, error: message });
@@ -1359,6 +1499,14 @@ export class AssistantService {
       false,
     );
 
+    this.replaceTurnArtifacts(
+      turn.turnId,
+      artifactsFromTurnResponse(response, {
+        code: failure?.code ?? response?.error?.code ?? 'assistant_turn_cancelled',
+        message: stoppedMessage,
+        retryable: false,
+      }, 'cancelled'),
+    );
     this.finishTurnUi(turn.turnId);
     this.persistSession();
     this.turnFinished.next({ turnId: turn.turnId, response, error: stoppedMessage });
@@ -1384,6 +1532,13 @@ export class AssistantService {
       this.pendingAnchor.set(turn.continuationPrompt);
       this.pendingContinuationContext.set(turn.context);
     }
+    this.replaceTurnArtifacts(turn.turnId, [{
+      kind: 'failure',
+      code,
+      message,
+      retryable: true,
+      state: 'failed',
+    }]);
     this.persistSession();
     this.turnFinished.next({ turnId: turn.turnId, response: null, error: message });
   }
@@ -1397,15 +1552,21 @@ export class AssistantService {
     this.lastError.set(response.error?.message ?? null);
     this.lastTurn.set(response);
     this.suggestions.set(response.suggestions ?? []);
-    this.updateTurnHistoryFacts(
-      turn.userEntryId,
-      response.sources ?? [],
-      response.executedCapabilities ?? [],
-      response.capturedNoteId ?? null,
-    );
 
     if (response.pendingPlan) {
+      const previous = this.pendingPlan();
+      const previousTurnId = this.pendingPlanTurnId();
+      if (previous && previous.planId !== response.pendingPlan.planId && previousTurnId) {
+        this.upsertTurnArtifact(previousTurnId, {
+          kind: 'destructive-result',
+          planId: previous.planId,
+          summary: previous.summary,
+          outcome: 'superseded',
+          capabilities: previous.steps.map((step) => step.capability),
+        });
+      }
       this.pendingPlan.set(response.pendingPlan);
+      this.pendingPlanTurnId.set(turn.turnId);
       this.directPlanApprovalArmed.set(true);
     }
 
@@ -1489,6 +1650,7 @@ export class AssistantService {
         response.sources ?? [], true, 'complete', null, response.suggestions);
     }
 
+    this.replaceTurnArtifacts(turn.turnId, artifactsFromTurnResponse(response));
     this.persistSession();
   }
 
@@ -1534,30 +1696,34 @@ export class AssistantService {
         historyEvidence: [],
         historyActions: [],
         historyCapturedNoteId: null,
+        artifacts: [],
       },
     ]);
     return id;
   }
 
-  private updateTurnHistoryFacts(
-    userEntryId: string,
-    sources: AssistantSourceReferenceDto[],
-    actions: string[],
-    capturedNoteId: string | null,
-  ): void {
-    const evidence = toHistoricalEvidence(sources);
-    this.eventLedger.update((events) =>
-      events.map((event) =>
-        event.id === userEntryId
-          ? {
-              ...event,
-              historyEvidence: evidence,
-              historyActions: [...actions],
-              historyCapturedNoteId: capturedNoteId,
-            }
-          : event,
-      ),
-    );
+  private replaceTurnArtifacts(turnId: string, artifacts: AssistantTurnArtifact[]): void {
+    this.eventLedger.update((events) => {
+      let targetIndex = -1;
+      for (let index = 0; index < events.length; index++) {
+        if (events[index].turnId === turnId) targetIndex = index;
+      }
+      if (targetIndex < 0) return events;
+
+      return events.map((event, index) =>
+        event.turnId !== turnId
+          ? event
+          : { ...event, artifacts: index === targetIndex ? [...artifacts] : [] },
+      );
+    });
+  }
+
+  private upsertTurnArtifact(turnId: string, artifact: AssistantTurnArtifact): void {
+    const existing = this.eventLedger()
+      .filter((event) => event.turnId === turnId)
+      .flatMap((event) => event.artifacts ?? [])
+      .filter((item) => artifactKey(item) !== artifactKey(artifact));
+    this.replaceTurnArtifacts(turnId, [...existing, artifact]);
   }
 
   private updateUserDelivery(
@@ -1682,15 +1848,175 @@ function toHistoricalContext(context: AssistantContext): AssistantHistoricalCont
   };
 }
 
-function toHistoricalEvidence(
-  sources: readonly AssistantSourceReferenceDto[],
-): AssistantHistoricalEvidenceDto[] {
-  return sources.map((source) => ({
-    bookId: source.bookId,
-    bookTitle: source.bookTitle,
-    sourceSha256: source.sourceSha256,
-    locators: source.locators.map((locator) => ({ ...locator })),
-  }));
+
+function artifactsFromTurnResponse(
+  response: AssistantTurnResponse | null,
+  failure?: { code: string; message: string; retryable: boolean } | null,
+  failureState: 'failed' | 'cancelled' = 'failed',
+): AssistantTurnArtifact[] {
+  if (!response && !failure) return [];
+
+  const artifacts: AssistantTurnArtifact[] = [];
+  for (const evidence of response?.evidence ?? []) {
+    artifacts.push({ kind: 'evidence', evidence: cloneEvidence(evidence) });
+  }
+
+  // Backward-compatible bridge responses may not yet carry #565 evidence.
+  if (!(response?.evidence?.length) && response?.sources?.length) {
+    for (const source of response.sources) {
+      artifacts.push({
+        kind: 'evidence',
+        evidence: {
+          handle: {
+            kind: 'book_text',
+            bookId: source.bookId,
+            sourceSha256: source.sourceSha256,
+          },
+          label: source.bookTitle,
+          excerpt: source.excerpt.slice(0, 320),
+          bookTitle: source.bookTitle,
+          bookAuthor: source.bookAuthor,
+          format: source.format,
+          locators: source.locators.map((locator) => ({ ...locator })),
+        },
+      });
+    }
+  }
+
+  if (response?.capturedNoteId) {
+    artifacts.push({
+      kind: 'capture',
+      noteId: response.capturedNoteId,
+      acknowledgement: response.acknowledgement,
+      state: 'saved',
+    });
+  }
+
+  for (const capability of response?.executedCapabilities ?? []) {
+    artifacts.push({ kind: 'action', capability, state: 'completed' });
+  }
+
+  for (const proposal of response?.suggestions ?? []) {
+    artifacts.push({ kind: 'proposal', proposal: { ...proposal } });
+  }
+
+  const terminalFailure = failure ?? (response?.error
+    ? { code: response.error.code, message: response.error.message, retryable: false }
+    : null);
+  if (terminalFailure) {
+    artifacts.push({
+      kind: 'failure',
+      code: terminalFailure.code,
+      message: terminalFailure.message,
+      retryable: terminalFailure.retryable,
+      state: failureState === 'cancelled' || /cancelled/i.test(terminalFailure.code)
+        ? 'cancelled'
+        : 'failed',
+    });
+  }
+
+  return dedupeArtifacts(artifacts);
+}
+
+function cloneEvidence(evidence: AssistantEvidenceReferenceDto): AssistantEvidenceReferenceDto {
+  return {
+    ...evidence,
+    handle: { ...evidence.handle },
+    locators: evidence.locators?.map((locator) => ({ ...locator })) ?? [],
+  };
+}
+
+function historyFactsFromArtifacts(artifacts: readonly AssistantTurnArtifact[]): {
+  evidenceHandles: AssistantEvidenceHandleDto[];
+  actions: string[];
+  capturedNoteId: string | null;
+} {
+  const evidenceHandles = artifacts
+    .filter((artifact): artifact is Extract<AssistantTurnArtifact, { kind: 'evidence' }> =>
+      artifact.kind === 'evidence')
+    .map((artifact) => ({ ...artifact.evidence.handle }));
+  const actions = artifacts
+    .flatMap((artifact) => {
+      if (artifact.kind === 'action') return [artifact.capability];
+      if (artifact.kind === 'destructive-result' && artifact.outcome === 'applied')
+        return artifact.capabilities;
+      return [];
+    });
+  const capturedNoteId = artifacts.find(
+    (artifact): artifact is Extract<AssistantTurnArtifact, { kind: 'capture' }> =>
+      artifact.kind === 'capture',
+  )?.noteId ?? null;
+
+  return {
+    evidenceHandles: uniqueBy(evidenceHandles, evidenceHandleKey),
+    actions: [...new Set(actions)],
+    capturedNoteId,
+  };
+}
+
+function artifactKey(artifact: AssistantTurnArtifact): string {
+  switch (artifact.kind) {
+    case 'evidence':
+      return `evidence:${evidenceHandleKey(artifact.evidence.handle)}`;
+    case 'capture':
+      return `capture:${artifact.noteId}`;
+    case 'action':
+      return `action:${artifact.capability}`;
+    case 'failure':
+      return `failure:${artifact.code}:${artifact.message}`;
+    case 'proposal':
+      return `proposal:${artifact.proposal.noteId ?? ''}:${artifact.proposal.value ?? artifact.proposal.label}`;
+    case 'destructive-result':
+      return `destructive:${artifact.planId}`;
+  }
+}
+
+function dedupeArtifacts(artifacts: readonly AssistantTurnArtifact[]): AssistantTurnArtifact[] {
+  return uniqueBy(artifacts, artifactKey);
+}
+
+function evidenceHandleKey(handle: AssistantEvidenceHandleDto): string {
+  return [
+    handle.kind,
+    handle.noteId ?? '',
+    handle.conceptId ?? '',
+    handle.bookId ?? '',
+    handle.sourceSha256 ?? '',
+    handle.extractorVersion ?? '',
+    handle.ordinal ?? '',
+  ].join('|');
+}
+
+function uniqueBy<T>(values: readonly T[], key: (value: T) => string): T[] {
+  const seen = new Set<string>();
+  return values.filter((value) => {
+    const id = key(value);
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+}
+
+function isAssistantTurnArtifact(value: unknown): value is AssistantTurnArtifact {
+  if (!value || typeof value !== 'object') return false;
+  const artifact = value as Partial<AssistantTurnArtifact>;
+  switch (artifact.kind) {
+    case 'evidence':
+      return !!(artifact as { evidence?: unknown }).evidence;
+    case 'capture':
+      return typeof (artifact as { noteId?: unknown }).noteId === 'string';
+    case 'action':
+      return typeof (artifact as { capability?: unknown }).capability === 'string';
+    case 'failure':
+      return typeof (artifact as { code?: unknown }).code === 'string'
+        && typeof (artifact as { message?: unknown }).message === 'string';
+    case 'proposal':
+      return !!(artifact as { proposal?: unknown }).proposal;
+    case 'destructive-result':
+      return typeof (artifact as { planId?: unknown }).planId === 'string';
+    default:
+      return false;
+  }
 }
 
 function sessionStorageOrNull(): Storage | null {
@@ -1765,7 +2091,8 @@ function isRestorableConversationEvent(value: unknown): value is AssistantConver
       event.delivery === 'retryable') &&
     Array.isArray(event.sources) &&
     Array.isArray(event.historyEvidence) &&
-    Array.isArray(event.historyActions)
+    Array.isArray(event.historyActions) &&
+    (event.artifacts === undefined || Array.isArray(event.artifacts))
   );
 }
 

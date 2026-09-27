@@ -16,6 +16,16 @@ public static class NotesEndpoints
                 Results.Ok(await notes.GetByBookAsync(bookId))
         );
 
+        // GET one canonical note for exact note/evidence deep-links.
+        group.MapGet(
+            "/notes/{id:guid}",
+            async (Guid id, INoteService notes) =>
+            {
+                var note = await notes.GetAsync(id);
+                return note is null ? Results.NotFound() : Results.Ok(note);
+            }
+        );
+
         // SEARCH notes by text (issue #158). The index could only ever match concept
         // NAMES, so a word living only in a note's body or quote was unreachable —
         // and 44 of this library's 63 notes belong to no concept at all, which no

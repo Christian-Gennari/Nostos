@@ -11,6 +11,7 @@ namespace Nostos.Backend.Services.Notes;
 public interface INoteService
 {
     Task<IReadOnlyList<NoteDto>> GetByBookAsync(Guid bookId, CancellationToken ct = default);
+    Task<NoteSearchHitDto?> GetAsync(Guid noteId, CancellationToken ct = default);
     Task<NoteSearchPageDto> GetUnlinkedAsync(int limit, int offset, CancellationToken ct = default);
     Task<NoteSearchPageDto> BrowseAsync(
         string? query, Guid? bookId, bool withoutConcepts, bool oldestFirst,

@@ -63,6 +63,12 @@ public sealed class AssistantOrchestrator(
     public const int MaxConceptSuggestions = 3;
 
     /// <summary>
+    /// A turn keeps only a small bounded set of evidence artifacts. Stable
+    /// handles carry identity; excerpts are display hints, not a second archive.
+    /// </summary>
+    public const int MaxEvidenceArtifacts = 12;
+
+    /// <summary>
     /// Appended to a quote typed/transcribed by hand rather than read from the
     /// digital source, so the difference is never inferred later.
     /// </summary>
@@ -189,6 +195,7 @@ public sealed class AssistantOrchestrator(
         var conceptsInspected = false;
         var executedCapabilities = new List<string>();
         var sourceReferences = new List<AssistantSourceReferenceDto>();
+        var evidenceReferences = new List<AssistantEvidenceReferenceDto>();
         var planSteps = new List<AssistantPlanStep>();
         AssistantAnchorPromptDto? anchorPrompt = null;
         string? acknowledgement = null;
@@ -528,14 +535,17 @@ public sealed class AssistantOrchestrator(
                     if (string.Equals(capability.Name, BookTextCapability, StringComparison.Ordinal))
                     {
                         sourceReferences.AddRange(ExtractBookTextSources(result.Data));
+                        MergeEvidenceReferences(evidenceReferences, ExtractBookTextEvidence(result.Data));
                     }
                     else if (string.Equals(capability.Name, KnowledgeSearchCapability, StringComparison.Ordinal))
                     {
                         sourceReferences.AddRange(ExtractKnowledgeSearchSources(result.Data));
+                        MergeEvidenceReferences(evidenceReferences, ExtractKnowledgeSearchEvidence(result.Data));
                     }
                     else if (string.Equals(capability.Name, KnowledgeReadCapability, StringComparison.Ordinal))
                     {
                         sourceReferences.AddRange(ExtractKnowledgeReadSources(result.Data));
+                        MergeEvidenceReferences(evidenceReferences, ExtractKnowledgeReadEvidence(result.Data));
                     }
                 }
 
@@ -667,7 +677,8 @@ public sealed class AssistantOrchestrator(
             capturedNoteId,
             executedCapabilities,
             sourceReferences,
-            terminalError);
+            terminalError,
+            evidenceReferences);
     }
 
     private Task CompleteUsageAsync(
@@ -1142,6 +1153,214 @@ public sealed class AssistantOrchestrator(
             && id.ValueKind == JsonValueKind.String
                 ? id.GetString()
                 : null;
+    }
+
+
+    private static void MergeEvidenceReferences(
+        List<AssistantEvidenceReferenceDto> target,
+        IEnumerable<AssistantEvidenceReferenceDto> incoming)
+    {
+        foreach (var evidence in incoming)
+        {
+            if (target.Count >= MaxEvidenceArtifacts)
+                return;
+
+            var key = EvidenceKey(evidence.Handle);
+            if (target.Any(existing => string.Equals(
+                    EvidenceKey(existing.Handle),
+                    key,
+                    StringComparison.Ordinal)))
+                continue;
+
+            target.Add(evidence);
+        }
+    }
+
+    private static string EvidenceKey(AssistantEvidenceHandleDto handle) =>
+        string.Join(
+            "|",
+            handle.Kind,
+            handle.NoteId,
+            handle.ConceptId,
+            handle.BookId,
+            handle.SourceSha256,
+            handle.ExtractorVersion,
+            handle.Ordinal);
+
+    private static AssistantEvidenceHandleDto ToEvidenceHandle(KnowledgeEvidenceHandle handle) =>
+        new(
+            handle.Kind,
+            handle.NoteId,
+            handle.ConceptId,
+            handle.BookId,
+            handle.SourceSha256,
+            handle.ExtractorVersion,
+            handle.Ordinal);
+
+    private static IEnumerable<AssistantEvidenceReferenceDto> ExtractKnowledgeSearchEvidence(
+        JsonElement? data)
+    {
+        if (data is not { ValueKind: JsonValueKind.Object } element)
+            yield break;
+
+        KnowledgeSearchResponse? response;
+        try
+        {
+            response = JsonSerializer.Deserialize<KnowledgeSearchResponse>(
+                element.GetRawText(),
+                JsonOptions);
+        }
+        catch (JsonException)
+        {
+            yield break;
+        }
+
+        if (response is null)
+            yield break;
+
+        foreach (var note in response.Notes)
+        {
+            yield return new AssistantEvidenceReferenceDto(
+                ToEvidenceHandle(note.Handle),
+                string.IsNullOrWhiteSpace(note.BookTitle) ? "Note" : $"Note · {note.BookTitle}",
+                ClipEvidence(note.Snippet),
+                BookTitle: note.BookTitle);
+        }
+
+        foreach (var concept in response.Concepts)
+        {
+            var excerpt = concept.MatchSnippet
+                ?? concept.SupportingNotes.FirstOrDefault()?.Snippet;
+            yield return new AssistantEvidenceReferenceDto(
+                ToEvidenceHandle(concept.Handle),
+                concept.Name,
+                ClipEvidence(excerpt));
+        }
+
+        foreach (var passage in response.BookPassages)
+            yield return ToEvidenceReference(passage);
+    }
+
+    private static IEnumerable<AssistantEvidenceReferenceDto> ExtractKnowledgeReadEvidence(
+        JsonElement? data)
+    {
+        if (data is not { ValueKind: JsonValueKind.Object } element)
+            yield break;
+
+        KnowledgeReadResponse? response;
+        try
+        {
+            response = JsonSerializer.Deserialize<KnowledgeReadResponse>(
+                element.GetRawText(),
+                JsonOptions);
+        }
+        catch (JsonException)
+        {
+            yield break;
+        }
+
+        if (response is null)
+            yield break;
+
+        if (response.Note is { } note)
+        {
+            yield return new AssistantEvidenceReferenceDto(
+                ToEvidenceHandle(response.Handle),
+                string.IsNullOrWhiteSpace(note.BookTitle) ? "Note" : $"Note · {note.BookTitle}",
+                ClipEvidence(note.SelectedText ?? note.Content),
+                BookTitle: note.BookTitle);
+        }
+        else if (response.Concept is { } concept)
+        {
+            yield return new AssistantEvidenceReferenceDto(
+                ToEvidenceHandle(response.Handle),
+                concept.Name,
+                ClipEvidence(concept.Notes.FirstOrDefault()?.Snippet));
+        }
+        else if (response.BookPassage is { } passage)
+        {
+            yield return ToEvidenceReference(passage);
+        }
+    }
+
+    private static IEnumerable<AssistantEvidenceReferenceDto> ExtractBookTextEvidence(JsonElement? data)
+    {
+        if (data is not { ValueKind: JsonValueKind.Object } element)
+            yield break;
+
+        BookTextSearchResponse? response;
+        try
+        {
+            response = JsonSerializer.Deserialize<BookTextSearchResponse>(
+                element.GetRawText(),
+                JsonOptions);
+        }
+        catch (JsonException)
+        {
+            yield break;
+        }
+
+        if (response is null)
+            yield break;
+
+        foreach (var passage in response.Passages)
+        {
+            var handle = new AssistantEvidenceHandleDto(
+                KnowledgeEvidenceKinds.BookText,
+                BookId: passage.BookId,
+                SourceSha256: passage.SourceSha256,
+                ExtractorVersion: passage.ExtractorVersion,
+                Ordinal: passage.Ordinal);
+            var source = ToAssistantSource(
+                passage.BookId,
+                passage.BookTitle,
+                passage.BookAuthor,
+                passage.Format,
+                passage.SourceSha256,
+                passage.Text,
+                passage.SourceSegments);
+
+            yield return new AssistantEvidenceReferenceDto(
+                handle,
+                passage.BookTitle,
+                ClipEvidence(passage.Text),
+                passage.BookTitle,
+                passage.BookAuthor,
+                passage.Format.ToString().ToLowerInvariant(),
+                source?.Locators ?? []);
+        }
+    }
+
+    private static AssistantEvidenceReferenceDto ToEvidenceReference(KnowledgeBookEvidence passage)
+    {
+        var source = ToAssistantSource(
+            passage.BookId,
+            passage.BookTitle,
+            passage.BookAuthor,
+            passage.Format,
+            passage.SourceSha256,
+            passage.Text,
+            passage.SourceSegments);
+
+        return new AssistantEvidenceReferenceDto(
+            ToEvidenceHandle(passage.Handle),
+            passage.BookTitle,
+            ClipEvidence(passage.Text),
+            passage.BookTitle,
+            passage.BookAuthor,
+            passage.Format.ToString().ToLowerInvariant(),
+            source?.Locators ?? []);
+    }
+
+    private static string? ClipEvidence(string? value, int max = 320)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        var flat = string.Join(
+            ' ',
+            value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        return flat.Length <= max ? flat : flat[..max].TrimEnd() + "…";
     }
 
 

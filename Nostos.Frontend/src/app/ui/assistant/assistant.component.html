@@ -146,6 +146,52 @@
           </button>
         </div>
         }
+        @if (entry.artifacts?.length) {
+        <div class="entry-artifacts" data-testid="assistant-entry-artifacts">
+          @for (artifact of entry.artifacts; track artifact.kind + ':' + $index) {
+            @if (artifact.kind === 'evidence' && showEvidenceArtifact(entry, artifact)) {
+              @if (canOpenEvidence(artifact.evidence)) {
+              <div class="entry-sources">
+                <button
+                  appButton
+                  variant="ghost"
+                  size="sm"
+                  type="button"
+                  class="entry-source"
+                  (click)="openEvidence(artifact.evidence)"
+                  [attr.title]="artifact.evidence.excerpt"
+                  data-testid="assistant-evidence"
+                >
+                  <nostos-icon name="book-open" [size]="12"></nostos-icon>
+                  <span>{{ evidenceLabel(artifact.evidence) }}</span>
+                </button>
+              </div>
+              } @else {
+              <footer class="entry-meta">
+                <span class="entry-status" [attr.title]="artifact.evidence.excerpt">
+                  Source · {{ evidenceLabel(artifact.evidence) }}
+                </span>
+              </footer>
+              }
+            }
+            @if (artifact.kind === 'proposal' && showProposalArtifact(entry, artifact)) {
+            <footer class="entry-meta">
+              <span class="entry-status">{{ artifactLabel(artifact) }}</span>
+            </footer>
+            }
+            @if (
+              artifact.kind === 'capture'
+              || artifact.kind === 'action'
+              || artifact.kind === 'failure'
+              || artifact.kind === 'destructive-result'
+            ) {
+            <footer class="entry-meta">
+              <span class="entry-status">{{ artifactLabel(artifact) }}</span>
+            </footer>
+            }
+          }
+        </div>
+        }
         @if (entry.anchorLabel || entry.meta) {
         <footer class="entry-meta">
           @if (entry.anchorLabel) { <span class="entry-anchor">{{ entry.anchorLabel }}</span> }

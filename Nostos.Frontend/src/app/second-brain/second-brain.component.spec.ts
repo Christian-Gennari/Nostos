@@ -2297,6 +2297,53 @@ describe('SecondBrain', () => {
 });
 
 describe('SecondBrain concept-link routing', () => {
+  it('opens the requested note evidence from the noteId query parameter', async () => {
+    await TestBed.configureTestingModule({
+      providers: [
+        provideRouter([{ path: 'second-brain', component: SecondBrain }]),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+      ],
+    }).compileComponents();
+
+    const harness = await RouterTestingHarness.create();
+    const navigation = harness.navigateByUrl('/second-brain?noteId=deep-note', SecondBrain);
+    const http = TestBed.inject(HttpTestingController);
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const deepNote: NoteSearchHit = {
+      id: 'deep-note',
+      bookId: 'book-deep',
+      bookTitle: 'Deep Book',
+      content: 'The exact canonical note.',
+      selectedText: 'The exact quotation.',
+      snippet: 'The exact quotation.',
+      conceptNames: ['Attention'],
+      createdAt: '2026-09-27T12:00:00Z',
+    };
+
+    http.expectOne('/api/concepts').flush(concepts);
+    http.expectOne('/api/concepts/stats').flush(stats);
+    http.match((request) => request.url === '/api/notes').forEach((request) => request.flush({
+      items: [deepNote],
+      totalCount: 1,
+      offset: 0,
+      limit: 25,
+    }));
+    http.expectOne('/api/notes/deep-note').flush(deepNote);
+
+    const routed = await navigation;
+    harness.detectChanges();
+
+    expect(routed.viewMode()).toBe('notes');
+    expect(routed.panelNote()?.id).toBe('deep-note');
+    expect(harness.routeNativeElement?.querySelector('.brain-browse-detail')?.textContent)
+      .toContain('The exact canonical note.');
+
+    http.verify();
+  });
+
   it('opens the requested concept evidence from the conceptId query parameter', async () => {
     await TestBed.configureTestingModule({
       providers: [
