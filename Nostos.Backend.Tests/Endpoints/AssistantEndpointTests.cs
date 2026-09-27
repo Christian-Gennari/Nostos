@@ -189,6 +189,73 @@ public sealed class AssistantEndpointTests : IDisposable
     }
 
     [Fact]
+    public async Task Started_acknowledges_that_the_exact_turn_is_already_stoppable()
+    {
+        var provider = new FakeLlmProvider().Returns("must not run");
+        var access = new BlockingManagedAiAccessPolicy();
+
+        using var factory = new LibraryEndpointFactory();
+        using var host = CreateHost(factory, provider, accessPolicy: access);
+        using var client = host.CreateClient();
+
+        var request = new AssistantTurnRequest(
+            "conversation-start-race",
+            "turn-start-race",
+            "Hello?",
+            Context(),
+            ConversationId: "conversation-start-race",
+            TurnId: "turn-start-race");
+
+        using var message = new HttpRequestMessage(HttpMethod.Post, AssistantEndpoints.StreamTurnRoute)
+        {
+            Content = JsonContent.Create(request),
+        };
+
+        using var response = await client.SendAsync(
+            message,
+            HttpCompletionOption.ResponseHeadersRead);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        await access.Entered;
+        await using var stream = await response.Content.ReadAsStreamAsync();
+        using var reader = new StreamReader(stream);
+
+        try
+        {
+            var firstLine = await reader.ReadLineAsync();
+            firstLine.Should().NotBeNullOrWhiteSpace();
+            var started = JsonSerializer.Deserialize<AssistantTurnEventDto>(
+                firstLine!,
+                new JsonSerializerOptions(JsonSerializerDefaults.Web));
+            started!.Kind.Should().Be(AssistantTurnEventKinds.Started);
+            started.TurnId.Should().Be("turn-start-race");
+
+            var stopResponse = await client.PostAsJsonAsync(
+                AssistantEndpoints.CancelTurnRoute,
+                new AssistantTurnCancelRequest(
+                    "conversation-start-race",
+                    "turn-start-race"));
+            stopResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            var stop = await stopResponse.Content.ReadFromJsonAsync<AssistantTurnCancelResponse>();
+            stop!.Accepted.Should().BeTrue();
+            stop.State.Should().Be("cancel_requested");
+        }
+        finally
+        {
+            access.Release();
+        }
+
+        var terminalLine = await reader.ReadLineAsync();
+        terminalLine.Should().NotBeNullOrWhiteSpace();
+        var terminal = JsonSerializer.Deserialize<AssistantTurnEventDto>(
+            terminalLine!,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        terminal!.Kind.Should().Be(AssistantTurnEventKinds.Cancelled);
+        terminal.Failure!.Code.Should().Be(AssistantErrorCodes.TurnCancelled);
+        provider.CallCount.Should().Be(0);
+    }
+
+    [Fact]
     public async Task Streamed_retrieval_activity_is_product_owned_and_no_evidence_is_typed()
     {
         var provider = new FakeLlmProvider()
@@ -591,7 +658,8 @@ public sealed class AssistantEndpointTests : IDisposable
         FakeLlmProvider provider,
         bool enabled = true,
         bool entitled = true,
-        AiUsageBlockReason? usageBlockReason = null)
+        AiUsageBlockReason? usageBlockReason = null,
+        IAiAccessPolicy? accessPolicy = null)
     {
         return factory.WithWebHostBuilder(builder =>
         {
@@ -607,7 +675,12 @@ public sealed class AssistantEndpointTests : IDisposable
                 services.RemoveAll<ILlmProvider>();
                 services.AddSingleton<ILlmProvider>(provider);
 
-                if (!entitled)
+                if (accessPolicy is not null)
+                {
+                    services.RemoveAll<IAiAccessPolicy>();
+                    services.AddSingleton(accessPolicy);
+                }
+                else if (!entitled)
                 {
                     services.RemoveAll<IAiAccessPolicy>();
                     services.AddSingleton<IAiAccessPolicy, DenyManagedAiAccessPolicy>();
@@ -641,6 +714,25 @@ public sealed class AssistantEndpointTests : IDisposable
             AiUsageLease? lease,
             TranscriptionUsage usage,
             CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
+    private sealed class BlockingManagedAiAccessPolicy : IAiAccessPolicy
+    {
+        private readonly TaskCompletionSource _entered =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _release =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task Entered => _entered.Task;
+
+        public async Task<bool> IsAllowedAsync(CancellationToken ct = default)
+        {
+            _entered.TrySetResult();
+            await _release.Task.WaitAsync(ct);
+            return true;
+        }
+
+        public void Release() => _release.TrySetResult();
     }
 
     private sealed class DenyManagedAiAccessPolicy : IAiAccessPolicy
