@@ -372,7 +372,7 @@ export class ReaderShell implements OnInit, OnDestroy {
       // turn so a cross-book citation never navigates the old mounted reader.
       setTimeout(() => {
         if (generation !== this.sourceNavigationGeneration) return;
-        if (this.currentRouteBookId !== this.book()?.id) return;
+        if (!this.isLoadedBookForCurrentRoute()) return;
         this.navigateGroundedSource(generation);
       }, 0);
     }
@@ -414,12 +414,33 @@ export class ReaderShell implements OnInit, OnDestroy {
     return null;
   }
 
+  private isLoadedBookForCurrentRoute(): boolean {
+    const routeBookId = this.currentRouteBookId;
+    const loadedBookId = this.book()?.id;
+    if (!routeBookId || typeof loadedBookId !== 'string') return false;
+
+    // Keep exact equality for lightweight/test hosts that use synthetic ids,
+    // but only relax casing when both values are well-formed GUIDs. This avoids
+    // treating arbitrary malformed route text as equivalent book identity.
+    if (routeBookId === loadedBookId) return true;
+
+    const guidPattern =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!guidPattern.test(routeBookId) || !guidPattern.test(loadedBookId)) return false;
+
+    return routeBookId.toLowerCase() === loadedBookId.toLowerCase();
+  }
+
   private navigateGroundedSource(generation: number, attempt = 0): void {
     // A newer query-param target supersedes any delayed retry from an older one.
     if (generation !== this.sourceNavigationGeneration) return;
 
     const target = this.pendingGroundedSourceTarget;
     if (!target) return;
+
+    // All grounded-navigation entry points, including the initial delayed load,
+    // must still belong to the book currently represented by the route.
+    if (!this.isLoadedBookForCurrentRoute()) return;
 
     const reader = this.activeReader();
     if (!reader?.goToSource) {
