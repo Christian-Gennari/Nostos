@@ -415,6 +415,8 @@ describe('AssistantService voice transcript alignment', () => {
     const firstBody = first.request.body;
     expect(firstBody.clientId).toBe(firstBody.conversationId);
     expect(firstBody.idempotencyKey).toBe(firstBody.turnId);
+    expect(service.entries()[0].turnId).toBe(firstBody.turnId);
+    expect(service.entries()[0].id).not.toBe(firstBody.turnId);
     first.error(new ProgressEvent('error'));
 
     expect(service.draft()).toBe('Capture this once');
@@ -517,7 +519,7 @@ describe('AssistantService voice transcript alignment', () => {
       ]);
     });
 
-    it('forgets a turn the assistant never received', () => {
+    it('keeps an uncertain turn visible but excludes it from remembered history', () => {
       service.open();
       service.updateDraft('A question that fails');
       service.submit();
