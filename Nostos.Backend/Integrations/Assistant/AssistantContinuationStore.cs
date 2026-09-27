@@ -32,7 +32,7 @@ internal sealed record AssistantContinuationLookup(
     AssistantContinuationLookupStatus Status,
     StoredAssistantContinuation? Continuation);
 
-internal sealed class AssistantContinuationStore
+public sealed class AssistantContinuationStore
 {
     internal const int MaxActiveContinuations = 256;
     internal const int MaxReplayReceipts = 256;
@@ -52,7 +52,7 @@ internal sealed class AssistantContinuationStore
     public AssistantContinuationStore(TimeProvider? timeProvider = null) =>
         _timeProvider = timeProvider ?? TimeProvider.System;
 
-    public StoredAssistantContinuation Create(
+    internal StoredAssistantContinuation Create(
         string conversationId,
         string originalTurnId,
         string kind,
@@ -87,7 +87,7 @@ internal sealed class AssistantContinuationStore
         }
     }
 
-    public AssistantContinuationLookup Find(string continuationId, string conversationId)
+    internal AssistantContinuationLookup Find(string continuationId, string conversationId)
     {
         lock (_gate)
         {
@@ -116,7 +116,7 @@ internal sealed class AssistantContinuationStore
         }
     }
 
-    public StoredAssistantContinuation Update(
+    internal StoredAssistantContinuation Update(
         StoredAssistantContinuation continuation,
         string kind,
         AssistantContextDto context)
@@ -143,7 +143,7 @@ internal sealed class AssistantContinuationStore
         }
     }
 
-    public bool TryGetReceipt(
+    internal bool TryGetReceipt(
         string continuationId,
         string conversationId,
         string turnId,
@@ -169,7 +169,7 @@ internal sealed class AssistantContinuationStore
     /// continuation active (for example, an unresolved book title that asks
     /// again, or a book answer that advances to a page prompt).
     /// </summary>
-    public void RecordReceipt(
+    internal void RecordReceipt(
         string continuationId,
         string conversationId,
         string turnId,
@@ -189,7 +189,7 @@ internal sealed class AssistantContinuationStore
     /// receipt. A retry of the same logical TurnId is therefore truthful and
     /// cannot execute the capture a second time.
     /// </summary>
-    public void Complete(
+    internal void Complete(
         StoredAssistantContinuation continuation,
         string turnId,
         AssistantTurnResponse response)
