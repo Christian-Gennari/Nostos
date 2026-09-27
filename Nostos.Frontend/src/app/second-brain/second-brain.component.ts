@@ -207,6 +207,7 @@ export class SecondBrain implements AfterViewChecked {
   reviewTotal = signal(0);
   reviewLoading = signal(false);
   reviewLoaded = signal(false);
+  reviewError = signal(false);
   /** The note under review, chosen explicitly. `null` focuses the first row. */
   reviewId = signal<string | null>(null);
   reviewSaving = signal(false);
@@ -215,7 +216,15 @@ export class SecondBrain implements AfterViewChecked {
   reviewPickerOpen = signal(false);
   reviewPickerQuery = signal('');
   reviewPickerConceptId = signal<string | null>(null);
+  reviewNewConceptName = computed(() => {
+    const name = this.reviewPickerQuery().trim();
+    if (!name || name.length > 100 || /[\[\]\r\n]/.test(name)) return null;
+    return this.concepts().some((concept) => concept.name.toLowerCase() === name.toLowerCase())
+      ? null : name;
+  });
   private reviewSeq = 0;
+  private reviewMutated = false;
+  private reviewReturnNote: NoteSearchHit | null = null;
   private reviewBrowseQuery = '';
   private reviewBookId: string | null = null;
   private reviewOldestFirst = false;
@@ -332,7 +341,7 @@ export class SecondBrain implements AfterViewChecked {
 
   /** True while the rail is the review queue rather than the concept index. */
   isReviewing = computed(() => this.viewMode() === 'unlinked');
-  private reviewReturnMode: 'list' | 'notes' = 'list';
+  reviewReturnMode: 'list' | 'notes' = 'list';
 
   /** The note under review: the chosen one, or the head of the queue. */
   reviewNote = computed<NoteSearchHit | null>(() => {
@@ -486,6 +495,7 @@ export class SecondBrain implements AfterViewChecked {
       if (!noteId || !this.reviewQueue().some((note) => note.id === noteId)) return;
 
       this.refreshIndexAndStats();
+      this.reviewMutated = true;
       this.removeFromReview(noteId);
       this.toast.success('Note linked to a concept');
     });
@@ -840,6 +850,8 @@ export class SecondBrain implements AfterViewChecked {
   openReview(): void {
     if (this.browseHasUnsavedEdit()) return;
     this.reviewReturnMode = this.isBrowsingNotes() ? 'notes' : 'list';
+    this.reviewReturnNote = this.reviewReturnMode === 'notes' ? this.panelNote() : null;
+    this.reviewMutated = false;
     this.reviewBrowseQuery = this.reviewReturnMode === 'notes' ? this.browseQuery() : '';
     this.reviewBookId = this.reviewReturnMode === 'notes' ? this.browseBookId() : null;
     this.reviewOldestFirst = this.reviewReturnMode === 'notes' && this.browseOldestFirst();
@@ -848,6 +860,7 @@ export class SecondBrain implements AfterViewChecked {
     this.reviewSeq++;
     this.reviewLoading.set(false);
     this.reviewLoaded.set(false);
+    this.reviewError.set(false);
     this.reviewQueue.set([]);
     this.reviewTotal.set(0);
     this.clearSourceSelectionState();
@@ -861,11 +874,15 @@ export class SecondBrain implements AfterViewChecked {
     this.loadReviewPage();
   }
 
-  /** Leave the review task, back to the concept index. */
+  /** Return to the previous Brain area, preserving an unchanged Notes list. */
   closeReview(): void {
     if (this.reviewHasUnsavedEdit()) return;
     this.setViewMode(this.reviewReturnMode);
-    if (this.reviewReturnMode === 'notes') this.reloadBrowse();
+    if (this.reviewReturnMode === 'notes') {
+      if (this.reviewMutated) this.reloadBrowse();
+      else if (this.reviewReturnNote) this.panelNote.set(this.reviewReturnNote);
+    }
+    this.reviewReturnNote = null;
   }
 
   /**
@@ -879,6 +896,7 @@ export class SecondBrain implements AfterViewChecked {
     if (this.reviewLoading()) return;
     const seq = this.reviewSeq;
     this.reviewLoading.set(true);
+    this.reviewError.set(false);
     const pageRequest = this.reviewBrowseQuery || this.reviewBookId || this.reviewOldestFirst
       ? this.notesService.browse({
           query: this.reviewBrowseQuery,
@@ -905,6 +923,7 @@ export class SecondBrain implements AfterViewChecked {
       error: () => {
         if (seq !== this.reviewSeq) return;
         this.reviewLoading.set(false);
+        this.reviewError.set(true);
         this.toast.error('Notes with no concept could not be loaded');
       },
     });
@@ -975,17 +994,18 @@ export class SecondBrain implements AfterViewChecked {
     const note = this.reviewNote();
     if (!note || this.reviewSaving()) return;
 
-    const content = this.reviewEditContent().trim();
+    const content = this.reviewEditContent();
     if (content === note.content) {
       this.cancelReviewEdit();
       return;
     }
 
     this.reviewSaving.set(true);
-    this.notesService.update(note.id, { content }).subscribe({
+    this.notesService.update(note.id, { content, selectedText: note.selectedText ?? undefined }).subscribe({
       next: () => {
         this.reviewSaving.set(false);
         this.reviewEditing.set(false);
+        this.reviewMutated = true;
         this.refreshIndexAndStats();
 
         if (declaresConcept(content)) {
@@ -1039,15 +1059,27 @@ export class SecondBrain implements AfterViewChecked {
     const concept = this.reviewPickerConcept();
     if (!note || !concept || this.reviewSaving()) return;
 
-    const content = this.withConceptReference(note.content, concept.name);
+    this.saveReviewLink(note, concept.name);
+  }
+
+  createReviewConcept(): void {
+    const note = this.reviewNote();
+    const name = this.reviewNewConceptName();
+    if (!note || !name || this.reviewSaving()) return;
+    this.saveReviewLink(note, name);
+  }
+
+  private saveReviewLink(note: NoteSearchHit, name: string): void {
+    const content = this.withConceptReference(note.content, name);
     this.reviewSaving.set(true);
-    this.notesService.update(note.id, { content }).subscribe({
+    this.notesService.update(note.id, { content, selectedText: note.selectedText ?? undefined }).subscribe({
       next: () => {
         this.reviewSaving.set(false);
+        this.reviewMutated = true;
         this.closeReviewPicker();
         this.refreshIndexAndStats();
         this.removeFromReview(note.id);
-        this.toast.success(`Linked to “${concept.name}”`);
+        this.toast.success(`Linked to “${name}”`);
       },
       error: () => {
         this.reviewSaving.set(false);
@@ -1100,6 +1132,19 @@ export class SecondBrain implements AfterViewChecked {
     this.panelNote.set(hit);
     this.browseEditing.set(false);
     this.browsePickerOpen.set(false);
+  }
+
+  openSearchNoteInNotes(): void {
+    const hit = this.panelNote();
+    if (!hit || this.isBrowsingNotes()) return;
+    const term = this.searchQuery();
+    this.browseQuery.set(term);
+    this.browseBookId.set(null);
+    this.browseBookTitle.set('');
+    const hadBrowsePage = this.browseLoaded();
+    this.setViewMode('notes');
+    if (hadBrowsePage) this.reloadBrowse();
+    this.panelNote.set(hit);
   }
 
   closeNotePanel(): void {

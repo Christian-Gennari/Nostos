@@ -174,12 +174,17 @@
       <div class="index-list" role="list" aria-label="Notes with no concept">
         @if (reviewLoading() && reviewQueue().length === 0) {
         <div class="index-wait-field wait-field" role="status" aria-label="Loading notes"></div>
+        } @else if (reviewError() && reviewQueue().length === 0) {
+        <div class="empty-index-state" role="alert">
+          <p>Notes could not be loaded.</p>
+          <button appButton variant="secondary" size="sm" type="button" (click)="loadReviewPage()">Retry</button>
+        </div>
         } @else if (reviewQueue().length === 0) {
         <div class="empty-index-state" role="status">
           <div class="empty-eyebrow">No notes here</div>
           <p>You can still browse all your saved notes.</p>
           <button appButton variant="secondary" size="sm" type="button" class="empty-clear" (click)="closeReview()">
-            Back to concepts
+            Back to {{ reviewReturnMode === 'notes' ? 'notes' : 'concepts' }}
           </button>
         </div>
         } @else {
@@ -201,7 +206,7 @@
           </button>
         </div>
         }
-        @if (reviewHasMore()) {
+        @if (reviewHasMore() && !reviewError()) {
         <button
           type="button"
           class="review-load-more"
@@ -210,6 +215,9 @@
         >
           {{ reviewLoading() ? 'Loading…' : 'Load more (' + (reviewTotal() - reviewQueue().length) + ' not shown)' }}
         </button>
+        }
+        @if (reviewError()) {
+          <button type="button" class="review-load-more" (click)="loadReviewPage()">Retry loading notes</button>
         }
         }
       </div>
@@ -391,7 +399,7 @@
       <div class="rail-foot">
         @if (isReviewing()) {
         <button type="button" class="rail-foot-action" (click)="closeReview()">
-          Back to notes
+          Back to {{ reviewReturnMode === 'notes' ? 'notes' : 'concepts' }}
         </button>
         } @else {
         <button type="button" class="rail-foot-action" (click)="openReview()">
@@ -545,28 +553,17 @@
             placeholder="Add [[Concept]] to connect this note"
           ></app-concept-input>
           <div class="review-actions">
-            <button
-              type="button"
-              class="concept-action primary"
-              [disabled]="reviewSaving()"
-              (click)="saveReviewEdit()"
-            >
-              {{ reviewSaving() ? 'Saving…' : 'Save note' }}
-            </button>
-            <button
-              type="button"
-              class="concept-action"
-              [disabled]="reviewSaving()"
-              (click)="cancelReviewEdit()"
-            >
-              Cancel
-            </button>
+            <button appButton variant="primary" size="sm" type="button" [disabled]="reviewSaving()"
+              (click)="saveReviewEdit()">{{ reviewSaving() ? 'Saving…' : 'Save note' }}</button>
+            <button appButton variant="ghost" size="sm" type="button" [disabled]="reviewSaving()"
+              (click)="cancelReviewEdit()">Cancel</button>
           </div>
           } @else {
-          <p class="review-content">{{ note.content }}</p>
+          <p class="review-content" [innerHTML]="note.content | noteFormat : conceptMap()"
+            (click)="handleContentClick($event)"></p>
 
           @if (reviewPickerOpen()) {
-          <div class="merge-picker" role="dialog" aria-label="Link this note to a concept">
+          <div class="merge-picker" role="group" aria-label="Link this note to a concept">
             <div class="merge-picker-head">
               <span class="detail-tool-label">Link to concept</span>
               <button
@@ -583,7 +580,7 @@
             </p>
             <div class="merge-search-box">
               <nostos-icon name="magnifying-glass" [size]="15"></nostos-icon>
-              <input
+              <input appInput controlSize="compact"
                 type="search"
                 placeholder="Search concepts..."
                 aria-label="Search concepts to link"
@@ -609,12 +606,16 @@
               }
               }
             </div>
+            @if (reviewNewConceptName(); as name) {
+              <button appButton variant="ghost" size="sm" type="button" [disabled]="reviewSaving()"
+                (click)="createReviewConcept()">Create and link “{{ name }}”</button>
+            }
             <div class="merge-picker-actions">
-              <button type="button" class="merge-picker-cancel" (click)="closeReviewPicker()">
+              <button appButton variant="ghost" size="sm" type="button" class="merge-picker-cancel" (click)="closeReviewPicker()">
                 Cancel
               </button>
               <button
-                type="button"
+                appButton variant="primary" size="sm" type="button"
                 class="merge-picker-confirm"
                 [disabled]="!reviewPickerConcept() || reviewSaving()"
                 (click)="confirmLinkToConcept()"
@@ -625,21 +626,20 @@
           </div>
           } @else {
           <div class="review-actions">
-            <button type="button" class="concept-action primary" (click)="openReviewPicker()">
+            <button appButton variant="secondary" size="sm" type="button" (click)="openReviewPicker()">
               Link to concept
             </button>
             <button
-              type="button"
-              class="concept-action"
+              appButton variant="ghost" size="sm" type="button"
               (click)="askNostos()"
               data-testid="review-suggest-concepts"
             >
               Suggest concepts
             </button>
-            <button type="button" class="concept-action" (click)="startReviewEdit()">
+            <button appButton variant="ghost" size="sm" type="button" (click)="startReviewEdit()">
               Edit note
             </button>
-            <button type="button" class="concept-action" (click)="openWritingHandoff([note.id])">
+            <button appButton variant="secondary" size="sm" type="button" (click)="openWritingHandoff([note.id])">
               Keep with writing…
             </button>
             <button appButton variant="ghost" size="sm" type="button" [disabled]="!reviewCanGoBack()"
@@ -1057,6 +1057,9 @@
           }
         </div>
         <div class="brain-note-panel-actions">
+          <button appButton variant="primary" size="sm" type="button" (click)="openSearchNoteInNotes()">
+            Open in Notes
+          </button>
           <button
             appButton
             variant="secondary"
