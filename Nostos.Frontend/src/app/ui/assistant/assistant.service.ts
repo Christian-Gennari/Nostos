@@ -1276,6 +1276,104 @@ function toContextDto(
   };
 }
 
+function toHistoricalContext(context: AssistantContext): AssistantHistoricalContextDto {
+  return {
+    surface: context.surface,
+    bookId: context.bookId,
+    bookTitle: context.bookTitle,
+    brainReviewNoteId: context.brainReviewNoteId,
+    concept: context.concept,
+    collectionId: context.collectionId,
+  };
+}
+
+function toHistoricalEvidence(
+  sources: readonly AssistantSourceReferenceDto[],
+): AssistantHistoricalEvidenceDto[] {
+  return sources.map((source) => ({
+    bookId: source.bookId,
+    bookTitle: source.bookTitle,
+    sourceSha256: source.sourceSha256,
+    locators: source.locators.map((locator) => ({ ...locator })),
+  }));
+}
+
+function sessionStorageOrNull(): Storage | null {
+  try {
+    return typeof globalThis.sessionStorage === 'undefined'
+      ? null
+      : globalThis.sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
+function isAnchorPrompt(value: unknown): value is AssistantAnchorPrompt {
+  if (!value || typeof value !== 'object') return false;
+  const prompt = value as Partial<AssistantAnchorPrompt>;
+  return (
+    (prompt.kind === 'physical_page' ||
+      prompt.kind === 'external_audio_timestamp' ||
+      prompt.kind === 'book') &&
+    typeof prompt.question === 'string' &&
+    typeof prompt.continuationId === 'string' &&
+    prompt.continuationId.length > 0
+  );
+}
+
+function isAssistantContext(value: unknown): value is AssistantContext {
+  if (!value || typeof value !== 'object') return false;
+  const context = value as Partial<AssistantContext>;
+  return typeof context.surface === 'string' && typeof context.route === 'string';
+}
+
+function isPendingPlan(value: unknown): value is AssistantPendingPlanDto {
+  if (!value || typeof value !== 'object') return false;
+  const plan = value as Partial<AssistantPendingPlanDto>;
+  return (
+    typeof plan.planId === 'string' &&
+    typeof plan.summary === 'string' &&
+    typeof plan.approvalToken === 'string' &&
+    Array.isArray(plan.steps)
+  );
+}
+
+function isPreparedTurn(value: unknown): value is PreparedAssistantTurn {
+  if (!value || typeof value !== 'object') return false;
+  const turn = value as Partial<PreparedAssistantTurn>;
+  const request = turn.request as Partial<AssistantTurnRequestDto> | undefined;
+  return (
+    typeof turn.turnId === 'string' &&
+    typeof turn.text === 'string' &&
+    typeof turn.userEntryId === 'string' &&
+    isAssistantContext(turn.context) &&
+    !!request &&
+    typeof request.turnId === 'string' &&
+    request.turnId === turn.turnId &&
+    typeof request.conversationId === 'string' &&
+    typeof request.message === 'string' &&
+    (turn.continuationPrompt === null || isAnchorPrompt(turn.continuationPrompt))
+  );
+}
+
+function isRestorableConversationEvent(value: unknown): value is AssistantConversationEvent {
+  if (!value || typeof value !== 'object') return false;
+  const event = value as Partial<AssistantConversationEvent>;
+  return (
+    typeof event.id === 'string' &&
+    typeof event.turnId === 'string' &&
+    (event.kind === 'user' || event.kind === 'assistant' || event.kind === 'error') &&
+    typeof event.text === 'string' &&
+    typeof event.remember === 'boolean' &&
+    (event.delivery === 'sending' ||
+      event.delivery === 'complete' ||
+      event.delivery === 'retryable') &&
+    Array.isArray(event.sources) &&
+    Array.isArray(event.historyEvidence) &&
+    Array.isArray(event.historyActions)
+  );
+}
+
 /**
  * Normalize a page/timestamp for local acknowledgement display. The server
  * independently performs the same deterministic normalization and remains the
