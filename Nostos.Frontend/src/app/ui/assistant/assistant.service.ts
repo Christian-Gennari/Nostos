@@ -342,7 +342,17 @@ export class AssistantService {
    * supplies model history. UI event ids remain distinct from TurnIds.
    */
   readonly entries = computed<AssistantEntry[]>(() =>
-    this.eventLedger().map(({ remember: _remember, delivery: _delivery, ...entry }) => entry),
+    this.eventLedger().map(
+      ({
+        remember: _remember,
+        delivery: _delivery,
+        historyContext: _historyContext,
+        historyEvidence: _historyEvidence,
+        historyActions: _historyActions,
+        historyCapturedNoteId: _historyCapturedNoteId,
+        ...entry
+      }) => entry,
+    ),
   );
   readonly sending = signal(false);
   readonly lastError = signal<string | null>(null);
@@ -373,13 +383,13 @@ export class AssistantService {
 
   /** A deterministic follow-up awaiting the user's next real turn. */
   readonly pendingAnchor = signal<AssistantAnchorPrompt | null>(null);
-  private pendingContinuationContext: AssistantContext | null = null;
+  private readonly pendingContinuationContext = signal<AssistantContext | null>(null);
 
   /**
    * The one logical turn whose HTTP result is uncertain. Retrying the unchanged
    * draft resends this exact request and TurnId; editing starts a new turn.
    */
-  private retryableTurn: PreparedAssistantTurn | null = null;
+  private readonly retryableTurn = signal<PreparedAssistantTurn | null>(null);
 
   /**
    * Model history is a projection of the canonical event ledger. A transport-
@@ -387,14 +397,16 @@ export class AssistantService {
    * completes, so the next genuinely new turn never pretends delivery was known.
    */
   readonly history = computed<AssistantHistoryMessage[]>(() =>
-    capHistory(
-      this.eventLedger()
-        .filter((event) => event.remember && event.delivery !== 'retryable')
-        .map((event) => ({
-          role: event.kind === 'user' ? 'user' : 'assistant',
-          text: event.text,
-        })),
-    ),
+    this.eventLedger()
+      .filter((event) => event.remember && event.delivery !== 'retryable')
+      .map((event) => ({
+        role: event.kind === 'user' ? 'user' : 'assistant',
+        text: event.text,
+        context: event.kind === 'user' ? event.historyContext : null,
+        evidence: event.historyEvidence.length > 0 ? event.historyEvidence : undefined,
+        actions: event.historyActions.length > 0 ? event.historyActions : undefined,
+        capturedNoteId: event.historyCapturedNoteId,
+      })),
   );
 
   /**
@@ -425,9 +437,12 @@ export class AssistantService {
   });
 
   constructor() {
+    this.restoreSession();
+
     // The repo verifies UI by reading handles in a live browser; expose the
     // resolved context, the last turn, the suggestions, the pending plan and the
-    // conversation history the next turn will carry.
+    // complete ephemeral history. The same reactive read also persists the
+    // current tab-scoped conversation to sessionStorage.
     effect(() => {
       globalThis.__nostosAssistant = {
         context: this.context(),
@@ -438,6 +453,7 @@ export class AssistantService {
         history: this.history(),
         capturedNoteId: this.capturedNoteId(),
       };
+      this.persistSession();
     });
   }
 
@@ -474,9 +490,9 @@ export class AssistantService {
     this.anchorDismissed.set(false);
     this.conversationId.set(createId());
     this.eventLedger.set([]);
-    this.retryableTurn = null;
+    this.retryableTurn.set(null);
     this.pendingAnchor.set(null);
-    this.pendingContinuationContext = null;
+    this.pendingContinuationContext.set(null);
     this.pendingPlan.set(null);
     this.directPlanApprovalArmed.set(false);
     this.suggestions.set([]);
@@ -490,6 +506,12 @@ export class AssistantService {
   }
 
   updateDraft(value: string): void {
+    const retry = this.retryableTurn();
+    if (retry && value.trim() !== retry.text) {
+      // Editing an uncertain delivery is a new logical turn. The old visible
+      // event remains marked uncertain and is never promoted into model history.
+      this.retryableTurn.set(null);
+    }
     this.draft.set(value);
   }
 
@@ -503,7 +525,7 @@ export class AssistantService {
     if (!transcript) return;
 
     const current = this.draft().trim();
-    this.draft.set(current ? `${current} ${transcript}` : transcript);
+    this.updateDraft(current ? `${current} ${transcript}` : transcript);
 
     if (TRANSCRIPT_SEND_POLICY === 'auto') this.scheduleAutoSend();
   }
@@ -547,9 +569,9 @@ export class AssistantService {
 
     const pending = this.pendingAnchor();
     if (pending) {
-      const context = this.pendingContinuationContext ?? this.context();
+      const context = this.pendingContinuationContext() ?? this.context();
       this.pendingAnchor.set(null);
-      this.pendingContinuationContext = null;
+      this.pendingContinuationContext.set(null);
       this.draft.set('');
       this.dispatchContinuation(text, pending, context, false);
       return;
@@ -599,9 +621,9 @@ export class AssistantService {
     const pending = this.pendingAnchor();
     if (!pending || pending.kind === 'book' || this.sending()) return;
 
-    const context = this.pendingContinuationContext ?? this.context();
+    const context = this.pendingContinuationContext() ?? this.context();
     this.pendingAnchor.set(null);
-    this.pendingContinuationContext = null;
+    this.pendingContinuationContext.set(null);
     this.draft.set('');
     this.dispatchContinuation("I don't know", pending, context, true);
   }
@@ -758,14 +780,14 @@ export class AssistantService {
     anchor: AssistantAnchor | null,
     captureBookTitle: string | null = null,
   ): void {
-    const retry = this.retryableTurn;
+    const retry = this.retryableTurn();
     if (retry && retry.text === text && retry.request.continuationId === null) {
       this.draft.set('');
       this.sendPreparedTurn(retry);
       return;
     }
 
-    this.retryableTurn = null;
+    this.retryableTurn.set(null);
     const context = this.context();
     this.startPreparedTurn({
       text,
@@ -784,7 +806,7 @@ export class AssistantService {
     context: AssistantContext,
     skipped: boolean,
   ): void {
-    const retry = this.retryableTurn;
+    const retry = this.retryableTurn();
     if (
       retry &&
       retry.text === text &&
@@ -795,7 +817,7 @@ export class AssistantService {
       return;
     }
 
-    this.retryableTurn = null;
+    this.retryableTurn.set(null);
     const displayAnchor: AssistantAnchor | null =
       prompt.kind === 'book'
         ? null
@@ -873,7 +895,7 @@ export class AssistantService {
     this.http.post<AssistantTurnResponse>('/api/assistant/turn', turn.request).subscribe({
       next: (response) => {
         this.sending.set(false);
-        if (this.retryableTurn?.turnId === turn.turnId) this.retryableTurn = null;
+        if (this.retryableTurn()?.turnId === turn.turnId) this.retryableTurn.set(null);
         this.updateUserDelivery(turn.userEntryId, 'complete', null);
         this.lastError.set(response.error?.message ?? null);
         this.lastTurn.set(response);
@@ -919,12 +941,12 @@ export class AssistantService {
               continuationId,
             };
             this.pendingAnchor.set(prompt);
-            this.pendingContinuationContext = turn.context;
+            this.pendingContinuationContext.set(turn.context);
             promptText = prompt.question;
             this.pushEntry(turn.turnId, 'assistant', prompt.question, null, null);
           } else {
             this.pendingAnchor.set(null);
-            this.pendingContinuationContext = null;
+            this.pendingContinuationContext.set(null);
             this.lastError.set(
               response.error?.message ??
                 'The assistant requested follow-up input without a valid continuation.',
@@ -932,7 +954,7 @@ export class AssistantService {
           }
         } else {
           this.pendingAnchor.set(null);
-          this.pendingContinuationContext = null;
+          this.pendingContinuationContext.set(null);
         }
 
         if (
@@ -951,7 +973,7 @@ export class AssistantService {
       },
       error: () => {
         this.sending.set(false);
-        this.retryableTurn = turn;
+        this.retryableTurn.set(turn);
         this.lastError.set(
           'The assistant could not be reached. Your message is still in the composer to retry.',
         );
@@ -960,7 +982,7 @@ export class AssistantService {
 
         if (turn.continuationPrompt) {
           this.pendingAnchor.set(turn.continuationPrompt);
-          this.pendingContinuationContext = turn.context;
+          this.pendingContinuationContext.set(turn.context);
         }
       },
     });
