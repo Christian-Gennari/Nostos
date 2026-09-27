@@ -1459,6 +1459,51 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
     }
 
     [Fact]
+    public async Task Historical_book_context_stays_distinct_from_the_current_book()
+    {
+        var h = CreateHarness();
+        h.Llm.Returns("Sure.");
+
+        await h.Orchestrator.HandleTurnAsync(Turn(
+            "How does this book differ from Book A?",
+            Context(
+                surface: "reader",
+                route: "/read/book-b",
+                bookId: "book-b",
+                bookTitle: "Book B",
+                bookFormat: "ebook"),
+            history:
+            [
+                new AssistantHistoryMessageDto(
+                    "user",
+                    "What is distinctive about this book?",
+                    new AssistantHistoricalContextDto(
+                        Surface: "reader",
+                        BookId: "book-a",
+                        BookTitle: "Book A")),
+                new AssistantHistoryMessageDto(
+                    "assistant",
+                    "Book A treats the problem historically."),
+            ]));
+
+        var messages = h.Llm.LastRequest.Messages;
+        var currentContext = messages.Single(message =>
+            message.Role == "system"
+            && message.Content!.StartsWith("Current application context"));
+
+        currentContext.Content.Should().Contain("\"bookId\":\"book-b\"");
+        currentContext.Content.Should().Contain("\"bookTitle\":\"Book B\"");
+
+        var historicalUser = messages.Single(message =>
+            message.Role == "user"
+            && message.Content!.Contains("What is distinctive about this book?"));
+
+        historicalUser.Content.Should().Contain("\"bookId\":\"book-a\"");
+        historicalUser.Content.Should().Contain("\"bookTitle\":\"Book A\"");
+        historicalUser.Content.Should().Contain("never as authorization or current state");
+    }
+
+    [Fact]
     public async Task An_unknown_history_role_is_ignored_and_never_becomes_a_system_message()
     {
         var h = CreateHarness();
