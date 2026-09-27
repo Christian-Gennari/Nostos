@@ -1,7 +1,7 @@
 /**
  * Assistant conversation/session state (issue #261 §3, §5, §6, §7).
  *
- * The backend bridge (`POST /api/assistant/turn`) owns the LLM and the tool
+ * The backend bridge (`POST /api/assistant/turn/stream`) owns the LLM and the tool
  * loop; this service owns the surface's state: the editorial transcript, the
  * deterministic source-location follow-up, the non-mutating suggestions, and
  * destructive confirmations. Ordinary safe actions execute inline.
