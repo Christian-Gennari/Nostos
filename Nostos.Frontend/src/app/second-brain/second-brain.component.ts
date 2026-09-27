@@ -35,6 +35,8 @@ import { ConceptInputComponent } from '../ui/concept-input.component/concept-inp
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
 import { ViewToggleComponent, type ViewToggleOption } from '../ui/view-toggle/view-toggle.component';
 import { ButtonComponent } from '../ui/button/button.component';
+import { BadgeComponent } from '../ui/badge/badge.component';
+import { ChipComponent } from '../ui/chip/chip.component';
 import { IconButtonComponent } from '../ui/icon-button/icon-button.component';
 import { InputDirective } from '../ui/form-control/form-control.directive';
 import { DropdownComponent, type DropdownOption } from '../ui/dropdown/dropdown.component';
@@ -77,6 +79,8 @@ import {
     NostosIconComponent,
     ViewToggleComponent,
     ButtonComponent,
+    BadgeComponent,
+    ChipComponent,
     IconButtonComponent,
     InputDirective,
     DropdownComponent,
@@ -101,6 +105,11 @@ export class SecondBrain implements AfterViewChecked {
     { value: 'newest', label: 'Newest first' },
     { value: 'oldest', label: 'Oldest first' },
     { value: 'source', label: 'Source' },
+  ] satisfies readonly DropdownOption[];
+
+  readonly browseOrderOptions = [
+    { value: 'newest', label: 'Newest first' },
+    { value: 'oldest', label: 'Oldest first' },
   ] satisfies readonly DropdownOption[];
   private conceptsService = inject(ConceptsService);
   private http = inject(HttpClient);
@@ -842,6 +851,12 @@ export class SecondBrain implements AfterViewChecked {
 
   inspectConceptProposal(candidate: AssistantSuggestionDto): void {
     if (!candidate.value || this.proposalNoteKey !== this.focusedNoteKey()) return;
+    if (this.proposalInspectingId() === candidate.value) {
+      this.proposalInspectingId.set(null);
+      this.proposalDetail.set(null);
+      return;
+    }
+    this.proposalMessage.set(null);
     this.proposalDetail.set(null);
     this.proposalInspectingId.set(candidate.value);
     this.conceptsService.get(candidate.value).subscribe({

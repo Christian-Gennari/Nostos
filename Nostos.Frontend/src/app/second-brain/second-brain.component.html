@@ -19,7 +19,13 @@
       <div class="brain-header-title">
         <div class="brain-header-heading">
           <h1>Brain</h1>
-          @if (conceptStats(); as stats) {
+          @if (isReviewing()) {
+          <span class="index-stats">{{ reviewTotal() }} {{ reviewTotal() === 1 ? 'note' : 'notes' }} to review</span>
+          } @else if (isBrowsingNotes()) {
+            @if (browseLoaded()) {
+            <span class="index-stats">{{ browseTotal() }} {{ browseTotal() === 1 ? 'note' : 'notes' }}</span>
+            }
+          } @else if (conceptStats(); as stats) {
           <span class="index-stats">
             {{ stats.totalConcepts }} {{ stats.totalConcepts === 1 ? 'concept' : 'concepts' }} ·
             {{ stats.totalReferences }}
@@ -104,17 +110,25 @@
         <input appInput controlSize="compact" id="brain-all-notes-search" type="search"
           placeholder="Search notes, quotes, books…" [ngModel]="browseQuery()"
           (ngModelChange)="setBrowseQuery($event)" />
-        <div class="brain-note-filter-row">
-          <label class="brain-note-filter"><input type="checkbox" [checked]="browseWithoutConcepts()"
-            (change)="setBrowseWithoutConcepts($any($event.target).checked)" /> Without concepts</label>
-          <button type="button" class="rail-foot-action" (click)="setBrowseOldestFirst(!browseOldestFirst())">
-            {{ browseOldestFirst() ? 'Oldest first' : 'Newest first' }}
+        <div class="brain-note-filter-row" aria-label="Note filters">
+          <button appChip type="button"
+            [attr.aria-pressed]="browseWithoutConcepts()"
+            (click)="setBrowseWithoutConcepts(!browseWithoutConcepts())">
+            Without concepts
           </button>
+          <app-dropdown
+            class="brain-note-order"
+            controlSize="compact"
+            ariaLabel="Order saved notes"
+            [options]="browseOrderOptions"
+            [value]="browseOldestFirst() ? 'oldest' : 'newest'"
+            (valueChange)="setBrowseOldestFirst($event === 'oldest')"
+          />
         </div>
         @if (browseBookId()) {
-          <button appButton variant="ghost" size="sm" type="button" class="brain-book-filter"
+          <button appChip type="button" class="brain-book-filter"
             [attr.aria-label]="'Clear book filter: ' + browseBookTitle()" (click)="setBrowseBook(null)">
-            {{ browseBookTitle() }} <nostos-icon name="x" [size]="14" />
+            Book: {{ browseBookTitle() }} <nostos-icon name="x" [size]="14" />
           </button>
         }
       </div>
@@ -141,17 +155,17 @@
           </button></div>
           }
           @if (browseNotes().length < browseTotal()) {
-            <button type="button" class="review-load-more" [disabled]="browseLoading()"
+            <button appButton variant="ghost" size="sm" type="button" class="review-load-more" [disabled]="browseLoading()"
               (click)="loadBrowsePage()">{{ browseLoading() ? 'Loading…' : 'Load more' }}</button>
           }
-          @if (browseError()) { <button type="button" class="review-load-more" (click)="loadBrowsePage()">Retry loading notes</button> }
+          @if (browseError()) { <button appButton variant="ghost" size="sm" type="button" class="review-load-more" (click)="loadBrowsePage()">Retry loading notes</button> }
         }
       </div>
       <div class="rail-foot">
         @if (browseWithoutConcepts()) {
-          <button type="button" class="rail-foot-action" (click)="openReview()">Review these notes one by one</button>
+          <button appButton variant="ghost" size="sm" type="button" class="rail-foot-action" (click)="openReview()">Review these notes one by one</button>
         } @else {
-          <button type="button" class="rail-foot-action" (click)="setBrowseWithoutConcepts(true)">See notes without concepts</button>
+          <button appButton variant="ghost" size="sm" type="button" class="rail-foot-action" (click)="setBrowseWithoutConcepts(true)">See notes without concepts</button>
         }
       </div>
       } @else if (isReviewing()) {
@@ -217,7 +231,7 @@
         </button>
         }
         @if (reviewError()) {
-          <button type="button" class="review-load-more" (click)="loadReviewPage()">Retry loading notes</button>
+          <button appButton variant="ghost" size="sm" type="button" class="review-load-more" (click)="loadReviewPage()">Retry loading notes</button>
         }
         }
       </div>
@@ -271,6 +285,8 @@
           @if (renameId() === c.id && renameSurface() === 'index') {
           <div class="index-item inline-rename" (click)="$event.stopPropagation()">
             <input
+              appInput
+              controlSize="compact"
               #renameInput
               type="text"
               class="inline-rename-input"
@@ -280,7 +296,7 @@
               (keydown.escape)="$event.stopPropagation(); cancelRename()"
               (focus)="selectRenameInput($event)"
               [attr.aria-label]="'Rename ' + c.name"
-              [attr.aria-invalid]="renameError() ? 'true' : null"
+              [invalid]="!!renameError()"
               [disabled]="renaming()"
               autofocus
             />
@@ -398,11 +414,11 @@
       -->
       <div class="rail-foot">
         @if (isReviewing()) {
-        <button type="button" class="rail-foot-action" (click)="closeReview()">
+        <button appButton variant="ghost" size="sm" type="button" class="rail-foot-action" (click)="closeReview()">
           Back to {{ reviewReturnMode === 'notes' ? 'notes' : 'concepts' }}
         </button>
         } @else {
-        <button type="button" class="rail-foot-action" (click)="openReview()">
+        <button appButton variant="ghost" size="sm" type="button" class="rail-foot-action" (click)="openReview()">
           Review notes with no concept
         </button>
         }
@@ -422,29 +438,45 @@
           <div class="review-head"><div class="super-title">Saved note</div>
             <h1 class="review-title">{{ note.bookTitle || 'Unknown source' }}</h1></div>
           <div class="review-body">
-            @if (note.selectedText) { <blockquote class="review-quote nostos-accent-rail">{{ note.selectedText }}</blockquote> }
-            @if (browseEditing()) {
-              <label class="visually-hidden" for="brain-browse-edit">Edit note</label>
-              <app-concept-input id="brain-browse-edit" [ngModel]="browseEditContent()"
-                (ngModelChange)="browseEditContent.set($event)" [rows]="6"
-                placeholder="Write your thought or link a [[Concept]]"></app-concept-input>
-              <div class="review-actions">
-                <button appButton variant="primary" size="sm" type="button" [disabled]="browseSaving()"
-                  (click)="saveBrowseEdit()">{{ browseSaving() ? 'Saving…' : 'Save note' }}</button>
-                <button appButton variant="ghost" size="sm" type="button" [disabled]="browseSaving()"
-                  (click)="cancelBrowseEdit()">Cancel</button>
-              </div>
-            } @else {
-              <p class="review-content" [innerHTML]="note.content | noteFormat : conceptMap()"
-                (click)="handleContentClick($event)"></p>
+            @if (note.selectedText) {
+            <section class="brain-note-section" aria-labelledby="browse-quote-label">
+              <div id="browse-quote-label" class="super-title">Quotation</div>
+              <blockquote class="review-quote nostos-accent-rail">{{ note.selectedText }}</blockquote>
+            </section>
             }
-            <div class="brain-note-panel-concepts">
-              @for (name of note.conceptNames; track name) {
-                <button appButton variant="ghost" size="sm" type="button" class="brain-note-concept-tag"
-                  (click)="openBrowseConcept(name)">Open {{ name }}</button>
+            <section class="brain-note-section" aria-labelledby="browse-reflection-label">
+              <div id="browse-reflection-label" class="super-title">Your note</div>
+              @if (browseEditing()) {
+                <label class="visually-hidden" for="brain-browse-edit">Edit note</label>
+                <app-concept-input id="brain-browse-edit" [ngModel]="browseEditContent()"
+                  (ngModelChange)="browseEditContent.set($event)" [rows]="6"
+                  placeholder="Write your thought or link a [[Concept]]"></app-concept-input>
+                <div class="review-actions">
+                  <button appButton variant="primary" size="sm" type="button" [disabled]="browseSaving()"
+                    (click)="saveBrowseEdit()">{{ browseSaving() ? 'Saving…' : 'Save note' }}</button>
+                  <button appButton variant="ghost" size="sm" type="button" [disabled]="browseSaving()"
+                    (click)="cancelBrowseEdit()">Cancel</button>
+                </div>
+              } @else {
+                <p class="review-content" [innerHTML]="note.content | noteFormat : conceptMap()"
+                  (click)="handleContentClick($event)"></p>
               }
-              @if (note.conceptNames.length === 0) { <span class="brain-note-panel-empty-concepts">Without concepts</span> }
-            </div>
+            </section>
+            <section class="brain-note-section" aria-labelledby="browse-links-label">
+              <div class="brain-note-section-heading">
+                <div id="browse-links-label" class="super-title">Linked concepts</div>
+                @if (note.conceptNames.length > 0) {
+                  <span appBadge tone="success" [dot]="true">Confirmed</span>
+                }
+              </div>
+              <div class="brain-note-panel-concepts">
+                @for (name of note.conceptNames; track name) {
+                  <button appButton variant="ghost" size="sm" type="button"
+                    (click)="openBrowseConcept(name)">{{ name }}</button>
+                }
+                @if (note.conceptNames.length === 0) { <span class="brain-note-panel-empty-concepts">No concepts linked</span> }
+              </div>
+            </section>
             @if (browsePickerOpen()) {
             <div class="merge-picker" role="group" aria-label="Choose a concept to link">
               <label class="detail-tool-label" for="brain-browse-concept">Link an existing concept</label>
@@ -471,14 +503,14 @@
             </div>
             }
             @if (!browseEditing()) {
-            <div class="review-actions">
-              <button appButton variant="secondary" size="sm" type="button"
+            <div class="review-actions" aria-label="Note actions">
+              <button appButton variant="primary" size="sm" type="button"
                 (click)="openBrowsePicker()">Link to concept</button>
-              <button appButton variant="ghost" size="sm" type="button" [disabled]="browseSaving() || proposalState() === 'loading' || proposalState() === 'linking'"
+              <button appButton variant="secondary" size="sm" type="button" [disabled]="browseSaving() || proposalState() === 'loading' || proposalState() === 'linking'"
                 (click)="askNostos()" data-testid="browse-suggest-concepts">Suggest concepts</button>
               <button appButton variant="ghost" size="sm" type="button"
                 (click)="startBrowseEdit()">Edit note</button>
-              <button appButton variant="secondary" size="sm" type="button"
+              <button appButton variant="ghost" size="sm" type="button"
                 (click)="openWritingHandoff([note.id])">Keep with writing…</button>
             </div>
             <ng-container *ngTemplateOutlet="conceptProposals"></ng-container>
@@ -489,7 +521,7 @@
                   Show notes from this book
                 </button>
               }
-              <a class="brain-source-link" [routerLink]="browseSourceParams(note) ? ['/read', note.bookId] : ['/library', note.bookId]"
+              <a appButton variant="ghost" size="sm" class="brain-source-link" [routerLink]="browseSourceParams(note) ? ['/read', note.bookId] : ['/library', note.bookId]"
                 [queryParams]="browseSourceParams(note)">{{ browseSourceParams(note) ? 'Return to passage' : 'Open book' }}</a>
             }
           </div>
@@ -543,9 +575,14 @@
 
         <div class="review-body">
           @if (note.selectedText) {
-          <blockquote class="review-quote nostos-accent-rail">{{ note.selectedText }}</blockquote>
+          <section class="brain-note-section" aria-labelledby="review-quote-label">
+            <div id="review-quote-label" class="super-title">Quotation</div>
+            <blockquote class="review-quote nostos-accent-rail">{{ note.selectedText }}</blockquote>
+          </section>
           }
 
+          <section class="brain-note-section" aria-labelledby="review-reflection-label">
+          <div id="review-reflection-label" class="super-title">Your note</div>
           @if (reviewEditing()) {
           <label class="visually-hidden" for="review-note-text">Note text</label>
           <app-concept-input
@@ -570,28 +607,27 @@
             <div class="merge-picker-head">
               <span class="detail-tool-label">Link to concept</span>
               <button
+                appIconButton
                 type="button"
                 class="merge-picker-close"
+                icon="x"
+                size="md"
+                [glyphSize]="15"
                 aria-label="Close concept picker"
                 (click)="closeReviewPicker()"
-              >
-                <nostos-icon name="x" [size]="15"></nostos-icon>
-              </button>
+              ></button>
             </div>
             <p class="merge-picker-hint">
               Linking adds an explicit <code>[[Concept]]</code> reference to the note.
             </p>
-            <div class="merge-search-box">
-              <nostos-icon name="magnifying-glass" [size]="15"></nostos-icon>
-              <input appInput controlSize="compact"
-                type="search"
-                placeholder="Search concepts..."
-                aria-label="Search concepts to link"
-                [ngModel]="reviewPickerQuery()"
-                (ngModelChange)="reviewPickerQuery.set($event)"
-                (keydown.escape)="closeReviewPicker()"
-              />
-            </div>
+            <input appInput controlSize="compact" class="merge-search-input"
+              type="search"
+              placeholder="Search concepts..."
+              aria-label="Search concepts to link"
+              [ngModel]="reviewPickerQuery()"
+              (ngModelChange)="reviewPickerQuery.set($event)"
+              (keydown.escape)="closeReviewPicker()"
+            />
             <div class="merge-target-list">
               @if (reviewPickerCandidates().length === 0) {
               <span class="merge-picker-empty">No concepts match.</span>
@@ -628,12 +664,12 @@
             </div>
           </div>
           } @else {
-          <div class="review-actions">
-            <button appButton variant="secondary" size="sm" type="button" (click)="openReviewPicker()">
+          <div class="review-actions" aria-label="Note actions">
+            <button appButton variant="primary" size="sm" type="button" (click)="openReviewPicker()">
               Link to concept
             </button>
             <button
-              appButton variant="ghost" size="sm" type="button"
+              appButton variant="secondary" size="sm" type="button"
               [disabled]="proposalState() === 'loading' || proposalState() === 'linking'"
               (click)="askNostos()"
               data-testid="review-suggest-concepts"
@@ -643,22 +679,25 @@
             <button appButton variant="ghost" size="sm" type="button" (click)="startReviewEdit()">
               Edit note
             </button>
-            <button appButton variant="secondary" size="sm" type="button" (click)="openWritingHandoff([note.id])">
+            <button appButton variant="ghost" size="sm" type="button" (click)="openWritingHandoff([note.id])">
               Keep with writing…
             </button>
+          </div>
+          <ng-container *ngTemplateOutlet="conceptProposals"></ng-container>
+          <div class="review-pagination" aria-label="Review navigation">
             <button appButton variant="ghost" size="sm" type="button" [disabled]="!reviewCanGoBack()"
               (click)="previousReviewNote()">Previous note</button>
             <button appButton variant="ghost" size="sm" type="button" [disabled]="!reviewCanAdvance() || reviewLoading()"
               (click)="skipReviewNote()">{{ reviewLoading() ? 'Loading…' : 'Next note' }}</button>
           </div>
-          <ng-container *ngTemplateOutlet="conceptProposals"></ng-container>
           @if (browseSourceParams(note); as target) {
-            <a class="brain-source-link" [routerLink]="['/read', note.bookId]" [queryParams]="target">Return to passage</a>
+            <a appButton variant="ghost" size="sm" class="brain-source-link" [routerLink]="['/read', note.bookId]" [queryParams]="target">Return to passage</a>
           } @else {
-            <a class="brain-source-link" [routerLink]="['/library', note.bookId]">Open book</a>
+            <a appButton variant="ghost" size="sm" class="brain-source-link" [routerLink]="['/library', note.bookId]">Open book</a>
           }
           }
           }
+          </section>
         </div>
       </div>
       }
@@ -675,6 +714,8 @@
             @if (renameId() === detail.id && renameSurface() === 'header') {
             <div class="inline-rename header-rename">
               <input
+                appInput
+                controlSize="compact"
                 #renameInput
                 type="text"
                 class="inline-rename-input"
@@ -684,7 +725,7 @@
                 (keydown.escape)="cancelRename()"
                 (focus)="selectRenameInput($event)"
                 [attr.aria-label]="'Rename ' + detail.name"
-                [attr.aria-invalid]="renameError() ? 'true' : null"
+                [invalid]="!!renameError()"
                 [disabled]="renaming()"
                 autofocus
               />
@@ -934,7 +975,7 @@
         <summary>Manage concept</summary>
         <div class="concept-actions" aria-label="Manage concept">
           <button
-            type="button"
+            appButton variant="ghost" size="sm" type="button"
             class="concept-action"
             [disabled]="renaming() || mergingConcept()"
             (click)="startRename(detail.id, 'header')"
@@ -943,7 +984,7 @@
             <span>Rename</span>
           </button>
           <button
-            type="button"
+            appButton variant="ghost" size="sm" type="button"
             class="concept-action"
             [disabled]="renaming() || mergingConcept()"
             (click)="openMergePicker()"
@@ -952,8 +993,8 @@
             <span>Merge into…</span>
           </button>
           <button
-            type="button"
-            class="concept-action danger"
+            appButton variant="danger" size="sm" type="button"
+            class="concept-action"
             [disabled]="renaming() || mergingConcept()"
             (click)="openDeleteConcept(detail.id)"
           >
@@ -967,25 +1008,24 @@
           <div class="merge-picker-head">
             <span class="detail-tool-label">Merge into…</span>
             <button
+              appIconButton
               type="button"
               class="merge-picker-close"
+              icon="x"
+              size="md"
+              [glyphSize]="15"
               aria-label="Close merge picker"
               (click)="closeMergePicker()"
-            >
-              <nostos-icon name="x" [size]="15"></nostos-icon>
-            </button>
+            ></button>
           </div>
-          <div class="merge-search-box">
-            <nostos-icon name="magnifying-glass" [size]="15"></nostos-icon>
-            <input
-              type="search"
-              placeholder="Search concepts..."
-              aria-label="Search merge targets"
-              [ngModel]="mergeSearchQuery()"
-              (ngModelChange)="mergeSearchQuery.set($event)"
-              (keydown.escape)="closeMergePicker()"
-            />
-          </div>
+          <input appInput controlSize="compact" class="merge-search-input"
+            type="search"
+            placeholder="Search concepts..."
+            aria-label="Search merge targets"
+            [ngModel]="mergeSearchQuery()"
+            (ngModelChange)="mergeSearchQuery.set($event)"
+            (keydown.escape)="closeMergePicker()"
+          />
           <div class="merge-target-list">
             @if (mergeCandidates().length === 0) {
             <span class="merge-picker-empty">No other concepts match.</span>
@@ -1004,9 +1044,10 @@
             }
           </div>
           <div class="merge-picker-actions">
-            <button type="button" class="merge-picker-cancel" (click)="closeMergePicker()">Cancel</button>
+            <button appButton variant="ghost" size="sm" type="button" class="merge-picker-cancel"
+              (click)="closeMergePicker()">Cancel</button>
             <button
-              type="button"
+              appButton variant="primary" size="sm" type="button"
               class="merge-picker-confirm"
               [disabled]="!mergeTarget()"
               (click)="openMergeConfirmation()"
@@ -1055,10 +1096,10 @@
         <div class="brain-note-panel-concepts">
           @if (note.conceptNames.length > 0) {
             @for (name of note.conceptNames; track name) {
-            <span class="brain-note-concept-tag">{{ name }}</span>
+            <span appBadge tone="success" [dot]="true">{{ name }}</span>
             }
           } @else {
-            <span class="brain-note-panel-empty-concepts">Belongs to no concept</span>
+            <span class="brain-note-panel-empty-concepts">No concepts linked</span>
           }
         </div>
         <div class="brain-note-panel-actions">
@@ -1084,48 +1125,75 @@
     @if (proposalState() !== 'idle') {
     <section class="brain-proposals" aria-label="Suggested concepts" data-testid="brain-proposals">
       <div class="brain-proposals-heading">
-        <strong>Possible connections</strong>
+        <div>
+          <div class="super-title">Optional assistance</div>
+          <h2>Possible connections</h2>
+          <p>Existing concepts that may fit this note. Nothing is linked until you choose it.</p>
+        </div>
         <button appButton variant="ghost" size="sm" type="button" [disabled]="proposalState() === 'linking'" (click)="cancelConceptProposals()">
           {{ proposalState() === 'loading' ? 'Cancel' : 'Dismiss' }}
         </button>
       </div>
+
       @if (proposalState() === 'loading') {
-        <p role="status">Looking at this note and your existing concepts…</p>
+        <p class="brain-proposals-state" role="status">Looking at this note and your existing concepts…</p>
       } @else if (proposalState() === 'linking') {
-        <p role="status">Linking the chosen concept…</p>
+        <p class="brain-proposals-state" role="status">Confirming the link…</p>
       } @else if (proposalState() === 'empty') {
-        <p role="status">No useful matches found. This note is fine without a concept.</p>
+        <div class="brain-proposals-state" role="status">
+          <strong>No useful matches found.</strong>
+          <span>This note is fine without a concept. Manual linking remains available above.</span>
+        </div>
       } @else if (proposalState() === 'unavailable' || proposalState() === 'error') {
-        <p role="alert">{{ proposalMessage() || 'Suggestions could not be loaded.' }}</p>
-        @if (canRetryProposalLink()) {
-          <button appButton variant="secondary" size="sm" type="button" (click)="retryProposalLink()">Try linking again</button>
-        }
-        <button appButton variant="secondary" size="sm" type="button" (click)="askNostos()">Try again</button>
+        <div class="brain-proposals-state" role="alert">
+          <strong>Suggestions are unavailable.</strong>
+          <span>{{ proposalMessage() || 'Suggestions could not be loaded.' }}</span>
+          <span>Manual linking still works above.</span>
+        </div>
+        <div class="brain-proposal-actions">
+          @if (canRetryProposalLink()) {
+            <button appButton variant="secondary" size="sm" type="button" (click)="retryProposalLink()">Try linking again</button>
+          }
+          <button appButton variant="ghost" size="sm" type="button" (click)="askNostos()">Try suggestions again</button>
+        </div>
       } @else {
-        <p class="brain-proposals-hint">Suggestions are optional. Inspect the concept before linking.</p>
-        @if (proposalMessage()) { <p role="alert">{{ proposalMessage() }}</p> }
-        @for (candidate of proposalCandidates(); track candidate.value) {
-          <div class="brain-proposal" data-testid="brain-proposal">
-            <div><strong>{{ candidate.label }}</strong><p>{{ candidate.reason }}</p></div>
-            <div class="brain-proposal-actions">
-              <button appButton variant="ghost" size="sm" type="button" (click)="inspectConceptProposal(candidate)">Inspect</button>
-              <button appButton variant="secondary" size="sm" type="button" (click)="acceptConceptProposal(candidate)">Link note</button>
-            </div>
-            @if (proposalInspectingId() === candidate.value) {
-              @if (proposalDetail(); as detail) {
-                <div class="brain-proposal-evidence">
-                  <span>{{ detail.notes.length }} linked {{ detail.notes.length === 1 ? 'note' : 'notes' }} in “{{ detail.name }}”</span>
-                  @for (evidence of detail.notes.slice(0, 2); track evidence.noteId) {
-                    <p><strong>{{ evidence.bookTitle }}</strong> · {{ evidence.selectedText || evidence.content }}</p>
-                  }
-                  <button appButton variant="ghost" size="sm" type="button" (click)="openBrowseConcept(detail.name)">Open concept</button>
-                </div>
-              } @else { <p role="status">Loading concept notes…</p> }
-            }
-          </div>
-        }
+        @if (proposalMessage()) { <p class="brain-proposals-state" role="alert">{{ proposalMessage() }}</p> }
+        <div class="brain-proposal-list">
+          @for (candidate of proposalCandidates(); track candidate.value) {
+            <article class="brain-proposal" data-testid="brain-proposal">
+              <div class="brain-proposal-copy">
+                <span appBadge>Suggested concept</span>
+                <h3>{{ candidate.label }}</h3>
+                <p>{{ candidate.reason }}</p>
+              </div>
+              <div class="brain-proposal-actions">
+                <button appButton variant="ghost" size="sm" type="button" (click)="inspectConceptProposal(candidate)">
+                  {{ proposalInspectingId() === candidate.value ? 'Hide evidence' : 'Inspect evidence' }}
+                </button>
+                <button appButton variant="primary" size="sm" type="button" (click)="acceptConceptProposal(candidate)">Link note</button>
+              </div>
+              @if (proposalInspectingId() === candidate.value) {
+                @if (proposalDetail(); as detail) {
+                  <div class="brain-proposal-evidence">
+                    <div class="brain-proposal-evidence-heading">
+                      <span appBadge [dot]="true">Existing evidence</span>
+                      <span>{{ detail.notes.length }} linked {{ detail.notes.length === 1 ? 'note' : 'notes' }} in “{{ detail.name }}”</span>
+                    </div>
+                    @for (evidence of detail.notes.slice(0, 2); track evidence.noteId) {
+                      <div class="brain-proposal-evidence-item">
+                        <strong>{{ evidence.bookTitle }}</strong>
+                        <p>{{ evidence.selectedText || evidence.content }}</p>
+                      </div>
+                    }
+                    <button appButton variant="ghost" size="sm" type="button" (click)="openBrowseConcept(detail.name)">Open concept</button>
+                  </div>
+                } @else { <p class="brain-proposals-state" role="status">Loading existing evidence…</p> }
+              }
+            </article>
+          }
+        </div>
       }
-      <button appButton variant="ghost" size="sm" type="button" (click)="openAskNostosForNote()">Ask Nostos a question about this note</button>
+      <button appButton variant="ghost" size="sm" type="button" class="brain-proposals-question" (click)="openAskNostosForNote()">Ask Nostos a question about this note</button>
     </section>
     }
   </ng-template>
