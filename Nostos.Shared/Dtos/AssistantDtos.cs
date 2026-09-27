@@ -63,7 +63,10 @@ public sealed record AssistantHistoryMessageDto(
     // APPENDED (#561): capabilities the server reported as completed on that
     // historical turn. This is reference context only; canonical current state
     // must still be read before acting.
-    IReadOnlyList<string>? Actions = null);
+    IReadOnlyList<string>? Actions = null,
+    // APPENDED (#561): identity of a note captured by this turn, when one exists.
+    // It helps resolve later "that note" references but carries no write authority.
+    string? CapturedNoteId = null);
 
 /// <summary>
 /// Compact application snapshot attached to an older user turn. Current
