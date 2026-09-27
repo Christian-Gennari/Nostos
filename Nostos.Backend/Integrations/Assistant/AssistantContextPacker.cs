@@ -19,7 +19,7 @@ namespace Nostos.Backend.Integrations.Assistant;
 internal sealed class AssistantContextPacker(AssistantOptions options)
 {
     internal const int ApproximateCharactersPerToken = 4;
-    internal const int MinimumHistoryEstimatedTokens = 1_000;
+    internal const int MinimumHistoryEstimatedTokens = 256;
     internal const int MaximumHistoryEstimatedTokens = 3_000;
 
     private static readonly JsonSerializerOptions MetadataJsonOptions = new(JsonSerializerDefaults.Web)
