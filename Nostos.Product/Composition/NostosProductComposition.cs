@@ -118,7 +118,7 @@ public static class NostosProductComposition
         {
             client.Timeout = TimeSpan.FromSeconds(15);
             client.DefaultRequestHeaders.UserAgent.ParseAdd(
-                "Nostos/1.0 (+https://github.com/Christian-Gennari/Nostos)");
+                "Nostos/1.0 (+https://github.com/Christian-Gennari/Nostos-Rebirth)");
         }).ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
         {
             AllowAutoRedirect = true,
@@ -161,7 +161,7 @@ public static class NostosProductComposition
         {
             client.Timeout = Timeout.InfiniteTimeSpan;
             client.DefaultRequestHeaders.UserAgent.ParseAdd(
-                "Nostos/1.0 (+https://github.com/Christian-Gennari/Nostos)");
+                "Nostos/1.0 (+https://github.com/Christian-Gennari/Nostos-Rebirth)");
         }).ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
         {
             AllowAutoRedirect = false,
@@ -185,7 +185,7 @@ public static class NostosProductComposition
             client.BaseAddress = new Uri(GutenbergCatalog.BaseUrl);
             client.Timeout = TimeSpan.FromSeconds(20);
             client.DefaultRequestHeaders.UserAgent.ParseAdd(
-                "Nostos/1.0 (+https://github.com/Christian-Gennari/Nostos)");
+                "Nostos/1.0 (+https://github.com/Christian-Gennari/Nostos-Rebirth)");
         });
         services.AddSingleton<IContentProvider, GutenbergProvider>();
 
@@ -209,7 +209,7 @@ public static class NostosProductComposition
             client.BaseAddress = new Uri(WikisourceCatalog.BaseUrl);
             client.Timeout = TimeSpan.FromSeconds(20);
             client.DefaultRequestHeaders.UserAgent.ParseAdd(
-                "Nostos/1.0 (+https://github.com/Christian-Gennari/Nostos)");
+                "Nostos/1.0 (+https://github.com/Christian-Gennari/Nostos-Rebirth)");
         });
         services.AddSingleton<IContentProvider, WikisourceProvider>();
 
@@ -223,7 +223,7 @@ public static class NostosProductComposition
             client.BaseAddress = new Uri(LibriVoxCatalog.BaseUrl);
             client.Timeout = TimeSpan.FromSeconds(20);
             client.DefaultRequestHeaders.UserAgent.ParseAdd(
-                "Nostos/1.0 (+https://github.com/Christian-Gennari/Nostos)");
+                "Nostos/1.0 (+https://github.com/Christian-Gennari/Nostos-Rebirth)");
         });
         services.AddSingleton<IContentProvider, LibriVoxProvider>();
 
