@@ -412,8 +412,9 @@ public sealed class AssistantOrchestrator(
                 }
             }
 
-            // Asking for a page/timestamp ends this turn deterministically; the
-            // user's answer arrives as the next turn's context anchor.
+            // Asking for deterministic capture input ends this turn. The user's
+            // actual answer arrives as the next Message plus continuation id; it
+            // is never hidden in context or replayed as the original message.
             if (anchorPrompt is not null)
             {
                 stopReason = AssistantTurnStopReason.UserInputRequired;
@@ -607,7 +608,7 @@ public sealed class AssistantOrchestrator(
 
         if (capture.Prompt is { } prompt)
         {
-            var updated = continuations.Update(stored, prompt.Kind, resumedContext);
+            continuations.Update(stored, prompt.Kind, resumedContext);
             var nextPrompt = prompt with { ContinuationId = continuationId };
             var response = new AssistantTurnResponse(
                 Reply: prompt.Question,
