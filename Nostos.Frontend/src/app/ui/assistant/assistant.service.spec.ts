@@ -137,15 +137,16 @@ describe('AssistantService voice transcript alignment', () => {
     });
     stop.flush({ accepted: true, state: 'cancel_requested' });
 
-    request.flush(
-      JSON.stringify({
-        turnId,
-        sequence: 3,
-        kind: 'cancelled',
-        failure: { code: 'assistant_turn_cancelled', message: 'Stopped.', retryable: false },
-        response: turn({ reply: '', error: { code: 'assistant_turn_cancelled', message: 'Stopped.' } }),
-      }) + '\n',
-    );
+    const cancelledLine = JSON.stringify({
+      turnId,
+      sequence: 3,
+      kind: 'cancelled',
+      failure: { code: 'assistant_turn_cancelled', message: 'Stopped.', retryable: false },
+      response: turn({ reply: '', error: { code: 'assistant_turn_cancelled', message: 'Stopped.' } }),
+    }) + '\n';
+
+    // DownloadProgress.partialText and the final XHR response are cumulative.
+    request.flush(activityLine + cancelledLine);
 
     expect(service.sending()).toBe(false);
     expect(service.activeTurnId()).toBeNull();

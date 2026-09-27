@@ -6,6 +6,7 @@ import { Router } from '@angular/router';
 
 import { AssistantComponent } from './assistant.component';
 import {
+  ASSISTANT_PENDING_DELAY_MS,
   ASSISTANT_SESSION_STORAGE_KEY,
   AssistantService,
   AssistantSourceReferenceDto,
@@ -756,7 +757,9 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     expect(rendered.textContent).toContain('**unfinished');
   });
 
-  describe('thinking indicator (issue #289)', () => {
+  describe('turn activity (issue #564)', () => {
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
     function transcript(): HTMLElement {
       return fixture.nativeElement.querySelector('[data-testid="assistant-transcript"]');
     }
@@ -775,8 +778,14 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
       return http.expectOne('/api/assistant/turn/stream');
     }
 
+    function revealPending(): void {
+      vi.advanceTimersByTime(ASSISTANT_PENDING_DELAY_MS);
+      fixture.detectChanges();
+    }
+
     it('shows the pending entry after the user entry while a turn is in flight', () => {
       const request = sendInFlight();
+      revealPending();
 
       const indicator = pending();
       expect(indicator).toBeTruthy();
@@ -792,6 +801,7 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
 
     it('removes the pending entry when the response arrives', () => {
       const request = sendInFlight();
+      revealPending();
       expect(pending()).toBeTruthy();
 
       request.flush(turn({ reply: 'Here.' }));
@@ -802,6 +812,7 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
 
     it('removes the pending entry when the request fails', () => {
       const request = sendInFlight();
+      revealPending();
       expect(pending()).toBeTruthy();
 
       request.flush('', { status: 503, statusText: 'Service Unavailable' });
@@ -813,19 +824,20 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
 
     it('exposes the state as accessible text and hides the decorative dots', () => {
       const request = sendInFlight();
+      revealPending();
 
       const indicator = pending()!;
       const hidden = indicator.querySelector('.visually-hidden');
       expect(hidden).toBeTruthy();
-      expect(hidden!.textContent?.trim()).toContain('Thinking');
+      expect(hidden!.textContent?.trim()).toContain('Working');
       expect(indicator.getAttribute('role')).toBe('status');
       expect(indicator.getAttribute('aria-live')).toBe('polite');
 
-      const dots = Array.from(indicator.querySelectorAll('.thinking-dot'));
-      expect(dots.length).toBe(3);
-      for (const dot of dots) {
-        expect(dot.getAttribute('aria-hidden')).toBe('true');
-      }
+      const dots = indicator.querySelector('.thinking-dots');
+      expect(dots).toBeTruthy();
+      expect(dots!.getAttribute('aria-hidden')).toBe('true');
+      expect(dots!.querySelectorAll('.thinking-dot').length).toBe(3);
+      expect(indicator.querySelector('[data-testid="assistant-stop-turn"]')).toBeTruthy();
 
       request.flush(turn());
     });

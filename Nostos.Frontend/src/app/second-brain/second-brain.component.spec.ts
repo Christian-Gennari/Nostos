@@ -1884,7 +1884,7 @@ describe('SecondBrain', () => {
       const assistant = TestBed.inject(AssistantService);
       expect(assistant.isOpen()).toBe(true);
 
-      const request = http.expectOne('/api/assistant/turn');
+      const request = http.expectOne('/api/assistant/turn/stream');
       expect(request.request.body.message).toBe('Where do you think this belongs?');
       expect(request.request.body.context.brainReviewNoteId).toBe('hit-1');
       request.flush({
@@ -1912,7 +1912,7 @@ describe('SecondBrain', () => {
         value: 'c-alpha',
       });
 
-      const turn = http.expectOne('/api/assistant/turn');
+      const turn = http.expectOne('/api/assistant/turn/stream');
       expect(turn.request.body.context.brainReviewNoteId).toBe('hit-1');
       turn.flush({
         reply: 'Linked the note to Alpha.',
