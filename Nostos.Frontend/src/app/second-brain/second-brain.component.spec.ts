@@ -298,7 +298,7 @@ describe('SecondBrain', () => {
       (fixture.nativeElement.querySelectorAll('.index-list .note-row-item')[1] as HTMLButtonElement).click();
       fixture.detectChanges();
       expect(fixture.nativeElement.querySelector('.brain-browse-detail')?.textContent).toContain('A separate thought');
-      expect(fixture.nativeElement.querySelector('.brain-browse-detail')?.textContent).toContain('Without concepts');
+      expect(fixture.nativeElement.querySelector('.brain-browse-detail')?.textContent).toContain('No concepts linked');
     });
 
     it('uses shared controls and a clear note hierarchy for the selected inspector', () => {
