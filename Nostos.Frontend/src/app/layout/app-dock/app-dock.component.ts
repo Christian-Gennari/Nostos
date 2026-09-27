@@ -14,6 +14,7 @@ import {
   Router,
   RouterLink,
   RouterLinkActive,
+  type UrlTree,
 } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationHistoryService } from '../../core/services/navigation-history.service';
@@ -333,8 +334,12 @@ export class AppDockComponent {
     });
   }
 
-  getLink(prefix: string): string {
-    return this.historyService.getLastUrl(prefix);
+  getLink(prefix: string): UrlTree {
+    // History stores the complete URL so Brain can restore evidence deep-links
+    // such as /second-brain?conceptId=.... RouterLink interprets a plain string
+    // as navigation commands, so parse the remembered URL first to preserve its
+    // path, query params and fragment as URL structure.
+    return this.router.parseUrl(this.historyService.getLastUrl(prefix));
   }
 
   handleDockClick(prefix: string, event: Event) {
