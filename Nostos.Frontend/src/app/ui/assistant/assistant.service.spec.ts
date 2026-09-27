@@ -675,6 +675,29 @@ describe('AssistantService voice transcript alignment', () => {
     answer.flush(turn({ acknowledgement: 'Saved.', capturedNoteId: 'note-reload' }));
   });
 
+  it('persists a New conversation as a clean replacement for the old session', () => {
+    service.updateDraft('Old conversation');
+    service.submit();
+    http.expectOne('/api/assistant/turn').flush(turn({ reply: 'Old reply' }));
+
+    const oldConversationId = service.conversationId();
+    service.newConversation();
+    const newConversationId = service.conversationId();
+
+    expect(newConversationId).not.toBe(oldConversationId);
+    expect(service.entries()).toEqual([]);
+
+    http.verify();
+    TestBed.resetTestingModule();
+    configureService();
+
+    expect(service.conversationId()).toBe(newConversationId);
+    expect(service.entries()).toEqual([]);
+    expect(service.history()).toEqual([]);
+    expect(service.pendingAnchor()).toBeNull();
+    expect(service.pendingPlan()).toBeNull();
+  });
+
   it('sends no per-turn processing mode', () => {
     service.open();
     service.updateDraft('A thought');
