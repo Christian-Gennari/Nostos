@@ -34,6 +34,29 @@ public static partial class AssistantCapabilities
     public static IReadOnlyList<AssistantCapability> Build(
         INoteService notes,
         ILibraryService library,
+        IConceptRepository concepts) =>
+        Build(
+            notes,
+            library,
+            concepts,
+            NoOpKnowledgeRetrievalService.Instance,
+            bookText: null);
+
+    public static IReadOnlyList<AssistantCapability> Build(
+        INoteService notes,
+        ILibraryService library,
+        IConceptRepository concepts,
+        IBookTextSearchService bookText) =>
+        Build(
+            notes,
+            library,
+            concepts,
+            NoOpKnowledgeRetrievalService.Instance,
+            bookText);
+
+    public static IReadOnlyList<AssistantCapability> Build(
+        INoteService notes,
+        ILibraryService library,
         IConceptRepository concepts,
         IKnowledgeRetrievalService knowledge,
         IBookTextSearchService? bookText = null)
@@ -48,7 +71,6 @@ public static partial class AssistantCapabilities
 
         return capabilities;
     }
-
 
     // ------------------------------------------------------------------
     // Argument readers. The tool args are JSON objects keyed by the canonical
