@@ -113,19 +113,32 @@ describe('AssistantService voice transcript alignment', () => {
 
     const request = http.expectOne('/api/assistant/turn/stream');
     const turnId = request.request.body.turnId as string;
+
+    // Stop is not exposed until the server has acknowledged registration.
+    service.stopActiveTurn();
+    http.expectNone('/api/assistant/turn/cancel');
+    expect(service.activeTurnId()).toBeNull();
+
+    const startedLine = JSON.stringify({
+      turnId,
+      sequence: 1,
+      kind: 'started',
+    }) + '\n';
     const activityLine = JSON.stringify({
       turnId,
       sequence: 2,
       kind: 'activity',
       activity: { code: 'searching_material', message: 'Searching your notes and books…' },
     }) + '\n';
+    const progressText = startedLine + activityLine;
 
     request.event({
       type: HttpEventType.DownloadProgress,
-      loaded: activityLine.length,
-      partialText: activityLine,
+      loaded: progressText.length,
+      partialText: progressText,
     });
 
+    expect(service.activeTurnId()).toBe(turnId);
     expect(service.turnActivity()?.code).toBe('searching_material');
     expect(service.pendingVisible()).toBe(true);
 
@@ -146,7 +159,7 @@ describe('AssistantService voice transcript alignment', () => {
     }) + '\n';
 
     // DownloadProgress.partialText and the final XHR response are cumulative.
-    request.flush(activityLine + cancelledLine);
+    request.flush(startedLine + activityLine + cancelledLine);
 
     expect(service.sending()).toBe(false);
     expect(service.activeTurnId()).toBeNull();
