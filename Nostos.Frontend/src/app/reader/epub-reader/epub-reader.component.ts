@@ -458,14 +458,17 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
   // --- IReader Methods ---
 
   next() {
+    this.sourceNavigationMessage.set(null);
     this.rendition?.next();
   }
 
   previous() {
+    this.sourceNavigationMessage.set(null);
     this.rendition?.prev();
   }
 
   goTo(target: string | number) {
+    this.sourceNavigationMessage.set(null);
     this.rendition?.display(target.toString());
   }
 
