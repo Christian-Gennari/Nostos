@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using Nostos.Backend.Configuration;
 using Nostos.Backend.Services.Ai;
 using Nostos.Backend.Services.Library;
+using Nostos.Backend.Services.Knowledge;
 using Nostos.Shared.Dtos;
 using Nostos.Product.Services.Ai;
 using Nostos.Product.BookText;
@@ -99,6 +100,8 @@ public sealed class AssistantOrchestrator(
 
     private const string CaptureCapability = "notes_capture";
     private const string BookTextCapability = "book_text_search";
+    private const string KnowledgeSearchCapability = "knowledge_search";
+    private const string KnowledgeReadCapability = "knowledge_read_evidence";
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -383,6 +386,14 @@ public sealed class AssistantOrchestrator(
                     if (string.Equals(capability.Name, BookTextCapability, StringComparison.Ordinal))
                     {
                         sourceReferences.AddRange(ExtractBookTextSources(result.Data));
+                    }
+                    else if (string.Equals(capability.Name, KnowledgeSearchCapability, StringComparison.Ordinal))
+                    {
+                        sourceReferences.AddRange(ExtractKnowledgeSearchSources(result.Data));
+                    }
+                    else if (string.Equals(capability.Name, KnowledgeReadCapability, StringComparison.Ordinal))
+                    {
+                        sourceReferences.AddRange(ExtractKnowledgeReadSources(result.Data));
                     }
                 }
 
@@ -840,6 +851,75 @@ public sealed class AssistantOrchestrator(
     }
 
 
+    private static IEnumerable<AssistantSourceReferenceDto> ExtractKnowledgeSearchSources(JsonElement? data)
+    {
+        if (data is not { ValueKind: JsonValueKind.Object } element)
+            yield break;
+
+        KnowledgeSearchResponse? response;
+        try
+        {
+            response = JsonSerializer.Deserialize<KnowledgeSearchResponse>(
+                element.GetRawText(),
+                JsonOptions);
+        }
+        catch (JsonException)
+        {
+            yield break;
+        }
+
+        if (response is null)
+            yield break;
+
+        foreach (var passage in response.BookPassages)
+        {
+            if (ToAssistantSource(
+                passage.BookId,
+                passage.BookTitle,
+                passage.BookAuthor,
+                passage.Format,
+                passage.SourceSha256,
+                passage.Text,
+                passage.SourceSegments) is { } source)
+            {
+                yield return source;
+            }
+        }
+    }
+
+    private static IEnumerable<AssistantSourceReferenceDto> ExtractKnowledgeReadSources(JsonElement? data)
+    {
+        if (data is not { ValueKind: JsonValueKind.Object } element)
+            yield break;
+
+        KnowledgeReadResponse? response;
+        try
+        {
+            response = JsonSerializer.Deserialize<KnowledgeReadResponse>(
+                element.GetRawText(),
+                JsonOptions);
+        }
+        catch (JsonException)
+        {
+            yield break;
+        }
+
+        if (response?.BookPassage is not { } passage)
+            yield break;
+
+        if (ToAssistantSource(
+            passage.BookId,
+            passage.BookTitle,
+            passage.BookAuthor,
+            passage.Format,
+            passage.SourceSha256,
+            passage.Text,
+            passage.SourceSegments) is { } source)
+        {
+            yield return source;
+        }
+    }
+
     private static IEnumerable<AssistantSourceReferenceDto> ExtractBookTextSources(JsonElement? data)
     {
         if (data is not { ValueKind: JsonValueKind.Object } element)
@@ -862,44 +942,66 @@ public sealed class AssistantOrchestrator(
 
         foreach (var passage in response.Passages)
         {
-            var locators = passage.SourceSegments
-                .Select(segment => segment.Locator switch
-                {
-                    PdfBookTextSourceLocator pdf => new AssistantSourceLocatorDto(
-                        Type: "pdf",
-                        PdfPageIndex: pdf.PageIndex,
-                        PdfPageLabel: pdf.PageLabel,
-                        StartTextOffset: pdf.StartTextOffset,
-                        EndTextOffset: pdf.EndTextOffset),
-                    EpubBookTextSourceLocator epub => new AssistantSourceLocatorDto(
-                        Type: "epub",
-                        EpubSpineIndex: epub.SpineIndex,
-                        EpubResourceHref: epub.ResourceHref,
-                        EpubCfi: epub.Cfi,
-                        StartTextOffset: epub.StartTextOffset,
-                        EndTextOffset: epub.EndTextOffset),
-                    AudioBookTextSourceLocator audio => new AssistantSourceLocatorDto(
-                        Type: "audio",
-                        StartTextOffset: checked((int)Math.Min(int.MaxValue, audio.StartMs)),
-                        EndTextOffset: checked((int)Math.Min(int.MaxValue, audio.EndMs))),
-                    _ => null,
-                })
-                .Where(locator => locator is not null)
-                .Cast<AssistantSourceLocatorDto>()
-                .ToList();
-
-            if (locators.Count == 0)
-                continue;
-
-            yield return new AssistantSourceReferenceDto(
+            if (ToAssistantSource(
                 passage.BookId,
                 passage.BookTitle,
                 passage.BookAuthor,
-                passage.Format.ToString().ToLowerInvariant(),
+                passage.Format,
                 passage.SourceSha256,
                 passage.Text,
-                locators);
+                passage.SourceSegments) is { } source)
+            {
+                yield return source;
+            }
         }
+    }
+
+    private static AssistantSourceReferenceDto? ToAssistantSource(
+        Guid bookId,
+        string bookTitle,
+        string? bookAuthor,
+        BookTextSourceFormat format,
+        string sourceSha256,
+        string text,
+        IReadOnlyList<BookTextSourceSegment> sourceSegments)
+    {
+        var locators = sourceSegments
+            .Select(segment => segment.Locator switch
+            {
+                PdfBookTextSourceLocator pdf => new AssistantSourceLocatorDto(
+                    Type: "pdf",
+                    PdfPageIndex: pdf.PageIndex,
+                    PdfPageLabel: pdf.PageLabel,
+                    StartTextOffset: pdf.StartTextOffset,
+                    EndTextOffset: pdf.EndTextOffset),
+                EpubBookTextSourceLocator epub => new AssistantSourceLocatorDto(
+                    Type: "epub",
+                    EpubSpineIndex: epub.SpineIndex,
+                    EpubResourceHref: epub.ResourceHref,
+                    EpubCfi: epub.Cfi,
+                    StartTextOffset: epub.StartTextOffset,
+                    EndTextOffset: epub.EndTextOffset),
+                AudioBookTextSourceLocator audio => new AssistantSourceLocatorDto(
+                    Type: "audio",
+                    StartTextOffset: checked((int)Math.Min(int.MaxValue, audio.StartMs)),
+                    EndTextOffset: checked((int)Math.Min(int.MaxValue, audio.EndMs))),
+                _ => null,
+            })
+            .Where(locator => locator is not null)
+            .Cast<AssistantSourceLocatorDto>()
+            .ToList();
+
+        if (locators.Count == 0)
+            return null;
+
+        return new AssistantSourceReferenceDto(
+            bookId,
+            bookTitle,
+            bookAuthor,
+            format.ToString().ToLowerInvariant(),
+            sourceSha256,
+            text,
+            locators);
     }
 
     private static int? ReadInt(JsonElement obj, string name) =>
