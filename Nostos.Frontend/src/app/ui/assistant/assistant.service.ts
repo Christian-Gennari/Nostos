@@ -662,11 +662,11 @@ export class AssistantService {
   }
 
   /**
-   * Execute exactly one pending plan through
-   * `POST /api/assistant/plan/approve`. The plan id and its approval token are
-   * both required; the server refuses a mismatch and mutates nothing.
+   * Execute exactly one pending destructive plan. The server keeps a bounded
+   * terminal receipt, so retrying the exact plan id + token after a lost HTTP
+   * response reports the original result without executing it twice.
    */
-  approvePlan(planId: string, approvalToken: string): void {
+  approvePlan(planId: string, approvalToken: string, turnId = createId()): void {
     if (!planId || !approvalToken || this.sending()) return;
 
     const plan = this.pendingPlan();
@@ -689,16 +689,19 @@ export class AssistantService {
               .filter((reply): reply is string => reply !== null);
             const executionReply =
               replies.length > 0 ? replies.join(' ') : (plan?.summary ?? 'Plan applied.');
-            this.turnLog.update((log) => [...log, { role: 'assistant', text: executionReply }]);
-            this.pushEntry('assistant', executionReply, null, 'Applied');
+            this.pushEntry(turnId, 'assistant', executionReply, null, 'Applied');
           } else {
             const failureReply =
               response.errorMessage ?? plan?.summary ?? 'The plan could not be applied.';
             this.lastError.set(failureReply);
-            this.turnLog.update((log) => [...log, { role: 'assistant', text: failureReply }]);
-            this.pushEntry('error', failureReply, null, response.errorCode ?? 'Refused');
+            this.pushEntry(
+              turnId,
+              'error',
+              failureReply,
+              null,
+              response.errorCode ?? 'Refused',
+            );
           }
-
         },
         error: () => {
           this.sending.set(false);
@@ -707,99 +710,216 @@ export class AssistantService {
       });
   }
 
-  private dispatchTurn(text: string, anchor: AssistantAnchor | null, captureBookTitle: string | null = null): void {
+  private dispatchTurn(
+    text: string,
+    anchor: AssistantAnchor | null,
+    captureBookTitle: string | null = null,
+  ): void {
+    const retry = this.retryableTurn;
+    if (retry && retry.text === text && retry.request.continuationId === null) {
+      this.draft.set('');
+      this.sendPreparedTurn(retry);
+      return;
+    }
+
+    this.retryableTurn = null;
     const context = this.context();
+    this.startPreparedTurn({
+      text,
+      context,
+      requestAnchor: anchor,
+      captureBookTitle,
+      continuationPrompt: null,
+      continuationSkipped: false,
+      displayAnchor: anchor,
+    });
+  }
 
-    // Read the history BEFORE this turn's user entry joins the log: the server
-    // receives `message` separately, so repeating it here would say it twice.
+  private dispatchContinuation(
+    text: string,
+    prompt: AssistantAnchorPrompt,
+    context: AssistantContext,
+    skipped: boolean,
+  ): void {
+    const retry = this.retryableTurn;
+    if (
+      retry &&
+      retry.text === text &&
+      retry.request.continuationId === prompt.continuationId &&
+      retry.request.continuationSkipped === skipped
+    ) {
+      this.sendPreparedTurn(retry);
+      return;
+    }
+
+    this.retryableTurn = null;
+    const displayAnchor =
+      prompt.kind === 'book'
+        ? null
+        : skipped
+          ? { kind: 'unknown', value: null, verified: false } satisfies AssistantAnchor
+          : this.anchorFromAnswer(prompt.kind, text);
+
+    // The answer itself is NOT encoded in context. The stored continuation is
+    // authoritative; context here remains the user's application snapshot.
+    this.startPreparedTurn({
+      text,
+      context,
+      requestAnchor: this.effectiveAnchor(context),
+      captureBookTitle: null,
+      continuationPrompt: prompt,
+      continuationSkipped: skipped,
+      displayAnchor,
+    });
+  }
+
+  private startPreparedTurn(options: {
+    text: string;
+    context: AssistantContext;
+    requestAnchor: AssistantAnchor | null;
+    captureBookTitle: string | null;
+    continuationPrompt: AssistantAnchorPrompt | null;
+    continuationSkipped: boolean;
+    displayAnchor: AssistantAnchor | null;
+  }): void {
+    const turnId = createId();
+    const conversationId = this.conversationId();
     const history = this.history();
-
-    // The turn is being dispatched, so it is remembered and the user's own words
-    // appear in the transcript at once — a plain question used to leave no trace
-    // of what was asked. Typed and voice both arrive here through `submit()`.
-    this.turnLog.update((log) => [...log, { role: 'user', text }]);
-    this.pushEntry('user', text, null, null);
+    const userEntryId = this.pushEntry(
+      turnId,
+      'user',
+      options.text,
+      null,
+      null,
+      [],
+      true,
+      'sending',
+    );
 
     const request: AssistantTurnRequestDto = {
-      clientId: this.clientId,
-      idempotencyKey: createId(),
-      message: text,
-      context: toContextDto(context, anchor, captureBookTitle),
+      clientId: conversationId,
+      idempotencyKey: turnId,
+      conversationId,
+      turnId,
+      message: options.text,
+      context: toContextDto(
+        options.context,
+        options.requestAnchor,
+        options.captureBookTitle,
+      ),
+      continuationId: options.continuationPrompt?.continuationId ?? null,
+      continuationSkipped: options.continuationSkipped,
       history,
     };
 
+    this.sendPreparedTurn({
+      turnId,
+      text: options.text,
+      request,
+      context: options.context,
+      displayAnchor: options.displayAnchor,
+      userEntryId,
+      continuationPrompt: options.continuationPrompt,
+    });
+  }
+
+  private sendPreparedTurn(turn: PreparedAssistantTurn): void {
+    this.updateUserDelivery(turn.userEntryId, 'sending', null);
     this.sending.set(true);
-    this.http.post<AssistantTurnResponse>('/api/assistant/turn', request).subscribe({
+
+    this.http.post<AssistantTurnResponse>('/api/assistant/turn', turn.request).subscribe({
       next: (response) => {
         this.sending.set(false);
-        this.lastError.set(null);
+        if (this.retryableTurn?.turnId === turn.turnId) this.retryableTurn = null;
+        this.updateUserDelivery(turn.userEntryId, 'complete', null);
+        this.lastError.set(response.error?.message ?? null);
         this.lastTurn.set(response);
         this.suggestions.set(response.suggestions ?? []);
-        // A no-plan response does not cancel a destructive plan that is still
-        // pending server-side. Only a newly proposed plan replaces it, and a
-        // successful approval clears it below.
+
         if (response.pendingPlan) {
           this.pendingPlan.set(response.pendingPlan);
           this.directPlanApprovalArmed.set(true);
         }
 
         for (const capability of response.executedCapabilities ?? []) {
-          this.actionExecuted.next({ capability, context });
+          this.actionExecuted.next({ capability, context: turn.context });
         }
 
-        // The raw-transcript view belongs to one captured note; a new turn
-        // replaces it, so stale raw words are never shown against a new note.
         this.capturedNoteId.set(response.capturedNoteId ?? null);
         this.rawOpen.set(false);
         this.rawTranscript.set(null);
         this.rawLoading.set(false);
 
         if (response.acknowledgement) {
-          // A capture's acknowledgement is an assistant entry: it keeps its
-          // "Saved" status and the anchor label naming where the thought landed.
           this.pushEntry(
+            turn.turnId,
             'assistant',
             response.acknowledgement,
-            this.anchorLabel({ ...context, anchor }),
+            this.anchorLabel({ ...turn.context, anchor: turn.displayAnchor }),
             'Saved',
           );
         }
 
-        if (response.reply) {
-          this.turnLog.update((log) => [...log, { role: 'assistant', text: response.reply }]);
-          this.pushEntry('assistant', response.reply, null, null, response.sources ?? []);
-        }
-
-        // A backend-requested follow-up arrives as the same deterministic prompt
-        // the surface already knows how to ask: a page or timestamp, or the book
-        // when no book is open and the app cannot know which one it is.
+        let promptText: string | null = null;
         if (response.anchorPrompt) {
           const kind = response.anchorPrompt.kind;
-          if (kind === 'physical_page' || kind === 'external_audio_timestamp' || kind === 'book') {
-            this.pendingText.set(text);
-            this.pendingAnchor.set({ kind, question: response.anchorPrompt.question });
+          const continuationId = response.anchorPrompt.continuationId?.trim();
+          if (
+            continuationId &&
+            (kind === 'physical_page' ||
+              kind === 'external_audio_timestamp' ||
+              kind === 'book')
+          ) {
+            const prompt: AssistantAnchorPrompt = {
+              kind,
+              question: response.anchorPrompt.question,
+              continuationId,
+            };
+            this.pendingAnchor.set(prompt);
+            this.pendingContinuationContext = turn.context;
+            promptText = prompt.question;
+            this.pushEntry(turn.turnId, 'assistant', prompt.question, null, null);
+          } else {
+            this.pendingAnchor.set(null);
+            this.pendingContinuationContext = null;
+            this.lastError.set(
+              response.error?.message ??
+                'The assistant requested follow-up input without a valid continuation.',
+            );
           }
-          this.pushEntry('assistant', response.anchorPrompt.question, null, null);
+        } else {
+          this.pendingAnchor.set(null);
+          this.pendingContinuationContext = null;
+        }
+
+        if (
+          response.reply &&
+          (!promptText || response.reply.trim() !== promptText.trim())
+        ) {
+          this.pushEntry(
+            turn.turnId,
+            response.error ? 'error' : 'assistant',
+            response.reply,
+            null,
+            response.error?.code ?? null,
+            response.sources ?? [],
+          );
         }
       },
       error: () => {
         this.sending.set(false);
-        this.lastError.set('The assistant could not be reached. Your message is still in the composer to retry.');
-        this.draft.set(text);
-        // The turn never ran: forget it, so the history does not claim a turn
-        // that the user is about to retry.
-        this.forgetLastUserTurn(text);
-        this.pushEntry('error', text, null, 'Not sent');
-      },
-    });
-  }
+        this.retryableTurn = turn;
+        this.lastError.set(
+          'The assistant could not be reached. Your message is still in the composer to retry.',
+        );
+        this.draft.set(turn.text);
+        this.updateUserDelivery(turn.userEntryId, 'retryable', 'Delivery uncertain');
 
-  /** Undo a user turn that was logged but never reached the assistant. */
-  private forgetLastUserTurn(text: string): void {
-    this.turnLog.update((log) => {
-      const last = log[log.length - 1];
-      if (last && last.role === 'user' && last.text === text) return log.slice(0, -1);
-      return log;
+        if (turn.continuationPrompt) {
+          this.pendingAnchor.set(turn.continuationPrompt);
+          this.pendingContinuationContext = turn.context;
+        }
+      },
     });
   }
 
@@ -816,17 +936,33 @@ export class AssistantService {
   }
 
   private pushEntry(
+    turnId: string,
     kind: AssistantEntry['kind'],
     text: string,
     anchorLabel: string | null,
     meta: string | null,
     sources: AssistantSourceReferenceDto[] = [],
-  ): void {
-    entrySeq += 1;
-    this.entries.update((entries) => [
-      ...entries,
-      { id: `a${entrySeq}`, kind, text, anchorLabel, meta, sources },
+    remember = true,
+    delivery: AssistantEventDelivery = 'complete',
+  ): string {
+    const id = createId();
+    this.eventLedger.update((events) => [
+      ...events,
+      { id, turnId, kind, text, anchorLabel, meta, sources, remember, delivery },
     ]);
+    return id;
+  }
+
+  private updateUserDelivery(
+    entryId: string,
+    delivery: AssistantEventDelivery,
+    meta: string | null,
+  ): void {
+    this.eventLedger.update((events) =>
+      events.map((event) =>
+        event.id === entryId ? { ...event, delivery, meta } : event,
+      ),
+    );
   }
 
   /** "The Magic Mountain · p. 183", from the resolved context or the answer. */
