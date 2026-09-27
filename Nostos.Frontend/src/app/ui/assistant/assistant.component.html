@@ -158,6 +158,7 @@
             <span class="thinking-dot"></span>
           </span>
           }
+          @if (assistant.activeTurnId()) {
           <button
             appButton
             variant="ghost"
@@ -169,6 +170,7 @@
           >
             Stop
           </button>
+          }
         </div>
       </article>
       }
