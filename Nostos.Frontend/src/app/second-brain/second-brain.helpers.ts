@@ -1,7 +1,7 @@
 export type IndexSort = 'usage' | 'az' | 'za';
 export type NoteSort = 'newest' | 'oldest' | 'source';
 /** The mode the header toggle persists. */
-export type BrainViewMode = 'list' | 'map';
+export type BrainViewMode = 'list' | 'map' | 'notes';
 /**
  * What the surface is actually showing. `unlinked` is deliberately NOT part of
  * `BrainViewMode`: review is a task the user enters and leaves, not a place to be
@@ -39,7 +39,7 @@ export const INDEX_SORT_STORAGE_KEY = 'nostos.brain.indexSort';
 export const BRAIN_VIEW_MODE_STORAGE_KEY = 'nostos.brain.viewMode';
 
 export const INDEX_SORTS: readonly IndexSort[] = ['usage', 'az', 'za'];
-export const BRAIN_VIEW_MODES: readonly BrainViewMode[] = ['list', 'map'];
+export const BRAIN_VIEW_MODES: readonly BrainViewMode[] = ['list', 'map', 'notes'];
 
 export interface NamePart {
   text: string;
@@ -88,4 +88,3 @@ export function declaredConceptNames(content: string): string[] {
 export function declaresConcept(content: string): boolean {
   return declaredConceptNames(content).length > 0;
 }
-

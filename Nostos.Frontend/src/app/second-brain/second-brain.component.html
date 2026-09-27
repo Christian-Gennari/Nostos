@@ -34,6 +34,12 @@
       </div>
 
       <div class="brain-header-tools">
+        <nav class="brain-areas" aria-label="Explore Brain">
+          <button appButton variant="ghost" size="sm" type="button" class="brain-area" [class.active]="isBrowsingNotes() || isReviewing()"
+            [attr.aria-current]="isBrowsingNotes() || isReviewing() ? 'page' : null" (click)="setViewMode('notes')">Notes</button>
+          <button appButton variant="ghost" size="sm" type="button" class="brain-area" [class.active]="!isBrowsingNotes() && !isReviewing()"
+            [attr.aria-current]="!isBrowsingNotes() && !isReviewing() ? 'page' : null" (click)="setViewMode('list')">Concepts</button>
+        </nav>
         <!--
           The search box is hidden while reviewing unlinked notes (issue #256).
           It searches concepts and note text — neither of which the review queue
@@ -42,7 +48,7 @@
           same reason the mode toggle has always cleared it: a filter whose control
           is off screen is a filter nobody can explain or clear.
         -->
-        @if (!isReviewing()) {
+        @if (!isReviewing() && !isBrowsingNotes()) {
         <div class="search-box">
           <nostos-icon name="magnifying-glass" [size]="16" class="search-icon"></nostos-icon>
           <input
@@ -75,6 +81,7 @@
              header used to carry a hand-copy of its markup and CSS. Icon-only
              with no text labels: at this size two labelled segments read as a
              button pair rather than one segmented control. -->
+        @if (!isBrowsingNotes() && !isReviewing()) {
         <nostos-view-toggle
           class="control-group view-mode-control"
           aria-label="Brain view"
@@ -82,15 +89,72 @@
           [value]="viewMode()"
           (valueChange)="setViewMode($event)"
         />
+        }
       </div>
     </header>
 
     <aside
       class="index-col"
-      [class.mobile-hidden]="selectedId() || (isReviewing() && reviewId())"
+      [class.mobile-hidden]="(isBrowsingNotes() && panelNote()) || (!isBrowsingNotes() && selectedId()) || (isReviewing() && reviewId())"
       [class.map-hidden]="viewMode() === 'map'"
     >
-      @if (isReviewing()) {
+      @if (isBrowsingNotes()) {
+      <div class="brain-note-filters">
+        <label class="visually-hidden" for="brain-all-notes-search">Search saved notes</label>
+        <input appInput controlSize="compact" id="brain-all-notes-search" type="search"
+          placeholder="Search notes, quotes, books…" [ngModel]="browseQuery()"
+          (ngModelChange)="setBrowseQuery($event)" />
+        <div class="brain-note-filter-row">
+          <label class="brain-note-filter"><input type="checkbox" [checked]="browseWithoutConcepts()"
+            (change)="setBrowseWithoutConcepts($any($event.target).checked)" /> Without concepts</label>
+          <button type="button" class="rail-foot-action" (click)="setBrowseOldestFirst(!browseOldestFirst())">
+            {{ browseOldestFirst() ? 'Oldest first' : 'Newest first' }}
+          </button>
+        </div>
+        @if (browseBookId()) {
+          <button appButton variant="ghost" size="sm" type="button" class="brain-book-filter"
+            [attr.aria-label]="'Clear book filter: ' + browseBookTitle()" (click)="setBrowseBook(null)">
+            {{ browseBookTitle() }} <nostos-icon name="x" [size]="14" />
+          </button>
+        }
+      </div>
+      <div class="brain-section-header">
+        <h2 class="brain-section-title">{{ browseWithoutConcepts() ? 'Without concepts' : 'All notes' }}</h2>
+        @if (browseLoaded()) { <span class="brain-section-count">{{ browseTotal() }} {{ browseTotal() === 1 ? 'note' : 'notes' }}</span> }
+      </div>
+      <div class="index-list" role="list" aria-label="Saved notes" [attr.aria-busy]="browseLoading()">
+        @if (browseLoading() && !browseLoaded()) {
+          <div class="index-wait-field wait-field" role="status" aria-label="Loading notes"></div>
+        } @else if (browseError() && !browseLoaded()) {
+          <div class="empty-index-state" role="alert"><p>Notes could not be loaded.</p>
+            <button appButton variant="secondary" size="sm" type="button" (click)="loadBrowsePage()">Retry</button></div>
+        } @else if (browseLoaded() && browseTotal() === 0) {
+          <div class="empty-index-state" role="status"><p>{{ browseQuery() ? 'No notes match this search.' : browseWithoutConcepts() ? 'No notes without concepts.' : 'Your notes will appear here as you read.' }}</p></div>
+        } @else {
+          @for (row of browseNotes(); track row.id) {
+          <div class="note-row-shell" role="listitem"><button type="button" class="note-row-item"
+            [class.active]="panelNote()?.id === row.id"
+            [attr.aria-pressed]="panelNote()?.id === row.id"
+            (click)="openNotePanel(row)">
+            <span class="note-row-main"><span class="note-row-snippet">{{ row.snippet || row.content || row.selectedText }}</span>
+              <span class="note-row-book">{{ row.bookTitle || 'Unknown source' }}</span></span>
+          </button></div>
+          }
+          @if (browseNotes().length < browseTotal()) {
+            <button type="button" class="review-load-more" [disabled]="browseLoading()"
+              (click)="loadBrowsePage()">{{ browseLoading() ? 'Loading…' : 'Load more' }}</button>
+          }
+          @if (browseError()) { <button type="button" class="review-load-more" (click)="loadBrowsePage()">Retry loading notes</button> }
+        }
+      </div>
+      <div class="rail-foot">
+        @if (browseWithoutConcepts()) {
+          <button type="button" class="rail-foot-action" (click)="openReview()">Review these notes one by one</button>
+        } @else {
+          <button type="button" class="rail-foot-action" (click)="setBrowseWithoutConcepts(true)">See notes without concepts</button>
+        }
+      </div>
+      } @else if (isReviewing()) {
       <!--
         The review queue (issue #256).
 
@@ -101,9 +165,9 @@
         of rows fetched, so it never reads as "this page is the whole queue".
       -->
       <div class="brain-section-header">
-        <h2 class="brain-section-title">Notes with no concept</h2>
+        <h2 class="brain-section-title">Without concepts</h2>
         <span class="brain-section-count" role="status" aria-live="polite" aria-atomic="true">
-          {{ reviewTotal() }} remaining
+          {{ reviewTotal() }} {{ reviewTotal() === 1 ? 'note' : 'notes' }}
         </span>
       </div>
 
@@ -112,8 +176,8 @@
         <div class="index-wait-field wait-field" role="status" aria-label="Loading notes"></div>
         } @else if (reviewQueue().length === 0) {
         <div class="empty-index-state" role="status">
-          <div class="empty-eyebrow">Nothing waiting</div>
-          <p>Every note is connected to a concept.</p>
+          <div class="empty-eyebrow">No notes here</div>
+          <p>You can still browse all your saved notes.</p>
           <button appButton variant="secondary" size="sm" type="button" class="empty-clear" (click)="closeReview()">
             Back to concepts
           </button>
@@ -327,7 +391,7 @@
       <div class="rail-foot">
         @if (isReviewing()) {
         <button type="button" class="rail-foot-action" (click)="closeReview()">
-          Done reviewing
+          Back to notes
         </button>
         } @else {
         <button type="button" class="rail-foot-action" (click)="openReview()">
@@ -339,9 +403,88 @@
 
     <section
       class="content-col"
-      [class.mobile-visible]="selectedId() || viewMode() === 'map' || (isReviewing() && reviewId())"
+      [class.mobile-visible]="(isBrowsingNotes() && panelNote()) || (!isBrowsingNotes() && selectedId()) || viewMode() === 'map' || (isReviewing() && reviewId())"
     >
-      @if (viewMode() === 'map') {
+      @if (isBrowsingNotes()) {
+        @if (panelNote(); as note) {
+        <button type="button" class="mobile-nav-header" (click)="closeNotePanel()">
+          <nostos-icon name="arrow-left" [size]="18"></nostos-icon><span>Back to notes</span>
+        </button>
+        <div class="review-pane brain-browse-detail">
+          <div class="review-head"><div class="super-title">Saved note</div>
+            <h1 class="review-title">{{ note.bookTitle || 'Unknown source' }}</h1></div>
+          <div class="review-body">
+            @if (note.selectedText) { <blockquote class="review-quote nostos-accent-rail">{{ note.selectedText }}</blockquote> }
+            @if (browseEditing()) {
+              <label class="visually-hidden" for="brain-browse-edit">Edit note</label>
+              <app-concept-input id="brain-browse-edit" [ngModel]="browseEditContent()"
+                (ngModelChange)="browseEditContent.set($event)" [rows]="6"
+                placeholder="Write your thought or link a [[Concept]]"></app-concept-input>
+              <div class="review-actions">
+                <button appButton variant="primary" size="sm" type="button" [disabled]="browseSaving()"
+                  (click)="saveBrowseEdit()">{{ browseSaving() ? 'Saving…' : 'Save note' }}</button>
+                <button appButton variant="ghost" size="sm" type="button" [disabled]="browseSaving()"
+                  (click)="cancelBrowseEdit()">Cancel</button>
+              </div>
+            } @else {
+              <p class="review-content" [innerHTML]="note.content | noteFormat : conceptMap()"
+                (click)="handleContentClick($event)"></p>
+            }
+            <div class="brain-note-panel-concepts">
+              @for (name of note.conceptNames; track name) {
+                <button appButton variant="ghost" size="sm" type="button" class="brain-note-concept-tag"
+                  (click)="openBrowseConcept(name)">Open {{ name }}</button>
+              }
+              @if (note.conceptNames.length === 0) { <span class="brain-note-panel-empty-concepts">Without concepts</span> }
+            </div>
+            @if (browsePickerOpen()) {
+            <div class="merge-picker" role="group" aria-label="Choose a concept to link">
+              <label class="detail-tool-label" for="brain-browse-concept">Link an existing concept</label>
+              <input appInput controlSize="compact" id="brain-browse-concept" type="search"
+                placeholder="Search concepts" [ngModel]="browsePickerQuery()"
+                (ngModelChange)="browsePickerQuery.set($event)" />
+              <div class="merge-target-list">
+                @for (candidate of browsePickerCandidates(); track candidate.id) {
+                  <button type="button" class="merge-target" [class.selected]="browsePickerId() === candidate.id"
+                    (click)="browsePickerId.set(candidate.id)">{{ candidate.name }}</button>
+                }
+                @if (browsePickerCandidates().length === 0) { <p>No matching concepts. You can write a new [[Concept]] while editing.</p> }
+              </div>
+              @if (browseNewConceptName(); as name) {
+                <button appButton variant="ghost" size="sm" type="button" [disabled]="browseSaving()"
+                  (click)="createBrowseConcept()">Create and link “{{ name }}”</button>
+              }
+              <div class="review-actions">
+                <button appButton variant="primary" size="sm" type="button"
+                  [disabled]="!browsePickerId() || browseSaving()" (click)="linkBrowseConcept()">Link note</button>
+                <button appButton variant="ghost" size="sm" type="button"
+                  (click)="browsePickerOpen.set(false)">Cancel</button>
+              </div>
+            </div>
+            }
+            @if (!browseEditing()) {
+            <div class="review-actions">
+              <button appButton variant="secondary" size="sm" type="button"
+                (click)="openBrowsePicker()">Link to concept</button>
+              <button appButton variant="ghost" size="sm" type="button"
+                (click)="startBrowseEdit()">Edit note</button>
+              <button appButton variant="secondary" size="sm" type="button"
+                (click)="openWritingHandoff([note.id])">Keep with writing…</button>
+            </div>
+            }
+            @if (!browseEditing() && !browseSaving()) {
+              @if (note.bookId !== browseBookId()) {
+                <button appButton variant="ghost" size="sm" type="button" (click)="setBrowseBook(note.bookId, note.bookTitle || 'Unknown source')">
+                  Show notes from this book
+                </button>
+              }
+              <a class="brain-source-link" [routerLink]="browseSourceParams(note) ? ['/read', note.bookId] : ['/library', note.bookId]"
+                [queryParams]="browseSourceParams(note)">{{ browseSourceParams(note) ? 'Return to passage' : 'Open book' }}</a>
+            }
+          </div>
+        </div>
+        } @else { <div class="landing-state"><h2>Return to a note</h2><p>Choose a saved thought to revisit it and see its source.</p></div> }
+      } @else if (viewMode() === 'map') {
       <!--
         The map is a whole-surface mode, not a widget beside the index: in map
         view the index rail closes and this column spans the layout (see
@@ -383,7 +526,7 @@
 
       <div class="review-pane">
         <div class="review-head">
-          <div class="super-title">Note with no concept</div>
+          <div class="super-title">Without concepts</div>
           <h1 class="review-title">{{ note.bookTitle || 'An unknown source' }}</h1>
         </div>
 
@@ -499,10 +642,16 @@
             <button type="button" class="concept-action" (click)="openWritingHandoff([note.id])">
               Keep with writing…
             </button>
-            <button type="button" class="concept-action" (click)="skipReviewNote()">
-              Skip
-            </button>
+            <button appButton variant="ghost" size="sm" type="button" [disabled]="!reviewCanGoBack()"
+              (click)="previousReviewNote()">Previous note</button>
+            <button appButton variant="ghost" size="sm" type="button" [disabled]="!reviewCanAdvance() || reviewLoading()"
+              (click)="skipReviewNote()">{{ reviewLoading() ? 'Loading…' : 'Next note' }}</button>
           </div>
+          @if (browseSourceParams(note); as target) {
+            <a class="brain-source-link" [routerLink]="['/read', note.bookId]" [queryParams]="target">Return to passage</a>
+          } @else {
+            <a class="brain-source-link" [routerLink]="['/library', note.bookId]">Open book</a>
+          }
           }
           }
         </div>
@@ -875,7 +1024,7 @@
       }
     </section>
 
-    @if (panelNote(); as note) {
+    @if (!isBrowsingNotes() && panelNote(); as note) {
     <aside class="brain-note-panel" role="dialog" data-testid="brain-note-panel" aria-label="Note detail">
       <div class="brain-note-panel-head">
         <h2 class="brain-note-panel-title">{{ note.bookTitle }}</h2>

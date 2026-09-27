@@ -125,6 +125,33 @@ public class NoteRepository : INoteRepository
             .ToListAsync();
     }
 
+    public async Task<(List<NoteModel> Items, int Total)> BrowseAsync(
+        string? query, Guid? bookId, bool withoutConcepts, bool oldestFirst, int limit, int offset)
+    {
+        var notes = _db.Notes.AsNoTracking().AsQueryable();
+        if (bookId.HasValue) notes = notes.Where(n => n.BookId == bookId.Value);
+        if (withoutConcepts) notes = notes.Where(n => !n.NoteConcepts.Any());
+        var term = query?.Trim();
+        if (!string.IsNullOrEmpty(term))
+        {
+            var pattern = $"%{Escape(term)}%";
+            notes = notes.Where(n =>
+                EF.Functions.Like(n.Content, pattern, "\\")
+                || (n.SelectedText != null && EF.Functions.Like(n.SelectedText, pattern, "\\"))
+                || (n.Book != null && EF.Functions.Like(n.Book.Title, pattern, "\\")));
+        }
+
+        var total = await notes.CountAsync();
+        var ordered = oldestFirst
+            ? notes.OrderBy(n => n.CreatedAt).ThenBy(n => n.Id)
+            : notes.OrderByDescending(n => n.CreatedAt).ThenBy(n => n.Id);
+        var items = await ordered.Skip(offset).Take(limit)
+            .Include(n => n.Book)
+            .Include(n => n.NoteConcepts).ThenInclude(nc => nc.Concept)
+            .ToListAsync();
+        return (items, total);
+    }
+
     public async Task<int> CountWithoutConceptsAsync()
     {
         return await _db.Notes.CountAsync(n => !n.NoteConcepts.Any());
