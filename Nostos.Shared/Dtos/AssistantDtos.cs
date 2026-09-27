@@ -11,7 +11,10 @@ namespace Nostos.Shared.Dtos;
 /// One assistant turn. New callers use <paramref name="ConversationId"/> and
 /// <paramref name="TurnId"/>; the legacy ClientId / IdempotencyKey pair remains
 /// the append-only compatibility alias. Canonical mutations derive receipt keys
-/// from the stable logical TurnId, so transport retry cannot create a second write.
+/// from the stable logical TurnId plus the capability and a deterministic
+/// fingerprint of its effective arguments (server-prepared for capture), so a
+/// transport retry that reorders or changes the model's tool sequence cannot
+/// create a second write or replay a different command's receipt.
 /// </summary>
 public sealed record AssistantTurnRequest(
     string ClientId,

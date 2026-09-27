@@ -755,6 +755,127 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
     }
 
     [Fact]
+    public async Task Retrying_a_capture_that_moves_to_a_different_call_position_executes_once()
+    {
+        var h = CreateHarness();
+        var book = await SeedBookAsync(h, "Retry Book");
+        var captureArgs = $$"""{"bookId":"{{book.Id}}","content":"One thought"}""";
+
+        // Attempt 1: the model searches first, so the capture lands at call
+        // ordinal 1 of the batch.
+        h.Llm.Enqueue(
+            new LlmCompletion(
+                null,
+                "tool_calls",
+                [
+                    new LlmToolCall(
+                        Guid.NewGuid().ToString("N"),
+                        "concepts_search",
+                        """{"term":"thought"}"""),
+                    new LlmToolCall(
+                        Guid.NewGuid().ToString("N"),
+                        "notes_capture",
+                        captureArgs),
+                ]),
+            new LlmCompletion("Saved.", "stop", []));
+
+        // Attempt 2 (same logical TurnId, different delivery): the model drops
+        // the read-only call, so the same capture moves to ordinal 0.
+        h.Llm.Enqueue(
+            new LlmCompletion(
+                null,
+                "tool_calls",
+                [new LlmToolCall(Guid.NewGuid().ToString("N"), "notes_capture", captureArgs)]),
+            new LlmCompletion("Saved.", "stop", []));
+
+        var context = Context(
+            bookId: book.Id.ToString(),
+            bookTitle: book.Title,
+            bookFormat: "ebook");
+        var first = await h.Orchestrator.HandleTurnAsync(Turn(
+            "Remember this.",
+            context,
+            idem: "delivery-a",
+            conversationId: "conversation-capture-position",
+            turnId: "turn-capture-position"));
+
+        first.CapturedNoteId.Should().NotBeNullOrWhiteSpace();
+
+        var retry = await h.Orchestrator.HandleTurnAsync(Turn(
+            "Remember this.",
+            context,
+            idem: "delivery-b",
+            conversationId: "conversation-capture-position",
+            turnId: "turn-capture-position"));
+
+        // One logical capture: the retry replays the canonical receipt instead
+        // of creating a second note.
+        retry.CapturedNoteId.Should().Be(first.CapturedNoteId);
+        (await NoteCountAsync(h)).Should().Be(1);
+
+        await using var db = await h.Factory.CreateDbContextAsync();
+        (await db.Notes.AsNoTracking().SingleAsync()).Content.Should().Be("One thought");
+    }
+
+    [Fact]
+    public async Task Retrying_an_act_that_moves_to_a_different_call_position_does_not_repeat_the_mutation()
+    {
+        var h = CreateHarness();
+        var obsolete = await SeedCollectionAsync(h, "Obsolete");
+        var deleteArgs = JsonSerializer.Serialize(new { collectionId = obsolete.Id });
+
+        // Attempt 1: the read-only listing pushes the delete to ordinal 1.
+        h.Llm.Enqueue(
+            new LlmCompletion(
+                null,
+                "tool_calls",
+                [
+                    new LlmToolCall(
+                        Guid.NewGuid().ToString("N"),
+                        "library_list_collections",
+                        "{}"),
+                    new LlmToolCall(
+                        Guid.NewGuid().ToString("N"),
+                        "library_delete_empty_collection",
+                        deleteArgs),
+                ]),
+            new LlmCompletion("Cleaned up.", "stop", []));
+
+        // Attempt 2 (same logical TurnId, different delivery): only the delete,
+        // which moves to ordinal 0. The target is already gone, so a
+        // re-execution fails instead of replaying the canonical receipt.
+        h.Llm.Enqueue(
+            new LlmCompletion(
+                null,
+                "tool_calls",
+                [new LlmToolCall(
+                    Guid.NewGuid().ToString("N"),
+                    "library_delete_empty_collection",
+                    deleteArgs)]),
+            new LlmCompletion("Cleaned up.", "stop", []));
+
+        var context = Context(surface: "library", route: "/library");
+        var first = await h.Orchestrator.HandleTurnAsync(Turn(
+            "Clean up that empty collection.",
+            context,
+            idem: "delivery-a",
+            conversationId: "conversation-act-position",
+            turnId: "turn-act-position"));
+
+        first.ExecutedCapabilities.Should().Contain("library_delete_empty_collection");
+
+        var retry = await h.Orchestrator.HandleTurnAsync(Turn(
+            "Clean up that empty collection.",
+            context,
+            idem: "delivery-b",
+            conversationId: "conversation-act-position",
+            turnId: "turn-act-position"));
+
+        retry.ExecutedCapabilities.Should().Contain("library_delete_empty_collection");
+        (await CollectionCountAsync(h)).Should().Be(0);
+    }
+
+    [Fact]
     public async Task PlanAndAct_delete_produces_a_pending_plan_and_mutates_nothing()
     {
         var h = CreateHarness();

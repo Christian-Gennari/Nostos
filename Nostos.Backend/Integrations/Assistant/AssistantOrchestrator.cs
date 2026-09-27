@@ -318,19 +318,8 @@ public sealed class AssistantOrchestrator(
                 completion.ToolCalls,
                 completion.ProviderState));
 
-            var callOrdinal = 0;
             foreach (var call in completion.ToolCalls)
             {
-                // Every tool call in one assistant turn needs its own receipt key.
-                // Reusing the turn key would make the canonical library service
-                // replay call #1 for call #2, silently breaking multi-step agent
-                // work. Iteration + ordinal stay stable for a retried turn while
-                // remaining distinct inside this bounded tool loop.
-                var toolContext = new AssistantToolContext(
-                    ClientId: conversationKey,
-                    IdempotencyKey: $"{turnId}:{iteration}:{callOrdinal}");
-                callOrdinal++;
-
                 if (!capabilityByName.TryGetValue(call.Name, out var capability))
                 {
                     messages.Add(LlmMessage.Tool(call.Id, ToolJson(new
@@ -384,6 +373,20 @@ public sealed class AssistantOrchestrator(
                 {
                     args = ParseArguments(call.ArgumentsJson);
                 }
+
+                // The receipt key identifies the logical mutation, not its
+                // position in the model's tool sequence. A retried delivery is
+                // free to reorder, add, or drop calls, so a positional key can
+                // miss an earlier write (a duplicate) or land on a different
+                // command's receipt (a wrong replay). One logical operation —
+                // same TurnId, capability and effective arguments — reuses one
+                // identity and replays instead of writing again; genuinely
+                // different mutations stay distinct. Capture fingerprints the
+                // server-prepared arguments, so model-chosen book or anchor
+                // noise cannot change the identity.
+                var toolContext = new AssistantToolContext(
+                    ClientId: conversationKey,
+                    IdempotencyKey: AssistantMutationIdentity.Key(turnId, capability.Name, args));
 
                 var result = await registry.InvokeAsync(capability.Name, args, toolContext, ct);
                 messages.Add(LlmMessage.Tool(call.Id, ToolJson(result)));
@@ -635,7 +638,10 @@ public sealed class AssistantOrchestrator(
         // each follow-up still has its own TurnId for conversation/retry truth.
         var toolContext = new AssistantToolContext(
             ClientId: conversationKey,
-            IdempotencyKey: $"{stored.OriginalTurnId}:continuation");
+            IdempotencyKey: AssistantMutationIdentity.Key(
+                stored.OriginalTurnId,
+                CaptureCapability,
+                capture.Arguments!.Value));
 
         var result = await registry.InvokeAsync(
             CaptureCapability,
