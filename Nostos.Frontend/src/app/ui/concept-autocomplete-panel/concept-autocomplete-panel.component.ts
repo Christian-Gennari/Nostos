@@ -29,6 +29,7 @@ import { ConceptAutocompleteService } from './concept-autocomplete.service';
           class="item"
           role="option"
           [class.active]="i === auto.activeIndex()"
+          [class.nostos-accent-rail]="i === auto.activeIndex()"
           [attr.aria-selected]="i === auto.activeIndex()"
           (mouseenter)="auto.activeIndex.set(i)"
           (click)="select(concept, $event)"

@@ -176,6 +176,7 @@
               type="button"
               class="toc-item"
               [class.active]="isActive(item)"
+              [class.nostos-accent-rail]="isActive(item)"
               (click)="handleTocClick(item)"
             >
               {{ item.label }}
