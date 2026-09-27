@@ -8,9 +8,13 @@ namespace Nostos.Shared.Dtos;
 // superset and carries no field the client does not already resolve.
 
 /// <summary>
-/// One assistant turn. <paramref name="ClientId"/> and
-/// <paramref name="IdempotencyKey"/> flow straight through to
-/// <c>notes_capture</c>, so a retried turn cannot create a second note.
+/// One assistant turn. New callers use <paramref name="ConversationId"/> and
+/// <paramref name="TurnId"/>; the legacy ClientId / IdempotencyKey pair remains
+/// the append-only compatibility alias. Canonical mutations derive receipt keys
+/// from the stable logical TurnId plus the capability and a deterministic
+/// fingerprint of its effective arguments (server-prepared for capture), so a
+/// transport retry that reorders or changes the model's tool sequence cannot
+/// create a second write or replay a different command's receipt.
 /// </summary>
 public sealed record AssistantTurnRequest(
     string ClientId,
@@ -28,7 +32,17 @@ public sealed record AssistantTurnRequest(
     // model can follow the exchange instead of rebuilding it from nothing each
     // turn (issue #286). Untrusted, client-supplied text: it travels only as
     // ordinary user/assistant turns and is never stored server-side.
-    IReadOnlyList<AssistantHistoryMessageDto>? History = null);
+    IReadOnlyList<AssistantHistoryMessageDto>? History = null,
+    // APPENDED (#560): explicit v3 identities. ClientId / IdempotencyKey remain
+    // the compatibility aliases for older callers; new clients send the same
+    // values here so a logical turn owns one stable mutation identity.
+    string? ConversationId = null,
+    string? TurnId = null,
+    // APPENDED (#560): when present, Message is the user's actual answer to a
+    // server-held deterministic capture continuation. The original capture text
+    // is never replayed as this turn's message.
+    string? ContinuationId = null,
+    bool ContinuationSkipped = false);
 
 /// <summary>
 /// One remembered turn sent by the client (issue #286). <c>Role</c> is
@@ -59,10 +73,10 @@ public sealed record AssistantContextDto(
     string? Concept = null,
     string? CollectionId = null,
     AssistantAnchorDto? Anchor = null,
-    // APPENDED (positional record): the book title the user gave when a capture
-    // asked which book it belongs to. Set ONLY by that answer, and resolved by
-    // the orchestrator; the model never supplies a book and never sees this
-    // (issue #262 §7 follow-up).
+    // APPENDED (positional record): legacy compatibility for the pre-#560 book
+    // follow-up shape. V3 clients send the title as the actual Message tied to a
+    // server continuation; the capture policy sets this field internally before
+    // canonical library resolution. The model never chooses the target book.
     string? CaptureBookTitle = null);
 
 /// <summary>
@@ -97,7 +111,11 @@ public sealed record AssistantTurnResponse(
     // APPENDED: source references produced by successful server-side book-text
     // retrieval. These are never model-authored citations; every locator comes
     // from the indexed exact source revision.
-    IReadOnlyList<AssistantSourceReferenceDto>? Sources = null);
+    IReadOnlyList<AssistantSourceReferenceDto>? Sources = null,
+    // APPENDED (#560): deterministic continuation failures are turn results,
+    // not provider failures. They are typed so a stale/wrong continuation never
+    // falls back to guessing or mutation.
+    AssistantTurnErrorDto? Error = null);
 
 /// <summary>
 /// One grounded imported-book passage surfaced by Ask Nostos. The excerpt is
@@ -136,7 +154,18 @@ public sealed record AssistantSourceLocatorDto(
 /// <c>"external_audio_timestamp"</c>). Nothing is saved until it is answered; an
 /// explicitly skipped location saves as <c>unknown</c>.
 /// </summary>
-public sealed record AssistantAnchorPromptDto(string Kind, string Question);
+public sealed record AssistantAnchorPromptDto(
+    string Kind,
+    string Question,
+    // APPENDED (#560): identifies the bounded server-held deterministic capture
+    // continuation. Null only for legacy callers/tests that construct the DTO.
+    string? ContinuationId = null);
+
+/// <summary>
+/// A deterministic turn-level failure. Used for continuation expiry/mismatch
+/// and other server-known refusal states where no model/tool mutation ran.
+/// </summary>
+public sealed record AssistantTurnErrorDto(string Code, string Message);
 
 /// <summary>
 /// A non-mutating proposal. The user selects one; the assistant never links or

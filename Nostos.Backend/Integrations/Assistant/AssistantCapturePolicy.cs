@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.RegularExpressions;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Nostos.Backend.Services.Library;
@@ -48,6 +49,51 @@ internal sealed class AssistantCapturePolicy(ILibraryService library)
             out var quoteFidelity);
 
         return AssistantCapturePreparation.Ready(args, book.Title, quoteFidelity);
+    }
+
+    /// <summary>
+    /// Applies the user's actual continuation message to the deterministic
+    /// capture context. The model is never consulted for the target book or
+    /// source location; normalization here mirrors the existing product behavior
+    /// for spoken page/timestamp answers.
+    /// </summary>
+    public AssistantContextDto ApplyContinuationAnswer(
+        AssistantContextDto context,
+        string kind,
+        string answer,
+        bool skipped)
+    {
+        if (skipped)
+        {
+            return context with
+            {
+                Anchor = new AssistantAnchorDto("unknown", null, false),
+            };
+        }
+
+        var trimmed = answer.Trim();
+        return kind switch
+        {
+            AssistantOrchestrator.BookPromptKind => context with
+            {
+                CaptureBookTitle = trimmed,
+            },
+            "physical_page" => context with
+            {
+                Anchor = new AssistantAnchorDto(
+                    "physical_page",
+                    NormalizePageAnswer(trimmed),
+                    false),
+            },
+            "external_audio_timestamp" => context with
+            {
+                Anchor = new AssistantAnchorDto(
+                    "external_audio_timestamp",
+                    NormalizeTimestampAnswer(trimmed),
+                    false),
+            },
+            _ => context,
+        };
     }
 
     private async Task<BookDecision> DecideBookAsync(AssistantContextDto? context, CancellationToken ct)
@@ -253,6 +299,49 @@ internal sealed class AssistantCapturePolicy(ILibraryService library)
         }
 
         return text;
+    }
+
+
+    private static string NormalizePageAnswer(string answer)
+    {
+        var cleaned = Regex.Replace(answer, @"[.\s]+$", string.Empty);
+        var match = Regex.Match(
+            cleaned,
+            @"^(?:page|p\.?)\s*(\d+)$",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        return match.Success ? match.Groups[1].Value : cleaned;
+    }
+
+    private static string NormalizeTimestampAnswer(string answer)
+    {
+        var parts = answer.Trim().Split(':');
+        if (parts.Length is < 1 or > 3)
+            return answer.Trim();
+
+        long seconds = 0;
+        foreach (var part in parts)
+        {
+            if (!long.TryParse(
+                    part.Trim(),
+                    NumberStyles.None,
+                    CultureInfo.InvariantCulture,
+                    out var value)
+                || value < 0)
+            {
+                return answer.Trim();
+            }
+
+            try
+            {
+                seconds = checked(seconds * 60 + value);
+            }
+            catch (OverflowException)
+            {
+                return answer.Trim();
+            }
+        }
+
+        return seconds.ToString(CultureInfo.InvariantCulture);
     }
 
 

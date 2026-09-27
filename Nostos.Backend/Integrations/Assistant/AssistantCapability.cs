@@ -56,6 +56,9 @@ public static class AssistantErrorCodes
     public const string ApprovalPlanMismatch = "assistant_approval_plan_mismatch";
     public const string InvalidArguments = "assistant_invalid_arguments";
     public const string NotFound = "assistant_not_found";
+    public const string ContinuationNotFound = "assistant_continuation_not_found";
+    public const string ContinuationMismatch = "assistant_continuation_mismatch";
+    public const string ContinuationAnswerRequired = "assistant_continuation_answer_required";
     public const string InvalidProcessingMode = "invalid_processing_mode";
 }
 

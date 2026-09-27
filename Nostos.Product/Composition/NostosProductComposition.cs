@@ -141,6 +141,7 @@ public static class NostosProductComposition
 
         services.AddSingleton<IThoughtProcessor, ThoughtProcessor>();
         services.AddSingleton<AssistantPlanStore>();
+        services.AddSingleton<AssistantContinuationStore>();
         services.AddSingleton<IAssistantSettingsService, AssistantSettingsService>();
         services.AddScoped<AssistantOrchestrator>();
 
