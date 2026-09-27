@@ -148,6 +148,26 @@ public interface IKnowledgeRetrievalService
         CancellationToken ct = default);
 }
 
+public sealed class NoOpKnowledgeRetrievalService : IKnowledgeRetrievalService
+{
+    public static NoOpKnowledgeRetrievalService Instance { get; } = new();
+
+    private NoOpKnowledgeRetrievalService() { }
+
+    public Task<KnowledgeSearchResponse> SearchAsync(
+        KnowledgeSearchRequest request,
+        CancellationToken ct = default) =>
+        Task.FromResult(new KnowledgeSearchResponse([], [], [], [], [], false));
+
+    public Task<KnowledgeOverview> OverviewAsync(CancellationToken ct = default) =>
+        Task.FromResult(new KnowledgeOverview(0, 0, 0, 0, [], []));
+
+    public Task<KnowledgeReadResponse?> ReadAsync(
+        KnowledgeEvidenceHandle handle,
+        CancellationToken ct = default) =>
+        Task.FromResult<KnowledgeReadResponse?>(null);
+}
+
 public sealed class KnowledgeRetrievalService(
     INoteService notes,
     INoteRepository noteRepository,
