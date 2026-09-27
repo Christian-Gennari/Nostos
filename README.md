@@ -237,41 +237,55 @@ This builds the Angular frontend and serves the application through the .NET hos
 
 ### Docker / Compose
 
+The official SelfHosted image is **`ghcr.io/christian-gennari/nostos`**. The `latest` tag is published only after the complete public product CI passes on `main`. Each release also gets an immutable `selfhosted-sha-<commit>` tag.
+
 The container keeps application binaries under `/app` and all durable SelfHosted data under **`/data`**. Do not relocate ASP.NET's content root to persist data: the frontend is served from the application's `wwwroot`, while the SQLite database and library storage have their own configurable paths.
 
-Build and run directly:
+Run the official image directly:
 
 ```bash
-docker build -t nostos:selfhosted .
+docker pull ghcr.io/christian-gennari/nostos:latest
 docker volume create nostos-data
 docker run -d \
   --name nostos \
   -p 5099:8080 \
   -v nostos-data:/data \
   --restart unless-stopped \
-  nostos:selfhosted
+  ghcr.io/christian-gennari/nostos:latest
 ```
 
 Or use the included Compose file:
 
 ```bash
-docker compose up -d --build
+docker compose up -d
 ```
 
 Then open **http://localhost:5099**. The named `nostos-data` volume contains `nostos.db`, stored books, and local backup archives, so replacing the container does not replace your library data.
 
-To rebuild after pulling a newer revision:
+To update to the newest verified SelfHosted image:
 
 ```bash
-docker compose build --pull
+docker compose pull
 docker compose up -d
 ```
 
-Compose keeps the existing named volume. Use Nostos' portable `.nostos` export/backup features as your user-owned backup and migration path; a Docker volume is persistent storage, not a substitute for backups.
+To pin a specific immutable SelfHosted build, set its release tag when running Compose:
+
+```bash
+NOSTOS_IMAGE_TAG=selfhosted-sha-<full-public-commit-sha> docker compose up -d
+```
+
+The `selfhosted-sha-*` prefix is intentional. Historical `sha-*` tags in the same GHCR package predate the hosted/SelfHosted package split and may identify old Cloud artifacts; do not use those as SelfHosted pins.
+
+Compose keeps the existing named volume across image replacement. Use Nostos' portable `.nostos` export/backup features as your user-owned backup and migration path; a Docker volume is persistent storage, not a substitute for backups.
+
+If you prefer to build from the source you cloned instead of pulling GHCR:
+
+```bash
+docker build --pull -t nostos:selfhosted .
+```
 
 For a non-container install, the historical database location remains `<content root>/nostos.db` unless `Persistence__DatabasePath` is configured explicitly. `Storage__BooksRoot` and `Storage__BackupsRoot` can likewise override their local paths.
-
-A stable prebuilt SelfHosted registry tag is being handled separately; the checked-in Compose path deliberately builds the exact source revision you have cloned instead of depending on an ambiguous registry tag.
 
 For provider-specific behavior and requirements, see [Content Providers & Acquisition](docs/content-providers.md).
 

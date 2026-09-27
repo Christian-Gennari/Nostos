@@ -1,0 +1,163 @@
+name: Publish SelfHosted container
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/publish-selfhosted-container.yml"
+      - "Dockerfile"
+      - "compose.yml"
+      - "README.md"
+  workflow_run:
+    workflows:
+      - Public product CI
+    types:
+      - completed
+
+permissions:
+  contents: read
+
+jobs:
+  validate-definition:
+    name: Validate SelfHosted package definition
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate Compose release contract
+        run: |
+          set -euo pipefail
+          docker compose config --quiet
+          grep -Fq 'ghcr.io/christian-gennari/nostos:${NOSTOS_IMAGE_TAG:-latest}' compose.yml
+
+  publish:
+    name: Publish public SelfHosted image
+    if: >-
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Resolve successful main revision
+        id: source
+        env:
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Expected a full 40-character source SHA" >&2
+            exit 1
+          fi
+          echo "sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+          echo "tag=selfhosted-sha-$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout exact successful revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.source.outputs.sha }}
+
+      - name: Sign in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and publish SelfHosted image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          pull: true
+          push: true
+          tags: |
+            ghcr.io/christian-gennari/nostos:latest
+            ghcr.io/christian-gennari/nostos:${{ steps.source.outputs.tag }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/Christian-Gennari/Nostos-Rebirth
+            org.opencontainers.image.revision=${{ steps.source.outputs.sha }}
+            org.opencontainers.image.title=Nostos
+            org.opencontainers.image.description=SelfHosted Nostos reading, thinking and writing environment
+
+      - name: Verify anonymous pull and persistent SelfHosted runtime
+        env:
+          IMAGE_REF: ghcr.io/christian-gennari/nostos@${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+
+          # Public SelfHosted users must not need GitHub credentials.
+          docker logout ghcr.io >/dev/null 2>&1 || true
+          docker image rm "$IMAGE_REF" >/dev/null 2>&1 || true
+          docker pull "$IMAGE_REF"
+
+          volume="nostos-published-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          first="nostos-published-first"
+          second="nostos-published-second"
+          port=18082
+
+          cleanup() {
+            docker rm -f "$first" "$second" >/dev/null 2>&1 || true
+            docker volume rm "$volume" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          docker volume create "$volume" >/dev/null
+
+          start_container() {
+            local name="$1"
+            docker run -d \
+              --name "$name" \
+              -p "$port:8080" \
+              -v "$volume:/data" \
+              "$IMAGE_REF" >/dev/null
+
+            for i in $(seq 1 45); do
+              if curl -fsS "http://127.0.0.1:$port/health/ready" >/dev/null; then
+                return 0
+              fi
+              if [ "$i" -eq 45 ]; then
+                docker logs "$name"
+                return 1
+              fi
+              sleep 2
+            done
+          }
+
+          start_container "$first"
+
+          curl -fsS "http://127.0.0.1:$port/" >/dev/null
+          curl -fsS "http://127.0.0.1:$port/api/runtime/capabilities" \
+            | grep -q '"deploymentMode":"SelfHosted"'
+
+          title="Published image persistence ${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          created="$(curl -fsS \
+            -H 'Content-Type: application/json' \
+            -X POST \
+            --data "{\"type\":\"physical\",\"title\":\"$title\"}" \
+            "http://127.0.0.1:$port/api/books/")"
+          book_id="$(printf '%s' "$created" | jq -er '.id')"
+
+          docker exec "$first" test -s /data/nostos.db
+          runtime_user="$(docker inspect -f '{{.Config.User}}' "$first")"
+          test -n "$runtime_user"
+          test "$runtime_user" != "0"
+
+          docker rm -f "$first" >/dev/null
+          start_container "$second"
+
+          persisted="$(curl -fsS "http://127.0.0.1:$port/api/books/$book_id")"
+          printf '%s' "$persisted" | jq -e \
+            --arg id "$book_id" \
+            --arg title "$title" \
+            '.id == $id and .title == $title' >/dev/null
