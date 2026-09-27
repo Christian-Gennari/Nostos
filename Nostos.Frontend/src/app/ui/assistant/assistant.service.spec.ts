@@ -471,7 +471,7 @@ describe('AssistantService voice transcript alignment', () => {
       turn({
         reply: 'Mountains looks right.',
         suggestions: [
-          { kind: 'concept', label: 'Mountains', reason: 'Existing concept.', value: 'c-alpha' },
+          { kind: 'concept', label: 'Mountains', reason: 'The note discusses the same climb.', value: 'c-alpha', noteId: 'note-1' },
         ],
         pendingPlan: {
           planId: 'plan-1',
@@ -489,6 +489,7 @@ describe('AssistantService voice transcript alignment', () => {
     );
 
     expect(service.suggestions().map((suggestion) => suggestion.label)).toEqual(['Mountains']);
+    expect(service.entries().at(-1)?.suggestions?.[0].noteId).toBe('note-1');
     expect(service.pendingPlan()?.planId).toBe('plan-1');
     expect(service.lastTurn()?.reply).toBe('Mountains looks right.');
   });
@@ -1020,8 +1021,9 @@ describe('AssistantService voice transcript alignment', () => {
       label: 'Mountains',
       reason: 'Existing concept.',
       value: 'c-alpha',
+      noteId: 'note-1',
     });
-    expect(service.lastError()).toContain('Second Brain');
+    expect(service.lastError()).toContain('Brain');
     http.expectNone('/api/assistant/turn/stream');
   });
 
@@ -1040,17 +1042,31 @@ describe('AssistantService voice transcript alignment', () => {
       label: 'Mountains',
       reason: 'Existing concept.',
       value: 'c-alpha',
+      noteId: 'note-1',
     });
 
     const request = http.expectOne('/api/assistant/turn/stream');
     expect(request.request.body.context.brainReviewNoteId).toBe('note-1');
     expect(request.request.body.message).toContain('Mountains');
+    expect(request.request.body.message).toContain('c-alpha');
+    service.applySuggestion({ kind: 'concept', label: 'Mountains', reason: 'Existing concept.', value: 'c-alpha', noteId: 'note-1' });
+    http.expectNone('/api/assistant/turn/stream');
     request.flush(turn({ executedCapabilities: ['notes_link_existing_concept'] }));
 
     expect(receipts).toEqual([
       { capability: 'notes_link_existing_concept', noteId: 'note-1' },
     ]);
     subscription.unsubscribe();
+  });
+
+  it('does not apply a proposal after the user changes to another review note', () => {
+    fake.set({ brainReviewNoteId: 'note-2' });
+    service.applySuggestion({
+      kind: 'concept', label: 'Mountains', reason: 'Evidence relationship.',
+      value: 'c-alpha', noteId: 'note-1',
+    });
+    expect(service.lastError()).toContain('suggested note');
+    http.expectNone('/api/assistant/turn/stream');
   });
 
   it('approves exactly one destructive plan and reports the canonical execution result', () => {
@@ -1206,5 +1222,25 @@ describe('AssistantService voice transcript alignment', () => {
 
     expect(service.suggestions()).toEqual([]);
     http.expectNone('/api/assistant/turn/stream');
+  });
+
+  it('keeps dismissed proposal chips dismissed after reopening the conversation', () => {
+    service.open();
+    service.updateDraft('Suggest concepts');
+    service.submit();
+    http.expectOne('/api/assistant/turn/stream').flush(turn({
+      reply: 'A possible connection.',
+      suggestions: [{ kind: 'concept', label: 'Mountains', reason: 'Shared ascent.', value: 'c-alpha', noteId: 'note-1' }],
+    }));
+    const proposal = service.entries().find((entry) => entry.suggestions?.length);
+    expect(proposal).toBeDefined();
+    service.dismissSuggestions(proposal!.turnId);
+    service.close();
+
+    http.verify();
+    TestBed.resetTestingModule();
+    configureService();
+
+    expect(service.entries().find((entry) => entry.turnId === proposal!.turnId)?.suggestions).toEqual([]);
   });
 });

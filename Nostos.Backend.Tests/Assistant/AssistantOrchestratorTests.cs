@@ -429,7 +429,7 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
     // ------------------------------------------------------------------
 
     [Fact]
-    public async Task Suggest_intent_changes_nothing_and_returns_suggestions()
+    public async Task Concept_list_read_changes_nothing_and_does_not_emit_suggestions()
     {
         var h = CreateHarness();
         var book = await SeedBookAsync(h, "Seeded Book");
@@ -446,7 +446,7 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
             "Where could this note belong?",
             Context(surface: "second-brain", route: "/second-brain")));
 
-        response.Suggestions.Should().Contain(s => s.Kind == "concept" && s.Label == "Seeded Concept");
+        response.Suggestions.Should().BeEmpty();
         h.Llm.CallCount.Should().Be(2);
 
         (await StoreSnapshotAsync(h)).Should().BeEquivalentTo(before);
@@ -481,8 +481,8 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         var h = CreateHarness();
         var book = await SeedBookAsync(h, "The Magic Mountain");
         var note = await SeedNoteAsync(h, book.Id, "Hans Castorp on the mountain");
-        await SeedConceptAsync(h, "Mountains");
-        await SeedConceptAsync(h, "The Alps");
+        var mountains = await SeedConceptAsync(h, "Mountains");
+        var alps = await SeedConceptAsync(h, "The Alps");
 
         var before = await StoreSnapshotAsync(h);
 
@@ -491,6 +491,7 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         h.Llm
             .CallsTool("notes_read_for_review", $$"""{"noteId":"{{note.Id}}"}""")
             .CallsTool("concepts_list")
+            .CallsTool("concepts_propose_links", $$"""{"noteId":"{{note.Id}}","candidates":[{"conceptId":"{{mountains.Id}}","reason":"Both discuss attention while climbing the mountain."},{"conceptId":"{{alps.Id}}","reason":"The note mentions an Alpine landscape in the book."}]}""")
             .Returns("A couple of concepts look right.");
 
         var response = await h.Orchestrator.HandleTurnAsync(Turn(
@@ -504,7 +505,9 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         response.Suggestions.Should().OnlyContain(s => s.Kind == "concept");
         response.Suggestions.Should().HaveCountLessThanOrEqualTo(AssistantOrchestrator.MaxConceptSuggestions);
         response.Suggestions.Select(s => s.Label).Should().BeSubsetOf(["Mountains", "The Alps"]);
-        h.Llm.CallCount.Should().Be(3);
+        response.Suggestions.Should().OnlyContain(s => s.NoteId == note.Id.ToString());
+        response.Suggestions.Should().Contain(s => s.Label == "Mountains" && s.Reason.Contains("attention"));
+        h.Llm.CallCount.Should().Be(4);
 
         // Suggesting is not linking: neither the note nor any concept changed.
         (await StoreSnapshotAsync(h)).Should().BeEquivalentTo(before);
@@ -521,9 +524,12 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         var book = await SeedBookAsync(h);
         var note = await SeedNoteAsync(h, book.Id, "A note with no concept");
         var seeded = new List<string>();
-        for (var i = 1; i <= 8; i++)
+        var candidates = new List<string>();
+        for (var i = 1; i <= AssistantOrchestrator.MaxConceptSuggestions; i++)
         {
-            seeded.Add((await SeedConceptAsync(h, $"Concept {i}")).Concept);
+            var concept = await SeedConceptAsync(h, $"Concept {i}");
+            seeded.Add(concept.Concept);
+            candidates.Add($$"""{"conceptId":"{{concept.Id}}","reason":"The note explicitly compares an existing relationship."}""");
         }
 
         var before = await StoreSnapshotAsync(h);
@@ -531,6 +537,7 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         h.Llm
             .CallsTool("notes_read_for_review", $$"""{"noteId":"{{note.Id}}"}""")
             .CallsTool("concepts_list")
+            .CallsTool("concepts_propose_links", $$"""{"noteId":"{{note.Id}}","candidates":[{{string.Join(",", candidates)}}]}""")
             .Returns("Ideas.");
 
         var response = await h.Orchestrator.HandleTurnAsync(Turn(
@@ -544,6 +551,67 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         response.Suggestions.Select(s => s.Label).Should().BeSubsetOf(seeded);
 
         // Zero concepts created to satisfy the suggestions.
+        (await StoreSnapshotAsync(h)).Should().BeEquivalentTo(before);
+    }
+
+    [Fact]
+    public async Task Proposal_with_unknown_concept_id_never_becomes_a_clickable_suggestion()
+    {
+        var h = CreateHarness();
+        var book = await SeedBookAsync(h);
+        var note = await SeedNoteAsync(h, book.Id, "A note needing review");
+        var before = await StoreSnapshotAsync(h);
+
+        h.Llm
+            .CallsTool("notes_read_for_review", $$"""{"noteId":"{{note.Id}}"}""")
+            .CallsTool("concepts_propose_links", $$"""{"noteId":"{{note.Id}}","candidates":[{"conceptId":"{{Guid.NewGuid()}}","reason":"Invented concept."}]}""")
+            .Returns("No validated suggestion.");
+
+        var response = await h.Orchestrator.HandleTurnAsync(Turn(
+            "Suggest concepts for this note.",
+            Context(surface: "second-brain", route: "/second-brain", brainReviewNoteId: note.Id.ToString())));
+
+        response.Suggestions.Should().BeEmpty();
+        (await StoreSnapshotAsync(h)).Should().BeEquivalentTo(before);
+    }
+
+    [Fact]
+    public async Task Proposal_requires_note_and_concept_reads_in_the_same_turn()
+    {
+        var h = CreateHarness();
+        var book = await SeedBookAsync(h);
+        var note = await SeedNoteAsync(h, book.Id, "Attention and reading");
+        var concept = await SeedConceptAsync(h, "Attention");
+
+        h.Llm
+            .CallsTool("concepts_propose_links", $$"""{"noteId":"{{note.Id}}","candidates":[{"conceptId":"{{concept.Id}}","reason":"The note distinguishes attention from reading."}]}""")
+            .Returns("I did not inspect the note.");
+
+        var response = await h.Orchestrator.HandleTurnAsync(Turn(
+            "Suggest a link.",
+            Context(surface: "second-brain", route: "/second-brain", brainReviewNoteId: note.Id.ToString())));
+        response.Suggestions.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Explicit_empty_proposal_is_an_honest_no_match_without_mutation()
+    {
+        var h = CreateHarness();
+        var book = await SeedBookAsync(h);
+        var note = await SeedNoteAsync(h, book.Id, "A thought with no clear connection");
+        var before = await StoreSnapshotAsync(h);
+
+        h.Llm
+            .CallsTool("notes_read_for_review", $$"""{"noteId":"{{note.Id}}"}""")
+            .CallsTool("concepts_list")
+            .CallsTool("concepts_propose_links", $$"""{"noteId":"{{note.Id}}","candidates":[]}""")
+            .Returns("No useful matches found.");
+
+        var response = await h.Orchestrator.HandleTurnAsync(Turn(
+            "Where does this belong?",
+            Context(surface: "second-brain", route: "/second-brain", brainReviewNoteId: note.Id.ToString())));
+
+        response.Suggestions.Should().BeEmpty();
         (await StoreSnapshotAsync(h)).Should().BeEquivalentTo(before);
     }
 

@@ -47,6 +47,7 @@ public sealed class AssistantCapabilityRegistryTests : IClassFixture<SqliteTestF
         "notes_read_for_review",
         "concepts_list",
         "concepts_search",
+        "concepts_propose_links",
         "library_list_collections",
         "library_get_collection",
         "notes_capture",

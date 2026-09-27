@@ -276,5 +276,69 @@ public static partial class AssistantCapabilities
                 return AssistantToolResult.Ok(Element(result));
             }),
 
+        new AssistantCapability(
+            "concepts_propose_links",
+            AssistantTrustClass.Suggest,
+            AssistantCapabilityCategory.Organization,
+            "Explicitly proposes up to three existing concepts for one real note, each with a concrete evidence-based reason. Use only after reading the note and relevant concept material. Ordinary concept listing/search never creates suggestions. This tool does not link or create anything.",
+            """
+            {
+              "type": "object",
+              "properties": {
+                "noteId": { "type": "string", "format": "uuid", "description": "The note whose actual material was read. Required." },
+                "candidates": {
+                  "type": "array", "maxItems": 3,
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "conceptId": { "type": "string", "format": "uuid", "description": "Existing concept ID obtained from Nostos. Required." },
+                      "reason": { "type": "string", "description": "One brief, concrete relationship between the note and this concept's evidence. Required." }
+                    },
+                    "required": ["conceptId", "reason"],
+                    "additionalProperties": false
+                  },
+                  "description": "Zero to three relevant existing concepts; an empty list means no useful match."
+                }
+              },
+              "required": ["noteId", "candidates"],
+              "additionalProperties": true
+            }
+            """,
+            async (context, args, ct) =>
+            {
+                if (Id(args, "noteId") is not { } noteId)
+                    return Invalid("'noteId' is required.");
+
+                if (await notes.GetForReviewAsync(noteId, ct) is null)
+                    return AssistantToolResult.Fail(
+                        AssistantErrorCodes.NotFound,
+                        "The note no longer exists.");
+
+                var candidates = Property(args, "candidates");
+                if (candidates.ValueKind != System.Text.Json.JsonValueKind.Array
+                    || candidates.GetArrayLength() > 3)
+                    return Invalid("'candidates' must be an array of at most three proposals.");
+
+                var available = (await concepts.GetAllWithUsageCountAsync())
+                    .ToDictionary(concept => concept.Id);
+                var seen = new HashSet<Guid>();
+                var proposals = new List<object>();
+                foreach (var item in candidates.EnumerateArray())
+                {
+                    if (Id(item, "conceptId") is not { } conceptId
+                        || !seen.Add(conceptId)
+                        || !available.TryGetValue(conceptId, out var concept))
+                        return Invalid("Every proposed concept must be a distinct existing concept ID.");
+
+                    var reason = Str(item, "reason")?.Trim();
+                    if (string.IsNullOrWhiteSpace(reason) || reason.Length > 240)
+                        return Invalid("Every proposal needs a brief evidence-based reason.");
+
+                    proposals.Add(new { id = concept.Id, name = concept.Name, reason });
+                }
+
+                return AssistantToolResult.Ok(Element(new { noteId, candidates = proposals }));
+            }),
+
     ];
 }

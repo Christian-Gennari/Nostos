@@ -2086,7 +2086,7 @@ describe('SecondBrain', () => {
         acknowledgement: null,
         anchorPrompt: null,
         suggestions: [
-          { kind: 'concept', label: 'Mountains', reason: 'Existing concept in your library.', value: 'c-alpha' },
+          { kind: 'concept', label: 'Mountains', reason: 'The note describes the same climb.', value: 'c-alpha', noteId: 'hit-1' },
         ],
         pendingPlan: null,
       });
@@ -2104,6 +2104,7 @@ describe('SecondBrain', () => {
         label: 'Alpha',
         reason: 'Existing concept in your library.',
         value: 'c-alpha',
+        noteId: 'hit-1',
       });
 
       const turn = http.expectOne('/api/assistant/turn/stream');

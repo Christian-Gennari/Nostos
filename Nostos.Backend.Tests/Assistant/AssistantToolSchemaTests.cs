@@ -137,6 +137,9 @@ public sealed class AssistantToolSchemaTests : IClassFixture<SqliteTestFixture>
         ["concepts_search"] = new(
             Properties: new() { ["term"] = "string" },
             Required: ["term"]),
+        ["concepts_propose_links"] = new(
+            Properties: new() { ["noteId"] = "string", ["candidates"] = "array" },
+            Required: ["noteId", "candidates"]),
         ["library_list_collections"] = new(Properties: new(), Required: []),
         ["library_get_collection"] = new(
             Properties: new() { ["collectionId"] = "string" },
@@ -310,7 +313,7 @@ public sealed class AssistantToolSchemaTests : IClassFixture<SqliteTestFixture>
                 [AssistantCapabilityCategory.SourceNavigation] = 1,
                 [AssistantCapabilityCategory.LibraryRead] = 4,
                 [AssistantCapabilityCategory.Capture] = 1,
-                [AssistantCapabilityCategory.Organization] = 9,
+                [AssistantCapabilityCategory.Organization] = 10,
                 [AssistantCapabilityCategory.OrdinaryAction] = 2,
             });
 
@@ -331,7 +334,7 @@ public sealed class AssistantToolSchemaTests : IClassFixture<SqliteTestFixture>
     {
         var measurement = AssistantCapabilityCatalogueMetrics.Measure(CreateHarness().Registry.All);
 
-        measurement.CapabilityCount.Should().Be(25);
+        measurement.CapabilityCount.Should().Be(26);
         measurement.SerializedToolSchemaUtf8Bytes.Should().BeGreaterThan(0);
         measurement.ToolDescriptionUtf8Bytes.Should().BeGreaterThan(0);
         measurement.LegacyDuplicateAbilitiesPromptUtf8Bytes.Should().BeGreaterThan(
