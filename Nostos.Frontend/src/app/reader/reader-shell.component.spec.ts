@@ -1063,6 +1063,22 @@ describe('ReaderShell toolbar contract (theme system removed)', () => {
     expect(stub.goTo).toHaveBeenCalledWith(40);
   });
 
+  it('keeps the active ToC rail square instead of bending with the row radius', () => {
+    const template = readSource('./reader-shell.component.html');
+    const css = readSource('./reader-shell.component.css');
+
+    expect(template).toContain('[class.nostos-accent-rail]="isActive(item)"');
+
+    const activeRule = css.slice(
+      css.indexOf('.toc-item.active {'),
+      css.indexOf('.toc-subitems {'),
+    );
+    expect(activeRule).toContain(
+      '--nostos-accent-rail-color: var(--color-brand-accent)',
+    );
+    expect(activeRule).not.toContain('box-shadow: inset 3px 0 0');
+  });
+
   it('keeps the page indicator to a single bordered field', () => {
     // The control used to nest two boxes: a filled grey pill around a field that
     // carried its own border (measured live — pill #EEEEEF x650..789 with a

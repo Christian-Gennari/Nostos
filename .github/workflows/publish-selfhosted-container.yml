@@ -85,7 +85,7 @@ jobs:
             ghcr.io/christian-gennari/nostos:latest
             ghcr.io/christian-gennari/nostos:${{ steps.source.outputs.tag }}
           labels: |
-            org.opencontainers.image.source=https://github.com/Christian-Gennari/Nostos-Rebirth
+            org.opencontainers.image.source=https://github.com/Christian-Gennari/Nostos
             org.opencontainers.image.revision=${{ steps.source.outputs.sha }}
             org.opencontainers.image.title=Nostos
             org.opencontainers.image.description=SelfHosted Nostos reading, thinking and writing environment

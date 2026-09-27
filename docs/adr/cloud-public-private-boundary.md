@@ -1,13 +1,13 @@
 # ADR: Public Nostos product and private hosted-service boundary
 
 - **Status:** Accepted; implemented by the public product seam and #462 cutover work
-- **Tracking:** [#438](https://github.com/Christian-Gennari/Nostos-Rebirth/issues/438), [#462](https://github.com/Christian-Gennari/Nostos-Rebirth/issues/462)
+- **Tracking:** [#438](https://github.com/Christian-Gennari/Nostos/issues/438), [#462](https://github.com/Christian-Gennari/Nostos/issues/462)
 - **Related:** #258 Nostos Cloud programme; paid hosting/database productionization now lives in the private Nostos-Cloud launch-readiness work
 - **Operational gate:** isolated private staging parity/security evidence is required before hosted traffic is moved
 
 ## Decision
 
-Nostos is one product. `Christian-Gennari/Nostos-Rebirth` owns the canonical product,
+Nostos is one product. `Christian-Gennari/Nostos` owns the canonical product,
 domain model and the one customer frontend. The public repository is a complete,
 usable SelfHosted application and has no dependency on the private repository.
 
@@ -19,7 +19,7 @@ commercial/provider/operator implementation. It consumes public `Nostos.Product`
 private Nostos-Cloud host
         │ pinned public commit
         ▼
-public Nostos-Rebirth product
+public Nostos product
 ```
 
 Reusable product, domain, capability-contract and frontend changes land in public
@@ -55,14 +55,14 @@ Those implementations are not compiled or shipped by public Nostos.
 ## Project composition
 
 ```text
-public Nostos-Rebirth
+public Nostos
   Nostos.Shared       shared DTOs and capability contracts
   Nostos.Product      canonical model, services, API and portable archives
   Nostos.Backend      SelfHosted host: SQLite, local storage, backup, BYOK
   Nostos.Frontend     the one Angular customer application
 
 private Nostos-Cloud
-  upstream/Nostos-Rebirth   pinned, read-only public source
+  upstream/Nostos   pinned, read-only public source
   Nostos.Cloud.Hosting      hosted implementations
   Nostos.Cloud.Host         official hosted executable
 ```

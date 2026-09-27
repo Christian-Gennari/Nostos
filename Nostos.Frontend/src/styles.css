@@ -1399,6 +1399,31 @@ p {
   border: 0;
 }
 
+/* Decorative left-edge rail.
+   A border-left or inset box-shadow follows the host's border radius, which
+   bends the rail around rounded top/bottom corners. The rail is its own square
+   pseudo-element instead, so the host keeps its shape while the status/selection
+   stroke stays editorially straight.
+
+   Consumers own the semantic colour through --nostos-accent-rail-color. Width
+   and inline offset are configurable for surfaces that reserve a transparent
+   border slot (for example a toast), but the geometry itself lives here once. */
+.nostos-accent-rail {
+  position: relative;
+}
+
+.nostos-accent-rail::before {
+  content: '';
+  position: absolute;
+  inset-block: var(--nostos-accent-rail-block-start, 0)
+    var(--nostos-accent-rail-block-end, 0);
+  inset-inline-start: var(--nostos-accent-rail-inline-start, 0);
+  inline-size: var(--nostos-accent-rail-width, 3px);
+  background: var(--nostos-accent-rail-color, currentColor);
+  border-radius: 0;
+  pointer-events: none;
+}
+
 button {
   -webkit-tap-highlight-color: transparent;
   -webkit-user-select: none;

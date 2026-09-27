@@ -2305,7 +2305,10 @@
 .review-quote {
   margin: 0;
   padding: 0.5rem 0.75rem;
-  border-left: 3px solid var(--border-color);
+  border-left: 3px solid transparent;
+  --nostos-accent-rail-width: 3px;
+  --nostos-accent-rail-inline-start: -3px;
+  --nostos-accent-rail-color: var(--border-color);
   font-size: 0.88rem;
   font-style: italic;
   color: var(--color-text-muted);

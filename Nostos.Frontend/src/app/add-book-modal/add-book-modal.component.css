@@ -426,8 +426,8 @@
   background: var(--bg-surface-alt);
 }
 .source-result.active {
+  --nostos-accent-rail-color: var(--color-primary);
   background: var(--bg-surface-alt);
-  box-shadow: inset 3px 0 0 var(--color-primary);
 }
 .source-result:disabled {
   cursor: default;

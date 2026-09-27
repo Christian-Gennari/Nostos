@@ -758,6 +758,7 @@
                       type="button"
                       class="source-result"
                       [class.active]="isSelectedSourceItem(item)"
+                      [class.nostos-accent-rail]="isSelectedSourceItem(item)"
                       [disabled]="!!runningAcquisition()"
                       (click)="selectSourceItem(item)"
                     >

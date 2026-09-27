@@ -280,10 +280,10 @@
   outline-offset: -2px;
 }
 .toc-item.active {
+  --nostos-accent-rail-color: var(--color-brand-accent);
   background-color: var(--bg-hover);
   color: var(--color-brand-accent);
   font-weight: var(--fw-semibold);
-  box-shadow: inset 3px 0 0 var(--color-brand-accent);
 }
 .toc-subitems {
   padding-left: 1.25rem;

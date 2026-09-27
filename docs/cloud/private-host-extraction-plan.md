@@ -5,7 +5,7 @@ Tracking: #438 and #462. The repository boundary is recorded in the
 
 ## Current ownership
 
-`Nostos-Rebirth` is the canonical public product repository. It owns
+`Nostos` is the canonical public product repository. It owns
 `Nostos.Product`, the SelfHosted SQLite/local-filesystem host, local backup and
 restore, the BYOK assistant path, portability, capability contracts and the one
 Angular frontend.
