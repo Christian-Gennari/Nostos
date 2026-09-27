@@ -146,42 +146,25 @@
 .brain-note-filter-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 0.5rem;
-  padding-top: 0.35rem;
+  padding-top: 0.45rem;
 }
 
-.brain-note-filter {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  font-size: 0.8rem;
-  color: var(--color-text-muted);
-  cursor: pointer;
+.brain-note-order {
+  min-width: 132px;
+  margin-left: auto;
 }
-
-.brain-note-filter input { accent-color: var(--color-brand-accent); }
 
 .brain-book-filter {
   max-width: 100%;
-  margin-top: 0.35rem;
+  margin-top: 0.45rem;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .brain-browse-detail { max-width: 760px; margin: 0 auto; }
 
-.brain-source-link {
-  align-self: flex-start;
-  color: var(--color-brand-accent);
-  font-size: 0.84rem;
-  text-decoration: underline;
-  text-underline-offset: 0.16rem;
-}
-
-.brain-source-link:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-}
+.brain-source-link { align-self: flex-start; }
 
 .brain-header-tools .search-box {
   flex: 0 1 320px;
@@ -965,39 +948,129 @@
   margin-top: 1.35rem;
 }
 
-/* The review pane's action row is a block in a column, so it takes no title
-   offset and is allowed to wrap on a phone. */
+/* Focused-note actions are one quiet row; primary/manual linking carries the
+   hierarchy, while optional assistance and utility actions remain subordinate. */
 .review-actions {
   margin-top: 0;
-  flex-wrap: wrap;
-}
-
-.brain-proposals {
-  margin-top: 1rem;
-  padding: 1rem 0;
-  border-top: 1px solid var(--border-color);
-  max-width: 48rem;
-  color: var(--color-text-main);
-  line-height: 1.45;
-}
-
-.brain-proposals-heading,
-.brain-proposal-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
   flex-wrap: wrap;
   gap: 0.5rem;
 }
 
-.brain-proposals-heading strong,
-.brain-proposal strong { font-family: 'Newsreader', serif; font-size: 1.08rem; }
-.brain-proposals p { margin: 0.45rem 0; }
-.brain-proposals-hint,
-.brain-proposal-evidence { color: var(--color-text-muted); font-size: 0.87rem; }
-.brain-proposal { padding: 0.85rem 0; border-top: 1px solid var(--border-color); }
-.brain-proposal-evidence { margin-top: 0.75rem; padding-inline-start: 0.75rem; border-inline-start: 2px solid var(--border-color); }
-.brain-proposal-evidence p { max-height: 5.4em; overflow: auto; overflow-wrap: anywhere; }
+.review-pagination {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.brain-note-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.brain-note-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.brain-proposals {
+  max-width: 48rem;
+  margin-top: 1.25rem;
+  padding-top: 1.15rem;
+  border-top: 1px solid var(--border-color);
+  color: var(--color-text-main);
+}
+
+.brain-proposals-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.brain-proposals-heading h2 {
+  margin: 0.1rem 0 0;
+  font-family: 'Newsreader', serif;
+  font-size: 1.18rem;
+  font-weight: var(--fw-semibold);
+}
+
+.brain-proposals-heading p,
+.brain-proposal-copy p {
+  margin: 0.25rem 0 0;
+  color: var(--color-text-muted);
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.brain-proposals-state {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin: 0.9rem 0;
+  color: var(--color-text-muted);
+  font-size: 0.86rem;
+}
+
+.brain-proposal-list {
+  margin-top: 0.75rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.brain-proposal {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.75rem 1rem;
+  padding: 1rem 0;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.brain-proposal-copy h3 {
+  margin: 0.4rem 0 0;
+  font-family: 'Newsreader', serif;
+  font-size: 1.08rem;
+  font-weight: var(--fw-semibold);
+}
+
+.brain-proposal-actions,
+.brain-proposal-evidence-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.brain-proposal-actions { justify-content: flex-end; }
+
+.brain-proposal-evidence {
+  grid-column: 1 / -1;
+  padding: 0.75rem 0 0 0.85rem;
+  border-left: 2px solid var(--border-color);
+  color: var(--color-text-muted);
+  font-size: 0.84rem;
+}
+
+.brain-proposal-evidence-item {
+  padding: 0.65rem 0;
+  border-top: 1px solid var(--border-color);
+}
+
+.brain-proposal-evidence-item:first-of-type { margin-top: 0.65rem; }
+
+.brain-proposal-evidence-item p {
+  display: -webkit-box;
+  margin: 0.2rem 0 0;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+}
+
+.brain-proposals-question { margin-top: 0.65rem; }
 
 .concept-management {
   max-width: 1100px;
@@ -1818,6 +1891,13 @@
   .brain-area { min-height: 44px; }
   .brain-note-filters { padding-inline: 1rem; }
 
+  .brain-note-filter-row .nostos-chip,
+  .review-actions .nostos-button,
+  .review-pagination .nostos-button,
+  .brain-proposal-actions .nostos-button {
+    min-height: 44px;
+  }
+
   .brain-header-tools .search-box {
     flex: 1 1 auto;
     min-width: 0;
@@ -2032,6 +2112,12 @@
   .header-rename .inline-rename-input {
     font-size: 2rem;
   }
+
+  .brain-proposal {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .brain-proposal-actions { justify-content: flex-start; }
 
   .merge-search-box,
   .merge-picker-cancel,
@@ -2316,34 +2402,24 @@
   border-top: 1px solid var(--border-color);
 }
 
-.note-row-item,
-.brain-note-panel-close {
-  border: none;
-  background: transparent;
-  color: var(--color-text-muted);
-  cursor: pointer;
-  border-radius: var(--radius-md);
-  flex-shrink: 0;
-}
-
 .note-row-item {
   width: 100%;
   display: flex;
   align-items: center;
   padding: 0.5rem 0.75rem;
-  text-align: left;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
   color: var(--color-text-main);
-  transition: background 0.15s ease;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 
-.note-row-item:hover,
-.brain-note-panel-close:hover {
-  background: var(--bg-hover);
-}
+.note-row-item:hover { background: var(--bg-hover); }
 
-.note-row-item:focus-visible,
-.brain-note-panel-close:focus-visible {
-  outline: 2px solid var(--border-color);
+.note-row-item:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: -2px;
 }
 
@@ -2402,10 +2478,6 @@
 
 
 
-.brain-note-panel-close:hover {
-  color: var(--color-text-main);
-}
-
 .brain-note-panel-body,
 .review-body {
   display: flex;
@@ -2444,14 +2516,6 @@
   align-items: center;
 }
 
-.brain-note-concept-tag {
-  font-size: 0.75rem;
-  padding: 0.2rem 0.5rem;
-  border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--color-brand-accent) 10%, transparent);
-  color: var(--color-brand-accent);
-}
-
 .brain-note-panel-empty-concepts {
   font-size: 0.8rem;
   color: var(--color-text-muted);
@@ -2471,54 +2535,23 @@
 /* The reviewed row. Same fill the concept index gives its active row, so
    "where am I" reads identically in both rails. */
 .note-row-item.active {
-  background: var(--bg-hover);
-  color: var(--color-text-main);
+  background: var(--selection-surface);
+  color: var(--selection-ink);
 }
 
-/* The rail's two buttons, one recipe.
- *
- * `Review notes with no concept` / `Done reviewing` sit in the rail's foot, the
- * queue's `Load more` sits at the end of the list; both are quiet full-width
- * rows in the rail, and neither is a badge. Keeping one rule is what stops them
- * drifting into two different affordances. */
+.note-row-item.active .note-row-snippet { color: var(--selection-ink); }
+.note-row-item.active .note-row-book {
+  color: color-mix(in srgb, var(--selection-ink) 72%, transparent);
+}
+
+/* Shared Button owns chrome, focus and disabled states; Brain owns only rail layout. */
 .rail-foot-action,
 .review-load-more {
-  display: block;
   width: 100%;
-  padding: 0.5rem;
-  border: none;
-  border-radius: var(--radius-md);
-  background: transparent;
-  color: var(--color-text-muted);
-  font-family: 'Hanken Grotesk', sans-serif;
-  font-size: 0.78rem;
-  text-align: left;
-  cursor: pointer;
-  transition:
-    background-color 0.15s ease,
-    color 0.15s ease;
+  justify-content: flex-start;
 }
 
-.rail-foot-action:hover,
-.review-load-more:hover:not(:disabled) {
-  background: var(--bg-hover);
-  color: var(--color-text-main);
-}
-
-.rail-foot-action:focus-visible,
-.review-load-more:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: -2px;
-}
-
-.review-load-more {
-  margin-top: 0.5rem;
-}
-
-.review-load-more:disabled {
-  cursor: default;
-  opacity: 0.6;
-}
+.review-load-more { margin-top: 0.5rem; }
 
 /* The rail's foot.
  *
