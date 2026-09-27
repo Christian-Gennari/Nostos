@@ -318,10 +318,12 @@ public sealed class AssistantToolSchemaTests : IClassFixture<SqliteTestFixture>
             .Where(capability => capability.Category == AssistantCapabilityCategory.Organization)
             .Select(capability => capability.Trust)
             .Distinct()
-            .Should().BeEquivalentTo(
+            .Should().BeEquivalentTo(new[]
+            {
                 AssistantTrustClass.Suggest,
                 AssistantTrustClass.Act,
-                AssistantTrustClass.PlanAndAct);
+                AssistantTrustClass.PlanAndAct,
+            });
     }
 
     [Fact]
