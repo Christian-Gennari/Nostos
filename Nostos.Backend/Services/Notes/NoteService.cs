@@ -575,7 +575,11 @@ public sealed class NoteService : INoteService
             .Select(nc => nc.Concept!.Concept)
             .OrderBy(name => name)
             .ToList(),
-        n.CreatedAt);
+        n.CreatedAt,
+        n.CfiRange,
+        n.SourceAnchorKind,
+        n.SourceAnchorValue,
+        n.AnchorVerified);
 
     /// <summary>
     /// The fragment around the match, so a row can show WHY it matched. Built here
