@@ -31,7 +31,7 @@ public static partial class LexicalQueryPlanner
         "men", "alla", "någon", "något", "mer", "mest", "bara",
     };
 
-    [GeneratedRegex(@"[p{L}p{N}][p{L}p{N}'’-]*", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"[\p{L}\p{N}][\p{L}\p{N}'’\-]*", RegexOptions.CultureInvariant)]
     private static partial Regex TokenRegex();
 
     public static IReadOnlyList<LexicalQueryVariant> Build(
