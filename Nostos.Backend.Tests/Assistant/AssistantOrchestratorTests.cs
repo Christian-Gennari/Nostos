@@ -689,6 +689,72 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
     }
 
     [Fact]
+    public async Task Retrying_the_same_capture_TurnId_executes_the_canonical_capture_once()
+    {
+        var h = CreateHarness();
+        var book = await SeedBookAsync(h, "Retry Book");
+
+        h.Llm
+            .CallsTool("notes_capture", $"""{"bookId":"{{book.Id}}","content":"One thought"}""")
+            .Returns("Saved.")
+            .CallsTool("notes_capture", $"""{"bookId":"{{book.Id}}","content":"One thought"}""")
+            .Returns("Saved.");
+
+        var first = Turn(
+            "Remember this.",
+            Context(bookId: book.Id.ToString(), bookTitle: book.Title, bookFormat: "ebook"),
+            idem: "delivery-a",
+            conversationId: "conversation-retry",
+            turnId: "turn-capture-stable");
+        var retry = Turn(
+            "Remember this.",
+            Context(bookId: book.Id.ToString(), bookTitle: book.Title, bookFormat: "ebook"),
+            idem: "delivery-b",
+            conversationId: "conversation-retry",
+            turnId: "turn-capture-stable");
+
+        await h.Orchestrator.HandleTurnAsync(first);
+        await h.Orchestrator.HandleTurnAsync(retry);
+
+        (await NoteCountAsync(h)).Should().Be(1);
+        await using var db = await h.Factory.CreateDbContextAsync();
+        (await db.Notes.AsNoTracking().SingleAsync()).Content.Should().Be("One thought");
+    }
+
+    [Fact]
+    public async Task Retrying_the_same_Act_TurnId_executes_the_canonical_mutation_once()
+    {
+        var h = CreateHarness();
+
+        h.Llm
+            .CallsTool("library_create_collection", """{"name":"Retry-safe"}""")
+            .Returns("Created.")
+            .CallsTool("library_create_collection", """{"name":"Retry-safe"}""")
+            .Returns("Created.");
+
+        var first = Turn(
+            "Create a Retry-safe collection.",
+            Context(surface: "library", route: "/library"),
+            idem: "delivery-a",
+            conversationId: "conversation-retry",
+            turnId: "turn-act-stable");
+        var retry = Turn(
+            "Create a Retry-safe collection.",
+            Context(surface: "library", route: "/library"),
+            idem: "delivery-b",
+            conversationId: "conversation-retry",
+            turnId: "turn-act-stable");
+
+        await h.Orchestrator.HandleTurnAsync(first);
+        await h.Orchestrator.HandleTurnAsync(retry);
+
+        await using var db = await h.Factory.CreateDbContextAsync();
+        (await db.Collections.AsNoTracking()
+            .Where(collection => collection.Name == "Retry-safe")
+            .CountAsync()).Should().Be(1);
+    }
+
+    [Fact]
     public async Task PlanAndAct_delete_produces_a_pending_plan_and_mutates_nothing()
     {
         var h = CreateHarness();
@@ -840,93 +906,240 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
     // ------------------------------------------------------------------
 
     [Fact]
-    public async Task A_physical_book_asks_for_a_page_and_skipping_still_captures_as_unknown()
+    public async Task Physical_page_is_a_real_continuation_turn_and_replay_captures_once()
     {
         var h = CreateHarness();
-        var book = await SeedBookAsync(h);
+        var book = await SeedBookAsync(h, "Physical Book");
 
-        h.Llm
-            .CallsTool("notes_capture", $$"""{"bookId":"{{book.Id}}","content":"A thought"}""")
-            .CallsTool("notes_capture", $$"""{"bookId":"{{book.Id}}","content":"A thought"}""")
-            .Returns("Saved.");
+        h.Llm.CallsTool(
+            "notes_capture",
+            $$"""{"bookId":"{{book.Id}}","content":"A thought"}""");
 
-        var unanswered = await h.Orchestrator.HandleTurnAsync(Turn(
+        var first = await h.Orchestrator.HandleTurnAsync(Turn(
             "Remember this.",
             Context(
                 bookId: book.Id.ToString(),
-                bookFormat: "physical")));
+                bookTitle: book.Title,
+                bookFormat: "physical"),
+            conversationId: "conversation-page",
+            turnId: "turn-original"));
 
-        unanswered.AnchorPrompt.Should().NotBeNull();
-        unanswered.AnchorPrompt!.Kind.Should().Be("physical_page");
-        unanswered.AnchorPrompt.Question.Should().Be("What page are you on?");
+        first.AnchorPrompt.Should().NotBeNull();
+        first.AnchorPrompt!.Kind.Should().Be("physical_page");
+        first.AnchorPrompt.ContinuationId.Should().NotBeNullOrWhiteSpace();
         (await NoteCountAsync(h)).Should().Be(0);
 
-        // "I don't know" arrives as an explicit unknown anchor on the next turn.
-        var skipped = await h.Orchestrator.HandleTurnAsync(Turn(
-            "Remember this.",
-            Context(
-                bookId: book.Id.ToString(),
-                bookFormat: "physical",
-                anchor: new AssistantAnchorDto("unknown", null, false))));
+        var continuationId = first.AnchorPrompt.ContinuationId!;
+        var answer = Turn(
+            "Page 247.",
+            Context(bookId: book.Id.ToString(), bookTitle: book.Title, bookFormat: "physical"),
+            idem: "delivery-answer-a",
+            conversationId: "conversation-page",
+            turnId: "turn-page-answer",
+            continuationId: continuationId);
 
-        skipped.AnchorPrompt.Should().BeNull();
+        var completed = await h.Orchestrator.HandleTurnAsync(answer);
+
+        completed.Acknowledgement.Should().Contain("Physical Book");
+        completed.CapturedNoteId.Should().NotBeNullOrWhiteSpace();
+        h.Llm.CallCount.Should().Be(1);
         (await NoteCountAsync(h)).Should().Be(1);
 
-        await using var db = await h.Factory.CreateDbContextAsync();
-        var note = await db.Notes.AsNoTracking().SingleAsync();
-        note.SourceAnchorKind.Should().Be("unknown");
-        note.AnchorVerified.Should().BeFalse();
+        await using (var db = await h.Factory.CreateDbContextAsync())
+        {
+            var note = await db.Notes.AsNoTracking().SingleAsync();
+            note.Content.Should().Be("A thought");
+            note.SourceAnchorKind.Should().Be("physical_page");
+            note.SourceAnchorValue.Should().Be("247");
+            note.AnchorVerified.Should().BeFalse();
+        }
+
+        // Simulate the successful continuation response being lost. The exact
+        // TurnId replays its bounded terminal receipt and cannot capture twice.
+        var replay = await h.Orchestrator.HandleTurnAsync(answer with
+        {
+            IdempotencyKey = "delivery-answer-b",
+        });
+
+        replay.CapturedNoteId.Should().Be(completed.CapturedNoteId);
+        (await NoteCountAsync(h)).Should().Be(1);
+        h.Llm.CallCount.Should().Be(1);
     }
 
     [Fact]
-    public async Task An_answered_page_anchor_is_stored_unverified()
-    {
-        var h = CreateHarness();
-        var book = await SeedBookAsync(h);
-
-        h.Llm
-            .CallsTool("notes_capture", $$"""{"bookId":"{{book.Id}}","content":"A thought"}""")
-            .Returns("Saved.");
-
-        var response = await h.Orchestrator.HandleTurnAsync(Turn(
-            "Remember this.",
-            Context(
-                bookId: book.Id.ToString(),
-                bookFormat: "physical",
-                anchor: new AssistantAnchorDto("physical_page", "183", false))));
-
-        response.AnchorPrompt.Should().BeNull();
-
-        await using var db = await h.Factory.CreateDbContextAsync();
-        var note = await db.Notes.AsNoTracking().SingleAsync();
-        note.SourceAnchorKind.Should().Be("physical_page");
-        note.SourceAnchorValue.Should().Be("183");
-        note.AnchorVerified.Should().BeFalse();
-    }
-
-    [Fact]
-    public async Task An_externally_played_audiobook_asks_for_a_timestamp()
+    public async Task Skipping_a_page_continuation_saves_unknown_without_model_guessing()
     {
         var h = CreateHarness();
         var book = await SeedBookAsync(h);
 
         h.Llm.CallsTool(
             "notes_capture",
-            $$"""{"bookId":"{{book.Id}}","content":"A thought"}""",
-            content: "Saved.");
+            $$"""{"bookId":"{{book.Id}}","content":"A thought"}""");
 
-        var response = await h.Orchestrator.HandleTurnAsync(Turn(
+        var first = await h.Orchestrator.HandleTurnAsync(Turn(
             "Remember this.",
+            Context(bookId: book.Id.ToString(), bookFormat: "physical"),
+            conversationId: "conversation-skip",
+            turnId: "turn-original"));
+
+        var completed = await h.Orchestrator.HandleTurnAsync(Turn(
+            "I don't know",
+            Context(bookId: book.Id.ToString(), bookFormat: "physical"),
+            conversationId: "conversation-skip",
+            turnId: "turn-skip",
+            continuationId: first.AnchorPrompt!.ContinuationId,
+            continuationSkipped: true));
+
+        completed.Error.Should().BeNull();
+        (await NoteCountAsync(h)).Should().Be(1);
+
+        await using var db = await h.Factory.CreateDbContextAsync();
+        var note = await db.Notes.AsNoTracking().SingleAsync();
+        note.SourceAnchorKind.Should().Be("unknown");
+        note.SourceAnchorValue.Should().BeNull();
+        note.AnchorVerified.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task External_audio_timestamp_continuation_normalizes_spoken_typed_time()
+    {
+        var h = CreateHarness();
+        var book = await SeedBookAsync(h, "External Audio");
+
+        h.Llm.CallsTool(
+            "notes_capture",
+            $$"""{"bookId":"{{book.Id}}","content":"Audio thought"}""");
+
+        var first = await h.Orchestrator.HandleTurnAsync(Turn(
+            "Save this thought.",
             Context(
                 bookId: book.Id.ToString(),
+                bookTitle: book.Title,
                 bookFormat: "audiobook",
-                readerType: null)));
+                readerType: null),
+            conversationId: "conversation-audio",
+            turnId: "turn-original"));
 
-        response.AnchorPrompt.Should().NotBeNull();
-        response.AnchorPrompt!.Kind.Should().Be("external_audio_timestamp");
-        response.AnchorPrompt.Question.Should().Be("What's the current timestamp?");
-        response.Reply.Should().Be("What's the current timestamp?");
+        first.AnchorPrompt!.Kind.Should().Be("external_audio_timestamp");
+
+        var completed = await h.Orchestrator.HandleTurnAsync(Turn(
+            "1:23",
+            Context(
+                bookId: book.Id.ToString(),
+                bookTitle: book.Title,
+                bookFormat: "audiobook",
+                readerType: null),
+            conversationId: "conversation-audio",
+            turnId: "turn-audio-answer",
+            continuationId: first.AnchorPrompt.ContinuationId));
+
+        completed.Acknowledgement.Should().Contain("External Audio");
         h.Llm.CallCount.Should().Be(1);
+
+        await using var db = await h.Factory.CreateDbContextAsync();
+        var note = await db.Notes.AsNoTracking().SingleAsync();
+        note.SourceAnchorKind.Should().Be("external_audio_timestamp");
+        note.SourceAnchorValue.Should().Be("83");
+        note.AnchorVerified.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Missing_book_continuation_uses_the_users_real_title_and_canonical_resolution()
+    {
+        var h = CreateHarness();
+        var intended = await SeedBookAsync(h, "Vita Contemplativa");
+        var modelChoice = await SeedBookAsync(h, "Wrong Model Choice");
+
+        // The model attempts to name a different book in its tool arguments.
+        // Capture policy must overwrite that with canonical resolution of the
+        // user's actual continuation answer.
+        h.Llm.CallsTool(
+            "notes_capture",
+            $$"""{"bookId":"{{modelChoice.Id}}","content":"A thought with no open book"}""");
+
+        var first = await h.Orchestrator.HandleTurnAsync(Turn(
+            "Save this thought.",
+            Context(
+                surface: "library",
+                route: "/library",
+                bookId: null,
+                bookTitle: null,
+                bookFormat: null),
+            conversationId: "conversation-book",
+            turnId: "turn-original"));
+
+        first.AnchorPrompt!.Kind.Should().Be("book");
+        first.AnchorPrompt.ContinuationId.Should().NotBeNullOrWhiteSpace();
+
+        var completed = await h.Orchestrator.HandleTurnAsync(Turn(
+            "Vita Contemplativa",
+            Context(surface: "library", route: "/library"),
+            conversationId: "conversation-book",
+            turnId: "turn-book-answer",
+            continuationId: first.AnchorPrompt.ContinuationId));
+
+        completed.Error.Should().BeNull();
+        completed.Acknowledgement.Should().Contain("Vita Contemplativa");
+        h.Llm.CallCount.Should().Be(1);
+
+        await using var db = await h.Factory.CreateDbContextAsync();
+        var note = await db.Notes.AsNoTracking().SingleAsync();
+        note.BookId.Should().Be(intended.Id);
+        note.BookId.Should().NotBe(modelChoice.Id);
+        note.Content.Should().Be("A thought with no open book");
+    }
+
+    [Fact]
+    public async Task Stale_wrong_or_mismatched_continuation_mutates_nothing_and_never_guesses()
+    {
+        var h = CreateHarness();
+        var book = await SeedBookAsync(h);
+
+        h.Llm
+            .CallsTool("notes_capture", $$"""{"bookId":"{{book.Id}}","content":"First"}""")
+            .CallsTool("notes_capture", $$"""{"bookId":"{{book.Id}}","content":"Second"}""");
+
+        var first = await h.Orchestrator.HandleTurnAsync(Turn(
+            "First capture.",
+            Context(bookId: book.Id.ToString(), bookFormat: "physical"),
+            conversationId: "conversation-stale",
+            turnId: "turn-first"));
+        var second = await h.Orchestrator.HandleTurnAsync(Turn(
+            "Second capture.",
+            Context(bookId: book.Id.ToString(), bookFormat: "physical"),
+            conversationId: "conversation-stale",
+            turnId: "turn-second"));
+
+        // One current continuation per conversation: the second supersedes the
+        // first without making the old id usable.
+        var stale = await h.Orchestrator.HandleTurnAsync(Turn(
+            "12",
+            Context(bookId: book.Id.ToString(), bookFormat: "physical"),
+            conversationId: "conversation-stale",
+            turnId: "turn-stale-answer",
+            continuationId: first.AnchorPrompt!.ContinuationId));
+
+        stale.Error!.Code.Should().Be(AssistantErrorCodes.ContinuationNotFound);
+        (await NoteCountAsync(h)).Should().Be(0);
+
+        var mismatch = await h.Orchestrator.HandleTurnAsync(Turn(
+            "13",
+            Context(bookId: book.Id.ToString(), bookFormat: "physical"),
+            conversationId: "different-conversation",
+            turnId: "turn-mismatch-answer",
+            continuationId: second.AnchorPrompt!.ContinuationId));
+
+        mismatch.Error!.Code.Should().Be(AssistantErrorCodes.ContinuationMismatch);
+        (await NoteCountAsync(h)).Should().Be(0);
+
+        var missing = await h.Orchestrator.HandleTurnAsync(Turn(
+            "14",
+            Context(bookId: book.Id.ToString(), bookFormat: "physical"),
+            conversationId: "conversation-stale",
+            turnId: "turn-missing-answer",
+            continuationId: "does-not-exist"));
+
+        missing.Error!.Code.Should().Be(AssistantErrorCodes.ContinuationNotFound);
         (await NoteCountAsync(h)).Should().Be(0);
     }
 
