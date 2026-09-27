@@ -285,6 +285,8 @@
           @if (renameId() === c.id && renameSurface() === 'index') {
           <div class="index-item inline-rename" (click)="$event.stopPropagation()">
             <input
+              appInput
+              controlSize="compact"
               #renameInput
               type="text"
               class="inline-rename-input"
@@ -294,7 +296,7 @@
               (keydown.escape)="$event.stopPropagation(); cancelRename()"
               (focus)="selectRenameInput($event)"
               [attr.aria-label]="'Rename ' + c.name"
-              [attr.aria-invalid]="renameError() ? 'true' : null"
+              [invalid]="!!renameError()"
               [disabled]="renaming()"
               autofocus
             />
@@ -605,28 +607,27 @@
             <div class="merge-picker-head">
               <span class="detail-tool-label">Link to concept</span>
               <button
+                appIconButton
                 type="button"
                 class="merge-picker-close"
+                icon="x"
+                size="md"
+                [glyphSize]="15"
                 aria-label="Close concept picker"
                 (click)="closeReviewPicker()"
-              >
-                <nostos-icon name="x" [size]="15"></nostos-icon>
-              </button>
+              ></button>
             </div>
             <p class="merge-picker-hint">
               Linking adds an explicit <code>[[Concept]]</code> reference to the note.
             </p>
-            <div class="merge-search-box">
-              <nostos-icon name="magnifying-glass" [size]="15"></nostos-icon>
-              <input appInput controlSize="compact"
-                type="search"
-                placeholder="Search concepts..."
-                aria-label="Search concepts to link"
-                [ngModel]="reviewPickerQuery()"
-                (ngModelChange)="reviewPickerQuery.set($event)"
-                (keydown.escape)="closeReviewPicker()"
-              />
-            </div>
+            <input appInput controlSize="compact" class="merge-search-input"
+              type="search"
+              placeholder="Search concepts..."
+              aria-label="Search concepts to link"
+              [ngModel]="reviewPickerQuery()"
+              (ngModelChange)="reviewPickerQuery.set($event)"
+              (keydown.escape)="closeReviewPicker()"
+            />
             <div class="merge-target-list">
               @if (reviewPickerCandidates().length === 0) {
               <span class="merge-picker-empty">No concepts match.</span>
@@ -712,6 +713,8 @@
             @if (renameId() === detail.id && renameSurface() === 'header') {
             <div class="inline-rename header-rename">
               <input
+                appInput
+                controlSize="compact"
                 #renameInput
                 type="text"
                 class="inline-rename-input"
@@ -721,7 +724,7 @@
                 (keydown.escape)="cancelRename()"
                 (focus)="selectRenameInput($event)"
                 [attr.aria-label]="'Rename ' + detail.name"
-                [attr.aria-invalid]="renameError() ? 'true' : null"
+                [invalid]="!!renameError()"
                 [disabled]="renaming()"
                 autofocus
               />
@@ -971,7 +974,7 @@
         <summary>Manage concept</summary>
         <div class="concept-actions" aria-label="Manage concept">
           <button
-            type="button"
+            appButton variant="ghost" size="sm" type="button"
             class="concept-action"
             [disabled]="renaming() || mergingConcept()"
             (click)="startRename(detail.id, 'header')"
@@ -980,7 +983,7 @@
             <span>Rename</span>
           </button>
           <button
-            type="button"
+            appButton variant="ghost" size="sm" type="button"
             class="concept-action"
             [disabled]="renaming() || mergingConcept()"
             (click)="openMergePicker()"
@@ -989,8 +992,8 @@
             <span>Merge into…</span>
           </button>
           <button
-            type="button"
-            class="concept-action danger"
+            appButton variant="danger" size="sm" type="button"
+            class="concept-action"
             [disabled]="renaming() || mergingConcept()"
             (click)="openDeleteConcept(detail.id)"
           >
@@ -1004,25 +1007,24 @@
           <div class="merge-picker-head">
             <span class="detail-tool-label">Merge into…</span>
             <button
+              appIconButton
               type="button"
               class="merge-picker-close"
+              icon="x"
+              size="md"
+              [glyphSize]="15"
               aria-label="Close merge picker"
               (click)="closeMergePicker()"
-            >
-              <nostos-icon name="x" [size]="15"></nostos-icon>
-            </button>
+            ></button>
           </div>
-          <div class="merge-search-box">
-            <nostos-icon name="magnifying-glass" [size]="15"></nostos-icon>
-            <input
-              type="search"
-              placeholder="Search concepts..."
-              aria-label="Search merge targets"
-              [ngModel]="mergeSearchQuery()"
-              (ngModelChange)="mergeSearchQuery.set($event)"
-              (keydown.escape)="closeMergePicker()"
-            />
-          </div>
+          <input appInput controlSize="compact" class="merge-search-input"
+            type="search"
+            placeholder="Search concepts..."
+            aria-label="Search merge targets"
+            [ngModel]="mergeSearchQuery()"
+            (ngModelChange)="mergeSearchQuery.set($event)"
+            (keydown.escape)="closeMergePicker()"
+          />
           <div class="merge-target-list">
             @if (mergeCandidates().length === 0) {
             <span class="merge-picker-empty">No other concepts match.</span>
@@ -1041,9 +1043,10 @@
             }
           </div>
           <div class="merge-picker-actions">
-            <button type="button" class="merge-picker-cancel" (click)="closeMergePicker()">Cancel</button>
+            <button appButton variant="ghost" size="sm" type="button" class="merge-picker-cancel"
+              (click)="closeMergePicker()">Cancel</button>
             <button
-              type="button"
+              appButton variant="primary" size="sm" type="button"
               class="merge-picker-confirm"
               [disabled]="!mergeTarget()"
               (click)="openMergeConfirmation()"
