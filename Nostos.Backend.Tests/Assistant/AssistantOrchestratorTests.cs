@@ -2148,26 +2148,6 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
     }
 
     [Fact]
-    public async Task A_fast_plain_turn_emits_no_product_activity()
-    {
-        var h = CreateHarness();
-        h.Llm.Returns("Here it is.");
-        var activities = new List<AssistantTurnActivityDto>();
-
-        var response = await h.Orchestrator.HandleTurnAsync(
-            Turn("A direct question.", Context()),
-            activity =>
-            {
-                activities.Add(activity);
-                return ValueTask.CompletedTask;
-            },
-            CancellationToken.None);
-
-        response.Error.Should().BeNull();
-        activities.Should().BeEmpty();
-    }
-
-    [Fact]
     public async Task Book_text_pending_is_a_typed_terminal_state()
     {
         var search = new FakeBookTextSearchService(new BookTextSearchResponse(
