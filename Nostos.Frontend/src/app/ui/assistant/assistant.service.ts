@@ -712,6 +712,7 @@ export class AssistantService {
       this.directPlanApprovalArmed.set(false);
       const reply = 'Okay. I won\'t make that change.';
       this.pushEntry(turnId, 'assistant', reply, null, 'Cancelled');
+      this.persistSession();
       return;
     }
 
@@ -732,6 +733,7 @@ export class AssistantService {
         toHistoricalContext(this.context()),
       );
       this.directPlanApprovalArmed.set(false);
+      this.persistSession();
       this.approvePlan(plan.planId, plan.approvalToken, turnId);
       return;
     }
@@ -901,10 +903,12 @@ export class AssistantService {
               response.errorCode ?? 'Refused',
             );
           }
+          this.persistSession();
         },
         error: () => {
           this.sending.set(false);
           this.lastError.set('The plan could not be applied. It is still waiting for approval.');
+          this.persistSession();
         },
       });
   }
