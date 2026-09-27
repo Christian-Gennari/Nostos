@@ -1695,18 +1695,20 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         };
         configure?.Invoke(assistantOptions);
         var plans = new AssistantPlanStore();
+        var continuations = new AssistantContinuationStore();
         var settings = new AssistantSettingsService(factory);
 
         var orchestrator = new AssistantOrchestrator(
             registry,
             llm,
             plans,
+            continuations,
             settings,
             libraryService,
             assistantOptions,
             NullLogger<AssistantOrchestrator>.Instance);
 
-        return new Harness(db, factory, registry, llm, plans, settings, orchestrator);
+        return new Harness(db, factory, registry, llm, plans, continuations, settings, orchestrator);
     }
 
     private static async Task<AssistantPendingPlanDto> CreatePlanAsync(Harness h)
@@ -1729,8 +1731,22 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         string clientId = "client-1",
         string idem = "key-1",
         string? processingMode = null,
-        IReadOnlyList<AssistantHistoryMessageDto>? history = null) =>
-        new(clientId, idem, message, context, processingMode, history);
+        IReadOnlyList<AssistantHistoryMessageDto>? history = null,
+        string? conversationId = null,
+        string? turnId = null,
+        string? continuationId = null,
+        bool continuationSkipped = false) =>
+        new(
+            clientId,
+            idem,
+            message,
+            context,
+            processingMode,
+            history,
+            conversationId,
+            turnId,
+            continuationId,
+            continuationSkipped);
 
     private static AssistantContextDto Context(
         string surface = "second-brain",
@@ -1849,6 +1865,7 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         AssistantCapabilityRegistry registry,
         FakeLlmProvider llm,
         AssistantPlanStore plans,
+        AssistantContinuationStore continuations,
         AssistantSettingsService settings,
         AssistantOrchestrator orchestrator) : IDisposable
     {
@@ -1857,6 +1874,7 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         public AssistantCapabilityRegistry Registry { get; } = registry;
         public FakeLlmProvider Llm { get; } = llm;
         public AssistantPlanStore Plans { get; } = plans;
+        public AssistantContinuationStore Continuations { get; } = continuations;
         public AssistantSettingsService Settings { get; } = settings;
         public AssistantOrchestrator Orchestrator { get; } = orchestrator;
 
