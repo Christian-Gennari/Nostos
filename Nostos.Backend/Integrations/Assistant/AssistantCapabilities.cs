@@ -2,6 +2,7 @@ using System.Text.Json;
 using Nostos.Backend.Data.Interfaces;
 using Nostos.Backend.Services.Library;
 using Nostos.Backend.Services.Notes;
+using Nostos.Backend.Services.Knowledge;
 using Nostos.Shared.Dtos;
 using Nostos.Shared.Enums;
 using Nostos.Product.BookText;
@@ -33,11 +34,35 @@ public static partial class AssistantCapabilities
     public static IReadOnlyList<AssistantCapability> Build(
         INoteService notes,
         ILibraryService library,
+        IConceptRepository concepts) =>
+        Build(
+            notes,
+            library,
+            concepts,
+            NoOpKnowledgeRetrievalService.Instance,
+            bookText: null);
+
+    public static IReadOnlyList<AssistantCapability> Build(
+        INoteService notes,
+        ILibraryService library,
         IConceptRepository concepts,
+        IBookTextSearchService bookText) =>
+        Build(
+            notes,
+            library,
+            concepts,
+            NoOpKnowledgeRetrievalService.Instance,
+            bookText);
+
+    public static IReadOnlyList<AssistantCapability> Build(
+        INoteService notes,
+        ILibraryService library,
+        IConceptRepository concepts,
+        IKnowledgeRetrievalService knowledge,
         IBookTextSearchService? bookText = null)
     {
         var capabilities = BuildLibraryBookCapabilities(library)
-            .Concat(BuildKnowledgeCapabilities(notes, concepts))
+            .Concat(BuildKnowledgeCapabilities(notes, concepts, knowledge))
             .Concat(BuildCollectionAndCaptureCapabilities(notes, library))
             .ToList();
 
@@ -46,7 +71,6 @@ public static partial class AssistantCapabilities
 
         return capabilities;
     }
-
 
     // ------------------------------------------------------------------
     // Argument readers. The tool args are JSON objects keyed by the canonical

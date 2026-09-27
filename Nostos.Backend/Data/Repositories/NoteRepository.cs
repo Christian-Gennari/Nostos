@@ -78,19 +78,28 @@ public class NoteRepository : INoteRepository
     {
         await _db.NoteConcepts.Where(nc => nc.NoteId == noteId).ExecuteDeleteAsync();
     }
-    public async Task<List<NoteModel>> SearchByTextAsync(string query, int limit)
+    public async Task<List<NoteModel>> SearchByTextAsync(
+        string query,
+        int limit,
+        IReadOnlyCollection<Guid>? bookIds = null)
     {
         var term = query.Trim();
-        if (term.Length == 0) return [];
+        if (term.Length == 0 || bookIds is { Count: 0 }) return [];
 
         // EF.Functions.Like keeps this a single query against the three text
         // columns a note really has. SQLite's LIKE is case-insensitive for ASCII,
         // which is the behaviour a search box should have.
         var pattern = $"%{Escape(term)}%";
-        return await _db
+        var notes = _db
             .Notes.Include(n => n.Book)
             .Include(n => n.NoteConcepts)
             .ThenInclude(nc => nc.Concept)
+            .AsQueryable();
+
+        if (bookIds is { Count: > 0 })
+            notes = notes.Where(n => bookIds.Contains(n.BookId));
+
+        return await notes
             .Where(n =>
                 EF.Functions.Like(n.Content, pattern, "\\")
                 || (n.SelectedText != null && EF.Functions.Like(n.SelectedText, pattern, "\\"))
@@ -119,6 +128,38 @@ public class NoteRepository : INoteRepository
     public async Task<int> CountWithoutConceptsAsync()
     {
         return await _db.Notes.CountAsync(n => !n.NoteConcepts.Any());
+    }
+
+    public Task<int> CountAsync() => _db.Notes.CountAsync();
+
+    public async Task<IReadOnlyList<NoteBookCount>> GetBookCountsAsync(int limit)
+    {
+        var take = Math.Clamp(limit, 1, 50);
+        var rows = await _db.Notes
+            .AsNoTracking()
+            .GroupBy(note => new
+            {
+                note.BookId,
+                BookTitle = note.Book != null ? note.Book.Title : string.Empty,
+            })
+            .Select(group => new
+            {
+                group.Key.BookId,
+                group.Key.BookTitle,
+                NoteCount = group.Count(),
+            })
+            .OrderByDescending(item => item.NoteCount)
+            .ThenBy(item => item.BookTitle)
+            .ThenBy(item => item.BookId)
+            .Take(take)
+            .ToListAsync();
+
+        return rows
+            .Select(item => new NoteBookCount(
+                item.BookId,
+                item.BookTitle,
+                item.NoteCount))
+            .ToList();
     }
 
     /// <summary>

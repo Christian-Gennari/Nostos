@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Nostos.Backend.Data.Interfaces;
 using Nostos.Backend.Data.Models;
+using Nostos.Backend.Search;
 using Nostos.Shared.Dtos;
 
 namespace Nostos.Backend.Data.Repositories;
@@ -23,20 +24,87 @@ public class ConceptRepository : IConceptRepository
             .ToListAsync();
     }
 
-    public async Task<List<ConceptDto>> SearchByNoteTextAsync(string term)
+    public Task<List<ConceptDto>> SearchByNoteTextAsync(string term) =>
+        SearchByNoteTextAsync(term, bookIds: null, limit: 50);
+
+    public async Task<List<ConceptDto>> SearchByNoteTextAsync(
+        string term,
+        IReadOnlyList<Guid>? bookIds,
+        int limit = 50)
     {
-        if (string.IsNullOrWhiteSpace(term))
+        var variants = LexicalQueryPlanner.Build(term);
+        if (variants.Count == 0 || bookIds is { Count: 0 })
             return [];
 
-        var cleanTerm = term.Trim();
-        var pattern = $"%{cleanTerm}%";
+        var take = Math.Clamp(limit, 1, 50);
+        var fused = new Dictionary<Guid, ConceptFusionCandidate>();
 
-        var matchingRows = await _db.NoteConcepts
+        foreach (var variant in variants)
+        {
+            var partial = await SearchSingleVariantAsync(variant.Text, bookIds, take);
+            for (var rank = 0; rank < partial.Count; rank++)
+            {
+                var concept = partial[rank];
+                var score = (variant.Weight * 100)
+                    + (concept.NoteMatchCount * 10)
+                    + Math.Max(0, take - rank);
+
+                if (!fused.TryGetValue(concept.Id, out var current))
+                {
+                    fused[concept.Id] = new ConceptFusionCandidate(
+                        concept,
+                        score,
+                        variant.Text,
+                        MatchedVariants: 1,
+                        BestVariantWeight: variant.Weight);
+                    continue;
+                }
+
+                fused[concept.Id] = current with
+                {
+                    Score = current.Score + score,
+                    MatchedVariants = current.MatchedVariants + 1,
+                    Best = concept.NoteMatchCount > current.Best.NoteMatchCount
+                        ? concept
+                        : current.Best,
+                    SnippetTerm = variant.Weight > current.BestVariantWeight
+                        ? variant.Text
+                        : current.SnippetTerm,
+                    BestVariantWeight = Math.Max(current.BestVariantWeight, variant.Weight),
+                };
+            }
+        }
+
+        return fused.Values
+            .OrderByDescending(candidate => candidate.MatchedVariants)
+            .ThenByDescending(candidate => candidate.Score)
+            .ThenByDescending(candidate => candidate.Best.NoteMatchCount)
+            .ThenBy(candidate => candidate.Best.Name)
+            .Take(take)
+            .Select(candidate => candidate.Best)
+            .ToList();
+    }
+
+    private async Task<List<ConceptDto>> SearchSingleVariantAsync(
+        string cleanTerm,
+        IReadOnlyList<Guid>? bookIds,
+        int limit)
+    {
+        var pattern = $"%{Escape(cleanTerm)}%";
+
+        var rows = _db.NoteConcepts
             .AsNoTracking()
+            .AsQueryable();
+
+        if (bookIds is { Count: > 0 })
+            rows = rows.Where(nc => bookIds.Contains(nc.Note.BookId));
+
+        var matchingRows = await rows
             .Where(nc =>
-                EF.Functions.Like(nc.Note.Content, pattern) ||
-                (nc.Note.SelectedText != null && EF.Functions.Like(nc.Note.SelectedText, pattern)) ||
-                (nc.Note.Book != null && EF.Functions.Like(nc.Note.Book.Title, pattern)))
+                EF.Functions.Like(nc.Concept.Concept, pattern, "\\")
+                || EF.Functions.Like(nc.Note.Content, pattern, "\\")
+                || (nc.Note.SelectedText != null && EF.Functions.Like(nc.Note.SelectedText, pattern, "\\"))
+                || (nc.Note.Book != null && EF.Functions.Like(nc.Note.Book.Title, pattern, "\\")))
             .Select(nc => new
             {
                 nc.ConceptId,
@@ -53,65 +121,50 @@ public class ConceptRepository : IConceptRepository
         if (matchingRows.Count == 0)
             return [];
 
-        var results = new List<ConceptDto>();
-        var groupedByConcept = matchingRows.GroupBy(r => r.ConceptId);
-
-        foreach (var group in groupedByConcept)
-        {
-            var firstRow = group.First();
-            var conceptId = group.Key;
-            var conceptName = firstRow.ConceptName;
-            var totalUsageCount = firstRow.TotalUsageCount;
-
-            var noteGroups = group.GroupBy(r => r.NoteId).ToList();
-            int noteMatchCount = noteGroups.Count;
-
-            string? snippet = null;
-            var orderedNotes = noteGroups
-                .Select(g => g.OrderBy(r => r.CreatedAt).First())
-                .OrderBy(r => r.CreatedAt);
-
-            foreach (var note in orderedNotes)
+        return matchingRows
+            .GroupBy(row => new { row.ConceptId, row.ConceptName, row.TotalUsageCount })
+            .Select(group =>
             {
-                if (!string.IsNullOrEmpty(note.Content) &&
-                    note.Content.Contains(cleanTerm, StringComparison.OrdinalIgnoreCase))
-                {
-                    snippet = CreateSnippet(note.Content, cleanTerm);
-                    break;
-                }
+                var noteGroups = group.GroupBy(row => row.NoteId).ToList();
+                var snippet = noteGroups
+                    .Select(noteGroup => noteGroup.OrderBy(row => row.CreatedAt).First())
+                    .OrderBy(row => row.CreatedAt)
+                    .Select(row =>
+                        MatchSnippet(row.Content, cleanTerm)
+                        ?? MatchSnippet(row.SelectedText, cleanTerm)
+                        ?? MatchSnippet(row.BookTitle, cleanTerm))
+                    .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
 
-                if (!string.IsNullOrEmpty(note.SelectedText) &&
-                    note.SelectedText.Contains(cleanTerm, StringComparison.OrdinalIgnoreCase))
-                {
-                    snippet = CreateSnippet(note.SelectedText, cleanTerm);
-                    break;
-                }
-
-                if (!string.IsNullOrEmpty(note.BookTitle) &&
-                    note.BookTitle.Contains(cleanTerm, StringComparison.OrdinalIgnoreCase))
-                {
-                    snippet = CreateSnippet(note.BookTitle, cleanTerm);
-                    break;
-                }
-            }
-
-            results.Add(new ConceptDto(
-                conceptId,
-                conceptName,
-                totalUsageCount,
-                noteMatchCount,
-                snippet
-            ));
-        }
-
-        // Order by NoteMatchCount descending, then Name ascending.
-        // Cap the returned list at 50 rows — the point of server-side matching is a flat payload.
-        return results
-            .OrderByDescending(c => c.NoteMatchCount)
-            .ThenBy(c => c.Name)
-            .Take(50)
+                return new ConceptDto(
+                    group.Key.ConceptId,
+                    group.Key.ConceptName,
+                    group.Key.TotalUsageCount,
+                    noteGroups.Count,
+                    snippet);
+            })
+            .OrderByDescending(concept => concept.NoteMatchCount)
+            .ThenBy(concept => concept.Name)
+            .Take(limit)
             .ToList();
     }
+
+    private static string? MatchSnippet(string? text, string term)
+    {
+        if (string.IsNullOrWhiteSpace(text)
+            || text.IndexOf(term, StringComparison.OrdinalIgnoreCase) < 0)
+            return null;
+        return CreateSnippet(text, term);
+    }
+
+    private static string Escape(string value) =>
+        value.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
+
+    private sealed record ConceptFusionCandidate(
+        ConceptDto Best,
+        int Score,
+        string SnippetTerm,
+        int MatchedVariants,
+        int BestVariantWeight = 0);
 
     private static string CreateSnippet(string text, string term)
     {

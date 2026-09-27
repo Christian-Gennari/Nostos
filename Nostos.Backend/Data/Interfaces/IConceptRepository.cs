@@ -14,6 +14,10 @@ public interface IConceptRepository
     /// Returns concepts whose linked notes match the given term in Content, SelectedText, or Book Title.
     /// </summary>
     Task<List<ConceptDto>> SearchByNoteTextAsync(string term);
+    Task<List<ConceptDto>> SearchByNoteTextAsync(
+        string term,
+        IReadOnlyList<Guid>? bookIds,
+        int limit = 50);
 
     /// <summary>
     /// Returns aggregate concept and reference counts in a single database query.

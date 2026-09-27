@@ -10,9 +10,11 @@ using Nostos.Backend.Integrations.Assistant;
 using Nostos.Backend.Services;
 using Nostos.Backend.Services.Ai;
 using Nostos.Backend.Services.Library;
+using Nostos.Backend.Services.Knowledge;
 using Nostos.Backend.Services.Notes;
 using Nostos.Backend.Tests.Services.Ai;
 using Nostos.Backend.Tests.Support;
+using Nostos.Product.BookText;
 using Xunit;
 
 namespace Nostos.Backend.Tests.Assistant;
@@ -36,6 +38,9 @@ public sealed class AssistantCapabilityRegistryTests : IClassFixture<SqliteTestF
         "library_create_or_match_book",
         "library_update_book",
         "library_set_book_collections_bulk",
+        "knowledge_search",
+        "knowledge_overview",
+        "knowledge_read_evidence",
         "notes_list_for_book",
         "notes_search",
         "notes_list_unlinked",
@@ -299,7 +304,10 @@ public sealed class AssistantCapabilityRegistryTests : IClassFixture<SqliteTestF
             ("library_list_books", "{}"),
             ("library_get_book", $$"""{"bookId":"{{book.Id}}"}"""),
             ("library_overview", "{}"),
-            ("notes_list_for_book", $$"""{"bookId":"{{book.Id}}"}"""),
+            ("knowledge_search", """{"query":"seeded"}"""),
+            ("knowledge_overview", "{}"),
+            ("knowledge_read_evidence", JsonSerializer.Serialize(new { kind = "note", noteId = note.Id })),
+            ("notes_list_for_book", JsonSerializer.Serialize(new { bookId = book.Id })),
             ("notes_search", """{"query":"seeded"}"""),
             ("notes_list_unlinked", "{}"),
             ("notes_read_for_review", $$"""{"noteId":"{{note.Id}}"}"""),
@@ -513,8 +521,9 @@ public sealed class AssistantCapabilityRegistryTests : IClassFixture<SqliteTestF
         // The same scoped context backs every note repository, exactly as the
         // web host wires it.
         var concepts = new ConceptRepository(db);
+        var noteRepository = new NoteRepository(db);
         var noteService = new NoteService(
-            new NoteRepository(db),
+            noteRepository,
             new BookRepository(db),
             concepts,
             new NoteProcessorService(concepts),
@@ -526,8 +535,22 @@ public sealed class AssistantCapabilityRegistryTests : IClassFixture<SqliteTestF
             factory,
             new BookLookupService(new NoopHttpClientFactory(), new SilentLogger<BookLookupService>()));
 
+        var bookTextIndex = new NoOpBookTextIndex();
+        var bookText = new BookTextSearchService(
+            bookTextIndex,
+            libraryService,
+            new BookTextOptions());
+        var knowledge = new KnowledgeRetrievalService(
+            noteService,
+            noteRepository,
+            concepts,
+            libraryService,
+            bookText,
+            bookTextIndex,
+            []);
+
         var registry = new AssistantCapabilityRegistry(
-            AssistantCapabilities.Build(noteService, libraryService, concepts));
+            AssistantCapabilities.Build(noteService, libraryService, concepts, knowledge));
 
         return new Harness(db, factory, registry);
     }

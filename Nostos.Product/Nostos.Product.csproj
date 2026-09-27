@@ -43,6 +43,7 @@
     <Compile Include="..\Nostos.Backend\Data\Repositories\**\*.cs" Link="Data\Repositories\%(RecursiveDir)%(Filename)%(Extension)" />
 
     <Compile Include="..\Nostos.Backend\Mapping\**\*.cs" Link="Mapping\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\Nostos.Backend\Search\**\*.cs" Link="Search\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\Nostos.Backend\Serialization\**\*.cs" Link="Serialization\%(RecursiveDir)%(Filename)%(Extension)" />
 
     <Compile Include="..\Nostos.Backend\Services\BookAssetFormats.cs" Link="Services\BookAssetFormats.cs" />
@@ -51,6 +52,7 @@
     <Compile Include="..\Nostos.Backend\Services\MediaMetadataService.cs" Link="Services\MediaMetadataService.cs" />
     <Compile Include="..\Nostos.Backend\Services\MediaTypeMap.cs" Link="Services\MediaTypeMap.cs" />
     <Compile Include="..\Nostos.Backend\Services\NoteProcessorService.cs" Link="Services\NoteProcessorService.cs" />
+    <Compile Include="..\Nostos.Backend\Services\Knowledge\**\*.cs" Link="Services\Knowledge\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\Nostos.Backend\Services\Library\**\*.cs" Link="Services\Library\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\Nostos.Backend\Services\Notes\**\*.cs" Link="Services\Notes\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\Nostos.Backend\Services\Portability\**\*.cs" Link="Services\Portability\%(RecursiveDir)%(Filename)%(Extension)" />

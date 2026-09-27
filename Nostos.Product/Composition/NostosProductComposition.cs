@@ -17,6 +17,7 @@ using Nostos.Backend.Serialization;
 using Nostos.Backend.Services;
 using Nostos.Backend.Services.Ai;
 using Nostos.Backend.Services.Library;
+using Nostos.Backend.Services.Knowledge;
 using Nostos.Backend.Services.Notes;
 using Nostos.Backend.Services.Portability;
 using Nostos.Product.BookText;
@@ -130,6 +131,7 @@ public static class NostosProductComposition
         services.AddScoped<MediaMetadataService>();
         services.AddScoped<NoteProcessorService>();
         services.AddScoped<INoteService, NoteService>();
+        services.AddScoped<IKnowledgeRetrievalService, KnowledgeRetrievalService>();
 
         services.AddScoped<IPortableArchiveService, PortableArchiveService>();
         services.TryAddScoped<IPortableArchiveExporter, DefaultPortableArchiveExporter>();
@@ -149,6 +151,7 @@ public static class NostosProductComposition
             sp.GetRequiredService<INoteService>(),
             sp.GetRequiredService<ILibraryService>(),
             sp.GetRequiredService<IConceptRepository>(),
+            sp.GetRequiredService<IKnowledgeRetrievalService>(),
             sp.GetRequiredService<IBookTextSearchService>())));
 
         services.Configure<AcquisitionOptions>(

@@ -29,7 +29,10 @@ public interface INoteRepository
     /// Notes whose text, quote or book title matches `query` (issue #158). Case is
     /// ignored; the caller caps the row count.
     /// </summary>
-    Task<List<NoteModel>> SearchByTextAsync(string query, int limit);
+    Task<List<NoteModel>> SearchByTextAsync(
+        string query,
+        int limit,
+        IReadOnlyCollection<Guid>? bookIds = null);
 
     /// <summary>
     /// The stored exactly-once receipt for a capture key pair, or null when the
@@ -58,4 +61,15 @@ public interface INoteRepository
     /// </summary>
     Task<int> CountWithoutConceptsAsync();
 
+    /// <summary>Total canonical notes visible in the current persistence scope.</summary>
+    Task<int> CountAsync();
+
+    /// <summary>
+    /// Bounded structural note counts by book for whole-knowledge overview.
+    /// </summary>
+    Task<IReadOnlyList<NoteBookCount>> GetBookCountsAsync(int limit);
+
 }
+
+public sealed record NoteBookCount(Guid BookId, string BookTitle, int NoteCount);
+

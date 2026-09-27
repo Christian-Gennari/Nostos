@@ -11,6 +11,7 @@ using Nostos.Backend.Integrations.Assistant;
 using Nostos.Backend.Services;
 using Nostos.Backend.Services.Ai;
 using Nostos.Backend.Services.Library;
+using Nostos.Backend.Services.Knowledge;
 using Nostos.Backend.Services.Notes;
 using Nostos.Backend.Tests.Services.Ai;
 using Nostos.Backend.Tests.Support;
@@ -1865,6 +1866,69 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
 
 
     [Fact]
+    public async Task Knowledge_search_book_evidence_becomes_the_same_server_grounded_source_reference()
+    {
+        var bookId = Guid.NewGuid();
+        var hash = new string('d', 64);
+        var evidence = new KnowledgeBookEvidence(
+            new KnowledgeEvidenceHandle(
+                KnowledgeEvidenceKinds.BookText,
+                BookId: bookId,
+                SourceSha256: hash,
+                ExtractorVersion: BookTextArtifactSchema.CurrentExtractorVersion,
+                Ordinal: 5),
+            bookId,
+            "Unified Book",
+            "Author",
+            hash,
+            BookTextArtifactSchema.CurrentExtractorVersion,
+            BookTextSourceFormat.Pdf,
+            5,
+            "Unified retrieval keeps exact source provenance.",
+            ["Chapter Three"],
+            [
+                new BookTextSourceSegment(
+                    0,
+                    47,
+                    new PdfBookTextSourceLocator(14, "15", 200, 247)),
+            ]);
+
+        var knowledge = new FakeKnowledgeRetrievalService(
+            new KnowledgeSearchResponse(
+                ["unified provenance", "unified", "provenance"],
+                [],
+                [],
+                [evidence],
+                [],
+                true));
+
+        var h = CreateHarness(knowledge: knowledge);
+        h.Llm
+            .CallsTool(
+                "knowledge_search",
+                $"{{\"query\":\"unified provenance\",\"bookIds\":[\"{bookId}\"]}}")
+            .Returns("The imported passage supports that.");
+
+        var response = await h.Orchestrator.HandleTurnAsync(
+            Turn(
+                "What does my material say about unified provenance?",
+                Context(surface: "library", route: "/library")));
+
+        knowledge.LastRequest.Should().NotBeNull();
+        knowledge.LastRequest!.BookIds.Should().ContainSingle().Which.Should().Be(bookId);
+        response.Sources.Should().ContainSingle();
+
+        var source = response.Sources!.Single();
+        source.BookId.Should().Be(bookId);
+        source.SourceSha256.Should().Be(hash);
+        source.Excerpt.Should().Contain("exact source provenance");
+        source.Locators.Should().ContainSingle();
+        source.Locators[0].Type.Should().Be("pdf");
+        source.Locators[0].PdfPageIndex.Should().Be(14);
+        source.Locators[0].PdfPageLabel.Should().Be("15");
+    }
+
+    [Fact]
     public async Task Book_text_search_sources_are_server_grounded_and_preserve_pdf_locator()
     {
         var bookId = Guid.NewGuid();
@@ -2091,7 +2155,11 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
     // Harness
     // ------------------------------------------------------------------
 
-    private Harness CreateHarness(int maxToolIterations = 6, Action<AssistantOptions>? configure = null, IBookTextSearchService? bookText = null)
+    private Harness CreateHarness(
+        int maxToolIterations = 6,
+        Action<AssistantOptions>? configure = null,
+        IBookTextSearchService? bookText = null,
+        IKnowledgeRetrievalService? knowledge = null)
     {
         var path = _fixture.CreateDatabasePath();
         var options = new DbContextOptionsBuilder<NostosDbContext>()
@@ -2121,7 +2189,12 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
             new BookLookupService(new NoopHttpClientFactory(), new SilentLogger<BookLookupService>()));
 
         var registry = new AssistantCapabilityRegistry(
-            AssistantCapabilities.Build(noteService, libraryService, concepts, bookText));
+            AssistantCapabilities.Build(
+                noteService,
+                libraryService,
+                concepts,
+                knowledge ?? NoOpKnowledgeRetrievalService.Instance,
+                bookText));
 
         var llm = new FakeLlmProvider();
         var assistantOptions = new AssistantOptions
@@ -2345,6 +2418,28 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
             Func<TState, Exception?, string> formatter)
         {
         }
+    }
+
+    private sealed class FakeKnowledgeRetrievalService(
+        KnowledgeSearchResponse response) : IKnowledgeRetrievalService
+    {
+        public KnowledgeSearchRequest? LastRequest { get; private set; }
+
+        public Task<KnowledgeSearchResponse> SearchAsync(
+            KnowledgeSearchRequest request,
+            CancellationToken ct = default)
+        {
+            LastRequest = request;
+            return Task.FromResult(response);
+        }
+
+        public Task<KnowledgeOverview> OverviewAsync(CancellationToken ct = default) =>
+            Task.FromResult(new KnowledgeOverview(0, 0, 0, 0, [], []));
+
+        public Task<KnowledgeReadResponse?> ReadAsync(
+            KnowledgeEvidenceHandle handle,
+            CancellationToken ct = default) =>
+            Task.FromResult<KnowledgeReadResponse?>(null);
     }
 
     private sealed class FakeBookTextSearchService(BookTextSearchResponse response)

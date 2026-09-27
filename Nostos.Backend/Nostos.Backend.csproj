@@ -49,6 +49,7 @@
     <Compile Remove="Data\Repositories\**\*.cs" />
 
     <Compile Remove="Mapping\**\*.cs" />
+    <Compile Remove="Search\**\*.cs" />
     <Compile Remove="Serialization\**\*.cs" />
 
     <Compile Remove="Services\BookAssetFormats.cs" />
@@ -57,6 +58,7 @@
     <Compile Remove="Services\MediaMetadataService.cs" />
     <Compile Remove="Services\MediaTypeMap.cs" />
     <Compile Remove="Services\NoteProcessorService.cs" />
+    <Compile Remove="Services\Knowledge\**\*.cs" />
     <Compile Remove="Services\Library\**\*.cs" />
     <Compile Remove="Services\Notes\**\*.cs" />
     <Compile Remove="Services\Portability\**\*.cs" />
