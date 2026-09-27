@@ -28,7 +28,10 @@ public sealed class KnowledgeRetrievalServiceTests : IClassFixture<SqliteTestFix
     public async Task Low_overlap_multi_query_recovers_relevant_note_and_ranks_it_over_a_distractor()
     {
         await using var h = await CreateHarnessAsync();
-        var book = await h.SeedBookAsync("Responsibility");
+        // Keep the book title neutral: note search intentionally includes book
+        // titles, and naming this book "Responsibility" would give the distractor
+        // an artificial second match unrelated to its note text.
+        var book = await h.SeedBookAsync("Neutral Reading");
         var relevant = await h.SeedNoteAsync(
             book.Id,
             "Freedom becomes concrete when a person accepts responsibility for a choice.");
