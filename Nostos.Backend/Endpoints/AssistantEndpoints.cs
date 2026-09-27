@@ -88,20 +88,6 @@ public static class AssistantEndpoints
         http.Response.StatusCode = StatusCodes.Status200OK;
         http.Response.ContentType = "application/x-ndjson; charset=utf-8";
 
-        await writer.WriteAsync(
-            AssistantTurnEventKinds.Started,
-            requestAborted: http.RequestAborted);
-
-        var unavailable = await UnavailableFailureAsync(config, access, http.RequestAborted);
-        if (unavailable is not null)
-        {
-            await writer.WriteAsync(
-                AssistantTurnEventKinds.Failed,
-                failure: unavailable,
-                requestAborted: http.RequestAborted);
-            return;
-        }
-
         using var execution = executions.TryBegin(
             conversationKey,
             turnId,
@@ -121,12 +107,30 @@ public static class AssistantEndpoints
 
         try
         {
+            // A client may expose Stop only after observing this event. Register
+            // the exact turn first so "started" is a truthful acknowledgement
+            // that /cancel can already target it.
+            await writer.WriteAsync(
+                AssistantTurnEventKinds.Started,
+                requestAborted: http.RequestAborted);
+
+            var unavailable = await UnavailableFailureAsync(config, access, execution.Token);
+            if (unavailable is not null)
+            {
+                await writer.WriteAsync(
+                    AssistantTurnEventKinds.Failed,
+                    failure: unavailable,
+                    requestAborted: http.RequestAborted);
+                return;
+            }
+
             var response = await orchestrator.HandleTurnAsync(
                 request,
                 activity => writer.WriteAsync(
                     AssistantTurnEventKinds.Activity,
                     activity: activity,
                     requestAborted: http.RequestAborted),
+                execution,
                 execution.Token);
 
             if (response.Error?.Code == AssistantErrorCodes.TurnCancelled)
