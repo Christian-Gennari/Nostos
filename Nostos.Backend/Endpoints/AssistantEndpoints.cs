@@ -137,7 +137,7 @@ public static class AssistantEndpoints
                         response.Error.Code,
                         response.Error.Message,
                         Retryable: false),
-                    response: response,
+                    responseBody: response,
                     requestAborted: http.RequestAborted);
             }
             else if (response.Error is { } turnError)
@@ -148,14 +148,14 @@ public static class AssistantEndpoints
                         turnError.Code,
                         turnError.Message,
                         Retryable: Retryable(turnError.Code)),
-                    response: response,
+                    responseBody: response,
                     requestAborted: http.RequestAborted);
             }
             else
             {
                 await writer.WriteAsync(
                     AssistantTurnEventKinds.Completed,
-                    response: response,
+                    responseBody: response,
                     requestAborted: http.RequestAborted);
             }
         }
