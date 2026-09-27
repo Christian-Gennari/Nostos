@@ -236,8 +236,8 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     ) as HTMLButtonElement;
     expect(newConversation).toBeTruthy();
     expect(newConversation.getAttribute('aria-label')).toBe('New conversation');
-    expect(newConversation.classList.contains('assistant-header-action')).toBe(true);
     expect(newConversation.classList.contains('assistant-new-conversation')).toBe(true);
+    expect(newConversation.classList.contains('nostos-icon-button')).toBe(true);
     // assistant-expand is intentionally hidden by the <=768px media query.
     // The New conversation action must never inherit that desktop-only class.
     expect(newConversation.classList.contains('assistant-expand')).toBe(false);
