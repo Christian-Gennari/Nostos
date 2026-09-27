@@ -695,9 +695,9 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         var book = await SeedBookAsync(h, "Retry Book");
 
         h.Llm
-            .CallsTool("notes_capture", $"""{"bookId":"{{book.Id}}","content":"One thought"}""")
+            .CallsTool("notes_capture", $$"""{"bookId":"{{book.Id}}","content":"One thought"}""")
             .Returns("Saved.")
-            .CallsTool("notes_capture", $"""{"bookId":"{{book.Id}}","content":"One thought"}""")
+            .CallsTool("notes_capture", $$"""{"bookId":"{{book.Id}}","content":"One thought"}""")
             .Returns("Saved.");
 
         var first = Turn(

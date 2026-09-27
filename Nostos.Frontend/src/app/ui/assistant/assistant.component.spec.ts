@@ -403,9 +403,16 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     assistant.updateDraft('A thought without a page');
     assistant.submit();
 
-    // The capture dispatches at once; the backend decides it needs a page.
+    // The capture dispatches at once; the backend decides it needs a page and
+    // returns the server-authoritative continuation prompt.
     http.expectOne('/api/assistant/turn').flush(
-      turn({ anchorPrompt: { kind: 'physical_page', question: 'What page are you on?' } }),
+      turn({
+        anchorPrompt: {
+          kind: 'physical_page',
+          question: 'What page are you on?',
+          continuationId: 'cont-page',
+        },
+      }),
     );
     expect(assistant.pendingAnchor()?.question).toBe('What page are you on?');
     fixture.detectChanges();
@@ -417,13 +424,13 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     skip.click();
     fixture.detectChanges();
 
+    // Skipping is a real continuation turn, not a replay of the original
+    // message with the answer hidden in request context.
     const request = http.expectOne('/api/assistant/turn');
-    expect(request.request.body.message).toBe('A thought without a page');
-    expect(request.request.body.context.anchor).toEqual({
-      kind: 'unknown',
-      value: null,
-      verified: false,
-    });
+    expect(request.request.body.message).toBe("I don't know");
+    expect(request.request.body.continuationId).toBe('cont-page');
+    expect(request.request.body.continuationSkipped).toBe(true);
+    expect(request.request.body.context.anchor).toBeNull();
     request.flush(turn());
   });
 
@@ -441,20 +448,31 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     assistant.updateDraft('A thought without a page');
     assistant.submit();
     http.expectOne('/api/assistant/turn').flush(
-      turn({ anchorPrompt: { kind: 'physical_page', question: 'What page are you on?' } }),
+      turn({
+        anchorPrompt: {
+          kind: 'physical_page',
+          question: 'What page are you on?',
+          continuationId: 'cont-page',
+        },
+      }),
     );
 
     assistant.updateDraft('42');
     assistant.submit();
 
+    // The typed page is the next real user message, tied to the server-held
+    // continuation; the answer is not smuggled into the request context.
     const request = http.expectOne('/api/assistant/turn');
-    expect(request.request.body.message).toBe('A thought without a page');
-    expect(request.request.body.context.anchor).toEqual({
-      kind: 'physical_page',
-      value: '42',
-      verified: false,
-    });
-    request.flush(turn());
+    expect(request.request.body.message).toBe('42');
+    expect(request.request.body.continuationId).toBe('cont-page');
+    expect(request.request.body.continuationSkipped).toBe(false);
+    expect(request.request.body.context.anchor).toBeNull();
+    request.flush(turn({ acknowledgement: 'Saved to A Physical Book.' }));
+    fixture.detectChanges();
+
+    expect(
+      fixture.nativeElement.querySelector('.entry .entry-anchor').textContent,
+    ).toContain('A Physical Book · p. 42');
   });
 
   it('names the book and page in the transcript once a follow-up is answered', () => {
@@ -474,24 +492,30 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     fixture.detectChanges();
 
     http.expectOne('/api/assistant/turn').flush(
-      turn({ anchorPrompt: { kind: 'physical_page', question: 'What page are you on?' } }),
+      turn({
+        anchorPrompt: {
+          kind: 'physical_page',
+          question: 'What page are you on?',
+          continuationId: 'cont-page',
+        },
+      }),
     );
     fixture.detectChanges();
 
+    // The server's follow-up question is part of the transcript, not only of
+    // the composer prompt.
     expect(
-      fixture.nativeElement.querySelector('[data-testid="assistant-anchor-prompt"]').textContent,
+      fixture.nativeElement.querySelector('[data-testid="assistant-transcript"]').textContent,
     ).toContain('What page are you on?');
 
     assistant.updateDraft('Page 247.');
     assistant.submit();
 
     const request = http.expectOne('/api/assistant/turn');
-    expect(request.request.body.message).toBe('A thought for The Magic Mountain');
-    expect(request.request.body.context.anchor).toEqual({
-      kind: 'physical_page',
-      value: '247',
-      verified: false,
-    });
+    expect(request.request.body.message).toBe('Page 247.');
+    expect(request.request.body.continuationId).toBe('cont-page');
+    expect(request.request.body.continuationSkipped).toBe(false);
+    expect(request.request.body.context.anchor).toBeNull();
     request.flush(
       turn({ acknowledgement: 'Saved to The Magic Mountain.', capturedNoteId: 'note-1' }),
     );
@@ -513,7 +537,13 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     fixture.detectChanges();
 
     http.expectOne('/api/assistant/turn').flush(
-      turn({ anchorPrompt: { kind: 'physical_page', question: 'What page are you on?' } }),
+      turn({
+        anchorPrompt: {
+          kind: 'physical_page',
+          question: 'What page are you on?',
+          continuationId: 'cont-page',
+        },
+      }),
     );
     fixture.detectChanges();
     expect(
@@ -526,6 +556,7 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
 
     fixture.componentInstance.open();
     fixture.detectChanges();
+    expect(assistant.pendingAnchor()?.continuationId).toBe('cont-page');
     expect(
       fixture.nativeElement.querySelector('[data-testid="assistant-anchor-prompt"]').textContent,
     ).toContain('What page are you on?');
@@ -550,6 +581,7 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
         anchorPrompt: {
           kind: 'external_audio_timestamp',
           question: "What's the current timestamp?",
+          continuationId: 'cont-audio',
         },
       }),
     );

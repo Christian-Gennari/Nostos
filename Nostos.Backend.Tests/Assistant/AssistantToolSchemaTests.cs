@@ -331,6 +331,7 @@ public sealed class AssistantToolSchemaTests : IClassFixture<SqliteTestFixture>
             registry,
             llm,
             new AssistantPlanStore(),
+            new AssistantContinuationStore(),
             new AssistantSettingsService(factory),
             libraryService,
             new AssistantOptions { Enabled = true },
