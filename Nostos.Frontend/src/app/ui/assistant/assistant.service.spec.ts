@@ -69,9 +69,8 @@ describe('AssistantService voice transcript alignment', () => {
   let http: HttpTestingController;
   let fake: ReturnType<typeof fakeContextService>;
 
-  beforeEach(() => {
-    sessionStorage.removeItem(ASSISTANT_SESSION_STORAGE_KEY);
-    fake = fakeContextService({});
+  function configureService(initial: Partial<AssistantContext> = {}): void {
+    fake = fakeContextService(initial);
     TestBed.configureTestingModule({
       providers: [
         { provide: AssistantContextService, useValue: fake },
@@ -81,6 +80,11 @@ describe('AssistantService voice transcript alignment', () => {
     });
     service = TestBed.inject(AssistantService);
     http = TestBed.inject(HttpTestingController);
+  }
+
+  beforeEach(() => {
+    sessionStorage.removeItem(ASSISTANT_SESSION_STORAGE_KEY);
+    configureService();
   });
 
   afterEach(() => {
