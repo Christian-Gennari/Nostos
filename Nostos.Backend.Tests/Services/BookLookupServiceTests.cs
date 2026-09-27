@@ -184,7 +184,7 @@ public sealed class BookLookupServiceTests
         client.Timeout.Should().Be(TimeSpan.FromSeconds(15));
         client.DefaultRequestHeaders.UserAgent.ToString().Should().Contain("Nostos/1.0");
         client.DefaultRequestHeaders.UserAgent.ToString()
-            .Should().Contain("github.com/Christian-Gennari/Nostos");
+            .Should().Contain("github.com/Christian-Gennari/Nostos-Rebirth");
     }
 
     private static BookLookupService Service(StubHttpMessageHandler handler) =>
