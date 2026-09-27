@@ -247,7 +247,7 @@
   white-space: nowrap;
 }
 
-.assistant-header-action {
+.assistant-expand {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -267,13 +267,13 @@
     border-color var(--motion-fast) var(--ease-plain);
 }
 
-.assistant-header-action:hover {
+.assistant-expand:hover {
   color: var(--color-text-main);
   background: var(--bg-hover);
   border-color: var(--border-color);
 }
 
-.assistant-header-action:focus-visible {
+.assistant-expand:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: 2px;
 }
