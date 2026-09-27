@@ -58,7 +58,7 @@ public static partial class LexicalQueryPlanner
 
         var contentTokens = TokenRegex()
             .Matches(normalized)
-            .Select(match => match.Value.Trim(''', '’', '-'))
+            .Select(match => match.Value.Trim('\'', '’', '-'))
             .Where(token => token.Length >= 3 && !StopWords.Contains(token))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Take(8)
