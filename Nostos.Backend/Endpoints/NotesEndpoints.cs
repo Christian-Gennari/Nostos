@@ -26,6 +26,15 @@ public static class NotesEndpoints
                 Results.Ok(await notes.SearchAsync(query ?? string.Empty, limit ?? 50))
         );
 
+        // A paged, searchable home for every saved note, whether or not it has a concept.
+        group.MapGet(
+            "/notes",
+            async (INoteService notes, string? query, Guid? bookId, bool? withoutConcepts,
+                bool? oldestFirst, int? limit, int? offset) =>
+                Results.Ok(await notes.BrowseAsync(query, bookId, withoutConcepts ?? false,
+                    oldestFirst ?? false, limit ?? 25, offset ?? 0))
+        );
+
         // Notes linked to no concept, so they can be read at all.
         //
         // Paged on purpose. This used to answer with a bare list capped at 50,

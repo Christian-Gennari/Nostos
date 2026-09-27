@@ -269,6 +269,97 @@ describe('SecondBrain', () => {
     localStorage.clear();
   });
 
+  describe('Notes browsing (#590)', () => {
+    const linked: NoteSearchHit = {
+      id: 'linked-note', bookId: 'book-a', bookTitle: 'A Book',
+      content: 'A thought about [[Alpha]]', selectedText: 'A passage',
+      snippet: 'A passage', conceptNames: ['Alpha'], createdAt: '2026-09-20T10:00:00Z',
+    };
+    const unlinked: NoteSearchHit = {
+      id: 'unlinked-note', bookId: 'book-b', bookTitle: 'Another Book',
+      content: 'A separate thought', selectedText: null,
+      snippet: 'A separate thought', conceptNames: [], createdAt: '2026-09-20T11:00:00Z',
+    };
+
+    const browse = (items: NoteSearchHit[], totalCount = items.length): void => {
+      http.expectOne((request) => request.url === '/api/notes')
+        .flush({ items, totalCount, offset: 0, limit: 25 });
+      fixture.detectChanges();
+    };
+
+    it('opens a bounded all-notes view and finds linked and unlinked material without a search', () => {
+      fixture.detectChanges();
+      expect(http.match((request) => request.url === '/api/notes')).toEqual([]);
+      component.setViewMode('notes');
+      browse([linked, unlinked]);
+
+      expect(component.browseTotal()).toBe(2);
+      expect(fixture.nativeElement.querySelectorAll('.index-list .note-row-item').length).toBe(2);
+      (fixture.nativeElement.querySelectorAll('.index-list .note-row-item')[1] as HTMLButtonElement).click();
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('.brain-browse-detail')?.textContent).toContain('A separate thought');
+      expect(fixture.nativeElement.querySelector('.brain-browse-detail')?.textContent).toContain('Without concepts');
+    });
+
+    it('filters without concepts, then enters focused review and returns to the filtered Notes view', () => {
+      component.setViewMode('notes');
+      browse([linked, unlinked]);
+      component.setBrowseWithoutConcepts(true);
+      const request = http.expectOne((req) => req.url === '/api/notes');
+      expect(request.request.params.get('withoutConcepts')).toBe('true');
+      request.flush({ items: [unlinked], totalCount: 1, offset: 0, limit: 25 });
+      fixture.detectChanges();
+
+      component.openReview();
+      http.expectOne((req) => req.url === '/api/notes/unlinked')
+        .flush({ items: [unlinked], totalCount: 1, offset: 0, limit: 25 });
+      component.closeReview();
+      http.expectOne((req) => req.url === '/api/notes')
+        .flush({ items: [unlinked], totalCount: 1, offset: 0, limit: 25 });
+      fixture.detectChanges();
+      expect(component.viewMode()).toBe('notes');
+      expect(component.browseWithoutConcepts()).toBe(true);
+    });
+
+    it('retains an unsaved edit and an unlinked note after a failed save', () => {
+      component.setViewMode('notes');
+      browse([unlinked]);
+      component.openNotePanel(unlinked);
+      component.startBrowseEdit();
+      component.browseEditContent.set('An edited thought');
+      component.closeNotePanel();
+      expect(component.panelNote()?.id).toBe(unlinked.id);
+
+      component.saveBrowseEdit();
+      http.expectOne((req) => req.method === 'PUT' && req.url === `/api/notes/${unlinked.id}`)
+        .error(new ProgressEvent('network-error'));
+      expect(component.browseEditing()).toBe(true);
+      expect(component.browseNotes().map((note) => note.id)).toEqual([unlinked.id]);
+    });
+
+    it('creates a concept through a canonical note link and removes only the filtered row', () => {
+      component.setViewMode('notes');
+      browse([unlinked]);
+      component.setBrowseWithoutConcepts(true);
+      browse([unlinked]);
+      component.openNotePanel(unlinked);
+      component.openBrowsePicker();
+      component.browsePickerQuery.set('New idea');
+      expect(component.browseNewConceptName()).toBe('New idea');
+
+      component.createBrowseConcept();
+      const save = http.expectOne((req) => req.method === 'PUT' && req.url === `/api/notes/${unlinked.id}`);
+      expect(save.request.body.content).toBe('A separate thought\n\n[[New idea]]');
+      save.flush({ ...unlinked, content: save.request.body.content });
+      http.expectOne('/api/concepts').flush(concepts);
+      http.expectOne('/api/concepts/stats').flush(stats);
+
+      expect(component.browseTotal()).toBe(0);
+      expect(component.browseNotes()).toEqual([]);
+      expect(component.panelNote()?.conceptNames).toEqual(['New idea']);
+    });
+  });
+
   describe('Brain → Writing source handoff (#492)', () => {
     it('keeps selection controls hidden until Select sources is explicitly entered', () => {
       component.selectConcept('c-alpha');
@@ -1547,10 +1638,10 @@ describe('SecondBrain', () => {
       // The concept index is replaced, not augmented: no concept rows remain.
       expect(fixture.nativeElement.querySelector('.index-row-shell')).toBeNull();
       expect(fixture.nativeElement.querySelector('.brain-section-title')?.textContent?.trim()).toBe(
-        'Notes with no concept'
+        'Without concepts'
       );
       expect(fixture.nativeElement.querySelector('.brain-section-count')?.textContent?.trim()).toBe(
-        '2 remaining'
+        '2 notes'
       );
       expect(fixture.nativeElement.querySelectorAll('.index-list .note-row-item').length).toBe(2);
 
@@ -1651,7 +1742,7 @@ describe('SecondBrain', () => {
       expect(component.reviewQueue().map((row) => row.id)).toEqual(['hit-2']);
       expect(component.reviewTotal()).toBe(1);
       expect(fixture.nativeElement.querySelector('.brain-section-count')?.textContent?.trim()).toBe(
-        '1 remaining'
+        '1 note'
       );
       // Resolving moves the review on rather than emptying the pane.
       expect(component.viewMode()).toBe('unlinked');
@@ -1732,8 +1823,8 @@ describe('SecondBrain', () => {
     it('shows a calm completion state when nothing is waiting', () => {
       enterReview([], 0);
 
-      expect(fixture.nativeElement.textContent).toContain('Nothing waiting');
-      expect(fixture.nativeElement.textContent).toContain('Every note is connected to a concept.');
+      expect(fixture.nativeElement.textContent).toContain('No notes here');
+      expect(fixture.nativeElement.textContent).toContain('You can still browse all your saved notes.');
       expect(fixture.nativeElement.querySelector('.index-list .note-row-item')).toBeNull();
       expect(fixture.nativeElement.querySelector('.review-pane')).toBeNull();
     });
@@ -1969,4 +2060,3 @@ describe('SecondBrain concept-link routing', () => {
     http.verify();
   });
 });
-

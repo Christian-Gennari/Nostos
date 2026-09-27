@@ -65,6 +65,33 @@ public sealed class NoteEndpointTests : IClassFixture<LibraryEndpointFactory>
     // ------------------------------------------------------------------
 
     [Fact]
+    public async Task Browse_notes_pages_linked_and_unlinked_material_and_filters_without_concepts()
+    {
+        var book = await CreateBookAsync();
+        var linked = await CreateNoteAsync(book.Id, "a thought about [[Attention]]");
+        var unlinked = await CreateNoteAsync(book.Id, "an unconnected thought");
+
+        var all = await Client.GetFromJsonAsync<NoteSearchPageDto>(
+            $"/api/notes?bookId={book.Id}&limit=1&offset=0");
+        all!.TotalCount.Should().Be(2);
+        all.Items.Should().ContainSingle();
+
+        var second = await Client.GetFromJsonAsync<NoteSearchPageDto>(
+            $"/api/notes?bookId={book.Id}&limit=1&offset=1");
+        all.Items.Concat(second!.Items).Select(n => n.Id).Should().BeEquivalentTo([linked.Id, unlinked.Id]);
+
+        var without = await Client.GetFromJsonAsync<NoteSearchPageDto>(
+            $"/api/notes?bookId={book.Id}&withoutConcepts=true&query=unconnected");
+        without!.TotalCount.Should().Be(1);
+        without.Items.Should().ContainSingle().Which.Id.Should().Be(unlinked.Id);
+        without.Items.Single().ConceptNames.Should().BeEmpty();
+    }
+
+    // ------------------------------------------------------------------
+    // GET /api/notes/unlinked
+    // ------------------------------------------------------------------
+
+    [Fact]
     public async Task Unlinked_notes_returns_a_page_with_the_total_and_clamped_bounds()
     {
         var book = await CreateBookAsync();

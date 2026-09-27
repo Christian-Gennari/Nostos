@@ -66,6 +66,10 @@ export interface NoteSearchHit {
   snippet: string | null;
   conceptNames: string[];
   createdAt: string;
+  cfiRange?: string | null;
+  sourceAnchorKind?: string;
+  sourceAnchorValue?: string | null;
+  anchorVerified?: boolean;
 }
 
 /**

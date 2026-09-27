@@ -84,6 +84,17 @@ public sealed class NoteService : INoteService
         return new NoteSearchPageDto(notes.Select(n => ByText(n, null)).ToList(), total, skip, take);
     }
 
+    public async Task<NoteSearchPageDto> BrowseAsync(
+        string? query, Guid? bookId, bool withoutConcepts, bool oldestFirst,
+        int limit, int offset, CancellationToken ct = default)
+    {
+        var take = Clamp(limit);
+        var skip = Math.Max(offset, 0);
+        var (items, total) = await _notes.BrowseAsync(
+            query, bookId, withoutConcepts, oldestFirst, take, skip);
+        return new NoteSearchPageDto(items.Select(n => ByText(n, query?.Trim())).ToList(), total, skip, take);
+    }
+
     public Task<IReadOnlyList<NoteSearchHitDto>> SearchAsync(
         string query,
         int limit,

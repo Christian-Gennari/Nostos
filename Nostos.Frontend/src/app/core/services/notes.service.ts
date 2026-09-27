@@ -52,6 +52,25 @@ export class NotesService {
     });
   }
 
+  browse(options: {
+    query?: string;
+    bookId?: string;
+    withoutConcepts?: boolean;
+    oldestFirst?: boolean;
+    limit?: number;
+    offset?: number;
+  } = {}): Observable<NoteSearchPage> {
+    const params: Record<string, string | number | boolean> = {
+      limit: options.limit ?? 25,
+      offset: options.offset ?? 0,
+    };
+    if (options.query?.trim()) params['query'] = options.query.trim();
+    if (options.bookId) params['bookId'] = options.bookId;
+    if (options.withoutConcepts) params['withoutConcepts'] = true;
+    if (options.oldestFirst) params['oldestFirst'] = true;
+    return this.http.get<NoteSearchPage>('/api/notes', { params });
+  }
+
   /**
    * Notes linked to no concept — an exception queue, not a second content type.
    *

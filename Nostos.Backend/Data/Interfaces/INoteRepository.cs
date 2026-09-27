@@ -54,6 +54,10 @@ public interface INoteRepository
     /// </summary>
     Task<List<NoteModel>> GetWithoutConceptsAsync(int limit, int offset);
 
+    /// <summary>A stable, bounded page across all notes, including notes without concepts.</summary>
+    Task<(List<NoteModel> Items, int Total)> BrowseAsync(
+        string? query, Guid? bookId, bool withoutConcepts, bool oldestFirst, int limit, int offset);
+
     /// <summary>
     /// How many notes are linked to no concept right now. The unlinked-note review
     /// queue traverses the whole set, so a page on its own would silently imply
@@ -72,4 +76,3 @@ public interface INoteRepository
 }
 
 public sealed record NoteBookCount(Guid BookId, string BookTitle, int NoteCount);
-
