@@ -1090,6 +1090,55 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
     }
 
     [Fact]
+    public async Task Missing_book_continuation_that_does_not_resolve_reprompts_without_mutating()
+    {
+        var h = CreateHarness();
+        var intended = await SeedBookAsync(h, "The Magic Mountain");
+
+        h.Llm.CallsTool(
+            "notes_capture",
+            """{"content":"A thought with no open book"}""");
+
+        var first = await h.Orchestrator.HandleTurnAsync(Turn(
+            "Save this thought.",
+            Context(surface: "library", route: "/library"),
+            conversationId: "conversation-book-reprompt",
+            turnId: "turn-original"));
+
+        var continuationId = first.AnchorPrompt!.ContinuationId!;
+        var unresolved = await h.Orchestrator.HandleTurnAsync(Turn(
+            "A Book That Is Not Here",
+            Context(surface: "library", route: "/library"),
+            conversationId: "conversation-book-reprompt",
+            turnId: "turn-book-missing",
+            continuationId: continuationId));
+
+        unresolved.Error.Should().BeNull();
+        unresolved.AnchorPrompt.Should().NotBeNull();
+        unresolved.AnchorPrompt!.Kind.Should().Be(AssistantOrchestrator.BookPromptKind);
+        unresolved.AnchorPrompt.Question.Should().Be(AssistantOrchestrator.BookNotFoundQuestion);
+        unresolved.AnchorPrompt.ContinuationId.Should().Be(continuationId);
+        (await NoteCountAsync(h)).Should().Be(0);
+        h.Llm.CallCount.Should().Be(1);
+
+        var completed = await h.Orchestrator.HandleTurnAsync(Turn(
+            "The Magic Mountain",
+            Context(surface: "library", route: "/library"),
+            conversationId: "conversation-book-reprompt",
+            turnId: "turn-book-resolved",
+            continuationId: continuationId));
+
+        completed.Error.Should().BeNull();
+        completed.CapturedNoteId.Should().NotBeNullOrWhiteSpace();
+        completed.Acknowledgement.Should().Contain("The Magic Mountain");
+        (await NoteCountAsync(h)).Should().Be(1);
+        h.Llm.CallCount.Should().Be(1);
+
+        await using var db = await h.Factory.CreateDbContextAsync();
+        (await db.Notes.AsNoTracking().SingleAsync()).BookId.Should().Be(intended.Id);
+    }
+
+    [Fact]
     public async Task Stale_wrong_or_mismatched_continuation_mutates_nothing_and_never_guesses()
     {
         var h = CreateHarness();
