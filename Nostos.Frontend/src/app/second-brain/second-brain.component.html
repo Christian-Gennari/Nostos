@@ -41,9 +41,9 @@
 
       <div class="brain-header-tools">
         <nav class="brain-areas" aria-label="Explore Brain">
-          <button appButton variant="ghost" size="sm" type="button" class="brain-area" [class.active]="isBrowsingNotes() || isReviewing()"
+          <button type="button" class="brain-area toggle-opt" [class.active]="isBrowsingNotes() || isReviewing()"
             [attr.aria-current]="isBrowsingNotes() || isReviewing() ? 'page' : null" (click)="setViewMode('notes')">Notes</button>
-          <button appButton variant="ghost" size="sm" type="button" class="brain-area" [class.active]="!isBrowsingNotes() && !isReviewing()"
+          <button type="button" class="brain-area toggle-opt" [class.active]="!isBrowsingNotes() && !isReviewing()"
             [attr.aria-current]="!isBrowsingNotes() && !isReviewing() ? 'page' : null" (click)="setViewMode('list')">Concepts</button>
         </nav>
         <!--
@@ -463,12 +463,7 @@
               }
             </section>
             <section class="brain-note-section" aria-labelledby="browse-links-label">
-              <div class="brain-note-section-heading">
-                <div id="browse-links-label" class="super-title">Linked concepts</div>
-                @if (note.conceptNames.length > 0) {
-                  <span appBadge tone="success" [dot]="true">Confirmed</span>
-                }
-              </div>
+              <div id="browse-links-label" class="super-title">Linked concepts</div>
               <div class="brain-note-panel-concepts">
                 @for (name of note.conceptNames; track name) {
                   <button appButton variant="ghost" size="sm" type="button"
