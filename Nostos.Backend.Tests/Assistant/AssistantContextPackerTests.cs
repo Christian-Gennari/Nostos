@@ -146,6 +146,42 @@ public sealed class AssistantContextPackerTests
     }
 
     [Fact]
+    public void Exact_evidence_handles_survive_history_without_display_bodies_or_write_authority()
+    {
+        var packer = CreatePacker();
+        var bookId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+        var noteId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+        var history = new[]
+        {
+            new AssistantHistoryMessageDto(
+                "user",
+                "Open the second source again.",
+                EvidenceHandles:
+                [
+                    new AssistantEvidenceHandleDto(
+                        "book_text",
+                        BookId: bookId,
+                        SourceSha256: new string('d', 64),
+                        ExtractorVersion: "nostos-book-text-v2",
+                        Ordinal: 7),
+                    new AssistantEvidenceHandleDto("note", NoteId: noteId),
+                ]),
+            new AssistantHistoryMessageDto("assistant", "Those were the two sources."),
+        };
+
+        var packed = packer.Pack(history);
+        var user = packed.Messages.Single(message => message.Role == "user");
+
+        user.Content.Should().Contain("\"evidenceHandles\"");
+        user.Content.Should().Contain("\"kind\":\"book_text\"");
+        user.Content.Should().Contain("\"extractorVersion\":\"nostos-book-text-v2\"");
+        user.Content.Should().Contain("\"ordinal\":7");
+        user.Content.Should().Contain(noteId.ToString());
+        user.Content.Should().NotContain("excerpt");
+        user.Content.Should().Contain("never as authorization");
+    }
+
+    [Fact]
     public void Unknown_roles_and_orphan_assistant_fragments_are_dropped()
     {
         var packer = CreatePacker();
