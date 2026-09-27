@@ -11,7 +11,7 @@ namespace Nostos.Product.BookText;
 public static class BookTextArtifactSchema
 {
     public const int CurrentVersion = 1;
-    public const string CurrentExtractorVersion = "nostos-book-text-v1";
+    public const string CurrentExtractorVersion = "nostos-book-text-v2";
     public const string SuggestedFileName = "extraction-v1.jsonl.gz";
 }
 
@@ -99,9 +99,11 @@ public sealed record PdfBookTextSourceLocator(
 /// EPUB provenance.
 ///
 /// epub.js CFI is preferred when available because the current Nostos reader can
-/// pass it directly to rendition.display(). Resource href + spine index remain
-/// mandatory structural fallbacks. Text offsets, when present, are offsets in
-/// the normalized visible text of that spine resource, never fake page numbers.
+/// pass it directly to rendition.display(). ResourceHref is the OPF/package-relative
+/// manifest href used by epub.js's spine, not the archive-root path used to read
+/// the ZIP entry. Resource href + spine index remain mandatory structural
+/// fallbacks. Text offsets, when present, are offsets in the normalized visible
+/// text of that spine resource, never fake page numbers.
 /// </summary>
 public sealed record EpubBookTextSourceLocator(
     int SpineIndex,
