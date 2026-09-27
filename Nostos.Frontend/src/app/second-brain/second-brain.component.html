@@ -474,11 +474,14 @@
             <div class="review-actions">
               <button appButton variant="secondary" size="sm" type="button"
                 (click)="openBrowsePicker()">Link to concept</button>
+              <button appButton variant="ghost" size="sm" type="button" [disabled]="browseSaving() || proposalState() === 'loading' || proposalState() === 'linking'"
+                (click)="askNostos()" data-testid="browse-suggest-concepts">Suggest concepts</button>
               <button appButton variant="ghost" size="sm" type="button"
                 (click)="startBrowseEdit()">Edit note</button>
               <button appButton variant="secondary" size="sm" type="button"
                 (click)="openWritingHandoff([note.id])">Keep with writing…</button>
             </div>
+            <ng-container *ngTemplateOutlet="conceptProposals"></ng-container>
             }
             @if (!browseEditing() && !browseSaving()) {
               @if (note.bookId !== browseBookId()) {
@@ -631,6 +634,7 @@
             </button>
             <button
               appButton variant="ghost" size="sm" type="button"
+              [disabled]="proposalState() === 'loading' || proposalState() === 'linking'"
               (click)="askNostos()"
               data-testid="review-suggest-concepts"
             >
@@ -647,6 +651,7 @@
             <button appButton variant="ghost" size="sm" type="button" [disabled]="!reviewCanAdvance() || reviewLoading()"
               (click)="skipReviewNote()">{{ reviewLoading() ? 'Loading…' : 'Next note' }}</button>
           </div>
+          <ng-container *ngTemplateOutlet="conceptProposals"></ng-container>
           @if (browseSourceParams(note); as target) {
             <a class="brain-source-link" [routerLink]="['/read', note.bookId]" [queryParams]="target">Return to passage</a>
           } @else {
@@ -1074,6 +1079,56 @@
     </aside>
     }
   </div>
+
+  <ng-template #conceptProposals>
+    @if (proposalState() !== 'idle') {
+    <section class="brain-proposals" aria-label="Suggested concepts" data-testid="brain-proposals">
+      <div class="brain-proposals-heading">
+        <strong>Possible connections</strong>
+        <button appButton variant="ghost" size="sm" type="button" [disabled]="proposalState() === 'linking'" (click)="cancelConceptProposals()">
+          {{ proposalState() === 'loading' ? 'Cancel' : 'Dismiss' }}
+        </button>
+      </div>
+      @if (proposalState() === 'loading') {
+        <p role="status">Looking at this note and your existing concepts…</p>
+      } @else if (proposalState() === 'linking') {
+        <p role="status">Linking the chosen concept…</p>
+      } @else if (proposalState() === 'empty') {
+        <p role="status">No useful matches found. This note is fine without a concept.</p>
+      } @else if (proposalState() === 'unavailable' || proposalState() === 'error') {
+        <p role="alert">{{ proposalMessage() || 'Suggestions could not be loaded.' }}</p>
+        @if (canRetryProposalLink()) {
+          <button appButton variant="secondary" size="sm" type="button" (click)="retryProposalLink()">Try linking again</button>
+        }
+        <button appButton variant="secondary" size="sm" type="button" (click)="askNostos()">Try again</button>
+      } @else {
+        <p class="brain-proposals-hint">Suggestions are optional. Inspect the concept before linking.</p>
+        @if (proposalMessage()) { <p role="alert">{{ proposalMessage() }}</p> }
+        @for (candidate of proposalCandidates(); track candidate.value) {
+          <div class="brain-proposal" data-testid="brain-proposal">
+            <div><strong>{{ candidate.label }}</strong><p>{{ candidate.reason }}</p></div>
+            <div class="brain-proposal-actions">
+              <button appButton variant="ghost" size="sm" type="button" (click)="inspectConceptProposal(candidate)">Inspect</button>
+              <button appButton variant="secondary" size="sm" type="button" (click)="acceptConceptProposal(candidate)">Link note</button>
+            </div>
+            @if (proposalInspectingId() === candidate.value) {
+              @if (proposalDetail(); as detail) {
+                <div class="brain-proposal-evidence">
+                  <span>{{ detail.notes.length }} linked {{ detail.notes.length === 1 ? 'note' : 'notes' }} in “{{ detail.name }}”</span>
+                  @for (evidence of detail.notes.slice(0, 2); track evidence.noteId) {
+                    <p><strong>{{ evidence.bookTitle }}</strong> · {{ evidence.selectedText || evidence.content }}</p>
+                  }
+                  <button appButton variant="ghost" size="sm" type="button" (click)="openBrowseConcept(detail.name)">Open concept</button>
+                </div>
+              } @else { <p role="status">Loading concept notes…</p> }
+            }
+          </div>
+        }
+      }
+      <button appButton variant="ghost" size="sm" type="button" (click)="openAskNostosForNote()">Ask Nostos a question about this note</button>
+    </section>
+    }
+  </ng-template>
 
   @if (handoffNoteIds().length > 0) {
   <app-brain-writing-handoff

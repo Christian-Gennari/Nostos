@@ -409,6 +409,12 @@ export class AssistantService {
    * the assistant's prose.
    */
   readonly actionExecuted = new Subject<{ capability: string; context: AssistantContext }>();
+  /** A terminal result keyed to the originating turn, for focused surfaces such as Brain. */
+  readonly turnFinished = new Subject<{
+    turnId: string;
+    response: AssistantTurnResponse | null;
+    error: string | null;
+  }>();
 
   /** True while an auto transcript is waiting out its Undo window. */
   readonly autoSendPending = signal(false);
@@ -871,21 +877,37 @@ export class AssistantService {
     this.submit();
   }
 
+  /** Request the same assistant proposal artifact while keeping the Brain note in place. */
+  requestConceptProposals(noteId: string): string | null {
+    const context = this.context();
+    if (this.sending() || !noteId || context.brainReviewNoteId !== noteId) return null;
+
+    return this.startPreparedTurn({
+      text: `Suggest up to three existing concepts for note ${noteId}. Read the note and existing concept evidence, then explicitly propose only grounded links. If none fit, return no proposals. Do not link anything.`,
+      context,
+      requestAnchor: this.effectiveAnchor(context),
+      captureBookTitle: null,
+      continuationPrompt: null,
+      continuationSkipped: false,
+      displayAnchor: this.effectiveAnchor(context),
+    });
+  }
+
   /**
    * Choose a non-mutating suggestion. The click is the user's explicit choice,
    * so the resulting existing-concept link may execute through the normal Act
    * path without asking for a second approval.
    */
-  applySuggestion(suggestion: AssistantSuggestionDto): void {
-    if (this.sending() || suggestion.kind !== 'concept' || !suggestion.value) return;
+  applySuggestion(suggestion: AssistantSuggestionDto): string | null {
+    if (this.sending() || suggestion.kind !== 'concept' || !suggestion.value) return null;
 
     const context = this.context();
     if (!suggestion.noteId || context.brainReviewNoteId !== suggestion.noteId) {
       this.lastError.set('Open the suggested note in Brain before linking it.');
-      return;
+      return null;
     }
 
-    this.dispatchTurn(
+    return this.dispatchTurn(
       `Link note ${suggestion.noteId} to the existing concept “${suggestion.label}” (ID ${suggestion.value}).`,
       this.effectiveAnchor(context),
     );
@@ -896,6 +918,16 @@ export class AssistantService {
     if (turnId) this.eventLedger.update((events) => events.map((event) =>
       event.turnId === turnId ? { ...event, suggestions: [] } : event));
     this.suggestions.set([]);
+    this.persistSession();
+  }
+
+  /** A note changed or left focus; old turn chips must not outlive that snapshot. */
+  dismissSuggestionsForNote(noteId: string): void {
+    this.eventLedger.update((events) => events.map((event) => ({
+      ...event,
+      suggestions: event.suggestions?.filter((item) => item.noteId !== noteId),
+    })));
+    this.suggestions.update((items) => items.filter((item) => item.noteId !== noteId));
     this.persistSession();
   }
 
@@ -954,17 +986,17 @@ export class AssistantService {
     text: string,
     anchor: AssistantAnchor | null,
     captureBookTitle: string | null = null,
-  ): void {
+  ): string {
     const retry = this.retryableTurn();
     if (retry && retry.text === text && retry.request.continuationId === null) {
       this.draft.set('');
       this.sendPreparedTurn(retry);
-      return;
+      return retry.turnId;
     }
 
     this.retryableTurn.set(null);
     const context = this.context();
-    this.startPreparedTurn({
+    return this.startPreparedTurn({
       text,
       context,
       requestAnchor: anchor,
@@ -1021,7 +1053,7 @@ export class AssistantService {
     continuationPrompt: AssistantAnchorPrompt | null;
     continuationSkipped: boolean;
     displayAnchor: AssistantAnchor | null;
-  }): void {
+  }): string {
     const turnId = createId();
     const conversationId = this.conversationId();
     const history = this.contextualHistory();
@@ -1062,6 +1094,7 @@ export class AssistantService {
       userEntryId,
       continuationPrompt: options.continuationPrompt,
     });
+    return turnId;
   }
 
   private sendPreparedTurn(turn: PreparedAssistantTurn): void {
@@ -1089,6 +1122,7 @@ export class AssistantService {
         terminalHandled = true;
         this.applyTurnResponse(turn, value);
         this.finishTurnUi(turn.turnId);
+        this.turnFinished.next({ turnId: turn.turnId, response: value, error: value.error?.message ?? null });
         return;
       }
 
@@ -1114,6 +1148,7 @@ export class AssistantService {
         terminalHandled = true;
         this.applyTurnResponse(turn, value.response);
         this.finishTurnUi(turn.turnId);
+        this.turnFinished.next({ turnId: turn.turnId, response: value.response, error: value.response.error?.message ?? null });
         return;
       }
 
@@ -1296,6 +1331,7 @@ export class AssistantService {
 
     this.finishTurnUi(turn.turnId);
     this.persistSession();
+    this.turnFinished.next({ turnId: turn.turnId, response, error: message });
   }
 
   private handleTerminalCancellation(
@@ -1325,6 +1361,7 @@ export class AssistantService {
 
     this.finishTurnUi(turn.turnId);
     this.persistSession();
+    this.turnFinished.next({ turnId: turn.turnId, response, error: stoppedMessage });
   }
 
   private handleTransportFailure(
@@ -1348,6 +1385,7 @@ export class AssistantService {
       this.pendingContinuationContext.set(turn.context);
     }
     this.persistSession();
+    this.turnFinished.next({ turnId: turn.turnId, response: null, error: message });
   }
 
   private applyTurnResponse(

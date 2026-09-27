@@ -39,7 +39,7 @@ import { IconButtonComponent } from '../ui/icon-button/icon-button.component';
 import { InputDirective } from '../ui/form-control/form-control.directive';
 import { DropdownComponent, type DropdownOption } from '../ui/dropdown/dropdown.component';
 import { AssistantContextService } from '../ui/assistant/assistant-context.service';
-import { AssistantService } from '../ui/assistant/assistant.service';
+import { AssistantService, type AssistantSuggestionDto } from '../ui/assistant/assistant.service';
 import {
   BrainWritingHandoffComponent,
   type BrainWritingHandoffResult,
@@ -109,9 +109,22 @@ export class SecondBrain implements AfterViewChecked {
   private readonly assistantContext = inject(AssistantContextService);
   private readonly assistant = inject(AssistantService);
   private readonly route = inject(ActivatedRoute);
+  private readonly host = inject(ElementRef<HTMLElement>);
 
-  /** The live review-note context provider, registered only while reviewing. */
+  /** The focused note context provider for browsing or optional review. */
   private assistantContextUnregister: (() => void) | null = null;
+
+  proposalState = signal<'idle' | 'loading' | 'ready' | 'empty' | 'unavailable' | 'error' | 'linking'>('idle');
+  proposalCandidates = signal<AssistantSuggestionDto[]>([]);
+  proposalMessage = signal<string | null>(null);
+  proposalDetail = signal<ConceptDetailDto | null>(null);
+  proposalInspectingId = signal<string | null>(null);
+  private proposalNoteKey: string | null = null;
+  private proposalNoteId: string | null = null;
+  private proposalTurnId: string | null = null;
+  private proposalLinkTurnId: string | null = null;
+  private proposalAccepted: AssistantSuggestionDto | null = null;
+  private ignoredProposalTurns = new Set<string>();
 
   // Phase 5 consumes these outputs to open the rename and confirmation flows.
   readonly renameRequested = output<string>();
@@ -499,6 +512,52 @@ export class SecondBrain implements AfterViewChecked {
       this.removeFromReview(noteId);
       this.toast.success('Note linked to a concept');
     });
+    const assistantTurnSubscription = this.assistant.turnFinished.subscribe((event) => {
+      if (this.ignoredProposalTurns.delete(event.turnId)) {
+        this.assistant.dismissSuggestions(event.turnId);
+        return;
+      }
+      if (event.turnId === this.proposalTurnId) {
+        this.proposalTurnId = null;
+        if (!this.proposalNoteKey || this.proposalNoteKey !== this.focusedNoteKey()) return;
+        if (event.error) {
+          this.proposalState.set(/offline|allowance|disabled|unavailable|configured/i.test(event.error)
+            ? 'unavailable' : 'error');
+          this.proposalMessage.set(event.error);
+          return;
+        }
+        const noteId = this.focusedNote()?.id;
+        const candidates = (event.response?.suggestions ?? []).filter((item) =>
+          item.kind === 'concept' && item.noteId === noteId && item.value && item.reason?.trim()).slice(0, 3);
+        this.proposalCandidates.set(candidates);
+        this.proposalState.set(candidates.length ? 'ready' : 'empty');
+        return;
+      }
+      if (event.turnId === this.proposalLinkTurnId) {
+        this.proposalLinkTurnId = null;
+        if (this.proposalNoteKey !== this.focusedNoteKey()) return;
+        if (event.response?.executedCapabilities?.includes('notes_link_existing_concept')) {
+          if (this.isBrowsingNotes() && this.proposalAccepted) {
+            const note = this.panelNote();
+            if (note && note.id === this.proposalAccepted.noteId) {
+              const content = this.withConceptReference(note.content, this.proposalAccepted.label);
+              const saved = { ...note, content, conceptNames: declaredConceptNames(content) };
+              this.panelNote.set(saved);
+              this.browseNotes.update((rows) => this.browseWithoutConcepts()
+                ? rows.filter((row) => row.id !== saved.id)
+                : rows.map((row) => row.id === saved.id ? saved : row));
+              if (this.browseWithoutConcepts()) this.browseTotal.update((total) => Math.max(0, total - 1));
+              this.refreshIndexAndStats();
+              this.toast.success('Note linked to a concept');
+            }
+          }
+          this.clearConceptProposals();
+        } else {
+          this.proposalState.set('error');
+          this.proposalMessage.set(event.error ?? 'No link was made. You can retry or link manually.');
+        }
+      }
+    });
 
     // A pending debounce and assistant receipt subscription must not outlive the surface.
     this.destroyRef.onDestroy(() => {
@@ -507,18 +566,18 @@ export class SecondBrain implements AfterViewChecked {
       this.unregisterAssistantContext();
       routeSubscription.unsubscribe();
       assistantActionSubscription.unsubscribe();
+      assistantTurnSubscription.unsubscribe();
     });
 
-    // The assistant needs to know which unlinked note is under review. The
+    // The assistant needs to know which note is in focus. The
     // provider is registered as `explicit` (it beats route-derived ambient
     // context) and re-registered whenever the focused note changes, then
     // removed when review ends or the surface is destroyed.
     effect(() => {
-      const reviewing = this.isReviewing();
-      const note = this.reviewNote();
+      const note = this.focusedNote();
 
       this.unregisterAssistantContext();
-      if (!reviewing || !note) return;
+      if (!note) return;
 
       this.assistantContextUnregister = this.assistantContext.register(
         () => ({
@@ -529,6 +588,11 @@ export class SecondBrain implements AfterViewChecked {
         }),
         { explicit: true },
       );
+    });
+
+    effect(() => {
+      const key = this.focusedNoteKey();
+      if (this.proposalNoteKey && this.proposalNoteKey !== key) this.clearConceptProposals();
     });
 
     this.conceptsService.list().subscribe({
@@ -725,13 +789,104 @@ export class SecondBrain implements AfterViewChecked {
     });
   }
 
-  /**
-   * Ask Nostos where the reviewed note belongs (issue #261 §5). The assistant
-   * only suggests existing concepts; choosing one is the user's authorization,
-   * and a successful link executes immediately through the normal Act path.
-   */
+  private focusedNote(): NoteSearchHit | null {
+    return this.isReviewing() ? this.reviewNote() : this.isBrowsingNotes() ? this.panelNote() : null;
+  }
+
+  private focusedNoteKey(): string | null {
+    const note = this.focusedNote();
+    return note ? JSON.stringify([note.id, note.content, note.selectedText, note.conceptNames]) : null;
+  }
+
+  /** Explicitly request the assistant's validated proposal artifact beside this note. */
   askNostos(): void {
-    this.assistant.requestSuggestions();
+    const note = this.focusedNote();
+    if (!note || this.browseEditing() || this.reviewEditing()) return;
+    this.clearConceptProposals();
+    this.proposalNoteKey = this.focusedNoteKey();
+    this.proposalNoteId = note.id;
+    const turnId = this.assistant.requestConceptProposals(note.id);
+    if (!turnId) {
+      this.proposalState.set('unavailable');
+      this.proposalMessage.set('Ask Nostos is busy or unavailable. You can still link a concept manually.');
+      return;
+    }
+    this.proposalTurnId = turnId;
+    this.proposalState.set('loading');
+  }
+
+  cancelConceptProposals(): void {
+    this.clearConceptProposals();
+    queueMicrotask(() => (this.host.nativeElement as HTMLElement).querySelector<HTMLButtonElement>(
+      this.isReviewing() ? '[data-testid="review-suggest-concepts"]' : '[data-testid="browse-suggest-concepts"]',
+    )?.focus());
+  }
+
+  private clearConceptProposals(): void {
+    if (this.proposalTurnId) {
+      this.ignoredProposalTurns.add(this.proposalTurnId);
+      if (this.assistant.activeTurnId() === this.proposalTurnId) this.assistant.stopActiveTurn();
+    }
+    this.proposalTurnId = null;
+    this.proposalLinkTurnId = null;
+    this.proposalAccepted = null;
+    if (this.proposalNoteId) this.assistant.dismissSuggestionsForNote(this.proposalNoteId);
+    this.proposalNoteId = null;
+    this.proposalNoteKey = null;
+    this.proposalCandidates.set([]);
+    this.proposalDetail.set(null);
+    this.proposalInspectingId.set(null);
+    this.proposalMessage.set(null);
+    this.proposalState.set('idle');
+  }
+
+  inspectConceptProposal(candidate: AssistantSuggestionDto): void {
+    if (!candidate.value || this.proposalNoteKey !== this.focusedNoteKey()) return;
+    this.proposalDetail.set(null);
+    this.proposalInspectingId.set(candidate.value);
+    this.conceptsService.get(candidate.value).subscribe({
+      next: (detail) => {
+        if (this.proposalInspectingId() === detail.id && this.proposalNoteKey === this.focusedNoteKey())
+          this.proposalDetail.set(detail);
+      },
+      error: () => {
+        if (this.proposalInspectingId() === candidate.value) {
+          this.proposalInspectingId.set(null);
+          this.proposalMessage.set('Could not load this concept. Try again or choose another.');
+        }
+      },
+    });
+  }
+
+  acceptConceptProposal(candidate: AssistantSuggestionDto): void {
+    const note = this.focusedNote();
+    if (!note || this.proposalState() !== 'ready' || this.proposalNoteKey !== this.focusedNoteKey()
+      || candidate.noteId !== note.id || !candidate.value || this.assistant.sending()) return;
+    this.proposalAccepted = candidate;
+    const turnId = this.assistant.applySuggestion(candidate);
+    if (!turnId) {
+      this.proposalAccepted = null;
+      this.proposalState.set('error');
+      this.proposalMessage.set('Could not start the link. You can link manually or try again.');
+      return;
+    }
+    this.proposalLinkTurnId = turnId;
+    this.proposalState.set('linking');
+  }
+
+  canRetryProposalLink(): boolean {
+    return !!this.proposalAccepted && this.proposalNoteKey === this.focusedNoteKey();
+  }
+
+  retryProposalLink(): void {
+    if (!this.proposalAccepted || !this.canRetryProposalLink()) return;
+    this.proposalState.set('ready');
+    this.acceptConceptProposal(this.proposalAccepted);
+  }
+
+  openAskNostosForNote(): void {
+    this.assistant.open();
+    this.assistant.updateDraft('I have a question about this note.');
   }
 
   /**
