@@ -1582,6 +1582,9 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         prompt.Should().Contain("notes_capture [immediate capture]");
         prompt.Should().Contain("collectionIds");
         prompt.Should().Contain("Multi-step work is allowed");
+        prompt.Should().Contain("Analysis, comparison and synthesis should be as detailed as needed");
+        prompt.Should().Contain("Historical application/evidence metadata");
+        prompt.Should().NotContain("Keep replies to a sentence or two");
     }
 
     [Fact]
