@@ -8,6 +8,7 @@ import { AssistantComponent } from './assistant.component';
 import {
   ASSISTANT_PENDING_DELAY_MS,
   ASSISTANT_SESSION_STORAGE_KEY,
+  AssistantEvidenceReferenceDto,
   AssistantService,
   AssistantSourceReferenceDto,
   AssistantTurnResponse,
@@ -207,6 +208,33 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
           sourceExcerpt: source.excerpt,
         },
       },
+    );
+  });
+
+  it('opens note and concept evidence on canonical Brain deep-links', () => {
+    const note: AssistantEvidenceReferenceDto = {
+      handle: { kind: 'note', noteId: 'note-42' },
+      label: 'Note · The Magic Mountain',
+      excerpt: 'A canonical note.',
+    };
+    const concept: AssistantEvidenceReferenceDto = {
+      handle: { kind: 'concept', conceptId: 'concept-7' },
+      label: 'Attention',
+      excerpt: 'Canonical concept evidence.',
+    };
+
+    expect(fixture.componentInstance.canOpenEvidence(note)).toBe(true);
+    fixture.componentInstance.openEvidence(note);
+    expect(router.navigate).toHaveBeenCalledWith(
+      ['/second-brain'],
+      { queryParams: { noteId: 'note-42' } },
+    );
+
+    expect(fixture.componentInstance.canOpenEvidence(concept)).toBe(true);
+    fixture.componentInstance.openEvidence(concept);
+    expect(router.navigate).toHaveBeenCalledWith(
+      ['/second-brain'],
+      { queryParams: { conceptId: 'concept-7' } },
     );
   });
 
