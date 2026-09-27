@@ -1,6 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { computed, signal } from '@angular/core';
-import { provideHttpClient } from '@angular/common/http';
+import { HttpEventType, provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { Router } from '@angular/router';
 
@@ -837,9 +837,34 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
       expect(dots).toBeTruthy();
       expect(dots!.getAttribute('aria-hidden')).toBe('true');
       expect(dots!.querySelectorAll('.thinking-dot').length).toBe(3);
-      expect(indicator.querySelector('[data-testid="assistant-stop-turn"]')).toBeTruthy();
 
-      request.flush(turn());
+      // Pending UI may appear from the local delay, but Stop is withheld until
+      // the server confirms the exact turn has been registered as active.
+      expect(indicator.querySelector('[data-testid="assistant-stop-turn"]')).toBeNull();
+
+      const turnId = request.request.body.turnId as string;
+      const startedLine = JSON.stringify({
+        turnId,
+        sequence: 1,
+        kind: 'started',
+      }) + '\n';
+      request.event({
+        type: HttpEventType.DownloadProgress,
+        loaded: startedLine.length,
+        partialText: startedLine,
+      });
+      fixture.detectChanges();
+
+      expect(
+        pending()!.querySelector('[data-testid="assistant-stop-turn"]'),
+      ).toBeTruthy();
+
+      request.flush(startedLine + JSON.stringify({
+        turnId,
+        sequence: 2,
+        kind: 'completed',
+        response: turn(),
+      }) + '\n');
     });
   });
 
