@@ -39,6 +39,57 @@ public sealed class AssistantTurnLifecycleTests
         duplicate.Should().BeNull();
     }
 
+    [Fact]
+    public void Cancellation_wins_the_atomic_mutation_boundary_when_requested_first()
+    {
+        var registry = new AssistantTurnExecutionRegistry();
+        using var execution = registry.TryBegin("conversation", "turn-1", CancellationToken.None);
+
+        execution.Should().NotBeNull();
+        registry.TryCancel("conversation", "turn-1").Should().BeTrue();
+
+        execution!.TryBeginMutation().Should().BeNull();
+        execution.Token.IsCancellationRequested.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Mutation_start_wins_the_atomic_boundary_when_claimed_first()
+    {
+        var registry = new AssistantTurnExecutionRegistry();
+        using var execution = registry.TryBegin("conversation", "turn-1", CancellationToken.None);
+
+        execution.Should().NotBeNull();
+        using var mutation = execution!.TryBeginMutation();
+        mutation.Should().NotBeNull();
+
+        registry.TryCancel("conversation", "turn-1").Should().BeTrue();
+        execution.Token.IsCancellationRequested.Should().BeTrue();
+
+        // A cancellation requested during the in-flight write prevents any
+        // subsequent canonical write from starting.
+        mutation!.Dispose();
+        execution.TryBeginMutation().Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Cancellation_and_completion_can_race_without_touching_a_disposed_token_source()
+    {
+        for (var i = 0; i < 256; i++)
+        {
+            var registry = new AssistantTurnExecutionRegistry();
+            var execution = registry.TryBegin("conversation", $"turn-{i}", CancellationToken.None);
+            execution.Should().NotBeNull();
+
+            var cancel = Task.Run(() =>
+                Record.Exception(() => registry.TryCancel("conversation", $"turn-{i}")));
+            var complete = Task.Run(() =>
+                Record.Exception(() => execution!.Dispose()));
+
+            var failures = await Task.WhenAll(cancel, complete);
+            failures.Should().OnlyContain(error => error is null);
+        }
+    }
+
     [Theory]
     [InlineData("knowledge_search", AssistantTrustClass.Suggest, AssistantCapabilityCategory.KnowledgeRetrieval, "searching_material", "Searching your notes and books…")]
     [InlineData("knowledge_read_evidence", AssistantTrustClass.Suggest, AssistantCapabilityCategory.SourceNavigation, "opening_evidence", "Opening the matching passage…")]
