@@ -27,7 +27,10 @@ import {
 } from './assistant-context.service';
 
 export interface AssistantEntry {
+  /** UI/event identity. Deliberately distinct from the logical TurnId. */
   id: string;
+  /** The logical user turn this visible event belongs to. */
+  turnId: string;
   /**
    * Speaker-explicit (issue #286): the user's own words, the assistant's words,
    * or a delivery failure. A capture's acknowledgement and the deterministic
@@ -75,6 +78,8 @@ export interface AssistantAnchorPrompt {
    */
   kind: 'physical_page' | 'external_audio_timestamp' | 'book';
   question: string;
+  /** Server-authoritative deterministic capture continuation. */
+  continuationId: string;
 }
 
 /** A non-mutating proposal returned by the bridge. */
@@ -119,6 +124,12 @@ export interface AssistantPlanApproveResponse {
 export interface AssistantAnchorPromptDto {
   kind: string;
   question: string;
+  continuationId?: string | null;
+}
+
+export interface AssistantTurnErrorDto {
+  code: string;
+  message: string;
 }
 
 /** One normal turn result, mirroring `AssistantTurnResponse`. */
@@ -134,18 +145,28 @@ export interface AssistantTurnResponse {
   executedCapabilities?: string[];
   /** Server-grounded passages with exact source locators. */
   sources?: AssistantSourceReferenceDto[];
+  /** Server-known deterministic refusal, e.g. stale continuation. */
+  error?: AssistantTurnErrorDto | null;
 }
 
 /** The turn request the bridge accepts. */
 interface AssistantTurnRequestDto {
+  /** Compatibility aliases: equal to conversationId / turnId for new clients. */
   clientId: string;
   idempotencyKey: string;
+  /** Stable for the current working Ask Nostos conversation. */
+  conversationId: string;
+  /** Stable identity for this logical user turn, reused on delivery retry. */
+  turnId: string;
   message: string;
   context: AssistantContextDto;
+  /** Server-held deterministic continuation answered by this real user turn. */
+  continuationId: string | null;
+  continuationSkipped: boolean;
   /**
-   * The recent turns the client remembers (issue #286). The server is stateless
-   * and appends the current `message` itself, so this is the log from BEFORE
-   * this turn — never the message being sent.
+   * The recent turns the client remembers (issue #286). The server appends the
+   * current `message` itself, so this is the completed log from BEFORE this
+   * logical turn — never the message being sent or a transport retry copy.
    */
   history: AssistantHistoryMessage[];
 }
@@ -220,6 +241,7 @@ export const TRANSCRIPT_AUTO_SEND_DELAY_MS = 2000;
 /** Shape exposed on `globalThis.__nostosAssistant` for live verification. */
 export interface NostosAssistantDiagnostics {
   context: AssistantContext;
+  conversationId: string;
   lastTurn: AssistantTurnResponse | null;
   suggestions: AssistantSuggestionDto[];
   pendingPlan: AssistantPendingPlanDto | null;
@@ -232,8 +254,6 @@ declare global {
   // eslint-disable-next-line no-var
   var __nostosAssistant: NostosAssistantDiagnostics | undefined;
 }
-
-let entrySeq = 0;
 
 /** A stable per-session id, with a fallback for environments without `crypto.randomUUID`. */
 function createId(): string {
