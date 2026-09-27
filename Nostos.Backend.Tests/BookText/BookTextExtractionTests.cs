@@ -56,9 +56,9 @@ public sealed class BookTextExtractionTests
         var continuationLocator = Assert.IsType<EpubBookTextSourceLocator>(continuation.SourceSegments.Single().Locator);
 
         Assert.Equal(0, firstLocator.SpineIndex);
-        Assert.EndsWith("chapter-1.xhtml", firstLocator.ResourceHref);
+        Assert.Equal("chapter-1.xhtml", firstLocator.ResourceHref);
         Assert.Equal(2, continuationLocator.SpineIndex);
-        Assert.EndsWith("chapter-2b.xhtml", continuationLocator.ResourceHref);
+        Assert.Equal("chapter-2b.xhtml", continuationLocator.ResourceHref);
         Assert.Null(continuationLocator.Cfi);
         Assert.NotNull(continuationLocator.StartTextOffset);
     }
