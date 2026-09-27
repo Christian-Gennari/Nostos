@@ -429,6 +429,7 @@ export class AssistantService {
     if (this.sending()) return;
 
     this.cancelAutoSend();
+    this.anchorDismissed.set(false);
     this.conversationId.set(createId());
     this.eventLedger.set([]);
     this.retryableTurn = null;
