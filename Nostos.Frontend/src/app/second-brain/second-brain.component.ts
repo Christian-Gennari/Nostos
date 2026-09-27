@@ -214,6 +214,24 @@ export class SecondBrain implements AfterViewChecked {
     this.setViewMode('list');
     this.selectConcept(concept.id);
   }
+
+  private deepLinkNoteSeq = 0;
+
+  private openDeepLinkedNote(noteId: string): void {
+    const seq = ++this.deepLinkNoteSeq;
+    this.setViewMode('notes');
+    this.notesService.get(noteId).subscribe({
+      next: (note) => {
+        if (seq !== this.deepLinkNoteSeq) return;
+        this.panelNote.set(note);
+      },
+      error: () => {
+        if (seq !== this.deepLinkNoteSeq) return;
+        this.toast.error('Could not open that note');
+      },
+    });
+  }
+
   private browseSeq = 0;
   private browseTimer: ReturnType<typeof setTimeout> | null = null;
   isBrowsingNotes = computed(() => this.viewMode() === 'notes');
@@ -502,6 +520,12 @@ export class SecondBrain implements AfterViewChecked {
 
   constructor() {
     const routeSubscription = this.route.queryParamMap.subscribe((params) => {
+      const noteId = params.get('noteId');
+      if (noteId) {
+        if (noteId !== this.panelNote()?.id) this.openDeepLinkedNote(noteId);
+        return;
+      }
+
       const conceptId = params.get('conceptId');
       if (!conceptId || conceptId === this.selectedId()) return;
 
