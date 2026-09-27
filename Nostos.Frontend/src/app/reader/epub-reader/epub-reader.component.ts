@@ -15,7 +15,7 @@ import {
 import { CommonModule } from '@angular/common';
 import { ButtonComponent } from '../../ui/button/button.component';
 import ePub, { Book, Rendition, Contents } from 'epubjs';
-import { Subject } from 'rxjs';
+import { Subject, Subscription } from 'rxjs';
 import { debounceTime, distinctUntilChanged, filter } from 'rxjs/operators';
 
 import { EpubAnnotationManager } from './epub-annotation-manager';
@@ -278,6 +278,31 @@ function normalizeEpubHrefForComparison(value: string): string {
   return parts.join('/');
 }
 
+/**
+ * Quiet window used to decide that epub.js has finished re-laying-out after a
+ * grounded display.
+ *
+ * A resolved `rendition.display()` is not a settled display: epub.js
+ * re-paginates on container size changes and then re-displays the view's last
+ * seen location (`Rendition.onResized`). On a real nested-OPF book (The Idea of
+ * Justice, chapter015, offset 9202) the grounded CFI display resolved 90 ms
+ * after the click and the reflow re-displayed the *section start* 23 ms later,
+ * silently undoing the navigation.
+ *
+ * The window is deliberately longer than the 350 ms resize debounce above: a
+ * queued `rendition.resize` re-layout must fall inside the quiet window and
+ * restart it, instead of being confirmed away just before it lands.
+ */
+const GROUNDED_SETTLE_QUIET_MS = 400;
+
+/**
+ * Hard ceiling for one settle wait. `resized` events restart the quiet window,
+ * so a stream of resizes (or a rendition that never stops re-laying-out) must
+ * still reach a verdict: at the deadline the target is verified regardless of
+ * later events, rather than holding progress persistence closed for ever.
+ */
+const GROUNDED_SETTLE_MAX_MS = 2000;
+
 @Component({
   selector: 'app-epub-reader',
   standalone: true,
@@ -323,6 +348,33 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
   private annotationManager: EpubAnnotationManager | null = null;
   private currentCfi: string | null = null;
   private pendingGroundedSource: ReaderSourceTarget | null = null;
+
+  /**
+   * Monotonic navigation generation. Every navigation (grounded apply, user
+   * page turn/keyboard/TOC, book load) bumps it, and every async continuation
+   * of a grounded navigation captures it and no-ops once superseded — a stale
+   * settle must never override a newer navigation.
+   */
+  private navigationGeneration = 0;
+
+  /**
+   * The grounded target currently protected through epub.js's layout settle.
+   * While it is set, relocated events are not persisted as reading progress:
+   * they describe reflow churn, not where the reader has been grounded.
+   */
+  private groundedNavigation: {
+    generation: number;
+    /** The exact CFI the grounded navigation displayed. */
+    cfi: string;
+    /** The resource the target was resolved to, for re-deriving its range. */
+    href: string | null;
+    /** Normalized text offset of the cited passage, when the locator had one. */
+    offset: number | null;
+    /** The single controlled retry has already been issued. */
+    reasserted: boolean;
+    /** Ends the in-flight settle wait (quiet timer + resize listeners). */
+    cancelSettle: (() => void) | null;
+  } | null = null;
 
   /** Keydown listeners registered inside each iframe's contents document. */
   private readonly keyboardDocuments = new Map<Document, () => void>();
@@ -458,16 +510,19 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
   // --- IReader Methods ---
 
   next() {
+    this.beginNavigation();
     this.sourceNavigationMessage.set(null);
     this.rendition?.next();
   }
 
   previous() {
+    this.beginNavigation();
     this.sourceNavigationMessage.set(null);
     this.rendition?.prev();
   }
 
   goTo(target: string | number) {
+    this.beginNavigation();
     this.sourceNavigationMessage.set(null);
     this.rendition?.display(target.toString());
   }
@@ -475,6 +530,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
   async goToSource(target: ReaderSourceTarget): Promise<void> {
     if (target.type !== 'epub') return;
 
+    this.beginNavigation();
     this.sourceNavigationMessage.set(null);
 
     // A source chip can be clicked before epub.js finishes its opening display.
@@ -492,17 +548,31 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
   private async applyGroundedSource(target: ReaderSourceTarget): Promise<void> {
     if (target.type !== 'epub' || !this.rendition) return;
 
+    const generation = this.beginNavigation();
     this.sourceNavigationMessage.set(null);
 
     if (target.epubCfi) {
+      // Protect before the display resolves: epub.js's settle can re-display a
+      // stale location as soon as it does, and nothing in between may persist
+      // that churn as the reader's progress.
+      this.protectGroundedTarget(
+        generation,
+        target.epubCfi,
+        target.epubResourceHref ?? null,
+        target.epubTextOffset ?? null,
+      );
       try {
         await this.rendition.display(target.epubCfi);
+        if (generation !== this.navigationGeneration) return;
+        this.watchGroundedSettle(generation);
         return;
       } catch {
         // A CFI belongs to one exact source revision but an older epub.js build
         // can still reject it. Fall through to the structural locator rather
         // than inventing a page or silently opening the wrong place.
+        this.cancelGroundedNavigation(generation);
       }
+      if (generation !== this.navigationGeneration) return;
     }
 
     if (!target.epubResourceHref) {
@@ -536,24 +606,16 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
         return;
       }
     }
+    if (generation !== this.navigationGeneration) return;
 
     if (target.epubTextOffset === null || target.epubTextOffset === undefined) return;
 
+    let cfi: string;
     try {
-      const rawContents = this.rendition.getContents?.();
-      const contents: Contents[] = Array.isArray(rawContents)
-        ? rawContents
-        : rawContents
-          ? [rawContents]
-          : [];
-      const displayed = normalizeEpubHrefForComparison(displayedHref);
+      const contents = this.renderedContents();
       const content =
-        contents.find((candidate: any) => {
-          const href = String(
-            candidate?.section?.href ?? candidate?.document?.location?.pathname ?? '',
-          );
-          return normalizeEpubHrefForComparison(href) === displayed;
-        }) ?? contents[0];
+        contents.find((candidate) => this.contentMatchesHref(candidate, displayedHref)) ??
+        contents[0];
 
       if (!content?.document) {
         this.failGroundedSourceNavigation();
@@ -569,16 +631,28 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
         return;
       }
 
-      const cfi = (content as any).cfiFromRange?.(range);
-      if (typeof cfi !== 'string' || cfi.length === 0) {
+      const computed = (content as any).cfiFromRange?.(range);
+      if (typeof computed !== 'string' || computed.length === 0) {
         this.failGroundedSourceNavigation();
         return;
       }
-
-      await this.rendition.display(cfi);
+      cfi = computed;
     } catch (error) {
       this.failGroundedSourceNavigation(error);
+      return;
     }
+    if (generation !== this.navigationGeneration) return;
+
+    this.protectGroundedTarget(generation, cfi, displayedHref, target.epubTextOffset);
+    try {
+      await this.rendition.display(cfi);
+    } catch (error) {
+      this.cancelGroundedNavigation(generation);
+      this.failGroundedSourceNavigation(error);
+      return;
+    }
+    if (generation !== this.navigationGeneration) return;
+    this.watchGroundedSettle(generation);
   }
 
   private epubSpineSources(): EpubSpineSource[] {
@@ -669,6 +743,289 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
 
   private normalizeSourceText(value: string): string {
     return value.replace(/\r\n?/g, '\n').replace(/[ \t\f\v]+/g, ' ').replace(/ *\n+ */g, '\n').trim();
+  }
+
+  // --- Grounded source navigation protection ---
+
+  /**
+   * Start a navigation operation. Bumps the generation and cancels any
+   * grounded protection: a new navigation — including the reader's own page
+   * turn, keyboard or TOC — must never be fought by a delayed reassert.
+   */
+  private beginNavigation(): number {
+    this.navigationGeneration++;
+    this.cancelGroundedNavigation();
+    return this.navigationGeneration;
+  }
+
+  /** Remember the grounded target to keep on screen through the settle. */
+  private protectGroundedTarget(
+    generation: number,
+    cfi: string,
+    href: string | null,
+    offset: number | null,
+  ): void {
+    this.groundedNavigation = {
+      generation,
+      cfi,
+      href,
+      offset,
+      reasserted: false,
+      cancelSettle: null,
+    };
+  }
+
+  /**
+   * Drop the protected target (a newer navigation, or a failed display of a
+   * candidate CFI). The optional generation keeps a stale failure path from
+   * tearing down the protection a newer navigation installed.
+   */
+  private cancelGroundedNavigation(generation?: number): void {
+    const target = this.groundedNavigation;
+    if (!target || (generation !== undefined && target.generation !== generation)) return;
+    this.groundedNavigation = null;
+    target.cancelSettle?.();
+  }
+
+  /**
+   * Wait for epub.js's layout settle before trusting where the display landed.
+   *
+   * The wait is event-driven — rendition `resized` events and the reader's own
+   * resize stream restart a short quiet window — with a hard deadline so a
+   * rendition that never stops re-laying-out still reaches a verdict instead
+   * of holding progress writes closed for ever.
+   */
+  private watchGroundedSettle(generation: number): void {
+    const target = this.groundedNavigation;
+    const rendition = this.rendition;
+    if (
+      !target ||
+      target.generation !== generation ||
+      generation !== this.navigationGeneration ||
+      !rendition
+    ) {
+      return;
+    }
+
+    let quietTimer: ReturnType<typeof setTimeout> | null = null;
+    let deadlineTimer: ReturnType<typeof setTimeout> | null = null;
+    let resizeSubscription: Subscription | null = null;
+
+    const cleanup = () => {
+      if (quietTimer) {
+        clearTimeout(quietTimer);
+        quietTimer = null;
+      }
+      if (deadlineTimer) {
+        clearTimeout(deadlineTimer);
+        deadlineTimer = null;
+      }
+      resizeSubscription?.unsubscribe();
+      resizeSubscription = null;
+      rendition.off('resized', onResized);
+      const current = this.groundedNavigation;
+      if (current && current.generation === generation) {
+        current.cancelSettle = null;
+      }
+    };
+
+    const finish = () => {
+      cleanup();
+      void this.verifyGroundedNavigation(generation);
+    };
+
+    // Every re-layout restarts the quiet window: the settle is not one resize
+    // but however many epub.js performs before the page stops moving.
+    const restartQuietWindow = () => {
+      if (quietTimer) clearTimeout(quietTimer);
+      quietTimer = setTimeout(finish, GROUNDED_SETTLE_QUIET_MS);
+    };
+
+    const onResized = () => restartQuietWindow();
+    const cancel = () => cleanup();
+
+    target.cancelSettle = cancel;
+    rendition.on('resized', onResized);
+    resizeSubscription = this.resizeSubject$.subscribe(restartQuietWindow);
+    deadlineTimer = setTimeout(finish, GROUNDED_SETTLE_MAX_MS);
+    restartQuietWindow();
+  }
+
+  /**
+   * Once the settle is quiet: confirm the grounded target is where the reader
+   * ended up, reassert it exactly once when it is not, and fail closed when
+   * even the controlled retry cannot establish it.
+   */
+  private async verifyGroundedNavigation(generation: number): Promise<void> {
+    const target = this.groundedNavigation;
+    if (!target || target.generation !== generation || generation !== this.navigationGeneration) {
+      return;
+    }
+
+    if (this.isGroundedTargetOnPage()) {
+      this.confirmGroundedNavigation(generation);
+      return;
+    }
+
+    if (target.reasserted) {
+      this.failGroundedNavigation(generation);
+      return;
+    }
+    target.reasserted = true;
+
+    const rendition = this.rendition;
+    if (!rendition) {
+      this.failGroundedNavigation(generation);
+      return;
+    }
+
+    try {
+      await rendition.display(target.cfi);
+    } catch (error) {
+      this.failGroundedNavigation(generation, error);
+      return;
+    }
+    if (generation !== this.navigationGeneration) return;
+    this.watchGroundedSettle(generation);
+  }
+
+  /** Confirmed: resume progress persistence with the verified target. */
+  private confirmGroundedNavigation(generation: number): void {
+    const target = this.groundedNavigation;
+    if (!target || target.generation !== generation) return;
+
+    this.groundedNavigation = null;
+    target.cancelSettle?.();
+    this.updateProgressState(target.cfi);
+  }
+
+  /** Failed closed: surface the existing message and resume persistence. */
+  private failGroundedNavigation(generation: number, error?: unknown): void {
+    const target = this.groundedNavigation;
+    if (!target || target.generation !== generation) return;
+
+    this.groundedNavigation = null;
+    target.cancelSettle?.();
+    this.failGroundedSourceNavigation(error);
+  }
+
+  /**
+   * Is the grounded target's start point inside the reading view's visible box?
+   *
+   * Measure the re-derived range when the environment can: the range lives in
+   * the iframe's document, whose coordinates are relative to that iframe's own
+   * viewport (epub.js pages by scrolling the *parent* container, not the
+   * iframe), so the frame element's rect is added before comparing with the
+   * page box. The comparison is inclusive because the target range is
+   * collapsed to the passage's first character: a zero-width rect on the edge
+   * still means the passage starts on the visible page.
+   *
+   * With no layout geometry to measure, accept only the rendition reporting
+   * exactly the CFI that was displayed; anything else fails closed.
+   */
+  private isGroundedTargetOnPage(): boolean {
+    const target = this.groundedNavigation;
+    if (!target) return false;
+
+    const found = this.groundedTargetRange();
+    if (found) {
+      const visible = this.isGroundedRangeVisible(found.range, found.content);
+      if (visible !== null) return visible;
+    }
+
+    const current = this.getCurrentLocation();
+    return current !== null && current === target.cfi;
+  }
+
+  /**
+   * Re-derive the grounded target's Range in the currently rendered contents:
+   * from the normalized text offset when the locator had one (the same
+   * machinery that built the CFI), else from the CFI itself.
+   */
+  private groundedTargetRange(): { content: Contents; range: Range } | null {
+    const target = this.groundedNavigation;
+    if (!target) return null;
+
+    const rendered = this.renderedContents().filter((content) => !!content?.document);
+    if (rendered.length === 0) return null;
+
+    const matching = rendered.filter((content) => this.contentMatchesHref(content, target.href));
+    const candidates = matching.length > 0 ? matching : rendered;
+
+    for (const content of candidates) {
+      if (target.offset !== null) {
+        const range = this.rangeAtNormalizedResourceOffset(
+          content.document,
+          Math.max(0, target.offset),
+        );
+        if (range) return { content, range };
+      }
+
+      if (target.cfi && typeof (content as any).range === 'function') {
+        try {
+          const range = (content as any).range(target.cfi) as Range | null;
+          if (range) return { content, range };
+        } catch {
+          // The CFI does not resolve in this contents — try the next one.
+        }
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Whether the range is inside the reading view, measured in the parent
+   * document's viewport. Null when there is no layout to measure — jsdom and
+   * detached documents, where `getBoundingClientRect` is missing or zero.
+   */
+  private isGroundedRangeVisible(range: Range, content: Contents): boolean | null {
+    if (typeof range?.getBoundingClientRect !== 'function') return null;
+
+    const frame = content?.window?.frameElement;
+    if (!frame || typeof frame.getBoundingClientRect !== 'function') return null;
+
+    const view = this.readingViewRect();
+    if (!view) return null;
+
+    const rangeRect = range.getBoundingClientRect();
+    const frameRect = frame.getBoundingClientRect();
+    // epub.js renders these frames borderless, so the frame's border box is
+    // also the origin of its content viewport.
+    const left = frameRect.left + rangeRect.left;
+    const right = frameRect.left + rangeRect.right;
+    const top = frameRect.top + rangeRect.top;
+    const bottom = frameRect.top + rangeRect.bottom;
+
+    return right >= view.left && left <= view.right && bottom >= view.top && top <= view.bottom;
+  }
+
+  /** The visible reading box, or null when it has not been laid out yet. */
+  private readingViewRect(): DOMRect | null {
+    const page = this.elementRef.nativeElement.querySelector('#epub-page') as HTMLElement | null;
+    const element = page ?? (this.elementRef.nativeElement as HTMLElement);
+    if (typeof element?.getBoundingClientRect !== 'function') return null;
+
+    const rect = element.getBoundingClientRect();
+    if (rect.width <= 0 && rect.height <= 0) return null;
+    return rect;
+  }
+
+  private renderedContents(): Contents[] {
+    try {
+      const raw = this.rendition?.getContents?.();
+      if (Array.isArray(raw)) return raw as Contents[];
+      return raw ? [raw as Contents] : [];
+    } catch {
+      return [];
+    }
+  }
+
+  private contentMatchesHref(content: Contents, href: string | null): boolean {
+    if (!href) return true;
+    const candidate = String(
+      (content as any)?.section?.href ?? (content as any)?.document?.location?.pathname ?? '',
+    );
+    return normalizeEpubHrefForComparison(candidate) === normalizeEpubHrefForComparison(href);
   }
 
   getCurrentLocation(): string | null {
@@ -774,6 +1131,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
   // --- Book Loading & Setup ---
 
   loadBook(id: string) {
+    this.beginNavigation();
     if (this.epubBook) {
       this.annotationManager?.destroy();
       this.annotationManager = null;
@@ -973,6 +1331,13 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
       label: progressLabel(percent, this.activeChapterLabel()),
       percentage: percent,
     });
+
+    // While a grounded navigation is still settling, relocated events describe
+    // epub.js's reflow churn (it re-displays the view's stale location) rather
+    // than where the reader has been grounded. Holding them back keeps the
+    // transient position out of the saved progress; confirmGroundedNavigation
+    // emits the verified target once protection ends.
+    if (this.groundedNavigation) return;
 
     this.progressUpdater$.next({ location: cfi, percentage: percent });
   }
@@ -1244,6 +1609,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
   ngOnDestroy(): void {
     this.unregisterAssistantContext?.();
     this.unregisterAssistantContext = null;
+    this.cancelGroundedNavigation();
     this.resizeObserver?.disconnect();
     if (this.fontApplyTimer) clearTimeout(this.fontApplyTimer);
     if (this.typographyApplyTimer) clearTimeout(this.typographyApplyTimer);
