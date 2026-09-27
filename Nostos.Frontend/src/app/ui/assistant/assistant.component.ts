@@ -82,6 +82,16 @@ export class AssistantComponent {
   private bodyObserver: ResizeObserver | null = null;
   private observedBody: HTMLElement | null = null;
 
+  /**
+   * The last scroll position requested by followEnd().
+   *
+   * Browsers may dispatch the resulting scroll event after later layout/content
+   * growth. Without remembering this target, that delayed programmatic event can
+   * look like a reader scroll away from the end and incorrectly disable follow
+   * mode just before the reply arrives.
+   */
+  private programmaticScrollTop: number | null = null;
+
   /** The element focused before opening, restored on close. */
   private previouslyFocused: HTMLElement | null = null;
 
@@ -177,6 +187,20 @@ export class AssistantComponent {
   onBodyScroll(): void {
     const element = this.body()?.nativeElement;
     if (!element) return;
+
+    const requested = this.programmaticScrollTop;
+    if (requested !== null) {
+      this.programmaticScrollTop = null;
+
+      // A programmatic scroll can be reported after the transcript has already
+      // grown. Its old target is then no longer the current end, but it still
+      // must not be mistaken for the reader deliberately scrolling back.
+      if (Math.abs(element.scrollTop - requested) <= FOLLOW_THRESHOLD_PX) {
+        this.following.set(true);
+        return;
+      }
+    }
+
     this.following.set(this.distanceToEnd(element) <= FOLLOW_THRESHOLD_PX);
   }
 
@@ -309,6 +333,7 @@ export class AssistantComponent {
     this.voice.cancel();
     this.assistant.close();
     this.expanded.set(false);
+    this.programmaticScrollTop = null;
     this.stopViewportTracking();
     const previous = this.previouslyFocused;
     this.previouslyFocused = null;
@@ -373,7 +398,10 @@ export class AssistantComponent {
     if (!this.following()) return;
     const element = this.body()?.nativeElement;
     if (!element) return;
-    element.scrollTop = Math.max(0, element.scrollHeight - element.clientHeight);
+
+    const target = Math.max(0, element.scrollHeight - element.clientHeight);
+    this.programmaticScrollTop = target;
+    element.scrollTop = target;
   }
 
   /**
