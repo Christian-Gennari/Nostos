@@ -23,7 +23,8 @@ public sealed class StandardEbooksProvider : IContentProvider,
 
     /// <summary>
     /// Approved by Standard Ebooks on 2026-09-25. Keep the identity stable unless
-    /// Standard Ebooks explicitly approves a replacement.
+    /// Standard Ebooks explicitly approves a replacement. The repository has since been renamed
+    /// to Nostos; this historical URL remains intentionally because it is the allowlisted identity.
     /// </summary>
     public const string ApprovedUserAgent =
         "Nostos/1.0 (+https://github.com/Christian-Gennari/Nostos-Rebirth)";

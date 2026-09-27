@@ -180,7 +180,7 @@ See the [public/private boundary ADR](docs/adr/cloud-public-private-boundary.md)
 Nostos is designed as a single product with a reusable product layer, a public SelfHosted host, and one shared frontend.
 
 ```text
-Nostos-Rebirth/
+Nostos/
 ├── Nostos.Product/       # canonical product, domain, application and API behavior
 ├── Nostos.Backend/       # public SelfHosted host: SQLite, local files, backup, BYOK
 ├── Nostos.Shared/        # shared DTOs and product contracts
@@ -217,8 +217,8 @@ Nostos-Rebirth/
 Clone the repository, install the root tooling and frontend dependencies, then start the backend and frontend together.
 
 ```bash
-git clone https://github.com/Christian-Gennari/Nostos-Rebirth.git
-cd Nostos-Rebirth
+git clone https://github.com/Christian-Gennari/Nostos.git
+cd Nostos
 
 npm install
 npm --prefix Nostos.Frontend install
@@ -312,7 +312,7 @@ Read the [Design Manifesto](docs/design-manifesto.md) for the product's visual a
 - **[Portable Archives](docs/cloud/portability.md):** Provider-neutral `.nostos` export and import contract.
 - **[PostgreSQL Compatibility](docs/cloud/postgresql-compatibility-spike.md):** Evidence for the shared relational product model.
 
-Current development work is tracked in [GitHub Issues](https://github.com/Christian-Gennari/Nostos-Rebirth/issues).
+Current development work is tracked in [GitHub Issues](https://github.com/Christian-Gennari/Nostos/issues).
 
 ---
 

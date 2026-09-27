@@ -5,7 +5,7 @@ Nostos can import books from external public-domain/open-content catalogues
 into the library, storage, reader, notes, work-grouping or backup layers.
 
 This document describes the provider/acquisition architecture introduced by
-[#166](https://github.com/Christian-Gennari/Nostos-Rebirth/issues/166), how to
+[#166](https://github.com/Christian-Gennari/Nostos/issues/166), how to
 add a new built-in provider, and what a provider must not do.
 
 ## The two concerns
@@ -425,6 +425,11 @@ User-Agent:
 ```
 Nostos/1.0 (+https://github.com/Christian-Gennari/Nostos-Rebirth)
 ```
+
+The repository has since been renamed to `Christian-Gennari/Nostos`, but this
+historical URL remains intentionally in the User-Agent because it is the exact
+identity Standard Ebooks approved. Change it only after Standard Ebooks approves
+a replacement.
 
 That access model carries **no shared credential or feed secret**. The same
 provider identity is therefore used in SelfHosted and Cloud; nothing sensitive
