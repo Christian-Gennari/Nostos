@@ -14,6 +14,7 @@ public static partial class AssistantCapabilities
         new AssistantCapability(
             "knowledge_search",
             AssistantTrustClass.Suggest,
+            AssistantCapabilityCategory.KnowledgeRetrieval,
             "Searches the user's own notes, concepts-through-linked-notes, and indexed imported PDF/EPUB text through one bounded retrieval path. Prefer this for questions that may span the user's reading and thinking. Results include canonical evidence handles that can be re-read exactly.",
             """
             {
@@ -59,6 +60,7 @@ public static partial class AssistantCapabilities
         new AssistantCapability(
             "knowledge_overview",
             AssistantTrustClass.Suggest,
+            AssistantCapabilityCategory.KnowledgeRetrieval,
             "Returns a compact structural overview of the user's notes and concepts: totals, unlinked notes, top concepts, and books with the most notes. Use this for whole-knowledge questions before making broad claims; it is structure, not an AI-generated insight.",
             """
             {
@@ -77,6 +79,7 @@ public static partial class AssistantCapabilities
         new AssistantCapability(
             "knowledge_read_evidence",
             AssistantTrustClass.Suggest,
+            AssistantCapabilityCategory.SourceNavigation,
             "Re-reads one canonical evidence handle returned by knowledge_search. Use it when a later turn needs the exact note, concept, or imported-book chunk again instead of trusting an old excerpt.",
             """
             {
@@ -120,6 +123,7 @@ public static partial class AssistantCapabilities
         new AssistantCapability(
             "notes_list_for_book",
             AssistantTrustClass.Suggest,
+            AssistantCapabilityCategory.KnowledgeRetrieval,
             "Lists the notes captured against one book.",
             """
             {
@@ -145,6 +149,7 @@ public static partial class AssistantCapabilities
         new AssistantCapability(
             "notes_search",
             AssistantTrustClass.Suggest,
+            AssistantCapabilityCategory.KnowledgeRetrieval,
             "Searches only note text and book titles. For questions that may span notes, concepts, or imported-book text, prefer knowledge_search.",
             """
             {
@@ -172,6 +177,7 @@ public static partial class AssistantCapabilities
         new AssistantCapability(
             "notes_list_unlinked",
             AssistantTrustClass.Suggest,
+            AssistantCapabilityCategory.KnowledgeRetrieval,
             "Lists notes that belong to no concept, for the review queue.",
             """
             {
@@ -197,6 +203,7 @@ public static partial class AssistantCapabilities
         new AssistantCapability(
             "notes_read_for_review",
             AssistantTrustClass.Suggest,
+            AssistantCapabilityCategory.KnowledgeRetrieval,
             "Reads one note (text, book, linked concepts) for the review flow.",
             """
             {
@@ -226,6 +233,7 @@ public static partial class AssistantCapabilities
         new AssistantCapability(
             "concepts_list",
             AssistantTrustClass.Suggest,
+            AssistantCapabilityCategory.KnowledgeRetrieval,
             "Lists concepts ordered by usage.",
             """
             {
@@ -244,6 +252,7 @@ public static partial class AssistantCapabilities
         new AssistantCapability(
             "concepts_search",
             AssistantTrustClass.Suggest,
+            AssistantCapabilityCategory.KnowledgeRetrieval,
             "Searches concepts through their linked note evidence. For questions that may span notes, concepts, or imported-book text, prefer knowledge_search.",
             """
             {

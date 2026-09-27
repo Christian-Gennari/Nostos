@@ -10,6 +10,7 @@ public static partial class AssistantCapabilities
         yield return new AssistantCapability(
             "book_text_search",
             AssistantTrustClass.Suggest,
+            AssistantCapabilityCategory.SourceNavigation,
             "Searches the user's indexed imported PDF/EPUB text inside an explicit book, collection, or library scope. Returns bounded passages plus exact source provenance. Use this before making claims about what an imported book says; if no evidence is returned, do not invent a source citation.",
             """
             {

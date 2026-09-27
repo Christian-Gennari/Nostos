@@ -16,6 +16,7 @@ public static partial class AssistantCapabilities
         new AssistantCapability(
             "library_resolve_book",
             AssistantTrustClass.Suggest,
+            AssistantCapabilityCategory.LibraryRead,
             "Finds a book by ISBN, ASIN, title, or author without changing the library.",
             """
             {
@@ -47,6 +48,7 @@ public static partial class AssistantCapabilities
         new AssistantCapability(
             "library_list_books",
             AssistantTrustClass.Suggest,
+            AssistantCapabilityCategory.LibraryRead,
             "Lists books with optional filter, sort, search, and collection restriction.",
             """
             {
@@ -82,6 +84,7 @@ public static partial class AssistantCapabilities
         new AssistantCapability(
             "library_get_book",
             AssistantTrustClass.Suggest,
+            AssistantCapabilityCategory.LibraryRead,
             "Gets one book and its current metadata and collection memberships by id.",
             """
             {
@@ -107,6 +110,7 @@ public static partial class AssistantCapabilities
         new AssistantCapability(
             "library_overview",
             AssistantTrustClass.Suggest,
+            AssistantCapabilityCategory.LibraryRead,
             "Returns a compact, complete overview of the user's books and collections for whole-library organization, recommendation, or structure questions. Prefer this over generic advice when the user asks about their library as a whole.",
             """
             {
@@ -181,6 +185,7 @@ public static partial class AssistantCapabilities
         new AssistantCapability(
             "library_create_or_match_book",
             AssistantTrustClass.Act,
+            AssistantCapabilityCategory.OrdinaryAction,
             "Adds a book to the library or matches an existing one by canonical identity. Ambiguity is returned as confirmation_required; never guess between candidates.",
             """
             {
@@ -236,6 +241,7 @@ public static partial class AssistantCapabilities
         new AssistantCapability(
             "library_update_book",
             AssistantTrustClass.Act,
+            AssistantCapabilityCategory.OrdinaryAction,
             "Updates an existing book through the canonical library service. collectionIds is a full replacement set: read the book first and preserve memberships the user did not ask to remove.",
             """
             {
@@ -285,6 +291,7 @@ public static partial class AssistantCapabilities
         new AssistantCapability(
             "library_set_book_collections_bulk",
             AssistantTrustClass.Act,
+            AssistantCapabilityCategory.Organization,
             "Replaces collection memberships for multiple books in one bounded action. Use this after inspecting library_overview when reorganizing several books; every item still goes through the canonical library service.",
             """
             {
