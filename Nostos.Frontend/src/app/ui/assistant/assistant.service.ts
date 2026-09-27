@@ -264,17 +264,44 @@ function createId(): string {
   return `id-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 }
 
+type AssistantEventDelivery = 'sending' | 'complete' | 'retryable';
+
+interface AssistantConversationEvent extends AssistantEntry {
+  /** Whether this event belongs in the model-facing history. */
+  remember: boolean;
+  /** Transport state for user turns; assistant/server events are complete. */
+  delivery: AssistantEventDelivery;
+}
+
+interface PreparedAssistantTurn {
+  turnId: string;
+  text: string;
+  request: AssistantTurnRequestDto;
+  context: AssistantContext;
+  displayAnchor: AssistantAnchor | null;
+  userEntryId: string;
+  /** Restored if delivery fails while answering a deterministic continuation. */
+  continuationPrompt: AssistantAnchorPrompt | null;
+}
+
 @Injectable({ providedIn: 'root' })
 export class AssistantService {
   private readonly contextService = inject(AssistantContextService);
   private readonly http = inject(HttpClient);
 
-  /** Stable for the life of the surface; keys the server-held pending plan. */
-  private readonly clientId = createId();
+  /** Stable working-conversation identity. Close/reopen never changes it. */
+  readonly conversationId = signal(createId());
 
   readonly isOpen = signal(false);
   readonly draft = signal('');
-  readonly entries = signal<AssistantEntry[]>([]);
+  private readonly eventLedger = signal<AssistantConversationEvent[]>([]);
+  /**
+   * Visible transcript projected from the same canonical event ledger that
+   * supplies model history. UI event ids remain distinct from TurnIds.
+   */
+  readonly entries = computed<AssistantEntry[]>(() =>
+    this.eventLedger().map(({ remember: _remember, delivery: _delivery, ...entry }) => entry),
+  );
   readonly sending = signal(false);
   readonly lastError = signal<string | null>(null);
 
@@ -302,20 +329,31 @@ export class AssistantService {
   readonly autoSendPending = signal(false);
   private autoSendTimer: ReturnType<typeof setTimeout> | null = null;
 
-  /** A deterministic follow-up awaiting an anchor answer. */
+  /** A deterministic follow-up awaiting the user's next real turn. */
   readonly pendingAnchor = signal<AssistantAnchorPrompt | null>(null);
-  private readonly pendingText = signal('');
+  private pendingContinuationContext: AssistantContext | null = null;
 
   /**
-   * The remembered turns, in order (issue #286). Separate from the display
-   * entries: this is exactly what the model is told on the next request, so an
-   * entry is appended the moment a turn is dispatched and never for a turn that
-   * failed. It lives only in memory and dies on refresh, by design.
+   * The one logical turn whose HTTP result is uncertain. Retrying the unchanged
+   * draft resends this exact request and TurnId; editing starts a new turn.
    */
-  private readonly turnLog = signal<AssistantHistoryMessage[]>([]);
+  private retryableTurn: PreparedAssistantTurn | null = null;
 
-  /** The capped, truncated history sent with the next turn (and in diagnostics). */
-  readonly history = computed<AssistantHistoryMessage[]>(() => capHistory(this.turnLog()));
+  /**
+   * Model history is a projection of the canonical event ledger. A transport-
+   * uncertain user event stays visible but is excluded until that same TurnId
+   * completes, so the next genuinely new turn never pretends delivery was known.
+   */
+  readonly history = computed<AssistantHistoryMessage[]>(() =>
+    capHistory(
+      this.eventLedger()
+        .filter((event) => event.remember && event.delivery !== 'retryable')
+        .map((event) => ({
+          role: event.kind === 'user' ? 'user' : 'assistant',
+          text: event.text,
+        })),
+    ),
+  );
 
   /**
    * The note the last turn captured, if any (issue #262 §8). Its raw transcript
