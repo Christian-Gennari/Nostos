@@ -2011,6 +2011,26 @@ export class SecondBrain implements AfterViewChecked {
     };
   }
 
+  /**
+   * Notes opened from the Notes index and notes shown as concept evidence are the
+   * same saved object. Feed both through the shared NoteCard presentation so a
+   * quotation/reflection does not acquire a second Brain-only visual language.
+   */
+  noteSearchHitForCard(note: NoteSearchHit): Note {
+    return {
+      id: note.id,
+      bookId: note.bookId,
+      content: note.content,
+      cfiRange: note.cfiRange ?? undefined,
+      selectedText: note.selectedText ?? undefined,
+      createdAt: note.createdAt,
+      bookTitle: note.bookTitle ?? undefined,
+      sourceAnchorKind: note.sourceAnchorKind,
+      sourceAnchorValue: note.sourceAnchorValue,
+      anchorVerified: note.anchorVerified,
+    };
+  }
+
   private loadRelated(id: string): void {
     const cached = this.relatedCache.get(id);
     if (cached) {
