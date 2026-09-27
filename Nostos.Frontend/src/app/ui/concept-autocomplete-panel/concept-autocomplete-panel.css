@@ -64,7 +64,7 @@
 }
 
 .item.active {
-  box-shadow: inset 3px 0 0 var(--color-accent);
+  --nostos-accent-rail-color: var(--color-accent);
 }
 
 .create-item {
