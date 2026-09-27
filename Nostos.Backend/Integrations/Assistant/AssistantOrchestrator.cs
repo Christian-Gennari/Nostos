@@ -34,6 +34,7 @@ public sealed class AssistantOrchestrator(
     AssistantCapabilityRegistry registry,
     ILlmProvider llm,
     AssistantPlanStore plans,
+    AssistantContinuationStore continuations,
     IAssistantSettingsService settings,
     ILibraryService library,
     AssistantOptions options,
@@ -142,12 +143,26 @@ public sealed class AssistantOrchestrator(
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        var conversationKey = ConversationKey(
+            string.IsNullOrWhiteSpace(request.ConversationId)
+                ? request.ClientId
+                : request.ConversationId);
+        var turnId = TurnKey(request);
+
+        if (!string.IsNullOrWhiteSpace(request.ContinuationId))
+        {
+            return await ResumeCaptureContinuationAsync(
+                request,
+                conversationKey,
+                turnId,
+                ct);
+        }
+
         var executionMeter = new AssistantExecutionMeter();
         AiUsageLease? usageLease = null;
         var toolLoopDetector = new AssistantToolLoopDetector();
         var stopReason = AssistantTurnStopReason.SafetyCeiling;
 
-        var conversationKey = ConversationKey(request.ClientId);
         var capabilityByName = registry.All.ToDictionary(c => c.Name, StringComparer.Ordinal);
         var messages = _conversation.BuildConversation(request);
         var tools = _conversation.BuildTools();
@@ -312,8 +327,8 @@ public sealed class AssistantOrchestrator(
                 // work. Iteration + ordinal stay stable for a retried turn while
                 // remaining distinct inside this bounded tool loop.
                 var toolContext = new AssistantToolContext(
-                    ClientId: request.ClientId,
-                    IdempotencyKey: $"{request.IdempotencyKey}:{iteration}:{callOrdinal}");
+                    ClientId: conversationKey,
+                    IdempotencyKey: $"{turnId}:{iteration}:{callOrdinal}");
                 callOrdinal++;
 
                 if (!capabilityByName.TryGetValue(call.Name, out var capability))
@@ -340,12 +355,24 @@ public sealed class AssistantOrchestrator(
 
                     if (capture.Prompt is { } prompt)
                     {
-                        anchorPrompt = prompt;
+                        var storedContinuation = continuations.Create(
+                            conversationKey,
+                            turnId,
+                            prompt.Kind,
+                            call.ArgumentsJson,
+                            request.Context ?? new AssistantContextDto("other", "/"),
+                            captureProcessingMode);
+
+                        anchorPrompt = prompt with
+                        {
+                            ContinuationId = storedContinuation.ContinuationId,
+                        };
                         messages.Add(LlmMessage.Tool(call.Id, ToolJson(new
                         {
                             status = capture.PromptStatus,
                             kind = prompt.Kind,
                             question = prompt.Question,
+                            continuationId = storedContinuation.ContinuationId,
                             message = capture.PromptMessage,
                         })));
                         continue;
@@ -404,7 +431,7 @@ public sealed class AssistantOrchestrator(
             // incorrectly imply the PlanAndAct work has already run.
             var summary = string.Join("; ", planSteps.Select(step => step.Summary));
 
-            var stored = plans.Create(conversationKey, request.IdempotencyKey, summary, planSteps);
+            var stored = plans.Create(conversationKey, turnId, summary, planSteps);
             pendingPlan = ToPendingPlanDto(stored);
         }
 
@@ -509,6 +536,149 @@ public sealed class AssistantOrchestrator(
             metrics.StopReason,
             metrics.ProviderFinishReason ?? "(none)");
     }
+
+    // ------------------------------------------------------------------
+    // Deterministic capture continuation — no model authority
+    // ------------------------------------------------------------------
+
+    private async Task<AssistantTurnResponse> ResumeCaptureContinuationAsync(
+        AssistantTurnRequest request,
+        string conversationKey,
+        string turnId,
+        CancellationToken ct)
+    {
+        var continuationId = request.ContinuationId!.Trim();
+
+        // A lost HTTP response is replayed by the same logical TurnId before we
+        // inspect active state. Terminal captures may already have removed that
+        // state, but their receipt remains bounded for a short retry window.
+        if (continuations.TryGetReceipt(
+                continuationId,
+                conversationKey,
+                turnId,
+                out var replay))
+        {
+            return replay;
+        }
+
+        var lookup = continuations.Find(continuationId, conversationKey);
+        if (lookup.Status == AssistantContinuationLookupStatus.ConversationMismatch)
+        {
+            return ContinuationFailure(
+                AssistantErrorCodes.ContinuationMismatch,
+                "That follow-up belongs to a different Ask Nostos conversation. Nothing was changed.");
+        }
+
+        if (lookup.Status != AssistantContinuationLookupStatus.Found
+            || lookup.Continuation is null)
+        {
+            return ContinuationFailure(
+                AssistantErrorCodes.ContinuationNotFound,
+                "That follow-up has expired, was superseded, or no longer exists. Nothing was changed.");
+        }
+
+        var stored = lookup.Continuation;
+        if (request.ContinuationSkipped
+            && string.Equals(stored.Kind, BookPromptKind, StringComparison.Ordinal))
+        {
+            return ContinuationFailure(
+                AssistantErrorCodes.ContinuationAnswerRequired,
+                "A book is required before this capture can be saved. Nothing was changed.");
+        }
+
+        if (!request.ContinuationSkipped && string.IsNullOrWhiteSpace(request.Message))
+        {
+            return ContinuationFailure(
+                AssistantErrorCodes.ContinuationAnswerRequired,
+                "This follow-up needs an answer before the capture can continue. Nothing was changed.");
+        }
+
+        var resumedContext = _capturePolicy.ApplyContinuationAnswer(
+            stored.Context,
+            stored.Kind,
+            request.Message,
+            request.ContinuationSkipped);
+
+        var capture = await _capturePolicy.PrepareAsync(
+            stored.ArgumentsJson,
+            resumedContext,
+            stored.ProcessingMode,
+            ct);
+
+        if (capture.Prompt is { } prompt)
+        {
+            var updated = continuations.Update(stored, prompt.Kind, resumedContext);
+            var nextPrompt = prompt with { ContinuationId = continuationId };
+            var response = new AssistantTurnResponse(
+                Reply: prompt.Question,
+                Acknowledgement: null,
+                AnchorPrompt: nextPrompt,
+                Suggestions: [],
+                PendingPlan: null,
+                CapturedNoteId: null,
+                ExecutedCapabilities: [],
+                Sources: [],
+                Error: null);
+
+            continuations.RecordReceipt(
+                continuationId,
+                conversationKey,
+                turnId,
+                response);
+            return response;
+        }
+
+        var toolContext = new AssistantToolContext(
+            ClientId: conversationKey,
+            IdempotencyKey: $"{turnId}:continuation");
+
+        var result = await registry.InvokeAsync(
+            CaptureCapability,
+            capture.Arguments!.Value,
+            toolContext,
+            ct);
+
+        if (!result.Success)
+        {
+            var failure = ContinuationFailure(
+                result.ErrorCode ?? AssistantErrorCodes.NotFound,
+                result.ErrorMessage ?? "The capture could not be completed.");
+            continuations.RecordReceipt(
+                continuationId,
+                conversationKey,
+                turnId,
+                failure);
+            return failure;
+        }
+
+        var completed = new AssistantTurnResponse(
+            Reply: string.Empty,
+            Acknowledgement: AssistantCapturePolicy.BuildAcknowledgement(
+                capture.BookTitle,
+                capture.QuoteFidelity),
+            AnchorPrompt: null,
+            Suggestions: [],
+            PendingPlan: null,
+            CapturedNoteId: ReadNoteId(result.Data),
+            ExecutedCapabilities: [],
+            Sources: [],
+            Error: null);
+
+        continuations.Complete(stored, turnId, completed);
+        return completed;
+    }
+
+    private static AssistantTurnResponse ContinuationFailure(string code, string message) =>
+        new(
+            Reply: message,
+            Acknowledgement: null,
+            AnchorPrompt: null,
+            Suggestions: [],
+            PendingPlan: null,
+            CapturedNoteId: null,
+            ExecutedCapabilities: [],
+            Sources: [],
+            Error: new AssistantTurnErrorDto(code, message));
 
     // ------------------------------------------------------------------
     // Approval — executes exactly the stored plan, once
@@ -620,8 +790,18 @@ public sealed class AssistantOrchestrator(
                 .ToList(),
             stored.ApprovalToken);
 
-    private static string ConversationKey(string? clientId) =>
-        string.IsNullOrWhiteSpace(clientId) ? "anonymous" : clientId.Trim();
+    private static string ConversationKey(string? conversationId) =>
+        string.IsNullOrWhiteSpace(conversationId) ? "anonymous" : conversationId.Trim();
+
+    private static string TurnKey(AssistantTurnRequest request)
+    {
+        var turnId = string.IsNullOrWhiteSpace(request.TurnId)
+            ? request.IdempotencyKey
+            : request.TurnId;
+        return string.IsNullOrWhiteSpace(turnId)
+            ? Guid.NewGuid().ToString("N")
+            : turnId.Trim();
+    }
 
     private static JsonObject ParseObject(string? json)
     {
