@@ -70,10 +70,10 @@ public sealed record AssistantContextDto(
     string? Concept = null,
     string? CollectionId = null,
     AssistantAnchorDto? Anchor = null,
-    // APPENDED (positional record): the book title the user gave when a capture
-    // asked which book it belongs to. Set ONLY by that answer, and resolved by
-    // the orchestrator; the model never supplies a book and never sees this
-    // (issue #262 §7 follow-up).
+    // APPENDED (positional record): legacy compatibility for the pre-#560 book
+    // follow-up shape. V3 clients send the title as the actual Message tied to a
+    // server continuation; the capture policy sets this field internally before
+    // canonical library resolution. The model never chooses the target book.
     string? CaptureBookTitle = null);
 
 /// <summary>
