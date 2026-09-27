@@ -14,7 +14,14 @@ import { ButtonComponent } from '../button/button.component';
 import { Router } from '@angular/router';
 import { IconButtonComponent } from '../icon-button/icon-button.component';
 import { NostosIconComponent } from '../icon/nostos-icon.component';
-import { AssistantService, AssistantSourceReferenceDto, formatTimestamp } from './assistant.service';
+import {
+  AssistantEntry,
+  AssistantEvidenceReferenceDto,
+  AssistantService,
+  AssistantSourceReferenceDto,
+  AssistantTurnArtifact,
+  formatTimestamp,
+} from './assistant.service';
 import { AssistantVoiceService } from './assistant-voice.service';
 import { AssistantStatusService } from './assistant-status.service';
 import { AssistantMarkdownPipe } from './assistant-markdown.pipe';
@@ -204,6 +211,88 @@ export class AssistantComponent {
     this.following.set(this.distanceToEnd(element) <= FOLLOW_THRESHOLD_PX);
   }
 
+
+  evidenceLabel(evidence: AssistantEvidenceReferenceDto): string {
+    const locator = evidence.locators?.[0];
+    const title = evidence.bookTitle?.trim() || evidence.label;
+    if (!locator) return evidence.label;
+    if (locator.type === 'pdf' && locator.pdfPageIndex !== null && locator.pdfPageIndex !== undefined) {
+      const page = locator.pdfPageLabel?.trim() || String(locator.pdfPageIndex + 1);
+      return `${title} · p. ${page}`;
+    }
+    if (locator.type === 'epub') return `${title} · reading position`;
+    return evidence.label;
+  }
+
+  canOpenEvidence(evidence: AssistantEvidenceReferenceDto): boolean {
+    return !!evidence.handle.bookId
+      && !!evidence.locators?.some((locator) => locator.type === 'pdf' || locator.type === 'epub');
+  }
+
+  openEvidence(evidence: AssistantEvidenceReferenceDto): void {
+    const bookId = evidence.handle.bookId;
+    const locator = evidence.locators?.[0];
+    if (!bookId || !locator) return;
+
+    this.openSource({
+      bookId,
+      bookTitle: evidence.bookTitle?.trim() || evidence.label,
+      bookAuthor: evidence.bookAuthor ?? null,
+      format: evidence.format ?? '',
+      sourceSha256: evidence.handle.sourceSha256 ?? '',
+      excerpt: evidence.excerpt ?? '',
+      locators: evidence.locators ?? [],
+    });
+  }
+
+  showEvidenceArtifact(entry: AssistantEntry, artifact: AssistantTurnArtifact): boolean {
+    if (artifact.kind !== 'evidence') return false;
+    if (artifact.evidence.handle.kind !== 'book_text') return true;
+    return !(entry.sources ?? []).some((source) =>
+      source.bookId === artifact.evidence.handle.bookId
+      && source.sourceSha256 === artifact.evidence.handle.sourceSha256);
+  }
+
+  showProposalArtifact(entry: AssistantEntry, artifact: AssistantTurnArtifact): boolean {
+    if (artifact.kind !== 'proposal') return false;
+    return !(entry.suggestions ?? []).some((suggestion) =>
+      suggestion.noteId === artifact.proposal.noteId
+      && (suggestion.value ?? suggestion.label) ===
+        (artifact.proposal.value ?? artifact.proposal.label));
+  }
+
+  artifactLabel(artifact: AssistantTurnArtifact): string {
+    switch (artifact.kind) {
+      case 'capture':
+        return 'Saved note';
+      case 'action':
+        return `Changed · ${this.humanizeCapability(artifact.capability)}`;
+      case 'failure':
+        return artifact.state === 'cancelled'
+          ? 'Stopped'
+          : `Failed · ${artifact.message}`;
+      case 'proposal':
+        return `Proposed · ${artifact.proposal.label} — ${artifact.proposal.reason}`;
+      case 'destructive-result':
+        return `${artifact.outcome === 'applied' ? 'Applied'
+          : artifact.outcome === 'refused' ? 'Not applied'
+          : artifact.outcome === 'superseded' ? 'Superseded'
+          : 'Failed'} · ${artifact.summary}`;
+      case 'evidence':
+        return this.evidenceLabel(artifact.evidence);
+    }
+  }
+
+  private humanizeCapability(capability: string): string {
+    const labels: Record<string, string> = {
+      notes_link_existing_concept: 'note linked to concept',
+      library_update_book: 'book updated',
+      library_move_book: 'book moved',
+      library_create_collection: 'collection created',
+      library_delete_collection: 'collection deleted',
+    };
+    return labels[capability] ?? capability.replaceAll('_', ' ');
+  }
 
   sourceLabel(source: AssistantSourceReferenceDto): string {
     const locator = source.locators[0];
