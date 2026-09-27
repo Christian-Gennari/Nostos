@@ -1036,8 +1036,8 @@ export function isExplicitPlanRejection(value: string): boolean {
 }
 
 /**
- * Builds the wire context, applying the turn's anchor (the composer may have
- * answered a follow-up) over the ambient one.
+ * Builds the wire context for an ordinary turn. Deterministic follow-up answers
+ * no longer travel here: they are real Message values tied to a continuation.
  */
 function toContextDto(
   context: AssistantContext,
@@ -1065,11 +1065,9 @@ function toContextDto(
 }
 
 /**
- * Turn a follow-up answer into the anchor value a note stores. The answer
- * arrives on the one send path — often as a voice transcript, so as prose
- * ("Page 247.") rather than a bare number — and the note's `SourceAnchorValue`
- * is a page/timestamp, not a sentence. Cleaning it here keeps a second "answer
- * mode" from being needed anywhere else (issue #262 §6).
+ * Normalize a page/timestamp for local acknowledgement display. The server
+ * independently performs the same deterministic normalization and remains the
+ * authority for what is stored; this helper never chooses the capture target.
  */
 export function normalizeAnchorAnswer(
   kind: 'physical_page' | 'external_audio_timestamp',
