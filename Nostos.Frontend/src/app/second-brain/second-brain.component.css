@@ -111,29 +111,22 @@
 .brain-areas {
   display: flex;
   align-items: center;
-  gap: 0.2rem;
+  gap: 2px;
+  padding: 3px;
+  background: var(--bg-hover);
+  border-radius: var(--radius-md);
   flex: 0 0 auto;
 }
 
 .brain-area {
-  border: 0;
-  border-bottom: 2px solid transparent;
-  background: transparent;
-  color: var(--color-text-muted);
-  font: inherit;
-  font-size: 0.84rem;
-  padding: 0.55rem 0.5rem;
-  cursor: pointer;
+  min-width: 74px;
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 0.82rem;
+  font-weight: var(--fw-medium);
 }
 
 .brain-area.active {
-  border-bottom-color: var(--color-brand-accent);
-  color: var(--color-text-main);
-}
-
-.brain-area:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: -2px;
+  font-weight: var(--fw-semibold);
 }
 
 .brain-note-filters {
@@ -959,13 +952,6 @@
   gap: 0.45rem;
 }
 
-.brain-note-section-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-}
-
 .brain-proposals {
   max-width: 48rem;
   margin-top: 1.25rem;
@@ -1742,7 +1728,11 @@
   }
 
   .brain-areas { width: 100%; }
-  .brain-area { min-height: 44px; }
+  .brain-area {
+    flex: 1 1 0;
+    min-height: 44px;
+    min-width: 0;
+  }
   .brain-note-filters { padding-inline: 1rem; }
 
   .brain-note-filter-row .nostos-chip,
