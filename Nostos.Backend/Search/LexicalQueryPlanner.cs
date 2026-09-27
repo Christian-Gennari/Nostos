@@ -72,7 +72,9 @@ public static partial class LexicalQueryPlanner
             Add(token, 1, LexicalQueryVariantKind.Token);
 
         // Use any remaining budget for adjacent content-word pairs. They add
-        // precision when available without starving later independent terms.
+        // precision only after every retained independent content word has had
+        // a chance to contribute recall; bounded pair expansion must not crowd
+        // a later query term out of the candidate set.
         for (var i = 0; i + 1 < contentTokens.Count && variants.Count < maxVariants; i++)
             Add($"{contentTokens[i]} {contentTokens[i + 1]}", 2, LexicalQueryVariantKind.Pair);
 
