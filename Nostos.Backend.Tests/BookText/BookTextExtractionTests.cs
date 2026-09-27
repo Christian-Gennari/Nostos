@@ -64,6 +64,24 @@ public sealed class BookTextExtractionTests
     }
 
     [Fact]
+    public async Task Epub_extractor_keeps_root_opf_manifest_href_canonical()
+    {
+        var fixture = BookTextFixtureFactory.CreateEpub(rootPackage: true);
+        var extractor = new EpubBookTextExtractor();
+
+        await using var source = new MemoryStream(fixture.Bytes);
+        var document = await extractor.ExtractAsync(source);
+
+        var chapter = document.Blocks.First(block =>
+            block.Text.Contains("Chapter One", StringComparison.Ordinal));
+        var locator = Assert.IsType<EpubBookTextSourceLocator>(
+            chapter.SourceSegments.Single().Locator);
+
+        Assert.Equal(0, locator.SpineIndex);
+        Assert.Equal("chapter-1.xhtml", locator.ResourceHref);
+    }
+
+    [Fact]
     public void Chunker_is_deterministic_and_preserves_multi_segment_provenance()
     {
         var revision = new BookTextSourceRevision(
