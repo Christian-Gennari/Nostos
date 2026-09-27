@@ -838,7 +838,6 @@ function legacySettingsFormRecipes(css) {
 const MIGRATED_UI_V1_TEMPLATES = [
   'src/app/settings/settings.component.html',
   'src/app/add-book-modal/add-book-modal.component.html',
-  'src/app/home/home.component.html',
   'src/app/ui/assistant/assistant.component.html',
   'src/app/library/library.component.html',
   'src/app/second-brain/second-brain.component.html',
@@ -1019,7 +1018,6 @@ const PRODUCT_RAW_BUTTON_CLASSES = new Map([
     new Set(['highlight-toggle', 'hl-pen', 'typo-opt', 'typo-step'])],
   ['src/app/writing-studio/writing-studio.component.html', new Set(['tab-btn', 'toggle-opt', 'list-item'])],
   ['src/app/ui/confirm-modal/confirm-modal.component.html', new Set()],
-  ['src/app/home/home.component.html', new Set()],
 ]);
 
 function stripHtmlComments(html) {

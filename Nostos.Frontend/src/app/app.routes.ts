@@ -1,5 +1,4 @@
 import { Routes } from '@angular/router';
-import { Home } from './home/home.component';
 import { WorkspaceLayout } from './layout/workspace-layout/workspace-layout.component';
 
 export const routes: Routes = [
@@ -10,7 +9,8 @@ export const routes: Routes = [
   },
   {
     path: '',
-    component: Home,
+    pathMatch: 'full',
+    redirectTo: 'library',
   },
 
   // Lightweight in-app reference fixture for Nostos UI v1. Intentionally not

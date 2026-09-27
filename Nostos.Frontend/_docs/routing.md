@@ -4,7 +4,7 @@
 
 | Path             | Component              | Lazy | Notes                                         |
 | ---------------- | ---------------------- | ---- | --------------------------------------------- |
-| `""`             | `Home`                 | No   | Landing page                                  |
+| `""`             | redirect → `"library"` | —    | Library is the app home                       |
 | `"read/:id"`     | `ReaderShell`          | Yes  | Full-screen reader (outside workspace layout) |
 | `""` (parent)    | `WorkspaceLayout`      | No   | Shell with router-outlet + dock bar           |
 | `"library"`      | `Library`              | Yes  | Book grid / list                              |
