@@ -135,22 +135,31 @@ public class NoteRepository : INoteRepository
     public async Task<IReadOnlyList<NoteBookCount>> GetBookCountsAsync(int limit)
     {
         var take = Math.Clamp(limit, 1, 50);
-        return await _db.Notes
+        var rows = await _db.Notes
             .AsNoTracking()
             .GroupBy(note => new
             {
                 note.BookId,
                 BookTitle = note.Book != null ? note.Book.Title : string.Empty,
             })
-            .Select(group => new NoteBookCount(
+            .Select(group => new
+            {
                 group.Key.BookId,
                 group.Key.BookTitle,
-                group.Count()))
+                NoteCount = group.Count(),
+            })
             .OrderByDescending(item => item.NoteCount)
             .ThenBy(item => item.BookTitle)
             .ThenBy(item => item.BookId)
             .Take(take)
             .ToListAsync();
+
+        return rows
+            .Select(item => new NoteBookCount(
+                item.BookId,
+                item.BookTitle,
+                item.NoteCount))
+            .ToList();
     }
 
     /// <summary>
