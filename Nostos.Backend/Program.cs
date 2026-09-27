@@ -175,7 +175,7 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
         | ForwardedHeaders.XForwardedHost;
 });
 
-builder.Services.AddNostosPersistence(builder.Environment.ContentRootPath);
+builder.Services.AddNostosPersistence(builder.Configuration, builder.Environment.ContentRootPath);
 builder.Services.AddScoped<IDatabaseBootstrapService, DatabaseBootstrapService>();
 
 builder.Services.AddOpenApi();

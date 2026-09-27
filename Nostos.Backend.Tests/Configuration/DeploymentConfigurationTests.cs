@@ -67,8 +67,10 @@ public sealed class DeploymentConfigurationTests
     public void Public_host_persistence_registration_uses_local_sqlite()
     {
         var services = new ServiceCollection();
+        var configuration = new ConfigurationBuilder().Build();
 
         var act = () => services.AddNostosPersistence(
+            configuration,
             Path.Combine(Path.GetTempPath(), "nostos-deployment-test"));
 
         act.Should().NotThrow();
