@@ -64,10 +64,35 @@ export interface AssistantSourceReferenceDto {
   locators: AssistantSourceLocatorDto[];
 }
 
-/** One remembered turn; the ordered log the model is told on the next request. */
+/** Compact application snapshot from when an older user turn occurred. */
+export interface AssistantHistoricalContextDto {
+  surface: string | null;
+  bookId: string | null;
+  bookTitle: string | null;
+  brainReviewNoteId: string | null;
+  concept: string | null;
+  collectionId: string | null;
+}
+
+/** Compact identity for source evidence surfaced during an older turn. */
+export interface AssistantHistoricalEvidenceDto {
+  bookId: string;
+  bookTitle: string;
+  sourceSha256: string;
+  locators: AssistantSourceLocatorDto[];
+}
+
+/**
+ * One remembered conversational message. The browser sends the complete
+ * session ledger; the server decides what fits into model context.
+ */
 export interface AssistantHistoryMessage {
   role: 'user' | 'assistant';
   text: string;
+  context?: AssistantHistoricalContextDto | null;
+  evidence?: AssistantHistoricalEvidenceDto[];
+  actions?: string[];
+  capturedNoteId?: string | null;
 }
 
 export interface AssistantAnchorPrompt {
@@ -172,17 +197,6 @@ interface AssistantTurnRequestDto {
 }
 
 /**
- * History caps (issue #286). {@link HISTORY_MAX_EXCHANGES} counts EXCHANGES, not
- * messages: an exchange is one user turn plus the assistant turn that followed
- * it, so the cap keeps the last ten user turns and everything from the earliest
- * of those onward. {@link HISTORY_MAX_CHARS} bounds each message's length.
- *
- * Exported so the spec asserts the shipped numbers rather than restating them.
- */
-export const HISTORY_MAX_EXCHANGES = 10;
-export const HISTORY_MAX_CHARS = 2000;
-
-/**
  * The raw transcript of one note and the mode its current text reflects
  * (mirrors the backend `NoteRawTranscriptDto`).
  */
@@ -238,6 +252,9 @@ export const TRANSCRIPT_SEND_POLICY: 'review' | 'auto' = 'auto';
 /** The grace window before an auto-sent transcript is dispatched. */
 export const TRANSCRIPT_AUTO_SEND_DELAY_MS = 2000;
 
+/** Session-scoped persistence only; closing the browser tab ends the conversation. */
+export const ASSISTANT_SESSION_STORAGE_KEY = 'nostos.ask-nostos.session.v1';
+
 /** Shape exposed on `globalThis.__nostosAssistant` for live verification. */
 export interface NostosAssistantDiagnostics {
   context: AssistantContext;
@@ -245,7 +262,7 @@ export interface NostosAssistantDiagnostics {
   lastTurn: AssistantTurnResponse | null;
   suggestions: AssistantSuggestionDto[];
   pendingPlan: AssistantPendingPlanDto | null;
-  /** The capped turn log the next request will carry (issue #286). */
+  /** Complete ephemeral session history; the server owns model-context packing. */
   history: AssistantHistoryMessage[];
   capturedNoteId: string | null;
 }
@@ -271,6 +288,14 @@ interface AssistantConversationEvent extends AssistantEntry {
   remember: boolean;
   /** Transport state for user turns; assistant/server events are complete. */
   delivery: AssistantEventDelivery;
+  /** Compact app snapshot owned by the user-turn root of this event group. */
+  historyContext: AssistantHistoricalContextDto | null;
+  /** Compact source handles surfaced by the completed turn. */
+  historyEvidence: AssistantHistoricalEvidenceDto[];
+  /** Canonical immediate actions reported as completed by the backend. */
+  historyActions: string[];
+  /** Captured note identity when this turn created one. */
+  historyCapturedNoteId: string | null;
 }
 
 interface PreparedAssistantTurn {
@@ -282,6 +307,23 @@ interface PreparedAssistantTurn {
   userEntryId: string;
   /** Restored if delivery fails while answering a deterministic continuation. */
   continuationPrompt: AssistantAnchorPrompt | null;
+}
+
+interface PersistedAssistantSession {
+  version: 1;
+  conversationId: string;
+  eventLedger: AssistantConversationEvent[];
+  draft: string;
+  pendingAnchor: AssistantAnchorPrompt | null;
+  pendingContinuationContext: AssistantContext | null;
+  pendingPlan: AssistantPendingPlanDto | null;
+  suggestions: AssistantSuggestionDto[];
+  capturedNoteId: string | null;
+  /**
+   * A request persisted before transport begins. On reload it is treated as
+   * delivery-uncertain and can be retried with the exact same TurnId.
+   */
+  retryableTurn: PreparedAssistantTurn | null;
 }
 
 @Injectable({ providedIn: 'root' })
