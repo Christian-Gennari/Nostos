@@ -55,7 +55,8 @@ public class ConceptRepository : IConceptRepository
                         concept,
                         score,
                         variant.Text,
-                        MatchedVariants: 1);
+                        MatchedVariants: 1,
+                        BestVariantWeight: variant.Weight);
                     continue;
                 }
 
