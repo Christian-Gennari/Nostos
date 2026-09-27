@@ -10,6 +10,7 @@ import {
   findTocItemForHref,
   marginInsetPercent,
   progressLabel,
+  resolveGroundedEpubResourceHref,
   spinePercentFrom,
   typographyCss,
 } from './epub-reader.component';
@@ -78,6 +79,9 @@ describe('EpubReader highlight-mode lifecycle (issue #16)', () => {
         locationFromCfi: () => 0,
       },
       navigation: { toc: [] },
+      spine: {
+        spineItems: [{ href: 'chapter-2.xhtml', index: 2 }],
+      },
       destroy: vi.fn(() => log.push('book-destroy')),
     };
     return { book, rendition, emit: book.emit };
@@ -141,6 +145,33 @@ describe('EpubReader highlight-mode lifecycle (issue #16)', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(lastRendition.display).toHaveBeenCalledWith('epubcfi(/6/8!/4/2:0)');
+  });
+
+
+  it('shows a calm visible state when a grounded EPUB resource cannot be resolved', async () => {
+    await setupComponent();
+    lastRendition.display.mockImplementation((target?: string) => {
+      log.push('display');
+      return target === 'missing.xhtml'
+        ? Promise.reject(new Error('No Section Found'))
+        : Promise.resolve();
+    });
+
+    await fixture.componentInstance.goToSource({
+      type: 'epub',
+      epubResourceHref: 'missing.xhtml',
+      epubSpineIndex: 7,
+      epubTextOffset: 12,
+      excerpt: 'Missing grounded passage',
+    });
+    fixture.detectChanges();
+
+    const status = fixture.nativeElement.querySelector(
+      '.source-navigation-status',
+    ) as HTMLElement | null;
+    expect(status).not.toBeNull();
+    expect(status!.textContent).toContain("Couldn't locate this passage in the EPUB.");
+    expect(fixture.componentInstance.errorMessage()).toBeNull();
   });
 
   it('initializes the annotation manager before rendition.display()', async () => {
@@ -892,5 +923,62 @@ describe('findTocItemForHref', () => {
     expect(findTocItemForHref(toc, 'nope.xhtml')).toBeNull();
     expect(findTocItemForHref(toc, null)).toBeNull();
     expect(findTocItemForHref([], 'ch1.xhtml')).toBeNull();
+  });
+});
+
+
+describe('resolveGroundedEpubResourceHref', () => {
+  const nestedSpine = [
+    { href: 'xhtml/chapter015.html', index: 14 },
+    { href: 'xhtml/chapter016.html', index: 15 },
+  ];
+
+  it('keeps a canonical root-OPF manifest href exact', () => {
+    expect(
+      resolveGroundedEpubResourceHref('xhtml/chapter015.html', 14, nestedSpine),
+    ).toBe('xhtml/chapter015.html');
+  });
+
+  it('resolves a legacy archive-root href for a nested OPF to the exact spine item', () => {
+    expect(
+      resolveGroundedEpubResourceHref(
+        'TheIdeaofJustice/xhtml/chapter015.html',
+        14,
+        nestedSpine,
+      ),
+    ).toBe('xhtml/chapter015.html');
+  });
+
+  it('accepts the new canonical nested-OPF locator without adding the package directory', () => {
+    expect(
+      resolveGroundedEpubResourceHref('xhtml/chapter016.html', 15, nestedSpine),
+    ).toBe('xhtml/chapter016.html');
+  });
+
+  it('fails closed when a suffix could refer to more than one spine resource', () => {
+    const ambiguous = [
+      { href: 'volume1/xhtml/chapter01.html', index: 1 },
+      { href: 'volume2/xhtml/chapter01.html', index: 2 },
+    ];
+
+    expect(
+      resolveGroundedEpubResourceHref('xhtml/chapter01.html', null, ambiguous),
+    ).toBeNull();
+  });
+
+  it('fails closed when the structural path matches but the grounded spine index disagrees', () => {
+    expect(
+      resolveGroundedEpubResourceHref(
+        'TheIdeaofJustice/xhtml/chapter015.html',
+        99,
+        nestedSpine,
+      ),
+    ).toBeNull();
+  });
+
+  it('returns null for a missing resource instead of guessing', () => {
+    expect(
+      resolveGroundedEpubResourceHref('unknown/missing.xhtml', null, nestedSpine),
+    ).toBeNull();
   });
 });
