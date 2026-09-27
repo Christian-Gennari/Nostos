@@ -616,6 +616,7 @@ export class AssistantService {
     this.rawOpen.set(false);
     this.rawTranscript.set(null);
     this.rawLoading.set(false);
+    this.persistSession();
   }
 
   updateDraft(value: string): void {
@@ -1095,6 +1096,8 @@ export class AssistantService {
             response.sources ?? [],
           );
         }
+
+        this.persistSession();
       },
       error: () => {
         this.sending.set(false);
@@ -1109,6 +1112,7 @@ export class AssistantService {
           this.pendingAnchor.set(turn.continuationPrompt);
           this.pendingContinuationContext.set(turn.context);
         }
+        this.persistSession();
       },
     });
   }
