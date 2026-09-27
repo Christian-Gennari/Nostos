@@ -60,6 +60,13 @@ public static class AssistantErrorCodes
     public const string ContinuationMismatch = "assistant_continuation_mismatch";
     public const string ContinuationAnswerRequired = "assistant_continuation_answer_required";
     public const string InvalidProcessingMode = "invalid_processing_mode";
+    public const string TurnAlreadyRunning = "assistant_turn_already_running";
+    public const string TurnCancelled = "assistant_turn_cancelled";
+    public const string ExecutionBudgetExhausted = "assistant_execution_budget_exhausted";
+    public const string NoEvidence = "assistant_no_evidence";
+    public const string SourceIndexingPending = "assistant_source_indexing_pending";
+    public const string SourceIndexingFailed = "assistant_source_indexing_failed";
+    public const string SourceIndexingUnsupported = "assistant_source_indexing_unsupported";
 }
 
 /// <summary>

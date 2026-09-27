@@ -208,6 +208,53 @@ public sealed record AssistantAnchorPromptDto(
 public sealed record AssistantTurnErrorDto(string Code, string Message);
 
 /// <summary>
+/// One safe, product-owned activity update for an in-flight turn. Code/message
+/// are chosen by Nostos from known operations; raw model/tool payloads never
+/// enter this contract.
+/// </summary>
+public sealed record AssistantTurnActivityDto(string Code, string Message);
+
+/// <summary>
+/// A terminal product failure. Retryable describes transport/provider recovery,
+/// not whether a canonical mutation should be replayed.
+/// </summary>
+public sealed record AssistantTurnFailureDto(
+    string Code,
+    string Message,
+    bool Retryable = false);
+
+/// <summary>
+/// One ordered event in the streamed turn transport. Sequence is monotonic
+/// within the logical TurnId. Response is present only when the server has
+/// terminal turn truth worth preserving (including already-committed actions).
+/// </summary>
+public sealed record AssistantTurnEventDto(
+    string TurnId,
+    long Sequence,
+    string Kind,
+    AssistantTurnActivityDto? Activity = null,
+    AssistantTurnFailureDto? Failure = null,
+    AssistantTurnResponse? Response = null);
+
+public static class AssistantTurnEventKinds
+{
+    public const string Started = "started";
+    public const string Activity = "activity";
+    public const string Completed = "completed";
+    public const string Failed = "failed";
+    public const string Cancelled = "cancelled";
+}
+
+/// <summary>Stop exactly one active logical turn in one conversation.</summary>
+public sealed record AssistantTurnCancelRequest(string ConversationId, string TurnId);
+
+/// <summary>
+/// Result of a stop request. Not-active is intentionally harmless: a stale stop
+/// must never attach itself to a newer turn.
+/// </summary>
+public sealed record AssistantTurnCancelResponse(bool Accepted, string State);
+
+/// <summary>
 /// A non-mutating proposal. The user selects one; the assistant never links or
 /// applies a suggestion on its own.
 /// </summary>
