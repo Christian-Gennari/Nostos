@@ -298,7 +298,37 @@ describe('SecondBrain', () => {
       (fixture.nativeElement.querySelectorAll('.index-list .note-row-item')[1] as HTMLButtonElement).click();
       fixture.detectChanges();
       expect(fixture.nativeElement.querySelector('.brain-browse-detail')?.textContent).toContain('A separate thought');
-      expect(fixture.nativeElement.querySelector('.brain-browse-detail')?.textContent).toContain('Without concepts');
+      expect(fixture.nativeElement.querySelector('.brain-browse-detail')?.textContent).toContain('No concepts linked');
+    });
+
+    it('uses shared controls and a clear note hierarchy for the selected inspector', () => {
+      component.setViewMode('notes');
+      browse([linked]);
+
+      const withoutConcepts = fixture.nativeElement.querySelector(
+        '.brain-note-filter-row button.nostos-chip',
+      ) as HTMLButtonElement;
+      expect(withoutConcepts).toBeTruthy();
+      expect(withoutConcepts.getAttribute('aria-pressed')).toBe('false');
+      expect(fixture.nativeElement.querySelector('app-dropdown.brain-note-order')).toBeTruthy();
+
+      (fixture.nativeElement.querySelector('.index-list .note-row-item') as HTMLButtonElement).click();
+      fixture.detectChanges();
+
+      const detail = fixture.nativeElement.querySelector('.brain-browse-detail') as HTMLElement;
+      expect(detail.textContent).toContain('Quotation');
+      expect(detail.textContent).toContain('Your note');
+      expect(detail.textContent).toContain('Linked concepts');
+      expect(detail.textContent).toContain('Confirmed');
+      expect(detail.querySelector('span.nostos-badge--success')).toBeTruthy();
+
+      const actions = detail.querySelector('.review-actions[aria-label="Note actions"]') as HTMLElement;
+      const link = [...actions.querySelectorAll('button')].find(
+        (button: HTMLButtonElement) => button.textContent?.trim() === 'Link to concept',
+      ) as HTMLButtonElement;
+      const suggest = actions.querySelector('[data-testid="browse-suggest-concepts"]') as HTMLButtonElement;
+      expect(link.classList.contains('nostos-button--primary')).toBe(true);
+      expect(suggest.classList.contains('nostos-button--secondary')).toBe(true);
     });
 
     it('filters without concepts, then enters focused review and returns to the filtered Notes view', () => {
@@ -2030,10 +2060,10 @@ describe('SecondBrain', () => {
       expect(panel.querySelector('blockquote')?.textContent?.trim()).toBe('The struggle itself toward the heights is enough to fill a man’s heart.');
       expect(panel.querySelector('.brain-note-panel-content')?.textContent?.trim()).toBe('One must imagine Sisyphus happy.');
 
-      const conceptTags = panel.querySelectorAll('.brain-note-concept-tag');
-      expect(conceptTags.length).toBe(2);
-      expect(conceptTags[0].textContent?.trim()).toBe('Absurdism');
-      expect(conceptTags[1].textContent?.trim()).toBe('Revolt');
+      const conceptBadges = panel.querySelectorAll('.nostos-badge--success');
+      expect(conceptBadges.length).toBe(2);
+      expect(conceptBadges[0].textContent?.trim()).toContain('Absurdism');
+      expect(conceptBadges[1].textContent?.trim()).toContain('Revolt');
 
       const closeBtn = panel.querySelector('button[aria-label="Close note"]') as HTMLButtonElement;
       expect(closeBtn).toBeTruthy();
@@ -2044,7 +2074,7 @@ describe('SecondBrain', () => {
       expect(fixture.nativeElement.querySelector('[data-testid="brain-note-panel"]')).toBeNull();
     });
 
-    it('shows "Belongs to no concept" in panel when note has no concept links', async () => {
+    it('shows the unlinked state in the panel when note has no concept links', async () => {
       component.setSearchQuery('rebel');
       await settleNoteSearch([], sampleHits);
       fixture.detectChanges();
@@ -2056,7 +2086,7 @@ describe('SecondBrain', () => {
       const panel = fixture.nativeElement.querySelector('[data-testid="brain-note-panel"]');
       expect(panel).toBeTruthy();
       expect(panel.querySelector('blockquote')).toBeNull();
-      expect(panel.textContent).toContain('Belongs to no concept');
+      expect(panel.textContent).toContain('No concepts linked');
     });
 
     it('never falls back to unlinked notes when the search box is empty', async () => {
@@ -2130,14 +2160,23 @@ describe('SecondBrain', () => {
 
       expect(component.proposalState()).toBe('ready');
       const proposal = fixture.nativeElement.querySelector('[data-testid="brain-proposal"]');
+      expect(proposal.textContent).toContain('Suggested concept');
       expect(proposal.textContent).toContain('Mountains');
       expect(proposal.textContent).toContain('same climb');
-      (proposal.querySelector('button') as HTMLButtonElement).click();
+      const proposalButtons = proposal.querySelectorAll('button');
+      expect((proposalButtons[1] as HTMLButtonElement).classList.contains('nostos-button--primary')).toBe(true);
+
+      (proposalButtons[0] as HTMLButtonElement).click();
       http.expectOne('/api/concepts/c-alpha').flush({
         id: 'c-alpha', name: 'Mountains', notes: [{ noteId: 'evidence-1', bookId: 'b-1', bookTitle: 'Other book', content: 'A related climb.' }],
       });
       fixture.detectChanges();
+      expect(proposal.textContent).toContain('Existing evidence');
       expect(proposal.textContent).toContain('A related climb.');
+
+      (proposal.querySelector('button') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      expect(proposal.textContent).not.toContain('A related climb.');
     });
 
     it('drops late proposals when review focus changes, without linking or showing old chips', () => {
@@ -2180,6 +2219,8 @@ describe('SecondBrain', () => {
       fixture.detectChanges();
       expect(component.proposalState()).toBe('unavailable');
       expect(fixture.nativeElement.querySelector('.review-actions')?.textContent).toContain('Link to concept');
+      expect(fixture.nativeElement.querySelector('[data-testid="brain-proposals"]')?.textContent)
+        .toContain('Manual linking');
 
       component.askNostos();
       const second = http.expectOne('/api/assistant/turn/stream');
