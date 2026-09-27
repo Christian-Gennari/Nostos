@@ -130,6 +130,29 @@ public class NoteRepository : INoteRepository
         return await _db.Notes.CountAsync(n => !n.NoteConcepts.Any());
     }
 
+    public Task<int> CountAsync() => _db.Notes.CountAsync();
+
+    public async Task<IReadOnlyList<NoteBookCount>> GetBookCountsAsync(int limit)
+    {
+        var take = Math.Clamp(limit, 1, 50);
+        return await _db.Notes
+            .AsNoTracking()
+            .GroupBy(note => new
+            {
+                note.BookId,
+                BookTitle = note.Book != null ? note.Book.Title : string.Empty,
+            })
+            .Select(group => new NoteBookCount(
+                group.Key.BookId,
+                group.Key.BookTitle,
+                group.Count()))
+            .OrderByDescending(item => item.NoteCount)
+            .ThenBy(item => item.BookTitle)
+            .ThenBy(item => item.BookId)
+            .Take(take)
+            .ToListAsync();
+    }
+
     /// <summary>
     /// `%` and `_` are wildcards inside LIKE, and `\` is the escape character
     /// passed above, so a user searching for "100%" must not match everything.
