@@ -76,6 +76,18 @@ public sealed class NoteService : INoteService
         return notes.Select(n => n.ToDto()).ToList();
     }
 
+    public async Task<NoteSearchHitDto?> GetAsync(Guid noteId, CancellationToken ct = default)
+    {
+        var note = await _db.Notes
+            .AsNoTracking()
+            .Include(n => n.Book)
+            .Include(n => n.NoteConcepts)
+            .ThenInclude(nc => nc.Concept)
+            .FirstOrDefaultAsync(n => n.Id == noteId, ct);
+
+        return note is null ? null : ByText(note, null);
+    }
+
     public async Task<NoteSearchPageDto> GetUnlinkedAsync(int limit, int offset, CancellationToken ct = default)
     {
         var take = Clamp(limit);
