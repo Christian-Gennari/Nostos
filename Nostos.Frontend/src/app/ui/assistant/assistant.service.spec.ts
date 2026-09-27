@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { signal } from '@angular/core';
-import { provideHttpClient } from '@angular/common/http';
+import { HttpEventType, provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 
 import {
@@ -90,6 +90,66 @@ describe('AssistantService voice transcript alignment', () => {
   afterEach(() => {
     vi.useRealTimers();
     http.verify();
+  });
+
+  it('keeps a fast completed turn quiet with no pending activity flash', () => {
+    vi.useFakeTimers();
+    service.open();
+    service.updateDraft('Where is this?');
+    service.submit();
+
+    const request = http.expectOne('/api/assistant/turn/stream');
+    request.flush(turn({ reply: 'Right here.' }));
+
+    expect(service.pendingVisible()).toBe(false);
+    expect(service.turnActivity()).toBeNull();
+  });
+
+  it('accepts ordered product activity and Stop targets the exact active TurnId', () => {
+    vi.useFakeTimers();
+    service.open();
+    service.updateDraft('Search my notes');
+    service.submit();
+
+    const request = http.expectOne('/api/assistant/turn/stream');
+    const turnId = request.request.body.turnId as string;
+    const activityLine = JSON.stringify({
+      turnId,
+      sequence: 2,
+      kind: 'activity',
+      activity: { code: 'searching_material', message: 'Searching your notes and books…' },
+    }) + '\n';
+
+    request.event({
+      type: HttpEventType.DownloadProgress,
+      loaded: activityLine.length,
+      partialText: activityLine,
+    });
+
+    expect(service.turnActivity()?.code).toBe('searching_material');
+    expect(service.pendingVisible()).toBe(true);
+
+    service.stopActiveTurn();
+    const stop = http.expectOne('/api/assistant/turn/cancel');
+    expect(stop.request.body).toEqual({
+      conversationId: service.conversationId(),
+      turnId,
+    });
+    stop.flush({ accepted: true, state: 'cancel_requested' });
+
+    request.flush(
+      JSON.stringify({
+        turnId,
+        sequence: 3,
+        kind: 'cancelled',
+        failure: { code: 'assistant_turn_cancelled', message: 'Stopped.', retryable: false },
+        response: turn({ reply: '', error: { code: 'assistant_turn_cancelled', message: 'Stopped.' } }),
+      }) + '\n',
+    );
+
+    expect(service.sending()).toBe(false);
+    expect(service.activeTurnId()).toBeNull();
+    expect(service.entries().at(-1)?.meta).toBe('Stopped');
   });
 
   it('defaults to auto-send', () => {

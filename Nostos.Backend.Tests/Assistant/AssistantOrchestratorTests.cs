@@ -2147,6 +2147,141 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         response.Reply.Should().Contain("not indexed");
     }
 
+    [Fact]
+    public async Task A_fast_plain_turn_emits_no_product_activity()
+    {
+        var h = CreateHarness();
+        h.Llm.Returns("Here it is.");
+        var activities = new List<AssistantTurnActivityDto>();
+
+        var response = await h.Orchestrator.HandleTurnAsync(
+            Turn("A direct question.", Context()),
+            activity =>
+            {
+                activities.Add(activity);
+                return ValueTask.CompletedTask;
+            },
+            CancellationToken.None);
+
+        response.Error.Should().BeNull();
+        activities.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Book_text_pending_is_a_typed_terminal_state()
+    {
+        var search = new FakeBookTextSearchService(new BookTextSearchResponse(
+            [],
+            [
+                new BookTextIngestionState(
+                    Guid.NewGuid(),
+                    BookTextIngestionStatus.Pending,
+                    "book.epub",
+                    BookTextSourceFormat.Epub,
+                    null,
+                    BookTextArtifactSchema.CurrentExtractorVersion,
+                    null,
+                    null,
+                    0,
+                    0,
+                    0,
+                    DateTime.UtcNow),
+            ],
+            false));
+
+        var h = CreateHarness(bookText: search);
+        h.Llm
+            .CallsTool("book_text_search", """{"query":"needle"}""")
+            .Returns("It is still indexing.");
+
+        var response = await h.Orchestrator.HandleTurnAsync(
+            Turn("Find needle.", Context(surface: "library", route: "/library")));
+
+        response.Error.Should().NotBeNull();
+        response.Error!.Code.Should().Be(AssistantErrorCodes.SourceIndexingPending);
+        response.Sources.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Cancellation_before_provider_or_write_produces_no_mutation()
+    {
+        var h = CreateHarness();
+        var book = await SeedBookAsync(h, "Cancellation Book");
+        h.Llm.CallsTool("notes_capture", """{"content":"must not be saved"}""");
+
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        var response = await h.Orchestrator.HandleTurnAsync(
+            Turn(
+                "Save this.",
+                Context(
+                    bookId: book.Id.ToString(),
+                    bookTitle: book.Title,
+                    bookFormat: "ebook",
+                    readerType: "epub",
+                    epubCfi: "epubcfi(/6/2)")),
+            cts.Token);
+
+        response.Error!.Code.Should().Be(AssistantErrorCodes.TurnCancelled);
+        h.Llm.CallCount.Should().Be(0);
+
+        await using var db = await h.Factory.CreateDbContextAsync();
+        (await db.Notes.AsNoTracking().CountAsync()).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Cancellation_after_capture_commit_preserves_and_reports_the_saved_note()
+    {
+        var h = CreateHarness();
+        var book = await SeedBookAsync(h, "Committed Book");
+        var secondProviderRoundStarted = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        h.Llm.AsyncResponder = async (call, token) =>
+        {
+            if (call == 1)
+            {
+                return new LlmCompletion(
+                    null,
+                    "tool_calls",
+                    [new LlmToolCall(
+                        "capture-1",
+                        "notes_capture",
+                        """{"content":"committed thought"}""")]);
+            }
+
+            secondProviderRoundStarted.TrySetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, token);
+            throw new InvalidOperationException("unreachable");
+        };
+
+        using var cts = new CancellationTokenSource();
+        var turnTask = h.Orchestrator.HandleTurnAsync(
+            Turn(
+                "Remember this.",
+                Context(
+                    bookId: book.Id.ToString(),
+                    bookTitle: book.Title,
+                    bookFormat: "ebook",
+                    readerType: "epub",
+                    epubCfi: "epubcfi(/6/2)")),
+            cts.Token);
+
+        await secondProviderRoundStarted.Task;
+        cts.Cancel();
+        var response = await turnTask;
+
+        response.Error!.Code.Should().Be(AssistantErrorCodes.TurnCancelled);
+        response.Error.Message.Should().Contain("remain");
+        response.Acknowledgement.Should().NotBeNullOrWhiteSpace();
+        response.CapturedNoteId.Should().NotBeNullOrWhiteSpace();
+
+        await using var db = await h.Factory.CreateDbContextAsync();
+        var note = await db.Notes.AsNoTracking().SingleAsync();
+        note.Content.Should().Be("committed thought");
+    }
+
     // ------------------------------------------------------------------
     // Harness
     // ------------------------------------------------------------------
