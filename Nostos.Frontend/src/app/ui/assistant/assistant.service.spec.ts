@@ -184,6 +184,47 @@ describe('AssistantService voice transcript alignment', () => {
     ).toEqual(['A thought I cannot place', '247']);
   });
 
+  it('retries a continuation answer with the same TurnId and no duplicate user event', () => {
+    fake.set({ bookFormat: 'physical' });
+    service.updateDraft('A thought I cannot place');
+    service.submit();
+
+    http.expectOne('/api/assistant/turn').flush(
+      turn({
+        reply: 'What page are you on?',
+        anchorPrompt: {
+          kind: 'physical_page',
+          question: 'What page are you on?',
+          continuationId: 'cont-retry',
+        },
+      }),
+    );
+
+    service.updateDraft('247');
+    service.submit();
+    const firstAnswer = http.expectOne('/api/assistant/turn');
+    const answerTurnId = firstAnswer.request.body.turnId;
+    firstAnswer.error(new ProgressEvent('error'));
+
+    expect(service.pendingAnchor()?.continuationId).toBe('cont-retry');
+    expect(service.draft()).toBe('247');
+    expect(
+      service.entries().filter((entry) => entry.kind === 'user' && entry.text === '247'),
+    ).toHaveLength(1);
+
+    service.submit();
+    const retry = http.expectOne('/api/assistant/turn');
+    expect(retry.request.body.turnId).toBe(answerTurnId);
+    expect(retry.request.body.idempotencyKey).toBe(answerTurnId);
+    expect(retry.request.body.message).toBe('247');
+    expect(retry.request.body.continuationId).toBe('cont-retry');
+    expect(
+      service.entries().filter((entry) => entry.kind === 'user' && entry.text === '247'),
+    ).toHaveLength(1);
+
+    retry.flush(turn({ reply: '', acknowledgement: 'Saved to The Magic Mountain.' }));
+  });
+
   it('cleans a spoken page answer and names book and page in the acknowledgement', () => {
     vi.useFakeTimers();
     fake.set({ bookFormat: 'physical' });
