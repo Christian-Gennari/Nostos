@@ -2314,12 +2314,12 @@ describe('SecondBrain concept-link routing', () => {
 
     http.expectOne('/api/concepts').flush(concepts);
     http.expectOne('/api/concepts/stats').flush(stats);
-    http.expectOne((request) => request.url === '/api/notes').flush({
+    http.match((request) => request.url === '/api/notes').forEach((request) => request.flush({
       items: [deepNote],
       totalCount: 1,
       offset: 0,
       limit: 25,
-    });
+    }));
     http.expectOne('/api/notes/deep-note').flush(deepNote);
 
     const routed = await navigation;
