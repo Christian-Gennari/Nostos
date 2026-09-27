@@ -629,9 +629,13 @@ public sealed class AssistantOrchestrator(
             return response;
         }
 
+        // The mutation belongs to the original capture turn, not to whichever
+        // follow-up turn happened to supply the last missing field. This keeps
+        // one canonical mutation identity across multi-stage continuations while
+        // each follow-up still has its own TurnId for conversation/retry truth.
         var toolContext = new AssistantToolContext(
             ClientId: conversationKey,
-            IdempotencyKey: $"{turnId}:continuation");
+            IdempotencyKey: $"{stored.OriginalTurnId}:continuation");
 
         var result = await registry.InvokeAsync(
             CaptureCapability,
