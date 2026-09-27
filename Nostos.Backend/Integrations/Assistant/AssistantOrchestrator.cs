@@ -43,7 +43,8 @@ public sealed class AssistantOrchestrator(
 {
     private readonly IAiUsageAccountingService _usageAccounting =
         usageAccounting ?? NoOpAiUsageAccountingService.Instance;
-    private readonly AssistantConversationBuilder _conversation = new(registry);
+    private readonly AssistantConversationBuilder _conversation =
+        new(registry, new AssistantContextPacker(options));
     private readonly AssistantPlanExecutor _planExecutor = new(registry, plans);
     private readonly AssistantCapturePolicy _capturePolicy = new(library);
 
@@ -59,27 +60,6 @@ public sealed class AssistantOrchestrator(
     /// (issue #261 §5).
     /// </summary>
     public const int MaxConceptSuggestions = 5;
-
-    /// <summary>
-    /// How many past exchanges of client-supplied history are kept. An exchange
-    /// is a user message plus the assistant message(s) that followed it; older
-    /// turns are dropped rather than sent (issue #286).
-    /// </summary>
-    public const int MaxHistoryExchanges = 10;
-
-    /// <summary>
-    /// Per-message ceiling for client-supplied history. A longer message is
-    /// truncated and marked with <see cref="HistoryTruncationMarker"/> so the
-    /// model can see the cut (issue #286).
-    /// </summary>
-    public const int MaxHistoryCharsPerMessage = 2000;
-
-    /// <summary>
-    /// Appended to a history message that exceeded
-    /// <see cref="MaxHistoryCharsPerMessage"/>, so the model can tell that text
-    /// was cut rather than assume the message ended there.
-    /// </summary>
-    public const string HistoryTruncationMarker = " [history truncated]";
 
     /// <summary>
     /// Appended to a quote typed/transcribed by hand rather than read from the
