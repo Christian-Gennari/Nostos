@@ -423,8 +423,13 @@ its official OPDS feeds on **September 25, 2026** by whitelisting the project
 User-Agent:
 
 ```
-Nostos/1.0 (+https://github.com/Christian-Gennari/Nostos)
+Nostos/1.0 (+https://github.com/Christian-Gennari/Nostos-Rebirth)
 ```
+
+The repository has since been renamed to `Christian-Gennari/Nostos`, but this
+historical URL remains intentionally in the User-Agent because it is the exact
+identity Standard Ebooks approved. Change it only after Standard Ebooks approves
+a replacement.
 
 That access model carries **no shared credential or feed secret**. The same
 provider identity is therefore used in SelfHosted and Cloud; nothing sensitive
