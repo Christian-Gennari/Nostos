@@ -851,6 +851,12 @@ export class SecondBrain implements AfterViewChecked {
 
   inspectConceptProposal(candidate: AssistantSuggestionDto): void {
     if (!candidate.value || this.proposalNoteKey !== this.focusedNoteKey()) return;
+    if (this.proposalInspectingId() === candidate.value) {
+      this.proposalInspectingId.set(null);
+      this.proposalDetail.set(null);
+      return;
+    }
+    this.proposalMessage.set(null);
     this.proposalDetail.set(null);
     this.proposalInspectingId.set(candidate.value);
     this.conceptsService.get(candidate.value).subscribe({
