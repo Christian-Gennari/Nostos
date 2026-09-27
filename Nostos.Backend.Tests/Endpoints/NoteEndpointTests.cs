@@ -42,6 +42,30 @@ public sealed class NoteEndpointTests : IClassFixture<LibraryEndpointFactory>
     }
 
     // ------------------------------------------------------------------
+    // GET /api/notes/{id}
+    // ------------------------------------------------------------------
+
+    [Fact]
+    public async Task Get_note_by_id_returns_canonical_note_evidence_and_missing_is_404()
+    {
+        var book = await CreateBookAsync();
+        var note = await CreateNoteAsync(book.Id, "a thought about [[Attention]]");
+
+        var response = await Client.GetAsync($"/api/notes/{note.Id}");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var hit = await response.Content.ReadFromJsonAsync<NoteSearchHitDto>();
+        hit!.Id.Should().Be(note.Id);
+        hit.BookId.Should().Be(book.Id);
+        hit.BookTitle.Should().Be(book.Title);
+        hit.Content.Should().Contain("[[Attention]]");
+        hit.ConceptNames.Should().Contain("Attention");
+
+        var missing = await Client.GetAsync($"/api/notes/{Guid.NewGuid()}");
+        missing.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    // ------------------------------------------------------------------
     // GET /api/notes/search
     // ------------------------------------------------------------------
 
