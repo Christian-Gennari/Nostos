@@ -228,9 +228,10 @@ function mockMatchMedia() {
 // Called per-test so each spec starts from a clean state.
 async function configureReaderShell(
   queryParams: Record<string, string | number> = {},
+  routeBookId = 'book-1',
 ): Promise<ComponentFixture<ReaderShell>> {
   const initialQueryParamMap = convertToParamMap(queryParams);
-  const initialParamMap = convertToParamMap({ id: 'book-1' });
+  const initialParamMap = convertToParamMap({ id: routeBookId });
   routeQueryParamMap$ = new BehaviorSubject<ParamMap>(initialQueryParamMap);
   routeParamMap$ = new BehaviorSubject<ParamMap>(initialParamMap);
 
@@ -531,6 +532,60 @@ describe('ReaderShell grounded book-text source navigation', () => {
 
     fixture.destroy();
   });
+
+  it.each([
+    [
+      'same GUID / same case',
+      'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+      'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+      true,
+    ],
+    [
+      'same GUID / different case',
+      'AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE',
+      'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+      true,
+    ],
+    [
+      'genuinely different GUID',
+      'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeef',
+      'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+      false,
+    ],
+    [
+      'malformed route id',
+      'not-a-guid',
+      'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+      false,
+    ],
+  ])(
+    'guards grounded navigation by semantic route/book identity: %s',
+    async (_label, routeBookId, loadedBookId, shouldNavigate) => {
+      const epubBook = {
+        ...audiobook,
+        id: loadedBookId,
+        type: 'ebook',
+        fileName: 'source.epub',
+      } as Book;
+      booksGetSpy.mockReturnValue(of(epubBook));
+
+      const fixture = await configureReaderShell(
+        { sourceHref: 'chapter-2.xhtml', sourceSpine: 2, sourceOffset: 314 },
+        routeBookId,
+      );
+      fixture.detectChanges();
+      fixture.detectChanges();
+
+      await new Promise((resolve) => setTimeout(resolve, 130));
+      fixture.detectChanges();
+
+      const stub = fixture.debugElement.query(By.directive(EpubReaderStub))
+        .componentInstance as EpubReaderStub;
+      expect(stub.goToSource).toHaveBeenCalledTimes(shouldNavigate ? 1 : 0);
+
+      fixture.destroy();
+    },
+  );
 
   it('passes grounded EPUB CFI plus structural fallback to the EPUB reader', async () => {
     const epubBook = { ...audiobook, id: 'book-1', type: 'ebook', fileName: 'source.epub' } as Book;
