@@ -157,11 +157,19 @@ public sealed class NoteServiceTests : IClassFixture<SqliteTestFixture>
 
         var second = await h.Service.LinkToExistingConceptAsync(note.Id, concept.Id);
         second.Success.Should().BeTrue();
+        second.Value!.Content.Should().Be("a note\n\n[[virtue]]");
 
         (await h.Db.NoteConcepts.CountAsync()).Should().Be(1,
             "the join is keyed (NoteId, ConceptId); a repeat link is a no-op");
         (await h.Db.Concepts.CountAsync()).Should().Be(1,
             "linking never creates a concept to satisfy the link");
+
+        // An ordinary edit reprocesses membership from the note body. The
+        // accepted assistant link must remain there after that reprocessing.
+        var edited = await h.Service.UpdateAsync(note.Id, new UpdateNoteDto(
+            second.Value.Content.Replace("a note", "an edited note"), null));
+        edited.Success.Should().BeTrue();
+        (await h.Db.NoteConcepts.CountAsync()).Should().Be(1);
     }
 
     [Fact]
@@ -207,9 +215,14 @@ public sealed class NoteServiceTests : IClassFixture<SqliteTestFixture>
         var result = await h.Service.LinkToExistingConceptAsync(note.Id, second.Id);
 
         result.Success.Should().BeTrue();
+        result.Value!.Content.Should().Contain("[[courage]]").And.Contain("[[virtue]]");
         var linked = await h.Db.NoteConcepts.Where(nc => nc.NoteId == note.Id)
             .Select(nc => nc.ConceptId).ToListAsync();
         linked.Should().BeEquivalentTo(new[] { first.Id, second.Id });
+
+        await h.Service.UpdateAsync(note.Id, new UpdateNoteDto(result.Value.Content + "\nAn edit"));
+        (await h.Db.NoteConcepts.Where(nc => nc.NoteId == note.Id)
+            .Select(nc => nc.ConceptId).ToListAsync()).Should().BeEquivalentTo(new[] { first.Id, second.Id });
     }
 
     // ------------------------------------------------------------------

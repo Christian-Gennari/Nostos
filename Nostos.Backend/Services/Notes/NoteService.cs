@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Nostos.Backend.Data;
@@ -362,23 +363,43 @@ public sealed class NoteService : INoteService
             return NoteCommandResult<NoteDto>.Fail(NoteErrorCodes.NoteNotFound, "Note not found.");
 
         // Never creates a concept: the link target must already exist.
-        var conceptExists = await _db.Concepts.AnyAsync(c => c.Id == conceptId, ct);
-        if (!conceptExists)
+        var concept = await _db.Concepts.AsNoTracking().FirstOrDefaultAsync(c => c.Id == conceptId, ct);
+        if (concept is null)
             return NoteCommandResult<NoteDto>.Fail(NoteErrorCodes.ConceptNotFound, "Concept not found.");
 
         // Idempotent. The join is keyed (NoteId, ConceptId); inserting a second
         // row would be a duplicate key. The check runs against the database, not
         // the tracked navigation, so a repeated call sees the committed link.
-        var alreadyLinked = await _db.NoteConcepts
+        var existingNames = await _db.NoteConcepts
             .AsNoTracking()
-            .AnyAsync(nc => nc.NoteId == noteId && nc.ConceptId == conceptId, ct);
+            .Where(nc => nc.NoteId == noteId)
+            .Select(nc => new { nc.ConceptId, Name = nc.Concept!.Concept })
+            .ToListAsync(ct);
+        var alreadyLinked = existingNames.Any(link => link.ConceptId == conceptId);
+
+        // The note body is the canonical source of membership on every later
+        // edit. A join-only Act link would disappear when UpdateAsync reprocesses
+        // that body. Normalize older join-only links on this note as well, so
+        // accepting a new proposal does not make those disappear on the next edit.
+        var references = Regex.Matches(note.Content, @"\[\[(.*?)\]\]").Cast<Match>()
+            .Select(match => match.Groups[1].Value.Trim())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var contentChanged = false;
+        foreach (var name in existingNames.Select(link => link.Name).Append(concept.Concept))
+        {
+            if (!references.Add(name)) continue;
+            var body = note.Content.TrimEnd();
+            note.Content = body.Length == 0 ? $"[[{name}]]" : $"{body}\n\n[[{name}]]";
+            contentChanged = true;
+        }
 
         if (!alreadyLinked)
         {
-            // Reuse the canonical join and never clear the note's other links.
+            // Keep other links and save the text and join in one unit of work.
             _concepts.AddNoteLink(new NoteConceptModel { NoteId = noteId, ConceptId = conceptId });
-            await _notes.SaveChangesAsync();
         }
+        if (!alreadyLinked || contentChanged)
+            await _notes.SaveChangesAsync();
 
         return NoteCommandResult<NoteDto>.Ok(note.ToDto());
     }
