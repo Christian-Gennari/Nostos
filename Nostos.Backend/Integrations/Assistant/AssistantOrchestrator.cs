@@ -123,11 +123,18 @@ public sealed class AssistantOrchestrator(
     public Task<AssistantTurnResponse> HandleTurnAsync(
         AssistantTurnRequest request,
         CancellationToken ct = default) =>
-        HandleTurnAsync(request, activity: null, ct);
+        HandleTurnAsync(request, activity: null, execution: null, ct);
+
+    internal Task<AssistantTurnResponse> HandleTurnAsync(
+        AssistantTurnRequest request,
+        Func<AssistantTurnActivityDto, ValueTask>? activity,
+        CancellationToken ct = default) =>
+        HandleTurnAsync(request, activity, execution: null, ct);
 
     internal async Task<AssistantTurnResponse> HandleTurnAsync(
         AssistantTurnRequest request,
         Func<AssistantTurnActivityDto, ValueTask>? activity,
+        AssistantTurnExecution? execution,
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -161,6 +168,7 @@ public sealed class AssistantOrchestrator(
                 conversationKey,
                 turnId,
                 activity,
+                execution,
                 ct);
         }
 
@@ -424,14 +432,20 @@ public sealed class AssistantOrchestrator(
                 var mutation = capability.Trust is
                     AssistantTrustClass.Capture or AssistantTrustClass.Act;
 
-                // Stop before a write means no write. Once the canonical
-                // mutation has begun, do not pass the user-stop token into the
-                // atomic domain command: let it reach truthful terminal state,
-                // then stop all subsequent work.
-                if (mutation && ct.IsCancellationRequested)
+                // Stop and canonical write-start share one lifecycle gate.
+                // If Stop wins, no write begins. If the mutation lease wins,
+                // that write is already considered in-flight and is allowed to
+                // reach its truthful terminal state before the turn stops.
+                AssistantTurnMutationLease? mutationLease = null;
+                if (mutation)
                 {
-                    stopReason = AssistantTurnStopReason.Cancelled;
-                    break;
+                    mutationLease = execution?.TryBeginMutation();
+                    if ((execution is not null && mutationLease is null)
+                        || (execution is null && ct.IsCancellationRequested))
+                    {
+                        stopReason = AssistantTurnStopReason.Cancelled;
+                        break;
+                    }
                 }
 
                 AssistantToolResult result;
@@ -447,6 +461,10 @@ public sealed class AssistantOrchestrator(
                 {
                     stopReason = AssistantTurnStopReason.Cancelled;
                     break;
+                }
+                finally
+                {
+                    mutationLease?.Dispose();
                 }
 
                 messages.Add(LlmMessage.Tool(call.Id, ToolJson(result)));
@@ -679,6 +697,7 @@ public sealed class AssistantOrchestrator(
         string conversationKey,
         string turnId,
         Func<AssistantTurnActivityDto, ValueTask>? activity,
+        AssistantTurnExecution? execution,
         CancellationToken ct)
     {
         var continuationId = request.ContinuationId!.Trim();
@@ -783,21 +802,31 @@ public sealed class AssistantOrchestrator(
         if (activity is not null)
             await activity(new AssistantTurnActivityDto("saving_note", "Saving your note…"));
 
-        if (ct.IsCancellationRequested)
+        AssistantTurnMutationLease? mutationLease = execution?.TryBeginMutation();
+        if ((execution is not null && mutationLease is null)
+            || (execution is null && ct.IsCancellationRequested))
         {
             return ContinuationFailure(
                 AssistantErrorCodes.TurnCancelled,
                 "Stopped.");
         }
 
-        // Same commit boundary as the ordinary capture path: cancellation may
-        // prevent the write from starting, but cannot make an in-flight
-        // canonical write ambiguous.
-        var result = await registry.InvokeAsync(
-            CaptureCapability,
-            capture.Arguments!.Value,
-            toolContext,
-            CancellationToken.None);
+        // Same atomic write boundary as the ordinary tool path. From this
+        // lifecycle transition onward, a Stop request may end subsequent work
+        // but cannot make this canonical write ambiguous.
+        AssistantToolResult result;
+        try
+        {
+            result = await registry.InvokeAsync(
+                CaptureCapability,
+                capture.Arguments!.Value,
+                toolContext,
+                CancellationToken.None);
+        }
+        finally
+        {
+            mutationLease?.Dispose();
+        }
 
         if (!result.Success)
         {
