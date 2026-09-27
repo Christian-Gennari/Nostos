@@ -8,9 +8,10 @@ namespace Nostos.Shared.Dtos;
 // superset and carries no field the client does not already resolve.
 
 /// <summary>
-/// One assistant turn. <paramref name="ClientId"/> and
-/// <paramref name="IdempotencyKey"/> flow straight through to
-/// <c>notes_capture</c>, so a retried turn cannot create a second note.
+/// One assistant turn. New callers use <paramref name="ConversationId"/> and
+/// <paramref name="TurnId"/>; the legacy ClientId / IdempotencyKey pair remains
+/// the append-only compatibility alias. Canonical mutations derive receipt keys
+/// from the stable logical TurnId, so transport retry cannot create a second write.
 /// </summary>
 public sealed record AssistantTurnRequest(
     string ClientId,
