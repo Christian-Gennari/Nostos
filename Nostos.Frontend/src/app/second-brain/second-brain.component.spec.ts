@@ -314,11 +314,43 @@ describe('SecondBrain', () => {
       http.expectOne((req) => req.url === '/api/notes/unlinked')
         .flush({ items: [unlinked], totalCount: 1, offset: 0, limit: 25 });
       component.closeReview();
-      http.expectOne((req) => req.url === '/api/notes')
-        .flush({ items: [unlinked], totalCount: 1, offset: 0, limit: 25 });
+      http.expectNone((req) => req.url === '/api/notes');
       fixture.detectChanges();
       expect(component.viewMode()).toBe('notes');
       expect(component.browseWithoutConcepts()).toBe(true);
+    });
+
+    it('returns to the same selected note and loaded page when review changes nothing', () => {
+      component.setViewMode('notes');
+      browse([linked, unlinked]);
+      component.openNotePanel(unlinked);
+      component.setBrowseWithoutConcepts(true);
+      browse([unlinked]);
+      component.openNotePanel(unlinked);
+
+      component.openReview();
+      http.expectOne((request) => request.url === '/api/notes/unlinked')
+        .flush({ items: [unlinked], totalCount: 1, offset: 0, limit: 25 });
+      component.closeReview();
+
+      expect(component.viewMode()).toBe('notes');
+      expect(component.panelNote()?.id).toBe(unlinked.id);
+      expect(component.browseNotes().map((note) => note.id)).toEqual([unlinked.id]);
+      http.expectNone((request) => request.url === '/api/notes');
+    });
+
+    it('opens a concept-search result in the complete Notes inspector', () => {
+      component.searchQuery.set('separate');
+      component.openNotePanel(unlinked);
+      component.openSearchNoteInNotes();
+
+      const request = http.expectOne((req) => req.url === '/api/notes');
+      expect(request.request.params.get('query')).toBe('separate');
+      request.flush({ items: [unlinked], totalCount: 1, offset: 0, limit: 25 });
+      fixture.detectChanges();
+      expect(component.viewMode()).toBe('notes');
+      expect(component.panelNote()?.id).toBe(unlinked.id);
+      expect(fixture.nativeElement.querySelector('.brain-browse-detail')?.textContent).toContain('Link to concept');
     });
 
     it('filters one book through the server and reviews only matching unlinked notes', () => {
@@ -341,9 +373,8 @@ describe('SecondBrain', () => {
       expect(review.request.params.get('withoutConcepts')).toBe('true');
       review.flush({ items: [unlinked], totalCount: 1, offset: 0, limit: 25 });
       component.closeReview();
-      const restored = http.expectOne((request) => request.url === '/api/notes');
-      expect(restored.request.params.get('bookId')).toBe('book-b');
-      restored.flush({ items: [unlinked], totalCount: 1, offset: 0, limit: 25 });
+      http.expectNone((request) => request.url === '/api/notes');
+      expect(component.browseBookId()).toBe('book-b');
 
       component.setBrowseBook(null);
       const cleared = http.expectOne((request) => request.url === '/api/notes');
@@ -1808,6 +1839,35 @@ describe('SecondBrain', () => {
       expect(component.reviewQueue().map((row) => row.id)).toEqual(['hit-1', 'hit-2']);
       expect(component.reviewTotal()).toBe(2);
       expect(TestBed.inject(ToastService).toasts().at(-1)?.message).toContain('Failed to link');
+    });
+
+    it('creates a concept from review through the canonical note update', () => {
+      enterReview();
+      component.openReviewPicker();
+      component.reviewPickerQuery.set('New connection');
+      fixture.detectChanges();
+      expect(component.reviewNewConceptName()).toBe('New connection');
+
+      component.createReviewConcept();
+      const save = http.expectOne((request) => request.method === 'PUT' && request.url === '/api/notes/hit-1');
+      expect(save.request.body.content).toContain('[[New connection]]');
+      expect(save.request.body.selectedText).toBe(sampleHits[0].selectedText);
+      save.flush({});
+      settleReviewRefresh();
+
+      expect(component.reviewQueue().map((row) => row.id)).toEqual(['hit-2']);
+      expect(component.reviewTotal()).toBe(1);
+    });
+
+    it('offers retry rather than an empty-queue claim when the review fetch fails', () => {
+      component.openReview();
+      http.expectOne((request) => request.url === '/api/notes/unlinked')
+        .error(new ProgressEvent('network-error'));
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('.index-list [role="alert"]')?.textContent)
+        .toContain('Notes could not be loaded');
+      expect(fixture.nativeElement.querySelector('.index-list')?.textContent).not.toContain('No notes here');
     });
 
     it('resolves a note whose edit declares a concept', () => {
