@@ -50,7 +50,47 @@ public sealed record AssistantTurnRequest(
 /// orchestrator and never promoted to a system message. <c>Text</c> is untrusted
 /// user-supplied text.
 /// </summary>
-public sealed record AssistantHistoryMessageDto(string Role, string Text);
+public sealed record AssistantHistoryMessageDto(
+    string Role,
+    string Text,
+    // APPENDED (#561): compact historical context from when this user turn
+    // happened. It is untrusted conversational metadata only; the backend may
+    // use it to resolve references but never as mutation authorization.
+    AssistantHistoricalContextDto? Context = null,
+    // APPENDED (#561): compact identities for source evidence surfaced during
+    // the historical turn. The excerpt itself is deliberately not repeated.
+    IReadOnlyList<AssistantHistoricalEvidenceDto>? Evidence = null,
+    // APPENDED (#561): capabilities the server reported as completed on that
+    // historical turn. This is reference context only; canonical current state
+    // must still be read before acting.
+    IReadOnlyList<string>? Actions = null,
+    // APPENDED (#561): identity of a note captured by this turn, when one exists.
+    // It helps resolve later "that note" references but carries no write authority.
+    string? CapturedNoteId = null);
+
+/// <summary>
+/// Compact application snapshot attached to an older user turn. Current
+/// <see cref="AssistantContextDto"/> remains authoritative for the present turn;
+/// this snapshot is only a reference-resolution aid.
+/// </summary>
+public sealed record AssistantHistoricalContextDto(
+    string? Surface = null,
+    string? BookId = null,
+    string? BookTitle = null,
+    string? BrainReviewNoteId = null,
+    string? Concept = null,
+    string? CollectionId = null);
+
+/// <summary>
+/// Compact identity for previously surfaced imported-book evidence. It carries
+/// no excerpt and grants no authority; a later factual claim should re-read the
+/// canonical source through the normal retrieval capability.
+/// </summary>
+public sealed record AssistantHistoricalEvidenceDto(
+    string BookId,
+    string BookTitle,
+    string SourceSha256,
+    IReadOnlyList<AssistantSourceLocatorDto>? Locators = null);
 
 /// <summary>
 /// What the user is looking at. Mirrors the frontend

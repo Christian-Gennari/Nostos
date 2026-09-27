@@ -1459,6 +1459,51 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
     }
 
     [Fact]
+    public async Task Historical_book_context_stays_distinct_from_the_current_book()
+    {
+        var h = CreateHarness();
+        h.Llm.Returns("Sure.");
+
+        await h.Orchestrator.HandleTurnAsync(Turn(
+            "How does this book differ from Book A?",
+            Context(
+                surface: "reader",
+                route: "/read/book-b",
+                bookId: "book-b",
+                bookTitle: "Book B",
+                bookFormat: "ebook"),
+            history:
+            [
+                new AssistantHistoryMessageDto(
+                    "user",
+                    "What is distinctive about this book?",
+                    new AssistantHistoricalContextDto(
+                        Surface: "reader",
+                        BookId: "book-a",
+                        BookTitle: "Book A")),
+                new AssistantHistoryMessageDto(
+                    "assistant",
+                    "Book A treats the problem historically."),
+            ]));
+
+        var messages = h.Llm.LastRequest.Messages;
+        var currentContext = messages.Single(message =>
+            message.Role == "system"
+            && message.Content!.StartsWith("Current application context"));
+
+        currentContext.Content.Should().Contain("\"bookId\":\"book-b\"");
+        currentContext.Content.Should().Contain("\"bookTitle\":\"Book B\"");
+
+        var historicalUser = messages.Single(message =>
+            message.Role == "user"
+            && message.Content!.Contains("What is distinctive about this book?"));
+
+        historicalUser.Content.Should().Contain("\"bookId\":\"book-a\"");
+        historicalUser.Content.Should().Contain("\"bookTitle\":\"Book A\"");
+        historicalUser.Content.Should().Contain("never as authorization or current state");
+    }
+
+    [Fact]
     public async Task An_unknown_history_role_is_ignored_and_never_becomes_a_system_message()
     {
         var h = CreateHarness();
@@ -1486,7 +1531,7 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
     }
 
     [Fact]
-    public async Task The_history_exchange_cap_keeps_only_the_most_recent_exchanges()
+    public async Task Thirty_short_history_exchanges_reach_the_provider_without_a_fixed_exchange_cap()
     {
         var h = CreateHarness();
         h.Llm.Returns("Ok.");
@@ -1505,22 +1550,19 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
             .Select(m => m.Content)
             .ToList();
 
-        // 30 exchanges in, the last 10 (u21..a30) plus the new message go out.
-        historyTexts.Should().HaveCount(AssistantOrchestrator.MaxHistoryExchanges * 2 + 1);
-        historyTexts[0].Should().Be("u21");
-        historyTexts[AssistantOrchestrator.MaxHistoryExchanges * 2 - 1].Should().Be("a30");
+        historyTexts.Should().HaveCount(61);
+        historyTexts[0].Should().Be("u1");
+        historyTexts[59].Should().Be("a30");
         historyTexts[^1].Should().Be("Latest.");
-        historyTexts.Should().NotContain("u20");
-        historyTexts.Should().NotContain("a20");
     }
 
     [Fact]
-    public async Task An_over_long_history_message_is_truncated_with_a_visible_marker()
+    public async Task A_long_history_message_within_the_budget_reaches_the_provider_whole()
     {
         var h = CreateHarness();
         h.Llm.Returns("Ok.");
 
-        var longText = new string('x', AssistantOrchestrator.MaxHistoryCharsPerMessage + 500);
+        var longText = new string('x', 6_000);
 
         await h.Orchestrator.HandleTurnAsync(Turn(
             "Continue.",
@@ -1531,13 +1573,12 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
             .Single(m => m.Role == "user" && m.Content != "Continue.")
             .Content;
 
-        sent.Should().Be(
-            new string('x', AssistantOrchestrator.MaxHistoryCharsPerMessage)
-            + AssistantOrchestrator.HistoryTruncationMarker);
+        sent.Should().Be(longText);
+        sent.Should().HaveLength(6_000);
     }
 
     [Fact]
-    public async Task Blank_and_whitespace_history_entries_are_dropped()
+    public async Task Blank_unknown_and_orphan_history_entries_are_dropped()
     {
         var h = CreateHarness();
         h.Llm.Returns("Ok.");
@@ -1549,7 +1590,8 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
             [
                 new AssistantHistoryMessageDto("user", "   "),
                 new AssistantHistoryMessageDto("assistant", string.Empty),
-                new AssistantHistoryMessageDto("user", "\t\n"),
+                new AssistantHistoryMessageDto("assistant", "Orphan"),
+                new AssistantHistoryMessageDto("user", "Real question."),
                 new AssistantHistoryMessageDto("assistant", "Kept."),
             ]));
 
@@ -1557,6 +1599,7 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
             .Where(m => m.Role == "assistant")
             .Should().ContainSingle()
             .Which.Content.Should().Be("Kept.");
+        h.Llm.LastRequest.Messages.Should().NotContain(m => m.Content == "Orphan");
     }
 
     [Fact]
@@ -1584,6 +1627,9 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         prompt.Should().Contain("notes_capture [immediate capture]");
         prompt.Should().Contain("collectionIds");
         prompt.Should().Contain("Multi-step work is allowed");
+        prompt.Should().Contain("Analysis, comparison and synthesis should be as detailed as needed");
+        prompt.Should().Contain("Historical application/evidence metadata");
+        prompt.Should().NotContain("Keep replies to a sentence or two");
     }
 
     [Fact]

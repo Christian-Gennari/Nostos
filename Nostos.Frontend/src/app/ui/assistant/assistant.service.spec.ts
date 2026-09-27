@@ -4,11 +4,10 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 
 import {
+  ASSISTANT_SESSION_STORAGE_KEY,
   AssistantHistoryMessage,
   AssistantService,
   AssistantTurnResponse,
-  HISTORY_MAX_CHARS,
-  HISTORY_MAX_EXCHANGES,
   TRANSCRIPT_AUTO_SEND_DELAY_MS,
   TRANSCRIPT_SEND_POLICY,
   isExplicitPlanApproval,
@@ -70,8 +69,8 @@ describe('AssistantService voice transcript alignment', () => {
   let http: HttpTestingController;
   let fake: ReturnType<typeof fakeContextService>;
 
-  beforeEach(() => {
-    fake = fakeContextService({});
+  function configureService(initial: Partial<AssistantContext> = {}): void {
+    fake = fakeContextService(initial);
     TestBed.configureTestingModule({
       providers: [
         { provide: AssistantContextService, useValue: fake },
@@ -81,6 +80,11 @@ describe('AssistantService voice transcript alignment', () => {
     });
     service = TestBed.inject(AssistantService);
     http = TestBed.inject(HttpTestingController);
+  }
+
+  beforeEach(() => {
+    sessionStorage.removeItem(ASSISTANT_SESSION_STORAGE_KEY);
+    configureService();
   });
 
   afterEach(() => {
@@ -575,6 +579,125 @@ describe('AssistantService voice transcript alignment', () => {
     expect(service.pendingAnchor()).toBeNull();
   });
 
+  it('restores the same conversation id and transcript after a page-reload-style service recreation', () => {
+    service.open();
+    service.updateDraft('First question');
+    service.submit();
+    http.expectOne('/api/assistant/turn').flush(turn({ reply: 'First answer' }));
+
+    const originalConversationId = service.conversationId();
+    const stored = sessionStorage.getItem(ASSISTANT_SESSION_STORAGE_KEY);
+    expect(stored).toBeTruthy();
+
+    http.verify();
+    TestBed.resetTestingModule();
+    configureService();
+
+    expect(service.conversationId()).toBe(originalConversationId);
+    expect(service.entries().map((entry) => entry.text)).toEqual([
+      'First question',
+      'First answer',
+    ]);
+
+    service.updateDraft('Follow up');
+    service.submit();
+    const request = http.expectOne('/api/assistant/turn');
+    expect(request.request.body.conversationId).toBe(originalConversationId);
+    expect(request.request.body.history[0]).toMatchObject({
+      role: 'user',
+      text: 'First question',
+      context: {
+        bookId: 'b1',
+        bookTitle: 'The Magic Mountain',
+      },
+    });
+    expect(request.request.body.history[1]).toEqual({
+      role: 'assistant',
+      text: 'First answer',
+    });
+    request.flush(turn());
+  });
+
+  it('restores an uncertain delivery with the exact same TurnId after reload', () => {
+    service.updateDraft('Capture this once');
+    service.submit();
+    const first = http.expectOne('/api/assistant/turn');
+    const originalTurnId = first.request.body.turnId;
+    const originalConversationId = first.request.body.conversationId;
+    first.error(new ProgressEvent('error'));
+
+    http.verify();
+    TestBed.resetTestingModule();
+    configureService();
+
+    expect(service.conversationId()).toBe(originalConversationId);
+    expect(service.draft()).toBe('Capture this once');
+    expect(service.entries().filter((entry) => entry.kind === 'user')).toHaveLength(1);
+    expect(service.history()).toEqual([]);
+
+    service.submit();
+    const retry = http.expectOne('/api/assistant/turn');
+    expect(retry.request.body.turnId).toBe(originalTurnId);
+    expect(retry.request.body.idempotencyKey).toBe(originalTurnId);
+    expect(retry.request.body.conversationId).toBe(originalConversationId);
+    retry.flush(turn({ reply: 'Captured once.' }));
+  });
+
+  it('restores a pending deterministic continuation after reload', () => {
+    fake.set({ bookFormat: 'physical' });
+    service.updateDraft('A thought I cannot place');
+    service.submit();
+    http.expectOne('/api/assistant/turn').flush(
+      turn({
+        reply: 'What page are you on?',
+        anchorPrompt: {
+          kind: 'physical_page',
+          question: 'What page are you on?',
+          continuationId: 'continuation-reload',
+        },
+      }),
+    );
+
+    const conversationId = service.conversationId();
+
+    http.verify();
+    TestBed.resetTestingModule();
+    configureService({ bookFormat: 'physical' });
+
+    expect(service.conversationId()).toBe(conversationId);
+    expect(service.pendingAnchor()?.continuationId).toBe('continuation-reload');
+
+    service.updateDraft('247');
+    service.submit();
+    const answer = http.expectOne('/api/assistant/turn');
+    expect(answer.request.body.message).toBe('247');
+    expect(answer.request.body.continuationId).toBe('continuation-reload');
+    answer.flush(turn({ acknowledgement: 'Saved.', capturedNoteId: 'note-reload' }));
+  });
+
+  it('persists a New conversation as a clean replacement for the old session', () => {
+    service.updateDraft('Old conversation');
+    service.submit();
+    http.expectOne('/api/assistant/turn').flush(turn({ reply: 'Old reply' }));
+
+    const oldConversationId = service.conversationId();
+    service.newConversation();
+    const newConversationId = service.conversationId();
+
+    expect(newConversationId).not.toBe(oldConversationId);
+    expect(service.entries()).toEqual([]);
+
+    http.verify();
+    TestBed.resetTestingModule();
+    configureService();
+
+    expect(service.conversationId()).toBe(newConversationId);
+    expect(service.entries()).toEqual([]);
+    expect(service.history()).toEqual([]);
+    expect(service.pendingAnchor()).toBeNull();
+    expect(service.pendingPlan()).toBeNull();
+  });
+
   it('sends no per-turn processing mode', () => {
     service.open();
     service.updateDraft('A thought');
@@ -615,62 +738,120 @@ describe('AssistantService voice transcript alignment', () => {
       expect(service.draft()).toBe('A question that fails');
     });
 
-    it('sends the remembered turns, in order, on the next turn', () => {
+    it('sends remembered turns with the historical app snapshot on the next turn', () => {
       service.open();
       service.updateDraft('First');
       service.submit();
       http.expectOne('/api/assistant/turn').flush(turn({ reply: 'First reply' }));
 
+      fake.set({
+        surface: 'reader',
+        route: '/read/b2',
+        bookId: 'b2',
+        bookTitle: 'Book B',
+        readingTarget: 'b2',
+      });
       service.updateDraft('Second');
       service.submit();
       const request = http.expectOne('/api/assistant/turn');
+      const history = request.request.body.history as AssistantHistoryMessage[];
 
-      expect(request.request.body.history).toEqual([
-        { role: 'user', text: 'First' },
-        { role: 'assistant', text: 'First reply' },
-      ]);
+      expect(history).toHaveLength(2);
+      expect(history[0]).toMatchObject({
+        role: 'user',
+        text: 'First',
+        context: {
+          surface: 'reader',
+          bookId: 'b1',
+          bookTitle: 'The Magic Mountain',
+        },
+      });
+      expect(history[1]).toEqual({ role: 'assistant', text: 'First reply' });
+      expect(request.request.body.context.bookId).toBe('b2');
+      expect(request.request.body.context.bookTitle).toBe('Book B');
       request.flush(turn({ reply: 'Second reply' }));
     });
 
-    it('caps the history at the last 10 exchanges', () => {
-      expect(HISTORY_MAX_EXCHANGES).toBe(10);
-
+    it('sends the complete session ledger instead of imposing a client exchange cap', () => {
       service.open();
-      for (let i = 1; i <= 11; i += 1) {
+      for (let i = 1; i <= 25; i += 1) {
         service.updateDraft(`Thought ${i}`);
         service.submit();
         http.expectOne('/api/assistant/turn').flush(turn({ reply: `Reply ${i}` }));
       }
 
-      service.updateDraft('Twelfth');
+      service.updateDraft('Twenty sixth');
       service.submit();
       const request = http.expectOne('/api/assistant/turn');
       const history = request.request.body.history as AssistantHistoryMessage[];
 
-      // Eleven exchanges became ten: the first exchange fell off the front, and
-      // every kept user turn still carries the answer that followed it.
-      expect(history).toHaveLength(20);
-      expect(history[0]).toEqual({ role: 'user', text: 'Thought 2' });
-      expect(history[19]).toEqual({ role: 'assistant', text: 'Reply 11' });
-      expect(history.some((entry) => entry.text === 'Thought 1')).toBe(false);
+      expect(history).toHaveLength(50);
+      expect(history[0]).toMatchObject({ role: 'user', text: 'Thought 1' });
+      expect(history[49]).toEqual({ role: 'assistant', text: 'Reply 25' });
       request.flush(turn());
     });
 
-    it('truncates a remembered message to HISTORY_MAX_CHARS, never drops it', () => {
-      expect(HISTORY_MAX_CHARS).toBe(2000);
+    it('does not truncate a long remembered answer before an immediate follow-up', () => {
+      const longAnswer = 'opening ' + 'x'.repeat(5_000) + ' final distinction';
 
       service.open();
-      service.updateDraft('x'.repeat(3000));
+      service.updateDraft('Give me a detailed answer');
       service.submit();
-      http.expectOne('/api/assistant/turn').flush(turn({ reply: 'Noted.' }));
+      http.expectOne('/api/assistant/turn').flush(turn({ reply: longAnswer }));
 
-      service.updateDraft('Next');
+      service.updateDraft('What did you mean by the final distinction?');
       service.submit();
       const request = http.expectOne('/api/assistant/turn');
       const history = request.request.body.history as AssistantHistoryMessage[];
 
-      expect(history[0].role).toBe('user');
-      expect(history[0].text).toHaveLength(HISTORY_MAX_CHARS);
+      expect(history[1].role).toBe('assistant');
+      expect(history[1].text).toBe(longAnswer);
+      expect(history[1].text.endsWith('final distinction')).toBe(true);
+      request.flush(turn());
+    });
+
+    it('carries compact source, action and captured-note identities without repeating excerpts', () => {
+      service.open();
+      service.updateDraft('Do the thing and show me the passage');
+      service.submit();
+      http.expectOne('/api/assistant/turn').flush(
+        turn({
+          reply: 'Done.',
+          executedCapabilities: ['library_update_book'],
+          capturedNoteId: 'note-42',
+          sources: [
+            {
+              bookId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+              bookTitle: 'Book A',
+              bookAuthor: 'Author',
+              format: 'pdf',
+              sourceSha256: 'sha-source',
+              excerpt: 'A deliberately large excerpt that should not be repeated in history.',
+              locators: [{ type: 'pdf', pdfPageIndex: 41, pdfPageLabel: '42' }],
+            },
+          ],
+        }),
+      );
+
+      service.updateDraft('What about that source?');
+      service.submit();
+      const request = http.expectOne('/api/assistant/turn');
+      const history = request.request.body.history as AssistantHistoryMessage[];
+      const root = history[0];
+
+      expect(root).toMatchObject({
+        role: 'user',
+        actions: ['library_update_book'],
+        capturedNoteId: 'note-42',
+        evidence: [
+          {
+            bookId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+            bookTitle: 'Book A',
+            sourceSha256: 'sha-source',
+          },
+        ],
+      });
+      expect(JSON.stringify(root)).not.toContain('deliberately large excerpt');
       request.flush(turn());
     });
   });

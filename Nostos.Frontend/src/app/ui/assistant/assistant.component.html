@@ -40,6 +40,18 @@
       </span>
       }
       <button
+        appIconButton
+        icon="plus"
+        [glyphSize]="14"
+        type="button"
+        class="assistant-new-conversation"
+        (click)="assistant.newConversation()"
+        [disabled]="assistant.sending()"
+        aria-label="New conversation"
+        title="New conversation"
+        data-testid="assistant-new-conversation"
+      ></button>
+      <button
         type="button"
         class="assistant-expand"
         (click)="toggleExpanded()"

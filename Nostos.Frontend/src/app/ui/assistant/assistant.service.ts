@@ -64,10 +64,35 @@ export interface AssistantSourceReferenceDto {
   locators: AssistantSourceLocatorDto[];
 }
 
-/** One remembered turn; the ordered log the model is told on the next request. */
+/** Compact application snapshot from when an older user turn occurred. */
+export interface AssistantHistoricalContextDto {
+  surface: string | null;
+  bookId: string | null;
+  bookTitle: string | null;
+  brainReviewNoteId: string | null;
+  concept: string | null;
+  collectionId: string | null;
+}
+
+/** Compact identity for source evidence surfaced during an older turn. */
+export interface AssistantHistoricalEvidenceDto {
+  bookId: string;
+  bookTitle: string;
+  sourceSha256: string;
+  locators: AssistantSourceLocatorDto[];
+}
+
+/**
+ * One remembered conversational message. The browser sends the complete
+ * session ledger; the server decides what fits into model context.
+ */
 export interface AssistantHistoryMessage {
   role: 'user' | 'assistant';
   text: string;
+  context?: AssistantHistoricalContextDto | null;
+  evidence?: AssistantHistoricalEvidenceDto[];
+  actions?: string[];
+  capturedNoteId?: string | null;
 }
 
 export interface AssistantAnchorPrompt {
@@ -164,23 +189,12 @@ interface AssistantTurnRequestDto {
   continuationId: string | null;
   continuationSkipped: boolean;
   /**
-   * The recent turns the client remembers (issue #286). The server appends the
-   * current `message` itself, so this is the completed log from BEFORE this
-   * logical turn — never the message being sent or a transport retry copy.
+   * The completed session ledger from BEFORE this logical turn. The browser
+   * sends it intact; the server owns the budgeted selection that reaches the
+   * model, so this field is not itself a provider-context contract.
    */
   history: AssistantHistoryMessage[];
 }
-
-/**
- * History caps (issue #286). {@link HISTORY_MAX_EXCHANGES} counts EXCHANGES, not
- * messages: an exchange is one user turn plus the assistant turn that followed
- * it, so the cap keeps the last ten user turns and everything from the earliest
- * of those onward. {@link HISTORY_MAX_CHARS} bounds each message's length.
- *
- * Exported so the spec asserts the shipped numbers rather than restating them.
- */
-export const HISTORY_MAX_EXCHANGES = 10;
-export const HISTORY_MAX_CHARS = 2000;
 
 /**
  * The raw transcript of one note and the mode its current text reflects
@@ -238,6 +252,9 @@ export const TRANSCRIPT_SEND_POLICY: 'review' | 'auto' = 'auto';
 /** The grace window before an auto-sent transcript is dispatched. */
 export const TRANSCRIPT_AUTO_SEND_DELAY_MS = 2000;
 
+/** Session-scoped persistence only; closing the browser tab ends the conversation. */
+export const ASSISTANT_SESSION_STORAGE_KEY = 'nostos.ask-nostos.session.v1';
+
 /** Shape exposed on `globalThis.__nostosAssistant` for live verification. */
 export interface NostosAssistantDiagnostics {
   context: AssistantContext;
@@ -245,7 +262,7 @@ export interface NostosAssistantDiagnostics {
   lastTurn: AssistantTurnResponse | null;
   suggestions: AssistantSuggestionDto[];
   pendingPlan: AssistantPendingPlanDto | null;
-  /** The capped turn log the next request will carry (issue #286). */
+  /** Complete ephemeral session history; the server owns model-context packing. */
   history: AssistantHistoryMessage[];
   capturedNoteId: string | null;
 }
@@ -271,6 +288,14 @@ interface AssistantConversationEvent extends AssistantEntry {
   remember: boolean;
   /** Transport state for user turns; assistant/server events are complete. */
   delivery: AssistantEventDelivery;
+  /** Compact app snapshot owned by the user-turn root of this event group. */
+  historyContext: AssistantHistoricalContextDto | null;
+  /** Compact source handles surfaced by the completed turn. */
+  historyEvidence: AssistantHistoricalEvidenceDto[];
+  /** Canonical immediate actions reported as completed by the backend. */
+  historyActions: string[];
+  /** Captured note identity when this turn created one. */
+  historyCapturedNoteId: string | null;
 }
 
 interface PreparedAssistantTurn {
@@ -282,6 +307,23 @@ interface PreparedAssistantTurn {
   userEntryId: string;
   /** Restored if delivery fails while answering a deterministic continuation. */
   continuationPrompt: AssistantAnchorPrompt | null;
+}
+
+interface PersistedAssistantSession {
+  version: 1;
+  conversationId: string;
+  eventLedger: AssistantConversationEvent[];
+  draft: string;
+  pendingAnchor: AssistantAnchorPrompt | null;
+  pendingContinuationContext: AssistantContext | null;
+  pendingPlan: AssistantPendingPlanDto | null;
+  suggestions: AssistantSuggestionDto[];
+  capturedNoteId: string | null;
+  /**
+   * A request persisted before transport begins. On reload it is treated as
+   * delivery-uncertain and can be retried with the exact same TurnId.
+   */
+  retryableTurn: PreparedAssistantTurn | null;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -300,7 +342,17 @@ export class AssistantService {
    * supplies model history. UI event ids remain distinct from TurnIds.
    */
   readonly entries = computed<AssistantEntry[]>(() =>
-    this.eventLedger().map(({ remember: _remember, delivery: _delivery, ...entry }) => entry),
+    this.eventLedger().map(
+      ({
+        remember: _remember,
+        delivery: _delivery,
+        historyContext: _historyContext,
+        historyEvidence: _historyEvidence,
+        historyActions: _historyActions,
+        historyCapturedNoteId: _historyCapturedNoteId,
+        ...entry
+      }) => entry,
+    ),
   );
   readonly sending = signal(false);
   readonly lastError = signal<string | null>(null);
@@ -331,13 +383,13 @@ export class AssistantService {
 
   /** A deterministic follow-up awaiting the user's next real turn. */
   readonly pendingAnchor = signal<AssistantAnchorPrompt | null>(null);
-  private pendingContinuationContext: AssistantContext | null = null;
+  private readonly pendingContinuationContext = signal<AssistantContext | null>(null);
 
   /**
    * The one logical turn whose HTTP result is uncertain. Retrying the unchanged
    * draft resends this exact request and TurnId; editing starts a new turn.
    */
-  private retryableTurn: PreparedAssistantTurn | null = null;
+  private readonly retryableTurn = signal<PreparedAssistantTurn | null>(null);
 
   /**
    * Model history is a projection of the canonical event ledger. A transport-
@@ -345,14 +397,30 @@ export class AssistantService {
    * completes, so the next genuinely new turn never pretends delivery was known.
    */
   readonly history = computed<AssistantHistoryMessage[]>(() =>
-    capHistory(
-      this.eventLedger()
-        .filter((event) => event.remember && event.delivery !== 'retryable')
-        .map((event) => ({
-          role: event.kind === 'user' ? 'user' : 'assistant',
-          text: event.text,
-        })),
-    ),
+    this.eventLedger()
+      .filter((event) => event.remember && event.delivery !== 'retryable')
+      .map((event) => ({
+        role: event.kind === 'user' ? 'user' : 'assistant',
+        text: event.text,
+      })),
+  );
+
+  /** Enriched wire history; the public transcript/history view stays text-only. */
+  private readonly contextualHistory = computed<AssistantHistoryMessage[]>(() =>
+    this.eventLedger()
+      .filter((event) => event.remember && event.delivery !== 'retryable')
+      .map((event) => ({
+        role: event.kind === 'user' ? 'user' : 'assistant',
+        text: event.text,
+        ...(event.kind === 'user' && event.historyContext
+          ? { context: event.historyContext }
+          : {}),
+        ...(event.historyEvidence.length > 0 ? { evidence: event.historyEvidence } : {}),
+        ...(event.historyActions.length > 0 ? { actions: event.historyActions } : {}),
+        ...(event.historyCapturedNoteId
+          ? { capturedNoteId: event.historyCapturedNoteId }
+          : {}),
+      })),
   );
 
   /**
@@ -383,9 +451,12 @@ export class AssistantService {
   });
 
   constructor() {
+    this.restoreSession();
+
     // The repo verifies UI by reading handles in a live browser; expose the
     // resolved context, the last turn, the suggestions, the pending plan and the
-    // conversation history the next turn will carry.
+    // complete ephemeral history. The same reactive read also persists the
+    // current tab-scoped conversation to sessionStorage.
     effect(() => {
       globalThis.__nostosAssistant = {
         context: this.context(),
@@ -396,7 +467,107 @@ export class AssistantService {
         history: this.history(),
         capturedNoteId: this.capturedNoteId(),
       };
+      this.persistSession();
     });
+  }
+
+  private restoreSession(): void {
+    const storage = sessionStorageOrNull();
+    if (!storage) return;
+
+    try {
+      const raw = storage.getItem(ASSISTANT_SESSION_STORAGE_KEY);
+      if (!raw) return;
+
+      const parsed = JSON.parse(raw) as Partial<PersistedAssistantSession>;
+      if (
+        parsed.version !== 1 ||
+        typeof parsed.conversationId !== 'string' ||
+        !parsed.conversationId.trim() ||
+        !Array.isArray(parsed.eventLedger)
+      ) {
+        storage.removeItem(ASSISTANT_SESSION_STORAGE_KEY);
+        return;
+      }
+
+      this.conversationId.set(parsed.conversationId);
+      const restoredEvents = parsed.eventLedger
+        .filter(isRestorableConversationEvent)
+        .map((event) =>
+          event.delivery === 'sending'
+            ? { ...event, delivery: 'retryable' as const, meta: 'Delivery uncertain' }
+            : event,
+        );
+      this.eventLedger.set(restoredEvents);
+
+      this.pendingAnchor.set(isAnchorPrompt(parsed.pendingAnchor) ? parsed.pendingAnchor : null);
+      this.pendingContinuationContext.set(
+        isAssistantContext(parsed.pendingContinuationContext)
+          ? parsed.pendingContinuationContext
+          : null,
+      );
+      this.pendingPlan.set(isPendingPlan(parsed.pendingPlan) ? parsed.pendingPlan : null);
+      this.suggestions.set(Array.isArray(parsed.suggestions) ? parsed.suggestions : []);
+      this.capturedNoteId.set(
+        typeof parsed.capturedNoteId === 'string' ? parsed.capturedNoteId : null,
+      );
+
+      const restoredRetry = isPreparedTurn(parsed.retryableTurn)
+        ? parsed.retryableTurn
+        : null;
+      this.retryableTurn.set(restoredRetry);
+
+      if (restoredRetry) {
+        // A reload can interrupt an in-flight request after the server committed
+        // but before the browser received the response. Treat it as uncertain:
+        // restore the exact request/TurnId and let canonical receipts decide.
+        this.draft.set(restoredRetry.text);
+        this.updateUserDelivery(
+          restoredRetry.userEntryId,
+          'retryable',
+          'Delivery uncertain',
+        );
+        if (restoredRetry.continuationPrompt) {
+          this.pendingAnchor.set(restoredRetry.continuationPrompt);
+          this.pendingContinuationContext.set(restoredRetry.context);
+        }
+      } else {
+        this.draft.set(typeof parsed.draft === 'string' ? parsed.draft : '');
+      }
+
+      // Natural-language destructive approval is intentionally NOT restored as
+      // armed. The explicit confirmation button can still submit the exact
+      // server-bound plan/token, while a generic "yes" after refresh cannot.
+      this.directPlanApprovalArmed.set(false);
+    } catch {
+      storage.removeItem(ASSISTANT_SESSION_STORAGE_KEY);
+    }
+  }
+
+  private persistSession(): void {
+    const storage = sessionStorageOrNull();
+    if (!storage) return;
+
+    const state: PersistedAssistantSession = {
+      version: 1,
+      conversationId: this.conversationId(),
+      eventLedger: this.eventLedger(),
+      draft: this.draft(),
+      pendingAnchor: this.pendingAnchor(),
+      pendingContinuationContext: this.pendingContinuationContext(),
+      pendingPlan: this.pendingPlan(),
+      suggestions: this.suggestions(),
+      capturedNoteId: this.capturedNoteId(),
+      retryableTurn: this.retryableTurn(),
+    };
+
+    try {
+      storage.setItem(ASSISTANT_SESSION_STORAGE_KEY, JSON.stringify(state));
+    } catch {
+      // Storage can be unavailable or full (privacy mode / browser quota).
+      // Conversation still works in memory; persistence is a convenience, not
+      // an execution/safety dependency.
+    }
   }
 
   open(): void {
@@ -421,9 +592,9 @@ export class AssistantService {
   }
 
   /**
-   * Deterministic conversation reset foundation for #560. The explicit UI action
-   * can be added later; this method already defines the state boundary. It does
-   * not persist or create a named/durable chat.
+   * Explicit #561 conversation boundary. The header action clears the current
+   * tab-scoped ledger and starts a fresh ConversationId; it never creates a
+   * named, durable or server-persisted chat.
    */
   newConversation(): void {
     if (this.sending()) return;
@@ -432,9 +603,9 @@ export class AssistantService {
     this.anchorDismissed.set(false);
     this.conversationId.set(createId());
     this.eventLedger.set([]);
-    this.retryableTurn = null;
+    this.retryableTurn.set(null);
     this.pendingAnchor.set(null);
-    this.pendingContinuationContext = null;
+    this.pendingContinuationContext.set(null);
     this.pendingPlan.set(null);
     this.directPlanApprovalArmed.set(false);
     this.suggestions.set([]);
@@ -445,9 +616,16 @@ export class AssistantService {
     this.rawOpen.set(false);
     this.rawTranscript.set(null);
     this.rawLoading.set(false);
+    this.persistSession();
   }
 
   updateDraft(value: string): void {
+    const retry = this.retryableTurn();
+    if (retry && value.trim() !== retry.text) {
+      // Editing an uncertain delivery is a new logical turn. The old visible
+      // event remains marked uncertain and is never promoted into model history.
+      this.retryableTurn.set(null);
+    }
     this.draft.set(value);
   }
 
@@ -461,7 +639,7 @@ export class AssistantService {
     if (!transcript) return;
 
     const current = this.draft().trim();
-    this.draft.set(current ? `${current} ${transcript}` : transcript);
+    this.updateDraft(current ? `${current} ${transcript}` : transcript);
 
     if (TRANSCRIPT_SEND_POLICY === 'auto') this.scheduleAutoSend();
   }
@@ -505,9 +683,9 @@ export class AssistantService {
 
     const pending = this.pendingAnchor();
     if (pending) {
-      const context = this.pendingContinuationContext ?? this.context();
+      const context = this.pendingContinuationContext() ?? this.context();
       this.pendingAnchor.set(null);
-      this.pendingContinuationContext = null;
+      this.pendingContinuationContext.set(null);
       this.draft.set('');
       this.dispatchContinuation(text, pending, context, false);
       return;
@@ -519,11 +697,22 @@ export class AssistantService {
       // so nothing in a later conversation can accidentally approve it.
       this.draft.set('');
       const turnId = createId();
-      this.pushEntry(turnId, 'user', text, null, null);
+      this.pushEntry(
+        turnId,
+        'user',
+        text,
+        null,
+        null,
+        [],
+        true,
+        'complete',
+        toHistoricalContext(this.context()),
+      );
       this.pendingPlan.set(null);
       this.directPlanApprovalArmed.set(false);
       const reply = 'Okay. I won\'t make that change.';
       this.pushEntry(turnId, 'assistant', reply, null, 'Cancelled');
+      this.persistSession();
       return;
     }
 
@@ -532,8 +721,19 @@ export class AssistantService {
       // executes only the exact server-held plan id + token.
       this.draft.set('');
       const turnId = createId();
-      this.pushEntry(turnId, 'user', text, null, null);
+      this.pushEntry(
+        turnId,
+        'user',
+        text,
+        null,
+        null,
+        [],
+        true,
+        'complete',
+        toHistoricalContext(this.context()),
+      );
       this.directPlanApprovalArmed.set(false);
+      this.persistSession();
       this.approvePlan(plan.planId, plan.approvalToken, turnId);
       return;
     }
@@ -557,9 +757,9 @@ export class AssistantService {
     const pending = this.pendingAnchor();
     if (!pending || pending.kind === 'book' || this.sending()) return;
 
-    const context = this.pendingContinuationContext ?? this.context();
+    const context = this.pendingContinuationContext() ?? this.context();
     this.pendingAnchor.set(null);
-    this.pendingContinuationContext = null;
+    this.pendingContinuationContext.set(null);
     this.draft.set('');
     this.dispatchContinuation("I don't know", pending, context, true);
   }
@@ -703,10 +903,12 @@ export class AssistantService {
               response.errorCode ?? 'Refused',
             );
           }
+          this.persistSession();
         },
         error: () => {
           this.sending.set(false);
           this.lastError.set('The plan could not be applied. It is still waiting for approval.');
+          this.persistSession();
         },
       });
   }
@@ -716,14 +918,14 @@ export class AssistantService {
     anchor: AssistantAnchor | null,
     captureBookTitle: string | null = null,
   ): void {
-    const retry = this.retryableTurn;
+    const retry = this.retryableTurn();
     if (retry && retry.text === text && retry.request.continuationId === null) {
       this.draft.set('');
       this.sendPreparedTurn(retry);
       return;
     }
 
-    this.retryableTurn = null;
+    this.retryableTurn.set(null);
     const context = this.context();
     this.startPreparedTurn({
       text,
@@ -742,7 +944,7 @@ export class AssistantService {
     context: AssistantContext,
     skipped: boolean,
   ): void {
-    const retry = this.retryableTurn;
+    const retry = this.retryableTurn();
     if (
       retry &&
       retry.text === text &&
@@ -753,7 +955,7 @@ export class AssistantService {
       return;
     }
 
-    this.retryableTurn = null;
+    this.retryableTurn.set(null);
     const displayAnchor: AssistantAnchor | null =
       prompt.kind === 'book'
         ? null
@@ -785,7 +987,7 @@ export class AssistantService {
   }): void {
     const turnId = createId();
     const conversationId = this.conversationId();
-    const history = this.history();
+    const history = this.contextualHistory();
     const userEntryId = this.pushEntry(
       turnId,
       'user',
@@ -795,6 +997,7 @@ export class AssistantService {
       [],
       true,
       'sending',
+      toHistoricalContext(options.context),
     );
 
     const request: AssistantTurnRequestDto = {
@@ -826,16 +1029,27 @@ export class AssistantService {
 
   private sendPreparedTurn(turn: PreparedAssistantTurn): void {
     this.updateUserDelivery(turn.userEntryId, 'sending', null);
+    this.retryableTurn.set(turn);
     this.sending.set(true);
+    // Persist before transport begins. A reload while the HTTP result is
+    // ambiguous can then retry this exact logical TurnId instead of inventing a
+    // new turn and defeating #560's mutation receipts.
+    this.persistSession();
 
     this.http.post<AssistantTurnResponse>('/api/assistant/turn', turn.request).subscribe({
       next: (response) => {
         this.sending.set(false);
-        if (this.retryableTurn?.turnId === turn.turnId) this.retryableTurn = null;
+        if (this.retryableTurn()?.turnId === turn.turnId) this.retryableTurn.set(null);
         this.updateUserDelivery(turn.userEntryId, 'complete', null);
         this.lastError.set(response.error?.message ?? null);
         this.lastTurn.set(response);
         this.suggestions.set(response.suggestions ?? []);
+        this.updateTurnHistoryFacts(
+          turn.userEntryId,
+          response.sources ?? [],
+          response.executedCapabilities ?? [],
+          response.capturedNoteId ?? null,
+        );
 
         if (response.pendingPlan) {
           this.pendingPlan.set(response.pendingPlan);
@@ -877,12 +1091,12 @@ export class AssistantService {
               continuationId,
             };
             this.pendingAnchor.set(prompt);
-            this.pendingContinuationContext = turn.context;
+            this.pendingContinuationContext.set(turn.context);
             promptText = prompt.question;
             this.pushEntry(turn.turnId, 'assistant', prompt.question, null, null);
           } else {
             this.pendingAnchor.set(null);
-            this.pendingContinuationContext = null;
+            this.pendingContinuationContext.set(null);
             this.lastError.set(
               response.error?.message ??
                 'The assistant requested follow-up input without a valid continuation.',
@@ -890,7 +1104,7 @@ export class AssistantService {
           }
         } else {
           this.pendingAnchor.set(null);
-          this.pendingContinuationContext = null;
+          this.pendingContinuationContext.set(null);
         }
 
         if (
@@ -906,10 +1120,12 @@ export class AssistantService {
             response.sources ?? [],
           );
         }
+
+        this.persistSession();
       },
       error: () => {
         this.sending.set(false);
-        this.retryableTurn = turn;
+        this.retryableTurn.set(turn);
         this.lastError.set(
           'The assistant could not be reached. Your message is still in the composer to retry.',
         );
@@ -918,8 +1134,9 @@ export class AssistantService {
 
         if (turn.continuationPrompt) {
           this.pendingAnchor.set(turn.continuationPrompt);
-          this.pendingContinuationContext = turn.context;
+          this.pendingContinuationContext.set(turn.context);
         }
+        this.persistSession();
       },
     });
   }
@@ -945,13 +1162,49 @@ export class AssistantService {
     sources: AssistantSourceReferenceDto[] = [],
     remember = true,
     delivery: AssistantEventDelivery = 'complete',
+    historyContext: AssistantHistoricalContextDto | null = null,
   ): string {
     const id = createId();
     this.eventLedger.update((events) => [
       ...events,
-      { id, turnId, kind, text, anchorLabel, meta, sources, remember, delivery },
+      {
+        id,
+        turnId,
+        kind,
+        text,
+        anchorLabel,
+        meta,
+        sources,
+        remember,
+        delivery,
+        historyContext,
+        historyEvidence: [],
+        historyActions: [],
+        historyCapturedNoteId: null,
+      },
     ]);
     return id;
+  }
+
+  private updateTurnHistoryFacts(
+    userEntryId: string,
+    sources: AssistantSourceReferenceDto[],
+    actions: string[],
+    capturedNoteId: string | null,
+  ): void {
+    const evidence = toHistoricalEvidence(sources);
+    this.eventLedger.update((events) =>
+      events.map((event) =>
+        event.id === userEntryId
+          ? {
+              ...event,
+              historyEvidence: evidence,
+              historyActions: [...actions],
+              historyCapturedNoteId: capturedNoteId,
+            }
+          : event,
+      ),
+    );
   }
 
   private updateUserDelivery(
@@ -1065,6 +1318,104 @@ function toContextDto(
   };
 }
 
+function toHistoricalContext(context: AssistantContext): AssistantHistoricalContextDto {
+  return {
+    surface: context.surface,
+    bookId: context.bookId,
+    bookTitle: context.bookTitle,
+    brainReviewNoteId: context.brainReviewNoteId,
+    concept: context.concept,
+    collectionId: context.collectionId,
+  };
+}
+
+function toHistoricalEvidence(
+  sources: readonly AssistantSourceReferenceDto[],
+): AssistantHistoricalEvidenceDto[] {
+  return sources.map((source) => ({
+    bookId: source.bookId,
+    bookTitle: source.bookTitle,
+    sourceSha256: source.sourceSha256,
+    locators: source.locators.map((locator) => ({ ...locator })),
+  }));
+}
+
+function sessionStorageOrNull(): Storage | null {
+  try {
+    return typeof globalThis.sessionStorage === 'undefined'
+      ? null
+      : globalThis.sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
+function isAnchorPrompt(value: unknown): value is AssistantAnchorPrompt {
+  if (!value || typeof value !== 'object') return false;
+  const prompt = value as Partial<AssistantAnchorPrompt>;
+  return (
+    (prompt.kind === 'physical_page' ||
+      prompt.kind === 'external_audio_timestamp' ||
+      prompt.kind === 'book') &&
+    typeof prompt.question === 'string' &&
+    typeof prompt.continuationId === 'string' &&
+    prompt.continuationId.length > 0
+  );
+}
+
+function isAssistantContext(value: unknown): value is AssistantContext {
+  if (!value || typeof value !== 'object') return false;
+  const context = value as Partial<AssistantContext>;
+  return typeof context.surface === 'string' && typeof context.route === 'string';
+}
+
+function isPendingPlan(value: unknown): value is AssistantPendingPlanDto {
+  if (!value || typeof value !== 'object') return false;
+  const plan = value as Partial<AssistantPendingPlanDto>;
+  return (
+    typeof plan.planId === 'string' &&
+    typeof plan.summary === 'string' &&
+    typeof plan.approvalToken === 'string' &&
+    Array.isArray(plan.steps)
+  );
+}
+
+function isPreparedTurn(value: unknown): value is PreparedAssistantTurn {
+  if (!value || typeof value !== 'object') return false;
+  const turn = value as Partial<PreparedAssistantTurn>;
+  const request = turn.request as Partial<AssistantTurnRequestDto> | undefined;
+  return (
+    typeof turn.turnId === 'string' &&
+    typeof turn.text === 'string' &&
+    typeof turn.userEntryId === 'string' &&
+    isAssistantContext(turn.context) &&
+    !!request &&
+    typeof request.turnId === 'string' &&
+    request.turnId === turn.turnId &&
+    typeof request.conversationId === 'string' &&
+    typeof request.message === 'string' &&
+    (turn.continuationPrompt === null || isAnchorPrompt(turn.continuationPrompt))
+  );
+}
+
+function isRestorableConversationEvent(value: unknown): value is AssistantConversationEvent {
+  if (!value || typeof value !== 'object') return false;
+  const event = value as Partial<AssistantConversationEvent>;
+  return (
+    typeof event.id === 'string' &&
+    typeof event.turnId === 'string' &&
+    (event.kind === 'user' || event.kind === 'assistant' || event.kind === 'error') &&
+    typeof event.text === 'string' &&
+    typeof event.remember === 'boolean' &&
+    (event.delivery === 'sending' ||
+      event.delivery === 'complete' ||
+      event.delivery === 'retryable') &&
+    Array.isArray(event.sources) &&
+    Array.isArray(event.historyEvidence) &&
+    Array.isArray(event.historyActions)
+  );
+}
+
 /**
  * Normalize a page/timestamp for local acknowledgement display. The server
  * independently performs the same deterministic normalization and remains the
@@ -1094,29 +1445,6 @@ export function parseTimestamp(value: string): string | null {
     .map((part) => Number(part.trim()))
     .reduce((total, part) => total * 60 + part, 0);
   return String(seconds);
-}
-
-/**
- * The history cap (issue #286). Keeps the last {@link HISTORY_MAX_EXCHANGES}
- * user turns and everything from the earliest of those onward, so each kept
- * user turn brings the assistant turn that answered it. Every message is
- * truncated to {@link HISTORY_MAX_CHARS} rather than dropped.
- */
-export function capHistory(
-  log: readonly AssistantHistoryMessage[],
-): AssistantHistoryMessage[] {
-  const userTurns = log
-    .map((message, index) => (message.role === 'user' ? index : -1))
-    .filter((index) => index >= 0);
-  const start =
-    userTurns.length > HISTORY_MAX_EXCHANGES
-      ? userTurns[userTurns.length - HISTORY_MAX_EXCHANGES]
-      : 0;
-
-  return log.slice(start).map((message) => ({
-    role: message.role,
-    text: message.text.slice(0, HISTORY_MAX_CHARS),
-  }));
 }
 
 /** Seconds (as a string) to `m:ss` / `h:mm:ss`. Null-safe and never NaN-y. */

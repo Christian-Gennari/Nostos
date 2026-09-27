@@ -6,6 +6,7 @@ import { Router } from '@angular/router';
 
 import { AssistantComponent } from './assistant.component';
 import {
+  ASSISTANT_SESSION_STORAGE_KEY,
   AssistantService,
   AssistantSourceReferenceDto,
   AssistantTurnResponse,
@@ -111,6 +112,7 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
 
   beforeEach(async () => {
     localStorage.clear();
+    sessionStorage.removeItem(ASSISTANT_SESSION_STORAGE_KEY);
     fake = fakeContextService({ surface: 'reader', route: '/read/b1', bookId: 'b1' });
     voice = fakeVoiceService();
     status = fakeStatusService(true);
@@ -217,6 +219,35 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
 
     expect(assistant.isOpen()).toBe(true);
     expect(fixture.nativeElement.querySelector('[data-testid="assistant-panel"]')).toBeTruthy();
+  });
+
+  it('starts a deliberate new conversation from the header action', () => {
+    fixture.componentInstance.open();
+    assistant.updateDraft('Keep this in the old conversation');
+    assistant.submit();
+    http.expectOne('/api/assistant/turn').flush(turn({ reply: 'Old reply' }));
+    fixture.detectChanges();
+
+    const oldConversationId = assistant.conversationId();
+    expect(assistant.entries().length).toBe(2);
+
+    const newConversation = fixture.nativeElement.querySelector(
+      '[data-testid="assistant-new-conversation"]',
+    ) as HTMLButtonElement;
+    expect(newConversation).toBeTruthy();
+    expect(newConversation.getAttribute('aria-label')).toBe('New conversation');
+    expect(newConversation.classList.contains('assistant-new-conversation')).toBe(true);
+    expect(newConversation.classList.contains('icon-btn')).toBe(true);
+    // assistant-expand is intentionally hidden by the <=768px media query.
+    // The New conversation action must never inherit that desktop-only class.
+    expect(newConversation.classList.contains('assistant-expand')).toBe(false);
+
+    newConversation.click();
+    fixture.detectChanges();
+
+    expect(assistant.conversationId()).not.toBe(oldConversationId);
+    expect(assistant.entries()).toEqual([]);
+    expect(assistant.history()).toEqual([]);
   });
 
   it('expands and collapses the desktop shell without replacing conversation state', () => {
