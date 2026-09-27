@@ -64,13 +64,17 @@ public static partial class LexicalQueryPlanner
             .Take(8)
             .ToList();
 
-        // Adjacent content-word pairs are more precise than individual tokens
-        // and often survive a question being rephrased around the same idea.
-        for (var i = 0; i + 1 < contentTokens.Count && variants.Count < maxVariants; i++)
-            Add($"{contentTokens[i]} {contentTokens[i + 1]}", 2, LexicalQueryVariantKind.Pair);
-
+        // Recall comes first: individual content words must get a chance
+        // before precision-oriented pairs consume the bounded variant budget.
+        // This is especially important when the user's wording only overlaps a
+        // stored note on a later term in a longer question.
         foreach (var token in contentTokens)
             Add(token, 1, LexicalQueryVariantKind.Token);
+
+        // Use any remaining budget for adjacent content-word pairs. They add
+        // precision when available without starving later independent terms.
+        for (var i = 0; i + 1 < contentTokens.Count && variants.Count < maxVariants; i++)
+            Add($"{contentTokens[i]} {contentTokens[i + 1]}", 2, LexicalQueryVariantKind.Pair);
 
         return variants;
     }
