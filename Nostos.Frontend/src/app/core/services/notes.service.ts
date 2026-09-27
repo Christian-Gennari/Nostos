@@ -30,6 +30,10 @@ export class NotesService {
     return this.http.get<Note[]>(`/api/books/${bookId}/notes`);
   }
 
+  get(id: string): Observable<NoteSearchHit> {
+    return this.http.get<NoteSearchHit>(`/api/notes/${id}`);
+  }
+
   create(bookId: string, dto: CreateNoteDto): Observable<Note> {
     return this.http.post<Note>(`/api/books/${bookId}/notes`, dto);
   }
