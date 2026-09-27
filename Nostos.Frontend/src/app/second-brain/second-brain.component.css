@@ -972,6 +972,33 @@
   flex-wrap: wrap;
 }
 
+.brain-proposals {
+  margin-top: 1rem;
+  padding: 1rem 0;
+  border-top: 1px solid var(--border-color);
+  max-width: 48rem;
+  color: var(--color-text-main);
+  line-height: 1.45;
+}
+
+.brain-proposals-heading,
+.brain-proposal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.brain-proposals-heading strong,
+.brain-proposal strong { font-family: 'Newsreader', serif; font-size: 1.08rem; }
+.brain-proposals p { margin: 0.45rem 0; }
+.brain-proposals-hint,
+.brain-proposal-evidence { color: var(--color-text-muted); font-size: 0.87rem; }
+.brain-proposal { padding: 0.85rem 0; border-top: 1px solid var(--border-color); }
+.brain-proposal-evidence { margin-top: 0.75rem; padding-inline-start: 0.75rem; border-inline-start: 2px solid var(--border-color); }
+.brain-proposal-evidence p { max-height: 5.4em; overflow: auto; overflow-wrap: anywhere; }
+
 .concept-management {
   max-width: 1100px;
   margin: 2rem auto 0;
