@@ -212,18 +212,7 @@
 
 
 
-.clear-search {
-  flex: 0 0 28px;
-  background: transparent;
-  color: var(--color-text-muted);
-}
-
-
-
-.clear-search:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: -2px;
-}
+.clear-search { flex: 0 0 28px; }
 
 /* ROW 3: Sort. The index reads top-down by usage by default, but that is not
    always the way you look for an idea, so the order is switchable and persists
@@ -1104,47 +1093,9 @@
   margin-left: 0;
 }
 
-.concept-action {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.32rem;
-  min-height: 32px;
-  padding: 0 0.6rem;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--color-text-light);
-  font-family: 'Hanken Grotesk', sans-serif;
-  font-size: 0.76rem;
-  transition:
-    background-color 0.15s ease,
-    color 0.15s ease;
-}
-
-.concept-action:hover:not(:disabled) {
-  background: var(--bg-hover);
-  color: var(--color-text-main);
-}
-
-.concept-action.danger:hover:not(:disabled) {
-  background: var(--danger-surface);
-  color: var(--color-danger);
-}
-
-.concept-action:focus-visible,
-.merge-picker-close:focus-visible,
-.merge-picker-cancel:focus-visible,
-.merge-picker-confirm:focus-visible,
 .merge-target:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: -2px;
-}
-
-.concept-action:disabled,
-.merge-picker-confirm:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 .inline-rename {
@@ -1157,20 +1108,6 @@
 .inline-rename-input {
   width: 100%;
   min-width: 0;
-  min-height: 36px;
-  padding: 0.35rem 0.55rem;
-  border: 1px solid var(--border-focus);
-  border-radius: var(--radius-md);
-  background: var(--bg-surface);
-  color: var(--color-text-main);
-  font-family: 'Hanken Grotesk', sans-serif;
-  font-size: 0.88rem;
-  outline: none;
-}
-
-.inline-rename-input:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: -2px;
 }
 
 .inline-rename-error {
@@ -1218,51 +1155,7 @@
   margin-bottom: 0.6rem;
 }
 
-.merge-picker-close {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border: 0;
-  border-radius: var(--radius-md);
-  background: transparent;
-  color: var(--color-text-muted);
-}
-
-.merge-picker-close:hover {
-  background: var(--bg-hover);
-  color: var(--color-text-main);
-}
-
-.merge-search-box {
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-  min-height: 40px;
-  padding: 0 0.65rem;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-lg);
-  background: var(--bg-input);
-  color: var(--color-text-muted);
-}
-
-.merge-search-box:focus-within {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: -2px;
-  color: var(--color-text-main);
-}
-
-.merge-search-box input {
-  width: 100%;
-  min-width: 0;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  color: var(--color-text-main);
-  font-family: 'Hanken Grotesk', sans-serif;
-  font-size: 0.82rem;
-}
+.merge-search-input { width: 100%; }
 
 .merge-target-list {
   display: flex;
@@ -1325,35 +1218,7 @@
 }
 
 .merge-picker-cancel,
-.merge-picker-confirm {
-  min-height: 36px;
-  padding: 0 0.8rem;
-  border-radius: var(--radius-md);
-  font-family: 'Hanken Grotesk', sans-serif;
-  font-size: 0.78rem;
-}
-
-.merge-picker-cancel {
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--color-text-muted);
-}
-
-.merge-picker-cancel:hover {
-  background: var(--bg-hover);
-  color: var(--color-text-main);
-}
-
-.merge-picker-confirm {
-  border: 1px solid var(--primary-fill);
-  background: var(--primary-fill);
-  color: var(--on-primary);
-}
-
-.merge-picker-confirm:hover:not(:disabled) {
-  background: var(--color-primary-hover);
-  border-color: var(--color-primary-hover);
-}
+.merge-picker-confirm { min-height: 36px; }
 
 /* Related concepts are evidence-backed structural paths. Their names remain
    quiet links, while the shared-note control explains and opens the evidence
@@ -1556,18 +1421,7 @@
 
 
 
-.clear-note-search {
-  flex: 0 0 28px;
-  background: transparent;
-  color: var(--color-text-muted);
-}
-
-
-
-.clear-note-search:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: -2px;
-}
+.clear-note-search { flex: 0 0 28px; }
 
 /* The inner shell only supplies layout; the canonical Dropdown owns the border. */
 .detail-select-shell {
