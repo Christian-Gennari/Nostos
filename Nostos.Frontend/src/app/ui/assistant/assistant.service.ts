@@ -493,90 +493,74 @@ export class AssistantService {
   }
 
   /**
-   * Enter submits. If a follow-up is pending, this is its answer: a page or
-   * timestamp for a location question, or the book's title when the capture
-   * asked which book it belongs to (there is no book open, so the app cannot
-   * know it and will not guess).
+   * Enter submits. A deterministic follow-up answer is a genuine new user turn:
+   * its own Message + TurnId reference the server-held continuation instead of
+   * replaying the original capture text in a mutated context.
    */
   submit(): void {
-    // A manual send consumes the pending window; the same call the timer makes
-    // is a no-op here because it already cleared its own timer.
     this.cancelAutoSend();
     const text = this.draft().trim();
     if (!text || this.sending()) return;
 
     const pending = this.pendingAnchor();
     if (pending) {
-      const original = this.pendingText();
+      const context = this.pendingContinuationContext ?? this.context();
       this.pendingAnchor.set(null);
-      this.pendingText.set('');
+      this.pendingContinuationContext = null;
       this.draft.set('');
-
-      if (pending.kind === 'book') {
-        this.dispatchTurn(original, this.effectiveAnchor(this.context()), text);
-        return;
-      }
-
-      this.dispatchTurn(original, this.anchorFromAnswer(pending.kind, text));
+      this.dispatchContinuation(text, pending, context, false);
       return;
     }
 
     const plan = this.pendingPlan();
     if (plan && isExplicitPlanRejection(text)) {
       // A clear rejection is terminal in the client: discard the token and plan
-      // so nothing in a later conversation can accidentally approve it. No
-      // mutation has occurred.
+      // so nothing in a later conversation can accidentally approve it.
       this.draft.set('');
-      this.turnLog.update((log) => [...log, { role: 'user', text }]);
-      this.pushEntry('user', text, null, null);
+      const turnId = createId();
+      this.pushEntry(turnId, 'user', text, null, null);
       this.pendingPlan.set(null);
       this.directPlanApprovalArmed.set(false);
       const reply = 'Okay. I won\'t make that change.';
-      this.turnLog.update((log) => [...log, { role: 'assistant', text: reply }]);
-      this.pushEntry('assistant', reply, null, 'Cancelled');
+      this.pushEntry(turnId, 'assistant', reply, null, 'Cancelled');
       return;
     }
 
     if (plan && this.directPlanApprovalArmed() && isExplicitPlanApproval(text)) {
       // A short, unambiguous confirmation on the immediate confirmation turn
-      // is itself the approval gesture. Execute the exact server-held plan id +
-      // token rather than asking the model to reinterpret destructive work.
+      // executes only the exact server-held plan id + token.
       this.draft.set('');
-      this.turnLog.update((log) => [...log, { role: 'user', text }]);
-      this.pushEntry('user', text, null, null);
+      const turnId = createId();
+      this.pushEntry(turnId, 'user', text, null, null);
       this.directPlanApprovalArmed.set(false);
-      this.approvePlan(plan.planId, plan.approvalToken);
+      this.approvePlan(plan.planId, plan.approvalToken, turnId);
       return;
     }
 
-    // Discussion or an unrelated turn may keep the destructive plan visible,
-    // but it disarms generic natural-language approval. This prevents a later
-    // unrelated "yes" from authorizing an old delete.
     if (plan) this.directPlanApprovalArmed.set(false);
 
     const context = this.context();
     const anchor = this.effectiveAnchor(context);
     this.draft.set('');
 
-    // Every other message dispatches normally. A question or qualification
-    // while a destructive plan is pending is discussion, not approval, so the
-    // plan survives and the assistant can answer without accidentally acting.
+    // Same unchanged draft after an uncertain delivery is the same logical turn.
+    // dispatchTurn recognizes it and reuses the prepared request + TurnId.
     this.dispatchTurn(text, anchor);
   }
 
   /**
-   * "I don't know" — never lose the capture to a missing anchor. A book
-   * question is deliberately not skippable: skipping it would save nothing and
-   * ask again, so the surface does not offer it (and this refuses it).
+   * "I don't know" is an explicit deterministic continuation turn for page /
+   * timestamp prompts. Book questions remain deliberately non-skippable.
    */
   skipAnchor(): void {
     const pending = this.pendingAnchor();
-    if (!pending || pending.kind === 'book') return;
-    const text = this.pendingText();
+    if (!pending || pending.kind === 'book' || this.sending()) return;
+
+    const context = this.pendingContinuationContext ?? this.context();
     this.pendingAnchor.set(null);
-    this.pendingText.set('');
+    this.pendingContinuationContext = null;
     this.draft.set('');
-    this.dispatchTurn(text, { kind: 'unknown', value: null, verified: false });
+    this.dispatchContinuation("I don't know", pending, context, true);
   }
 
   /** Remove a wrong ambient anchor for this session. */
