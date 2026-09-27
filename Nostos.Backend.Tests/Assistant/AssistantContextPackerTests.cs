@@ -127,7 +127,7 @@ public sealed class AssistantContextPackerTests
                 Evidence:
                 [
                     new AssistantHistoricalEvidenceDto(
-                        Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+                        "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
                         "Book A",
                         "source-sha",
                         [new AssistantSourceLocatorDto("pdf", PdfPageIndex: 41, PdfPageLabel: "42")]),
