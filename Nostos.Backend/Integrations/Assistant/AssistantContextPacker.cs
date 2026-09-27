@@ -16,7 +16,7 @@ namespace Nostos.Backend.Integrations.Assistant;
 /// rendered inside ordinary user content so it can help reference resolution
 /// without ever becoming privileged system instruction or mutation authority.
 /// </summary>
-internal sealed class AssistantContextPacker(AssistantOptions options)
+public sealed class AssistantContextPacker(AssistantOptions options)
 {
     internal const int ApproximateCharactersPerToken = 4;
     internal const int MinimumHistoryEstimatedTokens = 256;
@@ -34,9 +34,9 @@ internal sealed class AssistantContextPacker(AssistantOptions options)
     /// results, and answer. The cap also keeps unlimited/BYOK configurations
     /// bounded even when MaxTurnTokens is disabled.
     /// </summary>
-    internal int HistoryEstimatedTokenBudget { get; } = ComputeHistoryBudget(options);
+    public int HistoryEstimatedTokenBudget { get; } = ComputeHistoryBudget(options);
 
-    internal AssistantPackedHistory Pack(IReadOnlyList<AssistantHistoryMessageDto>? history)
+    public AssistantPackedHistory Pack(IReadOnlyList<AssistantHistoryMessageDto>? history)
     {
         var exchanges = BuildExchanges(history);
         if (exchanges.Count == 0)
@@ -177,7 +177,7 @@ internal sealed class AssistantContextPacker(AssistantOptions options)
     private sealed record HistoryExchange(IReadOnlyList<LlmMessage> Messages);
 }
 
-internal sealed record AssistantPackedHistory(
+public sealed record AssistantPackedHistory(
     IReadOnlyList<LlmMessage> Messages,
     int EstimatedTokens,
     int DroppedExchanges);
