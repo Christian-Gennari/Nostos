@@ -30,11 +30,15 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=build /app/publish/ ./
-RUN mkdir -p /tmp/nostos \
-    && chown -R "$APP_UID:$APP_UID" /app /tmp/nostos
+RUN mkdir -p /data /tmp/nostos \
+    && chown -R "$APP_UID:$APP_UID" /app /data /tmp/nostos
 ENV ASPNETCORE_ENVIRONMENT=Production \
     ASPNETCORE_URLS=http://0.0.0.0:8080 \
+    Persistence__DatabasePath=/data/nostos.db \
+    Storage__BooksRoot=/data/books \
+    Storage__BackupsRoot=/data/backups \
     TMPDIR=/tmp/nostos
 EXPOSE 8080
+VOLUME ["/data"]
 USER $APP_UID
 ENTRYPOINT ["dotnet", "Nostos.Backend.dll"]

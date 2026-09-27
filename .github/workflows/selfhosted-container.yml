@@ -47,3 +47,66 @@ jobs:
           runtime_user="$(docker inspect -f '{{.Config.User}}' nostos-runtime-test)"
           test -n "$runtime_user"
           test "$runtime_user" != "0"
+
+      - name: Verify named-volume persistence across container replacement
+        run: |
+          set -euo pipefail
+
+          volume="nostos-persistence-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          first="nostos-persistence-first"
+          second="nostos-persistence-second"
+          port=18081
+
+          cleanup() {
+            docker rm -f "$first" "$second" >/dev/null 2>&1 || true
+            docker volume rm "$volume" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          docker volume create "$volume" >/dev/null
+
+          start_container() {
+            local name="$1"
+            docker run -d \
+              --name "$name" \
+              -p "$port:8080" \
+              -v "$volume:/data" \
+              nostos-runtime:test >/dev/null
+
+            for i in $(seq 1 45); do
+              if curl -fsS "http://127.0.0.1:$port/health/ready" >/dev/null; then
+                return 0
+              fi
+              if [ "$i" -eq 45 ]; then
+                docker logs "$name"
+                return 1
+              fi
+              sleep 2
+            done
+          }
+
+          start_container "$first"
+
+          title="Container persistence probe ${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          created="$(curl -fsS \
+            -H 'Content-Type: application/json' \
+            -X POST \
+            --data "{\"type\":\"physical\",\"title\":\"$title\"}" \
+            "http://127.0.0.1:$port/api/books/")"
+          book_id="$(printf '%s' "$created" | jq -er '.id')"
+
+          docker exec "$first" test -s /data/nostos.db
+          docker exec "$first" test -w /data
+
+          docker rm -f "$first" >/dev/null
+
+          start_container "$second"
+
+          persisted="$(curl -fsS "http://127.0.0.1:$port/api/books/$book_id")"
+          printf '%s' "$persisted" | jq -e \
+            --arg id "$book_id" \
+            --arg title "$title" \
+            '.id == $id and .title == $title' >/dev/null
+
+          curl -fsS "http://127.0.0.1:$port/" >/dev/null
+
