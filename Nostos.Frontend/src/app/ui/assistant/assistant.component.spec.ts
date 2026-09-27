@@ -975,9 +975,13 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     fixture.detectChanges();
 
     assistant.open();
-    assistant.suggestions.set([
-      { kind: 'concept', label: 'Mountains', reason: 'Existing concept.', value: 'c-alpha' },
-    ]);
+    assistant.updateDraft('Where does this note belong?');
+    assistant.submit();
+    http.expectOne('/api/assistant/turn/stream').flush(turn({
+      suggestions: [
+        { kind: 'concept', label: 'Mountains', reason: 'Evidence relationship.', value: 'c-alpha', noteId: 'note-1' },
+      ],
+    }));
     fixture.detectChanges();
 
     const chip = fixture.nativeElement.querySelector(
@@ -1055,9 +1059,13 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
 
   it('leaves the note unlinked when the user dismisses the suggestions', () => {
     assistant.open();
-    assistant.suggestions.set([
-      { kind: 'concept', label: 'Mountains', reason: 'Existing concept.', value: 'c-alpha' },
-    ]);
+    assistant.updateDraft('Suggest a concept');
+    assistant.submit();
+    http.expectOne('/api/assistant/turn/stream').flush(turn({
+      suggestions: [
+        { kind: 'concept', label: 'Mountains', reason: 'Evidence relationship.', value: 'c-alpha', noteId: 'note-1' },
+      ],
+    }));
     fixture.detectChanges();
 
     const none = fixture.nativeElement.querySelector(
@@ -1070,6 +1078,7 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     fixture.detectChanges();
 
     expect(assistant.suggestions()).toEqual([]);
+    expect(assistant.entries().at(-1)?.suggestions).toEqual([]);
     http.expectNone('/api/assistant/turn/stream');
   });
 

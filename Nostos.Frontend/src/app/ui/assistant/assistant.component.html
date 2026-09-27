@@ -128,6 +128,24 @@
           }
         </div>
         }
+        @if (entry.suggestions?.length) {
+        <div class="assistant-suggestions" data-testid="assistant-suggestions">
+          <span class="suggestions-title">Existing concepts this note could link to</span>
+          <div class="suggestions-list">
+            @for (suggestion of entry.suggestions; track suggestion.value ?? suggestion.label) {
+            <button type="button" class="suggestion-chip" (click)="assistant.applySuggestion(suggestion)"
+              data-testid="assistant-suggestion">
+              <span class="suggestion-label">{{ suggestion.label }}</span>
+              <span class="suggestion-reason">{{ suggestion.reason }}</span>
+            </button>
+            }
+          </div>
+          <button appButton variant="ghost" size="sm" type="button" class="suggestion-none"
+            (click)="assistant.dismissSuggestions(entry.turnId)" data-testid="assistant-suggestion-none">
+            None of these / no strong match
+          </button>
+        </div>
+        }
         @if (entry.anchorLabel || entry.meta) {
         <footer class="entry-meta">
           @if (entry.anchorLabel) { <span class="entry-anchor">{{ entry.anchorLabel }}</span> }
@@ -174,36 +192,6 @@
         </div>
       </article>
       }
-    </div>
-    }
-
-    @if (assistant.suggestions().length > 0) {
-    <div class="assistant-suggestions" data-testid="assistant-suggestions">
-      <span class="suggestions-title">Existing concepts this note could link to</span>
-      <div class="suggestions-list">
-        @for (suggestion of assistant.suggestions(); track suggestion.value ?? suggestion.label) {
-        <button
-          type="button"
-          class="suggestion-chip"
-          (click)="assistant.applySuggestion(suggestion)"
-          data-testid="assistant-suggestion"
-        >
-          <span class="suggestion-label">{{ suggestion.label }}</span>
-          <span class="suggestion-reason">{{ suggestion.reason }}</span>
-        </button>
-        }
-      </div>
-      <button
-        appButton
-        variant="ghost"
-        size="sm"
-        type="button"
-        class="suggestion-none"
-        (click)="assistant.dismissSuggestions()"
-        data-testid="assistant-suggestion-none"
-      >
-        None of these / no strong match
-      </button>
     </div>
     }
 

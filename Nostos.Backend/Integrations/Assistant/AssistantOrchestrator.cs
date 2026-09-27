@@ -56,11 +56,11 @@ public sealed class AssistantOrchestrator(
     public const int MaxResponseTokens = 4096;
 
     /// <summary>
-    /// The review flow's "small set": at most five candidate concepts are shown
+    /// The review flow's "small set": at most three candidate concepts are shown
     /// for one unlinked note. A longer list is a search result, not a suggestion
     /// (issue #261 §5).
     /// </summary>
-    public const int MaxConceptSuggestions = 5;
+    public const int MaxConceptSuggestions = 3;
 
     /// <summary>
     /// Appended to a quote typed/transcribed by hand rather than read from the
@@ -105,11 +105,7 @@ public sealed class AssistantOrchestrator(
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
-    private static readonly HashSet<string> ConceptSuggestionCapabilities = new(StringComparer.Ordinal)
-    {
-        "concepts_list",
-        "concepts_search",
-    };
+    private const string ConceptProposalCapability = "concepts_propose_links";
 
     // ------------------------------------------------------------------
     // A turn
@@ -188,6 +184,9 @@ public sealed class AssistantOrchestrator(
         var captureProcessingMode = await settings.GetCaptureProcessingModeAsync(ct);
 
         var suggestions = new List<AssistantSuggestionDto>();
+        var reviewedNoteIds = new HashSet<Guid>();
+        var inspectedConceptIds = new HashSet<Guid>();
+        var conceptsInspected = false;
         var executedCapabilities = new List<string>();
         var sourceReferences = new List<AssistantSourceReferenceDto>();
         var planSteps = new List<AssistantPlanStep>();
@@ -451,11 +450,18 @@ public sealed class AssistantOrchestrator(
                 AssistantToolResult result;
                 try
                 {
-                    result = await registry.InvokeAsync(
-                        capability.Name,
-                        args,
-                        toolContext,
-                        mutation ? CancellationToken.None : ct);
+                    result = string.Equals(capability.Name, ConceptProposalCapability, StringComparison.Ordinal)
+                        && !ProposalUsesReadEvidence(
+                            args, request.Context?.BrainReviewNoteId,
+                            reviewedNoteIds, inspectedConceptIds, conceptsInspected)
+                        ? AssistantToolResult.Fail(
+                            AssistantErrorCodes.InvalidArguments,
+                            "Read the target note and existing concept evidence in this turn before proposing those IDs.")
+                        : await registry.InvokeAsync(
+                            capability.Name,
+                            args,
+                            toolContext,
+                            mutation ? CancellationToken.None : ct);
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested)
                 {
@@ -502,6 +508,21 @@ public sealed class AssistantOrchestrator(
 
                 if (result.Success && capability.Trust == AssistantTrustClass.Suggest)
                 {
+                    if (string.Equals(capability.Name, "notes_read_for_review", StringComparison.Ordinal)
+                        && Guid.TryParse(ReadString(args, "noteId"), out var readNoteId))
+                        reviewedNoteIds.Add(readNoteId);
+
+                    if (string.Equals(capability.Name, "concepts_list", StringComparison.Ordinal)
+                        || string.Equals(capability.Name, "concepts_search", StringComparison.Ordinal))
+                    {
+                        conceptsInspected = true;
+                        if (result.Data is { } conceptRows && conceptRows.ValueKind == JsonValueKind.Array)
+                            foreach (var row in conceptRows.EnumerateArray())
+                                if (row.ValueKind == JsonValueKind.Object
+                                    && Guid.TryParse(ReadString(row, "id"), out var readConceptId))
+                                    inspectedConceptIds.Add(readConceptId);
+                    }
+
                     MergeSuggestions(suggestions, ExtractSuggestions(capability.Name, result.Data));
 
                     if (string.Equals(capability.Name, BookTextCapability, StringComparison.Ordinal))
@@ -894,26 +915,47 @@ public sealed class AssistantOrchestrator(
     // Suggestions (non-mutating)
     // ------------------------------------------------------------------
 
+    private static bool ProposalUsesReadEvidence(
+        JsonElement args,
+        string? currentReviewNoteId,
+        HashSet<Guid> reviewedNoteIds,
+        HashSet<Guid> inspectedConceptIds,
+        bool conceptsInspected)
+    {
+        if (args.ValueKind != JsonValueKind.Object
+            || !Guid.TryParse(ReadString(args, "noteId"), out var noteId)
+            || !reviewedNoteIds.Contains(noteId)
+            || (Guid.TryParse(currentReviewNoteId, out var currentNoteId) && currentNoteId != noteId)
+            || !conceptsInspected
+            || !args.TryGetProperty("candidates", out var candidates)
+            || candidates.ValueKind != JsonValueKind.Array)
+            return false;
+
+        return candidates.EnumerateArray().All(candidate =>
+            candidate.ValueKind == JsonValueKind.Object
+            && Guid.TryParse(ReadString(candidate, "conceptId"), out var conceptId)
+            && inspectedConceptIds.Contains(conceptId));
+    }
+
     /// <summary>
-    /// Shapes a model-requested concept listing into response suggestions. This
-    /// is deliberately not scoring: it does not rank, filter, or invent — it only
-    /// conveys the candidates the model asked to see, with the one reason the
-    /// data carries. The Brain flow's cap and de-duplication (issue #261 §5) are
-    /// applied by <see cref="MergeSuggestions"/>, so both the listing and the
-    /// search path pass through the same "small set" rule.
+    /// Only an explicit, validated proposal capability can produce suggestions.
+    /// Ordinary concept reads are evidence, never implicit clickable actions.
     /// </summary>
     private static IEnumerable<AssistantSuggestionDto> ExtractSuggestions(
         string capabilityName,
         JsonElement? data)
     {
-        if (!ConceptSuggestionCapabilities.Contains(capabilityName)
+        if (!string.Equals(capabilityName, ConceptProposalCapability, StringComparison.Ordinal)
             || data is not { } element
-            || element.ValueKind != JsonValueKind.Array)
+            || element.ValueKind != JsonValueKind.Object
+            || !element.TryGetProperty("candidates", out var candidates)
+            || candidates.ValueKind != JsonValueKind.Array)
         {
             yield break;
         }
 
-        foreach (var item in element.EnumerateArray())
+        var noteId = ReadString(element, "noteId");
+        foreach (var item in candidates.EnumerateArray())
         {
             if (item.ValueKind != JsonValueKind.Object)
             {
@@ -926,25 +968,23 @@ public sealed class AssistantOrchestrator(
                 continue;
             }
 
-            var usage = ReadInt(item, "usageCount");
-            var reason = usage is > 0
-                ? $"Existing concept used in {usage} note{(usage == 1 ? string.Empty : "s")}."
-                : "Existing concept in your library.";
+            var reason = ReadString(item, "reason");
+            if (string.IsNullOrWhiteSpace(reason)) continue;
 
             yield return new AssistantSuggestionDto(
                 "concept",
                 name,
                 reason,
-                ReadString(item, "id"));
+                ReadString(item, "id"),
+                noteId);
         }
     }
 
     /// <summary>
     /// Adds incoming suggestions to the response, de-duplicated by identity and
     /// capped for concepts. The cap is what makes the review a small set rather
-    /// than a dump of the library; the de-duplication matters because
-    /// <c>concepts_list</c> and <c>concepts_search</c> can both name the same
-    /// concept in one turn. Nothing here creates or mutates anything.
+    /// than a dump of the library; de-duplication handles repeated explicit
+    /// proposals in one turn. Nothing here creates or mutates anything.
     /// </summary>
     private static void MergeSuggestions(
         List<AssistantSuggestionDto> target,
@@ -1257,13 +1297,6 @@ public sealed class AssistantOrchestrator(
             text,
             locators);
     }
-
-    private static int? ReadInt(JsonElement obj, string name) =>
-        obj.TryGetProperty(name, out var value)
-        && value.ValueKind == JsonValueKind.Number
-        && value.TryGetInt32(out var number)
-            ? number
-            : null;
 
     private static string ToolJson(object value) => JsonSerializer.Serialize(value, JsonOptions);
 

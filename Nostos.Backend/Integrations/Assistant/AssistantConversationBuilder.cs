@@ -36,7 +36,8 @@ internal sealed class AssistantConversationBuilder(
                 $"The user is reviewing the unlinked note '{request.Context!.BrainReviewNoteId}' in the Second Brain. "
                 + "To suggest where it belongs, read it with notes_read_for_review (that noteId), then look for matching "
                 + "existing concepts with concepts_list or concepts_search. "
-                + $"Offer at most {MaxConceptSuggestions} existing concepts, each with a brief reason. "
+                + $"When the user asks for candidates, explicitly call concepts_propose_links with this noteId and at most {MaxConceptSuggestions} existing concept IDs, each with a brief reason grounded in the note and relevant concept evidence. "
+                + "If none fit, call it with an empty candidate list. Listing or searching concepts alone never produces suggestions. "
                 + "Never create a concept to satisfy a suggestion, and never link a note without the user choosing."));
         }
 

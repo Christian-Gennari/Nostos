@@ -41,6 +41,7 @@ export interface AssistantEntry {
   anchorLabel: string | null;
   meta: string | null;
   sources?: AssistantSourceReferenceDto[];
+  suggestions?: AssistantSuggestionDto[];
 }
 
 export interface AssistantSourceLocatorDto {
@@ -113,6 +114,7 @@ export interface AssistantSuggestionDto {
   label: string;
   reason: string;
   value: string | null;
+  noteId?: string | null;
 }
 
 /** One ordered step of a plan awaiting approval. */
@@ -877,20 +879,22 @@ export class AssistantService {
   applySuggestion(suggestion: AssistantSuggestionDto): void {
     if (suggestion.kind !== 'concept' || !suggestion.value) return;
 
-    if (!this.context().brainReviewNoteId) {
-      this.lastError.set('Open the note in the Second Brain so the link has a target.');
+    const context = this.context();
+    if (!suggestion.noteId || context.brainReviewNoteId !== suggestion.noteId) {
+      this.lastError.set('Open the suggested note in Brain before linking it.');
       return;
     }
 
-    const context = this.context();
     this.dispatchTurn(
-      `Link the note I am reviewing to the existing concept “${suggestion.label}”.`,
+      `Link note ${suggestion.noteId} to the existing concept “${suggestion.label}” (ID ${suggestion.value}).`,
       this.effectiveAnchor(context),
     );
   }
 
   /** "None of these": leave the note unlinked, with no error. */
-  dismissSuggestions(): void {
+  dismissSuggestions(turnId?: string): void {
+    if (turnId) this.eventLedger.update((events) => events.map((event) =>
+      event.turnId === turnId ? { ...event, suggestions: [] } : event));
     this.suggestions.set([]);
   }
 
@@ -1428,7 +1432,14 @@ export class AssistantService {
         null,
         response.error?.code ?? null,
         response.sources ?? [],
+        true,
+        'complete',
+        null,
+        response.suggestions ?? [],
       );
+    } else if (response.suggestions?.length) {
+      this.pushEntry(turn.turnId, 'assistant', 'Here are possible connections.', null, null,
+        response.sources ?? [], true, 'complete', null, response.suggestions);
     }
 
     this.persistSession();
@@ -1456,6 +1467,7 @@ export class AssistantService {
     remember = true,
     delivery: AssistantEventDelivery = 'complete',
     historyContext: AssistantHistoricalContextDto | null = null,
+    suggestions: AssistantSuggestionDto[] = [],
   ): string {
     const id = createId();
     this.eventLedger.update((events) => [
@@ -1468,6 +1480,7 @@ export class AssistantService {
         anchorLabel,
         meta,
         sources,
+        suggestions,
         remember,
         delivery,
         historyContext,

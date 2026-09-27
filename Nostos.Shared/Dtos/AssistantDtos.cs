@@ -262,7 +262,10 @@ public sealed record AssistantSuggestionDto(
     string Kind,
     string Label,
     string Reason,
-    string? Value = null);
+    string? Value = null,
+    // The canonical target note for this proposal; never infer it from the
+    // current panel after the turn has completed or the user has navigated.
+    string? NoteId = null);
 
 /// <summary>
 /// A plan the assistant will not run inline. <c>ApprovalToken</c> is bound to
