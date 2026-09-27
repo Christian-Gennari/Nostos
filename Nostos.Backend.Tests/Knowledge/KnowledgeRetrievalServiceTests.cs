@@ -223,6 +223,32 @@ public sealed class KnowledgeRetrievalServiceTests : IClassFixture<SqliteTestFix
     }
 
     [Fact]
+    public async Task Optional_contributor_candidates_cannot_escape_explicit_book_scope()
+    {
+        await using var h = await CreateHarnessAsync();
+        var scoped = await h.SeedBookAsync("Scoped");
+        var outside = await h.SeedBookAsync("Outside");
+        var outsideNote = await h.SeedNoteAsync(
+            outside.Id,
+            "A semantic contributor should not bypass the explicit book scope.");
+
+        h.Contributor.Handles =
+        [
+            new KnowledgeEvidenceHandle(
+                KnowledgeEvidenceKinds.Note,
+                NoteId: outsideNote.Id),
+        ];
+
+        var result = await h.Knowledge.SearchAsync(
+            new KnowledgeSearchRequest(
+                "phrase absent from the scoped book",
+                BookIds: [scoped.Id],
+                MaxPerSource: 4));
+
+        result.Notes.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task Optional_contributor_candidates_are_resolved_through_canonical_data()
     {
         await using var h = await CreateHarnessAsync();
