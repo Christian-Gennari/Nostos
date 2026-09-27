@@ -148,6 +148,29 @@ describe('EpubReader highlight-mode lifecycle (issue #16)', () => {
   });
 
 
+  it('routes a legacy archive-root locator through the resolved epub.js spine href', async () => {
+    await setupComponent();
+    lastRendition.display.mockImplementation((target?: string) => {
+      log.push('display');
+      return target === 'OEBPS/chapter-2.xhtml'
+        ? Promise.reject(new Error('No Section Found'))
+        : Promise.resolve();
+    });
+
+    await fixture.componentInstance.goToSource({
+      type: 'epub',
+      epubResourceHref: 'OEBPS/chapter-2.xhtml',
+      epubSpineIndex: 2,
+      epubTextOffset: null,
+      excerpt: 'Legacy grounded passage',
+    });
+    fixture.detectChanges();
+
+    expect(lastRendition.display).toHaveBeenCalledWith('OEBPS/chapter-2.xhtml');
+    expect(lastRendition.display).toHaveBeenCalledWith('chapter-2.xhtml');
+    expect(fixture.componentInstance.sourceNavigationMessage()).toBeNull();
+  });
+
   it('shows a calm visible state when a grounded EPUB resource cannot be resolved', async () => {
     await setupComponent();
     lastRendition.display.mockImplementation((target?: string) => {
