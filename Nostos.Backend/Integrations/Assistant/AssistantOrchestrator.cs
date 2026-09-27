@@ -138,6 +138,22 @@ public sealed class AssistantOrchestrator(
                 : request.ConversationId);
         var turnId = AssistantTurnIdentity.TurnKey(request);
 
+        if (ct.IsCancellationRequested)
+        {
+            return new AssistantTurnResponse(
+                Reply: string.Empty,
+                Acknowledgement: null,
+                AnchorPrompt: null,
+                Suggestions: [],
+                PendingPlan: null,
+                CapturedNoteId: null,
+                ExecutedCapabilities: [],
+                Sources: [],
+                Error: new AssistantTurnErrorDto(
+                    AssistantErrorCodes.TurnCancelled,
+                    "Stopped."));
+        }
+
         if (!string.IsNullOrWhiteSpace(request.ContinuationId))
         {
             return await ResumeCaptureContinuationAsync(
