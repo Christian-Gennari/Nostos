@@ -52,7 +52,14 @@ public record NoteSearchHitDto(
     string? SelectedText,
     string? Snippet,
     IReadOnlyList<string> ConceptNames,
-    DateTime CreatedAt
+    DateTime CreatedAt,
+    // APPENDED (#562): exact note/source provenance for unified knowledge
+    // retrieval. These fields describe the canonical note; they never grant
+    // mutation authority.
+    string? CfiRange = null,
+    string SourceAnchorKind = "unknown",
+    string? SourceAnchorValue = null,
+    bool AnchorVerified = false
 );
 
 /// <summary>
