@@ -87,7 +87,7 @@ public sealed record AssistantHistoricalContextDto(
 /// canonical source through the normal retrieval capability.
 /// </summary>
 public sealed record AssistantHistoricalEvidenceDto(
-    Guid BookId,
+    string BookId,
     string BookTitle,
     string SourceSha256,
     IReadOnlyList<AssistantSourceLocatorDto>? Locators = null);
