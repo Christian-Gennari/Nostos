@@ -99,6 +99,28 @@ public sealed class AssistantToolSchemaTests : IClassFixture<SqliteTestFixture>
         ["library_set_book_collections_bulk"] = new(
             Properties: new() { ["updates"] = "array" },
             Required: ["updates"]),
+        ["knowledge_search"] = new(
+            Properties: new()
+            {
+                ["query"] = "string",
+                ["bookIds"] = "array",
+                ["collectionId"] = "string",
+                ["maxPerSource"] = "integer",
+            },
+            Required: ["query"]),
+        ["knowledge_overview"] = new(Properties: new(), Required: []),
+        ["knowledge_read_evidence"] = new(
+            Properties: new()
+            {
+                ["kind"] = "string",
+                ["noteId"] = "string",
+                ["conceptId"] = "string",
+                ["bookId"] = "string",
+                ["sourceSha256"] = "string",
+                ["extractorVersion"] = "string",
+                ["ordinal"] = "integer",
+            },
+            Required: ["kind"]),
         ["notes_list_for_book"] = new(
             Properties: new() { ["bookId"] = "string" },
             Required: ["bookId"]),
@@ -222,6 +244,8 @@ public sealed class AssistantToolSchemaTests : IClassFixture<SqliteTestFixture>
     {
         var byName = CreateHarness().Registry.All.ToDictionary(c => c.Name, StringComparer.Ordinal);
 
+        Required(byName["knowledge_search"]).Should().Contain("query");
+        Required(byName["knowledge_read_evidence"]).Should().Contain("kind");
         Required(byName["notes_search"]).Should().Contain("query");
         Required(byName["concepts_search"]).Should().Contain("term");
 
