@@ -31,7 +31,7 @@
 #     http://127.0.0.1:5099
 set -euo pipefail
 
-PROD_CHECKOUT="${1:-/home/dev/coding/projects/nostos-rebirth}"
+PROD_CHECKOUT="${1:-/home/dev/coding/projects/Nostos}"
 LOG="${2:-/tmp/nostos-probe-backend.log}"
 
 BACKEND_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../Nostos.Backend" && pwd)"

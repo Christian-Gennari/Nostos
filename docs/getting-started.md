@@ -10,7 +10,7 @@
 
 ```bash
 git clone <repository-url>
-cd Nostos-Rebirth
+cd Nostos
 ```
 
 ### Backend Dependencies

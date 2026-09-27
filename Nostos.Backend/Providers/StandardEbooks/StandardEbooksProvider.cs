@@ -26,7 +26,7 @@ public sealed class StandardEbooksProvider : IContentProvider,
     /// Standard Ebooks explicitly approves a replacement.
     /// </summary>
     public const string ApprovedUserAgent =
-        "Nostos/1.0 (+https://github.com/Christian-Gennari/Nostos-Rebirth)";
+        "Nostos/1.0 (+https://github.com/Christian-Gennari/Nostos)";
 
     public const string OpdsAccept = "application/atom+xml";
 

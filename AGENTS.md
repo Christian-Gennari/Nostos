@@ -18,7 +18,7 @@ branch, ports, and database copy instead, and do all work from there.
 
 ```bash
 agent-worktree new <slug>          # sibling worktree + agent/<slug> branch
-source ../nostos-rebirth-<slug>/.agent/env.sh
+source ../"$(basename "$(git rev-parse --show-toplevel)")"-<slug>/.agent/env.sh
 cd "$AGENT_WORKTREE"
 ```
 

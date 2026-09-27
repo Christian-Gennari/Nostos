@@ -5,7 +5,7 @@ Nostos can import books from external public-domain/open-content catalogues
 into the library, storage, reader, notes, work-grouping or backup layers.
 
 This document describes the provider/acquisition architecture introduced by
-[#166](https://github.com/Christian-Gennari/Nostos-Rebirth/issues/166), how to
+[#166](https://github.com/Christian-Gennari/Nostos/issues/166), how to
 add a new built-in provider, and what a provider must not do.
 
 ## The two concerns
@@ -423,7 +423,7 @@ its official OPDS feeds on **September 25, 2026** by whitelisting the project
 User-Agent:
 
 ```
-Nostos/1.0 (+https://github.com/Christian-Gennari/Nostos-Rebirth)
+Nostos/1.0 (+https://github.com/Christian-Gennari/Nostos)
 ```
 
 That access model carries **no shared credential or feed secret**. The same
