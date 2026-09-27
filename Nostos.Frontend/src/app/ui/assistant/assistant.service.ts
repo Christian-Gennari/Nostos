@@ -512,15 +512,19 @@ export class AssistantService {
           ...(event.kind === 'user' && event.historyContext
             ? { context: event.historyContext }
             : {}),
-          // Legacy restored sessions may still carry #561 book-only evidence.
-          ...(event.historyEvidence.length > 0 ? { evidence: event.historyEvidence } : {}),
-          ...(facts.evidenceHandles.length > 0
+          // Turn facts travel once, on the historical user root. Assistant
+          // prose stays text-only, which keeps repeated session payloads bounded.
+          ...(event.kind === 'user' && event.historyEvidence.length > 0
+            ? { evidence: event.historyEvidence }
+            : {}),
+          ...(event.kind === 'user' && facts.evidenceHandles.length > 0
             ? { evidenceHandles: facts.evidenceHandles }
             : {}),
-          ...((facts.actions.length > 0 ? facts.actions : event.historyActions).length > 0
+          ...(event.kind === 'user'
+            && (facts.actions.length > 0 ? facts.actions : event.historyActions).length > 0
             ? { actions: facts.actions.length > 0 ? facts.actions : event.historyActions }
             : {}),
-          ...(facts.capturedNoteId ?? event.historyCapturedNoteId
+          ...(event.kind === 'user' && (facts.capturedNoteId ?? event.historyCapturedNoteId)
             ? { capturedNoteId: facts.capturedNoteId ?? event.historyCapturedNoteId }
             : {}),
         };
