@@ -384,6 +384,8 @@ export class AssistantService {
   readonly turnActivity = signal<AssistantTurnActivityDto | null>(null);
   /** Delayed so fast/simple turns complete without flashing progress chrome. */
   readonly pendingVisible = signal(false);
+  /** Transport-local turn id; Stop is exposed only after server 'started'. */
+  private inFlightTurnId: string | null = null;
   private pendingTimer: ReturnType<typeof setTimeout> | null = null;
 
   /** The most recent turn, for the transcript and live verification. */
@@ -1093,6 +1095,11 @@ export class AssistantService {
 
       lastSequence = value.sequence;
 
+      if (value.kind === 'started') {
+        this.acknowledgeTurnStarted(turn.turnId);
+        return;
+      }
+
       if (value.kind === 'activity' && value.activity) {
         this.showTurnActivity(turn.turnId, value.activity);
         return;
@@ -1204,27 +1211,34 @@ export class AssistantService {
 
   private beginTurnUi(turnId: string): void {
     this.clearPendingTimer();
-    this.activeTurnId.set(turnId);
+    this.inFlightTurnId = turnId;
+    this.activeTurnId.set(null);
     this.turnActivity.set(null);
     this.pendingVisible.set(false);
     this.pendingTimer = setTimeout(() => {
       this.pendingTimer = null;
-      if (this.sending() && this.activeTurnId() === turnId) {
+      if (this.sending() && this.inFlightTurnId === turnId) {
         this.pendingVisible.set(true);
       }
     }, ASSISTANT_PENDING_DELAY_MS);
   }
 
+  private acknowledgeTurnStarted(turnId: string): void {
+    if (this.inFlightTurnId !== turnId || !this.sending()) return;
+    this.activeTurnId.set(turnId);
+  }
+
   private showTurnActivity(turnId: string, activity: AssistantTurnActivityDto): void {
-    if (this.activeTurnId() !== turnId) return;
+    if (this.inFlightTurnId !== turnId) return;
     this.clearPendingTimer();
     this.turnActivity.set(activity);
     this.pendingVisible.set(true);
   }
 
   private finishTurnUi(turnId: string | null): void {
-    if (turnId !== null && this.activeTurnId() !== turnId) return;
+    if (turnId !== null && this.inFlightTurnId !== turnId) return;
     this.clearPendingTimer();
+    this.inFlightTurnId = null;
     this.activeTurnId.set(null);
     this.turnActivity.set(null);
     this.pendingVisible.set(false);
