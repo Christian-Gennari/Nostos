@@ -215,6 +215,69 @@ export function progressLabel(percent: number, chapter: string | null): string {
   return chapter ? `${percent}% • ${chapter}` : `${percent}%`;
 }
 
+
+export interface EpubSpineSource {
+  href: string;
+  index: number;
+}
+
+/**
+ * Resolve a stored grounded EPUB href against epub.js's OPF-relative spine.
+ *
+ * New v2 book-text indexes store the manifest href directly. Older indexes
+ * stored the archive-root path, so a nested OPF can leave a deterministic
+ * directory prefix in front of the href epub.js knows. Comparison is path-only
+ * and exact/suffix based; ambiguity fails closed and a supplied spine index is
+ * treated as an additional provenance constraint, never as permission to guess.
+ */
+export function resolveGroundedEpubResourceHref(
+  storedHref: string,
+  storedSpineIndex: number | null | undefined,
+  spineItems: readonly EpubSpineSource[],
+): string | null {
+  const stored = normalizeEpubHrefForComparison(storedHref);
+  if (!stored) return null;
+
+  const matches = spineItems.filter((item) => {
+    const candidate = normalizeEpubHrefForComparison(item.href);
+    if (!candidate) return false;
+    return (
+      candidate === stored ||
+      stored.endsWith(`/${candidate}`) ||
+      candidate.endsWith(`/${stored}`)
+    );
+  });
+
+  if (storedSpineIndex !== null && storedSpineIndex !== undefined) {
+    const indexed = matches.filter((item) => item.index === storedSpineIndex);
+    return indexed.length === 1 ? indexed[0].href : null;
+  }
+
+  return matches.length === 1 ? matches[0].href : null;
+}
+
+function normalizeEpubHrefForComparison(value: string): string {
+  const pathOnly = value.split('#')[0].split('?')[0].replace(/\\/g, '/');
+  let decoded = pathOnly;
+  try {
+    decoded = decodeURIComponent(pathOnly);
+  } catch {
+    // A malformed escape should not make source navigation throw. Comparison
+    // can still use the literal path and fail closed if it does not match.
+  }
+
+  const parts: string[] = [];
+  for (const part of decoded.split('/')) {
+    if (!part || part === '.') continue;
+    if (part === '..') {
+      if (parts.length > 0) parts.pop();
+      continue;
+    }
+    parts.push(part);
+  }
+  return parts.join('/');
+}
+
 @Component({
   selector: 'app-epub-reader',
   standalone: true,
@@ -310,6 +373,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
 
   loading = signal(true);
   errorMessage = signal<string | null>(null);
+  readonly sourceNavigationMessage = signal<string | null>(null);
 
   constructor() {
     this.unregisterAssistantContext = this.assistantContext.register(
@@ -408,6 +472,8 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
   async goToSource(target: ReaderSourceTarget): Promise<void> {
     if (target.type !== 'epub') return;
 
+    this.sourceNavigationMessage.set(null);
+
     // A source chip can be clicked before epub.js finishes its opening display.
     // In that window the rendition may exist but the normal opening/restore
     // chain can still overwrite a navigation. Keep the exact grounded target
@@ -423,6 +489,8 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
   private async applyGroundedSource(target: ReaderSourceTarget): Promise<void> {
     if (target.type !== 'epub' || !this.rendition) return;
 
+    this.sourceNavigationMessage.set(null);
+
     if (target.epubCfi) {
       try {
         await this.rendition.display(target.epubCfi);
@@ -434,36 +502,97 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
       }
     }
 
-    if (!target.epubResourceHref) return;
+    if (!target.epubResourceHref) {
+      this.failGroundedSourceNavigation();
+      return;
+    }
+
+    let displayedHref = target.epubResourceHref;
+    try {
+      // Canonical/current locators take the direct path first.
+      await this.rendition.display(displayedHref);
+    } catch (exactError) {
+      // Legacy v1 locators are archive-root-relative. Resolve them against the
+      // actual epub.js spine only when the relationship is deterministic.
+      const compatibleHref = resolveGroundedEpubResourceHref(
+        target.epubResourceHref,
+        target.epubSpineIndex,
+        this.epubSpineSources(),
+      );
+
+      if (!compatibleHref || compatibleHref === displayedHref) {
+        this.failGroundedSourceNavigation(exactError);
+        return;
+      }
+
+      displayedHref = compatibleHref;
+      try {
+        await this.rendition.display(displayedHref);
+      } catch (compatibilityError) {
+        this.failGroundedSourceNavigation(compatibilityError);
+        return;
+      }
+    }
+
+    if (target.epubTextOffset === null || target.epubTextOffset === undefined) return;
 
     try {
-      await this.rendition.display(target.epubResourceHref);
       const rawContents = this.rendition.getContents?.();
       const contents: Contents[] = Array.isArray(rawContents)
         ? rawContents
         : rawContents
           ? [rawContents]
           : [];
+      const displayed = normalizeEpubHrefForComparison(displayedHref);
       const content =
         contents.find((candidate: any) => {
-          const href = String(candidate?.section?.href ?? candidate?.document?.location?.pathname ?? '');
-          return href.endsWith(target.epubResourceHref!);
+          const href = String(
+            candidate?.section?.href ?? candidate?.document?.location?.pathname ?? '',
+          );
+          return normalizeEpubHrefForComparison(href) === displayed;
         }) ?? contents[0];
 
-      if (!content?.document || target.epubTextOffset === null || target.epubTextOffset === undefined)
+      if (!content?.document) {
+        this.failGroundedSourceNavigation();
         return;
+      }
 
       const range = this.rangeAtNormalizedResourceOffset(
         content.document,
         Math.max(0, target.epubTextOffset),
       );
-      if (!range) return;
+      if (!range) {
+        this.failGroundedSourceNavigation();
+        return;
+      }
 
       const cfi = (content as any).cfiFromRange?.(range);
-      if (typeof cfi === 'string' && cfi.length > 0) {
-        await this.rendition.display(cfi);
+      if (typeof cfi !== 'string' || cfi.length === 0) {
+        this.failGroundedSourceNavigation();
+        return;
       }
+
+      await this.rendition.display(cfi);
     } catch (error) {
+      this.failGroundedSourceNavigation(error);
+    }
+  }
+
+  private epubSpineSources(): EpubSpineSource[] {
+    const spine = this.epubBook?.spine as unknown as
+      | { spineItems?: Array<{ href?: unknown; index?: unknown }> }
+      | undefined;
+    return (spine?.spineItems ?? [])
+      .map((item, fallbackIndex) => ({
+        href: typeof item.href === 'string' ? item.href : '',
+        index: typeof item.index === 'number' ? item.index : fallbackIndex,
+      }))
+      .filter((item) => item.href.length > 0);
+  }
+
+  private failGroundedSourceNavigation(error?: unknown): void {
+    this.sourceNavigationMessage.set("Couldn't locate this passage in the EPUB.");
+    if (error !== undefined) {
       console.warn('Could not navigate to the grounded EPUB source:', error);
     }
   }
@@ -654,6 +783,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     this.assistantSelection.set(null);
     this.progressUnlocked = false;
     this.errorMessage.set(null);
+    this.sourceNavigationMessage.set(null);
 
     this.loading.set(true);
     this.locationsReady.set(false);
