@@ -301,7 +301,7 @@ public static partial class AssistantCapabilities
                 }
               },
               "required": ["noteId", "candidates"],
-              "additionalProperties": false
+              "additionalProperties": true
             }
             """,
             async (context, args, ct) =>
