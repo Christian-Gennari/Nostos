@@ -877,7 +877,7 @@ export class AssistantService {
    * path without asking for a second approval.
    */
   applySuggestion(suggestion: AssistantSuggestionDto): void {
-    if (suggestion.kind !== 'concept' || !suggestion.value) return;
+    if (this.sending() || suggestion.kind !== 'concept' || !suggestion.value) return;
 
     const context = this.context();
     if (!suggestion.noteId || context.brainReviewNoteId !== suggestion.noteId) {
@@ -896,6 +896,7 @@ export class AssistantService {
     if (turnId) this.eventLedger.update((events) => events.map((event) =>
       event.turnId === turnId ? { ...event, suggestions: [] } : event));
     this.suggestions.set([]);
+    this.persistSession();
   }
 
   /**
@@ -1372,6 +1373,14 @@ export class AssistantService {
 
     for (const capability of response.executedCapabilities ?? []) {
       this.actionExecuted.next({ capability, context: turn.context });
+      if (capability === 'notes_link_existing_concept' && turn.context.brainReviewNoteId) {
+        const linkedNoteId = turn.context.brainReviewNoteId;
+        this.eventLedger.update((events) => events.map((event) => ({
+          ...event,
+          suggestions: event.suggestions?.filter((suggestion) => suggestion.noteId !== linkedNoteId),
+        })));
+        this.suggestions.update((items) => items.filter((item) => item.noteId !== linkedNoteId));
+      }
     }
 
     this.capturedNoteId.set(response.capturedNoteId ?? null);

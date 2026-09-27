@@ -1049,6 +1049,8 @@ describe('AssistantService voice transcript alignment', () => {
     expect(request.request.body.context.brainReviewNoteId).toBe('note-1');
     expect(request.request.body.message).toContain('Mountains');
     expect(request.request.body.message).toContain('c-alpha');
+    service.applySuggestion({ kind: 'concept', label: 'Mountains', reason: 'Existing concept.', value: 'c-alpha', noteId: 'note-1' });
+    http.expectNone('/api/assistant/turn/stream');
     request.flush(turn({ executedCapabilities: ['notes_link_existing_concept'] }));
 
     expect(receipts).toEqual([
@@ -1220,5 +1222,25 @@ describe('AssistantService voice transcript alignment', () => {
 
     expect(service.suggestions()).toEqual([]);
     http.expectNone('/api/assistant/turn/stream');
+  });
+
+  it('keeps dismissed proposal chips dismissed after reopening the conversation', () => {
+    service.open();
+    service.updateDraft('Suggest concepts');
+    service.submit();
+    http.expectOne('/api/assistant/turn/stream').flush(turn({
+      reply: 'A possible connection.',
+      suggestions: [{ kind: 'concept', label: 'Mountains', reason: 'Shared ascent.', value: 'c-alpha', noteId: 'note-1' }],
+    }));
+    const proposal = service.entries().find((entry) => entry.suggestions?.length);
+    expect(proposal).toBeDefined();
+    service.dismissSuggestions(proposal!.turnId);
+    service.close();
+
+    http.verify();
+    TestBed.resetTestingModule();
+    configureService();
+
+    expect(service.entries().find((entry) => entry.turnId === proposal!.turnId)?.suggestions).toEqual([]);
   });
 });
