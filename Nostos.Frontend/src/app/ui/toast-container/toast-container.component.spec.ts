@@ -34,6 +34,20 @@ describe('ToastContainerComponent', () => {
     expect(alert?.getAttribute('aria-atomic')).toBe('true');
   });
 
+  it('uses the shared square-ended accent rail for every semantic toast', () => {
+    const fixture = TestBed.createComponent(ToastContainerComponent);
+    const host = fixture.nativeElement as HTMLElement;
+
+    service.success('Saved');
+    service.info('Refresh started');
+    service.error('Could not save');
+    fixture.detectChanges();
+
+    const toasts = [...host.querySelectorAll<HTMLElement>('.toast')];
+    expect(toasts).toHaveLength(3);
+    expect(toasts.every((toast) => toast.classList.contains('nostos-accent-rail'))).toBe(true);
+  });
+
   it('keeps the canonical dismiss control outside the spoken live region', () => {
     const fixture = TestBed.createComponent(ToastContainerComponent);
     const host = fixture.nativeElement as HTMLElement;
