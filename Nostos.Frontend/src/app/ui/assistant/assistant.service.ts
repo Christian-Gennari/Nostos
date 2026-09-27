@@ -189,9 +189,9 @@ interface AssistantTurnRequestDto {
   continuationId: string | null;
   continuationSkipped: boolean;
   /**
-   * The recent turns the client remembers (issue #286). The server appends the
-   * current `message` itself, so this is the completed log from BEFORE this
-   * logical turn — never the message being sent or a transport retry copy.
+   * The completed session ledger from BEFORE this logical turn. The browser
+   * sends it intact; the server owns the budgeted selection that reaches the
+   * model, so this field is not itself a provider-context contract.
    */
   history: AssistantHistoryMessage[];
 }
@@ -592,9 +592,9 @@ export class AssistantService {
   }
 
   /**
-   * Deterministic conversation reset foundation for #560. The explicit UI action
-   * can be added later; this method already defines the state boundary. It does
-   * not persist or create a named/durable chat.
+   * Explicit #561 conversation boundary. The header action clears the current
+   * tab-scoped ledger and starts a fresh ConversationId; it never creates a
+   * named, durable or server-persisted chat.
    */
   newConversation(): void {
     if (this.sending()) return;
@@ -697,7 +697,17 @@ export class AssistantService {
       // so nothing in a later conversation can accidentally approve it.
       this.draft.set('');
       const turnId = createId();
-      this.pushEntry(turnId, 'user', text, null, null);
+      this.pushEntry(
+        turnId,
+        'user',
+        text,
+        null,
+        null,
+        [],
+        true,
+        'complete',
+        toHistoricalContext(this.context()),
+      );
       this.pendingPlan.set(null);
       this.directPlanApprovalArmed.set(false);
       const reply = 'Okay. I won\'t make that change.';
@@ -710,7 +720,17 @@ export class AssistantService {
       // executes only the exact server-held plan id + token.
       this.draft.set('');
       const turnId = createId();
-      this.pushEntry(turnId, 'user', text, null, null);
+      this.pushEntry(
+        turnId,
+        'user',
+        text,
+        null,
+        null,
+        [],
+        true,
+        'complete',
+        toHistoricalContext(this.context()),
+      );
       this.directPlanApprovalArmed.set(false);
       this.approvePlan(plan.planId, plan.approvalToken, turnId);
       return;
