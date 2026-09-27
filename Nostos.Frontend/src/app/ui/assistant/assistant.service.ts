@@ -389,6 +389,7 @@ export class AssistantService {
     effect(() => {
       globalThis.__nostosAssistant = {
         context: this.context(),
+        conversationId: this.conversationId(),
         lastTurn: this.lastTurn(),
         suggestions: this.suggestions(),
         pendingPlan: this.pendingPlan(),
@@ -417,6 +418,32 @@ export class AssistantService {
   toggle(): void {
     if (this.isOpen()) this.close();
     else this.open();
+  }
+
+  /**
+   * Deterministic conversation reset foundation for #560. The explicit UI action
+   * can be added later; this method already defines the state boundary. It does
+   * not persist or create a named/durable chat.
+   */
+  newConversation(): void {
+    if (this.sending()) return;
+
+    this.cancelAutoSend();
+    this.conversationId.set(createId());
+    this.eventLedger.set([]);
+    this.retryableTurn = null;
+    this.pendingAnchor.set(null);
+    this.pendingContinuationContext = null;
+    this.pendingPlan.set(null);
+    this.directPlanApprovalArmed.set(false);
+    this.suggestions.set([]);
+    this.lastTurn.set(null);
+    this.lastError.set(null);
+    this.draft.set('');
+    this.capturedNoteId.set(null);
+    this.rawOpen.set(false);
+    this.rawTranscript.set(null);
+    this.rawLoading.set(false);
   }
 
   updateDraft(value: string): void {
