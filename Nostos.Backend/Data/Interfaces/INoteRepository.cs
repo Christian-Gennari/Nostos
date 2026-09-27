@@ -29,7 +29,10 @@ public interface INoteRepository
     /// Notes whose text, quote or book title matches `query` (issue #158). Case is
     /// ignored; the caller caps the row count.
     /// </summary>
-    Task<List<NoteModel>> SearchByTextAsync(string query, int limit);
+    Task<List<NoteModel>> SearchByTextAsync(
+        string query,
+        int limit,
+        IReadOnlyCollection<Guid>? bookIds = null);
 
     /// <summary>
     /// The stored exactly-once receipt for a capture key pair, or null when the
