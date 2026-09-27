@@ -1990,6 +1990,68 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         source.Locators[0].Type.Should().Be("pdf");
         source.Locators[0].PdfPageIndex.Should().Be(14);
         source.Locators[0].PdfPageLabel.Should().Be("15");
+
+        response.Evidence.Should().ContainSingle();
+        var artifact = response.Evidence!.Single();
+        artifact.Handle.Kind.Should().Be(KnowledgeEvidenceKinds.BookText);
+        artifact.Handle.BookId.Should().Be(bookId);
+        artifact.Handle.SourceSha256.Should().Be(hash);
+        artifact.Handle.ExtractorVersion.Should().Be(BookTextArtifactSchema.CurrentExtractorVersion);
+        artifact.Handle.Ordinal.Should().Be(5);
+        artifact.Excerpt.Should().Contain("exact source provenance");
+    }
+
+    [Fact]
+    public async Task Knowledge_search_note_and_concept_results_keep_their_canonical_handles()
+    {
+        var bookId = Guid.NewGuid();
+        var noteId = Guid.NewGuid();
+        var conceptId = Guid.NewGuid();
+        var knowledge = new FakeKnowledgeRetrievalService(
+            new KnowledgeSearchResponse(
+                ["homecoming"],
+                [
+                    new KnowledgeNoteEvidence(
+                        new KnowledgeEvidenceHandle(KnowledgeEvidenceKinds.Note, NoteId: noteId),
+                        noteId,
+                        bookId,
+                        "Nostos",
+                        "A note about homecoming.",
+                        ["Homecoming"],
+                        DateTime.UtcNow,
+                        null,
+                        "unknown",
+                        null,
+                        false),
+                ],
+                [
+                    new KnowledgeConceptEvidence(
+                        new KnowledgeEvidenceHandle(KnowledgeEvidenceKinds.Concept, ConceptId: conceptId),
+                        conceptId,
+                        "Homecoming",
+                        2,
+                        1,
+                        "A note about homecoming.",
+                        []),
+                ],
+                [],
+                [],
+                true));
+
+        var h = CreateHarness(knowledge: knowledge);
+        h.Llm
+            .CallsTool("knowledge_search", "{\"query\":\"homecoming\"}")
+            .Returns("Your material connects this to homecoming.");
+
+        var response = await h.Orchestrator.HandleTurnAsync(
+            Turn("What do my notes say about homecoming?", Context(surface: "second-brain", route: "/second-brain")));
+
+        response.Evidence.Should().HaveCount(2);
+        response.Evidence![0].Handle.NoteId.Should().Be(noteId);
+        response.Evidence[0].Handle.Kind.Should().Be(KnowledgeEvidenceKinds.Note);
+        response.Evidence[1].Handle.ConceptId.Should().Be(conceptId);
+        response.Evidence[1].Handle.Kind.Should().Be(KnowledgeEvidenceKinds.Concept);
+        response.Suggestions.Should().BeEmpty("ordinary knowledge reads are evidence, not proposals");
     }
 
     [Fact]
@@ -2045,6 +2107,15 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         source.Locators[0].Type.Should().Be("pdf");
         source.Locators[0].PdfPageIndex.Should().Be(8);
         source.Locators[0].PdfPageLabel.Should().Be("7");
+
+        response.Evidence.Should().ContainSingle();
+        var artifact = response.Evidence!.Single();
+        artifact.Handle.BookId.Should().Be(bookId);
+        artifact.Handle.SourceSha256.Should().Be(new string('a', 64));
+        artifact.Handle.ExtractorVersion.Should().Be(BookTextArtifactSchema.CurrentExtractorVersion);
+        artifact.Handle.Ordinal.Should().Be(3);
+        artifact.Locators.Should().ContainSingle();
+        artifact.Locators![0].PdfPageIndex.Should().Be(8);
     }
 
     [Fact]
