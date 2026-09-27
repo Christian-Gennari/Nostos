@@ -40,19 +40,20 @@
       </span>
       }
       <button
+        appIconButton
+        icon="plus"
+        [glyphSize]="14"
         type="button"
-        class="assistant-header-action assistant-new-conversation"
+        class="assistant-new-conversation"
         (click)="assistant.newConversation()"
         [disabled]="assistant.sending()"
         aria-label="New conversation"
         title="New conversation"
         data-testid="assistant-new-conversation"
-      >
-        <nostos-icon name="plus" [size]="14"></nostos-icon>
-      </button>
+      ></button>
       <button
         type="button"
-        class="assistant-header-action assistant-expand"
+        class="assistant-expand"
         (click)="toggleExpanded()"
         [attr.aria-label]="expanded() ? 'Collapse Ask Nostos' : 'Expand Ask Nostos'"
         [attr.aria-pressed]="expanded()"
