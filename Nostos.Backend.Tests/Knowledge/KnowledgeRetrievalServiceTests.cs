@@ -394,7 +394,7 @@ public sealed class KnowledgeRetrievalServiceTests : IClassFixture<SqliteTestFix
             string rawText,
             string mode,
             CancellationToken ct = default) =>
-            Task.FromResult(new ThoughtProcessingResult(rawText, mode));
+            Task.FromResult(new ThoughtProcessingResult(rawText, mode, ProviderCalled: false));
     }
 
     private sealed class StubContributor : IKnowledgeRetrievalContributor
