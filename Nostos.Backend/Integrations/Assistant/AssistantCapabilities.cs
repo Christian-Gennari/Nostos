@@ -2,6 +2,7 @@ using System.Text.Json;
 using Nostos.Backend.Data.Interfaces;
 using Nostos.Backend.Services.Library;
 using Nostos.Backend.Services.Notes;
+using Nostos.Backend.Services.Knowledge;
 using Nostos.Shared.Dtos;
 using Nostos.Shared.Enums;
 using Nostos.Product.BookText;
@@ -34,10 +35,11 @@ public static partial class AssistantCapabilities
         INoteService notes,
         ILibraryService library,
         IConceptRepository concepts,
+        IKnowledgeRetrievalService knowledge,
         IBookTextSearchService? bookText = null)
     {
         var capabilities = BuildLibraryBookCapabilities(library)
-            .Concat(BuildKnowledgeCapabilities(notes, concepts))
+            .Concat(BuildKnowledgeCapabilities(notes, concepts, knowledge))
             .Concat(BuildCollectionAndCaptureCapabilities(notes, library))
             .ToList();
 
