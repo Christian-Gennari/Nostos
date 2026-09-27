@@ -162,7 +162,7 @@ describe('AssistantService voice transcript alignment', () => {
     // A capture that cannot know a page is dispatched first; the backend is what
     // decides to ask for one, and the prompt arrives on the turn response.
     http.expectOne('/api/assistant/turn').flush(
-      turn({ anchorPrompt: { kind: 'physical_page', question: 'What page are you on?' } }),
+      turn({ anchorPrompt: { kind: 'physical_page', question: 'What page are you on?', continuationId: 'cont-page' } }),
     );
     expect(service.pendingAnchor()?.question).toBe('What page are you on?');
 
@@ -174,13 +174,14 @@ describe('AssistantService voice transcript alignment', () => {
     vi.advanceTimersByTime(TRANSCRIPT_AUTO_SEND_DELAY_MS);
 
     const request = http.expectOne('/api/assistant/turn');
-    expect(request.request.body.message).toBe('A thought I cannot place');
-    expect(request.request.body.context.anchor).toEqual({
-      kind: 'physical_page',
-      value: '247',
-      verified: false,
-    });
+    expect(request.request.body.message).toBe('247');
+    expect(request.request.body.continuationId).toBe('cont-page');
+    expect(request.request.body.context.anchor).toBeNull();
     request.flush(turn());
+
+    expect(
+      service.history().filter((message) => message.role === 'user').map((message) => message.text),
+    ).toEqual(['A thought I cannot place', '247']);
   });
 
   it('cleans a spoken page answer and names book and page in the acknowledgement', () => {
@@ -191,19 +192,16 @@ describe('AssistantService voice transcript alignment', () => {
     service.submit();
 
     http.expectOne('/api/assistant/turn').flush(
-      turn({ anchorPrompt: { kind: 'physical_page', question: 'What page are you on?' } }),
+      turn({ anchorPrompt: { kind: 'physical_page', question: 'What page are you on?', continuationId: 'cont-page' } }),
     );
 
     service.insertTranscript('Page 247.');
     vi.advanceTimersByTime(TRANSCRIPT_AUTO_SEND_DELAY_MS);
 
     const request = http.expectOne('/api/assistant/turn');
-    expect(request.request.body.message).toBe('A thought I cannot place');
-    expect(request.request.body.context.anchor).toEqual({
-      kind: 'physical_page',
-      value: '247',
-      verified: false,
-    });
+    expect(request.request.body.message).toBe('Page 247.');
+    expect(request.request.body.continuationId).toBe('cont-page');
+    expect(request.request.body.context.anchor).toBeNull();
     request.flush(
       turn({ acknowledgement: 'Saved to The Magic Mountain.', capturedNoteId: 'note-1' }),
     );
@@ -224,6 +222,7 @@ describe('AssistantService voice transcript alignment', () => {
         anchorPrompt: {
           kind: 'external_audio_timestamp',
           question: "What's the current timestamp?",
+          continuationId: 'cont-audio',
         },
       }),
     );
@@ -233,18 +232,16 @@ describe('AssistantService voice transcript alignment', () => {
     vi.advanceTimersByTime(TRANSCRIPT_AUTO_SEND_DELAY_MS);
 
     const request = http.expectOne('/api/assistant/turn');
-    expect(request.request.body.context.anchor).toEqual({
-      kind: 'external_audio_timestamp',
-      value: '83',
-      verified: false,
-    });
+    expect(request.request.body.message).toBe('1:23');
+    expect(request.request.body.continuationId).toBe('cont-audio');
+    expect(request.request.body.context.anchor).toBeNull();
     request.flush(turn({ acknowledgement: 'Saved to The Magic Mountain.', capturedNoteId: 'n1' }));
 
     const capture = service.entries().find((entry) => entry.meta === 'Saved');
     expect(capture?.anchorLabel).toBe('The Magic Mountain · 1:23');
   });
 
-  it('answers a book question with the title, re-dispatching the original thought', () => {
+  it('answers a book question with the title as a real continuation turn', () => {
     // No book is open, so the app asks which one and refuses to guess: the note
     // is filed silently-wrong otherwise, and a wrong note is invisible.
     fake.set({ surface: 'library', route: '/library', bookId: null, bookTitle: null, readingTarget: null });
@@ -254,7 +251,7 @@ describe('AssistantService voice transcript alignment', () => {
 
     http
       .expectOne('/api/assistant/turn')
-      .flush(turn({ anchorPrompt: { kind: 'book', question: 'Which book is this for?' } }));
+      .flush(turn({ anchorPrompt: { kind: 'book', question: 'Which book is this for?', continuationId: 'cont-book' } }));
 
     expect(service.pendingAnchor()?.question).toBe('Which book is this for?');
 
@@ -262,8 +259,9 @@ describe('AssistantService voice transcript alignment', () => {
     service.submit();
 
     const request = http.expectOne('/api/assistant/turn');
-    expect(request.request.body.message).toBe('A thought with no book behind it');
-    expect(request.request.body.context.captureBookTitle).toBe('Vita Contemplativa');
+    expect(request.request.body.message).toBe('Vita Contemplativa');
+    expect(request.request.body.continuationId).toBe('cont-book');
+    expect(request.request.body.context.captureBookTitle).toBeNull();
     expect(request.request.body.context.anchor).toBeNull();
     request.flush(
       turn({ acknowledgement: 'Saved to Vita Contemplativa.', capturedNoteId: 'note-2' }),
@@ -284,7 +282,7 @@ describe('AssistantService voice transcript alignment', () => {
 
     http
       .expectOne('/api/assistant/turn')
-      .flush(turn({ anchorPrompt: { kind: 'book', question: 'Which book is this for?' } }));
+      .flush(turn({ anchorPrompt: { kind: 'book', question: 'Which book is this for?', continuationId: 'cont-book' } }));
 
     service.skipAnchor();
 
@@ -301,7 +299,7 @@ describe('AssistantService voice transcript alignment', () => {
     service.submit();
 
     http.expectOne('/api/assistant/turn').flush(
-      turn({ anchorPrompt: { kind: 'physical_page', question: 'What page are you on?' } }),
+      turn({ anchorPrompt: { kind: 'physical_page', question: 'What page are you on?', continuationId: 'cont-page' } }),
     );
 
     service.close();
@@ -318,12 +316,8 @@ describe('AssistantService voice transcript alignment', () => {
     service.submit();
 
     const request = http.expectOne('/api/assistant/turn');
-    expect(request.request.body.message).toBe('A thought I cannot place');
-    expect(request.request.body.context.anchor).toEqual({
-      kind: 'physical_page',
-      value: '247',
-      verified: false,
-    });
+    expect(request.request.body.message).toBe('247');
+    expect(request.request.body.continuationId).toBe('cont-page');
     request.flush(turn());
   });
 
@@ -334,19 +328,16 @@ describe('AssistantService voice transcript alignment', () => {
     service.submit();
 
     http.expectOne('/api/assistant/turn').flush(
-      turn({ anchorPrompt: { kind: 'physical_page', question: 'What page are you on?' } }),
+      turn({ anchorPrompt: { kind: 'physical_page', question: 'What page are you on?', continuationId: 'cont-page' } }),
     );
     expect(service.pendingAnchor()).not.toBeNull();
 
     service.skipAnchor();
 
     const request = http.expectOne('/api/assistant/turn');
-    expect(request.request.body.message).toBe('A thought with no page');
-    expect(request.request.body.context.anchor).toEqual({
-      kind: 'unknown',
-      value: null,
-      verified: false,
-    });
+    expect(request.request.body.message).toBe("I don't know");
+    expect(request.request.body.continuationId).toBe('cont-page');
+    expect(request.request.body.continuationSkipped).toBe(true);
     request.flush(turn());
     expect(service.pendingAnchor()).toBeNull();
   });
