@@ -211,9 +211,9 @@ interface AssistantContextDto {
   collectionId: string | null;
   anchor: { kind: string; value: string | null; verified: boolean } | null;
   /**
-   * The book title the user gave when a capture asked which book it belongs to,
-   * for a turn that is the answer to that question. Null on every other turn;
-   * the server resolves it and never lets the model choose a book.
+   * Legacy wire compatibility only. V3 continuation answers travel as the real
+   * message; this stays null on new-client follow-ups and the server resolves
+   * the book from its continuation state.
    */
   captureBookTitle: string | null;
 }
