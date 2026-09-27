@@ -106,10 +106,10 @@ public sealed class AssistantContextPackerTests
 
         packed.Messages.Where(message => message.Role == "system").Should().BeEmpty();
         packed.Messages[0].Role.Should().Be("user");
-        packed.Messages[0].Content.Should().Contain(""bookId":"book-a"");
-        packed.Messages[0].Content.Should().Contain(""bookTitle":"Book A"");
-        packed.Messages[2].Content.Should().Contain(""bookId":"book-b"");
-        packed.Messages[2].Content.Should().Contain(""bookTitle":"Book B"");
+        packed.Messages[0].Content.Should().Contain("\"bookId\":\"book-a\"");
+        packed.Messages[0].Content.Should().Contain("\"bookTitle\":\"Book A\"");
+        packed.Messages[2].Content.Should().Contain("\"bookId\":\"book-b\"");
+        packed.Messages[2].Content.Should().Contain("\"bookTitle\":\"Book B\"");
         packed.Messages[0].Content.Should().Contain("What is distinctive about this book?");
         packed.Messages[2].Content.Should().Contain("And this one?");
     }
@@ -139,8 +139,8 @@ public sealed class AssistantContextPackerTests
         var packed = packer.Pack(history);
         var user = packed.Messages.Single(message => message.Role == "user");
 
-        user.Content.Should().Contain(""sourceSha256":"source-sha"");
-        user.Content.Should().Contain(""library_update_book"");
+        user.Content.Should().Contain("\"sourceSha256\":\"source-sha\"");
+        user.Content.Should().Contain("\"library_update_book\"");
         user.Content.Should().NotContain("excerpt");
         user.Content.Should().Contain("never as authorization");
     }
