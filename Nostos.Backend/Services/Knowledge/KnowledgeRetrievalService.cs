@@ -251,6 +251,7 @@ public sealed class KnowledgeRetrievalService(
                     continue;
 
                 if (resolved.Note is { } note
+                    && IsBookAllowed(note.BookId, scopedBookIds)
                     && noteEvidence.Count < max
                     && noteEvidence.All(item => item.NoteId != note.NoteId))
                 {
@@ -260,9 +261,12 @@ public sealed class KnowledgeRetrievalService(
                     && conceptEvidence.Count < max
                     && conceptEvidence.All(item => item.ConceptId != concept.ConceptId))
                 {
-                    conceptEvidence.Add(ToConceptEvidence(concept));
+                    var scopedConcept = ToConceptEvidence(concept, scopedBookIds);
+                    if (scopedConcept is not null)
+                        conceptEvidence.Add(scopedConcept);
                 }
                 else if (resolved.BookPassage is { } passage
+                    && IsBookAllowed(passage.BookId, scopedBookIds)
                     && bookEvidence.Count < max
                     && bookEvidence.All(item => item.Handle != passage.Handle))
                 {
@@ -401,7 +405,7 @@ public sealed class KnowledgeRetrievalService(
         CancellationToken ct)
     {
         var model = await concepts.GetByIdWithNotesAsync(concept.Id);
-        var supporting = model is null
+        IReadOnlyList<KnowledgeConceptSupportingNote> supporting = model is null
             ? []
             : SupportingNotes(
                 model,
@@ -533,15 +537,31 @@ public sealed class KnowledgeRetrievalService(
             note.SourceAnchorValue,
             note.AnchorVerified);
 
-    private static KnowledgeConceptEvidence ToConceptEvidence(KnowledgeConceptRead concept) =>
-        new(
+    private static KnowledgeConceptEvidence? ToConceptEvidence(
+        KnowledgeConceptRead concept,
+        IReadOnlyList<Guid>? scopedBookIds)
+    {
+        var notes = concept.Notes
+            .Where(note => IsBookAllowed(note.BookId, scopedBookIds))
+            .ToList();
+
+        if (scopedBookIds is not null && notes.Count == 0)
+            return null;
+
+        return new KnowledgeConceptEvidence(
             ConceptHandle(concept.ConceptId),
             concept.ConceptId,
             concept.Name,
             concept.UsageCount,
-            concept.Notes.Count,
-            concept.Notes.FirstOrDefault()?.Snippet,
-            concept.Notes);
+            notes.Count,
+            notes.FirstOrDefault()?.Snippet,
+            notes);
+    }
+
+    private static bool IsBookAllowed(
+        Guid bookId,
+        IReadOnlyList<Guid>? scopedBookIds) =>
+        scopedBookIds is null || scopedBookIds.Contains(bookId);
 
     private static KnowledgeBookEvidence ToBookEvidence(BookTextSearchPassage passage) =>
         new(
