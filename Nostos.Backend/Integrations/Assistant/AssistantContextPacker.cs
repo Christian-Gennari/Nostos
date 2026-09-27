@@ -124,7 +124,8 @@ internal sealed class AssistantContextPacker(AssistantOptions options)
         var hasContext = entry.Context is not null;
         var hasEvidence = entry.Evidence is { Count: > 0 };
         var hasActions = entry.Actions is { Count: > 0 };
-        if (!hasContext && !hasEvidence && !hasActions)
+        var hasCapturedNote = !string.IsNullOrWhiteSpace(entry.CapturedNoteId);
+        if (!hasContext && !hasEvidence && !hasActions && !hasCapturedNote)
         {
             return entry.Text;
         }
@@ -135,6 +136,7 @@ internal sealed class AssistantContextPacker(AssistantOptions options)
                 context = entry.Context,
                 evidence = hasEvidence ? entry.Evidence : null,
                 actions = hasActions ? entry.Actions : null,
+                capturedNoteId = hasCapturedNote ? entry.CapturedNoteId : null,
             },
             MetadataJsonOptions);
 
