@@ -766,9 +766,16 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         approved.Success.Should().BeTrue();
         (await CollectionCountAsync(h)).Should().Be(0);
 
+        // If the first HTTP response was lost, the exact consumed plan + token
+        // replays execution truth. It never becomes executable a second time.
         var replay = await h.Orchestrator.ApproveAsync(plan.PlanId, plan.ApprovalToken);
-        replay.Success.Should().BeFalse();
-        replay.ErrorCode.Should().Be(AssistantErrorCodes.NotFound);
+        replay.Success.Should().BeTrue();
+        replay.Steps.Should().BeEquivalentTo(approved.Steps);
+        (await CollectionCountAsync(h)).Should().Be(0);
+
+        var wrongTokenAfterCompletion = await h.Orchestrator.ApproveAsync(plan.PlanId, "garbage-token");
+        wrongTokenAfterCompletion.Success.Should().BeFalse();
+        wrongTokenAfterCompletion.ErrorCode.Should().Be(AssistantErrorCodes.ApprovalPlanMismatch);
         (await CollectionCountAsync(h)).Should().Be(0);
     }
 
