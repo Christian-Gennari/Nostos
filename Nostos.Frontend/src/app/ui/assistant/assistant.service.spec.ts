@@ -164,6 +164,16 @@ describe('AssistantService voice transcript alignment', () => {
     expect(service.sending()).toBe(false);
     expect(service.activeTurnId()).toBeNull();
     expect(service.entries().at(-1)?.meta).toBe('Stopped');
+    const artifacts = service.entries()
+      .filter((entry) => entry.turnId === turnId)
+      .flatMap((entry) => entry.artifacts ?? []);
+    expect(artifacts).toContainEqual({
+      kind: 'failure',
+      code: 'assistant_turn_cancelled',
+      message: 'Stopped.',
+      retryable: false,
+      state: 'cancelled',
+    });
   });
 
   it('defaults to auto-send', () => {
@@ -905,6 +915,23 @@ describe('AssistantService voice transcript alignment', () => {
               locators: [{ type: 'pdf', pdfPageIndex: 41, pdfPageLabel: '42' }],
             },
           ],
+          evidence: [
+            {
+              handle: {
+                kind: 'book_text',
+                bookId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+                sourceSha256: 'sha-source',
+                extractorVersion: 'nostos-book-text-v2',
+                ordinal: 7,
+              },
+              label: 'Book A',
+              excerpt: 'A deliberately large excerpt that should not be repeated in history.',
+              bookTitle: 'Book A',
+              bookAuthor: 'Author',
+              format: 'pdf',
+              locators: [{ type: 'pdf', pdfPageIndex: 41, pdfPageLabel: '42' }],
+            },
+          ],
         }),
       );
 
@@ -918,17 +945,140 @@ describe('AssistantService voice transcript alignment', () => {
         role: 'user',
         actions: ['library_update_book'],
         capturedNoteId: 'note-42',
-        evidence: [
+        evidenceHandles: [
           {
+            kind: 'book_text',
             bookId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
-            bookTitle: 'Book A',
             sourceSha256: 'sha-source',
+            extractorVersion: 'nostos-book-text-v2',
+            ordinal: 7,
           },
         ],
       });
       expect(JSON.stringify(root)).not.toContain('deliberately large excerpt');
       request.flush(turn());
     });
+  });
+
+  it('keeps evidence, capture, action and proposal artifacts on the exact originating TurnId', () => {
+    fake.set({ brainReviewNoteId: 'note-42' });
+    service.open();
+    service.updateDraft('Find this, save it, and suggest a connection');
+    service.submit();
+
+    const first = http.expectOne('/api/assistant/turn/stream');
+    const firstTurnId = first.request.body.turnId as string;
+    first.flush(turn({
+      reply: 'Done.',
+      acknowledgement: 'Saved.',
+      capturedNoteId: 'note-42',
+      executedCapabilities: ['library_update_book'],
+      suggestions: [
+        { kind: 'concept', label: 'Homecoming', reason: 'Shared evidence.', value: 'concept-1', noteId: 'note-42' },
+      ],
+      evidence: [
+        {
+          handle: { kind: 'note', noteId: 'note-source-1' },
+          label: 'Note · Book A',
+          excerpt: 'Bounded evidence.',
+        },
+      ],
+    }));
+
+    const firstArtifacts = service.entries()
+      .filter((entry) => entry.turnId === firstTurnId)
+      .flatMap((entry) => entry.artifacts ?? []);
+    expect(firstArtifacts.map((artifact) => artifact.kind)).toEqual([
+      'evidence',
+      'capture',
+      'action',
+      'proposal',
+    ]);
+    expect(firstArtifacts.find((artifact) => artifact.kind === 'proposal')).toMatchObject({
+      proposal: { noteId: 'note-42', value: 'concept-1' },
+    });
+
+    // Route/navigation context can change without moving history to the new turn.
+    fake.set({ surface: 'library', route: '/library', brainReviewNoteId: null });
+    service.close();
+    service.open();
+    expect(service.entries()
+      .filter((entry) => entry.turnId === firstTurnId)
+      .flatMap((entry) => entry.artifacts ?? [])).toEqual(firstArtifacts);
+
+    service.updateDraft('A later turn');
+    service.submit();
+    const second = http.expectOne('/api/assistant/turn/stream');
+    const secondTurnId = second.request.body.turnId as string;
+    second.flush(turn({ reply: 'Later.' }));
+
+    expect(service.entries()
+      .filter((entry) => entry.turnId === firstTurnId)
+      .flatMap((entry) => entry.artifacts ?? [])).toEqual(firstArtifacts);
+    expect(service.entries()
+      .filter((entry) => entry.turnId === secondTurnId)
+      .flatMap((entry) => entry.artifacts ?? [])).toEqual([]);
+  });
+
+  it('restores inert artifacts in order but not executable proposal chips', () => {
+    fake.set({ brainReviewNoteId: 'note-1' });
+    service.updateDraft('Suggest concepts from this evidence');
+    service.submit();
+    const request = http.expectOne('/api/assistant/turn/stream');
+    const turnId = request.request.body.turnId as string;
+    request.flush(turn({
+      reply: 'A possible connection.',
+      capturedNoteId: 'note-1',
+      executedCapabilities: ['library_update_book'],
+      evidence: [
+        { handle: { kind: 'note', noteId: 'source-note' }, label: 'Source note', excerpt: 'Evidence.' },
+      ],
+      suggestions: [
+        { kind: 'concept', label: 'Homecoming', reason: 'Same theme.', value: 'concept-1', noteId: 'note-1' },
+      ],
+    }));
+
+    const before = service.entries()
+      .filter((entry) => entry.turnId === turnId)
+      .flatMap((entry) => entry.artifacts ?? [])
+      .map((artifact) => artifact.kind);
+    expect(before).toEqual(['evidence', 'capture', 'action', 'proposal']);
+
+    http.verify();
+    TestBed.resetTestingModule();
+    configureService({ brainReviewNoteId: 'note-1' });
+
+    const restored = service.entries().filter((entry) => entry.turnId === turnId);
+    expect(restored.flatMap((entry) => entry.artifacts ?? []).map((artifact) => artifact.kind))
+      .toEqual(before);
+    expect(restored.flatMap((entry) => entry.suggestions ?? [])).toEqual([]);
+    expect(service.suggestions()).toEqual([]);
+    http.expectNone('/api/assistant/turn/stream');
+  });
+
+  it('replaces uncertain retry artifacts instead of duplicating the same logical turn', () => {
+    service.updateDraft('Do this once');
+    service.submit();
+    const first = http.expectOne('/api/assistant/turn/stream');
+    const turnId = first.request.body.turnId as string;
+    first.error(new ProgressEvent('error'));
+
+    expect(service.entries()
+      .filter((entry) => entry.turnId === turnId)
+      .flatMap((entry) => entry.artifacts ?? [])
+      .map((artifact) => artifact.kind)).toEqual(['failure']);
+
+    service.submit();
+    const retry = http.expectOne('/api/assistant/turn/stream');
+    expect(retry.request.body.turnId).toBe(turnId);
+    retry.flush(turn({ reply: 'Done.', executedCapabilities: ['library_update_book'] }));
+
+    const artifacts = service.entries()
+      .filter((entry) => entry.turnId === turnId)
+      .flatMap((entry) => entry.artifacts ?? []);
+    expect(artifacts).toEqual([
+      { kind: 'action', capability: 'library_update_book', state: 'completed' },
+    ]);
   });
 
   describe('a two-sided transcript (issue #286)', () => {
@@ -1114,7 +1264,10 @@ describe('AssistantService voice transcript alignment', () => {
     // turn, which is what arms natural-language confirmation.
     service.updateDraft('Remove the obsolete collection.');
     service.submit();
-    http.expectOne('/api/assistant/turn/stream').flush(turn({ pendingPlan: plan }));
+    const planRequest = http.expectOne('/api/assistant/turn/stream');
+    const planTurnId = planRequest.request.body.turnId as string;
+    planRequest.flush(turn({ pendingPlan: plan }));
+    expect(service.pendingPlanTurnId()).toBe(planTurnId);
 
     service.updateDraft('Go ahead.');
     service.submit();
@@ -1146,6 +1299,19 @@ describe('AssistantService voice transcript alignment', () => {
       'Go ahead.',
       'Deleted the obsolete collection.',
     ]);
+    const resultArtifacts = service.entries()
+      .filter((entry) => entry.turnId === planTurnId)
+      .flatMap((entry) => entry.artifacts ?? []);
+    expect(resultArtifacts).toContainEqual({
+      kind: 'destructive-result',
+      planId: 'plan-1',
+      summary: 'Delete the obsolete collection',
+      outcome: 'applied',
+      capabilities: [],
+    });
+    const persisted = sessionStorage.getItem(ASSISTANT_SESSION_STORAGE_KEY) ?? '';
+    expect(persisted).not.toContain('argumentsJson');
+    expect(persisted).not.toContain('\"data\"');
   });
 
   it('does not mistake a qualified yes for destructive approval and disarms later generic yes', () => {
