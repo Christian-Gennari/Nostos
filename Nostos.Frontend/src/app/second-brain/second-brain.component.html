@@ -1147,7 +1147,8 @@
       } @else if (proposalState() === 'unavailable' || proposalState() === 'error') {
         <div class="brain-proposals-state" role="alert">
           <strong>Suggestions are unavailable.</strong>
-          <span>{{ proposalMessage() || 'Suggestions could not be loaded. Manual linking still works.' }}</span>
+          <span>{{ proposalMessage() || 'Suggestions could not be loaded.' }}</span>
+          <span>Manual linking still works above.</span>
         </div>
         <div class="brain-proposal-actions">
           @if (canRetryProposalLink()) {
