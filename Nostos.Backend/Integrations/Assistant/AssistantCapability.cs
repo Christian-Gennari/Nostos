@@ -69,6 +69,7 @@ public static class AssistantErrorCodes
 /// </summary>
 /// <param name="Name">The wire name the model calls.</param>
 /// <param name="Trust">The enforcement class; the registry refuses a PlanAndAct call without a matching approval.</param>
+/// <param name="Category">Product-domain metadata for measurement and possible deterministic grouping. This never grants authority.</param>
 /// <param name="Summary">The tool description the model reads.</param>
 /// <param name="ParametersJsonSchema">
 /// The JSON Schema advertised for this capability's arguments. It is
@@ -81,6 +82,7 @@ public static class AssistantErrorCodes
 public sealed record AssistantCapability(
     string Name,
     AssistantTrustClass Trust,
+    AssistantCapabilityCategory Category,
     string Summary,
     string ParametersJsonSchema,
     Func<AssistantToolContext, JsonElement, CancellationToken, Task<AssistantToolResult>> Execute);

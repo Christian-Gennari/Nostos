@@ -12,6 +12,7 @@ public static partial class AssistantCapabilities
         new AssistantCapability(
             "library_list_collections",
             AssistantTrustClass.Suggest,
+            AssistantCapabilityCategory.Organization,
             "Lists all collections as a flat (id, name, parentId) list.",
             """
             {
@@ -30,6 +31,7 @@ public static partial class AssistantCapabilities
         new AssistantCapability(
             "library_get_collection",
             AssistantTrustClass.Suggest,
+            AssistantCapabilityCategory.Organization,
             "Gets one collection and its membership.",
             """
             {
@@ -60,6 +62,7 @@ public static partial class AssistantCapabilities
         new AssistantCapability(
             "notes_capture",
             AssistantTrustClass.Capture,
+            AssistantCapabilityCategory.Capture,
             "Saves one of the user's own thoughts, observations or quotes as a note against the book that is open. Use it whenever the user gives you something of their own to keep — they do not have to say 'save' or 'note', and a thought of theirs must be saved rather than answered. The book is supplied by the app; never pass one.",
             """
             {
@@ -113,6 +116,7 @@ public static partial class AssistantCapabilities
         new AssistantCapability(
             "notes_link_existing_concept",
             AssistantTrustClass.Act,
+            AssistantCapabilityCategory.Organization,
             "Links a note to an existing concept. Never creates a concept.",
             """
             {
@@ -139,6 +143,7 @@ public static partial class AssistantCapabilities
         new AssistantCapability(
             "library_create_collection",
             AssistantTrustClass.Act,
+            AssistantCapabilityCategory.Organization,
             "Creates a collection (or returns the existing sibling with the same name).",
             """
             {
@@ -173,6 +178,7 @@ public static partial class AssistantCapabilities
         new AssistantCapability(
             "library_rename_collection",
             AssistantTrustClass.Act,
+            AssistantCapabilityCategory.Organization,
             "Renames an existing collection.",
             """
             {
@@ -206,6 +212,7 @@ public static partial class AssistantCapabilities
         new AssistantCapability(
             "library_move_collection",
             AssistantTrustClass.Act,
+            AssistantCapabilityCategory.Organization,
             "Moves a collection under a new parent (null moves it to the top level).",
             """
             {
@@ -239,6 +246,7 @@ public static partial class AssistantCapabilities
         new AssistantCapability(
             "library_delete_empty_collection",
             AssistantTrustClass.Act,
+            AssistantCapabilityCategory.Organization,
             "Deletes an empty collection immediately. Refuses when the collection still contains books, so cleanup after a reorganization does not need a second approval while membership-destructive deletion remains guarded.",
             """
             {
@@ -297,6 +305,7 @@ public static partial class AssistantCapabilities
         new AssistantCapability(
             "library_delete_collection",
             AssistantTrustClass.PlanAndAct,
+            AssistantCapabilityCategory.Organization,
             "Deletes a collection after explicit approval. Books are unlinked, never deleted; child collections must be handled first.",
             """
             {

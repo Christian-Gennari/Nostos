@@ -1604,7 +1604,7 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
     }
 
     [Fact]
-    public async Task The_system_prompt_knows_Nostos_and_advertises_only_real_capabilities()
+    public async Task The_system_prompt_knows_Nostos_and_defers_capability_advertising_to_structured_tools()
     {
         var h = CreateHarness();
         h.Llm.Returns("Ok.");
@@ -1618,17 +1618,13 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         prompt.Should().Contain("built-in format filters for Audiobooks, eBooks and PDFs");
         prompt.Should().Contain("Do not recommend collections merely to recreate a Library filter");
         prompt.Should().Contain("prefer library_overview");
-        prompt.Should().Contain("library_overview [read-only]");
-        prompt.Should().Contain("library_create_collection [immediate action]");
-        prompt.Should().Contain("library_create_or_match_book [immediate action]");
-        prompt.Should().Contain("library_update_book [immediate action]");
-        prompt.Should().Contain("library_set_book_collections_bulk [immediate action]");
-        prompt.Should().Contain("library_delete_empty_collection [immediate action]");
-        prompt.Should().Contain("library_delete_collection [requires approval]");
-        prompt.Should().Contain("notes_capture [immediate capture]");
+        prompt.Should().Contain("structured tools available in this turn");
+        prompt.Should().NotContain("Available abilities in this Nostos installation");
+        prompt.Should().NotContain("library_overview [read-only]");
         prompt.Should().Contain("collectionIds");
         prompt.Should().Contain("Multi-step work is allowed");
-        prompt.Should().Contain("Analysis, comparison and synthesis should be as detailed as needed");
+        prompt.Should().Contain("Passage or concept explanations may use as much explanation as genuinely needed");
+        prompt.Should().Contain("Broad interpretive requests should retrieve and orient first");
         prompt.Should().Contain("Historical application/evidence metadata");
         prompt.Should().NotContain("Keep replies to a sentence or two");
     }
@@ -1754,7 +1750,7 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         messages.Select(m => m.Role).Should().Equal("system", "system", "system", "user");
         messages.Should().OnlyContain(m => m.Role != "assistant");
         messages[messages.Count - 1].Content.Should().Be("Hello.");
-        messages[0].Content.Should().Contain("You have tools");
+        messages[0].Content.Should().Contain("You have structured Nostos tools");
     }
 
     // ------------------------------------------------------------------
