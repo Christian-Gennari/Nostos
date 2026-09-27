@@ -12,7 +12,7 @@ import { NostosIconComponent } from '../icon/nostos-icon.component';
     <div class="toast-container">
       @for (toast of toastService.toasts(); track toast.id) {
         <div
-          class="toast"
+          class="toast nostos-accent-rail"
           [class.toast-success]="toast.type === 'success'"
           [class.toast-error]="toast.type === 'error'"
           [class.toast-info]="toast.type === 'info'"
@@ -82,7 +82,10 @@ import { NostosIconComponent } from '../icon/nostos-icon.component';
         min-width: 0;
         padding: 0.7rem 0.65rem 0.7rem 0.8rem;
         border: 1px solid var(--border-color);
+        border-inline-start: 2px solid transparent;
         border-radius: var(--radius-lg);
+        --nostos-accent-rail-width: 2px;
+        --nostos-accent-rail-inline-start: -2px;
         background: var(--bg-surface);
         box-shadow: var(--shadow-md);
         color: var(--color-text-main);
@@ -115,7 +118,7 @@ import { NostosIconComponent } from '../icon/nostos-icon.component';
       }
 
       .toast-success {
-        border-left: 2px solid var(--color-success);
+        --nostos-accent-rail-color: var(--color-success);
       }
 
       .toast-success .toast-symbol {
@@ -123,7 +126,7 @@ import { NostosIconComponent } from '../icon/nostos-icon.component';
       }
 
       .toast-error {
-        border-left: 2px solid var(--color-danger);
+        --nostos-accent-rail-color: var(--color-danger);
       }
 
       .toast-error .toast-symbol {
@@ -131,7 +134,7 @@ import { NostosIconComponent } from '../icon/nostos-icon.component';
       }
 
       .toast-info {
-        border-left: 2px solid var(--color-primary);
+        --nostos-accent-rail-color: var(--color-primary);
       }
 
       .toast-info .toast-symbol {
