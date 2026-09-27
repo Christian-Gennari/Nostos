@@ -41,7 +41,7 @@
       }
       <button
         type="button"
-        class="assistant-expand"
+        class="assistant-header-action assistant-new-conversation"
         (click)="assistant.newConversation()"
         [disabled]="assistant.sending()"
         aria-label="New conversation"
@@ -52,7 +52,7 @@
       </button>
       <button
         type="button"
-        class="assistant-expand"
+        class="assistant-header-action assistant-expand"
         (click)="toggleExpanded()"
         [attr.aria-label]="expanded() ? 'Collapse Ask Nostos' : 'Expand Ask Nostos'"
         [attr.aria-pressed]="expanded()"
