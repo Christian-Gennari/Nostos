@@ -137,10 +137,9 @@
       </article>
       }
 
-      @if (assistant.sending()) {
-      <!-- The reply's own position, held while the turn is in flight: a slow
-           model otherwise reads as a hang. Decorative dots only; the hidden
-           label is what assistive tech announces. -->
+      @if (assistant.pendingVisible()) {
+      <!-- Fast turns never render this block. Slow turns expose only server-owned
+           product activity; no model reasoning or raw tool payload is shown. -->
       <article
         class="entry entry-assistant entry-pending"
         role="status"
@@ -148,12 +147,31 @@
         data-testid="assistant-pending"
       >
         <span class="entry-speaker">Nostos</span>
-        <span class="visually-hidden">Thinking</span>
-        <span class="thinking-dots">
-          <span class="thinking-dot" aria-hidden="true"></span>
-          <span class="thinking-dot" aria-hidden="true"></span>
-          <span class="thinking-dot" aria-hidden="true"></span>
-        </span>
+        <div class="pending-row">
+          @if (assistant.turnActivity(); as activity) {
+          <span class="turn-activity" data-testid="assistant-activity">{{ activity.message }}</span>
+          } @else {
+          <span class="visually-hidden">Working</span>
+          <span class="thinking-dots" aria-hidden="true">
+            <span class="thinking-dot"></span>
+            <span class="thinking-dot"></span>
+            <span class="thinking-dot"></span>
+          </span>
+          }
+          @if (assistant.activeTurnId()) {
+          <button
+            appButton
+            variant="ghost"
+            size="sm"
+            type="button"
+            class="turn-stop"
+            (click)="assistant.stopActiveTurn()"
+            data-testid="assistant-stop-turn"
+          >
+            Stop
+          </button>
+          }
+        </div>
       </article>
       }
     </div>

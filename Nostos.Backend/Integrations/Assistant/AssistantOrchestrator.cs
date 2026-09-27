@@ -120,17 +120,46 @@ public sealed class AssistantOrchestrator(
     /// model's tool calls, and return prose plus any suggestions / follow-up
     /// question / pending plan.
     /// </summary>
-    public async Task<AssistantTurnResponse> HandleTurnAsync(
+    public Task<AssistantTurnResponse> HandleTurnAsync(
         AssistantTurnRequest request,
+        CancellationToken ct = default) =>
+        HandleTurnAsync(request, activity: null, execution: null, ct);
+
+    internal Task<AssistantTurnResponse> HandleTurnAsync(
+        AssistantTurnRequest request,
+        Func<AssistantTurnActivityDto, ValueTask>? activity,
+        CancellationToken ct = default) =>
+        HandleTurnAsync(request, activity, execution: null, ct);
+
+    internal async Task<AssistantTurnResponse> HandleTurnAsync(
+        AssistantTurnRequest request,
+        Func<AssistantTurnActivityDto, ValueTask>? activity,
+        AssistantTurnExecution? execution,
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        var conversationKey = ConversationKey(
+        var conversationKey = AssistantTurnIdentity.ConversationKey(
             string.IsNullOrWhiteSpace(request.ConversationId)
                 ? request.ClientId
                 : request.ConversationId);
-        var turnId = TurnKey(request);
+        var turnId = AssistantTurnIdentity.TurnKey(request);
+
+        if (ct.IsCancellationRequested)
+        {
+            return new AssistantTurnResponse(
+                Reply: string.Empty,
+                Acknowledgement: null,
+                AnchorPrompt: null,
+                Suggestions: [],
+                PendingPlan: null,
+                CapturedNoteId: null,
+                ExecutedCapabilities: [],
+                Sources: [],
+                Error: new AssistantTurnErrorDto(
+                    AssistantErrorCodes.TurnCancelled,
+                    "Stopped."));
+        }
 
         if (!string.IsNullOrWhiteSpace(request.ContinuationId))
         {
@@ -138,6 +167,8 @@ public sealed class AssistantOrchestrator(
                 request,
                 conversationKey,
                 turnId,
+                activity,
+                execution,
                 ct);
         }
 
@@ -165,10 +196,21 @@ public sealed class AssistantOrchestrator(
         string? finalContent = null;
         string? lastAssistantContent = null;
         string? capturedNoteId = null;
+        AssistantTurnErrorDto? terminalError = null;
+        var retrievalAttempted = false;
+        var retrievalEvidenceAvailable = false;
+        var retrievalStates = new List<BookTextIngestionStatus>();
+        var mutationCompleted = false;
 
         var iterations = Math.Max(1, options.MaxToolIterations);
         for (var iteration = 0; iteration < iterations; iteration++)
         {
+            if (ct.IsCancellationRequested)
+            {
+                stopReason = AssistantTurnStopReason.Cancelled;
+                break;
+            }
+
             // Per-turn execution ceilings (#406). Token/cost are evaluated before
             // spending another upstream call. Wall clock also supplies the provider
             // call with the remaining turn deadline, so one slow in-flight call
@@ -217,10 +259,8 @@ public sealed class AssistantOrchestrator(
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
-                var metrics = executionMeter.Finish(AssistantTurnStopReason.Cancelled);
-                LogExecutionMetrics(metrics);
-                await CompleteUsageAsync(usageLease, metrics);
-                throw;
+                stopReason = AssistantTurnStopReason.Cancelled;
+                break;
             }
             catch (OperationCanceledException) when (turnDeadline?.IsCancellationRequested == true)
             {
@@ -242,6 +282,12 @@ public sealed class AssistantOrchestrator(
             }
 
             executionMeter.RecordCompletion(completion);
+
+            if (ct.IsCancellationRequested)
+            {
+                stopReason = AssistantTurnStopReason.Cancelled;
+                break;
+            }
 
             finalContent = completion.Content;
             if (!string.IsNullOrWhiteSpace(completion.Content))
@@ -303,6 +349,12 @@ public sealed class AssistantOrchestrator(
 
             foreach (var call in completion.ToolCalls)
             {
+                if (ct.IsCancellationRequested)
+                {
+                    stopReason = AssistantTurnStopReason.Cancelled;
+                    break;
+                }
+
                 if (!capabilityByName.TryGetValue(call.Name, out var capability))
                 {
                     messages.Add(LlmMessage.Tool(call.Id, ToolJson(new
@@ -371,12 +423,81 @@ public sealed class AssistantOrchestrator(
                     ClientId: conversationKey,
                     IdempotencyKey: AssistantMutationIdentity.Key(turnId, capability.Name, args));
 
-                var result = await registry.InvokeAsync(capability.Name, args, toolContext, ct);
+                if (AssistantTurnActivities.ForCapability(capability) is { } turnActivity
+                    && activity is not null)
+                {
+                    await activity(turnActivity);
+                }
+
+                var mutation = capability.Trust is
+                    AssistantTrustClass.Capture or AssistantTrustClass.Act;
+
+                // Stop and canonical write-start share one lifecycle gate.
+                // If Stop wins, no write begins. If the mutation lease wins,
+                // that write is already considered in-flight and is allowed to
+                // reach its truthful terminal state before the turn stops.
+                AssistantTurnMutationLease? mutationLease = null;
+                if (mutation)
+                {
+                    mutationLease = execution?.TryBeginMutation();
+                    if ((execution is not null && mutationLease is null)
+                        || (execution is null && ct.IsCancellationRequested))
+                    {
+                        stopReason = AssistantTurnStopReason.Cancelled;
+                        break;
+                    }
+                }
+
+                AssistantToolResult result;
+                try
+                {
+                    result = await registry.InvokeAsync(
+                        capability.Name,
+                        args,
+                        toolContext,
+                        mutation ? CancellationToken.None : ct);
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    stopReason = AssistantTurnStopReason.Cancelled;
+                    break;
+                }
+                finally
+                {
+                    mutationLease?.Dispose();
+                }
+
                 messages.Add(LlmMessage.Tool(call.Id, ToolJson(result)));
+
+                if (result.Success && mutation)
+                {
+                    mutationCompleted = true;
+                    terminalError = null;
+                }
+                else if (!result.Success && mutation)
+                {
+                    terminalError = new AssistantTurnErrorDto(
+                        result.ErrorCode ?? AssistantErrorCodes.NotFound,
+                        result.ErrorMessage ?? "The requested change could not be completed.");
+                }
 
                 if (result.Success && capability.Trust == AssistantTrustClass.Act)
                 {
                     executedCapabilities.Add(capability.Name);
+                }
+
+                if (result.Success
+                    && capability.Trust == AssistantTrustClass.Suggest
+                    && result.Data is { } retrievalData
+                    && (string.Equals(capability.Name, KnowledgeSearchCapability, StringComparison.Ordinal)
+                        || string.Equals(capability.Name, BookTextCapability, StringComparison.Ordinal)))
+                {
+                    retrievalAttempted = true;
+                    ObserveRetrieval(
+                        capability.Name,
+                        retrievalData,
+                        ref retrievalEvidenceAvailable,
+                        retrievalStates);
                 }
 
                 if (result.Success && capability.Trust == AssistantTrustClass.Suggest)
@@ -404,7 +525,16 @@ public sealed class AssistantOrchestrator(
                     acknowledgement = AssistantCapturePolicy.BuildAcknowledgement(capture!.BookTitle, capture.QuoteFidelity);
                     capturedNoteId = ReadNoteId(result.Data);
                 }
+
+                if (ct.IsCancellationRequested)
+                {
+                    stopReason = AssistantTurnStopReason.Cancelled;
+                    break;
+                }
             }
+
+            if (stopReason == AssistantTurnStopReason.Cancelled)
+                break;
 
             // Asking for deterministic capture input ends this turn. The user's
             // actual answer arrives as the next Message plus continuation id; it
@@ -420,7 +550,7 @@ public sealed class AssistantOrchestrator(
         // A PlanAndAct call is only a proposal until the user approves it. A
         // second proposal supersedes the first: one pending plan per conversation.
         AssistantPendingPlanDto? pendingPlan = null;
-        if (planSteps.Count > 0)
+        if (planSteps.Count > 0 && stopReason != AssistantTurnStopReason.Cancelled)
         {
             // Describe the server-held proposal, not model narration that might
             // incorrectly imply the PlanAndAct work has already run.
@@ -428,6 +558,27 @@ public sealed class AssistantOrchestrator(
 
             var stored = plans.Create(conversationKey, turnId, summary, planSteps);
             pendingPlan = ToPendingPlanDto(stored);
+        }
+
+        if (stopReason == AssistantTurnStopReason.Cancelled)
+        {
+            terminalError = new AssistantTurnErrorDto(
+                AssistantErrorCodes.TurnCancelled,
+                mutationCompleted
+                    ? "Stopped. Changes that already completed remain applied."
+                    : "Stopped.");
+        }
+        else if (stopReason == AssistantTurnStopReason.SafetyCeiling)
+        {
+            terminalError = new AssistantTurnErrorDto(
+                AssistantErrorCodes.ExecutionBudgetExhausted,
+                "This turn reached its execution limit before it could finish.");
+        }
+        else if (terminalError is null
+                 && retrievalAttempted
+                 && !retrievalEvidenceAvailable)
+        {
+            terminalError = RetrievalFailure(retrievalStates);
         }
 
         // Server-known boundaries outrank model narration. A provider can attach
@@ -438,7 +589,11 @@ public sealed class AssistantOrchestrator(
             AssistantTurnStopReason.RepeatedToolLoop;
 
         string reply;
-        if (anchorPrompt is not null)
+        if (stopReason == AssistantTurnStopReason.Cancelled)
+        {
+            reply = string.Empty;
+        }
+        else if (anchorPrompt is not null)
         {
             reply = anchorPrompt.Question;
         }
@@ -490,7 +645,8 @@ public sealed class AssistantOrchestrator(
             pendingPlan,
             capturedNoteId,
             executedCapabilities,
-            sourceReferences);
+            sourceReferences,
+            terminalError);
     }
 
     private Task CompleteUsageAsync(
@@ -540,6 +696,8 @@ public sealed class AssistantOrchestrator(
         AssistantTurnRequest request,
         string conversationKey,
         string turnId,
+        Func<AssistantTurnActivityDto, ValueTask>? activity,
+        AssistantTurnExecution? execution,
         CancellationToken ct)
     {
         var continuationId = request.ContinuationId!.Trim();
@@ -634,11 +792,41 @@ public sealed class AssistantOrchestrator(
                 CaptureCapability,
                 capture.Arguments!.Value));
 
-        var result = await registry.InvokeAsync(
-            CaptureCapability,
-            capture.Arguments!.Value,
-            toolContext,
-            ct);
+        if (ct.IsCancellationRequested)
+        {
+            return ContinuationFailure(
+                AssistantErrorCodes.TurnCancelled,
+                "Stopped.");
+        }
+
+        if (activity is not null)
+            await activity(new AssistantTurnActivityDto("saving_note", "Saving your note…"));
+
+        AssistantTurnMutationLease? mutationLease = execution?.TryBeginMutation();
+        if ((execution is not null && mutationLease is null)
+            || (execution is null && ct.IsCancellationRequested))
+        {
+            return ContinuationFailure(
+                AssistantErrorCodes.TurnCancelled,
+                "Stopped.");
+        }
+
+        // Same atomic write boundary as the ordinary tool path. From this
+        // lifecycle transition onward, a Stop request may end subsequent work
+        // but cannot make this canonical write ambiguous.
+        AssistantToolResult result;
+        try
+        {
+            result = await registry.InvokeAsync(
+                CaptureCapability,
+                capture.Arguments!.Value,
+                toolContext,
+                CancellationToken.None);
+        }
+        finally
+        {
+            mutationLease?.Dispose();
+        }
 
         if (!result.Success)
         {
@@ -664,7 +852,11 @@ public sealed class AssistantOrchestrator(
             CapturedNoteId: ReadNoteId(result.Data),
             ExecutedCapabilities: [],
             Sources: [],
-            Error: null);
+            Error: ct.IsCancellationRequested
+                ? new AssistantTurnErrorDto(
+                    AssistantErrorCodes.TurnCancelled,
+                    "Stopped. The saved note remains saved.")
+                : null);
 
         continuations.Complete(stored, turnId, completed);
         return completed;
@@ -779,6 +971,81 @@ public sealed class AssistantOrchestrator(
         }
     }
 
+    private static void ObserveRetrieval(
+        string capabilityName,
+        JsonElement data,
+        ref bool evidenceAvailable,
+        List<BookTextIngestionStatus> states)
+    {
+        var evidenceProperty = data.TryGetProperty("evidenceAvailable", out var evidence)
+            ? evidence
+            : default;
+        if (evidenceProperty.ValueKind is JsonValueKind.True)
+            evidenceAvailable = true;
+
+        var statePropertyName = string.Equals(
+            capabilityName,
+            KnowledgeSearchCapability,
+            StringComparison.Ordinal)
+                ? "bookTextStates"
+                : "states";
+
+        if (!data.TryGetProperty(statePropertyName, out var stateArray)
+            || stateArray.ValueKind != JsonValueKind.Array)
+            return;
+
+        foreach (var item in stateArray.EnumerateArray())
+        {
+            if (!item.TryGetProperty("status", out var status))
+                continue;
+
+            if (status.ValueKind == JsonValueKind.Number
+                && status.TryGetInt32(out var numeric)
+                && Enum.IsDefined(typeof(BookTextIngestionStatus), numeric))
+            {
+                states.Add((BookTextIngestionStatus)numeric);
+            }
+            else if (status.ValueKind == JsonValueKind.String
+                     && Enum.TryParse<BookTextIngestionStatus>(
+                         status.GetString(),
+                         ignoreCase: true,
+                         out var parsed))
+            {
+                states.Add(parsed);
+            }
+        }
+    }
+
+    private static AssistantTurnErrorDto RetrievalFailure(
+        IReadOnlyCollection<BookTextIngestionStatus> states)
+    {
+        if (states.Any(status =>
+                status is BookTextIngestionStatus.Pending or BookTextIngestionStatus.Processing))
+        {
+            return new AssistantTurnErrorDto(
+                AssistantErrorCodes.SourceIndexingPending,
+                "This source is still being indexed. Try again when it is ready.");
+        }
+
+        if (states.Contains(BookTextIngestionStatus.Failed))
+        {
+            return new AssistantTurnErrorDto(
+                AssistantErrorCodes.SourceIndexingFailed,
+                "Text indexing failed for this source, so Ask Nostos cannot search it yet.");
+        }
+
+        if (states.Contains(BookTextIngestionStatus.Unsupported))
+        {
+            return new AssistantTurnErrorDto(
+                AssistantErrorCodes.SourceIndexingUnsupported,
+                "This source cannot be searched as text in its current format.");
+        }
+
+        return new AssistantTurnErrorDto(
+            AssistantErrorCodes.NoEvidence,
+            "I could not find usable evidence for that in your Nostos material.");
+    }
+
     // ------------------------------------------------------------------
     // Small JSON helpers
     // ------------------------------------------------------------------
@@ -791,19 +1058,6 @@ public sealed class AssistantOrchestrator(
                 .Select(step => new AssistantPlanStepDto(step.Capability, step.Summary, step.ArgumentsJson))
                 .ToList(),
             stored.ApprovalToken);
-
-    private static string ConversationKey(string? conversationId) =>
-        string.IsNullOrWhiteSpace(conversationId) ? "anonymous" : conversationId.Trim();
-
-    private static string TurnKey(AssistantTurnRequest request)
-    {
-        var turnId = string.IsNullOrWhiteSpace(request.TurnId)
-            ? request.IdempotencyKey
-            : request.TurnId;
-        return string.IsNullOrWhiteSpace(turnId)
-            ? Guid.NewGuid().ToString("N")
-            : turnId.Trim();
-    }
 
     private static JsonObject ParseObject(string? json)
     {

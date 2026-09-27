@@ -1,11 +1,12 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { computed, signal } from '@angular/core';
-import { provideHttpClient } from '@angular/common/http';
+import { HttpEventType, provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { Router } from '@angular/router';
 
 import { AssistantComponent } from './assistant.component';
 import {
+  ASSISTANT_PENDING_DELAY_MS,
   ASSISTANT_SESSION_STORAGE_KEY,
   AssistantService,
   AssistantSourceReferenceDto,
@@ -225,7 +226,7 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     fixture.componentInstance.open();
     assistant.updateDraft('Keep this in the old conversation');
     assistant.submit();
-    http.expectOne('/api/assistant/turn').flush(turn({ reply: 'Old reply' }));
+    http.expectOne('/api/assistant/turn/stream').flush(turn({ reply: 'Old reply' }));
     fixture.detectChanges();
 
     const oldConversationId = assistant.conversationId();
@@ -408,7 +409,7 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     assistant.updateDraft('A thought about the snow');
     assistant.submit();
 
-    const request = http.expectOne('/api/assistant/turn');
+    const request = http.expectOne('/api/assistant/turn/stream');
     expect(request.request.body.message).toBe('A thought about the snow');
     expect(request.request.body.context.anchor).toEqual({
       kind: 'pdf_page',
@@ -436,7 +437,7 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
 
     // The capture dispatches at once; the backend decides it needs a page and
     // returns the server-authoritative continuation prompt.
-    http.expectOne('/api/assistant/turn').flush(
+    http.expectOne('/api/assistant/turn/stream').flush(
       turn({
         anchorPrompt: {
           kind: 'physical_page',
@@ -457,7 +458,7 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
 
     // Skipping is a real continuation turn, not a replay of the original
     // message with the answer hidden in request context.
-    const request = http.expectOne('/api/assistant/turn');
+    const request = http.expectOne('/api/assistant/turn/stream');
     expect(request.request.body.message).toBe("I don't know");
     expect(request.request.body.continuationId).toBe('cont-page');
     expect(request.request.body.continuationSkipped).toBe(true);
@@ -478,7 +479,7 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     assistant.open();
     assistant.updateDraft('A thought without a page');
     assistant.submit();
-    http.expectOne('/api/assistant/turn').flush(
+    http.expectOne('/api/assistant/turn/stream').flush(
       turn({
         anchorPrompt: {
           kind: 'physical_page',
@@ -493,7 +494,7 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
 
     // The typed page is the next real user message, tied to the server-held
     // continuation; the answer is not smuggled into the request context.
-    const request = http.expectOne('/api/assistant/turn');
+    const request = http.expectOne('/api/assistant/turn/stream');
     expect(request.request.body.message).toBe('42');
     expect(request.request.body.continuationId).toBe('cont-page');
     expect(request.request.body.continuationSkipped).toBe(false);
@@ -522,7 +523,7 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     assistant.submit();
     fixture.detectChanges();
 
-    http.expectOne('/api/assistant/turn').flush(
+    http.expectOne('/api/assistant/turn/stream').flush(
       turn({
         anchorPrompt: {
           kind: 'physical_page',
@@ -542,7 +543,7 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     assistant.updateDraft('Page 247.');
     assistant.submit();
 
-    const request = http.expectOne('/api/assistant/turn');
+    const request = http.expectOne('/api/assistant/turn/stream');
     expect(request.request.body.message).toBe('Page 247.');
     expect(request.request.body.continuationId).toBe('cont-page');
     expect(request.request.body.continuationSkipped).toBe(false);
@@ -567,7 +568,7 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     assistant.submit();
     fixture.detectChanges();
 
-    http.expectOne('/api/assistant/turn').flush(
+    http.expectOne('/api/assistant/turn/stream').flush(
       turn({
         anchorPrompt: {
           kind: 'physical_page',
@@ -596,7 +597,7 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     expect(
       fixture.nativeElement.querySelector('[data-testid="assistant-transcript"]').textContent,
     ).toContain('What page are you on?');
-    http.expectNone('/api/assistant/turn');
+    http.expectNone('/api/assistant/turn/stream');
   });
 
   it('asks for a timestamp when an audiobook is not open in the in-app reader', () => {
@@ -607,7 +608,7 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     assistant.updateDraft('A thought');
     assistant.submit();
 
-    http.expectOne('/api/assistant/turn').flush(
+    http.expectOne('/api/assistant/turn/stream').flush(
       turn({
         anchorPrompt: {
           kind: 'external_audio_timestamp',
@@ -634,7 +635,7 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     assistant.submit();
 
     expect(assistant.pendingAnchor()).toBeNull();
-    const request = http.expectOne('/api/assistant/turn');
+    const request = http.expectOne('/api/assistant/turn/stream');
     expect(request.request.body.context.anchor).toBeNull();
     request.flush(turn());
   });
@@ -656,7 +657,7 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     assistant.open();
     assistant.updateDraft('Who are you?');
     assistant.submit();
-    http.expectOne('/api/assistant/turn').flush(turn({ reply: 'The Nostos assistant.' }));
+    http.expectOne('/api/assistant/turn/stream').flush(turn({ reply: 'The Nostos assistant.' }));
     fixture.detectChanges();
 
     const userLabel = fixture.nativeElement.querySelector(
@@ -710,7 +711,7 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
       '**unfinished',
     ].join('\n');
 
-    http.expectOne('/api/assistant/turn').flush(turn({ reply }));
+    http.expectOne('/api/assistant/turn/stream').flush(turn({ reply }));
     fixture.detectChanges();
 
     const userEntry = fixture.nativeElement.querySelector('.entry-user .entry-text') as HTMLElement;
@@ -756,7 +757,9 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     expect(rendered.textContent).toContain('**unfinished');
   });
 
-  describe('thinking indicator (issue #289)', () => {
+  describe('turn activity (issue #564)', () => {
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
     function transcript(): HTMLElement {
       return fixture.nativeElement.querySelector('[data-testid="assistant-transcript"]');
     }
@@ -772,11 +775,17 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
       assistant.updateDraft('Are you there?');
       assistant.submit();
       fixture.detectChanges();
-      return http.expectOne('/api/assistant/turn');
+      return http.expectOne('/api/assistant/turn/stream');
+    }
+
+    function revealPending(): void {
+      vi.advanceTimersByTime(ASSISTANT_PENDING_DELAY_MS);
+      fixture.detectChanges();
     }
 
     it('shows the pending entry after the user entry while a turn is in flight', () => {
       const request = sendInFlight();
+      revealPending();
 
       const indicator = pending();
       expect(indicator).toBeTruthy();
@@ -792,6 +801,7 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
 
     it('removes the pending entry when the response arrives', () => {
       const request = sendInFlight();
+      revealPending();
       expect(pending()).toBeTruthy();
 
       request.flush(turn({ reply: 'Here.' }));
@@ -802,6 +812,7 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
 
     it('removes the pending entry when the request fails', () => {
       const request = sendInFlight();
+      revealPending();
       expect(pending()).toBeTruthy();
 
       request.flush('', { status: 503, statusText: 'Service Unavailable' });
@@ -813,21 +824,47 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
 
     it('exposes the state as accessible text and hides the decorative dots', () => {
       const request = sendInFlight();
+      revealPending();
 
       const indicator = pending()!;
       const hidden = indicator.querySelector('.visually-hidden');
       expect(hidden).toBeTruthy();
-      expect(hidden!.textContent?.trim()).toContain('Thinking');
+      expect(hidden!.textContent?.trim()).toContain('Working');
       expect(indicator.getAttribute('role')).toBe('status');
       expect(indicator.getAttribute('aria-live')).toBe('polite');
 
-      const dots = Array.from(indicator.querySelectorAll('.thinking-dot'));
-      expect(dots.length).toBe(3);
-      for (const dot of dots) {
-        expect(dot.getAttribute('aria-hidden')).toBe('true');
-      }
+      const dots = indicator.querySelector('.thinking-dots');
+      expect(dots).toBeTruthy();
+      expect(dots!.getAttribute('aria-hidden')).toBe('true');
+      expect(dots!.querySelectorAll('.thinking-dot').length).toBe(3);
 
-      request.flush(turn());
+      // Pending UI may appear from the local delay, but Stop is withheld until
+      // the server confirms the exact turn has been registered as active.
+      expect(indicator.querySelector('[data-testid="assistant-stop-turn"]')).toBeNull();
+
+      const turnId = request.request.body.turnId as string;
+      const startedLine = JSON.stringify({
+        turnId,
+        sequence: 1,
+        kind: 'started',
+      }) + '\n';
+      request.event({
+        type: HttpEventType.DownloadProgress,
+        loaded: startedLine.length,
+        partialText: startedLine,
+      });
+      fixture.detectChanges();
+
+      expect(
+        pending()!.querySelector('[data-testid="assistant-stop-turn"]'),
+      ).toBeTruthy();
+
+      request.flush(startedLine + JSON.stringify({
+        turnId,
+        sequence: 2,
+        kind: 'completed',
+        response: turn(),
+      }) + '\n');
     });
   });
 
@@ -837,7 +874,7 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     assistant.submit();
 
     http
-      .expectOne('/api/assistant/turn')
+      .expectOne('/api/assistant/turn/stream')
       .flush(turn({ acknowledgement: 'Saved.', capturedNoteId: 'note-9' }));
     fixture.detectChanges();
 
@@ -893,7 +930,7 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     assistant.submit();
 
     http
-      .expectOne('/api/assistant/turn')
+      .expectOne('/api/assistant/turn/stream')
       .flush(turn({ acknowledgement: 'Saved.', capturedNoteId: 'note-quote' }));
     fixture.detectChanges();
 
@@ -922,7 +959,7 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     assistant.updateDraft('Where does this go?');
     assistant.submit();
 
-    http.expectOne('/api/assistant/turn').flush(turn());
+    http.expectOne('/api/assistant/turn/stream').flush(turn());
     fixture.detectChanges();
 
     expect(fixture.nativeElement.querySelector('[data-testid="assistant-raw"]')).toBeNull();
@@ -952,7 +989,7 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     chip.click();
     fixture.detectChanges();
 
-    const request = http.expectOne('/api/assistant/turn');
+    const request = http.expectOne('/api/assistant/turn/stream');
     expect(request.request.body.message).toContain('Mountains');
     request.flush(turn({ reply: 'Linked the note to Mountains.', pendingPlan: null }));
     fixture.detectChanges();
@@ -1033,7 +1070,7 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     fixture.detectChanges();
 
     expect(assistant.suggestions()).toEqual([]);
-    http.expectNone('/api/assistant/turn');
+    http.expectNone('/api/assistant/turn/stream');
   });
 
   describe('following the newest turn (issue #300)', () => {
@@ -1115,7 +1152,7 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
       assistant.updateDraft('What are you reading?');
       assistant.submit();
       fixture.detectChanges();
-      http.expectOne('/api/assistant/turn').flush(turn({ reply: 'Your own library.' }));
+      http.expectOne('/api/assistant/turn/stream').flush(turn({ reply: 'Your own library.' }));
       await render();
 
       // The reply is at the end of the transcript, and so is the view: it is
@@ -1136,7 +1173,7 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
       readerScrollsTo(200);
       await render();
 
-      http.expectOne('/api/assistant/turn').flush(turn({ reply: 'Noted.' }));
+      http.expectOne('/api/assistant/turn/stream').flush(turn({ reply: 'Noted.' }));
       await render();
 
       // A big arrival under a view the reader owns, and it stays where they put it.
@@ -1153,7 +1190,7 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
 
       assistant.updateDraft('And now?');
       assistant.submit();
-      http.expectOne('/api/assistant/turn').flush(turn({ reply: 'Now this.' }));
+      http.expectOne('/api/assistant/turn/stream').flush(turn({ reply: 'Now this.' }));
       await render();
 
       expect(body().scrollTop).toBe(END);
@@ -1171,7 +1208,7 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
 
       // Their own turn is the thing being answered: it always comes back.
       expect(body().scrollTop).toBe(END);
-      http.expectOne('/api/assistant/turn').flush(turn());
+      http.expectOne('/api/assistant/turn/stream').flush(turn());
     });
 
     it('lands on the newest turn when the surface is opened', async () => {
@@ -1298,7 +1335,7 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
       expect(assistant.draft()).toBe('The Magic Mountain');
       // Auto-send is queued, not dispatched: nothing is sent while Undo is live.
       expect(assistant.autoSendPending()).toBe(true);
-      http.expectNone('/api/assistant/turn');
+      http.expectNone('/api/assistant/turn/stream');
 
       assistant.undoTranscript(); // do not leave a real 2s timer behind
     });
@@ -1322,7 +1359,7 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
       expect(assistant.autoSendPending()).toBe(false);
       expect(query('[data-testid="assistant-voice-undo"]')).toBeNull();
       expect(assistant.draft()).toBe('The Magic Mountain');
-      http.expectNone('/api/assistant/turn');
+      http.expectNone('/api/assistant/turn/stream');
     });
 
     it('closing the surface abandons a live recording', () => {

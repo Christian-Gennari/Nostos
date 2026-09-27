@@ -69,17 +69,21 @@ public sealed class NineRouterLlmProvider(
         {
             throw LlmException.ProviderFailure($"the gateway could not be reached ({ex.Message})");
         }
-        catch (TaskCanceledException ex)
+        catch (TaskCanceledException)
         {
-            throw LlmException.ProviderFailure($"the gateway timed out ({ex.Message})");
+            throw LlmException.TimedOut();
         }
 
         using (response)
         {
-            if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden
-                or HttpStatusCode.TooManyRequests)
+            if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
             {
                 throw LlmException.PermissionDenied();
+            }
+
+            if (response.StatusCode == HttpStatusCode.TooManyRequests)
+            {
+                throw LlmException.RateLimited();
             }
 
             if (!response.IsSuccessStatusCode)
