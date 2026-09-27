@@ -26,6 +26,12 @@ public static class AssistantTurnIdentity
 /// <summary>
 /// Active-turn cancellation registry. The key is the canonical
 /// (ConversationId, TurnId) pair, so a stale stop can never cancel a newer turn.
+///
+/// The active state also owns the mutation boundary. Cancellation and
+/// "mutation has begun" are serialized through the same gate so exactly one
+/// can win: if cancellation wins, the mutation lease is refused; if the
+/// mutation lease wins, that canonical write is allowed to reach its truthful
+/// terminal state before the turn stops.
 /// </summary>
 public sealed class AssistantTurnExecutionRegistry
 {
@@ -42,12 +48,13 @@ public sealed class AssistantTurnExecutionRegistry
 
         if (!_active.TryAdd(key, active))
         {
-            active.Cancellation.Dispose();
+            active.Complete();
             return null;
         }
 
         return new AssistantTurnExecution(
-            active.Cancellation.Token,
+            active.Token,
+            active.TryBeginMutation,
             () => Complete(key, active));
     }
 
@@ -57,30 +64,155 @@ public sealed class AssistantTurnExecutionRegistry
         if (!_active.TryGetValue(key, out var active))
             return false;
 
-        active.Cancellation.Cancel();
-        return true;
+        return active.TryCancel();
     }
 
     private void Complete(TurnKey key, ActiveTurn active)
     {
+        // Mark the lifecycle terminal before removing the dictionary entry. A
+        // concurrent Stop that already obtained the ActiveTurn can then observe
+        // completion and return not_active without touching a disposed CTS.
+        active.Complete();
+
         if (_active.TryGetValue(key, out var current)
-            && ReferenceEquals(current, active)
-            && _active.TryRemove(key, out _))
+            && ReferenceEquals(current, active))
         {
-            active.Cancellation.Dispose();
+            _active.TryRemove(key, out _);
         }
     }
 
     private readonly record struct TurnKey(string ConversationId, string TurnId);
-    private sealed record ActiveTurn(CancellationTokenSource Cancellation);
+
+    private sealed class ActiveTurn
+    {
+        private readonly object _gate = new();
+        private readonly CancellationTokenSource _cancellation;
+        private bool _completed;
+        private bool _cancelInFlight;
+        private bool _cancellationRequested;
+        private bool _mutationInProgress;
+        private bool _disposed;
+
+        public ActiveTurn(CancellationTokenSource cancellation)
+        {
+            _cancellation = cancellation;
+            Token = cancellation.Token;
+        }
+
+        public CancellationToken Token { get; }
+
+        public bool TryCancel()
+        {
+            CancellationTokenSource cancellation;
+
+            lock (_gate)
+            {
+                if (_completed)
+                    return false;
+
+                // Idempotent Stop requests remain accepted while this turn is
+                // active, but only the first request needs to signal the token.
+                if (_cancellationRequested)
+                    return true;
+
+                _cancellationRequested = true;
+                _cancelInFlight = true;
+                cancellation = _cancellation;
+            }
+
+            try
+            {
+                cancellation.Cancel();
+            }
+            finally
+            {
+                var dispose = false;
+                lock (_gate)
+                {
+                    _cancelInFlight = false;
+                    dispose = TryMarkDisposedLocked();
+                }
+
+                if (dispose)
+                    cancellation.Dispose();
+            }
+
+            return true;
+        }
+
+        public AssistantTurnMutationLease? TryBeginMutation()
+        {
+            lock (_gate)
+            {
+                if (_completed || _cancellationRequested || _mutationInProgress)
+                    return null;
+
+                _mutationInProgress = true;
+                return new AssistantTurnMutationLease(EndMutation);
+            }
+        }
+
+        public void Complete()
+        {
+            var dispose = false;
+
+            lock (_gate)
+            {
+                if (_completed)
+                    return;
+
+                _completed = true;
+                dispose = TryMarkDisposedLocked();
+            }
+
+            if (dispose)
+                _cancellation.Dispose();
+        }
+
+        private void EndMutation()
+        {
+            lock (_gate)
+            {
+                _mutationInProgress = false;
+            }
+        }
+
+        private bool TryMarkDisposedLocked()
+        {
+            if (_disposed || !_completed || _cancelInFlight)
+                return false;
+
+            _disposed = true;
+            return true;
+        }
+    }
 }
 
 public sealed class AssistantTurnExecution(
     CancellationToken token,
+    Func<AssistantTurnMutationLease?> tryBeginMutation,
     Action complete) : IDisposable
 {
     private int _disposed;
     public CancellationToken Token { get; } = token;
+
+    /// <summary>
+    /// Atomically claims the canonical write boundary against Stop. A null
+    /// result means cancellation or completion won before the write began.
+    /// </summary>
+    public AssistantTurnMutationLease? TryBeginMutation() =>
+        Volatile.Read(ref _disposed) == 0 ? tryBeginMutation() : null;
+
+    public void Dispose()
+    {
+        if (Interlocked.Exchange(ref _disposed, 1) == 0)
+            complete();
+    }
+}
+
+public sealed class AssistantTurnMutationLease(Action complete) : IDisposable
+{
+    private int _disposed;
 
     public void Dispose()
     {
