@@ -406,6 +406,88 @@ describe('AssistantService voice transcript alignment', () => {
     expect(service.pendingPlan()?.planId).toBe('plan-delete');
   });
 
+  it('reuses ConversationId and TurnId when an uncertain delivery is retried', () => {
+    service.open();
+    service.updateDraft('Capture this once');
+    service.submit();
+
+    const first = http.expectOne('/api/assistant/turn');
+    const firstBody = first.request.body;
+    expect(firstBody.clientId).toBe(firstBody.conversationId);
+    expect(firstBody.idempotencyKey).toBe(firstBody.turnId);
+    first.error(new ProgressEvent('error'));
+
+    expect(service.draft()).toBe('Capture this once');
+    expect(service.entries().filter((entry) => entry.kind === 'user')).toHaveLength(1);
+    expect(service.history()).toEqual([]);
+
+    service.submit();
+    const retry = http.expectOne('/api/assistant/turn');
+    expect(retry.request.body.turnId).toBe(firstBody.turnId);
+    expect(retry.request.body.idempotencyKey).toBe(firstBody.idempotencyKey);
+    expect(retry.request.body.conversationId).toBe(firstBody.conversationId);
+    expect(retry.request.body.history).toEqual(firstBody.history);
+    expect(service.entries().filter((entry) => entry.kind === 'user')).toHaveLength(1);
+    retry.flush(turn({ reply: 'Captured once.' }));
+
+    expect(service.history()).toEqual([
+      { role: 'user', text: 'Capture this once' },
+      { role: 'assistant', text: 'Captured once.' },
+    ]);
+  });
+
+  it('allocates a new TurnId when the user changes an uncertain draft', () => {
+    service.updateDraft('First delivery');
+    service.submit();
+    const first = http.expectOne('/api/assistant/turn');
+    const firstTurnId = first.request.body.turnId;
+    first.error(new ProgressEvent('error'));
+
+    service.updateDraft('This is a genuinely new turn');
+    service.submit();
+    const second = http.expectOne('/api/assistant/turn');
+    expect(second.request.body.turnId).not.toBe(firstTurnId);
+    expect(second.request.body.conversationId).toBe(service.conversationId());
+    expect(second.request.body.history).toEqual([]);
+    second.flush(turn());
+  });
+
+  it('allocates a new TurnId after a normal successful turn', () => {
+    service.updateDraft('First');
+    service.submit();
+    const first = http.expectOne('/api/assistant/turn');
+    const conversationId = first.request.body.conversationId;
+    const firstTurnId = first.request.body.turnId;
+    first.flush(turn());
+
+    service.updateDraft('Second');
+    service.submit();
+    const second = http.expectOne('/api/assistant/turn');
+    expect(second.request.body.conversationId).toBe(conversationId);
+    expect(second.request.body.turnId).not.toBe(firstTurnId);
+    second.flush(turn());
+  });
+
+  it('keeps ConversationId across close/reopen and resets it only for a new conversation', () => {
+    const conversationId = service.conversationId();
+
+    service.open();
+    service.close();
+    service.open();
+    expect(service.conversationId()).toBe(conversationId);
+
+    service.updateDraft('Keep me in the old ledger');
+    service.submit();
+    http.expectOne('/api/assistant/turn').flush(turn());
+    expect(service.entries().length).toBeGreaterThan(0);
+
+    service.newConversation();
+    expect(service.conversationId()).not.toBe(conversationId);
+    expect(service.entries()).toEqual([]);
+    expect(service.history()).toEqual([]);
+    expect(service.pendingAnchor()).toBeNull();
+  });
+
   it('sends no per-turn processing mode', () => {
     service.open();
     service.updateDraft('A thought');
