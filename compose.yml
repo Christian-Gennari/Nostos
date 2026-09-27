@@ -1,6 +1,6 @@
 services:
   nostos:
-    build: .
+    image: ghcr.io/christian-gennari/nostos:${NOSTOS_IMAGE_TAG:-latest}
     ports:
       - "5099:8080"
     volumes:
