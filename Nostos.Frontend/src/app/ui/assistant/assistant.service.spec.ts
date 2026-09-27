@@ -579,6 +579,102 @@ describe('AssistantService voice transcript alignment', () => {
     expect(service.pendingAnchor()).toBeNull();
   });
 
+  it('restores the same conversation id and transcript after a page-reload-style service recreation', () => {
+    service.open();
+    service.updateDraft('First question');
+    service.submit();
+    http.expectOne('/api/assistant/turn').flush(turn({ reply: 'First answer' }));
+
+    const originalConversationId = service.conversationId();
+    const stored = sessionStorage.getItem(ASSISTANT_SESSION_STORAGE_KEY);
+    expect(stored).toBeTruthy();
+
+    http.verify();
+    TestBed.resetTestingModule();
+    configureService();
+
+    expect(service.conversationId()).toBe(originalConversationId);
+    expect(service.entries().map((entry) => entry.text)).toEqual([
+      'First question',
+      'First answer',
+    ]);
+
+    service.updateDraft('Follow up');
+    service.submit();
+    const request = http.expectOne('/api/assistant/turn');
+    expect(request.request.body.conversationId).toBe(originalConversationId);
+    expect(request.request.body.history[0]).toMatchObject({
+      role: 'user',
+      text: 'First question',
+      context: {
+        bookId: 'b1',
+        bookTitle: 'The Magic Mountain',
+      },
+    });
+    expect(request.request.body.history[1]).toEqual({
+      role: 'assistant',
+      text: 'First answer',
+    });
+    request.flush(turn());
+  });
+
+  it('restores an uncertain delivery with the exact same TurnId after reload', () => {
+    service.updateDraft('Capture this once');
+    service.submit();
+    const first = http.expectOne('/api/assistant/turn');
+    const originalTurnId = first.request.body.turnId;
+    const originalConversationId = first.request.body.conversationId;
+    first.error(new ProgressEvent('error'));
+
+    http.verify();
+    TestBed.resetTestingModule();
+    configureService();
+
+    expect(service.conversationId()).toBe(originalConversationId);
+    expect(service.draft()).toBe('Capture this once');
+    expect(service.entries().filter((entry) => entry.kind === 'user')).toHaveLength(1);
+    expect(service.history()).toEqual([]);
+
+    service.submit();
+    const retry = http.expectOne('/api/assistant/turn');
+    expect(retry.request.body.turnId).toBe(originalTurnId);
+    expect(retry.request.body.idempotencyKey).toBe(originalTurnId);
+    expect(retry.request.body.conversationId).toBe(originalConversationId);
+    retry.flush(turn({ reply: 'Captured once.' }));
+  });
+
+  it('restores a pending deterministic continuation after reload', () => {
+    fake.set({ bookFormat: 'physical' });
+    service.updateDraft('A thought I cannot place');
+    service.submit();
+    http.expectOne('/api/assistant/turn').flush(
+      turn({
+        reply: 'What page are you on?',
+        anchorPrompt: {
+          kind: 'physical_page',
+          question: 'What page are you on?',
+          continuationId: 'continuation-reload',
+        },
+      }),
+    );
+
+    const conversationId = service.conversationId();
+
+    http.verify();
+    TestBed.resetTestingModule();
+    configureService({ bookFormat: 'physical' });
+
+    expect(service.conversationId()).toBe(conversationId);
+    expect(service.pendingAnchor()?.continuationId).toBe('continuation-reload');
+
+    service.updateDraft('247');
+    service.submit();
+    const answer = http.expectOne('/api/assistant/turn');
+    expect(answer.request.body.message).toBe('247');
+    expect(answer.request.body.continuationId).toBe('continuation-reload');
+    answer.flush(turn({ acknowledgement: 'Saved.', capturedNoteId: 'note-reload' }));
+  });
+
   it('sends no per-turn processing mode', () => {
     service.open();
     service.updateDraft('A thought');
