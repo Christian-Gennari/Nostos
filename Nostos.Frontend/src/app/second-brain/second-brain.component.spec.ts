@@ -2060,10 +2060,10 @@ describe('SecondBrain', () => {
       expect(panel.querySelector('blockquote')?.textContent?.trim()).toBe('The struggle itself toward the heights is enough to fill a man’s heart.');
       expect(panel.querySelector('.brain-note-panel-content')?.textContent?.trim()).toBe('One must imagine Sisyphus happy.');
 
-      const conceptTags = panel.querySelectorAll('.brain-note-concept-tag');
-      expect(conceptTags.length).toBe(2);
-      expect(conceptTags[0].textContent?.trim()).toBe('Absurdism');
-      expect(conceptTags[1].textContent?.trim()).toBe('Revolt');
+      const conceptBadges = panel.querySelectorAll('.nostos-badge--success');
+      expect(conceptBadges.length).toBe(2);
+      expect(conceptBadges[0].textContent?.trim()).toContain('Absurdism');
+      expect(conceptBadges[1].textContent?.trim()).toContain('Revolt');
 
       const closeBtn = panel.querySelector('button[aria-label="Close note"]') as HTMLButtonElement;
       expect(closeBtn).toBeTruthy();
@@ -2074,7 +2074,7 @@ describe('SecondBrain', () => {
       expect(fixture.nativeElement.querySelector('[data-testid="brain-note-panel"]')).toBeNull();
     });
 
-    it('shows "Belongs to no concept" in panel when note has no concept links', async () => {
+    it('shows the unlinked state in the panel when note has no concept links', async () => {
       component.setSearchQuery('rebel');
       await settleNoteSearch([], sampleHits);
       fixture.detectChanges();
@@ -2086,7 +2086,7 @@ describe('SecondBrain', () => {
       const panel = fixture.nativeElement.querySelector('[data-testid="brain-note-panel"]');
       expect(panel).toBeTruthy();
       expect(panel.querySelector('blockquote')).toBeNull();
-      expect(panel.textContent).toContain('Belongs to no concept');
+      expect(panel.textContent).toContain('No concepts linked');
     });
 
     it('never falls back to unlinked notes when the search box is empty', async () => {
