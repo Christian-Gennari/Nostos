@@ -86,7 +86,7 @@ public sealed class AssistantTurnLifecycleTests
                 Record.Exception(() => execution!.Dispose()));
 
             var failures = await Task.WhenAll(cancel, complete);
-            failures.Should().OnlyContain(error => error is null);
+            failures.Should().OnlyContain(error => error == null);
         }
     }
 
