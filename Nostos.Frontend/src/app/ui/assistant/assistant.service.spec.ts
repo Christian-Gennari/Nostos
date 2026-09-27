@@ -17,7 +17,7 @@ import { AssistantContext, AssistantContextService } from './assistant-context.s
 
 /**
  * The conversation now flows through the assistant bridge
- * (`POST /api/assistant/turn`), so "typed" and "transcribed" are compared on the
+ * (`POST /api/assistant/turn/stream`), so "typed" and "transcribed" are compared on the
  * wire, not on a mock's arguments.
  */
 
@@ -105,12 +105,12 @@ describe('AssistantService voice transcript alignment', () => {
     // While the window is open the text is in the composer and nothing is sent.
     expect(service.draft()).toBe('The Magic Mountain');
     expect(service.autoSendPending()).toBe(true);
-    http.expectNone('/api/assistant/turn');
+    http.expectNone('/api/assistant/turn/stream');
 
     vi.advanceTimersByTime(TRANSCRIPT_AUTO_SEND_DELAY_MS);
 
     expect(service.autoSendPending()).toBe(false);
-    const request = http.expectOne('/api/assistant/turn');
+    const request = http.expectOne('/api/assistant/turn/stream');
     expect(request.request.method).toBe('POST');
     expect(request.request.body.message).toBe('The Magic Mountain');
     request.flush(turn());
@@ -127,7 +127,7 @@ describe('AssistantService voice transcript alignment', () => {
     expect(service.autoSendPending()).toBe(false);
     // Well past the window: the cancelled dispatch must never fire.
     vi.advanceTimersByTime(TRANSCRIPT_AUTO_SEND_DELAY_MS * 4);
-    http.expectNone('/api/assistant/turn');
+    http.expectNone('/api/assistant/turn/stream');
     expect(service.draft()).toBe('The Magic Mountain');
   });
 
@@ -138,13 +138,13 @@ describe('AssistantService voice transcript alignment', () => {
     service.open();
     service.updateDraft(text);
     service.submit();
-    const typed = http.expectOne('/api/assistant/turn');
+    const typed = http.expectOne('/api/assistant/turn/stream');
     const typedRequest = typed.request;
     typed.flush(turn());
 
     service.insertTranscript(text);
     vi.advanceTimersByTime(TRANSCRIPT_AUTO_SEND_DELAY_MS);
-    const transcribed = http.expectOne('/api/assistant/turn');
+    const transcribed = http.expectOne('/api/assistant/turn/stream');
 
     // The idempotency key is unique per turn by design; everything that carries
     // meaning — the endpoint, the message and the resolved context — is identical.
@@ -165,7 +165,7 @@ describe('AssistantService voice transcript alignment', () => {
 
     // A capture that cannot know a page is dispatched first; the backend is what
     // decides to ask for one, and the prompt arrives on the turn response.
-    http.expectOne('/api/assistant/turn').flush(
+    http.expectOne('/api/assistant/turn/stream').flush(
       turn({ anchorPrompt: { kind: 'physical_page', question: 'What page are you on?', continuationId: 'cont-page' } }),
     );
     expect(service.pendingAnchor()?.question).toBe('What page are you on?');
@@ -173,11 +173,11 @@ describe('AssistantService voice transcript alignment', () => {
     service.insertTranscript('247');
     expect(service.draft()).toBe('247');
     expect(service.autoSendPending()).toBe(true);
-    http.expectNone('/api/assistant/turn');
+    http.expectNone('/api/assistant/turn/stream');
 
     vi.advanceTimersByTime(TRANSCRIPT_AUTO_SEND_DELAY_MS);
 
-    const request = http.expectOne('/api/assistant/turn');
+    const request = http.expectOne('/api/assistant/turn/stream');
     expect(request.request.body.message).toBe('247');
     expect(request.request.body.continuationId).toBe('cont-page');
     expect(request.request.body.context.anchor).toBeNull();
@@ -193,7 +193,7 @@ describe('AssistantService voice transcript alignment', () => {
     service.updateDraft('A thought I cannot place');
     service.submit();
 
-    http.expectOne('/api/assistant/turn').flush(
+    http.expectOne('/api/assistant/turn/stream').flush(
       turn({
         reply: 'What page are you on?',
         anchorPrompt: {
@@ -206,7 +206,7 @@ describe('AssistantService voice transcript alignment', () => {
 
     service.updateDraft('247');
     service.submit();
-    const firstAnswer = http.expectOne('/api/assistant/turn');
+    const firstAnswer = http.expectOne('/api/assistant/turn/stream');
     const answerTurnId = firstAnswer.request.body.turnId;
     firstAnswer.error(new ProgressEvent('error'));
 
@@ -217,7 +217,7 @@ describe('AssistantService voice transcript alignment', () => {
     ).toHaveLength(1);
 
     service.submit();
-    const retry = http.expectOne('/api/assistant/turn');
+    const retry = http.expectOne('/api/assistant/turn/stream');
     expect(retry.request.body.turnId).toBe(answerTurnId);
     expect(retry.request.body.idempotencyKey).toBe(answerTurnId);
     expect(retry.request.body.message).toBe('247');
@@ -236,14 +236,14 @@ describe('AssistantService voice transcript alignment', () => {
     service.updateDraft('A thought I cannot place');
     service.submit();
 
-    http.expectOne('/api/assistant/turn').flush(
+    http.expectOne('/api/assistant/turn/stream').flush(
       turn({ anchorPrompt: { kind: 'physical_page', question: 'What page are you on?', continuationId: 'cont-page' } }),
     );
 
     service.insertTranscript('Page 247.');
     vi.advanceTimersByTime(TRANSCRIPT_AUTO_SEND_DELAY_MS);
 
-    const request = http.expectOne('/api/assistant/turn');
+    const request = http.expectOne('/api/assistant/turn/stream');
     expect(request.request.body.message).toBe('Page 247.');
     expect(request.request.body.continuationId).toBe('cont-page');
     expect(request.request.body.context.anchor).toBeNull();
@@ -262,7 +262,7 @@ describe('AssistantService voice transcript alignment', () => {
     service.updateDraft('A thought');
     service.submit();
 
-    http.expectOne('/api/assistant/turn').flush(
+    http.expectOne('/api/assistant/turn/stream').flush(
       turn({
         anchorPrompt: {
           kind: 'external_audio_timestamp',
@@ -276,7 +276,7 @@ describe('AssistantService voice transcript alignment', () => {
     service.insertTranscript('1:23');
     vi.advanceTimersByTime(TRANSCRIPT_AUTO_SEND_DELAY_MS);
 
-    const request = http.expectOne('/api/assistant/turn');
+    const request = http.expectOne('/api/assistant/turn/stream');
     expect(request.request.body.message).toBe('1:23');
     expect(request.request.body.continuationId).toBe('cont-audio');
     expect(request.request.body.context.anchor).toBeNull();
@@ -295,7 +295,7 @@ describe('AssistantService voice transcript alignment', () => {
     service.submit();
 
     http
-      .expectOne('/api/assistant/turn')
+      .expectOne('/api/assistant/turn/stream')
       .flush(turn({ anchorPrompt: { kind: 'book', question: 'Which book is this for?', continuationId: 'cont-book' } }));
 
     expect(service.pendingAnchor()?.question).toBe('Which book is this for?');
@@ -303,7 +303,7 @@ describe('AssistantService voice transcript alignment', () => {
     service.updateDraft('Vita Contemplativa');
     service.submit();
 
-    const request = http.expectOne('/api/assistant/turn');
+    const request = http.expectOne('/api/assistant/turn/stream');
     expect(request.request.body.message).toBe('Vita Contemplativa');
     expect(request.request.body.continuationId).toBe('cont-book');
     expect(request.request.body.context.captureBookTitle).toBeNull();
@@ -326,13 +326,13 @@ describe('AssistantService voice transcript alignment', () => {
     service.submit();
 
     http
-      .expectOne('/api/assistant/turn')
+      .expectOne('/api/assistant/turn/stream')
       .flush(turn({ anchorPrompt: { kind: 'book', question: 'Which book is this for?', continuationId: 'cont-book' } }));
 
     service.skipAnchor();
 
     // Still waiting: no second turn was dispatched, and the question stands.
-    http.expectNone('/api/assistant/turn');
+    http.expectNone('/api/assistant/turn/stream');
     expect(service.pendingAnchor()?.question).toBe('Which book is this for?');
   });
 
@@ -343,7 +343,7 @@ describe('AssistantService voice transcript alignment', () => {
     service.updateDraft('A thought I cannot place');
     service.submit();
 
-    http.expectOne('/api/assistant/turn').flush(
+    http.expectOne('/api/assistant/turn/stream').flush(
       turn({ anchorPrompt: { kind: 'physical_page', question: 'What page are you on?', continuationId: 'cont-page' } }),
     );
 
@@ -360,7 +360,7 @@ describe('AssistantService voice transcript alignment', () => {
     service.updateDraft('247');
     service.submit();
 
-    const request = http.expectOne('/api/assistant/turn');
+    const request = http.expectOne('/api/assistant/turn/stream');
     expect(request.request.body.message).toBe('247');
     expect(request.request.body.continuationId).toBe('cont-page');
     request.flush(turn());
@@ -372,14 +372,14 @@ describe('AssistantService voice transcript alignment', () => {
     service.updateDraft('A thought with no page');
     service.submit();
 
-    http.expectOne('/api/assistant/turn').flush(
+    http.expectOne('/api/assistant/turn/stream').flush(
       turn({ anchorPrompt: { kind: 'physical_page', question: 'What page are you on?', continuationId: 'cont-page' } }),
     );
     expect(service.pendingAnchor()).not.toBeNull();
 
     service.skipAnchor();
 
-    const request = http.expectOne('/api/assistant/turn');
+    const request = http.expectOne('/api/assistant/turn/stream');
     expect(request.request.body.message).toBe("I don't know");
     expect(request.request.body.continuationId).toBe('cont-page');
     expect(request.request.body.continuationSkipped).toBe(true);
@@ -392,7 +392,7 @@ describe('AssistantService voice transcript alignment', () => {
     service.updateDraft('Where does this go?');
     service.submit();
 
-    const request = http.expectOne('/api/assistant/turn');
+    const request = http.expectOne('/api/assistant/turn/stream');
     request.flush(
       turn({
         reply: 'Mountains looks right.',
@@ -424,7 +424,7 @@ describe('AssistantService voice transcript alignment', () => {
     service.updateDraft('Delete the obsolete collection');
     service.submit();
 
-    http.expectOne('/api/assistant/turn').flush(
+    http.expectOne('/api/assistant/turn/stream').flush(
       turn({
         pendingPlan: {
           planId: 'plan-delete',
@@ -444,7 +444,7 @@ describe('AssistantService voice transcript alignment', () => {
 
     service.updateDraft('What books are in it?');
     service.submit();
-    http.expectOne('/api/assistant/turn').flush(turn({ reply: 'Three books.' }));
+    http.expectOne('/api/assistant/turn/stream').flush(turn({ reply: 'Three books.' }));
 
     // The backend still holds the destructive plan; a normal answer must not
     // make the confirmation disappear only on the client.
@@ -456,7 +456,7 @@ describe('AssistantService voice transcript alignment', () => {
     service.updateDraft('Capture this once');
     service.submit();
 
-    const first = http.expectOne('/api/assistant/turn');
+    const first = http.expectOne('/api/assistant/turn/stream');
     const firstBody = first.request.body;
     expect(firstBody.clientId).toBe(firstBody.conversationId);
     expect(firstBody.idempotencyKey).toBe(firstBody.turnId);
@@ -469,7 +469,7 @@ describe('AssistantService voice transcript alignment', () => {
     expect(service.history()).toEqual([]);
 
     service.submit();
-    const retry = http.expectOne('/api/assistant/turn');
+    const retry = http.expectOne('/api/assistant/turn/stream');
     expect(retry.request.body.turnId).toBe(firstBody.turnId);
     expect(retry.request.body.idempotencyKey).toBe(firstBody.idempotencyKey);
     expect(retry.request.body.conversationId).toBe(firstBody.conversationId);
@@ -489,7 +489,7 @@ describe('AssistantService voice transcript alignment', () => {
     service.updateDraft('A thought I cannot place');
     service.submit();
 
-    http.expectOne('/api/assistant/turn').flush(
+    http.expectOne('/api/assistant/turn/stream').flush(
       turn({
         anchorPrompt: {
           kind: 'physical_page',
@@ -501,7 +501,7 @@ describe('AssistantService voice transcript alignment', () => {
 
     service.updateDraft('247');
     service.submit();
-    const firstAnswer = http.expectOne('/api/assistant/turn');
+    const firstAnswer = http.expectOne('/api/assistant/turn/stream');
     const firstBody = firstAnswer.request.body;
     expect(firstBody.message).toBe('247');
     expect(firstBody.continuationId).toBe('cont-page-retry');
@@ -513,7 +513,7 @@ describe('AssistantService voice transcript alignment', () => {
     ).toHaveLength(1);
 
     service.submit();
-    const retry = http.expectOne('/api/assistant/turn');
+    const retry = http.expectOne('/api/assistant/turn/stream');
     expect(retry.request.body.turnId).toBe(firstBody.turnId);
     expect(retry.request.body.idempotencyKey).toBe(firstBody.idempotencyKey);
     expect(retry.request.body.continuationId).toBe(firstBody.continuationId);
@@ -530,13 +530,13 @@ describe('AssistantService voice transcript alignment', () => {
   it('allocates a new TurnId when the user changes an uncertain draft', () => {
     service.updateDraft('First delivery');
     service.submit();
-    const first = http.expectOne('/api/assistant/turn');
+    const first = http.expectOne('/api/assistant/turn/stream');
     const firstTurnId = first.request.body.turnId;
     first.error(new ProgressEvent('error'));
 
     service.updateDraft('This is a genuinely new turn');
     service.submit();
-    const second = http.expectOne('/api/assistant/turn');
+    const second = http.expectOne('/api/assistant/turn/stream');
     expect(second.request.body.turnId).not.toBe(firstTurnId);
     expect(second.request.body.conversationId).toBe(service.conversationId());
     expect(second.request.body.history).toEqual([]);
@@ -546,14 +546,14 @@ describe('AssistantService voice transcript alignment', () => {
   it('allocates a new TurnId after a normal successful turn', () => {
     service.updateDraft('First');
     service.submit();
-    const first = http.expectOne('/api/assistant/turn');
+    const first = http.expectOne('/api/assistant/turn/stream');
     const conversationId = first.request.body.conversationId;
     const firstTurnId = first.request.body.turnId;
     first.flush(turn());
 
     service.updateDraft('Second');
     service.submit();
-    const second = http.expectOne('/api/assistant/turn');
+    const second = http.expectOne('/api/assistant/turn/stream');
     expect(second.request.body.conversationId).toBe(conversationId);
     expect(second.request.body.turnId).not.toBe(firstTurnId);
     second.flush(turn());
@@ -569,7 +569,7 @@ describe('AssistantService voice transcript alignment', () => {
 
     service.updateDraft('Keep me in the old ledger');
     service.submit();
-    http.expectOne('/api/assistant/turn').flush(turn());
+    http.expectOne('/api/assistant/turn/stream').flush(turn());
     expect(service.entries().length).toBeGreaterThan(0);
 
     service.newConversation();
@@ -583,7 +583,7 @@ describe('AssistantService voice transcript alignment', () => {
     service.open();
     service.updateDraft('First question');
     service.submit();
-    http.expectOne('/api/assistant/turn').flush(turn({ reply: 'First answer' }));
+    http.expectOne('/api/assistant/turn/stream').flush(turn({ reply: 'First answer' }));
 
     const originalConversationId = service.conversationId();
     const stored = sessionStorage.getItem(ASSISTANT_SESSION_STORAGE_KEY);
@@ -601,7 +601,7 @@ describe('AssistantService voice transcript alignment', () => {
 
     service.updateDraft('Follow up');
     service.submit();
-    const request = http.expectOne('/api/assistant/turn');
+    const request = http.expectOne('/api/assistant/turn/stream');
     expect(request.request.body.conversationId).toBe(originalConversationId);
     expect(request.request.body.history[0]).toMatchObject({
       role: 'user',
@@ -621,7 +621,7 @@ describe('AssistantService voice transcript alignment', () => {
   it('restores an uncertain delivery with the exact same TurnId after reload', () => {
     service.updateDraft('Capture this once');
     service.submit();
-    const first = http.expectOne('/api/assistant/turn');
+    const first = http.expectOne('/api/assistant/turn/stream');
     const originalTurnId = first.request.body.turnId;
     const originalConversationId = first.request.body.conversationId;
     first.error(new ProgressEvent('error'));
@@ -636,7 +636,7 @@ describe('AssistantService voice transcript alignment', () => {
     expect(service.history()).toEqual([]);
 
     service.submit();
-    const retry = http.expectOne('/api/assistant/turn');
+    const retry = http.expectOne('/api/assistant/turn/stream');
     expect(retry.request.body.turnId).toBe(originalTurnId);
     expect(retry.request.body.idempotencyKey).toBe(originalTurnId);
     expect(retry.request.body.conversationId).toBe(originalConversationId);
@@ -647,7 +647,7 @@ describe('AssistantService voice transcript alignment', () => {
     fake.set({ bookFormat: 'physical' });
     service.updateDraft('A thought I cannot place');
     service.submit();
-    http.expectOne('/api/assistant/turn').flush(
+    http.expectOne('/api/assistant/turn/stream').flush(
       turn({
         reply: 'What page are you on?',
         anchorPrompt: {
@@ -669,7 +669,7 @@ describe('AssistantService voice transcript alignment', () => {
 
     service.updateDraft('247');
     service.submit();
-    const answer = http.expectOne('/api/assistant/turn');
+    const answer = http.expectOne('/api/assistant/turn/stream');
     expect(answer.request.body.message).toBe('247');
     expect(answer.request.body.continuationId).toBe('continuation-reload');
     answer.flush(turn({ acknowledgement: 'Saved.', capturedNoteId: 'note-reload' }));
@@ -678,7 +678,7 @@ describe('AssistantService voice transcript alignment', () => {
   it('persists a New conversation as a clean replacement for the old session', () => {
     service.updateDraft('Old conversation');
     service.submit();
-    http.expectOne('/api/assistant/turn').flush(turn({ reply: 'Old reply' }));
+    http.expectOne('/api/assistant/turn/stream').flush(turn({ reply: 'Old reply' }));
 
     const oldConversationId = service.conversationId();
     service.newConversation();
@@ -703,7 +703,7 @@ describe('AssistantService voice transcript alignment', () => {
     service.updateDraft('A thought');
     service.submit();
 
-    const request = http.expectOne('/api/assistant/turn');
+    const request = http.expectOne('/api/assistant/turn/stream');
     expect('processingMode' in request.request.body).toBe(false);
     request.flush(turn({ capturedNoteId: 'note-1' }));
 
@@ -719,7 +719,7 @@ describe('AssistantService voice transcript alignment', () => {
       // Dispatch is synchronous, so the turn is remembered before the reply.
       expect(service.history()).toEqual([{ role: 'user', text: 'What did I just read?' }]);
 
-      http.expectOne('/api/assistant/turn').flush(turn({ reply: 'The snow chapter.' }));
+      http.expectOne('/api/assistant/turn/stream').flush(turn({ reply: 'The snow chapter.' }));
 
       expect(service.history()).toEqual([
         { role: 'user', text: 'What did I just read?' },
@@ -732,7 +732,7 @@ describe('AssistantService voice transcript alignment', () => {
       service.updateDraft('A question that fails');
       service.submit();
 
-      http.expectOne('/api/assistant/turn').error(new ProgressEvent('error'));
+      http.expectOne('/api/assistant/turn/stream').error(new ProgressEvent('error'));
 
       expect(service.history()).toEqual([]);
       expect(service.draft()).toBe('A question that fails');
@@ -742,7 +742,7 @@ describe('AssistantService voice transcript alignment', () => {
       service.open();
       service.updateDraft('First');
       service.submit();
-      http.expectOne('/api/assistant/turn').flush(turn({ reply: 'First reply' }));
+      http.expectOne('/api/assistant/turn/stream').flush(turn({ reply: 'First reply' }));
 
       fake.set({
         surface: 'reader',
@@ -753,7 +753,7 @@ describe('AssistantService voice transcript alignment', () => {
       });
       service.updateDraft('Second');
       service.submit();
-      const request = http.expectOne('/api/assistant/turn');
+      const request = http.expectOne('/api/assistant/turn/stream');
       const history = request.request.body.history as AssistantHistoryMessage[];
 
       expect(history).toHaveLength(2);
@@ -777,12 +777,12 @@ describe('AssistantService voice transcript alignment', () => {
       for (let i = 1; i <= 25; i += 1) {
         service.updateDraft(`Thought ${i}`);
         service.submit();
-        http.expectOne('/api/assistant/turn').flush(turn({ reply: `Reply ${i}` }));
+        http.expectOne('/api/assistant/turn/stream').flush(turn({ reply: `Reply ${i}` }));
       }
 
       service.updateDraft('Twenty sixth');
       service.submit();
-      const request = http.expectOne('/api/assistant/turn');
+      const request = http.expectOne('/api/assistant/turn/stream');
       const history = request.request.body.history as AssistantHistoryMessage[];
 
       expect(history).toHaveLength(50);
@@ -797,11 +797,11 @@ describe('AssistantService voice transcript alignment', () => {
       service.open();
       service.updateDraft('Give me a detailed answer');
       service.submit();
-      http.expectOne('/api/assistant/turn').flush(turn({ reply: longAnswer }));
+      http.expectOne('/api/assistant/turn/stream').flush(turn({ reply: longAnswer }));
 
       service.updateDraft('What did you mean by the final distinction?');
       service.submit();
-      const request = http.expectOne('/api/assistant/turn');
+      const request = http.expectOne('/api/assistant/turn/stream');
       const history = request.request.body.history as AssistantHistoryMessage[];
 
       expect(history[1].role).toBe('assistant');
@@ -814,7 +814,7 @@ describe('AssistantService voice transcript alignment', () => {
       service.open();
       service.updateDraft('Do the thing and show me the passage');
       service.submit();
-      http.expectOne('/api/assistant/turn').flush(
+      http.expectOne('/api/assistant/turn/stream').flush(
         turn({
           reply: 'Done.',
           executedCapabilities: ['library_update_book'],
@@ -835,7 +835,7 @@ describe('AssistantService voice transcript alignment', () => {
 
       service.updateDraft('What about that source?');
       service.submit();
-      const request = http.expectOne('/api/assistant/turn');
+      const request = http.expectOne('/api/assistant/turn/stream');
       const history = request.request.body.history as AssistantHistoryMessage[];
       const root = history[0];
 
@@ -861,7 +861,7 @@ describe('AssistantService voice transcript alignment', () => {
       service.open();
       service.updateDraft('What did I just read?');
       service.submit();
-      http.expectOne('/api/assistant/turn').flush(turn({ reply: 'The snow chapter.' }));
+      http.expectOne('/api/assistant/turn/stream').flush(turn({ reply: 'The snow chapter.' }));
 
       expect(service.entries().map((entry) => entry.kind)).toEqual(['user', 'assistant']);
       expect(service.entries()[0]).toMatchObject({
@@ -878,12 +878,12 @@ describe('AssistantService voice transcript alignment', () => {
 
       service.updateDraft('The Magic Mountain');
       service.submit();
-      http.expectOne('/api/assistant/turn').flush(turn({ reply: 'Noted.' }));
+      http.expectOne('/api/assistant/turn/stream').flush(turn({ reply: 'Noted.' }));
       const typed = service.entries().find((entry) => entry.kind === 'user');
 
       service.insertTranscript('The Magic Mountain');
       vi.advanceTimersByTime(TRANSCRIPT_AUTO_SEND_DELAY_MS);
-      http.expectOne('/api/assistant/turn').flush(turn({ reply: 'Noted.' }));
+      http.expectOne('/api/assistant/turn/stream').flush(turn({ reply: 'Noted.' }));
       const voiced = service.entries().filter((entry) => entry.kind === 'user')[1];
 
       expect(typed).toBeTruthy();
@@ -898,12 +898,12 @@ describe('AssistantService voice transcript alignment', () => {
     service.open();
     service.updateDraft('First');
     service.submit();
-    http.expectOne('/api/assistant/turn').flush(turn({ capturedNoteId: 'note-1' }));
+    http.expectOne('/api/assistant/turn/stream').flush(turn({ capturedNoteId: 'note-1' }));
     expect(service.capturedNoteId()).toBe('note-1');
 
     service.updateDraft('Second');
     service.submit();
-    http.expectOne('/api/assistant/turn').flush(turn());
+    http.expectOne('/api/assistant/turn/stream').flush(turn());
     expect(service.capturedNoteId()).toBeNull();
     expect(service.rawOpen()).toBe(false);
   });
@@ -937,7 +937,7 @@ describe('AssistantService voice transcript alignment', () => {
     service.applySuggestion({ kind: 'collection', label: 'Essays', reason: 'A collection.', value: 'col-1' });
 
     expect(service.lastError()).toBeNull();
-    http.expectNone('/api/assistant/turn');
+    http.expectNone('/api/assistant/turn/stream');
   });
 
   it('needs a review target before it will request a concept link', () => {
@@ -948,7 +948,7 @@ describe('AssistantService voice transcript alignment', () => {
       value: 'c-alpha',
     });
     expect(service.lastError()).toContain('Second Brain');
-    http.expectNone('/api/assistant/turn');
+    http.expectNone('/api/assistant/turn/stream');
   });
 
   it('requests an immediate concept link and emits only a backend-confirmed action receipt', () => {
@@ -968,7 +968,7 @@ describe('AssistantService voice transcript alignment', () => {
       value: 'c-alpha',
     });
 
-    const request = http.expectOne('/api/assistant/turn');
+    const request = http.expectOne('/api/assistant/turn/stream');
     expect(request.request.body.context.brainReviewNoteId).toBe('note-1');
     expect(request.request.body.message).toContain('Mountains');
     request.flush(turn({ executedCapabilities: ['notes_link_existing_concept'] }));
@@ -1024,12 +1024,12 @@ describe('AssistantService voice transcript alignment', () => {
     // turn, which is what arms natural-language confirmation.
     service.updateDraft('Remove the obsolete collection.');
     service.submit();
-    http.expectOne('/api/assistant/turn').flush(turn({ pendingPlan: plan }));
+    http.expectOne('/api/assistant/turn/stream').flush(turn({ pendingPlan: plan }));
 
     service.updateDraft('Go ahead.');
     service.submit();
 
-    http.expectNone('/api/assistant/turn');
+    http.expectNone('/api/assistant/turn/stream');
     const request = http.expectOne('/api/assistant/plan/approve');
     expect(request.request.body).toEqual({ planId: 'plan-1', approvalToken: 'token-1' });
     expect(service.entries().at(-1)?.kind).toBe('user');
@@ -1068,13 +1068,13 @@ describe('AssistantService voice transcript alignment', () => {
 
     service.updateDraft('Remove the obsolete collection.');
     service.submit();
-    http.expectOne('/api/assistant/turn').flush(turn({ pendingPlan: plan }));
+    http.expectOne('/api/assistant/turn/stream').flush(turn({ pendingPlan: plan }));
 
     service.updateDraft('Yes, but explain what will happen first.');
     service.submit();
 
     http.expectNone('/api/assistant/plan/approve');
-    const discussion = http.expectOne('/api/assistant/turn');
+    const discussion = http.expectOne('/api/assistant/turn/stream');
     discussion.flush(turn({ reply: 'The collection will be deleted; its books remain.' }));
 
     expect(service.pendingPlan()?.planId).toBe('plan-1');
@@ -1084,7 +1084,7 @@ describe('AssistantService voice transcript alignment', () => {
     service.updateDraft('yes');
     service.submit();
     http.expectNone('/api/assistant/plan/approve');
-    const later = http.expectOne('/api/assistant/turn');
+    const later = http.expectOne('/api/assistant/turn/stream');
     later.flush(turn());
   });
 
@@ -1098,12 +1098,12 @@ describe('AssistantService voice transcript alignment', () => {
 
     service.updateDraft('Remove the obsolete collection.');
     service.submit();
-    http.expectOne('/api/assistant/turn').flush(turn({ pendingPlan: plan }));
+    http.expectOne('/api/assistant/turn/stream').flush(turn({ pendingPlan: plan }));
 
     service.updateDraft('No thanks.');
     service.submit();
 
-    http.expectNone('/api/assistant/turn');
+    http.expectNone('/api/assistant/turn/stream');
     http.expectNone('/api/assistant/plan/approve');
     expect(service.pendingPlan()).toBeNull();
     expect(service.entries().at(-1)?.text).toBe("Okay. I won't make that change.");
@@ -1131,6 +1131,6 @@ describe('AssistantService voice transcript alignment', () => {
     service.dismissSuggestions();
 
     expect(service.suggestions()).toEqual([]);
-    http.expectNone('/api/assistant/turn');
+    http.expectNone('/api/assistant/turn/stream');
   });
 });

@@ -17,7 +17,7 @@
  * and is dispatched after the grace window, with a pre-dispatch Undo.
  */
 import { Injectable, computed, effect, inject, signal } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpEventType } from '@angular/common/http';
 import { Subject } from 'rxjs';
 
 import {
@@ -156,6 +156,28 @@ export interface AssistantTurnErrorDto {
   code: string;
   message: string;
 }
+
+export interface AssistantTurnActivityDto {
+  code: string;
+  message: string;
+}
+
+export interface AssistantTurnFailureDto {
+  code: string;
+  message: string;
+  retryable: boolean;
+}
+
+export interface AssistantTurnEventDto {
+  turnId: string;
+  sequence: number;
+  kind: 'started' | 'activity' | 'completed' | 'failed' | 'cancelled' | string;
+  activity?: AssistantTurnActivityDto | null;
+  failure?: AssistantTurnFailureDto | null;
+  response?: AssistantTurnResponse | null;
+}
+
+export const ASSISTANT_PENDING_DELAY_MS = 350;
 
 /** One normal turn result, mirroring `AssistantTurnResponse`. */
 export interface AssistantTurnResponse {
@@ -356,6 +378,13 @@ export class AssistantService {
   );
   readonly sending = signal(false);
   readonly lastError = signal<string | null>(null);
+  /** Exact logical turn currently executing through the streamed transport. */
+  readonly activeTurnId = signal<string | null>(null);
+  /** Product-owned activity only; never model reasoning or raw tool data. */
+  readonly turnActivity = signal<AssistantTurnActivityDto | null>(null);
+  /** Delayed so fast/simple turns complete without flashing progress chrome. */
+  readonly pendingVisible = signal(false);
+  private pendingTimer: ReturnType<typeof setTimeout> | null = null;
 
   /** The most recent turn, for the transcript and live verification. */
   readonly lastTurn = signal<AssistantTurnResponse | null>(null);
@@ -613,6 +642,7 @@ export class AssistantService {
     this.lastError.set(null);
     this.draft.set('');
     this.capturedNoteId.set(null);
+    this.finishTurnUi(null);
     this.rawOpen.set(false);
     this.rawTranscript.set(null);
     this.rawLoading.set(false);
@@ -1031,114 +1061,363 @@ export class AssistantService {
     this.updateUserDelivery(turn.userEntryId, 'sending', null);
     this.retryableTurn.set(turn);
     this.sending.set(true);
+    this.beginTurnUi(turn.turnId);
+
     // Persist before transport begins. A reload while the HTTP result is
     // ambiguous can then retry this exact logical TurnId instead of inventing a
     // new turn and defeating #560's mutation receipts.
     this.persistSession();
 
-    this.http.post<AssistantTurnResponse>('/api/assistant/turn', turn.request).subscribe({
-      next: (response) => {
-        this.sending.set(false);
-        if (this.retryableTurn()?.turnId === turn.turnId) this.retryableTurn.set(null);
-        this.updateUserDelivery(turn.userEntryId, 'complete', null);
-        this.lastError.set(response.error?.message ?? null);
-        this.lastTurn.set(response);
-        this.suggestions.set(response.suggestions ?? []);
-        this.updateTurnHistoryFacts(
-          turn.userEntryId,
-          response.sources ?? [],
-          response.executedCapabilities ?? [],
-          response.capturedNoteId ?? null,
-        );
+    let receivedCharacters = 0;
+    let pendingText = '';
+    let lastSequence = 0;
+    let terminalHandled = false;
 
-        if (response.pendingPlan) {
-          this.pendingPlan.set(response.pendingPlan);
-          this.directPlanApprovalArmed.set(true);
+    const handleValue = (value: unknown): void => {
+      if (terminalHandled) return;
+
+      // Unit/backward compatibility: a complete response object is treated as
+      // one completed terminal event. Production uses the event envelope.
+      if (isAssistantTurnResponse(value)) {
+        terminalHandled = true;
+        this.applyTurnResponse(turn, value);
+        this.finishTurnUi(turn.turnId);
+        return;
+      }
+
+      if (!isAssistantTurnEvent(value)
+          || value.turnId !== turn.turnId
+          || value.sequence <= lastSequence) {
+        return;
+      }
+
+      lastSequence = value.sequence;
+
+      if (value.kind === 'activity' && value.activity) {
+        this.showTurnActivity(turn.turnId, value.activity);
+        return;
+      }
+
+      if (value.kind === 'completed' && value.response) {
+        terminalHandled = true;
+        this.applyTurnResponse(turn, value.response);
+        this.finishTurnUi(turn.turnId);
+        return;
+      }
+
+      if (value.kind === 'failed') {
+        terminalHandled = true;
+        this.handleTerminalFailure(turn, value.failure, value.response ?? null);
+        return;
+      }
+
+      if (value.kind === 'cancelled') {
+        terminalHandled = true;
+        this.handleTerminalCancellation(turn, value.failure, value.response ?? null);
+      }
+    };
+
+    const consumeCumulative = (text: string, final: boolean): void => {
+      const delta = text.slice(receivedCharacters);
+      receivedCharacters = text.length;
+      pendingText += delta;
+
+      const lines = pendingText.split('\n');
+      pendingText = lines.pop() ?? '';
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try {
+          handleValue(JSON.parse(trimmed));
+        } catch {
+          // A malformed product-event line is a transport failure, not a reason
+          // to expose its raw contents in the transcript.
+        }
+      }
+
+      if (final && pendingText.trim()) {
+        try {
+          handleValue(JSON.parse(pendingText.trim()));
+        } catch {
+          // Handled below as an incomplete/invalid transport.
+        }
+        pendingText = '';
+      }
+    };
+
+    this.http.post('/api/assistant/turn/stream', turn.request, {
+      observe: 'events',
+      reportProgress: true,
+      responseType: 'text',
+    }).subscribe({
+      next: (event) => {
+        if (event.type === HttpEventType.DownloadProgress) {
+          consumeCumulative(event.partialText ?? '', false);
+          return;
         }
 
-        for (const capability of response.executedCapabilities ?? []) {
-          this.actionExecuted.next({ capability, context: turn.context });
-        }
+        if (event.type === HttpEventType.Response) {
+          const body = typeof event.body === 'string'
+            ? event.body
+            : JSON.stringify(event.body ?? '');
+          consumeCumulative(body, true);
 
-        this.capturedNoteId.set(response.capturedNoteId ?? null);
-        this.rawOpen.set(false);
-        this.rawTranscript.set(null);
-        this.rawLoading.set(false);
-
-        if (response.acknowledgement) {
-          this.pushEntry(
-            turn.turnId,
-            'assistant',
-            response.acknowledgement,
-            this.anchorLabel({ ...turn.context, anchor: turn.displayAnchor }),
-            'Saved',
-          );
-        }
-
-        let promptText: string | null = null;
-        if (response.anchorPrompt) {
-          const kind = response.anchorPrompt.kind;
-          const continuationId = response.anchorPrompt.continuationId?.trim();
-          if (
-            continuationId &&
-            (kind === 'physical_page' ||
-              kind === 'external_audio_timestamp' ||
-              kind === 'book')
-          ) {
-            const prompt: AssistantAnchorPrompt = {
-              kind,
-              question: response.anchorPrompt.question,
-              continuationId,
-            };
-            this.pendingAnchor.set(prompt);
-            this.pendingContinuationContext.set(turn.context);
-            promptText = prompt.question;
-            this.pushEntry(turn.turnId, 'assistant', prompt.question, null, null);
-          } else {
-            this.pendingAnchor.set(null);
-            this.pendingContinuationContext.set(null);
-            this.lastError.set(
-              response.error?.message ??
-                'The assistant requested follow-up input without a valid continuation.',
+          if (!terminalHandled) {
+            this.handleTransportFailure(
+              turn,
+              'assistant_network_error',
+              'The Ask Nostos response ended unexpectedly. Your message is ready to retry.',
             );
           }
-        } else {
-          this.pendingAnchor.set(null);
-          this.pendingContinuationContext.set(null);
         }
-
-        if (
-          response.reply &&
-          (!promptText || response.reply.trim() !== promptText.trim())
-        ) {
-          this.pushEntry(
-            turn.turnId,
-            response.error ? 'error' : 'assistant',
-            response.reply,
-            null,
-            response.error?.code ?? null,
-            response.sources ?? [],
-          );
-        }
-
-        this.persistSession();
       },
       error: () => {
-        this.sending.set(false);
-        this.retryableTurn.set(turn);
-        this.lastError.set(
-          'The assistant could not be reached. Your message is still in the composer to retry.',
+        if (terminalHandled) return;
+        const offline =
+          typeof globalThis.navigator !== 'undefined'
+          && globalThis.navigator.onLine === false;
+        this.handleTransportFailure(
+          turn,
+          offline ? 'assistant_offline' : 'assistant_network_error',
+          offline
+            ? 'You are offline. Reconnect and retry this message.'
+            : 'The connection to Ask Nostos was interrupted. Your message is ready to retry.',
         );
-        this.draft.set(turn.text);
-        this.updateUserDelivery(turn.userEntryId, 'retryable', 'Delivery uncertain');
-
-        if (turn.continuationPrompt) {
-          this.pendingAnchor.set(turn.continuationPrompt);
-          this.pendingContinuationContext.set(turn.context);
-        }
-        this.persistSession();
       },
     });
+  }
+
+  /** Stop only the currently visible logical turn. No new turn is created. */
+  stopActiveTurn(): void {
+    const turnId = this.activeTurnId();
+    if (!turnId || !this.sending()) return;
+
+    this.http.post('/api/assistant/turn/cancel', {
+      conversationId: this.conversationId(),
+      turnId,
+    }).subscribe({
+      error: () => {
+        this.lastError.set('Ask Nostos could not send the Stop request.');
+      },
+    });
+  }
+
+  private beginTurnUi(turnId: string): void {
+    this.clearPendingTimer();
+    this.activeTurnId.set(turnId);
+    this.turnActivity.set(null);
+    this.pendingVisible.set(false);
+    this.pendingTimer = setTimeout(() => {
+      this.pendingTimer = null;
+      if (this.sending() && this.activeTurnId() === turnId) {
+        this.pendingVisible.set(true);
+      }
+    }, ASSISTANT_PENDING_DELAY_MS);
+  }
+
+  private showTurnActivity(turnId: string, activity: AssistantTurnActivityDto): void {
+    if (this.activeTurnId() !== turnId) return;
+    this.clearPendingTimer();
+    this.turnActivity.set(activity);
+    this.pendingVisible.set(true);
+  }
+
+  private finishTurnUi(turnId: string | null): void {
+    if (turnId !== null && this.activeTurnId() !== turnId) return;
+    this.clearPendingTimer();
+    this.activeTurnId.set(null);
+    this.turnActivity.set(null);
+    this.pendingVisible.set(false);
+    this.sending.set(false);
+  }
+
+  private clearPendingTimer(): void {
+    if (this.pendingTimer !== null) {
+      clearTimeout(this.pendingTimer);
+      this.pendingTimer = null;
+    }
+  }
+
+  private handleTerminalFailure(
+    turn: PreparedAssistantTurn,
+    failure: AssistantTurnFailureDto | null | undefined,
+    response: AssistantTurnResponse | null,
+  ): void {
+    if (response) {
+      this.applyTurnResponse(turn, response);
+    }
+
+    const message =
+      failure?.message
+      ?? response?.error?.message
+      ?? 'Ask Nostos could not complete this turn.';
+    const code =
+      failure?.code
+      ?? response?.error?.code
+      ?? 'assistant_turn_failed';
+
+    this.lastError.set(message);
+
+    if (!response?.reply && !response?.acknowledgement) {
+      this.pushEntry(turn.turnId, 'error', message, null, code, [], false);
+    }
+
+    if (failure?.retryable && !response) {
+      this.retryableTurn.set(turn);
+      this.draft.set(turn.text);
+      this.updateUserDelivery(turn.userEntryId, 'retryable', 'Ready to retry');
+      if (turn.continuationPrompt) {
+        this.pendingAnchor.set(turn.continuationPrompt);
+        this.pendingContinuationContext.set(turn.context);
+      }
+    } else {
+      if (this.retryableTurn()?.turnId === turn.turnId) this.retryableTurn.set(null);
+      this.updateUserDelivery(turn.userEntryId, 'complete', null);
+    }
+
+    this.finishTurnUi(turn.turnId);
+    this.persistSession();
+  }
+
+  private handleTerminalCancellation(
+    turn: PreparedAssistantTurn,
+    failure: AssistantTurnFailureDto | null | undefined,
+    response: AssistantTurnResponse | null,
+  ): void {
+    if (response) this.applyTurnResponse(turn, response);
+
+    if (this.retryableTurn()?.turnId === turn.turnId) this.retryableTurn.set(null);
+    this.updateUserDelivery(turn.userEntryId, 'complete', null);
+    this.lastError.set(null);
+
+    const stoppedMessage =
+      response?.error?.message
+      ?? failure?.message
+      ?? 'Stopped.';
+    this.pushEntry(
+      turn.turnId,
+      'assistant',
+      stoppedMessage,
+      null,
+      'Stopped',
+      [],
+      false,
+    );
+
+    this.finishTurnUi(turn.turnId);
+    this.persistSession();
+  }
+
+  private handleTransportFailure(
+    turn: PreparedAssistantTurn,
+    code: string,
+    message: string,
+  ): void {
+    this.finishTurnUi(turn.turnId);
+    this.retryableTurn.set(turn);
+    this.lastError.set(message);
+    this.draft.set(turn.text);
+    this.updateUserDelivery(
+      turn.userEntryId,
+      'retryable',
+      code === 'assistant_offline' ? 'Offline' : 'Delivery uncertain',
+    );
+    this.pushEntry(turn.turnId, 'error', message, null, code, [], false);
+
+    if (turn.continuationPrompt) {
+      this.pendingAnchor.set(turn.continuationPrompt);
+      this.pendingContinuationContext.set(turn.context);
+    }
+    this.persistSession();
+  }
+
+  private applyTurnResponse(
+    turn: PreparedAssistantTurn,
+    response: AssistantTurnResponse,
+  ): void {
+    if (this.retryableTurn()?.turnId === turn.turnId) this.retryableTurn.set(null);
+    this.updateUserDelivery(turn.userEntryId, 'complete', null);
+    this.lastError.set(response.error?.message ?? null);
+    this.lastTurn.set(response);
+    this.suggestions.set(response.suggestions ?? []);
+    this.updateTurnHistoryFacts(
+      turn.userEntryId,
+      response.sources ?? [],
+      response.executedCapabilities ?? [],
+      response.capturedNoteId ?? null,
+    );
+
+    if (response.pendingPlan) {
+      this.pendingPlan.set(response.pendingPlan);
+      this.directPlanApprovalArmed.set(true);
+    }
+
+    for (const capability of response.executedCapabilities ?? []) {
+      this.actionExecuted.next({ capability, context: turn.context });
+    }
+
+    this.capturedNoteId.set(response.capturedNoteId ?? null);
+    this.rawOpen.set(false);
+    this.rawTranscript.set(null);
+    this.rawLoading.set(false);
+
+    if (response.acknowledgement) {
+      this.pushEntry(
+        turn.turnId,
+        'assistant',
+        response.acknowledgement,
+        this.anchorLabel({ ...turn.context, anchor: turn.displayAnchor }),
+        'Saved',
+      );
+    }
+
+    let promptText: string | null = null;
+    if (response.anchorPrompt) {
+      const kind = response.anchorPrompt.kind;
+      const continuationId = response.anchorPrompt.continuationId?.trim();
+      if (
+        continuationId
+        && (kind === 'physical_page'
+          || kind === 'external_audio_timestamp'
+          || kind === 'book')
+      ) {
+        const prompt: AssistantAnchorPrompt = {
+          kind,
+          question: response.anchorPrompt.question,
+          continuationId,
+        };
+        this.pendingAnchor.set(prompt);
+        this.pendingContinuationContext.set(turn.context);
+        promptText = prompt.question;
+        this.pushEntry(turn.turnId, 'assistant', prompt.question, null, null);
+      } else {
+        this.pendingAnchor.set(null);
+        this.pendingContinuationContext.set(null);
+        this.lastError.set(
+          response.error?.message
+            ?? 'The assistant requested follow-up input without a valid continuation.',
+        );
+      }
+    } else {
+      this.pendingAnchor.set(null);
+      this.pendingContinuationContext.set(null);
+    }
+
+    if (
+      response.reply
+      && (!promptText || response.reply.trim() !== promptText.trim())
+    ) {
+      this.pushEntry(
+        turn.turnId,
+        response.error ? 'error' : 'assistant',
+        response.reply,
+        null,
+        response.error?.code ?? null,
+        response.sources ?? [],
+      );
+    }
+
+    this.persistSession();
   }
 
   private effectiveAnchor(context: AssistantContext): AssistantAnchor | null {
@@ -1413,6 +1692,27 @@ function isRestorableConversationEvent(value: unknown): value is AssistantConver
     Array.isArray(event.sources) &&
     Array.isArray(event.historyEvidence) &&
     Array.isArray(event.historyActions)
+  );
+}
+
+function isAssistantTurnEvent(value: unknown): value is AssistantTurnEventDto {
+  if (!value || typeof value !== 'object') return false;
+  const event = value as Partial<AssistantTurnEventDto>;
+  return (
+    typeof event.turnId === 'string'
+    && typeof event.sequence === 'number'
+    && typeof event.kind === 'string'
+  );
+}
+
+function isAssistantTurnResponse(value: unknown): value is AssistantTurnResponse {
+  if (!value || typeof value !== 'object') return false;
+  const response = value as Partial<AssistantTurnResponse>;
+  return (
+    typeof response.reply === 'string'
+    && Array.isArray(response.suggestions)
+    && ('pendingPlan' in response)
+    && ('anchorPrompt' in response)
   );
 }
 
