@@ -275,7 +275,7 @@ public sealed class NineRouterLlmProviderTests
     [Theory]
     [InlineData(HttpStatusCode.Unauthorized, LlmErrorCodes.Permission)]
     [InlineData(HttpStatusCode.Forbidden, LlmErrorCodes.Permission)]
-    [InlineData(HttpStatusCode.TooManyRequests, LlmErrorCodes.Permission)]
+    [InlineData(HttpStatusCode.TooManyRequests, LlmErrorCodes.RateLimited)]
     [InlineData(HttpStatusCode.BadGateway, LlmErrorCodes.Provider)]
     [InlineData(HttpStatusCode.InternalServerError, LlmErrorCodes.Provider)]
     public async Task Maps_provider_status_codes_to_data(HttpStatusCode status, string expectedCode)

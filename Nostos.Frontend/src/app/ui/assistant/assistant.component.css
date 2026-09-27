@@ -561,8 +561,26 @@
 }
 
 /* ------------------------------
-   Thinking indicator
+   Turn activity
 ------------------------------ */
+.pending-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 1.9rem;
+}
+
+.turn-activity {
+  color: var(--color-text-muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.turn-stop {
+  flex: 0 0 auto;
+}
+
 .entry-pending .thinking-dots {
   display: inline-flex;
   align-items: center;

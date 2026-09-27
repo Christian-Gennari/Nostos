@@ -152,6 +152,8 @@ export class SecondBrain implements AfterViewChecked {
   browseNotes = signal<NoteSearchHit[]>([]);
   browseTotal = signal(0);
   browseQuery = signal('');
+  browseBookId = signal<string | null>(null);
+  browseBookTitle = signal('');
   browseWithoutConcepts = signal(false);
   browseOldestFirst = signal(false);
   browseLoading = signal(false);
@@ -213,6 +215,10 @@ export class SecondBrain implements AfterViewChecked {
   reviewPickerOpen = signal(false);
   reviewPickerQuery = signal('');
   reviewPickerConceptId = signal<string | null>(null);
+  private reviewSeq = 0;
+  private reviewBrowseQuery = '';
+  private reviewBookId: string | null = null;
+  private reviewOldestFirst = false;
   private noteSearchTimer: ReturnType<typeof setTimeout> | null = null;
   private noteSearchSeq = 0;
   indexSort = signal<IndexSort>(this.readStoredSort());
@@ -342,6 +348,12 @@ export class SecondBrain implements AfterViewChecked {
    * gap to the total IS the unfetched remainder.
    */
   reviewHasMore = computed(() => this.reviewQueue().length < this.reviewTotal());
+  reviewCanGoBack = computed(() => this.reviewQueue().findIndex(
+    (row) => row.id === this.reviewNote()?.id) > 0);
+  reviewCanAdvance = computed(() => {
+    const index = this.reviewQueue().findIndex((row) => row.id === this.reviewNote()?.id);
+    return index >= 0 && (index < this.reviewQueue().length - 1 || this.reviewHasMore());
+  });
 
   /** The concept the user picked to link the reviewed note to. */
   reviewPickerConcept = computed(() => {
@@ -558,6 +570,13 @@ export class SecondBrain implements AfterViewChecked {
     this.reloadBrowse();
   }
 
+  setBrowseBook(bookId: string | null, title = ''): void {
+    if (this.browseHasUnsavedEdit()) return;
+    this.browseBookId.set(bookId);
+    this.browseBookTitle.set(bookId ? title : '');
+    this.reloadBrowse();
+  }
+
   setBrowseOldestFirst(value: boolean): void {
     if (this.browseHasUnsavedEdit()) return;
     this.browseOldestFirst.set(value);
@@ -671,6 +690,7 @@ export class SecondBrain implements AfterViewChecked {
     this.browseError.set(false);
     this.notesService.browse({
       query: this.browseQuery(),
+      bookId: this.browseBookId() ?? undefined,
       withoutConcepts: this.browseWithoutConcepts(),
       oldestFirst: this.browseOldestFirst(),
       limit: REVIEW_PAGE_SIZE,
@@ -820,12 +840,16 @@ export class SecondBrain implements AfterViewChecked {
   openReview(): void {
     if (this.browseHasUnsavedEdit()) return;
     this.reviewReturnMode = this.isBrowsingNotes() ? 'notes' : 'list';
-    if (this.reviewReturnMode === 'notes') {
-      // A note may have been linked from Notes since the previous review visit.
-      this.reviewLoaded.set(false);
-      this.reviewQueue.set([]);
-      this.reviewTotal.set(0);
-    }
+    this.reviewBrowseQuery = this.reviewReturnMode === 'notes' ? this.browseQuery() : '';
+    this.reviewBookId = this.reviewReturnMode === 'notes' ? this.browseBookId() : null;
+    this.reviewOldestFirst = this.reviewReturnMode === 'notes' && this.browseOldestFirst();
+    // A previous request may still be in flight. Its response belongs to the
+    // previous review, including its previous filters.
+    this.reviewSeq++;
+    this.reviewLoading.set(false);
+    this.reviewLoaded.set(false);
+    this.reviewQueue.set([]);
+    this.reviewTotal.set(0);
     this.clearSourceSelectionState();
     this.closeWritingHandoff();
     this.clearSearch();
@@ -834,7 +858,7 @@ export class SecondBrain implements AfterViewChecked {
     this.reviewEditing.set(false);
     this.closeReviewPicker();
     this.viewMode.set('unlinked');
-    if (!this.reviewLoaded()) this.loadReviewPage();
+    this.loadReviewPage();
   }
 
   /** Leave the review task, back to the concept index. */
@@ -851,19 +875,35 @@ export class SecondBrain implements AfterViewChecked {
    * that has been resolved is gone from the server's set too, so the rows this
    * browser holds are exactly the first N of the server's current order.
    */
-  loadReviewPage(): void {
+  loadReviewPage(advanceFromId: string | null = null): void {
     if (this.reviewLoading()) return;
+    const seq = this.reviewSeq;
     this.reviewLoading.set(true);
-    this.notesService.unlinkedPage(REVIEW_PAGE_SIZE, this.reviewQueue().length).subscribe({
+    const pageRequest = this.reviewBrowseQuery || this.reviewBookId || this.reviewOldestFirst
+      ? this.notesService.browse({
+          query: this.reviewBrowseQuery,
+          bookId: this.reviewBookId ?? undefined,
+          withoutConcepts: true,
+          oldestFirst: this.reviewOldestFirst,
+          limit: REVIEW_PAGE_SIZE,
+          offset: this.reviewQueue().length,
+        })
+      : this.notesService.unlinkedPage(REVIEW_PAGE_SIZE, this.reviewQueue().length);
+    pageRequest.subscribe({
       next: (page) => {
+        if (seq !== this.reviewSeq) return;
         const held = new Set(this.reviewQueue().map((row) => row.id));
         const fresh = (page.items ?? []).filter((row) => !held.has(row.id));
         this.reviewQueue.set([...this.reviewQueue(), ...fresh]);
         this.reviewTotal.set(page.totalCount ?? this.reviewQueue().length);
+        if (advanceFromId && this.reviewNote()?.id === advanceFromId && fresh.length) {
+          this.reviewId.set(fresh[0].id);
+        }
         this.reviewLoading.set(false);
         this.reviewLoaded.set(true);
       },
       error: () => {
+        if (seq !== this.reviewSeq) return;
         this.reviewLoading.set(false);
         this.toast.error('Notes with no concept could not be loaded');
       },
@@ -896,11 +936,18 @@ export class SecondBrain implements AfterViewChecked {
   skipReviewNote(): void {
     if (this.reviewHasUnsavedEdit()) return;
     const queue = this.reviewQueue();
-    if (queue.length < 2) return;
     const current = this.reviewNote();
+    if (!current) return;
     const index = current ? queue.findIndex((row) => row.id === current.id) : -1;
-    const next = queue[(index + 1) % queue.length];
-    this.focusReviewNote(next.id);
+    const next = queue[index + 1];
+    if (next) this.focusReviewNote(next.id);
+    else if (this.reviewHasMore()) this.loadReviewPage(current.id);
+  }
+
+  previousReviewNote(): void {
+    if (this.reviewHasUnsavedEdit()) return;
+    const index = this.reviewQueue().findIndex((row) => row.id === this.reviewNote()?.id);
+    if (index > 0) this.focusReviewNote(this.reviewQueue()[index - 1].id);
   }
 
   startReviewEdit(): void {

@@ -111,10 +111,16 @@
             {{ browseOldestFirst() ? 'Oldest first' : 'Newest first' }}
           </button>
         </div>
+        @if (browseBookId()) {
+          <button appButton variant="ghost" size="sm" type="button" class="brain-book-filter"
+            [attr.aria-label]="'Clear book filter: ' + browseBookTitle()" (click)="setBrowseBook(null)">
+            {{ browseBookTitle() }} <nostos-icon name="x" [size]="14" />
+          </button>
+        }
       </div>
       <div class="brain-section-header">
         <h2 class="brain-section-title">{{ browseWithoutConcepts() ? 'Without concepts' : 'All notes' }}</h2>
-        @if (browseLoaded()) { <span class="brain-section-count">{{ browseTotal() }} notes</span> }
+        @if (browseLoaded()) { <span class="brain-section-count">{{ browseTotal() }} {{ browseTotal() === 1 ? 'note' : 'notes' }}</span> }
       </div>
       <div class="index-list" role="list" aria-label="Saved notes" [attr.aria-busy]="browseLoading()">
         @if (browseLoading() && !browseLoaded()) {
@@ -385,7 +391,7 @@
       <div class="rail-foot">
         @if (isReviewing()) {
         <button type="button" class="rail-foot-action" (click)="closeReview()">
-          Done reviewing
+          Back to notes
         </button>
         } @else {
         <button type="button" class="rail-foot-action" (click)="openReview()">
@@ -467,6 +473,11 @@
             </div>
             }
             @if (!browseEditing() && !browseSaving()) {
+              @if (note.bookId !== browseBookId()) {
+                <button appButton variant="ghost" size="sm" type="button" (click)="setBrowseBook(note.bookId, note.bookTitle || 'Unknown source')">
+                  Show notes from this book
+                </button>
+              }
               <a class="brain-source-link" [routerLink]="browseSourceParams(note) ? ['/read', note.bookId] : ['/library', note.bookId]"
                 [queryParams]="browseSourceParams(note)">{{ browseSourceParams(note) ? 'Return to passage' : 'Open book' }}</a>
             }
@@ -631,9 +642,10 @@
             <button type="button" class="concept-action" (click)="openWritingHandoff([note.id])">
               Keep with writing…
             </button>
-            <button type="button" class="concept-action" (click)="skipReviewNote()">
-              Next note
-            </button>
+            <button appButton variant="ghost" size="sm" type="button" [disabled]="!reviewCanGoBack()"
+              (click)="previousReviewNote()">Previous note</button>
+            <button appButton variant="ghost" size="sm" type="button" [disabled]="!reviewCanAdvance() || reviewLoading()"
+              (click)="skipReviewNote()">{{ reviewLoading() ? 'Loading…' : 'Next note' }}</button>
           </div>
           @if (browseSourceParams(note); as target) {
             <a class="brain-source-link" [routerLink]="['/read', note.bookId]" [queryParams]="target">Return to passage</a>

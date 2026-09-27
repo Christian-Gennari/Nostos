@@ -149,7 +149,7 @@ public sealed class LlmException(string code, string message) : Exception(messag
 
     public static LlmException PermissionDenied() => new(
         LlmErrorCodes.Permission,
-        "The assistant provider rejected the configured credential or is rate limiting.");
+        "The assistant provider rejected the configured credential.");
 
     public static LlmException RateLimited() => new(
         LlmErrorCodes.RateLimited,

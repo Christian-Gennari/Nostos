@@ -321,6 +321,36 @@ describe('SecondBrain', () => {
       expect(component.browseWithoutConcepts()).toBe(true);
     });
 
+    it('filters one book through the server and reviews only matching unlinked notes', () => {
+      component.setViewMode('notes');
+      browse([linked, unlinked]);
+      component.openNotePanel(unlinked);
+      fixture.detectChanges();
+      const sourceFilter = [...fixture.nativeElement.querySelectorAll('.brain-browse-detail button')]
+        .find((button: HTMLButtonElement) => button.textContent?.includes('Show notes from this book')) as HTMLButtonElement;
+      sourceFilter.click();
+      const filtered = http.expectOne((request) => request.url === '/api/notes');
+      expect(filtered.request.params.get('bookId')).toBe('book-b');
+      filtered.flush({ items: [unlinked], totalCount: 1, offset: 0, limit: 25 });
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('.brain-book-filter')?.textContent).toContain('Another Book');
+
+      component.openReview();
+      const review = http.expectOne((request) => request.url === '/api/notes');
+      expect(review.request.params.get('bookId')).toBe('book-b');
+      expect(review.request.params.get('withoutConcepts')).toBe('true');
+      review.flush({ items: [unlinked], totalCount: 1, offset: 0, limit: 25 });
+      component.closeReview();
+      const restored = http.expectOne((request) => request.url === '/api/notes');
+      expect(restored.request.params.get('bookId')).toBe('book-b');
+      restored.flush({ items: [unlinked], totalCount: 1, offset: 0, limit: 25 });
+
+      component.setBrowseBook(null);
+      const cleared = http.expectOne((request) => request.url === '/api/notes');
+      expect(cleared.request.params.has('bookId')).toBe(false);
+      cleared.flush({ items: [linked, unlinked], totalCount: 2, offset: 0, limit: 25 });
+    });
+
     it('retains an unsaved edit and an unlinked note after a failed save', () => {
       component.setViewMode('notes');
       browse([unlinked]);
@@ -1715,6 +1745,19 @@ describe('SecondBrain', () => {
       expect(component.reviewQueue().length).toBe(component.reviewTotal());
     });
 
+    it('loads the next page when advancing from its last visible note, and moves back without mutating', () => {
+      enterReview([sampleHits[0]], 3);
+      component.skipReviewNote();
+      const next = http.expectOne((request) => request.url === '/api/notes/unlinked');
+      expect(next.request.params.get('offset')).toBe('1');
+      next.flush({ items: [sampleHits[1], thirdHit], totalCount: 3, offset: 1, limit: 25 });
+      fixture.detectChanges();
+      expect(component.reviewNote()?.id).toBe(sampleHits[1].id);
+      component.previousReviewNote();
+      expect(component.reviewNote()?.id).toBe(sampleHits[0].id);
+      http.expectNone((request) => request.method === 'PUT' || request.method === 'POST' || request.method === 'DELETE');
+    });
+
     it('links the reviewed note to an existing concept with an explicit reference, and drops it', () => {
       enterReview();
       component.openReviewPicker();
@@ -1975,7 +2018,7 @@ describe('SecondBrain', () => {
       const assistant = TestBed.inject(AssistantService);
       expect(assistant.isOpen()).toBe(true);
 
-      const request = http.expectOne('/api/assistant/turn');
+      const request = http.expectOne('/api/assistant/turn/stream');
       expect(request.request.body.message).toBe('Where do you think this belongs?');
       expect(request.request.body.context.brainReviewNoteId).toBe('hit-1');
       request.flush({
@@ -2003,7 +2046,7 @@ describe('SecondBrain', () => {
         value: 'c-alpha',
       });
 
-      const turn = http.expectOne('/api/assistant/turn');
+      const turn = http.expectOne('/api/assistant/turn/stream');
       expect(turn.request.body.context.brainReviewNoteId).toBe('hit-1');
       turn.flush({
         reply: 'Linked the note to Alpha.',

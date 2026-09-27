@@ -156,6 +156,245 @@ public sealed class AssistantEndpointTests : IDisposable
         (await ProblemTitleAsync(response)).Should().Be(LlmErrorCodes.NotConfigured);
     }
 
+    [Fact]
+    public async Task Streamed_plain_turn_is_ordered_owned_by_the_requested_turn_and_quiet()
+    {
+        var provider = new FakeLlmProvider().Returns("Hello from the stream.");
+
+        using var factory = new LibraryEndpointFactory();
+        using var host = CreateHost(factory, provider);
+        using var client = host.CreateClient();
+
+        var response = await client.PostAsJsonAsync(
+            AssistantEndpoints.StreamTurnRoute,
+            new AssistantTurnRequest(
+                "conversation-stream",
+                "turn-stream",
+                "Hello?",
+                Context(),
+                ConversationId: "conversation-stream",
+                TurnId: "turn-stream"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var events = await ReadTurnEventsAsync(response);
+
+        events.Should().HaveCount(2);
+        events.Select(e => e.TurnId).Should().OnlyContain(id => id == "turn-stream");
+        events.Select(e => e.Sequence).Should().Equal(1L, 2L);
+        events.Select(e => e.Kind).Should().Equal(
+            AssistantTurnEventKinds.Started,
+            AssistantTurnEventKinds.Completed);
+        events.Should().NotContain(e => e.Kind == AssistantTurnEventKinds.Activity);
+        events[^1].Response!.Reply.Should().Be("Hello from the stream.");
+    }
+
+    [Fact]
+    public async Task Started_acknowledges_that_the_exact_turn_is_already_stoppable()
+    {
+        var provider = new FakeLlmProvider().Returns("must not run");
+        var access = new BlockingManagedAiAccessPolicy();
+
+        using var factory = new LibraryEndpointFactory();
+        using var host = CreateHost(factory, provider, accessPolicy: access);
+        using var client = host.CreateClient();
+
+        var request = new AssistantTurnRequest(
+            "conversation-start-race",
+            "turn-start-race",
+            "Hello?",
+            Context(),
+            ConversationId: "conversation-start-race",
+            TurnId: "turn-start-race");
+
+        using var message = new HttpRequestMessage(HttpMethod.Post, AssistantEndpoints.StreamTurnRoute)
+        {
+            Content = JsonContent.Create(request),
+        };
+
+        using var response = await client.SendAsync(
+            message,
+            HttpCompletionOption.ResponseHeadersRead);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        await access.Entered;
+        await using var stream = await response.Content.ReadAsStreamAsync();
+        using var reader = new StreamReader(stream);
+
+        try
+        {
+            var firstLine = await reader.ReadLineAsync();
+            firstLine.Should().NotBeNullOrWhiteSpace();
+            var started = JsonSerializer.Deserialize<AssistantTurnEventDto>(
+                firstLine!,
+                new JsonSerializerOptions(JsonSerializerDefaults.Web));
+            started!.Kind.Should().Be(AssistantTurnEventKinds.Started);
+            started.TurnId.Should().Be("turn-start-race");
+
+            var stopResponse = await client.PostAsJsonAsync(
+                AssistantEndpoints.CancelTurnRoute,
+                new AssistantTurnCancelRequest(
+                    "conversation-start-race",
+                    "turn-start-race"));
+            stopResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            var stop = await stopResponse.Content.ReadFromJsonAsync<AssistantTurnCancelResponse>();
+            stop!.Accepted.Should().BeTrue();
+            stop.State.Should().Be("cancel_requested");
+        }
+        finally
+        {
+            access.Release();
+        }
+
+        var terminalLine = await reader.ReadLineAsync();
+        terminalLine.Should().NotBeNullOrWhiteSpace();
+        var terminal = JsonSerializer.Deserialize<AssistantTurnEventDto>(
+            terminalLine!,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        terminal!.Kind.Should().Be(AssistantTurnEventKinds.Cancelled);
+        terminal.Failure!.Code.Should().Be(AssistantErrorCodes.TurnCancelled);
+        provider.CallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Streamed_retrieval_activity_is_product_owned_and_no_evidence_is_typed()
+    {
+        var provider = new FakeLlmProvider()
+            .CallsTool("knowledge_search", """{"query":"private-needle"}""")
+            .Returns("I could not find it.");
+
+        using var factory = new LibraryEndpointFactory();
+        using var host = CreateHost(factory, provider);
+        using var client = host.CreateClient();
+
+        var response = await client.PostAsJsonAsync(
+            AssistantEndpoints.StreamTurnRoute,
+            new AssistantTurnRequest(
+                "conversation-retrieval",
+                "turn-retrieval",
+                "Find it.",
+                Context(),
+                ConversationId: "conversation-retrieval",
+                TurnId: "turn-retrieval"));
+
+        var body = await response.Content.ReadAsStringAsync();
+        var events = ReadTurnEvents(body);
+
+        events.Select(e => e.Sequence)
+            .Should().Equal(Enumerable.Range(1, events.Count).Select(i => (long)i));
+        events.Select(e => e.TurnId).Should().OnlyContain(id => id == "turn-retrieval");
+        events.Should().ContainSingle(e =>
+            e.Kind == AssistantTurnEventKinds.Activity
+            && e.Activity!.Code == "searching_material"
+            && e.Activity.Message == "Searching your notes and books…");
+
+        var terminal = events[^1];
+        terminal.Kind.Should().Be(AssistantTurnEventKinds.Failed);
+        terminal.Failure!.Code.Should().Be(AssistantErrorCodes.NoEvidence);
+        terminal.Response!.Error!.Code.Should().Be(AssistantErrorCodes.NoEvidence);
+
+        // The event transport contains product state, not raw tool/model internals.
+        body.Should().NotContain("private-needle");
+        body.Should().NotContain("argumentsJson");
+        body.Should().NotContain("tool_calls");
+        body.Should().NotContain("reasoning");
+    }
+
+    [Theory]
+    [InlineData(LlmErrorCodes.Timeout)]
+    [InlineData(LlmErrorCodes.RateLimited)]
+    public async Task Streamed_provider_failures_keep_their_typed_product_code(string errorCode)
+    {
+        var provider = new FakeLlmProvider
+        {
+            Failure = errorCode == LlmErrorCodes.Timeout
+                ? LlmException.TimedOut()
+                : LlmException.RateLimited(),
+        };
+
+        using var factory = new LibraryEndpointFactory();
+        using var host = CreateHost(factory, provider);
+        using var client = host.CreateClient();
+
+        var response = await client.PostAsJsonAsync(
+            AssistantEndpoints.StreamTurnRoute,
+            new AssistantTurnRequest(
+                "conversation-provider",
+                $"turn-{errorCode}",
+                "Hello?",
+                Context(),
+                ConversationId: "conversation-provider",
+                TurnId: $"turn-{errorCode}"));
+
+        var events = await ReadTurnEventsAsync(response);
+
+        events[^1].Kind.Should().Be(AssistantTurnEventKinds.Failed);
+        events[^1].Failure!.Code.Should().Be(errorCode);
+        events[^1].Failure.Retryable.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Streamed_usage_limit_is_distinct_from_provider_rate_limit()
+    {
+        var provider = new FakeLlmProvider().Returns("must not run");
+
+        using var factory = new LibraryEndpointFactory();
+        using var host = CreateHost(
+            factory,
+            provider,
+            usageBlockReason: AiUsageBlockReason.LimitReached);
+        using var client = host.CreateClient();
+
+        var response = await client.PostAsJsonAsync(
+            AssistantEndpoints.StreamTurnRoute,
+            new AssistantTurnRequest(
+                "conversation-quota",
+                "turn-quota",
+                "Hello?",
+                Context(),
+                ConversationId: "conversation-quota",
+                TurnId: "turn-quota"));
+
+        var events = await ReadTurnEventsAsync(response);
+
+        events[^1].Kind.Should().Be(AssistantTurnEventKinds.Failed);
+        events[^1].Failure!.Code.Should().Be("ai_usage_limit_reached");
+        events[^1].Failure.Retryable.Should().BeFalse();
+        provider.CallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Streamed_selfhosted_not_configured_is_a_terminal_product_failure()
+    {
+        using var factory = new LibraryEndpointFactory();
+        using var host = factory.WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("Assistant:Enabled", "true");
+            builder.UseSetting("Assistant:BaseUrl", "http://assistant.invalid/v1");
+            builder.UseSetting("Assistant:ApiKeyEnvironmentVariable", TokenVariable);
+        });
+        using var client = host.CreateClient();
+
+        Environment.SetEnvironmentVariable(TokenVariable, null);
+
+        var response = await client.PostAsJsonAsync(
+            AssistantEndpoints.StreamTurnRoute,
+            new AssistantTurnRequest(
+                "conversation-unconfigured",
+                "turn-unconfigured",
+                "Hello?",
+                Context(),
+                ConversationId: "conversation-unconfigured",
+                TurnId: "turn-unconfigured"));
+
+        var events = await ReadTurnEventsAsync(response);
+
+        events.Select(e => e.Kind).Should().Equal(
+            AssistantTurnEventKinds.Started,
+            AssistantTurnEventKinds.Failed);
+        events[^1].Failure!.Code.Should().Be(LlmErrorCodes.NotConfigured);
+        events[^1].Failure.Retryable.Should().BeFalse();
+    }
+
     // ------------------------------------------------------------------
     // Status — the single source of availability
     // ------------------------------------------------------------------
@@ -390,6 +629,17 @@ public sealed class AssistantEndpointTests : IDisposable
         return document.GetProperty("title").GetString();
     }
 
+    private static async Task<List<AssistantTurnEventDto>> ReadTurnEventsAsync(
+        HttpResponseMessage response) =>
+        ReadTurnEvents(await response.Content.ReadAsStringAsync());
+
+    private static List<AssistantTurnEventDto> ReadTurnEvents(string body) =>
+        body.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(line => JsonSerializer.Deserialize<AssistantTurnEventDto>(
+                line,
+                new JsonSerializerOptions(JsonSerializerDefaults.Web))!)
+            .ToList();
+
     private static void AssertNoCredentialField(Type dtoType)
     {
         var suspicious = dtoType.GetProperties()
@@ -407,7 +657,9 @@ public sealed class AssistantEndpointTests : IDisposable
         LibraryEndpointFactory factory,
         FakeLlmProvider provider,
         bool enabled = true,
-        bool entitled = true)
+        bool entitled = true,
+        AiUsageBlockReason? usageBlockReason = null,
+        IAiAccessPolicy? accessPolicy = null)
     {
         return factory.WithWebHostBuilder(builder =>
         {
@@ -423,13 +675,64 @@ public sealed class AssistantEndpointTests : IDisposable
                 services.RemoveAll<ILlmProvider>();
                 services.AddSingleton<ILlmProvider>(provider);
 
-                if (!entitled)
+                if (accessPolicy is not null)
+                {
+                    services.RemoveAll<IAiAccessPolicy>();
+                    services.AddSingleton(accessPolicy);
+                }
+                else if (!entitled)
                 {
                     services.RemoveAll<IAiAccessPolicy>();
                     services.AddSingleton<IAiAccessPolicy, DenyManagedAiAccessPolicy>();
                 }
+
+                if (usageBlockReason is { } blockReason)
+                {
+                    services.RemoveAll<IAiUsageAccountingService>();
+                    services.AddSingleton<IAiUsageAccountingService>(
+                        new BlockingUsageAccountingService(blockReason));
+                }
             });
         });
+    }
+
+    private sealed class BlockingUsageAccountingService(
+        AiUsageBlockReason reason) : IAiUsageAccountingService
+    {
+        public Task<AiUsageLease?> BeginLlmTurnAsync(CancellationToken cancellationToken = default) =>
+            throw new AiUsageException(reason, "blocked for deterministic endpoint coverage");
+
+        public Task CompleteLlmTurnAsync(
+            AiUsageLease? lease,
+            LlmProviderUsage usage,
+            CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task<AiUsageLease?> BeginSttAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<AiUsageLease?>(null);
+
+        public Task CompleteSttAsync(
+            AiUsageLease? lease,
+            TranscriptionUsage usage,
+            CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
+    private sealed class BlockingManagedAiAccessPolicy : IAiAccessPolicy
+    {
+        private readonly TaskCompletionSource _entered =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _release =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task Entered => _entered.Task;
+
+        public async Task<bool> IsAllowedAsync(CancellationToken ct = default)
+        {
+            _entered.TrySetResult();
+            await _release.Task.WaitAsync(ct);
+            return true;
+        }
+
+        public void Release() => _release.TrySetResult();
     }
 
     private sealed class DenyManagedAiAccessPolicy : IAiAccessPolicy
