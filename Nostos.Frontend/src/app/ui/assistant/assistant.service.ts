@@ -457,6 +457,105 @@ export class AssistantService {
     });
   }
 
+  private restoreSession(): void {
+    const storage = sessionStorageOrNull();
+    if (!storage) return;
+
+    try {
+      const raw = storage.getItem(ASSISTANT_SESSION_STORAGE_KEY);
+      if (!raw) return;
+
+      const parsed = JSON.parse(raw) as Partial<PersistedAssistantSession>;
+      if (
+        parsed.version !== 1 ||
+        typeof parsed.conversationId !== 'string' ||
+        !parsed.conversationId.trim() ||
+        !Array.isArray(parsed.eventLedger)
+      ) {
+        storage.removeItem(ASSISTANT_SESSION_STORAGE_KEY);
+        return;
+      }
+
+      this.conversationId.set(parsed.conversationId);
+      const restoredEvents = parsed.eventLedger
+        .filter(isRestorableConversationEvent)
+        .map((event) =>
+          event.delivery === 'sending'
+            ? { ...event, delivery: 'retryable' as const, meta: 'Delivery uncertain' }
+            : event,
+        );
+      this.eventLedger.set(restoredEvents);
+
+      this.pendingAnchor.set(isAnchorPrompt(parsed.pendingAnchor) ? parsed.pendingAnchor : null);
+      this.pendingContinuationContext.set(
+        isAssistantContext(parsed.pendingContinuationContext)
+          ? parsed.pendingContinuationContext
+          : null,
+      );
+      this.pendingPlan.set(isPendingPlan(parsed.pendingPlan) ? parsed.pendingPlan : null);
+      this.suggestions.set(Array.isArray(parsed.suggestions) ? parsed.suggestions : []);
+      this.capturedNoteId.set(
+        typeof parsed.capturedNoteId === 'string' ? parsed.capturedNoteId : null,
+      );
+
+      const restoredRetry = isPreparedTurn(parsed.retryableTurn)
+        ? parsed.retryableTurn
+        : null;
+      this.retryableTurn.set(restoredRetry);
+
+      if (restoredRetry) {
+        // A reload can interrupt an in-flight request after the server committed
+        // but before the browser received the response. Treat it as uncertain:
+        // restore the exact request/TurnId and let canonical receipts decide.
+        this.draft.set(restoredRetry.text);
+        this.updateUserDelivery(
+          restoredRetry.userEntryId,
+          'retryable',
+          'Delivery uncertain',
+        );
+        if (restoredRetry.continuationPrompt) {
+          this.pendingAnchor.set(restoredRetry.continuationPrompt);
+          this.pendingContinuationContext.set(restoredRetry.context);
+        }
+      } else {
+        this.draft.set(typeof parsed.draft === 'string' ? parsed.draft : '');
+      }
+
+      // Natural-language destructive approval is intentionally NOT restored as
+      // armed. The explicit confirmation button can still submit the exact
+      // server-bound plan/token, while a generic "yes" after refresh cannot.
+      this.directPlanApprovalArmed.set(false);
+    } catch {
+      storage.removeItem(ASSISTANT_SESSION_STORAGE_KEY);
+    }
+  }
+
+  private persistSession(): void {
+    const storage = sessionStorageOrNull();
+    if (!storage) return;
+
+    const state: PersistedAssistantSession = {
+      version: 1,
+      conversationId: this.conversationId(),
+      eventLedger: this.eventLedger(),
+      draft: this.draft(),
+      pendingAnchor: this.pendingAnchor(),
+      pendingContinuationContext: this.pendingContinuationContext(),
+      pendingPlan: this.pendingPlan(),
+      suggestions: this.suggestions(),
+      capturedNoteId: this.capturedNoteId(),
+      retryableTurn: this.retryableTurn(),
+    };
+
+    try {
+      storage.setItem(ASSISTANT_SESSION_STORAGE_KEY, JSON.stringify(state));
+    } catch {
+      // Storage can be unavailable or full (privacy mode / browser quota).
+      // Conversation still works in memory; persistence is a convenience, not
+      // an execution/safety dependency.
+    }
+  }
+
   open(): void {
     this.anchorDismissed.set(false);
     this.lastError.set(null);
@@ -859,6 +958,7 @@ export class AssistantService {
       [],
       true,
       'sending',
+      toHistoricalContext(options.context),
     );
 
     const request: AssistantTurnRequestDto = {
@@ -890,7 +990,12 @@ export class AssistantService {
 
   private sendPreparedTurn(turn: PreparedAssistantTurn): void {
     this.updateUserDelivery(turn.userEntryId, 'sending', null);
+    this.retryableTurn.set(turn);
     this.sending.set(true);
+    // Persist before transport begins. A reload while the HTTP result is
+    // ambiguous can then retry this exact logical TurnId instead of inventing a
+    // new turn and defeating #560's mutation receipts.
+    this.persistSession();
 
     this.http.post<AssistantTurnResponse>('/api/assistant/turn', turn.request).subscribe({
       next: (response) => {
@@ -900,6 +1005,12 @@ export class AssistantService {
         this.lastError.set(response.error?.message ?? null);
         this.lastTurn.set(response);
         this.suggestions.set(response.suggestions ?? []);
+        this.updateTurnHistoryFacts(
+          turn.userEntryId,
+          response.sources ?? [],
+          response.executedCapabilities ?? [],
+          response.capturedNoteId ?? null,
+        );
 
         if (response.pendingPlan) {
           this.pendingPlan.set(response.pendingPlan);
@@ -1009,13 +1120,49 @@ export class AssistantService {
     sources: AssistantSourceReferenceDto[] = [],
     remember = true,
     delivery: AssistantEventDelivery = 'complete',
+    historyContext: AssistantHistoricalContextDto | null = null,
   ): string {
     const id = createId();
     this.eventLedger.update((events) => [
       ...events,
-      { id, turnId, kind, text, anchorLabel, meta, sources, remember, delivery },
+      {
+        id,
+        turnId,
+        kind,
+        text,
+        anchorLabel,
+        meta,
+        sources,
+        remember,
+        delivery,
+        historyContext,
+        historyEvidence: [],
+        historyActions: [],
+        historyCapturedNoteId: null,
+      },
     ]);
     return id;
+  }
+
+  private updateTurnHistoryFacts(
+    userEntryId: string,
+    sources: AssistantSourceReferenceDto[],
+    actions: string[],
+    capturedNoteId: string | null,
+  ): void {
+    const evidence = toHistoricalEvidence(sources);
+    this.eventLedger.update((events) =>
+      events.map((event) =>
+        event.id === userEntryId
+          ? {
+              ...event,
+              historyEvidence: evidence,
+              historyActions: [...actions],
+              historyCapturedNoteId: capturedNoteId,
+            }
+          : event,
+      ),
+    );
   }
 
   private updateUserDelivery(
@@ -1158,29 +1305,6 @@ export function parseTimestamp(value: string): string | null {
     .map((part) => Number(part.trim()))
     .reduce((total, part) => total * 60 + part, 0);
   return String(seconds);
-}
-
-/**
- * The history cap (issue #286). Keeps the last {@link HISTORY_MAX_EXCHANGES}
- * user turns and everything from the earliest of those onward, so each kept
- * user turn brings the assistant turn that answered it. Every message is
- * truncated to {@link HISTORY_MAX_CHARS} rather than dropped.
- */
-export function capHistory(
-  log: readonly AssistantHistoryMessage[],
-): AssistantHistoryMessage[] {
-  const userTurns = log
-    .map((message, index) => (message.role === 'user' ? index : -1))
-    .filter((index) => index >= 0);
-  const start =
-    userTurns.length > HISTORY_MAX_EXCHANGES
-      ? userTurns[userTurns.length - HISTORY_MAX_EXCHANGES]
-      : 0;
-
-  return log.slice(start).map((message) => ({
-    role: message.role,
-    text: message.text.slice(0, HISTORY_MAX_CHARS),
-  }));
 }
 
 /** Seconds (as a string) to `m:ss` / `h:mm:ss`. Null-safe and never NaN-y. */
