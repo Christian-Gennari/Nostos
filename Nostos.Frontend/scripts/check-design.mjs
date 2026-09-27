@@ -1005,8 +1005,11 @@ const PRODUCT_RAW_BUTTON_CLASSES = new Map([
     new Set(['item-action', 'finished-btn-list', 'fav-btn-list',
       'finished-btn-grid', 'fav-btn-grid', 'action-circle'])],
   ['src/app/second-brain/second-brain.component.html',
-    // 'toggle-opt' is gone from this ledger for the same reason as the Library's.
-    new Set(['note-row-item', 'review-load-more', 'index-item', 'row-action',
+    // The icon-only list/map switch is the shared nostos-view-toggle component.
+    // brain-area is different: visible-text section navigation (Notes / Concepts)
+    // with nav + aria-current semantics, so it deliberately consumes the shared
+    // toggle-opt TAB recipe rather than pretending to be an ordinary action button.
+    new Set(['brain-area', 'note-row-item', 'review-load-more', 'index-item', 'row-action',
       'rail-foot-action', 'mobile-nav-header', 'concept-action', 'merge-picker-close',
       'merge-target', 'merge-picker-cancel', 'merge-picker-confirm', 'related-chip', 'related-more'])],
   ['src/app/book-detail/book-detail.component.html',
