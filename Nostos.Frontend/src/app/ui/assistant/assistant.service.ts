@@ -402,10 +402,24 @@ export class AssistantService {
       .map((event) => ({
         role: event.kind === 'user' ? 'user' : 'assistant',
         text: event.text,
-        context: event.kind === 'user' ? event.historyContext : null,
-        evidence: event.historyEvidence.length > 0 ? event.historyEvidence : undefined,
-        actions: event.historyActions.length > 0 ? event.historyActions : undefined,
-        capturedNoteId: event.historyCapturedNoteId,
+      })),
+  );
+
+  /** Enriched wire history; the public transcript/history view stays text-only. */
+  private readonly contextualHistory = computed<AssistantHistoryMessage[]>(() =>
+    this.eventLedger()
+      .filter((event) => event.remember && event.delivery !== 'retryable')
+      .map((event) => ({
+        role: event.kind === 'user' ? 'user' : 'assistant',
+        text: event.text,
+        ...(event.kind === 'user' && event.historyContext
+          ? { context: event.historyContext }
+          : {}),
+        ...(event.historyEvidence.length > 0 ? { evidence: event.historyEvidence } : {}),
+        ...(event.historyActions.length > 0 ? { actions: event.historyActions } : {}),
+        ...(event.historyCapturedNoteId
+          ? { capturedNoteId: event.historyCapturedNoteId }
+          : {}),
       })),
   );
 
@@ -948,7 +962,7 @@ export class AssistantService {
   }): void {
     const turnId = createId();
     const conversationId = this.conversationId();
-    const history = this.history();
+    const history = this.contextualHistory();
     const userEntryId = this.pushEntry(
       turnId,
       'user',
