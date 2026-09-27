@@ -287,6 +287,18 @@ describe('SecondBrain', () => {
       fixture.detectChanges();
     };
 
+    it('uses the shared segmented recipe for Notes and Concepts navigation', () => {
+      fixture.detectChanges();
+
+      const nav = fixture.nativeElement.querySelector('.brain-areas') as HTMLElement;
+      const tabs = [...nav.querySelectorAll('button')] as HTMLButtonElement[];
+
+      expect(tabs).toHaveLength(2);
+      expect(tabs.map((tab) => tab.textContent?.trim())).toEqual(['Notes', 'Concepts']);
+      expect(tabs.every((tab) => tab.classList.contains('toggle-opt'))).toBe(true);
+      expect(tabs.every((tab) => !tab.classList.contains('nostos-button'))).toBe(true);
+    });
+
     it('opens a bounded all-notes view and finds linked and unlinked material without a search', () => {
       fixture.detectChanges();
       expect(http.match((request) => request.url === '/api/notes')).toEqual([]);
@@ -319,8 +331,7 @@ describe('SecondBrain', () => {
       expect(detail.textContent).toContain('Quotation');
       expect(detail.textContent).toContain('Your note');
       expect(detail.textContent).toContain('Linked concepts');
-      expect(detail.textContent).toContain('Confirmed');
-      expect(detail.querySelector('span.nostos-badge--success')).toBeTruthy();
+      expect(detail.textContent).not.toContain('Confirmed');
 
       const actions = detail.querySelector('.review-actions[aria-label="Note actions"]') as HTMLElement;
       const link = [...actions.querySelectorAll('button')].find(
