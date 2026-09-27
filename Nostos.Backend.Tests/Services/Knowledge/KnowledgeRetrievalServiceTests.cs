@@ -182,6 +182,33 @@ public sealed class KnowledgeRetrievalServiceTests : IClassFixture<SqliteTestFix
     }
 
     [Fact]
+    public async Task Optional_contributor_candidates_are_re_resolved_and_cannot_escape_explicit_book_scope()
+    {
+        using var h = CreateHarness();
+        var scoped = await SeedBookAsync(h, "Scoped");
+        var outside = await SeedBookAsync(h, "Outside");
+        var outsideNote = await SeedNoteAsync(
+            h,
+            outside.Id,
+            "A semantic contributor should not smuggle this note into another book scope.");
+
+        h.Contributor.Handles =
+        [
+            new KnowledgeEvidenceHandle(
+                KnowledgeEvidenceKinds.Note,
+                NoteId: outsideNote.Id),
+        ];
+
+        var result = await h.Knowledge.SearchAsync(
+            new KnowledgeSearchRequest(
+                "phrase absent from canonical lexical material",
+                BookIds: [scoped.Id]));
+
+        result.Notes.Should().BeEmpty(
+            "the unified retrieval layer, not the optional contributor, owns explicit scope");
+    }
+
+    [Fact]
     public async Task Knowledge_overview_is_structural_bounded_and_complete_on_counts()
     {
         using var h = CreateHarness();
@@ -252,6 +279,7 @@ public sealed class KnowledgeRetrievalServiceTests : IClassFixture<SqliteTestFix
             library,
             new BookTextOptions());
 
+        var contributor = new StaticKnowledgeContributor();
         var knowledge = new KnowledgeRetrievalService(
             noteService,
             noteRepository,
@@ -259,7 +287,7 @@ public sealed class KnowledgeRetrievalServiceTests : IClassFixture<SqliteTestFix
             library,
             bookText,
             bookTextIndex,
-            []);
+            [contributor]);
 
         return new Harness(
             db,
@@ -267,6 +295,7 @@ public sealed class KnowledgeRetrievalServiceTests : IClassFixture<SqliteTestFix
             noteService,
             concepts,
             bookTextIndex,
+            contributor,
             knowledge);
     }
 
@@ -324,6 +353,7 @@ public sealed class KnowledgeRetrievalServiceTests : IClassFixture<SqliteTestFix
         NoteService NoteService,
         ConceptRepository Concepts,
         FakeBookTextIndex BookTextIndex,
+        StaticKnowledgeContributor Contributor,
         KnowledgeRetrievalService Knowledge) : IDisposable
     {
         public void Dispose() => Db.Dispose();
@@ -342,6 +372,17 @@ public sealed class KnowledgeRetrievalServiceTests : IClassFixture<SqliteTestFix
     private sealed class NoopHttpClientFactory : IHttpClientFactory
     {
         public HttpClient CreateClient(string name) => new();
+    }
+
+    private sealed class StaticKnowledgeContributor : IKnowledgeRetrievalContributor
+    {
+        public string Name => "test";
+        public IReadOnlyList<KnowledgeEvidenceHandle> Handles { get; set; } = [];
+
+        public Task<IReadOnlyList<KnowledgeEvidenceHandle>> SearchAsync(
+            KnowledgeSearchRequest request,
+            CancellationToken ct = default) =>
+            Task.FromResult(Handles);
     }
 
     private sealed class FakeBookTextIndex : IBookTextIndex
