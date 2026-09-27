@@ -753,11 +753,11 @@ export class AssistantService {
     }
 
     this.retryableTurn = null;
-    const displayAnchor =
+    const displayAnchor: AssistantAnchor | null =
       prompt.kind === 'book'
         ? null
         : skipped
-          ? { kind: 'unknown', value: null, verified: false } satisfies AssistantAnchor
+          ? { kind: 'unknown', value: null, verified: false }
           : this.anchorFromAnswer(prompt.kind, text);
 
     // The answer itself is NOT encoded in context. The stored continuation is
