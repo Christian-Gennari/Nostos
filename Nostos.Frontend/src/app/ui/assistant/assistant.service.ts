@@ -616,7 +616,7 @@ export class AssistantService {
         this.sending.set(false);
         this.lastError.set(null);
         this.rawTranscript.set(restored);
-        this.pushEntry('assistant', 'Original text restored.', null, 'Restored');
+        this.pushEntry(createId(), 'assistant', 'Original text restored.', null, 'Restored');
       },
       error: () => {
         this.sending.set(false);
