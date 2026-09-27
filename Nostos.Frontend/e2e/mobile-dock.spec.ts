@@ -241,6 +241,21 @@ test('the shell reserves exactly the dock height, leaving no dead band', async (
   ).toBeLessThanOrEqual(1);
 });
 
+test('the Brain dock restores a remembered query-param deep-link', async ({ page }) => {
+  const conceptId = '11111111-1111-1111-1111-111111111111';
+  const brainUrl = `${fixture.baseUrl}/second-brain?conceptId=${conceptId}`;
+
+  await page.goto(brainUrl);
+  await expect(page.locator('app-app-dock')).toBeVisible();
+  await expect(page).toHaveURL(brainUrl);
+
+  await page.locator('app-app-dock .dock-item[title="Library"]').click();
+  await expect(page).toHaveURL(`${fixture.baseUrl}/library`);
+
+  await page.locator('app-app-dock .dock-item[title="The Brain"]').click();
+  await expect(page).toHaveURL(brainUrl);
+});
+
 test('content can be scrolled clear of the dock on the reading view', async ({ page }) => {
   // Seed locally: without concepts the index is empty, the click has nothing to
   // open, and the failure looks like a layout bug rather than missing fixture data.
