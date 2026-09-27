@@ -85,14 +85,16 @@ internal static class BookTextFixtureFactory
             ]);
     }
 
-    public static GeneratedBookTextFixture CreateEpub()
+    public static GeneratedBookTextFixture CreateEpub(bool rootPackage = false)
     {
         const string mimetype = "application/epub+zip";
-        const string container = """
+        var packagePath = rootPackage ? "package.opf" : "OEBPS/package.opf";
+        var resourcePrefix = rootPackage ? string.Empty : "OEBPS/";
+        var container = $"""
             <?xml version="1.0" encoding="UTF-8"?>
             <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
               <rootfiles>
-                <rootfile full-path="OEBPS/package.opf" media-type="application/oebps-package+xml"/>
+                <rootfile full-path="{packagePath}" media-type="application/oebps-package+xml"/>
               </rootfiles>
             </container>
             """;
@@ -174,15 +176,17 @@ internal static class BookTextFixtureFactory
         {
             AddEntry(archive, "mimetype", mimetype, CompressionLevel.NoCompression);
             AddEntry(archive, "META-INF/container.xml", container, CompressionLevel.Optimal);
-            AddEntry(archive, "OEBPS/package.opf", package, CompressionLevel.Optimal);
-            AddEntry(archive, "OEBPS/nav.xhtml", nav, CompressionLevel.Optimal);
-            AddEntry(archive, "OEBPS/chapter-1.xhtml", chapter1, CompressionLevel.Optimal);
-            AddEntry(archive, "OEBPS/chapter-2a.xhtml", chapter2a, CompressionLevel.Optimal);
-            AddEntry(archive, "OEBPS/chapter-2b.xhtml", chapter2b, CompressionLevel.Optimal);
+            AddEntry(archive, packagePath, package, CompressionLevel.Optimal);
+            AddEntry(archive, $"{resourcePrefix}nav.xhtml", nav, CompressionLevel.Optimal);
+            AddEntry(archive, $"{resourcePrefix}chapter-1.xhtml", chapter1, CompressionLevel.Optimal);
+            AddEntry(archive, $"{resourcePrefix}chapter-2a.xhtml", chapter2a, CompressionLevel.Optimal);
+            AddEntry(archive, $"{resourcePrefix}chapter-2b.xhtml", chapter2b, CompressionLevel.Optimal);
         }
 
         return new GeneratedBookTextFixture(
-            FileName: "generated-book-text-fixture.epub",
+            FileName: rootPackage
+                ? "generated-root-opf-book-text-fixture.epub"
+                : "generated-book-text-fixture.epub",
             ContentType: "application/epub+zip",
             Format: BookTextSourceFormat.Epub,
             Bytes: output.ToArray(),
