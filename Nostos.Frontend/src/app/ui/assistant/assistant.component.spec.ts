@@ -1086,6 +1086,7 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     const PANE_HEIGHT = 400;
     const CONTENT_HEIGHT = 1200; // three panes of transcript: there is room to scroll
     const END = CONTENT_HEIGHT - PANE_HEIGHT;
+    let contentHeight = CONTENT_HEIGHT;
 
     /** Where the reader has put a pane. jsdom keeps no scroll position of its own. */
     const positions = new WeakMap<Element, number>();
@@ -1102,9 +1103,10 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
      * one — and restored afterwards.
      */
     beforeEach(() => {
+      contentHeight = CONTENT_HEIGHT;
       Object.defineProperty(HTMLElement.prototype, 'scrollHeight', {
         get(this: HTMLElement) {
-          return isPane(this) ? CONTENT_HEIGHT : 0;
+          return isPane(this) ? contentHeight : 0;
         },
         configurable: true,
       });
@@ -1167,6 +1169,31 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
       // The reply is at the end of the transcript, and so is the view: it is
       // seen without a manual scroll, which is the whole point of the issue.
       expect(body().scrollTop).toBe(END);
+    });
+
+    it('keeps following when an expanded-shell programmatic scroll event arrives after content grows', async () => {
+      await open();
+      fixture.componentInstance.toggleExpanded();
+      await render();
+
+      assistant.updateDraft('Keep following this reply.');
+      fixture.componentInstance.onSendClick();
+      await render();
+
+      const element = body();
+      expect(element.scrollTop).toBe(END);
+
+      // Reproduce the browser race seen in the expanded shell: followEnd() has
+      // already requested the old end, then layout/content grows before the
+      // resulting scroll event is delivered. That event is programmatic, not a
+      // reader decision to leave the newest turn.
+      contentHeight = CONTENT_HEIGHT + 240;
+      element.dispatchEvent(new Event('scroll'));
+
+      http.expectOne('/api/assistant/turn/stream').flush(turn({ reply: 'Still visible.' }));
+      await render();
+
+      expect(body().scrollTop).toBe(contentHeight - PANE_HEIGHT);
     });
 
     it('leaves the view alone when a reply arrives while an older turn is being read', async () => {
