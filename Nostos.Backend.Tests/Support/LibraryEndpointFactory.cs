@@ -14,18 +14,27 @@ public class LibraryEndpointFactory : WebApplicationFactory<Program>
 {
     public const string SpaShellMarker = "<!doctype html>";
     private readonly string _dbPath;
+    private readonly string _storageTempRoot;
+    private readonly string _booksRoot;
 
     public string DatabasePath => _dbPath;
+    public string StorageTempRoot => _storageTempRoot;
+    public string BooksRootPath => _booksRoot;
 
     public LibraryEndpointFactory()
     {
         _dbPath = Path.Combine(Path.GetTempPath(), $"nostos-library-tests-{Guid.NewGuid():N}.db");
+        _storageTempRoot = Path.Combine(
+            Path.GetTempPath(),
+            $"nostos-library-storage-{Guid.NewGuid():N}");
+        _booksRoot = Path.Combine(_storageTempRoot, "books");
         LibraryEndpointBootstrap.EnsureSchemaAndHistory(_dbPath);
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
+        builder.UseSetting("Storage:BooksRoot", _booksRoot);
         builder.ConfigureAppConfiguration((ctx, config) =>
         {
             config.AddInMemoryCollection(new Dictionary<string, string?>
@@ -70,6 +79,20 @@ public class LibraryEndpointFactory : WebApplicationFactory<Program>
                 {
                     // Best-effort cleanup only.
                 }
+            }
+
+            try
+            {
+                if (Directory.Exists(_storageTempRoot))
+                    Directory.Delete(_storageTempRoot, recursive: true);
+            }
+            catch (IOException)
+            {
+                // Best-effort cleanup only.
+            }
+            catch (UnauthorizedAccessException)
+            {
+                // Best-effort cleanup only.
             }
         }
     }
