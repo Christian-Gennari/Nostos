@@ -2308,6 +2308,58 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
     }
 
     [Fact]
+    public async Task Notes_list_for_book_results_keep_canonical_note_handles()
+    {
+        var h = CreateHarness();
+        var book = await SeedBookAsync(h, "List Provenance");
+        var note = await SeedNoteAsync(h, book.Id, "A listed note keeps provenance.");
+
+        h.Llm
+            .CallsTool("notes_list_for_book", $"""{"bookId":"{{book.Id}}"}""")
+            .Returns("That note says provenance should stay attached.");
+
+        var response = await h.Orchestrator.HandleTurnAsync(
+            Turn(
+                "What notes do I have for this book?",
+                Context(
+                    surface: "reader",
+                    route: $"/read/{book.Id}",
+                    bookId: book.Id.ToString(),
+                    bookTitle: book.Title)));
+
+        response.Evidence.Should().ContainSingle();
+        var artifact = response.Evidence!.Single();
+        artifact.Handle.Kind.Should().Be(KnowledgeEvidenceKinds.Note);
+        artifact.Handle.NoteId.Should().Be(note.Id);
+        artifact.BookTitle.Should().Be(book.Title);
+        artifact.Excerpt.Should().Contain("listed note keeps provenance");
+    }
+
+    [Fact]
+    public async Task Notes_search_results_keep_canonical_note_handles()
+    {
+        var h = CreateHarness();
+        var book = await SeedBookAsync(h, "Search Provenance");
+        var note = await SeedNoteAsync(h, book.Id, "A searchable note about homecoming.");
+
+        h.Llm
+            .CallsTool("notes_search", """{"query":"homecoming"}""")
+            .Returns("Your note connects this to homecoming.");
+
+        var response = await h.Orchestrator.HandleTurnAsync(
+            Turn(
+                "What do my notes say about homecoming?",
+                Context(surface: "second-brain", route: "/second-brain")));
+
+        response.Evidence.Should().ContainSingle();
+        var artifact = response.Evidence!.Single();
+        artifact.Handle.Kind.Should().Be(KnowledgeEvidenceKinds.Note);
+        artifact.Handle.NoteId.Should().Be(note.Id);
+        artifact.BookTitle.Should().Be(book.Title);
+        artifact.Excerpt.Should().Contain("homecoming");
+    }
+
+    [Fact]
     public async Task Book_text_search_sources_are_server_grounded_and_preserve_pdf_locator()
     {
         var bookId = Guid.NewGuid();
