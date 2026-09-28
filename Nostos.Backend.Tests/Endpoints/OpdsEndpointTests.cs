@@ -58,7 +58,10 @@ public sealed class OpdsEndpointTests : IClassFixture<LibraryEndpointFactory>
         var response = await Client.GetAsync("/opds/");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        response.Content.Headers.ContentType!.MediaType.Should().Be("application/atom+xml");
+        var contentType = response.Content.Headers.ContentType!;
+        contentType.MediaType.Should().Be("application/atom+xml");
+        contentType.ToString().Should().Contain("profile=opds-catalog");
+        contentType.ToString().Should().Contain("kind=acquisition");
 
         var body = await response.Content.ReadAsStringAsync();
         body.Should().StartWith("<?xml", "the document must carry its XML declaration");

@@ -383,7 +383,7 @@ Delete a writing. Cascading delete removes all children.
 OPDS 1.2 **acquisition** catalog of the books that have a stored file. Compatible
 with OPDS reader apps (Moon Reader, KOReader, Calibre, …).
 
-**Response:** `application/atom+xml`
+**Response:** `application/atom+xml;profile=opds-catalog;kind=acquisition`
 
 Each entry includes:
 
