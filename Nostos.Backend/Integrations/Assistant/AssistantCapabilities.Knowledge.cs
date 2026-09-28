@@ -24,7 +24,7 @@ public static partial class AssistantCapabilities
                 "bookIds": {
                   "type": "array",
                   "items": { "type": "string", "format": "uuid" },
-                  "description": "Optional explicit book scope. When present, note/concept/book-text evidence is restricted to these books."
+                  "description": "Explicit book scope. When present and non-empty, note/concept/book-text evidence is restricted to these books. Omit to keep current/recent conversational book scope; pass an empty array only when the user explicitly broadens to the whole library."
                 },
                 "collectionId": { "type": "string", "format": "uuid", "description": "Optional collection scope when bookIds are omitted." },
                 "maxPerSource": { "type": "integer", "minimum": 1, "maximum": 8, "description": "Maximum evidence items per source type. Defaults to 6." }
