@@ -277,10 +277,23 @@ internal sealed class AssistantRetrievalTurnState(AssistantContextDto context)
         return !string.IsNullOrWhiteSpace(ReadString(args, "collectionId"));
     }
 
-    private static bool HasExplicitScopeArgument(JsonElement args) =>
-        args.ValueKind == JsonValueKind.Object
-        && (args.TryGetProperty("bookIds", out _)
-            || args.TryGetProperty("collectionId", out _));
+    private static bool HasExplicitScopeArgument(JsonElement args)
+    {
+        if (args.ValueKind != JsonValueKind.Object)
+            return false;
+
+        if (args.TryGetProperty("bookIds", out var bookIds)
+            && bookIds.ValueKind is not JsonValueKind.Null and not JsonValueKind.Undefined)
+        {
+            // An empty array is intentional whole-library scope. A malformed
+            // non-null value is also explicit: do not silently overwrite it;
+            // the capability should return its normal invalid-arguments error.
+            return true;
+        }
+
+        return args.TryGetProperty("collectionId", out var collectionId)
+            && collectionId.ValueKind is not JsonValueKind.Null and not JsonValueKind.Undefined;
+    }
 
     private void RecordExplicitKnownBookScope(
         JsonElement args,
@@ -330,13 +343,14 @@ internal sealed class AssistantRetrievalTurnState(AssistantContextDto context)
                 string.Equals(entry.Role, "user", StringComparison.OrdinalIgnoreCase));
 
         if (latestUser?.Context is not { } historicalContext
-            || !Guid.TryParse(historicalContext.BookId, out var bookId)
-            || string.IsNullOrWhiteSpace(historicalContext.BookTitle))
+            || !Guid.TryParse(historicalContext.BookId, out var bookId))
         {
             return false;
         }
 
-        scope = new AssistantResolvedBookDto(bookId, historicalContext.BookTitle);
+        scope = new AssistantResolvedBookDto(
+            bookId,
+            historicalContext.BookTitle?.Trim() ?? string.Empty);
         return true;
     }
 
