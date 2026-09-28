@@ -4,6 +4,7 @@ using Nostos.Backend.Configuration;
 using Nostos.Backend.Services.Ai;
 using Nostos.Backend.Services.Library;
 using Nostos.Backend.Services.Knowledge;
+using Nostos.Backend.Search;
 using Nostos.Shared.Dtos;
 using Nostos.Product.Services.Ai;
 using Nostos.Product.BookText;
@@ -181,7 +182,13 @@ public sealed class AssistantOrchestrator(
 
         var capabilityByName = registry.All.ToDictionary(c => c.Name, StringComparer.Ordinal);
         var messages = _conversation.BuildConversation(request);
-        var tools = _conversation.BuildTools();
+        var captureSuppressed = AssistantCaptureIntentGuard.SuppressesCapture(
+            request.Message,
+            request.History);
+        var tools = _conversation.BuildTools()
+            .Where(tool => !captureSuppressed
+                || !string.Equals(tool.Name, CaptureCapability, StringComparison.Ordinal))
+            .ToList();
 
         // The capture post-processing mode is the owner's stored setting, resolved
         // once per turn (issue #262 §7). It is deliberately not read from the
@@ -204,8 +211,10 @@ public sealed class AssistantOrchestrator(
         string? capturedNoteId = null;
         AssistantTurnErrorDto? terminalError = null;
         var retrievalAttempted = false;
+        var scopedRetrievalAttempted = false;
         var retrievalEvidenceAvailable = false;
         var retrievalStates = new List<BookTextIngestionStatus>();
+        var metadataReadSucceeded = false;
         var mutationCompleted = false;
 
         var iterations = Math.Max(1, options.MaxToolIterations);
@@ -377,6 +386,22 @@ public sealed class AssistantOrchestrator(
                 if (capability.Trust == AssistantTrustClass.Capture
                     && string.Equals(capability.Name, CaptureCapability, StringComparison.Ordinal))
                 {
+                    if (captureSuppressed)
+                    {
+                        // Durable writes must not depend on the model correctly
+                        // interpreting an explicit "do not save" instruction or
+                        // a short source clarification. The tool is also omitted
+                        // from the advertised catalogue for these turns; this is
+                        // the server-side backstop if a provider still emits it.
+                        lastAssistantContent = null;
+                        messages.Add(LlmMessage.Tool(call.Id, ToolJson(new
+                        {
+                            status = "capture_rejected",
+                            message = "This turn is conversational control, not a capture. Nothing was saved. Do not call notes_capture again for this turn.",
+                        })));
+                        continue;
+                    }
+
                     capture = await _capturePolicy.PrepareAsync(
                         call.ArgumentsJson,
                         request.Context,
@@ -413,6 +438,10 @@ public sealed class AssistantOrchestrator(
                 else
                 {
                     args = ParseArguments(call.ArgumentsJson);
+                    if (string.Equals(capability.Name, BookTextCapability, StringComparison.Ordinal))
+                    {
+                        args = ApplyCurrentBookScope(args, request.Context);
+                    }
                 }
 
                 // The receipt key identifies the logical mutation, not its
@@ -469,6 +498,26 @@ public sealed class AssistantOrchestrator(
                             args,
                             toolContext,
                             mutation ? CancellationToken.None : ct);
+
+                    // One bounded server-owned recovery protects retrieval from a
+                    // weak query rewrite. Keep the model's exact scope, but when
+                    // a ready source returned no passage, retry once with the
+                    // distinctive lexical terms the user actually typed.
+                    if (result.Success
+                        && string.Equals(capability.Name, BookTextCapability, StringComparison.Ordinal)
+                        && result.Data is { } bookTextData
+                        && BuildBookTextFallbackArguments(
+                            args,
+                            request.Message,
+                            bookTextData) is { } fallbackArgs)
+                    {
+                        result = await registry.InvokeAsync(
+                            capability.Name,
+                            fallbackArgs,
+                            toolContext,
+                            ct);
+                        args = fallbackArgs;
+                    }
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested)
                 {
@@ -501,11 +550,19 @@ public sealed class AssistantOrchestrator(
 
                 if (result.Success
                     && capability.Trust == AssistantTrustClass.Suggest
+                    && IsMetadataReadCapability(capability.Name))
+                {
+                    metadataReadSucceeded = true;
+                }
+
+                if (result.Success
+                    && capability.Trust == AssistantTrustClass.Suggest
                     && result.Data is { } retrievalData
                     && (string.Equals(capability.Name, KnowledgeSearchCapability, StringComparison.Ordinal)
                         || string.Equals(capability.Name, BookTextCapability, StringComparison.Ordinal)))
                 {
                     retrievalAttempted = true;
+                    scopedRetrievalAttempted |= HasRetrievalScope(args);
                     ObserveRetrieval(
                         capability.Name,
                         retrievalData,
@@ -607,9 +664,24 @@ public sealed class AssistantOrchestrator(
         }
         else if (terminalError is null
                  && retrievalAttempted
+                 && scopedRetrievalAttempted
                  && !retrievalEvidenceAvailable)
         {
-            terminalError = RetrievalFailure(retrievalStates);
+            var retrievalFailure = RetrievalFailure(retrievalStates);
+
+            // "No passage from this search" is not the same thing as "the
+            // entire turn failed" when the turn also obtained canonical book
+            // metadata or exact evidence through another read path. Indexing
+            // states remain terminal because metadata cannot make an unavailable
+            // source searchable.
+            if (!string.Equals(
+                    retrievalFailure.Code,
+                    AssistantErrorCodes.NoEvidence,
+                    StringComparison.Ordinal)
+                || (!metadataReadSucceeded && evidenceReferences.Count == 0))
+            {
+                terminalError = retrievalFailure;
+            }
         }
 
         // Server-known boundaries outrank model narration. A provider can attach
@@ -1047,6 +1119,115 @@ public sealed class AssistantOrchestrator(
 
             target.Add(suggestion);
         }
+    }
+
+    private static bool IsMetadataReadCapability(string capabilityName) =>
+        string.Equals(capabilityName, "library_get_book", StringComparison.Ordinal)
+        || string.Equals(capabilityName, "library_list_books", StringComparison.Ordinal)
+        || string.Equals(capabilityName, "library_overview", StringComparison.Ordinal);
+
+    private static bool HasRetrievalScope(JsonElement args)
+    {
+        if (args.ValueKind != JsonValueKind.Object)
+            return false;
+
+        if (args.TryGetProperty("bookIds", out var bookIds)
+            && bookIds.ValueKind == JsonValueKind.Array
+            && bookIds.GetArrayLength() > 0)
+        {
+            return true;
+        }
+
+        return !string.IsNullOrWhiteSpace(ReadString(args, "collectionId"));
+    }
+
+    private static JsonElement ApplyCurrentBookScope(
+        JsonElement args,
+        AssistantContextDto? context)
+    {
+        if (!Guid.TryParse(context?.BookId, out var currentBookId)
+            || HasRetrievalScope(args))
+        {
+            return args;
+        }
+
+        var obj = JsonNode.Parse(args.GetRawText()) as JsonObject ?? new JsonObject();
+        obj["bookIds"] = new JsonArray(currentBookId.ToString());
+        return JsonSerializer.SerializeToElement(obj, JsonOptions);
+    }
+
+    private static JsonElement? BuildBookTextFallbackArguments(
+        JsonElement args,
+        string userMessage,
+        JsonElement resultData)
+    {
+        if (!CanRetryBookTextSearch(resultData))
+            return null;
+
+        var tokens = LexicalQueryPlanner.Build(userMessage)
+            .Where(variant => variant.Kind == LexicalQueryVariantKind.Token)
+            .Select(variant => variant.Text)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(8)
+            .ToList();
+
+        if (tokens.Count == 0)
+            return null;
+
+        var currentQuery = ReadString(args, "query") ?? string.Empty;
+        if (tokens.All(token => currentQuery.Contains(token, StringComparison.OrdinalIgnoreCase)))
+            return null;
+
+        var obj = JsonNode.Parse(args.GetRawText()) as JsonObject ?? new JsonObject();
+        obj["query"] = string.Join(" ", tokens);
+        return JsonSerializer.SerializeToElement(obj, JsonOptions);
+    }
+
+    private static bool CanRetryBookTextSearch(JsonElement data)
+    {
+        if (data.ValueKind != JsonValueKind.Object)
+            return false;
+
+        if (data.TryGetProperty("evidenceAvailable", out var evidence)
+            && evidence.ValueKind == JsonValueKind.True)
+        {
+            return false;
+        }
+
+        if (!data.TryGetProperty("states", out var states)
+            || states.ValueKind != JsonValueKind.Array)
+        {
+            return true;
+        }
+
+        foreach (var item in states.EnumerateArray())
+        {
+            if (!item.TryGetProperty("status", out var status))
+                return false;
+
+            if (status.ValueKind == JsonValueKind.Number
+                && status.TryGetInt32(out var numeric))
+            {
+                if ((BookTextIngestionStatus)numeric != BookTextIngestionStatus.Ready)
+                    return false;
+                continue;
+            }
+
+            if (status.ValueKind == JsonValueKind.String
+                && Enum.TryParse<BookTextIngestionStatus>(
+                    status.GetString(),
+                    ignoreCase: true,
+                    out var parsed))
+            {
+                if (parsed != BookTextIngestionStatus.Ready)
+                    return false;
+                continue;
+            }
+
+            return false;
+        }
+
+        return true;
     }
 
     private static void ObserveRetrieval(

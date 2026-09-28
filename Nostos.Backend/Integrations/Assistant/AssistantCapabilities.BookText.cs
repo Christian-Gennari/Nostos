@@ -16,7 +16,7 @@ public static partial class AssistantCapabilities
             {
               "type": "object",
               "properties": {
-                "query": { "type": "string", "description": "Lexical search terms for the passage or idea to find. Required." },
+                "query": { "type": "string", "description": "Distinctive lexical search terms from the user's wording. Preserve rare names, labels and quoted terms verbatim instead of replacing them with broader synonyms. Required." },
                 "bookIds": {
                   "type": "array",
                   "items": { "type": "string", "format": "uuid" },
