@@ -2582,6 +2582,92 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
     }
 
     [Fact]
+    public async Task Explicit_known_book_scope_is_carried_forward_even_when_search_is_empty()
+    {
+        var bookId = Guid.NewGuid();
+        var ready = new BookTextIngestionState(
+            bookId,
+            BookTextIngestionStatus.Ready,
+            "book.epub",
+            BookTextSourceFormat.Epub,
+            new string('a', 64),
+            BookTextArtifactSchema.CurrentExtractorVersion,
+            null,
+            null,
+            1,
+            1,
+            100,
+            DateTime.UtcNow);
+        var search = new FakeBookTextSearchService(
+            new BookTextSearchResponse([], [ready], false));
+        var h = CreateHarness(bookText: search);
+
+        var history = new AssistantHistoryMessageDto[]
+        {
+            new(
+                "user",
+                "Which book is this?",
+                new AssistantHistoricalContextDto(
+                    Surface: "library",
+                    BookId: bookId.ToString(),
+                    BookTitle: "Known Book")),
+            new("assistant", "Known Book."),
+        };
+
+        h.Llm
+            .CallsTool(
+                "book_text_search",
+                $"""{"query":"missing phrase","bookIds":["{{bookId}}"]}""")
+            .Returns("I could not find it.");
+
+        var response = await h.Orchestrator.HandleTurnAsync(Turn(
+            "In the book, find the missing phrase.",
+            Context(surface: "library", route: "/library"),
+            history: history));
+
+        search.LastRequest.Should().NotBeNull();
+        search.LastRequest!.BookIds.Should().ContainSingle().Which.Should().Be(bookId);
+        response.ResolvedBook.Should().NotBeNull();
+        response.ResolvedBook!.BookId.Should().Be(bookId);
+        response.ResolvedBook.BookTitle.Should().Be("Known Book");
+    }
+
+    [Fact]
+    public async Task Explicit_empty_book_scope_broadens_instead_of_inheriting_recent_book()
+    {
+        var historicalBookId = Guid.NewGuid();
+        var search = new FakeBookTextSearchService(
+            new BookTextSearchResponse([], [], false));
+        var h = CreateHarness(bookText: search);
+
+        var history = new AssistantHistoryMessageDto[]
+        {
+            new(
+                "user",
+                "Which book is this?",
+                new AssistantHistoricalContextDto(
+                    Surface: "library",
+                    BookId: historicalBookId.ToString(),
+                    BookTitle: "Recent Book")),
+            new("assistant", "Recent Book."),
+        };
+
+        h.Llm
+            .CallsTool("book_text_search", """{"query":"lantern","bookIds":[]}""")
+            .Returns("I could not find it.");
+
+        var response = await h.Orchestrator.HandleTurnAsync(Turn(
+            "Search my books for lantern.",
+            Context(surface: "library", route: "/library"),
+            history: history));
+
+        search.LastRequest.Should().NotBeNull();
+        search.LastRequest!.BookIds.Should().NotBeNull();
+        search.LastRequest.BookIds.Should().BeEmpty();
+        response.ResolvedBook.Should().BeNull();
+    }
+
+    [Fact]
     public async Task Resolved_book_scope_survives_library_followups_and_real_fts_recovers_exact_tokens()
     {
         RecordingBookTextSearchService? search = null;
