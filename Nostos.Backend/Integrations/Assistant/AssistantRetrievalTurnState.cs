@@ -233,12 +233,15 @@ internal sealed class AssistantRetrievalTurnState(AssistantContextDto context)
         if (data.ValueKind != JsonValueKind.Object)
             return false;
 
-        var evidenceCount =
+        // A concept hit can be a useful orientation clue without containing
+        // the continuity evidence itself. Treat the reader lookup as weak when
+        // it has at most one concrete note/passage, so a concept-only or
+        // one-note distractor cannot prevent the bounded library fallback.
+        var concreteEvidenceCount =
             ArrayLength(data, "notes")
-            + ArrayLength(data, "concepts")
             + ArrayLength(data, "bookPassages");
 
-        return evidenceCount <= 1;
+        return concreteEvidenceCount <= 1;
     }
 
     private static bool HasBlockingKnowledgeSourceState(JsonElement data)
