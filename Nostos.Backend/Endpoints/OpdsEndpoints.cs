@@ -27,7 +27,6 @@ public static class OpdsEndpoints
     private static readonly XNamespace OpdsCatalog = "http://opds-spec.org/2010/catalog";
     private static readonly XNamespace DcTerms = "http://purl.org/dc/terms/";
 
-    private const string AtomFeedType = "application/atom+xml";
     private const string AcquisitionFeedType =
         "application/atom+xml;profile=opds-catalog;kind=acquisition";
 
@@ -136,7 +135,7 @@ public static class OpdsEndpoints
                 foreach (var book in books)
                     feed.Add(BuildEntry(context, options, book));
 
-                return Results.Text(Serialize(feed), AtomFeedType, Encoding.UTF8);
+                return Results.Text(Serialize(feed), AcquisitionFeedType, Encoding.UTF8);
             }
         );
 
