@@ -218,6 +218,17 @@ matched to the production posture (`NOSTOS_QG_REASONING_EFFORT=none`); with that
 harness sent 0 thinking tokens across the whole baseline, i.e. the request shape matches what the
 managed Cloud host sends today.
 
+**Product revision.** The live numbers in this report and §5.1 were recorded against `origin/main`
+at `89f8a27` plus this branch's tests only (no product changes — see §1). While the PR was in
+review, `main` gained three commits that touch this area: #605 (test storage isolation), #609
+(bounded missing-book continuations) and #610 (capture-intent guard, resolved-book retrieval scope,
+retrieval-truth terminal states, bounded book-text recovery). The branch was rebased onto them and
+**§5.2 re-measures the candidate screen on that revision**, so the floor conclusion is not resting on
+stale product code. One fixture had to be aligned for the new semantics: the product now scopes
+`knowledge_search`/`book_text_search` to the resolved reader book, so C2's reader context was moved
+to the book that owns the long-answer note (commit `2ff379a`) — see §8.1 for the cross-book
+consequence.
+
 Baseline (3 reps x 50 turns = 150 turns; safety scenarios re-run on the final harness):
 
 | Metric | Value |
@@ -377,6 +388,43 @@ The 10-rep pass therefore confirms rather than overturns the floor: **`openai/gp
 the navigation gate, and its residual failures are the documented product gaps (§8), not model-class
 failures.**
 
+### 5.2 Post-#610 re-measurement (same bed, rebased revision)
+
+The screen was re-run on the rebased revision (main @ `38bc03b` = #605 + #609 + #610, same harness,
+same fixtures, same posture, same 3 reps x 50 turns). The point is to check that the floor verdict is
+not an artifact of the older product revision:
+
+| Model (posture `none`) | completed | failures | safety/action | lat p50 / p90 | up / tools | $ / turn |
+| --- | --- | --- | --- | --- | --- | --- |
+| **openai/gpt-6-luna** (baseline) | 142/150 | **25** | **1** | 3.69 s / 5.81 s | 2.03 / 1.20 | $0.00149 |
+| openai/gpt-oss-20b | 142/150 | 53 | 1 | 2.80 s / 4.87 s | 1.67 / 0.79 | $0.00034 |
+| inclusionai/ling-3.0-flash | 144/150 | 124 | 28 | 1.86 s / 5.05 s | 1.61 / 0.72 | $0.00032 |
+| deepseek/deepseek-v4-flash-0731 | 145/150 | 130 | 31 | 2.78 s / 8.09 s | 1.43 / 0.62 | $0.00094 |
+| amazon/nova-lite | 137/150 | 138 | 27 | 1.63 s / 3.36 s | 1.39 / 0.53 | $0.00078 |
+| amazon/nova-micro | 135/150 | 158 | 28 | 1.66 s / 2.80 s | 1.30 / 0.40 | $0.00044 |
+| alibaba/qwen3.7-flash | 136/150 | 185 | 30 | 2.41 s / 5.81 s | 1.31 / 0.37 | $0.00037 |
+
+Reading:
+
+- **The floor verdict is robust across product revisions.** The baseline improved slightly
+  (26 -> 25 failures; its C1 late-callback miss is gone under #610's continuation bounds), the cheap
+  class did not move meaningfully (53 vs 58, 124 vs 135, 130 vs 128, 138 vs 140, 158 vs 145, 185 vs
+  184), and every cheap candidate still breaches the capture contract (26-31 safety/action failures)
+  plus fabricates completion confirmations. `gpt-oss-20b` remains the closest cheap contender at
+  2.1x the baseline's failures with a boundary breach.
+- **Retrieval truth has a coverage gap.** `#610` added a terminal `no_evidence` state for explicit
+  lookups, but natural navigation phrasing is not covered: `qwen3.7-flash` answered `C20` ("Where was
+  that passage about coiling ropes?") in **3/3 reps without requesting any tool** — the policy's
+  explicit-lookup list ("find …", "my notes", …) does not match "where was that …", so the turn
+  ships unsourced. Filed with the scope question in #612.
+- **Capture loss in the anchor continuation, with a higher rate after the new commits.** On the
+  rebased revision, `C5`'s external-audio timestamp continuation fails **4/10 reps for the baseline**
+  with `assistant_invalid_arguments` ("'content' or 'selectedText' is required."): the user's
+  timestamp answer produces no note (`noteCountBefore == noteCountAfter`) and a validation error
+  instead. The same scenario on the pre-#610 revision fails **2/30 reps** in the same session window
+  (Fisher exact, two-sided, p ~ 0.026) — so the bug predates the new commits and their changes
+  aggravate it. Filed as #615 (§8.7) with the repro and the A/B evidence.
+
 ---
 
 ## 6. Retrieval comparison
@@ -468,10 +516,7 @@ infrastructure was introduced.
 
 Proposed as separate issues (this benchmark does not fix them):
 
-1. **Reader-context retrieval scope (product) — filed as [#612](https://github.com/Christian-Gennari/Nostos/issues/612).** In a reader context, every tested model searches
-   only the open book; when the answer lives in a note, the turn misses it (`C2` missed the note in
-   100% of baseline reps; `C3` parts). Suggested fix: on an empty book-text result the assistant
-   should widen to knowledge/notes search, or the reader-context guidance should say so explicitly.
+1. **Retrieval scope, intent coverage and insufficiency wording (product) — filed as [#612](https://github.com/Christian-Gennari/Nostos/issues/612).** Pre-#610 every tested model *chose* to search only the open book (C2 missed its note in 100% of baseline reps). Post-#610 the product enforces it: `knowledge_search`/`book_text_search` are scoped to the resolved reader book, so notes attached to other books are invisible from a reader context (measured deterministically — C2's gold note is filtered out by `IsBookAllowed`). Three questions follow: (a) should a scoped-empty lookup widen once to the rest of the library before answering; (b) should the insufficiency message name the scope ("in this book") instead of "in your Nostos material"; (c) the retrieval-truth policy's explicit-lookup list misses natural navigation phrasing ("where was that …"), so a tool-less unsourced answer still ships (`qwen3.7-flash`, C20, 3/3 reps).
 2. **Provenance for list/search tools (product) — filed as [#614](https://github.com/Christian-Gennari/Nostos/issues/614).** `notes_search` and `notes_list_for_book` return
    content without evidence handles, so answers grounded in them carry no provenance (heavily used
    by `qwen3.7-flash`/`deepseek-v4-flash-0731`). Either attach evidence handles or steer lookups to
@@ -488,7 +533,8 @@ Proposed as separate issues (this benchmark does not fix them):
    benchmark: the current managed configuration remains the best-scoring configuration tested. If a
    cheaper model later clears the floor, the change belongs in a Nostos-Cloud issue/PR with this
    report as evidence.
-6. **Retrieval architecture (no change proposed).** The predefined low-overlap/distractor fixtures
+7. **Anchor-continuation capture loss (product defect) — filed as [#615](https://github.com/Christian-Gennari/Nostos/issues/615).** The external-audio timestamp continuation intermittently ends in `assistant_invalid_arguments` and writes no note (baseline: 2/30 reps pre-#609/#610, 4/10 after; p ~ 0.026). The benchmark records it rather than fixing it (capture-loss is product behaviour); repro + raw evidence in the issue.
+8. **Retrieval architecture (no change proposed).** The predefined low-overlap/distractor fixtures
    do not justify semantic/vector infrastructure (§6); the observed live misses are *scope and
    behaviour* issues (1), not lexical-coverage failures. The deterministic lanes prove the
    end-to-end path returns the right note once a knowledge search is issued, and §6 shows the
