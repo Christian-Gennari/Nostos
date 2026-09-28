@@ -98,6 +98,10 @@ export class AddBookModal {
   isFetching = signal(false);
   /** Blocks re-entrant create/update submits until the whole mutation pipeline settles. */
   isSubmitting = signal(false);
+  /** Existing row kept after a failed file upload so retry never creates another book. */
+  private pendingUploadBook = signal<BookModel | null>(null);
+  readonly hasPendingUpload = computed(() => this.pendingUploadBook() !== null);
+  readonly uploadError = signal<string | null>(null);
 
   // Form State
   form = {
@@ -322,6 +326,8 @@ export class AddBookModal {
     };
     this.clearChosenFiles();
     this.uploadProgress.set(null);
+    this.uploadError.set(null);
+    this.pendingUploadBook.set(null);
     this.isFetching.set(false);
     this.isSubmitting.set(false);
     this.fileDragActive.set(false);
@@ -478,6 +484,14 @@ export class AddBookModal {
       return;
     }
 
+    // Once the row exists, every recovery attempt belongs to that same row.
+    // This branch deliberately comes before create() so pressing the primary
+    // action after a failed upload cannot create a duplicate.
+    if (this.hasPendingUpload()) {
+      this.retryUpload();
+      return;
+    }
+
     // Set this synchronously, before the first HTTP call. A disabled button is
     // UX feedback; this guard is the correctness boundary for same-tick double
     // clicks and programmatic re-entry.
@@ -531,8 +545,18 @@ export class AddBookModal {
   }
 
   handleFileUpload(createdBook: BookModel): void {
+    const file = this.selectedFile();
+    if (!file) {
+      this.isSubmitting.set(false);
+      this.uploadError.set('Choose a book file before retrying the upload.');
+      return;
+    }
+
+    this.pendingUploadBook.set(createdBook);
+    this.uploadError.set(null);
+    this.isSubmitting.set(true);
     this.uploadStartTime = performance.now();
-    this.booksService.uploadFile(createdBook.id, this.selectedFile()!).subscribe({
+    this.booksService.uploadFile(createdBook.id, file).subscribe({
       next: (event) => {
         if (event.type === HttpEventType.UploadProgress) {
           const percent = Math.round((event.loaded / (event.total ?? 1)) * 100);
@@ -540,6 +564,8 @@ export class AddBookModal {
         }
         if (event.type === HttpEventType.Response) {
           const elapsed = performance.now() - (this.uploadStartTime ?? 0);
+          this.pendingUploadBook.set(null);
+          this.uploadError.set(null);
           setTimeout(
             () => {
               this.uploadProgress.set(null);
@@ -549,14 +575,38 @@ export class AddBookModal {
           );
         }
       },
-      error: () => {
+      error: (error: unknown) => {
         this.uploadProgress.set(null);
-        // #622 owns the visible retry UX. Releasing the latch here prevents a
-        // dead modal today; its retry path must reuse createdBook.id rather than
-        // calling create() again.
         this.isSubmitting.set(false);
+        this.uploadError.set(this.describeUploadFailure(error));
       },
     });
+  }
+
+  retryUpload(): void {
+    const createdBook = this.pendingUploadBook();
+    if (!createdBook || this.isSubmitting()) return;
+    this.handleFileUpload(createdBook);
+  }
+
+  private describeUploadFailure(error: unknown): string {
+    const status = (error as { status?: number } | null)?.status;
+    if (status === 0) {
+      return 'The connection was interrupted. Your book is saved; retry the file when you are ready.';
+    }
+    if (status === 408 || status === 504) {
+      return 'The upload timed out. Your book is saved; try the file again.';
+    }
+    if (status === 413) {
+      return 'This file is larger than this server allows. Choose a smaller file to continue.';
+    }
+    if (status === 429) {
+      return 'Too many uploads are running right now. Your book is saved; try again in a moment.';
+    }
+    if (status != null && status >= 400 && status < 500) {
+      return 'The server could not accept this file. Your book is saved; check the file and try again.';
+    }
+    return 'The upload could not be completed. Your book is saved; try the file again.';
   }
 
   uploadCoverIfNeeded(bookId: string) {

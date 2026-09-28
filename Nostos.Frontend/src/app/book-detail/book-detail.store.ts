@@ -367,6 +367,19 @@ export class BookDetailStore {
           this.loadBook(b.id, { background: true });
         }
       },
+      error: (error: unknown) => this.toast.error(this.describeUploadFailure(error)),
     });
+  }
+
+  private describeUploadFailure(error: unknown): string {
+    const status = (error as { status?: number } | null)?.status;
+    if (status === 0) return 'The connection was interrupted. Try the upload again.';
+    if (status === 408 || status === 504) return 'The upload timed out. Try again.';
+    if (status === 413) return 'This file is larger than this server allows.';
+    if (status === 429) return 'Too many uploads are running right now. Try again in a moment.';
+    if (status != null && status >= 400 && status < 500) {
+      return 'The server could not accept this file. Check the file and try again.';
+    }
+    return 'The file could not be uploaded. Try again.';
   }
 }

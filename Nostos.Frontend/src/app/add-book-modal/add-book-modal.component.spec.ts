@@ -285,6 +285,43 @@ describe('AddBookModal', () => {
     expect(uploadSpy).toHaveBeenCalledTimes(1);
   });
 
+  it('retries a failed upload against the created book instead of creating another row', () => {
+    const books = TestBed.inject(BooksService);
+    const createdBook = { id: 'existing-row' } as unknown as Book;
+    const createSpy = vi.spyOn(books, 'create').mockReturnValue(of(createdBook));
+    const firstUpload = new Subject<any>();
+    const secondUpload = new Subject<any>();
+    const uploadSpy = vi
+      .spyOn(books, 'uploadFile')
+      .mockReturnValueOnce(firstUpload)
+      .mockReturnValueOnce(secondUpload);
+    const file = new File(['ebook'], 'magic-mountain.epub', {
+      type: 'application/epub+zip',
+    });
+
+    component.form.title = 'The Magic Mountain';
+    component.form.type = 'ebook';
+    component.selectedFile.set(file);
+
+    component.submit();
+    firstUpload.error({ status: 504 });
+    fixture.detectChanges();
+
+    expect(component.isSubmitting()).toBe(false);
+    expect(component.uploadError()).toContain('timed out');
+    expect(fixture.nativeElement.textContent).toContain('Retry upload');
+
+    // The primary form action is also safe recovery: it must route back to the
+    // already-created row rather than POST /api/books again.
+    component.submit();
+
+    expect(createSpy).toHaveBeenCalledTimes(1);
+    expect(uploadSpy).toHaveBeenCalledTimes(2);
+    expect(uploadSpy).toHaveBeenNthCalledWith(2, createdBook.id, file);
+    expect(component.isSubmitting()).toBe(true);
+    expect(component.uploadError()).toBeNull();
+  });
+
   it('renders the multi-select picker with the hierarchy intact', () => {
     fixture.detectChanges();
     const options = Array.from<Element>(
