@@ -2623,6 +2623,108 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
     }
 
     [Fact]
+    public async Task Sparse_implicit_reader_knowledge_lookup_widens_once_to_library()
+    {
+        var currentBook = Guid.NewGuid();
+        var otherBook = Guid.NewGuid();
+        var currentNote = Guid.NewGuid();
+        var crossBookNote = Guid.NewGuid();
+        var now = DateTime.UtcNow;
+
+        KnowledgeNoteEvidence Note(Guid noteId, Guid bookId, string title, string snippet) =>
+            new(
+                new KnowledgeEvidenceHandle(KnowledgeEvidenceKinds.Note, NoteId: noteId, BookId: bookId),
+                noteId,
+                bookId,
+                title,
+                snippet,
+                [],
+                now,
+                null,
+                "unknown",
+                null,
+                false);
+
+        var scoped = Note(
+            currentNote,
+            currentBook,
+            "Open Book",
+            "A weak same-book mention of the wick.");
+        var crossBook = Note(
+            crossBookNote,
+            otherBook,
+            "Other Book",
+            "The third rule says never trim a lit wick.");
+
+        var knowledge = new SequencedKnowledgeRetrievalService(
+            new KnowledgeSearchResponse(["third rule lit wick"], [scoped], [], [], [], true),
+            new KnowledgeSearchResponse(["third rule lit wick"], [scoped, crossBook], [], [], [], true));
+
+        var h = CreateHarness(knowledge: knowledge);
+        h.Llm
+            .CallsTool("knowledge_search", """{"query":"third rule lit wick"}""")
+            .Returns("The third rule is grounded in the note from the other book.");
+
+        var response = await h.Orchestrator.HandleTurnAsync(Turn(
+            "Why does that third rule about the lit wick matter?",
+            Context(
+                surface: "reader",
+                route: $"/read/{currentBook}",
+                bookId: currentBook.ToString(),
+                bookTitle: "Open Book",
+                bookFormat: "ebook",
+                readerType: "epub")));
+
+        knowledge.Requests.Should().HaveCount(2);
+        knowledge.Requests[0].BookIds.Should().ContainSingle().Which.Should().Be(currentBook);
+        knowledge.Requests[1].BookIds.Should().NotBeNull().And.BeEmpty();
+        response.Evidence.Should().Contain(item =>
+            item.Handle.Kind == KnowledgeEvidenceKinds.Note
+            && item.Handle.NoteId == crossBookNote);
+    }
+
+    [Fact]
+    public async Task Explicit_reader_knowledge_scope_is_not_widened()
+    {
+        var currentBook = Guid.NewGuid();
+        var noteId = Guid.NewGuid();
+        var note = new KnowledgeNoteEvidence(
+            new KnowledgeEvidenceHandle(KnowledgeEvidenceKinds.Note, NoteId: noteId, BookId: currentBook),
+            noteId,
+            currentBook,
+            "Open Book",
+            "The scoped note.",
+            [],
+            DateTime.UtcNow,
+            null,
+            "unknown",
+            null,
+            false);
+        var knowledge = new SequencedKnowledgeRetrievalService(
+            new KnowledgeSearchResponse(["scoped"], [note], [], [], [], true));
+
+        var h = CreateHarness(knowledge: knowledge);
+        h.Llm
+            .CallsTool(
+                "knowledge_search",
+                $"""{"query":"scoped","bookIds":["{{currentBook}}"]}""")
+            .Returns("Scoped answer.");
+
+        await h.Orchestrator.HandleTurnAsync(Turn(
+            "Search this book for the scoped note.",
+            Context(
+                surface: "reader",
+                route: $"/read/{currentBook}",
+                bookId: currentBook.ToString(),
+                bookTitle: "Open Book",
+                bookFormat: "ebook",
+                readerType: "epub")));
+
+        knowledge.Requests.Should().ContainSingle();
+        knowledge.Requests[0].BookIds.Should().ContainSingle().Which.Should().Be(currentBook);
+    }
+
+    [Fact]
     public async Task Empty_unscoped_knowledge_lookup_does_not_turn_a_general_answer_into_a_failure()
     {
         var knowledge = new FakeKnowledgeRetrievalService(
@@ -3444,6 +3546,36 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
             Func<TState, Exception?, string> formatter)
         {
         }
+    }
+
+    private sealed class SequencedKnowledgeRetrievalService(
+        params KnowledgeSearchResponse[] responses) : IKnowledgeRetrievalService
+    {
+        private readonly Queue<KnowledgeSearchResponse> _responses = new(responses);
+
+        public List<KnowledgeSearchRequest> Requests { get; } = [];
+
+        public Task<KnowledgeSearchResponse> SearchAsync(
+            KnowledgeSearchRequest request,
+            CancellationToken ct = default)
+        {
+            Requests.Add(request);
+            if (_responses.Count == 0)
+                throw new InvalidOperationException("No scripted knowledge response remains.");
+
+            return Task.FromResult(
+                _responses.Count == 1
+                    ? _responses.Peek()
+                    : _responses.Dequeue());
+        }
+
+        public Task<KnowledgeOverview> OverviewAsync(CancellationToken ct = default) =>
+            Task.FromResult(new KnowledgeOverview(0, 0, 0, 0, [], []));
+
+        public Task<KnowledgeReadResponse?> ReadAsync(
+            KnowledgeEvidenceHandle handle,
+            CancellationToken ct = default) =>
+            Task.FromResult<KnowledgeReadResponse?>(null);
     }
 
     private sealed class FakeKnowledgeRetrievalService(
