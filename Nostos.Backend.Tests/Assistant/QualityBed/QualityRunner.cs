@@ -29,7 +29,10 @@ internal sealed record QualityBedConfig(
     IReadOnlyList<string> ScenarioIds,
     int Reps,
     string OutDir,
-    bool Blind)
+    bool Blind,
+    // Production-posture control (NOSTOS_QG_REASONING_EFFORT). Null keeps the
+    // default: the request is byte-for-byte what the product sends.
+    string? ReasoningEffort = null)
 {
     public static QualityBedConfig FromEnvironment()
     {
@@ -43,6 +46,10 @@ internal sealed record QualityBedConfig(
             Environment.GetEnvironmentVariable("NOSTOS_QG_REPS"), out var parsed) ? Math.Max(1, parsed) : 1;
         var outDir = Environment.GetEnvironmentVariable("NOSTOS_QG_OUT")
             ?? Path.Combine(Path.GetTempPath(), $"nostos-quality-bed-{Guid.NewGuid():N}");
+        var reasoningEffort = Environment
+            .GetEnvironmentVariable(QualityReasoningEffortHandler.EnvironmentVariable)?.Trim();
+        if (string.IsNullOrEmpty(reasoningEffort))
+            reasoningEffort = null;
         return new QualityBedConfig(
             live,
             Environment.GetEnvironmentVariable("NOSTOS_QG_BASE_URL") ?? string.Empty,
@@ -52,7 +59,8 @@ internal sealed record QualityBedConfig(
             reps,
             outDir,
             string.Equals(
-                Environment.GetEnvironmentVariable("NOSTOS_QG_BLIND"), "1", StringComparison.Ordinal));
+                Environment.GetEnvironmentVariable("NOSTOS_QG_BLIND"), "1", StringComparison.Ordinal),
+            reasoningEffort);
     }
 }
 
@@ -64,7 +72,11 @@ internal sealed record QualityModelOutcome(
     IReadOnlyList<string> Failures,
     // Flat live-mode advisories with scenario/turn context. Serialized as the
     // top-level `advisories` array in results.json; existing fields unchanged.
-    IReadOnlyList<string>? Advisories = null);
+    IReadOnlyList<string>? Advisories = null,
+    // Production-posture control (NOSTOS_QG_REASONING_EFFORT) recorded for
+    // every run: null is the default (product bytes, no reasoning_effort).
+    // Appended so existing positional constructions keep compiling.
+    string? ReasoningEffort = null);
 
 internal sealed class QualityBedHost : IDisposable
 {
@@ -132,7 +144,8 @@ internal sealed class QualityBedHost : IDisposable
     }
 
     public static QualityBedHost CreateLive(
-        QualityMetricsSink sink, string baseUrl, string keyVariable, string model)
+        QualityMetricsSink sink, string baseUrl, string keyVariable, string model,
+        string? reasoningEffort = null)
     {
         var factory = new LibraryEndpointFactory();
         var host = factory.WithWebHostBuilder(builder =>
@@ -154,6 +167,17 @@ internal sealed class QualityBedHost : IDisposable
                         provider.GetRequiredService<ILogger<NineRouterLlmProvider>>()),
                     sink,
                     model));
+                // Production-posture control, transport boundary only: every
+                // live chat-completion request through the product's named
+                // client gains reasoning_effort. Additive on top of the
+                // product's own registration; unset keeps the product bytes.
+                if (!string.IsNullOrWhiteSpace(reasoningEffort))
+                {
+                    var effort = reasoningEffort.Trim();
+                    services
+                        .AddHttpClient(NineRouterLlmProvider.HttpClientName)
+                        .AddHttpMessageHandler(() => new QualityReasoningEffortHandler(effort));
+                }
             });
         });
         var client = host.CreateClient();
@@ -245,7 +269,8 @@ internal static class QualityRunner
                 model, blindId, outcomes,
                 Sum(outcomes.SelectMany(o => new[] { o.Totals })),
                 outcomes.SelectMany(o => o.Failures).ToList(),
-                outcomes.SelectMany(o => o.Advisories ?? []).ToList()));
+                outcomes.SelectMany(o => o.Advisories ?? []).ToList(),
+                config.ReasoningEffort));
             Console.WriteLine($"quality bed (live): {WriteModelOutputs(config, models[^1], blindId)}");
         }
 
@@ -292,7 +317,8 @@ internal static class QualityRunner
     private static QualityBedHost CreateSeededLiveHost(
         QualityMetricsSink sink, QualityBedConfig config, string model)
     {
-        var host = QualityBedHost.CreateLive(sink, config.BaseUrl, config.KeyEnvName, model);
+        var host = QualityBedHost.CreateLive(
+            sink, config.BaseUrl, config.KeyEnvName, model, config.ReasoningEffort);
         using var scope = host.Services.CreateScope();
         QualityLibrarySeeder.SeedAsync(scope.ServiceProvider).GetAwaiter().GetResult();
         return host;
