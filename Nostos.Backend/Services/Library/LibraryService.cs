@@ -470,6 +470,16 @@ public sealed class LibraryService : ILibraryService
             request.FinishedAt);
 
         var model = createDto.ToModel();
+        // Local-file creation is a two-step lifecycle: create metadata, then
+        // POST /file. The explicit intent distinguishes an abandoned upload
+        // from a valid metadata-only ebook/audiobook; never infer this from
+        // HasFile=false because that is a supported steady state.
+        if (request.FileUploadExpected)
+        {
+            model.Status = BookStatus.UploadPending;
+            model.StatusMessage = "Waiting for local file upload.";
+        }
+
         var (normIsbn, normAsin) = LibraryIdentityBackfill.ComputeNormalizedIdentity(model);
         model.NormalizedIsbn = normIsbn;
         model.NormalizedAsin = normAsin;

@@ -528,7 +528,13 @@ export class AddBookModal {
         },
       });
     } else {
-      this.booksService.create(payload).subscribe({
+      this.booksService.create({
+        ...payload,
+        // A digital row created for a chosen local file is not a completed
+        // library item until /file succeeds. Metadata-only digital books omit
+        // this flag and remain legitimate Ready rows without a file.
+        fileUploadExpected: this.form.type !== 'physical' && this.selectedFile() !== null,
+      }).subscribe({
         next: (createdBook) => {
           if (this.form.type !== 'physical' && this.selectedFile()) {
             this.handleFileUpload(createdBook);

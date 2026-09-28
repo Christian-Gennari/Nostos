@@ -106,7 +106,7 @@ export interface Book {
   source?: BookSource | null;
 
   /**
-   * Life-cycle status: 0 = Ready, 1 = Downloading, 2 = Transcoding, 3 = Failed.
+   * Life-cycle status: 0 = Ready, 1 = Downloading, 2 = Transcoding, 3 = Failed, 4 = UploadPending.
    */
   status?: number;
   statusMessage?: string | null;
@@ -180,6 +180,9 @@ export interface CreateBookDto {
    * Membership set — the authoritative shape.
    */
   collectionIds?: string[];
+
+  /** Explicitly marks create as the first half of a local-file upload. */
+  fileUploadExpected?: boolean;
 
   // Initial Metadata
   rating?: number;

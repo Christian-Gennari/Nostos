@@ -99,7 +99,8 @@ public static class BooksEndpoints
                     CollectionIds: dto.CollectionIds
                         ?? (dto.CollectionId.HasValue ? [dto.CollectionId.Value] : null),
                     Rating: dto.Rating, IsFavorite: dto.IsFavorite,
-                    PersonalReview: dto.PersonalReview, FinishedAt: dto.FinishedAt);
+                    PersonalReview: dto.PersonalReview, FinishedAt: dto.FinishedAt,
+                    FileUploadExpected: dto.FileUploadExpected);
 
                 var result = await library.CreateOrMatchBookAsync(request, strictConfirmation: false, ct);
                 if (LibraryHttpMapper.MapError(result) is { } error)
@@ -346,6 +347,14 @@ public static class BooksEndpoints
 
                 book.FileDetails.HasFile = true;
                 book.FileDetails.FileName = $"book{Path.GetExtension(file.FileName)}";
+                // A local-upload row is incomplete until the canonical file
+                // metadata is persisted. Success is the lifecycle boundary;
+                // failed/interrupted attempts deliberately leave UploadPending.
+                if (book.Status == BookStatus.UploadPending)
+                {
+                    book.Status = BookStatus.Ready;
+                    book.StatusMessage = null;
+                }
 
                 // Clear old locations/chapters if a new file is uploaded
                 book.FileDetails.LocationsJson = null;

@@ -87,7 +87,7 @@ public record BookDto(
     // this is where a file came from, not a licensing surface.
     BookSourceDto? Source = null,
     // Life-cycle status for create-on-confirm imports. Ready = 0, Downloading = 1,
-    // Transcoding = 2, Failed = 3. APPENDED to preserve positional record stability.
+    // Transcoding = 2, Failed = 3, UploadPending = 4. APPENDED to preserve positional record stability.
     Nostos.Shared.Enums.BookStatus Status = Nostos.Shared.Enums.BookStatus.Ready,
     string? StatusMessage = null
 );
@@ -138,7 +138,11 @@ public record CreateBookDto(
      * (membership is reported as CollectionIds).
      */
     Guid? CollectionId = null,
-    IReadOnlyList<Guid>? CollectionIds = null
+    IReadOnlyList<Guid>? CollectionIds = null,
+    // Explicit create intent for the local-file flow. A digital record without
+    // a file is otherwise legitimate, so incomplete upload state must never be
+    // inferred from HasFile/FileName.
+    bool FileUploadExpected = false
 );
 
 public record UpdateBookDto(
