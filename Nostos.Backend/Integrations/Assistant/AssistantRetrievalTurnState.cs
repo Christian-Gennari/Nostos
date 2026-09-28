@@ -54,8 +54,11 @@ internal sealed class AssistantRetrievalTurnState(AssistantContextDto context)
     /// </summary>
     public JsonElement ApplyImplicitBookScope(
         JsonElement args,
-        IReadOnlyList<AssistantHistoryMessageDto>? history)
+        IReadOnlyList<AssistantHistoryMessageDto>? history,
+        out bool implicitReaderScope)
     {
+        implicitReaderScope = false;
+
         if (HasExplicitScopeArgument(args))
         {
             RecordExplicitKnownBookScope(args, history);
@@ -68,6 +71,10 @@ internal sealed class AssistantRetrievalTurnState(AssistantContextDto context)
         {
             bookId = currentBookId;
             bookTitle = context.BookTitle;
+            implicitReaderScope = string.Equals(
+                context.Surface,
+                "reader",
+                StringComparison.OrdinalIgnoreCase);
         }
         else if (TryGetLatestHistoricalBookScope(history, out var historical))
         {
@@ -163,6 +170,29 @@ internal sealed class AssistantRetrievalTurnState(AssistantContextDto context)
     }
 
     /// <summary>
+    /// Reader context starts narrow for latency and relevance, but a single
+    /// weak same-book hit is not enough to prove the answer is in that book.
+    /// For implicitly scoped knowledge lookups only, widen once to the whole
+    /// library when the result is empty/sparse. Explicit scope is never widened.
+    /// </summary>
+    public JsonElement? BuildKnowledgeScopeFallbackArguments(
+        JsonElement args,
+        JsonElement resultData,
+        bool implicitReaderScope)
+    {
+        if (!implicitReaderScope
+            || !IsSparseKnowledgeResult(resultData)
+            || HasBlockingKnowledgeSourceState(resultData))
+        {
+            return null;
+        }
+
+        var obj = JsonNode.Parse(args.GetRawText()) as JsonObject ?? new JsonObject();
+        obj["bookIds"] = new JsonArray();
+        return JsonSerializer.SerializeToElement(obj, JsonOptions);
+    }
+
+    /// <summary>
     /// One bounded deterministic recovery for a ready indexed source. The
     /// original scope is preserved; only the query is reformulated from the
     /// user's literal lexical terms.
@@ -196,6 +226,75 @@ internal sealed class AssistantRetrievalTurnState(AssistantContextDto context)
         var obj = JsonNode.Parse(args.GetRawText()) as JsonObject ?? new JsonObject();
         obj["query"] = string.Join(" ", tokens);
         return JsonSerializer.SerializeToElement(obj, JsonOptions);
+    }
+
+    private static bool IsSparseKnowledgeResult(JsonElement data)
+    {
+        if (data.ValueKind != JsonValueKind.Object)
+            return false;
+
+        // A concept hit can be a useful orientation clue without containing
+        // the continuity evidence itself. Treat the reader lookup as weak when
+        // it has at most one concrete note/passage, so a concept-only or
+        // one-note distractor cannot prevent the bounded library fallback.
+        var concreteEvidenceCount =
+            ArrayLength(data, "notes")
+            + ArrayLength(data, "bookPassages");
+
+        return concreteEvidenceCount <= 1;
+    }
+
+    private static bool HasBlockingKnowledgeSourceState(JsonElement data)
+    {
+        if (data.ValueKind != JsonValueKind.Object
+            || !data.TryGetProperty("bookTextStates", out var states)
+            || states.ValueKind != JsonValueKind.Array)
+        {
+            return false;
+        }
+
+        foreach (var item in states.EnumerateArray())
+        {
+            if (!item.TryGetProperty("status", out var status))
+                continue;
+
+            if (TryReadIngestionStatus(status, out var parsed)
+                && parsed is BookTextIngestionStatus.Pending
+                    or BookTextIngestionStatus.Processing
+                    or BookTextIngestionStatus.Failed
+                    or BookTextIngestionStatus.Unsupported)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static int ArrayLength(JsonElement data, string propertyName) =>
+        data.TryGetProperty(propertyName, out var value)
+        && value.ValueKind == JsonValueKind.Array
+            ? value.GetArrayLength()
+            : 0;
+
+    private static bool TryReadIngestionStatus(
+        JsonElement status,
+        out BookTextIngestionStatus parsed)
+    {
+        parsed = default;
+        if (status.ValueKind == JsonValueKind.Number
+            && status.TryGetInt32(out var numeric)
+            && Enum.IsDefined(typeof(BookTextIngestionStatus), numeric))
+        {
+            parsed = (BookTextIngestionStatus)numeric;
+            return true;
+        }
+
+        return status.ValueKind == JsonValueKind.String
+            && Enum.TryParse(
+                status.GetString(),
+                ignoreCase: true,
+                out parsed);
     }
 
     private AssistantTurnErrorDto? SourceStateFailure()

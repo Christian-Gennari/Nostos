@@ -395,6 +395,7 @@ public sealed class AssistantOrchestrator(
                 }
 
                 JsonElement args;
+                var implicitReaderScope = false;
                 AssistantCapturePreparation? capture = null;
 
                 if (capability.Trust == AssistantTrustClass.Capture
@@ -458,7 +459,8 @@ public sealed class AssistantOrchestrator(
                     {
                         args = retrieval.ApplyImplicitBookScope(
                             args,
-                            request.History);
+                            request.History,
+                            out implicitReaderScope);
                     }
                 }
 
@@ -535,6 +537,23 @@ public sealed class AssistantOrchestrator(
                             toolContext,
                             ct);
                         args = fallbackArgs;
+                    }
+                    else if (result.Success
+                        && string.Equals(capability.Name, KnowledgeSearchCapability, StringComparison.Ordinal)
+                        && result.Data is { } knowledgeData
+                        && retrieval.BuildKnowledgeScopeFallbackArguments(
+                            args,
+                            knowledgeData,
+                            implicitReaderScope) is { } widenedArgs)
+                    {
+                        // Keep the original scoped args for turn-state truth:
+                        // this turn did attempt a reader-scoped lookup before
+                        // the bounded whole-library fallback.
+                        result = await registry.InvokeAsync(
+                            capability.Name,
+                            widenedArgs,
+                            toolContext,
+                            ct);
                     }
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested)

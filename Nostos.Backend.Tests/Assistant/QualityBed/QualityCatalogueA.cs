@@ -175,18 +175,17 @@ internal static partial class QualityCatalogue
             "C2",
             "Long-answer continuity",
             "C2 — long-answer continuity: follow-up references a point near the end of a long explanation that would have exceeded the old 2,000-character history cap.",
-            "The follow-up turn observes the complete long explanation, including its final point.",
+            "The follow-up observes the complete long explanation and recovers its grounding note after reader context moves to another book.",
             "Does the follow-up answer engage the third rule specifically, rather than restarting with generic lamp advice? " +
             "Is the long explanation itself coherent across its full length?",
             QualityModes.Deterministic | QualityModes.Live,
-            "Deterministic asserts the full long text is threaded into the follow-up provider request; live scores use.",
+            "Deterministic asserts full long-text continuity plus cross-book reader retrieval; live scores both.",
             [
                 new QualityTurnSpec(
                     "Explain the three rules of the gallery watch.",
-                    // The long account lives in the audiobook note that is the
-                    // gold source, and the product scopes searches to the open
-                    // book (resolved-book scope), so the reader context must be
-                    // that book for the follow-up to be answerable.
+                    // Establish the long answer from its canonical source first.
+                    // The continuity regression is the follow-up below, after
+                    // reader context has moved to a different open book.
                     () => QualityContexts.ReaderAudiobook(
                         QualityFixtureIds.BookSleeperCar,
                         QualityFixtureIds.TitleSleeperCar),
@@ -202,13 +201,13 @@ internal static partial class QualityCatalogue
                         MinEvidence: 1)),
                 new QualityTurnSpec(
                     "Why does that third rule about the lit wick matter?",
-                    // The long account lives in the audiobook note that is the
-                    // gold source, and the product scopes searches to the open
-                    // book (resolved-book scope), so the reader context must be
-                    // that book for the follow-up to be answerable.
-                    () => QualityContexts.ReaderAudiobook(
-                        QualityFixtureIds.BookSleeperCar,
-                        QualityFixtureIds.TitleSleeperCar),
+                    // The gold note belongs to another book. Reader context
+                    // starts on Salt Meridian so this turn proves the bounded
+                    // same-book -> whole-library widening path.
+                    () => QualityContexts.ReaderEbook(
+                        QualityFixtureIds.BookSaltMeridian,
+                        QualityFixtureIds.TitleSaltMeridian,
+                        "epubcfi(/6/4[c2]!/4/2/2)"),
                     QualityScript.Play(
                         QualityScript.ToolCall(
                             "knowledge_search",
