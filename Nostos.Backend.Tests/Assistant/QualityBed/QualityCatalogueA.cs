@@ -183,10 +183,13 @@ internal static partial class QualityCatalogue
             [
                 new QualityTurnSpec(
                     "Explain the three rules of the gallery watch.",
-                    () => QualityContexts.ReaderEbook(
-                        QualityFixtureIds.BookSaltMeridian,
-                        QualityFixtureIds.TitleSaltMeridian,
-                        "epubcfi(/6/4[chap05]!/4/2/6)"),
+                    // The long account lives in the audiobook note that is the
+                    // gold source, and the product scopes searches to the open
+                    // book (resolved-book scope), so the reader context must be
+                    // that book for the follow-up to be answerable.
+                    () => QualityContexts.ReaderAudiobook(
+                        QualityFixtureIds.BookSleeperCar,
+                        QualityFixtureIds.TitleSleeperCar),
                     QualityScript.Play(
                         QualityScript.ToolCall(
                             "knowledge_search",
@@ -199,10 +202,13 @@ internal static partial class QualityCatalogue
                         MinEvidence: 1)),
                 new QualityTurnSpec(
                     "Why does that third rule about the lit wick matter?",
-                    () => QualityContexts.ReaderEbook(
-                        QualityFixtureIds.BookSaltMeridian,
-                        QualityFixtureIds.TitleSaltMeridian,
-                        "epubcfi(/6/4[chap05]!/4/2/6)"),
+                    // The long account lives in the audiobook note that is the
+                    // gold source, and the product scopes searches to the open
+                    // book (resolved-book scope), so the reader context must be
+                    // that book for the follow-up to be answerable.
+                    () => QualityContexts.ReaderAudiobook(
+                        QualityFixtureIds.BookSleeperCar,
+                        QualityFixtureIds.TitleSleeperCar),
                     QualityScript.Play(
                         QualityScript.ToolCall(
                             "knowledge_search",

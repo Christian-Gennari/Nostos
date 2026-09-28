@@ -37,6 +37,19 @@ internal static class QualityContexts
         BookTitle: title,
         BookFormat: "audiobook",
         ReaderType: "car-stereo");
+
+    /// <summary>
+    /// In-app audiobook playback: the reader surface the frontend's audio reader
+    /// reports (BookFormat audiobook, ReaderType "audio"). Distinct from
+    /// <see cref="ExternalAudio"/> so scenario anchors stay explicit.
+    /// </summary>
+    public static AssistantContextDto ReaderAudiobook(Guid bookId, string title) => new(
+        Surface: "reader",
+        Route: "/read",
+        BookId: bookId.ToString(),
+        BookTitle: title,
+        BookFormat: "audiobook",
+        ReaderType: "audio");
 }
 
 internal static class QualityArgs
