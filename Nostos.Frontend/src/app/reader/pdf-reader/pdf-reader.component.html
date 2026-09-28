@@ -54,6 +54,8 @@
       (scrollModeChange)="onScrollModeChange($event)"
       [showBorders]="false"
       [zoom]="zoomLevel()"
+      [rotation]="rotation()"
+      [ignoreKeys]="ignoredViewerKeys"
       (pagesLoaded)="onPagesLoaded($event)"
       (pageChange)="onPageChange($event)"
       (textLayerRendered)="onTextLayerRendered($event)"

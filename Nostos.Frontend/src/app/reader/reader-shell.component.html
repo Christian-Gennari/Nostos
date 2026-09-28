@@ -407,6 +407,26 @@
       </div>
     </div>
     <div class="typo-row">
+      <span class="typo-label" id="pdf-rotation">Rotation</span>
+      <div class="typo-opts" role="group" aria-labelledby="pdf-rotation">
+        <button
+          type="button"
+          class="typo-opt"
+          (click)="pdfReader?.rotateCounterclockwise()"
+        >Left</button>
+        <button
+          type="button"
+          class="typo-opt"
+          (click)="pdfReader?.resetRotation()"
+        >Reset</button>
+        <button
+          type="button"
+          class="typo-opt"
+          (click)="pdfReader?.rotateClockwise()"
+        >Right</button>
+      </div>
+    </div>
+    <div class="typo-row">
       <span class="typo-label" id="pdf-fit">Page fit</span>
       <div class="typo-opts" role="group" aria-labelledby="pdf-fit">
         @for (p of pdfZoomPresets(); track p.value) {

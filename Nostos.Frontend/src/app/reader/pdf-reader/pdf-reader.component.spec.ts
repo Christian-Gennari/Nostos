@@ -36,6 +36,8 @@ class PdfViewerStub {
   theme = input<string>('light');
   showBorders = input<boolean>(true);
   zoom = input<string | number>('page-fit');
+  rotation = input<number>(0);
+  ignoreKeys = input<string[]>([]);
   showToolbar = input<boolean>(true);
   textLayer = input<boolean>(false);
   handTool = input<boolean>(false);
@@ -716,6 +718,42 @@ describe('PdfReader reading mode', () => {
       // phone reader is never stuck on a fit it cannot enlarge.
       expect(fixture.componentInstance.zoomLevel()).toBe(110);
     });
+  });
+
+  it('blocks pdf.js rotation shortcuts and keeps app-owned rotation recoverable', () => {
+    fixture = make();
+    const component = fixture.componentInstance;
+    const viewer = fixture.debugElement.query(By.directive(PdfViewerStub))
+      .componentInstance as PdfViewerStub;
+
+    expect(viewer.ignoreKeys()).toEqual(['R', 'SHIFT+R']);
+    expect(viewer.rotation()).toBe(0);
+
+    component.rotateClockwise();
+    fixture.detectChanges();
+    expect(component.rotation()).toBe(90);
+    expect(viewer.rotation()).toBe(90);
+
+    component.rotateCounterclockwise();
+    fixture.detectChanges();
+    expect(component.rotation()).toBe(0);
+
+    component.rotateCounterclockwise();
+    expect(component.rotation()).toBe(270);
+
+    component.resetRotation();
+    fixture.detectChanges();
+    expect(component.rotation()).toBe(0);
+    expect(viewer.rotation()).toBe(0);
+  });
+
+  it('exposes left, reset, and right rotation controls in PDF View settings', () => {
+    const shell = readSource('../reader-shell.component.html');
+
+    expect(shell).toContain('id="pdf-rotation"');
+    expect(shell).toContain('(click)="pdfReader?.rotateCounterclockwise()"');
+    expect(shell).toContain('(click)="pdfReader?.resetRotation()"');
+    expect(shell).toContain('(click)="pdfReader?.rotateClockwise()"');
   });
 
   it('offers the three fits the acceptance criteria ask for', () => {
