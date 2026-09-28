@@ -15,6 +15,7 @@ namespace Nostos.Backend.Integrations.Assistant;
 internal sealed class AssistantCapturePolicy(ILibraryService library)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private const int MaxBookCandidateChoices = 5;
 
     public async Task<AssistantCapturePreparation> PrepareAsync(
         string argumentsJson,
@@ -76,6 +77,8 @@ internal sealed class AssistantCapturePolicy(ILibraryService library)
         {
             AssistantOrchestrator.BookPromptKind => context with
             {
+                BookId = null,
+                BookTitle = null,
                 CaptureBookTitle = trimmed,
             },
             "physical_page" => context with
@@ -93,6 +96,57 @@ internal sealed class AssistantCapturePolicy(ILibraryService library)
                     false),
             },
             _ => context,
+        };
+    }
+
+    /// <summary>
+    /// Applies a book follow-up without giving the model authority over the
+    /// target. When the previous title produced multiple canonical candidates,
+    /// a displayed 1-based choice resolves directly to that candidate id.
+    /// Any other answer is treated as a fresh title and resolved normally.
+    /// </summary>
+    public async Task<AssistantContextDto> ApplyBookContinuationAnswerAsync(
+        AssistantContextDto context,
+        string answer,
+        CancellationToken ct)
+    {
+        var trimmed = answer.Trim();
+
+        if (!string.IsNullOrWhiteSpace(context.CaptureBookTitle)
+            && int.TryParse(
+                trimmed,
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out var selection))
+        {
+            var prior = await library.ResolveBookAsync(
+                new LibraryResolveBookRequest(
+                    Title: context.CaptureBookTitle.Trim(),
+                    IncludeExternalMetadata: false),
+                ct);
+
+            if (prior.Resolution == LibraryResolution.Candidates
+                && prior.Candidates is { Count: > 1 } candidates)
+            {
+                var choices = OrderBookCandidates(candidates);
+                if (selection >= 1 && selection <= choices.Count)
+                {
+                    var chosen = choices[selection - 1];
+                    return context with
+                    {
+                        BookId = chosen.BookId.ToString(),
+                        BookTitle = chosen.Title,
+                        CaptureBookTitle = null,
+                    };
+                }
+            }
+        }
+
+        return context with
+        {
+            BookId = null,
+            BookTitle = null,
+            CaptureBookTitle = trimmed,
         };
     }
 
@@ -120,13 +174,51 @@ internal sealed class AssistantCapturePolicy(ILibraryService library)
             LibraryResolution.ExactMatch when resolved.MatchedBook is { } match =>
                 BookDecision.At(match.Id, match.Title),
 
-            // Exactly one candidate is an answer, not an ambiguity. More than
-            // one is the user's to settle, so it becomes the same question again.
+            // Exactly one candidate is an answer, not an ambiguity.
             LibraryResolution.Candidates when resolved.Candidates is { Count: 1 } only =>
                 BookDecision.At(only[0].BookId, only[0].Title),
 
-            _ => BookDecision.Ask(new AssistantAnchorPromptDto(AssistantOrchestrator.BookPromptKind, AssistantOrchestrator.BookNotFoundQuestion)),
+            // Multiple candidates are a real ambiguity, not "not found".
+            // Show only a small stable set and let the user's numbered answer
+            // select one canonical id on the next deterministic continuation.
+            LibraryResolution.Candidates when resolved.Candidates is { Count: > 1 } many =>
+                BookDecision.Ask(new AssistantAnchorPromptDto(
+                    AssistantOrchestrator.BookPromptKind,
+                    BuildAmbiguousBookQuestion(many))),
+
+            _ => BookDecision.Ask(new AssistantAnchorPromptDto(
+                AssistantOrchestrator.BookPromptKind,
+                AssistantOrchestrator.BookNotFoundQuestion)),
         };
+    }
+
+    private static IReadOnlyList<LibraryCandidate> OrderBookCandidates(
+        IReadOnlyList<LibraryCandidate> candidates) =>
+        candidates
+            .OrderBy(candidate => candidate.Title, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(candidate => candidate.Author ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(candidate => candidate.BookId)
+            .Take(MaxBookCandidateChoices)
+            .ToList();
+
+    private static string BuildAmbiguousBookQuestion(IReadOnlyList<LibraryCandidate> candidates)
+    {
+        var choices = OrderBookCandidates(candidates)
+            .Select((candidate, index) =>
+            {
+                var label = string.IsNullOrWhiteSpace(candidate.Author)
+                    ? candidate.Title
+                    : $"{candidate.Title} — {candidate.Author}";
+                var identifier = candidate.Isbn ?? candidate.Asin;
+                if (!string.IsNullOrWhiteSpace(identifier))
+                {
+                    label += $" ({identifier})";
+                }
+
+                return $"{index + 1}. {label}";
+            });
+
+        return $"I found more than one matching book. Reply with the number: {string.Join("; ", choices)}";
     }
 
     // ------------------------------------------------------------------

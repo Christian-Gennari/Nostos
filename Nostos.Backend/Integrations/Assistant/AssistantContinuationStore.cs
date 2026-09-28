@@ -19,7 +19,8 @@ internal sealed record StoredAssistantContinuation(
     string ArgumentsJson,
     AssistantContextDto Context,
     string ProcessingMode,
-    DateTimeOffset ExpiresAt);
+    DateTimeOffset ExpiresAt,
+    int BookResolutionAttempts = 0);
 
 internal enum AssistantContinuationLookupStatus
 {
@@ -119,7 +120,8 @@ public sealed class AssistantContinuationStore
     internal StoredAssistantContinuation Update(
         StoredAssistantContinuation continuation,
         string kind,
-        AssistantContextDto context)
+        AssistantContextDto context,
+        int? bookResolutionAttempts = null)
     {
         lock (_gate)
         {
@@ -135,6 +137,8 @@ public sealed class AssistantContinuationStore
             {
                 Kind = kind,
                 Context = context,
+                BookResolutionAttempts =
+                    bookResolutionAttempts ?? continuation.BookResolutionAttempts,
                 ExpiresAt = Now + ActiveLifetime,
             };
 
