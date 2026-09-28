@@ -468,15 +468,15 @@ infrastructure was introduced.
 
 Proposed as separate issues (this benchmark does not fix them):
 
-1. **Reader-context retrieval scope (product).** In a reader context, every tested model searches
+1. **Reader-context retrieval scope (product) — filed as [#612](https://github.com/Christian-Gennari/Nostos/issues/612).** In a reader context, every tested model searches
    only the open book; when the answer lives in a note, the turn misses it (`C2` missed the note in
    100% of baseline reps; `C3` parts). Suggested fix: on an empty book-text result the assistant
    should widen to knowledge/notes search, or the reader-context guidance should say so explicitly.
-2. **Provenance for list/search tools (product).** `notes_search` and `notes_list_for_book` return
+2. **Provenance for list/search tools (product) — filed as [#614](https://github.com/Christian-Gennari/Nostos/issues/614).** `notes_search` and `notes_list_for_book` return
    content without evidence handles, so answers grounded in them carry no provenance (heavily used
    by `qwen3.7-flash`/`deepseek-v4-flash-0731`). Either attach evidence handles or steer lookups to
    `knowledge_search`.
-3. **Completion-claim guard (product).** Weaker models emit "Saved."/"The search returned no
+3. **Completion-claim guard (product) — filed as [#613](https://github.com/Christian-Gennari/Nostos/issues/613).** Weaker models emit "Saved."/"The search returned no
    evidence" without running the corresponding tool. The prompt already forbids this; a structural
    guard (reply claims a completed capture/read without the tool result in-turn => repair or
    reframe) would remove a real trust failure class.
@@ -517,6 +517,6 @@ Proposed as separate issues (this benchmark does not fix them):
 | Semantic/vector infrastructure evidence-backed and handled separately | None introduced; §6 documents the exact evidence that would reopen it (§8.6) |
 | Residual uncertainty documented rather than chasing false certainty | §7 (11 items) |
 
-**Deliverable status:** report + harness committed on `agent/ask-nostos-566-benchmark` (PR), #566 updated
-with the measured evidence. #566 closes when the PR merges; parent #557 is reassessed in its own
-comment after that.
+**Deliverable status:** report + harness committed on `agent/ask-nostos-566-benchmark` (PR #611); #566
+carries the measured evidence and closes with the benchmark complete; the three product follow-ups
+found by the gate are filed as #612/#613/#614; parent #557 is reassessed in its own comment.
