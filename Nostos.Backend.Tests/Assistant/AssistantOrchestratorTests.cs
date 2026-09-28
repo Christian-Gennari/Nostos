@@ -72,6 +72,44 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         note.AnchorVerified.Should().BeTrue();
     }
 
+    [Fact]
+    public async Task Toolless_saved_claim_is_replaced_with_an_honest_failure()
+    {
+        var h = CreateHarness();
+        h.Llm.Returns("Saved.");
+
+        var response = await h.Orchestrator.HandleTurnAsync(Turn(
+            "Remember this thought.",
+            Context()));
+
+        response.Reply.Should().NotBe("Saved.");
+        response.Reply.Should().Contain("could not verify");
+        response.Error.Should().NotBeNull();
+        response.Error!.Code.Should().Be(AssistantErrorCodes.UnverifiedCompletionClaim);
+        response.CapturedNoteId.Should().BeNull();
+        response.Acknowledgement.Should().BeNull();
+        h.Llm.CallCount.Should().Be(1);
+        (await NoteCountAsync(h)).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Toolless_no_evidence_search_claim_is_replaced_with_an_honest_failure()
+    {
+        var h = CreateHarness();
+        h.Llm.Returns("The search returned no evidence.");
+
+        var response = await h.Orchestrator.HandleTurnAsync(Turn(
+            "What have I written about homecoming?",
+            Context()));
+
+        response.Reply.Should().NotBe("The search returned no evidence.");
+        response.Reply.Should().Contain("no search completed");
+        response.Error.Should().NotBeNull();
+        response.Error!.Code.Should().Be(AssistantErrorCodes.UnverifiedCompletionClaim);
+        response.Evidence.Should().BeEmpty();
+        h.Llm.CallCount.Should().Be(1);
+    }
+
     [Theory]
     [InlineData("Spara inget.")]
     [InlineData("Spara inte det.")]
