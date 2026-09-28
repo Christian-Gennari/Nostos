@@ -2315,7 +2315,7 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         var note = await SeedNoteAsync(h, book.Id, "A listed note keeps provenance.");
 
         h.Llm
-            .CallsTool("notes_list_for_book", $"""{"bookId":"{{book.Id}}"}""")
+            .CallsTool("notes_list_for_book", JsonSerializer.Serialize(new { bookId = book.Id }))
             .Returns("That note says provenance should stay attached.");
 
         var response = await h.Orchestrator.HandleTurnAsync(
