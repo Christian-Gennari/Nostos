@@ -37,7 +37,10 @@ internal sealed class LibraryReadService(
         var safePage = Math.Max(1, page);
         var safePageSize = Math.Clamp(pageSize, 1, 100);
 
-        var query = db.Books.AsNoTracking().AsQueryable();
+        // The default Library is a grouped-work read model. Rows explicitly
+        // waiting for a required local upload are not library items yet; a
+        // Ready row with no file remains valid (metadata-only digital/physical).
+        var query = CountableBooks(db);
 
         if (!string.IsNullOrWhiteSpace(search))
         {
@@ -101,7 +104,7 @@ internal sealed class LibraryReadService(
         // When the status becomes Ready/Failed the row immediately returns to the
         // ordinary filtered result semantics.
         var filteredBookIds = query.Select(b => b.Id);
-        query = db.Books.AsNoTracking().Where(b =>
+        query = CountableBooks(db).Where(b =>
             b.Status == BookStatus.Downloading
             || b.Status == BookStatus.Transcoding
             || filteredBookIds.Contains(b.Id));
@@ -121,7 +124,7 @@ internal sealed class LibraryReadService(
                 .ToListAsync(ct);
 
             var candidateWorkIds = candidates.Select(c => c.WorkId).Distinct().ToList();
-            var siblingBooks = await db.Books.AsNoTracking()
+            var siblingBooks = await CountableBooks(db)
                 .Include(b => b.Acquisition)
                 .Where(b => candidateWorkIds.Contains(b.WorkId))
                 .ToListAsync(ct);
@@ -188,7 +191,7 @@ internal sealed class LibraryReadService(
                 .ToListAsync(ct);
 
             var pageWorkIds = items.Select(b => b.WorkId).Distinct().ToList();
-            var pageSiblings = await db.Books.AsNoTracking()
+            var pageSiblings = await CountableBooks(db)
                 .Include(b => b.BookCollections)
                 .Include(b => b.Acquisition)
                 .Where(b => pageWorkIds.Contains(b.WorkId))
@@ -227,18 +230,27 @@ internal sealed class LibraryReadService(
         var state = await TryGetStateAsync(db, ct);
         var version = state?.StateVersion ?? "0";
 
-        var all = await db.Books.AsNoTracking().CountAsync(ct);
-        var notStarted = await db.Books.AsNoTracking().CountAsync(b => b.Progress.ProgressPercent == 0, ct);
-        var reading = await db.Books.AsNoTracking().CountAsync(b => b.Progress.FinishedAt == null && b.Progress.ProgressPercent > 0, ct);
-        var favorites = await db.Books.AsNoTracking().CountAsync(b => b.Progress.IsFavorite, ct);
-        var finished = await db.Books.AsNoTracking().CountAsync(b => b.Progress.FinishedAt != null, ct);
-        var unsorted = await db.Books.AsNoTracking()
-            .CountAsync(b => !db.BookCollections.Any(bc => bc.BookId == b.Id), ct);
-        var audiobooks = await db.Books.AsNoTracking().OfType<AudioBookModel>().CountAsync(ct);
-        var pdfs = await db.Books.AsNoTracking().CountAsync(
-            b => b.FileDetails.FileName != null && EF.Functions.Like(b.FileDetails.FileName, "%.pdf"), ct);
-        var ebooks = await db.Books.AsNoTracking().OfType<EBookModel>().CountAsync(
-            b => b.FileDetails.FileName == null || !EF.Functions.Like(b.FileDetails.FileName, "%.pdf"), ct);
+        // Sidebar numbers describe the same unit as the default grouped Library:
+        // one count per WorkId after applying the book-level predicate. A work
+        // with two qualifying editions still occupies one visible card. This is
+        // deliberately NOT title/author deduplication; WorkId is the grouping
+        // contract and separate works remain separate.
+        var books = CountableBooks(db);
+        Task<int> CountWorksAsync(IQueryable<BookModel> source) =>
+            source.Select(b => b.WorkId).Distinct().CountAsync(ct);
+
+        var all = await CountWorksAsync(books);
+        var notStarted = await CountWorksAsync(books.Where(b => b.Progress.ProgressPercent == 0));
+        var reading = await CountWorksAsync(books.Where(b => b.Progress.FinishedAt == null && b.Progress.ProgressPercent > 0));
+        var favorites = await CountWorksAsync(books.Where(b => b.Progress.IsFavorite));
+        var finished = await CountWorksAsync(books.Where(b => b.Progress.FinishedAt != null));
+        var unsorted = await CountWorksAsync(books.Where(b =>
+            !db.BookCollections.Any(bc => bc.BookId == b.Id)));
+        var audiobooks = await CountWorksAsync(books.OfType<AudioBookModel>());
+        var pdfs = await CountWorksAsync(books.Where(
+            b => b.FileDetails.FileName != null && EF.Functions.Like(b.FileDetails.FileName, "%.pdf")));
+        var ebooks = await CountWorksAsync(books.OfType<EBookModel>().Where(
+            b => b.FileDetails.FileName == null || !EF.Functions.Like(b.FileDetails.FileName, "%.pdf")));
 
         var counts = new LibraryStatusCountsDto(
             all, notStarted, reading, favorites, finished, unsorted, audiobooks, ebooks, pdfs);
@@ -388,23 +400,30 @@ internal sealed class LibraryReadService(
         var state = await TryGetStateAsync(db, ct);
         var version = state?.StateVersion ?? "0";
 
-        // One grouped query for DIRECT counts, then a single in-memory
-        // post-order rollup. Never one count query per collection, and the
-        // frontend never sums counts itself (canonical recursion lives here).
+        // Membership stays per edition, but the Library card is per work.
+        // Carry WorkId sets upward rather than summing raw row counts: if two
+        // editions of one work sit in the same subtree (or in sibling child
+        // collections), their ancestor badge must still say 1.
         var collections = await db.Collections.AsNoTracking()
             .OrderBy(c => c.Name)
             .ThenBy(c => c.Id)
             .Select(c => new CollectionModel { Id = c.Id, ParentId = c.ParentId })
             .ToListAsync(ct);
 
-        var directCounts = await db.BookCollections.AsNoTracking()
-            .GroupBy(bc => bc.CollectionId)
-            .Select(g => new { CollectionId = g.Key, Count = g.Count() })
-            .ToDictionaryAsync(x => x.CollectionId, x => x.Count, ct);
+        var memberships = await db.BookCollections.AsNoTracking()
+            .Where(bc => bc.Book.Status != BookStatus.UploadPending)
+            .Select(bc => new { bc.CollectionId, bc.Book.WorkId })
+            .ToListAsync(ct);
 
-        var counts = RollUpDescendantCounts(collections, directCounts);
+        var directWorkIds = memberships
+            .GroupBy(x => x.CollectionId)
+            .ToDictionary(
+                g => g.Key,
+                g => g.Select(x => x.WorkId).ToHashSet());
+
+        var workIdsByCollection = RollUpDescendantWorkIds(collections, directWorkIds);
         var items = collections
-            .Select(c => new CollectionCountDto(c.Id, counts[c.Id]))
+            .Select(c => new CollectionCountDto(c.Id, workIdsByCollection[c.Id].Count))
             .ToList();
 
         return Result(
@@ -532,17 +551,23 @@ internal sealed class LibraryReadService(
         return result;
     }
 
+    private static IQueryable<BookModel> CountableBooks(NostosDbContext db) =>
+        db.Books.AsNoTracking().Where(b => b.Status != BookStatus.UploadPending);
+
     /// <summary>
-    /// Rolls direct per-collection book counts upward in a post-order
-    /// traversal so every collection's count is descendant-inclusive.
-    /// Iterative and cycle-safe (the service forbids cycles; the visiting
-    /// guard makes an accidental one terminate instead of hanging).
+    /// Rolls direct per-collection WORK membership upward in post-order.
+    /// HashSet union is the important semantic: collection membership belongs
+    /// to editions, while collection badges mirror grouped Library cards.
     /// </summary>
-    private static Dictionary<Guid, int> RollUpDescendantCounts(
+    private static Dictionary<Guid, HashSet<Guid>> RollUpDescendantWorkIds(
         IReadOnlyCollection<CollectionModel> collections,
-        IReadOnlyDictionary<Guid, int> directCounts)
+        IReadOnlyDictionary<Guid, HashSet<Guid>> directWorkIds)
     {
-        var counts = collections.ToDictionary(c => c.Id, c => directCounts.GetValueOrDefault(c.Id));
+        var workIds = collections.ToDictionary(
+            c => c.Id,
+            c => directWorkIds.TryGetValue(c.Id, out var ids)
+                ? new HashSet<Guid>(ids)
+                : []);
         var childrenByParent = collections
             .Where(c => c.ParentId.HasValue)
             .GroupBy(c => c.ParentId!.Value)
@@ -583,17 +608,15 @@ internal sealed class LibraryReadService(
             }
         }
 
-        // Post-order guarantees children precede parents: a parent's total
-        // is its own direct count plus each child's already-rolled-up total.
         foreach (var id in order)
         {
             if (childrenByParent.TryGetValue(id, out var children))
             {
                 foreach (var child in children)
-                    counts[id] += counts[child];
+                    workIds[id].UnionWith(workIds[child]);
             }
         }
 
-        return counts;
+        return workIds;
     }
 }
