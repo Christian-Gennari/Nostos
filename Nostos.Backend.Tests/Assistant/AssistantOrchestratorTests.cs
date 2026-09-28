@@ -10,6 +10,7 @@ using Nostos.Backend.Data.Repositories;
 using Nostos.Backend.Integrations.Assistant;
 using Nostos.Backend.Services;
 using Nostos.Backend.Services.Ai;
+using Nostos.Backend.Services.BookText;
 using Nostos.Backend.Services.Library;
 using Nostos.Backend.Services.Knowledge;
 using Nostos.Backend.Services.Notes;
@@ -69,6 +70,139 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         note.SourceAnchorValue.Should().Be("epubcfi(/6/4[chap01]!/4/2/2)");
         note.CfiRange.Should().Be("epubcfi(/6/4[chap01]!/4/2/2)");
         note.AnchorVerified.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("Spara inget.")]
+    [InlineData("Spara inte det.")]
+    [InlineData("Don't save that.")]
+    [InlineData("Don’t save that.")]
+    [InlineData("Do not save this.")]
+    [InlineData("Actually, don't keep this.")]
+    [InlineData("Nej, spara inte det.")]
+    [InlineData("Stopp.")]
+    public async Task Explicit_negative_capture_intent_cannot_create_a_note(string message)
+    {
+        var h = CreateHarness();
+        var book = await SeedBookAsync(h, "Guarded Book");
+
+        // Even if a weak provider emits the write anyway, the server refuses it.
+        h.Llm
+            .CallsTool("notes_capture", $$"""{"content":"{{message}}"}""")
+            .Returns("Nothing was saved.");
+
+        var response = await h.Orchestrator.HandleTurnAsync(Turn(
+            message,
+            Context(
+                surface: "reader",
+                route: $"/read/{book.Id}",
+                bookId: book.Id.ToString(),
+                bookTitle: book.Title,
+                bookFormat: "ebook",
+                readerType: "epub")));
+
+        response.CapturedNoteId.Should().BeNull();
+        response.Acknowledgement.Should().BeNull();
+        response.Error.Should().BeNull();
+        response.Reply.Should().Be("Nothing was saved.");
+        h.Llm.Requests[0].Tools.Should().NotContain(tool => tool.Name == "notes_capture");
+        (await NoteCountAsync(h)).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Short_book_scope_clarification_after_a_question_is_not_a_capture()
+    {
+        var h = CreateHarness();
+        var book = await SeedBookAsync(h, "Chrilles inspo-bok");
+
+        var history = new AssistantHistoryMessageDto[]
+        {
+            new("user", "Hur vet jag vilken typ av man jag är?"),
+            new("assistant", "Vilken källa menar du?"),
+        };
+
+        h.Llm
+            .CallsTool("notes_capture", """{"content":"I Chrilles inspo-bok"}""")
+            .Returns("Jag fortsätter med boken.");
+
+        var response = await h.Orchestrator.HandleTurnAsync(Turn(
+            "I Chrilles inspo-bok",
+            Context(surface: "library", route: "/library"),
+            history: history));
+
+        response.CapturedNoteId.Should().BeNull();
+        response.Acknowledgement.Should().BeNull();
+        response.ResolvedBook.Should().NotBeNull();
+        response.ResolvedBook!.BookId.Should().Be(book.Id);
+        response.ResolvedBook.BookTitle.Should().Be(book.Title);
+        h.Llm.Requests[0].Tools.Should().NotContain(tool => tool.Name == "notes_capture");
+        h.Llm.Requests[0].Messages.Should().Contain(message =>
+            message.Role == "system"
+            && message.Content != null
+            && message.Content.Contains(book.Id.ToString(), StringComparison.OrdinalIgnoreCase));
+        (await NoteCountAsync(h)).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task English_first_person_statement_after_a_question_is_not_mistaken_for_source_scope()
+    {
+        var h = CreateHarness();
+        var book = await SeedBookAsync(h, "Thought Book");
+
+        var history = new AssistantHistoryMessageDto[]
+        {
+            new("user", "What stayed with you from the chapter?"),
+            new("assistant", "Tell me what stood out."),
+        };
+
+        h.Llm
+            .CallsTool("notes_capture", """{"content":"I love this book"}""")
+            .Returns("");
+
+        var response = await h.Orchestrator.HandleTurnAsync(Turn(
+            "I love this book",
+            Context(
+                surface: "reader",
+                route: $"/read/{book.Id}",
+                bookId: book.Id.ToString(),
+                bookTitle: book.Title,
+                bookFormat: "ebook",
+                readerType: "epub"),
+            history: history));
+
+        response.CapturedNoteId.Should().NotBeNullOrWhiteSpace();
+        h.Llm.Requests[0].Tools.Should().Contain(tool => tool.Name == "notes_capture");
+
+        await using var db = await h.Factory.CreateDbContextAsync();
+        (await db.Notes.AsNoTracking().SingleAsync()).Content.Should().Be("I love this book");
+    }
+
+    [Fact]
+    public async Task Genuine_implicit_thought_remains_capturable_without_a_save_keyword()
+    {
+        var h = CreateHarness();
+        var book = await SeedBookAsync(h, "Thought Book");
+        const string thought = "Attention feels more scarce to me than time.";
+
+        h.Llm
+            .CallsTool("notes_capture", $$"""{"content":"{{thought}}"}""")
+            .Returns("");
+
+        var response = await h.Orchestrator.HandleTurnAsync(Turn(
+            thought,
+            Context(
+                surface: "reader",
+                route: $"/read/{book.Id}",
+                bookId: book.Id.ToString(),
+                bookTitle: book.Title,
+                bookFormat: "ebook",
+                readerType: "epub")));
+
+        response.CapturedNoteId.Should().NotBeNullOrWhiteSpace();
+        h.Llm.Requests[0].Tools.Should().Contain(tool => tool.Name == "notes_capture");
+
+        await using var db = await h.Factory.CreateDbContextAsync();
+        (await db.Notes.AsNoTracking().SingleAsync()).Content.Should().Be(thought);
     }
 
     [Fact]
@@ -2349,6 +2483,322 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
     }
 
     [Fact]
+    public async Task Empty_unscoped_knowledge_lookup_does_not_turn_a_general_answer_into_a_failure()
+    {
+        var knowledge = new FakeKnowledgeRetrievalService(
+            new KnowledgeSearchResponse(["identity"], [], [], [], [], false));
+
+        var h = CreateHarness(knowledge: knowledge);
+        h.Llm
+            .CallsTool("knowledge_search", """{"query":"identity"}""")
+            .Returns("A general answer that does not claim to come from your library.");
+
+        var response = await h.Orchestrator.HandleTurnAsync(Turn(
+            "Hur vet jag vilken typ av man jag är?",
+            Context(surface: "library", route: "/library")));
+
+        response.Error.Should().BeNull();
+        response.Reply.Should().Contain("general answer");
+        response.Evidence.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Canonical_book_metadata_plus_empty_text_search_is_not_a_contradictory_failed_turn()
+    {
+        var bookId = Guid.NewGuid();
+        var ready = new BookTextIngestionState(
+            bookId,
+            BookTextIngestionStatus.Ready,
+            "book.epub",
+            BookTextSourceFormat.Epub,
+            new string('f', 64),
+            BookTextArtifactSchema.CurrentExtractorVersion,
+            null,
+            null,
+            1,
+            1,
+            100,
+            DateTime.UtcNow);
+
+        var search = new FakeBookTextSearchService(
+            new BookTextSearchResponse([], [ready], false));
+
+        var h = CreateHarness(bookText: search);
+        var book = await SeedBookAsync(h, "Metadata Book");
+
+        h.Llm
+            .CallsTool("library_get_book", $$"""{"bookId":"{{book.Id}}"}""")
+            .CallsTool("book_text_search", $$"""{"query":"overview","bookIds":["{{book.Id}}"]}""")
+            .Returns("Metadata Book is in your library; I do not have a supporting passage for a textual summary.");
+
+        var response = await h.Orchestrator.HandleTurnAsync(Turn(
+            "Which book is this?",
+            Context(surface: "library", route: "/library")));
+
+        response.Error.Should().BeNull();
+        response.Reply.Should().Contain("in your library");
+        response.Sources.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Scoped_ready_book_text_lookup_with_no_evidence_remains_typed_no_evidence()
+    {
+        var bookId = Guid.NewGuid();
+        var ready = new BookTextIngestionState(
+            bookId,
+            BookTextIngestionStatus.Ready,
+            "book.epub",
+            BookTextSourceFormat.Epub,
+            new string('e', 64),
+            BookTextArtifactSchema.CurrentExtractorVersion,
+            null,
+            null,
+            1,
+            1,
+            100,
+            DateTime.UtcNow);
+
+        var search = new FakeBookTextSearchService(
+            new BookTextSearchResponse([], [ready], false));
+
+        var h = CreateHarness(bookText: search);
+        h.Llm
+            .CallsTool("book_text_search", """{"query":"needle"}""")
+            .Returns("I could not find that passage.");
+
+        var response = await h.Orchestrator.HandleTurnAsync(Turn(
+            "Find needle in this book.",
+            Context(
+                surface: "reader",
+                route: $"/read/{bookId}",
+                bookId: bookId.ToString(),
+                bookTitle: "Scoped Book",
+                bookFormat: "ebook",
+                readerType: "epub")));
+
+        search.LastRequest.Should().NotBeNull();
+        search.LastRequest!.BookIds.Should().ContainSingle().Which.Should().Be(bookId);
+        response.Error.Should().NotBeNull();
+        response.Error!.Code.Should().Be(AssistantErrorCodes.NoEvidence);
+        response.Sources.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Explicit_known_book_scope_is_carried_forward_even_when_search_is_empty()
+    {
+        var bookId = Guid.NewGuid();
+        var ready = new BookTextIngestionState(
+            bookId,
+            BookTextIngestionStatus.Ready,
+            "book.epub",
+            BookTextSourceFormat.Epub,
+            new string('a', 64),
+            BookTextArtifactSchema.CurrentExtractorVersion,
+            null,
+            null,
+            1,
+            1,
+            100,
+            DateTime.UtcNow);
+        var search = new FakeBookTextSearchService(
+            new BookTextSearchResponse([], [ready], false));
+        var h = CreateHarness(bookText: search);
+
+        var history = new AssistantHistoryMessageDto[]
+        {
+            new(
+                "user",
+                "Which book is this?",
+                new AssistantHistoricalContextDto(
+                    Surface: "library",
+                    BookId: bookId.ToString(),
+                    BookTitle: "Known Book")),
+            new("assistant", "Known Book."),
+        };
+
+        h.Llm
+            .CallsTool(
+                "book_text_search",
+                $$"""{"query":"missing phrase","bookIds":["{{bookId}}"]}""")
+            .Returns("I could not find it.");
+
+        var response = await h.Orchestrator.HandleTurnAsync(Turn(
+            "In the book, find the missing phrase.",
+            Context(surface: "library", route: "/library"),
+            history: history));
+
+        search.LastRequest.Should().NotBeNull();
+        search.LastRequest!.BookIds.Should().ContainSingle().Which.Should().Be(bookId);
+        response.ResolvedBook.Should().NotBeNull();
+        response.ResolvedBook!.BookId.Should().Be(bookId);
+        response.ResolvedBook.BookTitle.Should().Be("Known Book");
+    }
+
+    [Fact]
+    public async Task Explicit_empty_book_scope_broadens_instead_of_inheriting_recent_book()
+    {
+        var historicalBookId = Guid.NewGuid();
+        var search = new FakeBookTextSearchService(
+            new BookTextSearchResponse([], [], false));
+        var h = CreateHarness(bookText: search);
+
+        var history = new AssistantHistoryMessageDto[]
+        {
+            new(
+                "user",
+                "Which book is this?",
+                new AssistantHistoricalContextDto(
+                    Surface: "library",
+                    BookId: historicalBookId.ToString(),
+                    BookTitle: "Recent Book")),
+            new("assistant", "Recent Book."),
+        };
+
+        h.Llm
+            .CallsTool("book_text_search", """{"query":"lantern","bookIds":[]}""")
+            .Returns("I could not find it.");
+
+        var response = await h.Orchestrator.HandleTurnAsync(Turn(
+            "Search my books for lantern.",
+            Context(surface: "library", route: "/library"),
+            history: history));
+
+        search.LastRequest.Should().NotBeNull();
+        search.LastRequest!.BookIds.Should().NotBeNull();
+        search.LastRequest.BookIds.Should().BeEmpty();
+        response.ResolvedBook.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Resolved_book_scope_survives_library_followups_and_real_fts_recovers_exact_tokens()
+    {
+        RecordingBookTextSearchService? search = null;
+        var h = CreateHarness(
+            bookTextFactory: (factory, library) =>
+            {
+                search = new RecordingBookTextSearchService(
+                    new BookTextSearchService(
+                        new SqliteBookTextIndex(factory),
+                        library,
+                        new BookTextOptions { NeighborRadius = 0 }));
+                return search;
+            });
+
+        var book = await SeedEBookAsync(h, "Chrilles inspo-bok", "Vatsyayana");
+        const string passage =
+            "Man is divided into three classes: the hare man, the bull man, and the horse man.";
+        await SeedReadyBookTextAsync(h, book.Id, passage);
+
+        // Turn 1: resolve/read the named book while on the Library surface.
+        // There is deliberately no ambient current-book context.
+        h.Llm
+            .CallsTool(
+                "library_resolve_book",
+                $$"""{"title":"{{book.Title}}","author":"{{book.Author}}","includeExternalMetadata":false}""")
+            .CallsTool("library_get_book", $$"""{"bookId":"{{book.Id}}"}""")
+            .Returns("That is Chrilles inspo-bok.");
+
+        var first = await h.Orchestrator.HandleTurnAsync(Turn(
+            "Which book is Chrilles inspo-bok?",
+            Context(surface: "library", route: "/library"),
+            conversationId: "conversation-kama",
+            turnId: "turn-book"));
+
+        first.ResolvedBook.Should().NotBeNull();
+        first.ResolvedBook!.BookId.Should().Be(book.Id);
+        first.ResolvedBook.BookTitle.Should().Be(book.Title);
+
+        var historyAfterFirst = new AssistantHistoryMessageDto[]
+        {
+            new(
+                "user",
+                "Which book is Chrilles inspo-bok?",
+                new AssistantHistoricalContextDto(
+                    Surface: "library",
+                    BookId: first.ResolvedBook.BookId.ToString(),
+                    BookTitle: first.ResolvedBook.BookTitle)),
+            new("assistant", first.Reply),
+        };
+
+        // Turn 2: "the book" must inherit the canonical book from history even
+        // though the model omits bookIds and the current surface has no book.
+        h.Llm
+            .CallsTool("book_text_search", """{"query":"male type"}""")
+            .Returns("I could not find a passage for that wording.");
+
+        var second = await h.Orchestrator.HandleTurnAsync(Turn(
+            "In the book how do I know which type of male I am?",
+            Context(surface: "library", route: "/library"),
+            history: historyAfterFirst,
+            conversationId: "conversation-kama",
+            turnId: "turn-broad"));
+
+        search.Should().NotBeNull();
+        search!.Requests.Should().HaveCount(2,
+            "one initial search plus one bounded server-owned lexical recovery");
+        search.Requests.Should().OnlyContain(request =>
+            request.BookIds != null
+            && request.BookIds.Count == 1
+            && request.BookIds[0] == book.Id);
+        second.Error.Should().NotBeNull();
+        second.Error!.Code.Should().Be(AssistantErrorCodes.NoEvidence);
+        second.ResolvedBook.Should().NotBeNull();
+        second.ResolvedBook!.BookId.Should().Be(book.Id);
+
+        var historyAfterSecond = new AssistantHistoryMessageDto[]
+        {
+            historyAfterFirst[0],
+            historyAfterFirst[1],
+            new(
+                "user",
+                "In the book how do I know which type of male I am?",
+                new AssistantHistoricalContextDto(
+                    Surface: "library",
+                    BookId: second.ResolvedBook.BookId.ToString(),
+                    BookTitle: second.ResolvedBook.BookTitle)),
+            new("assistant", second.Reply),
+        };
+
+        // Turn 3 reproduces the tester's clarification. The model's first query
+        // is deliberately poor; the one bounded recovery uses literal user
+        // terms and must succeed against the real SQLite FTS implementation.
+        h.Llm
+            .CallsTool("book_text_search", """{"query":"male classification"}""")
+            .Returns("The passage uses the hare, bull, and horse categories.");
+
+        var third = await h.Orchestrator.HandleTurnAsync(Turn(
+            "I mean am I a bull, a horse or hare?",
+            Context(surface: "library", route: "/library"),
+            history: historyAfterSecond,
+            conversationId: "conversation-kama",
+            turnId: "turn-exact"));
+
+        search.Requests.Should().HaveCount(4,
+            "each empty first search may recover at most once and never loop");
+        var thirdInitial = search.Requests[2];
+        var thirdRecovery = search.Requests[3];
+
+        thirdInitial.BookIds.Should().ContainSingle().Which.Should().Be(book.Id);
+        thirdInitial.Query.Should().Be("male classification");
+        thirdRecovery.BookIds.Should().ContainSingle().Which.Should().Be(book.Id);
+        thirdRecovery.Query.Should().Contain("bull");
+        thirdRecovery.Query.Should().Contain("horse");
+        thirdRecovery.Query.Should().Contain("hare");
+        thirdRecovery.Query.Should().NotContain("mean");
+
+        third.Error.Should().BeNull();
+        third.Sources.Should().ContainSingle();
+        third.Evidence.Should().ContainSingle();
+        third.Sources![0].BookId.Should().Be(book.Id);
+        third.Sources[0].Excerpt.Should().Contain("hare man");
+        third.Sources[0].SourceSha256.Should().Be(new string('c', 64));
+        third.Sources[0].Locators.Should().ContainSingle();
+        third.Sources[0].Locators[0].Type.Should().Be("epub");
+        third.Evidence![0].Handle.BookId.Should().Be(book.Id);
+        third.Evidence[0].Handle.Ordinal.Should().Be(0);
+    }
+
+    [Fact]
     public async Task Book_text_wrong_book_scope_returns_no_server_source()
     {
         var wrongBook = Guid.NewGuid();
@@ -2528,7 +2978,8 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         int maxToolIterations = 6,
         Action<AssistantOptions>? configure = null,
         IBookTextSearchService? bookText = null,
-        IKnowledgeRetrievalService? knowledge = null)
+        IKnowledgeRetrievalService? knowledge = null,
+        Func<IDbContextFactory<NostosDbContext>, ILibraryService, IBookTextSearchService>? bookTextFactory = null)
     {
         var path = _fixture.CreateDatabasePath();
         var options = new DbContextOptionsBuilder<NostosDbContext>()
@@ -2557,13 +3008,15 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
             factory,
             new BookLookupService(new NoopHttpClientFactory(), new SilentLogger<BookLookupService>()));
 
+        var bookTextService = bookText ?? bookTextFactory?.Invoke(factory, libraryService);
+
         var registry = new AssistantCapabilityRegistry(
             AssistantCapabilities.Build(
                 noteService,
                 libraryService,
                 concepts,
                 knowledge ?? NoOpKnowledgeRetrievalService.Instance,
-                bookText));
+                bookTextService));
 
         var llm = new FakeLlmProvider();
         var assistantOptions = new AssistantOptions
@@ -2667,6 +3120,68 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         h.Db.Books.Add(book);
         await h.Db.SaveChangesAsync();
         return book;
+    }
+
+    private static async Task<EBookModel> SeedEBookAsync(
+        Harness h,
+        string title,
+        string author)
+    {
+        var book = new EBookModel
+        {
+            Id = Guid.NewGuid(),
+            Title = title,
+            Author = author,
+        };
+        h.Db.Books.Add(book);
+        await h.Db.SaveChangesAsync();
+        return book;
+    }
+
+    private static async Task SeedReadyBookTextAsync(
+        Harness h,
+        Guid bookId,
+        string text)
+    {
+        var index = new SqliteBookTextIndex(h.Factory);
+        await index.EnsureSchemaAsync();
+        await index.ScheduleAsync(bookId, "kama-sutra.epub", BookTextSourceFormat.Epub);
+
+        var work = await index.TryClaimNextAsync(TimeSpan.FromHours(1));
+        work.Should().NotBeNull();
+
+        var revision = new BookTextSourceRevision(
+            bookId,
+            new string('c', 64),
+            BookTextArtifactSchema.CurrentExtractorVersion,
+            BookTextSourceFormat.Epub);
+
+        var chunk = new BookTextIndexedChunk(
+            BookTextIdentity.ChunkId(revision, 0),
+            bookId,
+            revision.SourceSha256,
+            revision.ExtractorVersion,
+            revision.Format,
+            0,
+            text,
+            ["Part II"],
+            [
+                new BookTextSourceSegment(
+                    0,
+                    text.Length,
+                    new EpubBookTextSourceLocator(
+                        2,
+                        "part-2.xhtml",
+                        "epubcfi(/6/8!/4/2:0)",
+                        10,
+                        10 + text.Length)),
+            ]);
+
+        (await index.ReplaceReadyAsync(
+            revision,
+            [chunk],
+            text.Length,
+            work!.Attempt)).Should().BeTrue();
     }
 
     private static async Task<NoteModel> SeedNoteAsync(Harness h, Guid bookId, string content)
@@ -2824,6 +3339,20 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         {
             LastRequest = request;
             return Task.FromResult(response);
+        }
+    }
+
+    private sealed class RecordingBookTextSearchService(IBookTextSearchService inner)
+        : IBookTextSearchService
+    {
+        public List<BookTextSearchRequest> Requests { get; } = [];
+
+        public async Task<BookTextSearchResponse> SearchAsync(
+            BookTextSearchRequest request,
+            CancellationToken ct = default)
+        {
+            Requests.Add(request);
+            return await inner.SearchAsync(request, ct);
         }
     }
 

@@ -89,6 +89,11 @@ export interface AssistantEvidenceReferenceDto {
   locators?: AssistantSourceLocatorDto[] | null;
 }
 
+export interface AssistantResolvedBookDto {
+  bookId: string;
+  bookTitle: string;
+}
+
 /**
  * Historical turn outcomes. These values are inert: restoring them never
  * executes a capability, replays a capture, or approves a plan.
@@ -242,6 +247,8 @@ export interface AssistantTurnResponse {
   error?: AssistantTurnErrorDto | null;
   /** Canonical material found/used by this turn, with exact #562 handles. */
   evidence?: AssistantEvidenceReferenceDto[];
+  /** One unambiguous canonical book read/resolved/searched by this turn. */
+  resolvedBook?: AssistantResolvedBookDto | null;
 }
 
 /** The turn request the bridge accepts. */
@@ -1553,6 +1560,10 @@ export class AssistantService {
     this.lastTurn.set(response);
     this.suggestions.set(response.suggestions ?? []);
 
+    if (response.resolvedBook) {
+      this.promoteResolvedBookContext(turn.userEntryId, response.resolvedBook);
+    }
+
     if (response.pendingPlan) {
       const previous = this.pendingPlan();
       const previousTurnId = this.pendingPlanTurnId();
@@ -1700,6 +1711,26 @@ export class AssistantService {
       },
     ]);
     return id;
+  }
+
+  private promoteResolvedBookContext(
+    userEntryId: string,
+    book: AssistantResolvedBookDto,
+  ): void {
+    this.eventLedger.update((events) => events.map((event) => {
+      if (event.id !== userEntryId || event.kind !== 'user' || !event.historyContext) {
+        return event;
+      }
+
+      return {
+        ...event,
+        historyContext: {
+          ...event.historyContext,
+          bookId: book.bookId,
+          bookTitle: book.bookTitle,
+        },
+      };
+    }));
   }
 
   private replaceTurnArtifacts(turnId: string, artifacts: AssistantTurnArtifact[]): void {

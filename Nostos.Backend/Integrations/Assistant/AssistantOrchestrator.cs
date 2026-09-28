@@ -48,6 +48,7 @@ public sealed class AssistantOrchestrator(
         new(registry, new AssistantContextPacker(options));
     private readonly AssistantPlanExecutor _planExecutor = new(registry, plans);
     private readonly AssistantCapturePolicy _capturePolicy = new(library);
+    private readonly AssistantCaptureIntentGuard _captureIntentGuard = new(library);
 
     /// <summary>
     /// Generous on purpose: a tool-calling turn can spend reasoning tokens even
@@ -180,8 +181,27 @@ public sealed class AssistantOrchestrator(
         var stopReason = AssistantTurnStopReason.SafetyCeiling;
 
         var capabilityByName = registry.All.ToDictionary(c => c.Name, StringComparer.Ordinal);
-        var messages = _conversation.BuildConversation(request);
-        var tools = _conversation.BuildTools();
+
+        var captureIntent = await _captureIntentGuard.EvaluateAsync(
+            request.Message,
+            ct);
+        var captureSuppressed = captureIntent.SuppressCapture;
+        var turnContext = captureIntent.ResolvedBook is { } clarifiedBook
+            ? request.Context with
+            {
+                BookId = clarifiedBook.BookId.ToString(),
+                BookTitle = clarifiedBook.BookTitle,
+            }
+            : request.Context;
+
+        // The model sees the same canonical scope the server will enforce on
+        // read tools. A source clarification can therefore become useful
+        // immediately without being misclassified as a note.
+        var messages = _conversation.BuildConversation(request with { Context = turnContext });
+        var tools = _conversation.BuildTools()
+            .Where(tool => !captureSuppressed
+                || !string.Equals(tool.Name, CaptureCapability, StringComparison.Ordinal))
+            .ToList();
 
         // The capture post-processing mode is the owner's stored setting, resolved
         // once per turn (issue #262 §7). It is deliberately not read from the
@@ -203,9 +223,9 @@ public sealed class AssistantOrchestrator(
         string? lastAssistantContent = null;
         string? capturedNoteId = null;
         AssistantTurnErrorDto? terminalError = null;
-        var retrievalAttempted = false;
-        var retrievalEvidenceAvailable = false;
-        var retrievalStates = new List<BookTextIngestionStatus>();
+        var retrieval = new AssistantRetrievalTurnState(turnContext);
+        if (captureIntent.ResolvedBook is { } clarifiedScope)
+            retrieval.RecordResolvedBook(clarifiedScope);
         var mutationCompleted = false;
 
         var iterations = Math.Max(1, options.MaxToolIterations);
@@ -377,9 +397,25 @@ public sealed class AssistantOrchestrator(
                 if (capability.Trust == AssistantTrustClass.Capture
                     && string.Equals(capability.Name, CaptureCapability, StringComparison.Ordinal))
                 {
+                    if (captureSuppressed)
+                    {
+                        // Durable writes must not depend on the model correctly
+                        // interpreting an explicit "do not save" instruction or
+                        // a short source clarification. The tool is also omitted
+                        // from the advertised catalogue for these turns; this is
+                        // the server-side backstop if a provider still emits it.
+                        lastAssistantContent = null;
+                        messages.Add(LlmMessage.Tool(call.Id, ToolJson(new
+                        {
+                            status = "capture_rejected",
+                            message = "This turn is conversational control, not a capture. Nothing was saved. Do not call notes_capture again for this turn.",
+                        })));
+                        continue;
+                    }
+
                     capture = await _capturePolicy.PrepareAsync(
                         call.ArgumentsJson,
-                        request.Context,
+                        turnContext,
                         captureProcessingMode,
                         ct);
 
@@ -390,7 +426,7 @@ public sealed class AssistantOrchestrator(
                             turnId,
                             prompt.Kind,
                             call.ArgumentsJson,
-                            request.Context ?? new AssistantContextDto("other", "/"),
+                            turnContext,
                             captureProcessingMode);
 
                         anchorPrompt = prompt with
@@ -413,6 +449,13 @@ public sealed class AssistantOrchestrator(
                 else
                 {
                     args = ParseArguments(call.ArgumentsJson);
+                    if (string.Equals(capability.Name, BookTextCapability, StringComparison.Ordinal)
+                        || string.Equals(capability.Name, KnowledgeSearchCapability, StringComparison.Ordinal))
+                    {
+                        args = retrieval.ApplyImplicitBookScope(
+                            args,
+                            request.History);
+                    }
                 }
 
                 // The receipt key identifies the logical mutation, not its
@@ -459,7 +502,7 @@ public sealed class AssistantOrchestrator(
                 {
                     result = string.Equals(capability.Name, ConceptProposalCapability, StringComparison.Ordinal)
                         && !ProposalUsesReadEvidence(
-                            args, request.Context?.BrainReviewNoteId,
+                            args, turnContext.BrainReviewNoteId,
                             reviewedNoteIds, inspectedConceptIds, conceptsInspected)
                         ? AssistantToolResult.Fail(
                             AssistantErrorCodes.InvalidArguments,
@@ -469,6 +512,26 @@ public sealed class AssistantOrchestrator(
                             args,
                             toolContext,
                             mutation ? CancellationToken.None : ct);
+
+                    // One bounded server-owned recovery protects retrieval from a
+                    // weak query rewrite. Keep the model's exact scope, but when
+                    // a ready source returned no passage, retry once with the
+                    // distinctive lexical terms the user actually typed.
+                    if (result.Success
+                        && string.Equals(capability.Name, BookTextCapability, StringComparison.Ordinal)
+                        && result.Data is { } bookTextData
+                        && retrieval.BuildBookTextFallbackArguments(
+                            args,
+                            request.Message,
+                            bookTextData) is { } fallbackArgs)
+                    {
+                        result = await registry.InvokeAsync(
+                            capability.Name,
+                            fallbackArgs,
+                            toolContext,
+                            ct);
+                        args = fallbackArgs;
+                    }
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested)
                 {
@@ -500,17 +563,9 @@ public sealed class AssistantOrchestrator(
                 }
 
                 if (result.Success
-                    && capability.Trust == AssistantTrustClass.Suggest
-                    && result.Data is { } retrievalData
-                    && (string.Equals(capability.Name, KnowledgeSearchCapability, StringComparison.Ordinal)
-                        || string.Equals(capability.Name, BookTextCapability, StringComparison.Ordinal)))
+                    && capability.Trust == AssistantTrustClass.Suggest)
                 {
-                    retrievalAttempted = true;
-                    ObserveRetrieval(
-                        capability.Name,
-                        retrievalData,
-                        ref retrievalEvidenceAvailable,
-                        retrievalStates);
+                    retrieval.ObserveResult(capability.Name, args, result.Data);
                 }
 
                 if (result.Success && capability.Trust == AssistantTrustClass.Suggest)
@@ -534,18 +589,27 @@ public sealed class AssistantOrchestrator(
 
                     if (string.Equals(capability.Name, BookTextCapability, StringComparison.Ordinal))
                     {
-                        sourceReferences.AddRange(ExtractBookTextSources(result.Data));
+                        var sources = ExtractBookTextSources(result.Data).ToList();
+                        sourceReferences.AddRange(sources);
+                        retrieval.RecordSources(sources);
                         MergeEvidenceReferences(evidenceReferences, ExtractBookTextEvidence(result.Data));
                     }
                     else if (string.Equals(capability.Name, KnowledgeSearchCapability, StringComparison.Ordinal))
                     {
-                        sourceReferences.AddRange(ExtractKnowledgeSearchSources(result.Data));
+                        var sources = ExtractKnowledgeSearchSources(result.Data).ToList();
+                        sourceReferences.AddRange(sources);
+                        retrieval.RecordSources(sources);
                         MergeEvidenceReferences(evidenceReferences, ExtractKnowledgeSearchEvidence(result.Data));
                     }
                     else if (string.Equals(capability.Name, KnowledgeReadCapability, StringComparison.Ordinal))
                     {
-                        sourceReferences.AddRange(ExtractKnowledgeReadSources(result.Data));
+                        var beforeEvidence = evidenceReferences.Count;
+                        var sources = ExtractKnowledgeReadSources(result.Data).ToList();
+                        sourceReferences.AddRange(sources);
+                        retrieval.RecordSources(sources);
                         MergeEvidenceReferences(evidenceReferences, ExtractKnowledgeReadEvidence(result.Data));
+                        if (evidenceReferences.Count > beforeEvidence)
+                            retrieval.MarkExactEvidenceAvailable();
                     }
                 }
 
@@ -605,11 +669,9 @@ public sealed class AssistantOrchestrator(
                 AssistantErrorCodes.ExecutionBudgetExhausted,
                 "This turn reached its execution limit before it could finish.");
         }
-        else if (terminalError is null
-                 && retrievalAttempted
-                 && !retrievalEvidenceAvailable)
+        else if (terminalError is null)
         {
-            terminalError = RetrievalFailure(retrievalStates);
+            terminalError = retrieval.TerminalFailure(request.Message);
         }
 
         // Server-known boundaries outrank model narration. A provider can attach
@@ -668,6 +730,8 @@ public sealed class AssistantOrchestrator(
             pendingPlan is not null,
             anchorPrompt is not null);
 
+        var resolvedBook = retrieval.ResolvedBook;
+
         return new AssistantTurnResponse(
             reply,
             acknowledgement,
@@ -678,7 +742,8 @@ public sealed class AssistantOrchestrator(
             executedCapabilities,
             sourceReferences,
             terminalError,
-            evidenceReferences);
+            evidenceReferences,
+            resolvedBook);
     }
 
     private Task CompleteUsageAsync(
@@ -1047,81 +1112,6 @@ public sealed class AssistantOrchestrator(
 
             target.Add(suggestion);
         }
-    }
-
-    private static void ObserveRetrieval(
-        string capabilityName,
-        JsonElement data,
-        ref bool evidenceAvailable,
-        List<BookTextIngestionStatus> states)
-    {
-        var evidenceProperty = data.TryGetProperty("evidenceAvailable", out var evidence)
-            ? evidence
-            : default;
-        if (evidenceProperty.ValueKind is JsonValueKind.True)
-            evidenceAvailable = true;
-
-        var statePropertyName = string.Equals(
-            capabilityName,
-            KnowledgeSearchCapability,
-            StringComparison.Ordinal)
-                ? "bookTextStates"
-                : "states";
-
-        if (!data.TryGetProperty(statePropertyName, out var stateArray)
-            || stateArray.ValueKind != JsonValueKind.Array)
-            return;
-
-        foreach (var item in stateArray.EnumerateArray())
-        {
-            if (!item.TryGetProperty("status", out var status))
-                continue;
-
-            if (status.ValueKind == JsonValueKind.Number
-                && status.TryGetInt32(out var numeric)
-                && Enum.IsDefined(typeof(BookTextIngestionStatus), numeric))
-            {
-                states.Add((BookTextIngestionStatus)numeric);
-            }
-            else if (status.ValueKind == JsonValueKind.String
-                     && Enum.TryParse<BookTextIngestionStatus>(
-                         status.GetString(),
-                         ignoreCase: true,
-                         out var parsed))
-            {
-                states.Add(parsed);
-            }
-        }
-    }
-
-    private static AssistantTurnErrorDto RetrievalFailure(
-        IReadOnlyCollection<BookTextIngestionStatus> states)
-    {
-        if (states.Any(status =>
-                status is BookTextIngestionStatus.Pending or BookTextIngestionStatus.Processing))
-        {
-            return new AssistantTurnErrorDto(
-                AssistantErrorCodes.SourceIndexingPending,
-                "This source is still being indexed. Try again when it is ready.");
-        }
-
-        if (states.Contains(BookTextIngestionStatus.Failed))
-        {
-            return new AssistantTurnErrorDto(
-                AssistantErrorCodes.SourceIndexingFailed,
-                "Text indexing failed for this source, so Ask Nostos cannot search it yet.");
-        }
-
-        if (states.Contains(BookTextIngestionStatus.Unsupported))
-        {
-            return new AssistantTurnErrorDto(
-                AssistantErrorCodes.SourceIndexingUnsupported,
-                "This source cannot be searched as text in its current format.");
-        }
-
-        return new AssistantTurnErrorDto(
-            AssistantErrorCodes.NoEvidence,
-            "I could not find usable evidence for that in your Nostos material.");
     }
 
     // ------------------------------------------------------------------

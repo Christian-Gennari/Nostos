@@ -16,11 +16,11 @@ public static partial class AssistantCapabilities
             {
               "type": "object",
               "properties": {
-                "query": { "type": "string", "description": "Lexical search terms for the passage or idea to find. Required." },
+                "query": { "type": "string", "description": "Distinctive lexical search terms from the user's wording. Preserve rare names, labels and quoted terms verbatim instead of replacing them with broader synonyms. Required." },
                 "bookIds": {
                   "type": "array",
                   "items": { "type": "string", "format": "uuid" },
-                  "description": "Optional explicit accessible book ids. Omit for collection/library scope."
+                  "description": "Explicit book scope. Omit to keep the current/recent conversational book scope when one exists. Pass an empty array only when the user explicitly broadens to whole-library scope."
                 },
                 "collectionId": { "type": "string", "format": "uuid", "description": "Optional collection scope. Ignored when explicit bookIds are supplied." },
                 "maxPassages": { "type": "integer", "minimum": 1, "maximum": 8, "description": "Optional bounded result count." }

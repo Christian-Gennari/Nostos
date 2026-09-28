@@ -162,7 +162,19 @@ public sealed record AssistantTurnResponse(
     AssistantTurnErrorDto? Error = null,
     // APPENDED (#565): canonical evidence found/used by this exact turn. Stable
     // handles are authoritative; excerpt/labels are bounded display data only.
-    IReadOnlyList<AssistantEvidenceReferenceDto>? Evidence = null);
+    IReadOnlyList<AssistantEvidenceReferenceDto>? Evidence = null,
+    // APPENDED (#608): when this turn unambiguously resolved/read/searched one
+    // book, return that canonical identity so the client can attach it to this
+    // turn's existing historical context. It is conversational scope only and
+    // grants no write authority.
+    AssistantResolvedBookDto? ResolvedBook = null);
+
+/// <summary>
+/// One canonical book identity established by a successful current-turn read.
+/// The client may carry it forward as historical conversation scope; current
+/// application context and explicit tool arguments still outrank it.
+/// </summary>
+public sealed record AssistantResolvedBookDto(Guid BookId, string BookTitle);
 
 /// <summary>
 /// A stable #562 reference to canonical evidence. It grants no write authority.

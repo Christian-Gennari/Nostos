@@ -63,7 +63,7 @@ public static partial class AssistantCapabilities
             "notes_capture",
             AssistantTrustClass.Capture,
             AssistantCapabilityCategory.Capture,
-            "Saves one of the user's own thoughts, observations or quotes as a note against the book that is open. Use it whenever the user gives you something of their own to keep — they do not have to say 'save' or 'note', and a thought of theirs must be saved rather than answered. The book is supplied by the app; never pass one.",
+            "Saves one of the user's own thoughts, observations or quotes as a note against the book that is open. Use it for genuine thoughts the user gives you to keep even when they do not literally say 'save' or 'note'. Never use it for corrections, source/book clarifications, answers to a previous question, or explicit instructions not to save. The book is supplied by the app; never pass one.",
             """
             {
               "type": "object",

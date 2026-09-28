@@ -857,6 +857,53 @@ describe('AssistantService voice transcript alignment', () => {
       request.flush(turn({ reply: 'Second reply' }));
     });
 
+    it('promotes a backend-resolved book into the exact historical user turn', () => {
+      const bookId = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+      fake.set({
+        surface: 'library',
+        route: '/library',
+        bookId: null,
+        bookTitle: null,
+        readingTarget: null,
+      });
+
+      service.open();
+      service.updateDraft('Which book is Chrilles inspo-bok?');
+      service.submit();
+
+      http.expectOne('/api/assistant/turn/stream').flush(
+        turn({
+          reply: 'That is Chrilles inspo-bok.',
+          resolvedBook: {
+            bookId,
+            bookTitle: 'Chrilles inspo-bok',
+          },
+        }),
+      );
+
+      service.updateDraft('In the book, how do I know which type of male I am?');
+      service.submit();
+
+      const request = http.expectOne('/api/assistant/turn/stream');
+      const history = request.request.body.history as AssistantHistoryMessage[];
+
+      expect(history[0]).toMatchObject({
+        role: 'user',
+        text: 'Which book is Chrilles inspo-bok?',
+        context: {
+          surface: 'library',
+          bookId,
+          bookTitle: 'Chrilles inspo-bok',
+        },
+      });
+      expect(history[1]).toEqual({
+        role: 'assistant',
+        text: 'That is Chrilles inspo-bok.',
+      });
+      expect(request.request.body.context.bookId).toBeNull();
+      request.flush(turn());
+    });
+
     it('sends the complete session ledger instead of imposing a client exchange cap', () => {
       service.open();
       for (let i = 1; i <= 25; i += 1) {
