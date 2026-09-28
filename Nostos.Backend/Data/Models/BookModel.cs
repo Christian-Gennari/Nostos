@@ -17,14 +17,15 @@ public abstract class BookModel
     /// is Ready the instant the column appears — an additive migration with that
     /// default needs no backfill script.
     ///
-    /// An import now creates the row before the download starts, so a book can
-    /// legitimately exist with no file yet. Code that must not present a
-    /// half-imported book as complete filters on this.
+    /// Acquisition and local-upload flows can create the row before bytes arrive.
+    /// UploadPending is reserved for an explicitly expected local file; Ready +
+    /// HasFile=false remains a legitimate metadata-only book. Read models must use
+    /// lifecycle state rather than inferring incompleteness from file fields.
     /// </summary>
     public BookStatus Status { get; set; } = BookStatus.Ready;
 
     /// <summary>
-    /// Why an import failed, or the milestone it reached. Null while Ready.
+    /// Why an import failed, or the lifecycle milestone it reached. Null while Ready.
     /// </summary>
     public string? StatusMessage { get; set; }
 
