@@ -2649,7 +2649,9 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         search!.Requests.Should().HaveCount(2,
             "one initial search plus one bounded server-owned lexical recovery");
         search.Requests.Should().OnlyContain(request =>
-            request.BookIds is { Count: 1 } && request.BookIds[0] == book.Id);
+            request.BookIds != null
+            && request.BookIds.Count == 1
+            && request.BookIds[0] == book.Id);
         second.Error.Should().NotBeNull();
         second.Error!.Code.Should().Be(AssistantErrorCodes.NoEvidence);
         second.ResolvedBook.Should().NotBeNull();
