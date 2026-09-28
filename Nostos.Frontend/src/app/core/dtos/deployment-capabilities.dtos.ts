@@ -12,4 +12,5 @@ export interface DeploymentCapabilities {
   supportsEreaderAccess: boolean;
   usageMeteringAvailable: boolean;
   accountManagementUrl?: string | null;
+  feedbackUrl?: string | null;
 }

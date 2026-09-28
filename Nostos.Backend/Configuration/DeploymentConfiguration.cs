@@ -28,7 +28,8 @@ public sealed record DeploymentCapabilities(
     bool SupportsPrivateNetworkAccess,
     bool SupportsEreaderAccess,
     bool UsageMeteringAvailable,
-    string? AccountManagementUrl);
+    string? AccountManagementUrl,
+    string? FeedbackUrl);
 
 /// <summary>
 /// Server-authoritative deployment descriptor resolved once during startup.
@@ -40,6 +41,7 @@ public sealed record DeploymentDescriptor(
     public const string ConfigurationKey = "Nostos:DeploymentMode";
     public const string AccountManagementUrlConfigurationKey = "Nostos:AccountManagementUrl";
     public const string DefaultCloudAccountManagementUrl = "https://nostos.page/account";
+    public const string DefaultCloudFeedbackUrl = "https://nostos.page/feedback?from=settings";
 
     public static DeploymentDescriptor FromConfiguration(IConfiguration configuration)
     {
@@ -98,7 +100,8 @@ public sealed record DeploymentDescriptor(
                     SupportsPrivateNetworkAccess: true,
                     SupportsEreaderAccess: true,
                     UsageMeteringAvailable: false,
-                    AccountManagementUrl: null)),
+                    AccountManagementUrl: null,
+                    FeedbackUrl: null)),
 
             DeploymentMode.Cloud => new(
                 mode,
@@ -112,7 +115,8 @@ public sealed record DeploymentDescriptor(
                     SupportsPrivateNetworkAccess: false,
                     SupportsEreaderAccess: true,
                     UsageMeteringAvailable: true,
-                    AccountManagementUrl: DefaultCloudAccountManagementUrl)),
+                    AccountManagementUrl: DefaultCloudAccountManagementUrl,
+                    FeedbackUrl: DefaultCloudFeedbackUrl)),
 
             _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, "Unsupported Nostos deployment mode."),
         };

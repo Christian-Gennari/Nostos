@@ -52,6 +52,7 @@ const selfHostedCapabilities: DeploymentCapabilities = {
   supportsEreaderAccess: true,
   usageMeteringAvailable: false,
   accountManagementUrl: null,
+  feedbackUrl: null,
 };
 
 const cloudCapabilities: DeploymentCapabilities = {
@@ -66,6 +67,7 @@ const cloudCapabilities: DeploymentCapabilities = {
   supportsEreaderAccess: true,
   usageMeteringAvailable: true,
   accountManagementUrl: 'https://nostos.page/account',
+  feedbackUrl: 'https://nostos.page/feedback?from=settings',
 };
 
 const capabilitiesServiceMock = {
@@ -409,6 +411,7 @@ describe('SettingsComponent backup-only surface', () => {
     expect(navText).not.toContain('Account');
     expect(fixture.nativeElement.querySelector('[data-testid="cloud-account-settings"]')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="cloud-account-management-link"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="cloud-feedback-link"]')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="managed-ai-refill-link"]')).toBeNull();
     expect(cloudAuthServiceMock.getSession).not.toHaveBeenCalled();
   });
@@ -438,6 +441,14 @@ describe('SettingsComponent backup-only surface', () => {
     expect(manageAccount.textContent).toContain('Manage account & billing');
     expect(manageAccount.href).toBe('https://nostos.page/account');
     expect(manageAccount.target).toBe('_blank');
+
+    const sendFeedback = card.querySelector(
+      '[data-testid="cloud-feedback-link"]',
+    ) as HTMLAnchorElement;
+    expect(sendFeedback.textContent).toContain('Send feedback');
+    expect(sendFeedback.href).toBe('https://nostos.page/feedback?from=settings');
+    expect(sendFeedback.target).toBe('_blank');
+    expect(sendFeedback.rel).toBe('noopener noreferrer');
 
     const signOut = Array.from(card.querySelectorAll('button')).find((button: any) =>
       (button.textContent ?? '').includes('Sign out'),

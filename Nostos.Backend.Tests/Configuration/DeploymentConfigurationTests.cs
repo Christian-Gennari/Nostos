@@ -27,7 +27,8 @@ public sealed class DeploymentConfigurationTests
             SupportsPrivateNetworkAccess: true,
             SupportsEreaderAccess: true,
             UsageMeteringAvailable: false,
-            AccountManagementUrl: null));
+            AccountManagementUrl: null,
+            FeedbackUrl: null));
     }
 
     [Fact]
@@ -48,7 +49,8 @@ public sealed class DeploymentConfigurationTests
             SupportsPrivateNetworkAccess: false,
             SupportsEreaderAccess: true,
             UsageMeteringAvailable: true,
-            AccountManagementUrl: DeploymentDescriptor.DefaultCloudAccountManagementUrl));
+            AccountManagementUrl: DeploymentDescriptor.DefaultCloudAccountManagementUrl,
+            FeedbackUrl: DeploymentDescriptor.DefaultCloudFeedbackUrl));
     }
 
     [Fact]
@@ -96,6 +98,7 @@ public sealed class DeploymentConfigurationTests
         response.SupportsEreaderAccess.Should().BeTrue();
         response.UsageMeteringAvailable.Should().BeTrue();
         response.AccountManagementUrl.Should().Be(DeploymentDescriptor.DefaultCloudAccountManagementUrl);
+        response.FeedbackUrl.Should().Be(DeploymentDescriptor.DefaultCloudFeedbackUrl);
     }
 
     [Fact]

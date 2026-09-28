@@ -35,7 +35,8 @@ public static class DeploymentCapabilitiesEndpoints
             SupportsPrivateNetworkAccess: deployment.Capabilities.SupportsPrivateNetworkAccess,
             SupportsEreaderAccess: deployment.Capabilities.SupportsEreaderAccess,
             UsageMeteringAvailable: deployment.Capabilities.UsageMeteringAvailable,
-            AccountManagementUrl: deployment.Capabilities.AccountManagementUrl);
+            AccountManagementUrl: deployment.Capabilities.AccountManagementUrl,
+            FeedbackUrl: deployment.Capabilities.FeedbackUrl);
 }
 
 public sealed record DeploymentCapabilitiesResponse(
@@ -49,4 +50,5 @@ public sealed record DeploymentCapabilitiesResponse(
     bool SupportsPrivateNetworkAccess,
     bool SupportsEreaderAccess,
     bool UsageMeteringAvailable,
-    string? AccountManagementUrl);
+    string? AccountManagementUrl,
+    string? FeedbackUrl);
