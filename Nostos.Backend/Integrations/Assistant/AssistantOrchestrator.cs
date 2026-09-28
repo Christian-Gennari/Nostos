@@ -95,15 +95,15 @@ public sealed class AssistantOrchestrator(
     public const string WhichBookQuestion = "Which book is this for?";
 
     /// <summary>
-    /// The same question again, after an answer that named no book in the
-    /// library. Asked rather than guessed: the second answer is as likely to be
-    /// right as the first.
+    /// Follow-up after a title produced no local candidate. A continuation may
+    /// ask this again only within the bounded book-resolution attempt budget.
     /// </summary>
     public const string BookNotFoundQuestion = "I could not find that book. Which book is this for?";
 
-    /// <summary>The prompt kind the client answers with the book's title.</summary>
+    /// <summary>The prompt kind the client answers with a title or numbered candidate.</summary>
     public const string BookPromptKind = "book";
 
+    private const int MaxBookContinuationAttempts = 3;
     private const string CaptureCapability = "notes_capture";
     private const string BookTextCapability = "book_text_search";
     private const string KnowledgeSearchCapability = "knowledge_search";
@@ -778,11 +778,19 @@ public sealed class AssistantOrchestrator(
                 "This follow-up needs an answer before the capture can continue. Nothing was changed.");
         }
 
-        var resumedContext = _capturePolicy.ApplyContinuationAnswer(
-            stored.Context,
-            stored.Kind,
-            request.Message,
-            request.ContinuationSkipped);
+        var resumedContext = string.Equals(
+                stored.Kind,
+                BookPromptKind,
+                StringComparison.Ordinal)
+            ? await _capturePolicy.ApplyBookContinuationAnswerAsync(
+                stored.Context,
+                request.Message,
+                ct)
+            : _capturePolicy.ApplyContinuationAnswer(
+                stored.Context,
+                stored.Kind,
+                request.Message,
+                request.ContinuationSkipped);
 
         var capture = await _capturePolicy.PrepareAsync(
             stored.ArgumentsJson,
@@ -792,7 +800,26 @@ public sealed class AssistantOrchestrator(
 
         if (capture.Prompt is { } prompt)
         {
-            continuations.Update(stored, prompt.Kind, resumedContext);
+            var bookResolutionAttempts = stored.BookResolutionAttempts;
+            if (string.Equals(stored.Kind, BookPromptKind, StringComparison.Ordinal)
+                && string.Equals(prompt.Kind, BookPromptKind, StringComparison.Ordinal))
+            {
+                bookResolutionAttempts++;
+                if (bookResolutionAttempts >= MaxBookContinuationAttempts)
+                {
+                    var failure = ContinuationFailure(
+                        AssistantErrorCodes.NotFound,
+                        "I still could not match that to a book in your library. Nothing was saved.");
+                    continuations.Complete(stored, turnId, failure);
+                    return failure;
+                }
+            }
+
+            continuations.Update(
+                stored,
+                prompt.Kind,
+                resumedContext,
+                bookResolutionAttempts);
             var nextPrompt = prompt with { ContinuationId = continuationId };
             var response = new AssistantTurnResponse(
                 Reply: prompt.Question,

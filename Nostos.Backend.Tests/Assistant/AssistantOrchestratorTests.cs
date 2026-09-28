@@ -1280,6 +1280,57 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
     }
 
     [Fact]
+    public async Task Missing_book_continuation_with_ambiguous_title_lists_choices_and_accepts_number()
+    {
+        var h = CreateHarness();
+        var firstBook = await SeedBookAsync(h, "Collected Essays", "Alice Author");
+        var secondBook = await SeedBookAsync(h, "Collected Essays", "Bob Author");
+
+        h.Llm.CallsTool(
+            "notes_capture",
+            """{"content":"A thought with no open book"}""");
+
+        var first = await h.Orchestrator.HandleTurnAsync(Turn(
+            "Save this thought.",
+            Context(surface: "library", route: "/library"),
+            conversationId: "conversation-book-choice",
+            turnId: "turn-original"));
+
+        var continuationId = first.AnchorPrompt!.ContinuationId!;
+        var ambiguous = await h.Orchestrator.HandleTurnAsync(Turn(
+            "Collected Essays",
+            Context(surface: "library", route: "/library"),
+            conversationId: "conversation-book-choice",
+            turnId: "turn-book-title",
+            continuationId: continuationId));
+
+        ambiguous.Error.Should().BeNull();
+        ambiguous.AnchorPrompt.Should().NotBeNull();
+        ambiguous.AnchorPrompt!.Kind.Should().Be(AssistantOrchestrator.BookPromptKind);
+        ambiguous.AnchorPrompt.Question.Should().Contain("1. Collected Essays — Alice Author");
+        ambiguous.AnchorPrompt.Question.Should().Contain("2. Collected Essays — Bob Author");
+        ambiguous.AnchorPrompt.ContinuationId.Should().Be(continuationId);
+        (await NoteCountAsync(h)).Should().Be(0);
+
+        var completed = await h.Orchestrator.HandleTurnAsync(Turn(
+            "2",
+            Context(surface: "library", route: "/library"),
+            conversationId: "conversation-book-choice",
+            turnId: "turn-book-choice",
+            continuationId: continuationId));
+
+        completed.Error.Should().BeNull();
+        completed.CapturedNoteId.Should().NotBeNullOrWhiteSpace();
+        completed.Acknowledgement.Should().Contain("Collected Essays");
+        h.Llm.CallCount.Should().Be(1);
+
+        await using var db = await h.Factory.CreateDbContextAsync();
+        var note = await db.Notes.AsNoTracking().SingleAsync();
+        note.BookId.Should().Be(secondBook.Id);
+        note.BookId.Should().NotBe(firstBook.Id);
+    }
+
+    [Fact]
     public async Task Missing_book_continuation_that_does_not_resolve_reprompts_without_mutating()
     {
         var h = CreateHarness();
@@ -1326,6 +1377,74 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
 
         await using var db = await h.Factory.CreateDbContextAsync();
         (await db.Notes.AsNoTracking().SingleAsync()).BookId.Should().Be(intended.Id);
+    }
+
+    [Fact]
+    public async Task Missing_book_continuation_exhausts_retry_budget_and_becomes_terminal()
+    {
+        var h = CreateHarness();
+        await SeedBookAsync(h, "The Magic Mountain");
+
+        h.Llm.CallsTool(
+            "notes_capture",
+            """{"content":"A thought with no open book"}""");
+
+        var first = await h.Orchestrator.HandleTurnAsync(Turn(
+            "Save this thought.",
+            Context(surface: "library", route: "/library"),
+            conversationId: "conversation-book-exhausted",
+            turnId: "turn-original"));
+
+        var continuationId = first.AnchorPrompt!.ContinuationId!;
+
+        for (var attempt = 1; attempt <= 2; attempt++)
+        {
+            var retry = await h.Orchestrator.HandleTurnAsync(Turn(
+                $"Missing Book {attempt}",
+                Context(surface: "library", route: "/library"),
+                conversationId: "conversation-book-exhausted",
+                turnId: $"turn-missing-{attempt}",
+                continuationId: continuationId));
+
+            retry.Error.Should().BeNull();
+            retry.AnchorPrompt.Should().NotBeNull();
+            retry.AnchorPrompt!.Question.Should().Be(AssistantOrchestrator.BookNotFoundQuestion);
+        }
+
+        var terminal = await h.Orchestrator.HandleTurnAsync(Turn(
+            "Still Missing",
+            Context(surface: "library", route: "/library"),
+            conversationId: "conversation-book-exhausted",
+            turnId: "turn-missing-3",
+            continuationId: continuationId));
+
+        terminal.AnchorPrompt.Should().BeNull();
+        terminal.Error.Should().NotBeNull();
+        terminal.Error!.Code.Should().Be(AssistantErrorCodes.NotFound);
+        terminal.Reply.Should().Contain("Nothing was saved");
+        (await NoteCountAsync(h)).Should().Be(0);
+        h.Llm.CallCount.Should().Be(1);
+
+        var replay = await h.Orchestrator.HandleTurnAsync(Turn(
+            "Still Missing",
+            Context(surface: "library", route: "/library"),
+            conversationId: "conversation-book-exhausted",
+            turnId: "turn-missing-3",
+            continuationId: continuationId));
+
+        replay.Error!.Code.Should().Be(AssistantErrorCodes.NotFound);
+        replay.Reply.Should().Be(terminal.Reply);
+        (await NoteCountAsync(h)).Should().Be(0);
+
+        var afterTerminal = await h.Orchestrator.HandleTurnAsync(Turn(
+            "The Magic Mountain",
+            Context(surface: "library", route: "/library"),
+            conversationId: "conversation-book-exhausted",
+            turnId: "turn-after-terminal",
+            continuationId: continuationId));
+
+        afterTerminal.Error!.Code.Should().Be(AssistantErrorCodes.ContinuationNotFound);
+        (await NoteCountAsync(h)).Should().Be(0);
     }
 
     [Fact]
@@ -2540,9 +2659,11 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
             CaptureBookTitle: captureBookTitle);
 
     private static async Task<PhysicalBookModel> SeedBookAsync(
-        Harness h, string title = "Seeded Book")
+        Harness h,
+        string title = "Seeded Book",
+        string author = "Author")
     {
-        var book = new PhysicalBookModel { Id = Guid.NewGuid(), Title = title, Author = "Author" };
+        var book = new PhysicalBookModel { Id = Guid.NewGuid(), Title = title, Author = author };
         h.Db.Books.Add(book);
         await h.Db.SaveChangesAsync();
         return book;
