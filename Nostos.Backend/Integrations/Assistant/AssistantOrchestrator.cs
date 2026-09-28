@@ -664,21 +664,21 @@ public sealed class AssistantOrchestrator(
         }
         else if (terminalError is null
                  && retrievalAttempted
-                 && scopedRetrievalAttempted
                  && !retrievalEvidenceAvailable)
         {
             var retrievalFailure = RetrievalFailure(retrievalStates);
 
-            // "No passage from this search" is not the same thing as "the
-            // entire turn failed" when the turn also obtained canonical book
-            // metadata or exact evidence through another read path. Indexing
-            // states remain terminal because metadata cannot make an unavailable
-            // source searchable.
+            // Indexing failures are operational source states and stay typed
+            // regardless of how the model scoped the call. Plain "no evidence"
+            // is terminal only for a genuinely scoped lookup that did not also
+            // recover canonical metadata or exact evidence elsewhere.
             if (!string.Equals(
                     retrievalFailure.Code,
                     AssistantErrorCodes.NoEvidence,
                     StringComparison.Ordinal)
-                || (!metadataReadSucceeded && evidenceReferences.Count == 0))
+                || (scopedRetrievalAttempted
+                    && !metadataReadSucceeded
+                    && evidenceReferences.Count == 0))
             {
                 terminalError = retrievalFailure;
             }

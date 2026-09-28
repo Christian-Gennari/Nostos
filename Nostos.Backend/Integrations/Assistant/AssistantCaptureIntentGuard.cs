@@ -48,7 +48,7 @@ internal static partial class AssistantCaptureIntentGuard
                 && !string.IsNullOrWhiteSpace(entry.Text));
 
         return previousQuestion is not null
-            && previousQuestion.Text.TrimEnd().EndsWith('?', StringComparison.Ordinal)
+            && previousQuestion.Text.TrimEnd().EndsWith("?", StringComparison.Ordinal)
             && IsShortScopeClarification(current);
     }
 
