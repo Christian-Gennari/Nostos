@@ -2707,7 +2707,7 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         h.Llm
             .CallsTool(
                 "knowledge_search",
-                $"""{"query":"scoped","bookIds":["{{currentBook}}"]}""")
+                $"{{\"query\":\"scoped\",\"bookIds\":[\"{currentBook}\"]}}")
             .Returns("Scoped answer.");
 
         await h.Orchestrator.HandleTurnAsync(Turn(
