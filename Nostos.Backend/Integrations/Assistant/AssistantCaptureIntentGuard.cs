@@ -18,7 +18,7 @@ internal sealed record AssistantCaptureIntentDecision(
 internal sealed partial class AssistantCaptureIntentGuard(ILibraryService library)
 {
     [GeneratedRegex(
-        @"^(?:(?:please\s+)?(?:do\s+not|don't)\s+(?:save|record|capture|note)\b|save\s+nothing\b|(?:spara|anteckna|lagra)\s+(?:inte|inget|ingenting)\b)",
+        @"^(?:(?:please\s+)?(?:do\s+not|don['’]t)\s+(?:save|record|capture|note)\b|save\s+nothing\b|(?:spara|anteckna|lagra)\s+(?:inte|inget|ingenting)\b)",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex ExplicitNoCaptureRegex();
 
