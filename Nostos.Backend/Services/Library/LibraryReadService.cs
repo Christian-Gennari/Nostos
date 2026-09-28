@@ -94,6 +94,18 @@ internal sealed class LibraryReadService(
                 db.BookCollections.Any(bc => bc.BookId == b.Id && subtreeIds.Contains(bc.CollectionId)));
         }
 
+        // The book row is deliberately the only in-progress import surface.
+        // Apply ordinary Library filters first, then restore active imports once at
+        // this boundary so search/status/format/collection (and future filters)
+        // cannot remove the Downloading/Transcoding card the user is watching.
+        // When the status becomes Ready/Failed the row immediately returns to the
+        // ordinary filtered result semantics.
+        var filteredBookIds = query.Select(b => b.Id);
+        query = db.Books.AsNoTracking().Where(b =>
+            b.Status == BookStatus.Downloading
+            || b.Status == BookStatus.Transcoding
+            || filteredBookIds.Contains(b.Id));
+
         PaginatedResponse<BookDto> pageResult;
         int totalCount;
         if (groupByWork == true)
@@ -149,12 +161,9 @@ internal sealed class LibraryReadService(
         }
         else
         {
-            // Imports sort FIRST, whatever the sort key is. The row is an ordinary
-            // book all along (nothing filters it out), so the only reason a running
-            // import could not be seen was the ordering: under Last Read a brand-new
-            // book has no LastReadAt, so it sorted behind every book the user has
-            // ever opened — page 3 of a full library — and the progress bar was
-            // drawn on a card nobody could see.
+            // Imports sort FIRST, whatever the sort key is. The boundary above also
+            // keeps them in the result through ordinary filters, so their own card
+            // remains the single progress surface until the import settles.
             IOrderedQueryable<BookModel> ImportingFirst(IQueryable<BookModel> source) =>
                 source.OrderByDescending(b =>
                     b.Status == BookStatus.Downloading || b.Status == BookStatus.Transcoding);
