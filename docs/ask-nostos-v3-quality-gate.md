@@ -1,12 +1,12 @@
 # Ask Nostos v3 — retrieval-first quality gate and model floor (#566)
 
-Status: **draft — measurements pending**  ·  Issue: Christian-Gennari/Nostos#566 (final gate for epic #557)
-Base: `main` @ 89f8a27  ·  Harness: this repository (`Nostos.Backend.Tests/Assistant/…`)
+Status: **complete — measurements final; PR pending merge**  ·  Issue: Christian-Gennari/Nostos#566 (closed final gate for epic #557)
+Final validation/re-measurement base: `main` @ 38bc03bc (#605 + #609 + #610). Initial live baseline at `89f8a27` is retained explicitly in §4 for historical comparison.  ·  Harness: this repository (`Nostos.Backend.Tests/Assistant/…`)
 
 This report records, separately and without a blended score:
 
 1. deterministic Gate A architecture-correctness evidence;
-2. C1–C20 sustained retrieval/navigation scenario results;
+2. C1–C21 sustained retrieval/navigation scenario results;
 3. the recorded baseline (current managed production configuration);
 4. the cheap/fast candidate comparison;
 5. correctness, retrieval, provenance, grounding/restraint, safety, latency, tool-economy, token and cost metrics;
@@ -46,10 +46,14 @@ All 17 cases are covered by deterministic tests in `Nostos.Backend.Tests/Assista
 
 Evidence (commands run, real output):
 
-- `dotnet test --filter "FullyQualifiedName~GateA"` → **Passed: 23/23** (independent re-run after merge: 28/28 for GateA+retrieval fixtures).
-- `dotnet test --filter "FullyQualifiedName~Assistant"` → **Passed: 208/208** (185 pre-existing + 23 new).
-- Full backend suite: **988/988**.
-- `dotnet build Nostos.sln` → clean.
+Final verification on the rebased pushed head:
+
+- `dotnet build Nostos.sln` → **0 errors**.
+- `dotnet test --filter "FullyQualifiedName~GateA"` → **23/23 passed**.
+- `dotnet test --filter "FullyQualifiedName~QualityBed"` → **33/33 passed**.
+- `dotnet test --filter "FullyQualifiedName~Knowledge.Quality"` → **5/5 passed**.
+- `dotnet test --filter "FullyQualifiedName~Assistant"` → **260/260 passed**.
+- Public product CI on PR #611 → **green across all five lanes**.
 
 **Sabotage checks** (proving the new tests are not vacuous):
 
@@ -57,10 +61,11 @@ Evidence (commands run, real output):
 - Made the continuation resume pass an empty answer instead of the user's real answer →
   `Physical_page_answer_wins_over_a_stale_context_anchor` **fails** (lines 69/71). Reverted → green.
 
-### Product defects found and fixed
+### Product-defect relationship to this benchmark
 
-**None.** All 23 new tests passed against unmodified product code on first run. No product code
-was changed by this workstream.
+Gate A required **no new product-code change inside PR #611**. The retry/TurnId/continuation correctness defect had already been identified during the #558 architecture work and fixed in #560; the new Gate A coverage verifies those invariants and the sabotage checks above prove the tests fail when they are broken.
+
+While #611 was in review, `main` independently gained #609 and #610 from real tester findings (plus #605 test-storage isolation). The branch was rebased and the live screen was re-run on that product revision (§5.2). That re-run surfaced the separate anchor-continuation capture-loss defect now tracked as #615; #611 deliberately records rather than fixes it.
 
 ---
 
@@ -537,8 +542,8 @@ Proposed as separate issues (this benchmark does not fix them):
    benchmark: the current managed configuration remains the best-scoring configuration tested. If a
    cheaper model later clears the floor, the change belongs in a Nostos-Cloud issue/PR with this
    report as evidence.
-7. **Anchor-continuation capture loss (product defect) — filed as [#615](https://github.com/Christian-Gennari/Nostos/issues/615).** The external-audio timestamp continuation intermittently ends in `assistant_invalid_arguments` and writes no note (baseline: 2/30 reps pre-#609/#610, 4/10 after; p ~ 0.026). The benchmark records it rather than fixing it (capture-loss is product behaviour); repro + raw evidence in the issue.
-8. **Retrieval architecture (no change proposed).** The predefined low-overlap/distractor fixtures
+6. **Anchor-continuation capture loss (product defect) — filed as [#615](https://github.com/Christian-Gennari/Nostos/issues/615).** The external-audio timestamp continuation intermittently ends in `assistant_invalid_arguments` and writes no note (baseline: 2/30 reps pre-#609/#610, 4/10 after; p ~ 0.026). The benchmark records it rather than fixing it (capture-loss is product behaviour); repro + raw evidence in the issue.
+7. **Retrieval architecture (no change proposed).** The predefined low-overlap/distractor fixtures
    do not justify semantic/vector infrastructure (§6); the observed live misses are *scope and
    behaviour* issues (1), not lexical-coverage failures. The deterministic lanes prove the
    end-to-end path returns the right note once a knowledge search is issued, and §6 shows the
@@ -552,7 +557,7 @@ Proposed as separate issues (this benchmark does not fix them):
 
 | #566 acceptance criterion | Evidence |
 | --- | --- |
-| Gate A passes without systematic safety/provenance/idempotency failures | §1: 23/23 deterministic Gate A tests; the one real defect found (continuation/idempotency) was fixed with regression coverage + sabotage-verified |
+| Gate A passes without systematic safety/provenance/idempotency failures | §1: 23/23 deterministic Gate A tests; retry/continuation invariants fixed earlier in #560 are regression-covered here, and sabotage checks prove the new tests detect breaks; #611 itself introduces no product-code fix |
 | C1–C20 exist and run deterministically/live as appropriate | §3: 33/33 deterministic QualityBed tests (C1–C21); live lanes C1–C12, C16–C21 executed against the gateway |
 | Useful H1–H16 coverage preserved without making synthesis the goal | §3 H1–H16 map (retrieval/restraint reinterpretations; synthesis scoring deliberately dropped) |
 | Current production behaviour recorded as the baseline | §4 |
@@ -568,5 +573,5 @@ Proposed as separate issues (this benchmark does not fix them):
 | Residual uncertainty documented rather than chasing false certainty | §7 (11 items) |
 
 **Deliverable status:** report + harness committed on `agent/ask-nostos-566-benchmark` (PR #611); #566
-carries the measured evidence and closes with the benchmark complete; the three product follow-ups
-found by the gate are filed as #612/#613/#614; parent #557 is reassessed in its own comment.
+carries the measured evidence and is closed with the benchmark complete. The four product follow-ups
+surfaced by the gate/re-run are #612/#613/#614/#615. Parent #557 has been reassessed and intentionally remains open until those four are resolved or explicitly accepted as out of scope.
