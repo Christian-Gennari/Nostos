@@ -17,6 +17,7 @@ internal sealed record StoredAssistantContinuation(
     string OriginalTurnId,
     string Kind,
     string ArgumentsJson,
+    string OriginalMessage,
     AssistantContextDto Context,
     string ProcessingMode,
     DateTimeOffset ExpiresAt,
@@ -58,6 +59,7 @@ public sealed class AssistantContinuationStore
         string originalTurnId,
         string kind,
         string argumentsJson,
+        string originalMessage,
         AssistantContextDto context,
         string processingMode)
     {
@@ -78,6 +80,7 @@ public sealed class AssistantContinuationStore
                 originalTurnId,
                 kind,
                 argumentsJson,
+                originalMessage,
                 context,
                 processingMode,
                 Now + ActiveLifetime);

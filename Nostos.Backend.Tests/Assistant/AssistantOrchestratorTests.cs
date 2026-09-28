@@ -1406,6 +1406,56 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
     }
 
     [Fact]
+    public async Task External_audio_continuation_recovers_original_capture_when_tool_args_omit_content()
+    {
+        var h = CreateHarness();
+        var book = await SeedBookAsync(h, "External Audio");
+        const string capture = "mark the gull passage ending for the chapter list.";
+
+        // Reproduces #615: a weak provider can choose notes_capture correctly
+        // but omit both content and selectedText while the app still needs an
+        // external-audio timestamp before it may write.
+        h.Llm.CallsTool("notes_capture", "{}");
+
+        var first = await h.Orchestrator.HandleTurnAsync(Turn(
+            capture,
+            Context(
+                bookId: book.Id.ToString(),
+                bookTitle: book.Title,
+                bookFormat: "audiobook",
+                readerType: null),
+            conversationId: "conversation-audio-missing-content",
+            turnId: "turn-original"));
+
+        first.AnchorPrompt.Should().NotBeNull();
+        first.AnchorPrompt!.Kind.Should().Be("external_audio_timestamp");
+        (await NoteCountAsync(h)).Should().Be(0);
+
+        var completed = await h.Orchestrator.HandleTurnAsync(Turn(
+            "12:40",
+            Context(
+                bookId: book.Id.ToString(),
+                bookTitle: book.Title,
+                bookFormat: "audiobook",
+                readerType: null),
+            conversationId: "conversation-audio-missing-content",
+            turnId: "turn-audio-answer",
+            continuationId: first.AnchorPrompt.ContinuationId));
+
+        completed.Error.Should().BeNull();
+        completed.CapturedNoteId.Should().NotBeNullOrWhiteSpace();
+        h.Llm.CallCount.Should().Be(1);
+        (await NoteCountAsync(h)).Should().Be(1);
+
+        await using var db = await h.Factory.CreateDbContextAsync();
+        var note = await db.Notes.AsNoTracking().SingleAsync();
+        note.Content.Should().Be(capture);
+        note.SourceAnchorKind.Should().Be("external_audio_timestamp");
+        note.SourceAnchorValue.Should().Be("760");
+        note.AnchorVerified.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task Missing_book_continuation_uses_the_users_real_title_and_canonical_resolution()
     {
         var h = CreateHarness();
