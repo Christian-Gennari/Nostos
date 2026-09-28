@@ -1,5 +1,5 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { of, throwError } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 
 import { AddBookModal } from './add-book-modal.component';
 import { Book, BookLookupError, BooksService } from '../core/services/books.service';
@@ -231,6 +231,58 @@ describe('AddBookModal', () => {
     component.submit();
 
     expect(uploadSpy).not.toHaveBeenCalled();
+  });
+
+  it('allows only one create while the first add request is still in flight', () => {
+    const books = TestBed.inject(BooksService);
+    const createResult = new Subject<Book>();
+    const createSpy = vi.spyOn(books, 'create').mockReturnValue(createResult);
+
+    component.form.title = 'The Magic Mountain';
+    component.form.type = 'physical';
+
+    component.submit();
+    component.submit();
+
+    expect(createSpy).toHaveBeenCalledTimes(1);
+    expect(component.isSubmitting()).toBe(true);
+
+    createResult.error(new Error('create failed'));
+    expect(component.isSubmitting()).toBe(false);
+  });
+
+  it('keeps the add action locked after create returns while the file upload is running', () => {
+    const books = TestBed.inject(BooksService);
+    const createSpy = vi
+      .spyOn(books, 'create')
+      .mockReturnValue(of({ id: 'new-book' } as unknown as Book));
+    const uploadResult = new Subject<any>();
+    const uploadSpy = vi.spyOn(books, 'uploadFile').mockReturnValue(uploadResult);
+
+    component.form.title = 'The Magic Mountain';
+    component.form.type = 'ebook';
+    component.selectedFile.set(
+      new File(['ebook'], 'magic-mountain.epub', { type: 'application/epub+zip' }),
+    );
+
+    fixture.detectChanges();
+    component.submit();
+    fixture.detectChanges();
+
+    const submitButton = fixture.nativeElement.querySelector(
+      'button[type="submit"][form="add-book-form"]',
+    ) as HTMLButtonElement;
+
+    expect(createSpy).toHaveBeenCalledTimes(1);
+    expect(uploadSpy).toHaveBeenCalledTimes(1);
+    expect(component.isSubmitting()).toBe(true);
+    expect(submitButton.disabled).toBe(true);
+    expect(submitButton.textContent).toContain('Adding…');
+
+    component.submit();
+
+    expect(createSpy).toHaveBeenCalledTimes(1);
+    expect(uploadSpy).toHaveBeenCalledTimes(1);
   });
 
   it('renders the multi-select picker with the hierarchy intact', () => {
