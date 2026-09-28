@@ -81,7 +81,7 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
 
         // Even if a weak provider emits the write anyway, the server refuses it.
         h.Llm
-            .CallsTool("notes_capture", $"""{"content":"{{message}}"}""")
+            .CallsTool("notes_capture", $$"""{"content":"{{message}}"}""")
             .Returns("Nothing was saved.");
 
         var response = await h.Orchestrator.HandleTurnAsync(Turn(
@@ -143,7 +143,7 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         const string thought = "Attention feels more scarce to me than time.";
 
         h.Llm
-            .CallsTool("notes_capture", $"""{"content":"{{thought}}"}""")
+            .CallsTool("notes_capture", $$"""{"content":"{{thought}}"}""")
             .Returns("");
 
         var response = await h.Orchestrator.HandleTurnAsync(Turn(
@@ -2485,8 +2485,8 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         var book = await SeedBookAsync(h, "Metadata Book");
 
         h.Llm
-            .CallsTool("library_get_book", $"""{"bookId":"{{book.Id}}"}""")
-            .CallsTool("book_text_search", $"""{"query":"overview","bookIds":["{{book.Id}}"]}""")
+            .CallsTool("library_get_book", $$"""{"bookId":"{{book.Id}}"}""")
+            .CallsTool("book_text_search", $$"""{"query":"overview","bookIds":["{{book.Id}}"]}""")
             .Returns("Metadata Book is in your library; I do not have a supporting passage for a textual summary.");
 
         var response = await h.Orchestrator.HandleTurnAsync(Turn(
