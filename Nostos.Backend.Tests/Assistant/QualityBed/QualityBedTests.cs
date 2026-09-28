@@ -35,7 +35,7 @@ public sealed class QualityBedDeterministicTests
 
         // The catalogue is complete: every scenario runs unless filtered.
         if (config.ScenarioIds.Count == 0 && config.Reps == 1)
-            Assert.Equal(20, models.SelectMany(m => m.Scenarios).Count());
+            Assert.Equal(21, models.SelectMany(m => m.Scenarios).Count());
 
         var resultsPath = Path.Combine(config.OutDir, "quality-scripted", "results.json");
         Assert.True(File.Exists(resultsPath), $"expected {resultsPath}");
@@ -214,6 +214,11 @@ public sealed class QualityBedFixtureTests : IDisposable
 
         var gibberish = Match("quasar brass abacus zephyr");
         Assert.Empty(gibberish);
+
+        // C21 Swedish tokens match nothing stored: the live Swedish lookup
+        // can only be satisfied by the note captured on the previous turn.
+        var swedish = Match("kvällspromenaden fyrrummet fyren mörkt");
+        Assert.Empty(swedish);
 
         var margin = Match("margin chapter two river");
         Assert.Single(margin);
