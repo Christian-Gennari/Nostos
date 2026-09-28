@@ -313,9 +313,15 @@ describe('SecondBrain', () => {
       expect(fixture.nativeElement.querySelector('.brain-browse-detail')?.textContent).toContain('No concepts linked');
     });
 
-    it('uses shared controls and a clear note hierarchy for the selected inspector', () => {
+    it('uses the Concepts visual grammar for the Notes search, index and selected inspector', () => {
       component.setViewMode('notes');
       browse([linked]);
+
+      const header = fixture.nativeElement.querySelector('.brain-header') as HTMLElement;
+      const noteSearch = header.querySelector('#brain-all-notes-search') as HTMLInputElement;
+      expect(noteSearch).toBeTruthy();
+      expect(noteSearch.getAttribute('aria-label')).toBe('Search saved notes');
+      expect(fixture.nativeElement.querySelector('.index-col #brain-all-notes-search')).toBeNull();
 
       const withoutConcepts = fixture.nativeElement.querySelector(
         '.brain-note-filter-row button.nostos-chip',
@@ -328,18 +334,22 @@ describe('SecondBrain', () => {
       fixture.detectChanges();
 
       const detail = fixture.nativeElement.querySelector('.brain-browse-detail') as HTMLElement;
-      expect(detail.textContent).toContain('Quotation');
-      expect(detail.textContent).toContain('Your note');
+      const card = detail.querySelector('app-note-card') as HTMLElement;
+      expect(card).toBeTruthy();
+      expect(card.querySelector('.note-quote .quote-text')?.textContent).toContain('A passage');
+      expect(card.querySelector('.note-text')?.textContent).toContain('A thought about');
+      expect(detail.querySelector('.review-quote')).toBeNull();
       expect(detail.textContent).toContain('Linked concepts');
       expect(detail.textContent).not.toContain('Confirmed');
 
-      const actions = detail.querySelector('.review-actions[aria-label="Note actions"]') as HTMLElement;
+      const actions = detail.querySelector('.note-inspector-actions[aria-label="Note actions"]') as HTMLElement;
       const link = [...actions.querySelectorAll('button')].find(
         (button: HTMLButtonElement) => button.textContent?.trim() === 'Link to concept',
       ) as HTMLButtonElement;
       const suggest = actions.querySelector('[data-testid="browse-suggest-concepts"]') as HTMLButtonElement;
       expect(link.classList.contains('nostos-button--primary')).toBe(true);
       expect(suggest.classList.contains('nostos-button--secondary')).toBe(true);
+      expect(actions.querySelector('.note-inspector-utility-actions')?.textContent).toContain('Edit note');
     });
 
     it('filters without concepts, then enters focused review and returns to the filtered Notes view', () => {
@@ -1786,18 +1796,21 @@ describe('SecondBrain', () => {
       expect(localStorage.getItem('nostos.brain.viewMode')).toBeNull();
     });
 
-    it('shows the source, the quotation and the note in the focused pane', () => {
+    it('reuses the ordinary NoteCard presentation in optional review', () => {
       enterReview();
 
-      expect(fixture.nativeElement.querySelector('.review-title')?.textContent?.trim()).toBe(
+      expect(fixture.nativeElement.querySelector('.note-inspector-title')?.textContent?.trim()).toBe(
         'The Myth of Sisyphus'
       );
-      expect(fixture.nativeElement.querySelector('.review-quote')?.textContent?.trim()).toBe(
+      const card = fixture.nativeElement.querySelector('.review-pane app-note-card') as HTMLElement;
+      expect(card).toBeTruthy();
+      expect(card.querySelector('.note-quote .quote-text')?.textContent).toContain(
         'The struggle itself toward the heights is enough to fill a man’s heart.'
       );
-      expect(fixture.nativeElement.querySelector('.review-content')?.textContent?.trim()).toBe(
+      expect(card.querySelector('.note-text')?.textContent?.trim()).toBe(
         'One must imagine Sisyphus happy.'
       );
+      expect(fixture.nativeElement.querySelector('.review-pane .review-quote')).toBeNull();
       expect(fixture.nativeElement.querySelector('.review-pane')?.textContent).toContain('Link to concept');
       expect(fixture.nativeElement.querySelector('.review-pane')?.textContent).toContain('Edit note');
     });
@@ -1805,7 +1818,7 @@ describe('SecondBrain', () => {
     it('offers the same single-note handoff from the focused unlinked-review note', () => {
       enterReview();
 
-      const keep = [...fixture.nativeElement.querySelectorAll('.review-actions button')].find(
+      const keep = [...fixture.nativeElement.querySelectorAll('.note-inspector-utility-actions button')].find(
         (button: HTMLButtonElement) => button.textContent?.includes('Keep with writing')
       ) as HTMLButtonElement;
       expect(keep).toBeTruthy();
@@ -2217,7 +2230,7 @@ describe('SecondBrain', () => {
       fixture.detectChanges();
       expect(component.proposalState()).toBe('empty');
       expect(fixture.nativeElement.querySelector('[data-testid="brain-proposals"]')?.textContent).toContain('No useful matches found');
-      expect(fixture.nativeElement.querySelector('.review-actions')?.textContent).toContain('Link to concept');
+      expect(fixture.nativeElement.querySelector('.note-inspector-primary-actions')?.textContent).toContain('Link to concept');
     });
 
     it('keeps manual linking usable when AI is unavailable, and ignores cancelled late results', () => {
@@ -2229,7 +2242,7 @@ describe('SecondBrain', () => {
       });
       fixture.detectChanges();
       expect(component.proposalState()).toBe('unavailable');
-      expect(fixture.nativeElement.querySelector('.review-actions')?.textContent).toContain('Link to concept');
+      expect(fixture.nativeElement.querySelector('.note-inspector-primary-actions')?.textContent).toContain('Link to concept');
       expect(fixture.nativeElement.querySelector('[data-testid="brain-proposals"]')?.textContent)
         .toContain('Manual linking');
 

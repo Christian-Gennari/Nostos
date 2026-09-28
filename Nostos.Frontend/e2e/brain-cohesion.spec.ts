@@ -266,6 +266,83 @@ for (const theme of THEMES) {
     }
   });
 
+  test(`Notes inspector shares concept evidence presentation — ${theme}`, async ({ browser }) => {
+    const fixture = loadFixture();
+    await ensureSeed(fixture);
+
+    const { context, page } = await newCapturePage(browser, DESKTOP_VIEWPORT);
+    try {
+      await page.goto(`${fixture.baseUrl}/second-brain`, { waitUntil: 'domcontentloaded' });
+      await page.evaluate((t) => {
+        document.documentElement.setAttribute('data-theme', t);
+        try {
+          localStorage.setItem('nostos.theme', t);
+        } catch {
+          /* ignore */
+        }
+      }, theme);
+
+      await page.getByRole('button', { name: 'Notes', exact: true }).click();
+      const search = page.locator('#brain-all-notes-search');
+      await search.waitFor({ timeout: 30_000 });
+      await search.fill('soul becomes dyed');
+      const row = page.locator('.note-row-item').first();
+      await row.waitFor({ timeout: 30_000 });
+      await row.click();
+
+      const inspector = page.locator('[data-testid="brain-note-inspector"]');
+      await inspector.locator('app-note-card .quote-text').waitFor({ timeout: 30_000 });
+      expect(await inspector.locator('.quote-text').textContent()).toContain('soul becomes dyed');
+      expect(await inspector.locator('.note-text').textContent()).toContain('practice, not a talent');
+      expect(await inspector.locator('.review-quote').count()).toBe(0);
+      expect(await page.locator('.brain-header #brain-all-notes-search').count()).toBe(1);
+      expect(await page.locator('.index-col #brain-all-notes-search').count()).toBe(0);
+
+      await capturePng(page, `brain-cohesion-notes-${theme}`);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test(`Notes inspector remains readable on mobile — ${theme}`, async ({ browser }) => {
+    const fixture = loadFixture();
+    await ensureSeed(fixture);
+
+    const { context, page } = await newCapturePage(browser, MOBILE_VIEWPORT, true);
+    try {
+      await page.goto(`${fixture.baseUrl}/second-brain`, { waitUntil: 'domcontentloaded' });
+      await page.evaluate((t) => {
+        document.documentElement.setAttribute('data-theme', t);
+        try {
+          localStorage.setItem('nostos.theme', t);
+        } catch {
+          /* ignore */
+        }
+      }, theme);
+
+      await page.getByRole('button', { name: 'Notes', exact: true }).click();
+      const search = page.locator('#brain-all-notes-search');
+      await search.waitFor({ timeout: 30_000 });
+      await search.fill('soul becomes dyed');
+      const row = page.locator('.note-row-item').first();
+      await row.waitFor({ timeout: 30_000 });
+      await row.click();
+
+      const inspector = page.locator('[data-testid="brain-note-inspector"]');
+      await inspector.locator('app-note-card .quote-text').waitFor({ timeout: 30_000 });
+
+      const horizontalOverflow = await page.evaluate(() => {
+        const root = document.documentElement;
+        return root.scrollWidth - root.clientWidth;
+      });
+      expect(horizontalOverflow, 'Notes inspector must not create horizontal page overflow').toBeLessThanOrEqual(1);
+
+      await capturePng(page, `brain-cohesion-notes-mobile-${theme}`);
+    } finally {
+      await context.close();
+    }
+  });
+
   test(`index list on mobile — ${theme}`, async ({ browser }) => {
     const fixture = loadFixture();
     await ensureSeed(fixture);
