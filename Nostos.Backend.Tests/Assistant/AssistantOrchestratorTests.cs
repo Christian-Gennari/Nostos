@@ -2617,7 +2617,7 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         h.Llm
             .CallsTool(
                 "book_text_search",
-                $"""{"query":"missing phrase","bookIds":["{{bookId}}"]}""")
+                $$"""{"query":"missing phrase","bookIds":["{{bookId}}"]}""")
             .Returns("I could not find it.");
 
         var response = await h.Orchestrator.HandleTurnAsync(Turn(
