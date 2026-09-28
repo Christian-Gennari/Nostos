@@ -19,7 +19,9 @@ internal sealed record StoredAssistantContinuation(
     string ArgumentsJson,
     AssistantContextDto Context,
     string ProcessingMode,
-    DateTimeOffset ExpiresAt);
+    DateTimeOffset ExpiresAt,
+    int BookResolutionAttempts = 0,
+    IReadOnlyList<LibraryCandidate>? BookCandidates = null);
 
 internal enum AssistantContinuationLookupStatus
 {
@@ -58,7 +60,8 @@ public sealed class AssistantContinuationStore
         string kind,
         string argumentsJson,
         AssistantContextDto context,
-        string processingMode)
+        string processingMode,
+        IReadOnlyList<LibraryCandidate>? bookCandidates = null)
     {
         lock (_gate)
         {
@@ -79,7 +82,8 @@ public sealed class AssistantContinuationStore
                 argumentsJson,
                 context,
                 processingMode,
-                Now + ActiveLifetime);
+                Now + ActiveLifetime,
+                BookCandidates: bookCandidates);
 
             _activeById[continuation.ContinuationId] = continuation;
             _activeIdByConversation[conversationId] = continuation.ContinuationId;
@@ -119,7 +123,9 @@ public sealed class AssistantContinuationStore
     internal StoredAssistantContinuation Update(
         StoredAssistantContinuation continuation,
         string kind,
-        AssistantContextDto context)
+        AssistantContextDto context,
+        int bookResolutionAttempts = 0,
+        IReadOnlyList<LibraryCandidate>? bookCandidates = null)
     {
         lock (_gate)
         {
@@ -135,6 +141,8 @@ public sealed class AssistantContinuationStore
             {
                 Kind = kind,
                 Context = context,
+                BookResolutionAttempts = bookResolutionAttempts,
+                BookCandidates = bookCandidates,
                 ExpiresAt = Now + ActiveLifetime,
             };
 

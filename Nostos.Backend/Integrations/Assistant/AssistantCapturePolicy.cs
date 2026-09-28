@@ -15,6 +15,7 @@ namespace Nostos.Backend.Integrations.Assistant;
 internal sealed class AssistantCapturePolicy(ILibraryService library)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private const int MaxBookCandidates = 5;
 
     public async Task<AssistantCapturePreparation> PrepareAsync(
         string argumentsJson,
@@ -28,7 +29,8 @@ internal sealed class AssistantCapturePolicy(ILibraryService library)
             return AssistantCapturePreparation.Ask(
                 bookPrompt,
                 "awaiting_book",
-                "Ask the user for this; do not save the capture yet.");
+                "Ask the user for this; do not save the capture yet.",
+                book.Candidates);
         }
 
         var anchor = DecideAnchor(context);
@@ -61,7 +63,8 @@ internal sealed class AssistantCapturePolicy(ILibraryService library)
         AssistantContextDto context,
         string kind,
         string answer,
-        bool skipped)
+        bool skipped,
+        IReadOnlyList<LibraryCandidate>? bookCandidates = null)
     {
         if (skipped)
         {
@@ -74,10 +77,8 @@ internal sealed class AssistantCapturePolicy(ILibraryService library)
         var trimmed = answer.Trim();
         return kind switch
         {
-            AssistantOrchestrator.BookPromptKind => context with
-            {
-                CaptureBookTitle = trimmed,
-            },
+            AssistantOrchestrator.BookPromptKind =>
+                ApplyBookAnswer(context, trimmed, bookCandidates),
             "physical_page" => context with
             {
                 Anchor = new AssistantAnchorDto(
@@ -96,10 +97,42 @@ internal sealed class AssistantCapturePolicy(ILibraryService library)
         };
     }
 
+    private static AssistantContextDto ApplyBookAnswer(
+        AssistantContextDto context,
+        string answer,
+        IReadOnlyList<LibraryCandidate>? candidates)
+    {
+        if (candidates is { Count: > 0 }
+            && int.TryParse(
+                answer,
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out var selection)
+            && selection >= 1
+            && selection <= candidates.Count)
+        {
+            var candidate = candidates[selection - 1];
+            return context with
+            {
+                BookId = candidate.BookId.ToString(),
+                BookTitle = candidate.Title,
+                CaptureBookTitle = null,
+            };
+        }
+
+        return context with
+        {
+            BookId = null,
+            BookTitle = null,
+            CaptureBookTitle = answer,
+        };
+    }
+
     private async Task<BookDecision> DecideBookAsync(AssistantContextDto? context, CancellationToken ct)
     {
-        // The open book needs no resolution and cannot be overridden: whatever
-        // the user says, this is where the words were written.
+        // A concrete app-owned book id needs no further resolution. It can come
+        // from the open reader or from a deterministic numbered continuation
+        // choice; the model never chooses it.
         if (Guid.TryParse(context?.BookId, out var open))
         {
             return BookDecision.At(open, context?.BookTitle);
@@ -108,25 +141,73 @@ internal sealed class AssistantCapturePolicy(ILibraryService library)
         var title = context?.CaptureBookTitle;
         if (string.IsNullOrWhiteSpace(title))
         {
-            return BookDecision.Ask(new AssistantAnchorPromptDto(AssistantOrchestrator.BookPromptKind, AssistantOrchestrator.WhichBookQuestion));
+            return BookDecision.Ask(new AssistantAnchorPromptDto(
+                AssistantOrchestrator.BookPromptKind,
+                AssistantOrchestrator.WhichBookQuestion));
         }
 
         var resolved = await library.ResolveBookAsync(
             new LibraryResolveBookRequest(Title: title.Trim(), IncludeExternalMetadata: false),
             ct);
 
-        return resolved.Resolution switch
+        if (resolved.Resolution == LibraryResolution.ExactMatch
+            && resolved.MatchedBook is { } match)
         {
-            LibraryResolution.ExactMatch when resolved.MatchedBook is { } match =>
-                BookDecision.At(match.Id, match.Title),
+            return BookDecision.At(match.Id, match.Title);
+        }
 
-            // Exactly one candidate is an answer, not an ambiguity. More than
-            // one is the user's to settle, so it becomes the same question again.
-            LibraryResolution.Candidates when resolved.Candidates is { Count: 1 } only =>
-                BookDecision.At(only[0].BookId, only[0].Title),
+        if (resolved.Resolution == LibraryResolution.Candidates
+            && resolved.Candidates is { Count: 1 } only)
+        {
+            return BookDecision.At(only[0].BookId, only[0].Title);
+        }
 
-            _ => BookDecision.Ask(new AssistantAnchorPromptDto(AssistantOrchestrator.BookPromptKind, AssistantOrchestrator.BookNotFoundQuestion)),
-        };
+        if (resolved.Resolution == LibraryResolution.Candidates
+            && resolved.Candidates is { Count: > 1 } many)
+        {
+            var candidates = many
+                .OrderBy(candidate => candidate.Title, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(candidate => candidate.Author ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(candidate => candidate.Isbn ?? candidate.Asin ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(candidate => candidate.BookId)
+                .Take(MaxBookCandidates)
+                .ToList();
+
+            return BookDecision.Ask(
+                new AssistantAnchorPromptDto(
+                    AssistantOrchestrator.BookPromptKind,
+                    BuildAmbiguousBookQuestion(candidates)),
+                candidates);
+        }
+
+        return BookDecision.Ask(new AssistantAnchorPromptDto(
+            AssistantOrchestrator.BookPromptKind,
+            AssistantOrchestrator.BookNotFoundQuestion));
+    }
+
+    private static string BuildAmbiguousBookQuestion(IReadOnlyList<LibraryCandidate> candidates)
+    {
+        var options = string.Join(
+            " ",
+            candidates.Select((candidate, index) =>
+            {
+                var label = string.IsNullOrWhiteSpace(candidate.Author)
+                    ? candidate.Title
+                    : $"{candidate.Title} — {candidate.Author}";
+
+                if (!string.IsNullOrWhiteSpace(candidate.Isbn))
+                {
+                    label += $" (ISBN {candidate.Isbn})";
+                }
+                else if (!string.IsNullOrWhiteSpace(candidate.Asin))
+                {
+                    label += $" (ASIN {candidate.Asin})";
+                }
+
+                return $"{index + 1}. {label}";
+            }));
+
+        return $"I found more than one matching book. Reply with a number, or type a more specific title. {options}";
     }
 
     // ------------------------------------------------------------------
@@ -390,11 +471,19 @@ internal sealed class AssistantCapturePolicy(ILibraryService library)
             new("unknown", null, false, prompt);
     }
 
-    private sealed record BookDecision(Guid? BookId, string? Title, AssistantAnchorPromptDto? Prompt)
+    private sealed record BookDecision(
+        Guid? BookId,
+        string? Title,
+        AssistantAnchorPromptDto? Prompt,
+        IReadOnlyList<LibraryCandidate>? Candidates = null)
     {
-        public static BookDecision At(Guid bookId, string? title) => new(bookId, title, null);
+        public static BookDecision At(Guid bookId, string? title) =>
+            new(bookId, title, null);
 
-        public static BookDecision Ask(AssistantAnchorPromptDto prompt) => new(null, null, prompt);
+        public static BookDecision Ask(
+            AssistantAnchorPromptDto prompt,
+            IReadOnlyList<LibraryCandidate>? candidates = null) =>
+            new(null, null, prompt, candidates);
     }
 }
 
@@ -404,7 +493,8 @@ internal sealed record AssistantCapturePreparation(
     bool QuoteFidelity,
     AssistantAnchorPromptDto? Prompt,
     string? PromptStatus,
-    string? PromptMessage)
+    string? PromptMessage,
+    IReadOnlyList<LibraryCandidate>? BookCandidates = null)
 {
     public static AssistantCapturePreparation Ready(
         JsonElement arguments,
@@ -415,6 +505,7 @@ internal sealed record AssistantCapturePreparation(
     public static AssistantCapturePreparation Ask(
         AssistantAnchorPromptDto prompt,
         string status,
-        string message) =>
-        new(null, null, false, prompt, status, message);
+        string message,
+        IReadOnlyList<LibraryCandidate>? bookCandidates = null) =>
+        new(null, null, false, prompt, status, message, bookCandidates);
 }

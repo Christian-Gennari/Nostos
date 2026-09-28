@@ -101,6 +101,15 @@ public sealed class AssistantOrchestrator(
     /// </summary>
     public const string BookNotFoundQuestion = "I could not find that book. Which book is this for?";
 
+    /// <summary>
+    /// A capture may re-ask once after a failed book answer, but must never keep
+    /// a customer in an immortal deterministic continuation.
+    /// </summary>
+    public const int MaxBookResolutionAttempts = 2;
+
+    public const string BookResolutionFailedReply =
+        "I still could not identify a single book in your library. The note was not saved.";
+
     /// <summary>The prompt kind the client answers with the book's title.</summary>
     public const string BookPromptKind = "book";
 
@@ -391,7 +400,8 @@ public sealed class AssistantOrchestrator(
                             prompt.Kind,
                             call.ArgumentsJson,
                             request.Context ?? new AssistantContextDto("other", "/"),
-                            captureProcessingMode);
+                            captureProcessingMode,
+                            capture.BookCandidates);
 
                         anchorPrompt = prompt with
                         {
@@ -782,7 +792,8 @@ public sealed class AssistantOrchestrator(
             stored.Context,
             stored.Kind,
             request.Message,
-            request.ContinuationSkipped);
+            request.ContinuationSkipped,
+            stored.BookCandidates);
 
         var capture = await _capturePolicy.PrepareAsync(
             stored.ArgumentsJson,
@@ -792,7 +803,32 @@ public sealed class AssistantOrchestrator(
 
         if (capture.Prompt is { } prompt)
         {
-            continuations.Update(stored, prompt.Kind, resumedContext);
+            var bookResolutionAttempts = stored.BookResolutionAttempts;
+            if (string.Equals(stored.Kind, BookPromptKind, StringComparison.Ordinal)
+                && string.Equals(prompt.Kind, BookPromptKind, StringComparison.Ordinal))
+            {
+                bookResolutionAttempts++;
+                if (bookResolutionAttempts >= MaxBookResolutionAttempts)
+                {
+                    var failure = ContinuationFailure(
+                        AssistantErrorCodes.NotFound,
+                        BookResolutionFailedReply);
+                    continuations.Complete(stored, turnId, failure);
+                    return failure;
+                }
+            }
+            else
+            {
+                bookResolutionAttempts = 0;
+            }
+
+            continuations.Update(
+                stored,
+                prompt.Kind,
+                resumedContext,
+                bookResolutionAttempts,
+                capture.BookCandidates);
+
             var nextPrompt = prompt with { ContinuationId = continuationId };
             var response = new AssistantTurnResponse(
                 Reply: prompt.Question,

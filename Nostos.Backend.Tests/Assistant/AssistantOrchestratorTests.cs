@@ -1329,6 +1329,123 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
     }
 
     [Fact]
+    public async Task Missing_book_continuation_stops_after_two_unresolved_answers_without_mutating()
+    {
+        var h = CreateHarness();
+        await SeedBookAsync(h, "The Magic Mountain");
+
+        h.Llm.CallsTool(
+            "notes_capture",
+            """{"content":"A thought with no open book"}""");
+
+        var first = await h.Orchestrator.HandleTurnAsync(Turn(
+            "Save this thought.",
+            Context(surface: "library", route: "/library"),
+            conversationId: "conversation-book-bounded",
+            turnId: "turn-original"));
+
+        var continuationId = first.AnchorPrompt!.ContinuationId!;
+
+        var firstMiss = await h.Orchestrator.HandleTurnAsync(Turn(
+            "A Book That Is Not Here",
+            Context(surface: "library", route: "/library"),
+            conversationId: "conversation-book-bounded",
+            turnId: "turn-book-missing-1",
+            continuationId: continuationId));
+
+        firstMiss.Error.Should().BeNull();
+        firstMiss.AnchorPrompt.Should().NotBeNull();
+        firstMiss.AnchorPrompt!.Question.Should().Be(AssistantOrchestrator.BookNotFoundQuestion);
+
+        var secondMiss = await h.Orchestrator.HandleTurnAsync(Turn(
+            "Still Not A Book",
+            Context(surface: "library", route: "/library"),
+            conversationId: "conversation-book-bounded",
+            turnId: "turn-book-missing-2",
+            continuationId: continuationId));
+
+        secondMiss.Error.Should().NotBeNull();
+        secondMiss.Error!.Code.Should().Be(AssistantErrorCodes.NotFound);
+        secondMiss.Reply.Should().Be(AssistantOrchestrator.BookResolutionFailedReply);
+        secondMiss.AnchorPrompt.Should().BeNull();
+        (await NoteCountAsync(h)).Should().Be(0);
+        h.Llm.CallCount.Should().Be(1);
+
+        var afterTerminal = await h.Orchestrator.HandleTurnAsync(Turn(
+            "The Magic Mountain",
+            Context(surface: "library", route: "/library"),
+            conversationId: "conversation-book-bounded",
+            turnId: "turn-after-terminal",
+            continuationId: continuationId));
+
+        afterTerminal.Error.Should().NotBeNull();
+        afterTerminal.Error!.Code.Should().Be(AssistantErrorCodes.ContinuationNotFound);
+        (await NoteCountAsync(h)).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Ambiguous_book_continuation_lists_candidates_and_accepts_a_numbered_choice()
+    {
+        var h = CreateHarness();
+        var firstCandidate = new PhysicalBookModel
+        {
+            Id = Guid.Parse("00000000-0000-0000-0000-000000000101"),
+            Title = "Meditations",
+            Author = "Marcus Aurelius",
+        };
+        var secondCandidate = new PhysicalBookModel
+        {
+            Id = Guid.Parse("00000000-0000-0000-0000-000000000102"),
+            Title = "Meditations",
+            Author = "Rene Descartes",
+        };
+        h.Db.Books.AddRange(firstCandidate, secondCandidate);
+        await h.Db.SaveChangesAsync();
+
+        h.Llm.CallsTool(
+            "notes_capture",
+            """{"content":"A thought with an ambiguous book"}""");
+
+        var first = await h.Orchestrator.HandleTurnAsync(Turn(
+            "Save this thought.",
+            Context(surface: "library", route: "/library"),
+            conversationId: "conversation-book-ambiguous",
+            turnId: "turn-original"));
+
+        var continuationId = first.AnchorPrompt!.ContinuationId!;
+        var ambiguous = await h.Orchestrator.HandleTurnAsync(Turn(
+            "Meditations",
+            Context(surface: "library", route: "/library"),
+            conversationId: "conversation-book-ambiguous",
+            turnId: "turn-book-title",
+            continuationId: continuationId));
+
+        ambiguous.Error.Should().BeNull();
+        ambiguous.AnchorPrompt.Should().NotBeNull();
+        ambiguous.AnchorPrompt!.Question.Should().Contain("1. Meditations — Marcus Aurelius");
+        ambiguous.AnchorPrompt.Question.Should().Contain("2. Meditations — Rene Descartes");
+        ambiguous.AnchorPrompt.ContinuationId.Should().Be(continuationId);
+        (await NoteCountAsync(h)).Should().Be(0);
+
+        var completed = await h.Orchestrator.HandleTurnAsync(Turn(
+            "2",
+            Context(surface: "library", route: "/library"),
+            conversationId: "conversation-book-ambiguous",
+            turnId: "turn-book-choice",
+            continuationId: continuationId));
+
+        completed.Error.Should().BeNull();
+        completed.CapturedNoteId.Should().NotBeNullOrWhiteSpace();
+        completed.Acknowledgement.Should().Contain("Meditations");
+        h.Llm.CallCount.Should().Be(1);
+
+        await using var db = await h.Factory.CreateDbContextAsync();
+        var note = await db.Notes.AsNoTracking().SingleAsync();
+        note.BookId.Should().Be(secondCandidate.Id);
+        note.Content.Should().Be("A thought with an ambiguous book");
+    }
+
+    [Fact]
     public async Task Stale_wrong_or_mismatched_continuation_mutates_nothing_and_never_guesses()
     {
         var h = CreateHarness();
