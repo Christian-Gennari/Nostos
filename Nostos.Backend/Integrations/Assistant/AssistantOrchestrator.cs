@@ -676,7 +676,8 @@ public sealed class AssistantOrchestrator(
                     retrievalFailure.Code,
                     AssistantErrorCodes.NoEvidence,
                     StringComparison.Ordinal)
-                || (scopedRetrievalAttempted
+                || ((scopedRetrievalAttempted
+                        || IsExplicitRetrievalRequest(request.Message))
                     && !metadataReadSucceeded
                     && evidenceReferences.Count == 0))
             {
@@ -1119,6 +1120,30 @@ public sealed class AssistantOrchestrator(
 
             target.Add(suggestion);
         }
+    }
+
+    private static bool IsExplicitRetrievalRequest(string message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+            return false;
+
+        var normalized = message.Trim().ToLowerInvariant();
+        return normalized.StartsWith("find ", StringComparison.Ordinal)
+            || normalized.StartsWith("search ", StringComparison.Ordinal)
+            || normalized.StartsWith("where ", StringComparison.Ordinal)
+            || normalized.StartsWith("show me ", StringComparison.Ordinal)
+            || normalized.StartsWith("hitta ", StringComparison.Ordinal)
+            || normalized.StartsWith("sök ", StringComparison.Ordinal)
+            || normalized.StartsWith("var ", StringComparison.Ordinal)
+            || normalized.Contains("my notes", StringComparison.Ordinal)
+            || normalized.Contains("my library", StringComparison.Ordinal)
+            || normalized.Contains("my books", StringComparison.Ordinal)
+            || normalized.Contains("what did i write", StringComparison.Ordinal)
+            || normalized.Contains("what have i written", StringComparison.Ordinal)
+            || normalized.Contains("mina anteckningar", StringComparison.Ordinal)
+            || normalized.Contains("mitt bibliotek", StringComparison.Ordinal)
+            || normalized.Contains("vad skrev jag", StringComparison.Ordinal)
+            || normalized.Contains("vad har jag skrivit", StringComparison.Ordinal);
     }
 
     private static bool IsMetadataReadCapability(string capabilityName) =>
