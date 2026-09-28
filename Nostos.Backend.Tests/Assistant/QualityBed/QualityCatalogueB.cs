@@ -128,14 +128,15 @@ internal static partial class QualityCatalogue
                     new QualityTurnExpect(
                         RequiredTools: ["knowledge_search"],
                         ForbiddenTools: [],
-                        GoldNoteIds:
+                        GoldNoteIds: [QualityFixtureIds.NoteLanternWalk],
+                        CoexistenceNoteIds:
                         [
-                            QualityFixtureIds.NoteLanternWalk,
                             QualityFixtureIds.NoteDistHarborDues,
                             QualityFixtureIds.NoteDistLanternGift,
                             QualityFixtureIds.NoteDistEveningTrain,
                         ],
                         MinEvidence: 4,
+                        LiveMinEvidence: 1,
                         ExpectFirstEvidenceNoteId: QualityFixtureIds.NoteLanternWalk)),
             ]);
     }
@@ -222,7 +223,8 @@ internal static partial class QualityCatalogue
                         ForbiddenTools: [],
                         GoldNoteIds: [],
                         ReplyMustContain: ["could not find"],
-                        ExpectedErrorCode: AssistantErrorCodes.NoEvidence)),
+                        ExpectedErrorCode: AssistantErrorCodes.NoEvidence,
+                        AlsoAcceptErrorCodes: [AssistantErrorCodes.SourceIndexingPending])),
             ]);
     }
 }

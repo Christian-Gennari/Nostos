@@ -61,7 +61,10 @@ internal sealed record QualityModelOutcome(
     string? BlindId,
     IReadOnlyList<QualityScenarioOutcome> Scenarios,
     QualitySessionTotals Totals,
-    IReadOnlyList<string> Failures);
+    IReadOnlyList<string> Failures,
+    // Flat live-mode advisories with scenario/turn context. Serialized as the
+    // top-level `advisories` array in results.json; existing fields unchanged.
+    IReadOnlyList<string>? Advisories = null);
 
 internal sealed class QualityBedHost : IDisposable
 {
@@ -195,7 +198,8 @@ internal static class QualityRunner
             var model = new QualityModelOutcome(
                 "quality-scripted", null, outcomes,
                 Sum(outcomes.SelectMany(o => new[] { o.Totals })),
-                outcomes.SelectMany(o => o.Failures).ToList());
+                outcomes.SelectMany(o => o.Failures).ToList(),
+                outcomes.SelectMany(o => o.Advisories ?? []).ToList());
             var written = WriteModelOutputs(config, model, blindId: null);
             Console.WriteLine($"quality bed (deterministic): {written}");
             return [model];
@@ -240,7 +244,8 @@ internal static class QualityRunner
             models.Add(new QualityModelOutcome(
                 model, blindId, outcomes,
                 Sum(outcomes.SelectMany(o => new[] { o.Totals })),
-                outcomes.SelectMany(o => o.Failures).ToList()));
+                outcomes.SelectMany(o => o.Failures).ToList(),
+                outcomes.SelectMany(o => o.Advisories ?? []).ToList()));
             Console.WriteLine($"quality bed (live): {WriteModelOutputs(config, models[^1], blindId)}");
         }
 
@@ -320,6 +325,8 @@ internal static class QualityRunner
         var priors = new List<AssistantTurnResponse>();
         var turns = new List<QualityTurnRecord>();
         var failures = new List<string>();
+        var advisories = new List<string>();
+        var live = mode == QualityModes.Live;
 
         for (var index = 0; index < scenario.Turns.Count; index++)
         {
@@ -330,8 +337,12 @@ internal static class QualityRunner
             if (record.Response is not null)
                 priors.Add(record.Response);
 
-            foreach (var failure in QualityExpectationEvaluator.Evaluate(spec, record))
+            var evaluation = QualityExpectationEvaluator.Evaluate(spec, record, live);
+            foreach (var failure in evaluation.Failures)
                 failures.Add($"{scenario.Id} turn {index}: {failure}");
+            var turnAdvisories = evaluation.Advisories.ToList();
+            foreach (var advisory in turnAdvisories)
+                advisories.Add($"{scenario.Id} turn {index}: {advisory}");
 
             if (spec.Verify is not null)
             {
@@ -341,7 +352,18 @@ internal static class QualityRunner
                         host.Services, record, turns, mode);
                     var problem = await spec.Verify(verifyNeeded);
                     if (problem is not null)
-                        failures.Add($"{scenario.Id} turn {index}: {problem}");
+                    {
+                        if (live && (spec.Expect?.VerifyAdvisoryInLive == true))
+                        {
+                            var advisory = $"verify: {problem}";
+                            turnAdvisories.Add(advisory);
+                            advisories.Add($"{scenario.Id} turn {index}: {advisory}");
+                        }
+                        else
+                        {
+                            failures.Add($"{scenario.Id} turn {index}: {problem}");
+                        }
+                    }
                 }
                 catch (Exception exception)
                 {
@@ -350,6 +372,7 @@ internal static class QualityRunner
                 }
             }
 
+            turns[index] = record with { Advisories = turnAdvisories };
             AppendHistory(history, spec, record);
         }
 
@@ -363,7 +386,7 @@ internal static class QualityRunner
             turns.Sum(t => t.TotalMs));
 
         return new QualityScenarioOutcome(
-            scenario.Id, scenario.Title, sessionId, model, turns, totals, failures);
+            scenario.Id, scenario.Title, sessionId, model, turns, totals, failures, advisories);
     }
 
     private static void AppendHistory(
@@ -755,6 +778,12 @@ internal static class QualityRunner
                     $"total: {turn.TotalMs:F0} ms.");
                 if (turn.HarnessError is not null)
                     output.AppendLine($"HARNESS ERROR: {turn.HarnessError}");
+                if ((turn.Advisories ?? []).Count > 0)
+                {
+                    output.AppendLine("Advisories:");
+                    foreach (var advisory in turn.Advisories!)
+                        output.AppendLine($"- {advisory}");
+                }
                 output.AppendLine();
             }
 
@@ -766,6 +795,12 @@ internal static class QualityRunner
                 output.AppendLine("Failures:");
                 foreach (var failure in scenario.Failures)
                     output.AppendLine($"- {failure}");
+            }
+            if ((scenario.Advisories ?? []).Count > 0)
+            {
+                output.AppendLine($"Advisories ({scenario.Advisories!.Count}):");
+                foreach (var advisory in scenario.Advisories!)
+                    output.AppendLine($"- {advisory}");
             }
 
             output.AppendLine();

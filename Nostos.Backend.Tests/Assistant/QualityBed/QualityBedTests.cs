@@ -291,7 +291,7 @@ public sealed class QualityBedLiveWiringTests
 
             var model = new QualityModelOutcome(
                 StubModel, null, [outcome],
-                new QualitySessionTotals(1, 2, 1, 0, 0, 0, turn.TotalMs), []);
+                new QualitySessionTotals(1, 2, 1, 0, 0, 0, turn.TotalMs), [], []);
             var config = new QualityBedConfig(
                 true, $"http://127.0.0.1:{port}/v1", KeyVariable, [StubModel], ["C20"], 1, outDir, false);
             QualityRunner.WriteModelOutputs(config, model, null);

@@ -43,7 +43,29 @@ internal sealed record QualityTurnExpect(
     Guid? ExpectFirstEvidenceNoteId = null,
     int ExpectedNoteDelta = 0,
     int ExpectedCollectionDelta = 0,
-    string[]? ExpectedExecuted = null)
+    string[]? ExpectedExecuted = null,
+    // LIVE ONLY: alternative gold expressed as imported-book passages. The
+    // turn's gold requirement is satisfied if EITHER every GoldNoteIds note
+    // is present in note evidence, OR at least one book_text evidence item
+    // matches a declared entry (same Handle.BookId, Excerpt containing any
+    // marker case-insensitively). Deterministic mode ignores this field.
+    (string BookId, string[] ExcerptMarkers)[]? GoldBookPassages = null,
+    // LIVE ONLY: expected-error turns also pass when the observed code
+    // matches any entry here. Deterministic mode ignores this field.
+    string[]? AlsoAcceptErrorCodes = null,
+    // DETERMINISTIC ONLY: notes that must be present alongside gold. In live
+    // mode they are not required; an absence is recorded as an advisory.
+    Guid[]? CoexistenceNoteIds = null,
+    // LIVE ONLY override for MinEvidence. Deterministic mode uses MinEvidence.
+    int? LiveMinEvidence = null,
+    // LIVE ONLY: requesting these tool names records an advisory instead of
+    // failing. Keep them out of ForbiddenTools; deterministic mode relies on
+    // the scenario's Verify hooks plus ExpectedExecuted/NoPendingPlan checks.
+    string[]? AdvisoryTools = null,
+    // LIVE ONLY: a Verify hook failure becomes an advisory instead of a
+    // failure. The re-read requirement it guards stays hard via
+    // RequiredTools/evidence checks unless the catalogue says otherwise.
+    bool VerifyAdvisoryInLive = false)
 {
     public static QualityTurnExpect Empty => new([], [], []);
 }

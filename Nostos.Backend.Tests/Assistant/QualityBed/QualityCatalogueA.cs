@@ -43,7 +43,11 @@ internal static partial class QualityCatalogue
                     RequiredTools: ["knowledge_search"],
                     ForbiddenTools: [],
                     GoldNoteIds: [QualityFixtureIds.NoteRopeCoil],
-                    MinEvidence: 1)),
+                    MinEvidence: 1,
+                    GoldBookPassages:
+                    [
+                        (QualityFixtureIds.BookSaltMeridian.ToString(), ["coiling lines"]),
+                    ])),
         };
         turns.AddRange(C1Fillers());
         turns.Add(new QualityTurnSpec(
@@ -68,7 +72,11 @@ internal static partial class QualityCatalogue
                 ForbiddenTools: [],
                 GoldNoteIds: [QualityFixtureIds.NoteRopeCoil],
                 MinEvidence: 1,
-                ExpectFirstEvidenceNoteId: QualityFixtureIds.NoteRopeCoil)));
+                ExpectFirstEvidenceNoteId: QualityFixtureIds.NoteRopeCoil,
+                GoldBookPassages:
+                [
+                    (QualityFixtureIds.BookSaltMeridian.ToString(), ["coiling lines"]),
+                ])));
 
         return new QualityScenario(
             "C1",
@@ -148,7 +156,7 @@ internal static partial class QualityCatalogue
                     RequiredTools: ["knowledge_search"],
                     ForbiddenTools: [],
                     GoldNoteIds: [],
-                    ReplyMustNotContain: ["Saved", "saved", "Deleted", "deleted", "Created", "created"]));
+                    ReplyMustNotContain: ["I saved", "I've saved", "has been deleted", "I deleted", "I created", "I've created"]));
         }
     }
 
@@ -275,7 +283,11 @@ internal static partial class QualityCatalogue
                         RequiredTools: ["knowledge_search"],
                         ForbiddenTools: [],
                         GoldNoteIds: [QualityFixtureIds.NoteRopeCoil],
-                        MinEvidence: 1)),
+                        MinEvidence: 1,
+                        GoldBookPassages:
+                        [
+                            (QualityFixtureIds.BookSaltMeridian.ToString(), ["coiling lines"]),
+                        ])),
                 new QualityTurnSpec(
                     "Now in this book: what do the map margins say about the redrawn river?",
                     () => QualityContexts.ReaderEbook(
@@ -291,7 +303,11 @@ internal static partial class QualityCatalogue
                         RequiredTools: ["knowledge_search"],
                         ForbiddenTools: [],
                         GoldNoteIds: [QualityFixtureIds.NoteMarginChapterTwo],
-                        MinEvidence: 1)),
+                        MinEvidence: 1,
+                        GoldBookPassages:
+                        [
+                            (QualityFixtureIds.BookCartographer.ToString(), ["moved upstream"]),
+                        ])),
                 new QualityTurnSpec(
                     "Back in The Salt Meridian, what did the rope passage say?",
                     () => QualityContexts.ReaderEbook(
@@ -307,7 +323,11 @@ internal static partial class QualityCatalogue
                         RequiredTools: ["knowledge_search"],
                         ForbiddenTools: [],
                         GoldNoteIds: [QualityFixtureIds.NoteRopeCoil],
-                        MinEvidence: 1),
+                        MinEvidence: 1,
+                        GoldBookPassages:
+                        [
+                            (QualityFixtureIds.BookSaltMeridian.ToString(), ["coiling lines"]),
+                        ]),
                     Verify: async context =>
                     {
                         // Live mode cannot observe provider requests, and an

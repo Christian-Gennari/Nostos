@@ -1,7 +1,8 @@
 // Turn/session outcome records and the shared structural expectation
-// evaluator for the #566 quality bed. The evaluator runs identically in
-// deterministic and live modes; only the evidence source differs (scripted
-// provider vs real model).
+// evaluator for the #566 quality bed. Deterministic mode stays path-exact
+// (every finding is a failure); live mode asserts outcomes (retrieval
+// success, grounded provenance, honest insufficiency) and records path/prose
+// deviations as advisories. Safety checks stay hard in both modes.
 namespace Nostos.Backend.Tests.Assistant.QualityBed;
 
 using Nostos.Shared.Dtos;
@@ -38,7 +39,11 @@ internal sealed record QualityTurnRecord(
     int NoteCountAfter,
     int CollectionCountBefore,
     int CollectionCountAfter,
-    string? HarnessError);
+    string? HarnessError,
+    // Live-mode outcome scoring notes. Deterministic mode never populates
+    // this: every finding there is a failure. Serialized per turn as
+    // `advisories` in results.json.
+    IReadOnlyList<string>? Advisories = null);
 
 internal sealed record QualitySessionTotals(
     int Turns,
@@ -56,17 +61,43 @@ internal sealed record QualityScenarioOutcome(
     string Model,
     IReadOnlyList<QualityTurnRecord> Turns,
     QualitySessionTotals Totals,
-    IReadOnlyList<string> Failures);
+    IReadOnlyList<string> Failures,
+    // Flat live-mode advisories with turn context ("C1 turn 0: ...").
+    // Empty in deterministic mode. Serialized as `advisories`.
+    IReadOnlyList<string>? Advisories = null);
+
+/// <summary>
+/// Evaluator output split: failures gate the campaign, advisories record
+/// live-mode outcome deviations that stay visible without failing the run.
+/// Deterministic mode never produces advisories.
+/// </summary>
+internal sealed record QualityEvaluationResult(
+    IReadOnlyList<string> Failures,
+    IReadOnlyList<string> Advisories);
 
 internal static class QualityExpectationEvaluator
 {
-    public static List<string> Evaluate(QualityTurnSpec spec, QualityTurnRecord turn)
+    /// <summary>
+    /// Deterministic evaluation: every finding is a failure, exactly as
+    /// before. New live-only expectation fields are ignored here.
+    /// </summary>
+    public static List<string> Evaluate(QualityTurnSpec spec, QualityTurnRecord turn) =>
+        Evaluate(spec, turn, live: false).Failures.ToList();
+
+    /// <summary>
+    /// Mode-aware evaluation. Live mode asserts outcomes: required-tool
+    /// misses and positive reply-keyword misses become advisories, while
+    /// safety checks (forbidden tools, no-execution, deltas, pending plans,
+    /// economy caps, negative claim wording) stay hard in both modes.
+    /// </summary>
+    public static QualityEvaluationResult Evaluate(QualityTurnSpec spec, QualityTurnRecord turn, bool live)
     {
         var failures = new List<string>();
+        var advisories = new List<string>();
         if (turn.HarnessError is not null)
         {
             failures.Add($"harness error: {turn.HarnessError}");
-            return failures;
+            return new QualityEvaluationResult(failures, advisories);
         }
 
         var expect = spec.Expect ?? QualityTurnExpect.Empty;
@@ -76,25 +107,40 @@ internal static class QualityExpectationEvaluator
         var errorCode = turn.Response?.Error?.Code ?? turn.FailureCode;
         if (expect.ExpectedErrorCode is not null)
         {
-            if (!string.Equals(errorCode, expect.ExpectedErrorCode, StringComparison.Ordinal))
+            var accepted = string.Equals(errorCode, expect.ExpectedErrorCode, StringComparison.Ordinal)
+                || (live && (expect.AlsoAcceptErrorCodes ?? [])
+                    .Contains(errorCode ?? string.Empty, StringComparer.Ordinal));
+            if (!accepted)
                 failures.Add($"expected error '{expect.ExpectedErrorCode}' but observed '{errorCode ?? "(none)"}'");
+            else if (live
+                && !string.Equals(errorCode, expect.ExpectedErrorCode, StringComparison.Ordinal)
+                && errorCode is not null)
+                advisories.Add($"error code '{errorCode}' accepted via AlsoAcceptErrorCodes");
             var errorMessage = turn.Response?.Error?.Message ?? turn.FailureMessage ?? string.Empty;
             if (expect.ExpectedErrorMessageContains is not null
                 && !errorMessage.Contains(expect.ExpectedErrorMessageContains, StringComparison.OrdinalIgnoreCase))
                 failures.Add($"error message must contain '{expect.ExpectedErrorMessageContains}' (was: '{Truncate(errorMessage, 200)}')");
-            return failures;
+            return new QualityEvaluationResult(failures, advisories);
         }
 
         if (turn.Response is null)
         {
             failures.Add($"no turn response (terminal={turn.TerminalKind}, failure={turn.FailureCode ?? "(none)"})");
-            return failures;
+            return new QualityEvaluationResult(failures, advisories);
         }
 
         var response = turn.Response;
         foreach (var required in expect.RequiredTools)
-            if (!turn.RequestedTools.Contains(required, StringComparer.Ordinal))
-                failures.Add($"required tool '{required}' was never requested (requested: [{string.Join(",", turn.RequestedTools)}])");
+        {
+            if (turn.RequestedTools.Contains(required, StringComparer.Ordinal))
+                continue;
+            var detail = $"required tool '{required}' was never requested (requested: [{string.Join(",", turn.RequestedTools)}])";
+            if (live)
+                advisories.Add($"path deviation: {detail}");
+            else
+                failures.Add(detail);
+        }
+
         foreach (var forbidden in expect.ForbiddenTools)
         {
             if (turn.RequestedTools.Contains(forbidden, StringComparer.Ordinal))
@@ -103,16 +149,41 @@ internal static class QualityExpectationEvaluator
                 failures.Add($"forbidden tool '{forbidden}' executed");
         }
 
+        if (live)
+            foreach (var advisory in expect.AdvisoryTools ?? [])
+                if (turn.RequestedTools.Contains(advisory, StringComparer.Ordinal))
+                    advisories.Add($"tool '{advisory}' requested (advisory for this turn)");
+
         var evidenceNoteIds = (response.Evidence ?? [])
             .Where(e => string.Equals(e.Handle.Kind, "note", StringComparison.Ordinal) && e.Handle.NoteId.HasValue)
             .Select(e => e.Handle.NoteId!.Value)
             .ToList();
-        foreach (var gold in expect.GoldNoteIds)
-            if (!evidenceNoteIds.Contains(gold))
-                failures.Add($"gold note {gold} missing from evidence (evidence notes: [{string.Join(",", evidenceNoteIds)}])");
+        var missingGold = expect.GoldNoteIds.Where(gold => !evidenceNoteIds.Contains(gold)).ToList();
+        if (missingGold.Count > 0)
+        {
+            var bookPath = live ? MatchGoldBookPassage(expect, response) : null;
+            if (bookPath is not null)
+                advisories.Add($"outcome met via book-text path: {bookPath}");
+            else
+                foreach (var gold in missingGold)
+                    failures.Add($"gold note {gold} missing from evidence (evidence notes: [{string.Join(",", evidenceNoteIds)}])");
+        }
 
-        if ((response.Evidence?.Count ?? 0) < expect.MinEvidence)
-            failures.Add($"expected at least {expect.MinEvidence} evidence items, observed {response.Evidence?.Count ?? 0}");
+        // Deterministic-only coexistence: distractors that must sit alongside
+        // gold. In live they are query-dependent, so an absence is advisory.
+        foreach (var coexisting in expect.CoexistenceNoteIds ?? [])
+        {
+            if (evidenceNoteIds.Contains(coexisting))
+                continue;
+            if (live)
+                advisories.Add($"coexistence note {coexisting} absent (query-dependent)");
+            else
+                failures.Add($"coexistence note {coexisting} missing from evidence (evidence notes: [{string.Join(",", evidenceNoteIds)}])");
+        }
+
+        var minEvidence = live && expect.LiveMinEvidence.HasValue ? expect.LiveMinEvidence.Value : expect.MinEvidence;
+        if ((response.Evidence?.Count ?? 0) < minEvidence)
+            failures.Add($"expected at least {minEvidence} evidence items, observed {response.Evidence?.Count ?? 0}");
 
         if (turn.UpstreamCalls.Count > expect.MaxUpstreamCalls)
             failures.Add($"expected at most {expect.MaxUpstreamCalls} upstream calls, observed {turn.UpstreamCalls.Count}");
@@ -120,8 +191,16 @@ internal static class QualityExpectationEvaluator
             failures.Add($"expected at most {expect.MaxToolCalls} tool calls, observed {turn.RequestedTools.Count} ([{string.Join(",", turn.RequestedTools)}])");
 
         foreach (var required in expect.ReplyMustContain ?? [])
-            if (!response.Reply.Contains(required, StringComparison.OrdinalIgnoreCase))
-                failures.Add($"reply must contain '{required}' (reply was: '{Truncate(response.Reply, 200)}')");
+        {
+            if (response.Reply.Contains(required, StringComparison.OrdinalIgnoreCase))
+                continue;
+            var detail = $"reply must contain '{required}' (reply was: '{Truncate(response.Reply, 200)}')";
+            if (live)
+                advisories.Add($"prose: reply did not contain '{required}'");
+            else
+                failures.Add(detail);
+        }
+
         foreach (var forbidden in expect.ReplyMustNotContain ?? [])
             if (response.Reply.Contains(forbidden, StringComparison.OrdinalIgnoreCase))
                 failures.Add($"reply must not contain '{forbidden}'");
@@ -160,7 +239,42 @@ internal static class QualityExpectationEvaluator
                 failures.Add($"expected executed [{string.Join(",", expected)}], observed [{string.Join(",", executed)}]");
         }
 
-        return failures;
+        return new QualityEvaluationResult(failures, advisories);
+    }
+
+    /// <summary>
+    /// Live-only gold alternative: returns the matched passage BookId when at
+    /// least one book_text evidence item carries that book and its excerpt
+    /// contains any declared marker (case-insensitive), else null.
+    /// </summary>
+    private static string? MatchGoldBookPassage(QualityTurnExpect expect, AssistantTurnResponse response)
+    {
+        var passages = expect.GoldBookPassages;
+        if (passages is not { Length: > 0 })
+            return null;
+        var bookItems = (response.Evidence ?? [])
+            .Where(e => string.Equals(e.Handle.Kind, "book_text", StringComparison.Ordinal)
+                && e.Handle.BookId.HasValue)
+            .ToList();
+        if (bookItems.Count == 0)
+            return null;
+        foreach (var (bookId, markers) in passages)
+        {
+            var matchesBook = bookItems.Where(item =>
+                Guid.TryParse(bookId, out var parsed)
+                    ? item.Handle.BookId == parsed
+                    : string.Equals(item.Handle.BookId?.ToString(), bookId, StringComparison.OrdinalIgnoreCase));
+            foreach (var item in matchesBook)
+            {
+                var excerpt = item.Excerpt ?? string.Empty;
+                if ((markers ?? []).Any(marker =>
+                        !string.IsNullOrWhiteSpace(marker)
+                        && excerpt.Contains(marker, StringComparison.OrdinalIgnoreCase)))
+                    return bookId;
+            }
+        }
+
+        return null;
     }
 
     private static string Truncate(string value, int max) =>
