@@ -57,7 +57,10 @@ internal sealed class AssistantRetrievalTurnState(AssistantContextDto context)
         IReadOnlyList<AssistantHistoryMessageDto>? history)
     {
         if (HasExplicitScopeArgument(args))
+        {
+            RecordExplicitKnownBookScope(args, history);
             return args;
+        }
 
         Guid bookId;
         string? bookTitle;
@@ -278,6 +281,44 @@ internal sealed class AssistantRetrievalTurnState(AssistantContextDto context)
         args.ValueKind == JsonValueKind.Object
         && (args.TryGetProperty("bookIds", out _)
             || args.TryGetProperty("collectionId", out _));
+
+    private void RecordExplicitKnownBookScope(
+        JsonElement args,
+        IReadOnlyList<AssistantHistoryMessageDto>? history)
+    {
+        if (!TryReadSingleBookId(args, out var explicitBookId))
+            return;
+
+        if (Guid.TryParse(context.BookId, out var currentBookId)
+            && currentBookId == explicitBookId
+            && !string.IsNullOrWhiteSpace(context.BookTitle))
+        {
+            RecordBookScope(explicitBookId.ToString(), context.BookTitle);
+            return;
+        }
+
+        if (TryGetLatestHistoricalBookScope(history, out var historical)
+            && historical.BookId == explicitBookId)
+        {
+            RecordBookScope(explicitBookId.ToString(), historical.BookTitle);
+        }
+    }
+
+    private static bool TryReadSingleBookId(JsonElement args, out Guid bookId)
+    {
+        bookId = default;
+        if (args.ValueKind != JsonValueKind.Object
+            || !args.TryGetProperty("bookIds", out var bookIds)
+            || bookIds.ValueKind != JsonValueKind.Array
+            || bookIds.GetArrayLength() != 1)
+        {
+            return false;
+        }
+
+        var item = bookIds.EnumerateArray().Single();
+        return item.ValueKind == JsonValueKind.String
+            && Guid.TryParse(item.GetString(), out bookId);
+    }
 
     private static bool TryGetLatestHistoricalBookScope(
         IReadOnlyList<AssistantHistoryMessageDto>? history,
