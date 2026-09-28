@@ -175,7 +175,7 @@ internal static partial class QualityCatalogue
             "C2",
             "Long-answer continuity",
             "C2 — long-answer continuity: follow-up references a point near the end of a long explanation that would have exceeded the old 2,000-character history cap.",
-            "The follow-up observes the complete long explanation and can recover its grounding note outside the open reader book.",
+            "The follow-up observes the complete long explanation and recovers its grounding note after reader context moves to another book.",
             "Does the follow-up answer engage the third rule specifically, rather than restarting with generic lamp advice? " +
             "Is the long explanation itself coherent across its full length?",
             QualityModes.Deterministic | QualityModes.Live,
@@ -183,13 +183,12 @@ internal static partial class QualityCatalogue
             [
                 new QualityTurnSpec(
                     "Explain the three rules of the gallery watch.",
-                    // The gold note belongs to another book. Reader context
-                    // starts on Salt Meridian so this turn proves the bounded
-                    // same-book -> whole-library widening path.
-                    () => QualityContexts.ReaderEbook(
-                        QualityFixtureIds.BookSaltMeridian,
-                        QualityFixtureIds.TitleSaltMeridian,
-                        "epubcfi(/6/4[c2]!/4/2/2)"),
+                    // Establish the long answer from its canonical source first.
+                    // The continuity regression is the follow-up below, after
+                    // reader context has moved to a different open book.
+                    () => QualityContexts.ReaderAudiobook(
+                        QualityFixtureIds.BookSleeperCar,
+                        QualityFixtureIds.TitleSleeperCar),
                     QualityScript.Play(
                         QualityScript.ToolCall(
                             "knowledge_search",
