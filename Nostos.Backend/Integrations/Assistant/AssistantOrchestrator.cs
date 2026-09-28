@@ -4,7 +4,6 @@ using Nostos.Backend.Configuration;
 using Nostos.Backend.Services.Ai;
 using Nostos.Backend.Services.Library;
 using Nostos.Backend.Services.Knowledge;
-using Nostos.Backend.Search;
 using Nostos.Shared.Dtos;
 using Nostos.Product.Services.Ai;
 using Nostos.Product.BookText;
@@ -225,14 +224,8 @@ public sealed class AssistantOrchestrator(
         string? lastAssistantContent = null;
         string? capturedNoteId = null;
         AssistantTurnErrorDto? terminalError = null;
-        var retrievalAttempted = false;
-        var scopedRetrievalAttempted = false;
-        var retrievalEvidenceAvailable = false;
-        var retrievalStates = new List<BookTextIngestionStatus>();
-        var metadataBookIds = new HashSet<Guid>();
-        var emptyRetrievalBookIds = new HashSet<Guid>();
-        var turnBookScopes = new Dictionary<Guid, string>();
-        RecordBookScope(turnBookScopes, turnContext.BookId, turnContext.BookTitle);
+        var retrieval = new AssistantRetrievalTurnState(turnContext);
+        retrieval.RecordInitialContext();
         var mutationCompleted = false;
 
         var iterations = Math.Max(1, options.MaxToolIterations);
@@ -459,18 +452,9 @@ public sealed class AssistantOrchestrator(
                     if (string.Equals(capability.Name, BookTextCapability, StringComparison.Ordinal)
                         || string.Equals(capability.Name, KnowledgeSearchCapability, StringComparison.Ordinal))
                     {
-                        args = ApplyImplicitBookScope(
+                        args = retrieval.ApplyImplicitBookScope(
                             args,
-                            turnContext,
-                            request.History,
-                            out var inheritedScope);
-                        if (inheritedScope is not null)
-                        {
-                            RecordBookScope(
-                                turnBookScopes,
-                                inheritedScope.BookId.ToString(),
-                                inheritedScope.BookTitle);
-                        }
+                            request.History);
                     }
                 }
 
@@ -536,7 +520,7 @@ public sealed class AssistantOrchestrator(
                     if (result.Success
                         && string.Equals(capability.Name, BookTextCapability, StringComparison.Ordinal)
                         && result.Data is { } bookTextData
-                        && BuildBookTextFallbackArguments(
+                        && retrieval.BuildBookTextFallbackArguments(
                             args,
                             request.Message,
                             bookTextData) is { } fallbackArgs)
@@ -579,38 +563,9 @@ public sealed class AssistantOrchestrator(
                 }
 
                 if (result.Success
-                    && capability.Trust == AssistantTrustClass.Suggest
-                    && TryReadCanonicalBook(
-                        capability.Name,
-                        result.Data,
-                        out var readBook))
+                    && capability.Trust == AssistantTrustClass.Suggest)
                 {
-                    metadataBookIds.Add(readBook.BookId);
-                    RecordBookScope(
-                        turnBookScopes,
-                        readBook.BookId.ToString(),
-                        readBook.BookTitle);
-                }
-
-                if (result.Success
-                    && capability.Trust == AssistantTrustClass.Suggest
-                    && result.Data is { } retrievalData
-                    && (string.Equals(capability.Name, KnowledgeSearchCapability, StringComparison.Ordinal)
-                        || string.Equals(capability.Name, BookTextCapability, StringComparison.Ordinal)))
-                {
-                    retrievalAttempted = true;
-                    scopedRetrievalAttempted |= HasRetrievalScope(args);
-                    var callHasEvidence = RetrievalHasEvidence(retrievalData);
-                    if (!callHasEvidence)
-                    {
-                        RecordScopedBookIds(args, emptyRetrievalBookIds);
-                    }
-
-                    ObserveRetrieval(
-                        capability.Name,
-                        retrievalData,
-                        ref retrievalEvidenceAvailable,
-                        retrievalStates);
+                    retrieval.ObserveResult(capability.Name, args, result.Data);
                 }
 
                 if (result.Success && capability.Trust == AssistantTrustClass.Suggest)
@@ -636,16 +591,14 @@ public sealed class AssistantOrchestrator(
                     {
                         var sources = ExtractBookTextSources(result.Data).ToList();
                         sourceReferences.AddRange(sources);
-                        foreach (var source in sources)
-                            RecordBookScope(turnBookScopes, source.BookId.ToString(), source.BookTitle);
+                        retrieval.RecordSources(sources);
                         MergeEvidenceReferences(evidenceReferences, ExtractBookTextEvidence(result.Data));
                     }
                     else if (string.Equals(capability.Name, KnowledgeSearchCapability, StringComparison.Ordinal))
                     {
                         var sources = ExtractKnowledgeSearchSources(result.Data).ToList();
                         sourceReferences.AddRange(sources);
-                        foreach (var source in sources)
-                            RecordBookScope(turnBookScopes, source.BookId.ToString(), source.BookTitle);
+                        retrieval.RecordSources(sources);
                         MergeEvidenceReferences(evidenceReferences, ExtractKnowledgeSearchEvidence(result.Data));
                     }
                     else if (string.Equals(capability.Name, KnowledgeReadCapability, StringComparison.Ordinal))
@@ -653,11 +606,10 @@ public sealed class AssistantOrchestrator(
                         var beforeEvidence = evidenceReferences.Count;
                         var sources = ExtractKnowledgeReadSources(result.Data).ToList();
                         sourceReferences.AddRange(sources);
-                        foreach (var source in sources)
-                            RecordBookScope(turnBookScopes, source.BookId.ToString(), source.BookTitle);
+                        retrieval.RecordSources(sources);
                         MergeEvidenceReferences(evidenceReferences, ExtractKnowledgeReadEvidence(result.Data));
                         if (evidenceReferences.Count > beforeEvidence)
-                            retrievalEvidenceAvailable = true;
+                            retrieval.MarkExactEvidenceAvailable();
                     }
                 }
 
@@ -717,31 +669,9 @@ public sealed class AssistantOrchestrator(
                 AssistantErrorCodes.ExecutionBudgetExhausted,
                 "This turn reached its execution limit before it could finish.");
         }
-        else if (terminalError is null
-                 && retrievalAttempted
-                 && !retrievalEvidenceAvailable)
+        else if (terminalError is null)
         {
-            var retrievalFailure = RetrievalFailure(retrievalStates);
-
-            // Indexing failures are operational source states and stay typed.
-            // Plain "no evidence" is terminal for an explicit/material lookup
-            // or a scoped book lookup. A metadata read may satisfy only a
-            // clearly bibliographic question about that SAME book; it must
-            // never mask a missing passage for a source-content question.
-            var metadataGroundedSameBook =
-                AssistantRetrievalIntentPolicy.IsClearlyBookMetadataRequest(request.Message)
-                && emptyRetrievalBookIds.Overlaps(metadataBookIds);
-
-            if (!string.Equals(
-                    retrievalFailure.Code,
-                    AssistantErrorCodes.NoEvidence,
-                    StringComparison.Ordinal)
-                || ((scopedRetrievalAttempted
-                        || AssistantRetrievalIntentPolicy.IsExplicitMaterialLookup(request.Message))
-                    && !metadataGroundedSameBook))
-            {
-                terminalError = retrievalFailure;
-            }
+            terminalError = retrieval.TerminalFailure(request.Message);
         }
 
         // Server-known boundaries outrank model narration. A provider can attach
@@ -800,13 +730,7 @@ public sealed class AssistantOrchestrator(
             pendingPlan is not null,
             anchorPrompt is not null);
 
-        var resolvedBook = turnBookScopes.Count == 1
-            ? turnBookScopes
-                .Select(item => string.IsNullOrWhiteSpace(item.Value)
-                    ? null
-                    : new AssistantResolvedBookDto(item.Key, item.Value))
-                .SingleOrDefault()
-            : null;
+        var resolvedBook = retrieval.ResolvedBook;
 
         return new AssistantTurnResponse(
             reply,
@@ -1188,332 +1112,6 @@ public sealed class AssistantOrchestrator(
 
             target.Add(suggestion);
         }
-    }
-
-    private static bool HasRetrievalScope(JsonElement args)
-    {
-        if (args.ValueKind != JsonValueKind.Object)
-            return false;
-
-        if (args.TryGetProperty("bookIds", out var bookIds)
-            && bookIds.ValueKind == JsonValueKind.Array
-            && bookIds.GetArrayLength() > 0)
-        {
-            return true;
-        }
-
-        return !string.IsNullOrWhiteSpace(ReadString(args, "collectionId"));
-    }
-
-    private static bool HasExplicitRetrievalScopeArgument(JsonElement args) =>
-        args.ValueKind == JsonValueKind.Object
-        && (args.TryGetProperty("bookIds", out _)
-            || args.TryGetProperty("collectionId", out _));
-
-    private static JsonElement ApplyImplicitBookScope(
-        JsonElement args,
-        AssistantContextDto context,
-        IReadOnlyList<AssistantHistoryMessageDto>? history,
-        out AssistantResolvedBookDto? inheritedScope)
-    {
-        inheritedScope = null;
-        if (HasExplicitRetrievalScopeArgument(args))
-            return args;
-
-        Guid bookId;
-        string? bookTitle;
-        if (Guid.TryParse(context.BookId, out var currentBookId))
-        {
-            bookId = currentBookId;
-            bookTitle = context.BookTitle;
-        }
-        else if (TryGetLatestHistoricalBookScope(history, out var historical))
-        {
-            bookId = historical.BookId;
-            bookTitle = historical.BookTitle;
-        }
-        else
-        {
-            return args;
-        }
-
-        var obj = JsonNode.Parse(args.GetRawText()) as JsonObject ?? new JsonObject();
-        obj["bookIds"] = new JsonArray(bookId.ToString());
-        inheritedScope = string.IsNullOrWhiteSpace(bookTitle)
-            ? null
-            : new AssistantResolvedBookDto(bookId, bookTitle);
-        return JsonSerializer.SerializeToElement(obj, JsonOptions);
-    }
-
-    private static bool TryGetLatestHistoricalBookScope(
-        IReadOnlyList<AssistantHistoryMessageDto>? history,
-        out AssistantResolvedBookDto scope)
-    {
-        scope = default!;
-        var latestUser = history?
-            .LastOrDefault(entry =>
-                string.Equals(entry.Role, "user", StringComparison.OrdinalIgnoreCase));
-
-        if (latestUser?.Context is not { } context
-            || !Guid.TryParse(context.BookId, out var bookId)
-            || string.IsNullOrWhiteSpace(context.BookTitle))
-        {
-            return false;
-        }
-
-        scope = new AssistantResolvedBookDto(bookId, context.BookTitle);
-        return true;
-    }
-
-    private static bool RetrievalHasEvidence(JsonElement data) =>
-        data.ValueKind == JsonValueKind.Object
-        && data.TryGetProperty("evidenceAvailable", out var evidence)
-        && evidence.ValueKind == JsonValueKind.True;
-
-    private static void RecordScopedBookIds(
-        JsonElement args,
-        HashSet<Guid> target)
-    {
-        if (args.ValueKind != JsonValueKind.Object
-            || !args.TryGetProperty("bookIds", out var bookIds)
-            || bookIds.ValueKind != JsonValueKind.Array)
-        {
-            return;
-        }
-
-        foreach (var item in bookIds.EnumerateArray())
-        {
-            if (item.ValueKind == JsonValueKind.String
-                && Guid.TryParse(item.GetString(), out var id))
-            {
-                target.Add(id);
-            }
-        }
-    }
-
-    private static void RecordBookScope(
-        Dictionary<Guid, string> target,
-        string? bookId,
-        string? bookTitle)
-    {
-        if (!Guid.TryParse(bookId, out var id))
-            return;
-
-        if (!target.TryGetValue(id, out var existing)
-            || string.IsNullOrWhiteSpace(existing))
-        {
-            target[id] = bookTitle?.Trim() ?? string.Empty;
-        }
-    }
-
-    private static bool TryReadCanonicalBook(
-        string capabilityName,
-        JsonElement? data,
-        out AssistantResolvedBookDto book)
-    {
-        book = default!;
-        if (data is not { ValueKind: JsonValueKind.Object } element)
-            return false;
-
-        JsonElement candidate = default;
-        if (string.Equals(capabilityName, "library_get_book", StringComparison.Ordinal))
-        {
-            if (!element.TryGetProperty("data", out candidate)
-                || candidate.ValueKind != JsonValueKind.Object)
-            {
-                return false;
-            }
-        }
-        else if (string.Equals(capabilityName, "library_resolve_book", StringComparison.Ordinal))
-        {
-            if (element.TryGetProperty("matchedBook", out var matched)
-                && matched.ValueKind == JsonValueKind.Object)
-            {
-                candidate = matched;
-            }
-            else if (element.TryGetProperty("candidates", out var candidates)
-                     && candidates.ValueKind == JsonValueKind.Array
-                     && candidates.GetArrayLength() == 1)
-            {
-                candidate = candidates.EnumerateArray().Single();
-            }
-            else
-            {
-                return false;
-            }
-        }
-        else
-        {
-            return false;
-        }
-
-        if (!candidate.TryGetProperty("id", out var idProperty))
-        {
-            candidate.TryGetProperty("bookId", out idProperty);
-        }
-
-        if (idProperty.ValueKind != JsonValueKind.String
-            || !Guid.TryParse(idProperty.GetString(), out var id)
-            || !candidate.TryGetProperty("title", out var titleProperty)
-            || titleProperty.ValueKind != JsonValueKind.String
-            || string.IsNullOrWhiteSpace(titleProperty.GetString()))
-        {
-            return false;
-        }
-
-        book = new AssistantResolvedBookDto(id, titleProperty.GetString()!);
-        return true;
-    }
-
-    private static JsonElement? BuildBookTextFallbackArguments(
-        JsonElement args,
-        string userMessage,
-        JsonElement resultData)
-    {
-        if (!CanRetryBookTextSearch(resultData))
-            return null;
-
-        var tokens = LexicalQueryPlanner.Build(userMessage)
-            .Where(variant => variant.Kind == LexicalQueryVariantKind.Token)
-            .Select(variant => variant.Text)
-            .Where(token => !AssistantRetrievalIntentPolicy.IsBookTextRecoveryFiller(token))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .Take(8)
-            .ToList();
-
-        if (tokens.Count == 0)
-            return null;
-
-        var currentQuery = ReadString(args, "query") ?? string.Empty;
-        if (tokens.All(token => currentQuery.Contains(token, StringComparison.OrdinalIgnoreCase)))
-            return null;
-
-        var obj = JsonNode.Parse(args.GetRawText()) as JsonObject ?? new JsonObject();
-        obj["query"] = string.Join(" ", tokens);
-        return JsonSerializer.SerializeToElement(obj, JsonOptions);
-    }
-
-    private static bool CanRetryBookTextSearch(JsonElement data)
-    {
-        if (data.ValueKind != JsonValueKind.Object)
-            return false;
-
-        if (data.TryGetProperty("evidenceAvailable", out var evidence)
-            && evidence.ValueKind == JsonValueKind.True)
-        {
-            return false;
-        }
-
-        if (!data.TryGetProperty("states", out var states)
-            || states.ValueKind != JsonValueKind.Array
-            || states.GetArrayLength() == 0)
-        {
-            return false;
-        }
-
-        foreach (var item in states.EnumerateArray())
-        {
-            if (!item.TryGetProperty("status", out var status))
-                return false;
-
-            if (status.ValueKind == JsonValueKind.Number
-                && status.TryGetInt32(out var numeric))
-            {
-                if ((BookTextIngestionStatus)numeric != BookTextIngestionStatus.Ready)
-                    return false;
-                continue;
-            }
-
-            if (status.ValueKind == JsonValueKind.String
-                && Enum.TryParse<BookTextIngestionStatus>(
-                    status.GetString(),
-                    ignoreCase: true,
-                    out var parsed))
-            {
-                if (parsed != BookTextIngestionStatus.Ready)
-                    return false;
-                continue;
-            }
-
-            return false;
-        }
-
-        return true;
-    }
-
-    private static void ObserveRetrieval(
-        string capabilityName,
-        JsonElement data,
-        ref bool evidenceAvailable,
-        List<BookTextIngestionStatus> states)
-    {
-        var evidenceProperty = data.TryGetProperty("evidenceAvailable", out var evidence)
-            ? evidence
-            : default;
-        if (evidenceProperty.ValueKind is JsonValueKind.True)
-            evidenceAvailable = true;
-
-        var statePropertyName = string.Equals(
-            capabilityName,
-            KnowledgeSearchCapability,
-            StringComparison.Ordinal)
-                ? "bookTextStates"
-                : "states";
-
-        if (!data.TryGetProperty(statePropertyName, out var stateArray)
-            || stateArray.ValueKind != JsonValueKind.Array)
-            return;
-
-        foreach (var item in stateArray.EnumerateArray())
-        {
-            if (!item.TryGetProperty("status", out var status))
-                continue;
-
-            if (status.ValueKind == JsonValueKind.Number
-                && status.TryGetInt32(out var numeric)
-                && Enum.IsDefined(typeof(BookTextIngestionStatus), numeric))
-            {
-                states.Add((BookTextIngestionStatus)numeric);
-            }
-            else if (status.ValueKind == JsonValueKind.String
-                     && Enum.TryParse<BookTextIngestionStatus>(
-                         status.GetString(),
-                         ignoreCase: true,
-                         out var parsed))
-            {
-                states.Add(parsed);
-            }
-        }
-    }
-
-    private static AssistantTurnErrorDto RetrievalFailure(
-        IReadOnlyCollection<BookTextIngestionStatus> states)
-    {
-        if (states.Any(status =>
-                status is BookTextIngestionStatus.Pending or BookTextIngestionStatus.Processing))
-        {
-            return new AssistantTurnErrorDto(
-                AssistantErrorCodes.SourceIndexingPending,
-                "This source is still being indexed. Try again when it is ready.");
-        }
-
-        if (states.Contains(BookTextIngestionStatus.Failed))
-        {
-            return new AssistantTurnErrorDto(
-                AssistantErrorCodes.SourceIndexingFailed,
-                "Text indexing failed for this source, so Ask Nostos cannot search it yet.");
-        }
-
-        if (states.Contains(BookTextIngestionStatus.Unsupported))
-        {
-            return new AssistantTurnErrorDto(
-                AssistantErrorCodes.SourceIndexingUnsupported,
-                "This source cannot be searched as text in its current format.");
-        }
-
-        return new AssistantTurnErrorDto(
-            AssistantErrorCodes.NoEvidence,
-            "I could not find usable evidence for that in your Nostos material.");
     }
 
     // ------------------------------------------------------------------
