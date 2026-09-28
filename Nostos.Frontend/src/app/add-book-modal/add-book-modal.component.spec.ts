@@ -277,7 +277,7 @@ describe('AddBookModal', () => {
     expect(uploadSpy).toHaveBeenCalledTimes(1);
     expect(component.isSubmitting()).toBe(true);
     expect(submitButton.disabled).toBe(true);
-    expect(submitButton.textContent).toContain('Adding…');
+    expect(submitButton.textContent).toContain('Uploading…');
 
     component.submit();
 
