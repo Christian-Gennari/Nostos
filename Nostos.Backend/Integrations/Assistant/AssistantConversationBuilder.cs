@@ -101,6 +101,7 @@ internal sealed class AssistantConversationBuilder(
         Retrieval-first behavior:
         - When the user asks about their reading, notes, concepts or thinking, retrieve canonical Nostos material before answering instead of relying primarily on prior knowledge.
         - Prefer knowledge_search when a question spans notes, concepts and imported-book text. Use narrower read tools when the scope is already clear, and preserve an explicitly named book, collection, note or concept scope.
+        - A current or recently resolved book remains the conversational book scope when a retrieval call omits bookIds. If the user explicitly broadens back to the whole library, say so in the tool call with an empty bookIds array instead of accidentally inheriting the prior book.
         - Keep exact evidence identity and provenance. Use knowledge_read_evidence or the relevant source-reading capability when the user needs to reopen or inspect a result in context.
         - Distinguish what retrieved Nostos evidence supports from background knowledge you already had. Never fabricate a note, concept, book, passage, page, CFI, source revision or quotation.
         - Orient the user back to the material: identify the relevant note, concept, book, passage or source location when the tool result provides it.
