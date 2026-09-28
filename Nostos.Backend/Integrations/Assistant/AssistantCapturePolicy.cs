@@ -17,10 +17,18 @@ internal sealed class AssistantCapturePolicy(ILibraryService library)
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private const int MaxBookCandidateChoices = 5;
 
+    public Task<AssistantCapturePreparation> PrepareAsync(
+        string argumentsJson,
+        AssistantContextDto? context,
+        string processingMode,
+        CancellationToken ct) =>
+        PrepareAsync(argumentsJson, context, processingMode, fallbackContent: null, ct);
+
     public async Task<AssistantCapturePreparation> PrepareAsync(
         string argumentsJson,
         AssistantContextDto? context,
         string processingMode,
+        string? fallbackContent,
         CancellationToken ct)
     {
         var book = await DecideBookAsync(context, ct);
@@ -47,6 +55,7 @@ internal sealed class AssistantCapturePolicy(ILibraryService library)
             anchor,
             book.BookId!.Value,
             processingMode,
+            fallbackContent,
             out var quoteFidelity);
 
         return AssistantCapturePreparation.Ready(args, book.Title, quoteFidelity);
@@ -235,6 +244,7 @@ internal sealed class AssistantCapturePolicy(ILibraryService library)
         AnchorDecision decision,
         Guid bookId,
         string mode,
+        string? fallbackContent,
         out bool quoteFidelity)
     {
         quoteFidelity = false;
@@ -255,6 +265,18 @@ internal sealed class AssistantCapturePolicy(ILibraryService library)
         if (!string.IsNullOrWhiteSpace(selectedText))
         {
             obj["selectedText"] = selectedText;
+        }
+
+        var content = ReadString(obj, "content");
+        if (string.IsNullOrWhiteSpace(content)
+            && string.IsNullOrWhiteSpace(selectedText)
+            && !string.IsNullOrWhiteSpace(fallbackContent))
+        {
+            // A continuation answer supplies only the missing book/anchor. The
+            // original user turn remains the capture when a provider omitted
+            // content from the tool arguments that created the continuation.
+            content = fallbackContent;
+            obj["content"] = fallbackContent;
         }
 
         // The orchestrator owns the anchor. A guessed one would file the note
@@ -291,7 +313,6 @@ internal sealed class AssistantCapturePolicy(ILibraryService library)
                 JsonOptions);
         }
 
-        var content = ReadString(obj, "content");
         if (!string.IsNullOrWhiteSpace(selectedText) && !decision.Verified)
         {
             quoteFidelity = true;
