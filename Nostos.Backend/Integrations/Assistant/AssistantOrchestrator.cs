@@ -109,6 +109,8 @@ public sealed class AssistantOrchestrator(
     private const string BookTextCapability = "book_text_search";
     private const string KnowledgeSearchCapability = "knowledge_search";
     private const string KnowledgeReadCapability = "knowledge_read_evidence";
+    private const string NotesListForBookCapability = "notes_list_for_book";
+    private const string NotesSearchCapability = "notes_search";
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -600,6 +602,18 @@ public sealed class AssistantOrchestrator(
                         sourceReferences.AddRange(sources);
                         retrieval.RecordSources(sources);
                         MergeEvidenceReferences(evidenceReferences, ExtractKnowledgeSearchEvidence(result.Data));
+                    }
+                    else if (string.Equals(capability.Name, NotesListForBookCapability, StringComparison.Ordinal))
+                    {
+                        MergeEvidenceReferences(
+                            evidenceReferences,
+                            ExtractNoteListForBookEvidence(result.Data));
+                    }
+                    else if (string.Equals(capability.Name, NotesSearchCapability, StringComparison.Ordinal))
+                    {
+                        MergeEvidenceReferences(
+                            evidenceReferences,
+                            ExtractNoteSearchEvidence(result.Data));
                     }
                     else if (string.Equals(capability.Name, KnowledgeReadCapability, StringComparison.Ordinal))
                     {
@@ -1256,6 +1270,72 @@ public sealed class AssistantOrchestrator(
 
         foreach (var passage in response.BookPassages)
             yield return ToEvidenceReference(passage);
+    }
+
+    private static IEnumerable<AssistantEvidenceReferenceDto> ExtractNoteListForBookEvidence(
+        JsonElement? data)
+    {
+        if (data is not { ValueKind: JsonValueKind.Array } element)
+            yield break;
+
+        List<NoteDto>? notes;
+        try
+        {
+            notes = JsonSerializer.Deserialize<List<NoteDto>>(
+                element.GetRawText(),
+                JsonOptions);
+        }
+        catch (JsonException)
+        {
+            yield break;
+        }
+
+        if (notes is null)
+            yield break;
+
+        foreach (var note in notes)
+        {
+            yield return new AssistantEvidenceReferenceDto(
+                new AssistantEvidenceHandleDto(
+                    KnowledgeEvidenceKinds.Note,
+                    NoteId: note.Id),
+                string.IsNullOrWhiteSpace(note.BookTitle) ? "Note" : $"Note · {note.BookTitle}",
+                ClipEvidence(note.SelectedText ?? note.Content),
+                BookTitle: note.BookTitle);
+        }
+    }
+
+    private static IEnumerable<AssistantEvidenceReferenceDto> ExtractNoteSearchEvidence(
+        JsonElement? data)
+    {
+        if (data is not { ValueKind: JsonValueKind.Array } element)
+            yield break;
+
+        List<NoteSearchHitDto>? notes;
+        try
+        {
+            notes = JsonSerializer.Deserialize<List<NoteSearchHitDto>>(
+                element.GetRawText(),
+                JsonOptions);
+        }
+        catch (JsonException)
+        {
+            yield break;
+        }
+
+        if (notes is null)
+            yield break;
+
+        foreach (var note in notes)
+        {
+            yield return new AssistantEvidenceReferenceDto(
+                new AssistantEvidenceHandleDto(
+                    KnowledgeEvidenceKinds.Note,
+                    NoteId: note.Id),
+                string.IsNullOrWhiteSpace(note.BookTitle) ? "Note" : $"Note · {note.BookTitle}",
+                ClipEvidence(note.Snippet ?? note.SelectedText ?? note.Content),
+                BookTitle: note.BookTitle);
+        }
     }
 
     private static IEnumerable<AssistantEvidenceReferenceDto> ExtractKnowledgeReadEvidence(
