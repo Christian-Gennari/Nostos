@@ -426,6 +426,7 @@ public sealed class AssistantOrchestrator(
                             turnId,
                             prompt.Kind,
                             call.ArgumentsJson,
+                            request.Message,
                             turnContext,
                             captureProcessingMode);
 
@@ -861,6 +862,7 @@ public sealed class AssistantOrchestrator(
             stored.ArgumentsJson,
             resumedContext,
             stored.ProcessingMode,
+            stored.OriginalMessage,
             ct);
 
         if (capture.Prompt is { } prompt)
