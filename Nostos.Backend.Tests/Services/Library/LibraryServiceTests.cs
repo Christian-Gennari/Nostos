@@ -771,6 +771,117 @@ public sealed class LibraryServiceTests : IClassFixture<SqliteTestFixture>
         ((LibraryErrorDto)result.Data!).Code.Should().Be("invalid_book_identity");
     }
 
+    [Fact]
+    public async Task Grouped_library_and_sidebar_counts_use_the_same_work_unit()
+    {
+        var h = Harness();
+
+        // Two legitimate editions of one work are two persisted rows but one
+        // default Library card. A separate work proves this is WorkId grouping,
+        // not title/author deduplication in the count query.
+        await h.Service.CreateOrMatchBookAsync(
+            CreateRequest("physical", "Meditations", Author: "Marcus Aurelius"),
+            strictConfirmation: true);
+        await h.Service.CreateOrMatchBookAsync(
+            CreateRequest("ebook", "Meditations", Author: "Marcus Aurelius"),
+            strictConfirmation: true);
+        await h.Service.CreateOrMatchBookAsync(
+            CreateRequest("physical", "The Republic", Author: "Plato"),
+            strictConfirmation: true);
+
+        var grouped = (PaginatedResponse<BookDto>)(await h.Service.ListBooksAsync(
+            BookFilter.All, BookSort.Title, null, 1, 20, null, groupByWork: true)).Data!;
+        var counts = (LibraryStatusCountsDto)(await h.Service.GetStatusCountsAsync()).Data!;
+
+        await using var db = await h.Factory.CreateDbContextAsync();
+        (await db.Books.CountAsync()).Should().Be(3, "both Meditations editions remain real rows");
+        grouped.TotalCount.Should().Be(2);
+        counts.All.Should().Be(grouped.TotalCount);
+        counts.NotStarted.Should().Be(2, "both editions in one work still produce one not-started card");
+        grouped.Items.Single(b => b.Title == "Meditations").EditionCount.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task Collection_badges_count_distinct_works_across_the_selected_subtree()
+    {
+        var h = Harness();
+        var root = (CollectionDto)(await h.Service.CreateCollectionAsync(new(Client, Key(), "Root"))).Data!;
+        var printShelf = (CollectionDto)(await h.Service.CreateCollectionAsync(
+            new(Client, Key(), "Print", root.Id))).Data!;
+        var digitalShelf = (CollectionDto)(await h.Service.CreateCollectionAsync(
+            new(Client, Key(), "Digital", root.Id))).Data!;
+
+        await h.Service.CreateOrMatchBookAsync(
+            CreateRequest("physical", "Meditations", Author: "Marcus Aurelius", CollectionId: printShelf.Id),
+            strictConfirmation: true);
+        await h.Service.CreateOrMatchBookAsync(
+            CreateRequest("ebook", "Meditations", Author: "Marcus Aurelius", CollectionId: digitalShelf.Id),
+            strictConfirmation: true);
+
+        var groupedAtRoot = (PaginatedResponse<BookDto>)(await h.Service.ListBooksAsync(
+            BookFilter.All, BookSort.Title, null, 1, 20, root.Id, groupByWork: true)).Data!;
+        var counts = ((IEnumerable<CollectionCountDto>)(await h.Service.ListCollectionCountsAsync()).Data!)
+            .ToDictionary(c => c.CollectionId, c => c.BookCount);
+
+        groupedAtRoot.TotalCount.Should().Be(1);
+        counts[root.Id].Should().Be(groupedAtRoot.TotalCount,
+            "ancestor badges must not add the same work once per edition/child");
+        counts[printShelf.Id].Should().Be(1);
+        counts[digitalShelf.Id].Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Upload_pending_is_explicit_and_excluded_without_hiding_valid_fileless_books()
+    {
+        var h = Harness();
+        var abandoned = (CollectionDto)(await h.Service.CreateCollectionAsync(
+            new(Client, Key(), "Incomplete"))).Data!;
+        var metadataOnly = (CollectionDto)(await h.Service.CreateCollectionAsync(
+            new(Client, Key(), "Metadata only"))).Data!;
+
+        var pendingResult = await h.Service.CreateOrMatchBookAsync(
+            CreateRequest(
+                "ebook",
+                "Pending local upload",
+                Author: "Uploader",
+                CollectionId: abandoned.Id,
+                FileUploadExpected: true),
+            strictConfirmation: true);
+        var pending = ((LibraryCreateOrMatchResultDto)pendingResult.Data!).Book!;
+
+        var readyResult = await h.Service.CreateOrMatchBookAsync(
+            CreateRequest(
+                "ebook",
+                "Intentional metadata-only ebook",
+                Author: "Metadata Author",
+                CollectionId: metadataOnly.Id),
+            strictConfirmation: true);
+        var ready = ((LibraryCreateOrMatchResultDto)readyResult.Data!).Book!;
+
+        pending.Status.Should().Be(BookStatus.UploadPending);
+        pending.HasFile.Should().BeFalse();
+        ready.Status.Should().Be(BookStatus.Ready);
+        ready.HasFile.Should().BeFalse("file-less digital records are a legitimate steady state");
+
+        var grouped = (PaginatedResponse<BookDto>)(await h.Service.ListBooksAsync(
+            BookFilter.All, BookSort.Title, null, 1, 20, null, groupByWork: true)).Data!;
+        var statusCounts = (LibraryStatusCountsDto)(await h.Service.GetStatusCountsAsync()).Data!;
+        var collectionCounts = ((IEnumerable<CollectionCountDto>)(await h.Service.ListCollectionCountsAsync()).Data!)
+            .ToDictionary(c => c.CollectionId, c => c.BookCount);
+
+        grouped.Items.Select(b => b.Id).Should().Contain(ready.Id).And.NotContain(pending.Id);
+        grouped.TotalCount.Should().Be(1);
+        statusCounts.All.Should().Be(1);
+        statusCounts.Ebooks.Should().Be(1);
+        collectionCounts[abandoned.Id].Should().Be(0);
+        collectionCounts[metadataOnly.Id].Should().Be(1);
+
+        // The row is retained for retry/repair; hiding it from the read model is
+        // not deletion and operators can still address it by id.
+        var directRead = (BookDto)(await h.Service.GetBookAsync(pending.Id)).Data!;
+        directRead.Status.Should().Be(BookStatus.UploadPending);
+    }
+
     // ------------------------------------------------------------------
     // Collections
     // ------------------------------------------------------------------
@@ -1920,7 +2031,8 @@ public sealed class LibraryServiceTests : IClassFixture<SqliteTestFixture>
         Guid? ConfirmedBookId = null,
         bool ForceCreate = false,
         string? Key = null,
-        IReadOnlyList<Guid>? CollectionIds = null) =>
+        IReadOnlyList<Guid>? CollectionIds = null,
+        bool FileUploadExpected = false) =>
         new(Client, Key ?? $"k-{Guid.NewGuid():N}", type, title,
             Subtitle: Subtitle,
             Author: Author,
@@ -1929,7 +2041,8 @@ public sealed class LibraryServiceTests : IClassFixture<SqliteTestFixture>
             CollectionId: CollectionId,
             ConfirmedBookId: ConfirmedBookId,
             ForceCreate: ForceCreate,
-            CollectionIds: CollectionIds);
+            CollectionIds: CollectionIds,
+            FileUploadExpected: FileUploadExpected);
 
     private async Task<int> CountBooksAsync(TestHarness h)
     {
