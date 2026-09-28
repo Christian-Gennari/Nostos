@@ -1,4 +1,5 @@
 using Nostos.Backend.Services.Notes;
+using Nostos.Backend.Services.Notes.Imports;
 using Nostos.Shared.Dtos;
 
 namespace Nostos.Backend.Endpoints;
@@ -76,6 +77,39 @@ public static class NotesEndpoints
                     NoteErrorCodes.BookNotFound => Results.NotFound(new { error = result.ErrorMessage }),
                     _ => Results.BadRequest(new { error = result.ErrorMessage }),
                 };
+            }
+        );
+
+        // IMPORT KOReader sidecar metadata. This first slice accepts one
+        // text metadata.lua file, matches its book, and imports annotations
+        // through the canonical note service so provenance/idempotency stay
+        // identical to every other capture path.
+        group.MapPost(
+            "/notes/import/koreader",
+            async (HttpRequest request, KoreaderNoteImportService importer, CancellationToken ct) =>
+            {
+                const long maxMetadataBytes = 2 * 1024 * 1024;
+                if (!request.HasFormContentType)
+                    return Results.BadRequest(new { error = "Expected multipart/form-data with a KOReader metadata.lua file." });
+
+                var form = await request.ReadFormAsync(ct);
+                var file = form.Files.GetFile("file") ?? form.Files.FirstOrDefault();
+                if (file is null)
+                    return Results.BadRequest(new { error = "A KOReader metadata.lua file is required." });
+                if (file.Length <= 0 || file.Length > maxMetadataBytes)
+                    return Results.BadRequest(new { error = "KOReader metadata.lua must be between 1 byte and 2 MB." });
+
+                try
+                {
+                    await using var stream = file.OpenReadStream();
+                    using var reader = new StreamReader(stream);
+                    var source = await reader.ReadToEndAsync(ct);
+                    return Results.Ok(await importer.ImportAsync(source, ct));
+                }
+                catch (FormatException ex)
+                {
+                    return Results.BadRequest(new { error = ex.Message });
+                }
             }
         );
 

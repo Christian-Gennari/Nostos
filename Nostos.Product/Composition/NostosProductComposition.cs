@@ -19,6 +19,7 @@ using Nostos.Backend.Services.Ai;
 using Nostos.Backend.Services.Library;
 using Nostos.Backend.Services.Knowledge;
 using Nostos.Backend.Services.Notes;
+using Nostos.Backend.Services.Notes.Imports;
 using Nostos.Backend.Services.Portability;
 using Nostos.Product.BookText;
 
@@ -131,6 +132,7 @@ public static class NostosProductComposition
         services.AddScoped<MediaMetadataService>();
         services.AddScoped<NoteProcessorService>();
         services.AddScoped<INoteService, NoteService>();
+        services.AddScoped<KoreaderNoteImportService>();
         services.AddScoped<IKnowledgeRetrievalService, KnowledgeRetrievalService>();
 
         services.AddScoped<IPortableArchiveService, PortableArchiveService>();
