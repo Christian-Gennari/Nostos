@@ -74,7 +74,11 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
 
     [Theory]
     [InlineData("Spara inget.")]
+    [InlineData("Spara inte det.")]
     [InlineData("Don't save that.")]
+    [InlineData("Don’t save that.")]
+    [InlineData("Do not save this.")]
+    [InlineData("Stopp.")]
     public async Task Explicit_negative_capture_intent_cannot_create_a_note(string message)
     {
         var h = CreateHarness();
