@@ -214,6 +214,7 @@ public sealed class AssistantOrchestrator(
         var inspectedConceptIds = new HashSet<Guid>();
         var conceptsInspected = false;
         var executedCapabilities = new List<string>();
+        var successfulCapabilities = new HashSet<string>(StringComparer.Ordinal);
         var sourceReferences = new List<AssistantSourceReferenceDto>();
         var evidenceReferences = new List<AssistantEvidenceReferenceDto>();
         var planSteps = new List<AssistantPlanStep>();
@@ -545,6 +546,11 @@ public sealed class AssistantOrchestrator(
 
                 messages.Add(LlmMessage.Tool(call.Id, ToolJson(result)));
 
+                if (result.Success)
+                {
+                    successfulCapabilities.Add(capability.Name);
+                }
+
                 if (result.Success && mutation)
                 {
                     mutationCompleted = true;
@@ -705,6 +711,21 @@ public sealed class AssistantOrchestrator(
             {
                 reply = IncompleteTurnReply;
             }
+        }
+
+        // A model may narrate a write or empty search result without ever
+        // executing the capability. Only server-observed successful calls can
+        // support those completion claims; otherwise fail closed with an honest
+        // typed turn result instead of presenting invented state as fact.
+        if (AssistantCompletionClaimGuard.Evaluate(reply, successfulCapabilities) is { } unverifiedClaim)
+        {
+            logger.LogWarning(
+                "Assistant completion-claim guard replaced an unverified {ClaimKind} claim; reply content is not logged.",
+                unverifiedClaim.Kind);
+            reply = unverifiedClaim.ReplacementReply;
+            terminalError ??= new AssistantTurnErrorDto(
+                AssistantErrorCodes.UnverifiedCompletionClaim,
+                unverifiedClaim.ReplacementReply);
         }
 
         // The conversational reply is the only text the guard may rewrite. Note
