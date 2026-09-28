@@ -2499,8 +2499,15 @@
  * the same product as the concept index it temporarily replaces. */
 
 /* The reviewed row. Same fill the concept index gives its active row, so
-   "where am I" reads identically in both rails. */
-.note-row-item.active {
+   "where am I" reads identically in both rails.
+   Keep the explicit hover/focus variants in lockstep with the concept row above:
+   Angular's scoped attributes make the shell hover/focus selector more specific
+   than a bare `.note-row-item.active`. Without these variants, clicking or
+   hovering a selected note repaints its dark selection fill with `--bg-hover`
+   while its children keep `--selection-ink` — white on pale grey in light mode. */
+.note-row-item.active,
+.note-row-shell:hover .note-row-item.active,
+.note-row-shell:focus-within .note-row-item.active {
   background: var(--selection-surface);
   color: var(--selection-ink);
 }
