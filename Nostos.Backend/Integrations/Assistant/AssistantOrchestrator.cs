@@ -1335,7 +1335,7 @@ public sealed class AssistantOrchestrator(
                      && candidates.ValueKind == JsonValueKind.Array
                      && candidates.GetArrayLength() == 1)
             {
-                candidate = candidates[0];
+                candidate = candidates.EnumerateArray().Single();
             }
             else
             {
