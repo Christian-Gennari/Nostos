@@ -33,6 +33,8 @@ public sealed class McpHttpFactory : WebApplicationFactory<Program>
 
     private readonly string _dbPath;
     private readonly string _webRootPath;
+    private readonly string _storageTempRoot;
+    private readonly string _booksRoot;
     private readonly bool _enabled;
     private readonly string? _path;
     private readonly string? _envVarName;
@@ -42,6 +44,10 @@ public sealed class McpHttpFactory : WebApplicationFactory<Program>
         _dbPath = Path.Combine(Path.GetTempPath(), $"nostos-mcp-{Guid.NewGuid():N}.db");
         LibraryEndpointBootstrap.EnsureSchemaAndHistory(_dbPath);
         _webRootPath = CreateSpaShellWebRoot();
+        _storageTempRoot = Path.Combine(
+            Path.GetTempPath(),
+            $"nostos-mcp-storage-{Guid.NewGuid():N}");
+        _booksRoot = Path.Combine(_storageTempRoot, "books");
         _enabled = enabled;
         _path = path;
         _envVarName = envVarName;
@@ -62,10 +68,14 @@ public sealed class McpHttpFactory : WebApplicationFactory<Program>
     }
 
     public string DatabasePath => _dbPath;
+    public string StorageTempRoot => _storageTempRoot;
+    public string BooksRootPath => _booksRoot;
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
+        builder.UseEnvironment("Testing");
         builder.UseWebRoot(_webRootPath);
+        builder.UseSetting("Storage:BooksRoot", _booksRoot);
 
         builder.ConfigureServices(services =>
         {
@@ -123,6 +133,20 @@ public sealed class McpHttpFactory : WebApplicationFactory<Program>
             Directory.Delete(_webRootPath, recursive: true);
         }
         catch (IOException)
+        {
+            // Best-effort cleanup only.
+        }
+
+        try
+        {
+            if (Directory.Exists(_storageTempRoot))
+                Directory.Delete(_storageTempRoot, recursive: true);
+        }
+        catch (IOException)
+        {
+            // Best-effort cleanup only.
+        }
+        catch (UnauthorizedAccessException)
         {
             // Best-effort cleanup only.
         }
