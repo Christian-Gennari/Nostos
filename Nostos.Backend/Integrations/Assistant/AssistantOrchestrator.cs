@@ -184,7 +184,6 @@ public sealed class AssistantOrchestrator(
 
         var captureIntent = await _captureIntentGuard.EvaluateAsync(
             request.Message,
-            request.History,
             ct);
         var captureSuppressed = captureIntent.SuppressCapture;
         var turnContext = captureIntent.ResolvedBook is { } clarifiedBook
