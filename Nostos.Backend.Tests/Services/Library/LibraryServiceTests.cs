@@ -500,6 +500,67 @@ public sealed class LibraryServiceTests : IClassFixture<SqliteTestFixture>
         }
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task An_importing_book_stays_visible_through_library_filters_until_it_finishes(bool groupByWork)
+    {
+        var h = Harness();
+        var unrelatedCollection = (CollectionDto)(await h.Service.CreateCollectionAsync(
+            new(Client, "import-filter-collection", "Other shelf"))).Data!;
+        var importingId = ((LibraryCreateOrMatchResultDto)(await h.Service.CreateOrMatchBookAsync(
+            CreateRequest("ebook", "Visible while importing", Author: "Progress Test"),
+            strictConfirmation: true)).Data!).BookId!.Value;
+
+        await using (var db = await h.Factory.CreateDbContextAsync())
+        {
+            var importing = await db.Books.SingleAsync(b => b.Id == importingId);
+            importing.Status = BookStatus.Downloading;
+            await db.SaveChangesAsync();
+        }
+
+        // Every ordinary filter rejects this row:
+        // - it is not a favourite,
+        // - the search text does not match,
+        // - it has no PDF filename yet,
+        // - and it is not in the selected collection.
+        // The import must still be present because its own card/row is the only
+        // surface that can show Downloading/Transcoding progress.
+        var listed = await h.Service.ListBooksAsync(
+            BookFilter.Favorites,
+            BookSort.Title,
+            "definitely-no-match",
+            1,
+            20,
+            unrelatedCollection.Id,
+            groupByWork,
+            format: "pdf");
+        var page = (PaginatedResponse<BookDto>)listed.Data!;
+
+        page.Items.Select(b => b.Id).Should().ContainSingle().Which.Should().Be(importingId);
+
+        await using (var db = await h.Factory.CreateDbContextAsync())
+        {
+            var importing = await db.Books.SingleAsync(b => b.Id == importingId);
+            importing.Status = BookStatus.Ready;
+            await db.SaveChangesAsync();
+        }
+
+        var settled = await h.Service.ListBooksAsync(
+            BookFilter.Favorites,
+            BookSort.Title,
+            "definitely-no-match",
+            1,
+            20,
+            unrelatedCollection.Id,
+            groupByWork,
+            format: "pdf");
+        var settledPage = (PaginatedResponse<BookDto>)settled.Data!;
+
+        settledPage.Items.Should().BeEmpty(
+            "once the operational import state ends, ordinary library filters own visibility again");
+    }
+
     [Fact]
     public async Task An_importing_work_sorts_first_in_the_grouped_list()
     {
