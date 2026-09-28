@@ -484,9 +484,7 @@ export class AddBookModal {
     if (this.isSubmitting()) return;
     this.isSubmitting.set(true);
 
-    // A chosen source item turns the form into the import's own confirmation:
-    // the download starts from the values on screen rather than from what the
-    // source said. A hand-typed book and an edit both still go to the library.
+    // From here on this is the ordinary REST create/update path.
     // Sanitize Language
     if (this.form.language) {
       this.form.language = this.getFullLanguageName(this.form.language) || this.form.language;
