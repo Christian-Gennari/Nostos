@@ -408,21 +408,27 @@
     </div>
     <div class="typo-row">
       <span class="typo-label" id="pdf-rotation">Rotation</span>
-      <div class="typo-opts" role="group" aria-labelledby="pdf-rotation">
+      <div class="typo-steps" role="group" aria-labelledby="pdf-rotation">
         <button
           type="button"
-          class="typo-opt"
+          class="typo-step"
           (click)="pdfReader?.rotateCounterclockwise()"
+          aria-label="Rotate left"
+          title="Rotate left"
         >Left</button>
         <button
           type="button"
-          class="typo-opt"
+          class="typo-step"
           (click)="pdfReader?.resetRotation()"
+          aria-label="Reset rotation"
+          title="Reset rotation"
         >Reset</button>
         <button
           type="button"
-          class="typo-opt"
+          class="typo-step"
           (click)="pdfReader?.rotateClockwise()"
+          aria-label="Rotate right"
+          title="Rotate right"
         >Right</button>
       </div>
     </div>
