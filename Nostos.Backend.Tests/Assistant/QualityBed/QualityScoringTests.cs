@@ -219,6 +219,93 @@ public sealed class QualityScoringTests
             failure => failure.Contains("reply must not contain", StringComparison.Ordinal));
     }
 
+    // g2. claim-aware negative asserts: denials/hypotheticals pass, claims fail,
+    // identically in both modes (deterministic replies never trip the guard).
+    [Fact]
+    public void Negative_claim_denial_does_not_fail_in_either_mode()
+    {
+        var spec = Spec(new QualityTurnExpect(
+            RequiredTools: [],
+            ForbiddenTools: [],
+            GoldNoteIds: [],
+            ReplyMustNotContain: ["deleted"]));
+        var turn = Record(Reply("Nothing was deleted."), []);
+
+        var live = QualityExpectationEvaluator.Evaluate(spec, turn, live: true);
+        Assert.Empty(live.Failures);
+
+        var deterministic = QualityExpectationEvaluator.Evaluate(spec, turn, live: false);
+        Assert.Empty(deterministic.Failures);
+    }
+
+    [Fact]
+    public void Negative_claim_hypothetical_does_not_fail_in_either_mode()
+    {
+        var spec = Spec(new QualityTurnExpect(
+            RequiredTools: [],
+            ForbiddenTools: [],
+            GoldNoteIds: [],
+            ReplyMustNotContain: ["deleted"]));
+        var turn = Record(
+            Reply("So I can't say which books would be unlinked if it were deleted. Deleting the collection would not delete the books themselves."),
+            []);
+
+        var live = QualityExpectationEvaluator.Evaluate(spec, turn, live: true);
+        Assert.Empty(live.Failures);
+
+        var deterministic = QualityExpectationEvaluator.Evaluate(spec, turn, live: false);
+        Assert.Empty(deterministic.Failures);
+    }
+
+    [Fact]
+    public void Negative_claim_completion_still_fails_in_both_modes()
+    {
+        var deletedSpec = Spec(new QualityTurnExpect(
+            RequiredTools: [],
+            ForbiddenTools: [],
+            GoldNoteIds: [],
+            ReplyMustNotContain: ["deleted"]));
+        var deletedTurn = Record(Reply("I deleted the collection."), []);
+
+        var liveDeleted = QualityExpectationEvaluator.Evaluate(deletedSpec, deletedTurn, live: true);
+        Assert.Contains(
+            liveDeleted.Failures,
+            failure => failure.Contains("reply must not contain 'deleted'", StringComparison.Ordinal));
+
+        var deterministicDeleted = QualityExpectationEvaluator.Evaluate(deletedSpec, deletedTurn, live: false);
+        Assert.Contains(
+            deterministicDeleted.Failures,
+            failure => failure.Contains("reply must not contain 'deleted'", StringComparison.Ordinal));
+
+        var goneSpec = Spec(new QualityTurnExpect(
+            RequiredTools: [],
+            ForbiddenTools: [],
+            GoldNoteIds: [],
+            ReplyMustNotContain: ["is gone"]));
+        var goneTurn = Record(Reply("The collection is gone."), []);
+
+        var liveGone = QualityExpectationEvaluator.Evaluate(goneSpec, goneTurn, live: true);
+        Assert.Contains(
+            liveGone.Failures,
+            failure => failure.Contains("reply must not contain 'is gone'", StringComparison.Ordinal));
+
+        var deterministicGone = QualityExpectationEvaluator.Evaluate(goneSpec, goneTurn, live: false);
+        Assert.Contains(
+            deterministicGone.Failures,
+            failure => failure.Contains("reply must not contain 'is gone'", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Completion_claim_matcher_skips_cued_occurrences_but_fires_on_plain_ones()
+    {
+        Assert.False(QualityExpectationEvaluator.ContainsCompletionClaim("Nothing was deleted.", "deleted"));
+        Assert.False(QualityExpectationEvaluator.ContainsCompletionClaim("I did not delete anything.", "delete"));
+        Assert.False(QualityExpectationEvaluator.ContainsCompletionClaim(
+            "So I can't say which books would be unlinked if it were deleted.", "deleted"));
+        Assert.True(QualityExpectationEvaluator.ContainsCompletionClaim("I deleted the collection.", "deleted"));
+        Assert.True(QualityExpectationEvaluator.ContainsCompletionClaim("The collection is gone.", "is gone"));
+    }
+
     // Coexistence notes: hard in deterministic, advisory in live.
     [Fact]
     public void Coexistence_notes_are_required_in_deterministic_only()

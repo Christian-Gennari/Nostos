@@ -206,7 +206,7 @@ internal static class QualityExpectationEvaluator
         }
 
         foreach (var forbidden in expect.ReplyMustNotContain ?? [])
-            if (response.Reply.Contains(forbidden, StringComparison.OrdinalIgnoreCase))
+            if (ContainsCompletionClaim(response.Reply, forbidden))
                 failures.Add($"reply must not contain '{forbidden}'");
 
         if (expect.ExpectPendingPlan && response.PendingPlan is null)
@@ -250,6 +250,47 @@ internal static class QualityExpectationEvaluator
         }
 
         return new QualityEvaluationResult(failures, advisories);
+    }
+
+    /// <summary>
+    /// Claim-aware matcher for <c>ReplyMustNotContain</c>: fires only when the
+    /// phrase appears as a completion claim, not inside a denial or a
+    /// hypothetical. A ~40-character window immediately before each
+    /// case-insensitive occurrence is scanned for negation/hypothetical cues;
+    /// cued occurrences are skipped, other occurrences still fire.
+    /// </summary>
+    internal static bool ContainsCompletionClaim(string reply, string phrase)
+    {
+        if (string.IsNullOrEmpty(reply) || string.IsNullOrEmpty(phrase))
+            return false;
+        string[] cues =
+        [
+            "not ", "n't ", "never ", "nothing ", "no ", "if ", "would ",
+            "were ", "had been ", "was not", "isn't", "aren't", "didn't",
+            "doesn't", "can't", "cannot", "without ",
+        ];
+        var start = 0;
+        while (true)
+        {
+            var index = reply.IndexOf(phrase, start, StringComparison.OrdinalIgnoreCase);
+            if (index < 0)
+                return false;
+            var windowStart = Math.Max(0, index - 40);
+            var window = reply.Substring(windowStart, index - windowStart);
+            var cued = false;
+            foreach (var cue in cues)
+            {
+                if (window.Contains(cue, StringComparison.OrdinalIgnoreCase))
+                {
+                    cued = true;
+                    break;
+                }
+            }
+
+            if (!cued)
+                return true;
+            start = index + phrase.Length;
+        }
     }
 
     /// <summary>
