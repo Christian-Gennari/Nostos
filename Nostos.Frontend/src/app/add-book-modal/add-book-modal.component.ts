@@ -96,6 +96,8 @@ export class AddBookModal {
     () => !this.isEditMode() && this.flowIntent() === 'upload' && !this.selectedFile(),
   );
   isFetching = signal(false);
+  /** Blocks re-entrant create/update submits until the whole mutation pipeline settles. */
+  isSubmitting = signal(false);
 
   // Form State
   form = {
@@ -321,6 +323,7 @@ export class AddBookModal {
     this.clearChosenFiles();
     this.uploadProgress.set(null);
     this.isFetching.set(false);
+    this.isSubmitting.set(false);
     this.fileDragActive.set(false);
     this.coverDragActive.set(false);
     // The source search holds its own selection and job state; a stale
@@ -468,14 +471,20 @@ export class AddBookModal {
   submit(): void {
     if (!this.form.title.trim()) return;
 
-    // A chosen source item turns the form into the import's own confirmation:
-    // the download starts from the values on screen rather than from what the
-    // source said. A hand-typed book and an edit both still go to the library.
+    // A chosen source item owns its own acquisition lifecycle. The ordinary
+    // create/upload guard below is for hand-entered and local-file books.
     if (this.seededFromSource()) {
       this.importSelected();
       return;
     }
 
+    // Set this synchronously, before the first HTTP call. A disabled button is
+    // UX feedback; this guard is the correctness boundary for same-tick double
+    // clicks and programmatic re-entry.
+    if (this.isSubmitting()) return;
+    this.isSubmitting.set(true);
+
+    // From here on this is the ordinary REST create/update path.
     // Sanitize Language
     if (this.form.language) {
       this.form.language = this.getFullLanguageName(this.form.language) || this.form.language;
@@ -495,10 +504,14 @@ export class AddBookModal {
     if (this.isEditMode()) {
       this.booksService.update(this.book()!.id, payload).subscribe({
         next: (updated) => {
+          this.isSubmitting.set(false);
           this.bookUpdated.emit(updated);
           this.closeModal.emit();
         },
-        error: () => this.toast.error('Failed to update book'),
+        error: () => {
+          this.isSubmitting.set(false);
+          this.toast.error('Failed to update book');
+        },
       });
     } else {
       this.booksService.create(payload).subscribe({
@@ -509,7 +522,10 @@ export class AddBookModal {
             this.uploadCoverIfNeeded(createdBook.id);
           }
         },
-        error: () => this.toast.error('Failed to create book'),
+        error: () => {
+          this.isSubmitting.set(false);
+          this.toast.error('Failed to create book');
+        },
       });
     }
   }
@@ -533,7 +549,13 @@ export class AddBookModal {
           );
         }
       },
-      error: () => this.uploadProgress.set(null),
+      error: () => {
+        this.uploadProgress.set(null);
+        // #622 owns the visible retry UX. Releasing the latch here prevents a
+        // dead modal today; its retry path must reuse createdBook.id rather than
+        // calling create() again.
+        this.isSubmitting.set(false);
+      },
     });
   }
 

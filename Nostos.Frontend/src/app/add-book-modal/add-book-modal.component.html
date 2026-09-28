@@ -954,14 +954,18 @@
               type="submit"
               form="add-book-form"
               variant="primary"
-              [disabled]="bookForm.invalid || !form.title.trim()"
+              [disabled]="bookForm.invalid || !form.title.trim() || isSubmitting()"
             >
               {{
-                isEditMode()
-                  ? 'Save Changes'
-                  : seededFromSource()
-                    ? 'Import Book'
-                    : 'Add to Library'
+                isSubmitting()
+                  ? isEditMode()
+                    ? 'Saving…'
+                    : 'Adding…'
+                  : isEditMode()
+                    ? 'Save Changes'
+                    : seededFromSource()
+                      ? 'Import Book'
+                      : 'Add to Library'
               }}
             </button>
           }
