@@ -35,7 +35,16 @@ public class FileStorageService : IFileStorageService, IBookAssetStorage
         ILogger<FileStorageService> logger
     )
     {
-        _root = FileStorageOptions.ResolveBooksRoot(env.ContentRootPath, options.Value);
+        var storageOptions = options.Value;
+        if (string.Equals(env.EnvironmentName, "Testing", StringComparison.OrdinalIgnoreCase)
+            && string.IsNullOrWhiteSpace(storageOptions.BooksRoot))
+        {
+            throw new InvalidOperationException(
+                "Testing hosts must configure 'Storage:BooksRoot' to a disposable directory; " +
+                "the implicit Storage/books default is reserved for real application data.");
+        }
+
+        _root = FileStorageOptions.ResolveBooksRoot(env.ContentRootPath, storageOptions);
         _logger = logger;
         Directory.CreateDirectory(_root);
     }
