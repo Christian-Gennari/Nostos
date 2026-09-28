@@ -44,8 +44,8 @@ internal sealed class AssistantRetrievalTurnState(AssistantContextDto context)
                 .SingleOrDefault()
             : null;
 
-    public void RecordInitialContext() =>
-        RecordBookScope(context.BookId, context.BookTitle);
+    public void RecordResolvedBook(AssistantResolvedBookDto book) =>
+        RecordBookScope(book.BookId.ToString(), book.BookTitle);
 
     /// <summary>
     /// Applies the strongest available implicit book scope only when the model
