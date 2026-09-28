@@ -142,6 +142,95 @@ test('the row has ONE hover fill, from the name to the icons', async ({ browser 
   }
 });
 
+test('a selected note keeps its selection fill through focus and hover in light mode', async () => {
+  const fixture = loadFixture();
+  expect(context, 'shared context').not.toBeNull();
+  const page = await context!.newPage();
+  try {
+    await page.goto(`${fixture.baseUrl}/second-brain`, { waitUntil: 'domcontentloaded' });
+    await page.evaluate(() => {
+      document.documentElement.setAttribute('data-theme', 'light');
+      try {
+        localStorage.setItem('nostos.theme', 'light');
+      } catch {
+        /* ignore */
+      }
+    });
+
+    await page.getByRole('button', { name: 'Notes', exact: true }).click();
+    const row = page.locator('.note-row-item').first();
+    await row.waitFor({ timeout: 30_000 });
+    await row.click();
+    await expect(row).toHaveClass(/active/);
+
+    const read = () =>
+      page.evaluate(() => {
+        const active = document.querySelector('.note-row-item.active') as HTMLElement | null;
+        if (!active) return null;
+
+        const probe = document.createElement('span');
+        probe.style.background = 'var(--selection-surface)';
+        probe.style.color = 'var(--selection-ink)';
+        document.body.appendChild(probe);
+        const expectedBg = getComputedStyle(probe).backgroundColor;
+        const expectedInk = getComputedStyle(probe).color;
+        probe.remove();
+
+        const snippet = active.querySelector('.note-row-snippet') as HTMLElement | null;
+        const book = active.querySelector('.note-row-book') as HTMLElement | null;
+        return {
+          bg: getComputedStyle(active).backgroundColor,
+          ink: getComputedStyle(active).color,
+          snippetInk: snippet ? getComputedStyle(snippet).color : null,
+          bookInk: book ? getComputedStyle(book).color : null,
+          expectedBg,
+          expectedInk,
+        };
+      });
+
+    // Click leaves the row focused. Focus-within must not demote the selected
+    // surface to the pale hover fill.
+    const focusedAfterClick = await read();
+    expect(focusedAfterClick, 'selected note exists after click').not.toBeNull();
+    expect(focusedAfterClick!.bg, 'focused selected row keeps selection fill').toBe(
+      focusedAfterClick!.expectedBg
+    );
+    expect(focusedAfterClick!.ink, 'focused selected row keeps selection ink').toBe(
+      focusedAfterClick!.expectedInk
+    );
+
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    await moveMouse(page, [Math.round(DESKTOP_VIEWPORT.width - 40), 40]);
+    const atRest = await read();
+    expect(atRest!.bg, 'selected row at rest uses selection fill').toBe(atRest!.expectedBg);
+
+    const rowPt = await row.evaluate((el) => {
+      const r = (el as HTMLElement).getBoundingClientRect();
+      return [Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2)] as [
+        number,
+        number,
+      ];
+    });
+    await moveMouse(page, rowPt);
+    const hovered = await read();
+    expect(hovered!.bg, 'hover must not replace a selected row fill').toBe(hovered!.expectedBg);
+    expect(hovered!.ink, 'hover must not replace selected row ink').toBe(hovered!.expectedInk);
+    expect(hovered!.snippetInk, 'selected snippet ink is stable on hover').toBe(
+      atRest!.snippetInk
+    );
+    expect(hovered!.bookInk, 'selected source ink is stable on hover').toBe(atRest!.bookInk);
+
+    await moveMouse(page, [Math.round(DESKTOP_VIEWPORT.width - 40), 40]);
+    await row.focus();
+    const keyboardFocused = await read();
+    expect(keyboardFocused!.bg, 'keyboard focus must not replace a selected row fill').toBe(
+      keyboardFocused!.expectedBg
+    );
+  } finally {
+    await page.close();
+  }
+});
+
 test('a long name dissolves into the actions instead of hard-cutting', async ({ browser }) => {
   const fixture = loadFixture();
   expect(context, 'shared context').not.toBeNull();
