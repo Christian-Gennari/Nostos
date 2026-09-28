@@ -18,12 +18,12 @@ internal sealed record AssistantCaptureIntentDecision(
 internal sealed partial class AssistantCaptureIntentGuard(ILibraryService library)
 {
     [GeneratedRegex(
-        @"^(?:(?:please\s+)?(?:do\s+not|don['’]t)\s+(?:save|record|capture|note)\b|save\s+nothing\b|(?:spara|anteckna|lagra)\s+(?:inte|inget|ingenting)\b)",
+        @"^(?:(?:(?:actually|no|nope|wait|please|nej|vänta)\s*[,.:;-]?\s*)*)(?:(?:do\s+not|don['’]t|never)\s+(?:save|keep|record|capture|note)\b|save\s+nothing\b|(?:spara|anteckna|lagra)\s+(?:inte|inget|ingenting)\b)",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex ExplicitNoCaptureRegex();
 
     [GeneratedRegex(
-        @"^(?:stop|stopp|cancel|avbryt|never\s+mind|nevermind|glöm\s+det)\s*[.!?]*$",
+        @"^(?:stop|stopp|cancel|avbryt|never\s+mind|nevermind|glöm\s+det|forget\s+(?:it|that)|discard\s+(?:it|that))\s*[.!?]*$",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex ExactControlRegex();
 
@@ -34,7 +34,6 @@ internal sealed partial class AssistantCaptureIntentGuard(ILibraryService librar
 
     public async Task<AssistantCaptureIntentDecision> EvaluateAsync(
         string? message,
-        IReadOnlyList<AssistantHistoryMessageDto>? history,
         CancellationToken ct)
     {
         var current = message?.Trim();
@@ -45,17 +44,6 @@ internal sealed partial class AssistantCaptureIntentGuard(ILibraryService librar
             || ExactControlRegex().IsMatch(current))
         {
             return new AssistantCaptureIntentDecision(true);
-        }
-
-        var latestUser = history?
-            .LastOrDefault(entry =>
-                string.Equals(entry.Role, "user", StringComparison.OrdinalIgnoreCase)
-                && !string.IsNullOrWhiteSpace(entry.Text));
-
-        if (latestUser is null
-            || !latestUser.Text.TrimEnd().EndsWith("?", StringComparison.Ordinal))
-        {
-            return new AssistantCaptureIntentDecision(false);
         }
 
         var match = ScopeClarificationRegex().Match(current);
