@@ -31,11 +31,8 @@ internal static class AssistantRetrievalIntentPolicy
 
         return normalized.StartsWith("find ", StringComparison.Ordinal)
             || normalized.StartsWith("search ", StringComparison.Ordinal)
-            || normalized.StartsWith("where ", StringComparison.Ordinal)
-            || normalized.StartsWith("show me ", StringComparison.Ordinal)
             || normalized.StartsWith("hitta ", StringComparison.Ordinal)
             || normalized.StartsWith("sök ", StringComparison.Ordinal)
-            || normalized.StartsWith("var ", StringComparison.Ordinal)
             || normalized.Contains("my notes", StringComparison.Ordinal)
             || normalized.Contains("my library", StringComparison.Ordinal)
             || normalized.Contains("my books", StringComparison.Ordinal)
