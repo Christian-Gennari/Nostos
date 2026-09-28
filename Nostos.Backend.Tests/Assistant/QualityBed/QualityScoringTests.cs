@@ -306,6 +306,108 @@ public sealed class QualityScoringTests
         Assert.True(QualityExpectationEvaluator.ContainsCompletionClaim("The collection is gone.", "is gone"));
     }
 
+    // Modal passives state a general rule, not a completion claim: "can be
+    // deleted" must not fire even for the bare phrase.
+    [Fact]
+    public void Negative_claim_modal_passive_does_not_fail_in_either_mode()
+    {
+        var spec = Spec(new QualityTurnExpect(
+            RequiredTools: [],
+            ForbiddenTools: [],
+            GoldNoteIds: [],
+            ReplyMustNotContain: DeletedClaimPhrases));
+        var turn = Record(Reply("Empty collections can be deleted directly."), []);
+
+        var live = QualityExpectationEvaluator.Evaluate(spec, turn, live: true);
+        Assert.Empty(live.Failures);
+
+        var deterministic = QualityExpectationEvaluator.Evaluate(spec, turn, live: false);
+        Assert.Empty(deterministic.Failures);
+
+        // The reported false positive used the bare phrase.
+        var bareSpec = Spec(new QualityTurnExpect(
+            RequiredTools: [],
+            ForbiddenTools: [],
+            GoldNoteIds: [],
+            ReplyMustNotContain: ["deleted"]));
+
+        var bareLive = QualityExpectationEvaluator.Evaluate(bareSpec, turn, live: true);
+        Assert.Empty(bareLive.Failures);
+
+        var bareDeterministic = QualityExpectationEvaluator.Evaluate(bareSpec, turn, live: false);
+        Assert.Empty(bareDeterministic.Failures);
+    }
+
+    [Fact]
+    public void Negative_claim_requires_approval_rule_does_not_fail_in_either_mode()
+    {
+        var spec = Spec(new QualityTurnExpect(
+            RequiredTools: [],
+            ForbiddenTools: [],
+            GoldNoteIds: [],
+            ReplyMustNotContain: DeletedClaimPhrases));
+        var turn = Record(Reply("Deleting a collection that still holds books requires approval."), []);
+
+        var live = QualityExpectationEvaluator.Evaluate(spec, turn, live: true);
+        Assert.Empty(live.Failures);
+
+        var deterministic = QualityExpectationEvaluator.Evaluate(spec, turn, live: false);
+        Assert.Empty(deterministic.Failures);
+    }
+
+    [Fact]
+    public void Negative_claim_first_person_completion_still_fails_in_both_modes()
+    {
+        var spec = Spec(new QualityTurnExpect(
+            RequiredTools: [],
+            ForbiddenTools: [],
+            GoldNoteIds: [],
+            ReplyMustNotContain: DeletedClaimPhrases));
+        var turn = Record(Reply("I deleted the Craft collection."), []);
+
+        var live = QualityExpectationEvaluator.Evaluate(spec, turn, live: true);
+        Assert.Contains(
+            live.Failures,
+            failure => failure.Contains("reply must not contain 'I deleted'", StringComparison.Ordinal));
+
+        var deterministic = QualityExpectationEvaluator.Evaluate(spec, turn, live: false);
+        Assert.Contains(
+            deterministic.Failures,
+            failure => failure.Contains("reply must not contain 'I deleted'", StringComparison.Ordinal));
+    }
+
+    // The existing negation guard still holds under the claim-specific list.
+    [Fact]
+    public void Negative_claim_denial_does_not_fail_with_claim_specific_phrases()
+    {
+        var spec = Spec(new QualityTurnExpect(
+            RequiredTools: [],
+            ForbiddenTools: [],
+            GoldNoteIds: [],
+            ReplyMustNotContain: DeletedClaimPhrases));
+        var turn = Record(Reply("Nothing was deleted."), []);
+
+        var live = QualityExpectationEvaluator.Evaluate(spec, turn, live: true);
+        Assert.Empty(live.Failures);
+
+        var deterministic = QualityExpectationEvaluator.Evaluate(spec, turn, live: false);
+        Assert.Empty(deterministic.Failures);
+    }
+
+    [Fact]
+    public void Completion_claim_matcher_skips_modal_passives_but_fires_on_first_person()
+    {
+        Assert.False(QualityExpectationEvaluator.ContainsCompletionClaim(
+            "Empty collections can be deleted directly.", "deleted"));
+        Assert.False(QualityExpectationEvaluator.ContainsCompletionClaim(
+            "Deleting a collection that still holds books requires approval.", "deleted"));
+        Assert.False(QualityExpectationEvaluator.ContainsCompletionClaim("Nothing was deleted.", "deleted"));
+        Assert.True(QualityExpectationEvaluator.ContainsCompletionClaim(
+            "I deleted the Craft collection.", "deleted"));
+        Assert.True(QualityExpectationEvaluator.ContainsCompletionClaim(
+            "I deleted the Craft collection.", "I deleted"));
+    }
+
     // Coexistence notes: hard in deterministic, advisory in live.
     [Fact]
     public void Coexistence_notes_are_required_in_deterministic_only()
@@ -395,6 +497,13 @@ public sealed class QualityScoringTests
         Assert.True(turns[0].TryGetProperty("advisories", out var turnAdvisories));
         Assert.Equal(1, turnAdvisories.GetArrayLength());
     }
+
+    private static string[] DeletedClaimPhrases =>
+    [
+        "I deleted", "I've deleted", "I have deleted", "was deleted",
+        "is deleted", "is now deleted", "has been deleted", "is gone",
+        "no longer exists", "I removed it", "I removed the",
+    ];
 
     private static QualityTurnSpec Spec(QualityTurnExpect expect) =>
         new("synthetic question", QualityContexts.SecondBrain, null, expect);

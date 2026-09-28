@@ -254,9 +254,11 @@ internal static class QualityExpectationEvaluator
 
     /// <summary>
     /// Claim-aware matcher for <c>ReplyMustNotContain</c>: fires only when the
-    /// phrase appears as a completion claim, not inside a denial or a
-    /// hypothetical. A ~40-character window immediately before each
-    /// case-insensitive occurrence is scanned for negation/hypothetical cues;
+    /// phrase appears as a completion claim, not inside a denial, a
+    /// hypothetical, or a modal/passive general rule (e.g. "can be deleted").
+    /// A ~40-character window immediately before each
+    /// case-insensitive occurrence is scanned for negation/hypothetical and
+    /// modal/passive cues;
     /// cued occurrences are skipped, other occurrences still fire.
     /// </summary>
     internal static bool ContainsCompletionClaim(string reply, string phrase)
@@ -268,6 +270,9 @@ internal static class QualityExpectationEvaluator
             "not ", "n't ", "never ", "nothing ", "no ", "if ", "would ",
             "were ", "had been ", "was not", "isn't", "aren't", "didn't",
             "doesn't", "can't", "cannot", "without ",
+            "can be ", "may be ", "could be ", "should be ", "would be ",
+            "will be ", "to be ", "to delete", "for deletion",
+            "requires approval",
         ];
         var start = 0;
         while (true)
