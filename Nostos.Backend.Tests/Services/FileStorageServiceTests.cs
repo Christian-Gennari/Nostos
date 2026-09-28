@@ -43,6 +43,39 @@ public sealed class FileStorageServiceTests : IDisposable
     }
 
     [Fact]
+    public void Constructor_InTestingWithoutExplicitBooksRoot_RefusesDefaultStorage()
+    {
+        var contentRoot = Path.Combine(
+            Path.GetTempPath(),
+            "nostos-test-storage-guard-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(contentRoot);
+
+        try
+        {
+            var env = new FakeWebHostEnvironment { ContentRootPath = contentRoot };
+            var defaultRoot = FileStorageOptions.ResolveBooksRoot(
+                contentRoot,
+                new FileStorageOptions());
+
+            var act = () => new FileStorageService(
+                env,
+                Options.Create(new FileStorageOptions()),
+                NullLogger<FileStorageService>.Instance);
+
+            act.Should()
+                .Throw<InvalidOperationException>()
+                .WithMessage("*Storage:BooksRoot*disposable directory*");
+            Directory.Exists(defaultRoot).Should().BeFalse(
+                "a Testing host must fail before the production/default storage tree is created");
+        }
+        finally
+        {
+            if (Directory.Exists(contentRoot))
+                Directory.Delete(contentRoot, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task SaveBookFileAsync_FromStream_WritesWholePayloadToStorageRootBookExt_AndReturnsPath()
     {
         var bookId = Guid.NewGuid();
