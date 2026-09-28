@@ -225,7 +225,8 @@ public sealed class AssistantOrchestrator(
         string? capturedNoteId = null;
         AssistantTurnErrorDto? terminalError = null;
         var retrieval = new AssistantRetrievalTurnState(turnContext);
-        retrieval.RecordInitialContext();
+        if (captureIntent.ResolvedBook is { } clarifiedScope)
+            retrieval.RecordResolvedBook(clarifiedScope);
         var mutationCompleted = false;
 
         var iterations = Math.Max(1, options.MaxToolIterations);
