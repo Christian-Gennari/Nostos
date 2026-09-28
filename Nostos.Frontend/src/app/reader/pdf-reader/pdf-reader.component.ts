@@ -279,6 +279,28 @@ export class PdfReader implements OnInit, OnDestroy, IReader {
   // `page-width` on a phone: a fitted full page renders a 512-page book at about
   // 9.5px, which is not reading, it is squinting. Desktop keeps the full-page fit.
   zoomLevel = signal<string | number>(this.initialZoom());
+
+  /**
+   * pdf.js binds bare R / Shift+R to document rotation even when the viewer
+   * toolbar is hidden. Nostos owns rotation explicitly instead: those library
+   * shortcuts are disabled below, while this session-local angle is exposed in
+   * the existing View settings so a rotated document always has a way home.
+   */
+  readonly ignoredViewerKeys = ['R', 'SHIFT+R'];
+  rotation = signal<0 | 90 | 180 | 270>(0);
+
+  rotateClockwise(): void {
+    this.rotation.update((angle) => ((angle + 90) % 360) as 0 | 90 | 180 | 270);
+  }
+
+  rotateCounterclockwise(): void {
+    this.rotation.update((angle) => ((angle + 270) % 360) as 0 | 90 | 180 | 270);
+  }
+
+  resetRotation(): void {
+    this.rotation.set(0);
+  }
+
   currentPage = 1;
   totalPages = 0;
   private pdfDocRef: any = null;
