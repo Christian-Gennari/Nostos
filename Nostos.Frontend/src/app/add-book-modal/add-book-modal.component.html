@@ -162,6 +162,24 @@
                 <div class="upload-status" role="status">Uploading... {{ uploadProgress() }}%</div>
               }
 
+              @if (uploadError(); as err) {
+                <div class="upload-failure" role="alert">
+                  <span class="upload-failure__message">
+                    <nostos-icon name="warning-circle" [size]="14"></nostos-icon>
+                    {{ err }}
+                  </span>
+                  <button
+                    appButton
+                    type="button"
+                    variant="secondary"
+                    [disabled]="isSubmitting()"
+                    (click)="retryUpload()"
+                  >
+                    Retry upload
+                  </button>
+                </div>
+              }
+
               @if (!isEditMode() && flowIntent() === 'manual') {
                 <section
                   class="manual-file"
@@ -960,12 +978,16 @@
                 isSubmitting()
                   ? isEditMode()
                     ? 'Saving…'
-                    : 'Adding…'
-                  : isEditMode()
-                    ? 'Save Changes'
-                    : seededFromSource()
-                      ? 'Import Book'
-                      : 'Add to Library'
+                    : hasPendingUpload()
+                      ? 'Uploading…'
+                      : 'Adding…'
+                  : hasPendingUpload()
+                    ? 'Retry upload'
+                    : isEditMode()
+                      ? 'Save Changes'
+                      : seededFromSource()
+                        ? 'Import Book'
+                        : 'Add to Library'
               }}
             </button>
           }

@@ -160,6 +160,21 @@ describe('BookDetail reset progress', () => {
     expect(fixture.nativeElement.querySelector('.cover-overlay-btn')?.classList.contains('nostos-button')).toBe(false);
   });
 
+  it('surfaces a timed-out replacement upload instead of failing silently', async () => {
+    await setup(readableBook());
+    const errorToast = vi.spyOn(toast, 'error').mockImplementation(() => undefined);
+
+    component.store.uploadFile(
+      new File(['replacement'], 'meditations.epub', { type: 'application/epub+zip' }),
+    );
+
+    httpMock
+      .expectOne('/api/books/b1/file')
+      .flush('timeout', { status: 504, statusText: 'Gateway Timeout' });
+
+    expect(errorToast).toHaveBeenCalledWith('The upload timed out. Try again.');
+  });
+
   it('does not offer file upload for a physical metadata-only book', async () => {
     await setup(readableBook({ type: 'physical', hasFile: false, fileName: null }));
 
