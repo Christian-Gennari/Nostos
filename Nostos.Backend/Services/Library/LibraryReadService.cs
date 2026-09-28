@@ -39,19 +39,11 @@ internal sealed class LibraryReadService(
 
         var query = db.Books.AsNoTracking().AsQueryable();
 
-        // An active import is operational state, not an ordinary filtered result.
-        // Its own card/row is the only progress surface, so every library filter
-        // must keep it visible until the import settles. Otherwise a PDF with no
-        // filename yet (or any import excluded by search/status/collection) has
-        // nowhere to show Downloading/Transcoding progress at all.
         if (!string.IsNullOrWhiteSpace(search))
         {
             var term = $"%{search}%";
             query = query.Where(b =>
-                b.Status == BookStatus.Downloading
-                || b.Status == BookStatus.Transcoding
-                || EF.Functions.Like(b.Title, term)
-                || EF.Functions.Like(b.Author, term));
+                EF.Functions.Like(b.Title, term) || EF.Functions.Like(b.Author, term));
         }
 
         if (!string.IsNullOrWhiteSpace(format))
@@ -60,50 +52,29 @@ internal sealed class LibraryReadService(
             {
                 case "audiobook":
                 case "audio":
-                    query = query.Where(b =>
-                        b.Status == BookStatus.Downloading
-                        || b.Status == BookStatus.Transcoding
-                        || b is AudioBookModel);
+                    query = query.Where(b => b is AudioBookModel);
                     break;
                 case "pdf":
-                    query = query.Where(b =>
-                        b.Status == BookStatus.Downloading
-                        || b.Status == BookStatus.Transcoding
-                        || (b.FileDetails.FileName != null && EF.Functions.Like(b.FileDetails.FileName, "%.pdf")));
+                    query = query.Where(b => b.FileDetails.FileName != null && EF.Functions.Like(b.FileDetails.FileName, "%.pdf"));
                     break;
                 case "ebook":
                 case "epub":
-                    query = query.Where(b =>
-                        b.Status == BookStatus.Downloading
-                        || b.Status == BookStatus.Transcoding
-                        || (b is EBookModel
-                            && (b.FileDetails.FileName == null || !EF.Functions.Like(b.FileDetails.FileName, "%.pdf"))));
+                    query = query.Where(b => b is EBookModel && (b.FileDetails.FileName == null || !EF.Functions.Like(b.FileDetails.FileName, "%.pdf")));
                     break;
                 case "physical":
-                    query = query.Where(b =>
-                        b.Status == BookStatus.Downloading
-                        || b.Status == BookStatus.Transcoding
-                        || b is PhysicalBookModel);
+                    query = query.Where(b => b is PhysicalBookModel);
                     break;
             }
         }
 
         query = filter switch
         {
-            BookFilter.Favorites => query.Where(b =>
-                b.Status == BookStatus.Downloading || b.Status == BookStatus.Transcoding || b.Progress.IsFavorite),
-            BookFilter.Finished => query.Where(b =>
-                b.Status == BookStatus.Downloading || b.Status == BookStatus.Transcoding || b.Progress.FinishedAt != null),
-            BookFilter.Reading => query.Where(b =>
-                b.Status == BookStatus.Downloading
-                || b.Status == BookStatus.Transcoding
-                || (b.Progress.FinishedAt == null && b.Progress.ProgressPercent > 0)),
-            BookFilter.NotStarted => query.Where(b =>
-                b.Status == BookStatus.Downloading || b.Status == BookStatus.Transcoding || b.Progress.ProgressPercent == 0),
+            BookFilter.Favorites => query.Where(b => b.Progress.IsFavorite),
+            BookFilter.Finished => query.Where(b => b.Progress.FinishedAt != null),
+            BookFilter.Reading => query.Where(b => b.Progress.FinishedAt == null && b.Progress.ProgressPercent > 0),
+            BookFilter.NotStarted => query.Where(b => b.Progress.ProgressPercent == 0),
             BookFilter.Unsorted => query.Where(b =>
-                b.Status == BookStatus.Downloading
-                || b.Status == BookStatus.Transcoding
-                || !db.BookCollections.Any(bc => bc.BookId == b.Id)),
+                !db.BookCollections.Any(bc => bc.BookId == b.Id)),
             _ => query,
         };
 
@@ -120,10 +91,20 @@ internal sealed class LibraryReadService(
 
             // A book matches when ANY of its memberships is in the subtree.
             query = query.Where(b =>
-                b.Status == BookStatus.Downloading
-                || b.Status == BookStatus.Transcoding
-                || db.BookCollections.Any(bc => bc.BookId == b.Id && subtreeIds.Contains(bc.CollectionId)));
+                db.BookCollections.Any(bc => bc.BookId == b.Id && subtreeIds.Contains(bc.CollectionId)));
         }
+
+        // The book row is deliberately the only in-progress import surface.
+        // Apply ordinary Library filters first, then restore active imports once at
+        // this boundary so search/status/format/collection (and future filters)
+        // cannot remove the Downloading/Transcoding card the user is watching.
+        // When the status becomes Ready/Failed the row immediately returns to the
+        // ordinary filtered result semantics.
+        var filteredBookIds = query.Select(b => b.Id);
+        query = db.Books.AsNoTracking().Where(b =>
+            b.Status == BookStatus.Downloading
+            || b.Status == BookStatus.Transcoding
+            || filteredBookIds.Contains(b.Id));
 
         PaginatedResponse<BookDto> pageResult;
         int totalCount;
@@ -180,9 +161,9 @@ internal sealed class LibraryReadService(
         }
         else
         {
-            // Imports sort FIRST, whatever the sort key is. The filters above also
-            // preserve active imports deliberately: the card/row is the only progress
-            // surface, so operational state must remain visible until it settles.
+            // Imports sort FIRST, whatever the sort key is. The boundary above also
+            // keeps them in the result through ordinary filters, so their own card
+            // remains the single progress surface until the import settles.
             IOrderedQueryable<BookModel> ImportingFirst(IQueryable<BookModel> source) =>
                 source.OrderByDescending(b =>
                     b.Status == BookStatus.Downloading || b.Status == BookStatus.Transcoding);
