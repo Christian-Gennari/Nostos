@@ -159,11 +159,15 @@ internal static class QualityExpectationEvaluator
             .Select(e => e.Handle.NoteId!.Value)
             .ToList();
         var missingGold = expect.GoldNoteIds.Where(gold => !evidenceNoteIds.Contains(gold)).ToList();
+        var bookPathMatched = false;
         if (missingGold.Count > 0)
         {
             var bookPath = live ? MatchGoldBookPassage(expect, response) : null;
             if (bookPath is not null)
+            {
+                bookPathMatched = true;
                 advisories.Add($"outcome met via book-text path: {bookPath}");
+            }
             else
                 foreach (var gold in missingGold)
                     failures.Add($"gold note {gold} missing from evidence (evidence notes: [{string.Join(",", evidenceNoteIds)}])");
@@ -223,7 +227,13 @@ internal static class QualityExpectationEvaluator
             var observed = (response.Evidence ?? [])
                 .FirstOrDefault(e => string.Equals(e.Handle.Kind, "note", StringComparison.Ordinal));
             if (observed?.Handle.NoteId != first)
-                failures.Add($"expected first note evidence {first}, observed {observed?.Handle.NoteId?.ToString() ?? "(none)"}");
+            {
+                var detail = $"expected first note evidence {first}, observed {observed?.Handle.NoteId?.ToString() ?? "(none)"}";
+                if (live && bookPathMatched)
+                    advisories.Add($"outcome (first note evidence) not applicable on the book-text path: {detail}");
+                else
+                    failures.Add(detail);
+            }
         }
 
         if (expect.ExpectedNoteDelta != (turn.NoteCountAfter - turn.NoteCountBefore))

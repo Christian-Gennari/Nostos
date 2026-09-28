@@ -61,6 +61,38 @@ public sealed class QualityScoringTests
             advisory => advisory.Contains("book-text path", StringComparison.Ordinal));
     }
 
+    // b2. live + book-path gold match with no first note evidence → advisory,
+    // not failure; deterministic (no book path) → failure.
+    [Fact]
+    public void Live_book_path_first_evidence_is_advisory_but_failure_in_deterministic()
+    {
+        var bookId = QualityFixtureIds.BookSaltMeridian;
+        var spec = Spec(new QualityTurnExpect(
+            RequiredTools: [],
+            ForbiddenTools: [],
+            GoldNoteIds: [QualityFixtureIds.NoteRopeCoil],
+            MinEvidence: 1,
+            ExpectFirstEvidenceNoteId: QualityFixtureIds.NoteRopeCoil,
+            GoldBookPassages: [(bookId.ToString(), ["coiling lines"])]));
+        var turn = Record(
+            Reply(
+                "The Salt Meridian says coiling lines coil best dry.",
+                evidence: [BookTextEvidence(bookId, "Coiling lines. Ropes coil best when they are dry.")]),
+            []);
+
+        var live = QualityExpectationEvaluator.Evaluate(spec, turn, live: true);
+        Assert.Empty(live.Failures);
+        Assert.Contains(
+            live.Advisories,
+            advisory => advisory.Contains("outcome (first note evidence) not applicable on the book-text path", StringComparison.Ordinal));
+
+        var deterministic = QualityExpectationEvaluator.Evaluate(spec, turn, live: false);
+        Assert.Contains(
+            deterministic.Failures,
+            failure => failure.Contains("expected first note evidence", StringComparison.Ordinal));
+        Assert.Empty(deterministic.Advisories);
+    }
+
     // c. live + missing required tool → advisory only; deterministic → failure.
     [Fact]
     public void Missing_required_tool_is_advisory_in_live_but_failure_in_deterministic()

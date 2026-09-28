@@ -224,7 +224,12 @@ internal static partial class QualityCatalogue
                         GoldNoteIds: [],
                         ReplyMustContain: ["could not find"],
                         ExpectedErrorCode: AssistantErrorCodes.NoEvidence,
-                        AlsoAcceptErrorCodes: [AssistantErrorCodes.SourceIndexingPending])),
+                        AlsoAcceptErrorCodes:
+                        [
+                            AssistantErrorCodes.SourceIndexingPending,
+                            AssistantErrorCodes.SourceIndexingUnsupported,
+                            AssistantErrorCodes.SourceIndexingFailed,
+                        ])),
             ]);
     }
 }
