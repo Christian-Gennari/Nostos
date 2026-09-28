@@ -61,7 +61,11 @@ public sealed record LibraryCreateBookRequest(
     // existing positional callers (REST/MCP) keep compiling. When supplied
     // non-empty it is authoritative and CollectionId above acts as the legacy
     // single-value form.
-    IReadOnlyList<Guid>? CollectionIds = null
+    IReadOnlyList<Guid>? CollectionIds = null,
+    // Local upload intent is explicit so a newly-created digital row can be
+    // distinguished from an intentional metadata-only book before /file
+    // succeeds. Appended to preserve positional callers.
+    bool FileUploadExpected = false
 );
 
 // --- BOOK UPDATE ---
