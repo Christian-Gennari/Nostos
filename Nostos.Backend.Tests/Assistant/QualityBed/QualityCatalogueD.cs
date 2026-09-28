@@ -1,6 +1,7 @@
 // Scenarios C16–C20 (issue #566).
 namespace Nostos.Backend.Tests.Assistant.QualityBed;
 
+using Microsoft.EntityFrameworkCore;
 using Nostos.Backend.Integrations.Assistant;
 
 internal static partial class QualityCatalogue
@@ -102,6 +103,9 @@ internal static partial class QualityCatalogue
     // C17 — voice
     // ------------------------------------------------------------------
 
+    private const string C17CapturedContent =
+        "uh, the north jetty — no wait, the south jetty — at dawn, with the gulls.";
+
     private static QualityScenario C17()
     {
         // A dictated capture (captureSource voice, with hesitation and
@@ -118,7 +122,7 @@ internal static partial class QualityCatalogue
             "Deterministic proves voice capture + exact re-read; live scores preservation of nuance.",
             [
                 new QualityTurnSpec(
-                    "Dictate this: uh, the north jetty — no wait, the south jetty — at dawn, with the gulls.",
+                    "Dictate this: " + C17CapturedContent,
                     () => QualityContexts.ReaderEbook(
                         QualityFixtureIds.BookSaltMeridian,
                         QualityFixtureIds.TitleSaltMeridian,
@@ -127,7 +131,7 @@ internal static partial class QualityCatalogue
                         QualityScript.ToolCall(
                             "notes_capture",
                             QualityArgs.CaptureVoice(
-                                "uh, the north jetty — no wait, the south jetty — at dawn, with the gulls.",
+                                C17CapturedContent,
                                 QualityFixtureIds.BookSaltMeridian)),
                         QualityScript.Reply("Kept verbatim.")),
                     new QualityTurnExpect(
@@ -137,7 +141,21 @@ internal static partial class QualityCatalogue
                         ExpectCapturedNote: true,
                         ExpectedNoteDelta: 1,
                         VerifyAdvisoryInLive: true),
-                    Verify: context => QualityVerify.CapturedNoteSource(context, "voice")),
+                    Verify: async context =>
+                    {
+                        var sourceFailure = await QualityVerify.CapturedNoteSource(context, "voice");
+                        if (sourceFailure is not null)
+                            return sourceFailure;
+                        if (!Guid.TryParse(context.Turn.Response?.CapturedNoteId, out var noteId))
+                            return "no captured note id on the turn";
+                        await using var db = await QualityVerify.Db(context.Services);
+                        var note = await db.Notes.AsNoTracking().FirstOrDefaultAsync(n => n.Id == noteId);
+                        if (note is null)
+                            return $"captured note {noteId} not found";
+                        return string.Equals(note.Content, C17CapturedContent, StringComparison.Ordinal)
+                            ? null
+                            : $"captured content '{note.Content}', expected verbatim '{C17CapturedContent}'";
+                    }),
                 new QualityTurnSpec(
                     "Read that dictated entry back to me.",
                     () => QualityContexts.ReaderEbook(
