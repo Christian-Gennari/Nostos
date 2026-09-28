@@ -509,6 +509,10 @@ infrastructure was introduced.
     directly before recording the verdict; the failure modes (never calling `notes_capture`,
     claiming a save anyway, executing an unrequested `library_update_book`, searching only the open
     book) are genuine model behaviour.
+11. **The capture-loss rate rests on small samples.** Pre-#609/#610 2/30 reps (95% CI ~2-21%),
+    post-#610 4/10 (~17-69%); the *increase* is directionally supported (Fisher exact two-sided
+    p ~ 0.026) but the absolute post-rate interval is wide. The benchmark does not spend further
+    budget on it: a captured-thought-loss bug warrants a fix at either rate (#615).
 
 ---
 
