@@ -581,11 +581,22 @@ public sealed class BookTextSearchService(
             0,
             Math.Max(0, options.NeighborRadius));
 
+        var query = request.Query.Trim();
+        var candidateLimit = Math.Max(maxPassages, options.MaxSearchCandidates);
         var hits = await index.SearchAsync(
-            request.Query.Trim(),
+            query,
             searchableIds,
-            Math.Max(maxPassages, options.MaxSearchCandidates),
+            candidateLimit,
             ct);
+
+        if (hits.Count == 0)
+        {
+            hits = await RelaxedSearchAsync(
+                request,
+                searchableIds,
+                candidateLimit,
+                ct);
+        }
 
         var bookMap = books.ToDictionary(book => book.Id);
         var selected = new List<BookTextIndexedChunk>();
@@ -659,6 +670,70 @@ public sealed class BookTextSearchService(
 
         return new BookTextSearchResponse(passages, states, passages.Count > 0);
     }
+
+    private async Task<IReadOnlyList<BookTextSearchHit>> RelaxedSearchAsync(
+        BookTextSearchRequest request,
+        IReadOnlyList<Guid> bookIds,
+        int candidateLimit,
+        CancellationToken ct)
+    {
+        var tokens = Nostos.Backend.Search.LexicalQueryPlanner.Build(request.Query)
+            .Where(variant =>
+                variant.Kind == Nostos.Backend.Search.LexicalQueryVariantKind.Token)
+            .Select(variant => variant.Text)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(8)
+            .ToList();
+
+        if (tokens.Count <= 1)
+            return [];
+
+        var joined = string.Join(" ", tokens);
+        if (!string.Equals(
+                CollapseWhitespace(request.Query),
+                joined,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            var joinedHits = await index.SearchAsync(
+                joined,
+                bookIds,
+                candidateLimit,
+                ct);
+            if (joinedHits.Count > 0)
+                return joinedHits;
+        }
+
+        var bestHits = new Dictionary<Guid, BookTextSearchHit>();
+        foreach (var token in tokens.Take(4))
+        {
+            var tokenHits = await index.SearchAsync(
+                token,
+                bookIds,
+                candidateLimit,
+                ct);
+
+            foreach (var hit in tokenHits)
+            {
+                if (!bestHits.TryGetValue(hit.Chunk.Id, out var existing)
+                    || hit.Score > existing.Score)
+                {
+                    bestHits[hit.Chunk.Id] = hit;
+                }
+            }
+        }
+
+        return bestHits.Values
+            .OrderByDescending(hit => hit.Score)
+            .ThenBy(hit => hit.Chunk.Ordinal)
+            .ThenBy(hit => hit.Chunk.BookId)
+            .Take(candidateLimit)
+            .ToList();
+    }
+
+    private static string CollapseWhitespace(string value) =>
+        string.Join(
+            ' ',
+            value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
 
     private async Task<List<BookDto>> ResolveScopeAsync(
         BookTextSearchRequest request,

@@ -3212,6 +3212,164 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         note.Content.Should().Be("committed thought");
     }
 
+    [Fact]
+    public async Task Book_text_verbatim_question_recovers_passages_from_a_conjunctive_index()
+    {
+        var index = new ConjunctiveBookTextIndex();
+        var h = CreateHarness(
+            bookTextFactory: (_, library) =>
+                new BookTextSearchService(
+                    index,
+                    library,
+                    new BookTextOptions { NeighborRadius = 0 }));
+
+        var book = await SeedEBookAsync(h, "East of Eden", "John Steinbeck");
+        index.Configure(
+            book.Id,
+            book.Title,
+            "East of Eden follows intertwined families in California's Salinas Valley.");
+
+        h.Llm
+            .CallsTool(
+                "book_text_search",
+                $$"""{"query":"what is east of eden about","bookIds":["{{book.Id}}"]}""")
+            .Returns("The retrieved passage describes East of Eden.");
+
+        var response = await h.Orchestrator.HandleTurnAsync(Turn(
+            "What is East of Eden about?",
+            Context(
+                surface: "reader",
+                route: $"/reader/{book.Id}",
+                bookId: book.Id.ToString(),
+                bookTitle: book.Title)));
+
+        response.Error.Should().BeNull();
+        response.Sources.Should().NotBeNull();
+        response.Sources!.Should().Contain(source => source.BookId == book.Id);
+        index.Queries.Should().HaveCountGreaterThan(1);
+        index.Queries[0].Should().Be("what is east of eden about");
+        index.Queries.Skip(1).Should().Contain("east eden");
+    }
+
+    [Fact]
+    public async Task Book_text_over_specified_query_still_triggers_server_recovery_retry()
+    {
+        BookTextSearchResponse? emptyResponse = null;
+        BookTextSearchResponse? evidenceResponse = null;
+        var search = new FakeBookTextSearchService(
+            responder: request =>
+                string.Equals(request.Query, "east eden", StringComparison.OrdinalIgnoreCase)
+                    ? evidenceResponse!
+                    : emptyResponse!);
+
+        var h = CreateHarness(bookText: search);
+        var book = await SeedEBookAsync(h, "East of Eden", "John Steinbeck");
+        var readyState = new BookTextIngestionState(
+            book.Id,
+            BookTextIngestionStatus.Ready,
+            "east-of-eden.epub",
+            BookTextSourceFormat.Epub,
+            new string('c', 64),
+            BookTextArtifactSchema.CurrentExtractorVersion,
+            null,
+            null,
+            1,
+            1,
+            68,
+            DateTime.UtcNow);
+
+        emptyResponse = new BookTextSearchResponse(
+            [],
+            [readyState],
+            false);
+        evidenceResponse = new BookTextSearchResponse(
+            [
+                new BookTextSearchPassage(
+                    book.Id,
+                    book.Title,
+                    book.Author,
+                    new string('c', 64),
+                    BookTextArtifactSchema.CurrentExtractorVersion,
+                    BookTextSourceFormat.Epub,
+                    0,
+                    "East of Eden follows intertwined families in California's Salinas Valley.",
+                    ["Chapter One"],
+                    [
+                        new BookTextSourceSegment(
+                            0,
+                            68,
+                            new EpubBookTextSourceLocator(
+                                0,
+                                "chapter-1.xhtml",
+                                "epubcfi(/6/2!/4/2:0)",
+                                0,
+                                68)),
+                    ]),
+            ],
+            [readyState],
+            true);
+
+        h.Llm
+            .CallsTool(
+                "book_text_search",
+                $$"""{"query":"what is east of eden about","bookIds":["{{book.Id}}"]}""")
+            .Returns("The retrieved passage describes East of Eden.");
+
+        var response = await h.Orchestrator.HandleTurnAsync(Turn(
+            "What is East of Eden about?",
+            Context(
+                surface: "reader",
+                route: $"/reader/{book.Id}",
+                bookId: book.Id.ToString(),
+                bookTitle: book.Title)));
+
+        search.Requests.Should().HaveCount(2);
+        search.Requests[1].Query.Should().BeEquivalentTo("east eden");
+        response.Error.Should().BeNull();
+        response.Sources.Should().NotBeNull();
+        response.Sources!.Should().Contain(source => source.BookId == book.Id);
+    }
+
+    [Fact]
+    public async Task Book_text_identical_recovery_query_is_not_repeated()
+    {
+        var states = new List<BookTextIngestionState>();
+        var search = new FakeBookTextSearchService(
+            new BookTextSearchResponse([], states, false));
+        var h = CreateHarness(bookText: search);
+        var book = await SeedEBookAsync(h, "East of Eden", "John Steinbeck");
+
+        states.Add(new BookTextIngestionState(
+            book.Id,
+            BookTextIngestionStatus.Ready,
+            "east-of-eden.epub",
+            BookTextSourceFormat.Epub,
+            new string('c', 64),
+            BookTextArtifactSchema.CurrentExtractorVersion,
+            null,
+            null,
+            1,
+            1,
+            68,
+            DateTime.UtcNow));
+
+        h.Llm
+            .CallsTool(
+                "book_text_search",
+                $$"""{"query":"east eden","bookIds":["{{book.Id}}"]}""")
+            .Returns("I could not find usable evidence.");
+
+        await h.Orchestrator.HandleTurnAsync(Turn(
+            "What is East of Eden about?",
+            Context(
+                surface: "reader",
+                route: $"/reader/{book.Id}",
+                bookId: book.Id.ToString(),
+                bookTitle: book.Title)));
+
+        search.Requests.Should().ContainSingle();
+    }
+
     // ------------------------------------------------------------------
     // Harness
     // ------------------------------------------------------------------
@@ -3600,17 +3758,154 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
             Task.FromResult<KnowledgeReadResponse?>(null);
     }
 
-    private sealed class FakeBookTextSearchService(BookTextSearchResponse response)
+    private sealed class ConjunctiveBookTextIndex : IBookTextIndex
+    {
+        private Guid _bookId;
+        private string _title = string.Empty;
+        private string _passageText = string.Empty;
+
+        public List<string> Queries { get; } = [];
+
+        public void Configure(Guid bookId, string title, string passageText)
+        {
+            _bookId = bookId;
+            _title = title;
+            _passageText = passageText;
+        }
+
+        public Task EnsureSchemaAsync(CancellationToken ct = default) =>
+            Task.CompletedTask;
+
+        public Task ScheduleAsync(
+            Guid bookId,
+            string sourceFileName,
+            BookTextSourceFormat format,
+            CancellationToken ct = default) =>
+            Task.CompletedTask;
+
+        public Task<BookTextIngestionWork?> TryClaimNextAsync(
+            TimeSpan staleAfter,
+            CancellationToken ct = default) =>
+            Task.FromResult<BookTextIngestionWork?>(null);
+
+        public Task<bool> ReplaceReadyAsync(
+            BookTextSourceRevision revision,
+            IReadOnlyList<BookTextIndexedChunk> chunks,
+            long characterCount,
+            int expectedAttempt,
+            CancellationToken ct = default) =>
+            Task.FromResult(false);
+
+        public Task<bool> MarkFailedAsync(
+            Guid bookId,
+            string errorCode,
+            string errorMessage,
+            bool unsupported,
+            int expectedAttempt,
+            CancellationToken ct = default) =>
+            Task.FromResult(false);
+
+        public Task DeleteBookAsync(Guid bookId, CancellationToken ct = default) =>
+            Task.CompletedTask;
+
+        public Task<BookTextIngestionState?> GetStateAsync(
+            Guid bookId,
+            CancellationToken ct = default)
+        {
+            if (bookId != _bookId)
+                return Task.FromResult<BookTextIngestionState?>(null);
+
+            return Task.FromResult<BookTextIngestionState?>(
+                new BookTextIngestionState(
+                    _bookId,
+                    BookTextIngestionStatus.Ready,
+                    "east-of-eden.epub",
+                    BookTextSourceFormat.Epub,
+                    new string('c', 64),
+                    BookTextArtifactSchema.CurrentExtractorVersion,
+                    null,
+                    null,
+                    1,
+                    1,
+                    _passageText.Length,
+                    DateTime.UtcNow));
+        }
+
+        public Task<IReadOnlyList<BookTextSearchHit>> SearchAsync(
+            string query,
+            IReadOnlyList<Guid> bookIds,
+            int maxCandidates,
+            CancellationToken ct = default)
+        {
+            Queries.Add(query);
+
+            if (!bookIds.Contains(_bookId))
+                return Task.FromResult<IReadOnlyList<BookTextSearchHit>>([]);
+
+            var tokens = query.Split(
+                (char[]?)null,
+                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+            if (tokens.Length == 0
+                || !tokens.All(token =>
+                    _passageText.Contains(token, StringComparison.OrdinalIgnoreCase)))
+            {
+                return Task.FromResult<IReadOnlyList<BookTextSearchHit>>([]);
+            }
+
+            var chunk = new BookTextIndexedChunk(
+                Guid.NewGuid(),
+                _bookId,
+                new string('c', 64),
+                BookTextArtifactSchema.CurrentExtractorVersion,
+                BookTextSourceFormat.Epub,
+                0,
+                _passageText,
+                [_title],
+                [
+                    new BookTextSourceSegment(
+                        0,
+                        _passageText.Length,
+                        new EpubBookTextSourceLocator(
+                            0,
+                            "chapter-1.xhtml",
+                            "epubcfi(/6/2!/4/2:0)",
+                            0,
+                            _passageText.Length)),
+                ]);
+
+            return Task.FromResult<IReadOnlyList<BookTextSearchHit>>(
+                [new BookTextSearchHit(chunk, 1.0)]);
+        }
+
+        public Task<IReadOnlyList<BookTextIndexedChunk>> GetNeighborsAsync(
+            Guid bookId,
+            string sourceSha256,
+            string extractorVersion,
+            int ordinal,
+            int radius,
+            CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<BookTextIndexedChunk>>([]);
+    }
+
+    private sealed class FakeBookTextSearchService(
+        BookTextSearchResponse? response = null,
+        Func<BookTextSearchRequest, BookTextSearchResponse>? responder = null)
         : IBookTextSearchService
     {
+        private readonly BookTextSearchResponse _response =
+            response ?? new BookTextSearchResponse([], [], false);
+
         public BookTextSearchRequest? LastRequest { get; private set; }
+        public List<BookTextSearchRequest> Requests { get; } = [];
 
         public Task<BookTextSearchResponse> SearchAsync(
             BookTextSearchRequest request,
             CancellationToken ct = default)
         {
             LastRequest = request;
-            return Task.FromResult(response);
+            Requests.Add(request);
+            return Task.FromResult(responder?.Invoke(request) ?? _response);
         }
     }
 
