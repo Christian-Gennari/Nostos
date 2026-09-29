@@ -246,6 +246,8 @@ export class AssistantComponent {
   private readonly composer = viewChild<ElementRef<HTMLTextAreaElement>>('composer');
   /** The transcript's scroll container. */
   private readonly body = viewChild<ElementRef<HTMLElement>>('body');
+  /** The content whose post-layout growth can move the compact pane's end. */
+  private readonly transcript = viewChild<ElementRef<HTMLElement>>('transcript');
   private readonly destroyRef = inject(DestroyRef);
 
   /**
@@ -260,9 +262,10 @@ export class AssistantComponent {
    */
   private readonly following = signal(true);
 
-  /** Keeps the end in view when the container itself resizes (see below). */
+  /** Keeps the end in view when the pane or transcript changes size (see below). */
   private bodyObserver: ResizeObserver | null = null;
   private observedBody: HTMLElement | null = null;
+  private observedTranscript: HTMLElement | null = null;
 
   /**
    * The last scroll position requested by followEnd().
@@ -357,7 +360,10 @@ export class AssistantComponent {
         this.assistant.pendingAnchor();
         this.assistant.rawOpen();
         this.expandedSourceGroups();
-        this.observeBody(this.body()?.nativeElement ?? null);
+        this.observeScrollGeometry(
+          this.body()?.nativeElement ?? null,
+          this.transcript()?.nativeElement ?? null,
+        );
         this.followEnd();
       },
     });
@@ -723,20 +729,30 @@ export class AssistantComponent {
   }
 
   /**
-   * Watches the scroll container itself. Content growth is handled by the
-   * render effect above, but the container also changes height on its own — the
-   * composer growing under a long draft, a phone's sheet shifting for the
-   * software keyboard, a window resize — and each of those slides the newest
-   * turn out of view unless the end is re-taken.
+   * Watches both sides of the scroll geometry.
+   *
+   * The body can resize when the composer, keyboard, or viewport changes. The
+   * transcript can also grow after Angular's render pass while the compact
+   * flyout is still resolving its max-height/flex layout. Watching only the
+   * body misses that second case: expanded mode has a stable fixed-height pane,
+   * but compact mode can otherwise stop just above a newly-arrived reply.
    */
-  private observeBody(element: HTMLElement | null): void {
-    if (element === this.observedBody) return;
+  private observeScrollGeometry(
+    body: HTMLElement | null,
+    transcript: HTMLElement | null,
+  ): void {
+    if (body === this.observedBody && transcript === this.observedTranscript) return;
+
     this.bodyObserver?.disconnect();
     this.bodyObserver = null;
-    this.observedBody = element;
-    if (!element || typeof ResizeObserver === 'undefined') return;
+    this.observedBody = body;
+    this.observedTranscript = transcript;
+
+    if (!body || typeof ResizeObserver === 'undefined') return;
+
     this.bodyObserver = new ResizeObserver(() => this.followEnd());
-    this.bodyObserver.observe(element);
+    this.bodyObserver.observe(body);
+    if (transcript) this.bodyObserver.observe(transcript);
   }
 
   private startViewportTracking(): void {
