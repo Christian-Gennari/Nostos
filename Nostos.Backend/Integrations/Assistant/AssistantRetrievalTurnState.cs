@@ -194,8 +194,9 @@ internal sealed class AssistantRetrievalTurnState(AssistantContextDto context)
 
     /// <summary>
     /// One bounded deterministic recovery for a ready indexed source. The
-    /// original scope is preserved; only the query is reformulated from the
-    /// user's literal lexical terms.
+    /// original scope is preserved; whenever the model query is not already
+    /// in recovery form, it is reformulated from the user's literal lexical
+    /// terms, including over-specified supersets.
     /// </summary>
     public JsonElement? BuildBookTextFallbackArguments(
         JsonElement args,
@@ -217,16 +218,25 @@ internal sealed class AssistantRetrievalTurnState(AssistantContextDto context)
             return null;
 
         var currentQuery = ReadString(args, "query") ?? string.Empty;
-        if (tokens.All(token =>
-                currentQuery.Contains(token, StringComparison.OrdinalIgnoreCase)))
+        var recoveryQuery = string.Join(" ", tokens);
+        if (string.Equals(
+                CollapseWhitespace(currentQuery),
+                recoveryQuery,
+                StringComparison.OrdinalIgnoreCase))
         {
+            // Repeating the identical query cannot change the outcome.
             return null;
         }
 
         var obj = JsonNode.Parse(args.GetRawText()) as JsonObject ?? new JsonObject();
-        obj["query"] = string.Join(" ", tokens);
+        obj["query"] = recoveryQuery;
         return JsonSerializer.SerializeToElement(obj, JsonOptions);
     }
+
+    private static string CollapseWhitespace(string value) =>
+        string.Join(
+            ' ',
+            value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
 
     private static bool IsSparseKnowledgeResult(JsonElement data)
     {
