@@ -196,9 +196,6 @@
 }
 
 .assistant-heading-copy {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
   min-width: 0;
 }
 
@@ -208,15 +205,6 @@
   font-size: 0.98rem;
   font-weight: 500;
   line-height: 1.2;
-}
-
-.assistant-subtitle {
-  overflow: hidden;
-  color: var(--color-text-muted);
-  font-size: 0.68rem;
-  line-height: 1.3;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .assistant-header-actions {
@@ -247,38 +235,27 @@
   white-space: nowrap;
 }
 
-.assistant-expand {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+.assistant-header-action {
+  box-sizing: border-box;
   flex: 0 0 auto;
-  width: var(--control-h-md);
-  height: var(--control-h-md);
-  padding: 0;
   border: 1px solid transparent;
   border-radius: var(--radius-pill);
   background: transparent;
   color: var(--color-text-muted);
-  cursor: pointer;
-  touch-action: manipulation;
   transition:
     color var(--motion-fast) var(--ease-plain),
     background var(--motion-fast) var(--ease-plain),
-    border-color var(--motion-fast) var(--ease-plain);
+    border-color var(--motion-fast) var(--ease-plain),
+    opacity var(--motion-fast) var(--ease-plain);
 }
 
-.assistant-expand:hover {
+.assistant-header-action:hover {
   color: var(--color-text-main);
   background: var(--bg-hover);
   border-color: var(--border-color);
 }
 
-.assistant-expand:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: 2px;
-}
-
-.assistant-close:focus-visible {
+.assistant-header-action:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: 2px;
 }
@@ -1135,9 +1112,6 @@
     padding-left: 14px;
   }
 
-  .assistant-subtitle {
-    display: none;
-  }
 
   .assistant-context {
     max-width: min(40vw, 154px);
