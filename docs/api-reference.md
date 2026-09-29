@@ -4,12 +4,12 @@ All endpoints return JSON. Base path: `/api` (except OPDS at `/opds` and MCP
 at `/mcp`).
 
 > **Coverage note (2026-08-12):** this reference predates several shipped
-> surfaces — Reading Training, Backup, MCP, and the issue #34 canonical
+> surfaces — Backup, MCP, and the issue #34 canonical
 > library service. The Books / Notes / Collections / Concepts / Writings /
 > OPDS sections below remain accurate (inline corrections noted where the
-> library service changed behavior); the sections at the end cover Reading
-> Training, Backup, MCP, and Library. The authoritative route tables live in
-> [`Nostos.Backend/_docs/endpoints.md`](Nostos.Backend/_docs/endpoints.md).
+> library service changed behavior); the sections at the end cover Backup,
+> MCP, and Library. The authoritative route tables live in
+> [`Nostos.Backend/_docs/endpoints.md`](../Nostos.Backend/_docs/endpoints.md).
 
 ---
 
@@ -160,7 +160,7 @@ Delete a book, its files, and cover. Files are removed only after the
 database row is gone.
 
 **Response:** `204 No Content`, or `409 book_in_use` when the book is
-referenced by a Reading Training assignment or a note.
+referenced by a note.
 
 ### `POST /api/books/{id}/file`
 
@@ -445,66 +445,10 @@ the effective access model once at startup.
 | `Opds:Enabled`       | `true`               | Map `/opds/` at all                                   |
 | `Opds:PageSize`      | `50`                 | Entries per page (clamped to 500)                     |
 | `Opds:PublicBaseUrl` | unset                | Externally visible origin, e.g. `https://host:5215`   |
-
----
-
-## Reading Training — `/api/reading`
-
-`/api/reading` is the canonical surface; the complete canonical group is also
-mapped under `/api/reading-training` for backward compatibility (previously
-shipped body-only command shapes remain available there while clients
-migrate). All responses use the stable `ReadingCommandResultDto` envelope.
-Mutations are exact-once on `(clientId, idempotencyKey)` and delegate to
-`IReadingTrainingService` — the endpoint layer holds no training rules.
-
-| Method   | Route                                             | Description |
-| -------- | ------------------------------------------------- | ----------- |
-| `POST`   | `/initialize`                                     | Initialize the programme idempotently |
-| `GET`    | `/dashboard`                                      | Programme, books, open session and current review |
-| `GET`    | `/status`                                         | Current open-session status |
-| `GET`    | `/week?week=YYYY-Www`                             | ISO-week summary/review |
-| `GET`    | `/sessions?from=&to=&bookId=&mode=`               | Filtered session history |
-| `POST`   | `/sessions/plan`                                  | Plan a session |
-| `POST`   | `/sessions/start`                                 | Start a planned session |
-| `POST`   | `/sessions/start-new`                             | Create and start a session |
-| `POST`   | `/sessions/{id}/pause`                            | Pause the named open session |
-| `POST`   | `/sessions/{id}/resume`                           | Resume the named open session |
-| `POST`   | `/sessions/{id}/complete`                         | Stop timing and record actual minutes |
-| `POST`   | `/sessions/{id}/rate`                             | Submit effort, focus and optional rating |
-| `POST`   | `/sessions/{id}/skip-ratings`                     | Close without ratings |
-| `DELETE` | `/sessions/{id}/open`                             | Cancel the named open session |
-| `GET`    | `/books`                                          | List training assignments |
-| `POST`   | `/books`                                          | Add a library book assignment |
-| `PATCH`  | `/books/{assignmentId}`                           | Make the assignment default for its mode |
-| `POST`   | `/books/{assignmentId}/finish`                    | Finish a training assignment |
-| `POST`   | `/books/reorder`                                  | Reorder active assignments (UI extension) |
-| `GET`    | `/inbox`                                          | Unresolved captures |
-| `POST`   | `/captures`                                       | Capture text verbatim |
-| `PATCH`  | `/captures/{id}`                                  | Dismiss or keep a capture |
-| `POST`   | `/captures/{id}/promote-to-note`                  | Append a capture to an existing note |
-| `POST`   | `/reviews/preview`                                | Preview an ISO-week decision |
-| `POST`   | `/reviews/commit`                                 | Persist an immutable ISO-week review |
-| `POST`   | `/gateway/dispatch`                               | Dispatch optional connector text |
-| `GET`    | `/notifications/lease?maxCount&leaseSeconds`      | Claim due target-reached notifications under a lease |
-| `POST`   | `/notifications/{id}/ack`                         | Acknowledge a delivered notification idempotently |
-
-`POST /gateway/dispatch` accepts raw free text from optional gateway
-connectors (Telegram Reading topic, Discord channel scope) with a
-caller-supplied `(clientId, idempotencyKey)`; it performs at most one
-underlying mutation per dispatch and duplicate dispatches converge through
-the receipts. The accepted grammar (status, start/start new, pause, resume,
-done/stop, skip, cancel, rate pairs, and verbatim captures while a session is
-active) is documented in `Nostos.Backend/_docs/endpoints.md`.
-
-`GET /notifications/lease` validates `maxCount` (1..100) and `leaseSeconds`
-(1..3600); invalid values return 400 ProblemDetails. `POST
-/notifications/{id}/ack` returns 200 `{ notificationId, acknowledged: true }`
-for any existing notification (including duplicate acks) and 404 for an
-unknown id.
-
----
-
-## Backup — `/api/backup`
+ 
+ ---
+ 
+ ## Backup — `/api/backup`
 
 | Method     | Route            | Description |
 | ---------- | ---------------- | ----------- |
@@ -534,7 +478,7 @@ variable (default `NOSTOS_MCP_TOKEN`) at startup; enabling MCP without the
 token fails startup closed. Tools are discovered from the assembly and
 registered as `mcp__nostos__*` (double underscore).
 
-The shipped surface is **34 tools: 23 Reading Training + 11 Library**. Library
+The shipped surface is the **11 Library tools** below. Library
 tools: `library_list_books`, `library_get_book`, `library_resolve_book`,
 `library_create_or_match_book`, `library_update_book`,
 `library_list_collections`, `library_get_collection`,
@@ -602,6 +546,6 @@ All errors follow the Problem Details standard:
 
 Validation errors return `400 Bad Request` with `{ "error": "message" }`.
 
-Reading Training and Library errors use the same Problem Details shape with
-the domain error code in `title` and the human-readable reply in `detail`;
-the Library section above lists the status mapping.
+Library errors use the Problem Details shape with the domain error code in
+`title` and the human-readable reply in `detail`; the Library section above
+lists the status mapping.

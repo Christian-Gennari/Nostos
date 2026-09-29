@@ -12,7 +12,6 @@ app.MapConceptsEndpoints();
 app.MapWritingsEndpoints();
 app.MapOpdsEndpoints();
 app.MapBackupEndpoints();
-app.MapReadingTrainingEndpoints();
 ```
 
 ## Endpoint Groups
@@ -159,112 +158,6 @@ mapped only when `Opds:Enabled` is true, which is the default.
 | `POST`     | `/import`        | Scan `/backups` folder for untracked files | `IBackupService`               |
 | `GET`      | `/progress`      | Real-time step-by-step progress tracking   | `BackupSettingsProvider`       |
 
-### ReadingTrainingEndpoints (`/api/reading`)
-
-`/api/reading` is the canonical surface. The complete canonical group is also
-mapped under `/api/reading-training` for backward compatibility; previously
-shipped body-only command shapes remain available there while clients migrate.
-All variants call the same service and share command receipts/state versions.
-
-All responses use the stable `ReadingCommandResultDto` envelope. Mutations are
-exact-once by `(clientId, idempotencyKey)` and delegate to
-`IReadingTrainingService`; the endpoint layer contains no training rules.
-
-| Method   | Route                                             | Description |
-| -------- | ------------------------------------------------- | ----------- |
-| `POST`   | `/initialize`                                     | Initialize the programme idempotently |
-| `GET`    | `/dashboard`                                      | Programme, books, open session and current review |
-| `GET`    | `/status`                                         | Current open-session status |
-| `GET`    | `/week?week=YYYY-Www`                             | ISO-week summary/review |
-| `GET`    | `/sessions?from=&to=&bookId=&mode=`               | Filtered session history |
-| `POST`   | `/sessions/plan`                                  | Plan a session |
-| `POST`   | `/sessions/start`                                 | Start a planned session |
-| `POST`   | `/sessions/start-new`                             | Create and start a session |
-| `POST`   | `/sessions/{id}/pause`                            | Pause the named open session |
-| `POST`   | `/sessions/{id}/resume`                           | Resume the named open session |
-| `POST`   | `/sessions/{id}/complete`                         | Stop timing and record actual minutes |
-| `POST`   | `/sessions/{id}/rate`                             | Submit effort, focus and optional rating |
-| `POST`   | `/sessions/{id}/skip-ratings`                     | Close without ratings |
-| `DELETE` | `/sessions/{id}/open`                             | Cancel the named open session |
-| `GET`    | `/books`                                          | List training assignments |
-| `POST`   | `/books`                                          | Add a library book assignment |
-| `PATCH`  | `/books/{assignmentId}`                           | Make the assignment default for its mode |
-| `POST`   | `/books/{assignmentId}/finish`                    | Finish a training assignment |
-| `POST`   | `/books/reorder`                                  | Reorder active assignments (UI extension) |
-| `GET`    | `/inbox`                                          | Unresolved captures |
-| `POST`   | `/captures`                                       | Capture text verbatim |
-| `PATCH`  | `/captures/{id}`                                  | Dismiss or keep a capture |
-| `POST`   | `/captures/{id}/promote-to-note`                  | Append a capture to an existing note |
-| `POST`   | `/reviews/preview`                                | Preview an ISO-week decision |
-| `POST`   | `/reviews/commit`                                 | Persist an immutable ISO-week review |
-| `POST`   | `/gateway/dispatch`                               | Dispatch optional connector text |
-| `GET`    | `/notifications/lease?maxCount&leaseSeconds`      | Claim due target-reached notifications under a lease |
-| `POST`   | `/notifications/{id}/ack`                         | Acknowledge a delivered notification idempotently |
-
-`GET /notifications/lease` validates `maxCount` (1..100) and `leaseSeconds`
-(1..3600); invalid values return 400 ProblemDetails. The response is the typed
-claimed list (`notificationId`, `payload`, `leaseUntil`) in claim order.
-`POST /notifications/{notificationId}/ack` returns 200
-`{ notificationId, acknowledged: true }` for any existing notification —
-including duplicate acks — and 404 ProblemDetails for an unknown id. The
-scanner worker (`ReadingNotificationWorker`) enqueues target-reached rows on a
-calm poll interval (`ReadingTraining.NotificationPollSeconds`, default 15s,
-clamped 1..300) and never claims or acknowledges. The weekly-review catch-up
-worker (`ReadingWeeklyReviewWorker`) owns the commit schedule: a completed ISO
-week becomes eligible at 07:00 local time (programme timezone) on the Monday
-that starts the following week, and the worker commits every eligible
-uncommitted week through the same exact-once service command (deterministic
-client `reading-weekly-review-worker`, idempotency key `weekly-review:{yyyy}-W{ww}`),
-so restarts and duplicate workers converge. It polls every
-`ReadingTraining.WeeklyReviewPollSeconds` (default 300s, clamped 1..3600) and
-drains a downtime backlog across scans, capped at
-`ReadingTraining.WeeklyReviewMaxCatchUpWeeks` (default 4) per scan.
-
-### Reading gateway dispatch (`POST /api/reading/gateway/dispatch`)
-
-The exact route used by optional gateway connectors (Telegram/agent
-messaging). It accepts raw free text and returns the same stable
-`ReadingCommandResultDto` envelope and status mapping as every other reading
-command. The connector forwards the raw message verbatim with a caller-supplied
-`(clientId, idempotencyKey)`; Nostos performs at most one underlying service
-mutation per dispatch, and duplicate dispatches converge through the existing
-exact-once receipts.
-
-| Field | Type | Notes |
-| ----- | ---- | ----- |
-| `clientId` | string | Caller identity (receipts are keyed by client + key) |
-| `idempotencyKey` | string | Caller-supplied; reuse to replay the same message |
-| `text` | string | Raw message text, forwarded byte-for-byte |
-
-Accepted grammar (case-insensitive, outer whitespace ignored; the captured
-text is never altered):
-
-- **status** — `status`, `what am i reading`, `what am i currently reading`,
-  or text containing `how long`, `elapsed`, `time left`, `minutes left`,
-  `time remaining`, `how much time`, or `time so far`
-- **start** — `start`, `start now`; **start new** — `start a new reading
-  session`, `start new`, `start new session`, `new session`
-- **pause** — `pause`, `pause reading`; `answer now` / `answer now please`
-  also pause authoritatively (the saved question stays in the inbox for the
-  connector to inject into model discussion)
-- **resume** — `resume`, `resume reading`
-- **done** — `done`, `stop`, `stop reading`, `end`, `end reading`,
-  `end session`, `end reading session`, or compact `done <minutes>` forms
-  (`done 42m`, `done 42`, `done 42 effort 4 focus 8` — compact effort/focus
-  are parsed for recognition only; ratings stay in the two-turn flow)
-- **skip** — `skip ratings`, `skip rating`, `skip`
-- **cancel** — `cancel`, `cancel session`, `abandon`, `discard`, `discard it`,
-  `abandon session`
-- **rate pair** — `4, 8`, `4; 8`, `rate 4 8` (effort, focus 1–10)
-
-Anything else is a raw capture while a session is Active (or while Paused only
-with an explicit `thought:` / `question:` / `bookmark:` prefix), classified
-question/thought/bookmark like the legacy coach and stored verbatim,
-byte-for-byte. Slash commands, model-driven queries (`review`, `weekly
-review`, `inbox`, queue adds, `finish <book>`, and the legacy `read`
-prescription), and ordinary text with no active session return the stable
-`gateway_ignored` no-op (422) and create no state.
-
 ## MCP (Model Context Protocol)
 
 The MCP surface is opt-in (`Mcp:Enabled`, default disabled) and served as a
@@ -275,11 +168,9 @@ without the token fails startup closed. Tools are discovered from the
 assembly (`WithToolsFromAssembly`) and registered under the `mcp__nostos__`
 prefix. Maintenance mode guards the MCP route as well as `/api`.
 
-The full surface is 34 tools: 23 Reading Training tools (contract in
-[`docs/reading-training/contracts.md`](../../docs/reading-training/contracts.md))
-plus the 11 Library tools below (manifest asserted in tests). All library
-tools forward to the canonical `ILibraryService` and return its envelope
-unchanged.
+The shipped surface is the 11 Library tools below (manifest asserted in
+tests). All library tools forward to the canonical `ILibraryService` and return
+its envelope unchanged.
 
 ### Library tools (issue #34)
 
