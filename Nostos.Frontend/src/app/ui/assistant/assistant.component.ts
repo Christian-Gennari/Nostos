@@ -35,6 +35,181 @@ import { LibraryPreferencesService } from '../../core/services/library-preferenc
  */
 const FOLLOW_THRESHOLD_PX = 32;
 
+export type EntrySourceItem =
+  | {
+      kind: 'evidence';
+      key: string;
+      bookId: string | null;
+      bookTitle: string;
+      excerpt: string;
+      groupableBook: boolean;
+      evidence: AssistantEvidenceReferenceDto;
+    }
+  | {
+      kind: 'legacy';
+      key: string;
+      bookId: string | null;
+      bookTitle: string;
+      excerpt: string;
+      groupableBook: boolean;
+      source: AssistantSourceReferenceDto;
+    };
+
+export type EntrySourceDisplay =
+  | {
+      kind: 'item';
+      key: string;
+      item: EntrySourceItem;
+    }
+  | {
+      kind: 'group';
+      key: string;
+      bookId: string;
+      bookTitle: string;
+      items: EntrySourceItem[];
+    };
+
+export interface EntrySourceView {
+  items: EntrySourceDisplay[];
+}
+
+function canonicalEvidenceKey(evidence: AssistantEvidenceReferenceDto): string {
+  const handle = evidence.handle;
+  return [
+    handle.kind,
+    handle.noteId ?? '',
+    handle.conceptId ?? '',
+    handle.bookId ?? '',
+    handle.sourceSha256 ?? '',
+    handle.extractorVersion ?? '',
+    handle.ordinal ?? '',
+  ].map(String).join('|');
+}
+
+function legacySourceKey(source: AssistantSourceReferenceDto): string {
+  return `${source.bookId}|${source.sourceSha256}|${JSON.stringify(source.locators ?? [])}|${source.excerpt.slice(0, 320)}`;
+}
+
+/**
+ * Builds the one transcript source surface for a completed entry.
+ *
+ * Canonical evidence wins whenever it exists. Legacy `entry.sources` is only
+ * the historical bridge for entries that carry no evidence artifacts.
+ */
+export function buildEntrySourceView(entry: AssistantEntry): EntrySourceView {
+  const evidenceArtifacts = (entry.artifacts ?? []).filter(
+    (artifact): artifact is Extract<AssistantTurnArtifact, { kind: 'evidence' }> =>
+      artifact.kind === 'evidence',
+  );
+
+  const sourceItems: EntrySourceItem[] = [];
+
+  if (evidenceArtifacts.length > 0) {
+    const seen = new Set<string>();
+
+    for (const artifact of evidenceArtifacts) {
+      const evidence = artifact.evidence;
+      const dedupeKey = canonicalEvidenceKey(evidence);
+      if (seen.has(dedupeKey)) continue;
+      seen.add(dedupeKey);
+
+      const bookId = evidence.handle.bookId ?? null;
+      sourceItems.push({
+        kind: 'evidence',
+        key: `evidence:${dedupeKey}`,
+        bookId,
+        bookTitle: evidence.bookTitle?.trim() || evidence.label,
+        excerpt: evidence.excerpt ?? '',
+        groupableBook: evidence.handle.kind === 'book_text' && !!bookId,
+        evidence,
+      });
+    }
+  } else {
+    const seen = new Set<string>();
+
+    for (const source of entry.sources ?? []) {
+      const dedupeKey = legacySourceKey(source);
+      if (seen.has(dedupeKey)) continue;
+      seen.add(dedupeKey);
+
+      sourceItems.push({
+        kind: 'legacy',
+        key: `legacy:${dedupeKey}`,
+        bookId: source.bookId || null,
+        bookTitle: source.bookTitle,
+        excerpt: source.excerpt,
+        groupableBook: !!source.bookId,
+        source,
+      });
+    }
+  }
+
+  type PendingDisplay =
+    | {
+        kind: 'item';
+        key: string;
+        item: EntrySourceItem;
+      }
+    | {
+        kind: 'book';
+        key: string;
+        bookId: string;
+        bookTitle: string;
+        items: EntrySourceItem[];
+      };
+
+  const pending: PendingDisplay[] = [];
+  const bookGroupIndexes = new Map<string, number>();
+
+  for (const item of sourceItems) {
+    if (!item.groupableBook || !item.bookId) {
+      pending.push({
+        kind: 'item',
+        key: item.key,
+        item,
+      });
+      continue;
+    }
+
+    const existingIndex = bookGroupIndexes.get(item.bookId);
+    if (existingIndex !== undefined) {
+      const existing = pending[existingIndex];
+      if (existing.kind === 'book') existing.items.push(item);
+      continue;
+    }
+
+    bookGroupIndexes.set(item.bookId, pending.length);
+    pending.push({
+      kind: 'book',
+      key: `book:${item.bookId}`,
+      bookId: item.bookId,
+      bookTitle: item.bookTitle,
+      items: [item],
+    });
+  }
+
+  return {
+    items: pending.map((display): EntrySourceDisplay => {
+      if (display.kind === 'item') return display;
+      if (display.items.length === 1) {
+        return {
+          kind: 'item',
+          key: display.items[0].key,
+          item: display.items[0],
+        };
+      }
+
+      return {
+        kind: 'group',
+        key: display.key,
+        bookId: display.bookId,
+        bookTitle: display.bookTitle,
+        items: display.items,
+      };
+    }),
+  };
+}
+
 /**
  * App-wide assistant shell (issue #261 §1, §2, §4 capture; #262 voice).
  *
@@ -101,6 +276,12 @@ export class AssistantComponent {
 
   /** The element focused before opening, restored on close. */
   private previouslyFocused: HTMLElement | null = null;
+
+  /**
+   * Book source groups are collapsed by default. The key includes the visible
+   * entry identity because the same book may legitimately occur in many turns.
+   */
+  readonly expandedSourceGroups = signal<Set<string>>(new Set());
 
   /**
    * Whether the shell exists at all: the user wants it (preference on) AND the
@@ -175,6 +356,7 @@ export class AssistantComponent {
         this.assistant.pendingPlan();
         this.assistant.pendingAnchor();
         this.assistant.rawOpen();
+        this.expandedSourceGroups();
         this.observeBody(this.body()?.nativeElement ?? null);
         this.followEnd();
       },
@@ -211,6 +393,31 @@ export class AssistantComponent {
     this.following.set(this.distanceToEnd(element) <= FOLLOW_THRESHOLD_PX);
   }
 
+  sourceView(entry: AssistantEntry): EntrySourceView {
+    return buildEntrySourceView(entry);
+  }
+
+  sourceGroupId(entryId: string, bookId: string): string {
+    return `assistant-source-group-${encodeURIComponent(entryId)}-${encodeURIComponent(bookId)}`;
+  }
+
+  isSourceGroupExpanded(entryId: string, bookId: string): boolean {
+    return this.expandedSourceGroups().has(`${entryId}:${bookId}`);
+  }
+
+  toggleSourceGroup(entryId: string, bookId: string): void {
+    const key = `${entryId}:${bookId}`;
+    this.expandedSourceGroups.update((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  sourceExcerpt(excerpt: string | null | undefined): string {
+    return (excerpt ?? '').slice(0, 120).trim();
+  }
 
   evidenceLabel(evidence: AssistantEvidenceReferenceDto): string {
     const locator = evidence.locators?.[0];
@@ -270,14 +477,6 @@ export class AssistantComponent {
     });
   }
 
-  showEvidenceArtifact(entry: AssistantEntry, artifact: AssistantTurnArtifact): boolean {
-    if (artifact.kind !== 'evidence') return false;
-    if (artifact.evidence.handle.kind !== 'book_text') return true;
-    return !(entry.sources ?? []).some((source) =>
-      source.bookId === artifact.evidence.handle.bookId
-      && source.sourceSha256 === artifact.evidence.handle.sourceSha256);
-  }
-
   showProposalArtifact(entry: AssistantEntry, artifact: AssistantTurnArtifact): boolean {
     if (artifact.kind !== 'proposal') return false;
     return !(entry.suggestions ?? []).some((suggestion) =>
@@ -328,6 +527,11 @@ export class AssistantComponent {
     }
     if (locator.type === 'epub') return `${source.bookTitle} · reading position`;
     return source.bookTitle;
+  }
+
+  canOpenSource(source: AssistantSourceReferenceDto): boolean {
+    return !!this.router
+      && !!source.locators?.some((locator) => locator.type === 'pdf' || locator.type === 'epub');
   }
 
   openSource(source: AssistantSourceReferenceDto): void {

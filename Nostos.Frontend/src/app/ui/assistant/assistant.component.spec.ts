@@ -8,9 +8,11 @@ import { AssistantComponent } from './assistant.component';
 import {
   ASSISTANT_PENDING_DELAY_MS,
   ASSISTANT_SESSION_STORAGE_KEY,
+  AssistantEntry,
   AssistantEvidenceReferenceDto,
   AssistantService,
   AssistantSourceReferenceDto,
+  AssistantTurnArtifact,
   AssistantTurnResponse,
 } from './assistant.service';
 import { AssistantStatusService } from './assistant-status.service';
@@ -238,6 +240,283 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     );
   });
 
+  describe('grounded source grouping (issue #634)', () => {
+    function entry(
+      overrides: Partial<AssistantEntry> = {},
+    ): AssistantEntry {
+      return {
+        id: 'entry-grounded',
+        turnId: 'turn-grounded',
+        kind: 'assistant',
+        text: 'A grounded answer.',
+        anchorLabel: null,
+        meta: null,
+        sources: [],
+        suggestions: [],
+        artifacts: [],
+        ...overrides,
+      };
+    }
+
+    function epubEvidence(
+      ordinal: number,
+      cfi: string,
+      excerpt = `Distinct East of Eden passage ${ordinal}.`,
+    ): AssistantEvidenceReferenceDto {
+      return {
+        handle: {
+          kind: 'book_text',
+          bookId: 'east-of-eden',
+          sourceSha256: 'east-sha',
+          extractorVersion: 'epub-extractor-v2',
+          ordinal,
+        },
+        label: 'East of Eden',
+        bookTitle: 'East of Eden',
+        bookAuthor: 'John Steinbeck',
+        format: 'epub',
+        excerpt,
+        locators: [
+          {
+            type: 'epub',
+            epubCfi: cfi,
+            epubResourceHref: `chapter-${ordinal}.xhtml`,
+            epubSpineIndex: ordinal,
+            startTextOffset: ordinal * 100,
+          },
+        ],
+      };
+    }
+
+    function pdfEvidence(
+      ordinal: number,
+      page: number,
+    ): AssistantEvidenceReferenceDto {
+      return {
+        handle: {
+          kind: 'book_text',
+          bookId: 'pdf-book',
+          sourceSha256: 'pdf-sha',
+          extractorVersion: 'pdf-extractor-v1',
+          ordinal,
+        },
+        label: 'Grounded PDF',
+        bookTitle: 'Grounded PDF',
+        bookAuthor: null,
+        format: 'pdf',
+        excerpt: `Evidence from page ${page}.`,
+        locators: [
+          {
+            type: 'pdf',
+            pdfPageIndex: page - 1,
+            pdfPageLabel: String(page),
+          },
+        ],
+      };
+    }
+
+    function evidenceArtifacts(
+      ...evidence: AssistantEvidenceReferenceDto[]
+    ): AssistantTurnArtifact[] {
+      return evidence.map((item) => ({ kind: 'evidence', evidence: item }));
+    }
+
+    function legacySource(
+      ordinal: number,
+      overrides: Partial<AssistantSourceReferenceDto> = {},
+    ): AssistantSourceReferenceDto {
+      return {
+        bookId: 'east-of-eden',
+        bookTitle: 'East of Eden',
+        bookAuthor: 'John Steinbeck',
+        format: 'epub',
+        sourceSha256: 'east-sha',
+        excerpt: `Legacy passage ${ordinal}.`,
+        locators: [
+          {
+            type: 'epub',
+            epubCfi: `epubcfi(/6/${ordinal * 2}!/4/2:0)`,
+            epubResourceHref: `legacy-${ordinal}.xhtml`,
+            epubSpineIndex: ordinal,
+            startTextOffset: ordinal * 80,
+          },
+        ],
+        ...overrides,
+      };
+    }
+
+    function renderEntry(value: AssistantEntry): void {
+      assistant.open();
+      assistant.updateDraft('Render grounded sources.');
+      assistant.submit();
+      http.expectOne('/api/assistant/turn/stream').flush(turn({
+        reply: value.text,
+        sources: value.sources ?? [],
+        evidence: (value.artifacts ?? []).flatMap((artifact) =>
+          artifact.kind === 'evidence' ? [artifact.evidence] : []),
+      }));
+      fixture.detectChanges();
+    }
+
+    function sourceGroups(): NodeListOf<HTMLButtonElement> {
+      return fixture.nativeElement.querySelectorAll(
+        '[data-testid="assistant-source-group"]',
+      );
+    }
+
+    function sourceItems(): NodeListOf<HTMLElement> {
+      return fixture.nativeElement.querySelectorAll(
+        '[data-testid="assistant-source-item"]',
+      );
+    }
+
+    it('groups three canonical EPUB passages and preserves exact navigation when expanded', () => {
+      const first = epubEvidence(1, 'epubcfi(/6/2!/4/2:0)');
+      const second = epubEvidence(2, 'epubcfi(/6/4!/4/2:0)');
+      const third = epubEvidence(3, 'epubcfi(/6/6!/4/2:0)');
+
+      renderEntry(entry({
+        artifacts: evidenceArtifacts(first, second, third),
+      }));
+
+      expect(sourceGroups().length).toBe(1);
+      expect(sourceGroups()[0].textContent).toContain('East of Eden · 3 passages');
+      expect(sourceGroups()[0].getAttribute('aria-expanded')).toBe('false');
+      expect(sourceItems().length).toBe(0);
+
+      sourceGroups()[0].click();
+      fixture.detectChanges();
+
+      expect(sourceGroups()[0].getAttribute('aria-expanded')).toBe('true');
+      expect(sourceItems().length).toBe(3);
+
+      (sourceItems()[1] as HTMLButtonElement).click();
+
+      expect(router.navigate).toHaveBeenCalledWith(
+        ['/read', 'east-of-eden'],
+        {
+          queryParams: expect.objectContaining({
+            sourceCfi: 'epubcfi(/6/4!/4/2:0)',
+          }),
+        },
+      );
+    });
+
+    it('prefers canonical evidence over legacy sources when both are present', () => {
+      const evidence = [
+        epubEvidence(1, 'epubcfi(/6/2!/4/2:0)', 'Canonical passage one.'),
+        epubEvidence(2, 'epubcfi(/6/4!/4/2:0)', 'Canonical passage two.'),
+      ];
+
+      renderEntry(entry({
+        artifacts: evidenceArtifacts(...evidence),
+        sources: [
+          legacySource(1, { excerpt: 'LEGACY ONLY one.' }),
+          legacySource(2, { excerpt: 'LEGACY ONLY two.' }),
+          legacySource(3, { excerpt: 'LEGACY ONLY three.' }),
+        ],
+      }));
+
+      expect(sourceGroups().length).toBe(1);
+      sourceGroups()[0].click();
+      fixture.detectChanges();
+
+      expect(sourceItems().length).toBe(2);
+      expect(
+        fixture.nativeElement.querySelector('[data-testid="assistant-entry-sources"]').textContent,
+      ).not.toContain('LEGACY ONLY');
+    });
+
+    it('groups legacy sources when an entry has no evidence artifacts', () => {
+      renderEntry(entry({
+        artifacts: [],
+        sources: [
+          legacySource(1),
+          legacySource(2),
+          legacySource(3),
+        ],
+      }));
+
+      expect(sourceGroups().length).toBe(1);
+      expect(sourceGroups()[0].textContent).toContain('East of Eden · 3 passages');
+      expect(sourceItems().length).toBe(0);
+
+      sourceGroups()[0].click();
+      fixture.detectChanges();
+
+      expect(sourceItems().length).toBe(3);
+    });
+
+    it('deduplicates identical canonical handles into one single source pill', () => {
+      const duplicate = epubEvidence(7, 'epubcfi(/6/14!/4/2:0)');
+
+      renderEntry(entry({
+        artifacts: evidenceArtifacts(
+          duplicate,
+          {
+            ...duplicate,
+            excerpt: 'Later duplicate display data must not create another passage.',
+            locators: [
+              {
+                type: 'epub',
+                epubCfi: 'epubcfi(/6/999!/4/2:0)',
+              },
+            ],
+          },
+        ),
+      }));
+
+      expect(sourceGroups().length).toBe(0);
+      expect(sourceItems().length).toBe(1);
+      expect(sourceItems()[0].textContent).toContain('East of Eden · reading position');
+    });
+
+    it('groups PDF evidence while preserving useful page labels for each passage', () => {
+      renderEntry(entry({
+        artifacts: evidenceArtifacts(
+          pdfEvidence(1, 7),
+          pdfEvidence(2, 9),
+        ),
+      }));
+
+      expect(sourceGroups().length).toBe(1);
+      expect(sourceGroups()[0].textContent).toContain('Grounded PDF · 2 passages');
+
+      sourceGroups()[0].click();
+      fixture.detectChanges();
+
+      expect(sourceItems().length).toBe(2);
+      expect(sourceItems()[0].textContent).toContain('Grounded PDF · p. 7');
+      expect(sourceItems()[1].textContent).toContain('Grounded PDF · p. 9');
+    });
+
+    it('keeps note evidence as an individual pill using the canonical Brain deep-link', () => {
+      const note: AssistantEvidenceReferenceDto = {
+        handle: {
+          kind: 'note',
+          noteId: 'note-grounded',
+        },
+        label: 'A note about attention',
+        excerpt: 'Canonical note evidence.',
+      };
+
+      renderEntry(entry({
+        artifacts: evidenceArtifacts(note),
+      }));
+
+      expect(sourceGroups().length).toBe(0);
+      expect(sourceItems().length).toBe(1);
+      expect(sourceItems()[0].textContent).toContain('A note about attention');
+
+      (sourceItems()[0] as HTMLButtonElement).click();
+
+      expect(router.navigate).toHaveBeenCalledWith(
+        ['/second-brain'],
+        { queryParams: { noteId: 'note-grounded' } },
+      );
+    });
+  });
+
   it('renders the collapsed capsule trigger and toggles on click', () => {
     const trigger = fixture.nativeElement.querySelector('[data-testid="assistant-trigger"]');
     expect(trigger).toBeTruthy();
@@ -463,8 +742,6 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     assistant.updateDraft('A thought without a page');
     assistant.submit();
 
-    // The capture dispatches at once; the backend decides it needs a page and
-    // returns the server-authoritative continuation prompt.
     http.expectOne('/api/assistant/turn/stream').flush(
       turn({
         anchorPrompt: {
@@ -484,8 +761,6 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     skip.click();
     fixture.detectChanges();
 
-    // Skipping is a real continuation turn, not a replay of the original
-    // message with the answer hidden in request context.
     const request = http.expectOne('/api/assistant/turn/stream');
     expect(request.request.body.message).toBe("I don't know");
     expect(request.request.body.continuationId).toBe('cont-page');
@@ -520,8 +795,6 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     assistant.updateDraft('42');
     assistant.submit();
 
-    // The typed page is the next real user message, tied to the server-held
-    // continuation; the answer is not smuggled into the request context.
     const request = http.expectOne('/api/assistant/turn/stream');
     expect(request.request.body.message).toBe('42');
     expect(request.request.body.continuationId).toBe('cont-page');
@@ -562,8 +835,6 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     );
     fixture.detectChanges();
 
-    // The server's follow-up question is part of the transcript, not only of
-    // the composer prompt.
     expect(
       fixture.nativeElement.querySelector('[data-testid="assistant-transcript"]').textContent,
     ).toContain('What page are you on?');
@@ -620,8 +891,6 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     expect(
       fixture.nativeElement.querySelector('[data-testid="assistant-anchor-prompt"]').textContent,
     ).toContain('What page are you on?');
-    // The question is still in the transcript, and the thought behind it is
-    // still held (answering it must not restart the capture).
     expect(
       fixture.nativeElement.querySelector('[data-testid="assistant-transcript"]').textContent,
     ).toContain('What page are you on?');
@@ -761,17 +1030,13 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     expect(rendered.querySelector('pre code')?.textContent).toContain('const answer = 42;');
     expect(rendered.querySelector('hr')).toBeTruthy();
 
-    // Task lists are display-only: no form control is allowed into the transcript.
     expect(rendered.querySelector('input')).toBeNull();
     expect(rendered.textContent).toContain('☑');
     expect(rendered.textContent).toContain('☐');
 
-    // Remote Markdown images never create a network-loading element.
     expect(rendered.querySelector('img')).toBeNull();
     expect(rendered.textContent).toContain('[Image omitted: cover]');
 
-    // Raw HTML is shown literally, while Angular remains the final sanitizer for
-    // generated attributes such as link hrefs.
     expect(rendered.querySelector('script')).toBeNull();
     expect(rendered.textContent).toContain('<script>globalThis.__nostosXss = true</script>');
     expect(rendered.textContent).toContain('<img src="https://tracker.invalid/pixel"');
@@ -781,7 +1046,6 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     expect(unsafeLink).toBeTruthy();
     expect(unsafeLink?.getAttribute('href')?.startsWith('javascript:')).toBe(false);
 
-    // Malformed Markdown degrades to readable text instead of losing the tail.
     expect(rendered.textContent).toContain('**unfinished');
   });
 
@@ -866,8 +1130,6 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
       expect(dots!.getAttribute('aria-hidden')).toBe('true');
       expect(dots!.querySelectorAll('.thinking-dot').length).toBe(3);
 
-      // Pending UI may appear from the local delay, but Stop is withheld until
-      // the server confirms the exact turn has been registered as active.
       expect(indicator.querySelector('[data-testid="assistant-stop-turn"]')).toBeNull();
 
       const turnId = request.request.body.turnId as string;
@@ -895,7 +1157,6 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
       }) + '\n');
     });
   });
-
   it('shows the raw transcript of a captured note and restores it', () => {
     assistant.open();
     assistant.updateDraft('so anyway i was thinking');
@@ -906,7 +1167,6 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
       .flush(turn({ acknowledgement: 'Saved.', capturedNoteId: 'note-9' }));
     fixture.detectChanges();
 
-    // The affordance exists only because the turn named a captured note.
     const toggle = fixture.nativeElement.querySelector(
       '[data-testid="assistant-raw-toggle"]',
     ) as HTMLButtonElement;
@@ -1112,24 +1372,16 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
 
   describe('following the newest turn (issue #300)', () => {
     const PANE_HEIGHT = 400;
-    const CONTENT_HEIGHT = 1200; // three panes of transcript: there is room to scroll
+    const CONTENT_HEIGHT = 1200;
     const END = CONTENT_HEIGHT - PANE_HEIGHT;
     let contentHeight = CONTENT_HEIGHT;
 
-    /** Where the reader has put a pane. jsdom keeps no scroll position of its own. */
     const positions = new WeakMap<Element, number>();
 
     function isPane(element: Element): boolean {
       return element.getAttribute('data-testid') === 'assistant-body';
     }
 
-    /**
-     * jsdom lays nothing out: every element reports scrollHeight/clientHeight 0
-     * and `scrollTop` never moves. The behaviour under test is arithmetic on
-     * those numbers, so they are stated on the prototype — a pane that the
-     * surface renders mid-test (a reopen) is measured the same way as the first
-     * one — and restored afterwards.
-     */
     beforeEach(() => {
       contentHeight = CONTENT_HEIGHT;
       Object.defineProperty(HTMLElement.prototype, 'scrollHeight', {
@@ -1165,21 +1417,18 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
       return fixture.nativeElement.querySelector('[data-testid="assistant-body"]');
     }
 
-    /** The reader's own scroll, through the binding the template wires up. */
     function readerScrollsTo(position: number): void {
       const element = body();
       element.scrollTop = position;
       element.dispatchEvent(new Event('scroll'));
     }
 
-    /** Render, and let the after-render work that follows it run. */
     async function render(): Promise<void> {
       fixture.detectChanges();
       await fixture.whenStable();
       fixture.detectChanges();
     }
 
-    /** Open the surface: its pane is the size of a scrolled pane from the start. */
     async function open(): Promise<void> {
       assistant.open();
       await render();
@@ -1194,8 +1443,6 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
       http.expectOne('/api/assistant/turn/stream').flush(turn({ reply: 'Your own library.' }));
       await render();
 
-      // The reply is at the end of the transcript, and so is the view: it is
-      // seen without a manual scroll, which is the whole point of the issue.
       expect(body().scrollTop).toBe(END);
     });
 
@@ -1211,10 +1458,6 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
       const element = body();
       expect(element.scrollTop).toBe(END);
 
-      // Reproduce the browser race seen in the expanded shell: followEnd() has
-      // already requested the old end, then layout/content grows before the
-      // resulting scroll event is delivered. That event is programmatic, not a
-      // reader decision to leave the newest turn.
       contentHeight = CONTENT_HEIGHT + 240;
       element.dispatchEvent(new Event('scroll'));
 
@@ -1233,14 +1476,12 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
       fixture.componentInstance.onSendClick();
       await render();
 
-      // The reader answers the wait by scrolling back into the conversation.
       readerScrollsTo(200);
       await render();
 
       http.expectOne('/api/assistant/turn/stream').flush(turn({ reply: 'Noted.' }));
       await render();
 
-      // A big arrival under a view the reader owns, and it stays where they put it.
       expect(body().scrollTop).toBe(200);
     });
 
@@ -1270,7 +1511,6 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
       fixture.componentInstance.onSendClick();
       await render();
 
-      // Their own turn is the thing being answered: it always comes back.
       expect(body().scrollTop).toBe(END);
       http.expectOne('/api/assistant/turn/stream').flush(turn());
     });
@@ -1303,7 +1543,6 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
       open();
       const mic = query('[data-testid="assistant-voice-start"]');
       expect(mic).toBeTruthy();
-      // Reachability: it lives in the composer, never on the collapsed capsule.
       expect(query('.assistant-composer').contains(mic)).toBe(true);
       expect(query('.assistant-trigger').contains(mic)).toBe(false);
 
@@ -1397,11 +1636,10 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
       voice.onTranscript?.('The Magic Mountain');
 
       expect(assistant.draft()).toBe('The Magic Mountain');
-      // Auto-send is queued, not dispatched: nothing is sent while Undo is live.
       expect(assistant.autoSendPending()).toBe(true);
       http.expectNone('/api/assistant/turn/stream');
 
-      assistant.undoTranscript(); // do not leave a real 2s timer behind
+      assistant.undoTranscript();
     });
 
     it('shows the Undo affordance only while the auto-send window is open', () => {

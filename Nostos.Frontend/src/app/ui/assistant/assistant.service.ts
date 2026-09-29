@@ -1894,7 +1894,16 @@ function artifactsFromTurnResponse(
 
   // Backward-compatible bridge responses may not yet carry #565 evidence.
   if (!(response?.evidence?.length) && response?.sources?.length) {
+    const passageOrdinals = new Map<string, number>();
     for (const source of response.sources) {
+      const passageKey =
+        `${source.bookId}|${source.sourceSha256}|${JSON.stringify(source.locators ?? [])}`;
+      let ordinal = passageOrdinals.get(passageKey);
+      if (ordinal === undefined) {
+        ordinal = passageOrdinals.size;
+        passageOrdinals.set(passageKey, ordinal);
+      }
+
       artifacts.push({
         kind: 'evidence',
         evidence: {
@@ -1902,6 +1911,8 @@ function artifactsFromTurnResponse(
             kind: 'book_text',
             bookId: source.bookId,
             sourceSha256: source.sourceSha256,
+            // Synthesized passage identity keeps distinct passages through dedupe/grouping.
+            ordinal,
           },
           label: source.bookTitle,
           excerpt: source.excerpt.slice(0, 320),
