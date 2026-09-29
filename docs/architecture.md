@@ -2,7 +2,7 @@
 
 > **Status note (2026-08-12):** this overview predates the issue #34 library
 > service and the agent-facing integration surfaces. The **Integrations**
-> section below is the current reference for MCP, Reading Training, and the
+> section below is the current reference for MCP and the
 > canonical library service; decision 1's fallback description has been
 > corrected to the shipped method-constrained fallback. The remaining
 > sections are historical and largely unchanged.
@@ -117,10 +117,10 @@ Notes use `[[Concept Name]]` syntax. The `NoteProcessorService` parses these on 
 
 Scheduled background workers (`BackupWorker`) create ZIP archives containing the database and book files. The system implements a maintenance mode (via middleware) that blocks API access during restoration to prevent data corruption.
 
-## Integrations (MCP, Reading Training, Hermes)
+## Integrations (MCP, Hermes)
 
-The backend exposes two agent-facing surfaces on top of the same domain
-services:
+The backend exposes an agent-facing surface on top of the canonical domain
+service:
 
 - **MCP (Model Context Protocol)** — opt-in (`Mcp:Enabled`, default disabled)
   bearer-authenticated Streamable HTTP endpoint at `/mcp` (`Mcp:Path`). The
@@ -128,25 +128,18 @@ services:
   environment variable (default `NOSTOS_MCP_TOKEN`) at startup; enabling MCP
   without the token fails startup closed. Tools are discovered from the
   assembly (`WithToolsFromAssembly`) and register as `mcp__nostos__*`
-  (double underscore). The shipped surface is 34 tools: 23 Reading Training +
-  11 Library (issue #34). The maintenance-mode guard covers the MCP route as
+  (double underscore). The shipped surface is the 11 Library tools
+  (issue #34). The maintenance-mode guard covers the MCP route as
   well as `/api`.
-- **Reading Training** — standalone domain with its own REST group
-  (`/api/reading`, plus the `/api/reading-training` back-compat alias), MCP
-  tools, and an optional Hermes connector. The connector is a thin transport:
-  it routes the Telegram Reading topic and a Discord channel scope to
-  `POST /api/reading/gateway/dispatch` with caller-supplied
-  `(clientId, idempotencyKey)` and owns no state.
 
-Canonical services are the only domain entry points: `ILibraryService`
-(books and collections) and `IReadingTrainingService` (training) receive
-every command — REST endpoints, the Angular UI, and MCP tools all forward to
-them, and the endpoint/MCP layers hold no domain rules (thin connector
-doctrine). Books are added through `library_create_or_match_book` (or the
-legacy-permissive REST create); the earlier raw-curl add-book recipe is
-superseded.
+The canonical service is the only domain entry point: `ILibraryService`
+(books and collections) receives every command — REST endpoints, the Angular
+UI, and MCP tools all forward to it, and the endpoint/MCP layers hold no domain
+rules (thin connector doctrine). Books are added through
+`library_create_or_match_book` (or the legacy-permissive REST create); the
+earlier raw-curl add-book recipe is superseded.
 
-Both domains are exact-once on `(clientId, idempotencyKey)` receipts and a
+The library domain is exact-once on `(clientId, idempotencyKey)` receipts and a
 state version: `LibraryCommandReceipt` keys on `(ClientId, IdempotencyKey)`
 (client id ≤ 64 chars, key ≤ 128 chars, enforced by the
 `CK_LibraryCommandReceipts_Bounds` CHECK constraint; fixed MCP client
