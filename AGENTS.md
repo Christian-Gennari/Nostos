@@ -179,6 +179,18 @@ this section is the detail for when you are in the shared tree.**
 - If you find unexpected modifications, **leave them alone** and mention them
   in your report. They are not yours to clean up.
 
+
+### Repo-local Agent Skills
+
+Repo-local Agent Skills live under `.agents/skills/`. Treat that directory as a
+registry, not as startup context: discover candidates from lightweight metadata
+such as `name` and `description`, load a full `SKILL.md` only when the task
+actually needs it, and load bundled references/scripts only on demand. **Do not
+preload every skill for ordinary coding work.**
+
+For the vendored code-health skill set, provenance/update instructions, and the
+read-only scheduled-audit contract, see `.agents/README.md`.
+
 ---
 
 ## 5. Project specifics
