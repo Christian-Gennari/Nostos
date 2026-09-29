@@ -362,7 +362,6 @@
   line-height: 1.58;
 }
 
-
 /* Generated assistant Markdown lives under innerHTML, so its descendants do not
    receive Angular's emulated-encapsulation attribute. Keep the escape hatch
    narrow: only descendants of this one transcript surface use ::ng-deep. */
@@ -793,7 +792,6 @@
   text-align: right;
 }
 
-
 /* ------------------------------
    Raw transcript
 ------------------------------ */
@@ -838,7 +836,6 @@
   color: var(--color-text-muted);
   font-size: 0.7rem;
 }
-
 
 /* ------------------------------
    Composer
@@ -1052,7 +1049,6 @@
   font-size: 0.76rem;
 }
 
-
 /* ------------------------------
    Mobile
 ------------------------------ */
@@ -1230,4 +1226,74 @@
 .entry-source:focus-visible {
   border-color: var(--border-focus);
   color: var(--color-text-main);
+}
+
+.entry-source-group-wrap {
+  display: flex;
+  flex: 0 0 100%;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.entry-source-group {
+  justify-content: flex-start;
+}
+
+.entry-source-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  width: calc(100% - 0.8rem);
+  min-width: 0;
+  margin-left: 0.8rem;
+  padding-left: 0.55rem;
+  border-left: 1px solid var(--border-color);
+}
+
+.entry-source-list-row {
+  display: flex;
+  min-width: 0;
+}
+
+.entry-source-item {
+  justify-content: flex-start;
+  width: 100%;
+  min-width: 0;
+  text-align: left;
+}
+
+.entry-source-label {
+  flex: 0 0 auto;
+  max-width: 48%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.entry-source-excerpt {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-size: 0.7rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.entry-source-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 100%;
+  min-width: 0;
+  padding: 0.28rem 0.1rem;
+  color: var(--color-text-muted);
+  font-size: 0.72rem;
+  line-height: 1.3;
+}
+
+.entry-source-list .entry-source-status {
+  width: 100%;
 }

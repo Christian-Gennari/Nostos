@@ -109,25 +109,158 @@
         } @else {
         <blockquote class="entry-text">{{ entry.text }}</blockquote>
         }
-        @if (entry.sources?.length) {
-        <div class="entry-sources" data-testid="assistant-entry-sources">
-          @for (source of entry.sources; track source.bookId + ':' + source.sourceSha256 + ':' + $index) {
-          <button
-            appButton
-            variant="ghost"
-            size="sm"
-            type="button"
-            class="entry-source"
-            (click)="openSource(source)"
-            [attr.title]="source.excerpt"
-            data-testid="assistant-source"
-          >
-            <nostos-icon name="book-open" [size]="12"></nostos-icon>
-            <span>{{ sourceLabel(source) }}</span>
-          </button>
+
+        @if (sourceView(entry); as sourceView) {
+          @if (sourceView.items.length) {
+          <div class="entry-sources" data-testid="assistant-entry-sources">
+            @for (display of sourceView.items; track display.key) {
+              @if (display.kind === 'group') {
+              <div class="entry-source-group-wrap">
+                <button
+                  appButton
+                  variant="ghost"
+                  size="sm"
+                  type="button"
+                  class="entry-source entry-source-group"
+                  (click)="toggleSourceGroup(entry.id, display.bookId)"
+                  [attr.aria-expanded]="isSourceGroupExpanded(entry.id, display.bookId)"
+                  [attr.aria-controls]="sourceGroupId(entry.id, display.bookId)"
+                  data-testid="assistant-source-group"
+                >
+                  <nostos-icon name="book-open" [size]="12"></nostos-icon>
+                  <span>{{ display.bookTitle }} · {{ display.items.length }} passages</span>
+                </button>
+
+                @if (isSourceGroupExpanded(entry.id, display.bookId)) {
+                <div
+                  class="entry-source-list"
+                  [id]="sourceGroupId(entry.id, display.bookId)"
+                  role="list"
+                >
+                  @for (item of display.items; track item.key) {
+                  <div class="entry-source-list-row" role="listitem">
+                    @if (item.kind === 'evidence') {
+                      @if (canOpenEvidence(item.evidence)) {
+                      <button
+                        appButton
+                        variant="ghost"
+                        size="sm"
+                        type="button"
+                        class="entry-source entry-source-item"
+                        (click)="openEvidence(item.evidence)"
+                        [attr.title]="item.evidence.excerpt"
+                        data-testid="assistant-source-item"
+                      >
+                        <nostos-icon name="book-open" [size]="12"></nostos-icon>
+                        <span class="entry-source-label">{{ evidenceLabel(item.evidence) }}</span>
+                        @if (sourceExcerpt(item.evidence.excerpt); as excerpt) {
+                        <span class="entry-source-excerpt">{{ excerpt }}</span>
+                        }
+                      </button>
+                      } @else {
+                      <span
+                        class="entry-source-status"
+                        [attr.title]="item.evidence.excerpt"
+                        data-testid="assistant-source-item"
+                      >
+                        <span class="entry-source-label">Source · {{ evidenceLabel(item.evidence) }}</span>
+                        @if (sourceExcerpt(item.evidence.excerpt); as excerpt) {
+                        <span class="entry-source-excerpt">{{ excerpt }}</span>
+                        }
+                      </span>
+                      }
+                    } @else {
+                      @if (canOpenSource(item.source)) {
+                      <button
+                        appButton
+                        variant="ghost"
+                        size="sm"
+                        type="button"
+                        class="entry-source entry-source-item"
+                        (click)="openSource(item.source)"
+                        [attr.title]="item.source.excerpt"
+                        data-testid="assistant-source-item"
+                      >
+                        <nostos-icon name="book-open" [size]="12"></nostos-icon>
+                        <span class="entry-source-label">{{ sourceLabel(item.source) }}</span>
+                        @if (sourceExcerpt(item.source.excerpt); as excerpt) {
+                        <span class="entry-source-excerpt">{{ excerpt }}</span>
+                        }
+                      </button>
+                      } @else {
+                      <span
+                        class="entry-source-status"
+                        [attr.title]="item.source.excerpt"
+                        data-testid="assistant-source-item"
+                      >
+                        <span class="entry-source-label">Source · {{ sourceLabel(item.source) }}</span>
+                        @if (sourceExcerpt(item.source.excerpt); as excerpt) {
+                        <span class="entry-source-excerpt">{{ excerpt }}</span>
+                        }
+                      </span>
+                      }
+                    }
+                  </div>
+                  }
+                </div>
+                }
+              </div>
+              } @else {
+                @if (display.item.kind === 'evidence') {
+                  @if (canOpenEvidence(display.item.evidence)) {
+                  <button
+                    appButton
+                    variant="ghost"
+                    size="sm"
+                    type="button"
+                    class="entry-source"
+                    (click)="openEvidence(display.item.evidence)"
+                    [attr.title]="display.item.evidence.excerpt"
+                    data-testid="assistant-source-item"
+                  >
+                    <nostos-icon name="book-open" [size]="12"></nostos-icon>
+                    <span>{{ evidenceLabel(display.item.evidence) }}</span>
+                  </button>
+                  } @else {
+                  <span
+                    class="entry-source-status"
+                    [attr.title]="display.item.evidence.excerpt"
+                    data-testid="assistant-source-item"
+                  >
+                    Source · {{ evidenceLabel(display.item.evidence) }}
+                  </span>
+                  }
+                } @else {
+                  @if (canOpenSource(display.item.source)) {
+                  <button
+                    appButton
+                    variant="ghost"
+                    size="sm"
+                    type="button"
+                    class="entry-source"
+                    (click)="openSource(display.item.source)"
+                    [attr.title]="display.item.source.excerpt"
+                    data-testid="assistant-source-item"
+                  >
+                    <nostos-icon name="book-open" [size]="12"></nostos-icon>
+                    <span>{{ sourceLabel(display.item.source) }}</span>
+                  </button>
+                  } @else {
+                  <span
+                    class="entry-source-status"
+                    [attr.title]="display.item.source.excerpt"
+                    data-testid="assistant-source-item"
+                  >
+                    Source · {{ sourceLabel(display.item.source) }}
+                  </span>
+                  }
+                }
+              }
+            }
+          </div>
           }
-        </div>
         }
+
         @if (entry.suggestions?.length) {
         <div class="assistant-suggestions" data-testid="assistant-suggestions">
           <span class="suggestions-title">Existing concepts this note could link to</span>
@@ -149,31 +282,6 @@
         @if (entry.artifacts?.length) {
         <div class="entry-artifacts" data-testid="assistant-entry-artifacts">
           @for (artifact of entry.artifacts; track artifact.kind + ':' + $index) {
-            @if (artifact.kind === 'evidence' && showEvidenceArtifact(entry, artifact)) {
-              @if (canOpenEvidence(artifact.evidence)) {
-              <div class="entry-sources">
-                <button
-                  appButton
-                  variant="ghost"
-                  size="sm"
-                  type="button"
-                  class="entry-source"
-                  (click)="openEvidence(artifact.evidence)"
-                  [attr.title]="artifact.evidence.excerpt"
-                  data-testid="assistant-evidence"
-                >
-                  <nostos-icon name="book-open" [size]="12"></nostos-icon>
-                  <span>{{ evidenceLabel(artifact.evidence) }}</span>
-                </button>
-              </div>
-              } @else {
-              <footer class="entry-meta">
-                <span class="entry-status" [attr.title]="artifact.evidence.excerpt">
-                  Source · {{ evidenceLabel(artifact.evidence) }}
-                </span>
-              </footer>
-              }
-            }
             @if (artifact.kind === 'proposal' && showProposalArtifact(entry, artifact)) {
             <footer class="entry-meta">
               <span class="entry-status">{{ artifactLabel(artifact) }}</span>
