@@ -28,7 +28,6 @@
       </span>
       <div class="assistant-heading-copy">
         <span class="assistant-title">Ask Nostos</span>
-        <span class="assistant-subtitle">A quiet margin beside your reading</span>
       </div>
     </div>
 
@@ -44,7 +43,7 @@
         icon="plus"
         [glyphSize]="14"
         type="button"
-        class="assistant-new-conversation"
+        class="assistant-header-action assistant-new-conversation"
         (click)="assistant.newConversation()"
         [disabled]="assistant.sending()"
         aria-label="New conversation"
@@ -52,21 +51,22 @@
         data-testid="assistant-new-conversation"
       ></button>
       <button
+        appIconButton
+        [icon]="expanded() ? 'corners-in' : 'corners-out'"
+        [glyphSize]="14"
         type="button"
-        class="assistant-expand"
+        class="assistant-header-action assistant-expand"
         (click)="toggleExpanded()"
         [attr.aria-label]="expanded() ? 'Collapse Ask Nostos' : 'Expand Ask Nostos'"
         [attr.aria-pressed]="expanded()"
         data-testid="assistant-expand"
-      >
-        <nostos-icon [name]="expanded() ? 'corners-in' : 'corners-out'" [size]="14"></nostos-icon>
-      </button>
+      ></button>
       <button
         appIconButton
         icon="x"
         [glyphSize]="14"
         type="button"
-        class="assistant-close"
+        class="assistant-header-action assistant-close"
         (click)="close()"
         aria-label="Close Ask Nostos"
         data-testid="assistant-close"
@@ -87,7 +87,7 @@
     }
 
     @if (assistant.entries().length > 0) {
-    <div class="assistant-transcript" data-testid="assistant-transcript">
+    <div class="assistant-transcript" #transcript data-testid="assistant-transcript">
       @for (entry of assistant.entries(); track entry.id) {
       <article
         class="entry"
