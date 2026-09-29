@@ -545,6 +545,7 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     expect(newConversation).toBeTruthy();
     expect(newConversation.getAttribute('aria-label')).toBe('New conversation');
     expect(newConversation.classList.contains('assistant-new-conversation')).toBe(true);
+    expect(newConversation.classList.contains('assistant-header-action')).toBe(true);
     expect(newConversation.classList.contains('icon-btn')).toBe(true);
     // assistant-expand is intentionally hidden by the <=768px media query.
     // The New conversation action must never inherit that desktop-only class.
@@ -592,19 +593,20 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     expect(assistant.draft()).toBe('Keep this draft while the shell changes');
   });
 
-  it('uses the canonical icon button only for the ordinary close action', () => {
+  it('keeps the header quiet and uses one action treatment for all three controls', () => {
     fixture.componentInstance.open();
     fixture.detectChanges();
 
-    const close = fixture.nativeElement.querySelector(
-      '[data-testid="assistant-close"]',
-    ) as HTMLButtonElement;
-    const expand = fixture.nativeElement.querySelector(
-      '[data-testid="assistant-expand"]',
-    ) as HTMLButtonElement;
+    expect(fixture.nativeElement.querySelector('.assistant-subtitle')).toBeNull();
 
-    expect(close.classList.contains('icon-btn')).toBe(true);
-    expect(expand.classList.contains('icon-btn')).toBe(false);
+    const actions = [
+      fixture.nativeElement.querySelector('[data-testid="assistant-new-conversation"]'),
+      fixture.nativeElement.querySelector('[data-testid="assistant-expand"]'),
+      fixture.nativeElement.querySelector('[data-testid="assistant-close"]'),
+    ] as HTMLButtonElement[];
+
+    expect(actions.every((action) => action.classList.contains('icon-btn'))).toBe(true);
+    expect(actions.every((action) => action.classList.contains('assistant-header-action'))).toBe(true);
   });
 
   it('returns to compact mode after the expanded assistant is closed', () => {
@@ -1375,6 +1377,9 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     const CONTENT_HEIGHT = 1200;
     const END = CONTENT_HEIGHT - PANE_HEIGHT;
     let contentHeight = CONTENT_HEIGHT;
+    let originalResizeObserver: typeof ResizeObserver | undefined;
+    let resizeObserverCallback: (() => void) | null = null;
+    const observedResizeElements = new Set<Element>();
 
     const positions = new WeakMap<Element, number>();
 
@@ -1384,6 +1389,34 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
 
     beforeEach(() => {
       contentHeight = CONTENT_HEIGHT;
+      resizeObserverCallback = null;
+      observedResizeElements.clear();
+      originalResizeObserver = globalThis.ResizeObserver;
+
+      class TestResizeObserver {
+        constructor(callback: ResizeObserverCallback) {
+          resizeObserverCallback = () => callback([], this as unknown as ResizeObserver);
+        }
+
+        observe(element: Element): void {
+          observedResizeElements.add(element);
+        }
+
+        unobserve(element: Element): void {
+          observedResizeElements.delete(element);
+        }
+
+        disconnect(): void {
+          observedResizeElements.clear();
+        }
+      }
+
+      Object.defineProperty(globalThis, 'ResizeObserver', {
+        value: TestResizeObserver,
+        configurable: true,
+        writable: true,
+      });
+
       Object.defineProperty(HTMLElement.prototype, 'scrollHeight', {
         get(this: HTMLElement) {
           return isPane(this) ? contentHeight : 0;
@@ -1410,6 +1443,16 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     afterEach(() => {
       for (const property of ['scrollHeight', 'clientHeight', 'scrollTop']) {
         delete (HTMLElement.prototype as unknown as Record<string, unknown>)[property];
+      }
+
+      if (originalResizeObserver) {
+        Object.defineProperty(globalThis, 'ResizeObserver', {
+          value: originalResizeObserver,
+          configurable: true,
+          writable: true,
+        });
+      } else {
+        delete (globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver;
       }
     });
 
@@ -1444,6 +1487,36 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
       await render();
 
       expect(body().scrollTop).toBe(END);
+    });
+
+    it('follows post-layout transcript growth in compact mode without overriding history reading', async () => {
+      await open();
+      expect(fixture.componentInstance.expanded()).toBe(false);
+
+      assistant.updateDraft('Keep the compact reply visible.');
+      fixture.componentInstance.onSendClick();
+      http.expectOne('/api/assistant/turn/stream').flush(turn({ reply: 'A reply that reflows.' }));
+      await render();
+
+      const transcript = fixture.nativeElement.querySelector(
+        '[data-testid="assistant-transcript"]',
+      ) as HTMLElement;
+      expect(transcript).toBeTruthy();
+      expect(observedResizeElements.has(transcript)).toBe(true);
+      expect(body().scrollTop).toBe(END);
+
+      // Model the compact flyout settling after Angular's render pass. The
+      // transcript becomes taller without another signal changing.
+      contentHeight += 240;
+      resizeObserverCallback?.();
+
+      expect(body().scrollTop).toBe(contentHeight - PANE_HEIGHT);
+
+      readerScrollsTo(200);
+      contentHeight += 180;
+      resizeObserverCallback?.();
+
+      expect(body().scrollTop).toBe(200);
     });
 
     it('keeps following when an expanded-shell programmatic scroll event arrives after content grows', async () => {
