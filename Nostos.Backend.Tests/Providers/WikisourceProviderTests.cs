@@ -115,7 +115,9 @@ public sealed class WikisourceProviderTests
             new ProviderSearchQuery("pride", Kind: ProviderMediaKind.Audiobook),
             CancellationToken.None);
         audioOnly.Items.Should().BeEmpty();
-        handler.RecordedRequests.Should().HaveCount(3);
+        // Three ebook searches, one catalogue download: the parsed catalogue
+        // is reused (#641), and an audiobook-only search never fetches it.
+        handler.RecordedRequests.Should().HaveCount(1);
     }
 
     [Fact]
@@ -290,5 +292,132 @@ public sealed class WikisourceProviderTests
 
         var registry = new ProviderRegistry(new IContentProvider[] { provider });
         registry.Find(WikisourceProvider.ProviderIdentifier).Should().NotBeNull();
+    }
+
+    // ------------------------------------------------------------------
+    // Catalogue cache (#641): one download reused across searches
+    // ------------------------------------------------------------------
+
+    private sealed class ManualClock : TimeProvider
+    {
+        public DateTimeOffset Now { get; set; } = new(2026, 9, 30, 12, 0, 0, TimeSpan.Zero);
+        public override DateTimeOffset GetUtcNow() => Now;
+    }
+
+    private static int CatalogRequests(StubHttpMessageHandler handler) =>
+        handler.RecordedRequestPaths.Count(path => path == CatalogPath);
+
+    private static HttpResponseMessage CatalogResponse(string xml) => new(HttpStatusCode.OK)
+    {
+        Content = new StringContent(xml, System.Text.Encoding.UTF8, "application/atom+xml"),
+    };
+
+    [Fact]
+    public async Task Repeated_searches_reuse_the_parsed_catalogue_instead_of_redownloading_it()
+    {
+        var handler = new StubHttpMessageHandler();
+        handler.RegisterXml(CatalogPath, LoadFixture("ready-for-export.xml"));
+        var provider = new WikisourceProvider(new StubHttpClientFactory(handler), new ManualClock());
+
+        var first = await provider.SearchAsync(new ProviderSearchQuery("pride"), CancellationToken.None);
+        var second = await provider.SearchAsync(new ProviderSearchQuery("austen"), CancellationToken.None);
+        var third = await provider.SearchAsync(new ProviderSearchQuery("pride"), CancellationToken.None);
+
+        CatalogRequests(handler).Should().Be(1);
+        second.Items.Should().NotBeEmpty();
+        third.Items.Select(i => i.ExternalId).Should().Equal(first.Items.Select(i => i.ExternalId));
+    }
+
+    [Fact]
+    public async Task Concurrent_searches_share_one_catalogue_download()
+    {
+        var xml = LoadFixture("ready-for-export.xml");
+        using var release = new ManualResetEventSlim(false);
+        var handler = new StubHttpMessageHandler();
+        handler.Register(CatalogPath, _ =>
+        {
+            release.Wait(TimeSpan.FromSeconds(10));
+            return CatalogResponse(xml);
+        });
+        var provider = new WikisourceProvider(new StubHttpClientFactory(handler), new ManualClock());
+
+        var searches = Enumerable.Range(0, 5)
+            .Select(_ => provider.SearchAsync(new ProviderSearchQuery("pride"), CancellationToken.None))
+            .ToArray();
+        await Task.Delay(100);
+        release.Set();
+        var pages = await Task.WhenAll(searches).WaitAsync(TimeSpan.FromSeconds(10));
+
+        CatalogRequests(handler).Should().Be(1);
+        pages.Should().OnlyContain(page => page.Items.Count == 1);
+    }
+
+    [Fact]
+    public async Task An_expired_catalogue_is_refetched_but_a_fresh_one_is_not()
+    {
+        var clock = new ManualClock();
+        var handler = new StubHttpMessageHandler();
+        handler.RegisterXml(CatalogPath, LoadFixture("ready-for-export.xml"));
+        var provider = new WikisourceProvider(new StubHttpClientFactory(handler), clock);
+
+        await provider.SearchAsync(new ProviderSearchQuery("pride"), CancellationToken.None);
+        clock.Now += WikisourceProvider.CatalogFreshFor - TimeSpan.FromMinutes(1);
+        await provider.SearchAsync(new ProviderSearchQuery("pride"), CancellationToken.None);
+        CatalogRequests(handler).Should().Be(1, "the catalogue is still fresh");
+
+        clock.Now += TimeSpan.FromMinutes(2);
+        await provider.SearchAsync(new ProviderSearchQuery("pride"), CancellationToken.None);
+        CatalogRequests(handler).Should().Be(2, "an expired catalogue is never served");
+    }
+
+    [Fact]
+    public async Task A_failed_catalogue_download_is_not_cached()
+    {
+        var xml = LoadFixture("ready-for-export.xml");
+        var fail = true;
+        var handler = new StubHttpMessageHandler();
+        handler.Register(CatalogPath, _ => fail
+            ? new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+            : CatalogResponse(xml));
+        var provider = new WikisourceProvider(new StubHttpClientFactory(handler), new ManualClock());
+
+        var act = () => provider.SearchAsync(new ProviderSearchQuery("pride"), CancellationToken.None);
+        await act.Should().ThrowAsync<ProviderException>();
+
+        fail = false;
+        var page = await provider.SearchAsync(new ProviderSearchQuery("pride"), CancellationToken.None);
+
+        page.Items.Should().ContainSingle();
+        CatalogRequests(handler).Should().Be(2);
+    }
+
+    [Fact]
+    public async Task A_search_that_stops_waiting_still_lets_the_shared_download_warm_the_cache()
+    {
+        // The aggregate discovery deadline cancels a slow provider's search.
+        // That must not also cancel the catalogue download, or a cold catalogue
+        // slower than the deadline would never be cached.
+        var xml = LoadFixture("ready-for-export.xml");
+        using var release = new ManualResetEventSlim(false);
+        var handler = new StubHttpMessageHandler();
+        handler.Register(CatalogPath, _ =>
+        {
+            release.Wait(TimeSpan.FromSeconds(10));
+            return CatalogResponse(xml);
+        });
+        var provider = new WikisourceProvider(new StubHttpClientFactory(handler), new ManualClock());
+        using var cts = new CancellationTokenSource();
+
+        var abandoned = provider.SearchAsync(new ProviderSearchQuery("pride"), cts.Token);
+        await Task.Delay(100);
+        cts.Cancel();
+        await FluentActions.Awaiting(() => abandoned).Should().ThrowAsync<OperationCanceledException>();
+
+        release.Set();
+        var page = await provider.SearchAsync(new ProviderSearchQuery("pride"), CancellationToken.None)
+            .WaitAsync(TimeSpan.FromSeconds(10));
+
+        page.Items.Should().ContainSingle();
+        CatalogRequests(handler).Should().Be(1, "the abandoned search's download was reused");
     }
 }

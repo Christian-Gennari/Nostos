@@ -5,7 +5,12 @@ import { of, Subject, throwError } from 'rxjs';
 import { AddBookModal } from './add-book-modal.component';
 import { Book, BooksService } from '../core/services/books.service';
 import { ProvidersService } from '../core/services/providers.service';
-import { ProviderAcquisition, ProviderItem, ProviderSummary } from '../core/dtos/provider.dtos';
+import {
+  ProviderAcquisition,
+  ProviderDiscoverySearchResult,
+  ProviderItem,
+  ProviderSummary,
+} from '../core/dtos/provider.dtos';
 import { ToastService } from '../core/services/toast.service';
 
 /**
@@ -281,7 +286,8 @@ describe('AddBookModal — From a Source', () => {
     component.selectSourceItem(pride);
     fixture.detectChanges();
 
-    const action = fixture.nativeElement.querySelector('.source-action') as HTMLButtonElement;
+    // The next action lives in the persistent footer (#641).
+    const action = fixture.nativeElement.querySelector('[data-testid="source-use-book"]') as HTMLButtonElement;
     expect(action.classList.contains('nostos-button')).toBe(true);
     expect(action.classList.contains('nostos-button--primary')).toBe(true);
   });
@@ -449,7 +455,9 @@ describe('AddBookModal — From a Source', () => {
     fixture.detectChanges();
 
     expect(fixture.nativeElement.querySelectorAll('.source-result').length).toBe(1);
-    expect(fixture.nativeElement.textContent).toContain("Wikisource couldn't be searched right now.");
+    // Partial availability is one compact line, not a stack of errors (#641).
+    expect(fixture.nativeElement.querySelector('[data-testid="source-partial"]').textContent)
+      .toContain('Not searched right now: Wikisource');
     expect(fixture.nativeElement.textContent).toContain('Pride and Prejudice');
   });
 
@@ -869,5 +877,199 @@ describe('AddBookModal — From a Source', () => {
     expect(overrides?.title).toBeNull();
     expect(overrides?.categories).toBeNull();
     expect(overrides?.publisher).toBeNull();
+  });
+
+  // ------------------------------------------------------------------
+  // Responsive, stable, action-stable discovery (#641)
+  // ------------------------------------------------------------------
+
+  describe('responsive discovery (#641)', () => {
+    const ok = (items: ProviderItem[]): ProviderDiscoverySearchResult => ({
+      items,
+      hasMore: false,
+      sources: [
+        { providerId: 'gutenberg', displayName: 'Project Gutenberg', succeeded: true, notice: null, errorCode: null },
+      ],
+    });
+    const emma: ProviderItem = { ...pride, externalId: '158', title: 'Emma', assets: [] };
+    const persuasion: ProviderItem = { ...pride, externalId: '105', title: 'Persuasion', assets: [] };
+
+    function el(testId: string): HTMLElement | null {
+      return fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+    }
+
+    function titles(): string[] {
+      return Array.from(fixture.nativeElement.querySelectorAll('.source-result-title') as NodeListOf<HTMLElement>)
+        .map((e) => e.textContent?.trim() ?? '');
+    }
+
+    async function search(query = 'austen'): Promise<void> {
+      component.enterSourceMode();
+      await fixture.whenStable();
+      component.sourceQuery.set(query);
+      component.searchSource();
+      fixture.detectChanges();
+    }
+
+    it('aborts the previous request when a replacement search is submitted', async () => {
+      const first = new Subject<ProviderDiscoverySearchResult>();
+      const second = new Subject<ProviderDiscoverySearchResult>();
+      vi.spyOn(providers, 'searchAll')
+        .mockReturnValueOnce(first.asObservable())
+        .mockReturnValueOnce(second.asObservable());
+
+      await search('austen');
+      expect(first.observed).toBe(true);
+
+      component.sourceQuery.set('bronte');
+      component.searchSource();
+      expect(first.observed).toBe(false);
+      expect(second.observed).toBe(true);
+
+      second.next(ok([emma]));
+      second.complete();
+      fixture.detectChanges();
+      expect(titles()).toEqual(['Emma']);
+    });
+
+    it('aborts an in-flight search when the material type changes', async () => {
+      const pending = new Subject<ProviderDiscoverySearchResult>();
+      vi.spyOn(providers, 'searchAll').mockReturnValue(pending.asObservable());
+      await search('a');
+      component.sourceQuery.set('austen');
+      component.searchSource();
+      expect(pending.observed).toBe(true);
+
+      component.sourceQuery.set('x'); // too short to start a replacement
+      component.setSourceKind('audiobook');
+      expect(pending.observed).toBe(false);
+      expect(component.sourceSearching()).toBe(false);
+    });
+
+    it('aborts source requests when the modal closes', async () => {
+      const pending = new Subject<ProviderDiscoverySearchResult>();
+      vi.spyOn(providers, 'searchAll').mockReturnValue(pending.asObservable());
+      await search();
+      expect(pending.observed).toBe(true);
+
+      fixture.componentRef.setInput('isOpen', false);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(pending.observed).toBe(false);
+    });
+
+    it('reserves the result area while searching and swaps in one ordered set', async () => {
+      const pending = new Subject<ProviderDiscoverySearchResult>();
+      vi.spyOn(providers, 'searchAll').mockReturnValue(pending.asObservable());
+      await search();
+
+      expect(el('source-results-pane')).not.toBeNull();
+      expect(el('source-loading')?.textContent).toContain('Searching free catalogues…');
+      expect(titles()).toEqual([]);
+
+      pending.next(ok([pride, emma, persuasion]));
+      pending.complete();
+      fixture.detectChanges();
+
+      expect(el('source-loading')).toBeNull();
+      expect(titles()).toEqual(['Pride and Prejudice', 'Emma', 'Persuasion']);
+    });
+
+    it('never reorders or removes sibling results when one is selected', async () => {
+      vi.spyOn(providers, 'searchAll').mockReturnValue(of(ok([pride, emma, persuasion])));
+      vi.spyOn(providers, 'item').mockImplementation((_, externalId) =>
+        of([pride, emma, persuasion].find((item) => item.externalId === externalId)!),
+      );
+      await search();
+      fixture.detectChanges();
+      const before = titles();
+
+      component.selectSourceItem(emma);
+      fixture.detectChanges();
+
+      expect(titles()).toEqual(before);
+      expect(el('source-detail-pane')?.textContent).toContain('Emma');
+    });
+
+    it('drives the footer action: Select a book → Loading edition… → Use this book', async () => {
+      const detail = new Subject<ProviderItem>();
+      vi.spyOn(providers, 'searchAll').mockReturnValue(of(ok([{ ...pride, assets: [] }])));
+      vi.spyOn(providers, 'item').mockReturnValue(detail.asObservable());
+      await search();
+      fixture.detectChanges();
+      const action = () => el('source-use-book') as HTMLButtonElement;
+
+      expect(action().textContent?.trim()).toBe('Select a book');
+      expect(action().disabled).toBe(true);
+
+      component.selectSourceItem({ ...pride, assets: [] });
+      fixture.detectChanges();
+      expect(action().textContent?.trim()).toBe('Loading edition…');
+      expect(action().disabled).toBe(true);
+
+      detail.next(pride);
+      detail.complete();
+      fixture.detectChanges();
+      expect(action().textContent?.trim()).toBe('Use this book');
+      expect(action().disabled).toBe(false);
+      // The in-detail action is gone: the footer owns the next step.
+      expect(fixture.nativeElement.querySelector('.source-action')).toBeNull();
+
+      action().click();
+      fixture.detectChanges();
+      expect(component.sourceMode()).toBe(false);
+      expect(component.seededFromSource()).toBe(true);
+    });
+
+    it('keeps the footer action unavailable when the edition cannot be loaded', async () => {
+      vi.spyOn(providers, 'searchAll').mockReturnValue(of(ok([{ ...pride, assets: [] }])));
+      vi.spyOn(providers, 'item').mockReturnValue(throwError(() => new Error('down')));
+      await search();
+      component.selectSourceItem({ ...pride, assets: [] });
+      fixture.detectChanges();
+
+      const action = el('source-use-book') as HTMLButtonElement;
+      expect(action.disabled).toBe(true);
+      expect(component.sourceImportError()).toContain('could not be loaded');
+    });
+
+    it('aborts the previous detail request when another result is chosen', async () => {
+      const first = new Subject<ProviderItem>();
+      const second = new Subject<ProviderItem>();
+      vi.spyOn(providers, 'searchAll').mockReturnValue(of(ok([pride, emma])));
+      vi.spyOn(providers, 'item')
+        .mockReturnValueOnce(first.asObservable())
+        .mockReturnValueOnce(second.asObservable());
+      await search();
+
+      component.selectSourceItem(pride);
+      component.selectSourceItem(emma);
+      expect(first.observed).toBe(false);
+      expect(second.observed).toBe(true);
+    });
+
+    it('narrow flow: selecting opens the detail view and Back returns to the same results', async () => {
+      vi.spyOn(providers, 'searchAll').mockReturnValue(of(ok([pride, emma, persuasion])));
+      await search('austen');
+      component.setSourceKind('ebook');
+      component.sourceQuery.set('austen');
+      component.searchSource();
+      fixture.detectChanges();
+      const workspace = () => fixture.nativeElement.querySelector('.source-workspace') as HTMLElement;
+      expect(workspace().classList.contains('showing-detail')).toBe(false);
+
+      component.selectSourceItem(emma);
+      fixture.detectChanges();
+      expect(workspace().classList.contains('showing-detail')).toBe(true);
+      expect(el('source-back')).not.toBeNull();
+
+      (el('source-back') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      expect(workspace().classList.contains('showing-detail')).toBe(false);
+      expect(component.sourceQuery()).toBe('austen');
+      expect(component.sourceKind()).toBe('ebook');
+      expect(titles()).toEqual(['Pride and Prejudice', 'Emma', 'Persuasion']);
+      expect(component.isSelectedSourceItem(emma)).toBe(true);
+    });
   });
 });

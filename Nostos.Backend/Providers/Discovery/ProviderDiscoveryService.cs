@@ -34,7 +34,7 @@ public sealed class ProviderDiscoveryService
     {
         _registry = registry;
         _logger = logger;
-        _searchTimeout = options.Value.EffectiveSearchTimeout;
+        _searchTimeout = options.Value.EffectiveProviderDeadline;
     }
 
     public async Task<ProviderDiscoveryResult> SearchAsync(
@@ -52,6 +52,10 @@ public sealed class ProviderDiscoveryService
             .Select(registration => SearchOneAsync(registration, query, kind, limit, ct))
             .ToArray();
 
+        // Each task is bounded by the same deadline and they all start now, so
+        // this settles within the aggregate budget. The merge below runs once
+        // on the settled outcomes; a provider that finishes later has already
+        // been cancelled and cannot change the returned response.
         var results = await Task.WhenAll(tasks);
 
         var successfulPages = results

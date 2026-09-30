@@ -24,11 +24,23 @@ public sealed class WikisourceProvider : IContentProvider,
     private const long MaxEbookBytes = 128L * 1024 * 1024;
     private const int MaxExternalIdLength = 512;
 
-    private readonly HttpClient _http;
+    /// <summary>
+    /// How long a parsed export-ready catalogue is reused before the next
+    /// search refetches it (#641). WS Export's list changes slowly; before this
+    /// every search downloaded and parsed the whole feed.
+    /// </summary>
+    public static readonly TimeSpan CatalogFreshFor = TimeSpan.FromHours(6);
 
-    public WikisourceProvider(IHttpClientFactory httpClientFactory)
+    private readonly HttpClient _http;
+    private readonly TimeProvider _clock;
+    private readonly object _catalogGate = new();
+    private CatalogSnapshot? _catalog;
+    private Task<CatalogSnapshot>? _catalogRefresh;
+
+    public WikisourceProvider(IHttpClientFactory httpClientFactory, TimeProvider? clock = null)
     {
         _http = httpClientFactory.CreateClient(HttpClientName);
+        _clock = clock ?? TimeProvider.System;
     }
 
     public string Id => ProviderIdentifier;
@@ -62,11 +74,7 @@ public sealed class WikisourceProvider : IContentProvider,
         if (query.Kind is not null && query.Kind != ProviderMediaKind.Ebook)
             return new ProviderSearchPage([], HasMore: false);
 
-        var feed = await LoadAsync(WikisourceCatalog.CatalogPath, ct);
-        if (feed is null)
-            return new ProviderSearchPage([], HasMore: false);
-
-        var books = WikisourceCatalog.Parse(feed);
+        var books = await GetCatalogAsync(ct);
         var terms = (query.Query ?? string.Empty)
             .Split(' ', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
 
@@ -127,6 +135,58 @@ public sealed class WikisourceProvider : IContentProvider,
                 RightsStatement: book.Rights,
                 RightsUrl: null));
     }
+
+    /// <summary>
+    /// The parsed catalogue, reused while fresh. A refresh is single-flight:
+    /// concurrent searches share one download instead of each starting their
+    /// own. The download runs on its own bounded lifetime (the client's 20 s
+    /// timeout), not the caller's token, so a search that gives up (the
+    /// aggregate discovery deadline, a superseded request) stops waiting but
+    /// still lets the shared refresh finish and warm the cache for the next
+    /// search. A failed refresh is not cached; the next search retries it. An
+    /// expired catalogue is never served: it is refetched.
+    /// </summary>
+    private async Task<IReadOnlyList<WikisourceBook>> GetCatalogAsync(CancellationToken ct)
+    {
+        Task<CatalogSnapshot> refresh;
+        lock (_catalogGate)
+        {
+            if (_catalog is { } cached && _clock.GetUtcNow() - cached.LoadedAt < CatalogFreshFor)
+                return cached.Books;
+
+            refresh = _catalogRefresh ??= Task.Run(RefreshCatalogAsync);
+        }
+
+        var snapshot = await refresh.WaitAsync(ct);
+        return snapshot.Books;
+    }
+
+    private async Task<CatalogSnapshot> RefreshCatalogAsync()
+    {
+        try
+        {
+            var feed = await LoadAsync(WikisourceCatalog.CatalogPath, CancellationToken.None);
+            var snapshot = new CatalogSnapshot(
+                feed is null ? [] : WikisourceCatalog.Parse(feed),
+                _clock.GetUtcNow());
+
+            lock (_catalogGate)
+            {
+                _catalog = snapshot;
+                _catalogRefresh = null;
+            }
+
+            return snapshot;
+        }
+        catch
+        {
+            lock (_catalogGate)
+                _catalogRefresh = null;
+            throw;
+        }
+    }
+
+    private sealed record CatalogSnapshot(IReadOnlyList<WikisourceBook> Books, DateTimeOffset LoadedAt);
 
     private async Task<WikisourceBook?> LoadBookAsync(string externalId, CancellationToken ct)
     {

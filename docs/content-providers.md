@@ -231,6 +231,24 @@ once the discovery deadline expires. Provider-local timeout/cancellation is
 reported as `provider_timeout`; genuine HTTP request cancellation still
 propagates instead of being converted into a normal search response.
 
+The whole search is additionally bounded by an interactive budget,
+`ProviderDiscovery:AggregateSearchTimeout` (default `00:00:04`). Every eligible
+provider starts at the same moment and each waits at most the smaller of the
+two deadlines, so one unhealthy catalogue costs the Add Book picker a few
+seconds instead of the full per-provider deadline. Providers still pending at
+the budget are cancelled and reported as `provider_timeout`; siblings that
+answered in time contribute their results, which are merged once. The default
+is a conservative starting point, not a measured percentile; tune it once real
+provider timings are available.
+
+Wikisource has no server-side search: its provider filters WS Export's
+export-ready OPDS catalogue locally. The parsed catalogue is cached per process
+for six hours and refreshed single-flight, so concurrent searches share one
+download. The refresh runs on its own bounded lifetime (the client timeout),
+so a search that gives up at the aggregate budget still warms the cache for the
+next one. A failed refresh is not cached, and an expired catalogue is refetched
+rather than served.
+
 Search items are thin and carry no assets. They *do* carry normalized
 `MediaKind`, so the client can show "E-book" or "Audiobook" without knowing
 that Gutenberg is an ebook source or LibriVox is an audiobook source. Result
@@ -280,7 +298,9 @@ and the library row is attached.
   },
   "ProviderDiscovery": {
     // Hard deadline for one provider in unified search.
-    "SearchTimeout": "00:00:12"
+    "SearchTimeout": "00:00:12",
+    // Interactive ceiling for the whole search across providers.
+    "AggregateSearchTimeout": "00:00:04"
   },
   "Acquisition": {
     // Optional. Defaults to a sibling of Storage/books, NOT /tmp.
