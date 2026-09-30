@@ -1137,6 +1137,77 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     });
   });
 
+  describe('execution ceiling after a committed change (issue #647)', () => {
+    const PARTIAL = 'assistant_turn_partially_completed';
+
+    function transcript(): HTMLElement {
+      return fixture.nativeElement.querySelector('[data-testid="assistant-transcript"]');
+    }
+
+    /** Sends one streamed turn that ends with the given terminal event. */
+    function finishTurn(kind: 'completed' | 'failed', response: AssistantTurnResponse): void {
+      assistant.open();
+      fixture.detectChanges();
+      assistant.updateDraft('the epub version i guess?');
+      assistant.submit();
+      fixture.detectChanges();
+      const request = http.expectOne('/api/assistant/turn/stream');
+      const turnId = request.request.body.turnId as string;
+      const failure = response.error
+        ? { code: response.error.code, message: response.error.message, retryable: false }
+        : undefined;
+      request.flush(
+        JSON.stringify({ turnId, sequence: 1, kind: 'started' }) + '\n'
+        + JSON.stringify({ turnId, sequence: 2, kind, failure, response }) + '\n',
+      );
+      fixture.detectChanges();
+    }
+
+    it('shows one success outcome when the change completed before the ceiling', () => {
+      finishTurn('completed', turn({
+        reply: 'Done.',
+        executedCapabilities: ['library_update_book'],
+        error: null,
+      }));
+
+      const text = transcript().textContent ?? '';
+      expect(text).toContain('Done.');
+      expect(text).toContain('Changed · book updated');
+      expect(text).not.toContain('Failed');
+      expect(text).not.toContain('execution limit');
+      expect(transcript().querySelector('.entry-error')).toBeNull();
+    });
+
+    it('shows committed changes as applied and the rest as not finished, never as failed', () => {
+      const message =
+        "I made the changes listed below, but reached this turn's execution limit before I could finish the rest. Send another message to continue.";
+      finishTurn('failed', turn({
+        reply: message,
+        executedCapabilities: ['library_update_book'],
+        error: { code: PARTIAL, message },
+      }));
+
+      const text = transcript().textContent ?? '';
+      expect(text).toContain('Changed · book updated');
+      expect(text).toContain('Not finished');
+      expect(text).not.toContain('Failed');
+      expect(text).not.toContain(PARTIAL);
+      expect(text.match(/execution limit/g)?.length).toBe(1);
+      expect(transcript().querySelector('.entry-error')).toBeNull();
+      expect(assistant.lastError()).toBeNull();
+    });
+
+    it('still reports a failure when nothing was committed before the ceiling', () => {
+      const message = 'This turn reached its execution limit before it could finish.';
+      finishTurn('failed', turn({
+        reply: "I reached this turn's execution limit before I could finish. Send another message to continue.",
+        error: { code: 'assistant_execution_budget_exhausted', message },
+      }));
+
+      expect(transcript().textContent).toContain(`Failed · ${message}`);
+    });
+  });
+
   describe('turn activity (issue #564)', () => {
     beforeEach(() => vi.useFakeTimers());
     afterEach(() => vi.useRealTimers());

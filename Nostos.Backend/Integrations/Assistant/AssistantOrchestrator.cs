@@ -86,6 +86,22 @@ public sealed class AssistantOrchestrator(
     public const string IncompleteTurnReply =
         "I reached this turn's execution limit before I could finish. Send another message to continue.";
 
+    /// <summary>
+    /// The reply when the execution ceiling fires after the final round was
+    /// nothing but successful canonical writes: the requested change is done
+    /// and only the model's closing prose is missing. The server-owned action
+    /// artifacts name what changed, so no extra model call is spent to say so.
+    /// </summary>
+    public const string CompletedBeforeCeilingReply = "Done.";
+
+    /// <summary>
+    /// The reply when the execution ceiling fires after some canonical writes
+    /// committed but work was still in progress. It never implies a rollback:
+    /// the committed changes stay applied and are listed as action artifacts.
+    /// </summary>
+    public const string PartiallyCompletedReply =
+        "I made the changes listed below, but reached this turn's execution limit before I could finish the rest. Send another message to continue.";
+
     public const string ApprovalRequiredReply = "I've prepared a plan for your approval.";
 
     /// <summary>
@@ -230,6 +246,10 @@ public sealed class AssistantOrchestrator(
         if (captureIntent.ResolvedBook is { } clarifiedScope)
             retrieval.RecordResolvedBook(clarifiedScope);
         var mutationCompleted = false;
+        var mutationFailed = false;
+        // True when the most recent tool round consisted only of successful
+        // canonical writes, i.e. the model had nothing left to do but reply.
+        var lastRoundOnlySucceededMutations = false;
 
         var iterations = Math.Max(1, options.MaxToolIterations);
         for (var iteration = 0; iteration < iterations; iteration++)
@@ -376,6 +396,7 @@ public sealed class AssistantOrchestrator(
                 completion.ToolCalls,
                 completion.ProviderState));
 
+            var roundSucceededMutations = 0;
             foreach (var call in completion.ToolCalls)
             {
                 if (ct.IsCancellationRequested)
@@ -576,10 +597,12 @@ public sealed class AssistantOrchestrator(
                 if (result.Success && mutation)
                 {
                     mutationCompleted = true;
+                    roundSucceededMutations++;
                     terminalError = null;
                 }
                 else if (!result.Success && mutation)
                 {
+                    mutationFailed = true;
                     terminalError = new AssistantTurnErrorDto(
                         result.ErrorCode ?? AssistantErrorCodes.NotFound,
                         result.ErrorMessage ?? "The requested change could not be completed.");
@@ -671,6 +694,8 @@ public sealed class AssistantOrchestrator(
             if (stopReason == AssistantTurnStopReason.Cancelled)
                 break;
 
+            lastRoundOnlySucceededMutations = roundSucceededMutations == completion.ToolCalls.Count;
+
             // Asking for deterministic capture input ends this turn. The user's
             // actual answer arrives as the next Message plus continuation id; it
             // is never hidden in context or replayed as the original message.
@@ -695,6 +720,7 @@ public sealed class AssistantOrchestrator(
             pendingPlan = ToPendingPlanDto(stored);
         }
 
+        var ceilingOutcome = CeilingOutcome.None;
         if (stopReason == AssistantTurnStopReason.Cancelled)
         {
             terminalError = new AssistantTurnErrorDto(
@@ -705,9 +731,24 @@ public sealed class AssistantOrchestrator(
         }
         else if (stopReason == AssistantTurnStopReason.SafetyCeiling)
         {
-            terminalError = new AssistantTurnErrorDto(
-                AssistantErrorCodes.ExecutionBudgetExhausted,
-                "This turn reached its execution limit before it could finish.");
+            // The ceiling is a runaway guard, not a rollback: a committed write
+            // must never be reported as a failed turn (#647).
+            ceilingOutcome = !mutationCompleted
+                ? CeilingOutcome.NothingCommitted
+                : !mutationFailed && lastRoundOnlySucceededMutations
+                    ? CeilingOutcome.Completed
+                    : CeilingOutcome.PartiallyCompleted;
+
+            terminalError = ceilingOutcome switch
+            {
+                CeilingOutcome.Completed => null,
+                CeilingOutcome.PartiallyCompleted => new AssistantTurnErrorDto(
+                    AssistantErrorCodes.PartiallyCompleted,
+                    PartiallyCompletedReply),
+                _ => new AssistantTurnErrorDto(
+                    AssistantErrorCodes.ExecutionBudgetExhausted,
+                    "This turn reached its execution limit before it could finish."),
+            };
         }
         else if (terminalError is null)
         {
@@ -736,7 +777,12 @@ public sealed class AssistantOrchestrator(
         }
         else if (stoppedByExecutionGuard && acknowledgement is null)
         {
-            reply = IncompleteTurnReply;
+            reply = ceilingOutcome switch
+            {
+                CeilingOutcome.Completed => CompletedBeforeCeilingReply,
+                CeilingOutcome.PartiallyCompleted => PartiallyCompletedReply,
+                _ => IncompleteTurnReply,
+            };
         }
         else
         {
@@ -799,6 +845,14 @@ public sealed class AssistantOrchestrator(
             terminalError,
             evidenceReferences,
             resolvedBook);
+    }
+
+    private enum CeilingOutcome
+    {
+        None,
+        NothingCommitted,
+        Completed,
+        PartiallyCompleted,
     }
 
     private Task CompleteUsageAsync(

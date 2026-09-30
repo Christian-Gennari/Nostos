@@ -63,6 +63,7 @@ public static class AssistantErrorCodes
     public const string TurnAlreadyRunning = "assistant_turn_already_running";
     public const string TurnCancelled = "assistant_turn_cancelled";
     public const string ExecutionBudgetExhausted = "assistant_execution_budget_exhausted";
+    public const string PartiallyCompleted = "assistant_turn_partially_completed";
     public const string UnverifiedCompletionClaim = "assistant_unverified_completion_claim";
     public const string NoEvidence = "assistant_no_evidence";
     public const string SourceIndexingPending = "assistant_source_indexing_pending";

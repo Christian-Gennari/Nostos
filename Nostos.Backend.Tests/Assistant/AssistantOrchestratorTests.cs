@@ -1833,6 +1833,95 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         response.Reply.Should().NotContain("Done");
     }
 
+    // ------------------------------------------------------------------
+    // Execution ceiling after a committed write (#647)
+    // ------------------------------------------------------------------
+
+    private static LlmCompletion ToolRound(string id, string name, object args) =>
+        new(null, "tool_calls", [new LlmToolCall(id, name, JsonSerializer.Serialize(args))]);
+
+    [Fact]
+    public async Task A_committed_favorite_is_reported_done_when_the_ceiling_trips_before_the_closing_reply()
+    {
+        // The real flow: two editions of Essays and Aphorisms, the user picked
+        // the EPUB, the model reads it, favorites it, and the tool loop is then
+        // exhausted before the closing prose round.
+        var h = CreateHarness(maxToolIterations: 2);
+        await SeedBookAsync(h, "Essays and Aphorisms", "Arthur Schopenhauer");
+        var epub = await SeedEBookAsync(h, "Essays and Aphorisms", "Arthur Schopenhauer");
+        h.Llm.Enqueue(ToolRound("read", "library_get_book", new { bookId = epub.Id }));
+        h.Llm.Enqueue(ToolRound("favorite", "library_update_book", new { bookId = epub.Id, isFavorite = true }));
+
+        var response = await h.Orchestrator.HandleTurnAsync(Turn(
+            "the epub version i guess?",
+            Context(surface: "library", route: "/library")));
+
+        h.Llm.CallCount.Should().Be(2);
+        response.Error.Should().BeNull("a committed action must not be presented as a failed turn");
+        response.Reply.Should().Be(AssistantOrchestrator.CompletedBeforeCeilingReply);
+        response.ExecutedCapabilities.Should().Equal("library_update_book");
+
+        await using var db = await h.Factory.CreateDbContextAsync();
+        (await db.Books.AsNoTracking().SingleAsync(b => b.Id == epub.Id)).Progress.IsFavorite.Should().BeTrue();
+        (await db.Books.AsNoTracking().CountAsync(b => b.Progress.IsFavorite)).Should().Be(1);
+        (await db.LibraryCommandReceipts.AsNoTracking().CountAsync(r => r.CommandKind == "UpdateBook"))
+            .Should().Be(1, "the favorite mutation is applied exactly once");
+    }
+
+    [Fact]
+    public async Task Work_still_in_progress_after_a_committed_write_is_reported_partial_not_failed()
+    {
+        var h = CreateHarness(maxToolIterations: 2);
+        var first = await SeedBookAsync(h, "The Devils", "Dostoevsky");
+        var second = await SeedBookAsync(h, "Demons", "Dostoevsky");
+        h.Llm.Enqueue(ToolRound("fav-1", "library_update_book", new { bookId = first.Id, isFavorite = true }));
+        h.Llm.Enqueue(ToolRound("read-2", "library_get_book", new { bookId = second.Id }));
+
+        var response = await h.Orchestrator.HandleTurnAsync(Turn(
+            "Favorite both of them.",
+            Context(surface: "library", route: "/library")));
+
+        response.Error!.Code.Should().Be(AssistantErrorCodes.PartiallyCompleted);
+        response.Error.Code.Should().NotBe(AssistantErrorCodes.ExecutionBudgetExhausted);
+        response.Reply.Should().Be(AssistantOrchestrator.PartiallyCompletedReply);
+        response.Reply.Should().Contain("changes listed below").And.Contain("finish the rest");
+        response.ExecutedCapabilities.Should().Equal("library_update_book");
+
+        await using var db = await h.Factory.CreateDbContextAsync();
+        (await db.Books.AsNoTracking().SingleAsync(b => b.Id == first.Id)).Progress.IsFavorite.Should().BeTrue();
+        (await db.Books.AsNoTracking().SingleAsync(b => b.Id == second.Id)).Progress.IsFavorite.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task A_failed_write_after_a_committed_one_is_reported_partial_when_the_ceiling_trips()
+    {
+        var h = CreateHarness(maxToolIterations: 2);
+        var book = await SeedBookAsync(h, "The Devils", "Dostoevsky");
+        h.Llm.Enqueue(ToolRound("fav-1", "library_update_book", new { bookId = book.Id, isFavorite = true }));
+        h.Llm.Enqueue(ToolRound("fav-2", "library_update_book", new { bookId = Guid.NewGuid(), isFavorite = true }));
+
+        var response = await h.Orchestrator.HandleTurnAsync(Turn(
+            "Favorite both of them.",
+            Context(surface: "library", route: "/library")));
+
+        response.Error!.Code.Should().Be(AssistantErrorCodes.PartiallyCompleted);
+        response.ExecutedCapabilities.Should().Equal("library_update_book");
+    }
+
+    [Fact]
+    public async Task The_ceiling_with_nothing_committed_is_still_an_execution_budget_failure()
+    {
+        var h = CreateHarness(maxToolIterations: 2);
+        h.Llm.Responder = call => ToolRound($"read-{call}", "concepts_search", new { query = $"loop-{call}" });
+
+        var response = await h.Orchestrator.HandleTurnAsync(Turn(
+            "Loop, please.",
+            Context(surface: "second-brain", route: "/second-brain")));
+
+        response.Error!.Code.Should().Be(AssistantErrorCodes.ExecutionBudgetExhausted);
+        response.Reply.Should().Be(AssistantOrchestrator.IncompleteTurnReply);
+    }
+
     [Fact]
     public async Task Client_supplied_history_reaches_the_provider_in_order_before_the_new_message()
     {
