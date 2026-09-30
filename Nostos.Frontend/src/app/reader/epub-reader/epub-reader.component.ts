@@ -18,7 +18,7 @@ import ePub, { Book, Rendition, Contents } from 'epubjs';
 import { Subject, Subscription } from 'rxjs';
 import { debounceTime, distinctUntilChanged, filter } from 'rxjs/operators';
 
-import { EpubAnnotationManager } from './epub-annotation-manager';
+import { EpubAnnotationManager, SelectionAnchor } from './epub-annotation-manager';
 import { DEFAULT_HIGHLIGHT_COLOUR, HighlightColour } from '../highlight-colours';
 import { NotesService } from '../../core/services/notes.service';
 import { BooksService } from '../../core/services/books.service';
@@ -324,6 +324,12 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
   /** The book's highlighter pen (issue #208), owned by the shell. */
   highlightColour = input<HighlightColour>(DEFAULT_HIGHLIGHT_COLOUR);
   selectionCaptured = output<string>();
+  /**
+   * Where the captured selection sits in the page's viewport, emitted right
+   * after `selectionCaptured` so the shell can anchor its menu at the text
+   * (#650). Null when it could not be measured.
+   */
+  selectionAnchored = output<SelectionAnchor | null>();
   commitFailed = output<void>();
   exitRequested = output<void>();
 
@@ -1215,9 +1221,10 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     );
     this.annotationManager.setHighlightMode(this.highlightMode());
     this.annotationManager.setHighlightColour(this.highlightColour());
-    this.annotationManager.setOnSelectionCaptured((text) => {
+    this.annotationManager.setOnSelectionCaptured((text, anchor) => {
       this.assistantSelection.set(text);
       this.selectionCaptured.emit(text);
+      this.selectionAnchored.emit(anchor);
     });
     this.annotationManager.init();
 
@@ -1598,8 +1605,8 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     this.deleteHighlight(identifier);
   }
 
-  commitHighlight(): void {
-    this.annotationManager?.commitHighlight();
+  commitHighlight(content = ''): void {
+    this.annotationManager?.commitHighlight(content);
   }
 
   discardHighlight(): void {

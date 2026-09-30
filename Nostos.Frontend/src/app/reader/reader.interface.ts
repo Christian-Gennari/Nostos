@@ -52,7 +52,8 @@ export interface IReader {
 
   // Highlight Management
   removeHighlight(identifier: string): void;
-  commitHighlight(): void;
+  /** Saves the pending mark; `content` is the note text (EPUB "Add note", #650). */
+  commitHighlight(content?: string): void;
   discardHighlight(): void;
 
   // Reactive State

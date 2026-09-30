@@ -1,4 +1,4 @@
-import { Component, inject, OnInit, OnDestroy, signal, computed, effect, ViewChild, HostListener, ElementRef } from '@angular/core';
+import { Component, inject, OnInit, OnDestroy, signal, computed, effect, untracked, ViewChild, HostListener, ElementRef } from '@angular/core';
 import { ActivatedRoute, ParamMap, Router } from '@angular/router';
 import { CommonModule, Location } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -27,11 +27,13 @@ import { ButtonComponent } from '../ui/button/button.component';
 import { ScrollModeType } from 'ngx-extended-pdf-viewer';
 import { PdfReader } from './pdf-reader/pdf-reader.component';
 import { EpubReader } from './epub-reader/epub-reader.component';
+import type { SelectionAnchor } from './epub-reader/epub-annotation-manager';
 import { AudioReader } from './audio-reader/audio-reader.component';
 import { ConceptInputComponent } from '../ui/concept-input.component/concept-input.component';
 import { NoteCardComponent } from '../ui/note-card.component/note-card.component';
 import { ConfirmModal } from '../ui/confirm-modal/confirm-modal.component';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
+import { TextareaDirective } from '../ui/form-control/form-control.directive';
 import { readReaderReturnOrigin } from '../core/navigation/studio-reader-navigation';
 import { Theme, ThemeService } from '../core/services/theme.service';
 
@@ -50,6 +52,7 @@ import { Theme, ThemeService } from '../core/services/theme.service';
     IconButtonComponent,
     ButtonComponent,
     ConfirmModal,
+    TextareaDirective,
   ],
   templateUrl: './reader-shell.component.html',
   styleUrl: './reader-shell.component.css',
@@ -61,7 +64,74 @@ export class ReaderShell implements OnInit, OnDestroy {
     if (!bookId) return;
     this.highlightColour.set(readHighlightColour(bookId));
     });
+
+    // A page turn moves the text away from an anchored selection menu (#650).
+    // Rather than float over the wrong words, the menu docks to the bottom
+    // edge; the pending mark and any typed note are kept.
+    effect(() => {
+      this.progressState()?.label;
+      untracked(() => {
+        if (this.selectionAnchor()) this.selectionAnchor.set(null);
+      });
+    });
+
+    this.dockQuery?.addEventListener?.('change', this.onDockQueryChange);
   }
+
+  // ------------------------------------------------------------------
+  // Selection menu (#650, EPUB)
+  // ------------------------------------------------------------------
+
+  /**
+   * Phones and touch-first devices keep the bottom-docked bar: the selection
+   * handles occupy the space around the text there, and the bar is the
+   * thumb-safe place. Fine-pointer desktops anchor the menu at the text.
+   */
+  private readonly dockQuery: MediaQueryList | null =
+    typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+      ? window.matchMedia('(max-width: 768px), (pointer: coarse)')
+      : null;
+  dockedLayout = signal(this.dockQuery?.matches ?? true);
+  private readonly onDockQueryChange = (event: MediaQueryListEvent) =>
+    this.dockedLayout.set(event.matches);
+
+  /** Where the captured EPUB selection sits; null docks the menu. */
+  selectionAnchor = signal<SelectionAnchor | null>(null);
+  noteDraftOpen = signal(false);
+  noteDraft = signal('');
+  private committingNote = false;
+
+  /**
+   * Viewport placement for the anchored menu, or null for the docked bar.
+   * Opens below the selection when there is room, else above; it grows away
+   * from the text (top-anchored below, bottom-anchored above) so neither the
+   * collapsed menu nor the note editor covers the selection, and it is clamped
+   * horizontally to the viewport.
+   */
+  selectionMenuPlacement = computed<
+    { left: number; width: number; top: number | null; bottom: number | null } | null
+  >(() => {
+    const anchor = this.selectionAnchor();
+    if (!anchor || this.dockedLayout() || this.fileType() !== 'epub') return null;
+    if (typeof window === 'undefined') return null;
+
+    const gap = 8;
+    const edge = 8;
+    const minVisible = 64;
+    const reserve = 240; // room for the note editor when it opens
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const width = Math.min(360, vw - edge * 2);
+    const centre = (anchor.left + anchor.right) / 2;
+    const left = Math.min(Math.max(centre - width / 2, edge), vw - width - edge);
+
+    const roomBelow = vh - anchor.bottom;
+    const roomAbove = anchor.top;
+    if (roomBelow >= reserve || roomBelow >= roomAbove) {
+      return { left, width, top: Math.min(anchor.bottom + gap, vh - minVisible), bottom: null };
+    }
+    return { left, width, top: null, bottom: Math.min(vh - anchor.top + gap, vh - minVisible) };
+  });
 
   // Template-ref query (not type query): the epub child is stubbed in specs,
   // and a type query would resolve to null against the stub.
@@ -284,6 +354,7 @@ export class ReaderShell implements OnInit, OnDestroy {
     this.bookLoadGeneration++;
     this.pendingGroundedSourceTarget = null;
     if (this.saveFeedbackTimer) clearTimeout(this.saveFeedbackTimer);
+    this.dockQuery?.removeEventListener?.('change', this.onDockQueryChange);
   }
 
   private watchBookNavigation(): void {
@@ -499,7 +570,8 @@ export class ReaderShell implements OnInit, OnDestroy {
     // reader explicitly asks for it.
     this.pendingSelectionText.set(null);
     this.highlightSaving.set(false);
-    this.showSaveFeedback('Highlight saved');
+    this.showSaveFeedback(this.committingNote ? 'Note saved' : 'Highlight saved');
+    this.resetSelectionMenu();
   }
 
   toggleNotes() {
@@ -553,8 +625,35 @@ export class ReaderShell implements OnInit, OnDestroy {
 
   commitHighlight() {
     if (this.highlightSaving()) return;
+    this.committingNote = false;
     this.highlightSaving.set(true);
     this.activeReader()?.commitHighlight();
+  }
+
+  /** "Add note": reveal the note field in the same menu, at the text. */
+  openNoteDraft(): void {
+    this.noteDraftOpen.set(true);
+    setTimeout(() => {
+      this.host.nativeElement
+        .querySelector<HTMLTextAreaElement>('.selection-note-input')
+        ?.focus({ preventScroll: true });
+    }, 0);
+  }
+
+  /** Saves the mark together with the typed note, through the same commit. */
+  saveNote(): void {
+    const content = this.noteDraft().trim();
+    if (!content || this.highlightSaving()) return;
+    this.committingNote = true;
+    this.highlightSaving.set(true);
+    this.activeReader()?.commitHighlight(content);
+  }
+
+  onNoteDraftKeydown(event: KeyboardEvent): void {
+    if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+      event.preventDefault();
+      this.saveNote();
+    }
   }
 
   handleCommitFailed() {
@@ -567,10 +666,33 @@ export class ReaderShell implements OnInit, OnDestroy {
     this.activeReader()?.discardHighlight();
     this.pendingSelectionText.set(null);
     this.highlightSaving.set(false);
+    this.resetSelectionMenu();
   }
 
   handleSelectionCaptured(text: string) {
     this.pendingSelectionText.set(text);
+    this.resetSelectionMenu();
+  }
+
+  /**
+   * Anchors the menu at the captured EPUB selection. On desktop the menu takes
+   * focus (without scrolling) so Escape and keyboard actions reach it; the
+   * docked phone bar deliberately leaves focus alone.
+   */
+  handleSelectionAnchored(anchor: SelectionAnchor | null) {
+    this.selectionAnchor.set(anchor);
+    if (!this.selectionMenuPlacement()) return;
+    setTimeout(() => {
+      this.host.nativeElement
+        .querySelector<HTMLButtonElement>('.selection-menu .selection-primary')
+        ?.focus({ preventScroll: true });
+    }, 0);
+  }
+
+  private resetSelectionMenu(): void {
+    this.selectionAnchor.set(null);
+    this.noteDraftOpen.set(false);
+    this.noteDraft.set('');
   }
 
   toggleToc() {
@@ -794,6 +916,13 @@ export class ReaderShell implements OnInit, OnDestroy {
       // Overlays close in the order they stack: the typography panel rides on
       // top of the drawers, so it goes first. defaultPrevented still lets a
       // focused control claim Escape before the shell sees it.
+      // The EPUB selection menu (#650) is opened by the reader's latest
+      // gesture and sits above everything, so it is dismissed (unsaved) first.
+      if (this.pendingSelectionText() !== null && this.fileType() === 'epub' && !this.highlightSaving()) {
+        this.discardHighlight();
+        event.preventDefault();
+        return;
+      }
       if (this.typoOpen()) {
         this.typoOpen.set(false);
         this.restoreOverlayFocus();

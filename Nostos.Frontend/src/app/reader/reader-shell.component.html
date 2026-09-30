@@ -109,7 +109,7 @@
         (commitFailed)="handleCommitFailed()"
       />
       } @case ('epub') {
-      <app-epub-reader #epubReader [bookId]="book()!.id" [book]="book()" [highlightMode]="highlightMode()" [highlightColour]="highlightColour()" (noteCreated)="handleNoteCreated()" (selectionCaptured)="handleSelectionCaptured($event)" (commitFailed)="handleCommitFailed()" (exitRequested)="goBack()" />
+      <app-epub-reader #epubReader [bookId]="book()!.id" [book]="book()" [highlightMode]="highlightMode()" [highlightColour]="highlightColour()" (noteCreated)="handleNoteCreated()" (selectionCaptured)="handleSelectionCaptured($event)" (selectionAnchored)="handleSelectionAnchored($event)" (commitFailed)="handleCommitFailed()" (exitRequested)="goBack()" />
       } @case ('audio') {
       <app-audio-reader [bookId]="book()!.id" [book]="book()" />
       } @default {
@@ -128,20 +128,84 @@
       }
 
       @if (pendingSelectionText() !== null) {
-      <div class="highlight-confirmation">
-        <div class="confirmation-content">
-          <p class="selected-text">"{{ pendingSelectionText()!.length > 60 ? pendingSelectionText()!.slice(0, 60) + '...' : pendingSelectionText()! }}"</p>
-          <div class="confirmation-actions">
-            <button
-              appButton
-              type="button"
-              variant="secondary"
-              class="reader-confirm-action"
-              (click)="discardHighlight()"
+      <!-- One set of selection actions (#650), placed two ways. A fine-pointer
+           desktop anchors it at the marked EPUB text; phones, touch-first
+           devices and the PDF reader keep the bottom-docked bar, the
+           thumb-safe place that leaves the selection handles alone. -->
+      <ng-template #selectionActions>
+        @if (noteDraftOpen()) {
+          <div class="selection-note">
+            <label class="visually-hidden" for="selection-note-input">Note for this passage</label>
+            <textarea
+              appTextarea
+              controlSize="compact"
+              id="selection-note-input"
+              class="selection-note-input"
+              rows="3"
+              placeholder="Write a note…"
+              [value]="noteDraft()"
+              (input)="noteDraft.set($any($event.target).value)"
+              (keydown)="onNoteDraftKeydown($event)"
               [disabled]="highlightSaving()"
-            >
-              Cancel
-            </button>
+              data-testid="selection-note-input"
+            ></textarea>
+          </div>
+        }
+        <div class="confirmation-actions">
+          <button
+            appButton
+            type="button"
+            variant="secondary"
+            class="reader-confirm-action"
+            (click)="discardHighlight()"
+            [disabled]="highlightSaving()"
+            data-testid="selection-cancel"
+          >
+            Cancel
+          </button>
+          @if (fileType() === 'epub') {
+            @if (noteDraftOpen()) {
+              <button
+                appButton
+                type="button"
+                variant="primary"
+                class="reader-confirm-action selection-primary"
+                (click)="saveNote()"
+                [disabled]="highlightSaving() || !noteDraft().trim()"
+                [busy]="highlightSaving()"
+                data-testid="selection-save-note"
+              >
+                <nostos-icon name="check" [size]="16"></nostos-icon>
+                {{ highlightSaving() ? 'Saving…' : 'Save note' }}
+              </button>
+            } @else {
+              <button
+                appButton
+                type="button"
+                variant="secondary"
+                class="reader-confirm-action"
+                (click)="openNoteDraft()"
+                [disabled]="highlightSaving()"
+                data-testid="selection-add-note"
+              >
+                <nostos-icon name="note" [size]="16"></nostos-icon>
+                Add note
+              </button>
+              <button
+                appButton
+                type="button"
+                variant="primary"
+                class="reader-confirm-action selection-primary"
+                (click)="commitHighlight()"
+                [disabled]="highlightSaving()"
+                [busy]="highlightSaving()"
+                data-testid="selection-highlight"
+              >
+                <nostos-icon name="highlighter" [size]="16"></nostos-icon>
+                {{ highlightSaving() ? 'Saving…' : 'Highlight' }}
+              </button>
+            }
+          } @else {
             <button
               appButton
               type="button"
@@ -154,9 +218,33 @@
               <nostos-icon name="check" [size]="16"></nostos-icon>
               {{ highlightSaving() ? 'Saving…' : 'Save' }}
             </button>
-          </div>
+          }
+        </div>
+      </ng-template>
+
+      @if (selectionMenuPlacement(); as place) {
+      <div class="selection-scrim" (click)="discardHighlight()" aria-hidden="true" data-testid="selection-scrim"></div>
+      <div
+        class="selection-menu"
+        role="dialog"
+        aria-label="Selection actions"
+        data-testid="selection-menu"
+        [style.left.px]="place.left"
+        [style.width.px]="place.width"
+        [style.top.px]="place.top"
+        [style.bottom.px]="place.bottom"
+      >
+        <p class="selected-text">"{{ pendingSelectionText()!.length > 60 ? pendingSelectionText()!.slice(0, 60) + '...' : pendingSelectionText()! }}"</p>
+        <ng-container [ngTemplateOutlet]="selectionActions"></ng-container>
+      </div>
+      } @else {
+      <div class="highlight-confirmation" [class.epub-actions]="fileType() === 'epub'" [class.has-note]="noteDraftOpen()" data-testid="selection-bar">
+        <div class="confirmation-content">
+          <p class="selected-text">"{{ pendingSelectionText()!.length > 60 ? pendingSelectionText()!.slice(0, 60) + '...' : pendingSelectionText()! }}"</p>
+          <ng-container [ngTemplateOutlet]="selectionActions"></ng-container>
         </div>
       </div>
+      }
       }
     </main>
 

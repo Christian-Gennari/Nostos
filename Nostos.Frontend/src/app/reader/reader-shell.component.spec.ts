@@ -109,8 +109,11 @@ class EpubReaderStub {
   highlightColour = input<HighlightColour>(DEFAULT_HIGHLIGHT_COLOUR);
   noteCreated = output<void>();
   selectionCaptured = output<unknown>();
+  selectionAnchored = output<unknown>();
   commitFailed = output<unknown>();
   exitRequested = output<void>();
+  commitHighlight = vi.fn();
+  discardHighlight = vi.fn();
   // Typography surface the shell panel binds (mirrors EpubReader).
   typography = signal({ fontFamily: 'default', lineHeight: 1.6, margin: 'normal' });
   fontOptions = [
@@ -1509,7 +1512,11 @@ describe('ReaderShell UI kit migration (#362)', () => {
     ).map((button) => button.textContent?.replace(/\s+/g, ' ').trim() ?? '');
 
     expect(canonicalLabels).toContain('Cancel');
-    expect(canonicalLabels.filter((label) => label === 'Save')).toHaveLength(2);
+    // The notes panel keeps its Save; an EPUB selection's actions are now
+    // Highlight and Add note (#650), still canonical buttons.
+    expect(canonicalLabels.filter((label) => label === 'Save')).toHaveLength(1);
+    expect(canonicalLabels).toContain('Highlight');
+    expect(canonicalLabels).toContain('Add note');
     expect(canonicalLabels).toContain('Reset');
 
     // These are intentionally Reader-owned interaction contracts, not ordinary
@@ -1544,5 +1551,247 @@ describe('ReaderShell UI kit migration (#362)', () => {
     expect(mobile).toContain('.typo-step,');
     expect(mobile).toContain('.quick-actions button[appButton]');
     expect(mobile).toContain('min-height: var(--control-h-touch)');
+  });
+});
+
+
+describe('ReaderShell in-text selection actions (#650, EPUB)', () => {
+  let fixture: ComponentFixture<ReaderShell>;
+  const anchor = { top: 200, bottom: 220, left: 300, right: 500 };
+
+  beforeEach(() => {
+    booksGetSpy.mockReset();
+    localStorage.clear();
+    mockMatchMedia();
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1280 });
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 800 });
+  });
+
+  function render() {
+    fixture.detectChanges();
+    fixture.detectChanges();
+  }
+
+  async function openBook(fileName = 'iliad.epub') {
+    booksGetSpy.mockReturnValue(of({ ...audiobook, id: 'book-sel', fileName } as Book));
+    fixture = await configureReaderShell();
+    render();
+    // The shell marks the reader ready 100 ms after load (see loadBook), which
+    // is when activeReader() resolves to the rendered reader.
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    render();
+    return fixture.componentInstance;
+  }
+
+  function stub(): EpubReaderStub {
+    return fixture.debugElement.query(By.directive(EpubReaderStub)).componentInstance;
+  }
+
+  function el(testId: string): HTMLElement | null {
+    return fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+  }
+
+  async function capture(component: ReaderShell, at: typeof anchor | null = anchor) {
+    component.handleSelectionCaptured('Sing, goddess, the anger of Achilles');
+    component.handleSelectionAnchored(at);
+    render();
+  }
+
+  it('desktop: anchors the menu at the selection with Highlight and Add note, and no docked bar', async () => {
+    const component = await openBook();
+    component.dockedLayout.set(false);
+    await capture(component);
+
+    const menu = el('selection-menu')!;
+    expect(menu).not.toBeNull();
+    expect(el('selection-bar')).toBeNull();
+    expect(el('selection-highlight')).not.toBeNull();
+    expect(el('selection-add-note')).not.toBeNull();
+    // Below the selection (room below), never over it; clamped horizontally.
+    expect(parseFloat(menu.style.top)).toBeGreaterThan(anchor.bottom);
+    expect(menu.style.bottom).toBe('');
+    const left = parseFloat(menu.style.left);
+    const width = parseFloat(menu.style.width);
+    expect(left).toBeGreaterThanOrEqual(8);
+    expect(left + width).toBeLessThanOrEqual(1280 - 8);
+  });
+
+  it('desktop: opens above the selection when there is no room below, growing away from it', async () => {
+    const component = await openBook();
+    component.dockedLayout.set(false);
+    await capture(component, { top: 700, bottom: 760, left: 1200, right: 1270 });
+
+    const menu = el('selection-menu')!;
+    expect(menu.style.top).toBe('');
+    expect(parseFloat(menu.style.bottom)).toBeGreaterThanOrEqual(800 - 700);
+    expect(parseFloat(menu.style.left) + parseFloat(menu.style.width)).toBeLessThanOrEqual(1280 - 8);
+  });
+
+  it('Highlight saves in one action with no note text', async () => {
+    const component = await openBook();
+    component.dockedLayout.set(false);
+    await capture(component);
+
+    (el('selection-highlight') as HTMLButtonElement).click();
+
+    expect(stub().commitHighlight).toHaveBeenCalledTimes(1);
+    expect(stub().commitHighlight.mock.calls[0]).toEqual([]);
+  });
+
+  it('Add note takes the note at the text and saves it with the mark', async () => {
+    const component = await openBook();
+    component.dockedLayout.set(false);
+    await capture(component);
+
+    (el('selection-add-note') as HTMLButtonElement).click();
+    render();
+    const input = el('selection-note-input') as HTMLTextAreaElement;
+    expect(input).not.toBeNull();
+    expect((el('selection-save-note') as HTMLButtonElement).disabled).toBe(true);
+
+    input.value = '  The rage that starts it all.  ';
+    input.dispatchEvent(new Event('input'));
+    render();
+    (el('selection-save-note') as HTMLButtonElement).click();
+
+    expect(stub().commitHighlight).toHaveBeenCalledWith('The rage that starts it all.');
+
+    component.handleNoteCreated();
+    render();
+    expect(el('selection-menu')).toBeNull();
+    expect(component.noteDraft()).toBe('');
+  });
+
+  it('Ctrl/Cmd+Enter in the note field saves; plain Enter does not', async () => {
+    const component = await openBook();
+    component.dockedLayout.set(false);
+    await capture(component);
+    component.openNoteDraft();
+    component.noteDraft.set('A thought');
+    render();
+    const input = el('selection-note-input') as HTMLTextAreaElement;
+
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(stub().commitHighlight).not.toHaveBeenCalled();
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true }));
+    expect(stub().commitHighlight).toHaveBeenCalledWith('A thought');
+  });
+
+  it('a failed save keeps the menu and the typed note', async () => {
+    const component = await openBook();
+    component.dockedLayout.set(false);
+    await capture(component);
+    component.openNoteDraft();
+    component.noteDraft.set('Keep me');
+    component.saveNote();
+
+    component.handleCommitFailed();
+    render();
+
+    expect(el('selection-menu')).not.toBeNull();
+    expect(component.noteDraft()).toBe('Keep me');
+    expect(component.highlightSaving()).toBe(false);
+  });
+
+  it('the scrim dismisses without saving', async () => {
+    const component = await openBook();
+    component.dockedLayout.set(false);
+    await capture(component);
+
+    (el('selection-scrim') as HTMLElement).click();
+    render();
+
+    expect(stub().discardHighlight).toHaveBeenCalled();
+    expect(stub().commitHighlight).not.toHaveBeenCalled();
+    expect(el('selection-menu')).toBeNull();
+  });
+
+  it('Escape dismisses the menu first, then the overlay stack continues as before', async () => {
+    const component = await openBook();
+    component.dockedLayout.set(false);
+    component.notesOpen.set(true);
+    await capture(component);
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    render();
+    expect(stub().discardHighlight).toHaveBeenCalled();
+    expect(component.pendingSelectionText()).toBeNull();
+    expect(component.notesOpen()).toBe(true);
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    render();
+    expect(component.notesOpen()).toBe(false);
+  });
+
+  it('page-turn keys typed into the note field do not turn the page', async () => {
+    const component = await openBook();
+    component.dockedLayout.set(false);
+    await capture(component);
+    component.openNoteDraft();
+    render();
+    const input = el('selection-note-input') as HTMLTextAreaElement;
+
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+
+    expect(stub().next).not.toHaveBeenCalled();
+  });
+
+  it('phones keep the docked bar, with Add note, and no scrim over the page', async () => {
+    const component = await openBook();
+    component.dockedLayout.set(true);
+    await capture(component);
+
+    expect(el('selection-menu')).toBeNull();
+    expect(el('selection-scrim')).toBeNull();
+    const bar = el('selection-bar')!;
+    expect(bar).not.toBeNull();
+    expect(el('selection-add-note')).not.toBeNull();
+    expect(el('selection-highlight')).not.toBeNull();
+
+    (el('selection-add-note') as HTMLButtonElement).click();
+    render();
+    expect(bar.classList.contains('has-note')).toBe(true);
+    expect(el('selection-note-input')).not.toBeNull();
+  });
+
+  it('an unmeasurable selection docks the menu instead of guessing a position', async () => {
+    const component = await openBook();
+    component.dockedLayout.set(false);
+    await capture(component, null);
+
+    expect(el('selection-menu')).toBeNull();
+    expect(el('selection-bar')).not.toBeNull();
+  });
+
+  it('a page turn docks an anchored menu and keeps the typed note', async () => {
+    const component = await openBook();
+    component.dockedLayout.set(false);
+    await capture(component);
+    component.openNoteDraft();
+    component.noteDraft.set('Half-written');
+    render();
+    expect(el('selection-menu')).not.toBeNull();
+
+    stub().progress.set({ label: 'Page 2', percentage: 10 });
+    render();
+
+    expect(el('selection-menu')).toBeNull();
+    expect(el('selection-bar')).not.toBeNull();
+    expect(component.noteDraft()).toBe('Half-written');
+  });
+
+  it('PDF keeps its bar exactly: Cancel and Save, no Add note', async () => {
+    const component = await openBook('being-and-time.pdf');
+    component.dockedLayout.set(false);
+    component.handleSelectionCaptured('A PDF passage');
+    render();
+
+    expect(el('selection-menu')).toBeNull();
+    const labels = Array.from(
+      (el('selection-bar') as HTMLElement).querySelectorAll('button') as NodeListOf<HTMLButtonElement>,
+    ).map((b) => b.textContent?.replace(/\s+/g, ' ').trim());
+    expect(labels).toEqual(['Cancel', 'Save']);
+    expect(el('selection-bar')!.classList.contains('epub-actions')).toBe(false);
   });
 });
