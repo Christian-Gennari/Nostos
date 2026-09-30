@@ -616,6 +616,11 @@
   color: var(--color-text-light);
 }
 
+.typo-hint {
+  font-size: 0.7rem;
+  color: var(--color-text-light);
+}
+
 .typo-opts {
   display: flex;
   flex-wrap: wrap;

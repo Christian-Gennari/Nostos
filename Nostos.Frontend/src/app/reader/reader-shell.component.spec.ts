@@ -35,6 +35,7 @@ import { ConceptsService } from '../core/services/concepts.service';
 import { ConceptAutocompleteService } from '../ui/concept-autocomplete-panel/concept-autocomplete.service';
 import { Book } from '../core/dtos/book.dtos';
 import { Note } from '../core/dtos/note.dtos';
+import { ThemeService, THEME_STORAGE_KEY } from '../core/services/theme.service';
 
 // The AudioReader is kept real so this spec guards the reader page's total
 // GET /api/books/{id} count; Howl is mocked to avoid real media loading.
@@ -859,7 +860,7 @@ describe('ReaderShell audiobook load (issue #7)', () => {
   });
 });
 
-describe('ReaderShell toolbar contract (theme system removed)', () => {
+describe('ReaderShell toolbar contract', () => {
   let fixture: ComponentFixture<ReaderShell>;
 
   beforeEach(() => {
@@ -877,7 +878,10 @@ describe('ReaderShell toolbar contract (theme system removed)', () => {
     fixture.detectChanges();
   }
 
-  it('renders no theme toggle and no data-theme binding anywhere in the shell', async () => {
+  // The theme is app-wide (ThemeService owns data-theme on <html>). The shell
+  // offers it inside View settings (#651) but never as a header button and
+  // never as a reader-local data-theme.
+  it('renders no header theme button and no data-theme binding on the shell', async () => {
     fixture = await configureReaderShell();
     render();
 
@@ -885,6 +889,67 @@ describe('ReaderShell toolbar contract (theme system removed)', () => {
     expect(fixture.debugElement.query(By.css('.theme-toggle-btn'))).toBeNull();
     const layout = fixture.debugElement.query(By.css('.reader-layout'));
     expect(layout.nativeElement.hasAttribute('data-theme')).toBe(false);
+  });
+
+  describe('App appearance row in View settings (#651)', () => {
+    function appearanceButtons(): HTMLButtonElement[] {
+      return Array.from(fixture.nativeElement.querySelectorAll(
+        '[data-testid="reader-appearance"] .typo-opt',
+      ));
+    }
+
+    function button(label: string): HTMLButtonElement {
+      return appearanceButtons().find((el) => el.textContent?.trim() === label)!;
+    }
+
+    async function openPanelFor(fileName: string): Promise<HTMLElement> {
+      booksGetSpy.mockReturnValue(of({ ...audiobook, id: 'book-theme', fileName } as Book));
+      fixture = await configureReaderShell();
+      render();
+      fixture.componentInstance.toggleTypo();
+      render();
+      return fixture.nativeElement.querySelector('[data-testid="typo-panel"]');
+    }
+
+    for (const fileName of ['iliad.epub', 'being-and-time.pdf']) {
+      it(`is the first row of the panel for ${fileName} and labels its scope`, async () => {
+        const panel = await openPanelFor(fileName);
+
+        const firstLabel = panel.querySelector('.typo-label')?.textContent?.trim();
+        expect(firstLabel).toBe('App appearance');
+        expect(panel.textContent).toContain('Applies throughout Nostos');
+        expect(appearanceButtons().map((el) => el.textContent?.trim())).toEqual(['Light', 'Dark']);
+      });
+    }
+
+    it('reflects the current theme when the panel opens', async () => {
+      localStorage.setItem(THEME_STORAGE_KEY, 'dark');
+      await openPanelFor('iliad.epub');
+
+      expect(button('Dark').getAttribute('aria-pressed')).toBe('true');
+      expect(button('Light').getAttribute('aria-pressed')).toBe('false');
+    });
+
+    it('drives the app-wide ThemeService and persists with the Settings key', async () => {
+      await openPanelFor('being-and-time.pdf');
+      const theme = TestBed.inject(ThemeService);
+      expect(theme.theme()).toBe('light');
+
+      button('Dark').click();
+      render();
+      expect(theme.theme()).toBe('dark');
+      expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
+      expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('dark');
+      expect(button('Dark').getAttribute('aria-pressed')).toBe('true');
+      const layout = fixture.debugElement.query(By.css('.reader-layout'));
+      expect(layout.nativeElement.hasAttribute('data-theme')).toBe(false);
+
+      button('Light').click();
+      render();
+      expect(theme.theme()).toBe('light');
+      expect(document.documentElement.hasAttribute('data-theme')).toBe(false);
+      expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('light');
+    });
   });
 
   it('splits the chrome: configuration in the header, page turns in the pager', async () => {
