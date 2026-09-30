@@ -497,6 +497,62 @@
   min-height: var(--control-h-touch);
 }
 
+/* --- Selection actions (#650, EPUB) ---------------------------------------------
+   The same actions in two placements. Docked (phones, touch-first devices, PDF):
+   the bar above. Anchored (fine-pointer desktop, EPUB): a small surface next to
+   the marked text, positioned by the shell in viewport coordinates, with a
+   transparent scrim behind it so a click outside dismisses without saving.
+   Colours come only from tokens. */
+.selection-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 59;
+  background: transparent;
+}
+
+.selection-menu {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.75rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+}
+
+.selection-menu .confirmation-actions {
+  justify-content: flex-end;
+}
+
+.selection-note {
+  display: flex;
+  width: 100%;
+}
+
+.selection-note-input {
+  width: 100%;
+  min-height: 4.5rem;
+  resize: vertical;
+}
+
+/* The docked EPUB bar carries three actions. It wraps instead of squeezing the
+   quote to nothing; the PDF bar (two actions) is unchanged. */
+.highlight-confirmation.epub-actions .confirmation-content {
+  flex-wrap: wrap;
+}
+
+.highlight-confirmation.has-note .confirmation-content {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.highlight-confirmation.has-note .confirmation-actions {
+  justify-content: flex-end;
+}
+
 /* --- Page indicator (a #226 follow-up) -------------------------------------------
    The pager shows "12 / 162" with the number editable. It was TWO nested boxes:
    a filled grey pill wrapping the field, and the field carrying its own border.
@@ -772,6 +828,13 @@
   }
   .selected-text {
     font-size: 0.8rem;
+  }
+  .highlight-confirmation.epub-actions .selected-text {
+    flex: 1 1 100%;
+  }
+  .highlight-confirmation.epub-actions .confirmation-actions {
+    flex: 1 1 100%;
+    justify-content: flex-end;
   }
 }
 

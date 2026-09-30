@@ -2,7 +2,7 @@ import { Injector } from '@angular/core';
 import { Rendition, Contents } from 'epubjs';
 import { of, throwError } from 'rxjs';
 import type { Mock } from 'vitest';
-import { EpubAnnotationManager } from './epub-annotation-manager';
+import { EpubAnnotationManager, isMouseContextMenu } from './epub-annotation-manager';
 
 /**
  * Mobile native-callout suppression + completed selection capture (issues #16, #304).
@@ -224,7 +224,7 @@ describe('EpubAnnotationManager mobile highlight mode (issue #16)', () => {
     await flush();
 
     expect(annotations.highlight).toHaveBeenCalledTimes(1);
-    expect(onSelectionCaptured).toHaveBeenCalledWith(text);
+    expect(onSelectionCaptured).toHaveBeenCalledWith(text, null);
     expect(window.getSelection()?.rangeCount).toBe(0);
   });
 
@@ -244,7 +244,7 @@ describe('EpubAnnotationManager mobile highlight mode (issue #16)', () => {
       'epubjs-hl-pending',
       { fill: expect.any(String) },
     );
-    expect(onSelectionCaptured).toHaveBeenCalledWith('Some meaningful text');
+    expect(onSelectionCaptured).toHaveBeenCalledWith('Some meaningful text', null);
   });
 
   it('captures via touchend fallback when epub.js selected never fires', async () => {
@@ -256,7 +256,7 @@ describe('EpubAnnotationManager mobile highlight mode (issue #16)', () => {
     await flush();
 
     expect(annotations.highlight).toHaveBeenCalledTimes(1);
-    expect(onSelectionCaptured).toHaveBeenCalledWith('Fallback text');
+    expect(onSelectionCaptured).toHaveBeenCalledWith('Fallback text', null);
   });
 
   it('deduplicates fallback capture against a later epub.js selected event', async () => {
@@ -406,7 +406,10 @@ describe('EpubAnnotationManager mobile highlight mode (issue #16)', () => {
 
     expect(views[0].pane.removeMark).toHaveBeenCalledTimes(1);
     // contextmenu + mouseup + touchend listeners are removed.
-    expect(removeListenerSpy).toHaveBeenCalledTimes(3);
+    // Every listener registerContents adds is removed, by name.
+    expect(removeListenerSpy.mock.calls.map((call) => call[0]).sort()).toEqual(
+      ['contextmenu', 'mousedown', 'mousemove', 'mouseup', 'touchend'],
+    );
     expect(rendition.off).toHaveBeenCalledWith('selected', expect.any(Function));
   });
 
@@ -509,5 +512,256 @@ describe('EpubAnnotationManager mobile highlight mode (issue #16)', () => {
     } finally {
       computed.mockRestore();
     }
+  });
+});
+
+
+/**
+ * In-text selection actions (#650): right-click on a selection opens the menu
+ * regardless of highlight mode, mouse only; the note text is saved with the
+ * mark; the anchor is measured in the page's viewport. Uses the same fakes as
+ * the capture suite above so the pipeline under test is the production one.
+ */
+describe('EpubAnnotationManager selection actions (#650)', () => {
+  let manager: EpubAnnotationManager;
+  let annotations: ReturnType<typeof createRendition>['annotations'];
+  let notesService: { create: Mock<(...args: unknown[]) => unknown> };
+  let onSelectionCaptured: Mock<(...args: unknown[]) => void>;
+
+  beforeEach(() => {
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+      cb(0);
+      return 1;
+    });
+    const r = createRendition();
+    annotations = r.annotations;
+    notesService = { create: vi.fn(() => of({ id: 'n1' })) };
+    onSelectionCaptured = vi.fn();
+    manager = new EpubAnnotationManager(
+      r.rendition as unknown as Rendition,
+      'book-1',
+      { get: () => notesService } as unknown as Injector,
+      vi.fn(),
+      vi.fn(),
+    );
+    manager.setOnSelectionCaptured(onSelectionCaptured);
+  });
+
+  afterEach(() => {
+    manager.destroy();
+    window.getSelection()?.removeAllRanges();
+    document.body.innerHTML = '';
+    vi.unstubAllGlobals();
+  });
+
+  function rightClick(init: { pointerType?: string } = {}): Event {
+    const event = new Event('contextmenu', { cancelable: true });
+    if (init.pointerType !== undefined) {
+      Object.defineProperty(event, 'pointerType', { value: init.pointerType });
+    }
+    document.dispatchEvent(event);
+    return event;
+  }
+
+  it('a mouse right-click on a selection captures it without highlight mode and replaces the native menu', () => {
+    manager.registerContents(makeContents());
+    selectText('A passage worth a note');
+
+    const event = rightClick({ pointerType: 'mouse' });
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(annotations.highlight).toHaveBeenCalledTimes(1);
+    expect(onSelectionCaptured).toHaveBeenCalledTimes(1);
+    expect(onSelectionCaptured.mock.calls[0][0]).toBe('A passage worth a note');
+  });
+
+  it('a right-click with nothing selected keeps the native menu', () => {
+    manager.registerContents(makeContents());
+    collapseSelection();
+
+    const event = rightClick({ pointerType: 'mouse' });
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(annotations.highlight).not.toHaveBeenCalled();
+  });
+
+  it('a touch long-press contextmenu is left to the platform (#16)', () => {
+    manager.registerContents(makeContents());
+    selectText('A passage selected by long-press');
+
+    const event = rightClick({ pointerType: 'touch' });
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(annotations.highlight).not.toHaveBeenCalled();
+    expect(onSelectionCaptured).not.toHaveBeenCalled();
+    expect(window.getSelection()?.toString()).toBe('A passage selected by long-press');
+  });
+
+  it('a touch-first device never takes over contextmenu, even without pointerType', () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({ matches: query === '(pointer: coarse)' }));
+    manager.registerContents(makeContents());
+    selectText('A passage on a phone');
+
+    const event = rightClick();
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(annotations.highlight).not.toHaveBeenCalled();
+  });
+
+  it('does not double-capture when mouseup already captured in highlight mode', () => {
+    manager.setHighlightMode(true);
+    manager.registerContents(makeContents());
+    selectText('Captured on mouseup first');
+
+    document.dispatchEvent(new Event('mouseup'));
+    rightClick({ pointerType: 'mouse' });
+
+    expect(annotations.highlight).toHaveBeenCalledTimes(1);
+    expect(onSelectionCaptured).toHaveBeenCalledTimes(1);
+  });
+
+  it('highlight-mode completion signals still do nothing while the mode is off', () => {
+    manager.registerContents(makeContents());
+    selectText('Just reading, not marking');
+
+    document.dispatchEvent(new Event('mouseup'));
+    document.dispatchEvent(new Event('touchend'));
+
+    expect(annotations.highlight).not.toHaveBeenCalled();
+    expect(window.getSelection()?.toString()).toBe('Just reading, not marking');
+  });
+
+  it('saves the typed note with the mark through the same commit', async () => {
+    manager.registerContents(makeContents());
+    selectText('The passage');
+    rightClick({ pointerType: 'mouse' });
+
+    await expect(manager.commitHighlight('My thought about it')).resolves.toBe(true);
+
+    expect(notesService.create).toHaveBeenCalledWith('book-1', {
+      content: 'My thought about it',
+      cfiRange: CFI,
+      selectedText: 'The passage',
+    });
+    expect(annotations.add).toHaveBeenCalledTimes(1);
+  });
+
+  it('a plain highlight still saves empty note content', async () => {
+    manager.setHighlightMode(true);
+    manager.registerContents(makeContents());
+    selectText('Only a mark');
+    document.dispatchEvent(new Event('mouseup'));
+
+    await manager.commitHighlight();
+
+    expect(notesService.create).toHaveBeenCalledWith('book-1', expect.objectContaining({ content: '' }));
+  });
+
+  it('reports the selection box in the page viewport, offset by the iframe', () => {
+    const contents = {
+      ...makeContents(),
+      window: {
+        getSelection: () => ({
+          rangeCount: 1,
+          isCollapsed: false,
+          toString: () => 'Measured text',
+          getRangeAt: () => ({
+            cloneRange: () => ({}),
+            getBoundingClientRect: () => ({ top: 10, bottom: 30, left: 40, right: 140, width: 100, height: 20 }),
+          }),
+          removeAllRanges: vi.fn(),
+        }),
+        frameElement: { getBoundingClientRect: () => ({ top: 100, left: 200 }) },
+        matchMedia: () => ({ matches: false }),
+      },
+    } as unknown as Contents;
+    manager.registerContents(contents);
+
+    rightClick({ pointerType: 'mouse' });
+
+    expect(onSelectionCaptured).toHaveBeenCalledWith('Measured text', {
+      top: 110,
+      bottom: 130,
+      left: 240,
+      right: 340,
+    });
+  });
+
+  it('isMouseContextMenu accepts mice on fine pointers only', () => {
+    const fine = { matchMedia: () => ({ matches: false }) } as unknown as Window;
+    const coarse = { matchMedia: () => ({ matches: true }) } as unknown as Window;
+    const withType = (pointerType: string) => {
+      const event = new Event('contextmenu');
+      Object.defineProperty(event, 'pointerType', { value: pointerType });
+      return event;
+    };
+
+    expect(isMouseContextMenu(withType('mouse'), fine)).toBe(true);
+    expect(isMouseContextMenu(new Event('contextmenu'), fine)).toBe(true);
+    expect(isMouseContextMenu(withType('touch'), fine)).toBe(false);
+    expect(isMouseContextMenu(withType('pen'), fine)).toBe(false);
+    expect(isMouseContextMenu(withType('mouse'), coarse)).toBe(false);
+  });
+
+  it('ignores the debounced epub.js selected event mid-drag; mouseup captures the full range', () => {
+    manager.setHighlightMode(true);
+    const contents = makeContents();
+    manager.registerContents(contents);
+    manager.init();
+    const selectedHandler = (manager as unknown as { selectedHandler: (cfi: string, c: Contents) => void })
+      .selectedHandler;
+
+    const text = 'The whole dragged passage here';
+    document.body.textContent = text;
+    const node = document.body.firstChild!;
+    const range = document.createRange();
+    range.setStart(node, 0);
+    range.setEnd(node, 3);
+    window.getSelection()!.removeAllRanges();
+    window.getSelection()!.addRange(range);
+
+    document.dispatchEvent(new MouseEvent('mousedown', { button: 0 }));
+    // epub.js's debounce fires while the button is still held: ignored.
+    selectedHandler(CFI, contents);
+    expect(annotations.highlight).not.toHaveBeenCalled();
+    expect(window.getSelection()?.toString()).toBe('The');
+
+    range.setEnd(node, text.length);
+    window.getSelection()!.removeAllRanges();
+    window.getSelection()!.addRange(range);
+    document.dispatchEvent(new MouseEvent('mouseup', { button: 0 }));
+
+    expect(annotations.highlight).toHaveBeenCalledTimes(1);
+    expect(onSelectionCaptured.mock.calls[0][0]).toBe(text);
+  });
+
+  it('a touch selection still captures through the epub.js selected event', () => {
+    manager.setHighlightMode(true);
+    const contents = makeContents();
+    manager.registerContents(contents);
+    manager.init();
+    const selectedHandler = (manager as unknown as { selectedHandler: (cfi: string, c: Contents) => void })
+      .selectedHandler;
+    selectText('Selected with the handles');
+
+    selectedHandler(CFI, contents);
+
+    expect(annotations.highlight).toHaveBeenCalledTimes(1);
+  });
+
+  it('a drag released outside the iframe cannot leave the drag state stuck', () => {
+    manager.setHighlightMode(true);
+    const contents = makeContents();
+    manager.registerContents(contents);
+    manager.init();
+    const selectedHandler = (manager as unknown as { selectedHandler: (cfi: string, c: Contents) => void })
+      .selectedHandler;
+    selectText('Released elsewhere');
+
+    document.dispatchEvent(new MouseEvent('mousedown', { button: 0 }));
+    document.dispatchEvent(new MouseEvent('mousemove', { buttons: 0 }));
+    selectedHandler(CFI, contents);
+
+    expect(annotations.highlight).toHaveBeenCalledTimes(1);
   });
 });

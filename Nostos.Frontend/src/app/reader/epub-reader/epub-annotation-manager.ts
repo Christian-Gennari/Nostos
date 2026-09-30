@@ -47,6 +47,32 @@ interface EpubView {
 }
 
 /**
+ * Where a captured selection sits, in the reader page's viewport coordinates
+ * (the iframe's own offset already applied), so the shell can anchor the
+ * selection menu at the text (#650).
+ */
+export interface SelectionAnchor {
+  top: number;
+  bottom: number;
+  left: number;
+  right: number;
+}
+
+/**
+ * Whether a contextmenu event came from a real mouse right-click. Touch
+ * long-press also fires `contextmenu` (Android Chrome reports it as a
+ * PointerEvent with pointerType "touch"); taking it over would fight the
+ * phone's own selection menu (#16), so only a mouse on a fine-pointer device
+ * qualifies. Exported for tests.
+ */
+export function isMouseContextMenu(event: Event, win: Window): boolean {
+  const pointerType = (event as PointerEvent).pointerType;
+  if (typeof pointerType === 'string' && pointerType !== '' && pointerType !== 'mouse') return false;
+  const coarse = typeof win.matchMedia === 'function' && win.matchMedia('(pointer: coarse)').matches;
+  return !coarse;
+}
+
+/**
  * `--color-highlight` from styles.css in its light rendering, used when the
  * token cannot be resolved (unit tests, or a document that is not yet styled).
  */
@@ -63,8 +89,16 @@ export class EpubAnnotationManager {
   private pendingHighlight: PendingEpubHighlight | null = null;
   private lastCapturedKey: string | null = null;
   private readonly documentCleanups = new Map<Document, () => void>();
+  /**
+   * Documents in which a left-button mouse drag is in progress. epub.js emits
+   * `selected` from a debounced selectionchange (~250 ms), so a reader who
+   * pauses mid-drag used to be captured with a partial range and have the
+   * drag cut short (#304 again, via the epub.js path). A desktop drag is
+   * completed by mouseup instead; touch has no mouse state and is unaffected.
+   */
+  private readonly mouseDragDocuments = new Set<Document>();
   private selectedHandler: ((cfiRange: string, contents: Contents) => void) | null = null;
-  private onSelectionCaptured?: (text: string) => void;
+  private onSelectionCaptured?: (text: string, anchor: SelectionAnchor | null) => void;
 
   constructor(
     private rendition: Rendition,
@@ -98,7 +132,7 @@ export class EpubAnnotationManager {
     }
   }
 
-  setOnSelectionCaptured(callback: (text: string) => void) {
+  setOnSelectionCaptured(callback: (text: string, anchor: SelectionAnchor | null) => void) {
     this.onSelectionCaptured = callback;
   }
 
@@ -123,31 +157,49 @@ export class EpubAnnotationManager {
       return;
     }
 
-    const onContextMenu = (event: Event) => {
-      if (this.highlightMode) {
-        event.preventDefault();
-      }
-    };
-
-    const captureSelection = () => {
-      if (!this.highlightMode || this.pendingHighlight) {
-        return;
+    /**
+     * Captures the current selection. Highlight-mode completion signals
+     * (mouseup / touchend) only capture while the mode is on; a desktop
+     * right-click (#650) captures regardless of the mode. Returns whether a
+     * selection was captured.
+     */
+    const captureSelection = (evenOutsideHighlightMode = false): boolean => {
+      if ((!this.highlightMode && !evenOutsideHighlightMode) || this.pendingHighlight) {
+        return false;
       }
 
       const selection = contents.window.getSelection();
       if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
-        return;
+        return false;
       }
 
       const range = selection.getRangeAt(0);
       const selectedText = selection.toString().trim();
 
       if (!selectedText) {
-        return;
+        return false;
       }
 
       const cfiRange = contents.cfiFromRange(range.cloneRange());
       this.capturePendingHighlight(cfiRange, selectedText, contents);
+      return this.pendingHighlight !== null;
+    };
+
+    const onContextMenu = (event: Event) => {
+      if (this.highlightMode) {
+        event.preventDefault();
+      }
+
+      // Right-click on a selection opens the selection menu at the text, with
+      // or without highlight mode (#650). Mouse only: a touch long-press keeps
+      // the platform's own behaviour, and a right-click with nothing selected
+      // keeps the native menu.
+      if (!isMouseContextMenu(event, contents.window)) {
+        return;
+      }
+      if (captureSelection(true)) {
+        event.preventDefault();
+      }
     };
 
     // selectionchange fires repeatedly while a desktop drag is still growing.
@@ -155,17 +207,30 @@ export class EpubAnnotationManager {
     // selection and cuts the drag short (issue #304). Mouseup is the first
     // reliable desktop completion signal; touch keeps its existing touchend
     // fallback for browsers where epub.js never emits `selected`.
+    const onMouseDown = (event: MouseEvent) => {
+      if (event.button === 0) this.mouseDragDocuments.add(document);
+    };
+
+    // A drag released outside the iframe can miss mouseup here; the next move
+    // with no button held ends the drag state so it can never stick.
+    const onMouseMove = (event: MouseEvent) => {
+      if (event.buttons === 0) this.mouseDragDocuments.delete(document);
+    };
+
     const onMouseUp = () => {
-      requestAnimationFrame(captureSelection);
+      this.mouseDragDocuments.delete(document);
+      requestAnimationFrame(() => captureSelection());
     };
 
     const onTouchEnd = () => {
-      requestAnimationFrame(captureSelection);
+      requestAnimationFrame(() => captureSelection());
     };
 
     document.addEventListener('contextmenu', onContextMenu, {
       capture: true,
     });
+    document.addEventListener('mousedown', onMouseDown);
+    document.addEventListener('mousemove', onMouseMove, { passive: true });
     document.addEventListener('mouseup', onMouseUp);
     document.addEventListener('touchend', onTouchEnd, {
       passive: true,
@@ -173,8 +238,11 @@ export class EpubAnnotationManager {
 
     this.documentCleanups.set(document, () => {
       document.removeEventListener('contextmenu', onContextMenu, true);
+      document.removeEventListener('mousedown', onMouseDown);
+      document.removeEventListener('mousemove', onMouseMove);
       document.removeEventListener('mouseup', onMouseUp);
       document.removeEventListener('touchend', onTouchEnd);
+      this.mouseDragDocuments.delete(document);
     });
 
     this.applyModeToContents(contents);
@@ -230,6 +298,11 @@ export class EpubAnnotationManager {
       return;
     }
 
+    // Mid-drag: mouseup will capture the finished range.
+    if (this.mouseDragDocuments.has(contents.document)) {
+      return;
+    }
+
     const text = contents.window.getSelection()?.toString().trim() ?? '';
     if (!text) {
       return;
@@ -271,8 +344,36 @@ export class EpubAnnotationManager {
     };
     this.lastCapturedKey = key;
 
+    // Measured before the native selection is cleared, which empties it.
+    const anchor = this.anchorForSelection(contents);
     contents.window.getSelection()?.removeAllRanges();
-    this.onSelectionCaptured?.(selectedText);
+    this.onSelectionCaptured?.(selectedText, anchor);
+  }
+
+  /**
+   * The live selection's box in the parent page's viewport: the range's rect
+   * inside the iframe plus the iframe's own position. Null when it cannot be
+   * measured (tests, a detached document); the shell then docks the menu.
+   */
+  private anchorForSelection(contents: Contents): SelectionAnchor | null {
+    try {
+      const selection = contents.window.getSelection();
+      if (!selection || selection.rangeCount === 0) return null;
+      const rect = selection.getRangeAt(0).getBoundingClientRect();
+      if (!rect || (rect.width === 0 && rect.height === 0)) return null;
+
+      const frame = contents.window.frameElement?.getBoundingClientRect();
+      const dx = frame?.left ?? 0;
+      const dy = frame?.top ?? 0;
+      return {
+        top: rect.top + dy,
+        bottom: rect.bottom + dy,
+        left: rect.left + dx,
+        right: rect.right + dx,
+      };
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -282,7 +383,7 @@ export class EpubAnnotationManager {
    * the confirmation bar open — the user never loses a difficult selection to
    * a transient request failure.
    */
-  commitHighlight(): Promise<boolean> {
+  commitHighlight(content = ''): Promise<boolean> {
     const pending = this.pendingHighlight;
     if (!pending) {
       return Promise.resolve(false);
@@ -298,7 +399,8 @@ export class EpubAnnotationManager {
     return new Promise<boolean>((resolve) => {
       this.notesService
         .create(this.bookId, {
-          content: '',
+          // Empty for a plain highlight; the typed text for "Add note" (#650).
+          content,
           cfiRange: snapshot.cfiRange,
           selectedText: snapshot.selectedText,
         })
