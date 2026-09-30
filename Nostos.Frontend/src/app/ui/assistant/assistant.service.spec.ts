@@ -163,7 +163,8 @@ describe('AssistantService voice transcript alignment', () => {
 
     expect(service.sending()).toBe(false);
     expect(service.activeTurnId()).toBeNull();
-    expect(service.entries().at(-1)?.meta).toBe('Stopped');
+    expect(service.entries().at(-1)?.text).toBe('Stopped.');
+    expect(service.entries().at(-1)?.meta).toBeNull();
     const artifacts = service.entries()
       .filter((entry) => entry.turnId === turnId)
       .flatMap((entry) => entry.artifacts ?? []);

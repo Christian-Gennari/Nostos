@@ -117,6 +117,11 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
   beforeEach(async () => {
     localStorage.clear();
     sessionStorage.removeItem(ASSISTANT_SESSION_STORAGE_KEY);
+    await configureComponent();
+  });
+
+  /** Builds the component; called again after resetTestingModule to model a reload. */
+  async function configureComponent(): Promise<void> {
     fake = fakeContextService({ surface: 'reader', route: '/read/b1', bookId: 'b1' });
     voice = fakeVoiceService();
     status = fakeStatusService(true);
@@ -142,7 +147,7 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     // default is off; opt in here so those tests remain about assistant behavior.
     TestBed.inject(LibraryPreferencesService).setAssistantEnabled(true);
     fixture.detectChanges();
-  });
+  }
 
   afterEach(() => {
     http.verify();
@@ -1049,6 +1054,87 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     expect(unsafeLink?.getAttribute('href')?.startsWith('javascript:')).toBe(false);
 
     expect(rendered.textContent).toContain('**unfinished');
+  });
+
+  describe('manual Stop (issue #648)', () => {
+    function transcriptText(): string {
+      return fixture.nativeElement
+        .querySelector('[data-testid="assistant-transcript"]')
+        ?.textContent ?? '';
+    }
+
+    function stoppedCount(): number {
+      return transcriptText().match(/Stopped/g)?.length ?? 0;
+    }
+
+    /** Starts a streamed turn, presses Stop, and delivers one cancelled terminal event. */
+    function stopTurn(message: string, executedCapabilities: string[] = []): string {
+      assistant.open();
+      fixture.detectChanges();
+      assistant.updateDraft('Mark it as a favourite');
+      assistant.submit();
+      fixture.detectChanges();
+      const request = http.expectOne('/api/assistant/turn/stream');
+      const turnId = request.request.body.turnId as string;
+
+      const startedLine = JSON.stringify({ turnId, sequence: 1, kind: 'started' }) + '\n';
+      request.event({
+        type: HttpEventType.DownloadProgress,
+        loaded: startedLine.length,
+        partialText: startedLine,
+      });
+      fixture.detectChanges();
+
+      assistant.stopActiveTurn();
+      http.expectOne('/api/assistant/turn/cancel')
+        .flush({ accepted: true, state: 'cancel_requested' });
+
+      const error = { code: 'assistant_turn_cancelled', message };
+      request.flush(startedLine + JSON.stringify({
+        turnId,
+        sequence: 2,
+        kind: 'cancelled',
+        failure: { ...error, retryable: false },
+        response: turn({ reply: '', error, executedCapabilities }),
+      }) + '\n');
+      fixture.detectChanges();
+      return turnId;
+    }
+
+    it('renders one cancellation indication when nothing was committed', () => {
+      const turnId = stopTurn('Stopped.');
+
+      expect(stoppedCount()).toBe(1);
+      const artifacts = assistant.entries()
+        .filter((entry) => entry.turnId === turnId)
+        .flatMap((entry) => entry.artifacts ?? []);
+      expect(artifacts).toContainEqual(expect.objectContaining({
+        kind: 'failure',
+        code: 'assistant_turn_cancelled',
+        state: 'cancelled',
+      }));
+    });
+
+    it('keeps the single indication truthful after a committed change', () => {
+      stopTurn('Stopped. Changes that already completed remain applied.', ['library_update_book']);
+
+      expect(stoppedCount()).toBe(1);
+      expect(transcriptText()).toContain('Changes that already completed remain applied.');
+      expect(transcriptText()).toContain('Changed · book updated');
+    });
+
+    it('does not multiply the marker when the session is restored', async () => {
+      stopTurn('Stopped.');
+      expect(stoppedCount()).toBe(1);
+
+      http.verify();
+      TestBed.resetTestingModule();
+      await configureComponent();
+      assistant.open();
+      fixture.detectChanges();
+
+      expect(stoppedCount()).toBe(1);
+    });
   });
 
   describe('turn activity (issue #564)', () => {

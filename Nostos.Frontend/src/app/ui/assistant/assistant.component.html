@@ -290,7 +290,7 @@
             @if (
               artifact.kind === 'capture'
               || artifact.kind === 'action'
-              || artifact.kind === 'failure'
+              || (artifact.kind === 'failure' && artifact.state !== 'cancelled')
               || artifact.kind === 'destructive-result'
             ) {
             <footer class="entry-meta">
