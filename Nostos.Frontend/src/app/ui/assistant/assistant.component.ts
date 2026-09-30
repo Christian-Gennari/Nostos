@@ -498,9 +498,8 @@ export class AssistantComponent {
       case 'action':
         return `Changed · ${this.humanizeCapability(artifact.capability)}`;
       case 'failure':
-        return artifact.state === 'cancelled'
-          ? 'Stopped'
-          : `Failed · ${artifact.message}`;
+        // Cancelled failures are not rendered: the turn's stop message owns that state.
+        return `Failed · ${artifact.message}`;
       case 'proposal':
         return `Proposed · ${artifact.proposal.label} — ${artifact.proposal.reason}`;
       case 'destructive-result':

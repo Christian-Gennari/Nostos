@@ -297,6 +297,7 @@ public sealed class LibraryService : ILibraryService
         {
             var confirmed = await db.Books.AsNoTracking()
                 .Include(b => b.Acquisition)
+                .Include(b => b.BookCollections)
                 .SingleOrDefaultAsync(b => b.Id == request.ConfirmedBookId.Value, ct);
             if (confirmed is null)
                 return NoChange(Failure("book_not_found", LibraryReplyFormatter.BookNotFound, state.StateVersion));
@@ -313,10 +314,12 @@ public sealed class LibraryService : ILibraryService
         if (nIsbn is not null)
             isbnMatch = await db.Books.AsNoTracking()
                 .Include(b => b.Acquisition)
+                .Include(b => b.BookCollections)
                 .SingleOrDefaultAsync(b => b.NormalizedIsbn == nIsbn, ct);
         if (nAsin is not null)
             asinMatch = await db.Books.AsNoTracking()
                 .Include(b => b.Acquisition)
+                .Include(b => b.BookCollections)
                 .SingleOrDefaultAsync(b => b.NormalizedAsin == nAsin, ct);
 
         if (isbnMatch is not null && asinMatch is not null && isbnMatch.Id != asinMatch.Id)
@@ -353,6 +356,7 @@ public sealed class LibraryService : ILibraryService
         {
             var all = await db.Books.AsNoTracking()
                 .Include(b => b.Acquisition)
+                .Include(b => b.BookCollections)
                 .ToListAsync(ct);
             var hasAuthor = !string.IsNullOrEmpty(nAuthor);
             var exact = hasAuthor
@@ -678,7 +682,11 @@ public sealed class LibraryService : ILibraryService
     {
         var state = await EnsureStateAsync(db, ct);
 
-        var book = await db.Books.SingleOrDefaultAsync(b => b.Id == request.BookId, ct);
+        // Loaded so the returned BookDto reports real membership even when
+        // this update does not touch it.
+        var book = await db.Books
+            .Include(b => b.BookCollections)
+            .SingleOrDefaultAsync(b => b.Id == request.BookId, ct);
         if (book is null)
             return NoChange(Failure("book_not_found", LibraryReplyFormatter.BookNotFound, state.StateVersion));
 

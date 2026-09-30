@@ -305,9 +305,13 @@ internal sealed class LibraryReadService(
         BookModel? isbnMatch = null;
         BookModel? asinMatch = null;
         if (nIsbn is not null)
-            isbnMatch = await db.Books.AsNoTracking().SingleOrDefaultAsync(b => b.NormalizedIsbn == nIsbn, ct);
+            isbnMatch = await db.Books.AsNoTracking()
+                .Include(b => b.BookCollections)
+                .SingleOrDefaultAsync(b => b.NormalizedIsbn == nIsbn, ct);
         if (nAsin is not null)
-            asinMatch = await db.Books.AsNoTracking().SingleOrDefaultAsync(b => b.NormalizedAsin == nAsin, ct);
+            asinMatch = await db.Books.AsNoTracking()
+                .Include(b => b.BookCollections)
+                .SingleOrDefaultAsync(b => b.NormalizedAsin == nAsin, ct);
 
         if (isbnMatch is not null && asinMatch is not null && isbnMatch.Id != asinMatch.Id)
             return new LibraryResolveResult(LibraryResolution.IdentityConflict);
@@ -324,6 +328,7 @@ internal sealed class LibraryReadService(
         {
             var all = await db.Books.AsNoTracking()
                 .Include(b => b.Acquisition)
+                .Include(b => b.BookCollections)
                 .ToListAsync(ct);
             var hasAuthor = !string.IsNullOrEmpty(nAuthor);
             var exact = hasAuthor

@@ -1492,6 +1492,10 @@ export class AssistantService {
     this.updateUserDelivery(turn.userEntryId, 'complete', null);
     this.lastError.set(null);
 
+    // The message is the one visible cancellation indicator: it carries the
+    // server's truthful copy ("…changes that already completed remain
+    // applied"). The cancelled failure artifact below stays attached to the
+    // turn as inert state and is not rendered as a second "Stopped" label.
     const stoppedMessage =
       response?.error?.message
       ?? failure?.message
@@ -1501,7 +1505,7 @@ export class AssistantService {
       'assistant',
       stoppedMessage,
       null,
-      'Stopped',
+      null,
       [],
       false,
     );

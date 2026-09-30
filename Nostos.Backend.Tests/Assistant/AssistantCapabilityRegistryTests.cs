@@ -399,6 +399,67 @@ public sealed class AssistantCapabilityRegistryTests : IClassFixture<SqliteTestF
     }
 
     [Fact]
+    public async Task Update_book_sets_replaces_and_clears_the_description()
+    {
+        var h = CreateHarness();
+        var book = await SeedBookAsync(h, "Essays and Aphorisms", "Schopenhauer");
+
+        async Task<string?> UpdateAndReadAsync(object args, string key)
+        {
+            var result = await h.Registry.InvokeAsync(
+                "library_update_book",
+                Args(JsonSerializer.Serialize(args)),
+                new AssistantToolContext("client", key));
+            result.Success.Should().BeTrue();
+            await using var db = await h.Factory.CreateDbContextAsync();
+            return (await db.Books.AsNoTracking().SingleAsync(b => b.Id == book.Id)).Metadata.Description;
+        }
+
+        (await UpdateAndReadAsync(new { bookId = book.Id, description = "A selection from Parerga." }, "d1"))
+            .Should().Be("A selection from Parerga.", "a book without a description can be given one");
+        (await UpdateAndReadAsync(new { bookId = book.Id, description = "Short essays." }, "d2"))
+            .Should().Be("Short essays.", "an existing description can be replaced");
+        (await UpdateAndReadAsync(new { bookId = book.Id, rating = 4 }, "d3"))
+            .Should().Be("Short essays.", "omitting description leaves it unchanged");
+        (await UpdateAndReadAsync(new { bookId = book.Id, description = "" }, "d4"))
+            .Should().BeNull("an empty string clears the description");
+    }
+
+    [Fact]
+    public async Task Update_book_description_preserves_other_metadata_and_memberships_and_is_exactly_once()
+    {
+        var h = CreateHarness();
+        var collection = await SeedCollectionAsync(h, "Philosophy");
+        var book = await SeedBookAsync(h, "Essays and Aphorisms", "Schopenhauer");
+        var context = new AssistantToolContext("client", "describe-once");
+
+        var assign = await h.Registry.InvokeAsync(
+            "library_update_book",
+            Args(JsonSerializer.Serialize(new { bookId = book.Id, collectionIds = new[] { collection.Id }, rating = 5 })),
+            new AssistantToolContext("client", "assign"));
+        assign.Success.Should().BeTrue();
+
+        var args = Args(JsonSerializer.Serialize(new { bookId = book.Id, description = "Short essays." }));
+        var first = await h.Registry.InvokeAsync("library_update_book", args, context);
+        var replay = await h.Registry.InvokeAsync("library_update_book", args, context);
+
+        first.Success.Should().BeTrue();
+        replay.Success.Should().BeTrue();
+
+        await using var db = await h.Factory.CreateDbContextAsync();
+        var stored = await db.Books.AsNoTracking().SingleAsync(b => b.Id == book.Id);
+        stored.Metadata.Description.Should().Be("Short essays.");
+        stored.Title.Should().Be("Essays and Aphorisms");
+        stored.Author.Should().Be("Schopenhauer");
+        stored.Progress.Rating.Should().Be(5);
+        (await db.BookCollections.AsNoTracking().Where(link => link.BookId == book.Id)
+            .Select(link => link.CollectionId).ToListAsync())
+            .Should().Equal(collection.Id);
+        (await db.LibraryCommandReceipts.CountAsync(r => r.IdempotencyKey == "describe-once"))
+            .Should().Be(1, "a replay with the same mutation identity does not execute twice");
+    }
+
+    [Fact]
     public async Task Bulk_collection_membership_routes_each_book_through_the_canonical_service()
     {
         var h = CreateHarness();

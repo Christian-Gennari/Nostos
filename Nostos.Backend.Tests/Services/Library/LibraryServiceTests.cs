@@ -441,6 +441,81 @@ public sealed class LibraryServiceTests : IClassFixture<SqliteTestFixture>
         dto.CollectionIds.Should().BeEquivalentTo([coll2.Id]);
     }
 
+    // Every path that serialises a book must report its real membership; a
+    // missed Include(BookCollections) silently reports [] instead.
+
+    [Fact]
+    public async Task Update_that_does_not_touch_membership_still_reports_it()
+    {
+        var h = Harness();
+        var coll = (CollectionDto)(await h.Service.CreateCollectionAsync(new(Client, "c1", "Philosophy"))).Data!;
+        var bookId = await CreateBookInAsync(h, "Fictions", coll.Id);
+
+        var result = await h.Service.UpdateBookAsync(new(Client, "m1", bookId, Rating: 4));
+
+        ((BookDto)result.Data!).CollectionIds.Should().BeEquivalentTo([coll.Id]);
+    }
+
+    [Theory]
+    [InlineData("isbn")]
+    [InlineData("title+author")]
+    [InlineData("confirmedBookId")]
+    public async Task Create_or_match_matched_book_reports_its_membership(string route)
+    {
+        var h = Harness();
+        var coll = (CollectionDto)(await h.Service.CreateCollectionAsync(new(Client, "c1", "Philosophy"))).Data!;
+        var bookId = ((LibraryCreateOrMatchResultDto)(await h.Service.CreateOrMatchBookAsync(
+            CreateRequest("physical", "Fictions", Author: "Borges", Isbn: IsbnBorges, CollectionIds: [coll.Id]),
+            strictConfirmation: true)).Data!).BookId!.Value;
+
+        var request = route switch
+        {
+            "isbn" => CreateRequest("physical", "Some other title", Isbn: IsbnBorges),
+            "title+author" => CreateRequest("physical", "Fictions", Author: "Borges"),
+            _ => CreateRequest("physical", "Some other title", ConfirmedBookId: bookId),
+        };
+        var matched = (LibraryCreateOrMatchResultDto)(await h.Service.CreateOrMatchBookAsync(
+            request, strictConfirmation: true)).Data!;
+
+        matched.Outcome.Should().Be("matched");
+        matched.Book!.CollectionIds.Should().BeEquivalentTo([coll.Id]);
+    }
+
+    [Fact]
+    public async Task Create_or_match_matched_by_asin_reports_its_membership()
+    {
+        var h = Harness();
+        var coll = (CollectionDto)(await h.Service.CreateCollectionAsync(new(Client, "c1", "Philosophy"))).Data!;
+        await h.Service.CreateOrMatchBookAsync(
+            CreateRequest("audiobook", "War and Peace", Asin: AsinExample, CollectionIds: [coll.Id]),
+            strictConfirmation: true);
+
+        var matched = (LibraryCreateOrMatchResultDto)(await h.Service.CreateOrMatchBookAsync(
+            CreateRequest("audiobook", "Another title", Asin: AsinExample), strictConfirmation: true)).Data!;
+
+        matched.Outcome.Should().Be("matched");
+        matched.Book!.CollectionIds.Should().BeEquivalentTo([coll.Id]);
+    }
+
+    [Theory]
+    [InlineData("isbn")]
+    [InlineData("title+author")]
+    public async Task Resolve_exact_match_reports_its_membership(string route)
+    {
+        var h = Harness();
+        var coll = (CollectionDto)(await h.Service.CreateCollectionAsync(new(Client, "c1", "Philosophy"))).Data!;
+        await h.Service.CreateOrMatchBookAsync(
+            CreateRequest("physical", "Fictions", Author: "Borges", Isbn: IsbnBorges, CollectionIds: [coll.Id]),
+            strictConfirmation: true);
+
+        var result = await h.Service.ResolveBookAsync(route == "isbn"
+            ? new LibraryResolveBookRequest(Isbn: IsbnBorges)
+            : new LibraryResolveBookRequest(Title: "Fictions", Author: "Borges"));
+
+        result.Resolution.Should().Be(LibraryResolution.ExactMatch);
+        result.MatchedBook!.CollectionIds.Should().BeEquivalentTo([coll.Id]);
+    }
+
     [Fact]
     public async Task Collection_filter_matches_any_membership()
     {
