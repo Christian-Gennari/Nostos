@@ -1,8 +1,8 @@
-import { Component, ElementRef, inject, input, output, signal, computed, effect, viewChild } from '@angular/core';
+import { Component, DestroyRef, ElementRef, inject, input, output, signal, computed, effect, viewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpEventType } from '@angular/common/http';
-import { finalize } from 'rxjs';
+import { finalize, Subscription } from 'rxjs';
 import {
   BookLookupError,
   BooksService,
@@ -170,8 +170,14 @@ export class AddBookModal {
   coverDragActive = signal(false);
 
   constructor() {
+    // A closed or destroyed modal must not leave catalogue requests running.
+    inject(DestroyRef).onDestroy(() => this.cancelSourceRequests());
+
     effect(() => {
-      if (!this.isOpen()) return;
+      if (!this.isOpen()) {
+        this.cancelSourceRequests();
+        return;
+      }
 
       const currentBook = this.book();
       if (currentBook) {
@@ -659,6 +665,39 @@ export class AddBookModal {
   sourceSearched = signal(false);
   sourceSearchError = signal<string | null>(null);
   private sourceSearchVersion = 0;
+  /** The in-flight aggregate search; a newer search aborts it (#641). */
+  private sourceSearchSub: Subscription | null = null;
+  /** The in-flight detail request for the selected result. */
+  private sourceDetailSub: Subscription | null = null;
+
+  /**
+   * Narrow layouts show results and the selected book as two views (#641).
+   * Desktop shows both panes at once and ignores this.
+   */
+  sourceDetailOpen = signal(false);
+  private sourceResultsScrollTop = 0;
+  private sourceResultsPane = viewChild<ElementRef<HTMLElement>>('sourceResultsPane');
+
+  /**
+   * The persistent footer's next action. Choosing a result only seeds the
+   * Review Book step, so this is never labelled "Import".
+   */
+  sourcePrimaryAction = computed<{ label: string; enabled: boolean }>(() => {
+    const item = this.selectedItem();
+    if (!item) return { label: 'Select a book', enabled: false };
+    if (this.sourceImportError()) return { label: 'Use this book', enabled: false };
+    const detail = this.selectedDetail();
+    if (!detail) return { label: 'Loading edition…', enabled: false };
+    return {
+      label: 'Use this book',
+      enabled: detail.assets.length > 0 && !this.runningAcquisition(),
+    };
+  });
+
+  /** Names of the sources that could not be searched, for one compact line. */
+  sourceFailureNames = computed(() =>
+    this.sourceFailures().map((source) => source.displayName).join(', '),
+  );
 
   selectedItem = signal<ProviderItem | null>(null);
 
@@ -829,7 +868,10 @@ export class AddBookModal {
     if (kind === this.sourceKind()) return;
 
     this.sourceKind.set(kind);
+    // A search for the previous filter is obsolete whether or not a new one starts.
+    this.cancelSourceRequests();
     this.clearSourceSelection();
+    this.sourceDetailOpen.set(false);
 
     if (this.sourceQuery().trim().length >= 2) this.searchSource();
   }
@@ -840,11 +882,15 @@ export class AddBookModal {
 
     const kind = this.sourceKind();
     const version = ++this.sourceSearchVersion;
+    // Abort, not just ignore, the search this one replaces.
+    this.sourceSearchSub?.unsubscribe();
     this.sourceSearching.set(true);
     this.sourceSearchError.set(null);
     this.clearSourceSelection();
+    this.sourceDetailOpen.set(false);
+    this.sourceResultsScrollTop = 0;
 
-    this.providers
+    this.sourceSearchSub = this.providers
       .searchAll(query, kind === 'all' ? undefined : kind)
       .pipe(
         finalize(() => {
@@ -895,8 +941,10 @@ export class AddBookModal {
     // both halves of the identity prevents identical external ids from two
     // sources from colliding when responses arrive out of order.
     const selectedKey = this.sourceItemKey(item);
+    this.openSourceDetail();
 
-    this.providers.item(item.providerId, item.externalId).subscribe({
+    this.sourceDetailSub?.unsubscribe();
+    this.sourceDetailSub = this.providers.item(item.providerId, item.externalId).subscribe({
       next: (detail) => {
         const current = this.selectedItem();
         if (!current || this.sourceItemKey(current) !== selectedKey) return;
@@ -1044,7 +1092,33 @@ export class AddBookModal {
     });
   }
 
+  /** Narrow layouts: leave the list for the selected book, keeping its scroll. */
+  private openSourceDetail(): void {
+    const pane = this.sourceResultsPane()?.nativeElement;
+    if (pane) this.sourceResultsScrollTop = pane.scrollTop;
+    this.sourceDetailOpen.set(true);
+  }
+
+  /** Narrow layouts: back to the same list, query, filter, order and selection. */
+  backToSourceResults(): void {
+    this.sourceDetailOpen.set(false);
+    setTimeout(() => {
+      const pane = this.sourceResultsPane()?.nativeElement;
+      if (pane) pane.scrollTop = this.sourceResultsScrollTop;
+    }, 0);
+  }
+
+  private cancelSourceRequests(): void {
+    this.sourceSearchSub?.unsubscribe();
+    this.sourceSearchSub = null;
+    this.sourceDetailSub?.unsubscribe();
+    this.sourceDetailSub = null;
+    this.sourceSearching.set(false);
+  }
+
   private clearSourceSelection(): void {
+    this.sourceDetailSub?.unsubscribe();
+    this.sourceDetailSub = null;
     this.selectedItem.set(null);
     this.selectedDetail.set(null);
     this.selectedAssetId.set(null);
@@ -1061,6 +1135,8 @@ export class AddBookModal {
   }
 
   private resetSourceTab(): void {
+    this.cancelSourceRequests();
+    this.sourceDetailOpen.set(false);
     this.clearSourceResults();
     this.sourceQuery.set('');
     this.sourceKind.set('all');

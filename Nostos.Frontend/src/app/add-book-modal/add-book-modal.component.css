@@ -423,14 +423,87 @@
   flex: 1 1 auto;
   min-width: 0;
 }
-.source-results {
-  list-style: none;
-  margin: 0.75rem 0;
-  padding: 0;
-  max-height: 15rem;
+/* Discovery workspace (#641). One box whose size does not depend on what is
+   in it, so the loading surface and the results occupy the same space and a
+   finished search swaps in without the modal jumping. It takes the height the
+   viewport can spare (clamped, not a fixed number) and each pane scrolls on
+   its own, so the footer's next action never leaves the screen. */
+.source-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1rem;
+  height: clamp(15rem, calc(90dvh - 21rem), 36rem);
+  margin-top: 0.85rem;
+}
+.source-results-pane,
+.source-detail-pane {
+  min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.source-results-pane {
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
+}
+.source-results-pane > .source-hint,
+.source-results-pane > .source-error,
+.source-results-pane > .source-partial {
+  margin: 0.6rem 0.75rem;
+}
+.source-results {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.source-partial {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  color: var(--color-text-light);
+}
+.source-detail-empty {
+  margin: 0.25rem 0 0;
+}
+.source-back {
+  display: none;
+  align-self: flex-start;
+  margin-bottom: 0.5rem;
+}
+/* Reserved waiting state: the pane holds its size while the shared wait field
+   (styles.css, which already honours reduced motion) breathes behind one
+   line of copy. Nothing structured is drawn in the results' place. */
+.source-loading {
+  position: relative;
+  height: 100%;
+  min-height: 8rem;
+  overflow: hidden;
+}
+.source-loading-label {
+  position: relative;
+  z-index: 1;
+  margin: 0;
+  padding: 0.6rem 0.75rem;
+}
+/* Desktop: results and the selected book side by side. */
+@media (min-width: 769px) {
+  .source-workspace {
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  }
+}
+/* Narrow: one view at a time, list first; the list keeps its query, filter,
+   order and selection while the detail is open. */
+@media (max-width: 768px) {
+  .source-workspace {
+    height: clamp(15rem, calc(100dvh - 22rem), 36rem);
+  }
+  .source-workspace:not(.showing-detail) .source-detail-pane,
+  .source-workspace.showing-detail .source-results-pane {
+    display: none;
+  }
+  .source-back {
+    display: inline-flex;
+  }
 }
 .source-result {
   display: flex;
@@ -497,9 +570,6 @@
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
-  margin-top: 0.5rem;
-  padding-top: 1rem;
-  border-top: 1px solid var(--border-color);
 }
 .source-detail-title {
   margin: 0;
@@ -514,8 +584,6 @@
 }
 .source-detail-description {
   margin: 0;
-  max-height: 7rem;
-  overflow-y: auto;
   font-size: 0.85rem;
   color: var(--color-text-main);
 }

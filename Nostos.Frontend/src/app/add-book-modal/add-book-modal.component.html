@@ -2,7 +2,7 @@
   <app-modal-shell
     [isOpen]="true"
     variant="sheet"
-    [maxWidth]="'700px'"
+    [maxWidth]="sourceMode() ? '960px' : '700px'"
     [maxHeight]="'90vh'"
     [layer]="100"
     [ariaLabel]="isEditMode() ? 'Edit Book' : sourceMode() ? 'Find a book' : seededFromSource() ? 'Review Book' : 'Add a book'"
@@ -734,19 +734,6 @@
               </span>
             </div>
 
-            @for (notice of sourceNotices(); track notice.providerId) {
-              @if (notice.notice; as message) {
-                <p class="source-hint">{{ notice.displayName }}: {{ message }}</p>
-              }
-            }
-
-            @for (failure of sourceFailures(); track failure.providerId) {
-              <p class="source-error">
-                <nostos-icon name="warning-circle" [size]="14"></nostos-icon>
-                {{ failure.displayName }} couldn't be searched right now.
-              </p>
-            }
-
             @if (sourceSearchError()) {
               <p class="source-error">
                 <nostos-icon name="warning-circle" [size]="14"></nostos-icon>
@@ -754,185 +741,226 @@
               </p>
             }
 
-            @if (allSourcesFailed() && !sourceSearchError()) {
-              <p class="source-error">
-                <nostos-icon name="warning-circle" [size]="14"></nostos-icon>
-                The free book sources are unavailable right now.
-              </p>
-            } @else if (
-              sourceSearched() &&
-              !sourceSearching() &&
-              sourceResults().length === 0 &&
-              !sourceSearchError()
-            ) {
-              <p class="source-hint">No matching books were found for “{{ sourceQuery() }}”.</p>
-            }
-
-            @if (sourceResults().length > 0) {
-              <ul class="source-results">
-                @for (item of sourceResults(); track sourceItemKey(item)) {
-                  <li>
-                    <button
-                      type="button"
-                      class="source-result"
-                      [class.active]="isSelectedSourceItem(item)"
-                      [class.nostos-accent-rail]="isSelectedSourceItem(item)"
-                      [disabled]="!!runningAcquisition()"
-                      (click)="selectSourceItem(item)"
-                    >
-                      @if (item.coverUrl) {
-                        <img class="source-cover" [src]="item.coverUrl" alt="" loading="lazy" />
-                      } @else {
-                        <span class="source-cover source-cover-empty" aria-hidden="true"></span>
-                      }
-                      <span class="source-result-text">
-                        <span class="source-result-title">{{ item.title }}</span>
-                        @if (item.author) {
-                          <span class="source-result-author">{{ item.author }}</span>
-                        }
-                        <span class="source-result-provenance">
-                          {{ mediaKindLabel(item) }} · {{ providerName(item.providerId) }}
-                        </span>
-                        @if (item.language || item.categories) {
-                          <span class="source-result-meta">
-                            {{ item.language || ''
-                            }}{{ item.language && item.categories ? ' · ' : ''
-                            }}{{ item.categories || '' }}
-                          </span>
-                        }
-                        @if (sourceFacts(item)) {
-                          <span class="source-result-meta">{{ sourceFacts(item) }}</span>
-                        }
-                      </span>
-                    </button>
-                  </li>
-                }
-              </ul>
-            }
-
-            @if (sourceHasMore()) {
-              <p class="source-hint">
-                Showing the first combined results — refine the search for more specific matches.
-              </p>
-            }
-
-            @if (selectedSourceItem(); as item) {
-              <div class="source-detail">
-                <h4 class="source-detail-title">{{ item.title }}</h4>
-                @if (item.author) {
-                  <p class="source-detail-author">{{ item.author }}</p>
-                }
-                <p class="source-hint">
-                  {{ mediaKindLabel(item) }} · {{ providerName(item.providerId) }}
-                </p>
-                @if (sourceFacts(item)) {
-                  <p class="source-hint">{{ sourceFacts(item) }}</p>
-                }
-                @if (item.description) {
-                  <p class="source-detail-description">{{ item.description }}</p>
-                }
-
-                @if (item.mediaKind === 'ebook' && item.assets.length > 0) {
-                  @if (ebookFormatFamilies().length > 1) {
-                    <fieldset class="source-format-families">
-                      <legend>Format</legend>
-                      @for (family of ebookFormatFamilies(); track family) {
-                        <label class="source-format-family">
-                          <input
-                            type="radio"
-                            name="sourceFormatFamily"
-                            [value]="family"
-                            [checked]="selectedFormatFamily() === family"
-                            [disabled]="!!runningAcquisition()"
-                            (change)="selectFormatFamily(family)"
-                          />
-                          <span>{{ family }}</span>
-                          @if (family === 'EPUB') {
-                            <span class="source-format-recommended">Recommended</span>
-                          }
-                        </label>
-                      }
-                    </fieldset>
-                  } @else if (ebookFormatFamilies().length === 1) {
-                    <p class="source-hint">Format: {{ ebookFormatFamilies()[0] }}</p>
+            <!-- One stable workspace (#641): the waiting state reserves the
+                 same box the results then fill, in one swap. Results never
+                 stream in provider by provider or reorder once shown. Desktop
+                 shows results and the selected book side by side; narrow
+                 layouts show one view at a time. -->
+            @if (sourceSearching() || sourceSearched()) {
+            <div
+              class="source-workspace"
+              [class.showing-detail]="sourceDetailOpen() && !!selectedSourceItem()"
+            >
+              <div class="source-results-pane" #sourceResultsPane data-testid="source-results-pane">
+                @if (sourceSearching()) {
+                  <!-- The shared structureless wait field, not a guessed row
+                       structure (motion contract): the pane keeps its reserved
+                       size and the real results replace it in one swap. -->
+                  <div class="source-loading" role="status" aria-live="polite" data-testid="source-loading">
+                    <div class="wait-field" aria-hidden="true"></div>
+                    <p class="source-hint source-loading-label">Searching free catalogues…</p>
+                  </div>
+                } @else {
+                  @if (sourceFailures().length > 0 && !allSourcesFailed()) {
+                    <p class="source-partial" data-testid="source-partial">
+                      <nostos-icon name="warning-circle" [size]="12"></nostos-icon>
+                      Not searched right now: {{ sourceFailureNames() }}
+                    </p>
                   }
-
-                  @if (assetsForSelectedFamily().length > 1) {
-                    <details class="source-formats">
-                      <summary class="source-formats-summary">
-                        <span class="source-formats-current">{{ selectedAssetLabel() }}</span>
-                        <span class="source-formats-change">
-                          <span class="source-formats-when-closed">Options</span>
-                          <span class="source-formats-when-open">Done</span>
-                        </span>
-                      </summary>
-                      <div class="source-formats-list">
-                        @for (asset of assetsForSelectedFamily(); track asset.id) {
-                          <label class="source-asset">
-                            <input
-                              type="radio"
-                              name="sourceAsset"
-                              [value]="asset.id"
-                              [checked]="selectedAssetId() === asset.id"
-                              [disabled]="!!runningAcquisition()"
-                              (change)="selectedAssetId.set(asset.id)"
-                            />
-                            <span class="source-asset-label">{{ asset.label }}</span>
-                            @if (formatBytes(asset.sizeBytes)) {
-                              <span class="source-asset-size">{{ formatBytes(asset.sizeBytes) }}</span>
-                            }
-                          </label>
-                        }
-                      </div>
-                    </details>
-                  }
-                } @else if (item.mediaKind === 'audiobook' && item.assets.length > 0) {
-                  <p class="source-hint">Format: Audiobook</p>
-                }
-
-                @if (item.rightsStatement) {
-                  <p class="source-rights">
-                    <span class="source-rights-status">{{ rightsText() }}</span>
-                    @if (item.sourceUrl) {
-                      <a
-                        class="source-rights-link"
-                        [href]="item.sourceUrl"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        >(via {{ providerName(item.providerId) }}
-                        <nostos-icon name="arrow-square-out" [size]="12"></nostos-icon>)</a
-                      >
-                    } @else {
-                      <span class="source-rights-via"
-                        >(via {{ providerName(item.providerId) }})</span
-                      >
+                  @for (notice of sourceNotices(); track notice.providerId) {
+                    @if (notice.notice; as message) {
+                      <p class="source-partial">{{ notice.displayName }}: {{ message }}</p>
                     }
-                  </p>
-                } @else if (item.sourceUrl) {
-                  <p class="source-rights">
-                    <a
-                      class="source-rights-link"
-                      [href]="item.sourceUrl"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      >{{ providerName(item.providerId) }}
-                      <nostos-icon name="arrow-square-out" [size]="12"></nostos-icon></a
-                    >
+                  }
+
+                  @if (allSourcesFailed() && !sourceSearchError()) {
+                    <p class="source-error">
+                      <nostos-icon name="warning-circle" [size]="14"></nostos-icon>
+                      The free book sources are unavailable right now.
+                    </p>
+                  } @else if (sourceResults().length === 0 && !sourceSearchError()) {
+                    <p class="source-hint">No matching books were found for “{{ sourceQuery() }}”.</p>
+                  }
+
+                  @if (sourceResults().length > 0) {
+                    <ul class="source-results" data-testid="source-results">
+                      @for (item of sourceResults(); track sourceItemKey(item)) {
+                        <li>
+                          <button
+                            type="button"
+                            class="source-result"
+                            [class.active]="isSelectedSourceItem(item)"
+                            [class.nostos-accent-rail]="isSelectedSourceItem(item)"
+                            [attr.aria-pressed]="isSelectedSourceItem(item)"
+                            [disabled]="!!runningAcquisition()"
+                            (click)="selectSourceItem(item)"
+                          >
+                            @if (item.coverUrl) {
+                              <img class="source-cover" [src]="item.coverUrl" alt="" loading="lazy" />
+                            } @else {
+                              <span class="source-cover source-cover-empty" aria-hidden="true"></span>
+                            }
+                            <span class="source-result-text">
+                              <span class="source-result-title">{{ item.title }}</span>
+                              @if (item.author) {
+                                <span class="source-result-author">{{ item.author }}</span>
+                              }
+                              <span class="source-result-provenance">
+                                {{ mediaKindLabel(item) }} · {{ providerName(item.providerId) }}
+                              </span>
+                              @if (item.language || item.categories) {
+                                <span class="source-result-meta">
+                                  {{ item.language || ''
+                                  }}{{ item.language && item.categories ? ' · ' : ''
+                                  }}{{ item.categories || '' }}
+                                </span>
+                              }
+                              @if (sourceFacts(item)) {
+                                <span class="source-result-meta">{{ sourceFacts(item) }}</span>
+                              }
+                            </span>
+                          </button>
+                        </li>
+                      }
+                    </ul>
+                  }
+
+                  @if (sourceHasMore()) {
+                    <p class="source-hint">
+                      Showing the first combined results — refine the search for more specific matches.
+                    </p>
+                  }
+                }
+              </div>
+
+              <div class="source-detail-pane" data-testid="source-detail-pane">
+                @if (selectedSourceItem(); as item) {
+                  <button
+                    type="button"
+                    appButton
+                    variant="ghost"
+                    size="sm"
+                    class="source-back"
+                    (click)="backToSourceResults()"
+                    data-testid="source-back"
+                  >
+                    <nostos-icon name="arrow-left" [size]="14"></nostos-icon>
+                    Back to results
+                  </button>
+                  <div class="source-detail">
+                    <h4 class="source-detail-title">{{ item.title }}</h4>
+                    @if (item.author) {
+                      <p class="source-detail-author">{{ item.author }}</p>
+                    }
+                    <p class="source-hint">
+                      {{ mediaKindLabel(item) }} · {{ providerName(item.providerId) }}
+                    </p>
+                    @if (sourceFacts(item)) {
+                      <p class="source-hint">{{ sourceFacts(item) }}</p>
+                    }
+                    @if (item.description) {
+                      <p class="source-detail-description">{{ item.description }}</p>
+                    }
+
+                    @if (item.mediaKind === 'ebook' && item.assets.length > 0) {
+                      @if (ebookFormatFamilies().length > 1) {
+                        <fieldset class="source-format-families">
+                          <legend>Format</legend>
+                          @for (family of ebookFormatFamilies(); track family) {
+                            <label class="source-format-family">
+                              <input
+                                type="radio"
+                                name="sourceFormatFamily"
+                                [value]="family"
+                                [checked]="selectedFormatFamily() === family"
+                                [disabled]="!!runningAcquisition()"
+                                (change)="selectFormatFamily(family)"
+                              />
+                              <span>{{ family }}</span>
+                              @if (family === 'EPUB') {
+                                <span class="source-format-recommended">Recommended</span>
+                              }
+                            </label>
+                          }
+                        </fieldset>
+                      } @else if (ebookFormatFamilies().length === 1) {
+                        <p class="source-hint">Format: {{ ebookFormatFamilies()[0] }}</p>
+                      }
+
+                      @if (assetsForSelectedFamily().length > 1) {
+                        <details class="source-formats">
+                          <summary class="source-formats-summary">
+                            <span class="source-formats-current">{{ selectedAssetLabel() }}</span>
+                            <span class="source-formats-change">
+                              <span class="source-formats-when-closed">Options</span>
+                              <span class="source-formats-when-open">Done</span>
+                            </span>
+                          </summary>
+                          <div class="source-formats-list">
+                            @for (asset of assetsForSelectedFamily(); track asset.id) {
+                              <label class="source-asset">
+                                <input
+                                  type="radio"
+                                  name="sourceAsset"
+                                  [value]="asset.id"
+                                  [checked]="selectedAssetId() === asset.id"
+                                  [disabled]="!!runningAcquisition()"
+                                  (change)="selectedAssetId.set(asset.id)"
+                                />
+                                <span class="source-asset-label">{{ asset.label }}</span>
+                                @if (formatBytes(asset.sizeBytes)) {
+                                  <span class="source-asset-size">{{ formatBytes(asset.sizeBytes) }}</span>
+                                }
+                              </label>
+                            }
+                          </div>
+                        </details>
+                      }
+                    } @else if (item.mediaKind === 'audiobook' && item.assets.length > 0) {
+                      <p class="source-hint">Format: Audiobook</p>
+                    }
+
+                    @if (item.rightsStatement) {
+                      <p class="source-rights">
+                        <span class="source-rights-status">{{ rightsText() }}</span>
+                        @if (item.sourceUrl) {
+                          <a
+                            class="source-rights-link"
+                            [href]="item.sourceUrl"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            >(via {{ providerName(item.providerId) }}
+                            <nostos-icon name="arrow-square-out" [size]="12"></nostos-icon>)</a
+                          >
+                        } @else {
+                          <span class="source-rights-via"
+                            >(via {{ providerName(item.providerId) }})</span
+                          >
+                        }
+                      </p>
+                    } @else if (item.sourceUrl) {
+                      <p class="source-rights">
+                        <a
+                          class="source-rights-link"
+                          [href]="item.sourceUrl"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          >{{ providerName(item.providerId) }}
+                          <nostos-icon name="arrow-square-out" [size]="12"></nostos-icon></a
+                        >
+                      </p>
+                    }
+                    @if (!selectedDetail() && !sourceImportError()) {
+                      <p class="source-hint" role="status">Loading formats and rights…</p>
+                    }
+                  </div>
+                } @else if (!sourceSearching()) {
+                  <p class="source-hint source-detail-empty">
+                    Select a result to see its format and rights.
                   </p>
                 }
-
-                <button
-                  type="button"
-                  appButton
-                  variant="primary"
-                  class="source-action"
-                  (click)="seedFromSelectedItem()"
-                  [disabled]="item.assets.length === 0 || !!runningAcquisition()"
-                >
-                  <nostos-icon name="download-simple" [size]="14"></nostos-icon>
-                  Use this book
-                </button>
               </div>
+            </div>
             }
           </div>
           }
@@ -947,6 +975,21 @@
           <button appButton type="button" variant="secondary" (click)="showManualMode()">
             <nostos-icon name="pencil-simple" [size]="14"></nostos-icon>
             Add manually
+          </button>
+          <!-- The next step lives here, never below scrollable detail (#641).
+               It only seeds Review Book; that step's footer imports. -->
+          <button
+            appButton
+            type="button"
+            variant="primary"
+            data-testid="source-use-book"
+            [disabled]="!sourcePrimaryAction().enabled"
+            (click)="seedFromSelectedItem()"
+          >
+            @if (sourcePrimaryAction().enabled) {
+              <nostos-icon name="download-simple" [size]="14"></nostos-icon>
+            }
+            {{ sourcePrimaryAction().label }}
           </button>
         </app-dialog-actions>
       } @else {
