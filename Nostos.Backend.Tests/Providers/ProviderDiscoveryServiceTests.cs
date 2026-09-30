@@ -258,6 +258,98 @@ public sealed class ProviderDiscoveryServiceTests
         options.EffectiveSearchTimeout.Should().BeGreaterThan(TimeSpan.Zero);
     }
 
+    // ------------------------------------------------------------------
+    // Interactive aggregate budget (#641)
+    // ------------------------------------------------------------------
+
+    [Fact]
+    public async Task A_hung_provider_cannot_hold_the_aggregate_search_for_the_per_provider_deadline()
+    {
+        var hungToken = new TaskCompletionSource<CancellationToken>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var good = SearchProvider.Ebook("alpha", Item("alpha", "1", ProviderMediaKind.Ebook));
+        var hung = SearchProvider.Ebook("beta", async (_, ct) =>
+        {
+            hungToken.SetResult(ct);
+            await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+            return new ProviderSearchPage([]);
+        });
+        var service = CreateService(
+            new ProviderDiscoveryOptions
+            {
+                SearchTimeout = TimeSpan.FromSeconds(12),
+                AggregateSearchTimeout = TimeSpan.FromMilliseconds(150),
+            },
+            good,
+            hung);
+
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        var result = await service.SearchAsync("x", null, 20, CancellationToken.None)
+            .WaitAsync(TimeSpan.FromSeconds(3));
+        watch.Stop();
+
+        watch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(2), "the aggregate budget, not the 12 s provider deadline, bounds the response");
+        result.Items.Should().ContainSingle().Which.ProviderId.Should().Be("alpha");
+        result.Sources.Single(source => source.ProviderId == "beta").ErrorCode
+            .Should().Be(ProviderDiscoveryErrorCodes.Timeout);
+        (await hungToken.Task).IsCancellationRequested.Should().BeTrue("pending provider work is cancelled at the deadline");
+    }
+
+    [Fact]
+    public async Task A_provider_finishing_after_the_deadline_cannot_change_the_returned_response()
+    {
+        var late = new TaskCompletionSource<ProviderSearchPage>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var good = SearchProvider.Ebook("alpha", Item("alpha", "1", ProviderMediaKind.Ebook));
+        var slow = SearchProvider.Ebook("beta", (_, _) => late.Task);
+        var service = CreateService(
+            new ProviderDiscoveryOptions { AggregateSearchTimeout = TimeSpan.FromMilliseconds(100) },
+            good,
+            slow);
+
+        var result = await service.SearchAsync("x", null, 20, CancellationToken.None)
+            .WaitAsync(TimeSpan.FromSeconds(3));
+        var itemsBefore = result.Items.Select(Key).ToList();
+
+        late.SetResult(new ProviderSearchPage([Item("beta", "late", ProviderMediaKind.Ebook)]));
+        await Task.Delay(50);
+
+        result.Items.Select(Key).Should().Equal(itemsBefore).And.Equal("alpha:1");
+        result.Sources.Single(source => source.ProviderId == "beta").Succeeded.Should().BeFalse();
+    }
+
+    [Fact]
+    public void The_provider_deadline_is_the_smaller_of_the_provider_and_aggregate_budgets()
+    {
+        new ProviderDiscoveryOptions().EffectiveProviderDeadline
+            .Should().Be(ProviderDiscoveryOptions.DefaultAggregateSearchTimeout);
+        ProviderDiscoveryOptions.DefaultAggregateSearchTimeout
+            .Should().BeLessThan(ProviderDiscoveryOptions.DefaultSearchTimeout);
+
+        new ProviderDiscoveryOptions { SearchTimeout = TimeSpan.FromSeconds(1) }.EffectiveProviderDeadline
+            .Should().Be(TimeSpan.FromSeconds(1));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void NonPositiveAggregateSearchTimeout_FallsBackToFiniteDefault(int milliseconds)
+    {
+        var options = new ProviderDiscoveryOptions
+        {
+            AggregateSearchTimeout = TimeSpan.FromMilliseconds(milliseconds),
+        };
+
+        options.EffectiveAggregateSearchTimeout.Should().Be(ProviderDiscoveryOptions.DefaultAggregateSearchTimeout);
+        options.EffectiveProviderDeadline.Should().BeGreaterThan(TimeSpan.Zero);
+    }
+
+    private static ProviderDiscoveryService CreateService(
+        ProviderDiscoveryOptions options,
+        params IContentProvider[] providers) =>
+        new(
+            new ProviderRegistry(providers),
+            Options.Create(options),
+            NullLogger<ProviderDiscoveryService>.Instance);
+
     private static ProviderDiscoveryService CreateService(params IContentProvider[] providers) =>
         CreateService(ProviderDiscoveryOptions.DefaultSearchTimeout, providers);
 
