@@ -368,6 +368,25 @@
   @if (typoOpen() && (fileType() === 'epub' || fileType() === 'pdf')) {
   <div class="typo-scrim" (click)="toggleTypo()" aria-hidden="true"></div>
   <div class="typo-panel" data-testid="typo-panel" role="dialog" aria-label="View settings">
+    <!-- App-wide theme (#651). It drives ThemeService, the one owner of the
+         theme, so it is the same setting as Settings → Appearance and both
+         readers follow it without reloading. Kept first and identical for EPUB
+         and PDF; PDF "Page colours" below stays a separate page-pixel control. -->
+    <div class="typo-row" data-testid="reader-appearance">
+      <span class="typo-label" id="reader-appearance">App appearance</span>
+      <div class="typo-opts" role="group" aria-labelledby="reader-appearance" aria-describedby="reader-appearance-hint">
+        @for (t of appThemes; track t.value) {
+        <button
+          type="button"
+          class="typo-opt"
+          [class.active]="appTheme() === t.value"
+          [attr.aria-pressed]="appTheme() === t.value"
+          (click)="setAppTheme(t.value)"
+        >{{ t.label }}</button>
+        }
+      </div>
+      <span class="typo-hint" id="reader-appearance-hint">Applies throughout Nostos</span>
+    </div>
     @if (fileType() === 'pdf') {
     <!-- Fixed layout: how the pages advance, the render scale, and the fits it
          can snap to. Zoom used to be two header buttons; the modes and presets

@@ -499,7 +499,11 @@ export class AssistantComponent {
         return `Changed · ${this.humanizeCapability(artifact.capability)}`;
       case 'failure':
         // Cancelled failures are not rendered: the turn's stop message owns that state.
-        return `Failed · ${artifact.message}`;
+        // An incomplete turn's reply already explains what is left; the label only
+        // marks it, and never says "Failed" about changes that were applied.
+        return artifact.state === 'incomplete'
+          ? 'Not finished'
+          : `Failed · ${artifact.message}`;
       case 'proposal':
         return `Proposed · ${artifact.proposal.label} — ${artifact.proposal.reason}`;
       case 'destructive-result':

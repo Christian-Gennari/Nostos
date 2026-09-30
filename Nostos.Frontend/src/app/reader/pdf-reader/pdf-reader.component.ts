@@ -108,16 +108,24 @@ export class PdfReader implements OnInit, OnDestroy, IReader {
   // --- Page-colour inversion (issue #259) ---
 
   /**
-   * Whether the rendered page pixels are inverted. In dark mode the default is
-   * `true` so the page looks like a native dark surface (matching how the EPUB
-   * reader injects dark rules); the user can flip it in the View-settings panel.
-   * Persisted per book.
+   * The user's explicit per-book choice, or null when they never made one.
+   * It is a dark-mode preference: the "Page colours" row only exists in dark.
    */
-  pageInverted = signal(false);
+  private savedInversion = signal<boolean | null>(null);
+
+  /**
+   * Whether the rendered page pixels are inverted. Derived from the live theme
+   * so an in-book Light/Dark switch (#651) changes chrome and page together,
+   * with no frame where they disagree: in dark the default is `true` so the
+   * page looks like a native dark surface (matching how the EPUB reader
+   * injects dark rules) and the user can flip it in View settings; in light
+   * pages are always shown as printed. Persisted per book.
+   */
+  pageInverted = computed(() => this.isDark() && (this.savedInversion() ?? true));
 
   /** Toggle the inversion and persist the choice. */
   setPageInverted(value: boolean): void {
-    this.pageInverted.set(value);
+    this.savedInversion.set(value);
     try {
       localStorage.setItem(this.invertStorageKey(), JSON.stringify(value));
     } catch {
@@ -133,14 +141,14 @@ export class PdfReader implements OnInit, OnDestroy, IReader {
     try {
       const raw = localStorage.getItem(this.invertStorageKey());
       if (raw !== null) {
-        this.pageInverted.set(JSON.parse(raw) === true);
+        this.savedInversion.set(JSON.parse(raw) === true);
         return;
       }
     } catch {
       // fall through
     }
-    // Default: inverted in dark, as-printed in light.
-    this.pageInverted.set(this.isDark());
+    // No choice yet: pageInverted follows the theme (inverted in dark).
+    this.savedInversion.set(null);
   }
 
   @ViewChild(NgxExtendedPdfViewerComponent) pdfViewer!: NgxExtendedPdfViewerComponent;

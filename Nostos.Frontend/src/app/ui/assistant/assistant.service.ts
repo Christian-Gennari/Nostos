@@ -102,7 +102,7 @@ export type AssistantTurnArtifact =
   | { kind: 'evidence'; evidence: AssistantEvidenceReferenceDto }
   | { kind: 'capture'; noteId: string; acknowledgement: string | null; state: 'saved' }
   | { kind: 'action'; capability: string; state: 'completed' }
-  | { kind: 'failure'; code: string; message: string; retryable: boolean; state: 'failed' | 'cancelled' }
+  | { kind: 'failure'; code: string; message: string; retryable: boolean; state: 'failed' | 'cancelled' | 'incomplete' }
   | { kind: 'proposal'; proposal: AssistantSuggestionDto }
   | {
       kind: 'destructive-result';
@@ -1449,7 +1449,7 @@ export class AssistantService {
       ?? response?.error?.code
       ?? 'assistant_turn_failed';
 
-    this.lastError.set(message);
+    this.lastError.set(code === PARTIALLY_COMPLETED_CODE ? null : message);
 
     if (!response?.reply && !response?.acknowledgement) {
       this.pushEntry(turn.turnId, 'error', message, null, code, [], false);
@@ -1648,12 +1648,15 @@ export class AssistantService {
       response.reply
       && (!promptText || response.reply.trim() !== promptText.trim())
     ) {
+      // A partially completed turn is still the assistant speaking about work
+      // that did happen; only a real failure is rendered as an error entry.
+      const failed = !!response.error && response.error.code !== PARTIALLY_COMPLETED_CODE;
       this.pushEntry(
         turn.turnId,
-        response.error ? 'error' : 'assistant',
+        failed ? 'error' : 'assistant',
         response.reply,
         null,
-        response.error?.code ?? null,
+        failed ? response.error!.code : null,
         response.sources ?? [],
         true,
         'complete',
@@ -1884,6 +1887,12 @@ function toHistoricalContext(context: AssistantContext): AssistantHistoricalCont
 }
 
 
+/**
+ * The turn committed canonical changes but stopped before finishing the rest
+ * (#647). It is an honest incomplete state, never a failure or a rollback.
+ */
+const PARTIALLY_COMPLETED_CODE = 'assistant_turn_partially_completed';
+
 function artifactsFromTurnResponse(
   response: AssistantTurnResponse | null,
   failure?: { code: string; message: string; retryable: boolean } | null,
@@ -1957,7 +1966,9 @@ function artifactsFromTurnResponse(
       retryable: terminalFailure.retryable,
       state: failureState === 'cancelled' || /cancelled/i.test(terminalFailure.code)
         ? 'cancelled'
-        : 'failed',
+        : terminalFailure.code === PARTIALLY_COMPLETED_CODE
+          ? 'incomplete'
+          : 'failed',
     });
   }
 

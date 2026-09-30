@@ -219,6 +219,49 @@ describe('PdfReader theme-following surround and page inversion (#259)', () => {
     expect(fixture.componentInstance.pageInverted()).toBe(false);
   });
 
+  it('switches theme mid-document without recreating the viewer, keeping chrome and pages in step (#651)', () => {
+    themeService.setTheme('light');
+    setupComponent();
+    const viewer = viewerStub();
+    const container = fixture.debugElement.query(By.css('.pdf-container')).nativeElement as HTMLElement;
+    expect(container.classList.contains('inverted')).toBe(false);
+
+    themeService.setTheme('dark');
+    fixture.detectChanges();
+    expect(viewerStub()).toBe(viewer);
+    expect(viewer.theme()).toBe('dark');
+    expect(viewer.backgroundColor()).toBe('#0d0e11');
+    // With no per-book choice the dark default (inverted) applies in the same
+    // change as the chrome, so there is no frame where they disagree.
+    expect(container.classList.contains('inverted')).toBe(true);
+
+    themeService.setTheme('light');
+    fixture.detectChanges();
+    expect(viewerStub()).toBe(viewer);
+    expect(viewer.theme()).toBe('light');
+    expect(container.classList.contains('inverted')).toBe(false);
+  });
+
+  it('keeps an explicit As printed choice across theme switches and never inverts in light', () => {
+    themeService.setTheme('dark');
+    setupComponent();
+    fixture.componentInstance.setPageInverted(false);
+
+    themeService.setTheme('light');
+    fixture.detectChanges();
+    expect(fixture.componentInstance.pageInverted()).toBe(false);
+
+    themeService.setTheme('dark');
+    fixture.detectChanges();
+    expect(fixture.componentInstance.pageInverted()).toBe(false);
+
+    fixture.componentInstance.setPageInverted(true);
+    themeService.setTheme('light');
+    fixture.detectChanges();
+    // Page colours are a dark-mode choice.
+    expect(fixture.componentInstance.pageInverted()).toBe(false);
+  });
+
   it('persists the inversion choice per book and restores it', () => {
     themeService.setTheme('dark');
     setupComponent();

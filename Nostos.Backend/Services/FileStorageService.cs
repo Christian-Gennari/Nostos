@@ -77,11 +77,9 @@ public class FileStorageService : IFileStorageService, IBookAssetStorage
             await WriteStreamAsync(content, tempPath, ct);
 
             // Only once the transfer is complete do we disturb what is already
-            // there. The invariant is one "book.*" per folder, and replacing it
-            // is a rename rather than a truncate, so a reader can never observe
-            // a partially written book file.
-            DeleteExistingBookFiles(bookFolder, except: finalPath);
-            File.Move(tempPath, finalPath, overwrite: true);
+            // there. Replacing is a rename rather than a truncate, so a reader
+            // can never observe a partially written book file.
+            CommitStagedBookFile(bookFolder, tempPath, finalPath);
         }
         catch
         {
@@ -131,8 +129,7 @@ public class FileStorageService : IFileStorageService, IBookAssetStorage
                 TryDelete(sourcePath);
             }
 
-            DeleteExistingBookFiles(bookFolder, except: finalPath);
-            File.Move(tempPath, finalPath, overwrite: true);
+            CommitStagedBookFile(bookFolder, tempPath, finalPath);
         }
         catch
         {
@@ -430,6 +427,19 @@ public class FileStorageService : IFileStorageService, IBookAssetStorage
 
         await content.CopyToAsync(destination, CopyBufferSize, ct);
         await destination.FlushAsync(ct);
+    }
+
+    /// <summary>
+    /// Commits a fully staged book file under its final name, keeping the
+    /// invariant of one <c>book.*</c> per folder. The staged file is renamed
+    /// into place first and any other-format book file is removed only after
+    /// that succeeds, so a failed commit leaves the previous book intact
+    /// rather than deleting it with nothing to replace it.
+    /// </summary>
+    private void CommitStagedBookFile(string bookFolder, string tempPath, string finalPath)
+    {
+        File.Move(tempPath, finalPath, overwrite: true);
+        DeleteExistingBookFiles(bookFolder, except: finalPath);
     }
 
     private void DeleteExistingBookFiles(string bookFolder, string except)

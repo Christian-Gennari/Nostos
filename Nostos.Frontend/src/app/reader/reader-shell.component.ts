@@ -33,6 +33,7 @@ import { NoteCardComponent } from '../ui/note-card.component/note-card.component
 import { ConfirmModal } from '../ui/confirm-modal/confirm-modal.component';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
 import { readReaderReturnOrigin } from '../core/navigation/studio-reader-navigation';
+import { Theme, ThemeService } from '../core/services/theme.service';
 
 @Component({
   selector: 'app-reader-shell',
@@ -79,8 +80,25 @@ export class ReaderShell implements OnInit, OnDestroy {
   private conceptsService = inject(ConceptsService);
   private autocompleteService = inject(ConceptAutocompleteService);
 
-  /** Typography panel (EPUB only) toggled by the Aa control. */
+  private themeService = inject(ThemeService);
+
+  /** View settings panel (EPUB and PDF) toggled by the Aa control. */
   typoOpen = signal(false);
+
+  /**
+   * The app-wide theme, switchable from inside a book (#651). The readers
+   * already follow ThemeService, so a switch is colour-only: no reload,
+   * reflow or position change.
+   */
+  readonly appTheme = this.themeService.theme;
+  readonly appThemes: readonly { value: Theme; label: string }[] = [
+    { value: 'light', label: 'Light' },
+    { value: 'dark', label: 'Dark' },
+  ];
+
+  setAppTheme(theme: Theme): void {
+    this.themeService.setTheme(theme);
+  }
 
   toggleTypo(): void {
     const opening = !this.typoOpen();

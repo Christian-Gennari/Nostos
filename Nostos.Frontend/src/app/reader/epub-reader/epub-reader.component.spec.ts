@@ -4,6 +4,7 @@ import ePub from 'epubjs';
 
 import { NotesService } from '../../core/services/notes.service';
 import { BooksService } from '../../core/services/books.service';
+import { ThemeService } from '../../core/services/theme.service';
 import {
   DEFAULT_TYPOGRAPHY,
   EpubReader,
@@ -481,6 +482,36 @@ describe('EpubReader theme-following normalization', () => {
     const contents = makeContents();
     contentHooks.forEach((hook) => hook(contents));
     expect(contents.document.body.classList.contains('nostos-dark')).toBe(true);
+  });
+
+  it('an in-book theme switch is colour-only: same rendition, no re-display, no reflow (#651)', async () => {
+    await setupComponent();
+    const rendition = renditions[0];
+    const themes = rendition.themes;
+    const displays = log.filter((entry) => entry === 'display').length;
+    themes.fontSize.mockClear();
+    rendition.resize.mockClear();
+
+    TestBed.inject(ThemeService).setTheme('dark');
+    fixture.detectChanges();
+
+    expect(themes.current).toBe('nostos-dark');
+    expect(renditions).toHaveLength(1);
+    expect(log.filter((entry) => entry === 'display').length).toBe(displays);
+    expect(themes.fontSize).not.toHaveBeenCalled();
+    expect(rendition.resize).not.toHaveBeenCalled();
+
+    // A section loaded after the switch arrives in the new theme, with no
+    // old-theme frame.
+    const contents = makeContents();
+    contentHooks.forEach((hook) => hook(contents));
+    expect(contents.document.body.classList.contains('nostos-dark')).toBe(true);
+    expect(contents.document.body.classList.contains('nostos-light')).toBe(false);
+
+    TestBed.inject(ThemeService).setTheme('light');
+    fixture.detectChanges();
+    expect(themes.current).toBe('nostos-light');
+    expect(renditions).toHaveLength(1);
   });
 
   it('font size persists reader-wide and adopts the old per-book value', async () => {

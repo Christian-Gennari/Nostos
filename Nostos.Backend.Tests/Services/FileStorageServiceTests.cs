@@ -332,6 +332,69 @@ public sealed class FileStorageServiceTests : IDisposable
         }
     }
 
+    // A directory at the final name makes the commit rename fail
+    // deterministically after staging succeeded, with an older book of a
+    // different format already in the folder.
+    private string ArrangeCommitFailure(Guid bookId, byte[] existingEpub)
+    {
+        var bookFolder = Path.Combine(_tempDirectory, bookId.ToString());
+        Directory.CreateDirectory(bookFolder);
+        File.WriteAllBytes(Path.Combine(bookFolder, "book.epub"), existingEpub);
+        Directory.CreateDirectory(Path.Combine(bookFolder, "book.pdf"));
+        return bookFolder;
+    }
+
+    [Fact]
+    public async Task SaveBookFileAsync_CrossFormatCommitFails_KeepsThePreviousBookAndNoPartial()
+    {
+        var bookId = Guid.NewGuid();
+        var original = new byte[] { 1, 2, 3 };
+        var bookFolder = ArrangeCommitFailure(bookId, original);
+
+        using var replacement = new MemoryStream(new byte[] { 4, 5, 6, 7 });
+        var act = async () => await _sut.SaveBookFileAsync(bookId, replacement, "replacement.pdf");
+
+        await act.Should().ThrowAsync<Exception>();
+        var epub = Path.Combine(bookFolder, "book.epub");
+        File.Exists(epub).Should().BeTrue("a failed replacement must not delete the previous book");
+        (await File.ReadAllBytesAsync(epub)).Should().Equal(original);
+        Directory.GetFiles(bookFolder, "*.partial").Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task AdoptBookFileAsync_CrossFormatCommitFails_KeepsThePreviousBookAndNoPartial()
+    {
+        var bookId = Guid.NewGuid();
+        var original = new byte[] { 1, 2, 3 };
+        var bookFolder = ArrangeCommitFailure(bookId, original);
+        var staged = Path.Combine(_tempDirectory, "staged-" + Guid.NewGuid().ToString("N") + ".pdf");
+        await File.WriteAllBytesAsync(staged, new byte[] { 4, 5, 6, 7 });
+
+        var act = async () => await _sut.AdoptBookFileAsync(bookId, staged, "replacement.pdf");
+
+        await act.Should().ThrowAsync<Exception>();
+        var epub = Path.Combine(bookFolder, "book.epub");
+        File.Exists(epub).Should().BeTrue("a failed replacement must not delete the previous book");
+        (await File.ReadAllBytesAsync(epub)).Should().Equal(original);
+        Directory.GetFiles(bookFolder, "*.partial").Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task AdoptBookFileAsync_AdoptingDifferentExtension_LeavesExactlyOneBookFileInFolder()
+    {
+        var bookId = Guid.NewGuid();
+        using (var epub = new MemoryStream(new byte[] { 1, 2, 3 }))
+            await _sut.SaveBookFileAsync(bookId, epub, "first.epub");
+        var staged = Path.Combine(_tempDirectory, "staged-" + Guid.NewGuid().ToString("N") + ".pdf");
+        await File.WriteAllBytesAsync(staged, new byte[] { 4, 5, 6, 7 });
+
+        await _sut.AdoptBookFileAsync(bookId, staged, "second.pdf");
+
+        var bookFiles = Directory.GetFiles(Path.Combine(_tempDirectory, bookId.ToString()), "book.*");
+        bookFiles.Should().ContainSingle();
+        Path.GetFileName(bookFiles[0]).Should().Be("book.pdf");
+    }
+
     [Fact]
     public async Task SaveBookFileAsync_FormFileOverMemoryStream_ProducesSameResultAsStreamOverload()
     {
