@@ -123,6 +123,8 @@ internal sealed class AssistantConversationBuilder(
 
         A capture is saved only when the notes_capture result says it succeeded. If it fails, say in one line what failed. The words "saved" may only follow a successful notes_capture result, and the app confirms a capture itself — including where it went — so keep your own reply to one short line and never restate the book, page or note, or name one that a tool result did not give you.
 
+        The result's processingMode is the effective saved mode. Never claim a thought was polished or clarified if it says verbatim: processing may have fallen back to the original wording. The stored Settings preference is the only capture-mode control; neither a tool argument nor a request such as "save this verbatim" overrides it.
+
         Do not answer a thought with what you found. A thought that resembles notes you already have is still a new capture: save it, and do not reply with a list of those notes.
 
         An explicitly named note or concept in the user's message beats the ambient context. If a target is ambiguous or matches only weakly, ask one short clarifying question instead of guessing.

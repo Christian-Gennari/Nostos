@@ -238,6 +238,7 @@ public sealed class AssistantOrchestrator(
         var planSteps = new List<AssistantPlanStep>();
         AssistantAnchorPromptDto? anchorPrompt = null;
         string? acknowledgement = null;
+        var captureProcessingFellBack = false;
         string? finalContent = null;
         string? lastAssistantContent = null;
         string? capturedNoteId = null;
@@ -680,7 +681,10 @@ public sealed class AssistantOrchestrator(
                     && capability.Trust == AssistantTrustClass.Capture
                     && string.Equals(capability.Name, CaptureCapability, StringComparison.Ordinal))
                 {
-                    acknowledgement = AssistantCapturePolicy.BuildAcknowledgement(capture!.BookTitle, capture.QuoteFidelity);
+                    acknowledgement = AssistantCapturePolicy.BuildAcknowledgement(
+                        capture!.BookTitle, capture.QuoteFidelity, result.Data, captureProcessingMode);
+                    captureProcessingFellBack |= AssistantCapturePolicy.ProcessingFellBack(
+                        result.Data, captureProcessingMode);
                     capturedNoteId = ReadNoteId(result.Data);
                 }
 
@@ -774,6 +778,13 @@ public sealed class AssistantOrchestrator(
         else if (pendingPlan is not null)
         {
             reply = ApprovalRequiredReply;
+        }
+        else if (captureProcessingFellBack
+            && successfulCapabilities.All(name => name == CaptureCapability))
+        {
+            // A capture-only turn already has an honest deterministic receipt.
+            // Discard model narration that could falsely claim polishing worked.
+            reply = string.Empty;
         }
         else if (stoppedByExecutionGuard && acknowledgement is null)
         {
@@ -1079,7 +1090,9 @@ public sealed class AssistantOrchestrator(
             Reply: string.Empty,
             Acknowledgement: AssistantCapturePolicy.BuildAcknowledgement(
                 capture.BookTitle,
-                capture.QuoteFidelity),
+                capture.QuoteFidelity,
+                result.Data,
+                stored.ProcessingMode),
             AnchorPrompt: null,
             Suggestions: [],
             PendingPlan: null,

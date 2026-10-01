@@ -7,6 +7,9 @@ export interface Note {
   selectedText?: string;
   createdAt: string;
   bookTitle?: string;
+  rawContent?: string | null;
+  captureSource?: string;
+  processingMode?: string;
   sourceAnchorKind?: string;
   sourceAnchorValue?: string | null;
   anchorVerified?: boolean;
@@ -70,6 +73,16 @@ export interface NoteSearchHit {
   sourceAnchorKind?: string;
   sourceAnchorValue?: string | null;
   anchorVerified?: boolean;
+  captureSource?: string;
+  processingMode?: string;
+  hasRawContent?: boolean;
+}
+
+export interface NoteRawTranscript {
+  id: string;
+  rawContent: string | null;
+  content: string;
+  processingMode: string;
 }
 
 /**

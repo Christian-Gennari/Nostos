@@ -21,6 +21,7 @@ import { NotesService } from '../core/services/notes.service';
 import { Note, NoteSearchHit } from '../core/dtos/note.dtos';
 import { ConfirmModal } from '../ui/confirm-modal/confirm-modal.component';
 import { NoteCardComponent } from '../ui/note-card.component/note-card.component';
+import { NoteCaptureDetailsComponent } from '../ui/note-capture-details/note-capture-details.component';
 import { NoteFormatPipe } from '../ui/pipes/note-format.pipe';
 import {
   ConceptsService,
@@ -73,6 +74,7 @@ import {
   standalone: true,
   selector: 'app-brain',
   imports: [
+    NoteCaptureDetailsComponent,
     CommonModule,
     FormsModule,
     RouterLink,
@@ -1326,6 +1328,39 @@ export class SecondBrain implements AfterViewChecked {
     this.panelNote.set(hit);
     this.browseEditing.set(false);
     this.browsePickerOpen.set(false);
+  }
+
+  captureRestored(saved: Note): void {
+    this.reviewMutated = true;
+    // Apply the committed text immediately, then read canonical concept links.
+    if (this.panelNote()?.id === saved.id) {
+      this.panelNote.update((note) => note ? { ...note, content: saved.content,
+        processingMode: saved.processingMode } : note);
+    }
+    this.reviewQueue.update((rows) => rows.map((note) => note.id === saved.id
+      ? { ...note, content: saved.content, processingMode: saved.processingMode } : note));
+    this.browseNotes.update((rows) => rows.map((note) => note.id === saved.id
+      ? { ...note, content: saved.content, processingMode: saved.processingMode } : note));
+    this.invalidateAllDetailEntries();
+    if (this.selectedId()) this.selectConcept(this.selectedId()!);
+    this.invalidateRelatedData(true);
+    this.refreshIndexAndStats();
+    this.notesService.get(saved.id).subscribe({
+      next: (note) => {
+        if (this.panelNote()?.id === saved.id) this.panelNote.set(note);
+        this.reviewQueue.update((rows) => rows.map((row) => row.id === saved.id ? note : row));
+        if (note.conceptNames.length) this.removeFromReview(saved.id);
+        if (this.browseLoaded() && !this.browseEditing()) {
+          // Reconcile filtering/counts without closing the inspector the user
+          // just restored (or a different note they selected meanwhile).
+          const focused = this.panelNote();
+          this.reloadBrowse();
+          this.panelNote.set(focused);
+        }
+      },
+      error: () => this.toast.error('Original restored, but note details could not be refreshed'),
+    });
+    this.toast.success('Original wording restored');
   }
 
   openSearchNoteInNotes(): void {

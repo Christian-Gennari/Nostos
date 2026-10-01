@@ -1,0 +1,22 @@
+@if (note().hasRawContent) {
+  <section class="capture-details" aria-label="Saved thought wording" data-testid="note-capture-details">
+    <div class="capture-summary">
+      <span class="capture-mode">{{ modeLabel() }}{{ note().captureSource === 'voice' ? ' · Spoken thought' : '' }}</span>
+      <button appButton variant="ghost" size="sm" type="button" [attr.aria-expanded]="expanded()"
+        [disabled]="loading() || restoring()" (click)="toggleOriginal()">
+        {{ loading() ? 'Loading original…' : expanded() ? 'Hide original' : 'View original' }}
+      </button>
+    </div>
+    @if (expanded() && original()) {
+      <div class="capture-original">
+        <p class="capture-label">Original wording</p>
+        <p class="original-text" data-testid="note-original-text">{{ original() }}</p>
+        <p class="capture-help">Restoring replaces the note text with these words. The original stays available.</p>
+        <button appButton variant="secondary" size="sm" type="button"
+          [disabled]="restoring() || restoredHere() || note().content === original()"
+          (click)="restoreOriginal()">{{ restoring() ? 'Restoring…' : restoredHere() ? 'Original restored' : 'Restore original' }}</button>
+      </div>
+    }
+    @if (error()) { <p class="capture-help" role="alert">{{ error() }}</p> }
+  </section>
+}

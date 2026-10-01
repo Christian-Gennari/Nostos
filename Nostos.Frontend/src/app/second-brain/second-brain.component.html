@@ -492,6 +492,8 @@
                 (conceptClick)="setViewMode('list'); selectConcept($event)"
               ></app-note-card>
             </div>
+          <app-note-capture-details [note]="note" (restored)="captureRestored($event)" />
+
             }
 
             <section class="note-inspector-section" aria-labelledby="browse-links-label">
@@ -650,6 +652,8 @@
               [showDate]="true"
             ></app-note-card>
           </div>
+          <app-note-capture-details [note]="note" (restored)="captureRestored($event)" />
+
 
           @if (reviewPickerOpen()) {
           <div class="merge-picker note-inspector-picker" role="group" aria-label="Link this note to a concept">

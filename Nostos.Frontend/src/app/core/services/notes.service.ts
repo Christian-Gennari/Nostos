@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { Note, CreateNoteDto, NoteSearchHit, NoteSearchPage, UpdateNoteDto } from '../dtos/note.dtos';
+import { Note, CreateNoteDto, NoteSearchHit, NoteSearchPage, NoteRawTranscript, UpdateNoteDto } from '../dtos/note.dtos';
 
 /**
  * The assistant's capture payload (issue #261 §4). Appended: it extends the
@@ -44,6 +44,14 @@ export class NotesService {
 
   delete(id: string): Observable<void> {
     return this.http.delete<void>(`/api/notes/${id}`);
+  }
+
+  getOriginal(id: string): Observable<NoteRawTranscript> {
+    return this.http.get<NoteRawTranscript>(`/api/notes/${id}/raw`);
+  }
+
+  restoreOriginal(id: string): Observable<Note> {
+    return this.http.post<Note>(`/api/notes/${id}/raw/restore`, {});
   }
 
   /**

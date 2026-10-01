@@ -92,17 +92,14 @@ const AI_PROVIDER_COPY = {
   // per-capture select in the widget. The description shown is the one belonging
   // to the currently selected option, followed by `captureScope`.
   //
-  // The three descriptions are not parallel by accident: only the third claims
-  // anything about the user's words, because only that one stops being them.
-  // `clarify` rewrites vocabulary and syntax, so calling its output "your words"
-  // would be a lie, and "one clear thought" would promise a quality the setting
-  // cannot guarantee.
-  captureLabel: 'Captured thoughts',
-  captureScope: 'Applies only to new notes. Existing notes are never rewritten.',
+  // This global preference applies only to Ask Nostos captures. It never
+  // silently processes direct note creation, imports, edits or existing notes.
+  captureLabel: 'Saved thought wording',
+  captureScope: 'For thoughts saved through Ask Nostos, typed or spoken. Quotes stay exact. Manual notes, imports, edits and existing notes are unchanged. The original wording is kept when AI rephrases a thought.',
   captureDescriptions: {
-    verbatim: 'Your words, exactly as you wrote or spoke them.',
-    light_polish: 'Your words with grammar and filler tidied, nothing added or dropped.',
-    clarify: 'Your thoughts consolidated into a single note, rephrased for coherence.',
+    verbatim: 'Save your exact wording, without AI rephrasing.',
+    light_polish: 'Ask AI to tidy grammar and filler while preserving your meaning and voice.',
+    clarify: 'Ask AI to reorganize and rephrase your thought for clarity, without adding ideas.',
   } as Record<ProcessingMode, string>,
   captureLoadFailed: 'Could not read this setting',
   captureLoadFailedHelp:

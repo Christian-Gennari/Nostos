@@ -435,8 +435,10 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         (await db.Notes.AsNoTracking().CountAsync()).Should().Be(0);
     }
 
-    [Fact]
-    public async Task The_stored_setting_is_the_only_source_of_the_capture_mode()
+    [Theory]
+    [InlineData("text")]
+    [InlineData("voice")]
+    public async Task The_stored_setting_is_the_only_source_of_the_capture_mode(string source)
     {
         var h = CreateHarness();
         var book = await SeedBookAsync(h);
@@ -450,7 +452,7 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         h.Llm
             .CallsTool(
                 "notes_capture",
-                $$"""{"bookId":"{{book.Id}}","content":"so anyway i was thinking","processingMode":"clarify"}""")
+                $$"""{"bookId":"{{book.Id}}","content":"so anyway i was thinking","captureSource":"{{source}}","processingMode":"clarify"}""")
             .Returns("Saved.");
 
         var response = await h.Orchestrator.HandleTurnAsync(Turn(
@@ -464,11 +466,91 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         // The stored setting is the mode the note reflects, and the raw
         // transcript is kept beside the processed text (issue #262 §7, §8).
         note.ProcessingMode.Should().Be("light_polish");
+        note.CaptureSource.Should().Be(source);
         note.RawContent.Should().Be("so anyway i was thinking");
 
         // The turn names the note it created, so the surface can read its raw
         // transcript and offer restore.
         response.CapturedNoteId.Should().Be(note.Id.ToString());
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Processing_fallback_is_reported_in_the_capture_confirmation(bool providerFailure)
+    {
+        var thoughts = new FakeThoughtProcessor
+        {
+            Responder = (text, mode) => providerFailure
+                ? throw LlmException.ProviderFailure("processing unavailable")
+                : new ThoughtProcessingResult(text, "verbatim", ProviderCalled: true, FellBackToRaw: true)
+        };
+        var h = CreateHarness(thoughts: thoughts);
+        var book = await SeedBookAsync(h);
+        await h.Settings.UpdateAsync(new AssistantSettingsUpdateRequest("clarify"));
+        h.Llm.CallsTool("notes_capture", $$"""{"content":"words that must survive"}""")
+            .Returns("I polished and clarified your thought.");
+
+        var response = await h.Orchestrator.HandleTurnAsync(Turn(
+            "Remember this.", Context(bookId: book.Id.ToString(), bookFormat: "ebook")));
+
+        response.Acknowledgement.Should().Contain("original words were saved verbatim");
+        response.Reply.Should().BeEmpty("a fallback receipt must outrank false model narration");
+        response.CapturedNoteId.Should().NotBeNull();
+        await using var db = await h.Factory.CreateDbContextAsync();
+        var note = await db.Notes.AsNoTracking().SingleAsync();
+        note.Content.Should().Be("words that must survive");
+        note.RawContent.Should().Be(note.Content);
+        note.ProcessingMode.Should().Be("verbatim");
+    }
+
+    [Fact]
+    public async Task A_resumed_capture_reports_processing_fallback_and_replays_the_same_confirmation()
+    {
+        var thoughts = new FakeThoughtProcessor
+        {
+            Responder = (text, mode) => new ThoughtProcessingResult(
+                text, "verbatim", ProviderCalled: true, FellBackToRaw: true)
+        };
+        var h = CreateHarness(thoughts: thoughts);
+        var book = await SeedBookAsync(h, "Physical Book");
+        await h.Settings.UpdateAsync(new AssistantSettingsUpdateRequest("clarify"));
+        h.Llm.CallsTool("notes_capture", """{"content":"A thought worth keeping"}""");
+        var context = Context(bookId: book.Id.ToString(), bookTitle: book.Title, bookFormat: "physical");
+        var first = await h.Orchestrator.HandleTurnAsync(Turn(
+            "Remember this.", context, conversationId: "fallback-conversation", turnId: "fallback-first"));
+        first.AnchorPrompt.Should().NotBeNull();
+        var answer = Turn("Page 12.", context, idem: "fallback-answer",
+            conversationId: "fallback-conversation", turnId: "fallback-followup",
+            continuationId: first.AnchorPrompt!.ContinuationId);
+        var completed = await h.Orchestrator.HandleTurnAsync(answer);
+        completed.Acknowledgement.Should().Contain("original words were saved verbatim");
+        var replay = await h.Orchestrator.HandleTurnAsync(answer);
+        replay.Acknowledgement.Should().Be(completed.Acknowledgement);
+        (await NoteCountAsync(h)).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task A_quote_only_capture_under_clarify_is_exact_without_a_false_processing_failure()
+    {
+        var thoughts = new FakeThoughtProcessor
+        {
+            Responder = (text, mode) => throw new InvalidOperationException("quote must never reach processing")
+        };
+        var h = CreateHarness(thoughts: thoughts);
+        var book = await SeedBookAsync(h);
+        await h.Settings.UpdateAsync(new AssistantSettingsUpdateRequest("clarify"));
+        h.Llm.CallsTool("notes_capture", """{"content":"","selectedText":"An exact quotation."}""")
+            .Returns("Saved.");
+        var response = await h.Orchestrator.HandleTurnAsync(Turn(
+            "Save this passage.", Context(bookId: book.Id.ToString(), bookFormat: "ebook",
+                selectedText: "An exact quotation.")));
+        response.Acknowledgement.Should().NotBeNull().And.NotContain("could not be processed");
+        thoughts.Calls.Should().BeEmpty();
+        await using var db = await h.Factory.CreateDbContextAsync();
+        var note = await db.Notes.AsNoTracking().SingleAsync();
+        note.SelectedText.Should().Be("An exact quotation.");
+        note.ProcessingMode.Should().Be("verbatim");
     }
 
     [Fact]
@@ -3468,7 +3550,8 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         Action<AssistantOptions>? configure = null,
         IBookTextSearchService? bookText = null,
         IKnowledgeRetrievalService? knowledge = null,
-        Func<IDbContextFactory<NostosDbContext>, ILibraryService, IBookTextSearchService>? bookTextFactory = null)
+        Func<IDbContextFactory<NostosDbContext>, ILibraryService, IBookTextSearchService>? bookTextFactory = null,
+        IThoughtProcessor? thoughts = null)
     {
         var path = _fixture.CreateDatabasePath();
         var options = new DbContextOptionsBuilder<NostosDbContext>()
@@ -3489,7 +3572,7 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
             new BookRepository(db),
             concepts,
             new NoteProcessorService(concepts),
-            new FakeThoughtProcessor(),
+            thoughts ?? new FakeThoughtProcessor(),
             db,
             NullLogger<NoteService>.Instance);
 

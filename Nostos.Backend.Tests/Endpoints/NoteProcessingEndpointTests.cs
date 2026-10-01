@@ -193,6 +193,86 @@ public sealed class NoteProcessingEndpointTests : IClassFixture<LibraryEndpointF
         (await ErrorAsync(response)).Should().Be("Note not found.");
     }
 
+    [Theory]
+    [InlineData("book-detail", null, "A manual thought.", null, "text")]
+    [InlineData("reader-quick-note", "epubcfi(/6/4)", "A quick thought.", null, "text")]
+    [InlineData("reader-highlight", "3", "", "The exact selected passage.", "text")]
+    [InlineData("import", null, "Imported wording.", "Imported quotation.", "import")]
+    public async Task Direct_note_routes_ignore_the_assistant_setting_and_edits_do_not_process(
+        string route, string? cfiRange, string content, string? selectedText, string captureSource)
+    {
+        var provider = new FakeLlmProvider { Failure = LlmException.ProviderFailure("must not process") };
+        using var host = CreateHost(provider);
+        using var client = host.CreateClient();
+        var settings = await client.PutAsJsonAsync("/api/settings/assistant",
+            new AssistantSettingsUpdateRequest("clarify"));
+        settings.StatusCode.Should().Be(HttpStatusCode.OK);
+        var book = await CreateBookAsync(client);
+        var response = await client.PostAsJsonAsync($"/api/books/{book.Id}/notes",
+            new { content, cfiRange, selectedText, captureSource });
+        response.StatusCode.Should().Be(HttpStatusCode.Created, route);
+        var note = (await response.Content.ReadFromJsonAsync<NoteDto>())!;
+        note.Content.Should().Be(content);
+        note.SelectedText.Should().Be(selectedText);
+        note.ProcessingMode.Should().Be("verbatim");
+        note.RawContent.Should().BeNull();
+
+        var update = await client.PutAsJsonAsync($"/api/notes/{note.Id}",
+            new UpdateNoteDto("My deliberate edit.", selectedText));
+        update.StatusCode.Should().Be(HttpStatusCode.OK);
+        var edited = (await update.Content.ReadFromJsonAsync<NoteDto>())!;
+        edited.Content.Should().Be("My deliberate edit.");
+        edited.SelectedText.Should().Be(selectedText);
+        provider.CallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Canonical_note_reads_expose_capture_state_after_reload_and_restore_keeps_quote_and_anchor()
+    {
+        var provider = new FakeLlmProvider().Returns("Polished thought with [[Attention]].");
+        using var host = CreateHost(provider);
+        using var client = host.CreateClient();
+        var book = await CreateBookAsync(client);
+        var create = await client.PostAsJsonAsync($"/api/books/{book.Id}/notes", new
+        {
+            content = "raw words with [[Memory]]",
+            selectedText = "The exact quotation.",
+            processingMode = "light_polish",
+            captureSource = "voice",
+            sourceAnchorKind = "physical_page",
+            sourceAnchorValue = "12",
+            anchorVerified = false
+        });
+        create.StatusCode.Should().Be(HttpStatusCode.Created);
+        var created = (await create.Content.ReadFromJsonAsync<NoteDto>())!;
+        var read = await client.GetFromJsonAsync<NoteSearchHitDto>($"/api/notes/{created.Id}");
+        read!.CaptureSource.Should().Be("voice");
+        read.ProcessingMode.Should().Be("light_polish");
+        read.HasRawContent.Should().BeTrue();
+        read.ConceptNames.Should().Contain("Attention");
+        var browse = await client.GetFromJsonAsync<NoteSearchPageDto>($"/api/notes?bookId={book.Id}");
+        browse!.Items.Should().ContainSingle(n => n.Id == created.Id && n.HasRawContent);
+
+        // A new client represents opening the normal note surface after reload.
+        using var reloaded = host.CreateClient();
+        var raw = await reloaded.GetFromJsonAsync<NoteRawTranscriptDto>($"/api/notes/{created.Id}/raw");
+        raw!.RawContent.Should().Be("raw words with [[Memory]]");
+        var restore = await reloaded.PostAsync($"/api/notes/{created.Id}/raw/restore", null);
+        restore.StatusCode.Should().Be(HttpStatusCode.OK);
+        var saved = (await restore.Content.ReadFromJsonAsync<NoteDto>())!;
+        saved.Content.Should().Be(raw.RawContent);
+        saved.ProcessingMode.Should().Be("verbatim");
+        saved.RawContent.Should().Be(raw.RawContent);
+        saved.SelectedText.Should().Be("The exact quotation.");
+        saved.SourceAnchorKind.Should().Be("physical_page");
+        saved.SourceAnchorValue.Should().Be("12");
+        var after = await reloaded.GetFromJsonAsync<NoteSearchHitDto>($"/api/notes/{created.Id}");
+        after!.HasRawContent.Should().BeTrue();
+        after.ProcessingMode.Should().Be("verbatim");
+        after.ConceptNames.Should().Contain("Memory").And.NotContain("Attention");
+        provider.CallCount.Should().Be(1, "restore must not invoke thought processing");
+    }
+
     // ------------------------------------------------------------------
     // Helpers
     // ------------------------------------------------------------------
