@@ -607,7 +607,8 @@ export async function checkLibraryToolbarStability(page: Page): Promise<Geometry
   const after = await search.boundingBox();
   const titleAfter = await title.boundingBox();
   const scrollAfter = await scroller.evaluate((el) => el.clientWidth);
-  const searchPosition = await searchContainer.evaluate((el) => getComputedStyle(el).position);
+  const containerBox = await searchContainer.boundingBox();
+  const controlsBox = await page.locator('.toolbar-right').boundingBox();
   const toolbarBox = await toolbarEl.boundingBox();
   const toolbarPadding = await toolbarEl.evaluate((el) => {
     const style = getComputedStyle(el);
@@ -616,7 +617,15 @@ export async function checkLibraryToolbarStability(page: Page): Promise<Geometry
       paddingRight: parseFloat(style.paddingRight),
     };
   });
-  if (!before || !after || !titleBefore || !titleAfter || !toolbarBox) {
+  if (
+    !before ||
+    !after ||
+    !titleBefore ||
+    !titleAfter ||
+    !toolbarBox ||
+    !containerBox ||
+    !controlsBox
+  ) {
     return failCheck(
       'library-toolbar-stability',
       'could not measure .search-input / #library-title',
@@ -634,8 +643,21 @@ export async function checkLibraryToolbarStability(page: Page): Promise<Geometry
     toolbarPadding.paddingLeft +
     (toolbarBox.width - toolbarPadding.paddingLeft - toolbarPadding.paddingRight) / 2;
   const dCenterX = Math.abs(searchCenterX - toolbarCenterX);
-  const singleRowCentered = searchPosition === 'absolute';
-  const centeringOk = !singleRowCentered || dCenterX <= 1;
+  // Single row = the field shares a line with the control cluster (measured,
+  // not read from the layout mode, so a regression in either mode is caught).
+  // There the field must never reach the heading or the cluster (it once ran
+  // under the sort dropdown), and it is centred unless the cluster is wide
+  // enough to push it off centre, in which case it sits one column gap away.
+  const singleRowCentered =
+    containerBox.y < controlsBox.y + controlsBox.height &&
+    containerBox.y + containerBox.height > controlsBox.y;
+  const columnGap = await toolbarEl.evaluate((el) => parseFloat(getComputedStyle(el).columnGap));
+  const gapToControls = controlsBox.x - (containerBox.x + containerBox.width);
+  const gapToTitle = containerBox.x - (titleAfter.x + titleAfter.width);
+  const clearOk = gapToControls >= columnGap - 1 && gapToTitle >= columnGap - 1;
+  const centeringOk =
+    !singleRowCentered ||
+    (clearOk && (dCenterX <= 1 || Math.abs(gapToControls - columnGap) <= 1));
   const ok =
     dSearchX <= 1 && dSearchW <= 1 && dTitleX <= 1 && dTitleH <= 1 && dScrollW <= 1 && centeringOk;
   const metrics = {
@@ -653,10 +675,13 @@ export async function checkLibraryToolbarStability(page: Page): Promise<Geometry
     searchCenterX: r1(searchCenterX),
     toolbarCenterX: r1(toolbarCenterX),
     dCenterX: r1(dCenterX),
+    gapToControls: r1(gapToControls),
+    gapToTitle: r1(gapToTitle),
   };
   const centeringMessage = singleRowCentered
     ? `, search centre ${r1(searchCenterX)} vs toolbar content centre ${r1(toolbarCenterX)} ` +
-      `(Δ${r1(dCenterX)}px)`
+      `(Δ${r1(dCenterX)}px), gap to controls ${r1(gapToControls)}px, ` +
+      `gap to title ${r1(gapToTitle)}px`
     : ', search centring skipped in stacked mode (full-width field)';
   const titleText = (await title.textContent())?.trim() ?? '';
   const message =
