@@ -2,7 +2,11 @@ import { Injector } from '@angular/core';
 import { Rendition, Contents } from 'epubjs';
 import { of, throwError } from 'rxjs';
 import type { Mock } from 'vitest';
-import { EpubAnnotationManager, isMouseContextMenu } from './epub-annotation-manager';
+import {
+  EpubAnnotationManager,
+  isDesktopMouseSelection,
+  isMouseContextMenu,
+} from './epub-annotation-manager';
 
 /**
  * Mobile native-callout suppression + completed selection capture (issues #16, #304).
@@ -620,15 +624,65 @@ describe('EpubAnnotationManager selection actions (#650)', () => {
     expect(onSelectionCaptured).toHaveBeenCalledTimes(1);
   });
 
-  it('highlight-mode completion signals still do nothing while the mode is off', () => {
+  it('touchend still does nothing while highlight mode is off', () => {
     manager.registerContents(makeContents());
     selectText('Just reading, not marking');
 
-    document.dispatchEvent(new Event('mouseup'));
     document.dispatchEvent(new Event('touchend'));
 
     expect(annotations.highlight).not.toHaveBeenCalled();
     expect(window.getSelection()?.toString()).toBe('Just reading, not marking');
+  });
+
+  it('releasing a desktop mouse selection opens the menu without a right-click (#657)', () => {
+    manager.registerContents(makeContents());
+    selectText('Selected with the mouse');
+
+    document.dispatchEvent(new MouseEvent('mouseup', { button: 0 }));
+
+    expect(annotations.highlight).toHaveBeenCalledTimes(1);
+    expect(onSelectionCaptured).toHaveBeenCalledTimes(1);
+    expect(onSelectionCaptured.mock.calls[0][0]).toBe('Selected with the mouse');
+  });
+
+  it('a plain click (collapsed selection) opens nothing (#657)', () => {
+    manager.registerContents(makeContents());
+    collapseSelection();
+
+    document.dispatchEvent(new MouseEvent('mouseup', { button: 0 }));
+
+    expect(annotations.highlight).not.toHaveBeenCalled();
+    expect(onSelectionCaptured).not.toHaveBeenCalled();
+  });
+
+  it('a non-primary mouseup leaves the selection to the right-click path (#657)', () => {
+    manager.registerContents(makeContents());
+    selectText('Right button released');
+
+    document.dispatchEvent(new MouseEvent('mouseup', { button: 2 }));
+
+    expect(annotations.highlight).not.toHaveBeenCalled();
+    expect(window.getSelection()?.toString()).toBe('Right button released');
+  });
+
+  it('a touch-first device does not open the menu on mouseup outside highlight mode (#16)', () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({ matches: query === '(pointer: coarse)' }));
+    manager.registerContents(makeContents());
+    selectText('Emulated mouseup after a tap');
+
+    document.dispatchEvent(new MouseEvent('mouseup', { button: 0 }));
+
+    expect(annotations.highlight).not.toHaveBeenCalled();
+    expect(window.getSelection()?.toString()).toBe('Emulated mouseup after a tap');
+  });
+
+  it('isDesktopMouseSelection accepts the primary button on fine pointers only', () => {
+    const fine = { matchMedia: () => ({ matches: false }) } as unknown as Window;
+    const coarse = { matchMedia: () => ({ matches: true }) } as unknown as Window;
+
+    expect(isDesktopMouseSelection(new MouseEvent('mouseup', { button: 0 }), fine)).toBe(true);
+    expect(isDesktopMouseSelection(new MouseEvent('mouseup', { button: 2 }), fine)).toBe(false);
+    expect(isDesktopMouseSelection(new MouseEvent('mouseup', { button: 0 }), coarse)).toBe(false);
   });
 
   it('saves the typed note with the mark through the same commit', async () => {

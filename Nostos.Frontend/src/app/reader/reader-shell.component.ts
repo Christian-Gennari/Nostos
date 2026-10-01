@@ -36,6 +36,25 @@ import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
 import { TextareaDirective } from '../ui/form-control/form-control.directive';
 import { readReaderReturnOrigin } from '../core/navigation/studio-reader-navigation';
 import { Theme, ThemeService } from '../core/services/theme.service';
+import { ToastService } from '../core/services/toast.service';
+
+/** Longest quote a selection surface renders (#657); the full text is still saved. */
+export const SELECTION_PREVIEW_MAX = 320;
+
+/**
+ * The quote shown in the selection menu and bar (#657). Whitespace is folded so
+ * a passage spanning paragraphs reads as one line of prose, and a very long
+ * selection is cut at a word boundary. CSS clamps what is visible (three lines
+ * in the menu, one in the docked bar); this cap only keeps the DOM small.
+ */
+export function selectionPreview(text: string | null, max = SELECTION_PREVIEW_MAX): string {
+  if (!text) return '';
+  const flat = text.replace(/\s+/g, ' ').trim();
+  if (flat.length <= max) return flat;
+  const cut = flat.slice(0, max);
+  const space = cut.lastIndexOf(' ');
+  return `${(space > max * 0.6 ? cut.slice(0, space) : cut).trimEnd()}…`;
+}
 
 @Component({
   selector: 'app-reader-shell',
@@ -151,6 +170,7 @@ export class ReaderShell implements OnInit, OnDestroy {
   private autocompleteService = inject(ConceptAutocompleteService);
 
   private themeService = inject(ThemeService);
+  private toast = inject(ToastService);
 
   /** View settings panel (EPUB and PDF) toggled by the Aa control. */
   typoOpen = signal(false);
@@ -272,6 +292,7 @@ export class ReaderShell implements OnInit, OnDestroy {
   highlightColour = signal<HighlightColour>(DEFAULT_HIGHLIGHT_COLOUR);
   readonly highlightColours = HIGHLIGHT_COLOURS;
   pendingSelectionText = signal<string | null>(null);
+  readonly selectionPreview = computed(() => selectionPreview(this.pendingSelectionText()));
   highlightSaving = signal(false);
 
   dbNotes = signal<Note[]>([]);
@@ -656,6 +677,30 @@ export class ReaderShell implements OnInit, OnDestroy {
     }
   }
 
+  /**
+   * Copy (#657). A desktop mouse selection now opens the menu on release, and
+   * the capture replaces the native selection with the pending mark, so the
+   * menu carries the copy action the browser selection used to provide. The
+   * passage is copied in full, not the clamped preview; the menu then closes
+   * without saving, like any other non-saving choice.
+   */
+  copySelection(): void {
+    const text = this.pendingSelectionText();
+    if (!text || this.highlightSaving()) return;
+    const clipboard = typeof navigator !== 'undefined' ? navigator.clipboard : undefined;
+    if (!clipboard) {
+      this.toast.error('Copying is not available in this browser.');
+      return;
+    }
+    clipboard.writeText(text).then(
+      () => {
+        this.toast.success('Passage copied.');
+        this.discardHighlight();
+      },
+      () => this.toast.error('Could not copy the passage.'),
+    );
+  }
+
   handleCommitFailed() {
     // Keep the bar open with the pending capture; the failed save must not
     // lose a difficult mobile selection.
@@ -910,6 +955,22 @@ export class ReaderShell implements OnInit, OnDestroy {
 
   @HostListener('document:keydown', ['$event'])
   onDocumentKeydown(event: KeyboardEvent): void {
+    // Ctrl/Cmd+C while the anchored menu is open copies the captured passage
+    // (#657): the native selection it came from has already been replaced by
+    // the pending mark. The note field keeps its own copy behaviour.
+    if (
+      !event.defaultPrevented &&
+      (event.ctrlKey || event.metaKey) &&
+      !event.altKey &&
+      event.key.toLowerCase() === 'c' &&
+      this.selectionMenuPlacement() &&
+      !isTypingTarget(event.target)
+    ) {
+      event.preventDefault();
+      this.copySelection();
+      return;
+    }
+
     if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
 
     if (event.key === 'Escape') {

@@ -2,7 +2,8 @@
  * In-text selection actions for EPUB (#650) in a real engine, against the real
  * backend and a real epub.js rendition.
  *
- * Desktop (fine pointer): a real mouse drag-selection, right-click on it with
+ * Desktop (fine pointer): releasing a mouse selection opens the menu with
+ * highlight mode OFF (#657); a real mouse drag-selection, right-click on it with
  * highlight mode OFF, the menu anchored at the text, Add note persisting a
  * note linked to the passage; highlight mode with a real multi-word drag
  * (#304: the drag must not be cut short) and one-action Highlight; Escape and
@@ -215,6 +216,42 @@ export function desktopSelectionSpecs() {
     });
     expect(prevented).toBe(false);
     await expect(page.locator('[data-testid="selection-menu"]')).toHaveCount(0);
+  });
+
+  test('releasing a mouse selection opens the menu without a right-click; the quote shows the passage (#657)', async ({ page }) => {
+    const { baseUrl } = loadFixture();
+    const bookId = await seedEpub(baseUrl, `Selection D ${run}`);
+    await openReader(page, baseUrl, bookId);
+    const menu = page.locator('[data-testid="selection-menu"]');
+
+    // Highlight mode stays OFF: a plain desktop drag is enough.
+    await dispatchInFrame(page, 'mousedown');
+    const selected = await selectChars(page, 140);
+    await dispatchInFrame(page, 'mouseup');
+
+    await expect(menu).toBeVisible();
+    await expect(page.locator('[data-testid="selection-bar"]')).toHaveCount(0);
+    // Far more than the old 60-character slice is visible.
+    await expect(menu.locator('.selected-text')).toContainText(selected.trim().slice(0, 100));
+    // Desktop density: the menu's actions are 32px controls, not 44px touch targets.
+    for (const id of ['selection-copy', 'selection-cancel', 'selection-add-note', 'selection-highlight']) {
+      const b = (await page.locator(`[data-testid="${id}"]`).boundingBox())!;
+      expect(b.height, `${id} desktop height`).toBeLessThan(40);
+    }
+    await snap(page, 'desktop-mouseup-menu');
+
+    await page.locator('[data-testid="selection-cancel"]').click();
+    await expect(menu).toHaveCount(0);
+    expect(await notes(baseUrl, bookId)).toHaveLength(0);
+
+    // A plain click (collapsed selection) opens nothing.
+    await page.frameLocator('#epub-viewer iframe').locator('p').first().evaluate((el) => {
+      el.ownerDocument.getSelection()?.removeAllRanges();
+    });
+    await dispatchInFrame(page, 'mousedown');
+    await dispatchInFrame(page, 'mouseup');
+    await page.waitForTimeout(300);
+    await expect(menu).toHaveCount(0);
   });
 }
 

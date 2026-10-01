@@ -73,6 +73,19 @@ export function isMouseContextMenu(event: Event, win: Window): boolean {
 }
 
 /**
+ * Whether a mouseup completes a desktop mouse selection that should open the
+ * selection menu at the text without a right-click (#657). Primary button
+ * only, and only on a fine-pointer device: a phone's selection belongs to its
+ * own handles and OS menu (#16), which emulated mouse events must not race.
+ * Exported for tests.
+ */
+export function isDesktopMouseSelection(event: MouseEvent, win: Window): boolean {
+  if (typeof event.button === 'number' && event.button !== 0) return false;
+  const coarse = typeof win.matchMedia === 'function' && win.matchMedia('(pointer: coarse)').matches;
+  return !coarse;
+}
+
+/**
  * `--color-highlight` from styles.css in its light rendering, used when the
  * token cannot be resolved (unit tests, or a document that is not yet styled).
  */
@@ -158,10 +171,10 @@ export class EpubAnnotationManager {
     }
 
     /**
-     * Captures the current selection. Highlight-mode completion signals
-     * (mouseup / touchend) only capture while the mode is on; a desktop
-     * right-click (#650) captures regardless of the mode. Returns whether a
-     * selection was captured.
+     * Captures the current selection. Touch completion (touchend) only
+     * captures while highlight mode is on; a desktop mouse selection (#657,
+     * on mouseup) and a desktop right-click (#650) capture regardless of the
+     * mode. Returns whether a selection was captured.
      */
     const captureSelection = (evenOutsideHighlightMode = false): boolean => {
       if ((!this.highlightMode && !evenOutsideHighlightMode) || this.pendingHighlight) {
@@ -191,9 +204,10 @@ export class EpubAnnotationManager {
       }
 
       // Right-click on a selection opens the selection menu at the text, with
-      // or without highlight mode (#650). Mouse only: a touch long-press keeps
-      // the platform's own behaviour, and a right-click with nothing selected
-      // keeps the native menu.
+      // or without highlight mode (#650). Since #657 mouseup usually captures
+      // first; this remains the path for keyboard-extended selections. Mouse
+      // only: a touch long-press keeps the platform's own behaviour, and a
+      // right-click with nothing selected keeps the native menu.
       if (!isMouseContextMenu(event, contents.window)) {
         return;
       }
@@ -217,9 +231,13 @@ export class EpubAnnotationManager {
       if (event.buttons === 0) this.mouseDragDocuments.delete(document);
     };
 
-    const onMouseUp = () => {
+    // Releasing a desktop mouse selection opens the selection menu straight
+    // away (#657): no right-click needed. A plain click leaves a collapsed
+    // selection and captures nothing, so links and page focus are unaffected.
+    const onMouseUp = (event: MouseEvent) => {
       this.mouseDragDocuments.delete(document);
-      requestAnimationFrame(() => captureSelection());
+      const desktop = isDesktopMouseSelection(event, contents.window);
+      requestAnimationFrame(() => captureSelection(desktop));
     };
 
     const onTouchEnd = () => {

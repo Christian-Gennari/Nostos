@@ -493,7 +493,10 @@
   flex-shrink: 0;
 }
 
-.reader-confirm-action {
+/* Touch targets for the docked bar only. The anchored desktop menu keeps the
+   primitives' own 32px desktop height (#657); 44px buttons there made a small
+   pointer surface read like a phone sheet. */
+.highlight-confirmation .reader-confirm-action {
   min-height: var(--control-h-touch);
 }
 
@@ -515,16 +518,61 @@
   z-index: 60;
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
-  padding: 0.75rem;
+  gap: 12px;
+  padding: 12px;
+  /* The floating-panel recipe the Dropdown primitive uses: surface, hairline,
+     4px radius, shadow-md. */
   background: var(--bg-surface);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-md);
+  animation: selection-menu-in var(--motion-fast) var(--ease-out);
+}
+
+@keyframes selection-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .selection-menu {
+    animation: none;
+  }
+}
+
+/* The quote follows NoteCard's quote recipe (accent rule, Newsreader italic),
+   so the passage reads the same here as in the note it is about to become.
+   Up to three lines are shown (#657); the old single 60-character slice left
+   too little of the passage to recognise. */
+.selection-quote {
+  margin: 0;
+  padding: 2px 0 2px 12px;
+  border-left: 3px solid var(--color-accent);
+}
+
+.selection-menu .selected-text {
+  font-family: 'Newsreader', serif;
+  font-size: 1rem;
+  line-height: 1.5;
+  letter-spacing: 0.004em;
+  text-wrap: pretty;
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
 }
 
 .selection-menu .confirmation-actions {
   justify-content: flex-end;
+  gap: 6px;
+}
+
+/* Copy is a utility, not a choice about the mark: it sits apart, leading. */
+.selection-copy {
+  margin-right: auto;
 }
 
 .selection-note {
