@@ -173,7 +173,9 @@
      the stage and still separate from the graph edges. Kept in the existing
      neutral families rather than a new hue: a category palette was the
      obvious alternative and it is exactly the "colourful AI aesthetic" the
-     design manifesto rules out. */
+     design manifesto rules out. Clusters are tinted, but only with three of
+     the manifesto's own accents (`--graph-community-*` below), and anything
+     outside the three largest clusters stays in this neutral ink. */
   --graph-node: #46464B;       /* light: cool ink; 9.4:1 on the white stage */
   --graph-node-head: #121316;  /* the touched node: obsidian, the ink */
   --graph-edge: #76777B;       /* neutral slate; structure without a colour cast */
@@ -182,6 +184,19 @@
      built-in hover drawer hardcodes #FFF, which is correct here and a white
      block on dark; this token lets the fill follow the theme instead. */
   --graph-label-box: #ffffff;
+  /* Cluster hues for the concept map: the manifesto's own accents — pine,
+     clay and slate — deepened just enough to read as ink on the stage. Three,
+     because every pair can sit side by side on a graph: run through the
+     data-viz palette validator on all pairs they clear lightness, contrast
+     and the normal-vision floor; the worst colour-blind pair (clay/pine,
+     ΔE 6.5) is in the warn band, which is acceptable only because the hue is
+     never the sole cue (clusters are grouped in space and labelled). A
+     restrained burgundy was tried as a fourth and collapsed onto pine for
+     red-green colour-blind readers (ΔE 0.4). Smaller clusters keep the
+     neutral node ink. */
+  --graph-community-1: #2F6E4E; /* pine */
+  --graph-community-2: #B06A30; /* clay */
+  --graph-community-3: #5560A8; /* slate */
 
   /* ── Accent (slate) ── */
   --color-accent: #5B5E66;
@@ -657,6 +672,11 @@
   /* The label plate must be a surface, not white: on dark the active label's
      ink is silver, which measured 1.16:1 on Sigma's hardcoded white box. */
   --graph-label-box: #121318;
+  /* The same three hues stepped for the obsidian field (validated against
+     #0d0e11; worst colour-blind pair ΔE 7.4). */
+  --graph-community-1: #4D9F78;
+  --graph-community-2: #C9803F;
+  --graph-community-3: #7D85DA;
 
   /* ── Accent — the palette's own primary, used as the accent role ──
      The artifact's prose accent is spruce #3a5d53, but spruce on this ground

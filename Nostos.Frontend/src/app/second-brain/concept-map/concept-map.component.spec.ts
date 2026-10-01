@@ -606,28 +606,69 @@ describe('ConceptMapComponent', () => {
     expect(rail.getAttribute('aria-orientation')).toBe('horizontal');
   });
 
-  it('keeps the notes action inside the rail, next to the selection name', () => {
+  it('shows the selected concept in a card with its notes action, not in the camera rail', () => {
     setConcepts(concepts);
     flushGraph();
 
-    // Nothing selected: no chip, no notes action — the rail is pure camera.
-    let rail = fixture.nativeElement.querySelector('[role="toolbar"]') as HTMLElement;
-    expect(rail.querySelector('[aria-label="Read notes"]')).toBeNull();
+    // Nothing selected: no card, and the rail is pure camera.
+    expect(fixture.nativeElement.querySelector('.map-card')).toBeNull();
+    const rail = fixture.nativeElement.querySelector('[role="toolbar"]') as HTMLElement;
+    expect(rail.textContent).not.toContain('Read notes');
 
-    fixture.componentRef.setInput('selectedName', 'Beta');
+    component.selectAccessibleNode('alpha');
+    fixture.componentRef.setInput('selectedName', 'Alpha');
     fixture.detectChanges();
-    rail = fixture.nativeElement.querySelector('[role="toolbar"]') as HTMLElement;
 
-    // Inside the SAME toolbar as the camera controls — that is the whole point
-    // of moving it out of the parent's separate floating bar.
-    const notes = rail.querySelector('[aria-label="Read notes"]') as HTMLButtonElement;
-    expect(notes, 'the notes action belongs to the map action rail').toBeTruthy();
-    expect(rail.querySelector('.map-selection-name')?.textContent).toContain('Beta');
+    const card = fixture.nativeElement.querySelector('.map-card') as HTMLElement;
+    expect(card, 'a selection opens the card').toBeTruthy();
+    expect(card.querySelector('.map-selection-name')?.textContent).toContain('Alpha');
+    // Counts come from the one graph response: alpha is used 12 times and
+    // shares notes with beta and gamma.
+    expect(card.querySelector('.map-card-meta')?.textContent).toMatch(/12 references\s*·\s*2 connections/);
+
+    // Related concepts, strongest link first (beta shares 3 notes, gamma 1).
+    const related = [...card.querySelectorAll('.map-card-related button')].map((b) => b.textContent?.trim());
+    expect(related).toEqual(['Beta', 'Gamma']);
 
     const emitted = vi.fn();
     component.openNotes.subscribe(emitted);
-    notes.click();
+    const notes = [...card.querySelectorAll('button')].find((b) => b.textContent?.includes('Read notes'));
+    expect(notes, 'the card carries the notes action').toBeTruthy();
+    notes!.click();
     expect(emitted).toHaveBeenCalled();
+  });
+
+  it('moves the selection to a related concept from the card', () => {
+    setConcepts(concepts);
+    flushGraph();
+    component.selectAccessibleNode('alpha');
+    fixture.detectChanges();
+
+    const selected = vi.fn();
+    component.conceptSelected.subscribe(selected);
+    const beta = [...fixture.nativeElement.querySelectorAll('.map-card-related button')].find(
+      (b) => (b as HTMLElement).textContent?.trim() === 'Beta'
+    ) as HTMLButtonElement;
+    beta.click();
+    fixture.detectChanges();
+
+    expect(selected).toHaveBeenCalledWith('beta');
+    expect(component.selectedNodeId()).toBe('beta');
+  });
+
+  it('closes the card and clears the selection from its close button', () => {
+    setConcepts(concepts);
+    flushGraph();
+    component.selectAccessibleNode('alpha');
+    fixture.detectChanges();
+
+    const cleared = vi.fn();
+    component.selectionCleared.subscribe(cleared);
+    (fixture.nativeElement.querySelector('[aria-label="Clear selection"]') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(cleared).toHaveBeenCalled();
+    expect(fixture.nativeElement.querySelector('.map-card')).toBeNull();
   });
 
   it('shows loading status while graph data is pending', () => {

@@ -315,6 +315,25 @@ export function mixHex(first: string, second: string, amount: number): string {
   return `#${[0, 2, 4].map((offset) => mix(offset).toString(16).padStart(2, '0')).join('')}`;
 }
 
+/**
+ * How many clusters get a hue of their own.
+ *
+ * Three, drawn from the manifesto's accents (pine, clay, slate — see the
+ * `--graph-community-*` tokens), not one per cluster. The map is a scatter, so
+ * every pair of hues can end up side by side and the palette has to separate
+ * on ALL pairs, not just adjacent ones. A restrained fourth (burgundy) collapsed
+ * onto pine for red-green colour-blind readers, and a louder fourth would be
+ * the "colourful AI aesthetic" the manifesto rules out. Smaller clusters keep
+ * the neutral node ink.
+ */
+export const COMMUNITY_HUES = 3;
+
+/** Light-theme values, used only when the CSS tokens cannot be read. */
+const COMMUNITY_FALLBACK = ['#2f6e4e', '#b06a30', '#5560a8'];
+
+/** A cluster needs at least this many concepts before it earns a hue. */
+export const COMMUNITY_MIN_SIZE = 3;
+
 export interface ThemeColors {
   node: string;
   nodeHead: string;
@@ -332,6 +351,10 @@ export interface ThemeColors {
    * measured 17.2:1, which is exactly why this only ever showed up on dark.
    */
   labelBox: string;
+  /** The stage field, painted as a halo behind every label so edges pass behind words. */
+  field: string;
+  /** Cluster hues, largest cluster first. See `COMMUNITY_HUES`. */
+  communities: string[];
 }
 
 export function readTheme(): ThemeColors {
@@ -343,6 +366,10 @@ export function readTheme(): ThemeColors {
     label: getCssVar('--color-text-muted', '#6b6e78'),
     labelActive: getCssVar('--color-text-main', '#2b2d33'),
     labelBox: getCssVar('--graph-label-box', '#ffffff'),
+    field: getCssVar('--bg-body', '#fbfbfc'),
+    communities: COMMUNITY_FALLBACK.map((fallback, index) =>
+      getCssVar(`--graph-community-${index + 1}`, fallback)
+    ),
   };
 }
 
@@ -356,56 +383,6 @@ export interface HoverDrawSettings {
 }
 
 /**
- * Sigma's `drawDiscNodeLabel`, with a side flip so text never runs off the canvas.
- *
- * The built-in drawer always puts the label to the RIGHT of the node
- * (`data.x + data.size + 3`). On a narrow stage the rightmost nodes therefore
- * push their text past the canvas edge, and Sigma simply cuts it off — this is
- * what produced truncated names like "pruder" and "Aristot", and it is what the
- * mobile framing spec measures as ink on the label canvas border.
- *
- * Reserving a gutter cannot solve it on a phone. A long concept name needs ~140px
- * of room (16 chars x 12px x 0.62), and a 369px stage can only give that by
- * shrinking the graph to ~55% of the width — trading a clipped word for a
- * needlessly small map. Flipping the label to the left of its node costs nothing
- * and is what a reader expects at the edge of a frame.
- *
- * `data.x` here is a viewport coordinate on the label canvas, so
- * `context.canvas.width` is the exact bound to test against. Colours and font
- * come from the same settings the built-in reads, so nothing else changes.
- */
-export function drawFlipsAtEdgeNodeLabel(
-  context: CanvasRenderingContext2D,
-  data: { x: number; y: number; size: number; label?: string | null },
-  settings: HoverDrawSettings
-): void {
-  if (!data.label) return;
-  const { labelSize, labelFont, labelWeight } = settings;
-  const color = settings.labelColor.attribute
-    ? (data as unknown as Record<string, unknown>)[settings.labelColor.attribute] ??
-      settings.labelColor.color ??
-      '#000'
-    : settings.labelColor.color ?? '#000';
-
-  context.font = `${labelWeight} ${labelSize}px ${labelFont}`;
-  context.fillStyle = String(color);
-
-  const textWidth = context.measureText(data.label).width;
-  const overflowsRight = data.x + data.size + LABEL_OFFSET_PX + textWidth > context.canvas.width;
-  // Only flip when the left side actually has room, so a very wide label on a
-  // narrow stage degrades to the old behaviour rather than clipping the other way.
-  const flips = overflowsRight && data.x - data.size - LABEL_OFFSET_PX - textWidth >= 0;
-
-  if (flips) {
-    context.textAlign = 'right';
-    context.fillText(data.label, data.x - data.size - LABEL_OFFSET_PX, data.y + labelSize / 3);
-    context.textAlign = 'left';
-  } else {
-    context.fillText(data.label, data.x + data.size + LABEL_OFFSET_PX, data.y + labelSize / 3);
-  }
-}
-
-/**
  * Sigma's `drawDiscNodeHover`, with a theme-aware box fill and the same edge flip.
  *
  * The built-in version is `context.fillStyle = "#FFF"` unconditionally, which
@@ -415,7 +392,7 @@ export function drawFlipsAtEdgeNodeLabel(
  * light mode stays pixel-identical apart from the token (which is `#ffffff`
  * there) and dark mode stops drawing a white block.
  *
- * The flip matches `drawFlipsAtEdgeNodeLabel`: without it the plate and the text
+ * The flip matches `placeLabels`: without it the plate and the text
  * would part company on a node near the right edge.
  *
  * If Sigma is upgraded, re-check this against the new implementation.
@@ -426,7 +403,11 @@ export function drawThemeNodeHover(
   settings: HoverDrawSettings,
   boxFill: string
 ): void {
-  const { labelSize, labelFont, labelWeight } = settings;
+  const { labelSize, labelFont } = settings;
+  // The node's own weight (hubs and the active node are 600), so the plate is
+  // measured for the text actually drawn on it.
+  const labelWeight =
+    String((data as unknown as Record<string, unknown>)['labelWeight'] ?? '') || settings.labelWeight;
   context.font = `${labelWeight} ${labelSize}px ${labelFont}`;
 
   context.fillStyle = boxFill;
@@ -444,7 +425,7 @@ export function drawThemeNodeHover(
     const angleRadian = Math.asin(boxHeight / 2 / radius);
     const xDeltaCoord = Math.sqrt(Math.abs(radius ** 2 - (boxHeight / 2) ** 2));
 
-    const overflowsRight = data.x + radius + boxWidth > context.canvas.width;
+    const overflowsRight = data.x + radius + boxWidth > logicalCanvasWidth(context.canvas);
     const flips = overflowsRight && data.x - radius - boxWidth >= 0;
     const direction = flips ? -1 : 1;
 
@@ -479,7 +460,8 @@ export function drawThemeNodeHover(
     (typeof perNode === 'string' && perNode) || settings.labelColor.color || '#000';
   if (typeof data.label === 'string') {
     const textWidth = context.measureText(data.label).width;
-    const overflowsRight = data.x + data.size + LABEL_OFFSET_PX + textWidth > context.canvas.width;
+    const overflowsRight =
+      data.x + data.size + LABEL_OFFSET_PX + textWidth > logicalCanvasWidth(context.canvas);
     const flips = overflowsRight && data.x - data.size - LABEL_OFFSET_PX - textWidth >= 0;
     if (flips) {
       context.textAlign = 'right';
@@ -499,3 +481,373 @@ export function compareConcepts(a: ConceptDto, b: ConceptDto): number {
   );
 }
 
+
+/* ── Label layout ──
+ *
+ * Sigma's label grid decides which labels are *candidates* (one region of the
+ * screen at a time), but it never checks whether two chosen labels overlap, and
+ * its drawer paints straight onto edges. On a 54-node graph that produced pairs
+ * like "Seneca/Death" printed on top of each other, and every edge under a word
+ * cut through it.
+ *
+ * So the component no longer lets Sigma draw labels. Its `defaultDrawNodeLabel`
+ * only COLLECTS each candidate, and after the frame `placeLabels` lays them out
+ * in priority order — the active neighbourhood first, then hub concepts, then
+ * the rest by size — skipping any label that would collide with one already
+ * placed. `drawPlacedLabels` then paints each one over a halo in the field
+ * colour, so edges pass behind words instead of through them.
+ */
+
+/** Label priority tiers. Higher wins a collision. */
+export const LABEL_PRIORITY = {
+  /** Not part of the active neighbourhood while something is active. */
+  dimmed: 0,
+  normal: 1,
+  /** The most-referenced concepts: always candidates, drawn bolder. */
+  hub: 2,
+  /** The hovered/selected node and its neighbours. Never culled. */
+  active: 3,
+} as const;
+
+/** Fraction of nodes, by usage, that count as hubs. */
+export const HUB_FRACTION = 0.15;
+/** Hub count bounds, so a tiny graph still has one and a big one stays selective. */
+export const HUB_MIN = 1;
+export const HUB_MAX = 12;
+
+/** Halo stroke width in px. `strokeText` paints half of it outside the glyph. */
+export const LABEL_HALO_WIDTH = 4;
+
+/** Breathing room kept between two placed labels, in px. */
+const LABEL_COLLISION_PAD = 2;
+
+/**
+ * The canvas width in the units Sigma draws in.
+ *
+ * Sigma sizes each canvas's backing store at `width × pixelRatio` and then
+ * scales the context, so node coordinates handed to a drawer are CSS pixels
+ * while `canvas.width` is DEVICE pixels. Testing `x + textWidth > canvas.width`
+ * therefore never fired on a 2x phone, the edge flip never ran, and right-edge
+ * labels were cut off ("Epictetu", "Marcu") — while desktop at 1x looked fine.
+ */
+export function logicalCanvasWidth(canvas: HTMLCanvasElement): number {
+  const css = canvas.clientWidth;
+  if (css > 0) return css;
+  const ratio =
+    typeof window !== 'undefined' && window.devicePixelRatio > 0 ? window.devicePixelRatio : 1;
+  return canvas.width / ratio;
+}
+
+export interface LabelCandidate {
+  key: string;
+  /** Node centre, viewport px. */
+  x: number;
+  y: number;
+  /** Drawn node radius, viewport px. */
+  size: number;
+  label: string;
+  color: string;
+  weight: string;
+  priority: number;
+  /**
+   * Drawn elsewhere — Sigma paints the hovered/selected node's label on its own
+   * plate on the hover layer — so this pass only RESERVES its box, keeping other
+   * labels off it, and does not paint it a second time.
+   */
+  reserveOnly?: boolean;
+}
+
+/** A node disc, viewport px, that labels should not cover. */
+export interface DiscObstacle {
+  key: string;
+  x: number;
+  y: number;
+  size: number;
+}
+
+export interface PlacedLabel extends LabelCandidate {
+  /** Where the text starts (left edge), viewport px. */
+  textX: number;
+  /** Text baseline, viewport px. */
+  textY: number;
+  align: 'left' | 'right';
+}
+
+interface Box {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+function intersects(a: Box, b: Box): boolean {
+  return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+}
+
+/**
+ * Lay labels out without overlaps.
+ *
+ * Each label prefers the right of its node and flips left when the right side
+ * would leave the stage, cover another node, or hit a label already placed.
+ * Labels never overlap each other: one that fits on neither side is dropped,
+ * whatever its tier, because overprinted text is unreadable anyway — the
+ * selection card lists the active node's neighbours by name. Covering another
+ * node's disc is only tolerated for hub and active labels, which must stay.
+ */
+export function placeLabels(
+  candidates: LabelCandidate[],
+  measure: (label: string, weight: string) => number,
+  stageWidth: number,
+  labelSize: number,
+  discs: DiscObstacle[] = []
+): PlacedLabel[] {
+  const ordered = [...candidates].sort(
+    (a, b) =>
+      b.priority - a.priority ||
+      b.size - a.size ||
+      (a.key < b.key ? -1 : a.key > b.key ? 1 : 0)
+  );
+
+  const placed: PlacedLabel[] = [];
+  const boxes: Box[] = [];
+  const seen = new Set<string>();
+  const half = labelSize * 0.6;
+
+  for (const candidate of ordered) {
+    if (seen.has(candidate.key) || !candidate.label) continue;
+    seen.add(candidate.key);
+
+    const width = measure(candidate.label, candidate.weight);
+    const top = candidate.y - half - LABEL_COLLISION_PAD;
+    const bottom = candidate.y + half + LABEL_COLLISION_PAD;
+    const rightStart = candidate.x + candidate.size + LABEL_OFFSET_PX;
+    const leftEnd = candidate.x - candidate.size - LABEL_OFFSET_PX;
+
+    const right: Box = { left: rightStart - LABEL_COLLISION_PAD, right: rightStart + width + LABEL_COLLISION_PAD, top, bottom };
+    const left: Box = { left: leftEnd - width - LABEL_COLLISION_PAD, right: leftEnd + LABEL_COLLISION_PAD, top, bottom };
+
+    const rightFits = rightStart + width <= stageWidth;
+    const leftFits = leftEnd - width >= 0;
+    const clearOfLabels = (box: Box) => !boxes.some((other) => intersects(box, other));
+    const clearOfDiscs = (box: Box) =>
+      !discs.some(
+        (d) =>
+          d.key !== candidate.key &&
+          intersects(box, { left: d.x - d.size, right: d.x + d.size, top: d.y - d.size, bottom: d.y + d.size })
+      );
+
+    let side: 'left' | 'right' | null = null;
+    if (candidate.reserveOnly) {
+      side = rightFits || !leftFits ? 'right' : 'left';
+    } else if (rightFits && clearOfLabels(right) && clearOfDiscs(right)) side = 'right';
+    else if (leftFits && clearOfLabels(left) && clearOfDiscs(left)) side = 'left';
+    else if (candidate.priority >= LABEL_PRIORITY.hub) {
+      if (rightFits && clearOfLabels(right)) side = 'right';
+      else if (leftFits && clearOfLabels(left)) side = 'left';
+    }
+    if (!side) continue;
+
+    boxes.push(side === 'right' ? right : left);
+    if (candidate.reserveOnly) continue;
+    placed.push({
+      ...candidate,
+      align: side === 'right' ? 'left' : 'right',
+      textX: side === 'right' ? rightStart : leftEnd,
+      textY: candidate.y + labelSize / 3,
+    });
+  }
+
+  return placed;
+}
+
+/** Paint placed labels: a halo in the field colour first, then the ink. */
+export function drawPlacedLabels(
+  context: CanvasRenderingContext2D,
+  labels: PlacedLabel[],
+  labelSize: number,
+  labelFont: string,
+  halo: string
+): void {
+  context.save();
+  context.lineJoin = 'round';
+  context.lineWidth = LABEL_HALO_WIDTH;
+  context.strokeStyle = halo;
+  for (const label of labels) {
+    context.font = `${label.weight} ${labelSize}px ${labelFont}`;
+    context.textAlign = label.align;
+    context.strokeText(label.label, label.textX, label.textY);
+    context.fillStyle = label.color;
+    context.fillText(label.label, label.textX, label.textY);
+  }
+  context.restore();
+}
+
+/** Ids of the most-referenced concepts, `HUB_FRACTION` of the graph. */
+export function pickHubs(nodes: Array<{ id: string; usageCount: number }>): Set<string> {
+  const count = Math.min(HUB_MAX, Math.max(HUB_MIN, Math.round(nodes.length * HUB_FRACTION)));
+  return new Set(
+    [...nodes]
+      .sort((a, b) => b.usageCount - a.usageCount || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+      .slice(0, count)
+      .map((n) => n.id)
+  );
+}
+
+/* ── Clusters ── */
+
+/**
+ * Weighted label propagation: each concept repeatedly joins the cluster its
+ * neighbours share the most notes with, until nothing changes.
+ *
+ * Deterministic — nodes are visited in `hashSeed` order and ties go to the
+ * smaller cluster id — so a reload paints the same clusters in the same hues.
+ * Returns each node's cluster RANK (0 = largest), which is what picks its hue:
+ * colour follows the cluster's size order, not the order clusters were found.
+ */
+export function detectCommunities(
+  ids: string[],
+  edges: Array<{ sourceId: string; targetId: string; sharedNotes: number }>
+): Map<string, number> {
+  const neighbours = new Map<string, Array<{ id: string; weight: number }>>();
+  for (const id of ids) neighbours.set(id, []);
+  for (const edge of edges) {
+    const a = neighbours.get(edge.sourceId);
+    const b = neighbours.get(edge.targetId);
+    if (!a || !b || edge.sourceId === edge.targetId) continue;
+    const weight = Math.max(1, edge.sharedNotes);
+    a.push({ id: edge.targetId, weight });
+    b.push({ id: edge.sourceId, weight });
+  }
+
+  const label = new Map(ids.map((id) => [id, id]));
+  const order = [...ids].sort((a, b) => hashSeed(a) - hashSeed(b));
+
+  for (let round = 0; round < 30; round += 1) {
+    let changed = false;
+    for (const id of order) {
+      const tally = new Map<string, number>();
+      for (const n of neighbours.get(id)!) {
+        const l = label.get(n.id)!;
+        tally.set(l, (tally.get(l) ?? 0) + n.weight);
+      }
+      if (tally.size === 0) continue;
+      let best = label.get(id)!;
+      let bestWeight = tally.get(best) ?? -1;
+      for (const [l, w] of tally) {
+        if (w > bestWeight || (w === bestWeight && l < best)) {
+          best = l;
+          bestWeight = w;
+        }
+      }
+      if (best !== label.get(id)) {
+        label.set(id, best);
+        changed = true;
+      }
+    }
+    if (!changed) break;
+  }
+
+  const sizes = new Map<string, number>();
+  for (const l of label.values()) sizes.set(l, (sizes.get(l) ?? 0) + 1);
+  const ranked = [...sizes.entries()]
+    .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))
+    .map(([l]) => l);
+  const rank = new Map(ranked.map((l, index) => [l, index]));
+
+  return new Map(ids.map((id) => [id, rank.get(label.get(id)!)!]));
+}
+
+/* ── Framing ── */
+
+/**
+ * Centre-force strengths for a stage of the given shape.
+ *
+ * Obsidian's forces settle into a roughly round cloud, so on a 1310x650 desktop
+ * stage the graph filled 88% of the height but only 51% of the width, and on a
+ * portrait phone the reverse. Stretching the result afterwards was tried and
+ * removed (see the note above `hashSeed`): it shears the layout and corrupts the
+ * live physics. Weakening the centre pull along the stage's LONG axis instead
+ * lets the simulation itself settle into the stage's shape, in one unit system,
+ * with nothing rescaled afterwards.
+ */
+export function centerStrengths(width: number, height: number): { x: number; y: number } {
+  const base = OBSIDIAN_FORCES.centerStrength;
+  if (!(width > 0) || !(height > 0)) return { x: base, y: base };
+  const aspect = Math.min(2.2, Math.max(1 / 2.2, width / height));
+  return aspect >= 1 ? { x: base / aspect, y: base } : { x: base, y: base * aspect };
+}
+
+/**
+ * Positions for concepts with no connections: a tidy shelf under the graph.
+ *
+ * Left to the physics, an unconnected concept is pushed away by everything and
+ * held only by the weak centre force, so it drifts to a corner — measured two
+ * isolates settling well outside the main body, where the fit then had to frame
+ * them and shrank everything else. Shelved in rows the width of the graph, they
+ * stay visible and findable without deciding the zoom.
+ *
+ * Sigma's graph y axis points UP, so "under" is `minY - gap`.
+ */
+export function shelfPositions(
+  count: number,
+  extent: { minX: number; maxX: number; minY: number; maxY: number } | null,
+  spacing: number
+): Array<{ x: number; y: number }> {
+  if (count <= 0) return [];
+  const minX = extent?.minX ?? 0;
+  const maxX = extent?.maxX ?? 0;
+  const minY = extent?.minY ?? 0;
+  const span = Math.max(spacing, maxX - minX);
+  const perRow = Math.max(1, Math.floor(span / spacing) + 1);
+  const centre = (minX + maxX) / 2;
+  const positions: Array<{ x: number; y: number }> = [];
+  for (let index = 0; index < count; index += 1) {
+    const row = Math.floor(index / perRow);
+    const inRow = Math.min(perRow, count - row * perRow);
+    const column = index % perRow;
+    positions.push({
+      x: centre + (column - (inRow - 1) / 2) * spacing,
+      y: minY - spacing * (extent ? 1 : 0) - row * spacing * 0.6,
+    });
+  }
+  return positions;
+}
+
+/**
+ * The rotation, in radians, that lays a settled layout's long axis along the
+ * stage's long axis.
+ *
+ * A force layout has no preferred orientation, so its long axis lands wherever
+ * the seed sent it: measured on a portrait phone, a graph lying sideways filled
+ * 84% of the width and 47% of the height. Rotating it is a RIGID transform —
+ * every distance the forces settled on is preserved — so unlike the per-axis
+ * stretch removed earlier, it cannot distort the layout or the live physics.
+ *
+ * The long axis is the principal component of the node positions.
+ */
+export function alignmentRotation(
+  points: Array<{ x: number; y: number }>,
+  stageWidth: number,
+  stageHeight: number
+): number {
+  if (points.length < 3 || !(stageWidth > 0) || !(stageHeight > 0)) return 0;
+  const n = points.length;
+  const mx = points.reduce((sum, p) => sum + p.x, 0) / n;
+  const my = points.reduce((sum, p) => sum + p.y, 0) / n;
+  let sxx = 0;
+  let syy = 0;
+  let sxy = 0;
+  for (const p of points) {
+    const dx = p.x - mx;
+    const dy = p.y - my;
+    sxx += dx * dx;
+    syy += dy * dy;
+    sxy += dx * dy;
+  }
+  // A near-round cloud has no long axis worth turning.
+  const spread = Math.sqrt((sxx - syy) ** 2 + 4 * sxy * sxy);
+  if (spread < 0.08 * (sxx + syy)) return 0;
+  const principal = 0.5 * Math.atan2(2 * sxy, sxx - syy);
+  const target = stageWidth >= stageHeight ? 0 : Math.PI / 2;
+  return target - principal;
+}

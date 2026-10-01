@@ -13,16 +13,9 @@
  * Fill the height the parent hands down, so the graph uses the column instead of
  * stopping at a magic number.
  *
- * `.sigma-container` is `clamp(420px, 62dvh, 760px)`, which at 1920x1080 capped
- * the stage at 672px — 62.2% of the column, leaving 344px of unused column below
- * the graph. `dvh` is also measured against the browser viewport rather than
- * this card, so it over- or under-shoots depending on what else is on screen.
- *
  * These rules live HERE rather than in the parent because Angular view
  * encapsulation rewrites each component's own selectors with its host attribute
- * and the parent's stylesheet cannot reach into them (verified: the parent's
- * `.concept-map`/`.sigma-container` rules computed as `display: block` inside
- * here, so the flex chain never connected).
+ * and the parent's stylesheet cannot reach into them.
  *
  * `min-height: 0` all the way down is required — a flex child defaults to
  * `min-height: auto`, which refuses to shrink below its content and breaks the
@@ -32,8 +25,6 @@
 :host,
 .concept-map,
 .map-stage {
-  /* The `100%` above is a percentage against a flex-resolved parent, which
-     collapses. `flex` on the same elements is what actually carries the height. */
   flex: 1;
   min-height: 0;
 }
@@ -44,119 +35,268 @@
   flex-direction: column;
 }
 
+/*
+ * ONE surface.
+ *
+ * The map used to be a padded `--bg-surface` card holding a stage with a 1px
+ * border AND a 1px inset-shadow border — a card inside a card with a doubled
+ * rule. The stage is now the only frame: one hairline, one radius, the field
+ * inside it.
+ */
+.map-stage {
+  position: relative;
+  min-height: 360px;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  background: var(--bg-body);
+}
+
+/* A graph surface should feel like a field, not a flat card. */
 .sigma-container {
   flex: 1;
   min-height: 0;
-  height: auto;
+  width: 100%;
+  cursor: default;
+  background: radial-gradient(circle at 50% 48%, var(--bg-surface) 0%, var(--bg-body) 72%);
 }
 
-.concept-map {
-  gap: 0.7rem;
-  padding: 1rem;
-  background: var(--bg-surface);
+/* Grab cursor while dragging a node. */
+.sigma-container.dragging {
+  cursor: grabbing;
 }
 
-/* Floating overlays inside the canvas rather than a toolbar above it. */
-.map-toolbar,
-.map-actions {
+/*
+ * Focus mode. `:fullscreen` is the real Fullscreen API; `.is-fullscreen` is
+ * also the fallback the component applies where that API does not exist for
+ * ordinary elements (iPhone Safari), so the stage is pinned over the page.
+ */
+.map-stage:fullscreen,
+.map-stage.is-fullscreen {
+  border: 0;
+  border-radius: 0;
+}
+
+.map-stage.is-fullscreen:not(:fullscreen) {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--layer-navigation, 50) + 1);
+  min-height: 0;
+  padding: env(safe-area-inset-top, 0) env(safe-area-inset-right, 0) env(safe-area-inset-bottom, 0)
+    env(safe-area-inset-left, 0);
+}
+
+/* ── Overlays on the stage ── */
+
+/*
+ * The legend: what size and line weight mean. Quiet metadata in the corner, on
+ * a wash of the field so it stays legible when a node sits under it.
+ */
+.map-legend {
   position: absolute;
   top: 0.75rem;
-  z-index: 2;
-}
-
-/*
- * The map toolbar: the way back to the list, plus the map's own search.
- *
- * Both are needed here because map view closes the index rail, which is where
- * the page-level search and view toggle live. The exit control is first so it
- * always sits in the same place regardless of the search field's width.
- */
-.map-toolbar {
   left: 0.75rem;
-  width: min(360px, calc(100% - 1.5rem));
+  z-index: 1;
   display: flex;
-  align-items: flex-start;
-  gap: 0.35rem;
-}
-
-.map-search-field {
-  position: relative;
-  flex: 1;
-  min-width: 0;
-}
-
-.map-toolbar .map-view-exit {
-  flex: 0 0 auto;
-  border: 1px solid var(--border-color);
-  background: color-mix(in srgb, var(--bg-surface) 92%, transparent);
-  color: var(--color-text-muted);
-  box-shadow: 0 2px 10px color-mix(in srgb, var(--border-color) 16%, transparent);
-}
-
-.map-toolbar .map-view-exit:hover {
-  background: var(--bg-hover);
-  color: var(--color-text-main);
-}
-
-/*
- * The single action rail: selection chip + every camera/mode action.
- *
- * Previously six loose text buttons (353x32px measured) with the notes action
- * in a separate overlay owned by the parent component. Grouping them in one
- * bordered surface is what makes it read as one section; the chip is inside it
- * so "what is selected" and "act on the selection" are adjacent rather than in
- * two opposite corners.
- */
-.map-actions {
-  right: 0.75rem;
-  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 0.1rem;
-  padding: 0.2rem;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--bg-surface) 92%, transparent);
-  box-shadow: 0 2px 10px color-mix(in srgb, var(--border-color) 16%, transparent);
+  gap: 0.25rem 0.9rem;
+  max-width: calc(100% - 1.5rem);
+  padding: 0.2rem 0.45rem;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--bg-body) 82%, transparent);
+  color: var(--color-text-muted);
+  font-size: 0.7rem;
+  line-height: 1.4;
+  pointer-events: none;
 }
 
-.map-selection {
+.map-legend-item {
   display: inline-flex;
   align-items: center;
-  gap: 0.1rem;
-  min-width: 0;
-  padding-left: 0.55rem;
+  gap: 0.4rem;
+  white-space: nowrap;
 }
 
-.map-selection-name {
-  font-family: 'Newsreader', serif;
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--color-text-main);
+/* A small and a large disc: size is the encoding being explained. */
+.map-legend-dot {
+  position: relative;
+  width: 10px;
+  height: 10px;
+  margin-left: 6px;
+  border-radius: var(--radius-round);
+  background: var(--graph-node);
+}
+
+.map-legend-dot::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: -6px;
+  width: 4px;
+  height: 4px;
+  margin-top: -2px;
+  border-radius: var(--radius-round);
+  background: var(--graph-node);
+}
+
+.map-legend-line {
+  width: 16px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--graph-edge);
+}
+
+.map-limit-note {
+  font-style: italic;
+}
+
+.map-status {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 1;
+  margin: 0;
+  transform: translate(-50%, -50%);
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  line-height: 1.4;
+  text-align: center;
+  pointer-events: none;
+}
+
+/*
+ * The heads-up layer along the bottom edge: the selection card on the left, the
+ * camera rail on the right. One flex row, so the two can never overlap; the
+ * layer itself lets pointer events through to the graph.
+ */
+.map-hud {
+  position: absolute;
+  right: 0.75rem;
+  bottom: 0.75rem;
+  left: 0.75rem;
+  z-index: 2;
+  display: flex;
+  align-items: flex-end;
+  gap: 0.75rem;
+  pointer-events: none;
+}
+
+.map-hud > * {
+  pointer-events: auto;
+}
+
+/* Both floating surfaces share one recipe: content surface, hairline, a quiet
+   ambient shadow. Solid rather than frosted — the manifesto rules out blur. */
+.map-card,
+.map-actions {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-md);
+}
+
+/* ── Selection card ── */
+
+.map-card {
+  display: grid;
+  gap: 0.55rem;
+  width: min(340px, 100%);
   min-width: 0;
-  max-width: 14ch;
+  padding: 0.75rem 0.85rem 0.85rem;
+}
+
+.map-card-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+/* The concept's cluster hue — the card's one link back to the canvas. */
+.map-card-swatch {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-round);
+}
+
+.map-card-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
   overflow: hidden;
+  color: var(--color-text-main);
+  font-family: 'Newsreader', serif;
+  font-size: 1.1rem;
+  font-weight: var(--fw-semibold);
+  line-height: 1.25;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* Separates "act on the selection" from the camera controls. */
+.map-card .map-card-close {
+  flex: 0 0 auto;
+  margin: -0.25rem -0.35rem -0.25rem 0;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text-muted);
+}
+
+.map-card .map-card-close:hover {
+  background: var(--bg-hover);
+  color: var(--color-text-main);
+}
+
+.map-card-meta {
+  margin: -0.3rem 0 0;
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.map-card-related {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.map-card-related .nostos-chip {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 0.75rem;
+  text-overflow: ellipsis;
+}
+
+.map-card-notes {
+  justify-self: start;
+}
+
+/* ── Camera rail ── */
+
+.map-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.1rem;
+  margin-left: auto;
+  padding: 0.2rem;
+}
+
+/* Separates the zoom pair from the framing actions. */
 .map-rail-divider {
   width: 1px;
   align-self: stretch;
-  margin: 0.25rem 0.3rem;
+  margin: 0.25rem 0.2rem;
   background: var(--border-color);
-}
-
-/* The read-notes action is the one rail item that navigates away, so it keeps
-   the accent ink until hovered. */
-.map-action--notes {
-  color: var(--color-text-main);
 }
 
 /* Rail buttons read as a group, not as six separate chips. */
 .map-actions .map-action {
   border: 0;
-  border-radius: calc(var(--radius-md) - 2px);
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--color-text-muted);
 }
@@ -171,59 +311,6 @@
   color: var(--color-text-main);
 }
 
-.map-search input {
-  box-sizing: border-box;
-  width: 100%;
-  min-height: 34px;
-  padding: 0 0.75rem;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--bg-surface) 94%, transparent);
-  color: var(--color-text-main);
-  font: 0.78rem 'Hanken Grotesk', sans-serif;
-}
-
-.map-search input::placeholder {
-  color: var(--color-text-muted);
-}
-
-.map-search-results {
-  position: absolute;
-  top: 2.45rem;
-  left: 0;
-  width: 100%;
-  margin: 0;
-  padding: 0.25rem;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-  background: var(--bg-surface);
-  box-shadow: 0 12px 28px color-mix(in srgb, var(--border-color) 22%, transparent);
-  list-style: none;
-}
-
-.map-search-results button {
-  display: flex;
-  width: 100%;
-  flex-direction: column;
-  gap: 0.15rem;
-  padding: 0.55rem 0.65rem;
-  border: 0;
-  background: transparent;
-  color: var(--color-text-main);
-  cursor: pointer;
-  text-align: left;
-}
-
-.map-search-results button:hover,
-.map-search-results button:focus-visible {
-  background: var(--bg-hover);
-}
-
-.map-search-results small {
-  color: var(--color-text-muted);
-  font-size: 0.68rem;
-}
-
 /* The rail's buttons are `appIconButton`, whose base sizing lives in
    styles.css (`.icon-btn`, 32px). Only the disabled state needs stating here. */
 .map-actions .map-action:disabled {
@@ -232,69 +319,9 @@
 }
 
 .map-actions .map-action:focus-visible,
-.map-search input:focus-visible,
-.map-search-results button:focus-visible,
 .map-accessible-list button:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: -2px;
-}
-
-.map-limit-note,
-.map-status {
-  margin: 0;
-  color: var(--color-text-muted);
-  font-size: 0.72rem;
-  line-height: 1.4;
-}
-
-.map-limit-note {
-  font-style: italic;
-}
-
-.map-status {
-  text-align: center;
-}
-
-/* The graph is the content, sitting directly on the page surface. */
-.map-stage {
-  position: relative;
-  min-height: 360px;
-  overflow: hidden;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-  background: var(--bg-body);
-  box-shadow: inset 0 0 0 1px var(--border-color);
-}
-
-/* A graph surface should feel like a field, not a flat card. */
-.sigma-container {
-  width: 100%;
-  height: clamp(420px, 62dvh, 760px);
-  cursor: default;
-  background:
-    radial-gradient(circle at 50% 48%, var(--bg-surface) 0%, var(--bg-body) 72%);
-}
-
-/* Show grab cursor when hovering a node, grabbing while dragging. */
-.sigma-container.dragging {
-  cursor: grabbing;
-}
-
-.map-stage:fullscreen,
-.map-stage.is-fullscreen {
-  min-height: 100dvh;
-  border: 0;
-  border-radius: 0;
-}
-
-.map-stage:fullscreen .sigma-container,
-.map-stage.is-fullscreen .sigma-container {
-  height: 100dvh;
-}
-
-.map-stage:fullscreen .map-controls,
-.map-stage:fullscreen .map-toolbar {
-  top: 1rem;
 }
 
 .map-accessible-list {
@@ -306,202 +333,127 @@
 }
 
 /*
- * The map's own phone layout.
- *
- * Height as well as width: an 844x390 landscape phone matches no
- * `max-width: 768px` rule, so the stage kept the desktop `clamp(420px, ...)`
- * height (measured 420px inside a 390px viewport — it overflowed) and the
- * floating dock covered graph nodes.
+ * Touch screens: pinch is the zoom, so the ± pair (and its divider) leave the
+ * rail and the remaining four actions get the room. Keyed to the POINTER, not
+ * the width — a narrow desktop window keeps its zoom buttons, a tablet does not.
  */
-@media (max-width: 768px), (max-height: 500px) {
-  .concept-map {
-    /* The card no longer needs its own inset on a phone: the parent column is
-       already full-bleed and the stage border does the framing. */
-    padding: 0.6rem;
-    gap: 0;
-    min-height: 0;
-  }
-
-  .map-toolbar {
-    top: 0.5rem;
-    left: 0.5rem;
-    width: calc(100% - 1rem);
-  }
-
-  .map-actions {
-    top: auto;
-    right: 0.5rem;
-    bottom: 0.5rem;
-    left: 0.5rem;
-    justify-content: center;
-    flex-wrap: wrap;
-    padding: 0.25rem;
-    /*
-     * Space the targets apart, not just up to size.
-     *
-     * The buttons are 44x44px (correct), but `gap: 0.1rem` left only 1.6px
-     * between adjacent hit areas — measured on a 390x844 viewport. Two thumbs
-     * cannot reliably resolve a 1.6px boundary, so every action was a coin flip
-     * against its neighbour: tap Fit and land on Focus. Apple's guidance is
-     * 44x44pt with space BETWEEN targets, so the gap is the actual defect, not
-     * the button size.
-     *
-     * 0.4rem gives ~6.4px of separation, which also reads in the QHD screenshot
-     * as six distinct buttons rather than one smear of glyphs.
-     */
-    gap: 0.4rem;
-  }
-
-  /* A tap target on a phone, where a mis-tap costs a camera jump. */
-  .map-actions .map-action,
-  .map-selection {
-    min-height: 44px;
-    min-width: 44px;
-  }
-
-  /* The toolbar's exit control takes the same 44px tap contract — it is the
-     ONLY way out of map view, so a miss is worse here than anywhere else in the
-     rail. The search field beside it is already 34px tall; both grow together so
-     the cluster stays on one line. */
-  .map-toolbar .map-view-exit {
-    width: 44px;
-    height: 44px;
-  }
-
-  .map-search input {
-    min-height: 44px;
-  }
-
-  /*
-   * The selection chip takes its OWN row when present.
-   *
-   * Six 44px controls plus a name and a notes button cannot share one 353px
-   * row: with the tap-gap above it overflows, and `flex-wrap` then broke it
-   * accidentally — measured a rail 104px tall with one button stranded on a
-   * second row and overlapping its neighbour (a -203.8px "gap" between two
-   * targets). Giving the chip a full-width basis makes the two-row shape
-   * deliberate and keeps every control on one clean line beneath it.
-   *
-   * Nothing selected = the rail is still a single 54px row, so the graph only
-   * gives up height while there is actually a selection to show.
-   */
-  .map-selection {
-    flex: 1 1 100%;
-    justify-content: center;
-    padding-left: 0;
-  }
-
-  /* The divider separates chip from controls inline; as stacked rows the row
-     break does that job and a hairline would read as a border. */
-  .map-rail-divider {
+@media (pointer: coarse) {
+  .map-action--zoom {
     display: none;
   }
 
-  /* Fill the column instead of a fixed 420px: the parent now hands the map a
-     bounded height, and `dvh` units are measured against the browser viewport
-     rather than the stage, so they over- or under-shoot inside a card.
-
-     Percentages cannot be used to bridge the gap: `min-height: 100%` against a
-     parent whose height is resolved by flex collapses, which left the card 21px
-     tall. Flexing both levels avoids the percentage chain entirely. */
-  :host {
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-  }
-
-  .concept-map {
-    flex: 1;
-    min-height: 0;
-    height: auto;
-  }
-
-  .sigma-container {
-    flex: 1;
-    min-height: 0;
-    height: auto;
-  }
-
-  .map-stage {
-    display: flex;
-    flex-direction: column;
-    flex: 1;
-    min-height: 0;
-    height: auto;
-  }
-}
-
-/*
- * Landscape phone: the media queries above key off WIDTH (`max-width: 768px`),
- * so an 844x390 iPhone in landscape never matched them and fell through to the
- * desktop rules — measured, all six map controls rendered 32px tall against the
- * 44px touch minimum, on the one axis where a thumb has the least room.
- *
- * Keying off height as well catches every short viewport regardless of width.
- */
-@media (max-height: 500px) {
+  /* 44px tap targets with real space between them: two adjacent 44px targets
+     1.6px apart were measured as a coin flip between neighbours. */
   .map-actions {
-    gap: 0.15rem;
-    bottom: 0.4rem;
-    left: 0.4rem;
-    right: 0.4rem;
+    gap: 0.4rem;
+    padding: 0.25rem;
   }
 
   .map-actions .map-action,
-  .map-selection {
-    min-height: 44px;
+  .map-card .map-card-close {
     min-width: 44px;
+    min-height: 44px;
   }
 
-  .map-stage {
-    min-height: 0;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .sigma-container {
-    scroll-behavior: auto;
+  .map-card-related .nostos-chip,
+  .map-card-notes {
+    min-height: 36px;
   }
 }
 
 /*
- * Short viewports (landscape phones): give the map controls their own row.
+ * Phone, portrait: the map is the screen.
  *
- * A width-keyed rule cannot express this. At 844x390 the floating control strip
- * wraps to two rows and stands ~88px tall against a 273px stage, so it sat over
- * the canvas and covered five node labels (measured `covered-by-controls: 5`).
- * Placing the strip in normal flow removes the overlap structurally rather than
- * tuning the graph fit around a moving obstacle: the canvas ends where the
- * controls begin. Portrait keeps the floating strip, where the stage is tall
- * enough for it.
+ * Full-bleed stage (no frame to spend pixels on), and the HUD becomes a stack:
+ * the rail at the thumb's corner, the selection card across the full width
+ * beneath it, like a sheet peeking up from the dock.
  */
-@media (max-height: 500px) {
-  /* The map's search + exit cluster is a floating overlay on a tall stage, but a
-     390px-tall landscape viewport has no room to float anything over the canvas
-     (the same reason the action rail below goes static there): the toolbar takes
-     its own row above the graph instead. */
-  .map-toolbar {
-    position: static;
-    order: 0;
-    width: auto;
-    margin: 0.4rem 0.5rem 0;
-  }
-
+@media (max-width: 768px) {
   .map-stage {
-    display: flex;
-    flex-direction: column;
+    min-height: 0;
+    border: 0;
+    border-radius: 0;
   }
 
-  .sigma-container {
-    order: 1;
-    flex: 1;
-    min-height: 0;
+  .map-legend {
+    top: 0.5rem;
+    left: 0.5rem;
+    font-size: 0.66rem;
+  }
+
+  .map-hud {
+    right: 0.5rem;
+    bottom: 0.5rem;
+    left: 0.5rem;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
   }
 
   .map-actions {
-    position: static;
-    order: 2;
-    margin: 0.4rem 0.5rem 0.5rem;
-    justify-content: flex-end;
+    order: -1;
+    align-self: flex-end;
+  }
+
+  .map-card {
+    width: auto;
+    padding: 0.7rem 0.75rem 0.75rem;
+  }
+
+  /* One row of related concepts that scrolls sideways, so the card keeps a
+     fixed, small height and the graph keeps the screen. */
+  .map-card-related {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    margin-inline: -0.75rem;
+    padding-inline: 0.75rem;
+  }
+
+  .map-card-related::-webkit-scrollbar {
+    display: none;
+  }
+
+  .map-card-related .nostos-chip {
+    flex: 0 0 auto;
+    max-width: 70%;
+  }
+}
+
+/*
+ * Short viewports (landscape phones). The HUD goes back to a row — card left,
+ * rail right — because a stacked HUD would cover most of a ~300px stage. The
+ * card is narrower and drops its related list, which the canvas shows anyway.
+ */
+@media (max-height: 500px) {
+  .map-stage {
+    min-height: 0;
+  }
+
+  .map-legend {
+    display: none;
+  }
+
+  .map-hud {
+    right: 0.5rem;
+    bottom: 0.5rem;
+    left: 0.5rem;
+    flex-direction: row;
+    align-items: flex-end;
+  }
+
+  .map-actions {
+    order: 0;
+    align-self: auto;
+  }
+
+  .map-card {
+    width: min(320px, 48%);
+    gap: 0.4rem;
+    padding: 0.55rem 0.7rem 0.65rem;
+  }
+
+  .map-card-related {
+    display: none;
   }
 }
