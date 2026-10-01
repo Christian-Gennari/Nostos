@@ -19,7 +19,8 @@ import { readFileSync } from 'node:fs';
 /** Read one of this component's own source files for a static guard. */
 const readSource = (file: string) => readFileSync(new URL(file, import.meta.url), 'utf-8');
 
-import { ReaderShell } from './reader-shell.component';
+import { ReaderShell, selectionPreview } from './reader-shell.component';
+import { ToastService } from '../core/services/toast.service';
 import {
   DEFAULT_HIGHLIGHT_COLOUR,
   HighlightColour,
@@ -1793,5 +1794,130 @@ describe('ReaderShell in-text selection actions (#650, EPUB)', () => {
     ).map((b) => b.textContent?.replace(/\s+/g, ' ').trim());
     expect(labels).toEqual(['Cancel', 'Save']);
     expect(el('selection-bar')!.classList.contains('epub-actions')).toBe(false);
+  });
+
+  // --- #657: desktop polish -------------------------------------------------
+
+  function stubClipboard(writeText: (text: string) => Promise<void>) {
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+  }
+
+  it('desktop: shows the whole short passage in a quote, not a 60-character slice', async () => {
+    const component = await openBook();
+    component.dockedLayout.set(false);
+    const passage =
+      'Sing, goddess, the anger of Peleus son Achilles and its devastation, which put pains thousandfold upon the Achaians.';
+    component.handleSelectionCaptured(passage);
+    component.handleSelectionAnchored(anchor);
+    render();
+
+    const quote = el('selection-menu')!.querySelector('.selection-quote .selected-text')!;
+    expect(quote.textContent!.trim()).toBe(passage);
+  });
+
+  it('desktop: compact controls — a Copy icon action, a ghost Cancel, no touch floor', async () => {
+    const component = await openBook();
+    component.dockedLayout.set(false);
+    await capture(component);
+
+    const copy = el('selection-copy') as HTMLButtonElement;
+    expect(copy).not.toBeNull();
+    expect(copy.getAttribute('aria-label')).toBe('Copy passage');
+    expect(el('selection-cancel')!.classList.contains('nostos-button--ghost')).toBe(true);
+
+    const css = readSource('./reader-shell.component.css');
+    expect(css).toContain('.highlight-confirmation .reader-confirm-action {');
+    expect(css).not.toMatch(/^\.reader-confirm-action \{/m);
+  });
+
+  it('phones keep the secondary Cancel and no Copy action in the docked bar', async () => {
+    const component = await openBook();
+    component.dockedLayout.set(true);
+    await capture(component);
+
+    expect(el('selection-copy')).toBeNull();
+    expect(el('selection-cancel')!.classList.contains('nostos-button--secondary')).toBe(true);
+  });
+
+  it('Copy copies the full passage, confirms with a toast and closes without saving', async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    stubClipboard(writeText);
+    const component = await openBook();
+    const toast = TestBed.inject(ToastService);
+    const success = vi.spyOn(toast, 'success');
+    component.dockedLayout.set(false);
+    await capture(component);
+
+    (el('selection-copy') as HTMLButtonElement).click();
+    await Promise.resolve();
+    render();
+
+    expect(writeText).toHaveBeenCalledWith('Sing, goddess, the anger of Achilles');
+    expect(success).toHaveBeenCalledWith('Passage copied.');
+    expect(stub().discardHighlight).toHaveBeenCalled();
+    expect(stub().commitHighlight).not.toHaveBeenCalled();
+    expect(el('selection-menu')).toBeNull();
+  });
+
+  it('Ctrl/Cmd+C copies the captured passage while the menu is open', async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    stubClipboard(writeText);
+    const component = await openBook();
+    component.dockedLayout.set(false);
+    await capture(component);
+
+    const event = new KeyboardEvent('keydown', { key: 'c', metaKey: true, bubbles: true, cancelable: true });
+    document.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(writeText).toHaveBeenCalledWith('Sing, goddess, the anger of Achilles');
+  });
+
+  it('Ctrl+C in the note field is left to the field', async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    stubClipboard(writeText);
+    const component = await openBook();
+    component.dockedLayout.set(false);
+    await capture(component);
+    component.openNoteDraft();
+    render();
+    const input = el('selection-note-input') as HTMLTextAreaElement;
+
+    const event = new KeyboardEvent('keydown', { key: 'c', ctrlKey: true, bubbles: true, cancelable: true });
+    input.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(writeText).not.toHaveBeenCalled();
+  });
+
+  it('a failed copy keeps the menu open and reports the failure', async () => {
+    stubClipboard(() => Promise.reject(new Error('denied')));
+    const component = await openBook();
+    const error = vi.spyOn(TestBed.inject(ToastService), 'error');
+    component.dockedLayout.set(false);
+    await capture(component);
+
+    component.copySelection();
+    await Promise.resolve();
+    await Promise.resolve();
+    render();
+
+    expect(error).toHaveBeenCalledWith('Could not copy the passage.');
+    expect(el('selection-menu')).not.toBeNull();
+  });
+});
+
+describe('selectionPreview (#657)', () => {
+  it('returns short passages whole, with whitespace folded', () => {
+    expect(selectionPreview('  Sing,\n\n goddess  ')).toBe('Sing, goddess');
+    expect(selectionPreview(null)).toBe('');
+  });
+
+  it('cuts a long passage at a word boundary with an ellipsis', () => {
+    const words = Array.from({ length: 40 }, (_, i) => `word${i}`).join(' ');
+    const preview = selectionPreview(words, 50);
+    expect(preview.endsWith('…')).toBe(true);
+    expect(preview.length).toBeLessThanOrEqual(51);
+    expect(preview.slice(0, -1).split(' ').every((w) => /^word\d+$/.test(w))).toBe(true);
   });
 });
