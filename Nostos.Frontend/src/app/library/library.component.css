@@ -94,12 +94,20 @@ app-sidebar-collections.no-transition {
   padding: 1.5rem 3rem;
   border-bottom: 1px solid var(--glass-border);
   margin-bottom: 2rem;
-  /* Single row: static heading left, controls right, search centred against the
-     toolbar's own box. No track sizes to the heading any more, so nothing the
-     heading does can move a sibling. */
-  display: flex;
+  /* Single row: heading left, controls right, search in the middle track.
+     Both side tracks are at least their content wide and otherwise share the
+     leftover space equally, so the search stays centred whenever there is room
+     and shrinks (never overlaps) when the control cluster grows. The earlier
+     absolutely centred field relied on a hard-coded 400px clearance for that
+     cluster; once the cluster outgrew it the field ran under the sort control. */
+  display: grid;
+  grid-template-columns: minmax(max-content, 1fr) minmax(0, 480px) minmax(max-content, 1fr);
+  /* The row stays the heading's line box, as it was while the field sat out of
+     flow: the slightly taller compact field centres into the padding instead
+     of growing the sticky toolbar. */
+  grid-template-rows: 2.4rem;
   align-items: center;
-  gap: 2rem;
+  column-gap: 2rem;
 }
 
 /* --- STATIC HEADING ---
@@ -166,14 +174,11 @@ app-sidebar-collections.no-transition {
 
 /* NEW: Search Bar Styles */
 .search-bar-container {
-  /* Truthful centring: the field is pinned to the toolbar's centre and its width
-     is capped so it can never reach the 375px control cluster. 400px of
-     clearance per side = that cluster plus breathing room (measured). */
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  width: min(480px, calc(100% - 2 * 25rem));
+  /* Fills the toolbar's middle track (capped at 480px there). Relative so the
+     search icon is positioned against this box. */
+  position: relative;
+  width: 100%;
+  min-width: 0;
   display: flex;
   align-items: center;
 }
@@ -1203,12 +1208,11 @@ app-sidebar-collections.no-transition {
   display: none;
 }
 
-/* Below the width where a centred field would be squeezed under ~205px, the
-   search drops to its own full-width row instead of becoming a sliver. At 1440
-   the clearing is the 375px control cluster plus its breathing room, so the
-   field lands at ~245px there and grows to the 480px cap near 1700. */
+/* Below this width the middle track gets too narrow for a useful field, so the
+   search drops to its own full-width row instead of becoming a sliver. */
 @media (max-width: 1400px) {
   .toolbar {
+    display: flex;
     flex-wrap: wrap;
     row-gap: 0.75rem;
   }
@@ -1222,12 +1226,6 @@ app-sidebar-collections.no-transition {
   }
 
   .search-bar-container {
-    /* Relative, not static: the search icon is positioned against this box, and
-       the base rule's 50%/translate offsets must be released with it. */
-    position: relative;
-    left: auto;
-    top: auto;
-    transform: none;
     order: 2;
     width: 100%;
     max-width: none;
@@ -1367,10 +1365,6 @@ app-sidebar-collections.no-transition {
     width: 100%;
     max-width: 100%; /* Full width on mobile */
     order: 2;
-    position: relative;
-    left: auto;
-    top: auto;
-    transform: none;
   }
 
   /* The UI-kit migration made compact fields grow back to the global 44px
