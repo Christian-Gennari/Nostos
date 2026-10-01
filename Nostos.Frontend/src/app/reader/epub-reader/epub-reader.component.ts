@@ -67,6 +67,43 @@ const NOSTOS_DARK_RULES: Record<string, Record<string, string>> = {
   '::selection': { background: 'rgba(143, 191, 174, 0.35) !important' },
 };
 
+/** The theme surface of `rendition.themes` the reader drives. */
+interface ReaderThemes {
+  register(name: string, rules: Record<string, Record<string, string>>): void;
+  select(name: string): void;
+}
+
+/** Registers both Nostos themes on a rendition (once per rendition). */
+export function registerNostosReaderThemes(themes: ReaderThemes): void {
+  themes.register(NOSTOS_LIGHT_THEME, NOSTOS_LIGHT_RULES);
+  themes.register(NOSTOS_DARK_THEME, NOSTOS_DARK_RULES);
+}
+
+/**
+ * Selects the Nostos theme matching the app theme in every rendered section.
+ *
+ * epub.js (0.3.93) keeps one `<style id="epubjs-inserted-css-<theme>">` per
+ * theme in each section document and never removes or reorders it: selecting
+ * a theme again appends its rules to the EXISTING element. Both Nostos themes
+ * use the same `!important` selectors, so whichever element sits later in
+ * <head> wins. After dark -> light -> dark the light element is the later one,
+ * and the page stayed white inside a dark app until a reload. Removing both
+ * Nostos stylesheets first means epub.js re-creates only the selected one,
+ * last in <head>; sections rendered later only ever receive the current theme.
+ */
+export function selectNostosReaderTheme(
+  themes: ReaderThemes,
+  contents: readonly Pick<Contents, 'document'>[],
+  theme: Theme,
+): void {
+  for (const content of contents) {
+    for (const name of [NOSTOS_LIGHT_THEME, NOSTOS_DARK_THEME]) {
+      content.document?.getElementById(`epubjs-inserted-css-${name}`)?.remove();
+    }
+  }
+  themes.select(theme === 'dark' ? NOSTOS_DARK_THEME : NOSTOS_LIGHT_THEME);
+}
+
 /** Reading typefaces offered by the typography panel. */
 export type EpubFontFamily = 'default' | 'serif' | 'sans' | 'mono';
 
@@ -1584,8 +1621,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     const themes = this.rendition?.themes;
     if (!themes) return;
 
-    themes.register(NOSTOS_LIGHT_THEME, NOSTOS_LIGHT_RULES);
-    themes.register(NOSTOS_DARK_THEME, NOSTOS_DARK_RULES);
+    registerNostosReaderThemes(themes);
 
     // Select the matching theme so the first section is rendered with it.
     this.selectReaderTheme(this.themeService.theme());
@@ -1594,7 +1630,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
   private selectReaderTheme(theme: Theme) {
     const themes = this.rendition?.themes;
     if (!themes) return;
-    themes.select(theme === 'dark' ? NOSTOS_DARK_THEME : NOSTOS_LIGHT_THEME);
+    selectNostosReaderTheme(themes, this.renderedContents(), theme);
   }
 
   public deleteHighlight(cfiRange: string) {
