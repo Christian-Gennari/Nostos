@@ -455,9 +455,17 @@ describe('AddBookModal — From a Source', () => {
     fixture.detectChanges();
 
     expect(fixture.nativeElement.querySelectorAll('.source-result').length).toBe(1);
-    // Partial availability is one compact line, not a stack of errors (#641).
-    expect(fixture.nativeElement.querySelector('[data-testid="source-partial"]').textContent)
-      .toContain('Not searched right now: Wikisource');
+    // Partial availability is one compact row, not a stack of errors (#641):
+    // each source's outcome as a dot Badge (#658), plus one announced line.
+    const partial = fixture.nativeElement.querySelector('[data-testid="source-partial"]') as HTMLElement;
+    expect(partial.textContent).toContain('Not searched right now: Wikisource');
+    const badges = Array.from(partial.querySelectorAll('.nostos-badge') as NodeListOf<HTMLElement>);
+    expect(badges.map((b) => b.textContent?.replace(/\s+/g, ' ').trim())).toEqual([
+      'Project Gutenberg',
+      'Wikisource · unavailable',
+    ]);
+    expect(badges[0].classList.contains('nostos-badge--success')).toBe(true);
+    expect(badges[1].classList.contains('nostos-badge--danger')).toBe(true);
     expect(fixture.nativeElement.textContent).toContain('Pride and Prejudice');
   });
 
@@ -1070,6 +1078,138 @@ describe('AddBookModal — From a Source', () => {
       expect(component.sourceKind()).toBe('ebook');
       expect(titles()).toEqual(['Pride and Prejudice', 'Emma', 'Persuasion']);
       expect(component.isSelectedSourceItem(emma)).toBe(true);
+    });
+
+    // --------------------------------------------------------------------
+    // Waiting state and empty detail pane (#658)
+    // --------------------------------------------------------------------
+
+    function badgeLabels(testId: string): string[] {
+      const host = el(testId);
+      if (!host) return [];
+      return Array.from(host.querySelectorAll('.nostos-badge') as NodeListOf<HTMLElement>).map(
+        (b) => b.textContent?.replace(/\s+/g, ' ').trim() ?? '',
+      );
+    }
+
+    it('names the catalogues being searched while waiting, for the current material type', async () => {
+      const pending = new Subject<ProviderDiscoverySearchResult>();
+      vi.spyOn(providers, 'searchAll').mockReturnValue(pending.asObservable());
+      await search();
+
+      expect(badgeLabels('source-searching')).toEqual(['Project Gutenberg', 'LibriVox', 'Wikisource']);
+
+      component.setSourceKind('audiobook');
+      fixture.detectChanges();
+      expect(badgeLabels('source-searching')).toEqual(['LibriVox']);
+
+      pending.complete();
+    });
+
+    it('says a catalogue is slow only after the wait threshold, and clears it on answer', async () => {
+      vi.useFakeTimers();
+      try {
+        const pending = new Subject<ProviderDiscoverySearchResult>();
+        vi.spyOn(providers, 'searchAll').mockReturnValue(pending.asObservable());
+        component.enterSourceMode();
+        component.sourceQuery.set('austen');
+        component.searchSource();
+        fixture.detectChanges();
+        expect(el('source-slow')).toBeNull();
+
+        vi.advanceTimersByTime(AddBookModal.SOURCE_SLOW_AFTER_MS - 1);
+        fixture.detectChanges();
+        expect(el('source-slow')).toBeNull();
+
+        vi.advanceTimersByTime(1);
+        fixture.detectChanges();
+        expect(el('source-slow')?.textContent).toContain('slow to answer');
+
+        pending.next(ok([pride]));
+        pending.complete();
+        fixture.detectChanges();
+        expect(component.sourceSearchSlow()).toBe(false);
+        expect(el('source-slow')).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('a fast answer never shows the slow notice', async () => {
+      vi.useFakeTimers();
+      try {
+        vi.spyOn(providers, 'searchAll').mockReturnValue(of(ok([pride])));
+        component.enterSourceMode();
+        component.sourceQuery.set('austen');
+        component.searchSource();
+        vi.advanceTimersByTime(AddBookModal.SOURCE_SLOW_AFTER_MS * 2);
+        fixture.detectChanges();
+        expect(component.sourceSearchSlow()).toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('a replaced search does not inherit the previous search\'s slow notice', async () => {
+      vi.useFakeTimers();
+      try {
+        vi.spyOn(providers, 'searchAll').mockReturnValue(new Subject<ProviderDiscoverySearchResult>());
+        component.enterSourceMode();
+        component.sourceQuery.set('austen');
+        component.searchSource();
+        vi.advanceTimersByTime(AddBookModal.SOURCE_SLOW_AFTER_MS);
+        expect(component.sourceSearchSlow()).toBe(true);
+
+        component.sourceQuery.set('bronte');
+        component.searchSource();
+        expect(component.sourceSearchSlow()).toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('keeps an intentional placeholder in the detail pane while searching and before a pick', async () => {
+      const pending = new Subject<ProviderDiscoverySearchResult>();
+      vi.spyOn(providers, 'searchAll').mockReturnValue(pending.asObservable());
+      vi.spyOn(providers, 'item').mockReturnValue(of(emma));
+      await search();
+
+      const placeholder = () => el('source-detail-placeholder');
+      expect(placeholder()?.textContent).toContain('The book you choose will appear here.');
+
+      pending.next(ok([pride, emma]));
+      pending.complete();
+      fixture.detectChanges();
+      expect(placeholder()?.textContent).toContain('Select a result to see its format and rights.');
+
+      component.selectSourceItem(emma);
+      fixture.detectChanges();
+      expect(placeholder()).toBeNull();
+    });
+
+    it('labels a timed-out source as timed out', async () => {
+      vi.spyOn(providers, 'searchAll').mockReturnValue(
+        of({
+          items: [pride],
+          hasMore: false,
+          sources: [
+            { providerId: 'gutenberg', displayName: 'Project Gutenberg', succeeded: true, notice: null, errorCode: null },
+            { providerId: 'librivox', displayName: 'LibriVox', succeeded: false, notice: null, errorCode: 'provider_timeout' },
+          ],
+        }),
+      );
+      await search();
+      fixture.detectChanges();
+
+      expect(badgeLabels('source-partial')).toEqual(['Project Gutenberg', 'LibriVox · timed out']);
+    });
+
+    it('a clean search shows no per-source row', async () => {
+      vi.spyOn(providers, 'searchAll').mockReturnValue(of(ok([pride])));
+      await search();
+      fixture.detectChanges();
+
+      expect(el('source-partial')).toBeNull();
     });
   });
 });

@@ -758,14 +758,43 @@
                        size and the real results replace it in one swap. -->
                   <div class="source-loading" role="status" aria-live="polite" data-testid="source-loading">
                     <div class="wait-field" aria-hidden="true"></div>
-                    <p class="source-hint source-loading-label">Searching free catalogues…</p>
+                    <div class="source-loading-body">
+                      <p class="source-hint source-loading-label">Searching free catalogues…</p>
+                      <!-- Which catalogues are being asked (#658), so a slow one
+                           reads as an external source answering, not a frozen
+                           modal. One aggregate answer still swaps in at once. -->
+                      @if (searchingSources().length > 0) {
+                        <div class="source-status" aria-label="Catalogues being searched" data-testid="source-searching">
+                          @for (source of searchingSources(); track source.id) {
+                            <span appBadge [dot]="true">{{ source.displayName }}</span>
+                          }
+                        </div>
+                      }
+                      @if (sourceSearchSlow()) {
+                        <p class="source-hint source-slow" data-testid="source-slow">
+                          Some catalogues are slow to answer. Any that have not replied
+                          within a few seconds are skipped, and the rest are shown.
+                        </p>
+                      }
+                    </div>
                   </div>
                 } @else {
-                  @if (sourceFailures().length > 0 && !allSourcesFailed()) {
-                    <p class="source-partial" data-testid="source-partial">
-                      <nostos-icon name="warning-circle" [size]="12"></nostos-icon>
-                      Not searched right now: {{ sourceFailureNames() }}
-                    </p>
+                  <!-- Per-source outcome (#658): which catalogues answered and
+                       which did not, and why. Shown only when one fell short,
+                       so a clean search stays quiet. -->
+                  @if (sourceFailures().length > 0) {
+                    <div class="source-status source-partial" role="note" data-testid="source-partial">
+                      <span class="visually-hidden">Not searched right now: {{ sourceFailureNames() }}.</span>
+                      @for (source of sourceStatuses(); track source.providerId) {
+                        @if (source.succeeded) {
+                          <span appBadge tone="success" [dot]="true" aria-hidden="true">{{ source.displayName }}</span>
+                        } @else {
+                          <span appBadge tone="danger" [dot]="true" aria-hidden="true" data-testid="source-failed"
+                            >{{ source.displayName }} · {{ sourceFailureReason(source) }}</span
+                          >
+                        }
+                      }
+                    </div>
                   }
                   @for (notice of sourceNotices(); track notice.providerId) {
                     @if (notice.notice; as message) {
@@ -954,10 +983,20 @@
                       <p class="source-hint" role="status">Loading formats and rights…</p>
                     }
                   </div>
-                } @else if (!sourceSearching()) {
-                  <p class="source-hint source-detail-empty">
-                    Select a result to see its format and rights.
-                  </p>
+                } @else {
+                  <!-- An intentional placeholder, not a void (#658): the pane
+                       keeps its frame while searching and before a pick, so the
+                       desktop split reads as one balanced workspace. -->
+                  <div class="source-detail-placeholder" data-testid="source-detail-placeholder">
+                    <nostos-icon name="book-open" [size]="20"></nostos-icon>
+                    <p class="source-hint source-detail-empty">
+                      {{
+                        sourceSearching()
+                          ? 'The book you choose will appear here.'
+                          : 'Select a result to see its format and rights.'
+                      }}
+                    </p>
+                  </div>
                 }
               </div>
             </div>

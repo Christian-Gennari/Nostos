@@ -17,11 +17,13 @@ import { loadFixture } from './fixture';
 
 const EVIDENCE_DIR = path.join(__dirname, '..', 'visual-evidence');
 
+// Capability names as the server reports them (lower-case flags): the waiting
+// state names the sources that can search AND acquire the requested kind (#658).
 const PROVIDERS = [
-  { id: 'gutenberg', displayName: 'Project Gutenberg', capabilities: ['Search'] },
-  { id: 'librivox', displayName: 'LibriVox', capabilities: ['Search'] },
-  { id: 'standardebooks', displayName: 'Standard Ebooks', capabilities: ['Search'] },
-  { id: 'wikisource', displayName: 'Wikisource', capabilities: ['Search'] },
+  { id: 'gutenberg', displayName: 'Project Gutenberg', capabilities: ['search', 'itemretrieval', 'ebookacquisition'] },
+  { id: 'librivox', displayName: 'LibriVox', capabilities: ['search', 'itemretrieval', 'audiobookacquisition'] },
+  { id: 'standardebooks', displayName: 'Standard Ebooks', capabilities: ['search', 'itemretrieval', 'ebookacquisition'] },
+  { id: 'wikisource', displayName: 'Wikisource', capabilities: ['search', 'itemretrieval', 'ebookacquisition'] },
 ];
 
 const TITLES = [
@@ -141,6 +143,18 @@ export function addBookDiscoverySpecs(viewport: 'desktop' | 'mobile') {
       await page.locator('#source-query').press('Enter');
       await expect(page.locator('[data-testid="source-loading"]')).toBeVisible();
       await expect(page.locator('.source-result')).toHaveCount(0);
+      // The waiting state names every catalogue being asked (#658).
+      await expect(page.locator('[data-testid="source-searching"] .nostos-badge')).toHaveCount(PROVIDERS.length);
+      if (viewport === 'desktop') {
+        // No dead void beside the waiting pane: the detail pane keeps a framed
+        // placeholder of the same height (#658).
+        const placeholder = page.locator('[data-testid="source-detail-placeholder"]');
+        await expect(placeholder).toBeVisible();
+        const loadingPane = await box(page, '[data-testid="source-results-pane"]');
+        const placeholderBox = await placeholder.boundingBox();
+        expect(Math.round(placeholderBox!.height)).toBe(Math.round(loadingPane.height));
+        expect(await placeholder.evaluate((el) => getComputedStyle(el).borderTopStyle)).toBe('dashed');
+      }
       const loadingBox = await box(page, '.source-workspace');
       await snap(page, `${viewport}-${theme}-loading`);
 
@@ -153,7 +167,7 @@ export function addBookDiscoverySpecs(viewport: 'desktop' | 'mobile') {
       const pane = page.locator('[data-testid="source-results-pane"]');
       const scrolls = await pane.evaluate((el) => el.scrollHeight > el.clientHeight);
       expect(scrolls, 'a long list scrolls inside its pane').toBe(true);
-      await expect(page.locator('[data-testid="source-partial"]')).toContainText('Wikisource');
+      await expect(page.locator('[data-testid="source-partial"]')).toContainText('Wikisource · timed out');
       const footer = page.locator('[data-testid="source-use-book"]');
       await expect(footer).toHaveText(/Select a book/);
       await expect(footer).toBeDisabled();
