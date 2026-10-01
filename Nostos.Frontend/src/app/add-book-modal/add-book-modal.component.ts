@@ -9,6 +9,7 @@ import {
   Book as BookModel,
 } from '../core/services/books.service';
 import { ProvidersService } from '../core/services/providers.service';
+import { BadgeComponent } from '../ui/badge/badge.component';
 import { ImportService } from '../core/services/import.service';
 import { ToastService } from '../core/services/toast.service';
 import {
@@ -49,11 +50,19 @@ type AddBookIntentKind = 'upload' | 'source' | 'physical' | 'manual';
     ModalShell,
     DialogActionsComponent,
     ButtonComponent,
+    BadgeComponent,
   ],
   templateUrl: './add-book-modal.component.html',
   styleUrl: './add-book-modal.component.css',
 })
 export class AddBookModal {
+  /**
+   * How long a search may wait before the waiting state says a catalogue is
+   * being slow (#658). Below the server's 4 s aggregate budget, so the notice
+   * only appears when a source is actually dragging the search out.
+   */
+  static readonly SOURCE_SLOW_AFTER_MS = 2500;
+
   readonly bookTypeOptions = [
     { value: 'physical', label: 'Physical Book' },
     { value: 'ebook', label: 'E-book (EPUB, PDF)' },
@@ -664,6 +673,13 @@ export class AddBookModal {
   sourceSearching = signal(false);
   sourceSearched = signal(false);
   sourceSearchError = signal<string | null>(null);
+  /**
+   * True once a search has been waiting long enough that a slow catalogue is
+   * the likely cause (#658). The aggregate search is bounded server-side, so
+   * the copy can promise that late sources are skipped rather than awaited.
+   */
+  sourceSearchSlow = signal(false);
+  private sourceSlowTimer: ReturnType<typeof setTimeout> | null = null;
   private sourceSearchVersion = 0;
   /** The in-flight aggregate search; a newer search aborts it (#641). */
   private sourceSearchSub: Subscription | null = null;
@@ -747,6 +763,30 @@ export class AddBookModal {
 
 
   sourceFailures = computed(() => this.sourceStatuses().filter((source) => !source.succeeded));
+
+  /**
+   * The catalogues the current search is querying (#658), so the waiting state
+   * names them instead of reading as a frozen modal. Mirrors the server's
+   * eligibility rule (ProviderDiscoveryService.IsEligible): a source must
+   * search and be able to acquire the requested kind.
+   */
+  searchingSources = computed(() => {
+    const kind = this.sourceKind();
+    return this.providerList().filter((provider) => {
+      const capabilities = provider.capabilities.map((name) => name.toLowerCase());
+      if (!capabilities.includes('search')) return false;
+      const ebook = capabilities.includes('ebookacquisition');
+      const audiobook = capabilities.includes('audiobookacquisition');
+      if (kind === 'ebook') return ebook;
+      if (kind === 'audiobook') return audiobook;
+      return ebook || audiobook;
+    });
+  });
+
+  /** Why a source contributed nothing, in two or three words (#658). */
+  sourceFailureReason(source: ProviderDiscoverySourceStatus): string {
+    return source.errorCode === 'provider_timeout' ? 'timed out' : 'unavailable';
+  }
   sourceNotices = computed(() =>
     this.sourceStatuses().filter((source) => source.succeeded && !!source.notice),
   );
@@ -889,12 +929,21 @@ export class AddBookModal {
     this.clearSourceSelection();
     this.sourceDetailOpen.set(false);
     this.sourceResultsScrollTop = 0;
+    this.clearSourceSlowTimer();
+    this.sourceSlowTimer = setTimeout(() => {
+      if (this.sourceSearchVersion === version && this.sourceSearching()) {
+        this.sourceSearchSlow.set(true);
+      }
+    }, AddBookModal.SOURCE_SLOW_AFTER_MS);
 
     this.sourceSearchSub = this.providers
       .searchAll(query, kind === 'all' ? undefined : kind)
       .pipe(
         finalize(() => {
-          if (this.sourceSearchVersion === version) this.sourceSearching.set(false);
+          if (this.sourceSearchVersion === version) {
+            this.sourceSearching.set(false);
+            this.clearSourceSlowTimer();
+          }
         }),
       )
       .subscribe({
@@ -1114,6 +1163,13 @@ export class AddBookModal {
     this.sourceDetailSub?.unsubscribe();
     this.sourceDetailSub = null;
     this.sourceSearching.set(false);
+    this.clearSourceSlowTimer();
+  }
+
+  private clearSourceSlowTimer(): void {
+    if (this.sourceSlowTimer !== null) clearTimeout(this.sourceSlowTimer);
+    this.sourceSlowTimer = null;
+    this.sourceSearchSlow.set(false);
   }
 
   private clearSourceSelection(): void {
