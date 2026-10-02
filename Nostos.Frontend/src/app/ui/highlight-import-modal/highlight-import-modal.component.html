@@ -143,8 +143,8 @@
               <span class="highlight-count-badge">{{ unplaced().length }}</span>
             </summary>
             <p class="highlight-hint-inline">
-              {{ count(unplacedHighlightCount(), 'highlight') }} belong to books Nostos could not
-              place. Add the book to your library, then import the same file again.
+              {{ count(unplacedHighlightCount(), 'highlight') }}
+              {{ unplacedHighlightCount() === 1 ? 'belongs' : 'belong' }} to books Nostos could not place. Add the book to your library, then import the same file again.
             </p>
             <ul class="highlight-rows">
               @for (book of unplaced(); track $index) {
