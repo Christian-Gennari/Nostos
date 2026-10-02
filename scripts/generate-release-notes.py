@@ -27,7 +27,7 @@ SCOPES = {
 }
 INTERNAL_SCOPES = {
     "ci", "test", "tests", "testing", "build", "deps", "dependencies", "agent",
-    "workflow", "release", "release-notes", "quality-bed", "visual-qa",
+    "workflow", "release", "releases", "release-notes", "quality-bed", "visual-qa",
 }
 PUBLIC_TYPES = {"feat", "fix", "perf", "ux", "revert"}
 SKIP_LABELS = {"release-note:skip", "release-note:none", "skip-changelog"}
@@ -63,7 +63,10 @@ def resolve_range(base: str, target: str, root: Path = ROOT) -> tuple[str, str]:
     # Resolve before forming the range; --end-of-options keeps refs out of git options.
     start = run("git", "rev-parse", "--verify", "--end-of-options", f"{base}^{{commit}}", root=root)
     end = run("git", "rev-parse", "--verify", "--end-of-options", f"{target}^{{commit}}", root=root)
-    run("git", "merge-base", "--is-ancestor", start, end, root=root)
+    try:
+        run("git", "merge-base", "--is-ancestor", start, end, root=root)
+    except ValueError as error:
+        raise ValueError("--from must be an ancestor of --to; fetch the required history first") from error
     return start, end
 
 
@@ -183,14 +186,23 @@ def update_changelog(path: Path, section: str, version: str) -> None:
     headings = list(re.finditer(r"^## (.+)$", original, re.MULTILINE))
     intro = original[:headings[0].start()] if headings else original
     releases = []
+    replaced = False
     for index, heading in enumerate(headings):
         name = heading[1].strip()
-        # A release takes the place of the pending draft. Re-running replaces only that version.
-        if name == version or (version != "Unreleased" and name == "Unreleased"):
+        # Re-running an older version keeps its position in the release history.
+        if name == version:
+            if not replaced:
+                releases.append(section.strip())
+                replaced = True
+            continue
+        # A release takes the place of the pending draft.
+        if version != "Unreleased" and name == "Unreleased":
             continue
         stop = headings[index + 1].start() if index + 1 < len(headings) else len(original)
         releases.append(original[heading.start():stop].strip())
-    content = "\n\n".join([intro.strip(), section.strip(), *releases]) + "\n"
+    if not replaced:
+        releases.insert(0, section.strip())
+    content = "\n\n".join([intro.strip(), *releases]) + "\n"
     path.write_text(content, encoding="utf-8")
 
 

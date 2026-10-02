@@ -21,6 +21,9 @@ or model calls. `release-it` would introduce a Node release lifecycle and plugin
 for labels and PR summaries. The small script handles Nostos's four sections and
 its mix of squash and merge commits directly.
 
+Use a clone with full history (`fetch-depth: 0` for an Actions checkout); unshallow
+a shallow clone and fetch the required tags or pins before generating notes.
+
 The range is **previous revision excluded, target revision included**. Both
 arguments accept tags or full commit pins; the previous revision must be an
 ancestor of the target. GitHub mode walks the first-parent history and looks up
@@ -134,6 +137,9 @@ not an assertion that a release shipped. It covers the commits after
 For the first release, use that same baseline pin to retain the seeded changes,
 then use published CalVer tags thereafter. The initial scope is deliberately
 recent history rather than a retroactive account of every past merge.
+Its 16 entries were generated from merged PRs, then edited against those PRs for
+reader-facing wording. Re-running the range replaces that editorial pass with
+the current PR summaries or titles; older release sections retain their wording.
 
 ```bash
 python3 -m unittest discover -s scripts/tests -v
