@@ -1,108 +1,158 @@
 <section class="concept-map" [attr.aria-busy]="loading()" aria-label="Concept map">
-  @if (isCapped()) {
-  <p class="map-limit-note">Showing the 150 most-referenced concepts.</p>
-  }
-
   <div #mapStage class="map-stage" [class.is-fullscreen]="isFullscreen()">
+    <div #sigmaContainer class="sigma-container"></div>
+
+    <!-- Status sits ON the stage, centred, rather than in a strip below it. -->
+    @if (loading()) {
+    <p class="map-status" role="status" aria-live="polite">Loading graph…</p>
+    } @else if (noConnections()) {
+    @if (searchQuery.trim()) {
+    <p class="map-status" role="status" aria-live="polite">
+      No concepts match “{{ searchQuery.trim() }}”.
+    </p>
+    } @else {
+    <p class="map-status" role="status" aria-live="polite">No connections yet</p>
+    }
+    }
+
 
     <!--
-      One action rail for everything the map can do.
-
-      These used to be six loose buttons with text labels, with the "Read notes"
-      action living in a separate floating bar in the PARENT component — so the
-      note action sat outside the control surface and the group never read as a
-      single section. Icon buttons + one toolbar is the fix.
+      What the marks mean. Size and line weight carry the two numbers the map
+      encodes, and nothing on the canvas said so.
     -->
-    <div class="map-actions" role="toolbar" aria-label="Map actions" aria-orientation="horizontal">
-      @if (selectedName) {
-      <span class="map-selection" role="status">
-        <span class="map-selection-name">{{ selectedName }}</span>
+    <div #mapLegend class="map-legend">
+      <span class="map-legend-item">
+        <span class="map-legend-dot" aria-hidden="true"></span>Size: references
+      </span>
+      <span class="map-legend-item">
+        <span class="map-legend-line" aria-hidden="true"></span>Line: shared notes
+      </span>
+      @if (isCapped()) {
+      <span class="map-limit-note">Showing the 150 most-referenced concepts.</span>
+      }
+    </div>
+
+    <!--
+      The heads-up layer: the selected concept's card and the camera rail.
+
+      One layer, so the two can never overlap: on a wide stage they sit side by
+      side along the bottom edge; on a phone the card spans the width and the
+      rail stacks above it, at the thumb's corner.
+    -->
+    <div #mapHud class="map-hud">
+      @if (selection(); as sel) {
+      <section class="map-card" role="region" aria-label="Selected concept">
+        <div class="map-card-head">
+          <span
+            class="map-card-swatch"
+            aria-hidden="true"
+            [style.background]="sel.hue ?? 'var(--graph-node)'"
+          ></span>
+          <h2 class="map-card-title map-selection-name">{{ selectedName || sel.name }}</h2>
+          <button
+            appIconButton
+            type="button"
+            class="map-card-close"
+            icon="x"
+            size="xs"
+            [glyphSize]="15"
+            aria-label="Clear selection"
+            title="Clear selection"
+            (click)="clearSelection()"
+          ></button>
+        </div>
+        <p class="map-card-meta">
+          {{ sel.usageCount }} {{ sel.usageCount === 1 ? 'reference' : 'references' }} ·
+          {{ sel.connectionCount }} {{ sel.connectionCount === 1 ? 'connection' : 'connections' }}
+        </p>
+        @if (sel.related.length) {
+        <div class="map-card-related" role="group" aria-label="Most connected concepts">
+          @for (related of sel.related; track related.id) {
+          <button
+            appChip
+            type="button"
+            [attr.aria-label]="related.name + ', ' + related.sharedNotes + (related.sharedNotes === 1 ? ' shared note' : ' shared notes')"
+            (click)="selectRelated(related.id)"
+          >{{ related.name }}</button>
+          }
+        </div>
+        }
+        <button
+          appButton
+          variant="primary"
+          size="sm"
+          type="button"
+          class="map-card-notes"
+          (click)="openNotes.emit()"
+        >
+          <nostos-icon name="book-open" [size]="16" />
+          Read notes
+        </button>
+      </section>
+      }
+
+      <div class="map-actions" role="toolbar" aria-label="Map actions" aria-orientation="horizontal">
+        <!-- Zoom is pinch on a touch screen; the buttons stay for mouse and keyboard. -->
         <button
           appIconButton
           type="button"
-          class="map-action map-action--notes"
-          icon="book-open"
-          [glyphSize]="15"
-          aria-label="Read notes"
-          title="Read notes"
-          (click)="openNotes.emit()"
+          class="map-action map-action--zoom"
+          icon="minus"
+          aria-label="Zoom out"
+          title="Zoom out"
+          (click)="zoomOut()"
         ></button>
-      </span>
-      <span class="map-rail-divider" aria-hidden="true"></span>
-      }
-
-      <button
-        appIconButton
-        type="button"
-        class="map-action"
-        icon="minus"
-        aria-label="Zoom out"
-        title="Zoom out"
-        (click)="zoomOut()"
-      ></button>
-      <button
-        appIconButton
-        type="button"
-        class="map-action"
-        icon="plus"
-        aria-label="Zoom in"
-        title="Zoom in"
-        (click)="zoomIn()"
-      ></button>
-      <button
-        appIconButton
-        type="button"
-        class="map-action"
-        icon="scan"
-        aria-label="Fit to view"
-        title="Fit to view"
-        (click)="fitGraph()"
-      ></button>
-      <button
-        appIconButton
-        type="button"
-        class="map-action"
-        icon="crosshair"
-        [disabled]="!selectedNodeId()"
-        aria-label="Center on selection"
-        title="Center on selection"
-        (click)="centerSelected()"
-      ></button>
-      <button
-        appIconButton
-        type="button"
-        class="map-action"
-        [icon]="isFullscreen() ? 'arrows-in' : 'arrows-out'"
-        [pressed]="isFullscreen()"
-        [attr.aria-label]="isFullscreen() ? 'Exit focus mode' : 'Focus mode'"
-        [attr.title]="isFullscreen() ? 'Exit focus mode' : 'Focus mode'"
-        (click)="toggleFullscreen()"
-      ></button>
-      <button
-        appIconButton
-        type="button"
-        class="map-action"
-        icon="arrow-counter-clockwise"
-        aria-label="Reset layout"
-        title="Reset layout"
-        (click)="resetView()"
-      ></button>
+        <button
+          appIconButton
+          type="button"
+          class="map-action map-action--zoom"
+          icon="plus"
+          aria-label="Zoom in"
+          title="Zoom in"
+          (click)="zoomIn()"
+        ></button>
+        <span class="map-rail-divider map-action--zoom" aria-hidden="true"></span>
+        <button
+          appIconButton
+          type="button"
+          class="map-action"
+          icon="scan"
+          aria-label="Fit to view"
+          title="Fit to view"
+          (click)="fitGraph()"
+        ></button>
+        <button
+          appIconButton
+          type="button"
+          class="map-action"
+          icon="crosshair"
+          [disabled]="!selectedNodeId()"
+          aria-label="Center on selection"
+          title="Center on selection"
+          (click)="centerSelected()"
+        ></button>
+        <button
+          appIconButton
+          type="button"
+          class="map-action"
+          [icon]="isFullscreen() ? 'arrows-in' : 'arrows-out'"
+          [pressed]="isFullscreen()"
+          [attr.aria-label]="isFullscreen() ? 'Exit focus mode' : 'Focus mode'"
+          [attr.title]="isFullscreen() ? 'Exit focus mode' : 'Focus mode'"
+          (click)="toggleFullscreen()"
+        ></button>
+        <button
+          appIconButton
+          type="button"
+          class="map-action"
+          icon="arrow-counter-clockwise"
+          aria-label="Reset layout"
+          title="Reset layout"
+          (click)="resetView()"
+        ></button>
+      </div>
     </div>
-
-    <div #sigmaContainer class="sigma-container"></div>
   </div>
-
-  @if (loading()) {
-  <p class="map-status" role="status" aria-live="polite">Loading graph…</p>
-  } @else if (noConnections()) {
-  @if (searchQuery.trim()) {
-  <p class="map-status" role="status" aria-live="polite">
-    No concepts match “{{ searchQuery.trim() }}”.
-  </p>
-  } @else {
-  <p class="map-status" role="status" aria-live="polite">No connections yet</p>
-  }
-  }
 
   <ul class="map-accessible-list visually-hidden" aria-label="Concepts in this map">
     @for (node of accessibleNodes(); track node.id) {

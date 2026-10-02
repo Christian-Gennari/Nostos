@@ -29,6 +29,9 @@ import {
 } from 'd3-force';
 
 import { IconButtonComponent } from '../../ui/icon-button/icon-button.component';
+import { ButtonComponent } from '../../ui/button/button.component';
+import { ChipComponent } from '../../ui/chip/chip.component';
+import { NostosIconComponent } from '../../ui/icon/nostos-icon.component';
 import {
   ConceptDto,
   ConceptsService,
@@ -60,17 +63,59 @@ import {
   mixHex,
   type ThemeColors,
   readTheme,
-  drawFlipsAtEdgeNodeLabel,
   drawThemeNodeHover,
   compareConcepts,
+  COMMUNITY_HUES,
+  COMMUNITY_MIN_SIZE,
+  LABEL_PRIORITY,
+  type LabelCandidate,
+  placeLabels,
+  drawPlacedLabels,
+  logicalCanvasWidth,
+  pickHubs,
+  detectCommunities,
+  centerStrengths,
+  shelfPositions,
+  alignmentRotation,
+  type DiscObstacle,
 } from './concept-map.helpers';
 
 export { MAX_MAP_CONCEPTS } from './concept-map.helpers';
 
+/** How many related concepts the selection card lists. */
+const SELECTION_RELATED_MAX = 4;
+
+/**
+ * How far from a node, in CSS px, a tap still selects it on a touch screen.
+ *
+ * Sigma hit-tests against the DRAWN radius, which is 3-4px for the many
+ * concepts at the low end of the usage range — far below the 44px a finger can
+ * aim at. A tap that misses every disc picks the nearest node within this
+ * radius instead of clearing the selection.
+ */
+const TOUCH_HIT_RADIUS_PX = 22;
+
+interface MapModel {
+  names: Map<string, string>;
+  usage: Map<string, number>;
+  /** Neighbours by shared notes, strongest first. */
+  neighbours: Map<string, Array<{ id: string; sharedNotes: number }>>;
+  hue: Map<string, string | null>;
+}
+
+export interface MapSelection {
+  id: string;
+  name: string;
+  usageCount: number;
+  connectionCount: number;
+  hue: string | null;
+  related: Array<{ id: string; name: string; sharedNotes: number }>;
+}
+
 @Component({
   selector: 'app-concept-map',
   standalone: true,
-  imports: [CommonModule, IconButtonComponent],
+  imports: [CommonModule, IconButtonComponent, ButtonComponent, ChipComponent, NostosIconComponent],
   templateUrl: './concept-map.component.html',
   styleUrl: './concept-map.component.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -112,6 +157,8 @@ export class ConceptMapComponent implements OnChanges, AfterViewInit, OnDestroy 
 
   @ViewChild('sigmaContainer', { static: false }) sigmaContainer!: ElementRef<HTMLDivElement>;
   @ViewChild('mapStage', { static: false }) mapStage!: ElementRef<HTMLElement>;
+  @ViewChild('mapHud', { static: false }) mapHud?: ElementRef<HTMLElement>;
+  @ViewChild('mapLegend', { static: false }) mapLegend?: ElementRef<HTMLElement>;
 
   private sigma: Sigma | null = null;
   private graph: Graph | null = null;
@@ -150,6 +197,8 @@ export class ConceptMapComponent implements OnChanges, AfterViewInit, OnDestroy 
   private draggingActive = false;
   /** Removes the window-level drag safety net. Set while Sigma is alive. */
   private detachDragSafetyNet: (() => void) | null = null;
+  /** True while Focus mode is the CSS fallback rather than the Fullscreen API. */
+  private pseudoFullscreen = false;
 
   /**
    * The settled ForceAtlas2 layout, kept so "Reset layout" can restore node
@@ -172,6 +221,38 @@ export class ConceptMapComponent implements OnChanges, AfterViewInit, OnDestroy 
   readonly accessibleNodes = signal<
     Array<{ id: string; name: string; usageCount: number; connectionCount: number }>
   >([]);
+
+  /**
+   * What the selection card knows about every concept, rebuilt with the graph.
+   *
+   * Derived from the single `/api/concepts/graph` response the map already
+   * loads, so the card makes no request of its own — the map's one-request
+   * contract (asserted in the spec) holds.
+   */
+  private readonly model = signal<MapModel | null>(null);
+
+  /** The selected concept, as the selection card presents it. */
+  readonly selection = computed<MapSelection | null>(() => {
+    const id = this.selectedNodeId();
+    const model = this.model();
+    if (!id || !model || !model.names.has(id)) return null;
+    const neighbours = model.neighbours.get(id) ?? [];
+    return {
+      id,
+      name: model.names.get(id)!,
+      usageCount: model.usage.get(id) ?? 0,
+      connectionCount: neighbours.length,
+      hue: model.hue.get(id) ?? null,
+      related: neighbours.slice(0, SELECTION_RELATED_MAX).map((n) => ({
+        id: n.id,
+        name: model.names.get(n.id) ?? n.id,
+        sharedNotes: n.sharedNotes,
+      })),
+    };
+  });
+
+  /** Label candidates Sigma offered during the frame being drawn. */
+  private labelCandidates: LabelCandidate[] = [];
 
   /* Icons for the action rail. Exposed as fields because the template reads
      them; `strokeWidth` stays at the app default of 2.
@@ -297,38 +378,103 @@ export class ConceptMapComponent implements OnChanges, AfterViewInit, OnDestroy 
     seedPositions(seeds, OBSIDIAN_FORCES.linkDistance);
     const seedById = new Map(seeds.map((s) => [s.id, s]));
 
+    // Hierarchy: the most-referenced concepts are hubs, which are always label
+    // candidates and drawn at a heavier weight, so the eye has somewhere to start.
+    const hubs = pickHubs(visibleNodes);
+
+    // Structure: clusters of concepts that share notes. The largest few take a
+    // hue each (see COMMUNITY_HUES); the rest keep the neutral node ink.
+    const clusterRank = detectCommunities(
+      visibleNodes.map((n) => n.id),
+      visibleEdges
+    );
+    const clusterSizes = new Map<number, number>();
+    for (const rank of clusterRank.values()) {
+      clusterSizes.set(rank, (clusterSizes.get(rank) ?? 0) + 1);
+    }
+    const hueOf = (id: string): string | null => {
+      const rank = clusterRank.get(id);
+      if (rank === undefined || rank >= COMMUNITY_HUES) return null;
+      if ((clusterSizes.get(rank) ?? 0) < COMMUNITY_MIN_SIZE) return null;
+      return this.theme.communities[rank] ?? null;
+    };
+
     // Add nodes.
     for (const node of visibleNodes) {
       const ratio = (Math.max(0, node.usageCount) - minUsage) / usageRange;
       const size = NODE_SIZE_MIN + (NODE_SIZE_MAX - NODE_SIZE_MIN) * Math.sqrt(ratio);
-      const nodeColor = mixHex(this.theme.node, this.theme.nodeHead, 0.18 + ratio * 0.42);
+      const hue = hueOf(node.id);
+      // Hue strength follows usage, so a cluster reads as one family while its
+      // big concepts still stand out from its small ones.
+      const nodeColor = hue
+        ? mixHex(this.theme.node, hue, 0.55 + ratio * 0.45)
+        : mixHex(this.theme.node, this.theme.nodeHead, 0.18 + ratio * 0.42);
       const seeded = seedById.get(node.id)!;
+      const hub = hubs.has(node.id);
 
       graph.addNode(node.id, {
         label: node.name,
         size,
         color: nodeColor,
-        labelColor: hexToRgba(this.theme.label, 0.8 + ratio * 0.16),
+        hue,
+        labelColor: hub ? this.theme.labelActive : hexToRgba(this.theme.label, 0.8 + ratio * 0.16),
+        labelWeight: hub ? '600' : '400',
+        labelPriority: hub ? LABEL_PRIORITY.hub : LABEL_PRIORITY.normal,
+        forceLabel: hub,
         x: seeded.x,
         y: seeded.y,
         usageCount: node.usageCount,
       });
     }
 
-    // Add edges.
+    // Add edges. An edge inside a coloured cluster carries the cluster's hue;
+    // an edge between clusters stays neutral, so bridges read as bridges.
     for (const edge of visibleEdges) {
       const strength = edge.sharedNotes / maxShared;
       const edgeSize = EDGE_SIZE_MIN + strength * (EDGE_SIZE_MAX - EDGE_SIZE_MIN);
+      const alpha = EDGE_ALPHA_MIN + strength * EDGE_ALPHA_RANGE;
+      const sourceHue = hueOf(edge.sourceId);
+      const sameCluster = sourceHue !== null && sourceHue === hueOf(edge.targetId);
       try {
         graph.addEdge(edge.sourceId, edge.targetId, {
           size: edgeSize,
-          color: hexToRgba(this.theme.edge, EDGE_ALPHA_MIN + strength * EDGE_ALPHA_RANGE),
+          color: sameCluster
+            ? hexToRgba(mixHex(this.theme.edge, sourceHue, 0.6), alpha)
+            : hexToRgba(this.theme.edge, alpha),
           sharedNotes: edge.sharedNotes,
         });
       } catch {
         // Duplicate edge or missing node — skip silently.
       }
     }
+
+    // The selection card's view of the graph.
+    const names = new Map(visibleNodes.map((n) => [n.id, n.name]));
+    const neighbours = new Map<string, Array<{ id: string; sharedNotes: number }>>();
+    for (const edge of visibleEdges) {
+      if (edge.sourceId === edge.targetId) continue;
+      for (const [from, to] of [
+        [edge.sourceId, edge.targetId],
+        [edge.targetId, edge.sourceId],
+      ]) {
+        const list = neighbours.get(from) ?? [];
+        if (!list.some((n) => n.id === to)) list.push({ id: to, sharedNotes: edge.sharedNotes });
+        neighbours.set(from, list);
+      }
+    }
+    for (const list of neighbours.values()) {
+      list.sort(
+        (a, b) =>
+          b.sharedNotes - a.sharedNotes ||
+          (names.get(a.id) ?? '').localeCompare(names.get(b.id) ?? '')
+      );
+    }
+    this.model.set({
+      names,
+      usage: new Map(visibleNodes.map((n) => [n.id, n.usageCount])),
+      neighbours,
+      hue: new Map(visibleNodes.map((n) => [n.id, hueOf(n.id)])),
+    });
 
     this.noConnections.set(graph.size === 0);
 
@@ -360,7 +506,17 @@ export class ConceptMapComponent implements OnChanges, AfterViewInit, OnDestroy 
     //  * Alpha is an energy budget that DECAYS to `alphaMin`, at which point the
     //    loop halts by itself. So the settle and the post-drag relaxation are the
     //    same code path, and neither leaves a permanent timer running.
-    const layoutNodes: LayoutNode[] = visibleNodes.map((n) => {
+    //
+    // Concepts with no connection stay out of the simulation: they are placed on
+    // a shelf after the settle (see `shelfPositions`), not left to drift.
+    const connected = new Set<string>();
+    for (const edge of visibleEdges) {
+      if (edge.sourceId === edge.targetId) continue;
+      connected.add(edge.sourceId);
+      connected.add(edge.targetId);
+    }
+    const isolates = visibleNodes.filter((n) => !connected.has(n.id));
+    const layoutNodes: LayoutNode[] = visibleNodes.filter((n) => connected.has(n.id)).map((n) => {
       const attrs = graph.getNodeAttributes(n.id);
       return {
         id: n.id,
@@ -388,12 +544,16 @@ export class ConceptMapComponent implements OnChanges, AfterViewInit, OnDestroy 
       return degree > 0 ? OBSIDIAN_LINK_STRENGTH / degree : OBSIDIAN_LINK_STRENGTH;
     };
 
+    // Centre pull per axis, weaker along the stage's long side so the settled
+    // graph takes the stage's shape instead of a circle (see `centerStrengths`).
+    const centre = centerStrengths(container.clientWidth, container.clientHeight);
+
     this.layout = forceSimulation<LayoutNode>(layoutNodes)
       // Stop before the first tick: the settle is driven explicitly below, and a
       // d3 simulation otherwise starts its own timer on construction.
       .stop()
-      .force('x', forceX<LayoutNode>(0).strength(OBSIDIAN_FORCES.centerStrength))
-      .force('y', forceY<LayoutNode>(0).strength(OBSIDIAN_FORCES.centerStrength))
+      .force('x', forceX<LayoutNode>(0).strength(centre.x))
+      .force('y', forceY<LayoutNode>(0).strength(centre.y))
       .force(
         'link',
         forceLink<LayoutNode, { source: string; target: string }>(layoutLinks)
@@ -437,7 +597,42 @@ export class ConceptMapComponent implements OnChanges, AfterViewInit, OnDestroy 
       this.layout.tick();
       settleTicks += 1;
     }
+
+    // Turn the settled graph so its long axis follows the stage's. Rigid, about
+    // the origin the centre forces pull toward, so the physics stay consistent.
+    const turn = alignmentRotation(
+      layoutNodes.map((n) => ({ x: Number(n.x) || 0, y: Number(n.y) || 0 })),
+      container.clientWidth,
+      container.clientHeight
+    );
+    if (turn) {
+      const cos = Math.cos(turn);
+      const sin = Math.sin(turn);
+      for (const n of layoutNodes) {
+        const x = Number(n.x) || 0;
+        const y = Number(n.y) || 0;
+        n.x = x * cos - y * sin;
+        n.y = x * sin + y * cos;
+      }
+    }
     this.writeLayoutToGraph();
+
+    // Shelve the unconnected concepts under the settled graph.
+    if (isolates.length) {
+      const extent = this.graphExtent(connected);
+      const shelf = shelfPositions(
+        isolates.length,
+        extent,
+        // Wide enough for a label between two shelved dots.
+        OBSIDIAN_FORCES.collideRadius * 3.6
+      );
+      [...isolates]
+        .sort((a, b) => compareConcepts(a, b))
+        .forEach((node, index) => {
+          graph.setNodeAttribute(node.id, 'x', shelf[index].x);
+          graph.setNodeAttribute(node.id, 'y', shelf[index].y);
+        });
+    }
 
     // Snapshot the computed layout so "Reset" can restore it after drags.
     this.layoutHome.clear();
@@ -501,16 +696,30 @@ export class ConceptMapComponent implements OnChanges, AfterViewInit, OnDestroy 
       // `autoRescale` is false, which is this configuration — the setting is
       // inert here. Room for labels comes from `fitOccupancy()` instead.
       stagePadding: 0,
-      // Sigma's label grid deconflicts labels for us: measured 0 merged blobs at
-      // every density tried, while raising density from 1 to 1.6 lifted the
-      // displayed labels from 20 to 30 of 53. More of the map is legible with no
-      // collisions introduced.
-      labelDensity: 1.6,
-      // Replace Sigma's `drawDiscNodeLabel`, which always draws to the RIGHT of
-      // the node and lets a label on a right-edge node be cut off by the canvas.
-      // Geometry, font and colour are reproduced exactly; only the side flips.
-      defaultDrawNodeLabel: (context, data, settings) =>
-        drawFlipsAtEdgeNodeLabel(context, data, settings),
+      // Sigma's label grid only picks CANDIDATES now; overlaps are resolved by
+      // `placeLabels` after the frame. So the density can be generous — the
+      // collision pass, not the grid, decides what is drawn.
+      labelDensity: 3,
+      // Collect, don't draw. Sigma's own drawer paints each label the moment it
+      // is chosen, with no knowledge of the others, so labels overprinted each
+      // other and edges cut through them. The `afterRender` hook below lays the
+      // collected candidates out without overlaps and paints them over a halo.
+      defaultDrawNodeLabel: (_context, data) => {
+        if (!data.label) return;
+        const attrs = data as unknown as Record<string, unknown>;
+        this.labelCandidates.push({
+          key: String(attrs['key'] ?? data.label),
+          x: data.x,
+          y: data.y,
+          size: data.size,
+          label: data.label,
+          color: String(attrs['labelColor'] ?? this.theme.label),
+          weight: String(attrs['labelWeight'] ?? '400'),
+          priority: Number(attrs['labelPriority'] ?? LABEL_PRIORITY.normal),
+          // Sigma draws these on its hover plate; keep others off that box.
+          reserveOnly: attrs['highlighted'] === true || attrs['key'] === this.hoveredId(),
+        });
+      },
       // Replace Sigma's `drawDiscNodeHover`, whose label box is a hardcoded
       // `#FFF`. Geometry is unchanged; only the fill follows the theme.
       defaultDrawNodeHover: (context, data, settings) =>
@@ -518,6 +727,11 @@ export class ConceptMapComponent implements OnChanges, AfterViewInit, OnDestroy 
     });
 
     this.sigma = sigma;
+
+    sigma.on('beforeRender', () => {
+      this.labelCandidates = [];
+    });
+    sigma.on('afterRender', () => this.drawLabels());
 
     // Keep the renderer and the simulation reachable for diagnostics and for the
     // visual-verification harness, which measures graph geometry through the live
@@ -559,9 +773,13 @@ export class ConceptMapComponent implements OnChanges, AfterViewInit, OnDestroy 
           res['zIndex'] = 2;
           res['highlighted'] = true;
           res['labelColor'] = component.theme.labelActive;
+          res['labelWeight'] = '600';
+          res['labelPriority'] = LABEL_PRIORITY.active;
           res['forceLabel'] = true;
         } else if (neighbors.has(node)) {
           res['zIndex'] = 1;
+          res['labelColor'] = component.theme.labelActive;
+          res['labelPriority'] = LABEL_PRIORITY.active;
           res['forceLabel'] = true;
         } else {
           // Keep unconnected nodes visible AND labelled.
@@ -573,6 +791,8 @@ export class ConceptMapComponent implements OnChanges, AfterViewInit, OnDestroy 
           // active neighbourhood.
           res['color'] = hexToRgba(component.theme.node, NODE_ALPHA_DIM);
           res['labelColor'] = hexToRgba(component.theme.label, 0.62);
+          res['labelWeight'] = '400';
+          res['labelPriority'] = LABEL_PRIORITY.dimmed;
           res['zIndex'] = 0;
         }
       }
@@ -596,7 +816,12 @@ export class ConceptMapComponent implements OnChanges, AfterViewInit, OnDestroy 
           // pixel classification found zero pixels bright enough to separate
           // them). At full alpha it is 11.90:1 against 3.44:1, so a line that
           // touches the focused node is unmistakable.
-          res['color'] = component.theme.edgeActive;
+          //
+          // A node in a coloured cluster lights its edges in the cluster's hue
+          // (opaque, so the contrast above still holds); a neutral one in ink.
+          const activeHue = graph.getNodeAttributes(activeId)['hue'];
+          res['color'] =
+            typeof activeHue === 'string' && activeHue ? activeHue : component.theme.edgeActive;
           res['size'] = Math.max((data['size'] as number) ?? 1, 2) * 1.6;
           res['zIndex'] = 1;
         } else {
@@ -629,6 +854,7 @@ export class ConceptMapComponent implements OnChanges, AfterViewInit, OnDestroy 
       component.selectedNodeId.set(node);
       component.conceptSelected.emit(node);
       sigma.refresh();
+      component.revealSelected();
     });
 
     // Double-click opens the concept, the way Obsidian's graph does.
@@ -665,7 +891,16 @@ export class ConceptMapComponent implements OnChanges, AfterViewInit, OnDestroy 
     // `tapMoveTolerance`, and a double-click dispatches `doubleClickStage`
     // instead of a second `clickStage`. So an empty-space click during a pan
     // release never lands here and cannot wipe a selection by accident.
-    sigma.on('clickStage', () => {
+    sigma.on('clickStage', (payload?: { event?: { x: number; y: number } }) => {
+      // A tap that just missed a small node selects it rather than clearing.
+      const near = component.nearestNodeForTouch(payload?.event);
+      if (near) {
+        component.selectedNodeId.set(near);
+        component.conceptSelected.emit(near);
+        sigma.refresh();
+        component.revealSelected();
+        return;
+      }
       component.hoveredId.set(null);
       component.selectedNodeId.set(null);
       component.selectionCleared.emit();
@@ -1004,6 +1239,66 @@ export class ConceptMapComponent implements OnChanges, AfterViewInit, OnDestroy 
     this.layoutHome.clear();
   }
 
+  /**
+   * Lay out this frame's label candidates without overlaps and paint them.
+   *
+   * Runs on Sigma's `afterRender`, onto the label canvas Sigma has just cleared
+   * and filled with nothing (the collector above draws nothing itself).
+   */
+  private drawLabels(): void {
+    const sigma = this.sigma as (Sigma & { getCanvases?: () => Record<string, HTMLCanvasElement> }) | null;
+    const canvas = sigma?.getCanvases?.()['labels'];
+    const context = canvas?.getContext('2d');
+    if (!sigma || !canvas || !context) return;
+
+    const font = "'Hanken Grotesk', sans-serif";
+    const measure = (label: string, weight: string): number => {
+      context.font = `${weight} ${LABEL_DRAW_SIZE}px ${font}`;
+      return context.measureText(label).width;
+    };
+    // Every node disc on screen, so labels can steer around them.
+    const discs: DiscObstacle[] = [];
+    const scaleSize = (sigma as unknown as { scaleSize?: (size: number) => number }).scaleSize;
+    this.graph?.forEachNode((key, attrs) => {
+      const point = sigma.graphToViewport({ x: Number(attrs['x']) || 0, y: Number(attrs['y']) || 0 });
+      const size = Number(attrs['size']) || 0;
+      discs.push({ key, x: point.x, y: point.y, size: scaleSize ? scaleSize.call(sigma, size) : size });
+    });
+    const placed = placeLabels(
+      this.labelCandidates,
+      measure,
+      logicalCanvasWidth(canvas),
+      LABEL_DRAW_SIZE,
+      discs
+    );
+    drawPlacedLabels(context, placed, LABEL_DRAW_SIZE, font, hexToRgba(this.theme.field, 0.9));
+  }
+
+  /**
+   * The node nearest a viewport point, within the touch hit radius.
+   *
+   * Only on a coarse pointer: a mouse can hit a 3px disc, a finger cannot.
+   */
+  private nearestNodeForTouch(point: { x: number; y: number } | undefined): string | null {
+    const sigma = this.sigma;
+    const graph = this.graph;
+    if (!sigma || !graph || !point) return null;
+    if (typeof window.matchMedia !== 'function' || !window.matchMedia('(pointer: coarse)').matches) {
+      return null;
+    }
+    let best: string | null = null;
+    let bestDistance = TOUCH_HIT_RADIUS_PX;
+    graph.forEachNode((node, attrs) => {
+      const viewport = sigma.graphToViewport({ x: Number(attrs['x']) || 0, y: Number(attrs['y']) || 0 });
+      const distance = Math.hypot(viewport.x - point.x, viewport.y - point.y);
+      if (distance < bestDistance) {
+        best = node;
+        bestDistance = distance;
+      }
+    });
+    return best;
+  }
+
   private refreshRendering(): void {
     if (this.sigma) {
       this.sigma.refresh();
@@ -1033,15 +1328,72 @@ export class ConceptMapComponent implements OnChanges, AfterViewInit, OnDestroy 
   }
 
   /**
+   * Stage height covered by the overlays, which the fit should frame around.
+   *
+   * Only on a portrait stage: there the legend spans the top and the rail sits
+   * across the bottom, so a graph centred on the whole stage measured with its
+   * top third empty and its lower nodes under the rail. On a landscape stage
+   * both are small corner items and reserving full-width bands for them would
+   * only shrink a graph that is already bound by height.
+   */
+  private overlayInsets(): { top: number; bottom: number } {
+    const stage = this.sigmaContainer?.nativeElement?.getBoundingClientRect();
+    if (!stage || !(stage.height > stage.width)) return { top: 0, bottom: 0 };
+    const legend = this.mapLegend?.nativeElement?.getBoundingClientRect();
+    const rail = this.mapHud?.nativeElement?.querySelector('.map-actions')?.getBoundingClientRect();
+    return {
+      top: legend && legend.height ? Math.max(0, legend.bottom - stage.top) : 0,
+      bottom: rail && rail.height ? Math.max(0, stage.bottom - rail.top) : 0,
+    };
+  }
+
+  /**
+   * Keep the selected node out from under the selection card.
+   *
+   * On a phone the card spans the bottom of the stage, so tapping a node in the
+   * lower part of the graph opened a card on top of the very node it describes.
+   * Pan just enough to lift the node clear; the zoom is left alone.
+   */
+  private revealSelected(): void {
+    window.requestAnimationFrame(() => {
+      const sigma = this.sigma;
+      const id = this.selectedNodeId();
+      const card = this.mapHud?.nativeElement?.querySelector('.map-card')?.getBoundingClientRect();
+      const stage = this.sigmaContainer?.nativeElement?.getBoundingClientRect();
+      if (!sigma || !id || !card || !stage || !this.graph?.hasNode(id) || !card.height) return;
+      const attrs = this.graph.getNodeAttributes(id);
+      const point = sigma.graphToViewport({ x: Number(attrs['x']) || 0, y: Number(attrs['y']) || 0 });
+      // Only when the card actually covers the node: in landscape it sits in the
+      // left half, and a node to its right must not move.
+      const margin = 32;
+      const left = card.left - stage.left - margin;
+      const right = card.right - stage.left + margin;
+      const limit = card.top - stage.top - margin;
+      if (point.x < left || point.x > right || point.y <= limit) return;
+      const camera = sigma.getCamera();
+      const state = camera.getState();
+      const shift = sigma.viewportToFramedGraph({ x: point.x, y: point.y }, { cameraState: state });
+      const target = sigma.viewportToFramedGraph({ x: point.x, y: limit }, { cameraState: state });
+      camera.animate(
+        { x: state.x + (shift.x - target.x), y: state.y + (shift.y - target.y) },
+        { duration: 300 }
+      );
+    });
+  }
+
+  /**
    * Compute the graph's extent in graph coordinates.
    */
-  private graphExtent(): { minX: number; maxX: number; minY: number; maxY: number } | null {
+  private graphExtent(
+    only?: Set<string>
+  ): { minX: number; maxX: number; minY: number; maxY: number } | null {
     if (!this.graph || this.graph.order === 0) return null;
     let minX = Infinity;
     let maxX = -Infinity;
     let minY = Infinity;
     let maxY = -Infinity;
-    this.graph.forEachNode((_node, attrs) => {
+    this.graph.forEachNode((node, attrs) => {
+      if (only && !only.has(node)) return;
       const x = Number(attrs['x']) || 0;
       const y = Number(attrs['y']) || 0;
       if (x < minX) minX = x;
@@ -1074,7 +1426,8 @@ export class ConceptMapComponent implements OnChanges, AfterViewInit, OnDestroy 
    * viewport aspect and any future change to its internals.
    */
   private fitCameraState(
-    occupancy: { x: number; y: number } = { x: FIT_OCCUPANCY, y: FIT_OCCUPANCY }
+    occupancy: { x: number; y: number } = { x: FIT_OCCUPANCY, y: FIT_OCCUPANCY },
+    insets: { top: number; bottom: number } = { top: 0, bottom: 0 }
   ): { x: number; y: number; ratio: number } | null {
     const extent = this.graphExtent();
     const sigma = this.sigma;
@@ -1094,13 +1447,24 @@ export class ConceptMapComponent implements OnChanges, AfterViewInit, OnDestroy 
     const effectiveX = spanX > 0 ? spanX : Math.max(extent.maxX - extent.minX, 1e-6);
     const effectiveY = spanY > 0 ? spanY : Math.max(extent.maxY - extent.minY, 1e-6);
 
+    const freeHeight = Math.max(height * 0.5, height - insets.top - insets.bottom);
     const ratio = Math.max(
       effectiveX / (width * occupancy.x),
-      effectiveY / (height * occupancy.y),
+      effectiveY / (freeHeight * occupancy.y),
       1e-6
     );
 
-    return { x: 0.5, y: 0.5, ratio };
+    // Centre in the free band between the overlays, not on the whole stage.
+    // The camera state that shows the graph's centre at viewport y + dy is the
+    // framed point that sits at y - dy under a centred camera.
+    const dy = (insets.top - insets.bottom) / 2;
+    if (dy === 0) return { x: 0.5, y: 0.5, ratio };
+    const framed = sigma.viewportToFramedGraph(
+      { x: width / 2, y: height / 2 - dy },
+      { cameraState: { x: 0.5, y: 0.5, angle: 0, ratio } }
+    );
+    if (!Number.isFinite(framed.x) || !Number.isFinite(framed.y)) return { x: 0.5, y: 0.5, ratio };
+    return { x: framed.x, y: framed.y, ratio };
   }
 
   /**
@@ -1136,7 +1500,7 @@ export class ConceptMapComponent implements OnChanges, AfterViewInit, OnDestroy 
 
   /** Frame the whole graph. */
   fitGraph(): void {
-    const state = this.fitCameraState(this.fitOccupancy());
+    const state = this.fitCameraState(this.fitOccupancy(), this.overlayInsets());
     if (!state || !this.sigma) return;
     this.sigma.getCamera().animate(state, { duration: 350 });
   }
@@ -1226,14 +1590,43 @@ export class ConceptMapComponent implements OnChanges, AfterViewInit, OnDestroy 
       return;
     }
     const stage = this.mapStage?.nativeElement;
-    if (!stage || !document.fullscreenEnabled || !stage.requestFullscreen) return;
-    await stage.requestFullscreen();
+    if (!stage) return;
+    if (document.fullscreenEnabled && stage.requestFullscreen) {
+      await stage.requestFullscreen();
+      return;
+    }
+    // iPhone Safari has no Fullscreen API for anything but video, so Focus mode
+    // used to do nothing there — on the one device that needs the room most.
+    // Fall back to pinning the stage over the page (`.is-fullscreen` in CSS).
+    this.pseudoFullscreen = true;
+    this.isFullscreen.set(true);
+    window.setTimeout(() => this.sigma?.refresh(), 0);
   }
 
   private async exitFullscreen(): Promise<void> {
+    if (this.pseudoFullscreen) {
+      this.pseudoFullscreen = false;
+      this.isFullscreen.set(false);
+      window.setTimeout(() => this.sigma?.refresh(), 0);
+      return;
+    }
     if (document.fullscreenElement && document.exitFullscreen) {
       await document.exitFullscreen();
     }
+  }
+
+  /** Close the selection card: the same as clicking empty space. */
+  clearSelection(): void {
+    this.hoveredId.set(null);
+    this.selectedNodeId.set(null);
+    this.selectionCleared.emit();
+    this.refreshRendering();
+  }
+
+  /** Select a related concept from the card and bring it into view. */
+  selectRelated(id: string): void {
+    this.selectAccessibleNode(id);
+    this.centerSelected();
   }
 
   zoomIn(): void {

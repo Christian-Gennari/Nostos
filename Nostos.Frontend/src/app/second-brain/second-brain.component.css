@@ -790,9 +790,9 @@
   display: none;
 }
 
-/* The map's own action rail (selection chip + camera controls + Read notes)
-   lives inside `app-concept-map`, so this view no longer owns a floating
-   selection bar. See concept-map.component.css. */
+/* The map's selection card (with Read notes) and camera rail live inside
+   `app-concept-map`, so this view no longer owns a floating selection bar.
+   See concept-map.component.css. */
 
 /* The map takes the stage it is now on: it is the whole point of this view, so
    give it the available height and width rather than the ~360px it needed as a
@@ -2213,31 +2213,9 @@
   padding-bottom: 0;
 }
 
-/* The map view is full-bleed: its own toolbar carries the way back to the list,
-   so the reading-width back band is not rendered in this mode at all. */
-
-.content-col.mobile-visible:has(app-concept-map) .map-wrapper {
-  flex: 1;
-  min-height: 0;
-  /* No max-width centring on a phone: it is the screen or it is wasted. */
-  max-width: none;
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-/* Only the child's HOST element is reachable from here, and the host must be
-   the flex container: with the host as `display: block` the card inside it
-   sized to its own content (measured 21px inside a 634px host) and the graph
-   had nothing to fill. Setting it here rather than via the child's `:host`
-   rule keeps the whole chain in one place and avoids the encapsulation
-   question entirely. */
-.content-col.mobile-visible:has(app-concept-map) app-concept-map {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
-}
+/* The `.map-wrapper` and `app-concept-map` flex chain above applies at every
+   width (no max-width centring, host as the flex container), so the phone
+   needs no copy of it. */
 
 }
 
@@ -2689,5 +2667,29 @@
     top: 0.5rem;
     right: 0.5rem;
     min-height: 34px;
+  }
+}
+
+/* Map view on a phone: a one-row header. The stacked header took 188px of an
+   844px screen (and left ~125px of graph in landscape); in map view it only
+   needs the title, search and the way back. The Notes/Concepts switch is one
+   tap away in the list view. */
+@media (max-width: 768px), (max-height: 500px) {
+  .brain-layout.map-view .brain-header {
+    flex-direction: row;
+    align-items: center;
+    padding: 0.5rem 0.75rem;
+  }
+
+  .brain-layout.map-view :is(.brain-header-purpose, .index-stats, .brain-areas) {
+    display: none;
+  }
+
+  /* The phone search box already flexes; only the tools row must stop
+     wrapping and give up its full-width row. */
+  .brain-layout.map-view .brain-header-tools {
+    flex: 1;
+    flex-wrap: nowrap;
+    width: auto;
   }
 }
