@@ -1,0 +1,24 @@
+{
+  "texts": {
+    "first-review": "Review before importing | Nothing has been added yet. Check where each book is going, then import. | CHECK THESE | 1 | Candide, ou l'optimisme | Voltaire · 1 highlight | Is this Candide by Voltaire ? | Similar title, same author | Yes, import here | Another book | Leave out | NOT IN YOUR LIBRARY | 3 | The possessed | Fyodor Dostoyevsky · 1 highlight | Left out | Add to library | Choose a book | The Time Machine | H. G. Wells · 2 highlights | Left out | Add to library | Choose a book | A Book Not In Nostos | 1 highlight | Left out | Add to library | Choose a book | READY | 3 | Candide | Voltaire · 2 highlights | Candide · Voltaire | Change | Leave out | Devils | Fyodor Dostoevsky · 2 highlights | Devils · Fyodor Dostoevsky | Change | Leave out | Fictions | Borges, Jorge Luis · 1 highlight | Fictions · Jorge Luis Borges | Change | Leave out | 1 still to check | Back | Import 3 books",
+    "first-result": "Import highlights | 9 highlights imported | Into 4 books. | IMPORTED | 6 | Candide | 2 new | Candide | 1 new | Devils | 1 new | The Time Machine | Added to your library · 2 new | Devils | 2 new | Fictions | 1 new | LEFT OUT | 1 | Undo import | Import another file | Done",
+    "remembered-review": "Review before importing | Nothing has been added yet. Check where each book is going, then import. | NOT IN YOUR LIBRARY | 1 | A Book Not In Nostos | 1 highlight | Left out | Add to library | Choose a book | READY | 6 | Candide | Voltaire · 2 highlights | Candide · Voltaire · as last time | Change | Leave out | Candide, ou l'optimisme | Voltaire · 1 highlight | Candide · Voltaire · as last time | Change | Leave out | The possessed | Fyodor Dostoyevsky · 1 highlight | Devils · Fyodor Dostoevsky · as last time | Change | Leave out | The Time Machine | H. G. Wells · 2 highlights | The Time Machine · H. G. Wells · as last time | Change | Leave out | Devils | Fyodor Dostoevsky · 2 highlights | Devils · Fyodor Dostoevsky · as last time | Change | Leave out | Fictions | Borges, Jorge Luis · 1 highlight | Fictions · Jorge Luis Borges · as last time | Change | Leave out | Back | Import 6 books",
+    "repeat-result": "Import highlights | Already up to date | All 9 highlights found are already in Nostos. | IMPORTED | 6 | Candide | 2 already imported | Candide | 1 already imported | Devils | 1 already imported | The Time Machine | 2 already imported | Devils | 2 already imported | Fictions | 1 already imported | LEFT OUT | 1 | Import another file | Done",
+    "result-undo": "Import highlights | Import undone | 9 highlights removed from your library. | Import another file | Done"
+  },
+  "finalState": {
+    "Books": 4,
+    "Notes": 0,
+    "NoteImportBatches": 0,
+    "NoteImportBookLinks": 6,
+    "NoteImportBatchNotes": 0,
+    "batches": [
+      0,
+      0
+    ],
+    "candideNote": 0,
+    "timeNote": 0,
+    "newBook": 1
+  },
+  "consoleErrors": []
+}

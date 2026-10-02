@@ -92,9 +92,15 @@ export class HighlightImportService {
   }
 
   /** Imports the books that have a decision; a book without one is left out. */
-  commit(file: File, decisions: HighlightImportDecision[]): Observable<HighlightImportResult> {
+  commit(
+    file: File,
+    decisions: HighlightImportDecision[],
+    batchId: string | null = null,
+  ): Observable<HighlightImportResult> {
     const body = this.body(file);
     body.append('decisions', JSON.stringify(decisions));
+    // Files chosen together are one import, and so one thing to undo.
+    if (batchId) body.append('batchId', batchId);
     return this.http.post<HighlightImportResult>('/api/notes/imports/commit', body);
   }
 

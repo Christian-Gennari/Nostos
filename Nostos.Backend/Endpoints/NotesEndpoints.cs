@@ -134,7 +134,8 @@ public static class NotesEndpoints
                     var decisions = JsonSerializer.Deserialize<List<HighlightImportDecision>>(
                         form["decisions"].ToString() is { Length: > 0 } json ? json : "[]",
                         ImportJson) ?? [];
-                    return importer.CommitAsync(path, fileName, decisions, ct);
+                    Guid? batchId = Guid.TryParse(form["batchId"].ToString(), out var parsed) ? parsed : null;
+                    return importer.CommitAsync(path, fileName, decisions, batchId, ct);
                 })
         );
 

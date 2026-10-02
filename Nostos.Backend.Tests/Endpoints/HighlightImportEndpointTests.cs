@@ -172,6 +172,12 @@ public sealed class HighlightImportEndpointTests : IDisposable
         book.Title.Should().Be("Not In The Library");
         book.Author.Should().Be("Nobody");
         (await db.Notes.CountAsync(note => note.BookId == book.Id)).Should().Be(2);
+
+        (await client.DeleteAsync($"/api/notes/imports/batches/{result.BatchId}"))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+        (await db.Books.CountAsync()).Should().Be(1);
+        (await db.Notes.CountAsync()).Should().Be(0);
+        (await db.NoteImportBookLinks.SingleAsync()).BookId.Should().Be(book.Id);
     }
 
     [Fact]
@@ -205,6 +211,38 @@ public sealed class HighlightImportEndpointTests : IDisposable
 
         await using var verify = CreateContext(factory.DatabasePath);
         (await verify.Notes.CountAsync(note => note.BookId == other.Id)).Should().Be(2);
+    }
+
+    [Fact]
+    public async Task Files_imported_together_share_one_batch()
+    {
+        using var factory = new LibraryEndpointFactory();
+        var client = factory.CreateClient();
+        var kobo = await CreateBookAsync(client, "Synthetic Kobo Book", "Ada Reader");
+        var koreader = await CreateBookAsync(client, "Synthetic Reader Book", "Ada Reader");
+        var sidecar = Path.Combine(AppContext.BaseDirectory, "Fixtures", "koreader", "metadata.lua");
+        var sidecarKey = (await PreviewAsync(client, sidecar)).Books.Single().SourceKey;
+
+        var first = await CommitAsync(client, CreateKoboDatabase(), new HighlightImportDecision("vol-1", kobo.Id));
+        var response = await UploadAsync(client, "commit", sidecar,
+            [new HighlightImportDecision(sidecarKey, koreader.Id)], first.BatchId);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var second = (await response.Content.ReadFromJsonAsync<HighlightImportResult>())!;
+
+        second.BatchId.Should().Be(first.BatchId);
+        var batches = await client.GetFromJsonAsync<List<HighlightImportBatchSummary>>("/api/notes/imports/batches");
+        batches.Should().ContainSingle().Which.Should().Match<HighlightImportBatchSummary>(batch =>
+            batch.NoteCount == 4 && batch.BookCount == 2);
+
+        var undo = await client.DeleteAsync($"/api/notes/imports/batches/{first.BatchId}");
+        undo.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var report = JsonDocument.Parse(await undo.Content.ReadAsStringAsync());
+        report.RootElement.GetProperty("removed").GetInt32().Should().Be(4);
+        await using var db = CreateContext(factory.DatabasePath);
+        (await db.Notes.CountAsync()).Should().Be(0);
+        (await db.Books.CountAsync()).Should().Be(2);
+        (await db.NoteImportBookLinks.CountAsync()).Should().Be(2);
+        (await db.NoteCommandReceipts.CountAsync()).Should().Be(0);
     }
 
     [Fact]
@@ -377,12 +415,15 @@ public sealed class HighlightImportEndpointTests : IDisposable
         HttpClient client,
         string step,
         string path,
-        HighlightImportDecision[]? decisions = null)
+        HighlightImportDecision[]? decisions = null,
+        Guid? batchId = null)
     {
         using var body = new MultipartFormDataContent();
         body.Add(new ByteArrayContent(await File.ReadAllBytesAsync(path)), "file", Path.GetFileName(path));
         if (decisions is not null)
             body.Add(new StringContent(JsonSerializer.Serialize(decisions, JsonSerializerOptions.Web)), "decisions");
+        if (batchId is not null)
+            body.Add(new StringContent(batchId.Value.ToString()), "batchId");
         return await client.PostAsync($"/api/notes/imports/{step}", body);
     }
 

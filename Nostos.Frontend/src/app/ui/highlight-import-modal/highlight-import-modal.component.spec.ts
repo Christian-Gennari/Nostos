@@ -11,6 +11,7 @@ import {
   HighlightImportService,
 } from '../../core/services/highlight-import.service';
 import { BooksService } from '../../core/services/books.service';
+import { Book, PaginatedResponse } from '../../core/dtos/book.dtos';
 
 const previewBook = (overrides: Partial<HighlightImportPreviewBook>): HighlightImportPreviewBook => ({
   sourceKey: 'vol-1',
@@ -130,12 +131,33 @@ describe('HighlightImportModal', () => {
     await component.importReviewed();
 
     expect(commit).toHaveBeenCalledTimes(1);
+    expect(commit.mock.calls[0][2]).toBeNull();
     expect(commit.mock.calls[0][1]).toEqual([
       { sourceKey: 'vol-2', bookId: 'b2' },
       { sourceKey: 'vol-3', create: true },
     ]);
     expect(component.stage()).toBe('result');
     expect(component.headline()).toBe('3 highlights imported');
+  });
+
+  it('shares one undoable batch across files and counts library books once', async () => {
+    const files = [file('metadata.epub.lua'), file('KoboReader.sqlite')];
+    vi.spyOn(service, 'preview').mockReturnValue(of({ source: 'koreader', books: [previewBook({})] }));
+    const commit = vi.spyOn(service, 'commit').mockReturnValue(
+      of({ batchId: 'batch-1', source: 'koreader', books: [resultBook({})] }),
+    );
+    const undo = vi.spyOn(service, 'undo').mockReturnValue(of({ removed: 6 }));
+    service.open();
+    await component.readFiles(files);
+
+    await component.importReviewed();
+
+    expect(commit.mock.calls.map((call) => call[2])).toEqual([null, 'batch-1']);
+    expect(component.batchIds()).toEqual(['batch-1']);
+    expect(component.summary()).toBe('Into 1 book.');
+    await component.undoImport();
+    expect(undo).toHaveBeenCalledTimes(1);
+    expect(component.summary()).toBe('6 highlights removed from your library.');
   });
 
   it('imports nothing when nothing is selected', async () => {
@@ -184,6 +206,46 @@ describe('HighlightImportModal', () => {
     expect(component.batchIds()).toEqual([]);
   });
 
+  it('keeps Undo available when the request fails and lets the owner retry', async () => {
+    await review(previewBook({}));
+    vi.spyOn(service, 'commit').mockReturnValue(
+      of({ batchId: 'batch-1', source: 'kobo', books: [resultBook({})] }),
+    );
+    const undo = vi.spyOn(service, 'undo').mockReturnValueOnce(
+      throwError(() => new HttpErrorResponse({ status: 0 })),
+    ).mockReturnValue(of({ removed: 3 }));
+    await component.importReviewed();
+
+    await component.undoImport();
+    fixture.detectChanges();
+
+    expect(component.batchIds()).toEqual(['batch-1']);
+    expect(component.undone()).toBeNull();
+    expect(text()).toContain('The import could not be undone. Try again.');
+    await component.undoImport();
+    expect(undo).toHaveBeenCalledTimes(2);
+    expect(component.summary()).toBe('3 highlights removed from your library.');
+    expect(component.undoError()).toBeNull();
+  });
+
+  it('can search again after a library request fails', async () => {
+    await review(missing);
+    const list = vi.mocked(TestBed.inject(BooksService).list);
+    list.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 0 })));
+    component.openPicker(component.missing()[0]);
+    component.onSearch('Devils');
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    fixture.detectChanges();
+    expect(text()).toContain('Search could not finish. Try again.');
+
+    list.mockReturnValueOnce(of({ items: [{ id: 'b9', title: 'Demons', author: 'Dostoevsky' }], totalCount: 1 } as PaginatedResponse<Book>));
+    component.onSearch('Demons');
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    expect(component.searchResults()[0].bookId).toBe('b9');
+    expect(component.searchError()).toBe(false);
+  });
+
   it('shows the server reason when a file cannot be read', async () => {
     vi.spyOn(service, 'preview').mockReturnValue(
       throwError(
@@ -215,11 +277,12 @@ describe('HighlightImportModal', () => {
     service.preview(file()).subscribe();
     http.expectOne('/api/notes/imports/preview').flush({ source: 'kobo', books: [] });
 
-    service.commit(file(), [{ sourceKey: 'vol-1', bookId: 'b1' }]).subscribe();
+    service.commit(file(), [{ sourceKey: 'vol-1', bookId: 'b1' }], 'batch-1').subscribe();
     const request = http.expectOne('/api/notes/imports/commit');
     expect((request.request.body as FormData).get('decisions')).toBe(
       JSON.stringify([{ sourceKey: 'vol-1', bookId: 'b1' }]),
     );
+    expect((request.request.body as FormData).get('batchId')).toBe('batch-1');
     request.flush({ batchId: null, source: 'kobo', books: [] });
 
     service.undo('batch-1').subscribe();

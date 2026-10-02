@@ -77,6 +77,7 @@ public sealed class HighlightImportService
         string path,
         string? fileName,
         IReadOnlyList<HighlightImportDecision> decisions,
+        Guid? batchId = null,
         CancellationToken ct = default)
     {
         var (source, sourceBooks) = HighlightImportSourceReader.Read(path);
@@ -84,7 +85,16 @@ public sealed class HighlightImportService
             .GroupBy(decision => decision.SourceKey, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => group.Last(), StringComparer.Ordinal);
 
-        var batch = new NoteImportBatch { Source = source, FileName = Truncate(fileName, 260) };
+        // Several files chosen together are one import to the owner, so later
+        // files join the batch the first one opened.
+        var batch = batchId is null
+            ? null
+            : await _db.NoteImportBatches.FirstOrDefaultAsync(candidate => candidate.Id == batchId, ct);
+        var isNewBatch = batch is null;
+        batch ??= new NoteImportBatch { Source = source, FileName = Truncate(fileName, 260) };
+        // Held back until every note exists: the capture path saves and commits
+        // on its own, and must not carry half a batch with it.
+        var added = new List<NoteImportBatchNote>();
         var results = new List<HighlightImportResultBook>(sourceBooks.Count);
 
         foreach (var sourceBook in sourceBooks)
@@ -166,8 +176,9 @@ public sealed class HighlightImportService
                 if (!result.Success)
                     throw new InvalidOperationException(result.ErrorMessage ?? "Highlight import failed.");
 
-                batch.Notes.Add(new NoteImportBatchNote
+                added.Add(new NoteImportBatchNote
                 {
+                    BatchId = batch.Id,
                     NoteId = result.Value!.Id,
                     ClientId = entry.ClientId,
                     IdempotencyKey = entry.Key,
@@ -190,11 +201,12 @@ public sealed class HighlightImportService
         }
 
         // A batch exists to be undone; one that added nothing has nothing to undo.
-        if (batch.Notes.Count > 0)
+        if (isNewBatch && added.Count > 0)
             _db.NoteImportBatches.Add(batch);
+        _db.NoteImportBatchNotes.AddRange(added);
         await _db.SaveChangesAsync(ct);
 
-        return new HighlightImportResult(batch.Notes.Count > 0 ? batch.Id : null, source, results);
+        return new HighlightImportResult(!isNewBatch || added.Count > 0 ? batch.Id : null, source, results);
     }
 
     public async Task<IReadOnlyList<HighlightImportBatchSummary>> ListBatchesAsync(

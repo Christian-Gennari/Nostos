@@ -6,7 +6,7 @@
   [maxWidth]="'600px'"
   [maxHeight]="'min(760px, calc(100vh - 2.5rem))'"
   [layer]="110"
-  [busy]="busy()"
+  [busy]="busy() || undoing()"
   [dismissOnBackdrop]="stage() === 'pick'"
   ariaLabelledBy="highlight-import-title"
   [style.--modal-head-padding]="'1.15rem 1.25rem 0.9rem'"
@@ -23,12 +23,15 @@
       class="highlight-import-close"
       title="Close"
       aria-label="Close"
-      [disabled]="busy()"
+      [disabled]="busy() || undoing()"
       (click)="close()"
     ></button>
   </header>
 
   <div class="highlight-import-body">
+    @if (undoError()) {
+      <p class="highlight-failure" role="alert">{{ undoError() }}</p>
+    }
     @switch (stage()) {
       @case ('pick') {
         <p class="highlight-import-hint">
@@ -86,7 +89,7 @@
                       {{ count(batch.noteCount, 'highlight') }} into {{ count(batch.bookCount, 'book') }}
                     </span>
                     <span class="highlight-row-sub">
-                      {{ batch.createdAtUtc | date: 'medium' }} · {{ batch.fileName || batch.source }}
+                      {{ batch.createdAtUtc | date: 'medium' }}
                     </span>
                   </span>
                   <button appButton type="button" variant="ghost" size="sm" [disabled]="undoing()" (click)="undoRecent(batch)">
@@ -269,10 +272,10 @@
           Undo import
         </button>
       }
-      <button appButton type="button" variant="secondary" (click)="importAnother()">
+      <button appButton type="button" variant="secondary" [disabled]="undoing()" (click)="importAnother()">
         Import another file
       </button>
-      <button appButton type="button" variant="primary" (click)="close()">Done</button>
+      <button appButton type="button" variant="primary" [disabled]="undoing()" (click)="close()">Done</button>
     </app-dialog-actions>
   }
 </app-modal-shell>
@@ -330,7 +333,7 @@
         <nostos-icon name="arrow-right" [size]="13"></nostos-icon>
         <span class="highlight-review-target-text">
           @if (target.kind === 'create') {
-            Added to your library as a new book
+            Will be added to your library as a new book
           } @else {
             <strong>{{ target.title }}</strong>
             @if (target.author) {
@@ -407,6 +410,8 @@
             <li class="highlight-picker-empty">
               @if (searching()) {
                 Searching…
+              } @else if (searchError()) {
+                Search could not finish. Try again.
               } @else if (searchQuery().trim()) {
                 No book in your library matches.
               } @else {

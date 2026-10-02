@@ -2,7 +2,7 @@ import { Component, computed, effect, inject, signal } from '@angular/core';
 import { DatePipe, NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Router } from '@angular/router';
-import { Subject, debounceTime, distinctUntilChanged, firstValueFrom, of, switchMap } from 'rxjs';
+import { Subject, catchError, debounceTime, distinctUntilChanged, firstValueFrom, of, switchMap } from 'rxjs';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
   HighlightImportBatch,
@@ -105,11 +105,13 @@ export class HighlightImportModal {
   readonly searchQuery = signal('');
   readonly searchResults = signal<HighlightImportCandidate[]>([]);
   readonly searching = signal(false);
+  readonly searchError = signal(false);
   private readonly searchSubject = new Subject<string>();
 
   readonly results = signal<HighlightImportResultBook[]>([]);
   readonly batchIds = signal<string[]>([]);
   readonly undoing = signal(false);
+  readonly undoError = signal<string | null>(null);
   readonly undone = signal<number | null>(null);
 
   readonly imported = computed(() => this.results().filter((book) => book.status === 'imported'));
@@ -136,7 +138,8 @@ export class HighlightImportModal {
     const imported = this.importedCount();
     const duplicates = this.duplicateCount();
     if (imported > 0) {
-      const from = `Into ${this.count(this.imported().filter((b) => b.importedCount > 0).length, 'book')}.`;
+      const books = new Set(this.imported().filter((book) => book.importedCount > 0).map((book) => book.bookId));
+      const from = `Into ${this.count(books.size, 'book')}.`;
       return duplicates > 0 ? `${from} ${duplicates} more were already in Nostos.` : from;
     }
     if (duplicates > 0) {
@@ -162,7 +165,13 @@ export class HighlightImportModal {
           const q = query.trim();
           if (!q) return of(null);
           this.searching.set(true);
-          return this.booksService.list({ search: q, page: 1, pageSize: 6 });
+          this.searchError.set(false);
+          return this.booksService.list({ search: q, page: 1, pageSize: 6 }).pipe(
+            catchError(() => {
+              this.searchError.set(true);
+              return of(null);
+            }),
+          );
         }),
         takeUntilDestroyed(),
       )
@@ -216,6 +225,7 @@ export class HighlightImportModal {
     this.results.set([]);
     this.batchIds.set([]);
     this.undone.set(null);
+    this.undoError.set(null);
     this.fileCount.set(files.length);
     this.stage.set('reading');
 
@@ -259,6 +269,7 @@ export class HighlightImportModal {
     this.pickingRowId.set(row.id);
     this.searchQuery.set('');
     this.searchResults.set([]);
+    this.searchError.set(false);
     this.searchSubject.next('');
   }
 
@@ -314,9 +325,13 @@ export class HighlightImportModal {
         );
 
       try {
-        const result = await firstValueFrom(this.service.commit(file, decisions));
+        const result = await firstValueFrom(
+          this.service.commit(file, decisions, this.batchIds()[0] ?? null),
+        );
         this.results.update((all) => [...all, ...result.books]);
-        if (result.batchId) this.batchIds.update((ids) => [...ids, result.batchId!]);
+        if (result.batchId && !this.batchIds().includes(result.batchId)) {
+          this.batchIds.update((ids) => [...ids, result.batchId!]);
+        }
       } catch (error) {
         this.fail(file, this.failureMessage(error));
       }
@@ -331,26 +346,35 @@ export class HighlightImportModal {
   async undoImport(): Promise<void> {
     if (this.undoing() || this.batchIds().length === 0) return;
     this.undoing.set(true);
+    this.undoError.set(null);
     let removed = 0;
+    const pending: string[] = [];
     for (const id of this.batchIds()) {
       try {
         removed += (await firstValueFrom(this.service.undo(id))).removed;
-      } catch {
-        // Already gone, or unreachable: the count below says what was undone.
+      } catch (error) {
+        if (!(error instanceof HttpErrorResponse && error.status === 404)) pending.push(id);
       }
     }
-    this.batchIds.set([]);
-    this.undone.set(removed);
+    this.batchIds.set(pending);
+    if (pending.length === 0) {
+      this.undone.set(removed);
+    } else {
+      this.undoError.set('The import could not be undone. Try again.');
+    }
     this.undoing.set(false);
   }
 
   async undoRecent(batch: HighlightImportBatch): Promise<void> {
     if (this.undoing()) return;
     this.undoing.set(true);
+    this.undoError.set(null);
     try {
       await firstValueFrom(this.service.undo(batch.id));
-    } catch {
-      // Reloading the list below shows the truth either way.
+    } catch (error) {
+      if (!(error instanceof HttpErrorResponse && error.status === 404)) {
+        this.undoError.set('The import could not be undone. Try again.');
+      }
     }
     this.undoing.set(false);
     this.loadRecent();
@@ -367,12 +391,13 @@ export class HighlightImportModal {
   }
 
   close(): void {
-    if (this.busy()) return;
+    if (this.busy() || this.undoing()) return;
     this.service.close();
     this.stage.set('pick');
     this.rows.set([]);
     this.results.set([]);
     this.failures.set([]);
+    this.undoError.set(null);
     this.closePicker();
   }
 

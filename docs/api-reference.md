@@ -256,6 +256,42 @@ Delete a note and its concept links.
 
 **Response:** `204 No Content`
 
+### E-reader highlight import — `/api/notes/imports`
+
+Settings → Library & data → E-reader highlights opens the review dialog. Select
+one Kobo `KoboReader.sqlite` or several KOReader `metadata.*.lua` sidecars. The
+server detects the format from the contents. Kobo files are read-only, with a
+256 MB upload limit; KOReader sidecars have a 2 MB limit.
+
+| Method | Path | Behavior |
+| --- | --- | --- |
+| `POST` | `/api/notes/imports/preview` | Read multipart field `file`; return `{ source, books }` without writing. |
+| `POST` | `/api/notes/imports/commit` | Read the same `file` and a JSON `decisions` form field; import only decided books. |
+| `GET` | `/api/notes/imports/batches` | Return the five most recent imports that still have notes, with note/book counts. |
+| `DELETE` | `/api/notes/imports/batches/{id}` | Undo a batch; return `{ removed }`, or `404` if it no longer exists. |
+
+Preview books include `sourceKey`, title/author, annotation/new counts, and
+candidates. `match` is `exact` for one ISBN or title-and-author identity,
+`remembered` for a previously confirmed destination, `suggested` for a match
+that needs confirmation (including multiple editions), or `none`.
+
+The commit's `decisions` is an array. Use `{ "sourceKey": "…", "bookId": "guid" }`
+to select a library book, or `{ "sourceKey": "…", "create": true }` to add a
+physical book from the device metadata. Omitted books are left out. Books and
+notes are added only on commit. Confirmed destinations are remembered.
+
+Commit returns `{ batchId, source, books }`. Each result book reports its
+`status` (`imported` or `skipped`), destination, imported/duplicate counts,
+whether it was created, and any message. An optional `batchId` form field joins
+later selected files to the first file's batch so one Undo covers the selection.
+An import that adds nothing creates no new batch.
+
+Re-import does not duplicate notes. Undo removes the batch's notes and their
+import receipts, allowing them to be imported again; newly added books and
+remembered destinations stay in the library. Kobo dog-ears, stylus markup and
+deleted rows are ignored. The original `POST /api/notes/import/koreader` endpoint
+remains available for direct single-sidecar imports.
+
 ---
 
 ## Collections — `/api/collections`
