@@ -7,8 +7,11 @@ import { BooksService } from '../../core/services/books.service';
 import { ThemeService } from '../../core/services/theme.service';
 import {
   DEFAULT_TYPOGRAPHY,
+  EPUB_FONT_OPTIONS,
   EpubReader,
   findTocItemForHref,
+  fontFamilyFromStored,
+  libronFontFaceCss,
   marginInsetPercent,
   progressLabel,
   resolveGroundedEpubResourceHref,
@@ -595,12 +598,12 @@ describe('EpubReader theme-following normalization', () => {
       component.setTypography({ fontFamily: 'sans' });
       expect(applied).toHaveBeenCalledTimes(1); // leading edge
       component.setTypography({ fontFamily: 'mono' });
-      component.setTypography({ fontFamily: 'serif' });
+      component.setTypography({ fontFamily: 'publisher' });
       expect(applied).toHaveBeenCalledTimes(1); // deferred, not once per click
 
       vi.advanceTimersByTime(300);
       expect(applied).toHaveBeenCalledTimes(2); // one apply, at the end
-      expect(component.typography().fontFamily).toBe('serif');
+      expect(component.typography().fontFamily).toBe('publisher');
     } finally {
       vi.useRealTimers();
     }
@@ -717,8 +720,8 @@ describe('EpubReader theme-following normalization', () => {
 });
 
 describe('typographyCss', () => {
-  it('keeps the publisher typeface on default but applies spacing', () => {
-    const css = typographyCss({ fontFamily: 'default', lineHeight: 1.6, margin: 'normal' });
+  it('keeps the publisher typeface on Publisher but applies spacing', () => {
+    const css = typographyCss({ fontFamily: 'publisher', lineHeight: 1.6, margin: 'normal' });
     expect(css).not.toContain('font-family');
     expect(css).toContain('line-height:1.6 !important');
     // Margins are NOT a stylesheet rule either: they are padding on our own
@@ -728,10 +731,71 @@ describe('typographyCss', () => {
   });
 
   it('overrides the typeface per choice', () => {
-    const css = typographyCss({ fontFamily: 'serif', lineHeight: 2.0, margin: 'wide' });
-    expect(css).toContain('font-family:Georgia, "Times New Roman", Times, serif !important');
+    const css = typographyCss({ fontFamily: 'sans', lineHeight: 2.0, margin: 'wide' });
+    expect(css).toContain(
+      'font-family:system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important',
+    );
     expect(css).toContain('line-height:2 !important');
     expect(css).not.toContain('padding');
+    expect(typographyCss({ fontFamily: 'mono', lineHeight: 1.6, margin: 'normal' })).toContain(
+      'font-family:ui-monospace, SFMono-Regular, monospace !important',
+    );
+  });
+
+  it('sets Libron with a conventional serif fallback', () => {
+    const css = typographyCss({ fontFamily: 'libron', lineHeight: 1.6, margin: 'normal' });
+    expect(css).toContain(
+      'font-family:"Libron", Georgia, "Times New Roman", Times, serif !important',
+    );
+  });
+});
+
+describe('EPUB typeface model (issue #670)', () => {
+  it('defaults to Libron and keeps the other defaults', () => {
+    expect(DEFAULT_TYPOGRAPHY).toEqual({ fontFamily: 'libron', lineHeight: 1.6, margin: 'normal' });
+  });
+
+  it('offers exactly Libron, Publisher, Sans, Mono, in that order', () => {
+    expect(EPUB_FONT_OPTIONS).toEqual([
+      { value: 'libron', label: 'Libron' },
+      { value: 'publisher', label: 'Publisher' },
+      { value: 'sans', label: 'Sans' },
+      { value: 'mono', label: 'Mono' },
+    ]);
+  });
+
+  it('migrates stored values and falls back to Libron for anything unknown', () => {
+    expect(fontFamilyFromStored('default')).toBe('publisher');
+    expect(fontFamilyFromStored('serif')).toBe('libron');
+    expect(fontFamilyFromStored('sans')).toBe('sans');
+    expect(fontFamilyFromStored('mono')).toBe('mono');
+    expect(fontFamilyFromStored('libron')).toBe('libron');
+    expect(fontFamilyFromStored('publisher')).toBe('publisher');
+    for (const bad of ['comic-sans', '', 'toString', 'constructor', undefined, null, 3, {}]) {
+      expect(fontFamilyFromStored(bad)).toBe('libron');
+    }
+  });
+
+  it('declares the four bundled Libron faces against app-absolute URLs', () => {
+    const css = libronFontFaceCss('https://nostos.example/app/');
+    const faces = css.split('@font-face').filter(Boolean);
+    expect(faces).toHaveLength(4);
+    const expected = [
+      ['normal', 400, 'Libron-Regular.woff2'],
+      ['italic', 400, 'Libron-Italic.woff2'],
+      ['normal', 700, 'Libron-Bold.woff2'],
+      ['italic', 700, 'Libron-BoldItalic.woff2'],
+    ] as const;
+    expected.forEach(([style, weight, file], i) => {
+      expect(faces[i]).toContain('font-family:"Libron"');
+      expect(faces[i]).toContain(`font-style:${style};`);
+      expect(faces[i]).toContain(`font-weight:${weight};`);
+      expect(faces[i]).toContain(
+        `src:url("https://nostos.example/app/fonts/libron/${file}") format("woff2")`,
+      );
+    });
+    // Bundled with the app: no third-party font host.
+    expect(css).not.toMatch(/googleapis|gstatic|jsdelivr|unpkg/);
   });
 });
 
@@ -849,19 +913,60 @@ describe('EpubReader typography persistence', () => {
     localStorage.clear();
     localStorage.setItem(
       'nostos.epub-typography.book-9',
-      JSON.stringify({ fontFamily: 'serif', lineHeight: 2, margin: 'wide' }),
+      JSON.stringify({ fontFamily: 'mono', lineHeight: 2, margin: 'wide' }),
     );
 
     component.loadBook('book-9');
 
     // The book's own choice is honoured…
-    expect(component.typography()).toEqual({ fontFamily: 'serif', lineHeight: 2, margin: 'wide' });
+    expect(component.typography()).toEqual({ fontFamily: 'mono', lineHeight: 2, margin: 'wide' });
     // …and becomes the reader-wide preference for every other book.
     expect(JSON.parse(localStorage.getItem('nostos.epub-typography')!)).toEqual({
-      fontFamily: 'serif',
+      fontFamily: 'mono',
       lineHeight: 2,
       margin: 'wide',
     });
+  });
+
+  it('opens in Libron when no preference has been saved', () => {
+    expect(localStorage.getItem('nostos.epub-typography')).toBeNull();
+    expect(fixture.componentInstance.typography()).toEqual({
+      fontFamily: 'libron',
+      lineHeight: 1.6,
+      margin: 'normal',
+    });
+  });
+
+  it.each([
+    ['default', 'publisher'],
+    ['serif', 'libron'],
+    ['sans', 'sans'],
+    ['mono', 'mono'],
+  ])('reads a saved "%s" typeface as %s and keeps the rest of the preference', (saved, now) => {
+    const component = fixture.componentInstance;
+    localStorage.setItem(
+      'nostos.epub-typography',
+      JSON.stringify({ fontFamily: saved, lineHeight: 1.8, margin: 'wide' }),
+    );
+
+    component.loadBook('book-9');
+
+    expect(component.typography()).toEqual({ fontFamily: now, lineHeight: 1.8, margin: 'wide' });
+  });
+
+  it('migrates a per-book value written under the old names too', () => {
+    const component = fixture.componentInstance;
+    localStorage.setItem(
+      'nostos.epub-typography.book-9',
+      JSON.stringify({ fontFamily: 'default', lineHeight: 2, margin: 'wide' }),
+    );
+
+    component.loadBook('book-9');
+
+    expect(component.typography().fontFamily).toBe('publisher');
+    expect(JSON.parse(localStorage.getItem('nostos.epub-typography')!).fontFamily).toBe(
+      'publisher',
+    );
   });
 
   it('ignores an invalid stored preference rather than trusting it', () => {
@@ -875,35 +980,91 @@ describe('EpubReader typography persistence', () => {
     component.loadBook('book-9');
 
     expect(component.typography()).toEqual({
-      fontFamily: 'default',
+      fontFamily: 'libron',
       lineHeight: DEFAULT_TYPOGRAPHY.lineHeight,
       margin: 'normal',
     });
   });
 
-  it('reset restores publisher defaults', () => {
+  it('reset restores the Nostos defaults, Libron included', () => {
     const component = fixture.componentInstance;
     component.setTypography({ fontFamily: 'mono', margin: 'wide' });
     component.zoomIn();
     component.resetTypography();
     expect(component.typography()).toEqual({
-      fontFamily: 'default',
+      fontFamily: 'libron',
       lineHeight: 1.6,
       margin: 'normal',
     });
+    expect(JSON.parse(localStorage.getItem('nostos.epub-typography')!).fontFamily).toBe('libron');
     expect(component.fontSizePercent()).toBe(100);
     expect(localStorage.getItem('nostos.epub-font-size')).toBe('100');
   });
 
   it('writes the rules into newly rendered sections', () => {
     const component = fixture.componentInstance;
-    component.setTypography({ fontFamily: 'serif', lineHeight: 2.0, margin: 'narrow' });
+    component.setTypography({ fontFamily: 'libron', lineHeight: 2.0, margin: 'narrow' });
 
     const doc = makeDocument();
     (component as unknown as { upsertTypographyStyle: (d: Document) => void }).upsertTypographyStyle(doc);
     const style = doc.getElementById('nostos-typography');
-    expect(style?.textContent).toContain('font-family:Georgia, "Times New Roman", Times, serif !important');
+    expect(style?.textContent).toContain(
+      'font-family:"Libron", Georgia, "Times New Roman", Times, serif !important',
+    );
     expect(style?.textContent).not.toContain('padding');
+  });
+
+  it('gives every section the Libron faces, once, ahead of the typography rules', () => {
+    const component = fixture.componentInstance;
+    const upsert = (d: Document) =>
+      (component as unknown as { upsertTypographyStyle: (d: Document) => void }).upsertTypographyStyle(d);
+
+    // Two sections, as epub.js renders them: each is its own document.
+    const [first, second] = [makeDocument(), makeDocument()];
+    for (const doc of [first, second]) {
+      upsert(doc);
+      const fonts = doc.getElementById('nostos-reader-fonts');
+      expect(fonts?.textContent).toBe(libronFontFaceCss(document.baseURI));
+      expect(fonts?.textContent?.match(/@font-face/g)).toHaveLength(4);
+      // The faces are declared before the rule that asks for them.
+      expect(fonts?.nextElementSibling?.id).toBe('nostos-typography');
+    }
+
+    // The faces stay available whatever is selected, and a repaint of an open
+    // section does not stack a second copy.
+    component.setTypography({ fontFamily: 'publisher' });
+    upsert(first);
+    expect(first.querySelectorAll('#nostos-reader-fonts')).toHaveLength(1);
+    expect(first.getElementById('nostos-typography')?.textContent).not.toContain('font-family');
+  });
+
+  it('repaints open sections in place on a typeface change, without re-displaying', () => {
+    const component = fixture.componentInstance;
+    const rendition = (component as unknown as {
+      rendition: { display: ReturnType<typeof vi.fn>; getContents: () => unknown };
+    }).rendition;
+    const doc = makeDocument();
+    rendition.getContents = () => [{ document: doc }];
+    const displaysBefore = rendition.display.mock.calls.length;
+    const progressBefore = booksService.updateProgress.mock.calls.length;
+
+    vi.useFakeTimers();
+    try {
+      for (const fontFamily of ['publisher', 'sans', 'mono', 'libron'] as const) {
+        component.setTypography({ fontFamily });
+        vi.runAllTimers();
+        expect(doc.getElementById('nostos-typography')?.textContent).toBe(
+          typographyCss({ ...DEFAULT_TYPOGRAPHY, fontFamily }),
+        );
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+
+    // The reading position is epub.js's to keep across the re-layout: the
+    // reader neither navigates nor writes a new position for a typeface change.
+    expect(rendition.display.mock.calls.length).toBe(displaysBefore);
+    expect(booksService.updateProgress.mock.calls.length).toBe(progressBefore);
   });
 
   it('resizes the rendition into the padded page box when the margin changes', () => {
