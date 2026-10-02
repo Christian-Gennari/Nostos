@@ -65,8 +65,9 @@ public sealed class KoboNoteImportEndpointTests : IDisposable
             && note.SelectedText == "A synthetic Kobo highlight."
             && note.Content == "My annotation."
             && note.SourceAnchorValue == "bm-1");
-        // Hidden (deleted on device) and text-less dog-ear rows are not imported.
-        notes.Should().NotContain(note => note.SourceAnchorValue == "bm-hidden" || note.SourceAnchorValue == "bm-dogear");
+        // Hidden (deleted on device), dog-ear and stylus-markup rows are not imported.
+        notes.Select(note => note.SourceAnchorValue).Should().NotContain(
+            ["bm-hidden", "bm-hidden-int", "bm-dogear", "bm-markup", "bm-markup-old"]);
     }
 
     [Fact]
@@ -117,28 +118,43 @@ public sealed class KoboNoteImportEndpointTests : IDisposable
         var path = Path.Combine(_directory, $"KoboReader-{Guid.NewGuid():N}.sqlite");
         Execute(path,
             """
+            -- Column layout of Kobo firmware 4.38.23828 (the Bookmark table in
+            -- full; content reduced to the columns a book row needs).
             CREATE TABLE content (
-                ContentID TEXT NOT NULL, ContentType TEXT NOT NULL,
-                Title TEXT, Attribution TEXT, ISBN TEXT);
+                ContentID TEXT NOT NULL, ContentType TEXT NOT NULL, MimeType TEXT NOT NULL,
+                BookID TEXT, BookTitle TEXT, Title TEXT COLLATE NOCASE,
+                Attribution TEXT COLLATE NOCASE, ___UserID TEXT NOT NULL, ISBN TEXT,
+                PRIMARY KEY (ContentID));
             CREATE TABLE Bookmark (
-                BookmarkID TEXT NOT NULL PRIMARY KEY, VolumeID TEXT NOT NULL, ContentID TEXT NOT NULL,
+                BookmarkID TEXT NOT NULL, VolumeID TEXT NOT NULL, ContentID TEXT NOT NULL,
+                StartContainerPath TEXT NOT NULL, StartContainerChildIndex INTEGER NOT NULL,
+                StartOffset INTEGER NOT NULL, EndContainerPath TEXT NOT NULL,
+                EndContainerChildIndex INTEGER NOT NULL, EndOffset INTEGER NOT NULL,
                 Text TEXT, Annotation TEXT, ExtraAnnotationData BLOB, DateCreated TEXT,
-                ChapterProgress REAL, Hidden BOOL, Type TEXT);
+                ChapterProgress REAL NOT NULL DEFAULT 0, Hidden BOOL NOT NULL DEFAULT 0,
+                Version TEXT, DateModified TEXT, Creator TEXT, UUID TEXT, UserID TEXT,
+                SyncTime TEXT, Published BIT DEFAULT false, ContextString TEXT, Type TEXT,
+                PRIMARY KEY (BookmarkID));
 
             INSERT INTO content VALUES
-                ('vol-1', '6', 'Synthetic Kobo Book', 'Ada Reader', '3f6c1c1e-not-an-isbn'),
-                ('vol-1!ch1', '9', 'Chapter One', NULL, NULL),
-                ('vol-2', '6', 'Second Synthetic Book', 'Ada Lovelace', NULL),
-                ('vol-3', '6', 'Not In The Library', 'Nobody', NULL);
+                ('vol-1', '6', 'application/x-kobo-epub+zip', NULL, NULL, 'Synthetic Kobo Book', 'Ada Reader', 'user', '3f6c1c1e-not-an-isbn'),
+                ('vol-1!ch1', '9', 'application/x-kobo-epub+zip', NULL, NULL, 'Chapter One', NULL, 'user', NULL),
+                ('vol-2', '6', 'application/x-kobo-epub+zip', NULL, NULL, 'Second Synthetic Book', 'Ada Lovelace', 'user', NULL),
+                ('vol-3', '6', 'application/x-kobo-epub+zip', NULL, NULL, 'Not In The Library', 'Nobody', 'user', NULL);
 
-            INSERT INTO Bookmark VALUES
-                ('bm-1', 'vol-1', 'vol-1!ch1', 'A synthetic Kobo highlight.', 'My annotation.', NULL, '2026-09-28T12:00:00.000', 0.1, 'false', 'note'),
-                ('bm-2', 'vol-1', 'vol-1!ch1', '  A second Kobo highlight.  ', NULL, NULL, '2026-09-28T12:05:00.000', 0.2, 'false', 'highlight'),
-                ('bm-hidden', 'vol-1', 'vol-1!ch1', 'Deleted on the device.', NULL, NULL, '2026-09-28T12:06:00.000', 0.3, 'true', 'highlight'),
-                ('bm-dogear', 'vol-1', 'vol-1!ch1', NULL, NULL, NULL, '2026-09-28T12:07:00.000', 0.4, 'false', 'dogear'),
-                ('bm-3', 'vol-2', 'vol-2', 'Matched by title alone.', NULL, NULL, '2026-09-28T12:08:00.000', 0.5, 'false', 'highlight'),
-                ('bm-4', 'vol-3', 'vol-3', 'Unmatched one.', NULL, NULL, '2026-09-28T12:09:00.000', 0.5, 'false', 'highlight'),
-                ('bm-5', 'vol-3', 'vol-3', 'Unmatched two.', NULL, NULL, '2026-09-28T12:10:00.000', 0.6, 'false', 'highlight');
+            INSERT INTO Bookmark (BookmarkID, VolumeID, ContentID, StartContainerPath,
+                StartContainerChildIndex, StartOffset, EndContainerPath, EndContainerChildIndex,
+                EndOffset, Text, Annotation, DateCreated, ChapterProgress, Hidden, Type) VALUES
+                ('bm-1', 'vol-1', 'vol-1!ch1', 'span#kobo\.1\.1', -99, 3, 'span#kobo\.1\.3', -99, 40, 'A synthetic Kobo highlight.', 'My annotation.', '2026-09-28T12:00:00.000', 0.1, 'false', 'note'),
+                ('bm-2', 'vol-1', 'vol-1!ch1', 'span#kobo\.1\.1', -99, 3, 'span#kobo\.1\.3', -99, 40, '  A second Kobo highlight.  ', '', '2026-09-28T12:00:00.000', 0.1, 'false', 'highlight'),
+                ('bm-hidden', 'vol-1', 'vol-1!ch1', 'span#kobo\.1\.1', -99, 3, 'span#kobo\.1\.3', -99, 40, 'Deleted on the device.', '', '2026-09-28T12:00:00.000', 0.1, 'true', 'highlight'),
+                ('bm-hidden-int', 'vol-1', 'vol-1!ch1', 'span#kobo\.1\.1', -99, 3, 'span#kobo\.1\.3', -99, 40, 'Deleted on the device.', '', '2026-09-28T12:00:00.000', 0.1, 1, 'highlight'),
+                ('bm-dogear', 'vol-1', 'vol-1!ch1', 'span#kobo\.1\.1', -99, 0, 'span#kobo\.1\.1', -99, 0, 'Page text under the dog-ear.', NULL, '2026-09-28T12:00:00.000', 0.1, 'false', 'dogear'),
+                ('bm-markup', 'vol-1', 'vol-1!ch1', 'span#kobo\.1\.1', -99, 3, 'span#kobo\.1\.3', -99, 40, NULL, NULL, '2026-09-28T12:00:00.000', 0.1, 'false', 'markup'),
+                ('bm-markup-old', 'vol-1', 'vol-1!ch1', 'span#kobo\.1\.1', -99, 3, 'span#kobo\.1\.3', -99, 40, '###MARKUP###', NULL, '2026-09-28T12:00:00.000', 0.1, 0, NULL),
+                ('bm-3', 'vol-2', 'vol-2', 'span#kobo\.1\.1', -99, 3, 'span#kobo\.1\.3', -99, 40, 'Matched by title alone.', NULL, '2026-09-28T12:00:00.000', 0.1, 0, 'highlight'),
+                ('bm-4', 'vol-3', 'vol-3', 'span#kobo\.1\.1', -99, 3, 'span#kobo\.1\.3', -99, 40, 'Unmatched one.', NULL, '2026-09-28T12:00:00.000', 0.1, 0, 'highlight'),
+                ('bm-5', 'vol-3', 'vol-3', 'span#kobo\.1\.1', -99, 3, 'span#kobo\.1\.3', -99, 40, 'Unmatched two.', NULL, '2026-09-28T12:00:00.000', 0.1, 0, 'highlight');
             """);
         return path;
     }

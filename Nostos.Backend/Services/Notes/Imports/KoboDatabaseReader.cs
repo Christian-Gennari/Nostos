@@ -11,6 +11,7 @@ namespace Nostos.Backend.Services.Notes.Imports;
 internal static class KoboDatabaseReader
 {
     private static readonly byte[] SqliteMagic = "SQLite format 3\0"u8.ToArray();
+    private const string MarkupSentinel = "###MARKUP###";
 
     public static IReadOnlyList<KoboVolume> Read(string path)
     {
@@ -43,7 +44,8 @@ internal static class KoboDatabaseReader
                 SELECT BookmarkID, VolumeID,
                        {Optional(bookmarkColumns, "Text")},
                        {Optional(bookmarkColumns, "Annotation")},
-                       {Optional(bookmarkColumns, "Hidden")}
+                       {Optional(bookmarkColumns, "Hidden")},
+                       {Optional(bookmarkColumns, "Type")}
                 FROM Bookmark
                 ORDER BY VolumeID, {(bookmarkColumns.Contains("DateCreated") ? "DateCreated," : string.Empty)} BookmarkID
                 """;
@@ -62,6 +64,18 @@ internal static class KoboDatabaseReader
                     && (hidden.Equals("true", StringComparison.OrdinalIgnoreCase) || hidden == "1"))
                     continue;
 
+                // Dog-ears mark a page and stylus markup is a drawing; neither is
+                // a text annotation. Firmware before the Type column existed
+                // flagged markup with a sentinel in Text instead.
+                var type = Text(reader, 5);
+                var text = Text(reader, 2);
+                if (type is not null
+                    && (type.Equals("dogear", StringComparison.OrdinalIgnoreCase)
+                        || type.Equals("markup", StringComparison.OrdinalIgnoreCase)))
+                    continue;
+                if (text == MarkupSentinel)
+                    continue;
+
                 if (!grouped.TryGetValue(volumeId, out var bookmarks))
                 {
                     bookmarks = [];
@@ -69,7 +83,7 @@ internal static class KoboDatabaseReader
                     order.Add(volumeId);
                 }
 
-                bookmarks.Add(new KoboBookmark(bookmarkId, Text(reader, 2), Text(reader, 3)));
+                bookmarks.Add(new KoboBookmark(bookmarkId, text, Text(reader, 3)));
             }
 
             return order
