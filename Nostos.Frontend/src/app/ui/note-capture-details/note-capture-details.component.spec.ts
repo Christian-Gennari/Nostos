@@ -38,7 +38,9 @@ describe('NoteCaptureDetailsComponent', () => {
     const fixture = render();
     expect(fixture.nativeElement.textContent).toContain('Light polish · Spoken thought');
     http.expectNone(() => true);
-    fixture.componentInstance.toggleOriginal();
+    expect(fixture.nativeElement.querySelector('[role="dialog"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="note-original-text"]')).toBeNull();
+    fixture.componentInstance.openOriginal();
     http.expectOne('/api/notes/captured-note/raw').flush({
       id: note.id, rawContent: 'so i think <b>this</b> matters\nmaybe',
       content: note.content, processingMode: 'light_polish',
@@ -47,14 +49,18 @@ describe('NoteCaptureDetailsComponent', () => {
     const original = fixture.nativeElement.querySelector('[data-testid="note-original-text"]');
     expect(original.textContent).toBe('so i think <b>this</b> matters\nmaybe');
     expect(original.querySelector('b')).toBeNull();
-    fixture.componentInstance.toggleOriginal();
-    fixture.componentInstance.toggleOriginal();
+    expect(original.closest('[role="dialog"]').getAttribute('aria-label')).toBe('Original wording');
+    expect(fixture.nativeElement.querySelector('[data-testid="note-capture-details"] [data-testid="note-original-text"]')).toBeNull();
+    fixture.componentInstance.closeOriginal();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[role="dialog"]')).toBeNull();
+    fixture.componentInstance.openOriginal();
     http.expectNone(() => true);
   });
 
   it('restores through the canonical endpoint and emits the committed note', () => {
     const fixture = render();
-    fixture.componentInstance.toggleOriginal();
+    fixture.componentInstance.openOriginal();
     http.expectOne('/api/notes/captured-note/raw').flush({ id: note.id, rawContent: 'raw words' });
     const emitted = vi.fn();
     fixture.componentInstance.restored.subscribe(emitted);
@@ -72,7 +78,7 @@ describe('NoteCaptureDetailsComponent', () => {
 
   it('reports a failed restore without presenting a success and permits retry', () => {
     const fixture = render();
-    fixture.componentInstance.toggleOriginal();
+    fixture.componentInstance.openOriginal();
     http.expectOne('/api/notes/captured-note/raw').flush({ id: note.id, rawContent: 'raw words' });
     const emitted = vi.fn();
     fixture.componentInstance.restored.subscribe(emitted);
@@ -88,32 +94,58 @@ describe('NoteCaptureDetailsComponent', () => {
 
   it('permits retry after an original-text load failure', () => {
     const fixture = render();
-    fixture.componentInstance.toggleOriginal();
+    fixture.componentInstance.openOriginal();
     http.expectOne('/api/notes/captured-note/raw').flush({}, { status: 503, statusText: 'Unavailable' });
     fixture.detectChanges();
     expect(fixture.nativeElement.textContent).toContain('Could not load the original wording');
-    fixture.componentInstance.toggleOriginal();
-    fixture.componentInstance.toggleOriginal();
+    fixture.componentInstance.closeOriginal();
+    fixture.componentInstance.openOriginal();
     http.expectOne('/api/notes/captured-note/raw').flush({ id: note.id, rawContent: 'raw words' });
     expect(fixture.componentInstance.original()).toBe('raw words');
   });
 
+  it('allows closing while loading and reuses the pending request on reopening', () => {
+    const fixture = render();
+    fixture.componentInstance.openOriginal();
+    const pending = http.expectOne('/api/notes/captured-note/raw');
+    fixture.componentInstance.closeOriginal();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[role="dialog"]')).toBeNull();
+    fixture.componentInstance.openOriginal();
+    http.expectNone(() => true);
+    pending.flush({ id: note.id, rawContent: 'raw words' });
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-testid="note-original-text"]').textContent).toBe('raw words');
+  });
+
+  it('locks modal dismissal while a restore is in flight', () => {
+    const fixture = render();
+    fixture.componentInstance.openOriginal();
+    http.expectOne('/api/notes/captured-note/raw').flush({ id: note.id, rawContent: 'raw words' });
+    fixture.componentInstance.restoreOriginal();
+    fixture.componentInstance.closeOriginal();
+    expect(fixture.componentInstance.originalOpen()).toBe(true);
+    http.expectOne('/api/notes/captured-note/raw/restore').flush({ ...note, content: 'raw words' });
+    fixture.componentInstance.closeOriginal();
+    expect(fixture.componentInstance.originalOpen()).toBe(false);
+  });
+
   it('discards a delayed original response after selecting a different note', () => {
     const fixture = render();
-    fixture.componentInstance.toggleOriginal();
+    fixture.componentInstance.openOriginal();
     const pending = http.expectOne('/api/notes/captured-note/raw');
     fixture.componentRef.setInput('note', { ...note, id: 'another-note' });
     fixture.detectChanges();
     pending.flush({ id: note.id, rawContent: 'wrong note words' });
     expect(fixture.componentInstance.original()).toBeNull();
-    expect(fixture.componentInstance.expanded()).toBe(false);
-    fixture.componentInstance.toggleOriginal();
+    expect(fixture.componentInstance.originalOpen()).toBe(false);
+    fixture.componentInstance.openOriginal();
     http.expectOne('/api/notes/another-note/raw').flush({ id: 'another-note', rawContent: 'correct words' });
   });
 
   it('reconciles a committed restore by id without populating a newly selected note', () => {
     const fixture = render();
-    fixture.componentInstance.toggleOriginal();
+    fixture.componentInstance.openOriginal();
     http.expectOne('/api/notes/captured-note/raw').flush({ id: note.id, rawContent: 'raw words' });
     const emitted = vi.fn();
     fixture.componentInstance.restored.subscribe(emitted);
@@ -130,18 +162,18 @@ describe('NoteCaptureDetailsComponent', () => {
 
   it('keeps the original open when canonical data for the same note refreshes', () => {
     const fixture = render();
-    fixture.componentInstance.toggleOriginal();
+    fixture.componentInstance.openOriginal();
     http.expectOne('/api/notes/captured-note/raw').flush({ id: note.id, rawContent: 'raw words' });
     fixture.componentRef.setInput('note', { ...note, content: 'raw words', processingMode: 'verbatim' });
     fixture.detectChanges();
     expect(fixture.componentInstance.original()).toBe('raw words');
-    expect(fixture.componentInstance.expanded()).toBe(true);
+    expect(fixture.componentInstance.originalOpen()).toBe(true);
   });
 
   it('keeps the original available after reload and restore, with effective mode verbatim', () => {
     const fixture = render({ ...note, processingMode: 'verbatim', content: 'raw words' });
     expect(fixture.nativeElement.textContent).toContain('Verbatim');
-    fixture.componentInstance.toggleOriginal();
+    fixture.componentInstance.openOriginal();
     http.expectOne('/api/notes/captured-note/raw').flush({ id: note.id, rawContent: 'raw words' });
     fixture.detectChanges();
     const restore = Array.from(fixture.nativeElement.querySelectorAll('button'))

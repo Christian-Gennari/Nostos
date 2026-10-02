@@ -1,8 +1,12 @@
 :host { display: block; }
 .capture-details { margin-top: 1rem; color: var(--color-text-muted); }
 .capture-summary { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
-.capture-mode, .capture-label, .capture-help { font-size: 0.85rem; }
-.capture-original { margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--border-color); }
-.capture-label { margin: 0 0 0.5rem; }
-.original-text { color: var(--color-text-main); white-space: pre-wrap; overflow-wrap: anywhere; }
-.capture-help { line-height: 1.5; }
+.capture-mode, .capture-help { font-size: 0.85rem; }
+.original-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.original-header h2 { margin: 0; font-size: 1.1rem; color: var(--color-text-main); }
+.original-body { padding: 1.25rem 1.5rem; }
+.original-text { margin: 0; color: var(--color-text-main); line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.capture-help { color: var(--color-text-muted); line-height: 1.5; }
+@media (max-width: 768px) {
+  .original-body { padding: 1rem; }
+}

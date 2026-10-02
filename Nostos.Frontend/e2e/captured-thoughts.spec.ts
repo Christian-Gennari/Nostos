@@ -90,10 +90,34 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
 
         await page.goto(`${baseUrl}/second-brain?noteId=${note.id}`);
         await expect(page.getByTestId('note-capture-details')).toContainText('Light polish');
-        await page.getByRole('button', { name: 'View original', exact: true }).click();
+        const viewOriginal = page.getByRole('button', { name: 'View original', exact: true });
+        const originalDialog = page.getByRole('dialog', { name: 'Original wording', exact: true });
+        await expect(originalDialog).toHaveCount(0);
+        await expect(page.getByTestId('note-original-text')).toHaveCount(0);
+        await capturePng(page, `captured-original-modal-${size}-${theme}-inspector`);
+        await viewOriginal.click();
         await expect(page.getByTestId('note-original-text')).toHaveText(raw);
-        await capturePng(page, `captured-thoughts-note-${size}-${theme}-after`);
+        await expect(originalDialog).toBeVisible();
+        const closeOriginal = originalDialog.getByRole('button', { name: 'Close original wording', exact: true });
+        await expect(closeOriginal).toBeFocused();
+        await page.keyboard.press('Shift+Tab');
+        await expect(originalDialog.getByRole('button', { name: 'Restore original', exact: true })).toBeFocused();
+        await page.keyboard.press('Tab');
+        await expect(closeOriginal).toBeFocused();
+        await capturePng(page, `captured-original-modal-${size}-${theme}-open`);
+        await page.keyboard.press('Escape');
+        await expect(originalDialog).toHaveCount(0);
+        await expect(viewOriginal).toBeFocused();
+        await viewOriginal.click();
+        if (size === 'desktop') {
+          await page.mouse.click(5, 5);
+        } else {
+          await closeOriginal.click();
+        }
+        await expect(originalDialog).toHaveCount(0);
+        await expect(viewOriginal).toBeFocused();
         await page.reload();
+        await expect(originalDialog).toHaveCount(0);
         await page.getByRole('button', { name: 'View original', exact: true }).click();
         await expect(page.getByTestId('note-original-text')).toHaveText(raw);
         await page.getByRole('button', { name: 'Restore original', exact: true }).click();
@@ -105,6 +129,23 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
         expect(restored.sourceAnchorValue).toBe('12');
         expect(restored.hasRawContent).toBe(true);
         expect(providerCalls).toBe(1);
+        await expect(originalDialog).toBeVisible();
+        await originalDialog.getByRole('button', { name: 'Close', exact: true }).click();
+        await expect(originalDialog).toHaveCount(0);
+        // Long transcripts scroll inside the modal while dismissal stays reachable.
+        const longOriginal = Array(100).fill(raw).join('\n\n');
+        await page.route(`**/api/notes/${note.id}/raw`, (route) => route.fulfill({
+          json: { id: note.id, rawContent: longOriginal, content: raw, processingMode: 'verbatim' },
+        }));
+        await page.reload();
+        await viewOriginal.click();
+        await expect(page.getByTestId('note-original-text')).toHaveText(longOriginal);
+        const scroll = originalDialog.locator('.modal-scroll');
+        expect(await scroll.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
+        await expect(originalDialog.getByRole('button', { name: 'Close', exact: true })).toBeInViewport();
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+        await closeOriginal.click();
+        await page.unroute(`**/api/notes/${note.id}/raw`);
 
         await page.goto(`${baseUrl}/settings`);
         await page.getByRole('tab', { name: 'Assistant', exact: true }).click();

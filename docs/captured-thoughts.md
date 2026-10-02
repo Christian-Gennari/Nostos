@@ -23,7 +23,8 @@ ignored wire-compatibility field; tool arguments cannot override the preference.
 
 Brain's Notes inspector and optional Review inspector expose the effective saved
 mode and offer **View original** and **Restore original** when an original is
-available. Original text comes from the canonical `/api/notes/{id}/raw` endpoint,
+available. Original wording stays hidden until **View original** opens a modal;
+**Restore original** is available inside that modal. Original text comes from the canonical `/api/notes/{id}/raw` endpoint,
 so this works after reload, without conversation history. Restore replaces the
 current note text, sets the mode to verbatim, retains the original, and rebuilds
 concept links without changing the quote or source anchor.

@@ -3,11 +3,15 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Note, NoteSearchHit } from '../../core/dtos/note.dtos';
 import { NotesService } from '../../core/services/notes.service';
 import { ButtonComponent } from '../button/button.component';
+import { A11yModule } from '@angular/cdk/a11y';
+import { ModalShell } from '../modal-shell/modal-shell.component';
+import { DialogActionsComponent } from '../dialog-actions/dialog-actions.component';
+import { IconButtonComponent } from '../icon-button/icon-button.component';
 
 /** Original wording is canonical note data, available without an assistant session. */
 @Component({
   selector: 'app-note-capture-details',
-  imports: [ButtonComponent],
+  imports: [ButtonComponent, A11yModule, ModalShell, DialogActionsComponent, IconButtonComponent],
   templateUrl: './note-capture-details.component.html',
   styleUrl: './note-capture-details.component.css',
 })
@@ -15,7 +19,7 @@ export class NoteCaptureDetailsComponent {
   readonly note = input.required<NoteSearchHit>();
   readonly restored = output<Note>();
   readonly original = signal<string | null>(null);
-  readonly expanded = signal(false);
+  readonly originalOpen = signal(false);
   readonly loading = signal(false);
   readonly restoring = signal(false);
   readonly error = signal<string | null>(null);
@@ -33,7 +37,7 @@ export class NoteCaptureDetailsComponent {
       this.noteId = id;
       this.generation++;
       this.original.set(null);
-      this.expanded.set(false);
+      this.originalOpen.set(false);
       this.loading.set(false);
       this.restoring.set(false);
       this.error.set(null);
@@ -49,11 +53,13 @@ export class NoteCaptureDetailsComponent {
     }
   }
 
-  toggleOriginal(): void {
-    if (this.loading() || this.restoring()) return;
-    if (this.expanded()) { this.expanded.set(false); return; }
-    this.expanded.set(true);
-    if (this.original() !== null) return;
+  closeOriginal(): void {
+    if (!this.restoring()) this.originalOpen.set(false);
+  }
+
+  openOriginal(): void {
+    this.originalOpen.set(true);
+    if (this.loading() || this.original() !== null) return;
     const generation = this.generation;
     this.loading.set(true);
     this.error.set(null);
