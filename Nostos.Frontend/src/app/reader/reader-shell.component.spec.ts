@@ -116,10 +116,12 @@ class EpubReaderStub {
   commitHighlight = vi.fn();
   discardHighlight = vi.fn();
   // Typography surface the shell panel binds (mirrors EpubReader).
-  typography = signal({ fontFamily: 'default', lineHeight: 1.6, margin: 'normal' });
+  typography = signal({ fontFamily: 'libron', lineHeight: 1.6, margin: 'normal' });
   fontOptions = [
-    { value: 'default', label: 'Publisher' },
-    { value: 'serif', label: 'Serif' },
+    { value: 'libron', label: 'Libron' },
+    { value: 'publisher', label: 'Publisher' },
+    { value: 'sans', label: 'Sans' },
+    { value: 'mono', label: 'Mono' },
   ];
   lineOptions = [1.4, 1.6];
   marginOptions = [{ value: 'normal', label: 'Normal' }];
@@ -1387,16 +1389,30 @@ describe('ReaderShell typography panel (EPUB)', () => {
     fixture.componentInstance.toggleTypo();
     render();
 
-    const serif = Array.from(
+    const typefaces = Array.from(
       fixture.nativeElement.querySelectorAll(
-        '[data-testid="typo-panel"] .typo-opt',
+        '[data-testid="typo-panel"] [aria-labelledby="typo-typeface"] .typo-opt',
       ) as NodeListOf<HTMLButtonElement>,
-    ).find((el) => el.textContent?.trim() === 'Serif');
-    expect(serif).toBeTruthy();
-    serif!.click();
+    );
+    // The reader's options are shown as given: four choices, Libron first and
+    // marked as the current one.
+    expect(typefaces.map((el) => el.textContent?.trim())).toEqual([
+      'Libron',
+      'Publisher',
+      'Sans',
+      'Mono',
+    ]);
+    expect(typefaces.map((el) => el.getAttribute('aria-pressed'))).toEqual([
+      'true',
+      'false',
+      'false',
+      'false',
+    ]);
+
+    typefaces[1].click();
 
     const stub = fixture.debugElement.query(By.directive(EpubReaderStub));
-    expect(stub.componentInstance.setTypography).toHaveBeenCalledWith({ fontFamily: 'serif' });
+    expect(stub.componentInstance.setTypography).toHaveBeenCalledWith({ fontFamily: 'publisher' });
   });
 
   /**

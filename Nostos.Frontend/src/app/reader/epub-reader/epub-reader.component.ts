@@ -104,8 +104,11 @@ export function selectNostosReaderTheme(
   themes.select(theme === 'dark' ? NOSTOS_DARK_THEME : NOSTOS_LIGHT_THEME);
 }
 
-/** Reading typefaces offered by the typography panel. */
-export type EpubFontFamily = 'default' | 'serif' | 'sans' | 'mono';
+/**
+ * Reading typefaces offered by the typography panel. `libron` is the bundled
+ * Nostos reading face; `publisher` leaves the book's authored typeface alone.
+ */
+export type EpubFontFamily = 'libron' | 'publisher' | 'sans' | 'mono';
 
 export type EpubMargin = 'narrow' | 'normal' | 'wide';
 
@@ -116,8 +119,8 @@ export interface EpubTypography {
 }
 
 export const EPUB_FONT_OPTIONS: { value: EpubFontFamily; label: string }[] = [
-  { value: 'default', label: 'Publisher' },
-  { value: 'serif', label: 'Serif' },
+  { value: 'libron', label: 'Libron' },
+  { value: 'publisher', label: 'Publisher' },
   { value: 'sans', label: 'Sans' },
   { value: 'mono', label: 'Mono' },
 ];
@@ -131,13 +134,14 @@ export const EPUB_MARGIN_OPTIONS: { value: EpubMargin; label: string }[] = [
 ];
 
 export const DEFAULT_TYPOGRAPHY: EpubTypography = {
-  fontFamily: 'default',
+  fontFamily: 'libron',
   lineHeight: 1.6,
   margin: 'normal',
 };
 
-const FONT_STACKS: Record<Exclude<EpubFontFamily, 'default'>, string> = {
-  serif: 'Georgia, "Times New Roman", Times, serif',
+const FONT_STACKS: Record<Exclude<EpubFontFamily, 'publisher'>, string> = {
+  // The serif fallback keeps a book readable if a Libron asset fails to load.
+  libron: '"Libron", Georgia, "Times New Roman", Times, serif',
   sans: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
   mono: 'ui-monospace, SFMono-Regular, monospace',
 };
@@ -165,6 +169,65 @@ export function marginInsetPercent(margin: EpubMargin): number {
 }
 
 const TYPOGRAPHY_STYLE_ID = 'nostos-typography';
+const READER_FONTS_STYLE_ID = 'nostos-reader-fonts';
+
+/**
+ * The bundled Libron faces (SIL OFL 1.1, see `public/fonts/libron/`). Only 400
+ * and 700 exist; the browser's weight matching maps every authored weight onto
+ * one of them, so bold and italic text resolve to a real face, never a
+ * synthesised one.
+ */
+const LIBRON_FACES: { file: string; style: 'normal' | 'italic'; weight: 400 | 700 }[] = [
+  { file: 'Libron-Regular.woff2', style: 'normal', weight: 400 },
+  { file: 'Libron-Italic.woff2', style: 'italic', weight: 400 },
+  { file: 'Libron-Bold.woff2', style: 'normal', weight: 700 },
+  { file: 'Libron-BoldItalic.woff2', style: 'italic', weight: 700 },
+];
+
+/**
+ * Absolute URLs of the Libron files. They must be absolute: epub.js renders
+ * each section in its own iframe document (srcdoc/blob), where a relative URL
+ * would not resolve against the app.
+ */
+function libronFaceUrls(baseUri: string): string[] {
+  return LIBRON_FACES.map((face) => new URL(`fonts/libron/${face.file}`, baseUri).href);
+}
+
+/**
+ * The `@font-face` rules that make Libron available inside one contents
+ * document. Pure for testability. Declaring a face costs nothing until text
+ * actually uses it, so the rules are injected whatever typeface is selected —
+ * switching to Libron later needs no second injection.
+ */
+export function libronFontFaceCss(baseUri: string): string {
+  const urls = libronFaceUrls(baseUri);
+  return LIBRON_FACES.map(
+    (face, i) =>
+      `@font-face{font-family:"Libron";font-style:${face.style};font-weight:${face.weight};` +
+      `font-display:block;src:url("${urls[i]}") format("woff2");}`,
+  ).join('');
+}
+
+/**
+ * Stored typeface values and what they mean now. `default` and `serif` are the
+ * names earlier versions wrote: Publisher keeps being Publisher, and the old
+ * generic Serif becomes Libron, the Nostos serif. Anything else is not a
+ * preference we can honour and falls back to the default.
+ */
+const STORED_FONT_FAMILIES: Record<string, EpubFontFamily> = {
+  libron: 'libron',
+  publisher: 'publisher',
+  sans: 'sans',
+  mono: 'mono',
+  default: 'publisher',
+  serif: 'libron',
+};
+
+export function fontFamilyFromStored(value: unknown): EpubFontFamily {
+  return typeof value === 'string' && Object.hasOwn(STORED_FONT_FAMILIES, value)
+    ? STORED_FONT_FAMILIES[value]
+    : DEFAULT_TYPOGRAPHY.fontFamily;
+}
 
 /**
  * Quiet window for coalescing a burst of typography changes into ONE
@@ -200,7 +263,7 @@ const FONT_SIZE_STORAGE_KEY = 'nostos.epub-font-size';
 
 /**
  * The injected typography rules for one contents document. Pure for
- * testability. `default` keeps the publisher's typeface (no font-family
+ * testability. `publisher` keeps the book's own typeface (no font-family
  * override); line height always applies.
  *
  * Margins are deliberately NOT here — see {@link marginInsetPercent}: they are
@@ -209,7 +272,7 @@ const FONT_SIZE_STORAGE_KEY = 'nostos.epub-font-size';
  */
 export function typographyCss(t: EpubTypography): string {
   const family =
-    t.fontFamily === 'default' ? '' : `font-family:${FONT_STACKS[t.fontFamily]} !important;`;
+    t.fontFamily === 'publisher' ? '' : `font-family:${FONT_STACKS[t.fontFamily]} !important;`;
   return `body{${family}line-height:${t.lineHeight} !important;}`;
 }
 /**
@@ -1123,6 +1186,8 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
   /** Pending trailing applies; see requestFontSizeApply / requestTypographyApply. */
   private fontApplyTimer: ReturnType<typeof setTimeout> | null = null;
   private typographyApplyTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Libron is fetched once per reader instance; see preloadLibron. */
+  private libronPreloaded = false;
 
   private applyFontSize() {
     const size = this.currentFontSize();
@@ -1239,6 +1304,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     this.registerReaderThemes();
     this.applyFontSize();
     this.restoreSavedTypography();
+    if (this.typography().fontFamily === 'libron') this.preloadLibron();
 
     // 3. Register Hooks
     rendition.hooks.content.register((contents: Contents) => {
@@ -1448,8 +1514,9 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
   }
 
   private injectCustomStyles(contents: any) {
-    // EPUB content documents must not need a network request just to honour a
-    // reader setting. Serif/Sans use dependable local/system stacks.
+    // EPUB content documents must not need an external request just to honour
+    // a reader setting. Libron is bundled with the app; Sans/Mono use
+    // dependable local/system stacks.
     this.upsertTypographyStyle(contents.document);
   }
 
@@ -1457,6 +1524,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
   setTypography(patch: Partial<EpubTypography>): void {
     const next = { ...this.typography(), ...patch };
     this.typography.set(next);
+    if (next.fontFamily === 'libron') this.preloadLibron();
     try {
       // One preference for the whole reader, not per book — you should not have
       // to pick your typeface again for every new EPUB you open.
@@ -1524,12 +1592,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
       if (!raw) return null;
       const parsed = JSON.parse(raw) as Partial<EpubTypography>;
       return {
-        fontFamily:
-          parsed.fontFamily === 'serif' ||
-          parsed.fontFamily === 'sans' ||
-          parsed.fontFamily === 'mono'
-            ? parsed.fontFamily
-            : 'default',
+        fontFamily: fontFamilyFromStored(parsed.fontFamily),
         lineHeight:
           typeof parsed.lineHeight === 'number' && EPUB_LINE_OPTIONS.includes(parsed.lineHeight)
             ? parsed.lineHeight
@@ -1603,8 +1666,38 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     }
   }
 
+  /**
+   * Fetch the Libron files from the app document so they are already in the
+   * HTTP cache when the first section paints — the section then renders in
+   * Libron at once instead of re-laying-out when the font arrives. The faces
+   * are loaded, never added to `document.fonts`: Libron is the book's
+   * typeface, not an app UI font.
+   */
+  private preloadLibron(): void {
+    if (this.libronPreloaded || typeof FontFace === 'undefined') return;
+    this.libronPreloaded = true;
+    const urls = libronFaceUrls(document.baseURI);
+    LIBRON_FACES.forEach((face, i) => {
+      new FontFace('Libron', `url("${urls[i]}") format("woff2")`, {
+        style: face.style,
+        weight: String(face.weight),
+      })
+        .load()
+        .catch(() => {
+          // A missing asset must not break reading — the serif fallback in
+          // the font stack takes over.
+        });
+    });
+  }
+
   private upsertTypographyStyle(doc: Document): void {
     try {
+      if (!doc.getElementById(READER_FONTS_STYLE_ID)) {
+        const fonts = doc.createElement('style');
+        fonts.id = READER_FONTS_STYLE_ID;
+        fonts.textContent = libronFontFaceCss(document.baseURI);
+        doc.head.appendChild(fonts);
+      }
       let style = doc.getElementById(TYPOGRAPHY_STYLE_ID);
       if (!style) {
         style = doc.createElement('style');
