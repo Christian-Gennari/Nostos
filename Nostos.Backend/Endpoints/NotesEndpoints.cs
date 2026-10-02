@@ -113,6 +113,49 @@ public static class NotesEndpoints
             }
         );
 
+        // IMPORT Kobo highlights. KoboReader.sqlite covers every book on the
+        // device, so the report is per book. The upload is spooled to a private
+        // temp directory (SQLite needs a file, and may create -wal/-shm beside
+        // it) that is removed whatever the outcome.
+        group.MapPost(
+            "/notes/import/kobo",
+            async (HttpRequest request, KoboNoteImportService importer, CancellationToken ct) =>
+            {
+                const long maxDatabaseBytes = 256L * 1024 * 1024;
+                if (!request.HasFormContentType)
+                    return Results.BadRequest(new { error = "Expected multipart/form-data with a KoboReader.sqlite file." });
+
+                var form = await request.ReadFormAsync(ct);
+                var file = form.Files.GetFile("file") ?? form.Files.FirstOrDefault();
+                if (file is null)
+                    return Results.BadRequest(new { error = "A KoboReader.sqlite file is required." });
+                if (file.Length <= 0 || file.Length > maxDatabaseBytes)
+                    return Results.BadRequest(new { error = "KoboReader.sqlite must be between 1 byte and 256 MB." });
+
+                var directory = Directory.CreateTempSubdirectory("nostos-kobo-import-");
+                try
+                {
+                    var path = Path.Combine(directory.FullName, "KoboReader.sqlite");
+                    await using (var target = File.Create(path))
+                    await using (var source = file.OpenReadStream())
+                    {
+                        await source.CopyToAsync(target, ct);
+                    }
+
+                    return Results.Ok(await importer.ImportAsync(path, ct));
+                }
+                catch (FormatException ex)
+                {
+                    return Results.BadRequest(new { error = ex.Message });
+                }
+                finally
+                {
+                    try { directory.Delete(recursive: true); }
+                    catch (IOException) { }
+                }
+            }
+        );
+
         // UPDATE note
         group.MapPut(
             "/notes/{id}",
