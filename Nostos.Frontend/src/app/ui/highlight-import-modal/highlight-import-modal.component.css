@@ -301,12 +301,18 @@ summary.highlight-section-header:focus-visible {
   flex-direction: column;
   align-items: stretch;
   gap: 0;
+  /* A hairline, not `--danger-surface`: in the dark theme that token is a
+     saturated fill sized for a small mark, too loud for a full-width row. */
   border-color: var(--danger-hairline);
-  background: var(--danger-surface);
 }
 
 .highlight-failure .highlight-row-sub {
-  color: var(--danger-ink);
+  color: var(--color-danger);
+}
+
+/* A reason must be readable in full; only titles truncate. */
+.highlight-failure .highlight-row-sub,
+.highlight-unplaced .highlight-row-sub {
   white-space: normal;
 }
 

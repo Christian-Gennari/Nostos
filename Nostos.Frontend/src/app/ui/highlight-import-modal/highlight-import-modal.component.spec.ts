@@ -98,6 +98,7 @@ describe('HighlightImportModal', () => {
     await component.importFiles([file('KoboReader.sqlite')]);
 
     expect(component.headline()).toBe('Already up to date');
+    expect(component.summary()).toBe('All 2 highlights found are already in Nostos.');
   });
 
   it('keeps going past a file that fails and shows the server reason', async () => {

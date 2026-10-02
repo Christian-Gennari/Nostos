@@ -75,7 +75,9 @@ export class HighlightImportModal {
       return duplicates > 0 ? `${from} ${duplicates} more were already in Nostos.` : from;
     }
     if (duplicates > 0) {
-      return `All ${this.count(duplicates, 'highlight')} in ${duplicates === 1 ? 'this file is' : 'these files are'} already in Nostos.`;
+      return duplicates === 1
+        ? 'The 1 highlight found is already in Nostos.'
+        : `All ${duplicates} highlights found are already in Nostos.`;
     }
     if (this.books().length > 0) return 'None of these books are in your library yet.';
     return this.failures().length > 0 ? '' : 'The file holds no highlights or notes.';
