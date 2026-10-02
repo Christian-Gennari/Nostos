@@ -154,10 +154,9 @@ public sealed class KoboNoteImportService
     }
 
     /// <summary>
-    /// ISBN first, then title + author, then title alone. Kobo's ISBN column
-    /// often holds a store id rather than an ISBN and its author formatting
-    /// rarely agrees with the library's, so each step falls through to the next
-    /// only when it finds nothing.
+    /// ISBN, else title and author together. A title on its own is a
+    /// resemblance, not an identity, so it never attaches notes: two different
+    /// books share titles far too often.
     /// </summary>
     private static List<LibraryBook> Match(KoboVolume volume, IReadOnlyList<LibraryBook> library)
     {
@@ -170,19 +169,13 @@ public sealed class KoboNoteImportService
         }
 
         var title = BookIdentityNormalizer.NormalizeTitle(volume.Title);
-        if (title.Length == 0)
+        var author = BookIdentityNormalizer.NormalizeAuthor(volume.Author);
+        if (title.Length == 0 || author.Length == 0)
             return [];
 
-        var byTitle = library.Where(book => book.NormalizedTitle == title).ToList();
-        var author = BookIdentityNormalizer.NormalizeAuthor(volume.Author);
-        if (author.Length > 0)
-        {
-            var byAuthor = byTitle.Where(book => book.NormalizedAuthor == author).ToList();
-            if (byAuthor.Count > 0)
-                return byAuthor;
-        }
-
-        return byTitle;
+        return library
+            .Where(book => book.NormalizedTitle == title && book.NormalizedAuthor == author)
+            .ToList();
     }
 
     private static string Fingerprint(Guid bookId, string bookmarkId) =>

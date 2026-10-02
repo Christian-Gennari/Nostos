@@ -24,8 +24,8 @@ public sealed class KoboNoteImportEndpointTests : IDisposable
         using var factory = new LibraryEndpointFactory();
         var client = factory.CreateClient();
         var owned = await CreateBookAsync(client, "Synthetic Kobo Book", "Ada Reader");
-        // Author formatting on the device differs from the library's.
-        var byTitle = await CreateBookAsync(client, "Second Synthetic Book", "Lovelace, Ada");
+        // Same title, different author formatting: a resemblance, never a match.
+        await CreateBookAsync(client, "Second Synthetic Book", "Lovelace, Ada");
         var database = CreateKoboDatabase();
 
         var first = await UploadAsync(client, database);
@@ -33,31 +33,29 @@ public sealed class KoboNoteImportEndpointTests : IDisposable
         var report = await first.Content.ReadFromJsonAsync<KoboImportReport>();
 
         report!.BookCount.Should().Be(3);
-        report.MatchedBookCount.Should().Be(2);
+        report.MatchedBookCount.Should().Be(1);
         report.AnnotationCount.Should().Be(5);
-        report.ImportedCount.Should().Be(3);
+        report.ImportedCount.Should().Be(2);
         report.DuplicateCount.Should().Be(0);
-        report.SkippedCount.Should().Be(2);
+        report.SkippedCount.Should().Be(3);
 
         var matched = report.Books.Single(book => book.BookId == owned.Id);
         matched.Status.Should().Be("matched");
         matched.ImportedCount.Should().Be(2);
-        report.Books.Single(book => book.BookId == byTitle.Id).ImportedCount.Should().Be(1);
 
-        var unmatched = report.Books.Single(book => book.Status == "unmatched");
-        unmatched.SourceTitle.Should().Be("Not In The Library");
-        unmatched.AnnotationCount.Should().Be(2);
-        unmatched.SkippedCount.Should().Be(2);
+        report.Books.Where(book => book.Status == "unmatched")
+            .Select(book => book.SourceTitle)
+            .Should().BeEquivalentTo("Second Synthetic Book", "Not In The Library");
 
         var second = await UploadAsync(client, database);
         var secondReport = await second.Content.ReadFromJsonAsync<KoboImportReport>();
         secondReport!.ImportedCount.Should().Be(0);
-        secondReport.DuplicateCount.Should().Be(3);
+        secondReport.DuplicateCount.Should().Be(2);
 
         await using var db = CreateContext(factory.DatabasePath);
         var notes = await db.Notes.AsNoTracking().ToListAsync();
 
-        notes.Should().HaveCount(3);
+        notes.Should().HaveCount(2);
         notes.Should().OnlyContain(note =>
             note.CaptureSource == "import" && note.SourceAnchorKind == "kobo_bookmark");
         notes.Should().Contain(note =>
