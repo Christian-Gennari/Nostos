@@ -360,3 +360,162 @@ summary.highlight-section-header:focus-visible {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* --- Review ------------------------------------------------------------- */
+
+.highlight-recent {
+  margin-top: 1.4rem;
+  padding-top: 1.15rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.highlight-review {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0.65rem 0.7rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  color: var(--color-text-main);
+}
+
+/* An unanswered question is the one thing on this screen that needs the
+   owner, so it alone is lifted off the list. */
+.highlight-review.is-question {
+  border-color: var(--border-focus);
+}
+
+.highlight-review-source {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.highlight-review-target {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: var(--color-text-muted);
+}
+
+.highlight-review-target nostos-icon {
+  flex-shrink: 0;
+  align-self: center;
+  color: var(--color-text-light);
+}
+
+.highlight-review-target-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.highlight-review-target-text strong {
+  font-weight: var(--fw-semibold);
+  color: var(--color-text-main);
+}
+
+.highlight-review-reason {
+  display: block;
+  font-size: 0.74rem;
+  color: var(--color-text-light);
+}
+
+.highlight-review-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 0.75rem;
+}
+
+.highlight-review-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.highlight-review-left-out {
+  margin-right: auto;
+  font-size: 0.78rem;
+  color: var(--color-text-light);
+}
+
+.highlight-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.highlight-link:hover {
+  color: var(--color-text-main);
+}
+
+.highlight-link:focus-visible,
+.highlight-picker-option:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.highlight-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin-top: 0.2rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--border-light);
+}
+
+.highlight-picker-search {
+  width: 100%;
+}
+
+.highlight-picker-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.highlight-picker-option {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  padding: 0.4rem 0.5rem;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--color-text-main);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.highlight-picker-option:hover {
+  background: var(--bg-hover);
+}
+
+.highlight-picker-empty {
+  padding: 0.4rem 0.5rem;
+  font-size: 0.78rem;
+  color: var(--color-text-light);
+}
+
+.highlight-picker-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.highlight-footer-note {
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+}

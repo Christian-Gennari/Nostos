@@ -21,7 +21,15 @@ internal static class HighlightImportSourceReader
         if (new FileInfo(path).Length > MaxSidecarBytes)
             throw new FormatException("This file is not a Kobo database or a KOReader metadata file.");
 
-        return (Koreader, [ReadKoreader(File.ReadAllText(path))]);
+        try
+        {
+            return (Koreader, [ReadKoreader(File.ReadAllText(path))]);
+        }
+        catch (FormatException)
+        {
+            // The sidecar parser's own message assumes the file is a sidecar.
+            throw new FormatException("This file is not a Kobo database or a KOReader metadata file.");
+        }
     }
 
     private static List<ImportSourceBook> ReadKobo(string path) =>
