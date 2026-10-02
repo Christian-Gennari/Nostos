@@ -287,6 +287,44 @@ describe('SecondBrain', () => {
       fixture.detectChanges();
     };
 
+    it('restores canonical capture wording without closing the inspector', () => {
+      component.setViewMode('notes');
+      const captured = { ...unlinked, processingMode: 'clarify', hasRawContent: true };
+      browse([captured]);
+      component.openNotePanel(captured);
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('app-note-capture-details')).not.toBeNull();
+      component.captureRestored({
+        id: captured.id, bookId: captured.bookId, createdAt: captured.createdAt,
+        content: 'Original thought about [[Alpha]]', processingMode: 'verbatim',
+      });
+      expect(component.panelNote()?.content).toBe('Original thought about [[Alpha]]');
+      flushMutationRefresh();
+      const canonical = { ...captured, content: 'Original thought about [[Alpha]]',
+        conceptNames: ['Alpha'], processingMode: 'verbatim' };
+      http.expectOne(`/api/notes/${captured.id}`).flush(canonical);
+      browse([canonical]);
+      expect(component.panelNote()).toEqual(canonical);
+      expect(component.browseNotes()[0].processingMode).toBe('verbatim');
+      expect(fixture.nativeElement.querySelector('[data-testid="brain-note-inspector"]')).not.toBeNull();
+    });
+
+    it('reconciles an old capture restore without overwriting the newly focused note', () => {
+      component.setViewMode('notes');
+      browse([linked, unlinked]);
+      component.openNotePanel(linked);
+      component.captureRestored({
+        id: unlinked.id, bookId: unlinked.bookId, createdAt: unlinked.createdAt,
+        content: 'Restored old note', processingMode: 'verbatim',
+      });
+      flushMutationRefresh();
+      const canonical = { ...unlinked, content: 'Restored old note', processingMode: 'verbatim' };
+      http.expectOne(`/api/notes/${unlinked.id}`).flush(canonical);
+      browse([linked, canonical]);
+      expect(component.panelNote()?.id).toBe(linked.id);
+      expect(component.panelNote()?.content).toBe(linked.content);
+    });
+
     it('uses the shared segmented recipe for Notes and Concepts navigation', () => {
       fixture.detectChanges();
 

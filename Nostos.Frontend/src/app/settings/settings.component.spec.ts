@@ -1177,12 +1177,12 @@ describe('SettingsComponent backup-only surface', () => {
     const dropdown = captureModeDropdown();
     const trigger = dropdown!.querySelector('.nostos-dropdown__trigger') as HTMLButtonElement;
     expect(trigger.textContent).toContain('Light polish');
-    expect(trigger.getAttribute('aria-label')).toBe('Captured thoughts');
+    expect(trigger.getAttribute('aria-label')).toBe('Saved thought wording');
 
     const card = assistantCard();
-    expect(card!.textContent).toContain('Your words with grammar and filler tidied');
+    expect(card!.textContent).toContain('Ask AI to tidy grammar and filler');
     expect(card!.textContent).toContain(
-      'Applies only to new notes. Existing notes are never rewritten.',
+      'For thoughts saved through Ask Nostos, typed or spoken. Quotes stay exact.',
     );
   });
 

@@ -22,7 +22,8 @@ namespace Nostos.Backend.Tests.Services.Notes;
 ///
 /// Each hard invariant the brief names has a test:
 /// raw capture preserved; reprocess from RawContent never from processed prose;
-/// quotes untouched; per-capture mode honoured; raw readable and restorable.
+/// quotes untouched; server-prepared service mode honoured; raw readable and
+/// restorable. The assistant's global setting selects that service mode.
 /// </summary>
 public sealed class NoteProcessingModeTests : IClassFixture<SqliteTestFixture>
 {

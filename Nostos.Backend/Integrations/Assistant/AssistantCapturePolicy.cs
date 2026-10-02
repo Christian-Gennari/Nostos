@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.RegularExpressions;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Nostos.Backend.Services.Ai;
 using Nostos.Backend.Services.Library;
 using Nostos.Shared.Dtos;
 
@@ -396,7 +397,11 @@ internal sealed class AssistantCapturePolicy(ILibraryService library)
         return null;
     }
 
-    public static string BuildAcknowledgement(string? bookTitle, bool quoteFidelity)
+    public static string BuildAcknowledgement(
+        string? bookTitle,
+        bool quoteFidelity,
+        JsonElement? savedNote = null,
+        string requestedMode = "verbatim")
     {
         var text = string.IsNullOrWhiteSpace(bookTitle)
             ? "Saved."
@@ -411,8 +416,27 @@ internal sealed class AssistantCapturePolicy(ILibraryService library)
             text += $" {AssistantOrchestrator.QuoteFidelityNote}";
         }
 
+        // Read the committed result, including a replayed receipt. A quote-only
+        // capture has no raw thought and is intentionally verbatim, not a failure.
+        if (ProcessingFellBack(savedNote, requestedMode))
+        {
+            text += " Wording could not be processed, so your original words were saved verbatim.";
+        }
+
         return text;
     }
+
+    public static bool ProcessingFellBack(JsonElement? savedNote, string requestedMode) =>
+        ThoughtProcessingModes.Normalize(requestedMode) != ThoughtProcessingModes.Verbatim
+            && savedNote is { ValueKind: JsonValueKind.Object } envelope
+            && envelope.TryGetProperty("value", out var note)
+            && note.ValueKind == JsonValueKind.Object
+            && note.TryGetProperty("processingMode", out var mode)
+            && mode.ValueKind == JsonValueKind.String
+            && mode.GetString() == ThoughtProcessingModes.Verbatim
+            && note.TryGetProperty("rawContent", out var raw)
+            && raw.ValueKind == JsonValueKind.String
+            && !string.IsNullOrWhiteSpace(raw.GetString());
 
 
     private static string NormalizePageAnswer(string answer)

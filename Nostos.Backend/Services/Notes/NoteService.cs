@@ -623,7 +623,10 @@ public sealed class NoteService : INoteService
         n.CfiRange,
         n.SourceAnchorKind,
         n.SourceAnchorValue,
-        n.AnchorVerified);
+        n.AnchorVerified,
+        n.CaptureSource,
+        n.ProcessingMode,
+        !string.IsNullOrWhiteSpace(n.RawContent));
 
     /// <summary>
     /// The fragment around the match, so a row can show WHY it matched. Built here

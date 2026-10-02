@@ -59,7 +59,12 @@ public record NoteSearchHitDto(
     string? CfiRange = null,
     string SourceAnchorKind = "unknown",
     string? SourceAnchorValue = null,
-    bool AnchorVerified = false
+    bool AnchorVerified = false,
+    // Capture state belongs to the canonical note, independently of chat history.
+    // Original text is fetched explicitly through /raw, not repeated in every row.
+    string CaptureSource = "text",
+    string ProcessingMode = "verbatim",
+    bool HasRawContent = false
 );
 
 /// <summary>

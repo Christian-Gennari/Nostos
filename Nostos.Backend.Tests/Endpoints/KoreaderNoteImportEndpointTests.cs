@@ -17,6 +17,9 @@ public sealed class KoreaderNoteImportEndpointTests
     {
         using var factory = new LibraryEndpointFactory();
         var client = factory.CreateClient();
+        var setting = await client.PutAsJsonAsync("/api/settings/assistant",
+            new AssistantSettingsUpdateRequest("clarify"));
+        setting.StatusCode.Should().Be(HttpStatusCode.OK);
         var book = await CreateBookAsync(client, "Synthetic Reader Book", "Ada Reader");
         var fixture = FixturePath("metadata.lua");
 
@@ -44,6 +47,7 @@ public sealed class KoreaderNoteImportEndpointTests
 
         notes.Should().HaveCount(2);
         notes.Should().OnlyContain(note => note.CaptureSource == "import");
+        notes.Should().OnlyContain(note => note.ProcessingMode == "verbatim" && note.RawContent == null);
         notes.Should().Contain(note =>
             note.SelectedText == "A synthetic highlighted sentence."
             && note.Content == "Remember this connection."

@@ -1,0 +1,39 @@
+@if (note().hasRawContent) {
+  <section class="capture-details" aria-label="Saved thought wording" data-testid="note-capture-details">
+    <div class="capture-summary">
+      <span class="capture-mode">{{ modeLabel() }}{{ note().captureSource === 'voice' ? ' · Spoken thought' : '' }}</span>
+      <button appButton variant="ghost" size="sm" type="button" aria-haspopup="dialog"
+        (click)="openOriginal()">View original</button>
+    </div>
+  </section>
+  @if (originalOpen()) {
+    <app-modal-shell [isOpen]="true" maxWidth="640px" [layer]="120" [busy]="restoring()"
+      ariaLabel="Original wording" (closed)="closeOriginal()"
+      [cdkTrapFocus]="true" [cdkTrapFocusAutoCapture]="true">
+      <div class="original-header" shellHeader>
+        <h2>Original wording</h2>
+        <button appIconButton icon="x" type="button" aria-label="Close original wording"
+          cdkFocusInitial [disabled]="restoring()" (click)="closeOriginal()"></button>
+      </div>
+      <div class="original-body" [attr.aria-busy]="loading()">
+        @if (loading()) {
+          <p class="capture-help" role="status">Loading original…</p>
+        }
+        @if (original()) {
+          <p class="original-text" data-testid="note-original-text">{{ original() }}</p>
+          <p class="capture-help">Restoring replaces the note text with these words. The original stays available.</p>
+        }
+        @if (error()) { <p class="capture-help" role="alert">{{ error() }}</p> }
+      </div>
+      <app-dialog-actions shellActions>
+        <button appButton variant="ghost" type="button" [disabled]="restoring()"
+          (click)="closeOriginal()">Close</button>
+        @if (original()) {
+          <button appButton variant="secondary" type="button"
+            [disabled]="restoring() || restoredHere() || note().content === original()"
+            (click)="restoreOriginal()">{{ restoring() ? 'Restoring…' : restoredHere() ? 'Original restored' : 'Restore original' }}</button>
+        }
+      </app-dialog-actions>
+    </app-modal-shell>
+  }
+}
