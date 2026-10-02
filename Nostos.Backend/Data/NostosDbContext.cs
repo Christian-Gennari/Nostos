@@ -42,6 +42,12 @@ public class NostosDbContext : DbContext
     // Exact-once command record for assistant note mutations (issue #260 §2, §4).
     public DbSet<NoteCommandReceipt> NoteCommandReceipts => Set<NoteCommandReceipt>();
 
+    // E-reader highlight import (issue #656): remembered device-book -> library
+    // -book decisions, and per-file batches so an import can be undone.
+    public DbSet<NoteImportBookLink> NoteImportBookLinks => Set<NoteImportBookLink>();
+    public DbSet<NoteImportBatch> NoteImportBatches => Set<NoteImportBatch>();
+    public DbSet<NoteImportBatchNote> NoteImportBatchNotes => Set<NoteImportBatchNote>();
+
     // Server-wide AI provider overrides (assistant-milestone plan, "AI provider
     // settings"). One row; NULL columns fall back to appsettings/env.
     public DbSet<AiProviderSettingsModel> AiProviderSettings => Set<AiProviderSettingsModel>();
@@ -372,6 +378,34 @@ public class NostosDbContext : DbContext
                 "CK_NoteCommandReceipts_Bounds",
                 "length(\"ClientId\") <= 64 AND length(\"IdempotencyKey\") <= 128 AND " +
                 "length(\"Command\") <= 32 AND length(\"ResultJson\") <= 131072"));
+        });
+
+        // --- E-READER HIGHLIGHT IMPORT (issue #656) ---
+        // Every FK cascades: a link or a batch row is bookkeeping about a book
+        // or a note and must never block deleting either.
+        modelBuilder.Entity<NoteImportBookLink>(e =>
+        {
+            e.HasIndex(x => new { x.Source, x.SourceKey }).IsUnique();
+            e.HasOne(x => x.Book)
+                .WithMany()
+                .HasForeignKey(x => x.BookId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<NoteImportBatch>().HasIndex(x => x.CreatedAtUtc);
+
+        modelBuilder.Entity<NoteImportBatchNote>(e =>
+        {
+            e.HasKey(x => new { x.BatchId, x.NoteId });
+            e.HasOne(x => x.Batch)
+                .WithMany(b => b.Notes)
+                .HasForeignKey(x => x.BatchId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.Note)
+                .WithMany()
+                .HasForeignKey(x => x.NoteId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => x.NoteId);
         });
 
         // --- AI PROVIDER SETTINGS (assistant-milestone plan) ---

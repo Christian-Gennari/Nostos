@@ -14,7 +14,9 @@ internal sealed record KoreaderMetadataDocument(
     string? Title,
     string? Author,
     string? Isbn,
-    IReadOnlyList<KoreaderAnnotation> Annotations);
+    IReadOnlyList<KoreaderAnnotation> Annotations,
+    // KOReader's own identity for the book file; null in older sidecars.
+    string? PartialMd5 = null);
 
 internal sealed record KoreaderAnnotation(
     string? Text,

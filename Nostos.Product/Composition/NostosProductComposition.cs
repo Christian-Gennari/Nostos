@@ -133,7 +133,7 @@ public static class NostosProductComposition
         services.AddScoped<NoteProcessorService>();
         services.AddScoped<INoteService, NoteService>();
         services.AddScoped<KoreaderNoteImportService>();
-        services.AddScoped<KoboNoteImportService>();
+        services.AddScoped<HighlightImportService>();
         services.AddScoped<IKnowledgeRetrievalService, KnowledgeRetrievalService>();
 
         services.AddScoped<IPortableArchiveService, PortableArchiveService>();
