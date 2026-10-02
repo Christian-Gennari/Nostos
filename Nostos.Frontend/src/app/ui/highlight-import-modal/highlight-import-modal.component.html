@@ -3,17 +3,19 @@
   [isOpen]="true"
   variant="sheet"
   cardClass="highlight-import-card"
-  [maxWidth]="'560px'"
-  [maxHeight]="'min(700px, calc(100vh - 2.5rem))'"
+  [maxWidth]="'600px'"
+  [maxHeight]="'min(760px, calc(100vh - 2.5rem))'"
   [layer]="110"
-  [busy]="stage() === 'importing'"
+  [busy]="busy() || undoing()"
   [dismissOnBackdrop]="stage() === 'pick'"
   ariaLabelledBy="highlight-import-title"
   [style.--modal-head-padding]="'1.15rem 1.25rem 0.9rem'"
   (closed)="close()"
 >
   <header class="highlight-import-head" shellHeader>
-    <h2 id="highlight-import-title" class="highlight-import-title">Import highlights</h2>
+    <h2 id="highlight-import-title" class="highlight-import-title">
+      {{ stage() === 'review' ? 'Review before importing' : 'Import highlights' }}
+    </h2>
     <button
       appIconButton
       icon="x"
@@ -21,17 +23,21 @@
       class="highlight-import-close"
       title="Close"
       aria-label="Close"
-      [disabled]="stage() === 'importing'"
+      [disabled]="busy() || undoing()"
       (click)="close()"
     ></button>
   </header>
 
   <div class="highlight-import-body">
+    @if (undoError()) {
+      <p class="highlight-failure" role="alert">{{ undoError() }}</p>
+    }
     @switch (stage()) {
       @case ('pick') {
         <p class="highlight-import-hint">
-          Bring the highlights and notes you made on an e-reader into Nostos. They are added to the
-          matching books in your library; importing the same file again never creates duplicates.
+          Bring the highlights and notes you made on an e-reader into Nostos. You see where every
+          book is going before anything is added, and importing the same file again never creates
+          duplicates.
         </p>
 
         <label
@@ -46,7 +52,6 @@
             class="highlight-file-input"
             data-testid="highlight-import-input"
             multiple
-            accept=".sqlite,.sqlite3,.db,.lua"
             (change)="onFilesSelected($event)"
           />
           <nostos-icon name="upload-simple" [size]="22" weight="light"></nostos-icon>
@@ -70,27 +75,95 @@
             </dd>
           </div>
         </dl>
+
+        @if (recent().length > 0) {
+          <section class="highlight-section highlight-recent" aria-labelledby="highlight-recent-title">
+            <div class="highlight-section-header">
+              <h3 class="highlight-section-title" id="highlight-recent-title">Recent imports</h3>
+            </div>
+            <ul class="highlight-rows">
+              @for (batch of recent(); track batch.id) {
+                <li class="highlight-row" data-testid="highlight-recent-row">
+                  <span class="highlight-row-text">
+                    <span class="highlight-row-title">
+                      {{ count(batch.noteCount, 'highlight') }} into {{ count(batch.bookCount, 'book') }}
+                    </span>
+                    <span class="highlight-row-sub">
+                      {{ batch.createdAtUtc | date: 'medium' }}
+                    </span>
+                  </span>
+                  <button appButton type="button" variant="ghost" size="sm" [disabled]="undoing()" (click)="undoRecent(batch)">
+                    Undo
+                  </button>
+                </li>
+              }
+            </ul>
+          </section>
+        }
+      }
+
+      @case ('reading') {
+        <ng-container *ngTemplateOutlet="progress; context: { $implicit: 'Reading' }"></ng-container>
       }
 
       @case ('importing') {
-        <div class="highlight-progress" role="status" aria-live="polite">
-          <nostos-icon name="circle-notch" [size]="22" class="spin"></nostos-icon>
-          <p class="highlight-progress-title">
-            @if (fileCount() > 1) {
-              Importing file {{ currentIndex() }} of {{ fileCount() }}…
-            } @else {
-              Importing highlights…
-            }
-          </p>
-          <p class="highlight-progress-file">{{ currentFileName() }}</p>
-          <p class="highlight-progress-note">A full Kobo library can take a minute. Keep this window open.</p>
-        </div>
+        <ng-container *ngTemplateOutlet="progress; context: { $implicit: 'Importing' }"></ng-container>
+      }
+
+      @case ('review') {
+        <p class="highlight-import-hint">
+          Nothing has been added yet. Check where each book is going, then import.
+        </p>
+
+        <ng-container *ngTemplateOutlet="failureList"></ng-container>
+
+        @if (toCheck().length > 0) {
+          <section class="highlight-section" aria-labelledby="highlight-check-title">
+            <div class="highlight-section-header">
+              <h3 class="highlight-section-title" id="highlight-check-title">Check these</h3>
+              <span class="highlight-count-badge">{{ toCheck().length }}</span>
+            </div>
+            <ul class="highlight-rows">
+              @for (row of toCheck(); track row.id) {
+                <ng-container *ngTemplateOutlet="reviewRow; context: { $implicit: row }"></ng-container>
+              }
+            </ul>
+          </section>
+        }
+
+        @if (missing().length > 0) {
+          <section class="highlight-section" aria-labelledby="highlight-missing-title">
+            <div class="highlight-section-header">
+              <h3 class="highlight-section-title" id="highlight-missing-title">Not in your library</h3>
+              <span class="highlight-count-badge">{{ missing().length }}</span>
+            </div>
+            <ul class="highlight-rows">
+              @for (row of missing(); track row.id) {
+                <ng-container *ngTemplateOutlet="reviewRow; context: { $implicit: row }"></ng-container>
+              }
+            </ul>
+          </section>
+        }
+
+        @if (ready().length > 0) {
+          <section class="highlight-section" aria-labelledby="highlight-ready-title">
+            <div class="highlight-section-header">
+              <h3 class="highlight-section-title" id="highlight-ready-title">Ready</h3>
+              <span class="highlight-count-badge">{{ ready().length }}</span>
+            </div>
+            <ul class="highlight-rows">
+              @for (row of ready(); track row.id) {
+                <ng-container *ngTemplateOutlet="reviewRow; context: { $implicit: row }"></ng-container>
+              }
+            </ul>
+          </section>
+        }
       }
 
       @case ('result') {
         <div class="highlight-result-summary" data-testid="highlight-import-summary" aria-live="polite">
           <nostos-icon
-            [name]="importedCount() > 0 || duplicateCount() > 0 ? 'check-circle' : 'warning-circle'"
+            [name]="undone() === null && (importedCount() > 0 || duplicateCount() > 0) ? 'check-circle' : 'warning-circle'"
             [size]="22"
             weight="light"
           ></nostos-icon>
@@ -102,25 +175,16 @@
           </div>
         </div>
 
-        @if (failures().length > 0) {
-          <ul class="highlight-failures" role="alert">
-            @for (failure of failures(); track $index) {
-              <li class="highlight-failure">
-                <span class="highlight-row-title">{{ failure.fileName }}</span>
-                <span class="highlight-row-sub">{{ failure.message }}</span>
-              </li>
-            }
-          </ul>
-        }
+        <ng-container *ngTemplateOutlet="failureList"></ng-container>
 
-        @if (matched().length > 0) {
-          <section class="highlight-section" aria-labelledby="highlight-matched-title">
+        @if (imported().length > 0 && undone() === null) {
+          <section class="highlight-section" aria-labelledby="highlight-imported-title">
             <div class="highlight-section-header">
-              <h3 class="highlight-section-title" id="highlight-matched-title">In your library</h3>
-              <span class="highlight-count-badge">{{ matched().length }}</span>
+              <h3 class="highlight-section-title" id="highlight-imported-title">Imported</h3>
+              <span class="highlight-count-badge">{{ imported().length }}</span>
             </div>
             <ul class="highlight-rows">
-              @for (book of matched(); track $index) {
+              @for (book of imported(); track $index) {
                 <li>
                   <button type="button" class="highlight-row highlight-row--link" (click)="openBook(book)">
                     <span class="highlight-row-text">
@@ -135,19 +199,15 @@
           </section>
         }
 
-        @if (unplaced().length > 0) {
-          <details class="highlight-section highlight-unplaced" [open]="matched().length === 0">
+        @if (skipped().length > 0 && undone() === null) {
+          <details class="highlight-section highlight-unplaced" [open]="imported().length === 0">
             <summary class="highlight-section-header">
               <nostos-icon name="caret-right" [size]="12" class="highlight-disclosure"></nostos-icon>
-              <h3 class="highlight-section-title">Not imported</h3>
-              <span class="highlight-count-badge">{{ unplaced().length }}</span>
+              <h3 class="highlight-section-title">Left out</h3>
+              <span class="highlight-count-badge">{{ skipped().length }}</span>
             </summary>
-            <p class="highlight-hint-inline">
-              {{ count(unplacedHighlightCount(), 'highlight') }}
-              {{ unplacedHighlightCount() === 1 ? 'belongs' : 'belong' }} to books Nostos could not place. Add the book to your library, then import the same file again.
-            </p>
             <ul class="highlight-rows">
-              @for (book of unplaced(); track $index) {
+              @for (book of skipped(); track $index) {
                 <li class="highlight-row">
                   <span class="highlight-row-text">
                     <span class="highlight-row-title">{{ book.sourceTitle || 'Untitled book' }}</span>
@@ -155,8 +215,10 @@
                       @if (book.sourceAuthor) {
                         {{ book.sourceAuthor }} ·
                       }
-                      {{ count(book.annotationCount, 'highlight') }} ·
-                      {{ book.status === 'ambiguous' ? book.message : 'Not in your library' }}
+                      {{ count(book.annotationCount, 'highlight') }}
+                      @if (book.message) {
+                        · {{ book.message }}
+                      }
                     </span>
                   </span>
                 </li>
@@ -168,13 +230,203 @@
     }
   </div>
 
+  @if (stage() === 'review') {
+    <app-dialog-actions shellActions>
+      <span dialogActionsStart class="highlight-footer-note" aria-live="polite">
+        @if (unanswered() > 0) {
+          {{ unanswered() }} still to check
+        }
+      </span>
+      <button appButton type="button" variant="secondary" (click)="backToPick()">Back</button>
+      <button
+        appButton
+        type="button"
+        variant="primary"
+        data-testid="highlight-import-commit"
+        [disabled]="included().length === 0"
+        (click)="importReviewed()"
+      >
+        @if (included().length === 0) {
+          Nothing selected
+        } @else {
+          Import {{ count(included().length, 'book') }}
+        }
+      </button>
+    </app-dialog-actions>
+  }
+
   @if (stage() === 'result') {
     <app-dialog-actions shellActions>
-      <button appButton type="button" variant="secondary" (click)="importAnother()">
+      @if (batchIds().length > 0) {
+        <button
+          appButton
+          dialogActionsStart
+          type="button"
+          variant="ghost"
+          data-testid="highlight-import-undo"
+          [disabled]="undoing()"
+          [busy]="undoing()"
+          (click)="undoImport()"
+        >
+          <nostos-icon name="arrow-counter-clockwise" [size]="14"></nostos-icon>
+          Undo import
+        </button>
+      }
+      <button appButton type="button" variant="secondary" [disabled]="undoing()" (click)="importAnother()">
         Import another file
       </button>
-      <button appButton type="button" variant="primary" (click)="close()">Done</button>
+      <button appButton type="button" variant="primary" [disabled]="undoing()" (click)="close()">Done</button>
     </app-dialog-actions>
   }
 </app-modal-shell>
 }
+
+<ng-template #progress let-verb>
+  <div class="highlight-progress" role="status" aria-live="polite">
+    <nostos-icon name="circle-notch" [size]="22" class="spin"></nostos-icon>
+    <p class="highlight-progress-title">
+      @if (fileCount() > 1) {
+        {{ verb }} file {{ currentIndex() }} of {{ fileCount() }}…
+      } @else {
+        {{ verb }} highlights…
+      }
+    </p>
+    <p class="highlight-progress-file">{{ currentFileName() }}</p>
+    <p class="highlight-progress-note">A full Kobo library can take a minute. Keep this window open.</p>
+  </div>
+</ng-template>
+
+<ng-template #failureList>
+  @if (failures().length > 0) {
+    <ul class="highlight-failures" role="alert">
+      @for (failure of failures(); track $index) {
+        <li class="highlight-failure">
+          <span class="highlight-row-title">{{ failure.fileName }}</span>
+          <span class="highlight-row-sub">{{ failure.message }}</span>
+        </li>
+      }
+    </ul>
+  }
+</ng-template>
+
+<!-- One book from the device. Its three states read top to bottom as: what the
+     device calls it, then where it is going (or the question that decides that). -->
+<ng-template #reviewRow let-row>
+  <li
+    class="highlight-review"
+    data-testid="highlight-review-row"
+    [class.is-included]="row.target"
+    [class.is-question]="!row.target && row.suggestion"
+  >
+    <div class="highlight-review-source">
+      <span class="highlight-row-title">{{ row.book.title || 'Untitled book' }}</span>
+      <span class="highlight-row-sub">
+        @if (row.book.author) {
+          {{ row.book.author }} ·
+        }
+        {{ count(row.book.annotationCount, 'highlight') }}
+      </span>
+    </div>
+
+    @if (row.target; as target) {
+      <div class="highlight-review-target">
+        <nostos-icon name="arrow-right" [size]="13"></nostos-icon>
+        <span class="highlight-review-target-text">
+          @if (target.kind === 'create') {
+            Will be added to your library as a new book
+          } @else {
+            <strong>{{ target.title }}</strong>
+            @if (target.author) {
+              · {{ target.author }}
+            }
+            @if (row.book.match === 'remembered' && target.bookId === row.book.bookId) {
+              · as last time
+            }
+          }
+        </span>
+        <span class="highlight-review-actions">
+          <button type="button" class="highlight-link" (click)="openPicker(row)">Change</button>
+          <button type="button" class="highlight-link" (click)="skip(row)">Leave out</button>
+        </span>
+      </div>
+    } @else if (row.suggestion; as suggestion) {
+      <div class="highlight-review-target">
+        <span class="highlight-review-target-text">
+          Is this <strong>{{ suggestion.title }}</strong>
+          @if (suggestion.author) {
+            by {{ suggestion.author }}
+          }
+          ?
+          <span class="highlight-review-reason">{{ suggestion.reason }}</span>
+        </span>
+      </div>
+      <div class="highlight-review-buttons">
+        <button appButton type="button" variant="primary" size="sm" data-testid="highlight-confirm" (click)="confirm(row)">
+          Yes, import here
+        </button>
+        <button appButton type="button" variant="secondary" size="sm" (click)="openPicker(row)">
+          Another book
+        </button>
+        <button appButton type="button" variant="ghost" size="sm" (click)="skip(row)">Leave out</button>
+      </div>
+    } @else {
+      <div class="highlight-review-buttons">
+        <span class="highlight-review-left-out">Left out</span>
+        <button appButton type="button" variant="secondary" size="sm" data-testid="highlight-add" (click)="addToLibrary(row)">
+          <nostos-icon name="plus" [size]="13"></nostos-icon>
+          Add to library
+        </button>
+        <button appButton type="button" variant="ghost" size="sm" (click)="openPicker(row)">
+          Choose a book
+        </button>
+      </div>
+    }
+
+    @if (pickingRowId() === row.id) {
+      <div class="highlight-picker" data-testid="highlight-picker">
+        <input
+          appInput
+          type="search"
+          class="highlight-picker-search"
+          placeholder="Search your library"
+          aria-label="Search your library"
+          [value]="searchQuery()"
+          (input)="onSearch($any($event.target).value)"
+        />
+        <ul class="highlight-picker-list">
+          @for (candidate of searchQuery().trim() ? searchResults() : row.book.candidates; track candidate.bookId) {
+            <li>
+              <button type="button" class="highlight-picker-option" (click)="choose(row, candidate)">
+                <span class="highlight-row-title">{{ candidate.title }}</span>
+                <span class="highlight-row-sub">
+                  {{ candidate.author || 'Unknown author' }}
+                  @if (candidate.reason) {
+                    · {{ candidate.reason }}
+                  }
+                </span>
+              </button>
+            </li>
+          } @empty {
+            <li class="highlight-picker-empty">
+              @if (searching()) {
+                Searching…
+              } @else if (searchError()) {
+                Search could not finish. Try again.
+              } @else if (searchQuery().trim()) {
+                No book in your library matches.
+              } @else {
+                Type a title or an author.
+              }
+            </li>
+          }
+        </ul>
+        <div class="highlight-picker-footer">
+          <button type="button" class="highlight-link" (click)="addToLibrary(row)">
+            Add as a new book instead
+          </button>
+          <button type="button" class="highlight-link" (click)="closePicker()">Cancel</button>
+        </div>
+      </div>
+    }
+  </li>
+</ng-template>

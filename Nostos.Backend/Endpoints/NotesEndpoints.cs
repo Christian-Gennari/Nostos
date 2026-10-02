@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Nostos.Backend.Services.Notes;
 using Nostos.Backend.Services.Notes.Imports;
 using Nostos.Shared.Dtos;
@@ -113,47 +114,44 @@ public static class NotesEndpoints
             }
         );
 
-        // IMPORT Kobo highlights. KoboReader.sqlite covers every book on the
-        // device, so the report is per book. The upload is spooled to a private
-        // temp directory (SQLite needs a file, and may create -wal/-shm beside
-        // it) that is removed whatever the outcome.
+        // E-READER HIGHLIGHT IMPORT (issue #656), in two steps so nothing is
+        // written on a guess: `preview` reads the file and proposes a library
+        // book per device book; `commit` takes the same file again with the
+        // owner's decisions. Stateless on purpose — the server keeps no upload
+        // between the two calls. The file is a Kobo database or a KOReader
+        // sidecar, told apart by content.
         group.MapPost(
-            "/notes/import/kobo",
-            async (HttpRequest request, KoboNoteImportService importer, CancellationToken ct) =>
-            {
-                const long maxDatabaseBytes = 256L * 1024 * 1024;
-                if (!request.HasFormContentType)
-                    return Results.BadRequest(new { error = "Expected multipart/form-data with a KoboReader.sqlite file." });
+            "/notes/imports/preview",
+            (HttpRequest request, HighlightImportService importer, CancellationToken ct) =>
+                WithImportFileAsync(request, ct, (path, _, _) => importer.PreviewAsync(path, ct))
+        );
 
-                var form = await request.ReadFormAsync(ct);
-                var file = form.Files.GetFile("file") ?? form.Files.FirstOrDefault();
-                if (file is null)
-                    return Results.BadRequest(new { error = "A KoboReader.sqlite file is required." });
-                if (file.Length <= 0 || file.Length > maxDatabaseBytes)
-                    return Results.BadRequest(new { error = "KoboReader.sqlite must be between 1 byte and 256 MB." });
+        group.MapPost(
+            "/notes/imports/commit",
+            (HttpRequest request, HighlightImportService importer, CancellationToken ct) =>
+                WithImportFileAsync(request, ct, (path, fileName, form) =>
+                {
+                    var decisions = JsonSerializer.Deserialize<List<HighlightImportDecision>>(
+                        form["decisions"].ToString() is { Length: > 0 } json ? json : "[]",
+                        ImportJson) ?? [];
+                    Guid? batchId = Guid.TryParse(form["batchId"].ToString(), out var parsed) ? parsed : null;
+                    return importer.CommitAsync(path, fileName, decisions, batchId, ct);
+                })
+        );
 
-                var directory = Directory.CreateTempSubdirectory("nostos-kobo-import-");
-                try
-                {
-                    var path = Path.Combine(directory.FullName, "KoboReader.sqlite");
-                    await using (var target = File.Create(path))
-                    await using (var source = file.OpenReadStream())
-                    {
-                        await source.CopyToAsync(target, ct);
-                    }
+        group.MapGet(
+            "/notes/imports/batches",
+            async (HighlightImportService importer, CancellationToken ct) =>
+                Results.Ok(await importer.ListBatchesAsync(5, ct))
+        );
 
-                    return Results.Ok(await importer.ImportAsync(path, ct));
-                }
-                catch (FormatException ex)
-                {
-                    return Results.BadRequest(new { error = ex.Message });
-                }
-                finally
-                {
-                    try { directory.Delete(recursive: true); }
-                    catch (IOException) { }
-                }
-            }
+        // UNDO one import: removes the notes it created, nothing else.
+        group.MapDelete(
+            "/notes/imports/batches/{id}",
+            async (Guid id, HighlightImportService importer, CancellationToken ct) =>
+                await importer.UndoAsync(id, ct) is { } removed
+                    ? Results.Ok(new { removed })
+                    : Results.NotFound()
         );
 
         // UPDATE note
@@ -177,6 +175,50 @@ public static class NotesEndpoints
         );
 
         return routes;
+    }
+
+    private static readonly JsonSerializerOptions ImportJson = new(JsonSerializerDefaults.Web);
+
+    // SQLite needs a real file and may create -wal/-shm beside it, so the
+    // upload is spooled to a private temp directory that is removed whatever
+    // the outcome.
+    private static async Task<IResult> WithImportFileAsync<T>(
+        HttpRequest request,
+        CancellationToken ct,
+        Func<string, string, IFormCollection, Task<T>> run)
+    {
+        const long maxBytes = 256L * 1024 * 1024;
+        if (!request.HasFormContentType)
+            return Results.BadRequest(new { error = "Expected multipart/form-data with a KoboReader.sqlite or KOReader metadata.lua file." });
+
+        var form = await request.ReadFormAsync(ct);
+        var file = form.Files.GetFile("file") ?? form.Files.FirstOrDefault();
+        if (file is null)
+            return Results.BadRequest(new { error = "A KoboReader.sqlite or KOReader metadata.lua file is required." });
+        if (file.Length <= 0 || file.Length > maxBytes)
+            return Results.BadRequest(new { error = "The file must be between 1 byte and 256 MB." });
+
+        var directory = Directory.CreateTempSubdirectory("nostos-highlight-import-");
+        try
+        {
+            var path = Path.Combine(directory.FullName, "upload");
+            await using (var target = File.Create(path))
+            await using (var source = file.OpenReadStream())
+            {
+                await source.CopyToAsync(target, ct);
+            }
+
+            return Results.Ok(await run(path, Path.GetFileName(file.FileName), form));
+        }
+        catch (Exception ex) when (ex is FormatException or JsonException)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
+        finally
+        {
+            try { directory.Delete(recursive: true); }
+            catch (IOException) { }
+        }
     }
 
     private static string? HeaderValue(HttpRequest request, string name) =>

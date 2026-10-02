@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Nostos.Backend.Data;
 
@@ -10,9 +11,11 @@ using Nostos.Backend.Data;
 namespace Nostos.Backend.Migrations
 {
     [DbContext(typeof(NostosDbContext))]
-    partial class NostosDbContextModelSnapshot : ModelSnapshot
+    [Migration("20261002151347_AddNoteImportTables")]
+    partial class AddNoteImportTables
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.0");

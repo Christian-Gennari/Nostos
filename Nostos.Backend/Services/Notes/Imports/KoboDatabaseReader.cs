@@ -178,7 +178,7 @@ internal static class KoboDatabaseReader
         return name.Length == 0 || name.Length == volumeId.Length ? null : name;
     }
 
-    private static bool HasSqliteHeader(string path)
+    public static bool HasSqliteHeader(string path)
     {
         Span<byte> header = stackalloc byte[16];
         using var stream = File.OpenRead(path);

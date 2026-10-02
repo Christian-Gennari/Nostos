@@ -17,6 +17,7 @@ internal static partial class KoreaderMetadataParser
         var title = default(string);
         var author = default(string);
         var isbn = default(string);
+        var checksum = default(string);
         var annotations = new List<KoreaderAnnotation>();
         var section = Section.None;
         Dictionary<string, string?>? current = null;
@@ -69,6 +70,9 @@ internal static partial class KoreaderMetadataParser
             }
 
             var value = ParseScalar(rawValue);
+            if (section == Section.None && key == "partial_md5_checksum")
+                checksum = value;
+
             if (section == Section.DocProps)
             {
                 switch (key)
@@ -103,7 +107,8 @@ internal static partial class KoreaderMetadataParser
             Clean(title),
             Clean(author),
             Clean(isbn),
-            annotations);
+            annotations,
+            Clean(checksum));
     }
 
     private static KoreaderAnnotation ToAnnotation(IReadOnlyDictionary<string, string?> values) =>

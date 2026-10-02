@@ -93,6 +93,7 @@ Nostos includes readers for the formats it stores, so notes and progress can sta
 - **PDF reader:** Read PDFs, select passages, and create highlights without leaving Nostos.
 - **Audiobook player:** Listen to chaptered audiobooks with saved playback progress.
 - **Contextual notes:** Keep thoughts attached to the book they came from instead of moving them into a disconnected notes folder.
+- **E-reader highlights:** Import Kobo databases or KOReader sidecars from Settings → Library & data. Review destinations, match an existing book or add a missing one, and undo an import. Repeat imports keep confirmed matches and avoid duplicates.
 
 ---
 

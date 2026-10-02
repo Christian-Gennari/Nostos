@@ -1,13 +1,47 @@
 import { Injectable, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable, map } from 'rxjs';
+import { Observable } from 'rxjs';
 
-export type HighlightImportSource = 'kobo' | 'koreader';
-export type HighlightImportStatus = 'matched' | 'unmatched' | 'ambiguous';
+/**
+ * How sure the server is that a book on the device is a book in the library.
+ * `exact` and `remembered` are ready to import; `suggested` is a resemblance
+ * the owner has to confirm; `none` has no plausible library book.
+ */
+export type HighlightImportMatch = 'exact' | 'remembered' | 'suggested' | 'none';
 
-/** One book's outcome, whichever e-reader the file came from. */
-export interface HighlightImportBook {
-  status: HighlightImportStatus;
+export interface HighlightImportCandidate {
+  bookId: string;
+  title: string;
+  author: string | null;
+  reason: string;
+}
+
+export interface HighlightImportPreviewBook {
+  sourceKey: string;
+  title: string | null;
+  author: string | null;
+  annotationCount: number;
+  newCount: number;
+  match: HighlightImportMatch;
+  bookId: string | null;
+  candidates: HighlightImportCandidate[];
+}
+
+export interface HighlightImportPreview {
+  source: 'kobo' | 'koreader';
+  books: HighlightImportPreviewBook[];
+}
+
+/** One book's answer: an existing library book, or `create` to add it. */
+export interface HighlightImportDecision {
+  sourceKey: string;
+  bookId?: string;
+  create?: boolean;
+}
+
+export interface HighlightImportResultBook {
+  sourceKey: string;
+  status: 'imported' | 'skipped';
   bookId: string | null;
   bookTitle: string | null;
   sourceTitle: string | null;
@@ -15,23 +49,23 @@ export interface HighlightImportBook {
   annotationCount: number;
   importedCount: number;
   duplicateCount: number;
-  skippedCount: number;
+  created: boolean;
   message: string | null;
 }
 
-interface KoboImportReport {
-  books: HighlightImportBook[];
+export interface HighlightImportResult {
+  batchId: string | null;
+  source: 'kobo' | 'koreader';
+  books: HighlightImportResultBook[];
 }
 
-interface KoreaderImportReport {
-  status: HighlightImportStatus;
-  bookId: string | null;
-  bookTitle: string | null;
-  annotationCount: number;
-  importedCount: number;
-  duplicateCount: number;
-  skippedCount: number;
-  message: string | null;
+export interface HighlightImportBatch {
+  id: string;
+  source: 'kobo' | 'koreader';
+  fileName: string | null;
+  createdAtUtc: string;
+  noteCount: number;
+  bookCount: number;
 }
 
 /**
@@ -52,41 +86,36 @@ export class HighlightImportService {
     this.isOpen.set(false);
   }
 
-  /**
-   * Which e-reader a file came from, by name: KOReader sidecars are
-   * `metadata.<ext>.lua`, a Kobo database is `KoboReader.sqlite`.
-   */
-  detectSource(fileName: string): HighlightImportSource | null {
-    const name = fileName.toLowerCase();
-    if (name.endsWith('.lua')) return 'koreader';
-    if (name.endsWith('.sqlite') || name.endsWith('.sqlite3') || name.endsWith('.db')) return 'kobo';
-    return null;
+  /** Reads a file and proposes a library book per device book. Writes nothing. */
+  preview(file: File): Observable<HighlightImportPreview> {
+    return this.http.post<HighlightImportPreview>('/api/notes/imports/preview', this.body(file));
   }
 
-  /**
-   * Imports one file. A Kobo database reports every book on the device; a
-   * KOReader sidecar is one book, returned here as a one-book list so the
-   * dialog renders a single shape.
-   */
-  import(file: File, source: HighlightImportSource): Observable<HighlightImportBook[]> {
+  /** Imports the books that have a decision; a book without one is left out. */
+  commit(
+    file: File,
+    decisions: HighlightImportDecision[],
+    batchId: string | null = null,
+  ): Observable<HighlightImportResult> {
+    const body = this.body(file);
+    body.append('decisions', JSON.stringify(decisions));
+    // Files chosen together are one import, and so one thing to undo.
+    if (batchId) body.append('batchId', batchId);
+    return this.http.post<HighlightImportResult>('/api/notes/imports/commit', body);
+  }
+
+  recent(): Observable<HighlightImportBatch[]> {
+    return this.http.get<HighlightImportBatch[]>('/api/notes/imports/batches');
+  }
+
+  /** Removes the notes one import created. */
+  undo(batchId: string): Observable<{ removed: number }> {
+    return this.http.delete<{ removed: number }>(`/api/notes/imports/batches/${batchId}`);
+  }
+
+  private body(file: File): FormData {
     const body = new FormData();
     body.append('file', file, file.name);
-
-    if (source === 'kobo') {
-      return this.http
-        .post<KoboImportReport>('/api/notes/import/kobo', body)
-        .pipe(map((report) => report.books));
-    }
-
-    return this.http.post<KoreaderImportReport>('/api/notes/import/koreader', body).pipe(
-      map((report) => [
-        {
-          ...report,
-          // The sidecar report carries no title for a book it could not place.
-          sourceTitle: report.bookTitle ?? file.name,
-          sourceAuthor: null,
-        },
-      ]),
-    );
+    return body;
   }
 }

@@ -8,7 +8,7 @@ namespace Nostos.Backend.Services.Notes.Imports;
 
 public sealed class KoreaderNoteImportService
 {
-    private const string ClientId = "koreader-import";
+    internal const string ClientId = "koreader-import";
     private readonly NostosDbContext _db;
     private readonly INoteService _notes;
 
@@ -152,7 +152,7 @@ public sealed class KoreaderNoteImportService
         };
     }
 
-    private static (string Kind, string? Value) Anchor(KoreaderAnnotation annotation)
+    internal static (string Kind, string? Value) Anchor(KoreaderAnnotation annotation)
     {
         if (!string.IsNullOrWhiteSpace(annotation.PositionStart)
             || !string.IsNullOrWhiteSpace(annotation.PositionEnd))
@@ -168,7 +168,7 @@ public sealed class KoreaderNoteImportService
             : ("koreader_page", page);
     }
 
-    private static string Fingerprint(
+    internal static string Fingerprint(
         Guid bookId,
         string anchorKind,
         string? anchorValue,
@@ -188,7 +188,7 @@ public sealed class KoreaderNoteImportService
             .ToLowerInvariant();
     }
 
-    private static string? Clean(string? value) =>
+    internal static string? Clean(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     private sealed record BookMatch(
