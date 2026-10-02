@@ -419,9 +419,11 @@ export function drawThemeNodeHover(
   const PADDING = 2;
   if (typeof data.label === 'string') {
     const textWidth = context.measureText(data.label).width;
-    const boxWidth = Math.round(textWidth + 5);
     const boxHeight = Math.round(labelSize + 2 * PADDING);
     const radius = Math.max(data.size, labelSize / 2) + PADDING;
+    // The text starts `size + LABEL_OFFSET_PX` from the centre, not at the
+    // plate's disc `radius`, so the plate must reach past the text's end.
+    const boxWidth = Math.round(data.size + LABEL_OFFSET_PX - radius + textWidth + 6);
     const angleRadian = Math.asin(boxHeight / 2 / radius);
     const xDeltaCoord = Math.sqrt(Math.abs(radius ** 2 - (boxHeight / 2) ** 2));
 
