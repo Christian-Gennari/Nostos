@@ -5,6 +5,7 @@ import { of } from 'rxjs';
 import { CommandPalette } from './command-palette.component';
 import { BooksService } from '../../core/services/books.service';
 import { CollectionsService } from '../../core/services/collections.service';
+import { HighlightImportService } from '../../core/services/highlight-import.service';
 import { LibraryFilterService } from '../../library/library-filter.service';
 
 describe('CommandPalette (Cmd/Ctrl+K)', () => {
@@ -20,8 +21,11 @@ describe('CommandPalette (Cmd/Ctrl+K)', () => {
     ]),
   );
 
+  const openHighlightImport = vi.fn();
+
   beforeEach(async () => {
     localStorage.clear();
+    openHighlightImport.mockClear();
     booksList.mockClear();
     collectionsList.mockClear();
 
@@ -31,6 +35,7 @@ describe('CommandPalette (Cmd/Ctrl+K)', () => {
         provideRouter([]),
         { provide: BooksService, useValue: { list: booksList } },
         { provide: CollectionsService, useValue: { list: collectionsList } },
+        { provide: HighlightImportService, useValue: { open: openHighlightImport } },
       ],
     }).compileComponents();
 
@@ -76,11 +81,23 @@ describe('CommandPalette (Cmd/Ctrl+K)', () => {
 
   it('lists go-to actions and filters them by query', () => {
     component.open();
-    expect(component.entries().filter((e) => e.kind === 'action').length).toBe(4);
+    expect(component.entries().filter((e) => e.kind === 'action').length).toBe(5);
 
     component.onQueryChange('studio');
     const actions = component.entries().filter((e) => e.kind === 'action');
     expect(actions.map((a) => a.label)).toEqual(['Go to Writing Studio']);
+  });
+
+  it('opens the highlight import dialog in place, without navigating', () => {
+    component.open();
+    component.onQueryChange('kobo');
+    const [action] = component.entries().filter((e) => e.kind === 'action');
+
+    component.run(action);
+
+    expect(openHighlightImport).toHaveBeenCalledTimes(1);
+    expect(router.navigate).not.toHaveBeenCalled();
+    expect(component.isOpen()).toBe(false);
   });
 
   it('filters collections client-side and navigates with the filter set', () => {

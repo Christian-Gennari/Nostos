@@ -7,6 +7,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
 import { BooksService } from '../../core/services/books.service';
 import { CollectionsService } from '../../core/services/collections.service';
+import { HighlightImportService } from '../../core/services/highlight-import.service';
 import { LibraryFilterService } from '../../library/library-filter.service';
 import { Book } from '../../core/dtos/book.dtos';
 import { Collection } from '../../core/dtos/collection.dtos';
@@ -15,13 +16,15 @@ import { NostosIconComponent } from '../icon/nostos-icon.component';
 export type PaletteEntry =
   | { kind: 'book'; id: string; label: string; sub: string }
   | { kind: 'collection'; id: string; label: string; sub: string }
-  | { kind: 'action'; id: string; label: string; sub: string; route: string };
+  // An action either navigates (`route`) or opens the highlight import dialog.
+  | { kind: 'action'; id: string; label: string; sub: string; route?: string };
 
 const ACTIONS: PaletteEntry[] = [
   { kind: 'action', id: 'go-library', label: 'Go to Library', sub: 'Browse your books', route: '/library' },
   { kind: 'action', id: 'go-brain', label: 'Go to Second Brain', sub: 'Concepts and notes', route: '/second-brain' },
   { kind: 'action', id: 'go-studio', label: 'Go to Writing Studio', sub: 'Your drafts', route: '/studio' },
   { kind: 'action', id: 'go-settings', label: 'Go to Settings', sub: 'Backup and appearance', route: '/settings' },
+  { kind: 'action', id: 'import-highlights', label: 'Import e-reader highlights', sub: 'Kobo and KOReader notes' },
 ];
 
 /**
@@ -44,6 +47,7 @@ export class CommandPalette {
   private booksService = inject(BooksService);
   private collectionsService = inject(CollectionsService);
   private filters = inject(LibraryFilterService);
+  private highlightImport = inject(HighlightImportService);
   isOpen = signal(false);
   query = signal('');
   books = signal<Book[]>([]);
@@ -189,8 +193,10 @@ export class CommandPalette {
     } else if (entry.kind === 'collection') {
       this.filters.collectionId.set(entry.id);
       this.router.navigate(['/library']);
-    } else {
+    } else if (entry.route) {
       this.router.navigate([entry.route]);
+    } else {
+      this.highlightImport.open();
     }
   }
 }
