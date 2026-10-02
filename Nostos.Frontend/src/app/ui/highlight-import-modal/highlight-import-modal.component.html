@@ -1,0 +1,180 @@
+@if (isOpen()) {
+<app-modal-shell
+  [isOpen]="true"
+  variant="sheet"
+  cardClass="highlight-import-card"
+  [maxWidth]="'560px'"
+  [maxHeight]="'min(700px, calc(100vh - 2.5rem))'"
+  [layer]="110"
+  [busy]="stage() === 'importing'"
+  [dismissOnBackdrop]="stage() === 'pick'"
+  ariaLabelledBy="highlight-import-title"
+  [style.--modal-head-padding]="'1.15rem 1.25rem 0.9rem'"
+  (closed)="close()"
+>
+  <header class="highlight-import-head" shellHeader>
+    <h2 id="highlight-import-title" class="highlight-import-title">Import highlights</h2>
+    <button
+      appIconButton
+      icon="x"
+      [glyphSize]="20"
+      class="highlight-import-close"
+      title="Close"
+      aria-label="Close"
+      [disabled]="stage() === 'importing'"
+      (click)="close()"
+    ></button>
+  </header>
+
+  <div class="highlight-import-body">
+    @switch (stage()) {
+      @case ('pick') {
+        <p class="highlight-import-hint">
+          Bring the highlights and notes you made on an e-reader into Nostos. They are added to the
+          matching books in your library; importing the same file again never creates duplicates.
+        </p>
+
+        <label
+          class="highlight-drop-zone"
+          [class.drag-active]="dragActive()"
+          (dragover)="onDragOver($event)"
+          (dragleave)="onDragLeave()"
+          (drop)="onDrop($event)"
+        >
+          <input
+            type="file"
+            class="highlight-file-input"
+            data-testid="highlight-import-input"
+            multiple
+            accept=".sqlite,.sqlite3,.db,.lua"
+            (change)="onFilesSelected($event)"
+          />
+          <nostos-icon name="upload-simple" [size]="22" weight="light"></nostos-icon>
+          <span class="highlight-drop-title">Choose files or drop them here</span>
+          <span class="highlight-drop-hint">KoboReader.sqlite or KOReader metadata.lua</span>
+        </label>
+
+        <dl class="highlight-sources">
+          <div class="highlight-source">
+            <dt>Kobo</dt>
+            <dd>
+              Connect the e-reader by USB and pick <code>KoboReader.sqlite</code> from its hidden
+              <code>.kobo</code> folder. One file covers every book.
+            </dd>
+          </div>
+          <div class="highlight-source">
+            <dt>KOReader</dt>
+            <dd>
+              Pick the <code>metadata.*.lua</code> file inside a book's <code>.sdr</code> folder.
+              You can select several at once.
+            </dd>
+          </div>
+        </dl>
+      }
+
+      @case ('importing') {
+        <div class="highlight-progress" role="status" aria-live="polite">
+          <nostos-icon name="circle-notch" [size]="22" class="spin"></nostos-icon>
+          <p class="highlight-progress-title">
+            @if (fileCount() > 1) {
+              Importing file {{ currentIndex() }} of {{ fileCount() }}…
+            } @else {
+              Importing highlights…
+            }
+          </p>
+          <p class="highlight-progress-file">{{ currentFileName() }}</p>
+          <p class="highlight-progress-note">A full Kobo library can take a minute. Keep this window open.</p>
+        </div>
+      }
+
+      @case ('result') {
+        <div class="highlight-result-summary" data-testid="highlight-import-summary" aria-live="polite">
+          <nostos-icon
+            [name]="importedCount() > 0 || duplicateCount() > 0 ? 'check-circle' : 'warning-circle'"
+            [size]="22"
+            weight="light"
+          ></nostos-icon>
+          <div>
+            <p class="highlight-result-headline">{{ headline() }}</p>
+            @if (summary()) {
+              <p class="highlight-result-sub">{{ summary() }}</p>
+            }
+          </div>
+        </div>
+
+        @if (failures().length > 0) {
+          <ul class="highlight-failures" role="alert">
+            @for (failure of failures(); track $index) {
+              <li class="highlight-failure">
+                <span class="highlight-row-title">{{ failure.fileName }}</span>
+                <span class="highlight-row-sub">{{ failure.message }}</span>
+              </li>
+            }
+          </ul>
+        }
+
+        @if (matched().length > 0) {
+          <section class="highlight-section" aria-labelledby="highlight-matched-title">
+            <div class="highlight-section-header">
+              <h3 class="highlight-section-title" id="highlight-matched-title">In your library</h3>
+              <span class="highlight-count-badge">{{ matched().length }}</span>
+            </div>
+            <ul class="highlight-rows">
+              @for (book of matched(); track $index) {
+                <li>
+                  <button type="button" class="highlight-row highlight-row--link" (click)="openBook(book)">
+                    <span class="highlight-row-text">
+                      <span class="highlight-row-title">{{ book.bookTitle }}</span>
+                      <span class="highlight-row-sub">{{ outcome(book) }}</span>
+                    </span>
+                    <nostos-icon name="caret-right" [size]="14"></nostos-icon>
+                  </button>
+                </li>
+              }
+            </ul>
+          </section>
+        }
+
+        @if (unplaced().length > 0) {
+          <details class="highlight-section highlight-unplaced" [open]="matched().length === 0">
+            <summary class="highlight-section-header">
+              <nostos-icon name="caret-right" [size]="12" class="highlight-disclosure"></nostos-icon>
+              <h3 class="highlight-section-title">Not imported</h3>
+              <span class="highlight-count-badge">{{ unplaced().length }}</span>
+            </summary>
+            <p class="highlight-hint-inline">
+              {{ count(unplacedHighlightCount(), 'highlight') }}
+              {{ unplacedHighlightCount() === 1 ? 'belongs' : 'belong' }} to books Nostos could not place. Add the book to your library, then import the same file again.
+            </p>
+            <ul class="highlight-rows">
+              @for (book of unplaced(); track $index) {
+                <li class="highlight-row">
+                  <span class="highlight-row-text">
+                    <span class="highlight-row-title">{{ book.sourceTitle || 'Untitled book' }}</span>
+                    <span class="highlight-row-sub">
+                      @if (book.sourceAuthor) {
+                        {{ book.sourceAuthor }} ·
+                      }
+                      {{ count(book.annotationCount, 'highlight') }} ·
+                      {{ book.status === 'ambiguous' ? book.message : 'Not in your library' }}
+                    </span>
+                  </span>
+                </li>
+              }
+            </ul>
+          </details>
+        }
+      }
+    }
+  </div>
+
+  @if (stage() === 'result') {
+    <app-dialog-actions shellActions>
+      <button appButton type="button" variant="secondary" (click)="importAnother()">
+        Import another file
+      </button>
+      <button appButton type="button" variant="primary" (click)="close()">Done</button>
+    </app-dialog-actions>
+  }
+</app-modal-shell>
+}

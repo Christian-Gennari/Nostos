@@ -565,6 +565,34 @@
       </section>
       }
 
+      <section class="settings-card" data-testid="highlight-import-card">
+        <div class="card-header">
+          <div class="card-header-copy">
+            <h2>E-reader highlights</h2>
+          </div>
+        </div>
+
+        <div class="card-body">
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="label-text">Import highlights and notes</span>
+              <span class="label-desc">Bring what you marked on a Kobo or in KOReader into the matching books in your library. Importing the same file again never creates duplicates.</span>
+            </div>
+
+            <button
+              appButton
+              variant="secondary"
+              class="highlight-import-action"
+              data-testid="highlight-import-action"
+              (click)="openHighlightImport()"
+            >
+              <nostos-icon name="highlighter" [size]="16"></nostos-icon>
+              Import…
+            </button>
+          </div>
+        </div>
+      </section>
+
           </section>
           }
 

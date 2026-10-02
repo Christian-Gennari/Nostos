@@ -35,6 +35,7 @@ import { DeploymentCapabilities } from '../core/dtos/deployment-capabilities.dto
 import { CloudAiRefillService } from '../core/services/cloud-ai-refill.service';
 import { CloudAuthService } from '../core/services/cloud-auth.service';
 import { CloudSession } from '../core/dtos/cloud-auth.dtos';
+import { HighlightImportService } from '../core/services/highlight-import.service';
 import { PortableLibraryService } from '../core/services/portable-library.service';
 import { CloudManagedAiUsage } from '../core/dtos/cloud-ai-refill.dtos';
 import {
@@ -196,6 +197,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
   private cloudAiRefills = inject(CloudAiRefillService);
   private portableLibrary = inject(PortableLibraryService);
   private cloudAuth = inject(CloudAuthService);
+  private highlightImport = inject(HighlightImportService);
 
   /** Which settings surface is visible. This is local UI state, not a route. */
   readonly activeSettingsSection = signal<SettingsSection>('library');
@@ -244,12 +246,8 @@ export class SettingsComponent implements OnInit, OnDestroy {
       this.deploymentCapabilities()?.managedAi === true &&
       this.deploymentCapabilities()?.usageMeteringAvailable === true,
   );
-  readonly hasLibrarySettings = computed(
-    () =>
-      this.supportsLocalBackupConfiguration() ||
-      this.supportsEreaderAccess() ||
-      this.supportsCloudPortableExport(),
-  );
+  /** Highlight import exists on every deployment, so the section always has content. */
+  readonly hasLibrarySettings = computed(() => this.deploymentCapabilities() !== null);
 
   /** The AI provider card's copy, exposed so the template reads one source. */
   readonly copy = AI_PROVIDER_COPY;
@@ -303,6 +301,10 @@ export class SettingsComponent implements OnInit, OnDestroy {
   readonly captureModeDescription = computed(
     () => this.copy.captureDescriptions[this.captureProcessingMode()],
   );
+
+  openHighlightImport(): void {
+    this.highlightImport.open();
+  }
 
   setSettingsSection(section: SettingsSection): void {
     this.activeSettingsSection.set(section);
@@ -457,15 +459,6 @@ export class SettingsComponent implements OnInit, OnDestroy {
       next: (capabilities) => {
         this.deploymentCapabilities.set(capabilities);
         this.capabilitiesFailed.set(false);
-
-        // Keep Library & data when any library-facing capability exists.
-        if (
-          !capabilities.supportsLocalBackupConfiguration &&
-          !capabilities.supportsEreaderAccess &&
-          capabilities.deploymentMode !== 'Cloud'
-        ) {
-          this.activeSettingsSection.set('assistant');
-        }
 
         // Do not touch owner/infrastructure APIs before the server says this
         // deployment exposes them. This also prevents forbidden controls from

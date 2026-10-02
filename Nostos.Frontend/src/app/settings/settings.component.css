@@ -776,7 +776,8 @@
     align-self: flex-start;
   }
 
-  .portable-export-action {
+  .portable-export-action,
+  .highlight-import-action {
     width: 100%;
   }
 

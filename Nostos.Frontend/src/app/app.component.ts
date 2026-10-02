@@ -9,6 +9,7 @@ import {
 } from '@angular/router';
 import { ToastContainerComponent } from './ui/toast-container/toast-container.component';
 import { CommandPalette } from './ui/command-palette/command-palette.component';
+import { HighlightImportModal } from './ui/highlight-import-modal/highlight-import-modal.component';
 import { AssistantComponent } from './ui/assistant/assistant.component';
 import { SwUpdateService } from './core/services/sw-update.service';
 import { ThemeService } from './core/services/theme.service';
@@ -21,6 +22,7 @@ import { CloudEntryComponent } from './cloud-entry/cloud-entry.component';
     RouterOutlet,
     ToastContainerComponent,
     CommandPalette,
+    HighlightImportModal,
     AssistantComponent,
     CloudEntryComponent,
   ],
