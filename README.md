@@ -21,12 +21,15 @@
 <hr>
 
 <div align="center">
-  <img
-    width="2880"
-    height="1800"
-    alt="Nostos Library Interface"
-    src="docs/screenshots/library.png"
-  />
+  <a href="https://nostos.page">
+    <img
+      width="2880"
+      height="1620"
+      alt="Nostos Launch Film — A home for your reading life"
+      src="docs/screenshots/promo-poster.png"
+    />
+  </a>
+  <p><em>Watch the launch film on <a href="https://nostos.page">nostos.page</a></em></p>
 </div>
 
 ## What is Nostos?
@@ -53,6 +56,15 @@ Keep different kinds of books in one collection without flattening them into the
 - **Collections and filtering:** Organize books into nested collections, move them with drag and drop, and filter by reading state, rating, recency, or collection.
 - **Works and editions:** Nostos can group matching editions using normalized ISBNs or title and author identity.
 - **Free-source acquisition:** Search and import supported public-domain material from Project Gutenberg and LibriVox. Imported books become ordinary Nostos library items rather than remaining dependent on the source.
+
+<div align="center">
+  <img
+    width="2880"
+    height="1800"
+    alt="Nostos Library Interface"
+    src="docs/screenshots/library.png"
+  />
+</div>
 
 <details>
   <summary><strong>View Library Screenshots</strong></summary>
