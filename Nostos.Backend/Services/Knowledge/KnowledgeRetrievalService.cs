@@ -1,9 +1,11 @@
+using Microsoft.Extensions.Logging;
 using Nostos.Backend.Data.Interfaces;
 using Nostos.Backend.Data.Models;
 using Nostos.Backend.Search;
 using Nostos.Backend.Services.Library;
 using Nostos.Backend.Services.Notes;
 using Nostos.Product.BookText;
+using Nostos.Product.Services.Ai;
 using Nostos.Shared.Dtos;
 using Nostos.Shared.Enums;
 
@@ -175,8 +177,19 @@ public sealed class KnowledgeRetrievalService(
     ILibraryService library,
     IBookTextSearchService bookText,
     IBookTextIndex bookTextIndex,
-    IEnumerable<IKnowledgeRetrievalContributor> contributors) : IKnowledgeRetrievalService
+    IEnumerable<IKnowledgeRetrievalContributor> contributors,
+    IEmbeddingProvider? embeddings = null,
+    IBookTextEmbeddingIndex? embeddingIndex = null,
+    BookTextOptions? bookTextOptions = null,
+    ILogger<KnowledgeRetrievalService>? logger = null) : IKnowledgeRetrievalService
 {
+    /// <summary>Candidates taken from each channel (lexical, vector) before fusion.</summary>
+    public const int HybridCandidatesPerChannel = 30;
+
+    // A search turn must not wait out the provider's own (ingestion-sized)
+    // request timeout for a single query vector.
+    private static readonly TimeSpan QueryEmbeddingTimeout = TimeSpan.FromSeconds(10);
+
     private const int DefaultMaxPerSource = 6;
     private const int MaximumMaxPerSource = 8;
     private const int SupportingNotesPerConcept = 3;
@@ -234,9 +247,12 @@ public sealed class KnowledgeRetrievalService(
                 ct));
         }
 
-        var bookEvidence = bookResponse.Passages
-            .Select(ToBookEvidence)
-            .ToList();
+        var bookEvidence = await FuseBookEvidenceAsync(
+            request.Query.Trim(),
+            bookResponse,
+            bookResponse.Passages.Select(ToBookEvidence).ToList(),
+            max,
+            ct);
 
         // Optional contributors can add canonical candidates (for example a
         // future embedding index). Their output is never trusted as evidence on
@@ -507,6 +523,152 @@ public sealed class KnowledgeRetrievalService(
             chunk.Text,
             chunk.HeadingPath,
             chunk.SourceSegments);
+    }
+
+    /// <summary>
+    /// Hybrid passage retrieval (issue #683): fuses the lexical FTS ranking with
+    /// the vector ranking by Reciprocal Rank Fusion.
+    ///
+    /// The vector channel is strictly additive. With no active embedding model,
+    /// no stored vectors, or a provider that fails or times out, this returns
+    /// <paramref name="lexical"/> untouched — the turn never fails because of
+    /// embeddings. Only caller cancellation propagates.
+    /// </summary>
+    private async Task<List<KnowledgeBookEvidence>> FuseBookEvidenceAsync(
+        string query,
+        BookTextSearchResponse bookResponse,
+        List<KnowledgeBookEvidence> lexical,
+        int max,
+        CancellationToken ct)
+    {
+        if (embeddings is null || embeddingIndex is null)
+            return lexical;
+
+        // Same visibility rule as the lexical pipeline: only books whose
+        // current revision is Ready, inside the scope it already resolved.
+        var readyBookIds = bookResponse.States
+            .Where(state => state.Status == BookTextIngestionStatus.Ready)
+            .Select(state => state.BookId)
+            .Distinct()
+            .ToList();
+        if (readyBookIds.Count == 0)
+            return lexical;
+
+        IReadOnlyList<BookTextSearchHit> vectorHits;
+        try
+        {
+            var model = await embeddings.GetActiveModelAsync(ct);
+            if (string.IsNullOrWhiteSpace(model))
+                return lexical;
+
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(QueryEmbeddingTimeout);
+
+            var batch = await embeddings.EmbedAsync([query], timeout.Token);
+            if (batch.Vectors.Count == 0 || batch.Vectors[0].Length == 0)
+                return lexical;
+
+            vectorHits = await embeddingIndex.SearchAsync(
+                model,
+                batch.Vectors[0],
+                readyBookIds,
+                HybridCandidatesPerChannel,
+                ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            // Deliberately no query text in this line.
+            logger?.LogWarning(
+                "Vector retrieval failed with {Failure}; answering from lexical search only.",
+                exception is EmbeddingException embedding
+                    ? embedding.Code
+                    : exception.GetType().Name);
+            return lexical;
+        }
+
+        if (vectorHits.Count == 0)
+            return lexical;
+
+        var lexicalHits = await bookTextIndex.SearchAsync(
+            query,
+            readyBookIds,
+            HybridCandidatesPerChannel,
+            ct);
+
+        var chunks = new Dictionary<KnowledgeEvidenceHandle, BookTextIndexedChunk>();
+        foreach (var hit in lexicalHits.Concat(vectorHits))
+            chunks.TryAdd(BookHandle(hit.Chunk), hit.Chunk);
+
+        // The strict FTS query can come back empty where the lexical pipeline's
+        // relaxed fallback still found passages; those then stand in as the
+        // lexical ranking so the channel is never dropped from the fusion.
+        var lexicalRanking = lexicalHits.Count > 0
+            ? lexicalHits.Select(hit => BookHandle(hit.Chunk)).ToList()
+            : lexical.Select(item => item.Handle).ToList();
+
+        var fused = ReciprocalRankFusion.Fuse<KnowledgeEvidenceHandle>(
+        [
+            new(lexicalRanking),
+            new(vectorHits.Select(hit => BookHandle(hit.Chunk)).ToList()),
+        ]);
+
+        var options = bookTextOptions ?? new BookTextOptions();
+        var lexicalByHandle = lexical
+            .GroupBy(item => item.Handle)
+            .ToDictionary(group => group.Key, group => group.First());
+        var books = new Dictionary<Guid, BookDto?>();
+        var evidence = new List<KnowledgeBookEvidence>(max);
+        var totalChars = 0;
+
+        foreach (var candidate in fused)
+        {
+            KnowledgeBookEvidence? item;
+            if (chunks.TryGetValue(candidate.Key, out var chunk))
+            {
+                if (!books.TryGetValue(chunk.BookId, out var book))
+                {
+                    book = (await library.GetBookAsync(chunk.BookId, ct)).Data as BookDto;
+                    books[chunk.BookId] = book;
+                }
+
+                if (book is null)
+                    continue;
+
+                item = new KnowledgeBookEvidence(
+                    candidate.Key,
+                    chunk.BookId,
+                    book.Title,
+                    book.Author,
+                    chunk.SourceSha256,
+                    chunk.ExtractorVersion,
+                    chunk.Format,
+                    chunk.Ordinal,
+                    chunk.Text.Length <= options.MaxPassageChars
+                        ? chunk.Text
+                        : chunk.Text[..options.MaxPassageChars],
+                    chunk.HeadingPath,
+                    chunk.SourceSegments);
+            }
+            else if (!lexicalByHandle.TryGetValue(candidate.Key, out item))
+            {
+                continue;
+            }
+
+            // The same passage budget the lexical pipeline enforces.
+            if (totalChars + item.Text.Length > options.MaxTotalPassageChars)
+                break;
+
+            evidence.Add(item);
+            totalChars += item.Text.Length;
+            if (evidence.Count >= max)
+                break;
+        }
+
+        return evidence.Count > 0 ? evidence : lexical;
     }
 
     private static KnowledgeNoteEvidence ToNoteEvidence(NoteSearchHitDto note) =>

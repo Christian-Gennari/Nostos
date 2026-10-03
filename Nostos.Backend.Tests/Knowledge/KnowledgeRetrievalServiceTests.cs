@@ -13,6 +13,7 @@ using Nostos.Backend.Services.Library;
 using Nostos.Backend.Services.Notes;
 using Nostos.Backend.Tests.Support;
 using Nostos.Product.BookText;
+using Nostos.Product.Services.Ai;
 using Nostos.Shared.Enums;
 using Xunit;
 
@@ -275,7 +276,207 @@ public sealed class KnowledgeRetrievalServiceTests : IClassFixture<SqliteTestFix
         result.Notes.Should().HaveCount(1);
     }
 
-    private async Task<Harness> CreateHarnessAsync()
+    // The hybrid corpus (issue #683). For the query "freedom":
+    //   lexical (bm25) ranks  Dense (ordinal 0) > Sparse (ordinal 3); Synonym has no match
+    //   vector (cosine) ranks Sparse (1.0) > Synonym (0.9) > Dense (0.5) > fillers (0)
+    // so RRF, k=60, gives Sparse 1/62+1/61 > Dense 1/61+1/63 > Synonym 1/62.
+    private const string EmbeddingModel = "test-embedding-model";
+    private const string Dense = "Freedom freedom freedom.";
+    private const string Sparse =
+        "Freedom is discussed here once, in a long passage that is mostly about harbours, tides, weather and the slow repair of wooden boats.";
+    private const string Synonym = "Liberty is the condition of ruling oneself without a master.";
+
+    private static readonly string[] HybridCorpus =
+    [
+        Dense,
+        "Filler about bread and ovens.",
+        "Filler about mountain paths.",
+        Sparse,
+        "Filler about river stones.",
+        "Filler about winter coats.",
+        Synonym,
+    ];
+
+    private static async Task<(PhysicalBookModel Book, IReadOnlyList<BookTextIndexedChunk> Chunks)> SeedHybridCorpusAsync(
+        Harness h)
+    {
+        var book = await h.SeedBookAsync("Hybrid");
+        var chunks = await h.IndexBookAsync(book.Id, HybridCorpus);
+        await h.BookTextIndex.StoreAsync(
+            EmbeddingModel,
+            chunks
+                .Select(chunk => new BookTextChunkEmbedding(chunk.Id, chunk.Text switch
+                {
+                    Sparse => [1f, 0f, 0f],
+                    Synonym => [0.9f, 0.43589f, 0f],
+                    Dense => [0.5f, 0.86603f, 0f],
+                    _ => [0f, 0f, 1f],
+                }))
+                .ToList());
+        return (book, chunks);
+    }
+
+    [Fact]
+    public async Task Disabled_embeddings_keep_book_retrieval_purely_lexical()
+    {
+        var provider = new FakeEmbeddingProvider(model: null);
+        await using var h = await CreateHarnessAsync(provider);
+        var (book, _) = await SeedHybridCorpusAsync(h);
+
+        var result = await h.Knowledge.SearchAsync(
+            new KnowledgeSearchRequest("freedom", BookIds: [book.Id], MaxPerSource: 3));
+
+        // bm25 order, each hit followed by its neighbours: exactly what the
+        // lexical pipeline returned before the vector channel existed.
+        result.BookPassages.Select(passage => passage.Ordinal).Should().Equal(0, 1, 3);
+        result.BookPassages.Should().NotContain(passage => passage.Text == Synonym);
+        provider.EmbedCalls.Should().Be(0);
+
+        await using var withoutEmbeddings = await CreateHarnessAsync();
+        var (lexicalBook, _) = await SeedHybridCorpusAsync(withoutEmbeddings);
+        var lexical = await withoutEmbeddings.Knowledge.SearchAsync(
+            new KnowledgeSearchRequest("freedom", BookIds: [lexicalBook.Id], MaxPerSource: 3));
+        result.BookPassages.Select(passage => passage.Text)
+            .Should().Equal(lexical.BookPassages.Select(passage => passage.Text));
+    }
+
+    [Fact]
+    public async Task Enabled_embeddings_fuse_lexical_and_vector_rankings_by_rrf()
+    {
+        var provider = new FakeEmbeddingProvider(EmbeddingModel) { QueryVector = [1f, 0f, 0f] };
+        await using var h = await CreateHarnessAsync(provider);
+        var (book, chunks) = await SeedHybridCorpusAsync(h);
+
+        var result = await h.Knowledge.SearchAsync(
+            new KnowledgeSearchRequest("freedom", BookIds: [book.Id], MaxPerSource: 3));
+
+        // Sparse is second lexically and first by vector, so fusion lifts it
+        // over the lexical leader; Synonym has no lexical match at all and is
+        // only reachable through the vector channel.
+        result.BookPassages.Select(passage => passage.Text).Should().Equal(Sparse, Dense, Synonym);
+        result.EvidenceAvailable.Should().BeTrue();
+        provider.EmbedCalls.Should().Be(1);
+        provider.LastInputs.Should().Equal("freedom");
+
+        // A vector-only passage is still canonical evidence: same handle,
+        // heading path and source anchors as the indexed chunk, and it rereads.
+        var synonymChunk = chunks.Single(chunk => chunk.Text == Synonym);
+        var synonym = result.BookPassages[2];
+        synonym.Handle.Should().Be(new KnowledgeEvidenceHandle(
+            KnowledgeEvidenceKinds.BookText,
+            BookId: book.Id,
+            SourceSha256: synonymChunk.SourceSha256,
+            ExtractorVersion: synonymChunk.ExtractorVersion,
+            Ordinal: synonymChunk.Ordinal));
+        synonym.BookTitle.Should().Be("Hybrid");
+        synonym.BookAuthor.Should().Be("Author");
+        synonym.HeadingPath.Should().Equal("Chapter One");
+        synonym.SourceSegments.Should().BeEquivalentTo(synonymChunk.SourceSegments);
+
+        var reread = await h.Knowledge.ReadAsync(synonym.Handle);
+        reread!.BookPassage!.Text.Should().Be(Synonym);
+    }
+
+    [Fact]
+    public async Task Vector_channel_recovers_passages_when_the_lexical_channel_finds_nothing()
+    {
+        var provider = new FakeEmbeddingProvider(EmbeddingModel) { QueryVector = [1f, 0f, 0f] };
+        await using var h = await CreateHarnessAsync(provider);
+        var (book, _) = await SeedHybridCorpusAsync(h);
+
+        var result = await h.Knowledge.SearchAsync(
+            new KnowledgeSearchRequest("emancipation", BookIds: [book.Id], MaxPerSource: 3));
+
+        result.BookPassages.Select(passage => passage.Text).Should().Equal(Sparse, Synonym, Dense);
+        result.EvidenceAvailable.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Vector_channel_cannot_escape_explicit_book_scope()
+    {
+        var provider = new FakeEmbeddingProvider(EmbeddingModel) { QueryVector = [1f, 0f, 0f] };
+        await using var h = await CreateHarnessAsync(provider);
+        await SeedHybridCorpusAsync(h);
+        var scoped = await h.SeedBookAsync("Scoped");
+        await h.IndexBookAsync(scoped.Id, "Unrelated passage about clockwork.");
+
+        var result = await h.Knowledge.SearchAsync(
+            new KnowledgeSearchRequest("freedom", BookIds: [scoped.Id], MaxPerSource: 3));
+
+        result.BookPassages.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Enabled_embeddings_without_stored_vectors_stay_lexical()
+    {
+        // A model with no vectors yet (the embedding pass has not caught up).
+        var provider = new FakeEmbeddingProvider("another-model") { QueryVector = [1f, 0f, 0f] };
+        await using var h = await CreateHarnessAsync(provider);
+        var (book, _) = await SeedHybridCorpusAsync(h);
+
+        var result = await h.Knowledge.SearchAsync(
+            new KnowledgeSearchRequest("freedom", BookIds: [book.Id], MaxPerSource: 3));
+
+        result.BookPassages.Select(passage => passage.Ordinal).Should().Equal(0, 1, 3);
+    }
+
+    public static TheoryData<Exception> EmbeddingFailures => new()
+    {
+        EmbeddingException.TimedOut(),
+        EmbeddingException.ProviderFailure("HTTP 500"),
+        new InvalidOperationException("unexpected"),
+        new TaskCanceledException("provider-side timeout"),
+    };
+
+    [Theory]
+    [MemberData(nameof(EmbeddingFailures))]
+    public async Task Failing_embedding_provider_falls_back_to_lexical_without_failing_the_turn(
+        Exception failure)
+    {
+        var provider = new FakeEmbeddingProvider(EmbeddingModel) { Failure = failure };
+        await using var h = await CreateHarnessAsync(provider);
+        var (book, _) = await SeedHybridCorpusAsync(h);
+
+        var result = await h.Knowledge.SearchAsync(
+            new KnowledgeSearchRequest("freedom", BookIds: [book.Id], MaxPerSource: 3));
+
+        provider.EmbedCalls.Should().Be(1);
+        result.BookPassages.Select(passage => passage.Ordinal).Should().Equal(0, 1, 3);
+        result.EvidenceAvailable.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Failing_active_model_lookup_falls_back_to_lexical()
+    {
+        var provider = new FakeEmbeddingProvider(EmbeddingModel)
+        {
+            ModelFailure = new InvalidOperationException("settings unavailable"),
+        };
+        await using var h = await CreateHarnessAsync(provider);
+        var (book, _) = await SeedHybridCorpusAsync(h);
+
+        var result = await h.Knowledge.SearchAsync(
+            new KnowledgeSearchRequest("freedom", BookIds: [book.Id], MaxPerSource: 3));
+
+        result.BookPassages.Select(passage => passage.Ordinal).Should().Equal(0, 1, 3);
+    }
+
+    [Fact]
+    public async Task Caller_cancellation_during_embedding_is_not_swallowed_as_a_fallback()
+    {
+        using var cts = new CancellationTokenSource();
+        var provider = new FakeEmbeddingProvider(EmbeddingModel) { OnEmbed = cts.Cancel };
+        await using var h = await CreateHarnessAsync(provider);
+        var (book, _) = await SeedHybridCorpusAsync(h);
+
+        var act = () => h.Knowledge.SearchAsync(
+            new KnowledgeSearchRequest("freedom", BookIds: [book.Id], MaxPerSource: 3),
+            cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    private async Task<Harness> CreateHarnessAsync(IEmbeddingProvider? embeddings = null)
     {
         var path = _fixture.CreateDatabasePath();
         var options = new DbContextOptionsBuilder<NostosDbContext>()
@@ -315,7 +516,9 @@ public sealed class KnowledgeRetrievalServiceTests : IClassFixture<SqliteTestFix
             library,
             bookSearch,
             index,
-            [contributor]);
+            [contributor],
+            embeddings,
+            embeddings is null ? null : index);
 
         return new Harness(
             db,
@@ -352,6 +555,46 @@ public sealed class KnowledgeRetrievalServiceTests : IClassFixture<SqliteTestFix
             Db.Books.Add(book);
             await Db.SaveChangesAsync();
             return book;
+        }
+
+        public async Task<IReadOnlyList<BookTextIndexedChunk>> IndexBookAsync(
+            Guid bookId,
+            params string[] texts)
+        {
+            await BookTextIndex.ScheduleAsync(bookId, "book.pdf", BookTextSourceFormat.Pdf);
+            BookTextIngestionWork? work;
+            do
+            {
+                work = await BookTextIndex.TryClaimNextAsync(TimeSpan.FromMinutes(15));
+                work.Should().NotBeNull();
+            }
+            while (work!.BookId != bookId);
+
+            var revision = new BookTextSourceRevision(
+                bookId,
+                new string('a', 64),
+                BookTextArtifactSchema.CurrentExtractorVersion,
+                BookTextSourceFormat.Pdf);
+
+            var chunks = texts
+                .Select((text, ordinal) => new BookTextIndexedChunk(
+                    BookTextIdentity.ChunkId(revision, ordinal),
+                    bookId,
+                    revision.SourceSha256,
+                    revision.ExtractorVersion,
+                    revision.Format,
+                    ordinal,
+                    text,
+                    ["Chapter One"],
+                    [new BookTextSourceSegment(0, text.Length, new PdfBookTextSourceLocator(ordinal, null, 0, text.Length))]))
+                .ToList();
+
+            (await BookTextIndex.ReplaceReadyAsync(
+                revision,
+                chunks,
+                chunks.Sum(chunk => chunk.Text.Length),
+                work.Attempt)).Should().BeTrue();
+            return chunks;
         }
 
         public async Task<NoteModel> SeedNoteAsync(
@@ -424,6 +667,33 @@ public sealed class KnowledgeRetrievalServiceTests : IClassFixture<SqliteTestFix
             string mode,
             CancellationToken ct = default) =>
             Task.FromResult(new ThoughtProcessingResult(rawText, mode, ProviderCalled: false));
+    }
+
+    private sealed class FakeEmbeddingProvider(string? model) : IEmbeddingProvider
+    {
+        public float[] QueryVector { get; init; } = [1f, 0f, 0f];
+        public Exception? Failure { get; init; }
+        public Exception? ModelFailure { get; init; }
+        public Action? OnEmbed { get; init; }
+        public int EmbedCalls { get; private set; }
+        public IReadOnlyList<string> LastInputs { get; private set; } = [];
+
+        public Task<string?> GetActiveModelAsync(CancellationToken ct = default) =>
+            ModelFailure is null ? Task.FromResult(model) : throw ModelFailure;
+
+        public Task<EmbeddingBatch> EmbedAsync(
+            IReadOnlyList<string> inputs,
+            CancellationToken ct = default)
+        {
+            EmbedCalls++;
+            LastInputs = inputs;
+            if (Failure is not null)
+                throw Failure;
+
+            OnEmbed?.Invoke();
+            ct.ThrowIfCancellationRequested();
+            return Task.FromResult(new EmbeddingBatch(model!, [QueryVector.ToArray()], TotalTokens: 1));
+        }
     }
 
     private sealed class StubContributor : IKnowledgeRetrievalContributor
