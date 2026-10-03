@@ -9,18 +9,21 @@ using Microsoft.EntityFrameworkCore;
 using Nostos.Backend.Configuration;
 using Nostos.Backend.Data;
 using Nostos.Backend.Data.Models;
+using Nostos.Product.Services.Ai;
 
 namespace Nostos.Backend.Services.Ai;
 
 /// <summary>
-/// The one place the assistant's LLM and voice STT configuration is read and
-/// written (assistant-milestone plan, "AI provider settings").
+/// The one place the assistant's LLM, voice STT and passage-embedding
+/// configuration is read and written (assistant-milestone plan, "AI provider
+/// settings"; embeddings: issue #683).
 ///
 /// <para>
 /// Effective config = the stored override when set, else the existing
 /// <c>appsettings.json</c>/environment fallback. That is why
-/// <see cref="AssistantOptions"/> and <see cref="SpeechOptions"/> are still
-/// injected here: they are the fallback, and the class never rewrites them.
+/// <see cref="AssistantOptions"/>, <see cref="SpeechOptions"/> and
+/// <see cref="EmbeddingOptions"/> are still injected here: they are the
+/// fallback, and the class never rewrites them.
 /// </para>
 ///
 /// <para>
@@ -42,6 +45,7 @@ public sealed class AiProviderSettingsService(
     IDbContextFactory<NostosDbContext> dbFactory,
     AssistantOptions assistantOptions,
     SpeechOptions speechOptions,
+    EmbeddingOptions embeddingOptions,
     IDataProtectionProvider dataProtection,
     IHttpClientFactory httpClientFactory,
     ILogger<AiProviderSettingsService> logger) : IAiProviderSettingsService
@@ -68,6 +72,9 @@ public sealed class AiProviderSettingsService(
     public async Task<EffectiveAiProviderConfig> GetEffectiveSttAsync(CancellationToken ct = default) =>
         ResolveStt(await LoadRowAsync(ct));
 
+    public async Task<EffectiveAiProviderConfig> GetEffectiveEmbeddingAsync(CancellationToken ct = default) =>
+        ResolveEmbedding(await LoadRowAsync(ct));
+
     // ------------------------------------------------------------------
     // GET / PUT
     // ------------------------------------------------------------------
@@ -76,7 +83,10 @@ public sealed class AiProviderSettingsService(
     {
         await using var db = await dbFactory.CreateDbContextAsync(ct);
         var row = await LoadRowAsync(db, ct);
-        return new AiProviderSettingsResponse(ToDto(ResolveLlm(row)), ToDto(ResolveStt(row)));
+        return new AiProviderSettingsResponse(
+            ToDto(ResolveLlm(row)),
+            ToDto(ResolveStt(row)),
+            ToDto(ResolveEmbedding(row)));
     }
 
     public async Task<AiProviderSettingsResponse> UpdateAsync(
@@ -103,6 +113,11 @@ public sealed class AiProviderSettingsService(
         if (request.Stt is not null)
         {
             ApplySttUpdate(row, request.Stt);
+        }
+
+        if (request.Embedding is not null)
+        {
+            ApplyEmbeddingUpdate(row, request.Embedding);
         }
 
         row.UpdatedAtUtc = DateTime.UtcNow;
@@ -156,6 +171,29 @@ public sealed class AiProviderSettingsService(
         }
 
         row.SttApiKeyEncrypted = ApplyKey(update.ApiKey, row.SttApiKeyEncrypted);
+    }
+
+    private void ApplyEmbeddingUpdate(AiProviderSettingsModel row, AiProviderSectionUpdate update)
+    {
+        ValidateBaseUrl(update.BaseUrl);
+        ValidateModel(update.Model);
+
+        if (update.Enabled is { } enabled)
+        {
+            row.EmbeddingEnabled = enabled;
+        }
+
+        if (update.BaseUrl is not null)
+        {
+            row.EmbeddingBaseUrl = update.BaseUrl.Trim();
+        }
+
+        if (update.Model is not null)
+        {
+            row.EmbeddingModel = update.Model.Trim();
+        }
+
+        row.EmbeddingApiKeyEncrypted = ApplyKey(update.ApiKey, row.EmbeddingApiKeyEncrypted);
     }
 
     /// <summary>
@@ -218,9 +256,9 @@ public sealed class AiProviderSettingsService(
         ValidateResolvedBaseUrl(baseUrl, kind);
         var apiKey = ResolveApiKey(request.ApiKey, effective);
 
-        // Try {baseUrl}/models, then {baseUrl}/v1/models. The LLM base URL
-        // already ends in /v1, STT's does not, so the first attempt covers the
-        // former and the fallback the latter.
+        // Try {baseUrl}/models, then {baseUrl}/v1/models. The LLM and embedding
+        // base URLs already end in /v1, STT's does not, so the first attempt
+        // covers the former and the fallback the latter.
         string? lastError = null;
         foreach (var url in new[] { Combine(baseUrl, "models"), Combine(baseUrl, "v1/models") })
         {
@@ -269,9 +307,12 @@ public sealed class AiProviderSettingsService(
                 return new AiProviderTestResult(false, null, $"{KindLabel(kind)} model is not configured.");
             }
 
-            return kind == AiProviderKind.Llm
-                ? await TestLlmAsync(baseUrl, model, apiKey, ct)
-                : await TestSttAsync(baseUrl, model, apiKey, ct);
+            return kind switch
+            {
+                AiProviderKind.Llm => await TestLlmAsync(baseUrl, model, apiKey, ct),
+                AiProviderKind.Embedding => await TestEmbeddingAsync(baseUrl, model, apiKey, ct),
+                _ => await TestSttAsync(baseUrl, model, apiKey, ct),
+            };
         }
         catch (AiProviderValidationException ex)
         {
@@ -344,6 +385,46 @@ public sealed class AiProviderSettingsService(
             : new AiProviderTestResult(false, null, error);
     }
 
+    private async Task<AiProviderTestResult> TestEmbeddingAsync(
+        string baseUrl,
+        string model,
+        string? apiKey,
+        CancellationToken ct)
+    {
+        // One minimal REAL embedding, parsed with the same reader ingestion
+        // uses: an endpoint that answers 200 with something that is not a
+        // usable vector must fail here, not later in the background worker.
+        var inputs = new[] { "ping" };
+        using var content = new StringContent(
+            OpenAiCompatibleEmbeddings.BuildRequestBody(model, inputs),
+            Encoding.UTF8,
+            "application/json");
+        var (ok, body, error) = await SendAsync(
+            HttpMethod.Post,
+            OpenAiCompatibleEmbeddings.BuildUri(baseUrl).ToString(),
+            apiKey,
+            content,
+            ct);
+
+        if (!ok)
+        {
+            return new AiProviderTestResult(false, null, error);
+        }
+
+        try
+        {
+            var batch = OpenAiCompatibleEmbeddings.ParseResponse(body, model, inputs.Length);
+            return new AiProviderTestResult(
+                true,
+                $"Reached {model} ({batch.Vectors[0].Length} dimensions).",
+                null);
+        }
+        catch (EmbeddingException ex)
+        {
+            return new AiProviderTestResult(false, null, ex.Message);
+        }
+    }
+
     /// <summary>
     /// A generated 1-second silent 16-bit mono WAV, so the STT probe costs one
     /// real (tiny) transcription without shipping a fixture blob.
@@ -395,7 +476,12 @@ public sealed class AiProviderSettingsService(
     private async Task<EffectiveAiProviderConfig> EffectiveAsync(AiProviderKind kind, CancellationToken ct)
     {
         var row = await LoadRowAsync(ct);
-        return kind == AiProviderKind.Llm ? ResolveLlm(row) : ResolveStt(row);
+        return kind switch
+        {
+            AiProviderKind.Llm => ResolveLlm(row),
+            AiProviderKind.Embedding => ResolveEmbedding(row),
+            _ => ResolveStt(row),
+        };
     }
 
     private EffectiveAiProviderConfig ResolveLlm(AiProviderSettingsModel? row)
@@ -422,6 +508,20 @@ public sealed class AiProviderSettingsService(
             OverrideOrFallback(row?.SttBaseUrl, speechOptions.BaseUrl),
             OverrideOrFallback(row?.SttModel, speechOptions.Model),
             speechOptions.ApiKeyEnvironmentVariable,
+            key,
+            fromEnv);
+    }
+
+    private EffectiveAiProviderConfig ResolveEmbedding(AiProviderSettingsModel? row)
+    {
+        var (key, fromEnv) = ResolveKey(
+            row?.EmbeddingApiKeyEncrypted, embeddingOptions.ApiKeyEnvironmentVariable, "embedding");
+
+        return new EffectiveAiProviderConfig(
+            row?.EmbeddingEnabled ?? embeddingOptions.Enabled,
+            OverrideOrFallback(row?.EmbeddingBaseUrl, embeddingOptions.BaseUrl),
+            OverrideOrFallback(row?.EmbeddingModel, embeddingOptions.Model),
+            embeddingOptions.ApiKeyEnvironmentVariable,
             key,
             fromEnv);
     }
@@ -478,11 +578,16 @@ public sealed class AiProviderSettingsService(
     {
         "llm" => AiProviderKind.Llm,
         "stt" => AiProviderKind.Stt,
-        _ => throw new AiProviderValidationException("kind must be 'llm' or 'stt'."),
+        "embedding" => AiProviderKind.Embedding,
+        _ => throw new AiProviderValidationException("kind must be 'llm', 'stt' or 'embedding'."),
     };
 
-    private static string KindLabel(AiProviderKind kind) =>
-        kind == AiProviderKind.Llm ? "LLM" : "STT";
+    private static string KindLabel(AiProviderKind kind) => kind switch
+    {
+        AiProviderKind.Llm => "LLM",
+        AiProviderKind.Embedding => "Embedding",
+        _ => "STT",
+    };
 
     private static void ValidateResolvedBaseUrl(string baseUrl, AiProviderKind kind)
     {

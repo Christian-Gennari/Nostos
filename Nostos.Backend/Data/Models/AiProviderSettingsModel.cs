@@ -1,8 +1,9 @@
 namespace Nostos.Backend.Data.Models;
 
 /// <summary>
-/// Singleton row holding the server-wide overrides for the assistant's LLM and
-/// voice STT providers (assistant-milestone plan, "AI provider settings").
+/// Singleton row holding the server-wide overrides for the assistant's LLM,
+/// voice STT and passage-embedding providers (assistant-milestone plan, "AI
+/// provider settings"; embeddings: issue #683).
 ///
 /// Nostos is a single-user, unauthenticated app: there are no accounts, so the
 /// provider configuration is server-wide and there is exactly one row. Every
@@ -35,6 +36,14 @@ public class AiProviderSettingsModel
 
     /// <summary>Data-Protection ciphertext of the owner-supplied STT key, or null.</summary>
     public string? SttApiKeyEncrypted { get; set; }
+
+    // --- Embedding (semantic retrieval) overrides ---
+    public bool? EmbeddingEnabled { get; set; }
+    public string? EmbeddingBaseUrl { get; set; }
+    public string? EmbeddingModel { get; set; }
+
+    /// <summary>Data-Protection ciphertext of the owner-supplied embedding key, or null.</summary>
+    public string? EmbeddingApiKeyEncrypted { get; set; }
 
     public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
 }

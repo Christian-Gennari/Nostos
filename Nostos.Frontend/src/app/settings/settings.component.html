@@ -1143,6 +1143,148 @@
                 >{{ status.text }}</p>
               }
             </div>
+
+            @if (aiEmbeddingAvailable()) {
+              <!-- Embeddings (semantic passage index). Hidden when the host manages them. -->
+              <div class="provider-section provider-section--wide" data-testid="ai-provider-embedding">
+                <h3 class="provider-heading">{{ copy.embeddings }}</h3>
+
+                <div class="provider-toggle-row">
+                  <label appSwitch>
+                    <input
+                      type="checkbox"
+                      [checked]="aiEmbedding().enabled"
+                      (change)="setAiEmbeddingEnabled($event)"
+                      [attr.aria-label]="copy.embeddingToggle"
+                      data-testid="embedding-toggle"
+                    >
+                  </label>
+                  <span class="provider-toggle-label">{{ copy.embeddingToggle }}</span>
+                </div>
+                <p class="provider-help provider-toggle-help">{{ copy.embeddingToggleHelp }}</p>
+
+                <div class="provider-wide-fields">
+                <div class="provider-field">
+                  <label class="provider-label" for="ai-embedding-base-url">{{ copy.endpoint }}</label>
+                  <input
+                    id="ai-embedding-base-url"
+                    appInput
+                    controlSize="compact"
+                    class="provider-input"
+                    type="text"
+                    autocomplete="off"
+                    spellcheck="false"
+                    [placeholder]="copy.endpointPlaceholderEmbedding"
+                    [value]="aiEmbedding().baseUrl"
+                    (input)="setAiBaseUrl('embedding', $event)"
+                  />
+                  <p class="provider-help">{{ copy.endpointHelp }}</p>
+                </div>
+
+                <div class="provider-field">
+                  <label class="provider-label" for="ai-embedding-model">{{ copy.model }}</label>
+                  <div class="provider-input-row">
+                    <input
+                      id="ai-embedding-model"
+                      appInput
+                      controlSize="compact"
+                      class="provider-input"
+                      type="text"
+                      autocomplete="off"
+                      spellcheck="false"
+                      [placeholder]="copy.modelPlaceholderEmbedding"
+                      list="ai-embedding-model-options"
+                      [value]="aiEmbedding().model"
+                      (input)="setAiModel('embedding', $event)"
+                    />
+                    <button
+                      type="button"
+                      appButton variant="secondary"
+                      (click)="loadAiModels('embedding')"
+                      [disabled]="aiBusy()"
+                      [busy]="aiLoadingKind() === 'embedding'"
+                    >
+                      @if (aiLoadingKind() === 'embedding') {
+                        <nostos-icon name="circle-notch" [size]="15" class="spin"></nostos-icon>
+                        {{ copy.loading }}
+                      } @else {
+                        {{ copy.loadModels }}
+                      }
+                    </button>
+                  </div>
+                  <datalist id="ai-embedding-model-options">
+                    @for (model of aiEmbeddingModels(); track model) {
+                      <option [value]="model"></option>
+                    }
+                  </datalist>
+                  <p class="provider-help">{{ copy.modelHelp }}</p>
+                </div>
+
+                <div class="provider-field">
+                  <label class="provider-label" for="ai-embedding-api-key">{{ copy.apiKey }}</label>
+                  <input
+                    id="ai-embedding-api-key"
+                    appInput
+                    controlSize="compact"
+                    class="provider-input"
+                    type="password"
+                    autocomplete="new-password"
+                    [placeholder]="
+                      aiEmbedding().hasKey || aiEmbedding().keyFromServerEnv
+                        ? copy.apiKeyPlaceholderSet
+                        : copy.apiKeyPlaceholderUnset
+                    "
+                    [value]="aiEmbedding().key"
+                    (input)="setAiKey('embedding', $event)"
+                  />
+                  @if (aiEmbedding().hasKey || aiEmbedding().key.length > 0) {
+                    <div class="provider-key-row">
+                      <span class="provider-key-state">
+                        <nostos-icon name="check" [size]="14"></nostos-icon>
+                        {{ aiEmbedding().keyFromServerEnv ? copy.configuredFromEnv : copy.configured }}
+                      </span>
+                      <button
+                        type="button"
+                        appButton variant="secondary" size="sm"
+                        (click)="clearAiKey('embedding')"
+                        [disabled]="aiBusy()"
+                      >
+                        {{ copy.clear }}
+                      </button>
+                    </div>
+                  }
+                  <p class="provider-help">{{ copy.apiKeyHelp }}</p>
+                </div>
+
+                </div>
+
+                <div class="provider-actions">
+                  <button
+                    type="button"
+                    appButton variant="secondary"
+                    (click)="testAiConnection('embedding')"
+                    [disabled]="aiBusy()"
+                    [busy]="aiTestingKind() === 'embedding'"
+                  >
+                    @if (aiTestingKind() === 'embedding') {
+                      <nostos-icon name="circle-notch" [size]="15" class="spin"></nostos-icon>
+                      {{ copy.testing }}
+                    } @else {
+                      {{ copy.testConnection }}
+                    }
+                  </button>
+                </div>
+
+                @if (aiEmbeddingStatus(); as status) {
+                  <p
+                    class="provider-status"
+                    [class.is-ok]="status.tone === 'ok'"
+                    [class.is-error]="status.tone === 'error'"
+                    role="status"
+                  >{{ status.text }}</p>
+                }
+              </div>
+            }
             </div>
 
             <div class="provider-footer">

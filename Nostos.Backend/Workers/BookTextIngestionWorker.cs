@@ -9,6 +9,12 @@ public sealed class BookTextIngestionWorker(
 {
     private static readonly TimeSpan IdleDelay = TimeSpan.FromSeconds(3);
 
+    // Embedding is the low-priority second stage: it is only attempted when no
+    // extraction work is waiting, and after an idle or failed pass it is left
+    // alone for a while so a fully embedded library is not rescanned every
+    // cycle and a broken provider is not called in a tight loop.
+    private DateTime _nextEmbeddingPassUtc = DateTime.MinValue;
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         logger.LogInformation("Book-text ingestion worker started.");
@@ -35,7 +41,8 @@ public sealed class BookTextIngestionWorker(
         {
             try
             {
-                var didWork = await ProcessOneAsync(stoppingToken);
+                var didWork = await ProcessOneAsync(stoppingToken)
+                    || await ProcessEmbeddingsWhenDueAsync(stoppingToken);
                 if (!didWork)
                     await Task.Delay(IdleDelay, stoppingToken);
             }
@@ -65,5 +72,33 @@ public sealed class BookTextIngestionWorker(
         var engine = scope.ServiceProvider.GetRequiredService<BookTextIngestionEngine>();
         await engine.ProcessAsync(work, ct);
         return true;
+    }
+
+    /// <summary>
+    /// Embeds one batch of chunks that have no vector for the active model.
+    /// Never throws for a provider problem: a failure is a reported outcome and
+    /// leaves lexical search untouched.
+    /// </summary>
+    public async Task<BookTextEmbeddingPassResult> ProcessEmbeddingsAsync(CancellationToken ct = default)
+    {
+        using var scope = scopes.CreateScope();
+        var engine = scope.ServiceProvider.GetRequiredService<BookTextEmbeddingEngine>();
+        return await engine.ProcessBatchAsync(ct);
+    }
+
+    private async Task<bool> ProcessEmbeddingsWhenDueAsync(CancellationToken ct)
+    {
+        if (DateTime.UtcNow < _nextEmbeddingPassUtc)
+            return false;
+
+        var result = await ProcessEmbeddingsAsync(ct);
+        if (result.Status == BookTextEmbeddingPassStatus.Embedded)
+            return true;
+
+        var wait = result.Status == BookTextEmbeddingPassStatus.Failed
+            ? options.EmbeddingFailureBackoffSeconds
+            : options.EmbeddingIdlePollSeconds;
+        _nextEmbeddingPassUtc = DateTime.UtcNow.AddSeconds(Math.Max(1, wait));
+        return false;
     }
 }

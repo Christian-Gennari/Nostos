@@ -9,12 +9,12 @@
  * that could carry a key back to the client.
  */
 
-/** The two independently configurable providers behind one "AI provider" card. */
-export type AiProviderKind = 'llm' | 'stt';
+/** The independently configurable providers behind one "AI provider" card. */
+export type AiProviderKind = 'llm' | 'stt' | 'embedding';
 
 /** One provider's effective settings, as `GET`/`PUT` report them. */
 export interface AiProviderSection {
-  /** Whether the provider is switched on. Voice is user-toggleable; the LLM is not. */
+  /** Whether the provider is switched on. Voice and embeddings are user-toggleable; the LLM is not. */
   enabled: boolean;
   /** Effective endpoint, including any `/v1` suffix the provider needs. */
   baseUrl: string;
@@ -30,6 +30,11 @@ export interface AiProviderSection {
 export interface AiProviderSettings {
   llm: AiProviderSection;
   stt: AiProviderSection;
+  /**
+   * Passage embeddings for semantic retrieval. Absent when the host manages
+   * embeddings itself (or predates them); the card then shows no section.
+   */
+  embedding?: AiProviderSection;
 }
 
 /**
@@ -48,6 +53,7 @@ export interface AiProviderSectionUpdate {
 export interface AiProviderUpdate {
   llm?: AiProviderSectionUpdate;
   stt?: AiProviderSectionUpdate;
+  embedding?: AiProviderSectionUpdate;
 }
 
 /** `POST .../models` body. `baseUrl`/`apiKey` omitted fall back to effective values. */

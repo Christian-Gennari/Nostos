@@ -6,8 +6,9 @@ namespace Nostos.Backend.Endpoints;
 /// The AI provider settings surface (assistant-milestone plan, "AI provider
 /// settings"). Four routes under one group:
 /// <list type="bullet">
-/// <item><c>GET /api/settings/ai-provider</c> — effective LLM + STT config.</item>
-/// <item><c>PUT /api/settings/ai-provider</c> — partial update of either
+/// <item><c>GET /api/settings/ai-provider</c> — effective LLM + STT +
+/// embedding config.</item>
+/// <item><c>PUT /api/settings/ai-provider</c> — partial update of any
 /// section; the apiKey is tri-state (null = unchanged, "" = clear, value =
 /// store).</item>
 /// <item><c>POST /api/settings/ai-provider/models</c> — the endpoint's model

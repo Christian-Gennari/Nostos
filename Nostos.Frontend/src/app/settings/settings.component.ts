@@ -42,6 +42,7 @@ import {
   AiProviderKind,
   AiProviderSection,
   AiProviderSectionUpdate,
+  AiProviderSettings,
   AiProviderUpdate,
 } from '../core/dtos/ai-provider.dtos';
 
@@ -60,11 +61,17 @@ const PORTABLE_EXPORT_URL_LIFETIME_MS = 60_000;
 const AI_PROVIDER_COPY = {
   title: 'AI provider',
   intro:
-    'Notes and voice recordings are sent directly to the OpenAI-compatible endpoints configured below.',
+    'Notes, voice recordings and book passages are sent directly to the OpenAI-compatible endpoints configured below.',
   readingAssistant: 'Reading assistant',
   voiceTranscription: 'Voice transcription',
   voiceToggle: 'Enable voice transcription',
   voiceToggleHelp: 'Send voice recordings to the transcription endpoint.',
+  embeddings: 'Embeddings',
+  embeddingToggle: 'Enable passage embeddings',
+  embeddingToggleHelp:
+    'Send book passages to the embedding endpoint to build a semantic index of your library. Ask Nostos keeps using keyword search whenever this is off or the endpoint is unavailable.',
+  endpointPlaceholderEmbedding: 'https://ai-gateway.vercel.sh/v1',
+  modelPlaceholderEmbedding: 'e.g. alibaba/qwen3-embedding-0-6b',
   endpoint: 'Endpoint',
   endpointPlaceholder: 'https://api.openai.com/v1',
   endpointHelp: 'Base URL, including /v1.',
@@ -351,14 +358,20 @@ export class SettingsComponent implements OnInit, OnDestroy {
   aiLoadFailed = signal(false);
   aiLlm = signal<AiProviderForm>(emptyAiProviderForm());
   aiStt = signal<AiProviderForm>(emptyAiProviderForm());
+  aiEmbedding = signal<AiProviderForm>(emptyAiProviderForm());
+
+  /** False when the host reports no embedding section (it manages embeddings itself). */
+  aiEmbeddingAvailable = signal(false);
 
   /** Model ids offered as suggestions for each sub-section (free text stays editable). */
   aiLlmModels = signal<string[]>([]);
   aiSttModels = signal<string[]>([]);
+  aiEmbeddingModels = signal<string[]>([]);
 
   /** Inline outcome lines: `Testing…` / test result / load result / clear notice. */
   aiLlmStatus = signal<AiProviderStatus | null>(null);
   aiSttStatus = signal<AiProviderStatus | null>(null);
+  aiEmbeddingStatus = signal<AiProviderStatus | null>(null);
   aiSaveStatus = signal<AiProviderStatus | null>(null);
 
   aiSaving = signal(false);
@@ -618,8 +631,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
   loadAiProvider(): void {
     this.aiProvider.get().subscribe({
       next: (settings) => {
-        this.aiLlm.set(this.toAiForm(settings.llm));
-        this.aiStt.set(this.toAiForm(settings.stt));
+        this.applyAiSettings(settings);
         this.aiLoadFailed.set(false);
       },
       error: () => {
@@ -648,6 +660,10 @@ export class SettingsComponent implements OnInit, OnDestroy {
 
   setAiVoiceEnabled(event: Event): void {
     this.patchAiForm('stt', { enabled: (event.target as HTMLInputElement).checked });
+  }
+
+  setAiEmbeddingEnabled(event: Event): void {
+    this.patchAiForm('embedding', { enabled: (event.target as HTMLInputElement).checked });
   }
 
   clearAiKey(kind: AiProviderKind): void {
@@ -734,14 +750,17 @@ export class SettingsComponent implements OnInit, OnDestroy {
     if (llm) update.llm = llm;
     const stt = this.buildAiSectionUpdate(this.aiStt());
     if (stt) update.stt = stt;
+    if (this.aiEmbeddingAvailable()) {
+      const embedding = this.buildAiSectionUpdate(this.aiEmbedding());
+      if (embedding) update.embedding = embedding;
+    }
 
     this.aiSaving.set(true);
     this.aiSaveStatus.set(null);
     this.aiProvider.update(update).subscribe({
       next: (settings) => {
         this.aiSaving.set(false);
-        this.aiLlm.set(this.toAiForm(settings.llm));
-        this.aiStt.set(this.toAiForm(settings.stt));
+        this.applyAiSettings(settings);
         this.aiSaveStatus.set({ text: AI_PROVIDER_COPY.saved, tone: 'ok' });
       },
       error: (error) => {
@@ -801,22 +820,52 @@ export class SettingsComponent implements OnInit, OnDestroy {
     };
   }
 
+  /** Seeds every section from a GET/PUT response. */
+  private applyAiSettings(settings: AiProviderSettings): void {
+    this.aiLlm.set(this.toAiForm(settings.llm));
+    this.aiStt.set(this.toAiForm(settings.stt));
+    this.aiEmbeddingAvailable.set(!!settings.embedding);
+    this.aiEmbedding.set(
+      settings.embedding ? this.toAiForm(settings.embedding) : emptyAiProviderForm(),
+    );
+  }
+
+  private aiFormSignal(kind: AiProviderKind) {
+    switch (kind) {
+      case 'llm':
+        return this.aiLlm;
+      case 'stt':
+        return this.aiStt;
+      case 'embedding':
+        return this.aiEmbedding;
+    }
+  }
+
   private aiFormFor(kind: AiProviderKind): AiProviderForm {
-    return kind === 'llm' ? this.aiLlm() : this.aiStt();
+    return this.aiFormSignal(kind)();
   }
 
   private patchAiForm(kind: AiProviderKind, patch: Partial<AiProviderForm>): void {
-    const target = kind === 'llm' ? this.aiLlm : this.aiStt;
-    target.update((form) => ({ ...form, ...patch }));
+    this.aiFormSignal(kind).update((form) => ({ ...form, ...patch }));
   }
 
   private setAiModels(kind: AiProviderKind, models: string[]): void {
-    const target = kind === 'llm' ? this.aiLlmModels : this.aiSttModels;
+    const target =
+      kind === 'llm'
+        ? this.aiLlmModels
+        : kind === 'stt'
+          ? this.aiSttModels
+          : this.aiEmbeddingModels;
     target.set(models);
   }
 
   private setAiStatus(kind: AiProviderKind, status: AiProviderStatus | null): void {
-    const target = kind === 'llm' ? this.aiLlmStatus : this.aiSttStatus;
+    const target =
+      kind === 'llm'
+        ? this.aiLlmStatus
+        : kind === 'stt'
+          ? this.aiSttStatus
+          : this.aiEmbeddingStatus;
     target.set(status);
   }
 

@@ -22,6 +22,7 @@ using Nostos.Backend.Services.Notes;
 using Nostos.Backend.Services.Notes.Imports;
 using Nostos.Backend.Services.Portability;
 using Nostos.Product.BookText;
+using Nostos.Product.Services.Ai;
 
 namespace Nostos.Product.Composition;
 
@@ -75,6 +76,10 @@ public static class NostosProductComposition
             ?? new SpeechOptions();
         services.AddSingleton(speech);
 
+        services.AddSingleton(
+            configuration.GetSection(EmbeddingOptions.SectionName).Get<EmbeddingOptions>()
+            ?? new EmbeddingOptions());
+
         var opds =
             configuration.GetSection(OpdsOptions.SectionName).Get<OpdsOptions>()
             ?? new OpdsOptions();
@@ -102,6 +107,11 @@ public static class NostosProductComposition
         services.TryAddScoped<IBookTextIngestionScheduler, NoOpBookTextIngestionScheduler>();
         services.TryAddScoped<IBookTextLifecycle, BookTextLifecycle>();
         services.AddScoped<BookTextIngestionEngine>();
+        // Embeddings are optional: with no host-supplied provider or vector
+        // store these fallbacks keep the embedding pass a no-op.
+        services.TryAddSingleton<IEmbeddingProvider, NoOpEmbeddingProvider>();
+        services.TryAddScoped<IBookTextEmbeddingIndex, NoOpBookTextEmbeddingIndex>();
+        services.AddScoped<BookTextEmbeddingEngine>();
         services.AddScoped<IBookTextSearchService, BookTextSearchService>();
         services.AddScoped<BookTextBackfillService>();
 

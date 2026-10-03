@@ -24,6 +24,7 @@ public sealed class AiProviderSettingsServiceTests : IDisposable
 {
     private const string LlmEnvVariable = "NOSTOS_AI_PROVIDER_SERVICE_TEST_LLM_TOKEN";
     private const string SttEnvVariable = "NOSTOS_AI_PROVIDER_SERVICE_TEST_STT_TOKEN";
+    private const string EmbeddingEnvVariable = "NOSTOS_AI_PROVIDER_SERVICE_TEST_EMBEDDING_TOKEN";
     private const string EnvKeyValue = "sk-from-environment";
 
     private readonly SqliteTestFixture _fixture = new();
@@ -142,6 +143,94 @@ public sealed class AiProviderSettingsServiceTests : IDisposable
         {
             Environment.SetEnvironmentVariable(LlmEnvVariable, null);
         }
+    }
+
+    [Fact]
+    public async Task Embedding_test_posts_one_real_embedding_and_reports_its_dimensions()
+    {
+        var handler = new StubHttpMessageHandler();
+        string? body = null;
+        handler.Register("/v1/embeddings", request =>
+        {
+            body = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+            return Json("""{"data":[{"index":0,"embedding":[0.1,0.2,0.3,0.4]}]}""");
+        });
+
+        Environment.SetEnvironmentVariable(EmbeddingEnvVariable, EnvKeyValue);
+        try
+        {
+            var service = CreateService(handler);
+            var result = await service.TestAsync(new AiProviderTestRequest("embedding", null, null, null));
+
+            result.Ok.Should().BeTrue();
+            result.Detail.Should().Contain("alibaba/qwen3-embedding-0-6b").And.Contain("4 dimensions");
+            body.Should().Contain("\"model\":\"alibaba/qwen3-embedding-0-6b\"");
+            body.Should().Contain("\"input\":[\"ping\"]");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(EmbeddingEnvVariable, null);
+        }
+    }
+
+    [Fact]
+    public async Task Embedding_test_fails_when_a_200_carries_no_usable_vector()
+    {
+        var handler = new StubHttpMessageHandler();
+        // A chat endpoint answering the embeddings route: 200, but not a vector.
+        handler.Register("/v1/embeddings", Json("""{"choices":[{"message":{"content":"pong"}}]}"""));
+
+        var service = CreateService(handler);
+        var result = await service.TestAsync(new AiProviderTestRequest("embedding", null, null, null));
+
+        result.Ok.Should().BeFalse();
+        result.Error.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    public async Task Embedding_settings_round_trip_with_the_key_encrypted_at_rest()
+    {
+        const string key = "sk-embedding-owner-key";
+        var path = _fixture.CreateDatabasePath();
+        var service = CreateService(new StubHttpMessageHandler(), path);
+
+        var before = await service.GetAsync();
+        before.Embedding!.Model.Should().Be("alibaba/qwen3-embedding-0-6b");
+        before.Embedding.HasKey.Should().BeFalse();
+        (await service.GetEffectiveEmbeddingAsync()).IsAvailable.Should().BeFalse();
+
+        var updated = await service.UpdateAsync(new AiProviderSettingsUpdateRequest(
+            Llm: null,
+            Stt: null,
+            Embedding: new AiProviderSectionUpdate(true, "http://ollama.lan:11434/v1", "qwen3-embedding:0.6b", key)));
+
+        updated.Embedding!.BaseUrl.Should().Be("http://ollama.lan:11434/v1");
+        updated.Embedding.Model.Should().Be("qwen3-embedding:0.6b");
+        updated.Embedding.HasKey.Should().BeTrue();
+        updated.Embedding.KeyFromServerEnv.Should().BeFalse();
+        // The other surfaces are untouched.
+        updated.Llm.Model.Should().Be("test-llm-model");
+
+        var effective = await service.GetEffectiveEmbeddingAsync();
+        effective.IsAvailable.Should().BeTrue();
+        effective.ApiKey.Should().Be(key);
+
+        using (var db = _fixture.CreateContext(path))
+        {
+            var row = await db.AiProviderSettings.SingleAsync();
+            row.EmbeddingApiKeyEncrypted.Should().NotBeNullOrWhiteSpace();
+            row.EmbeddingApiKeyEncrypted.Should().NotContain(key);
+            row.LlmApiKeyEncrypted.Should().BeNull();
+        }
+
+        // The kill switch is a stored `false`, distinct from "never set".
+        var disabled = await service.UpdateAsync(new AiProviderSettingsUpdateRequest(
+            Llm: null,
+            Stt: null,
+            Embedding: new AiProviderSectionUpdate(false, null, null, null)));
+        disabled.Embedding!.Enabled.Should().BeFalse();
+        disabled.Embedding.HasKey.Should().BeTrue();
+        (await service.GetEffectiveEmbeddingAsync()).IsAvailable.Should().BeFalse();
     }
 
     [Fact]
@@ -284,10 +373,19 @@ public sealed class AiProviderSettingsServiceTests : IDisposable
             ApiKeyEnvironmentVariable = SttEnvVariable,
         };
 
+        var embedding = new EmbeddingOptions
+        {
+            Enabled = true,
+            BaseUrl = "https://ai-gateway.vercel.sh/v1",
+            Model = "alibaba/qwen3-embedding-0-6b",
+            ApiKeyEnvironmentVariable = EmbeddingEnvVariable,
+        };
+
         return new AiProviderSettingsService(
             new TestDbContextFactory(path),
             assistant,
             speech,
+            embedding,
             new EphemeralDataProtectionProvider(),
             new StubHttpClientFactory(handler),
             NullLogger<AiProviderSettingsService>.Instance);

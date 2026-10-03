@@ -43,9 +43,24 @@ builder.Services.AddSingleton<
 
 // SelfHosted owns the concrete local book-text persistence boundary. Register
 // these before AddNostosProduct so its TryAdd no-op fallbacks are never selected.
-builder.Services.AddScoped<IBookTextIndex, SqliteBookTextIndex>();
+builder.Services.AddScoped<SqliteBookTextIndex>();
+builder.Services.AddScoped<IBookTextIndex>(sp => sp.GetRequiredService<SqliteBookTextIndex>());
+builder.Services.AddScoped<IBookTextEmbeddingIndex>(sp => sp.GetRequiredService<SqliteBookTextIndex>());
 builder.Services.AddScoped<IBookDerivedArtifactStorage, FileBookTextArtifactStorage>();
 builder.Services.AddScoped<IBookTextIngestionScheduler, BookTextIngestionScheduler>();
+
+// Passage embeddings (issue #683): BYOK and optional. Registered here for the
+// same reason — it must win over the product's no-op provider. While the
+// surface is unconfigured the provider reports no active model, so the
+// book-text embedding pass does nothing and retrieval stays lexical.
+var embeddingOptions =
+    builder.Configuration.GetSection(EmbeddingOptions.SectionName).Get<EmbeddingOptions>()
+    ?? new EmbeddingOptions();
+builder.Services.AddHttpClient(OpenAiCompatibleEmbeddingProvider.HttpClientName, client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(Math.Max(1, embeddingOptions.RequestTimeoutSeconds));
+});
+builder.Services.AddSingleton<IEmbeddingProvider, OpenAiCompatibleEmbeddingProvider>();
 
 var product = builder.Services.AddNostosProduct(builder.Configuration);
 var assistantOptions = product.Assistant;
