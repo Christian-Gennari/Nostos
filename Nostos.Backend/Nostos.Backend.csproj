@@ -32,26 +32,13 @@
   </ItemGroup>
 
   <!--
-    Canonical product source is compiled by Nostos.Product. Keep historical
-    paths during #459, but do not compile a second copy into the host assembly.
+    Canonical product source is compiled by Nostos.Product. The 02.2 foundation
+    batch has moved physically into that project. The remaining rules below
+    cover product-owned files that still reside at historical Backend paths
+    during the transitional move batches; do not compile a second copy into
+    the host assembly.
   -->
   <ItemGroup>
-    <Compile Remove="Configuration\AssistantOptions.cs" />
-    <Compile Remove="Configuration\DeploymentConfiguration.cs" />
-    <Compile Remove="Configuration\LibraryReceiptRetentionOptions.cs" />
-    <Compile Remove="Configuration\OpdsOptions.cs" />
-    <Compile Remove="Configuration\SpeechOptions.cs" />
-
-    <Compile Remove="Data\NostosDbContext.cs" />
-    <Compile Remove="Data\UtcDateTimeValueConverters.cs" />
-    <Compile Remove="Data\Interfaces\**\*.cs" />
-    <Compile Remove="Data\Models\**\*.cs" />
-    <Compile Remove="Data\Repositories\**\*.cs" />
-
-    <Compile Remove="Mapping\**\*.cs" />
-    <Compile Remove="Search\**\*.cs" />
-    <Compile Remove="Serialization\**\*.cs" />
-
     <Compile Remove="Services\BookAssetFormats.cs" />
     <Compile Remove="Services\BookLookupService.cs" />
     <Compile Remove="Services\IBookAssetStorage.cs" />
