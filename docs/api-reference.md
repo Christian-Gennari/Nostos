@@ -226,7 +226,7 @@ List all notes for a book.
 Get one canonical note for exact note/evidence deep-links.
 
 **Response:** [`NoteSearchHitDto`](../Nostos.Shared/Dtos/NoteDto.cs) — produced by
-[`NotesEndpoints`](../Nostos.Backend/Endpoints/NotesEndpoints.cs).
+[`NotesEndpoints`](https://github.com/Christian-Gennari/Nostos/blob/cf09b3114f54d9f2727fa590c2002ef9f31c5216/Nostos.Backend/Endpoints/NotesEndpoints.cs).
 
 ```json
 {
@@ -258,7 +258,7 @@ and processing mode.
 
 **Response:** [`NoteRawTranscriptDto`](../Nostos.Shared/Dtos/NoteDto.cs) —
 produced by
-[`NoteProcessingEndpoints`](../Nostos.Backend/Endpoints/NoteProcessingEndpoints.cs).
+[`NoteProcessingEndpoints`](https://github.com/Christian-Gennari/Nostos/blob/cf09b3114f54d9f2727fa590c2002ef9f31c5216/Nostos.Backend/Endpoints/NoteProcessingEndpoints.cs).
 
 `{ id, rawContent, content, processingMode }`
 
@@ -385,7 +385,7 @@ Read-only. Topics are created automatically when notes with `[[brackets]]` are s
 
 > Topics were formerly called Concepts. `/api/concepts` remains a transition
 > prefix alias to the identical handlers in
-> [`TopicsEndpoints`](../Nostos.Backend/Endpoints/TopicsEndpoints.cs). Both prefixes
+> [`TopicsEndpoints`](https://github.com/Christian-Gennari/Nostos/blob/cf09b3114f54d9f2727fa590c2002ef9f31c5216/Nostos.Backend/Endpoints/TopicsEndpoints.cs). Both prefixes
 > use the current topic request/response field names; the alias does not restore
 > old `concept` payload field names.
 
