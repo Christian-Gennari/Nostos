@@ -46,6 +46,10 @@ def _evaluate_compile_items(project: Path) -> list[dict[str, Any]]:
         raise RuntimeError(
             f"{project.relative_to(REPO_ROOT)} did not return an Items.Compile list"
         )
+    if not items:
+        raise RuntimeError(
+            f"{project.relative_to(REPO_ROOT)} returned an empty Items.Compile list"
+        )
     return items
 
 

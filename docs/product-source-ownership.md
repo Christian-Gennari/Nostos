@@ -169,7 +169,7 @@ completed.
 
 ### Product/Backend project mirror rules
 
-`Nostos.Product.csproj` currently contains the `Compile Include`/`Link` rules for
+At the inventory baseline, `Nostos.Product.csproj` contained the `Compile Include`/`Link` rules for
 the 151 historical Backend paths. `Nostos.Backend.csproj` contains matching
 `Compile Remove` rules.
 
