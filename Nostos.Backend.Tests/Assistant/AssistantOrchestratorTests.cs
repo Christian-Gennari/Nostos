@@ -2683,6 +2683,92 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
     }
 
     [Fact]
+    public async Task Book_text_evidence_is_deduplicated_bounded_clipped_and_keeps_grounded_locators()
+    {
+        var bookId = Guid.NewGuid();
+        var hash = new string('e', 64);
+        var longText = string.Join(
+            "   ",
+            Enumerable.Repeat("bounded", 60));
+
+        BookTextSearchPassage Passage(int ordinal, string text) =>
+            new(
+                bookId,
+                "Bounded Evidence",
+                "Author",
+                hash,
+                BookTextArtifactSchema.CurrentExtractorVersion,
+                BookTextSourceFormat.Pdf,
+                ordinal,
+                text,
+                ["Chapter"],
+                [
+                    new BookTextSourceSegment(
+                        0,
+                        text.Length,
+                        new PdfBookTextSourceLocator(
+                            ordinal + 3,
+                            (ordinal + 4).ToString(),
+                            ordinal * 100,
+                            ordinal * 100 + text.Length)),
+                ]);
+
+        var passages = new List<BookTextSearchPassage>
+        {
+            Passage(0, longText),
+            Passage(0, longText),
+        };
+        passages.AddRange(
+            Enumerable.Range(1, 12)
+                .Select(ordinal => Passage(ordinal, $"Passage {ordinal}.")));
+
+        var search = new FakeBookTextSearchService(
+            new BookTextSearchResponse(
+                passages,
+                [],
+                true));
+
+        var h = CreateHarness(bookText: search);
+        h.Llm
+            .CallsTool(
+                "book_text_search",
+                $"{{\"query\":\"bounded evidence\",\"bookIds\":[\"{bookId}\"]}}")
+            .Returns("The grounded evidence is available.");
+
+        var response = await h.Orchestrator.HandleTurnAsync(Turn(
+            "What does this source say about bounded evidence?",
+            Context(
+                surface: "reader",
+                route: $"/reader/{bookId}",
+                bookId: bookId.ToString(),
+                bookTitle: "Bounded Evidence",
+                bookFormat: "ebook",
+                readerType: "pdf")));
+
+        response.Sources.Should().HaveCount(14,
+            "source projection is not governed by the evidence-artifact cap");
+
+        response.Evidence.Should().HaveCount(AssistantOrchestrator.MaxEvidenceArtifacts);
+        response.Evidence!
+            .Select(item => item.Handle.Ordinal)
+            .Should()
+            .Equal(Enumerable.Range(0, AssistantOrchestrator.MaxEvidenceArtifacts)
+                .Select(ordinal => (int?)ordinal));
+
+        var first = response.Evidence[0];
+        first.Excerpt.Should().NotBeNull();
+        first.Excerpt!.Should().EndWith("…");
+        first.Excerpt.Length.Should().BeLessThanOrEqualTo(321);
+        first.Excerpt.Should().NotContain("  ");
+        first.Locators.Should().ContainSingle();
+        first.Locators![0].Type.Should().Be("pdf");
+        first.Locators[0].PdfPageIndex.Should().Be(3);
+        first.Locators[0].PdfPageLabel.Should().Be("4");
+        first.Locators[0].StartTextOffset.Should().Be(0);
+        first.Locators[0].EndTextOffset.Should().Be(longText.Length);
+    }
+
+    [Fact]
     public async Task Book_text_paraphrase_lookup_preserves_grounded_epub_source()
     {
         var bookId = Guid.NewGuid();
