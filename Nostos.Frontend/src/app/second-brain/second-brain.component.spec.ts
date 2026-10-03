@@ -680,11 +680,16 @@ describe('SecondBrain', () => {
 
   it('prefetches on hover so the click is already a cache hit', async () => {
     component.prefetch('c-gamma');
-    http.expectOne('/api/topics/c-gamma').flush(detail('c-gamma', 'Gamma'));
+    component.prefetch('c-gamma');
+
+    const requests = http.match('/api/topics/c-gamma');
+    expect(requests).toHaveLength(1);
+    requests[0].flush(detail('c-gamma', 'Gamma'));
     await fixture.whenStable();
 
     component.selectTopic('c-gamma');
     flushRelated('c-gamma');
+    expect(http.match('/api/topics/c-gamma')).toHaveLength(0);
     expect(component.loadingDetail()).toBe(false);
     expect(component.selectedDetail()!.name).toBe('Gamma');
   });
@@ -940,6 +945,7 @@ describe('SecondBrain', () => {
       bookTitle: 'Meditations',
     });
 
+    expect(component.loadingDetail()).toBe(true);
     http.expectOne('/api/topics/c-alpha').flush({
       ...alphaDetail,
       notes: [{ ...alphaDetail.notes[0], content: 'New note about [[Alpha]]' }],
@@ -955,7 +961,9 @@ describe('SecondBrain', () => {
     );
     await fixture.whenStable();
 
+    expect(component.loadingDetail()).toBe(false);
     expect(component.selectedDetail()?.notes[0].content).toBe('New note about [[Alpha]]');
+    expect(component.relatedTopics()).toEqual([]);
     expect(component.topics().find((topic) => topic.id === 'c-beta')?.usageCount).toBe(2);
     expect(component.topicStats()?.totalReferences).toBe(14);
   });

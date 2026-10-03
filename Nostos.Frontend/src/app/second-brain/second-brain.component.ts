@@ -13,7 +13,6 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { HttpClient } from '@angular/common/http';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 
 import { ToastService } from '../core/services/toast.service';
@@ -47,6 +46,7 @@ import {
   BrainWritingHandoffComponent,
   type BrainWritingHandoffResult,
 } from './writing-handoff/brain-writing-handoff.component';
+import { TopicDataCache } from './topic-data-cache';
 
 import {
   ALL_SOURCES,
@@ -114,7 +114,6 @@ export class SecondBrain implements AfterViewChecked {
     { value: 'oldest', label: 'Oldest first' },
   ] satisfies readonly DropdownOption[];
   private topicsService = inject(TopicsService);
-  private http = inject(HttpClient);
   private notesService = inject(NotesService);
   private toast = inject(ToastService);
   private readonly assistantContext = inject(AssistantContextService);
@@ -307,20 +306,11 @@ export class SecondBrain implements AfterViewChecked {
   /**
    * Details already fetched, keyed by topic id.
    *
-   * The wait-field that used to cover this pane is gone: the pane's background
-   * is identical for every topic, so a full-cover loading surface only ever
-   * read as a flash between two states that look the same. Instead the pane
-   * keeps whatever it is already showing and swaps the content in place — which
-   * means a topic we have seen before must not be re-fetched (that round trip
-   * is the only thing that could still make the pane blink). Hover/focus
-   * pre-warms this cache so even a first visit is usually instant.
+   * Cache/pending/version mechanics live in a component-scoped coordinator.
+   * This component still decides when reads and invalidations happen and owns
+   * all selection, loading, error and focus behaviour.
    */
-  private detailCache = new Map<string, TopicDetailDto>();
-  private pendingRequests = new Set<string>();
-  private detailRequestVersion = 0;
-  private relatedCache = new Map<string, RelatedTopicDto[]>();
-  private pendingRelatedRequests = new Set<string>();
-  private relatedRequestVersion = 0;
+  private readonly topicData = new TopicDataCache();
 
   @ViewChildren('indexRow') private indexRows!: QueryList<ElementRef<HTMLElement>>;
   @ViewChildren('noteCardHost', { read: ElementRef })
@@ -1582,7 +1572,7 @@ export class SecondBrain implements AfterViewChecked {
     if (!merged) {
       // Preserve an already-fetched detail for its in-place name update, but
       // prevent an older prefetch response from restoring the old name.
-      this.detailRequestVersion += 1;
+      this.topicData.advanceDetailVersion();
     }
 
     if (!merged) {
@@ -1590,7 +1580,7 @@ export class SecondBrain implements AfterViewChecked {
         items.map((topic) => (topic.id === requestedId ? survivor : topic))
       );
 
-      const cached = this.detailCache.get(requestedId);
+      const cached = this.topicData.detail(requestedId);
       if (cached) this.commitDetail(requestedId, { ...cached, name: survivor.name });
       if (detailBefore?.id === requestedId) {
         this.selectedDetail.set({ ...detailBefore, name: survivor.name });
@@ -1757,26 +1747,22 @@ export class SecondBrain implements AfterViewChecked {
    * of an index row so the click itself is a cache hit and swaps with no wait.
    */
   prefetch(id: string): void {
-    if (this.detailCache.has(id) || this.pendingRequests.has(id)) return;
+    if (this.topicData.detail(id) || this.topicData.isDetailPending(id)) return;
     this.prefetchRequest(id);
   }
 
   private prefetchRequest(id: string): void {
-    this.pendingRequests.add(id);
-    const requestVersion = this.detailRequestVersion;
+    const requestVersion = this.topicData.beginPendingDetail(id);
     this.topicsService.get(id).subscribe({
       next: (detail) => {
-        this.pendingRequests.delete(id);
-        if (requestVersion !== this.detailRequestVersion) return;
-        this.detailCache.set(id, detail);
+        if (!this.topicData.resolveDetail(id, requestVersion, detail, true)) return;
         if (this.selectedId() !== id) return;
         this.selectedDetail.set(detail);
         this.loadingDetail.set(false);
         this.loadRelated(id);
       },
       error: () => {
-        this.pendingRequests.delete(id);
-        if (requestVersion !== this.detailRequestVersion) return;
+        if (!this.topicData.rejectDetail(id, requestVersion, true)) return;
         if (this.selectedId() === id) this.loadingDetail.set(false);
       },
     });
@@ -1920,7 +1906,7 @@ export class SecondBrain implements AfterViewChecked {
     this.relatedExpanded.set(false);
     this.loadRelated(id);
 
-    const cached = this.detailCache.get(id);
+    const cached = this.topicData.detail(id);
     if (cached) {
       // Instant, animation-free swap: same background, no loading surface, no
       // blur — the pane simply shows the topic that was asked for.
@@ -1929,7 +1915,7 @@ export class SecondBrain implements AfterViewChecked {
       return;
     }
 
-    if (this.pendingRequests.has(id)) {
+    if (this.topicData.isDetailPending(id)) {
       // A prefetch is already in flight for exactly this topic; let it land
       // and set the detail when it lands, so we do not start a duplicate
       // request or dim content twice.
@@ -1939,18 +1925,19 @@ export class SecondBrain implements AfterViewChecked {
       this.loadingDetail.set(true);
     }
 
-    const requestVersion = this.detailRequestVersion;
+    // Direct selection historically did not participate in pending-request
+    // dedupe; preserve that timing/coordination contract here.
+    const requestVersion = this.topicData.detailVersion();
     this.topicsService.get(id).subscribe({
       next: (detail) => {
-        if (requestVersion !== this.detailRequestVersion) return;
-        this.detailCache.set(id, detail);
+        if (!this.topicData.resolveDetail(id, requestVersion, detail, false)) return;
         // Ignore a response for a topic the user has already moved on from.
         if (this.selectedId() !== id) return;
         this.selectedDetail.set(detail);
         this.loadingDetail.set(false);
       },
       error: () => {
-        if (requestVersion !== this.detailRequestVersion) return;
+        if (!this.topicData.rejectDetail(id, requestVersion, false)) return;
         if (this.selectedId() !== id) return;
         this.toast.error('Failed to load topic details');
         this.loadingDetail.set(false);
@@ -2068,7 +2055,7 @@ export class SecondBrain implements AfterViewChecked {
   }
 
   private loadRelated(id: string): void {
-    const cached = this.relatedCache.get(id);
+    const cached = this.topicData.related(id);
     if (cached) {
       if (this.selectedId() === id) {
         this.relatedTopics.set(cached);
@@ -2076,26 +2063,22 @@ export class SecondBrain implements AfterViewChecked {
       }
       return;
     }
-    if (this.pendingRelatedRequests.has(id)) {
+    if (this.topicData.isRelatedPending(id)) {
       if (this.selectedId() === id) this.relatedLoading.set(true);
       return;
     }
 
-    this.pendingRelatedRequests.add(id);
     if (this.selectedId() === id) this.relatedLoading.set(true);
-    const requestVersion = this.relatedRequestVersion;
-    this.http.get<RelatedTopicDto[]>(`/api/topics/${id}/related`).subscribe({
+    const requestVersion = this.topicData.beginRelated(id);
+    this.topicsService.getRelated(id).subscribe({
       next: (related) => {
-        this.pendingRelatedRequests.delete(id);
-        if (requestVersion !== this.relatedRequestVersion) return;
-        this.relatedCache.set(id, related);
+        if (!this.topicData.resolveRelated(id, requestVersion, related)) return;
         if (this.selectedId() !== id) return;
         this.relatedTopics.set(related);
         this.relatedLoading.set(false);
       },
       error: () => {
-        this.pendingRelatedRequests.delete(id);
-        if (requestVersion !== this.relatedRequestVersion) return;
+        if (!this.topicData.rejectRelated(id, requestVersion)) return;
         if (this.selectedId() !== id) return;
         this.relatedTopics.set([]);
         this.relatedLoading.set(false);
@@ -2104,9 +2087,7 @@ export class SecondBrain implements AfterViewChecked {
   }
 
   private invalidateRelatedData(reloadSelected: boolean): void {
-    this.relatedRequestVersion += 1;
-    this.relatedCache.clear();
-    this.pendingRelatedRequests.clear();
+    this.topicData.invalidateRelatedData();
     this.relatedTopics.set([]);
     this.relatedExpanded.set(false);
     this.relatedEvidenceId.set(null);
@@ -2117,17 +2098,11 @@ export class SecondBrain implements AfterViewChecked {
   }
 
   private invalidateDetailEntries(...ids: string[]): void {
-    this.detailRequestVersion += 1;
-    for (const id of ids) {
-      this.detailCache.delete(id);
-      this.pendingRequests.delete(id);
-    }
+    this.topicData.invalidateDetailEntries(...ids);
   }
 
   private invalidateAllDetailEntries(): void {
-    this.detailRequestVersion += 1;
-    this.detailCache.clear();
-    this.pendingRequests.clear();
+    this.topicData.invalidateAllDetailEntries();
   }
 
   private refreshIndexAndStats(): void {
@@ -2173,7 +2148,7 @@ export class SecondBrain implements AfterViewChecked {
       .update(event.id, { content: event.content, selectedText: event.selectedText })
       .subscribe({
         next: (updated) => {
-          const current = this.detailCache.get(topicId);
+          const current = this.topicData.detail(topicId);
           if (current) {
             this.commitDetail(topicId, {
               ...current,
@@ -2251,27 +2226,23 @@ export class SecondBrain implements AfterViewChecked {
   }
 
   private commitDetail(topicId: string, detail: TopicDetailDto): void {
-    this.detailCache.set(topicId, detail);
+    this.topicData.commitDetail(topicId, detail);
     if (this.selectedId() === topicId) this.selectedDetail.set(detail);
   }
 
   private reloadDetailInPlace(id: string): void {
     this.loadingDetail.set(true);
-    const requestVersion = this.detailRequestVersion;
-    this.pendingRequests.add(id);
+    const requestVersion = this.topicData.beginPendingDetail(id);
     this.topicsService.get(id).subscribe({
       next: (detail) => {
-        this.pendingRequests.delete(id);
-        if (requestVersion !== this.detailRequestVersion) return;
-        this.detailCache.set(id, detail);
+        if (!this.topicData.resolveDetail(id, requestVersion, detail, true)) return;
         if (this.selectedId() !== id) return;
         this.selectedDetail.set(detail);
         this.loadingDetail.set(false);
         this.loadRelated(id);
       },
       error: () => {
-        this.pendingRequests.delete(id);
-        if (requestVersion !== this.detailRequestVersion) return;
+        if (!this.topicData.rejectDetail(id, requestVersion, true)) return;
         if (this.selectedId() !== id) return;
         this.loadingDetail.set(false);
         this.toast.error('Note saved, but this topic could not be refreshed');
