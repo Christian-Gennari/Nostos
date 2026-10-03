@@ -1,5 +1,5 @@
 /**
- * Capture the concept map at 1:1 for visual review, in both themes.
+ * Capture the topic map at 1:1 for visual review, in both themes.
  * Also hides only the floating controls so the graph itself is unobstructed.
  */
 import { chromium } from '@playwright/test';

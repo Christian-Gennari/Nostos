@@ -1,19 +1,19 @@
 /**
  * Cohesion evidence for the Second Brain, seeded with realistic data.
  *
- * The earlier fixtures were 1-5 trivial concepts with no quotes, which is why the
+ * The earlier fixtures were 1-5 trivial topics with no quotes, which is why the
  * design pass missed the quote presentation entirely: nothing on screen exercised
  * it. This seeds several books with mixed note kinds (quote + commentary,
  * quote-only, plain) so every card shape and every index state is represented,
  * then captures desktop and mobile in light and dark.
  *
  * Isolation: the fixture is shared and `visual-regression`'s empty-state test
- * requires it pristine, so this spec records the concept ids that existed before
+ * requires it pristine, so this spec records the topic ids that existed before
  * it seeded and deletes only the ones it created (via `cleanupBrain`).
  */
 import { expect, test } from '@playwright/test';
 import { apiPost, loadFixture } from './support/fixture';
-import { cleanupBrain, snapshotConceptIds, type BrainSeed } from './support/brain-fixture';
+import { cleanupBrain, snapshotTopicIds, type BrainSeed } from './support/brain-fixture';
 import { capturePng, DESKTOP_VIEWPORT, MOBILE_VIEWPORT, newCapturePage } from './support/visual-capture';
 
 test.describe.configure({ mode: 'serial' });
@@ -87,7 +87,7 @@ async function ensureSeed(fixture: ReturnType<typeof loadFixture>): Promise<Brai
   if (seed) return seed;
 
   // Snapshot BEFORE creating anything, so cleanup can restore the fixture exactly.
-  const beforeConceptIds = await snapshotConceptIds(fixture.baseUrl);
+  const beforeTopicIds = await snapshotTopicIds(fixture.baseUrl);
   const firstBook = await apiPost<{ id: string }>(fixture.baseUrl, '/api/books', {
     type: 'physical',
     title: BOOKS[0].title,
@@ -117,14 +117,14 @@ async function ensureSeed(fixture: ReturnType<typeof loadFixture>): Promise<Brai
     }
   }
 
-  seed = { bookId: firstBook.id, conceptNames: [], beforeConceptIds };
+  seed = { bookId: firstBook.id, topicNames: [], beforeTopicIds };
   return seed;
 }
 
 const THEMES = ['light', 'dark'] as const;
 
 for (const theme of THEMES) {
-  test(`concept pane with quotes — ${theme}`, async ({ browser }) => {
+  test(`topic pane with quotes — ${theme}`, async ({ browser }) => {
     const fixture = loadFixture();
     await ensureSeed(fixture);
 
@@ -266,7 +266,7 @@ for (const theme of THEMES) {
     }
   });
 
-  test(`Notes inspector shares concept evidence presentation — ${theme}`, async ({ browser }) => {
+  test(`Notes inspector shares topic evidence presentation — ${theme}`, async ({ browser }) => {
     const fixture = loadFixture();
     await ensureSeed(fixture);
 

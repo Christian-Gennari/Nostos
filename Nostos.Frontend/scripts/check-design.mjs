@@ -1006,11 +1006,11 @@ const PRODUCT_RAW_BUTTON_CLASSES = new Map([
       'finished-btn-grid', 'fav-btn-grid', 'action-circle'])],
   ['src/app/second-brain/second-brain.component.html',
     // The icon-only list/map switch is the shared nostos-view-toggle component.
-    // brain-area is different: visible-text section navigation (Notes / Concepts)
+    // brain-area is different: visible-text section navigation (Notes / Topics)
     // with nav + aria-current semantics, so it deliberately consumes the shared
     // toggle-opt TAB recipe rather than pretending to be an ordinary action button.
     new Set(['brain-area', 'note-row-item', 'review-load-more', 'index-item', 'row-action',
-      'rail-foot-action', 'mobile-nav-header', 'concept-action', 'merge-picker-close',
+      'rail-foot-action', 'mobile-nav-header', 'topic-action', 'merge-picker-close',
       'merge-target', 'merge-picker-cancel', 'merge-picker-confirm', 'related-chip', 'related-more'])],
   ['src/app/book-detail/book-detail.component.html',
     new Set(['btn-back', 'cover-overlay-btn', 'status-chip', 'status-dropdown-item',
@@ -1065,7 +1065,7 @@ function rawOrdinaryFieldWithoutPrimitive(html, relativePath) {
         classes.includes('composer-field')) continue;
     if (relativePath === 'src/app/second-brain/second-brain.component.html' &&
         (classes.includes('inline-rename-input') ||
-         /aria-label\s*=\s*["']Search (?:concepts to link|merge targets)["']/.test(raw))) continue;
+         /aria-label\s*=\s*["']Search (?:topics to link|merge targets)["']/.test(raw))) continue;
 
     out.push({ tag: raw, index: tag.index });
   }

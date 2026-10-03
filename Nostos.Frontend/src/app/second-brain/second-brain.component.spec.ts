@@ -76,7 +76,7 @@ vi.mock('graphology', () => {
 });
 
 /**
- * d3-force is the concept map's layout engine now (it replaced ForceAtlas2).
+ * d3-force is the topic map's layout engine now (it replaced ForceAtlas2).
  * This spec mounts the map inside the page, so the simulation must exist in
  * jsdom where there is no WebGL and no rAF-driven physics.
  */
@@ -114,7 +114,7 @@ vi.mock('d3-force', () => {
 });
 
 import { SecondBrain } from './second-brain.component';
-import { ConceptDetailDto, ConceptDto, ConceptStatsDto } from '../core/services/concepts.service';
+import { TopicDetailDto, TopicDto, TopicStatsDto } from '../core/services/topics.service';
 import { NoteSearchHit } from '../core/dtos/note.dtos';
 import { ToastService } from '../core/services/toast.service';
 import { AssistantContextService } from '../ui/assistant/assistant-context.service';
@@ -123,27 +123,27 @@ import { AssistantService } from '../ui/assistant/assistant.service';
 /**
  * Second Brain behaviour that the "flashing" complaint was about.
  *
- * The page's background is identical for every concept, so the detail pane must
+ * The page's background is identical for every topic, so the detail pane must
  * swap its content WITHOUT a loading surface and WITHOUT an arrival animation.
  * These specs pin the two mechanisms that made it flash: the `loadingDetail`
  * bit that used to drive a covering wait-field, and the re-fetch of an
- * already-seen concept.
+ * already-seen topic.
  */
-const concepts: ConceptDto[] = [
+const topics: TopicDto[] = [
   { id: 'c-alpha', name: 'Alpha', usageCount: 9 },
   { id: 'c-beta', name: 'Beta', usageCount: 3 },
   { id: 'c-gamma', name: 'Gamma', usageCount: 3 },
 ];
 
-const stats: ConceptStatsDto = {
-  totalConcepts: 3,
+const stats: TopicStatsDto = {
+  totalTopics: 3,
   totalReferences: 15,
-  singleNoteConcepts: 0,
+  singleNoteTopics: 0,
   mostUsedName: 'Alpha',
   mostUsedCount: 9,
 };
 
-const detail = (id: string, name: string): ConceptDetailDto => ({
+const detail = (id: string, name: string): TopicDetailDto => ({
   id,
   name,
   notes: [
@@ -158,7 +158,7 @@ const detail = (id: string, name: string): ConceptDetailDto => ({
   ],
 });
 
-const detailWithNotes = (id: string, name: string): ConceptDetailDto => ({
+const detailWithNotes = (id: string, name: string): TopicDetailDto => ({
   id,
   name,
   notes: [
@@ -197,16 +197,16 @@ describe('SecondBrain', () => {
   let fixture: ComponentFixture<SecondBrain>;
   let http: HttpTestingController;
 
-  const flushChildConceptLists = (): void => {
-    for (const request of http.match('/api/concepts')) {
-      if (!request.cancelled) request.flush(concepts);
+  const flushChildTopicLists = (): void => {
+    for (const request of http.match('/api/topics')) {
+      if (!request.cancelled) request.flush(topics);
     }
   };
 
   const flushRelated = (id: string, related: object[] = []): void => {
-    http.expectOne(`/api/concepts/${id}/related`).flush(related);
+    http.expectOne(`/api/topics/${id}/related`).flush(related);
     fixture.detectChanges();
-    flushChildConceptLists();
+    flushChildTopicLists();
   };
 
   /**
@@ -215,12 +215,12 @@ describe('SecondBrain', () => {
    * reaching into a private field.
    */
   const settleNoteSearch = async (
-    rows: ConceptDto[] = [],
+    rows: TopicDto[] = [],
     noteHits: NoteSearchHit[] = []
   ): Promise<void> => {
     await new Promise((resolve) => setTimeout(resolve, 320));
     http
-      .match((request) => request.url === '/api/concepts' && request.params.has('search'))
+      .match((request) => request.url === '/api/topics' && request.params.has('search'))
       .forEach((request) => request.flush(rows));
     http
       .match((request) => request.url === '/api/notes/search')
@@ -229,23 +229,23 @@ describe('SecondBrain', () => {
     await fixture.whenStable();
   };
 
-  const flushDetail = (id: string, value: ConceptDetailDto, related: object[] = []): void => {
-    http.expectOne(`/api/concepts/${id}`).flush(value);
+  const flushDetail = (id: string, value: TopicDetailDto, related: object[] = []): void => {
+    http.expectOne(`/api/topics/${id}`).flush(value);
     flushRelated(id, related);
   };
 
   const flushMutationRefresh = (
-    refreshedConcepts: ConceptDto[] = concepts,
-    refreshedStats: ConceptStatsDto = stats
+    refreshedTopics: TopicDto[] = topics,
+    refreshedStats: TopicStatsDto = stats
   ): void => {
-    // Opening a note editor creates a self-contained concept autocomplete
+    // Opening a note editor creates a self-contained topic autocomplete
     // input, which also requests the list. The final list request is the
     // mutation refresh; settle any earlier child requests first.
-    const listRequests = http.match('/api/concepts');
+    const listRequests = http.match('/api/topics');
     expect(listRequests.length).toBeGreaterThan(0);
-    listRequests.slice(0, -1).forEach((request) => request.flush(concepts));
-    listRequests.at(-1)!.flush(refreshedConcepts);
-    http.expectOne('/api/concepts/stats').flush(refreshedStats);
+    listRequests.slice(0, -1).forEach((request) => request.flush(topics));
+    listRequests.at(-1)!.flush(refreshedTopics);
+    http.expectOne('/api/topics/stats').flush(refreshedStats);
   };
 
   beforeEach(async () => {
@@ -258,8 +258,8 @@ describe('SecondBrain', () => {
     component = fixture.componentInstance;
     http = TestBed.inject(HttpTestingController);
     fixture.detectChanges();
-    http.expectOne('/api/concepts').flush(concepts);
-    http.expectOne('/api/concepts/stats').flush(stats);
+    http.expectOne('/api/topics').flush(topics);
+    http.expectOne('/api/topics/stats').flush(stats);
 
     await fixture.whenStable();
   });
@@ -273,12 +273,12 @@ describe('SecondBrain', () => {
     const linked: NoteSearchHit = {
       id: 'linked-note', bookId: 'book-a', bookTitle: 'A Book',
       content: 'A thought about [[Alpha]]', selectedText: 'A passage',
-      snippet: 'A passage', conceptNames: ['Alpha'], createdAt: '2026-09-20T10:00:00Z',
+      snippet: 'A passage', topicNames: ['Alpha'], createdAt: '2026-09-20T10:00:00Z',
     };
     const unlinked: NoteSearchHit = {
       id: 'unlinked-note', bookId: 'book-b', bookTitle: 'Another Book',
       content: 'A separate thought', selectedText: null,
-      snippet: 'A separate thought', conceptNames: [], createdAt: '2026-09-20T11:00:00Z',
+      snippet: 'A separate thought', topicNames: [], createdAt: '2026-09-20T11:00:00Z',
     };
 
     const browse = (items: NoteSearchHit[], totalCount = items.length): void => {
@@ -301,7 +301,7 @@ describe('SecondBrain', () => {
       expect(component.panelNote()?.content).toBe('Original thought about [[Alpha]]');
       flushMutationRefresh();
       const canonical = { ...captured, content: 'Original thought about [[Alpha]]',
-        conceptNames: ['Alpha'], processingMode: 'verbatim' };
+        topicNames: ['Alpha'], processingMode: 'verbatim' };
       http.expectOne(`/api/notes/${captured.id}`).flush(canonical);
       browse([canonical]);
       expect(component.panelNote()).toEqual(canonical);
@@ -325,14 +325,14 @@ describe('SecondBrain', () => {
       expect(component.panelNote()?.content).toBe(linked.content);
     });
 
-    it('uses the shared segmented recipe for Notes and Concepts navigation', () => {
+    it('uses the shared segmented recipe for Notes and Topics navigation', () => {
       fixture.detectChanges();
 
       const nav = fixture.nativeElement.querySelector('.brain-areas') as HTMLElement;
       const tabs = [...nav.querySelectorAll('button')] as HTMLButtonElement[];
 
       expect(tabs).toHaveLength(2);
-      expect(tabs.map((tab) => tab.textContent?.trim())).toEqual(['Notes', 'Concepts']);
+      expect(tabs.map((tab) => tab.textContent?.trim())).toEqual(['Notes', 'Topics']);
       expect(tabs.every((tab) => tab.classList.contains('toggle-opt'))).toBe(true);
       expect(tabs.every((tab) => !tab.classList.contains('nostos-button'))).toBe(true);
     });
@@ -348,10 +348,10 @@ describe('SecondBrain', () => {
       (fixture.nativeElement.querySelectorAll('.index-list .note-row-item')[1] as HTMLButtonElement).click();
       fixture.detectChanges();
       expect(fixture.nativeElement.querySelector('.brain-browse-detail')?.textContent).toContain('A separate thought');
-      expect(fixture.nativeElement.querySelector('.brain-browse-detail')?.textContent).toContain('No concepts linked');
+      expect(fixture.nativeElement.querySelector('.brain-browse-detail')?.textContent).toContain('No topics linked');
     });
 
-    it('uses the Concepts visual grammar for the Notes search, index and selected inspector', () => {
+    it('uses the Topics visual grammar for the Notes search, index and selected inspector', () => {
       component.setViewMode('notes');
       browse([linked]);
 
@@ -361,11 +361,11 @@ describe('SecondBrain', () => {
       expect(noteSearch.getAttribute('aria-label')).toBe('Search saved notes');
       expect(fixture.nativeElement.querySelector('.index-col #brain-all-notes-search')).toBeNull();
 
-      const withoutConcepts = fixture.nativeElement.querySelector(
+      const withoutTopics = fixture.nativeElement.querySelector(
         '.brain-note-filter-row button.nostos-chip',
       ) as HTMLButtonElement;
-      expect(withoutConcepts).toBeTruthy();
-      expect(withoutConcepts.getAttribute('aria-pressed')).toBe('false');
+      expect(withoutTopics).toBeTruthy();
+      expect(withoutTopics.getAttribute('aria-pressed')).toBe('false');
       expect(fixture.nativeElement.querySelector('app-dropdown.brain-note-order')).toBeTruthy();
 
       (fixture.nativeElement.querySelector('.index-list .note-row-item') as HTMLButtonElement).click();
@@ -377,25 +377,25 @@ describe('SecondBrain', () => {
       expect(card.querySelector('.note-quote .quote-text')?.textContent).toContain('A passage');
       expect(card.querySelector('.note-text')?.textContent).toContain('A thought about');
       expect(detail.querySelector('.review-quote')).toBeNull();
-      expect(detail.textContent).toContain('Linked concepts');
+      expect(detail.textContent).toContain('Linked topics');
       expect(detail.textContent).not.toContain('Confirmed');
 
       const actions = detail.querySelector('.note-inspector-actions[aria-label="Note actions"]') as HTMLElement;
       const link = [...actions.querySelectorAll('button')].find(
-        (button: HTMLButtonElement) => button.textContent?.trim() === 'Link to concept',
+        (button: HTMLButtonElement) => button.textContent?.trim() === 'Link to topic',
       ) as HTMLButtonElement;
-      const suggest = actions.querySelector('[data-testid="browse-suggest-concepts"]') as HTMLButtonElement;
+      const suggest = actions.querySelector('[data-testid="browse-suggest-topics"]') as HTMLButtonElement;
       expect(link.classList.contains('nostos-button--primary')).toBe(true);
       expect(suggest.classList.contains('nostos-button--secondary')).toBe(true);
       expect(actions.querySelector('.note-inspector-utility-actions')?.textContent).toContain('Edit note');
     });
 
-    it('filters without concepts, then enters focused review and returns to the filtered Notes view', () => {
+    it('filters without topics, then enters focused review and returns to the filtered Notes view', () => {
       component.setViewMode('notes');
       browse([linked, unlinked]);
-      component.setBrowseWithoutConcepts(true);
+      component.setBrowseWithoutTopics(true);
       const request = http.expectOne((req) => req.url === '/api/notes');
-      expect(request.request.params.get('withoutConcepts')).toBe('true');
+      expect(request.request.params.get('withoutTopics')).toBe('true');
       request.flush({ items: [unlinked], totalCount: 1, offset: 0, limit: 25 });
       fixture.detectChanges();
 
@@ -406,14 +406,14 @@ describe('SecondBrain', () => {
       http.expectNone((req) => req.url === '/api/notes');
       fixture.detectChanges();
       expect(component.viewMode()).toBe('notes');
-      expect(component.browseWithoutConcepts()).toBe(true);
+      expect(component.browseWithoutTopics()).toBe(true);
     });
 
     it('returns to the same selected note and loaded page when review changes nothing', () => {
       component.setViewMode('notes');
       browse([linked, unlinked]);
       component.openNotePanel(unlinked);
-      component.setBrowseWithoutConcepts(true);
+      component.setBrowseWithoutTopics(true);
       browse([unlinked]);
       component.openNotePanel(unlinked);
 
@@ -428,7 +428,7 @@ describe('SecondBrain', () => {
       http.expectNone((request) => request.url === '/api/notes');
     });
 
-    it('opens a concept-search result in the complete Notes inspector', () => {
+    it('opens a topic-search result in the complete Notes inspector', () => {
       component.searchQuery.set('separate');
       component.openNotePanel(unlinked);
       component.openSearchNoteInNotes();
@@ -439,7 +439,7 @@ describe('SecondBrain', () => {
       fixture.detectChanges();
       expect(component.viewMode()).toBe('notes');
       expect(component.panelNote()?.id).toBe(unlinked.id);
-      expect(fixture.nativeElement.querySelector('.brain-browse-detail')?.textContent).toContain('Link to concept');
+      expect(fixture.nativeElement.querySelector('.brain-browse-detail')?.textContent).toContain('Link to topic');
     });
 
     it('filters one book through the server and reviews only matching unlinked notes', () => {
@@ -459,7 +459,7 @@ describe('SecondBrain', () => {
       component.openReview();
       const review = http.expectOne((request) => request.url === '/api/notes');
       expect(review.request.params.get('bookId')).toBe('book-b');
-      expect(review.request.params.get('withoutConcepts')).toBe('true');
+      expect(review.request.params.get('withoutTopics')).toBe('true');
       review.flush({ items: [unlinked], totalCount: 1, offset: 0, limit: 25 });
       component.closeReview();
       http.expectNone((request) => request.url === '/api/notes');
@@ -487,43 +487,43 @@ describe('SecondBrain', () => {
       expect(component.browseNotes().map((note) => note.id)).toEqual([unlinked.id]);
     });
 
-    it('creates a concept through a canonical note link and removes only the filtered row', () => {
+    it('creates a topic through a canonical note link and removes only the filtered row', () => {
       component.setViewMode('notes');
       browse([unlinked]);
-      component.setBrowseWithoutConcepts(true);
+      component.setBrowseWithoutTopics(true);
       browse([unlinked]);
       component.openNotePanel(unlinked);
       component.openBrowsePicker();
       component.browsePickerQuery.set('New idea');
-      expect(component.browseNewConceptName()).toBe('New idea');
+      expect(component.browseNewTopicName()).toBe('New idea');
 
-      component.createBrowseConcept();
+      component.createBrowseTopic();
       const save = http.expectOne((req) => req.method === 'PUT' && req.url === `/api/notes/${unlinked.id}`);
       expect(save.request.body.content).toBe('A separate thought\n\n[[New idea]]');
       save.flush({ ...unlinked, content: save.request.body.content });
-      http.expectOne('/api/concepts').flush(concepts);
-      http.expectOne('/api/concepts/stats').flush(stats);
+      http.expectOne('/api/topics').flush(topics);
+      http.expectOne('/api/topics/stats').flush(stats);
 
       expect(component.browseTotal()).toBe(0);
       expect(component.browseNotes()).toEqual([]);
-      expect(component.panelNote()?.conceptNames).toEqual(['New idea']);
+      expect(component.panelNote()?.topicNames).toEqual(['New idea']);
     });
 
     it('links an inline proposal through the assistant Act receipt without losing the note inspector', () => {
       component.setViewMode('notes');
       browse([unlinked]);
-      component.setBrowseWithoutConcepts(true);
+      component.setBrowseWithoutTopics(true);
       browse([unlinked]);
       component.openNotePanel(unlinked);
       fixture.detectChanges();
       expect(TestBed.inject(AssistantContextService).context().brainReviewNoteId).toBe(unlinked.id);
 
-      (fixture.nativeElement.querySelector('[data-testid="browse-suggest-concepts"]') as HTMLButtonElement).click();
+      (fixture.nativeElement.querySelector('[data-testid="browse-suggest-topics"]') as HTMLButtonElement).click();
       const proposal = http.expectOne('/api/assistant/turn/stream');
       expect(proposal.request.body.context.brainReviewNoteId).toBe(unlinked.id);
       proposal.flush({
         reply: 'A connection.', acknowledgement: null, anchorPrompt: null, pendingPlan: null,
-        suggestions: [{ kind: 'concept', label: 'Alpha', reason: 'Both describe this idea.', value: 'c-alpha', noteId: unlinked.id }],
+        suggestions: [{ kind: 'topic', label: 'Alpha', reason: 'Both describe this idea.', value: 'c-alpha', noteId: unlinked.id }],
       });
       fixture.detectChanges();
       const buttons = fixture.nativeElement.querySelectorAll('[data-testid="brain-proposal"] button');
@@ -532,10 +532,10 @@ describe('SecondBrain', () => {
       expect(link.request.body.message).toContain('c-alpha');
       link.flush({
         reply: 'Linked.', acknowledgement: null, anchorPrompt: null, pendingPlan: null,
-        suggestions: [], executedCapabilities: ['notes_link_existing_concept'],
+        suggestions: [], executedCapabilities: ['notes_link_existing_topic'],
       });
-      http.expectOne('/api/concepts').flush(concepts);
-      http.expectOne('/api/concepts/stats').flush(stats);
+      http.expectOne('/api/topics').flush(topics);
+      http.expectOne('/api/topics/stats').flush(stats);
       fixture.detectChanges();
 
       expect(component.browseNotes()).toEqual([]);
@@ -547,7 +547,7 @@ describe('SecondBrain', () => {
 
   describe('Brain → Writing source handoff (#492)', () => {
     it('keeps selection controls hidden until Select sources is explicitly entered', () => {
-      component.selectConcept('c-alpha');
+      component.selectTopic('c-alpha');
       flushDetail('c-alpha', detailWithNotes('c-alpha', 'Alpha'));
       fixture.detectChanges();
 
@@ -590,7 +590,7 @@ describe('SecondBrain', () => {
         content: 'A focused result',
         selectedText: null,
         snippet: 'A focused result',
-        conceptNames: ['Alpha'],
+        topicNames: ['Alpha'],
         createdAt: '2026-09-20T10:00:00Z',
       };
 
@@ -644,13 +644,13 @@ describe('SecondBrain', () => {
       expect(component.handoffNoteIds()).toEqual([]);
     });
 
-    it('clears source selection when the current concept evidence context is abandoned', () => {
-      component.selectConcept('c-alpha');
+    it('clears source selection when the current topic evidence context is abandoned', () => {
+      component.selectTopic('c-alpha');
       flushDetail('c-alpha', detail('c-alpha', 'Alpha'));
       component.sourceSelectionMode.set(true);
       component.selectedSourceNoteIds.set(new Set(['c-alpha-n1']));
 
-      component.selectConcept('c-beta');
+      component.selectTopic('c-beta');
       flushDetail('c-beta', detail('c-beta', 'Beta'));
 
       expect(component.sourceSelectionMode()).toBe(false);
@@ -658,42 +658,42 @@ describe('SecondBrain', () => {
     });
   });
 
-  it('never raises the loading state when a concept is selected from cache', async () => {
-    component.selectConcept('c-alpha');
+  it('never raises the loading state when a topic is selected from cache', async () => {
+    component.selectTopic('c-alpha');
     expect(component.loadingDetail()).toBe(true);
     flushDetail('c-alpha', detail('c-alpha', 'Alpha'));
     await fixture.whenStable();
     expect(component.loadingDetail()).toBe(false);
 
-    // Second visit to the same concept: served from the detail cache, so the
+    // Second visit to the same topic: served from the detail cache, so the
     // pane must never enter — let alone render — a waiting state. No request,
     // and `loadingDetail` never true.
-    component.selectConcept('c-beta');
+    component.selectTopic('c-beta');
     flushDetail('c-beta', detail('c-beta', 'Beta'));
     await fixture.whenStable();
 
-    component.selectConcept('c-alpha');
+    component.selectTopic('c-alpha');
     expect(component.loadingDetail()).toBe(false);
     expect(component.selectedDetail()!.name).toBe('Alpha');
-    http.expectNone('/api/concepts/c-alpha');
+    http.expectNone('/api/topics/c-alpha');
   });
 
   it('prefetches on hover so the click is already a cache hit', async () => {
     component.prefetch('c-gamma');
-    http.expectOne('/api/concepts/c-gamma').flush(detail('c-gamma', 'Gamma'));
+    http.expectOne('/api/topics/c-gamma').flush(detail('c-gamma', 'Gamma'));
     await fixture.whenStable();
 
-    component.selectConcept('c-gamma');
+    component.selectTopic('c-gamma');
     flushRelated('c-gamma');
     expect(component.loadingDetail()).toBe(false);
     expect(component.selectedDetail()!.name).toBe('Gamma');
   });
 
-  it('ignores a slow response for a concept the user has already left', async () => {
-    component.selectConcept('c-alpha');
-    const slow = http.expectOne('/api/concepts/c-alpha');
+  it('ignores a slow response for a topic the user has already left', async () => {
+    component.selectTopic('c-alpha');
+    const slow = http.expectOne('/api/topics/c-alpha');
     flushRelated('c-alpha');
-    component.selectConcept('c-beta');
+    component.selectTopic('c-beta');
     flushDetail('c-beta', detail('c-beta', 'Beta'));
     await fixture.whenStable();
 
@@ -704,7 +704,7 @@ describe('SecondBrain', () => {
   });
 
   it('renders no loading surface and no arrival animation on the pane', async () => {
-    component.selectConcept('c-alpha');
+    component.selectTopic('c-alpha');
     flushDetail('c-alpha', detail('c-alpha', 'Alpha'));
     await fixture.whenStable();
 
@@ -718,26 +718,26 @@ describe('SecondBrain', () => {
   });
 
   it('keeps the existing pane visible during a cold switch without a loading surface', async () => {
-    component.selectConcept('c-alpha');
+    component.selectTopic('c-alpha');
     flushDetail('c-alpha', detail('c-alpha', 'Alpha'));
     await fixture.whenStable();
 
-    component.selectConcept('c-gamma');
+    component.selectTopic('c-gamma');
     fixture.detectChanges();
 
     expect(component.selectedDetail()?.name).toBe('Alpha');
-    expect(fixture.nativeElement.querySelector('.concept-title')?.textContent).toContain('Alpha');
+    expect(fixture.nativeElement.querySelector('.topic-title')?.textContent).toContain('Alpha');
     expect(fixture.nativeElement.querySelector('.content-col .wait-field')).toBeNull();
     expect(fixture.nativeElement.querySelector('.detail-wait-field')).toBeNull();
 
     flushDetail('c-gamma', detail('c-gamma', 'Gamma'));
     await fixture.whenStable();
     expect(fixture.nativeElement.querySelector('.content-col .wait-field')).toBeNull();
-    expect(fixture.nativeElement.querySelector('.concept-title')?.textContent).toContain('Gamma');
+    expect(fixture.nativeElement.querySelector('.topic-title')?.textContent).toContain('Gamma');
   });
 
   it('filters notes by source and keeps the live count in sync', async () => {
-    component.selectConcept('c-alpha');
+    component.selectTopic('c-alpha');
     flushDetail('c-alpha', detailWithNotes('c-alpha', 'Alpha'));
     await fixture.whenStable();
     fixture.detectChanges();
@@ -757,7 +757,7 @@ describe('SecondBrain', () => {
   });
 
   it('sorts notes by newest, oldest and source order', async () => {
-    component.selectConcept('c-alpha');
+    component.selectTopic('c-alpha');
     flushDetail('c-alpha', detailWithNotes('c-alpha', 'Alpha'));
     await fixture.whenStable();
 
@@ -771,9 +771,9 @@ describe('SecondBrain', () => {
     expect(ids()).toEqual(['c-alpha-middle', 'c-alpha-newest', 'c-alpha-oldest']);
   });
 
-  it('explains related concepts through inspectable shared-note evidence before navigating', async () => {
+  it('explains related topics through inspectable shared-note evidence before navigating', async () => {
     const alphaDetail = detailWithNotes('c-alpha', 'Alpha');
-    component.selectConcept('c-alpha');
+    component.selectTopic('c-alpha');
     flushDetail('c-alpha', alphaDetail, [
       {
         id: 'c-beta',
@@ -810,33 +810,33 @@ describe('SecondBrain', () => {
     (fixture.nativeElement.querySelector('.related-chip') as HTMLButtonElement).click();
     expect(component.selectedId()).toBe('c-beta');
 
-    http.expectOne('/api/concepts/c-beta').flush(detail('c-beta', 'Beta'));
-    http.expectOne('/api/concepts/c-beta/related').flush([]);
+    http.expectOne('/api/topics/c-beta').flush(detail('c-beta', 'Beta'));
+    http.expectOne('/api/topics/c-beta/related').flush([]);
     fixture.detectChanges();
-    flushChildConceptLists();
+    flushChildTopicLists();
     await fixture.whenStable();
-    expect(fixture.nativeElement.querySelector('.concept-title')?.textContent).toContain('Beta');
+    expect(fixture.nativeElement.querySelector('.topic-title')?.textContent).toContain('Beta');
   });
 
-  it('puts captured evidence before secondary concept management in the detail DOM', async () => {
-    component.selectConcept('c-alpha');
+  it('puts captured evidence before secondary topic management in the detail DOM', async () => {
+    component.selectTopic('c-alpha');
     flushDetail('c-alpha', detail('c-alpha', 'Alpha'));
     await fixture.whenStable();
     fixture.detectChanges();
 
     const evidence = fixture.nativeElement.querySelector(
-      '[data-testid="concept-evidence"]'
+      '[data-testid="topic-evidence"]'
     ) as HTMLElement;
-    const management = fixture.nativeElement.querySelector('.concept-management') as HTMLElement;
+    const management = fixture.nativeElement.querySelector('.topic-management') as HTMLElement;
 
     expect(evidence).toBeTruthy();
     expect(management).toBeTruthy();
     expect(evidence.compareDocumentPosition(management) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(management.querySelector('summary')?.textContent?.trim()).toBe('Manage concept');
+    expect(management.querySelector('summary')?.textContent?.trim()).toBe('Manage topic');
   });
 
   it('optimistically edits a note and keeps the updated detail cached', async () => {
-    component.selectConcept('c-alpha');
+    component.selectTopic('c-alpha');
     flushDetail('c-alpha', detail('c-alpha', 'Alpha'));
     await fixture.whenStable();
     fixture.detectChanges();
@@ -860,25 +860,25 @@ describe('SecondBrain', () => {
       createdAt: '2026-09-12T12:00:00Z',
       bookTitle: 'Meditations',
     });
-    http.expectOne('/api/concepts/c-alpha').flush({
+    http.expectOne('/api/topics/c-alpha').flush({
       ...detail('c-alpha', 'Alpha'),
       notes: [{ ...detail('c-alpha', 'Alpha').notes[0], content: 'Updated note about [[Alpha]]' }],
     });
-    http.expectOne('/api/concepts/c-alpha/related').flush([]);
+    http.expectOne('/api/topics/c-alpha/related').flush([]);
     flushMutationRefresh();
     await fixture.whenStable();
 
-    component.selectConcept('c-beta');
-    http.expectOne('/api/concepts/c-beta').flush(detail('c-beta', 'Beta'));
+    component.selectTopic('c-beta');
+    http.expectOne('/api/topics/c-beta').flush(detail('c-beta', 'Beta'));
     flushRelated('c-beta');
     await fixture.whenStable();
-    component.selectConcept('c-alpha');
+    component.selectTopic('c-alpha');
     expect(component.selectedDetail()!.notes[0].content).toBe('Updated note about [[Alpha]]');
-    http.expectNone('/api/concepts/c-alpha');
+    http.expectNone('/api/topics/c-alpha');
   });
 
   it('restores an optimistic note edit when saving fails', async () => {
-    component.selectConcept('c-alpha');
+    component.selectTopic('c-alpha');
     flushDetail('c-alpha', detail('c-alpha', 'Alpha'));
     await fixture.whenStable();
 
@@ -892,7 +892,7 @@ describe('SecondBrain', () => {
   });
 
   it('confirms deletion before removing the note card', async () => {
-    component.selectConcept('c-alpha');
+    component.selectTopic('c-alpha');
     flushDetail('c-alpha', detail('c-alpha', 'Alpha'));
     await fixture.whenStable();
     fixture.detectChanges();
@@ -909,21 +909,21 @@ describe('SecondBrain', () => {
     const removal = http.expectOne('/api/notes/c-alpha-n1');
     expect(removal.request.method).toBe('DELETE');
     removal.flush(null);
-    http.expectOne('/api/concepts/c-alpha/related').flush([]);
+    http.expectOne('/api/topics/c-alpha/related').flush([]);
     flushMutationRefresh();
     await fixture.whenStable();
     expect(fixture.nativeElement.querySelector('.confirm-modal-card')).toBeNull();
   });
 
-  it('refreshes every stale concept count when an edit changes its [[ ]] links', async () => {
-    const alphaDetail: ConceptDetailDto = {
+  it('refreshes every stale topic count when an edit changes its [[ ]] links', async () => {
+    const alphaDetail: TopicDetailDto = {
       ...detail('c-alpha', 'Alpha'),
       notes: [{
         ...detail('c-alpha', 'Alpha').notes[0],
         content: 'Old note about [[Alpha]] and [[Beta]]',
       }],
     };
-    component.selectConcept('c-alpha');
+    component.selectTopic('c-alpha');
     flushDetail('c-alpha', alphaDetail, [{ id: 'c-beta', name: 'Beta', sharedNotes: 1 }]);
     await fixture.whenStable();
 
@@ -940,28 +940,28 @@ describe('SecondBrain', () => {
       bookTitle: 'Meditations',
     });
 
-    http.expectOne('/api/concepts/c-alpha').flush({
+    http.expectOne('/api/topics/c-alpha').flush({
       ...alphaDetail,
       notes: [{ ...alphaDetail.notes[0], content: 'New note about [[Alpha]]' }],
     });
-    http.expectOne('/api/concepts/c-alpha/related').flush([]);
+    http.expectOne('/api/topics/c-alpha/related').flush([]);
     flushMutationRefresh(
       [
         { id: 'c-alpha', name: 'Alpha', usageCount: 9 },
         { id: 'c-beta', name: 'Beta', usageCount: 2 },
-        concepts[2],
+        topics[2],
       ],
       { ...stats, totalReferences: 14 }
     );
     await fixture.whenStable();
 
     expect(component.selectedDetail()?.notes[0].content).toBe('New note about [[Alpha]]');
-    expect(component.concepts().find((concept) => concept.id === 'c-beta')?.usageCount).toBe(2);
-    expect(component.conceptStats()?.totalReferences).toBe(14);
+    expect(component.topics().find((topic) => topic.id === 'c-beta')?.usageCount).toBe(2);
+    expect(component.topicStats()?.totalReferences).toBe(14);
   });
 
-  it('selects a concept tag rendered inside a note card', async () => {
-    component.selectConcept('c-alpha');
+  it('selects a topic tag rendered inside a note card', async () => {
+    component.selectTopic('c-alpha');
     flushDetail(
       'c-alpha',
       {
@@ -973,18 +973,18 @@ describe('SecondBrain', () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    (fixture.nativeElement.querySelector('.concept-tag') as HTMLElement).click();
+    (fixture.nativeElement.querySelector('.topic-tag') as HTMLElement).click();
     expect(component.selectedId()).toBe('c-beta');
-    http.expectOne('/api/concepts/c-beta').flush(detail('c-beta', 'Beta'));
-    http.expectOne('/api/concepts/c-beta/related').flush([]);
+    http.expectOne('/api/topics/c-beta').flush(detail('c-beta', 'Beta'));
+    http.expectOne('/api/topics/c-beta/related').flush([]);
     fixture.detectChanges();
-    flushChildConceptLists();
+    flushChildTopicLists();
     await fixture.whenStable();
-    expect(fixture.nativeElement.querySelector('.concept-title')?.textContent).toContain('Beta');
+    expect(fixture.nativeElement.querySelector('.topic-title')?.textContent).toContain('Beta');
   });
 
   it('sorts the index by usage, A-Z and Z-A, and persists the choice', () => {
-    const names = () => component.filteredConcepts().map((c) => c.name);
+    const names = () => component.filteredTopics().map((c) => c.name);
 
     expect(names()).toEqual(['Alpha', 'Beta', 'Gamma']);
 
@@ -1001,20 +1001,20 @@ describe('SecondBrain', () => {
 
   it('filters by name and reports the filtered count', () => {
     component.searchQuery.set('bet');
-    expect(component.filteredConcepts().map((c) => c.name)).toEqual(['Beta']);
+    expect(component.filteredTopics().map((c) => c.name)).toEqual(['Beta']);
     component.searchQuery.set('nothing-matches-this');
-    expect(component.filteredConcepts().length).toBe(0);
+    expect(component.filteredTopics().length).toBe(0);
   });
 
   it('shows the decorative stats line and ignores a failed stats request', async () => {
     const el: HTMLElement = fixture.nativeElement;
     fixture.detectChanges();
-    expect(el.querySelector('.index-stats')?.textContent).toContain('3 concepts · 15 references');
+    expect(el.querySelector('.index-stats')?.textContent).toContain('3 topics · 15 references');
 
     const second = TestBed.createComponent(SecondBrain);
     second.detectChanges();
-    http.expectOne('/api/concepts').flush(concepts);
-    http.expectOne('/api/concepts/stats').error(new ProgressEvent('network-error'));
+    http.expectOne('/api/topics').flush(topics);
+    http.expectOne('/api/topics/stats').error(new ProgressEvent('network-error'));
 
     await second.whenStable();
     expect(second.nativeElement.querySelector('.index-stats')).toBeNull();
@@ -1028,25 +1028,25 @@ describe('SecondBrain', () => {
     expect(header.querySelector('.brain-header-purpose')?.textContent?.trim()).toBe(
       'Revisit what you noticed. See what connects.'
     );
-    expect(header.querySelector('.index-stats')?.textContent).toContain('3 concepts · 15 references');
+    expect(header.querySelector('.index-stats')?.textContent).toContain('3 topics · 15 references');
 
-    const conceptHeader = () =>
+    const topicHeader = () =>
       Array.from(
         fixture.nativeElement.querySelectorAll('.brain-section-header') as NodeListOf<HTMLElement>
-      ).find((section) => section.querySelector('.brain-section-title')?.textContent?.trim() === 'Concepts');
-    expect(conceptHeader()?.querySelector('.brain-section-count')).toBeNull();
+      ).find((section) => section.querySelector('.brain-section-title')?.textContent?.trim() === 'Topics');
+    expect(topicHeader()?.querySelector('.brain-section-count')).toBeNull();
 
     component.searchQuery.set('bet');
     fixture.detectChanges();
 
     expect(header.querySelector('[role="status"]')?.textContent).toContain(
-      'Showing 1 of 3 concepts'
+      'Showing 1 of 3 topics'
     );
-    expect(conceptHeader()?.querySelector('.brain-section-count')).toBeNull();
+    expect(topicHeader()?.querySelector('.brain-section-count')).toBeNull();
   });
 
   it('normalizes diacritics and ranks exact, prefix and substring matches', () => {
-    component.concepts.set([
+    component.topics.set([
       { id: 'exact', name: 'Théâtre', usageCount: 1 },
       { id: 'prefix-a', name: 'Theatre Alpha', usageCount: 1 },
       { id: 'prefix-b', name: 'Theatre Beta', usageCount: 1 },
@@ -1055,7 +1055,7 @@ describe('SecondBrain', () => {
     component.setSort('az');
     component.searchQuery.set('theatre');
 
-    expect(component.filteredConcepts().map((concept) => concept.name)).toEqual([
+    expect(component.filteredTopics().map((topic) => topic.name)).toEqual([
       'Théâtre',
       'Theatre Alpha',
       'Theatre Beta',
@@ -1081,7 +1081,7 @@ describe('SecondBrain', () => {
     expect(component.searchQuery()).toBe('');
 
     component.setSearchQuery('alp');
-    const input = fixture.nativeElement.querySelector('input[aria-label="Search concepts and notes"]');
+    const input = fixture.nativeElement.querySelector('input[aria-label="Search topics and notes"]');
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     expect(component.searchQuery()).toBe('');
   });
@@ -1090,7 +1090,7 @@ describe('SecondBrain', () => {
     fixture.detectChanges();
 
     const search = fixture.nativeElement.querySelector(
-      'input[aria-label="Search concepts and notes"]',
+      'input[aria-label="Search topics and notes"]',
     ) as HTMLInputElement;
     const sortTrigger = fixture.nativeElement.querySelector('#brain-sort') as HTMLButtonElement;
     const sort = sortTrigger.closest('app-dropdown') as HTMLElement;
@@ -1130,41 +1130,41 @@ describe('SecondBrain', () => {
     rows[1].dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     expect(component.selectedId()).toBe('c-beta');
     flushRelated('c-beta');
-    http.expectOne('/api/concepts/c-alpha').flush(detail('c-alpha', 'Alpha'));
-    http.expectOne('/api/concepts/c-beta').flush(detail('c-beta', 'Beta'));
+    http.expectOne('/api/topics/c-alpha').flush(detail('c-alpha', 'Alpha'));
+    http.expectOne('/api/topics/c-beta').flush(detail('c-beta', 'Beta'));
     fixture.detectChanges();
-    flushChildConceptLists();
+    flushChildTopicLists();
     await fixture.whenStable();
   });
 
   it('moves from the search input into the first filtered row', () => {
     fixture.detectChanges();
-    const input = fixture.nativeElement.querySelector('input[aria-label="Search concepts and notes"]');
+    const input = fixture.nativeElement.querySelector('input[aria-label="Search topics and notes"]');
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
 
     const firstRow = fixture.nativeElement.querySelector('.index-item') as HTMLElement;
     expect(component.cursorIndex()).toBe(0);
     expect(document.activeElement).toBe(firstRow);
-    http.expectOne('/api/concepts/c-alpha').flush(detail('c-alpha', 'Alpha'));
+    http.expectOne('/api/topics/c-alpha').flush(detail('c-alpha', 'Alpha'));
   });
 
   it('renders distinct empty states for an empty index and an empty search', async () => {
-    component.concepts.set([]);
-    component.loadingConcepts.set(false);
+    component.topics.set([]);
+    component.loadingTopics.set(false);
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('.empty-index-state')?.textContent).toContain(
-      'Link a concept'
+      'Link a topic'
     );
     expect(fixture.nativeElement.querySelector('a[routerLink="/library"]')).toBeTruthy();
 
-    component.concepts.set(concepts);
+    component.topics.set(topics);
     component.setSearchQuery('xyz');
     fixture.detectChanges();
     // The server search must also come back empty, or the state it renders is a
     // half-answer (issue #158).
     await settleNoteSearch([]);
     expect(fixture.nativeElement.querySelector('.empty-index-state')?.textContent).toContain(
-      'No concept names match “xyz”'
+      'No topic names match “xyz”'
     );
     expect(fixture.nativeElement.querySelector('.empty-clear')).toBeTruthy();
   });
@@ -1172,7 +1172,7 @@ describe('SecondBrain', () => {
   it('reaches note text: a content-only match appears, ranked and labelled', async () => {
     // Issue #158. The index payload carries no note text, so a word that only
     // appears inside a note can only be matched on the server — and it must be
-    // labelled, because it is not a concept of that name.
+    // labelled, because it is not a topic of that name.
     component.setSearchQuery('sisyphus');
     await settleNoteSearch([
       { id: 'c-gamma', name: 'Absurdity', usageCount: 2, noteMatchCount: 3, noteMatchSnippet: '…Sisyphus, whom the gods…' },
@@ -1180,7 +1180,7 @@ describe('SecondBrain', () => {
     ]);
 
     // No name matches at all here, so both rows are content matches, most matches first.
-    expect(component.filteredConcepts().map((c) => c.name)).toEqual(['Absurdity', 'Alpha']);
+    expect(component.filteredTopics().map((c) => c.name)).toEqual(['Absurdity', 'Alpha']);
 
     const labels = fixture.nativeElement.querySelectorAll('[data-testid="index-note-match"]');
     expect(labels.length).toBe(2);
@@ -1199,7 +1199,7 @@ describe('SecondBrain', () => {
 
     // Name matches lead and keep their ranking; the row gains the label rather
     // than being duplicated as a content match.
-    expect(component.filteredConcepts().map((c) => c.name)).toEqual(['Alpha']);
+    expect(component.filteredTopics().map((c) => c.name)).toEqual(['Alpha']);
     expect(fixture.nativeElement.querySelectorAll('.index-item').length).toBe(1);
     expect(
       fixture.nativeElement.querySelector('[data-testid="index-note-match"]')?.textContent
@@ -1212,14 +1212,14 @@ describe('SecondBrain', () => {
       { id: 'c-gamma', name: 'Absurdity', usageCount: 2, noteMatchCount: 3, noteMatchSnippet: '…' },
     ]);
 
-    // The picker answers "which concept did I mean", so it must never offer a row
+    // The picker answers "which topic did I mean", so it must never offer a row
     // that only matched by content. It has its own query box, so search that.
     component.mergeSearchQuery.set('sisyphus');
     expect(component.mergeCandidates().map((c) => c.name)).toEqual([]);
     component.mergeSearchQuery.set('');
 
     (fixture.nativeElement.querySelector('.index-item') as HTMLButtonElement).click();
-    http.expectOne('/api/concepts/c-gamma').flush(detail('c-gamma', 'Absurdity'));
+    http.expectOne('/api/topics/c-gamma').flush(detail('c-gamma', 'Absurdity'));
     flushRelated('c-gamma');
     fixture.detectChanges();
     await fixture.whenStable();
@@ -1236,13 +1236,13 @@ describe('SecondBrain', () => {
     expect(loadingFixture.nativeElement.querySelector('.wait-field')).toBeTruthy();
     expect(loadingFixture.nativeElement.querySelector('.index-item')).toBeNull();
 
-    http.expectOne('/api/concepts').flush(concepts);
-    http.expectOne('/api/concepts/stats').flush(stats);
+    http.expectOne('/api/topics').flush(topics);
+    http.expectOne('/api/topics/stats').flush(stats);
 
   });
 
   it('shows letter separators for alphabetical order but not usage order', () => {
-    component.concepts.set([
+    component.topics.set([
       { id: 'a', name: 'Aster', usageCount: 1 },
       { id: 'b', name: 'Birch', usageCount: 2 },
       { id: 'c', name: 'Cedar', usageCount: 3 },
@@ -1257,7 +1257,7 @@ describe('SecondBrain', () => {
     expect(fixture.nativeElement.querySelectorAll('.letter-separator').length).toBe(0);
   });
 
-  it('reveals row actions and emits their concept id without selecting the row', () => {
+  it('reveals row actions and emits their topic id without selecting the row', () => {
     fixture.detectChanges();
     const rename = fixture.nativeElement.querySelector('.row-action:not(.danger)') as HTMLButtonElement;
     const remove = fixture.nativeElement.querySelector('.row-action.danger') as HTMLButtonElement;
@@ -1279,17 +1279,17 @@ describe('SecondBrain', () => {
 
     const index = fixture.nativeElement.querySelector('.index-list') as HTMLElement;
     expect(index.getAttribute('role')).toBe('list');
-    expect(index.getAttribute('aria-label')).toBe('Concept index');
+    expect(index.getAttribute('aria-label')).toBe('Topic index');
     expect(index.querySelectorAll('.index-row-shell[role="listitem"]')).toHaveLength(3);
     expect(index.querySelectorAll('.index-item[role="button"]')).toHaveLength(0);
     expect(index.querySelector('.index-row-shell .index-item')?.tagName).toBe('BUTTON');
     expect(fixture.nativeElement.querySelector('.brain-header [role="status"]')?.textContent).toContain(
-      'Showing 3 of 3 concepts'
+      'Showing 3 of 3 topics'
     );
   });
 
   it('gives every icon-only action an accessible name after note cards render', async () => {
-    component.selectConcept('c-alpha');
+    component.selectTopic('c-alpha');
     flushDetail('c-alpha', detail('c-alpha', 'Alpha'));
     await fixture.whenStable();
     fixture.detectChanges();
@@ -1308,8 +1308,8 @@ describe('SecondBrain', () => {
     );
   });
 
-  it('renames inline, sends the concept body, updates the pane, and refreshes stats', async () => {
-    component.selectConcept('c-alpha');
+  it('renames inline, sends the topic body, updates the pane, and refreshes stats', async () => {
+    component.selectTopic('c-alpha');
     flushDetail('c-alpha', detail('c-alpha', 'Alpha'));
     await fixture.whenStable();
 
@@ -1320,21 +1320,21 @@ describe('SecondBrain', () => {
 
     component.renameValue.set('Nietzsche');
     component.commitRename('c-alpha');
-    const rename = http.expectOne('/api/concepts/c-alpha');
+    const rename = http.expectOne('/api/topics/c-alpha');
     expect(rename.request.method).toBe('PUT');
-    expect(rename.request.body).toEqual({ concept: 'Nietzsche' });
+    expect(rename.request.body).toEqual({ topic: 'Nietzsche' });
     rename.flush({ id: 'c-alpha', name: 'Nietzsche', usageCount: 9 });
 
-    http.expectOne('/api/concepts/c-alpha/related').flush([]);
+    http.expectOne('/api/topics/c-alpha/related').flush([]);
     flushMutationRefresh([
       { id: 'c-alpha', name: 'Nietzsche', usageCount: 9 },
-      concepts[1],
-      concepts[2],
+      topics[1],
+      topics[2],
     ]);
     await fixture.whenStable();
 
     expect(component.renameId()).toBeNull();
-    expect(component.concepts().find((concept) => concept.id === 'c-alpha')?.name).toBe('Nietzsche');
+    expect(component.topics().find((topic) => topic.id === 'c-alpha')?.name).toBe('Nietzsche');
     expect(component.selectedDetail()?.name).toBe('Nietzsche');
     expect(TestBed.inject(ToastService).toasts().at(-1)?.message).toBe('Renamed to Nietzsche');
   });
@@ -1349,20 +1349,20 @@ describe('SecondBrain', () => {
     component.commitRename('c-alpha');
     fixture.detectChanges();
 
-    expect(component.renameError()).toBe('A concept name is required.');
-    expect(http.match('/api/concepts/c-alpha')).toHaveLength(0);
-    expect(component.concepts().find((concept) => concept.id === 'c-alpha')?.name).toBe('Alpha');
+    expect(component.renameError()).toBe('A topic name is required.');
+    expect(http.match('/api/topics/c-alpha')).toHaveLength(0);
+    expect(component.topics().find((topic) => topic.id === 'c-alpha')?.name).toBe('Alpha');
   });
 
   it('rolls back a failed rename and reports the failure', async () => {
     component.startRename('c-alpha');
     component.renameValue.set('Unavailable');
     component.commitRename('c-alpha');
-    http.expectOne('/api/concepts/c-alpha').error(new ProgressEvent('network-error'));
+    http.expectOne('/api/topics/c-alpha').error(new ProgressEvent('network-error'));
     await fixture.whenStable();
 
     expect(component.renameId()).toBeNull();
-    expect(component.concepts().find((concept) => concept.id === 'c-alpha')?.name).toBe('Alpha');
+    expect(component.topics().find((topic) => topic.id === 'c-alpha')?.name).toBe('Alpha');
     expect(TestBed.inject(ToastService).toasts().at(-1)?.message).toContain('changes were not saved');
   });
 
@@ -1371,25 +1371,25 @@ describe('SecondBrain', () => {
     component.renameValue.set('Beta');
     component.commitRename('c-alpha');
 
-    const rename = http.expectOne('/api/concepts/c-alpha');
+    const rename = http.expectOne('/api/topics/c-alpha');
     expect(rename.request.method).toBe('PUT');
-    expect(rename.request.body).toEqual({ concept: 'Beta' });
+    expect(rename.request.body).toEqual({ topic: 'Beta' });
     rename.flush({ id: 'c-beta', name: 'Beta', usageCount: 4 });
     flushMutationRefresh(
       [
         { id: 'c-beta', name: 'Beta', usageCount: 4 },
-        concepts[2],
+        topics[2],
       ],
-      { ...stats, totalConcepts: 2, totalReferences: 12 }
+      { ...stats, totalTopics: 2, totalReferences: 12 }
     );
 
-    expect(component.concepts().map((concept) => concept.id)).toEqual(['c-beta', 'c-gamma']);
-    expect(component.concepts()).toHaveLength(2);
+    expect(component.topics().map((topic) => topic.id)).toEqual(['c-beta', 'c-gamma']);
+    expect(component.topics()).toHaveLength(2);
     expect(TestBed.inject(ToastService).toasts().at(-1)?.message).toBe('Merged into Beta');
   });
 
   it('searches merge targets, confirms the consequence, and selects the survivor', async () => {
-    component.selectConcept('c-alpha');
+    component.selectTopic('c-alpha');
     flushDetail('c-alpha', detail('c-alpha', 'Alpha'));
     await fixture.whenStable();
 
@@ -1404,33 +1404,33 @@ describe('SecondBrain', () => {
     fixture.detectChanges();
     const modal = fixture.nativeElement.querySelector('.confirm-modal-card') as HTMLElement;
     expect(modal.textContent).toContain('move 1 note');
-    expect(modal.textContent).toContain('source concept “Alpha” will disappear');
+    expect(modal.textContent).toContain('source topic “Alpha” will disappear');
 
     (modal.querySelector('.btn-confirm') as HTMLButtonElement).click();
-    const merge = http.expectOne('/api/concepts/c-alpha/merge');
+    const merge = http.expectOne('/api/topics/c-alpha/merge');
     expect(merge.request.method).toBe('POST');
     expect(merge.request.body).toEqual({ targetId: 'c-beta' });
-    expect(component.mergingConcept()).toBe(true);
+    expect(component.mergingTopic()).toBe(true);
 
     merge.flush({ id: 'c-beta', name: 'Beta', usageCount: 4 });
-    http.expectOne('/api/concepts/c-beta/related').flush([]);
-    http.expectOne('/api/concepts/c-beta').flush(detail('c-beta', 'Beta'));
+    http.expectOne('/api/topics/c-beta/related').flush([]);
+    http.expectOne('/api/topics/c-beta').flush(detail('c-beta', 'Beta'));
     flushMutationRefresh(
-      [concepts[1], concepts[2]],
-      { ...stats, totalConcepts: 2, totalReferences: 14 }
+      [topics[1], topics[2]],
+      { ...stats, totalTopics: 2, totalReferences: 14 }
     );
     await fixture.whenStable();
 
-    expect(component.mergingConcept()).toBe(false);
+    expect(component.mergingTopic()).toBe(false);
     expect(component.selectedId()).toBe('c-beta');
-    expect(component.concepts().map((concept) => concept.id)).toEqual(['c-beta', 'c-gamma']);
+    expect(component.topics().map((topic) => topic.id)).toEqual(['c-beta', 'c-gamma']);
     expect(component.selectedDetail()?.name).toBe('Beta');
-    expect(component.conceptStats()?.totalConcepts).toBe(2);
+    expect(component.topicStats()?.totalTopics).toBe(2);
     expect(TestBed.inject(ToastService).toasts().at(-1)?.message).toContain('Merged Alpha into Beta');
   });
 
-  it('rolls back a failed merge and keeps both concepts', async () => {
-    component.selectConcept('c-alpha');
+  it('rolls back a failed merge and keeps both topics', async () => {
+    component.selectTopic('c-alpha');
     flushDetail('c-alpha', detail('c-alpha', 'Alpha'));
     await fixture.whenStable();
     component.openMergePicker();
@@ -1438,54 +1438,54 @@ describe('SecondBrain', () => {
     component.openMergeConfirmation();
     component.confirmMerge();
 
-    http.expectOne('/api/concepts/c-alpha/merge').error(new ProgressEvent('network-error'));
+    http.expectOne('/api/topics/c-alpha/merge').error(new ProgressEvent('network-error'));
     await fixture.whenStable();
-    expect(component.mergingConcept()).toBe(false);
-    expect(component.concepts().map((concept) => concept.id)).toEqual(['c-alpha', 'c-beta', 'c-gamma']);
+    expect(component.mergingTopic()).toBe(false);
+    expect(component.topics().map((topic) => topic.id)).toEqual(['c-alpha', 'c-beta', 'c-gamma']);
     expect(component.selectedId()).toBe('c-alpha');
     expect(TestBed.inject(ToastService).toasts().at(-1)?.message).toContain('changes were not saved');
   });
 
-  it('confirms concept deletion with honest reference wording and refreshes the stats line', async () => {
-    component.selectConcept('c-alpha');
+  it('confirms topic deletion with honest reference wording and refreshes the stats line', async () => {
+    component.selectTopic('c-alpha');
     flushDetail('c-alpha', detail('c-alpha', 'Alpha'));
     await fixture.whenStable();
 
-    component.openDeleteConcept('c-alpha');
+    component.openDeleteTopic('c-alpha');
     fixture.detectChanges();
     const modal = fixture.nativeElement.querySelector('.confirm-modal-card') as HTMLElement;
     expect(modal.textContent).toContain('does not edit note text');
     expect(modal.textContent).toContain('[[Alpha]] reference stays in notes');
-    expect(modal.textContent).toContain('saving a note again will re-create the concept');
+    expect(modal.textContent).toContain('saving a note again will re-create the topic');
 
     (modal.querySelector('.btn-confirm') as HTMLButtonElement).click();
-    const deletion = http.expectOne('/api/concepts/c-alpha');
+    const deletion = http.expectOne('/api/topics/c-alpha');
     expect(deletion.request.method).toBe('DELETE');
-    expect(component.deletingConcept()).toBe(true);
+    expect(component.deletingTopic()).toBe(true);
     deletion.flush(null);
     flushMutationRefresh(
-      [concepts[1], concepts[2]],
-      { ...stats, totalConcepts: 2, totalReferences: 6 }
+      [topics[1], topics[2]],
+      { ...stats, totalTopics: 2, totalReferences: 6 }
     );
     await fixture.whenStable();
 
-    expect(component.deletingConcept()).toBe(false);
+    expect(component.deletingTopic()).toBe(false);
     expect(component.selectedId()).toBeNull();
     expect(component.selectedDetail()).toBeNull();
-    expect(component.concepts().map((concept) => concept.id)).toEqual(['c-beta', 'c-gamma']);
-    expect(component.conceptStats()?.totalConcepts).toBe(2);
-    expect(fixture.nativeElement.querySelector('.concept-title')).toBeNull();
+    expect(component.topics().map((topic) => topic.id)).toEqual(['c-beta', 'c-gamma']);
+    expect(component.topicStats()?.totalTopics).toBe(2);
+    expect(fixture.nativeElement.querySelector('.topic-title')).toBeNull();
   });
 
-  it('rolls back a failed concept deletion and leaves its row intact', async () => {
-    component.openDeleteConcept('c-alpha');
-    component.confirmDeleteConcept();
-    http.expectOne('/api/concepts/c-alpha').error(new ProgressEvent('network-error'));
+  it('rolls back a failed topic deletion and leaves its row intact', async () => {
+    component.openDeleteTopic('c-alpha');
+    component.confirmDeleteTopic();
+    http.expectOne('/api/topics/c-alpha').error(new ProgressEvent('network-error'));
     await fixture.whenStable();
 
-    expect(component.deletingConcept()).toBe(false);
-    expect(component.conceptDeleteTarget()).toBeNull();
-    expect(component.concepts().some((concept) => concept.id === 'c-alpha')).toBe(true);
+    expect(component.deletingTopic()).toBe(false);
+    expect(component.topicDeleteTarget()).toBeNull();
+    expect(component.topics().some((topic) => topic.id === 'c-alpha')).toBe(true);
     expect(TestBed.inject(ToastService).toasts().at(-1)?.message).toContain('still in your index');
   });
 
@@ -1494,8 +1494,8 @@ describe('SecondBrain', () => {
     const second = TestBed.createComponent(SecondBrain);
     expect(second.componentInstance.indexSort()).toBe('za');
     // Flush the second instance's own list request before it is discarded.
-    http.expectOne('/api/concepts').flush(concepts);
-    http.expectOne('/api/concepts/stats').flush(stats);
+    http.expectOne('/api/topics').flush(topics);
+    http.expectOne('/api/topics/stats').flush(stats);
 
   });
 
@@ -1506,16 +1506,16 @@ describe('SecondBrain', () => {
 
     expect(component.viewMode()).toBe('map');
     expect(localStorage.getItem('nostos.brain.viewMode')).toBe('map');
-    expect(fixture.nativeElement.querySelector('app-concept-map')).toBeTruthy();
-    flushChildConceptLists();
-    http.match('/api/concepts/graph').forEach((request) => request.flush({ nodes: [], edges: [] }));
+    expect(fixture.nativeElement.querySelector('app-topic-map')).toBeTruthy();
+    flushChildTopicLists();
+    http.match('/api/topics/graph').forEach((request) => request.flush({ nodes: [], edges: [] }));
 
     const list = fixture.nativeElement.querySelector('.view-mode-control .vt-opt:first-child') as HTMLButtonElement;
     list.click();
     fixture.detectChanges();
     expect(component.viewMode()).toBe('list');
     expect(localStorage.getItem('nostos.brain.viewMode')).toBe('list');
-    expect(fixture.nativeElement.querySelector('app-concept-map')).toBeNull();
+    expect(fixture.nativeElement.querySelector('app-topic-map')).toBeNull();
   });
 
   it('renders the map on the main stage, not in the index rail', () => {
@@ -1523,7 +1523,7 @@ describe('SecondBrain', () => {
     (fixture.nativeElement.querySelector('.view-mode-control .vt-opt:last-child') as HTMLButtonElement).click();
     fixture.detectChanges();
 
-    const map = fixture.nativeElement.querySelector('app-concept-map') as HTMLElement;
+    const map = fixture.nativeElement.querySelector('app-topic-map') as HTMLElement;
     expect(map).toBeTruthy();
     // The graph must live in the content column (the main stage). In the ~320px
     // index rail it was unreadable; this pins the placement so a future change
@@ -1532,8 +1532,8 @@ describe('SecondBrain', () => {
     expect(map.closest('.index-col')).toBeNull();
     expect(map.closest('.index-list')).toBeNull();
 
-    flushChildConceptLists();
-    http.match('/api/concepts/graph').forEach((request) => request.flush({ nodes: [], edges: [] }));
+    flushChildTopicLists();
+    http.match('/api/topics/graph').forEach((request) => request.flush({ nodes: [], edges: [] }));
   });
 
   it('closes the index rail so the map owns the whole layout in map view', () => {
@@ -1552,8 +1552,8 @@ describe('SecondBrain', () => {
     // Flush the child's requests FIRST: an assertion failure here would
     // otherwise abort the test before afterEach's http.verify() ran, and the
     // open request would cascade into every later test in the file.
-    flushChildConceptLists();
-    http.match('/api/concepts/graph').forEach((request) => request.flush({ nodes: [], edges: [] }));
+    flushChildTopicLists();
+    http.match('/api/topics/graph').forEach((request) => request.flush({ nodes: [], edges: [] }));
     fixture.detectChanges();
 
     // Map view: the rail is closed and the LAYOUT itself collapses to one
@@ -1583,29 +1583,29 @@ describe('SecondBrain', () => {
 
     component.setSearchQuery('alp');
     await settleNoteSearch([]);
-    expect(component.filteredConcepts().map((concept) => concept.name)).toEqual(['Alpha']);
+    expect(component.filteredTopics().map((topic) => topic.name)).toEqual(['Alpha']);
 
     (fixture.nativeElement.querySelector('.brain-header .view-mode-control .vt-opt:last-child') as HTMLButtonElement).click();
     fixture.detectChanges();
-    flushChildConceptLists();
-    http.match('/api/concepts/graph').forEach((request) => request.flush({ nodes: [], edges: [] }));
+    flushChildTopicLists();
+    http.match('/api/topics/graph').forEach((request) => request.flush({ nodes: [], edges: [] }));
     fixture.detectChanges();
 
     expect(component.searchQuery()).toBe('alp');
-    expect(component.filteredConcepts().map((concept) => concept.name)).toEqual(['Alpha']);
+    expect(component.filteredTopics().map((topic) => topic.name)).toEqual(['Alpha']);
 
     // The map draws the filtered set — the same set the list was showing — so
-    // the two modes agree about what "the concepts" means.
-    const map = fixture.debugElement.query(By.css('app-concept-map'));
-    expect(map.componentInstance.concepts.map((c: { name: string }) => c.name)).toEqual(['Alpha']);
+    // the two modes agree about what "the topics" means.
+    const map = fixture.debugElement.query(By.css('app-topic-map'));
+    expect(map.componentInstance.topics.map((c: { name: string }) => c.name)).toEqual(['Alpha']);
   });
 
   it('leaves map view from the persistent header, with the rail restored', () => {
     fixture.detectChanges();
     (fixture.nativeElement.querySelector('.brain-header .view-mode-control .vt-opt:last-child') as HTMLButtonElement).click();
     fixture.detectChanges();
-    flushChildConceptLists();
-    http.match('/api/concepts/graph').forEach((request) => request.flush({ nodes: [], edges: [] }));
+    flushChildTopicLists();
+    http.match('/api/topics/graph').forEach((request) => request.flush({ nodes: [], edges: [] }));
     fixture.detectChanges();
 
     // The rail closes in map view, but the header does NOT — it is the reason
@@ -1620,38 +1620,38 @@ describe('SecondBrain', () => {
 
     const index = fixture.nativeElement.querySelector('.index-col') as HTMLElement;
     expect(component.viewMode()).toBe('list');
-    expect(fixture.nativeElement.querySelector('app-concept-map')).toBeNull();
+    expect(fixture.nativeElement.querySelector('app-topic-map')).toBeNull();
     expect(index.classList.contains('map-hidden')).toBe(false);
     expect(getComputedStyle(index).display).not.toBe('none');
     expect(getComputedStyle(fixture.nativeElement.querySelector('.brain-layout') as HTMLElement)
       .gridTemplateColumns).toContain('280px');
   });
 
-  it('opens a double-clicked node as the concept detail, and leaves the map', () => {
+  it('opens a double-clicked node as the topic detail, and leaves the map', () => {
     fixture.detectChanges();
     (fixture.nativeElement.querySelector('.view-mode-control .vt-opt:last-child') as HTMLButtonElement).click();
     fixture.detectChanges();
-    flushChildConceptLists();
-    http.match('/api/concepts/graph').forEach((request) => request.flush({ nodes: [], edges: [] }));
+    flushChildTopicLists();
+    http.match('/api/topics/graph').forEach((request) => request.flush({ nodes: [], edges: [] }));
     fixture.detectChanges();
 
-    // Double-clicking a node must land on the concept's notes — the same place
+    // Double-clicking a node must land on the topic's notes — the same place
     // an index row click does — not merely re-select it.
-    const map = fixture.debugElement.query(By.css('app-concept-map'));
-    expect(map.componentInstance.openConcept.observed, 'the parent must bind openConcept').toBe(true);
-    map.componentInstance.openConcept.emit('c-beta');
+    const map = fixture.debugElement.query(By.css('app-topic-map'));
+    expect(map.componentInstance.openTopic.observed, 'the parent must bind openTopic').toBe(true);
+    map.componentInstance.openTopic.emit('c-beta');
     fixture.detectChanges();
     flushDetail('c-beta', detail('c-beta', 'Beta'));
     fixture.detectChanges();
 
     expect(component.selectedId()).toBe('c-beta');
     expect(component.viewMode()).toBe('list');
-    expect(fixture.nativeElement.querySelector('.concept-title')?.textContent).toContain('Beta');
+    expect(fixture.nativeElement.querySelector('.topic-title')?.textContent).toContain('Beta');
   });
 
   it('drops the selection when the map reports empty space was clicked', () => {
     fixture.detectChanges();
-    component.selectConcept('c-beta');
+    component.selectTopic('c-beta');
     flushDetail('c-beta', detail('c-beta', 'Beta'));
     fixture.detectChanges();
     expect(component.selectedId()).toBe('c-beta');
@@ -1660,13 +1660,13 @@ describe('SecondBrain', () => {
     // clicks happen, so enter the mode before wiring the assertion.
     component.setViewMode('map');
     fixture.detectChanges();
-    flushChildConceptLists();
-    http.match('/api/concepts/graph').forEach((request) => request.flush({ nodes: [], edges: [] }));
+    flushChildTopicLists();
+    http.match('/api/topics/graph').forEach((request) => request.flush({ nodes: [], edges: [] }));
     fixture.detectChanges();
 
     // The index rail highlights the selected row, so a deselect has to reach the
     // parent rather than only the canvas.
-    const map = fixture.debugElement.query(By.css('app-concept-map'));
+    const map = fixture.debugElement.query(By.css('app-topic-map'));
     expect(map, 'the map must be rendered in map view').toBeTruthy();
     expect(
       map.componentInstance.selectionCleared.observed,
@@ -1684,31 +1684,31 @@ describe('SecondBrain', () => {
     fixture.detectChanges();
     (fixture.nativeElement.querySelector('.view-mode-control .vt-opt:last-child') as HTMLButtonElement).click();
     fixture.detectChanges();
-    flushChildConceptLists();
-    http.match('/api/concepts/graph').forEach((request) => request.flush({ nodes: [], edges: [] }));
+    flushChildTopicLists();
+    http.match('/api/topics/graph').forEach((request) => request.flush({ nodes: [], edges: [] }));
 
-    // Selecting a concept from the map must NOT navigate away from the graph —
+    // Selecting a topic from the map must NOT navigate away from the graph —
     // that would hide the map the moment it was used.
-    component.onMapConceptSelected('c-beta');
+    component.onMapTopicSelected('c-beta');
     fixture.detectChanges();
     flushDetail('c-beta', detail('c-beta', 'Beta'));
     fixture.detectChanges();
 
     expect(component.viewMode()).toBe('map');
-    expect(fixture.nativeElement.querySelector('app-concept-map')).toBeTruthy();
-    expect(component.selectedConceptName()).toBe('Beta');
+    expect(fixture.nativeElement.querySelector('app-topic-map')).toBeTruthy();
+    expect(component.selectedTopicName()).toBe('Beta');
 
     // ...and the map's own action rail is the explicit route to the notes. The
-    // action lives INSIDE app-concept-map now, so the child is asked to emit it
+    // action lives INSIDE app-topic-map now, so the child is asked to emit it
     // rather than the parent template owning a separate button.
-    const map = fixture.debugElement.query(By.css('app-concept-map'));
+    const map = fixture.debugElement.query(By.css('app-topic-map'));
     expect(map, 'the map owns the notes action').toBeTruthy();
     expect(map.componentInstance.selectedName).toBe('Beta');
 
     map.componentInstance.openNotes.emit();
     fixture.detectChanges();
     expect(component.viewMode()).toBe('list');
-    expect(fixture.nativeElement.querySelector('app-concept-map')).toBeNull();
+    expect(fixture.nativeElement.querySelector('app-topic-map')).toBeNull();
   });
 
   describe('unlinked-notes review (issue #256)', () => {
@@ -1720,7 +1720,7 @@ describe('SecondBrain', () => {
         content: 'One must imagine Sisyphus happy.',
         selectedText: 'The struggle itself toward the heights is enough to fill a man’s heart.',
         snippet: 'One must imagine Sisyphus happy.',
-        conceptNames: ['Absurdism', 'Revolt'],
+        topicNames: ['Absurdism', 'Revolt'],
         createdAt: '2026-09-01T10:00:00Z',
       },
       {
@@ -1730,7 +1730,7 @@ describe('SecondBrain', () => {
         content: 'I rebel — therefore we exist.',
         selectedText: null,
         snippet: null,
-        conceptNames: [],
+        topicNames: [],
         createdAt: '2026-09-02T10:00:00Z',
       },
     ];
@@ -1742,7 +1742,7 @@ describe('SecondBrain', () => {
       content: 'A third unconnected remark.',
       selectedText: null,
       snippet: null,
-      conceptNames: [],
+      topicNames: [],
       createdAt: '2026-09-03T10:00:00Z',
     };
 
@@ -1761,23 +1761,23 @@ describe('SecondBrain', () => {
       fixture.detectChanges();
     };
 
-    /** A concept link write re-reads the index and the stats line. */
+    /** A topic link write re-reads the index and the stats line. */
     const settleReviewRefresh = (): void => {
       fixture.detectChanges();
-      http.match('/api/concepts').forEach((request) => {
-        if (!request.cancelled) request.flush(concepts);
+      http.match('/api/topics').forEach((request) => {
+        if (!request.cancelled) request.flush(topics);
       });
-      http.match('/api/concepts/stats').forEach((request) => {
+      http.match('/api/topics/stats').forEach((request) => {
         if (!request.cancelled) request.flush(stats);
       });
       fixture.detectChanges();
     };
 
-    it('shows the concept index alone in the rail, with no notes section beneath it', () => {
+    it('shows the topic index alone in the rail, with no notes section beneath it', () => {
       const sectionTitles = fixture.nativeElement.querySelectorAll('.brain-section-title');
 
       expect(sectionTitles.length).toBe(1);
-      expect(sectionTitles[0].textContent?.trim()).toBe('Concepts');
+      expect(sectionTitles[0].textContent?.trim()).toBe('Topics');
       expect(fixture.nativeElement.querySelector('.brain-notes-section')).toBeNull();
       expect(component.noteSearchHits()).toEqual([]);
     });
@@ -1785,8 +1785,8 @@ describe('SecondBrain', () => {
     it('does not load unlinked notes merely because the Brain was opened', () => {
       const second = TestBed.createComponent(SecondBrain);
       second.detectChanges();
-      http.expectOne('/api/concepts').flush(concepts);
-      http.expectOne('/api/concepts/stats').flush(stats);
+      http.expectOne('/api/topics').flush(topics);
+      http.expectOne('/api/topics/stats').flush(stats);
 
       // The whole point of the issue: nothing here fetched them, so the mode has
       // to fetch them itself when it is opened.
@@ -1814,16 +1814,16 @@ describe('SecondBrain', () => {
 
     it('enters review from the rail foot and shows the queue with what is left', () => {
       expect(fixture.nativeElement.querySelector('.rail-foot-action')?.textContent?.trim()).toBe(
-        'Review notes with no concept'
+        'Review notes with no topic'
       );
 
       enterReview();
 
       expect(component.viewMode()).toBe('unlinked');
-      // The concept index is replaced, not augmented: no concept rows remain.
+      // The topic index is replaced, not augmented: no topic rows remain.
       expect(fixture.nativeElement.querySelector('.index-row-shell')).toBeNull();
       expect(fixture.nativeElement.querySelector('.brain-section-title')?.textContent?.trim()).toBe(
-        'Without concepts'
+        'Without topics'
       );
       expect(fixture.nativeElement.querySelector('.brain-section-count')?.textContent?.trim()).toBe(
         '2 notes'
@@ -1849,7 +1849,7 @@ describe('SecondBrain', () => {
         'One must imagine Sisyphus happy.'
       );
       expect(fixture.nativeElement.querySelector('.review-pane .review-quote')).toBeNull();
-      expect(fixture.nativeElement.querySelector('.review-pane')?.textContent).toContain('Link to concept');
+      expect(fixture.nativeElement.querySelector('.review-pane')?.textContent).toContain('Link to topic');
       expect(fixture.nativeElement.querySelector('.review-pane')?.textContent).toContain('Edit note');
     });
 
@@ -1916,14 +1916,14 @@ describe('SecondBrain', () => {
       http.expectNone((request) => request.method === 'PUT' || request.method === 'POST' || request.method === 'DELETE');
     });
 
-    it('links the reviewed note to an existing concept with an explicit reference, and drops it', () => {
+    it('links the reviewed note to an existing topic with an explicit reference, and drops it', () => {
       enterReview();
       component.openReviewPicker();
       fixture.detectChanges();
 
       expect(fixture.nativeElement.querySelector('.merge-picker')).toBeTruthy();
 
-      component.chooseReviewConcept('c-alpha');
+      component.chooseReviewTopic('c-alpha');
       fixture.detectChanges();
       (
         fixture.nativeElement.querySelector('.merge-picker-actions .merge-picker-confirm') as HTMLButtonElement
@@ -1932,7 +1932,7 @@ describe('SecondBrain', () => {
 
       const put = http.expectOne((req) => req.method === 'PUT' && req.url === '/api/notes/hit-1');
       // The association written is the canonical one: an explicit [[reference]] in
-      // the note body, which the server rebuilds the note's concepts from.
+      // the note body, which the server rebuilds the note's topics from.
       expect((put.request.body as { content: string }).content).toBe(
         'One must imagine Sisyphus happy.\n\n[[Alpha]]'
       );
@@ -1953,10 +1953,10 @@ describe('SecondBrain', () => {
     it('does not write anything when a link fails', () => {
       enterReview();
       component.openReviewPicker();
-      component.chooseReviewConcept('c-alpha');
+      component.chooseReviewTopic('c-alpha');
       fixture.detectChanges();
 
-      component.confirmLinkToConcept();
+      component.confirmLinkToTopic();
       fixture.detectChanges();
       http
         .expectOne((req) => req.method === 'PUT' && req.url === '/api/notes/hit-1')
@@ -1968,14 +1968,14 @@ describe('SecondBrain', () => {
       expect(TestBed.inject(ToastService).toasts().at(-1)?.message).toContain('Failed to link');
     });
 
-    it('creates a concept from review through the canonical note update', () => {
+    it('creates a topic from review through the canonical note update', () => {
       enterReview();
       component.openReviewPicker();
       component.reviewPickerQuery.set('New connection');
       fixture.detectChanges();
-      expect(component.reviewNewConceptName()).toBe('New connection');
+      expect(component.reviewNewTopicName()).toBe('New connection');
 
-      component.createReviewConcept();
+      component.createReviewTopic();
       const save = http.expectOne((request) => request.method === 'PUT' && request.url === '/api/notes/hit-1');
       expect(save.request.body.content).toContain('[[New connection]]');
       expect(save.request.body.selectedText).toBe(sampleHits[0].selectedText);
@@ -1997,7 +1997,7 @@ describe('SecondBrain', () => {
       expect(fixture.nativeElement.querySelector('.index-list')?.textContent).not.toContain('No notes here');
     });
 
-    it('resolves a note whose edit declares a concept', () => {
+    it('resolves a note whose edit declares a topic', () => {
       enterReview();
       component.startReviewEdit();
       fixture.detectChanges();
@@ -2016,7 +2016,7 @@ describe('SecondBrain', () => {
       expect(component.reviewEditing()).toBe(false);
     });
 
-    it('keeps a note queued when an edit still leaves it with no concept', () => {
+    it('keeps a note queued when an edit still leaves it with no topic', () => {
       enterReview();
       component.startReviewEdit();
       fixture.detectChanges();
@@ -2066,7 +2066,7 @@ describe('SecondBrain', () => {
 
       expect(component.viewMode()).toBe('list');
       expect(fixture.nativeElement.querySelector('.brain-section-title')?.textContent?.trim()).toBe(
-        'Concepts'
+        'Topics'
       );
       expect(fixture.nativeElement.querySelectorAll('.index-list .note-row-item').length).toBe(0);
       expect(component.reviewQueue().length).toBe(2);
@@ -2122,10 +2122,10 @@ describe('SecondBrain', () => {
       expect(panel.querySelector('blockquote')?.textContent?.trim()).toBe('The struggle itself toward the heights is enough to fill a man’s heart.');
       expect(panel.querySelector('.brain-note-panel-content')?.textContent?.trim()).toBe('One must imagine Sisyphus happy.');
 
-      const conceptBadges = panel.querySelectorAll('.nostos-badge--success');
-      expect(conceptBadges.length).toBe(2);
-      expect(conceptBadges[0].textContent?.trim()).toContain('Absurdism');
-      expect(conceptBadges[1].textContent?.trim()).toContain('Revolt');
+      const topicBadges = panel.querySelectorAll('.nostos-badge--success');
+      expect(topicBadges.length).toBe(2);
+      expect(topicBadges[0].textContent?.trim()).toContain('Absurdism');
+      expect(topicBadges[1].textContent?.trim()).toContain('Revolt');
 
       const closeBtn = panel.querySelector('button[aria-label="Close note"]') as HTMLButtonElement;
       expect(closeBtn).toBeTruthy();
@@ -2136,7 +2136,7 @@ describe('SecondBrain', () => {
       expect(fixture.nativeElement.querySelector('[data-testid="brain-note-panel"]')).toBeNull();
     });
 
-    it('shows the unlinked state in the panel when note has no concept links', async () => {
+    it('shows the unlinked state in the panel when note has no topic links', async () => {
       component.setSearchQuery('rebel');
       await settleNoteSearch([], sampleHits);
       fixture.detectChanges();
@@ -2148,7 +2148,7 @@ describe('SecondBrain', () => {
       const panel = fixture.nativeElement.querySelector('[data-testid="brain-note-panel"]');
       expect(panel).toBeTruthy();
       expect(panel.querySelector('blockquote')).toBeNull();
-      expect(panel.textContent).toContain('No concepts linked');
+      expect(panel.textContent).toContain('No topics linked');
     });
 
     it('never falls back to unlinked notes when the search box is empty', async () => {
@@ -2164,7 +2164,7 @@ describe('SecondBrain', () => {
       expect(rows.length).toBe(1);
       expect(rows[0].querySelector('.note-row-snippet')?.textContent?.trim()).toBe('“One must imagine Sisyphus happy.”');
 
-      // Clearing the query returns the rail to concepts only. This is the
+      // Clearing the query returns the rail to topics only. This is the
       // regression the issue is about: the old section fell back to the whole
       // unlinked list whenever the box was empty.
       component.clearSearch();
@@ -2195,7 +2195,7 @@ describe('SecondBrain', () => {
       enterReview();
 
       const button = fixture.nativeElement.querySelector(
-        '[data-testid="review-suggest-concepts"]',
+        '[data-testid="review-suggest-topics"]',
       ) as HTMLButtonElement;
       expect(button).toBeTruthy();
 
@@ -2214,7 +2214,7 @@ describe('SecondBrain', () => {
         acknowledgement: null,
         anchorPrompt: null,
         suggestions: [
-          { kind: 'concept', label: 'Mountains', reason: 'The note describes the same climb.', value: 'c-alpha', noteId: 'hit-1' },
+          { kind: 'topic', label: 'Mountains', reason: 'The note describes the same climb.', value: 'c-alpha', noteId: 'hit-1' },
         ],
         pendingPlan: null,
       });
@@ -2222,14 +2222,14 @@ describe('SecondBrain', () => {
 
       expect(component.proposalState()).toBe('ready');
       const proposal = fixture.nativeElement.querySelector('[data-testid="brain-proposal"]');
-      expect(proposal.textContent).toContain('Suggested concept');
+      expect(proposal.textContent).toContain('Suggested topic');
       expect(proposal.textContent).toContain('Mountains');
       expect(proposal.textContent).toContain('same climb');
       const proposalButtons = proposal.querySelectorAll('button');
       expect((proposalButtons[1] as HTMLButtonElement).classList.contains('nostos-button--primary')).toBe(true);
 
       (proposalButtons[0] as HTMLButtonElement).click();
-      http.expectOne('/api/concepts/c-alpha').flush({
+      http.expectOne('/api/topics/c-alpha').flush({
         id: 'c-alpha', name: 'Mountains', notes: [{ noteId: 'evidence-1', bookId: 'b-1', bookTitle: 'Other book', content: 'A related climb.' }],
       });
       fixture.detectChanges();
@@ -2250,7 +2250,7 @@ describe('SecondBrain', () => {
       fixture.detectChanges();
       request.flush({
         reply: 'A connection.', acknowledgement: null, anchorPrompt: null, pendingPlan: null,
-        suggestions: [{ kind: 'concept', label: 'Alpha', reason: 'Related note.', value: 'c-alpha', noteId: 'hit-1' }],
+        suggestions: [{ kind: 'topic', label: 'Alpha', reason: 'Related note.', value: 'c-alpha', noteId: 'hit-1' }],
       });
       fixture.detectChanges();
       expect(component.proposalState()).toBe('idle');
@@ -2268,7 +2268,7 @@ describe('SecondBrain', () => {
       fixture.detectChanges();
       expect(component.proposalState()).toBe('empty');
       expect(fixture.nativeElement.querySelector('[data-testid="brain-proposals"]')?.textContent).toContain('No useful matches found');
-      expect(fixture.nativeElement.querySelector('.note-inspector-primary-actions')?.textContent).toContain('Link to concept');
+      expect(fixture.nativeElement.querySelector('.note-inspector-primary-actions')?.textContent).toContain('Link to topic');
     });
 
     it('keeps manual linking usable when AI is unavailable, and ignores cancelled late results', () => {
@@ -2280,16 +2280,16 @@ describe('SecondBrain', () => {
       });
       fixture.detectChanges();
       expect(component.proposalState()).toBe('unavailable');
-      expect(fixture.nativeElement.querySelector('.note-inspector-primary-actions')?.textContent).toContain('Link to concept');
+      expect(fixture.nativeElement.querySelector('.note-inspector-primary-actions')?.textContent).toContain('Link to topic');
       expect(fixture.nativeElement.querySelector('[data-testid="brain-proposals"]')?.textContent)
         .toContain('Manual linking');
 
       component.askNostos();
       const second = http.expectOne('/api/assistant/turn/stream');
-      component.cancelConceptProposals();
+      component.cancelTopicProposals();
       second.flush({
         reply: 'A match.', acknowledgement: null, anchorPrompt: null, pendingPlan: null,
-        suggestions: [{ kind: 'concept', label: 'Alpha', reason: 'Same theme.', value: 'c-alpha', noteId: 'hit-1' }],
+        suggestions: [{ kind: 'topic', label: 'Alpha', reason: 'Same theme.', value: 'c-alpha', noteId: 'hit-1' }],
       });
       fixture.detectChanges();
       expect(component.proposalState()).toBe('idle');
@@ -2303,7 +2303,7 @@ describe('SecondBrain', () => {
       component.askNostos();
       http.expectOne('/api/assistant/turn/stream').flush({
         reply: 'A match.', acknowledgement: null, anchorPrompt: null, pendingPlan: null,
-        suggestions: [{ kind: 'concept', label: 'Alpha', reason: 'Same theme.', value: 'c-alpha', noteId: 'hit-1' }],
+        suggestions: [{ kind: 'topic', label: 'Alpha', reason: 'Same theme.', value: 'c-alpha', noteId: 'hit-1' }],
       });
       expect(component.proposalState()).toBe('ready');
 
@@ -2319,9 +2319,9 @@ describe('SecondBrain', () => {
 
       const assistant = TestBed.inject(AssistantService);
       assistant.applySuggestion({
-        kind: 'concept',
+        kind: 'topic',
         label: 'Alpha',
-        reason: 'Existing concept in your library.',
+        reason: 'Existing topic in your library.',
         value: 'c-alpha',
         noteId: 'hit-1',
       });
@@ -2334,7 +2334,7 @@ describe('SecondBrain', () => {
         anchorPrompt: null,
         suggestions: [],
         pendingPlan: null,
-        executedCapabilities: ['notes_link_existing_concept'],
+        executedCapabilities: ['notes_link_existing_topic'],
       });
 
       // The receipt describes a real write, so the index/stats refresh and the
@@ -2347,7 +2347,7 @@ describe('SecondBrain', () => {
   });
 });
 
-describe('SecondBrain concept-link routing', () => {
+describe('SecondBrain topic-link routing', () => {
   it('opens the requested note evidence from the noteId query parameter', async () => {
     await TestBed.configureTestingModule({
       providers: [
@@ -2370,12 +2370,12 @@ describe('SecondBrain concept-link routing', () => {
       content: 'The exact canonical note.',
       selectedText: 'The exact quotation.',
       snippet: 'The exact quotation.',
-      conceptNames: ['Attention'],
+      topicNames: ['Attention'],
       createdAt: '2026-09-27T12:00:00Z',
     };
 
-    http.expectOne('/api/concepts').flush(concepts);
-    http.expectOne('/api/concepts/stats').flush(stats);
+    http.expectOne('/api/topics').flush(topics);
+    http.expectOne('/api/topics/stats').flush(stats);
     http.match((request) => request.url === '/api/notes').forEach((request) => request.flush({
       items: [deepNote],
       totalCount: 1,
@@ -2395,7 +2395,7 @@ describe('SecondBrain concept-link routing', () => {
     http.verify();
   });
 
-  it('opens the requested concept evidence from the conceptId query parameter', async () => {
+  it('opens the requested topic evidence from the topicId query parameter', async () => {
     await TestBed.configureTestingModule({
       providers: [
         provideRouter([{ path: 'second-brain', component: SecondBrain }]),
@@ -2405,26 +2405,26 @@ describe('SecondBrain concept-link routing', () => {
     }).compileComponents();
 
     const harness = await RouterTestingHarness.create();
-    const navigation = harness.navigateByUrl('/second-brain?conceptId=c-beta', SecondBrain);
+    const navigation = harness.navigateByUrl('/second-brain?topicId=c-beta', SecondBrain);
     const http = TestBed.inject(HttpTestingController);
 
     // The routed component is created before navigation can settle because its
     // initial HTTP reads are intentionally still outstanding.
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    http.expectOne('/api/concepts').flush(concepts);
-    http.expectOne('/api/concepts/stats').flush(stats);
-    http.expectOne('/api/concepts/c-beta/related').flush([]);
-    http.expectOne('/api/concepts/c-beta').flush(detail('c-beta', 'Beta'));
+    http.expectOne('/api/topics').flush(topics);
+    http.expectOne('/api/topics/stats').flush(stats);
+    http.expectOne('/api/topics/c-beta/related').flush([]);
+    http.expectOne('/api/topics/c-beta').flush(detail('c-beta', 'Beta'));
 
     const routed = await navigation;
     harness.detectChanges();
 
     expect(routed.selectedId()).toBe('c-beta');
     expect(routed.selectedDetail()?.name).toBe('Beta');
-    expect(harness.routeNativeElement?.querySelector('.concept-title')?.textContent).toContain('Beta');
+    expect(harness.routeNativeElement?.querySelector('.topic-title')?.textContent).toContain('Beta');
     expect(
-      harness.routeNativeElement?.querySelector('[data-testid="concept-evidence"]')
+      harness.routeNativeElement?.querySelector('[data-testid="topic-evidence"]')
     ).toBeTruthy();
 
     http.verify();

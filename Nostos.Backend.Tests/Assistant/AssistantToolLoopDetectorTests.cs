@@ -27,15 +27,15 @@ public sealed class AssistantToolLoopDetectorTests
         var detector = new AssistantToolLoopDetector();
 
         detector.IsImmediateRepeat([
-            new LlmToolCall("call-1", "concepts_search", """{"query":"one"}"""),
+            new LlmToolCall("call-1", "topics_search", """{"query":"one"}"""),
         ]).Should().BeFalse();
 
         detector.IsImmediateRepeat([
-            new LlmToolCall("call-2", "concepts_search", """{"query":"two"}"""),
+            new LlmToolCall("call-2", "topics_search", """{"query":"two"}"""),
         ]).Should().BeFalse();
 
         detector.IsImmediateRepeat([
-            new LlmToolCall("call-3", "concepts_search", """{"query":"two"}"""),
+            new LlmToolCall("call-3", "topics_search", """{"query":"two"}"""),
         ]).Should().BeTrue();
     }
 }

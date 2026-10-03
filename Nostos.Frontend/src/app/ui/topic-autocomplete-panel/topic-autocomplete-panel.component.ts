@@ -1,29 +1,29 @@
 import { CommonModule } from '@angular/common';
 import { Component, ElementRef, EventEmitter, inject, Output, ViewChild } from '@angular/core';
-import { ConceptDto } from '../../core/services/concepts.service';
-import { ConceptAutocompleteService } from './concept-autocomplete.service';
+import { TopicDto } from '../../core/services/topics.service';
+import { TopicAutocompleteService } from './topic-autocomplete.service';
 
 @Component({
   standalone: true,
-  selector: 'concept-autocomplete-panel',
+  selector: 'topic-autocomplete-panel',
   imports: [CommonModule],
   template: `
     @if (auto.pickerOpen()) {
-    <div class="autocomplete-panel" role="dialog" aria-label="Link a concept">
+    <div class="autocomplete-panel" role="dialog" aria-label="Link a topic">
       <div class="picker-search">
         <input
           #searchInput
           type="search"
           [value]="auto.query()"
-          placeholder="Find or create a concept..."
-          aria-label="Find or create a concept"
+          placeholder="Find or create a topic..."
+          aria-label="Find or create a topic"
           (input)="onSearchInput($event)"
           (keydown)="onSearchKeydown($event)"
         />
       </div>
 
-      <div class="picker-list" role="listbox" aria-label="Concepts">
-        @for (concept of auto.suggestions(); track concept.id; let i = $index) {
+      <div class="picker-list" role="listbox" aria-label="Topics">
+        @for (topic of auto.suggestions(); track topic.id; let i = $index) {
         <button
           type="button"
           class="item"
@@ -32,9 +32,9 @@ import { ConceptAutocompleteService } from './concept-autocomplete.service';
           [class.nostos-accent-rail]="i === auto.activeIndex()"
           [attr.aria-selected]="i === auto.activeIndex()"
           (mouseenter)="auto.activeIndex.set(i)"
-          (click)="select(concept, $event)"
+          (click)="select(topic, $event)"
         >
-          {{ concept.name }}
+          {{ topic.name }}
         </button>
         }
 
@@ -49,7 +49,7 @@ import { ConceptAutocompleteService } from './concept-autocomplete.service';
         }
 
         @if (auto.suggestions().length === 0 && !canUseQuery()) {
-        <div class="picker-empty">Type a concept name.</div>
+        <div class="picker-empty">Type a topic name.</div>
         }
       </div>
 
@@ -60,13 +60,13 @@ import { ConceptAutocompleteService } from './concept-autocomplete.service';
     </div>
     }
   `,
-  styleUrls: ['./concept-autocomplete-panel.css'],
+  styleUrls: ['./topic-autocomplete-panel.css'],
 })
-export class ConceptAutocompletePanel {
-  readonly auto = inject(ConceptAutocompleteService);
+export class TopicAutocompletePanel {
+  readonly auto = inject(TopicAutocompleteService);
 
-  @Output() conceptSelected = new EventEmitter<ConceptDto>();
-  @Output() conceptNameSelected = new EventEmitter<string>();
+  @Output() topicSelected = new EventEmitter<TopicDto>();
+  @Output() topicNameSelected = new EventEmitter<string>();
   @Output() cancelled = new EventEmitter<void>();
 
   @ViewChild('searchInput') private searchInput?: ElementRef<HTMLInputElement>;
@@ -84,7 +84,7 @@ export class ConceptAutocompletePanel {
     const query = this.auto.query().trim();
     if (!query) return false;
     return !this.auto.suggestions().some(
-      (concept) => concept.name.trim().toLocaleLowerCase() === query.toLocaleLowerCase()
+      (topic) => topic.name.trim().toLocaleLowerCase() === query.toLocaleLowerCase()
     );
   }
 
@@ -116,22 +116,22 @@ export class ConceptAutocompletePanel {
     const chosen = this.auto.choose();
     if (chosen) {
       event.preventDefault();
-      this.conceptSelected.emit(chosen);
+      this.topicSelected.emit(chosen);
       this.auto.clear();
       return;
     }
 
     if (this.canUseQuery()) {
       event.preventDefault();
-      this.conceptNameSelected.emit(this.auto.query().trim());
+      this.topicNameSelected.emit(this.auto.query().trim());
       this.auto.clear();
     }
   }
 
-  select(concept: ConceptDto, event: Event): void {
+  select(topic: TopicDto, event: Event): void {
     event.preventDefault();
     event.stopPropagation();
-    this.conceptSelected.emit(concept);
+    this.topicSelected.emit(topic);
     this.auto.clear();
   }
 
@@ -140,7 +140,7 @@ export class ConceptAutocompletePanel {
     event.stopPropagation();
     const query = this.auto.query().trim();
     if (!query) return;
-    this.conceptNameSelected.emit(query);
+    this.topicNameSelected.emit(query);
     this.auto.clear();
   }
 

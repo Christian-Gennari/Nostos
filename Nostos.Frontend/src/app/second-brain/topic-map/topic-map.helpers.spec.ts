@@ -9,7 +9,7 @@ import {
   shelfPositions,
   type LabelCandidate,
   type PlacedLabel,
-} from './concept-map.helpers';
+} from './topic-map.helpers';
 
 /** 7px per character: a stand-in for `measureText` at the 12px label size. */
 const measure = (label: string): number => label.length * 7;
@@ -37,7 +37,7 @@ function overlaps(a: PlacedLabel, b: PlacedLabel): boolean {
   return p.left < q.right && q.left < p.right && p.top < q.bottom && q.top < p.bottom;
 }
 
-describe('concept map label layout', () => {
+describe('topic map label layout', () => {
   it('never places two labels on top of each other', () => {
     // A tight cluster, like Seneca/Death or Narrative/Practice/Revision in the
     // captured graph, where Sigma's own drawer overprinted the names.
@@ -190,7 +190,7 @@ describe('centerStrengths', () => {
 });
 
 describe('shelfPositions', () => {
-  it('lines unconnected concepts up under the graph, centred', () => {
+  it('lines unconnected topics up under the graph, centred', () => {
     const shelf = shelfPositions(3, { minX: -100, maxX: 100, minY: -50, maxY: 50 }, 100);
     expect(shelf).toHaveLength(3);
     for (const p of shelf) expect(p.y).toBeLessThan(-50);

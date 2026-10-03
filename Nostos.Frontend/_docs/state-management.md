@@ -14,7 +14,7 @@ Services that are `providedIn: 'root'` expose `signal()` properties directly.
 | ---------------------------- | --------------------------------------- | ---------------------------- |
 | `CollectionsService`         | `sidebarExpanded`        | Sidebar toggle (`LibraryFilterService.collectionId` owns the active filter) |
 | `ToastService`               | `toasts`                                | Reactive toast notifications |
-| `ConceptAutocompleteService` | `suggestions`, `activeIndex`            | Autocomplete dropdown state  |
+| `TopicAutocompleteService` | `suggestions`, `activeIndex`            | Autocomplete dropdown state  |
 
 Components read these signals in templates: `@if (service.toasts().length)`.
 
@@ -32,7 +32,7 @@ error      = signal<string | null>(null)
 book       = signal<Book | null>(null)
 notes      = signal<Note[]>([])
 collections = signal<Collection[]>([])
-conceptMap = signal<Map<string, ConceptDto>>(new Map())
+topicMap = signal<Map<string, TopicDto>>(new Map())
 ```
 
 **Key methods:** `loadAllData(id)`, `toggleFavorite()`, `toggleFinished()`, `rate()`, `addNote()`, `updateNote()`, `deleteNote()`, `uploadCover()`, `deleteCover()`, `uploadFile()`
@@ -65,15 +65,15 @@ Computed signals auto-update when their dependencies change. Used heavily in `Re
 
 ### 5. Component-Scoped DI
 
-`ConceptInputComponent` provides `ConceptAutocompleteService` at the component level:
+`TopicInputComponent` provides `TopicAutocompleteService` at the component level:
 
 ```ts
 @Component({
-  providers: [ConceptAutocompleteService]
+  providers: [TopicAutocompleteService]
 })
 ```
 
-Each `<app-concept-input>` instance gets its own autocomplete state — independent suggestions, independent keyboard navigation index.
+Each `<app-topic-input>` instance gets its own autocomplete state — independent suggestions, independent keyboard navigation index.
 
 ### 6. Component Lifecycle
 
@@ -95,6 +95,6 @@ There is no global application store. Each page manages its own data lifecycle:
 
 - **Library** — fetches on init, paginates via infinite scroll
 - **BookDetail** — `BookDetailStore.loadAllData(id)` on route change
-- **SecondBrain** — fetches concept list on init, detail on selection
+- **SecondBrain** — fetches topic list on init, detail on selection
 - **WritingStudio** — fetches full tree on init, individual documents on selection
 - **ReaderShell** — fetches book + notes on init, syncs progress on navigation

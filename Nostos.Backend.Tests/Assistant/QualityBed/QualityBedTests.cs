@@ -111,7 +111,7 @@ public sealed class QualityBedFixtureTests : IDisposable
         Assert.Equal(7, await db.Books.CountAsync());
         Assert.Equal(3, await db.Collections.CountAsync());
         Assert.Equal(21, await db.Notes.CountAsync());
-        Assert.Equal(7, await db.Concepts.CountAsync());
+        Assert.Equal(7, await db.Topics.CountAsync());
 
         // Every note carries an anchor (CFI range or typed anchor value).
         var notes = await db.Notes.AsNoTracking().ToListAsync();
@@ -119,9 +119,9 @@ public sealed class QualityBedFixtureTests : IDisposable
             note.CfiRange is not null || note.SourceAnchorValue is not null,
             $"note {note.Id} has no anchor"));
 
-        // Every concept is linked to at least one note.
-        var linked = await db.Set<Nostos.Backend.Data.Models.NoteConceptModel>()
-            .Select(link => link.ConceptId)
+        // Every topic is linked to at least one note.
+        var linked = await db.Set<Nostos.Backend.Data.Models.NoteTopicModel>()
+            .Select(link => link.TopicId)
             .Distinct()
             .ToListAsync();
         Assert.Equal(7, linked.Count);

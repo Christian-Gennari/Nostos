@@ -1,21 +1,21 @@
 {
-  "artifact": "brain-concept-desktop.png",
+  "artifact": "brain-topic-desktop.png",
   "capturedAt": "2026-09-13T08:31:31.691Z",
-  "name": "brain-concept-desktop",
+  "name": "brain-topic-desktop",
   "surface": "brain",
   "viewport": {
     "width": 1440,
     "height": 900
   },
-  "state": "concept-selected-notes",
+  "state": "topic-selected-notes",
   "checks": [
     {
       "id": "brain-no-arrival-animation",
       "pass": true,
-      "message": "selected concept pane has no covering wait field, waiting class, or running arrival animation",
+      "message": "selected topic pane has no covering wait field, waiting class, or running arrival animation",
       "metrics": {
         "animationNames": {
-          ".concept-header": "none",
+          ".topic-header": "none",
           ".note-card": "none"
         },
         "waitElements": [],
@@ -63,8 +63,8 @@
       "pass": true,
       "message": "flash guard rejected a temporary pane animation and passed after it was removed",
       "metrics": {
-        "injectedCheck": "Brain pane flash guard failed: wait elements [—], animation names [.concept-header=brain-pane-regression-probe], running animations [brain-pane-regression-probe]",
-        "restoredCheck": "selected concept pane has no covering wait field, waiting class, or running arrival animation"
+        "injectedCheck": "Brain pane flash guard failed: wait elements [—], animation names [.topic-header=brain-pane-regression-probe], running animations [brain-pane-regression-probe]",
+        "restoredCheck": "selected topic pane has no covering wait field, waiting class, or running arrival animation"
       }
     }
   ],

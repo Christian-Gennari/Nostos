@@ -239,7 +239,7 @@ let createdCollectionId: string | null = null;
 
 test('brain sidebar row matches the library sidebar row', async ({ browser }) => {
   const fixture = loadFixture();
-  // The Brain index only renders rows when concepts exist, and the shared fixture
+  // The Brain index only renders rows when topics exist, and the shared fixture
   // starts empty — so seed (and clean up) rather than assuming data.
   seed = await seedBrain(
     fixture.baseUrl,
@@ -265,7 +265,7 @@ test('brain sidebar row matches the library sidebar row', async ({ browser }) =>
   try {
     await page.goto(`${fixture.baseUrl}/library`, { waitUntil: 'domcontentloaded' });
     // `.tree-row` (a COLLECTION), not `.nav-item` (a status filter). The Library
-    // sidebar has two row styles; the concept index is the collections analogue
+    // sidebar has two row styles; the topic index is the collections analogue
     // because that is the row that carries a count plus hover rename/delete.
     await page.locator('.tree-row').first().waitFor({ timeout: 30_000 });
     await page.waitForTimeout(300);

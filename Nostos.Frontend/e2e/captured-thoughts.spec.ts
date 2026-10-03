@@ -3,7 +3,7 @@ import { createServer } from 'node:http';
 import { readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { loadFixture, apiGet, apiPost } from './support/fixture';
-import { cleanupBrain, snapshotConceptIds } from './support/brain-fixture';
+import { cleanupBrain, snapshotTopicIds } from './support/brain-fixture';
 import { capturePng } from './support/visual-capture';
 import type { AiProviderSettings } from '../src/app/core/dtos/ai-provider.dtos';
 import type { Note, NoteSearchHit } from '../src/app/core/dtos/note.dtos';
@@ -15,7 +15,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
     const size = viewport.width === 390 ? 'mobile' : 'desktop';
     test(`captured thought original survives reload and restore: ${size} ${theme}`, async ({ browser }) => {
       const { baseUrl } = loadFixture();
-      const beforeConceptIds = await snapshotConceptIds(baseUrl);
+      const beforeTopicIds = await snapshotTopicIds(baseUrl);
       const previousProvider = await apiGet<AiProviderSettings>(baseUrl, '/api/settings/ai-provider');
       const previousMode = await apiGet(baseUrl, '/api/settings/assistant');
       expect(previousProvider.llm.hasKey, 'fixture must have no real provider credential').toBe(false);
@@ -168,7 +168,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
         try {
           await put('/api/settings/ai-provider', { llm: { ...previousProvider.llm, apiKey: '' } });
           await put('/api/settings/assistant', previousMode);
-          if (bookId) await cleanupBrain(baseUrl, { bookId, conceptNames: [], beforeConceptIds });
+          if (bookId) await cleanupBrain(baseUrl, { bookId, topicNames: [], beforeTopicIds });
         } finally {
           server.closeAllConnections();
           await new Promise<void>((resolve) => server.close(() => resolve()));

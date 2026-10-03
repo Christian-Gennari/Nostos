@@ -12,7 +12,7 @@ internal static partial class QualityCatalogue
     private static readonly string[] WriteTools =
     [
         "notes_capture",
-        "notes_link_existing_concept",
+        "notes_link_existing_topic",
         "library_create_collection",
         "library_rename_collection",
         "library_move_collection",

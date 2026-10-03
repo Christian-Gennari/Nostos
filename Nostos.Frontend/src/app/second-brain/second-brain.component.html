@@ -25,9 +25,9 @@
             @if (browseLoaded()) {
             <span class="index-stats">{{ browseTotal() }} {{ browseTotal() === 1 ? 'note' : 'notes' }}</span>
             }
-          } @else if (conceptStats(); as stats) {
+          } @else if (topicStats(); as stats) {
           <span class="index-stats">
-            {{ stats.totalConcepts }} {{ stats.totalConcepts === 1 ? 'concept' : 'concepts' }} ·
+            {{ stats.totalTopics }} {{ stats.totalTopics === 1 ? 'topic' : 'topics' }} ·
             {{ stats.totalReferences }}
             {{ stats.totalReferences === 1 ? 'reference' : 'references' }}
           </span>
@@ -35,7 +35,7 @@
         </div>
         <p class="brain-header-purpose">Revisit what you noticed. See what connects.</p>
         <span class="visually-hidden" role="status" aria-live="polite" aria-atomic="true">
-          Showing {{ filteredConcepts().length }} of {{ concepts().length }} concepts
+          Showing {{ filteredTopics().length }} of {{ topics().length }} topics
         </span>
       </div>
 
@@ -44,11 +44,11 @@
           <button type="button" class="brain-area toggle-opt" [class.active]="isBrowsingNotes() || isReviewing()"
             [attr.aria-current]="isBrowsingNotes() || isReviewing() ? 'page' : null" (click)="setViewMode('notes')">Notes</button>
           <button type="button" class="brain-area toggle-opt" [class.active]="!isBrowsingNotes() && !isReviewing()"
-            [attr.aria-current]="!isBrowsingNotes() && !isReviewing() ? 'page' : null" (click)="setViewMode('list')">Concepts</button>
+            [attr.aria-current]="!isBrowsingNotes() && !isReviewing() ? 'page' : null" (click)="setViewMode('list')">Topics</button>
         </nav>
         <!--
           The search box is hidden while reviewing unlinked notes (issue #256).
-          It searches concepts and note text — neither of which the review queue
+          It searches topics and note text — neither of which the review queue
           contains — so leaving it on screen would either look like it filters the
           queue or silently do nothing. The query is cleared on the way in, for the
           same reason the mode toggle has always cleared it: a filter whose control
@@ -88,8 +88,8 @@
             controlSize="compact"
             #searchInput
             type="text"
-            placeholder="Search concepts and notes..."
-            aria-label="Search concepts and notes"
+            placeholder="Search topics and notes..."
+            aria-label="Search topics and notes"
             [ngModel]="searchQuery()"
             (ngModelChange)="setSearchQuery($event)"
             (keydown)="handleSearchKeydown($event)"
@@ -134,9 +134,9 @@
       <div class="brain-note-filters">
         <div class="brain-note-filter-row" aria-label="Note filters">
           <button appChip type="button"
-            [attr.aria-pressed]="browseWithoutConcepts()"
-            (click)="setBrowseWithoutConcepts(!browseWithoutConcepts())">
-            Without concepts
+            [attr.aria-pressed]="browseWithoutTopics()"
+            (click)="setBrowseWithoutTopics(!browseWithoutTopics())">
+            Without topics
           </button>
           <app-dropdown
             class="brain-note-order"
@@ -155,7 +155,7 @@
         }
       </div>
       <div class="brain-section-header">
-        <h2 class="brain-section-title">{{ browseWithoutConcepts() ? 'Without concepts' : 'All notes' }}</h2>
+        <h2 class="brain-section-title">{{ browseWithoutTopics() ? 'Without topics' : 'All notes' }}</h2>
         @if (browseLoaded()) { <span class="brain-section-count">{{ browseTotal() }} {{ browseTotal() === 1 ? 'note' : 'notes' }}</span> }
       </div>
       <div class="index-list" role="list" aria-label="Saved notes" [attr.aria-busy]="browseLoading()">
@@ -165,7 +165,7 @@
           <div class="empty-index-state" role="alert"><p>Notes could not be loaded.</p>
             <button appButton variant="secondary" size="sm" type="button" (click)="loadBrowsePage()">Retry</button></div>
         } @else if (browseLoaded() && browseTotal() === 0) {
-          <div class="empty-index-state" role="status"><p>{{ browseQuery() ? 'No notes match this search.' : browseWithoutConcepts() ? 'No notes without concepts.' : 'Your notes will appear here as you read.' }}</p></div>
+          <div class="empty-index-state" role="status"><p>{{ browseQuery() ? 'No notes match this search.' : browseWithoutTopics() ? 'No notes without topics.' : 'Your notes will appear here as you read.' }}</p></div>
         } @else {
           @for (row of browseNotes(); track row.id) {
           <div class="note-row-shell" role="listitem"><button type="button" class="note-row-item"
@@ -184,10 +184,10 @@
         }
       </div>
       <div class="rail-foot">
-        @if (browseWithoutConcepts()) {
+        @if (browseWithoutTopics()) {
           <button appButton variant="ghost" size="sm" type="button" class="rail-foot-action" (click)="openReview()">Review these notes one by one</button>
         } @else {
-          <button appButton variant="ghost" size="sm" type="button" class="rail-foot-action" (click)="setBrowseWithoutConcepts(true)">See notes without concepts</button>
+          <button appButton variant="ghost" size="sm" type="button" class="rail-foot-action" (click)="setBrowseWithoutTopics(true)">See notes without topics</button>
         }
       </div>
       } @else if (isReviewing()) {
@@ -195,19 +195,19 @@
         The review queue (issue #256).
 
         This is the ONLY place unlinked notes are shown. It is deliberately not a
-        second section under the concept index: it replaces the index for as long
-        as the user has chosen to review, and the rail goes back to concepts the
+        second section under the topic index: it replaces the index for as long
+        as the user has chosen to review, and the rail goes back to topics the
         moment they are done. The count is the number still waiting, not the number
         of rows fetched, so it never reads as "this page is the whole queue".
       -->
       <div class="brain-section-header">
-        <h2 class="brain-section-title">Without concepts</h2>
+        <h2 class="brain-section-title">Without topics</h2>
         <span class="brain-section-count" role="status" aria-live="polite" aria-atomic="true">
           {{ reviewTotal() }} {{ reviewTotal() === 1 ? 'note' : 'notes' }}
         </span>
       </div>
 
-      <div class="index-list" role="list" aria-label="Notes with no concept">
+      <div class="index-list" role="list" aria-label="Notes with no topic">
         @if (reviewLoading() && reviewQueue().length === 0) {
         <div class="index-wait-field wait-field" role="status" aria-label="Loading notes"></div>
         } @else if (reviewError() && reviewQueue().length === 0) {
@@ -220,7 +220,7 @@
           <div class="empty-eyebrow">No notes here</div>
           <p>You can still browse all your saved notes.</p>
           <button appButton variant="secondary" size="sm" type="button" class="empty-clear" (click)="closeReview()">
-            Back to {{ reviewReturnMode === 'notes' ? 'notes' : 'concepts' }}
+            Back to {{ reviewReturnMode === 'notes' ? 'notes' : 'topics' }}
           </button>
         </div>
         } @else {
@@ -259,13 +259,13 @@
       </div>
       } @else {
       <div class="index-tools">
-        <label class="visually-hidden" for="brain-sort">Sort concepts</label>
+        <label class="visually-hidden" for="brain-sort">Sort topics</label>
         <div class="select-shell sort-shell">
           <app-dropdown
             class="sort-select"
             controlId="brain-sort"
             controlSize="compact"
-            ariaLabel="Sort concepts"
+            ariaLabel="Sort topics"
             [options]="indexSortOptions"
             [value]="indexSort()"
             (valueChange)="setSort($event)"
@@ -274,32 +274,32 @@
       </div>
 
       <div class="brain-section-header">
-        <h2 class="brain-section-title">Concepts</h2>
+        <h2 class="brain-section-title">Topics</h2>
       </div>
 
       <div
         class="index-list"
-        [attr.aria-busy]="loadingConcepts()"
+        [attr.aria-busy]="loadingTopics()"
         role="list"
-        aria-label="Concept index"
+        aria-label="Topic index"
       >
-        @if (loadingConcepts()) {
-        <div class="index-wait-field wait-field" role="status" aria-label="Loading concepts"></div>
-        } @else if (concepts().length === 0) {
+        @if (loadingTopics()) {
+        <div class="index-wait-field wait-field" role="status" aria-label="Loading topics"></div>
+        } @else if (topics().length === 0) {
         <div class="empty-index-state" role="status">
           <div class="empty-eyebrow">The index is quiet</div>
-          <p>Concepts appear when you link one from a note.</p>
-          <p class="empty-example">Use <strong>Link a concept</strong> while editing a note to connect material across your reading.</p>
+          <p>Topics appear when you link one from a note.</p>
+          <p class="empty-example">Use <strong>Link a topic</strong> while editing a note to connect material across your reading.</p>
           <a routerLink="/library" class="empty-link">Go to Library</a>
         </div>
-        } @else if (filteredConcepts().length === 0) {
+        } @else if (filteredTopics().length === 0) {
         <div class="empty-index-state" role="status">
           <div class="empty-eyebrow">No match</div>
-          <p>No concept names match “{{ searchQuery().trim() }}”. Note-text matches appear below.</p>
+          <p>No topic names match “{{ searchQuery().trim() }}”. Note-text matches appear below.</p>
           <button appButton variant="secondary" size="sm" type="button" class="empty-clear" (click)="clearSearch()">Clear search</button>
         </div>
         } @else {
-        @for (c of filteredConcepts(); track c.id; let i = $index) {
+        @for (c of filteredTopics(); track c.id; let i = $index) {
         @if (isLetterStart(i)) {
         <div class="letter-separator super-title" aria-hidden="true">{{ letterFor(c) }}</div>
         }
@@ -352,7 +352,7 @@
               </span>
               <!-- A name match and a note match are different things (issue #158):
                    the row says which, and how many, so a content match is never read
-                   as a concept that is literally called that. -->
+                   as a topic that is literally called that. -->
               @if (c.noteMatchCount) {
               <span class="note-match" data-testid="index-note-match">
                 <span class="note-match-count">
@@ -397,8 +397,8 @@
 
         This section renders ONLY while a query is active. It used to share one
         implicit heading with the unlinked-note list, falling back to "Notes with
-        no concept" whenever the box was empty — which is how a maintenance queue
-        came to live permanently under the concept index (issue #256). Unlinked
+        no topic" whenever the box was empty — which is how a maintenance queue
+        came to live permanently under the topic index (issue #256). Unlinked
         notes now have review mode and no other home.
       -->
       @if (searchQuery().trim()) {
@@ -437,11 +437,11 @@
       <div class="rail-foot">
         @if (isReviewing()) {
         <button appButton variant="ghost" size="sm" type="button" class="rail-foot-action" (click)="closeReview()">
-          Back to {{ reviewReturnMode === 'notes' ? 'notes' : 'concepts' }}
+          Back to {{ reviewReturnMode === 'notes' ? 'notes' : 'topics' }}
         </button>
         } @else {
         <button appButton variant="ghost" size="sm" type="button" class="rail-foot-action" (click)="openReview()">
-          Review notes with no concept
+          Review notes with no topic
         </button>
         }
       </div>
@@ -470,9 +470,9 @@
             <section class="note-inspector-edit" aria-labelledby="browse-edit-label">
               <div id="browse-edit-label" class="super-title">Edit note</div>
               <label class="visually-hidden" for="brain-browse-edit">Edit note</label>
-              <app-concept-input id="brain-browse-edit" [ngModel]="browseEditContent()"
+              <app-topic-input id="brain-browse-edit" [ngModel]="browseEditContent()"
                 (ngModelChange)="browseEditContent.set($event)" [rows]="6"
-                placeholder="Write your thought or link a [[Concept]]"></app-concept-input>
+                placeholder="Write your thought or link a [[Topic]]"></app-topic-input>
               <div class="note-inspector-inline-actions">
                 <button appButton variant="primary" size="sm" type="button" [disabled]="browseSaving()"
                   (click)="saveBrowseEdit()">{{ browseSaving() ? 'Saving…' : 'Save note' }}</button>
@@ -484,12 +484,12 @@
             <div class="note-card note-inspector-card">
               <app-note-card
                 [note]="noteSearchHitForCard(note)"
-                [conceptMap]="conceptMap()"
+                [topicMap]="topicMap()"
                 [showNavigation]="false"
                 [showActions]="false"
                 [showSource]="true"
                 [showDate]="true"
-                (conceptClick)="setViewMode('list'); selectConcept($event)"
+                (topicClick)="setViewMode('list'); selectTopic($event)"
               ></app-note-card>
             </div>
           <app-note-capture-details [note]="note" (restored)="captureRestored($event)" />
@@ -497,28 +497,28 @@
             }
 
             <section class="note-inspector-section" aria-labelledby="browse-links-label">
-              <div id="browse-links-label" class="super-title">Linked concepts</div>
-              <div class="brain-note-panel-concepts">
-                @for (name of note.conceptNames; track name) {
-                  <button type="button" class="related-chip note-concept-link"
-                    (click)="openBrowseConcept(name)">{{ name }}</button>
+              <div id="browse-links-label" class="super-title">Linked topics</div>
+              <div class="brain-note-panel-topics">
+                @for (name of note.topicNames; track name) {
+                  <button type="button" class="related-chip note-topic-link"
+                    (click)="openBrowseTopic(name)">{{ name }}</button>
                 }
-                @if (note.conceptNames.length === 0) {
-                  <span class="brain-note-panel-empty-concepts">No concepts linked</span>
+                @if (note.topicNames.length === 0) {
+                  <span class="brain-note-panel-empty-topics">No topics linked</span>
                 }
               </div>
             </section>
 
             @if (browsePickerOpen()) {
-            <div class="merge-picker note-inspector-picker" role="group" aria-label="Choose a concept to link">
+            <div class="merge-picker note-inspector-picker" role="group" aria-label="Choose a topic to link">
               <div class="merge-picker-head">
-                <span class="detail-tool-label">Link to concept</span>
+                <span class="detail-tool-label">Link to topic</span>
                 <button appIconButton type="button" icon="x" size="md" [glyphSize]="15"
-                  aria-label="Close concept picker" (click)="browsePickerOpen.set(false)"></button>
+                  aria-label="Close topic picker" (click)="browsePickerOpen.set(false)"></button>
               </div>
-              <p class="merge-picker-hint">Linking adds an explicit <code>[[Concept]]</code> reference to the note.</p>
-              <input appInput controlSize="compact" id="brain-browse-concept" type="search"
-                placeholder="Search concepts" [ngModel]="browsePickerQuery()"
+              <p class="merge-picker-hint">Linking adds an explicit <code>[[Topic]]</code> reference to the note.</p>
+              <input appInput controlSize="compact" id="brain-browse-topic" type="search"
+                placeholder="Search topics" [ngModel]="browsePickerQuery()"
                 (ngModelChange)="browsePickerQuery.set($event)" />
               <div class="merge-target-list">
                 @for (candidate of browsePickerCandidates(); track candidate.id) {
@@ -529,18 +529,18 @@
                   </button>
                 }
                 @if (browsePickerCandidates().length === 0) {
-                  <p class="merge-picker-empty">No matching concepts. You can create one deliberately below.</p>
+                  <p class="merge-picker-empty">No matching topics. You can create one deliberately below.</p>
                 }
               </div>
-              @if (browseNewConceptName(); as name) {
+              @if (browseNewTopicName(); as name) {
                 <button appButton variant="ghost" size="sm" type="button" [disabled]="browseSaving()"
-                  (click)="createBrowseConcept()">Create and link “{{ name }}”</button>
+                  (click)="createBrowseTopic()">Create and link “{{ name }}”</button>
               }
               <div class="merge-picker-actions">
                 <button appButton variant="ghost" size="sm" type="button"
                   (click)="browsePickerOpen.set(false)">Cancel</button>
                 <button appButton variant="primary" size="sm" type="button"
-                  [disabled]="!browsePickerId() || browseSaving()" (click)="linkBrowseConcept()">Link note</button>
+                  [disabled]="!browsePickerId() || browseSaving()" (click)="linkBrowseTopic()">Link note</button>
               </div>
             </div>
             }
@@ -549,10 +549,10 @@
             <section class="note-inspector-actions" aria-label="Note actions">
               <div class="note-inspector-primary-actions">
                 <button appButton variant="primary" size="sm" type="button"
-                  (click)="openBrowsePicker()">Link to concept</button>
+                  (click)="openBrowsePicker()">Link to topic</button>
                 <button appButton variant="secondary" size="sm" type="button"
                   [disabled]="browseSaving() || proposalState() === 'loading' || proposalState() === 'linking'"
-                  (click)="askNostos()" data-testid="browse-suggest-concepts">Suggest concepts</button>
+                  (click)="askNostos()" data-testid="browse-suggest-topics">Suggest topics</button>
               </div>
               <div class="note-inspector-utility-actions">
                 <button appButton variant="ghost" size="sm" type="button"
@@ -568,7 +568,7 @@
                   [queryParams]="browseSourceParams(note)">{{ browseSourceParams(note) ? 'Return to passage' : 'Open book' }}</a>
               </div>
             </section>
-            <ng-container *ngTemplateOutlet="conceptProposals"></ng-container>
+            <ng-container *ngTemplateOutlet="topicProposals"></ng-container>
             }
           </div>
         </div>
@@ -577,7 +577,7 @@
       <!--
         The map is a whole-surface mode, not a widget beside the index: in map
         view the index rail closes and this column spans the layout (see
-        `.map-hidden` / `.map-view` in the stylesheet). It replaces the concept
+        `.map-hidden` / `.map-view` in the stylesheet). It replaces the topic
         pane entirely, and it carries its own search and its own way back to the
         list view — the map component owns both, because the page-level search
         and view toggle are inside the rail that this mode closes.
@@ -585,20 +585,20 @@
       <div class="map-wrapper">
         <!--
           The map owns the whole action surface, including the notes action:
-          the selected concept's card ("Read notes") and the camera rail share
+          the selected topic's card ("Read notes") and the camera rail share
           one heads-up layer inside it, instead of a floating bar in this
           template.
         -->
-        <app-concept-map
-          [concepts]="filteredConcepts()"
+        <app-topic-map
+          [topics]="filteredTopics()"
           [searchQuery]="searchQuery()"
           [selectedId]="selectedId()"
-          [selectedName]="selectedConceptName()"
-          (conceptSelected)="onMapConceptSelected($event)"
+          [selectedName]="selectedTopicName()"
+          (topicSelected)="onMapTopicSelected($event)"
           (selectionCleared)="clearSelection()"
-          (openNotes)="openSelectedConcept()"
-          (openConcept)="openConceptFromMap($event)"
-        ></app-concept-map>
+          (openNotes)="openSelectedTopic()"
+          (openTopic)="openTopicFromMap($event)"
+        ></app-topic-map>
       </div>
       } @else if (isReviewing()) {
       <!--
@@ -616,7 +616,7 @@
       <div class="note-inspector review-pane note-inspector-review" data-testid="brain-review-inspector">
         <header class="note-inspector-head">
           <div>
-            <div class="super-title">Without concepts</div>
+            <div class="super-title">Without topics</div>
             <h1 class="note-inspector-title">{{ note.bookTitle || 'An unknown source' }}</h1>
             <p class="note-inspector-context">Review is optional. Moving on does not change this note.</p>
           </div>
@@ -627,13 +627,13 @@
           <section class="note-inspector-edit" aria-labelledby="review-edit-label">
             <div id="review-edit-label" class="super-title">Edit note</div>
             <label class="visually-hidden" for="review-note-text">Note text</label>
-            <app-concept-input
+            <app-topic-input
               id="review-note-text"
               [ngModel]="reviewEditContent()"
               (ngModelChange)="reviewEditContent.set($event)"
               [rows]="5"
-              placeholder="Add [[Concept]] to connect this note"
-            ></app-concept-input>
+              placeholder="Add [[Topic]] to connect this note"
+            ></app-topic-input>
             <div class="note-inspector-inline-actions">
               <button appButton variant="primary" size="sm" type="button" [disabled]="reviewSaving()"
                 (click)="saveReviewEdit()">{{ reviewSaving() ? 'Saving…' : 'Save note' }}</button>
@@ -645,7 +645,7 @@
           <div class="note-card note-inspector-card">
             <app-note-card
               [note]="noteSearchHitForCard(note)"
-              [conceptMap]="conceptMap()"
+              [topicMap]="topicMap()"
               [showNavigation]="false"
               [showActions]="false"
               [showSource]="true"
@@ -656,9 +656,9 @@
 
 
           @if (reviewPickerOpen()) {
-          <div class="merge-picker note-inspector-picker" role="group" aria-label="Link this note to a concept">
+          <div class="merge-picker note-inspector-picker" role="group" aria-label="Link this note to a topic">
             <div class="merge-picker-head">
-              <span class="detail-tool-label">Link to concept</span>
+              <span class="detail-tool-label">Link to topic</span>
               <button
                 appIconButton
                 type="button"
@@ -666,31 +666,31 @@
                 icon="x"
                 size="md"
                 [glyphSize]="15"
-                aria-label="Close concept picker"
+                aria-label="Close topic picker"
                 (click)="closeReviewPicker()"
               ></button>
             </div>
             <p class="merge-picker-hint">
-              Linking adds an explicit <code>[[Concept]]</code> reference to the note.
+              Linking adds an explicit <code>[[Topic]]</code> reference to the note.
             </p>
             <input appInput controlSize="compact" class="merge-search-input"
               type="search"
-              placeholder="Search concepts..."
-              aria-label="Search concepts to link"
+              placeholder="Search topics..."
+              aria-label="Search topics to link"
               [ngModel]="reviewPickerQuery()"
               (ngModelChange)="reviewPickerQuery.set($event)"
               (keydown.escape)="closeReviewPicker()"
             />
             <div class="merge-target-list">
               @if (reviewPickerCandidates().length === 0) {
-              <span class="merge-picker-empty">No concepts match.</span>
+              <span class="merge-picker-empty">No topics match.</span>
               } @else {
               @for (candidate of reviewPickerCandidates(); track candidate.id) {
               <button
                 type="button"
                 class="merge-target"
-                [class.selected]="reviewPickerConceptId() === candidate.id"
-                (click)="chooseReviewConcept(candidate.id)"
+                [class.selected]="reviewPickerTopicId() === candidate.id"
+                (click)="chooseReviewTopic(candidate.id)"
               >
                 <span>{{ candidate.name }}</span>
                 <span class="merge-target-count">{{ candidate.usageCount }}</span>
@@ -698,9 +698,9 @@
               }
               }
             </div>
-            @if (reviewNewConceptName(); as name) {
+            @if (reviewNewTopicName(); as name) {
               <button appButton variant="ghost" size="sm" type="button" [disabled]="reviewSaving()"
-                (click)="createReviewConcept()">Create and link “{{ name }}”</button>
+                (click)="createReviewTopic()">Create and link “{{ name }}”</button>
             }
             <div class="merge-picker-actions">
               <button appButton variant="ghost" size="sm" type="button" class="merge-picker-cancel" (click)="closeReviewPicker()">
@@ -709,8 +709,8 @@
               <button
                 appButton variant="primary" size="sm" type="button"
                 class="merge-picker-confirm"
-                [disabled]="!reviewPickerConcept() || reviewSaving()"
-                (click)="confirmLinkToConcept()"
+                [disabled]="!reviewPickerTopic() || reviewSaving()"
+                (click)="confirmLinkToTopic()"
               >
                 {{ reviewSaving() ? 'Linking…' : 'Link note' }}
               </button>
@@ -720,15 +720,15 @@
           <section class="note-inspector-actions" aria-label="Note actions">
             <div class="note-inspector-primary-actions">
               <button appButton variant="primary" size="sm" type="button" (click)="openReviewPicker()">
-                Link to concept
+                Link to topic
               </button>
               <button
                 appButton variant="secondary" size="sm" type="button"
                 [disabled]="proposalState() === 'loading' || proposalState() === 'linking'"
                 (click)="askNostos()"
-                data-testid="review-suggest-concepts"
+                data-testid="review-suggest-topics"
               >
-                Suggest concepts
+                Suggest topics
               </button>
             </div>
             <div class="note-inspector-utility-actions">
@@ -748,7 +748,7 @@
             </div>
           </section>
 
-          <ng-container *ngTemplateOutlet="conceptProposals"></ng-container>
+          <ng-container *ngTemplateOutlet="topicProposals"></ng-container>
 
           <nav class="review-pagination" aria-label="Review navigation">
             <button appButton variant="ghost" size="sm" type="button" [disabled]="!reviewCanGoBack()"
@@ -767,10 +767,10 @@
         <span>Back to Index</span>
       </button>
       } @if (selectedDetail(); as detail) {
-      <div class="concept-header">
-        <div class="concept-head-row">
-          <div class="concept-head-copy">
-            <div class="super-title">Concept</div>
+      <div class="topic-header">
+        <div class="topic-head-row">
+          <div class="topic-head-copy">
+            <div class="super-title">Topic</div>
             @if (renameId() === detail.id && renameSurface() === 'header') {
             <div class="inline-rename header-rename">
               <input
@@ -794,9 +794,9 @@
               }
             </div>
             } @else {
-            <h1 class="concept-title">{{ detail.name }}</h1>
+            <h1 class="topic-title">{{ detail.name }}</h1>
             }
-            <div class="concept-meta">
+            <div class="topic-meta">
               {{ detail.notes.length }} {{ detail.notes.length === 1 ? 'note' : 'notes' }} from your reading
             </div>
           </div>
@@ -896,8 +896,8 @@
 
       @if (detail.notes.length === 0) {
       <div class="empty-notes-state" role="status">
-        <div class="empty-eyebrow">A quiet concept</div>
-        <p>No notes mention this concept yet.</p>
+        <div class="empty-eyebrow">A quiet topic</div>
+        <p>No notes mention this topic yet.</p>
       </div>
       } @else if (filteredNotes().length === 0) {
       <div class="empty-notes-state" role="status">
@@ -908,7 +908,7 @@
         </button>
       </div>
       } @else {
-      <div class="cards-grid" data-testid="concept-evidence">
+      <div class="cards-grid" data-testid="topic-evidence">
         @for (note of filteredNotes(); track note.noteId) {
         <div
           class="note-card"
@@ -929,14 +929,14 @@
           <app-note-card
             #noteCardHost
             [note]="noteForCard(note)"
-            [conceptMap]="conceptMap()"
+            [topicMap]="topicMap()"
             [showNavigation]="false"
             [showActions]="!sourceSelectionMode()"
             [showSource]="true"
             [showDate]="true"
             (update)="onUpdateNote($event)"
             (delete)="onDeleteNote($event)"
-            (conceptClick)="selectConcept($event)"
+            (topicClick)="selectTopic($event)"
             (click)="handleContentClick($event)"
           ></app-note-card>
         </div>
@@ -944,23 +944,23 @@
       </div>
       }
 
-      <section class="related-section" aria-labelledby="related-concepts-heading">
+      <section class="related-section" aria-labelledby="related-topics-heading">
         <div class="related-section-head">
           <div>
-            <h2 id="related-concepts-heading" class="related-heading">Related through shared notes</h2>
+            <h2 id="related-topics-heading" class="related-heading">Related through shared notes</h2>
             <p class="related-explanation">
-              These concepts appear together in the same saved notes. Inspect the shared notes to see why the connection is shown.
+              These topics appear together in the same saved notes. Inspect the shared notes to see why the connection is shown.
             </p>
           </div>
         </div>
 
         @if (relatedLoading()) {
         <p class="related-empty">Finding shared notes…</p>
-        } @else if (relatedConcepts().length === 0) {
-        <p class="related-empty">No concepts share notes with this one yet.</p>
+        } @else if (relatedTopics().length === 0) {
+        <p class="related-empty">No topics share notes with this one yet.</p>
         } @else {
         <div class="related-list">
-          @for (related of visibleRelatedConcepts(); track related.id) {
+          @for (related of visibleRelatedTopics(); track related.id) {
           <div class="related-item">
             <button
               type="button"
@@ -969,7 +969,7 @@
               [title]="related.name"
               (mouseenter)="prefetch(related.id)"
               (focus)="prefetch(related.id)"
-              (click)="selectConcept(related.id)"
+              (click)="selectTopic(related.id)"
             >
               <span class="related-chip-name">{{ related.name }}</span>
             </button>
@@ -997,18 +997,18 @@
           @if (relatedEvidenceId() === related.id) {
           <div class="related-evidence" data-testid="related-evidence">
             <p class="related-evidence-reason">
-              These notes contain both concepts; that co-occurrence is the reason this relationship is shown.
+              These notes contain both topics; that co-occurrence is the reason this relationship is shown.
             </p>
             <div class="related-evidence-notes">
               @for (note of relatedEvidenceNotes(); track note.noteId) {
               <app-note-card
                 [note]="noteForCard(note)"
-                [conceptMap]="conceptMap()"
+                [topicMap]="topicMap()"
                 [showNavigation]="false"
                 [showActions]="false"
                 [showSource]="true"
                 [showDate]="true"
-                (conceptClick)="selectConcept($event)"
+                (topicClick)="selectTopic($event)"
               ></app-note-card>
               }
             </div>
@@ -1031,13 +1031,13 @@
         }
       </section>
 
-      <details class="concept-management">
-        <summary>Manage concept</summary>
-        <div class="concept-actions" aria-label="Manage concept">
+      <details class="topic-management">
+        <summary>Manage topic</summary>
+        <div class="topic-actions" aria-label="Manage topic">
           <button
             appButton variant="ghost" size="sm" type="button"
-            class="concept-action"
-            [disabled]="renaming() || mergingConcept()"
+            class="topic-action"
+            [disabled]="renaming() || mergingTopic()"
             (click)="startRename(detail.id, 'header')"
           >
             <nostos-icon name="pencil-simple" [size]="14"></nostos-icon>
@@ -1045,8 +1045,8 @@
           </button>
           <button
             appButton variant="ghost" size="sm" type="button"
-            class="concept-action"
-            [disabled]="renaming() || mergingConcept()"
+            class="topic-action"
+            [disabled]="renaming() || mergingTopic()"
             (click)="openMergePicker()"
           >
             <nostos-icon name="git-merge" [size]="14"></nostos-icon>
@@ -1054,9 +1054,9 @@
           </button>
           <button
             appButton variant="danger" size="sm" type="button"
-            class="concept-action"
-            [disabled]="renaming() || mergingConcept()"
-            (click)="openDeleteConcept(detail.id)"
+            class="topic-action"
+            [disabled]="renaming() || mergingTopic()"
+            (click)="openDeleteTopic(detail.id)"
           >
             <nostos-icon name="trash" [size]="14"></nostos-icon>
             <span>Delete</span>
@@ -1064,7 +1064,7 @@
         </div>
 
         @if (mergePickerOpen()) {
-        <div class="merge-picker" role="dialog" aria-label="Choose a concept to merge into">
+        <div class="merge-picker" role="dialog" aria-label="Choose a topic to merge into">
           <div class="merge-picker-head">
             <span class="detail-tool-label">Merge into…</span>
             <button
@@ -1080,7 +1080,7 @@
           </div>
           <input appInput controlSize="compact" class="merge-search-input"
             type="search"
-            placeholder="Search concepts..."
+            placeholder="Search topics..."
             aria-label="Search merge targets"
             [ngModel]="mergeSearchQuery()"
             (ngModelChange)="mergeSearchQuery.set($event)"
@@ -1088,7 +1088,7 @@
           />
           <div class="merge-target-list">
             @if (mergeCandidates().length === 0) {
-            <span class="merge-picker-empty">No other concepts match.</span>
+            <span class="merge-picker-empty">No other topics match.</span>
             } @else {
             @for (candidate of mergeCandidates(); track candidate.id) {
             <button
@@ -1124,7 +1124,7 @@
           <nostos-icon name="brain" [size]="48" weight="thin"></nostos-icon>
         </div>
         <h2>Return to what you noticed</h2>
-        <p>Search concepts or note text above, or choose a concept to compare the material you captured across books.</p>
+        <p>Search topics or note text above, or choose a topic to compare the material you captured across books.</p>
       </div>
       }
       }
@@ -1150,16 +1150,16 @@
         }
         <p
           class="brain-note-panel-content"
-          [innerHTML]="note.content | noteFormat : conceptMap()"
+          [innerHTML]="note.content | noteFormat : topicMap()"
           (click)="handleContentClick($event)"
         ></p>
-        <div class="brain-note-panel-concepts">
-          @if (note.conceptNames.length > 0) {
-            @for (name of note.conceptNames; track name) {
+        <div class="brain-note-panel-topics">
+          @if (note.topicNames.length > 0) {
+            @for (name of note.topicNames; track name) {
             <span appBadge tone="success" [dot]="true">{{ name }}</span>
             }
           } @else {
-            <span class="brain-note-panel-empty-concepts">No concepts linked</span>
+            <span class="brain-note-panel-empty-topics">No topics linked</span>
           }
         </div>
         <div class="brain-note-panel-actions">
@@ -1181,28 +1181,28 @@
     }
   </div>
 
-  <ng-template #conceptProposals>
+  <ng-template #topicProposals>
     @if (proposalState() !== 'idle') {
-    <section class="brain-proposals" aria-label="Suggested concepts" data-testid="brain-proposals">
+    <section class="brain-proposals" aria-label="Suggested topics" data-testid="brain-proposals">
       <div class="brain-proposals-heading">
         <div>
           <div class="super-title">Optional assistance</div>
           <h2>Possible connections</h2>
-          <p>Existing concepts that may fit this note. Nothing is linked until you choose it.</p>
+          <p>Existing topics that may fit this note. Nothing is linked until you choose it.</p>
         </div>
-        <button appButton variant="ghost" size="sm" type="button" [disabled]="proposalState() === 'linking'" (click)="cancelConceptProposals()">
+        <button appButton variant="ghost" size="sm" type="button" [disabled]="proposalState() === 'linking'" (click)="cancelTopicProposals()">
           {{ proposalState() === 'loading' ? 'Cancel' : 'Dismiss' }}
         </button>
       </div>
 
       @if (proposalState() === 'loading') {
-        <p class="brain-proposals-state" role="status">Looking at this note and your existing concepts…</p>
+        <p class="brain-proposals-state" role="status">Looking at this note and your existing topics…</p>
       } @else if (proposalState() === 'linking') {
         <p class="brain-proposals-state" role="status">Confirming the link…</p>
       } @else if (proposalState() === 'empty') {
         <div class="brain-proposals-state" role="status">
           <strong>No useful matches found.</strong>
-          <span>This note is fine without a concept. Manual linking remains available above.</span>
+          <span>This note is fine without a topic. Manual linking remains available above.</span>
         </div>
       } @else if (proposalState() === 'unavailable' || proposalState() === 'error') {
         <div class="brain-proposals-state" role="alert">
@@ -1222,15 +1222,15 @@
           @for (candidate of proposalCandidates(); track candidate.value) {
             <article class="brain-proposal" data-testid="brain-proposal">
               <div class="brain-proposal-copy">
-                <span appBadge>Suggested concept</span>
+                <span appBadge>Suggested topic</span>
                 <h3>{{ candidate.label }}</h3>
                 <p>{{ candidate.reason }}</p>
               </div>
               <div class="brain-proposal-actions">
-                <button appButton variant="ghost" size="sm" type="button" (click)="inspectConceptProposal(candidate)">
+                <button appButton variant="ghost" size="sm" type="button" (click)="inspectTopicProposal(candidate)">
                   {{ proposalInspectingId() === candidate.value ? 'Hide evidence' : 'Inspect evidence' }}
                 </button>
-                <button appButton variant="primary" size="sm" type="button" (click)="acceptConceptProposal(candidate)">Link note</button>
+                <button appButton variant="primary" size="sm" type="button" (click)="acceptTopicProposal(candidate)">Link note</button>
               </div>
               @if (proposalInspectingId() === candidate.value) {
                 @if (proposalDetail(); as detail) {
@@ -1245,7 +1245,7 @@
                         <p>{{ evidence.selectedText || evidence.content }}</p>
                       </div>
                     }
-                    <button appButton variant="ghost" size="sm" type="button" (click)="openBrowseConcept(detail.name)">Open concept</button>
+                    <button appButton variant="ghost" size="sm" type="button" (click)="openBrowseTopic(detail.name)">Open topic</button>
                   </div>
                 } @else { <p class="brain-proposals-state" role="status">Loading existing evidence…</p> }
               }
@@ -1269,7 +1269,7 @@
   <app-confirm-modal
     [isOpen]="!!deleteTarget()"
     [heading]="deleteHeading()"
-    description="This note will be permanently removed from your library and from this concept."
+    description="This note will be permanently removed from your library and from this topic."
     confirmLabel="Delete Note"
     busyLabel="Deleting…"
     [busy]="deletingNote()"
@@ -1281,23 +1281,23 @@
     [isOpen]="!!mergeConfirmation()"
     [heading]="mergeHeading()"
     [description]="mergeDescription()"
-    confirmLabel="Merge concepts"
+    confirmLabel="Merge topics"
     busyLabel="Merging…"
-    [busy]="mergingConcept()"
+    [busy]="mergingTopic()"
     tone="neutral"
     (confirm)="confirmMerge()"
     (cancel)="cancelMergeConfirmation()"
   ></app-confirm-modal>
 
   <app-confirm-modal
-    [isOpen]="!!conceptDeleteTarget()"
-    [heading]="conceptDeleteHeading()"
-    [description]="conceptDeleteDescription()"
-    confirmLabel="Delete concept"
+    [isOpen]="!!topicDeleteTarget()"
+    [heading]="topicDeleteHeading()"
+    [description]="topicDeleteDescription()"
+    confirmLabel="Delete topic"
     busyLabel="Deleting…"
-    [busy]="deletingConcept()"
+    [busy]="deletingTopic()"
     tone="danger"
-    (confirm)="confirmDeleteConcept()"
-    (cancel)="cancelDeleteConcept()"
+    (confirm)="confirmDeleteTopic()"
+    (cancel)="cancelDeleteTopic()"
   ></app-confirm-modal>
 </main>

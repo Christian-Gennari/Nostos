@@ -33,13 +33,13 @@ import { ButtonComponent } from '../../ui/button/button.component';
 import { ChipComponent } from '../../ui/chip/chip.component';
 import { NostosIconComponent } from '../../ui/icon/nostos-icon.component';
 import {
-  ConceptDto,
-  ConceptsService,
-  ConceptGraphDto,
-} from '../../core/services/concepts.service';
+  TopicDto,
+  TopicsService,
+  TopicGraphDto,
+} from '../../core/services/topics.service';
 
 import {
-  MAX_MAP_CONCEPTS,
+  MAX_MAP_TOPICS,
   NODE_SIZE_MIN,
   NODE_SIZE_MAX,
   EDGE_SIZE_MIN,
@@ -64,7 +64,7 @@ import {
   type ThemeColors,
   readTheme,
   drawThemeNodeHover,
-  compareConcepts,
+  compareTopics,
   COMMUNITY_HUES,
   COMMUNITY_MIN_SIZE,
   LABEL_PRIORITY,
@@ -78,18 +78,18 @@ import {
   shelfPositions,
   alignmentRotation,
   type DiscObstacle,
-} from './concept-map.helpers';
+} from './topic-map.helpers';
 
-export { MAX_MAP_CONCEPTS } from './concept-map.helpers';
+export { MAX_MAP_TOPICS } from './topic-map.helpers';
 
-/** How many related concepts the selection card lists. */
+/** How many related topics the selection card lists. */
 const SELECTION_RELATED_MAX = 4;
 
 /**
  * How far from a node, in CSS px, a tap still selects it on a touch screen.
  *
  * Sigma hit-tests against the DRAWN radius, which is 3-4px for the many
- * concepts at the low end of the usage range — far below the 44px a finger can
+ * topics at the low end of the usage range — far below the 44px a finger can
  * aim at. A tap that misses every disc picks the nearest node within this
  * radius instead of clearing the selection.
  */
@@ -113,18 +113,18 @@ export interface MapSelection {
 }
 
 @Component({
-  selector: 'app-concept-map',
+  selector: 'app-topic-map',
   standalone: true,
   imports: [CommonModule, IconButtonComponent, ButtonComponent, ChipComponent, NostosIconComponent],
-  templateUrl: './concept-map.component.html',
-  styleUrl: './concept-map.component.css',
+  templateUrl: './topic-map.component.html',
+  styleUrl: './topic-map.component.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class ConceptMapComponent implements OnChanges, AfterViewInit, OnDestroy {
-  @Input() concepts: ConceptDto[] = [];
+export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
+  @Input() topics: TopicDto[] = [];
   @Input() selectedId: string | null = null;
   /**
-   * Name of the selected concept, supplied by the parent.
+   * Name of the selected topic, supplied by the parent.
    *
    * The map owns the action rail, so the "what is selected" chip belongs here
    * too — otherwise the notes action sits in a second floating overlay outside
@@ -134,21 +134,21 @@ export class ConceptMapComponent implements OnChanges, AfterViewInit, OnDestroy 
   /**
    * The surface search query, so the empty state can explain itself.
    *
-   * The header's search filters the concept set the map draws. Without this, a
+   * The header's search filters the topic set the map draws. Without this, a
    * query matching nothing left the graph empty and the map claimed "No
    * connections yet" — which is false: the connections exist and the filter
    * excluded them. With the query the map can say which of the two it is.
    */
   @Input() searchQuery = '';
-  @Output() readonly conceptSelected = new EventEmitter<string>();
+  @Output() readonly topicSelected = new EventEmitter<string>();
   /** Emitted by the rail's "Read notes" action. */
   @Output() readonly openNotes = new EventEmitter<void>();
-  /** Emitted by a node double-click, to open that concept's notes. */
-  @Output() readonly openConcept = new EventEmitter<string>();
+  /** Emitted by a node double-click, to open that topic's notes. */
+  @Output() readonly openTopic = new EventEmitter<string>();
   /**
    * Emitted when a click on empty space clears the selection.
    *
-   * Separate from `conceptSelected` rather than widening it to `string | null`:
+   * Separate from `topicSelected` rather than widening it to `string | null`:
    * the two mean different things ("this node is now the subject" versus "there
    * is no subject"), and a nullable id would let a consumer treat a deselect as
    * a selection of nothing.
@@ -162,7 +162,7 @@ export class ConceptMapComponent implements OnChanges, AfterViewInit, OnDestroy 
 
   private sigma: Sigma | null = null;
   private graph: Graph | null = null;
-  private graphData: ConceptGraphDto | null = null;
+  private graphData: TopicGraphDto | null = null;
   private theme: ThemeColors = readTheme();
   private destroyed = false;
   private viewInitialized = false;
@@ -212,7 +212,7 @@ export class ConceptMapComponent implements OnChanges, AfterViewInit, OnDestroy 
   readonly selectedNodeId = signal<string | null>(null);
   readonly isFullscreen = signal(false);
   readonly sourceCount = signal(0);
-  readonly isCapped = computed(() => this.sourceCount() > MAX_MAP_CONCEPTS);
+  readonly isCapped = computed(() => this.sourceCount() > MAX_MAP_TOPICS);
   readonly noConnections = signal(false);
   /**
    * Accessible nodes: the full set currently rendered, so the hidden list
@@ -223,15 +223,15 @@ export class ConceptMapComponent implements OnChanges, AfterViewInit, OnDestroy 
   >([]);
 
   /**
-   * What the selection card knows about every concept, rebuilt with the graph.
+   * What the selection card knows about every topic, rebuilt with the graph.
    *
-   * Derived from the single `/api/concepts/graph` response the map already
+   * Derived from the single `/api/topics/graph` response the map already
    * loads, so the card makes no request of its own — the map's one-request
    * contract (asserted in the spec) holds.
    */
   private readonly model = signal<MapModel | null>(null);
 
-  /** The selected concept, as the selection card presents it. */
+  /** The selected topic, as the selection card presents it. */
   readonly selection = computed<MapSelection | null>(() => {
     const id = this.selectedNodeId();
     const model = this.model();
@@ -263,7 +263,7 @@ export class ConceptMapComponent implements OnChanges, AfterViewInit, OnDestroy 
      "you use the same icon for two different buttons" and confirmed by comparing
      the rendered SVG geometry. Focus mode uses the diagonal expand/shrink arrows
      instead, which also communicates fullscreen better than brackets. */
-  private readonly conceptsService = inject(ConceptsService);
+  private readonly topicsService = inject(TopicsService);
 
   /* ── Keyboard and fullscreen ── */
   private readonly handleFullscreenChange = (): void => {
@@ -285,8 +285,8 @@ export class ConceptMapComponent implements OnChanges, AfterViewInit, OnDestroy 
       this.selectedNodeId.set(this.selectedId);
       this.refreshRendering();
     }
-    if (changes['concepts']) {
-      this.sourceCount.set((this.concepts ?? []).length);
+    if (changes['topics']) {
+      this.sourceCount.set((this.topics ?? []).length);
       this.loadGraphData();
     }
   }
@@ -312,7 +312,7 @@ export class ConceptMapComponent implements OnChanges, AfterViewInit, OnDestroy 
 
   private loadGraphData(): void {
     this.loading.set(true);
-    this.conceptsService.getGraph().subscribe({
+    this.topicsService.getGraph().subscribe({
       next: (data) => {
         if (this.destroyed) return;
         this.graphData = data;
@@ -341,9 +341,9 @@ export class ConceptMapComponent implements OnChanges, AfterViewInit, OnDestroy 
     const container = this.sigmaContainer.nativeElement;
 
     const visibleIds = new Set(
-      [...(this.concepts ?? [])]
-        .sort(compareConcepts)
-        .slice(0, MAX_MAP_CONCEPTS)
+      [...(this.topics ?? [])]
+        .sort(compareTopics)
+        .slice(0, MAX_MAP_TOPICS)
         .map((c) => c.id)
     );
 
@@ -378,11 +378,11 @@ export class ConceptMapComponent implements OnChanges, AfterViewInit, OnDestroy 
     seedPositions(seeds, OBSIDIAN_FORCES.linkDistance);
     const seedById = new Map(seeds.map((s) => [s.id, s]));
 
-    // Hierarchy: the most-referenced concepts are hubs, which are always label
+    // Hierarchy: the most-referenced topics are hubs, which are always label
     // candidates and drawn at a heavier weight, so the eye has somewhere to start.
     const hubs = pickHubs(visibleNodes);
 
-    // Structure: clusters of concepts that share notes. The largest few take a
+    // Structure: clusters of topics that share notes. The largest few take a
     // hue each (see COMMUNITY_HUES); the rest keep the neutral node ink.
     const clusterRank = detectCommunities(
       visibleNodes.map((n) => n.id),
@@ -405,7 +405,7 @@ export class ConceptMapComponent implements OnChanges, AfterViewInit, OnDestroy 
       const size = NODE_SIZE_MIN + (NODE_SIZE_MAX - NODE_SIZE_MIN) * Math.sqrt(ratio);
       const hue = hueOf(node.id);
       // Hue strength follows usage, so a cluster reads as one family while its
-      // big concepts still stand out from its small ones.
+      // big topics still stand out from its small ones.
       const nodeColor = hue
         ? mixHex(this.theme.node, hue, 0.55 + ratio * 0.45)
         : mixHex(this.theme.node, this.theme.nodeHead, 0.18 + ratio * 0.42);
@@ -507,7 +507,7 @@ export class ConceptMapComponent implements OnChanges, AfterViewInit, OnDestroy 
     //    loop halts by itself. So the settle and the post-drag relaxation are the
     //    same code path, and neither leaves a permanent timer running.
     //
-    // Concepts with no connection stay out of the simulation: they are placed on
+    // Topics with no connection stay out of the simulation: they are placed on
     // a shelf after the settle (see `shelfPositions`), not left to drift.
     const connected = new Set<string>();
     for (const edge of visibleEdges) {
@@ -617,7 +617,7 @@ export class ConceptMapComponent implements OnChanges, AfterViewInit, OnDestroy 
     }
     this.writeLayoutToGraph();
 
-    // Shelve the unconnected concepts under the settled graph.
+    // Shelve the unconnected topics under the settled graph.
     if (isolates.length) {
       const extent = this.graphExtent(connected);
       const shelf = shelfPositions(
@@ -627,7 +627,7 @@ export class ConceptMapComponent implements OnChanges, AfterViewInit, OnDestroy 
         OBSIDIAN_FORCES.collideRadius * 3.6
       );
       [...isolates]
-        .sort((a, b) => compareConcepts(a, b))
+        .sort((a, b) => compareTopics(a, b))
         .forEach((node, index) => {
           graph.setNodeAttribute(node.id, 'x', shelf[index].x);
           graph.setNodeAttribute(node.id, 'y', shelf[index].y);
@@ -787,7 +787,7 @@ export class ConceptMapComponent implements OnChanges, AfterViewInit, OnDestroy 
           // Setting `label: ''` here erased them entirely, which is the other
           // half of the "everything else melts into the background" report: the
           // user loses both the dot and its name, so the map reads as if those
-          // concepts do not exist rather than that they are merely not the
+          // topics do not exist rather than that they are merely not the
           // active neighbourhood.
           res['color'] = hexToRgba(component.theme.node, NODE_ALPHA_DIM);
           res['labelColor'] = hexToRgba(component.theme.label, 0.62);
@@ -852,12 +852,12 @@ export class ConceptMapComponent implements OnChanges, AfterViewInit, OnDestroy 
       // If we just finished dragging, don't treat the mouseup as a click.
       if (component.isDragging) return;
       component.selectedNodeId.set(node);
-      component.conceptSelected.emit(node);
+      component.topicSelected.emit(node);
       sigma.refresh();
       component.revealSelected();
     });
 
-    // Double-click opens the concept, the way Obsidian's graph does.
+    // Double-click opens the topic, the way Obsidian's graph does.
     //
     // Sigma's mouse captor counts its own clicks: the FIRST click emits `click`
     // (so the node is already selected by the time this fires) and the second
@@ -873,7 +873,7 @@ export class ConceptMapComponent implements OnChanges, AfterViewInit, OnDestroy 
       if (component.isDragging) return;
       preventSigmaDefault();
       component.selectedNodeId.set(node);
-      component.openConcept.emit(node);
+      component.openTopic.emit(node);
       sigma.refresh();
     });
 
@@ -896,7 +896,7 @@ export class ConceptMapComponent implements OnChanges, AfterViewInit, OnDestroy 
       const near = component.nearestNodeForTouch(payload?.event);
       if (near) {
         component.selectedNodeId.set(near);
-        component.conceptSelected.emit(near);
+        component.topicSelected.emit(near);
         sigma.refresh();
         component.revealSelected();
         return;
@@ -1316,7 +1316,7 @@ export class ConceptMapComponent implements OnChanges, AfterViewInit, OnDestroy 
    * only thing left to reserve is a small constant edge allowance.
    *
    * Reserving a per-label gutter here was measurably harmful on a phone, where a
-   * long concept name needs ~140px of a 369px stage: the reservation made the
+   * long topic name needs ~140px of a 369px stage: the reservation made the
    * width the binding axis of the fit and shrank every node instead of an
    * occasional word. See `LABEL_EDGE_ALLOWANCE_FRACTION`.
    */
@@ -1623,7 +1623,7 @@ export class ConceptMapComponent implements OnChanges, AfterViewInit, OnDestroy 
     this.refreshRendering();
   }
 
-  /** Select a related concept from the card and bring it into view. */
+  /** Select a related topic from the card and bring it into view. */
   selectRelated(id: string): void {
     this.selectAccessibleNode(id);
     this.centerSelected();
@@ -1645,7 +1645,7 @@ export class ConceptMapComponent implements OnChanges, AfterViewInit, OnDestroy 
 
   selectAccessibleNode(id: string): void {
     this.selectedNodeId.set(id);
-    this.conceptSelected.emit(id);
+    this.topicSelected.emit(id);
     this.refreshRendering();
   }
 }

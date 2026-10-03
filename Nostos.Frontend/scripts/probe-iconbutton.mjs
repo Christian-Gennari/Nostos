@@ -131,9 +131,9 @@ const SURFACES = [
     // note-card's EDIT-MODE buttons (save / cancel) only exist while a note is
     // being edited, so without this surface they would be migrated with no
     // coverage at all — the probe would report "identical" while seeing none of
-    // them. Open a concept, then click the note's edit action.
+    // them. Open a topic, then click the note's edit action.
     setup: async (page) => {
-      // The concept list is `.index-item` BUTTONS (no `.nav-item` here — that class
+      // The topic list is `.index-item` BUTTONS (no `.nav-item` here — that class
       // matched the sidebar's NAV LINKS, so clicking it navigated to Library and the
       // surface silently captured Library's buttons instead of note-card's).
       const item = await page.waitForSelector('.index-item', { timeout: 10000 }).catch(() => null);
@@ -169,7 +169,7 @@ const SURFACES = [
   {
     name: 'brain-notes',
     route: '/second-brain',
-    // note-card's 5 buttons only render once a concept with notes is open.
+    // note-card's 5 buttons only render once a topic with notes is open.
     setup: async (page) => {
       const item = await page.$('.index-item, .tree-row, .nav-item');
       if (item) { await item.click().catch(() => {}); await page.waitForTimeout(600); }

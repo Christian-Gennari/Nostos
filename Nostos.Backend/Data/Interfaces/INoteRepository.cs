@@ -8,9 +8,9 @@ public interface INoteRepository
     Task<NoteModel?> GetByIdAsync(Guid id);
 
     /// <summary>
-    /// Gets a note with its NoteConcepts and Book eagerly loaded (for update/re-processing).
+    /// Gets a note with its NoteTopics and Book eagerly loaded (for update/re-processing).
     /// </summary>
-    Task<NoteModel?> GetByIdWithConceptsAsync(Guid id);
+    Task<NoteModel?> GetByIdWithTopicsAsync(Guid id);
 
     /// <summary>
     /// Gets a note with its Book eagerly loaded (for building the response DTO after create).
@@ -22,9 +22,9 @@ public interface INoteRepository
     Task DeleteAsync(NoteModel note);
 
     /// <summary>
-    /// Bulk-deletes all NoteConceptModel links for a given note.
+    /// Bulk-deletes all NoteTopicModel links for a given note.
     /// </summary>
-    Task DeleteConceptLinksAsync(Guid noteId);
+    Task DeleteTopicLinksAsync(Guid noteId);
     /// <summary>
     /// Notes whose text, quote or book title matches `query` (issue #158). Case is
     /// ignored; the caller caps the row count.
@@ -49,21 +49,21 @@ public interface INoteRepository
     Task AddReceiptAsync(NoteCommandReceipt receipt);
 
     /// <summary>
-    /// Notes linked to no concept at all. These are unreachable through the index's
-    /// concept rows, which is the gap #158 was filed about.
+    /// Notes linked to no topic at all. These are unreachable through the index's
+    /// topic rows, which is the gap #158 was filed about.
     /// </summary>
-    Task<List<NoteModel>> GetWithoutConceptsAsync(int limit, int offset);
+    Task<List<NoteModel>> GetWithoutTopicsAsync(int limit, int offset);
 
-    /// <summary>A stable, bounded page across all notes, including notes without concepts.</summary>
+    /// <summary>A stable, bounded page across all notes, including notes without topics.</summary>
     Task<(List<NoteModel> Items, int Total)> BrowseAsync(
-        string? query, Guid? bookId, bool withoutConcepts, bool oldestFirst, int limit, int offset);
+        string? query, Guid? bookId, bool withoutTopics, bool oldestFirst, int limit, int offset);
 
     /// <summary>
-    /// How many notes are linked to no concept right now. The unlinked-note review
+    /// How many notes are linked to no topic right now. The unlinked-note review
     /// queue traverses the whole set, so a page on its own would silently imply
     /// that the page IS the set (issue #256).
     /// </summary>
-    Task<int> CountWithoutConceptsAsync();
+    Task<int> CountWithoutTopicsAsync();
 
     /// <summary>Total canonical notes visible in the current persistence scope.</summary>
     Task<int> CountAsync();

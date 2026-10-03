@@ -1,5 +1,5 @@
 /**
- * Mobile concept-map audit.
+ * Mobile topic-map audit.
  *
  * "The layout is super weird and buggy on mobile" is a set of uncounted claims.
  * This enumerates what a phone actually sees: geometry of every map surface, the
@@ -65,7 +65,7 @@ for (const dev of DEVICES) {
 
   // Index (list) state first — the user lands here.
   const indexState = await page.evaluate(() => {
-    const col = document.querySelector('.content-col, .map-wrapper, .concept-map');
+    const col = document.querySelector('.content-col, .map-wrapper, .topic-map');
     const doc = document.documentElement;
     return {
       docScrollWidth: doc.scrollWidth,
@@ -130,7 +130,7 @@ for (const dev of DEVICES) {
       };
     }
     const squished = [];
-    document.querySelectorAll('.sigma-container, .concept-map, .map-wrapper, [role="toolbar"], .map-search, .map-legend').forEach((el) => {
+    document.querySelectorAll('.sigma-container, .topic-map, .map-wrapper, [role="toolbar"], .map-search, .map-legend').forEach((el) => {
       const b = el.getBoundingClientRect();
       if (b.width < 40 || b.height < 20) squished.push({ cls: el.className.toString().slice(0, 50), w: Math.round(b.width), h: Math.round(b.height) });
     });
@@ -141,7 +141,7 @@ for (const dev of DEVICES) {
       innerHeight: window.innerHeight,
       visualHeight: window.visualViewport ? Math.round(window.visualViewport.height) : null,
       stage: r(sigma),
-      map: r(q('.concept-map')),
+      map: r(q('.topic-map')),
       wrapper: r(q('.map-wrapper')),
       controls: controls,
       controlsTiny: controls.filter((c) => c.w < 40 || c.h < 40),

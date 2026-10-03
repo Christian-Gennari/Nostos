@@ -10,9 +10,9 @@ namespace Nostos.Backend.Tests.Data;
 /// <summary>
 /// Note-text search and the unlinked-note listing (issue #158).
 ///
-/// The defect these close: the index could only match concept NAMES, so a word
+/// The defect these close: the index could only match topic NAMES, so a word
 /// living only in a note's body or quote was unreachable, and a note belonging to
-/// no concept could not be reached at all.
+/// no topic could not be reached at all.
 /// </summary>
 public sealed class NoteSearchTests
 {
@@ -27,10 +27,10 @@ public sealed class NoteSearchTests
         var book = new PhysicalBookModel { Id = Guid.NewGuid(), Title = "Nostos Test Book" };
         db.Books.Add(book);
 
-        var concept = new ConceptModel { Id = Guid.NewGuid(), Concept = "virtue" };
-        db.Concepts.Add(concept);
+        var topic = new TopicModel { Id = Guid.NewGuid(), Topic = "virtue" };
+        db.Topics.Add(topic);
 
-        // One note that belongs to a concept, one that belongs to none — the case
+        // One note that belongs to a topic, one that belongs to none — the case
         // the index could never surface.
         var linked = new NoteModel
         {
@@ -49,7 +49,7 @@ public sealed class NoteSearchTests
             CreatedAt = DateTime.UtcNow.AddSeconds(-5),
         };
         db.Notes.AddRange(linked, unlinked);
-        db.NoteConcepts.Add(new NoteConceptModel { NoteId = linked.Id, ConceptId = concept.Id });
+        db.NoteTopics.Add(new NoteTopicModel { NoteId = linked.Id, TopicId = topic.Id });
         await db.SaveChangesAsync();
 
         return (harness, book.Id, linked.Id, unlinked.Id);
@@ -93,9 +93,9 @@ public sealed class NoteSearchTests
     }
 
     [Fact]
-    public async Task Searches_a_note_that_belongs_to_no_concept()
+    public async Task Searches_a_note_that_belongs_to_no_topic()
     {
-        // The whole point of #158: this note has no concept row to be reached by.
+        // The whole point of #158: this note has no topic row to be reached by.
         var (harness, _, _, unlinkedId) = await SeedAsync();
         using var _h = harness;
 
@@ -131,13 +131,13 @@ public sealed class NoteSearchTests
     }
 
     [Fact]
-    public async Task Lists_only_the_notes_that_belong_to_no_concept()
+    public async Task Lists_only_the_notes_that_belong_to_no_topic()
     {
         var (harness, _, _, unlinkedId) = await SeedAsync();
         using var _h = harness;
 
         await using var db = await harness.ContextFactory.CreateDbContextAsync();
-        var unlinked = await new NoteRepository(db).GetWithoutConceptsAsync(50, 0);
+        var unlinked = await new NoteRepository(db).GetWithoutTopicsAsync(50, 0);
 
         unlinked.Should().ContainSingle().Which.Id.Should().Be(unlinkedId);
     }
@@ -174,7 +174,7 @@ public sealed class NoteSearchTests
     }
 
     [Fact]
-    public async Task Counts_every_note_that_belongs_to_no_concept()
+    public async Task Counts_every_note_that_belongs_to_no_topic()
     {
         var harness = await SeedUnlinkedAsync(5);
         using var _h = harness;
@@ -182,7 +182,7 @@ public sealed class NoteSearchTests
         await using var db = await harness.ContextFactory.CreateDbContextAsync();
         var repo = new NoteRepository(db);
 
-        (await repo.CountWithoutConceptsAsync()).Should().Be(5);
+        (await repo.CountWithoutTopicsAsync()).Should().Be(5);
     }
 
     [Fact]
@@ -194,9 +194,9 @@ public sealed class NoteSearchTests
         await using var db = await harness.ContextFactory.CreateDbContextAsync();
         var repo = new NoteRepository(db);
 
-        var first = await repo.GetWithoutConceptsAsync(2, 0);
-        var second = await repo.GetWithoutConceptsAsync(2, 2);
-        var third = await repo.GetWithoutConceptsAsync(2, 4);
+        var first = await repo.GetWithoutTopicsAsync(2, 0);
+        var second = await repo.GetWithoutTopicsAsync(2, 2);
+        var third = await repo.GetWithoutTopicsAsync(2, 4);
 
         first.Should().HaveCount(2);
         second.Should().HaveCount(2);
@@ -218,14 +218,14 @@ public sealed class NoteSearchTests
         await using var db = await harness.ContextFactory.CreateDbContextAsync();
         var repo = new NoteRepository(db);
 
-        var page = await repo.GetWithoutConceptsAsync(25, 3);
+        var page = await repo.GetWithoutTopicsAsync(25, 3);
 
         page.Should().BeEmpty();
-        (await repo.CountWithoutConceptsAsync()).Should().Be(3);
+        (await repo.CountWithoutTopicsAsync()).Should().Be(3);
     }
 
     [Fact]
-    public async Task A_note_that_gains_a_concept_leaves_the_queue_and_the_count()
+    public async Task A_note_that_gains_a_topic_leaves_the_queue_and_the_count()
     {
         // Resolving a note in review mode is an ordinary note save that adds the
         // association; the queue and its total both have to follow.
@@ -234,15 +234,15 @@ public sealed class NoteSearchTests
 
         await using var db = await harness.ContextFactory.CreateDbContextAsync();
         var repo = new NoteRepository(db);
-        var concept = new ConceptModel { Id = Guid.NewGuid(), Concept = "Freedom" };
-        db.Concepts.Add(concept);
+        var topic = new TopicModel { Id = Guid.NewGuid(), Topic = "Freedom" };
+        db.Topics.Add(topic);
         await db.SaveChangesAsync();
 
-        var target = (await repo.GetWithoutConceptsAsync(1, 0)).Single();
-        db.NoteConcepts.Add(new NoteConceptModel { NoteId = target.Id, ConceptId = concept.Id });
+        var target = (await repo.GetWithoutTopicsAsync(1, 0)).Single();
+        db.NoteTopics.Add(new NoteTopicModel { NoteId = target.Id, TopicId = topic.Id });
         await db.SaveChangesAsync();
 
-        (await repo.CountWithoutConceptsAsync()).Should().Be(2);
-        (await repo.GetWithoutConceptsAsync(25, 0)).Select(n => n.Id).Should().NotContain(target.Id);
+        (await repo.CountWithoutTopicsAsync()).Should().Be(2);
+        (await repo.GetWithoutTopicsAsync(25, 0)).Select(n => n.Id).Should().NotContain(target.Id);
     }
 }

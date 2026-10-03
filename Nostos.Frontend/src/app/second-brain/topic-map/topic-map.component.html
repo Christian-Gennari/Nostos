@@ -1,4 +1,4 @@
-<section class="concept-map" [attr.aria-busy]="loading()" aria-label="Concept map">
+<section class="topic-map" [attr.aria-busy]="loading()" aria-label="Topic map">
   <div #mapStage class="map-stage" [class.is-fullscreen]="isFullscreen()">
     <div #sigmaContainer class="sigma-container"></div>
 
@@ -8,7 +8,7 @@
     } @else if (noConnections()) {
     @if (searchQuery.trim()) {
     <p class="map-status" role="status" aria-live="polite">
-      No concepts match “{{ searchQuery.trim() }}”.
+      No topics match “{{ searchQuery.trim() }}”.
     </p>
     } @else {
     <p class="map-status" role="status" aria-live="polite">No connections yet</p>
@@ -28,12 +28,12 @@
         <span class="map-legend-line" aria-hidden="true"></span>Line: shared notes
       </span>
       @if (isCapped()) {
-      <span class="map-limit-note">Showing the 150 most-referenced concepts.</span>
+      <span class="map-limit-note">Showing the 150 most-referenced topics.</span>
       }
     </div>
 
     <!--
-      The heads-up layer: the selected concept's card and the camera rail.
+      The heads-up layer: the selected topic's card and the camera rail.
 
       One layer, so the two can never overlap: on a wide stage they sit side by
       side along the bottom edge; on a phone the card spans the width and the
@@ -41,7 +41,7 @@
     -->
     <div #mapHud class="map-hud">
       @if (selection(); as sel) {
-      <section class="map-card" role="region" aria-label="Selected concept">
+      <section class="map-card" role="region" aria-label="Selected topic">
         <div class="map-card-head">
           <span
             class="map-card-swatch"
@@ -66,7 +66,7 @@
           {{ sel.connectionCount }} {{ sel.connectionCount === 1 ? 'connection' : 'connections' }}
         </p>
         @if (sel.related.length) {
-        <div class="map-card-related" role="group" aria-label="Most connected concepts">
+        <div class="map-card-related" role="group" aria-label="Most connected topics">
           @for (related of sel.related; track related.id) {
           <button
             appChip
@@ -154,7 +154,7 @@
     </div>
   </div>
 
-  <ul class="map-accessible-list visually-hidden" aria-label="Concepts in this map">
+  <ul class="map-accessible-list visually-hidden" aria-label="Topics in this map">
     @for (node of accessibleNodes(); track node.id) {
     <li>
       <button

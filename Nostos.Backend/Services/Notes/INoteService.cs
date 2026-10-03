@@ -4,7 +4,7 @@ namespace Nostos.Backend.Services.Notes;
 
 /// <summary>
 /// Canonical note domain service. The REST endpoints call this one service;
-/// note creation/update/delete semantics (including <c>[[WikiLink]]</c> concept
+/// note creation/update/delete semantics (including <c>[[WikiLink]]</c> topic
 /// processing) live here, never in a handler, mirroring <c>ILibraryService</c>
 /// for the library.
 /// </summary>
@@ -14,7 +14,7 @@ public interface INoteService
     Task<NoteSearchHitDto?> GetAsync(Guid noteId, CancellationToken ct = default);
     Task<NoteSearchPageDto> GetUnlinkedAsync(int limit, int offset, CancellationToken ct = default);
     Task<NoteSearchPageDto> BrowseAsync(
-        string? query, Guid? bookId, bool withoutConcepts, bool oldestFirst,
+        string? query, Guid? bookId, bool withoutTopics, bool oldestFirst,
         int limit, int offset, CancellationToken ct = default);
     Task<IReadOnlyList<NoteSearchHitDto>> SearchAsync(string query, int limit, CancellationToken ct = default);
     Task<IReadOnlyList<NoteSearchHitDto>> SearchAsync(
@@ -38,7 +38,7 @@ public interface INoteService
     Task<NoteCommandResult<NoteDto>> UpdateAsync(Guid noteId, UpdateNoteDto dto, CancellationToken ct = default);
     Task<NoteCommandResult<bool>> DeleteAsync(Guid noteId, CancellationToken ct = default);
 
-    Task<NoteCommandResult<NoteDto>> LinkToExistingConceptAsync(Guid noteId, Guid conceptId, CancellationToken ct = default);
+    Task<NoteCommandResult<NoteDto>> LinkToExistingTopicAsync(Guid noteId, Guid topicId, CancellationToken ct = default);
     Task<NoteReviewDto?> GetForReviewAsync(Guid noteId, CancellationToken ct = default);
 
     /// <summary>

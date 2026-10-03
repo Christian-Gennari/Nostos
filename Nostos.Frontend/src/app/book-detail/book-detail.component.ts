@@ -44,7 +44,7 @@ interface PendingWorkAction {
 import { AddBookModal } from '../add-book-modal/add-book-modal.component';
 import { EditionsModal, WorkMember } from './editions-modal/editions-modal.component';
 import { ConfirmModal } from '../ui/confirm-modal/confirm-modal.component';
-import { ConceptInputComponent } from '../ui/concept-input.component/concept-input.component';
+import { TopicInputComponent } from '../ui/topic-input.component/topic-input.component';
 import { NoteCardComponent } from '../ui/note-card.component/note-card.component';
 import { StarRatingComponent } from '../ui/star-rating/star-rating.component';
 import { LibraryPreferencesService } from '../core/services/library-preferences.service';
@@ -67,7 +67,7 @@ import { DialogActionsComponent } from '../ui/dialog-actions/dialog-actions.comp
     AddBookModal,
     EditionsModal,
     ConfirmModal,
-    ConceptInputComponent,
+    TopicInputComponent,
     NoteCardComponent,
     StarRatingComponent,
     ButtonComponent,
@@ -398,8 +398,8 @@ export class BookDetail implements OnInit, OnDestroy {
   /** True while the cover-remove question is up (asked through ConfirmModal). */
   readonly coverDeletePending = signal(false);
 
-  onConceptClick(conceptId: string): void {
-    this.goToConcept(conceptId);
+  onTopicClick(topicId: string): void {
+    this.goToTopic(topicId);
   }
 
   // --- MANUAL WORK MEMBERSHIP (issue #143) ---
@@ -593,8 +593,8 @@ export class BookDetail implements OnInit, OnDestroy {
 
   // --- Navigation & Helpers ---
 
-  goToConcept(conceptId: string): void {
-    this.router.navigate(['/second-brain'], { queryParams: { conceptId } });
+  goToTopic(topicId: string): void {
+    this.router.navigate(['/second-brain'], { queryParams: { topicId } });
   }
 
   switchEdition(id: string): void {

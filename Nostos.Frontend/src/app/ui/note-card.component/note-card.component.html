@@ -11,11 +11,11 @@
     ></textarea>
     }
 
-    <app-concept-input
+    <app-topic-input
       [(ngModel)]="editContent"
       [rows]="3"
       (submitTrigger)="saveEdit()"
-    ></app-concept-input>
+    ></app-topic-input>
 
     <div class="edit-actions">
       <button appIconButton icon="check" [glyphSize]="16" (click)="saveEdit($event)" title="Save"></button>
@@ -34,7 +34,7 @@
       } @if (note.content) {
       <p
         class="note-text"
-        [innerHTML]="note.content | noteFormat : conceptMap"
+        [innerHTML]="note.content | noteFormat : topicMap"
         (click)="onContentClick($event)"
       ></p>
       } @else {

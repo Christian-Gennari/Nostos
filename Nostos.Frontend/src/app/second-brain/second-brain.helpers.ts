@@ -64,16 +64,16 @@ export function searchRank(name: string, query: string): number {
 }
 
 /**
- * The `[[Concept]]` names a note body declares.
+ * The `[[Topic]]` names a note body declares.
  *
  * This mirrors NoteProcessorService's rule on the server — trimmed, non-empty
  * names, case-insensitively distinct — because review mode has to answer one
  * question locally: did the save I just made resolve this note? On the server a
- * note is unlinked exactly when it declares no concept, so the same rule here is
+ * note is unlinked exactly when it declares no topic, so the same rule here is
  * not a second link model, it is the one link model read locally. Asking the
  * server again instead would make the queue end on a second round trip.
  */
-export function declaredConceptNames(content: string): string[] {
+export function declaredTopicNames(content: string): string[] {
   const names: string[] = [];
   for (const match of (content ?? '').matchAll(/\[\[(.*?)\]\]/g)) {
     const name = match[1].trim();
@@ -84,7 +84,7 @@ export function declaredConceptNames(content: string): string[] {
   return names;
 }
 
-/** True when a note body declares at least one concept. */
-export function declaresConcept(content: string): boolean {
-  return declaredConceptNames(content).length > 0;
+/** True when a note body declares at least one topic. */
+export function declaresTopic(content: string): boolean {
+  return declaredTopicNames(content).length > 0;
 }

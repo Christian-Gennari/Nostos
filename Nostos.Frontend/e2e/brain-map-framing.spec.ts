@@ -1,5 +1,5 @@
 /**
- * Decisive framing check for the Sigma concept map.
+ * Decisive framing check for the Sigma topic map.
  *
  * Measures the margins on all four sides of the drawn graph separately for
  * nodes and for labels, so "centred or not" is settled by measurement rather

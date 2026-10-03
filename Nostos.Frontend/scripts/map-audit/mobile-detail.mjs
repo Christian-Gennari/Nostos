@@ -67,7 +67,7 @@ for (const dev of DEVICES) {
     const dockRect = dock ? dock.getBoundingClientRect() : null;
     const stage = document.querySelector('.sigma-container');
     const stageRect = stage ? stage.getBoundingClientRect() : null;
-    const card = document.querySelector('.concept-map');
+    const card = document.querySelector('.topic-map');
     const cardRect = card ? card.getBoundingClientRect() : null;
     const vh = window.innerHeight;
     return {

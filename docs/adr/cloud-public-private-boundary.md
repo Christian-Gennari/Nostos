@@ -31,7 +31,7 @@ allowed in the public build.
 
 The public repository keeps:
 
-- canonical Library, Brain, Reader, Studio, Notes, Concepts and Writing behavior;
+- canonical Library, Brain, Reader, Studio, Notes, Topics and Writing behavior;
 - `Nostos.Product`, `Nostos.Shared`, domain models and provider-neutral contracts;
 - the SelfHosted ASP.NET host, SQLite persistence and schema bootstrap;
 - local filesystem media and local backup/restore;

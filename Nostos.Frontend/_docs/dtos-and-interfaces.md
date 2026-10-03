@@ -209,10 +209,10 @@ interface MoveWritingDto {
 
 ---
 
-## Concept Types (Inline in ConceptsService)
+## Topic Types (Inline in TopicsService)
 
 ```ts
-interface ConceptDto {
+interface TopicDto {
   id: string;
   name: string;
   usageCount: number;
@@ -227,7 +227,7 @@ interface NoteContextDto {
   bookTitle: string;
 }
 
-interface ConceptDetailDto {
+interface TopicDetailDto {
   id: string;
   name: string;
   notes: NoteContextDto[];

@@ -24,15 +24,15 @@ import { NoteCardComponent } from '../ui/note-card.component/note-card.component
 import { NoteCaptureDetailsComponent } from '../ui/note-capture-details/note-capture-details.component';
 import { NoteFormatPipe } from '../ui/pipes/note-format.pipe';
 import {
-  ConceptsService,
-  ConceptDto,
-  ConceptDetailDto,
+  TopicsService,
+  TopicDto,
+  TopicDetailDto,
   NoteContextDto,
-  ConceptStatsDto,
-  RelatedConceptDto,
-} from '../core/services/concepts.service';
-import { ConceptMapComponent } from './concept-map/concept-map.component';
-import { ConceptInputComponent } from '../ui/concept-input.component/concept-input.component';
+  TopicStatsDto,
+  RelatedTopicDto,
+} from '../core/services/topics.service';
+import { TopicMapComponent } from './topic-map/topic-map.component';
+import { TopicInputComponent } from '../ui/topic-input.component/topic-input.component';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
 import { ViewToggleComponent, type ViewToggleOption } from '../ui/view-toggle/view-toggle.component';
 import { ButtonComponent } from '../ui/button/button.component';
@@ -56,8 +56,8 @@ import {
   INDEX_SORT_STORAGE_KEY,
   NOTE_SEARCH_DEBOUNCE_MS,
   REVIEW_PAGE_SIZE,
-  declaresConcept,
-  declaredConceptNames,
+  declaresTopic,
+  declaredTopicNames,
   normalizeSearchText,
   searchRank,
   type BrainPaneMode,
@@ -89,8 +89,8 @@ import {
     NoteCardComponent,
     NoteFormatPipe,
     ConfirmModal,
-    ConceptMapComponent,
-    ConceptInputComponent,
+    TopicMapComponent,
+    TopicInputComponent,
     BrainWritingHandoffComponent,
   ],
   templateUrl: './second-brain.component.html',
@@ -113,7 +113,7 @@ export class SecondBrain implements AfterViewChecked {
     { value: 'newest', label: 'Newest first' },
     { value: 'oldest', label: 'Oldest first' },
   ] satisfies readonly DropdownOption[];
-  private conceptsService = inject(ConceptsService);
+  private topicsService = inject(TopicsService);
   private http = inject(HttpClient);
   private notesService = inject(NotesService);
   private toast = inject(ToastService);
@@ -128,7 +128,7 @@ export class SecondBrain implements AfterViewChecked {
   proposalState = signal<'idle' | 'loading' | 'ready' | 'empty' | 'unavailable' | 'error' | 'linking'>('idle');
   proposalCandidates = signal<AssistantSuggestionDto[]>([]);
   proposalMessage = signal<string | null>(null);
-  proposalDetail = signal<ConceptDetailDto | null>(null);
+  proposalDetail = signal<TopicDetailDto | null>(null);
   proposalInspectingId = signal<string | null>(null);
   private proposalNoteKey: string | null = null;
   private proposalNoteId: string | null = null;
@@ -141,7 +141,7 @@ export class SecondBrain implements AfterViewChecked {
   readonly renameRequested = output<string>();
   readonly deleteRequested = output<string>();
 
-  // Concept management state. Rename stays in the surface that initiated it;
+  // Topic management state. Rename stays in the surface that initiated it;
   // the confirmation state is separate from note deletion because the latter
   // has a different consequence and tone.
   renameId = signal<string | null>(null);
@@ -154,20 +154,20 @@ export class SecondBrain implements AfterViewChecked {
   mergeSearchQuery = signal('');
   mergeTargetId = signal<string | null>(null);
   mergeConfirmation = signal<MergeRequest | null>(null);
-  mergingConcept = signal(false);
+  mergingTopic = signal(false);
 
-  conceptDeleteTarget = signal<ConceptDto | null>(null);
-  deletingConcept = signal(false);
+  topicDeleteTarget = signal<TopicDto | null>(null);
+  deletingTopic = signal(false);
 
   // State
-  concepts = signal<ConceptDto[]>([]);
-  conceptStats = signal<ConceptStatsDto | null>(null);
-  loadingConcepts = signal(true);
+  topics = signal<TopicDto[]>([]);
+  topicStats = signal<TopicStatsDto | null>(null);
+  loadingTopics = signal(true);
   searchQuery = signal('');
 
   // Note-text matches for the current query, from the server (issue #158). Empty
   // until a search runs, and cleared when the query is.
-  noteMatches = signal<ConceptDto[]>([]);
+  noteMatches = signal<TopicDto[]>([]);
   noteHits = signal<NoteSearchHit[]>([]);
   panelNote = signal<NoteSearchHit | null>(null);
 
@@ -178,7 +178,7 @@ export class SecondBrain implements AfterViewChecked {
   browseQuery = signal('');
   browseBookId = signal<string | null>(null);
   browseBookTitle = signal('');
-  browseWithoutConcepts = signal(false);
+  browseWithoutTopics = signal(false);
   browseOldestFirst = signal(false);
   browseLoading = signal(false);
   browseLoaded = signal(false);
@@ -189,11 +189,11 @@ export class SecondBrain implements AfterViewChecked {
   browsePickerQuery = signal('');
   browsePickerId = signal<string | null>(null);
   browseSaving = signal(false);
-  browsePickerCandidates = computed(() => this.filterAndSortConcepts(this.browsePickerQuery(), null));
-  browseNewConceptName = computed(() => {
+  browsePickerCandidates = computed(() => this.filterAndSortTopics(this.browsePickerQuery(), null));
+  browseNewTopicName = computed(() => {
     const name = this.browsePickerQuery().trim();
     if (!name || name.length > 100 || /[\[\]\r\n]/.test(name)) return null;
-    return this.concepts().some((item) => item.name.toLowerCase() === name.toLowerCase())
+    return this.topics().some((item) => item.name.toLowerCase() === name.toLowerCase())
       ? null : name;
   });
   browseSourceParams(note: NoteSearchHit): { sourcePage: number } | { sourceCfi: string } | null {
@@ -209,12 +209,12 @@ export class SecondBrain implements AfterViewChecked {
     return cfi?.startsWith('epubcfi(') ? { sourceCfi: cfi } : null;
   }
 
-  openBrowseConcept(name: string): void {
-    const concept = this.concepts().find(
+  openBrowseTopic(name: string): void {
+    const topic = this.topics().find(
       (item) => item.name.trim().toLowerCase() === name.trim().toLowerCase());
-    if (!concept) return;
+    if (!topic) return;
     this.setViewMode('list');
-    this.selectConcept(concept.id);
+    this.selectTopic(topic.id);
   }
 
   private deepLinkNoteSeq = 0;
@@ -257,11 +257,11 @@ export class SecondBrain implements AfterViewChecked {
   reviewEditContent = signal('');
   reviewPickerOpen = signal(false);
   reviewPickerQuery = signal('');
-  reviewPickerConceptId = signal<string | null>(null);
-  reviewNewConceptName = computed(() => {
+  reviewPickerTopicId = signal<string | null>(null);
+  reviewNewTopicName = computed(() => {
     const name = this.reviewPickerQuery().trim();
     if (!name || name.length > 100 || /[\[\]\r\n]/.test(name)) return null;
-    return this.concepts().some((concept) => concept.name.toLowerCase() === name.toLowerCase())
+    return this.topics().some((topic) => topic.name.toLowerCase() === name.toLowerCase())
       ? null : name;
   });
   private reviewSeq = 0;
@@ -276,20 +276,20 @@ export class SecondBrain implements AfterViewChecked {
   viewMode = signal<BrainPaneMode>(this.readStoredViewMode());
   /** The Brain's two panes. Same control as the Library's, different second option. */
   readonly viewToggleOptions = [
-    { value: 'list', icon: 'list-bullets', label: 'Concept view' },
+    { value: 'list', icon: 'list-bullets', label: 'Topic view' },
     { value: 'map', icon: 'map-trifold', label: 'Map view' },
   ] satisfies readonly ViewToggleOption[];
   cursorIndex = signal<number | null>(null);
 
   selectedId = signal<string | null>(null);
-  selectedDetail = signal<ConceptDetailDto | null>(null);
+  selectedDetail = signal<TopicDetailDto | null>(null);
   loadingDetail = signal(false);
 
   noteSearchQuery = signal('');
   sourceFilter = signal(ALL_SOURCES);
   noteSort = signal<NoteSort>('newest');
 
-  relatedConcepts = signal<RelatedConceptDto[]>([]);
+  relatedTopics = signal<RelatedTopicDto[]>([]);
   relatedLoading = signal(false);
   relatedExpanded = signal(false);
   relatedEvidenceId = signal<string | null>(null);
@@ -305,20 +305,20 @@ export class SecondBrain implements AfterViewChecked {
   deletingNote = signal(false);
 
   /**
-   * Details already fetched, keyed by concept id.
+   * Details already fetched, keyed by topic id.
    *
    * The wait-field that used to cover this pane is gone: the pane's background
-   * is identical for every concept, so a full-cover loading surface only ever
+   * is identical for every topic, so a full-cover loading surface only ever
    * read as a flash between two states that look the same. Instead the pane
    * keeps whatever it is already showing and swaps the content in place — which
-   * means a concept we have seen before must not be re-fetched (that round trip
+   * means a topic we have seen before must not be re-fetched (that round trip
    * is the only thing that could still make the pane blink). Hover/focus
    * pre-warms this cache so even a first visit is usually instant.
    */
-  private detailCache = new Map<string, ConceptDetailDto>();
+  private detailCache = new Map<string, TopicDetailDto>();
   private pendingRequests = new Set<string>();
   private detailRequestVersion = 0;
-  private relatedCache = new Map<string, RelatedConceptDto[]>();
+  private relatedCache = new Map<string, RelatedTopicDto[]>();
   private pendingRelatedRequests = new Set<string>();
   private relatedRequestVersion = 0;
 
@@ -327,9 +327,9 @@ export class SecondBrain implements AfterViewChecked {
   private noteCardHosts!: QueryList<ElementRef<HTMLElement>>;
 
   // Computed Map for the Pipe to look up IDs efficiently
-  conceptMap = computed(() => {
-    const map = new Map<string, ConceptDto>();
-    this.concepts().forEach((c) => {
+  topicMap = computed(() => {
+    const map = new Map<string, TopicDto>();
+    this.topics().forEach((c) => {
       map.set(c.name.trim().toLowerCase(), c);
     });
     return map;
@@ -344,21 +344,21 @@ export class SecondBrain implements AfterViewChecked {
   // also strips accents. Note-text matches arrive from the server (issue #158),
   // because the index payload carries no note text at all, and are merged after
   // the name matches: name matches lead, then content matches by match count. A
-  // concept that matches both keeps its name position and gains the label.
-  filteredConcepts = computed(() => {
-    const named = this.filterAndSortConcepts(this.searchQuery(), null);
+  // topic that matches both keeps its name position and gains the label.
+  filteredTopics = computed(() => {
+    const named = this.filterAndSortTopics(this.searchQuery(), null);
     const noteRows = this.noteMatches();
     if (!noteRows.length) return named;
 
     const noteById = new Map(noteRows.map((row) => [row.id, row]));
-    const withLabels = named.map((concept) => {
-      const hit = noteById.get(concept.id);
+    const withLabels = named.map((topic) => {
+      const hit = noteById.get(topic.id);
       return hit
-        ? { ...concept, noteMatchCount: hit.noteMatchCount, noteMatchSnippet: hit.noteMatchSnippet }
-        : concept;
+        ? { ...topic, noteMatchCount: hit.noteMatchCount, noteMatchSnippet: hit.noteMatchSnippet }
+        : topic;
     });
 
-    const namedIds = new Set(named.map((concept) => concept.id));
+    const namedIds = new Set(named.map((topic) => topic.id));
     const contentOnly = noteRows
       .filter((row) => !namedIds.has(row.id))
       .sort(
@@ -376,12 +376,12 @@ export class SecondBrain implements AfterViewChecked {
    * switched between two unrelated collections: the server's matches for the
    * current query, and — whenever the query happened to be empty — the whole
    * unlinked-note list. That is what let a maintenance queue read as a permanent
-   * second content type under the concept index (issue #256). A search now shows
+   * second content type under the topic index (issue #256). A search now shows
    * its own matches and nothing shows unlinked notes except review mode.
    */
   noteSearchHits = computed(() => (this.searchQuery().trim() ? this.noteHits() : []));
 
-  /** True while the rail is the review queue rather than the concept index. */
+  /** True while the rail is the review queue rather than the topic index. */
   isReviewing = computed(() => this.viewMode() === 'unlinked');
   reviewReturnMode: 'list' | 'notes' = 'list';
 
@@ -406,49 +406,49 @@ export class SecondBrain implements AfterViewChecked {
     return index >= 0 && (index < this.reviewQueue().length - 1 || this.reviewHasMore());
   });
 
-  /** The concept the user picked to link the reviewed note to. */
-  reviewPickerConcept = computed(() => {
-    const id = this.reviewPickerConceptId();
-    return id ? this.concepts().find((concept) => concept.id === id) ?? null : null;
+  /** The topic the user picked to link the reviewed note to. */
+  reviewPickerTopic = computed(() => {
+    const id = this.reviewPickerTopicId();
+    return id ? this.topics().find((topic) => topic.id === id) ?? null : null;
   });
 
-  reviewPickerCandidates = computed(() => this.filterAndSortConcepts(this.reviewPickerQuery(), null));
+  reviewPickerCandidates = computed(() => this.filterAndSortTopics(this.reviewPickerQuery(), null));
 
   mergeCandidates = computed(() =>
-    this.filterAndSortConcepts(this.mergeSearchQuery(), this.selectedId())
+    this.filterAndSortTopics(this.mergeSearchQuery(), this.selectedId())
   );
 
   mergeTarget = computed(() => {
     const targetId = this.mergeTargetId();
-    return targetId ? this.concepts().find((concept) => concept.id === targetId) ?? null : null;
+    return targetId ? this.topics().find((topic) => topic.id === targetId) ?? null : null;
   });
 
-  conceptDeleteHeading = computed(() => {
-    const target = this.conceptDeleteTarget();
-    return target ? `Delete “${target.name}”?` : 'Delete concept?';
+  topicDeleteHeading = computed(() => {
+    const target = this.topicDeleteTarget();
+    return target ? `Delete “${target.name}”?` : 'Delete topic?';
   });
 
-  conceptDeleteDescription = computed(() => {
-    const target = this.conceptDeleteTarget();
+  topicDeleteDescription = computed(() => {
+    const target = this.topicDeleteTarget();
     return target
-      ? `Deleting this concept removes its note links, but does not edit note text. The [[${target.name}]] reference stays in notes, and saving a note again will re-create the concept.`
+      ? `Deleting this topic removes its note links, but does not edit note text. The [[${target.name}]] reference stays in notes, and saving a note again will re-create the topic.`
       : '';
   });
 
   mergeHeading = computed(() => {
     const request = this.mergeConfirmation();
-    return request ? `Merge “${request.sourceName}” into “${request.targetName}”?` : 'Merge concepts?';
+    return request ? `Merge “${request.sourceName}” into “${request.targetName}”?` : 'Merge topics?';
   });
 
   mergeDescription = computed(() => {
     const request = this.mergeConfirmation();
     if (!request) return '';
     const noteLabel = request.noteCount === 1 ? 'note' : 'notes';
-    return `This will move ${request.noteCount} ${noteLabel} into “${request.targetName}” and the source concept “${request.sourceName}” will disappear.`;
+    return `This will move ${request.noteCount} ${noteLabel} into “${request.targetName}” and the source topic “${request.sourceName}” will disappear.`;
   });
 
   showLetterSeparators = computed(
-    () => this.indexSort() !== 'usage' && this.filteredConcepts().length > 0
+    () => this.indexSort() !== 'usage' && this.filteredTopics().length > 0
   );
 
   sourceOptions = computed<SourceOption[]>(() => {
@@ -497,18 +497,18 @@ export class SecondBrain implements AfterViewChecked {
     () => this.sourceFilter() !== ALL_SOURCES || this.noteSearchQuery().trim().length > 0
   );
 
-  visibleRelatedConcepts = computed(() =>
-    this.relatedExpanded() ? this.relatedConcepts() : this.relatedConcepts().slice(0, 8)
+  visibleRelatedTopics = computed(() =>
+    this.relatedExpanded() ? this.relatedTopics() : this.relatedTopics().slice(0, 8)
   );
 
-  hiddenRelatedCount = computed(() => Math.max(0, this.relatedConcepts().length - 8));
+  hiddenRelatedCount = computed(() => Math.max(0, this.relatedTopics().length - 8));
 
   relatedEvidenceNotes = computed(() => {
     const relatedId = this.relatedEvidenceId();
     const detail = this.selectedDetail();
     if (!relatedId || !detail) return [];
 
-    const related = this.relatedConcepts().find((candidate) => candidate.id === relatedId);
+    const related = this.relatedTopics().find((candidate) => candidate.id === relatedId);
     const sharedIds = new Set(related?.sharedNoteIds ?? []);
     return detail.notes.filter((note) => sharedIds.has(note.noteId));
   });
@@ -528,24 +528,25 @@ export class SecondBrain implements AfterViewChecked {
         return;
       }
 
-      const conceptId = params.get('conceptId');
-      if (!conceptId || conceptId === this.selectedId()) return;
+      // `conceptId` is the pre-rename name; keep old bookmarks and shared links working.
+      const topicId = params.get('topicId') ?? params.get('conceptId');
+      if (!topicId || topicId === this.selectedId()) return;
 
       // Links from notes and Book Detail land on the evidence, not merely on
-      // the Brain route. List view is the surface that owns concept evidence.
+      // the Brain route. List view is the surface that owns topic evidence.
       this.setViewMode('list');
-      this.selectConcept(conceptId);
+      this.selectTopic(topicId);
     });
 
     const assistantActionSubscription = this.assistant.actionExecuted.subscribe((event) => {
-      if (event.capability !== 'notes_link_existing_concept') return;
+      if (event.capability !== 'notes_link_existing_topic') return;
       const noteId = event.context.brainReviewNoteId;
       if (!noteId || !this.reviewQueue().some((note) => note.id === noteId)) return;
 
       this.refreshIndexAndStats();
       this.reviewMutated = true;
       this.removeFromReview(noteId);
-      this.toast.success('Note linked to a concept');
+      this.toast.success('Note linked to a topic');
     });
     const assistantTurnSubscription = this.assistant.turnFinished.subscribe((event) => {
       if (this.ignoredProposalTurns.delete(event.turnId)) {
@@ -563,7 +564,7 @@ export class SecondBrain implements AfterViewChecked {
         }
         const noteId = this.focusedNote()?.id;
         const candidates = (event.response?.suggestions ?? []).filter((item) =>
-          item.kind === 'concept' && item.noteId === noteId && item.value && item.reason?.trim()).slice(0, 3);
+          item.kind === 'topic' && item.noteId === noteId && item.value && item.reason?.trim()).slice(0, 3);
         this.proposalCandidates.set(candidates);
         this.proposalState.set(candidates.length ? 'ready' : 'empty');
         return;
@@ -571,22 +572,22 @@ export class SecondBrain implements AfterViewChecked {
       if (event.turnId === this.proposalLinkTurnId) {
         this.proposalLinkTurnId = null;
         if (this.proposalNoteKey !== this.focusedNoteKey()) return;
-        if (event.response?.executedCapabilities?.includes('notes_link_existing_concept')) {
+        if (event.response?.executedCapabilities?.includes('notes_link_existing_topic')) {
           if (this.isBrowsingNotes() && this.proposalAccepted) {
             const note = this.panelNote();
             if (note && note.id === this.proposalAccepted.noteId) {
-              const content = this.withConceptReference(note.content, this.proposalAccepted.label);
-              const saved = { ...note, content, conceptNames: declaredConceptNames(content) };
+              const content = this.withTopicReference(note.content, this.proposalAccepted.label);
+              const saved = { ...note, content, topicNames: declaredTopicNames(content) };
               this.panelNote.set(saved);
-              this.browseNotes.update((rows) => this.browseWithoutConcepts()
+              this.browseNotes.update((rows) => this.browseWithoutTopics()
                 ? rows.filter((row) => row.id !== saved.id)
                 : rows.map((row) => row.id === saved.id ? saved : row));
-              if (this.browseWithoutConcepts()) this.browseTotal.update((total) => Math.max(0, total - 1));
+              if (this.browseWithoutTopics()) this.browseTotal.update((total) => Math.max(0, total - 1));
               this.refreshIndexAndStats();
-              this.toast.success('Note linked to a concept');
+              this.toast.success('Note linked to a topic');
             }
           }
-          this.clearConceptProposals();
+          this.clearTopicProposals();
         } else {
           this.proposalState.set('error');
           this.proposalMessage.set(event.error ?? 'No link was made. You can retry or link manually.');
@@ -627,22 +628,22 @@ export class SecondBrain implements AfterViewChecked {
 
     effect(() => {
       const key = this.focusedNoteKey();
-      if (this.proposalNoteKey && this.proposalNoteKey !== key) this.clearConceptProposals();
+      if (this.proposalNoteKey && this.proposalNoteKey !== key) this.clearTopicProposals();
     });
 
-    this.conceptsService.list().subscribe({
+    this.topicsService.list().subscribe({
       next: (data) => {
-        this.concepts.set(data);
-        this.loadingConcepts.set(false);
+        this.topics.set(data);
+        this.loadingTopics.set(false);
       },
       error: () => {
-        this.loadingConcepts.set(false);
-        this.toast.error('Failed to load concepts');
+        this.loadingTopics.set(false);
+        this.toast.error('Failed to load topics');
       },
     });
 
-    this.conceptsService.getStats().subscribe({
-      next: (stats) => this.conceptStats.set(stats),
+    this.topicsService.getStats().subscribe({
+      next: (stats) => this.topicStats.set(stats),
       // Stats are editorial decoration. A failed request must not make the
       // index unavailable or produce a toast for an otherwise usable page.
       error: () => undefined,
@@ -652,7 +653,7 @@ export class SecondBrain implements AfterViewChecked {
 
     // Deliberately nothing else. The rail used to fetch the unlinked notes here,
     // on every visit, purely so it could render them as a second section under
-    // the concept index (issue #256). They now load only when the user opens
+    // the topic index (issue #256). They now load only when the user opens
     // review mode.
   }
 
@@ -673,9 +674,9 @@ export class SecondBrain implements AfterViewChecked {
     }, NOTE_SEARCH_DEBOUNCE_MS);
   }
 
-  setBrowseWithoutConcepts(value: boolean): void {
+  setBrowseWithoutTopics(value: boolean): void {
     if (this.browseHasUnsavedEdit()) return;
-    this.browseWithoutConcepts.set(value);
+    this.browseWithoutTopics.set(value);
     this.reloadBrowse();
   }
 
@@ -748,33 +749,33 @@ export class SecondBrain implements AfterViewChecked {
     this.browsePickerOpen.set(true);
   }
 
-  linkBrowseConcept(): void {
+  linkBrowseTopic(): void {
     const note = this.panelNote();
-    const concept = this.concepts().find((item) => item.id === this.browsePickerId());
-    if (!note || !concept || this.browseSaving()) return;
-    const content = this.withConceptReference(note.content, concept.name);
+    const topic = this.topics().find((item) => item.id === this.browsePickerId());
+    if (!note || !topic || this.browseSaving()) return;
+    const content = this.withTopicReference(note.content, topic.name);
     if (content === note.content) { this.browsePickerOpen.set(false); return; }
     this.saveBrowseNote(note, content);
   }
 
-  createBrowseConcept(): void {
+  createBrowseTopic(): void {
     const note = this.panelNote();
-    const name = this.browseNewConceptName();
+    const name = this.browseNewTopicName();
     if (!note || !name || this.browseSaving()) return;
-    // The existing processor creates the concept from this same canonical link.
-    this.saveBrowseNote(note, this.withConceptReference(note.content, name));
+    // The existing processor creates the topic from this same canonical link.
+    this.saveBrowseNote(note, this.withTopicReference(note.content, name));
   }
 
   private saveBrowseNote(note: NoteSearchHit, content: string): void {
     this.browseSaving.set(true);
     this.notesService.update(note.id, { content, selectedText: note.selectedText ?? undefined }).subscribe({
       next: () => {
-        const saved: NoteSearchHit = { ...note, content, conceptNames: declaredConceptNames(content),
+        const saved: NoteSearchHit = { ...note, content, topicNames: declaredTopicNames(content),
           snippet: note.selectedText || content.slice(0, 160) };
-        this.browseNotes.update((items) => this.browseWithoutConcepts() && saved.conceptNames.length
+        this.browseNotes.update((items) => this.browseWithoutTopics() && saved.topicNames.length
           ? items.filter((item) => item.id !== note.id)
           : items.map((item) => item.id === note.id ? saved : item));
-        if (this.browseWithoutConcepts() && saved.conceptNames.length) {
+        if (this.browseWithoutTopics() && saved.topicNames.length) {
           this.browseTotal.update((total) => Math.max(0, total - 1));
         }
         if (this.panelNote()?.id === note.id) this.panelNote.set(saved);
@@ -800,7 +801,7 @@ export class SecondBrain implements AfterViewChecked {
     this.notesService.browse({
       query: this.browseQuery(),
       bookId: this.browseBookId() ?? undefined,
-      withoutConcepts: this.browseWithoutConcepts(),
+      withoutTopics: this.browseWithoutTopics(),
       oldestFirst: this.browseOldestFirst(),
       limit: REVIEW_PAGE_SIZE,
       offset,
@@ -830,34 +831,34 @@ export class SecondBrain implements AfterViewChecked {
 
   private focusedNoteKey(): string | null {
     const note = this.focusedNote();
-    return note ? JSON.stringify([note.id, note.content, note.selectedText, note.conceptNames]) : null;
+    return note ? JSON.stringify([note.id, note.content, note.selectedText, note.topicNames]) : null;
   }
 
   /** Explicitly request the assistant's validated proposal artifact beside this note. */
   askNostos(): void {
     const note = this.focusedNote();
     if (!note || this.browseEditing() || this.reviewEditing()) return;
-    this.clearConceptProposals();
+    this.clearTopicProposals();
     this.proposalNoteKey = this.focusedNoteKey();
     this.proposalNoteId = note.id;
-    const turnId = this.assistant.requestConceptProposals(note.id);
+    const turnId = this.assistant.requestTopicProposals(note.id);
     if (!turnId) {
       this.proposalState.set('unavailable');
-      this.proposalMessage.set('Ask Nostos is busy or unavailable. You can still link a concept manually.');
+      this.proposalMessage.set('Ask Nostos is busy or unavailable. You can still link a topic manually.');
       return;
     }
     this.proposalTurnId = turnId;
     this.proposalState.set('loading');
   }
 
-  cancelConceptProposals(): void {
-    this.clearConceptProposals();
+  cancelTopicProposals(): void {
+    this.clearTopicProposals();
     queueMicrotask(() => (this.host.nativeElement as HTMLElement).querySelector<HTMLButtonElement>(
-      this.isReviewing() ? '[data-testid="review-suggest-concepts"]' : '[data-testid="browse-suggest-concepts"]',
+      this.isReviewing() ? '[data-testid="review-suggest-topics"]' : '[data-testid="browse-suggest-topics"]',
     )?.focus());
   }
 
-  private clearConceptProposals(): void {
+  private clearTopicProposals(): void {
     if (this.proposalTurnId) {
       this.ignoredProposalTurns.add(this.proposalTurnId);
       if (this.assistant.activeTurnId() === this.proposalTurnId) this.assistant.stopActiveTurn();
@@ -875,7 +876,7 @@ export class SecondBrain implements AfterViewChecked {
     this.proposalState.set('idle');
   }
 
-  inspectConceptProposal(candidate: AssistantSuggestionDto): void {
+  inspectTopicProposal(candidate: AssistantSuggestionDto): void {
     if (!candidate.value || this.proposalNoteKey !== this.focusedNoteKey()) return;
     if (this.proposalInspectingId() === candidate.value) {
       this.proposalInspectingId.set(null);
@@ -885,7 +886,7 @@ export class SecondBrain implements AfterViewChecked {
     this.proposalMessage.set(null);
     this.proposalDetail.set(null);
     this.proposalInspectingId.set(candidate.value);
-    this.conceptsService.get(candidate.value).subscribe({
+    this.topicsService.get(candidate.value).subscribe({
       next: (detail) => {
         if (this.proposalInspectingId() === detail.id && this.proposalNoteKey === this.focusedNoteKey())
           this.proposalDetail.set(detail);
@@ -893,13 +894,13 @@ export class SecondBrain implements AfterViewChecked {
       error: () => {
         if (this.proposalInspectingId() === candidate.value) {
           this.proposalInspectingId.set(null);
-          this.proposalMessage.set('Could not load this concept. Try again or choose another.');
+          this.proposalMessage.set('Could not load this topic. Try again or choose another.');
         }
       },
     });
   }
 
-  acceptConceptProposal(candidate: AssistantSuggestionDto): void {
+  acceptTopicProposal(candidate: AssistantSuggestionDto): void {
     const note = this.focusedNote();
     if (!note || this.proposalState() !== 'ready' || this.proposalNoteKey !== this.focusedNoteKey()
       || candidate.noteId !== note.id || !candidate.value || this.assistant.sending()) return;
@@ -922,7 +923,7 @@ export class SecondBrain implements AfterViewChecked {
   retryProposalLink(): void {
     if (!this.proposalAccepted || !this.canRetryProposalLink()) return;
     this.proposalState.set('ready');
-    this.acceptConceptProposal(this.proposalAccepted);
+    this.acceptTopicProposal(this.proposalAccepted);
   }
 
   openAskNostosForNote(): void {
@@ -960,7 +961,7 @@ export class SecondBrain implements AfterViewChecked {
     }
   }
 
-  private compareForSort(a: ConceptDto, b: ConceptDto): number {
+  private compareForSort(a: TopicDto, b: TopicDto): number {
     switch (this.indexSort()) {
       case 'az':
         return a.name.localeCompare(b.name);
@@ -971,10 +972,10 @@ export class SecondBrain implements AfterViewChecked {
     }
   }
 
-  private filterAndSortConcepts(queryText: string, excludedId: string | null): ConceptDto[] {
+  private filterAndSortTopics(queryText: string, excludedId: string | null): TopicDto[] {
     const query = normalizeSearchText(queryText.trim());
-    const rows = this.concepts().filter(
-      (concept) => concept.id !== excludedId && (!query || normalizeSearchText(concept.name).includes(query))
+    const rows = this.topics().filter(
+      (topic) => topic.id !== excludedId && (!query || normalizeSearchText(topic.name).includes(query))
     );
 
     return rows.sort((a, b) => {
@@ -1013,7 +1014,7 @@ export class SecondBrain implements AfterViewChecked {
 
   private runNoteSearch(term: string): void {
     const seq = ++this.noteSearchSeq;
-    this.conceptsService.searchNotes(term).subscribe({
+    this.topicsService.searchNotes(term).subscribe({
       next: (rows) => {
         if (seq === this.noteSearchSeq) this.noteMatches.set(rows ?? []);
       },
@@ -1097,7 +1098,7 @@ export class SecondBrain implements AfterViewChecked {
       ? this.notesService.browse({
           query: this.reviewBrowseQuery,
           bookId: this.reviewBookId ?? undefined,
-          withoutConcepts: true,
+          withoutTopics: true,
           oldestFirst: this.reviewOldestFirst,
           limit: REVIEW_PAGE_SIZE,
           offset: this.reviewQueue().length,
@@ -1120,7 +1121,7 @@ export class SecondBrain implements AfterViewChecked {
         if (seq !== this.reviewSeq) return;
         this.reviewLoading.set(false);
         this.reviewError.set(true);
-        this.toast.error('Notes with no concept could not be loaded');
+        this.toast.error('Notes with no topic could not be loaded');
       },
     });
   }
@@ -1182,8 +1183,8 @@ export class SecondBrain implements AfterViewChecked {
    * Save the reviewed note's text.
    *
    * This is the canonical note edit path, unchanged: the server re-reads the
-   * `[[Concept]]` links from the body on save. What review mode adds is the
-   * consequence — a note that now declares a concept has been resolved, so it
+   * `[[Topic]]` links from the body on save. What review mode adds is the
+   * consequence — a note that now declares a topic has been resolved, so it
    * leaves the queue immediately instead of waiting for a reload.
    */
   saveReviewEdit(): void {
@@ -1204,11 +1205,11 @@ export class SecondBrain implements AfterViewChecked {
         this.reviewMutated = true;
         this.refreshIndexAndStats();
 
-        if (declaresConcept(content)) {
+        if (declaresTopic(content)) {
           this.removeFromReview(note.id);
-          this.toast.success('Note linked to a concept');
+          this.toast.success('Note linked to a topic');
         } else {
-          // Still belongs to no concept. Keep it queued, showing what was just
+          // Still belongs to no topic. Keep it queued, showing what was just
           // written, rather than pretending the edit resolved anything.
           this.reviewQueue.update((rows) =>
             rows.map((row) => (row.id === note.id ? { ...row, content } : row))
@@ -1226,47 +1227,47 @@ export class SecondBrain implements AfterViewChecked {
   openReviewPicker(): void {
     this.reviewEditing.set(false);
     this.reviewPickerQuery.set('');
-    this.reviewPickerConceptId.set(null);
+    this.reviewPickerTopicId.set(null);
     this.reviewPickerOpen.set(true);
   }
 
   closeReviewPicker(): void {
     this.reviewPickerOpen.set(false);
     this.reviewPickerQuery.set('');
-    this.reviewPickerConceptId.set(null);
+    this.reviewPickerTopicId.set(null);
   }
 
-  chooseReviewConcept(id: string): void {
-    this.reviewPickerConceptId.set(id);
+  chooseReviewTopic(id: string): void {
+    this.reviewPickerTopicId.set(id);
   }
 
   /**
-   * Link the reviewed note to an existing concept.
+   * Link the reviewed note to an existing topic.
    *
    * The association written here is the canonical one this codebase has: the note
-   * body gains an explicit `[[Concept]]` reference and the server rebuilds the
-   * note's concept links from it. Nothing is invented — the concept must already
+   * body gains an explicit `[[Topic]]` reference and the server rebuilds the
+   * note's topic links from it. Nothing is invented — the topic must already
    * exist, it is chosen by the user, and no prose is rewritten beyond appending
    * the reference. Membership is never stored as a link the next note save would
    * silently drop.
    */
-  confirmLinkToConcept(): void {
+  confirmLinkToTopic(): void {
     const note = this.reviewNote();
-    const concept = this.reviewPickerConcept();
-    if (!note || !concept || this.reviewSaving()) return;
+    const topic = this.reviewPickerTopic();
+    if (!note || !topic || this.reviewSaving()) return;
 
-    this.saveReviewLink(note, concept.name);
+    this.saveReviewLink(note, topic.name);
   }
 
-  createReviewConcept(): void {
+  createReviewTopic(): void {
     const note = this.reviewNote();
-    const name = this.reviewNewConceptName();
+    const name = this.reviewNewTopicName();
     if (!note || !name || this.reviewSaving()) return;
     this.saveReviewLink(note, name);
   }
 
   private saveReviewLink(note: NoteSearchHit, name: string): void {
-    const content = this.withConceptReference(note.content, name);
+    const content = this.withTopicReference(note.content, name);
     this.reviewSaving.set(true);
     this.notesService.update(note.id, { content, selectedText: note.selectedText ?? undefined }).subscribe({
       next: () => {
@@ -1285,9 +1286,9 @@ export class SecondBrain implements AfterViewChecked {
   }
 
   /** `content` with an explicit `[[name]]` reference, appended unless already there. */
-  private withConceptReference(content: string, name: string): string {
+  private withTopicReference(content: string, name: string): string {
     const trimmedName = name.trim();
-    const declared = declaredConceptNames(content).some(
+    const declared = declaredTopicNames(content).some(
       (existing) => existing.toLowerCase() === trimmedName.toLowerCase()
     );
     if (declared) return content;
@@ -1332,7 +1333,7 @@ export class SecondBrain implements AfterViewChecked {
 
   captureRestored(saved: Note): void {
     this.reviewMutated = true;
-    // Apply the committed text immediately, then read canonical concept links.
+    // Apply the committed text immediately, then read canonical topic links.
     if (this.panelNote()?.id === saved.id) {
       this.panelNote.update((note) => note ? { ...note, content: saved.content,
         processingMode: saved.processingMode } : note);
@@ -1342,14 +1343,14 @@ export class SecondBrain implements AfterViewChecked {
     this.browseNotes.update((rows) => rows.map((note) => note.id === saved.id
       ? { ...note, content: saved.content, processingMode: saved.processingMode } : note));
     this.invalidateAllDetailEntries();
-    if (this.selectedId()) this.selectConcept(this.selectedId()!);
+    if (this.selectedId()) this.selectTopic(this.selectedId()!);
     this.invalidateRelatedData(true);
     this.refreshIndexAndStats();
     this.notesService.get(saved.id).subscribe({
       next: (note) => {
         if (this.panelNote()?.id === saved.id) this.panelNote.set(note);
         this.reviewQueue.update((rows) => rows.map((row) => row.id === saved.id ? note : row));
-        if (note.conceptNames.length) this.removeFromReview(saved.id);
+        if (note.topicNames.length) this.removeFromReview(saved.id);
         if (this.browseLoaded() && !this.browseEditing()) {
           // Reconcile filtering/counts without closing the inspector the user
           // just restored (or a different note they selected meanwhile).
@@ -1385,9 +1386,9 @@ export class SecondBrain implements AfterViewChecked {
    * Selecting from the index. A content match is only useful if the notes that
    * matched are the ones on screen, so the note filter comes along with it.
    */
-  selectIndexRow(concept: ConceptDto): void {
-    this.selectConcept(concept.id);
-    if (concept.noteMatchCount) this.setNoteSearchQuery(this.searchQuery());
+  selectIndexRow(topic: TopicDto): void {
+    this.selectTopic(topic.id);
+    if (topic.noteMatchCount) this.setNoteSearchQuery(this.searchQuery());
   }
 
   setNoteSearchQuery(query: string): void {
@@ -1418,7 +1419,7 @@ export class SecondBrain implements AfterViewChecked {
       return;
     }
 
-    if (event.key === 'ArrowDown' && this.filteredConcepts().length > 0) {
+    if (event.key === 'ArrowDown' && this.filteredTopics().length > 0) {
       event.preventDefault();
       this.focusCursor(0);
     }
@@ -1431,7 +1432,7 @@ export class SecondBrain implements AfterViewChecked {
   handleIndexKeydown(event: KeyboardEvent, index: number, id: string): void {
     if (event.key === 'ArrowDown') {
       event.preventDefault();
-      this.focusCursor(Math.min(index + 1, this.filteredConcepts().length - 1));
+      this.focusCursor(Math.min(index + 1, this.filteredTopics().length - 1));
       return;
     }
 
@@ -1443,19 +1444,19 @@ export class SecondBrain implements AfterViewChecked {
 
     if (event.key === 'Enter' || event.key === ' ' || event.key === 'Spacebar') {
       event.preventDefault();
-      this.selectConceptFromIndex(id);
+      this.selectTopicFromIndex(id);
     }
   }
 
   /** Keyboard selection shares the row's behaviour, content filter included. */
-  private selectConceptFromIndex(id: string): void {
-    const concept = this.filteredConcepts().find((row) => row.id === id);
-    if (concept) this.selectIndexRow(concept);
-    else this.selectConcept(id);
+  private selectTopicFromIndex(id: string): void {
+    const topic = this.filteredTopics().find((row) => row.id === id);
+    if (topic) this.selectIndexRow(topic);
+    else this.selectTopic(id);
   }
 
   private focusCursor(index: number): void {
-    const rows = this.filteredConcepts();
+    const rows = this.filteredTopics();
     if (rows.length === 0) return;
 
     const boundedIndex = Math.max(0, Math.min(index, rows.length - 1));
@@ -1470,15 +1471,15 @@ export class SecondBrain implements AfterViewChecked {
     row.scrollIntoView?.({ block: 'nearest' });
   }
 
-  letterFor(concept: ConceptDto): string {
-    const firstLetter = concept.name.trim().charAt(0);
+  letterFor(topic: TopicDto): string {
+    const firstLetter = topic.name.trim().charAt(0);
     return firstLetter ? firstLetter.toLocaleUpperCase() : '#';
   }
 
   isLetterStart(index: number): boolean {
     if (!this.showLetterSeparators()) return false;
     if (index === 0) return true;
-    const rows = this.filteredConcepts();
+    const rows = this.filteredTopics();
     return this.letterFor(rows[index]) !== this.letterFor(rows[index - 1]);
   }
 
@@ -1518,9 +1519,9 @@ export class SecondBrain implements AfterViewChecked {
 
   startRename(id: string, surface: RenameSurface = 'index'): void {
     if (this.renaming()) return;
-    const concept = this.concepts().find((candidate) => candidate.id === id);
+    const topic = this.topics().find((candidate) => candidate.id === id);
     const detail = this.selectedDetail();
-    const name = concept?.name ?? (detail?.id === id ? detail.name : null);
+    const name = topic?.name ?? (detail?.id === id ? detail.name : null);
     if (!name) return;
 
     this.renameId.set(id);
@@ -1545,18 +1546,18 @@ export class SecondBrain implements AfterViewChecked {
 
     const name = this.renameValue().trim();
     if (!name) {
-      this.renameError.set('A concept name is required.');
+      this.renameError.set('A topic name is required.');
       return;
     }
 
-    const original = this.concepts().find((concept) => concept.id === id);
+    const original = this.topics().find((topic) => topic.id === id);
     if (!original) {
       this.cancelRename();
       return;
     }
 
     this.renaming.set(true);
-    this.conceptsService.rename(id, name).subscribe({
+    this.topicsService.rename(id, name).subscribe({
       next: (survivor) => {
         this.renaming.set(false);
         this.renameId.set(null);
@@ -1567,12 +1568,12 @@ export class SecondBrain implements AfterViewChecked {
       error: () => {
         this.renaming.set(false);
         this.cancelRename();
-        this.toast.error('Could not rename concept — changes were not saved');
+        this.toast.error('Could not rename topic — changes were not saved');
       },
     });
   }
 
-  private applyRenameResult(requestedId: string, survivor: ConceptDto): void {
+  private applyRenameResult(requestedId: string, survivor: TopicDto): void {
     const selectedBefore = this.selectedId();
     const detailBefore = this.selectedDetail();
     const merged = survivor.id !== requestedId;
@@ -1585,8 +1586,8 @@ export class SecondBrain implements AfterViewChecked {
     }
 
     if (!merged) {
-      this.concepts.update((items) =>
-        items.map((concept) => (concept.id === requestedId ? survivor : concept))
+      this.topics.update((items) =>
+        items.map((topic) => (topic.id === requestedId ? survivor : topic))
       );
 
       const cached = this.detailCache.get(requestedId);
@@ -1596,10 +1597,10 @@ export class SecondBrain implements AfterViewChecked {
       }
       this.toast.success(`Renamed to ${survivor.name}`);
     } else {
-      this.concepts.update((items) =>
+      this.topics.update((items) =>
         items
-          .filter((concept) => concept.id !== requestedId)
-          .map((concept) => (concept.id === survivor.id ? survivor : concept))
+          .filter((topic) => topic.id !== requestedId)
+          .map((topic) => (topic.id === survivor.id ? survivor : topic))
       );
       this.invalidateDetailEntries(requestedId, survivor.id);
 
@@ -1614,7 +1615,7 @@ export class SecondBrain implements AfterViewChecked {
             name: survivor.name,
           });
         }
-        this.selectConcept(survivor.id);
+        this.selectTopic(survivor.id);
       }
       this.toast.success(`Merged into ${survivor.name}`);
     }
@@ -1624,14 +1625,14 @@ export class SecondBrain implements AfterViewChecked {
 
   openMergePicker(): void {
     const sourceId = this.selectedId();
-    if (!sourceId || this.mergingConcept()) return;
+    if (!sourceId || this.mergingTopic()) return;
     this.mergeSearchQuery.set('');
     this.mergeTargetId.set(null);
     this.mergePickerOpen.set(true);
   }
 
   closeMergePicker(): void {
-    if (this.mergingConcept()) return;
+    if (this.mergingTopic()) return;
     this.mergePickerOpen.set(false);
     this.mergeSearchQuery.set('');
     this.mergeTargetId.set(null);
@@ -1645,7 +1646,7 @@ export class SecondBrain implements AfterViewChecked {
   openMergeConfirmation(): void {
     const sourceId = this.selectedId();
     const target = this.mergeTarget();
-    const source = sourceId ? this.concepts().find((concept) => concept.id === sourceId) : null;
+    const source = sourceId ? this.topics().find((topic) => topic.id === sourceId) : null;
     if (!source || !target || source.id === target.id) return;
 
     this.mergeConfirmation.set({
@@ -1659,24 +1660,24 @@ export class SecondBrain implements AfterViewChecked {
   }
 
   cancelMergeConfirmation(): void {
-    if (!this.mergingConcept()) this.mergeConfirmation.set(null);
+    if (!this.mergingTopic()) this.mergeConfirmation.set(null);
   }
 
   confirmMerge(): void {
     const request = this.mergeConfirmation();
-    if (!request || this.mergingConcept()) return;
+    if (!request || this.mergingTopic()) return;
 
-    this.mergingConcept.set(true);
-    this.conceptsService.merge(request.sourceId, request.targetId).subscribe({
+    this.mergingTopic.set(true);
+    this.topicsService.merge(request.sourceId, request.targetId).subscribe({
       next: (survivor) => {
-        this.mergingConcept.set(false);
+        this.mergingTopic.set(false);
         this.mergeConfirmation.set(null);
         const previousDetail = this.selectedDetail();
 
-        this.concepts.update((items) =>
+        this.topics.update((items) =>
           items
-            .filter((concept) => concept.id !== request.sourceId)
-            .map((concept) => (concept.id === survivor.id ? survivor : concept))
+            .filter((topic) => topic.id !== request.sourceId)
+            .map((topic) => (topic.id === survivor.id ? survivor : topic))
         );
         this.invalidateDetailEntries(request.sourceId, request.targetId);
         this.invalidateRelatedData(false);
@@ -1689,40 +1690,40 @@ export class SecondBrain implements AfterViewChecked {
               name: survivor.name,
             });
           }
-          this.selectConcept(survivor.id);
+          this.selectTopic(survivor.id);
         }
 
         this.toast.success(`Merged ${request.sourceName} into ${survivor.name}`);
         this.refreshIndexAndStats();
       },
       error: () => {
-        this.mergingConcept.set(false);
+        this.mergingTopic.set(false);
         this.mergeConfirmation.set(null);
-        this.toast.error('Could not merge concepts — changes were not saved');
+        this.toast.error('Could not merge topics — changes were not saved');
       },
     });
   }
 
-  openDeleteConcept(id: string): void {
-    if (this.deletingConcept()) return;
-    const concept = this.concepts().find((candidate) => candidate.id === id);
-    if (concept) this.conceptDeleteTarget.set(concept);
+  openDeleteTopic(id: string): void {
+    if (this.deletingTopic()) return;
+    const topic = this.topics().find((candidate) => candidate.id === id);
+    if (topic) this.topicDeleteTarget.set(topic);
   }
 
-  cancelDeleteConcept(): void {
-    if (!this.deletingConcept()) this.conceptDeleteTarget.set(null);
+  cancelDeleteTopic(): void {
+    if (!this.deletingTopic()) this.topicDeleteTarget.set(null);
   }
 
-  confirmDeleteConcept(): void {
-    const target = this.conceptDeleteTarget();
-    if (!target || this.deletingConcept()) return;
+  confirmDeleteTopic(): void {
+    const target = this.topicDeleteTarget();
+    if (!target || this.deletingTopic()) return;
 
-    this.deletingConcept.set(true);
-    this.conceptsService.delete(target.id).subscribe({
+    this.deletingTopic.set(true);
+    this.topicsService.delete(target.id).subscribe({
       next: () => {
-        this.deletingConcept.set(false);
-        this.conceptDeleteTarget.set(null);
-        this.concepts.update((items) => items.filter((concept) => concept.id !== target.id));
+        this.deletingTopic.set(false);
+        this.topicDeleteTarget.set(null);
+        this.topics.update((items) => items.filter((topic) => topic.id !== target.id));
         this.invalidateDetailEntries(target.id);
         this.invalidateRelatedData(false);
         if (this.selectedId() === target.id) {
@@ -1732,9 +1733,9 @@ export class SecondBrain implements AfterViewChecked {
         this.refreshIndexAndStats();
       },
       error: () => {
-        this.deletingConcept.set(false);
-        this.conceptDeleteTarget.set(null);
-        this.toast.error('Could not delete concept — it is still in your index');
+        this.deletingTopic.set(false);
+        this.topicDeleteTarget.set(null);
+        this.toast.error('Could not delete topic — it is still in your index');
       },
     });
   }
@@ -1747,7 +1748,7 @@ export class SecondBrain implements AfterViewChecked {
 
   requestDelete(id: string, event: MouseEvent): void {
     event.stopPropagation();
-    this.openDeleteConcept(id);
+    this.openDeleteTopic(id);
     this.deleteRequested.emit(id);
   }
 
@@ -1763,7 +1764,7 @@ export class SecondBrain implements AfterViewChecked {
   private prefetchRequest(id: string): void {
     this.pendingRequests.add(id);
     const requestVersion = this.detailRequestVersion;
-    this.conceptsService.get(id).subscribe({
+    this.topicsService.get(id).subscribe({
       next: (detail) => {
         this.pendingRequests.delete(id);
         if (requestVersion !== this.detailRequestVersion) return;
@@ -1825,37 +1826,37 @@ export class SecondBrain implements AfterViewChecked {
    * map the moment you used it, which is the opposite of a whole-brain view.
    * Selection highlights the node (and its index row); the detail is still
    * fetched so the cache is warm. Opening the notes is an explicit action: a
-   * double-click on the node (`openConceptFromMap`), or the rail's "Read notes".
+   * double-click on the node (`openTopicFromMap`), or the rail's "Read notes".
    */
-  onMapConceptSelected(id: string): void {
-    this.selectConcept(id);
+  onMapTopicSelected(id: string): void {
+    this.selectTopic(id);
   }
 
   /**
-   * Open a concept from the map: double-click, or the rail's "Read notes".
+   * Open a topic from the map: double-click, or the rail's "Read notes".
    *
-   * Always switches to list view, because the concept's notes ARE the detail
+   * Always switches to list view, because the topic's notes ARE the detail
    * pane — there is nowhere to show them while the map owns the screen.
    */
-  openConceptFromMap(id: string): void {
-    this.selectConcept(id);
+  openTopicFromMap(id: string): void {
+    this.selectTopic(id);
     this.setViewMode('list');
   }
 
-  /** Leave the map to read the selected concept's notes (the rail action). */
-  openSelectedConcept(): void {
+  /** Leave the map to read the selected topic's notes (the rail action). */
+  openSelectedTopic(): void {
     if (!this.selectedId()) return;
     this.setViewMode('list');
   }
 
   /** True when the map has a selection that can be opened. */
-  canOpenSelectedConcept = computed(() => !!this.selectedId() && this.viewMode() === 'map');
+  canOpenSelectedTopic = computed(() => !!this.selectedId() && this.viewMode() === 'map');
 
-  /** The selected concept's display name, for the map's selection bar. */
-  selectedConceptName = computed(() => {
+  /** The selected topic's display name, for the map's selection bar. */
+  selectedTopicName = computed(() => {
     const id = this.selectedId();
     if (!id || this.viewMode() !== 'map') return null;
-    return this.concepts().find((concept) => concept.id === id)?.name ?? null;
+    return this.topics().find((topic) => topic.id === id)?.name ?? null;
   });
 
   private readStoredSort(): IndexSort {
@@ -1906,7 +1907,7 @@ export class SecondBrain implements AfterViewChecked {
     return Number.isNaN(timestamp) ? null : timestamp;
   }
 
-  selectConcept(id: string): void {
+  selectTopic(id: string): void {
     if (id !== this.selectedId()) {
       this.clearSourceSelectionState();
       this.closeWritingHandoff();
@@ -1922,14 +1923,14 @@ export class SecondBrain implements AfterViewChecked {
     const cached = this.detailCache.get(id);
     if (cached) {
       // Instant, animation-free swap: same background, no loading surface, no
-      // blur — the pane simply shows the concept that was asked for.
+      // blur — the pane simply shows the topic that was asked for.
       this.selectedDetail.set(cached);
       this.loadingDetail.set(false);
       return;
     }
 
     if (this.pendingRequests.has(id)) {
-      // A prefetch is already in flight for exactly this concept; let it land
+      // A prefetch is already in flight for exactly this topic; let it land
       // and set the detail when it lands, so we do not start a duplicate
       // request or dim content twice.
       this.loadingDetail.set(true);
@@ -1939,11 +1940,11 @@ export class SecondBrain implements AfterViewChecked {
     }
 
     const requestVersion = this.detailRequestVersion;
-    this.conceptsService.get(id).subscribe({
+    this.topicsService.get(id).subscribe({
       next: (detail) => {
         if (requestVersion !== this.detailRequestVersion) return;
         this.detailCache.set(id, detail);
-        // Ignore a response for a concept the user has already moved on from.
+        // Ignore a response for a topic the user has already moved on from.
         if (this.selectedId() !== id) return;
         this.selectedDetail.set(detail);
         this.loadingDetail.set(false);
@@ -1951,7 +1952,7 @@ export class SecondBrain implements AfterViewChecked {
       error: () => {
         if (requestVersion !== this.detailRequestVersion) return;
         if (this.selectedId() !== id) return;
-        this.toast.error('Failed to load concept details');
+        this.toast.error('Failed to load topic details');
         this.loadingDetail.set(false);
       },
     });
@@ -1965,7 +1966,7 @@ export class SecondBrain implements AfterViewChecked {
     this.relatedEvidenceId.set(null);
     this.loadingDetail.set(false);
     this.selectedDetail.set(null);
-    this.relatedConcepts.set([]);
+    this.relatedTopics.set([]);
   }
 
   startSourceSelection(): void {
@@ -2047,7 +2048,7 @@ export class SecondBrain implements AfterViewChecked {
   }
 
   /**
-   * Notes opened from the Notes index and notes shown as concept evidence are the
+   * Notes opened from the Notes index and notes shown as topic evidence are the
    * same saved object. Feed both through the shared NoteCard presentation so a
    * quotation/reflection does not acquire a second Brain-only visual language.
    */
@@ -2070,7 +2071,7 @@ export class SecondBrain implements AfterViewChecked {
     const cached = this.relatedCache.get(id);
     if (cached) {
       if (this.selectedId() === id) {
-        this.relatedConcepts.set(cached);
+        this.relatedTopics.set(cached);
         this.relatedLoading.set(false);
       }
       return;
@@ -2083,20 +2084,20 @@ export class SecondBrain implements AfterViewChecked {
     this.pendingRelatedRequests.add(id);
     if (this.selectedId() === id) this.relatedLoading.set(true);
     const requestVersion = this.relatedRequestVersion;
-    this.http.get<RelatedConceptDto[]>(`/api/concepts/${id}/related`).subscribe({
+    this.http.get<RelatedTopicDto[]>(`/api/topics/${id}/related`).subscribe({
       next: (related) => {
         this.pendingRelatedRequests.delete(id);
         if (requestVersion !== this.relatedRequestVersion) return;
         this.relatedCache.set(id, related);
         if (this.selectedId() !== id) return;
-        this.relatedConcepts.set(related);
+        this.relatedTopics.set(related);
         this.relatedLoading.set(false);
       },
       error: () => {
         this.pendingRelatedRequests.delete(id);
         if (requestVersion !== this.relatedRequestVersion) return;
         if (this.selectedId() !== id) return;
-        this.relatedConcepts.set([]);
+        this.relatedTopics.set([]);
         this.relatedLoading.set(false);
       },
     });
@@ -2106,7 +2107,7 @@ export class SecondBrain implements AfterViewChecked {
     this.relatedRequestVersion += 1;
     this.relatedCache.clear();
     this.pendingRelatedRequests.clear();
-    this.relatedConcepts.set([]);
+    this.relatedTopics.set([]);
     this.relatedExpanded.set(false);
     this.relatedEvidenceId.set(null);
     this.relatedLoading.set(false);
@@ -2133,13 +2134,13 @@ export class SecondBrain implements AfterViewChecked {
     // Mutation responses update the visible row immediately. These background
     // reads reconcile counts and cover server-side deduplication after a merge,
     // without toggling the list's wait field or covering the detail pane.
-    this.conceptsService.list().subscribe({
-      next: (data) => this.concepts.set(data),
-      error: () => this.toast.error('The concept index could not be refreshed'),
+    this.topicsService.list().subscribe({
+      next: (data) => this.topics.set(data),
+      error: () => this.toast.error('The topic index could not be refreshed'),
     });
-    this.conceptsService.getStats().subscribe({
-      next: (stats) => this.conceptStats.set(stats),
-      error: () => this.toast.error('The concept statistics could not be refreshed'),
+    this.topicsService.getStats().subscribe({
+      next: (stats) => this.topicStats.set(stats),
+      error: () => this.toast.error('The topic statistics could not be refreshed'),
     });
   }
 
@@ -2152,13 +2153,13 @@ export class SecondBrain implements AfterViewChecked {
   }
 
   onUpdateNote(event: { id: string; content: string; selectedText?: string }): void {
-    const conceptId = this.selectedId();
+    const topicId = this.selectedId();
     const detail = this.selectedDetail();
     const original = detail?.notes.find((note) => note.noteId === event.id);
-    if (!conceptId || !detail || !original) return;
+    if (!topicId || !detail || !original) return;
 
     const previousDetail = detail;
-    const optimisticDetail: ConceptDetailDto = {
+    const optimisticDetail: TopicDetailDto = {
       ...detail,
       notes: detail.notes.map((note) =>
         note.noteId === event.id
@@ -2166,15 +2167,15 @@ export class SecondBrain implements AfterViewChecked {
           : note
       ),
     };
-    this.commitDetail(conceptId, optimisticDetail);
+    this.commitDetail(topicId, optimisticDetail);
 
     this.notesService
       .update(event.id, { content: event.content, selectedText: event.selectedText })
       .subscribe({
         next: (updated) => {
-          const current = this.detailCache.get(conceptId);
+          const current = this.detailCache.get(topicId);
           if (current) {
-            this.commitDetail(conceptId, {
+            this.commitDetail(topicId, {
               ...current,
               notes: current.notes.map((note) =>
                 note.noteId === event.id ? this.contextFromNote(updated, note) : note
@@ -2182,22 +2183,22 @@ export class SecondBrain implements AfterViewChecked {
             });
           }
 
-          // Updating note text re-processes every [[Concept]] link on the
-          // server. A note can therefore leave one concept, join another, or
+          // Updating note text re-processes every [[Topic]] link on the
+          // server. A note can therefore leave one topic, join another, or
           // change the aggregate reference count without changing its own id.
           // Keep the optimistic card in place, but discard every potentially
-          // stale concept detail and related graph before reloading the active
+          // stale topic detail and related graph before reloading the active
           // pane. The refresh is deliberately in-place: the pane background
           // does not change, so it must not show a loading surface or arrival
           // animation while the canonical membership lands.
           this.invalidateAllDetailEntries();
           this.invalidateRelatedData(true);
-          this.reloadDetailInPlace(conceptId);
+          this.reloadDetailInPlace(topicId);
           this.refreshIndexAndStats();
           this.toast.success('Note updated');
         },
         error: () => {
-          this.commitDetail(conceptId, previousDetail);
+          this.commitDetail(topicId, previousDetail);
           this.toast.error('Failed to update note — changes reverted');
         },
       });
@@ -2215,24 +2216,24 @@ export class SecondBrain implements AfterViewChecked {
 
   confirmDeleteNote(): void {
     const target = this.deleteTarget();
-    const conceptId = this.selectedId();
+    const topicId = this.selectedId();
     const detail = this.selectedDetail();
-    if (!target || !conceptId || !detail || this.deletingNote()) return;
+    if (!target || !topicId || !detail || this.deletingNote()) return;
 
     const previousDetail = detail;
     this.deletingNote.set(true);
-    this.commitDetail(conceptId, {
+    this.commitDetail(topicId, {
       ...detail,
       notes: detail.notes.filter((note) => note.noteId !== target.noteId),
     });
 
     this.notesService.delete(target.noteId).subscribe({
       next: () => {
-        this.adjustConceptUsage(conceptId, -1);
-        // Deleting a note removes all of its NoteConcept links, not just the
-        // link for the concept currently open. The optimistic card/count above
+        this.adjustTopicUsage(topicId, -1);
+        // Deleting a note removes all of its NoteTopic links, not just the
+        // link for the topic currently open. The optimistic card/count above
         // makes the active pane immediate; these cache invalidations and
-        // background reads reconcile every concept row and aggregate stat.
+        // background reads reconcile every topic row and aggregate stat.
         this.invalidateAllDetailEntries();
         this.invalidateRelatedData(true);
         this.refreshIndexAndStats();
@@ -2241,7 +2242,7 @@ export class SecondBrain implements AfterViewChecked {
         this.toast.success('Note deleted');
       },
       error: () => {
-        this.commitDetail(conceptId, previousDetail);
+        this.commitDetail(topicId, previousDetail);
         this.deletingNote.set(false);
         this.deleteTarget.set(null);
         this.toast.error('Failed to delete note — note restored');
@@ -2249,16 +2250,16 @@ export class SecondBrain implements AfterViewChecked {
     });
   }
 
-  private commitDetail(conceptId: string, detail: ConceptDetailDto): void {
-    this.detailCache.set(conceptId, detail);
-    if (this.selectedId() === conceptId) this.selectedDetail.set(detail);
+  private commitDetail(topicId: string, detail: TopicDetailDto): void {
+    this.detailCache.set(topicId, detail);
+    if (this.selectedId() === topicId) this.selectedDetail.set(detail);
   }
 
   private reloadDetailInPlace(id: string): void {
     this.loadingDetail.set(true);
     const requestVersion = this.detailRequestVersion;
     this.pendingRequests.add(id);
-    this.conceptsService.get(id).subscribe({
+    this.topicsService.get(id).subscribe({
       next: (detail) => {
         this.pendingRequests.delete(id);
         if (requestVersion !== this.detailRequestVersion) return;
@@ -2273,7 +2274,7 @@ export class SecondBrain implements AfterViewChecked {
         if (requestVersion !== this.detailRequestVersion) return;
         if (this.selectedId() !== id) return;
         this.loadingDetail.set(false);
-        this.toast.error('Note saved, but this concept could not be refreshed');
+        this.toast.error('Note saved, but this topic could not be refreshed');
       },
     });
   }
@@ -2290,40 +2291,40 @@ export class SecondBrain implements AfterViewChecked {
     };
   }
 
-  private adjustConceptUsage(conceptId: string, delta: number): void {
-    this.concepts.update((items) =>
-      items.map((concept) =>
-        concept.id === conceptId
-          ? { ...concept, usageCount: Math.max(0, concept.usageCount + delta) }
-          : concept
+  private adjustTopicUsage(topicId: string, delta: number): void {
+    this.topics.update((items) =>
+      items.map((topic) =>
+        topic.id === topicId
+          ? { ...topic, usageCount: Math.max(0, topic.usageCount + delta) }
+          : topic
       )
     );
-    this.conceptStats.update((stats) =>
+    this.topicStats.update((stats) =>
       stats
         ? { ...stats, totalReferences: Math.max(0, stats.totalReferences + delta) }
         : stats
     );
   }
 
-  // Handler for clicking concepts inside the text
+  // Handler for clicking topics inside the text
   handleContentClick(event: MouseEvent): void {
     const target = event.target as HTMLElement;
-    // The pipe adds the 'concept-tag' class and 'data-concept-id' attribute
-    const conceptTag = target.closest('.concept-tag');
-    if (conceptTag) {
+    // The pipe adds the 'topic-tag' class and 'data-topic-id' attribute
+    const topicTag = target.closest('.topic-tag');
+    if (topicTag) {
       // Angular's innerHTML sanitizer may remove the data attribute in some
-      // browser/test DOMs. The rendered label is still the canonical concept
+      // browser/test DOMs. The rendered label is still the canonical topic
       // name, so use it as a safe fallback while retaining the fast id path.
-      const conceptId =
-        conceptTag.getAttribute('data-concept-id') ??
-        this.concepts().find(
-          (concept) => concept.name.trim().toLowerCase() === conceptTag.textContent?.trim().toLowerCase()
+      const topicId =
+        topicTag.getAttribute('data-topic-id') ??
+        this.topics().find(
+          (topic) => topic.name.trim().toLowerCase() === topicTag.textContent?.trim().toLowerCase()
         )?.id;
-      if (conceptId) {
+      if (topicId) {
         event.preventDefault();
         event.stopPropagation();
         if (this.isBrowsingNotes()) this.setViewMode('list');
-        this.selectConcept(conceptId);
+        this.selectTopic(topicId);
       }
     }
   }

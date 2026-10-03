@@ -13,8 +13,8 @@
  *    control stayed in the document.
  *  - The Studio's document tree is the only way to open a document, but its
  *    chevrons were 12x20px and its row actions 22x22px.
- *  - Brain's "Back to Index" is the only exit from the concept detail sheet
- *    (the index column is display:none while a concept is open) yet it was a
+ *  - Brain's "Back to Index" is the only exit from the topic detail sheet
+ *    (the index column is display:none while a topic is open) yet it was a
  *    static block at the top of the scrolling column, so it left the viewport
  *    permanently once the sheet was scrolled.
  *
@@ -32,11 +32,11 @@ const MIN_TAP_TARGET = 44; // CSS px, Apple HIG / Material minimum
 let fixture: ReturnType<typeof loadFixture>;
 
 /**
- * Concepts seeded by this spec, cleaned up in `afterAll`.
+ * Topics seeded by this spec, cleaned up in `afterAll`.
  *
  * Every Playwright spec shares ONE fixture instance, and
  * `visual-regression.spec.ts`'s `brain-empty-desktop` asserts the *pristine*
- * empty state. A spec that leaves concepts behind therefore poisons it for
+ * empty state. A spec that leaves topics behind therefore poisons it for
  * every later spec — which is exactly what happened before `seedBrain`/
  * `cleanupBrain` were used here. See `support/brain-fixture.ts`.
  */
@@ -202,22 +202,22 @@ test('the studio document tree exposes 44px expand chevrons', async ({ page }) =
 
 test('the Brain back control stays reachable after scrolling the detail sheet', async ({ page }) => {
   // Notes are created through a book (the app has no standalone POST /api/notes),
-  // and a note's [[Concept]] reference is what materialises the concept. Seeded via
+  // and a note's [[Topic]] reference is what materialises the topic. Seeded via
   // the shared helper so `afterAll` can restore the fixture exactly.
-  const concept = `MobilePolish${Date.now()}`;
+  const topic = `MobilePolish${Date.now()}`;
   const seed = await seedBrain(
     fixture.baseUrl,
-    `Mobile Polish Brain ${concept}`,
+    `Mobile Polish Brain ${topic}`,
     [
-      `A note referencing [[${concept}]] with enough surrounding text to push the ` +
+      `A note referencing [[${topic}]] with enough surrounding text to push the ` +
         'detail sheet well past the fold. '.repeat(30),
     ],
-    [concept],
+    [topic],
   );
   seeds.push(seed);
 
   await page.goto(`${fixture.baseUrl}/second-brain`, { waitUntil: 'domcontentloaded' });
-  const item = page.locator('.index-item', { hasText: concept }).first();
+  const item = page.locator('.index-item', { hasText: topic }).first();
   await item.waitFor({ timeout: 30_000 });
   await item.click();
 
@@ -231,7 +231,7 @@ test('the Brain back control stays reachable after scrolling the detail sheet', 
   //
   // The content line is derived from the COLUMN's own padding (and cross-checked
   // against the note card), not from a sibling element that may not exist for a
-  // concept with no rendered header row.
+  // topic with no rendered header row.
   const band = await page.evaluate(() => {
     const nav = document.querySelector('.mobile-nav-header') as HTMLElement | null;
     const col = document.querySelector('.content-col') as HTMLElement | null;
@@ -281,7 +281,7 @@ test('the Brain back control stays reachable after scrolling the detail sheet', 
 
   // Visible is not enough — it must still work.
   await back.click();
-  await expect(page.locator('.index-item', { hasText: concept }).first()).toBeVisible();
+  await expect(page.locator('.index-item', { hasText: topic }).first()).toBeVisible();
 });
 
 /**
@@ -364,28 +364,28 @@ test('the mobile view-mode toggle matches the library toggle', async ({ page }) 
 });
 
 /**
- * Open a concept detail sheet and return the scrolling column, failing early if
+ * Open a topic detail sheet and return the scrolling column, failing early if
  * the fixture produced no note cards to measure.
  */
-async function openConceptDetail(page: Page): Promise<void> {
-  const concept = `MobileNotes${Date.now()}`;
+async function openTopicDetail(page: Page): Promise<void> {
+  const topic = `MobileNotes${Date.now()}`;
   const seed = await seedBrain(
     fixture.baseUrl,
-    `Mobile Notes Source ${concept}`,
-    [`A note about [[${concept}]] with enough text to give the card a body.`],
-    [concept],
+    `Mobile Notes Source ${topic}`,
+    [`A note about [[${topic}]] with enough text to give the card a body.`],
+    [topic],
   );
   seeds.push(seed);
 
   await page.goto(`${fixture.baseUrl}/second-brain`, { waitUntil: 'domcontentloaded' });
-  const item = page.locator('.index-item', { hasText: concept }).first();
+  const item = page.locator('.index-item', { hasText: topic }).first();
   await item.waitFor({ timeout: 30_000 });
   await item.click();
   await page.locator('app-note-card .note-card-container').first().waitFor({ timeout: 30_000 });
 }
 
-test('the concept detail pane has no horizontal scrollbar from card actions', async ({ page }) => {
-  await openConceptDetail(page);
+test('the topic detail pane has no horizontal scrollbar from card actions', async ({ page }) => {
+  await openTopicDetail(page);
 
   const measured = await page.evaluate(() => {
     const col = document.querySelector('.content-col') as HTMLElement | null;
@@ -411,11 +411,11 @@ test('the concept detail pane has no horizontal scrollbar from card actions', as
       overflowing,
     };
   });
-  expect(measured, 'the concept detail column must be present').not.toBeNull();
+  expect(measured, 'the topic detail column must be present').not.toBeNull();
 
   // Regression: two 44px card-action buttons needed 102px of a 287px footer
   // pinned to 32px tall, so the cluster overhung the card by 49px (and the
-  // concept header by 69px); `overflow-x: auto` turned that into a second
+  // topic header by 69px); `overflow-x: auto` turned that into a second
   // scrollbar beside the vertical one.
   expect(
     measured!.overflowing,
@@ -428,7 +428,7 @@ test('the concept detail pane has no horizontal scrollbar from card actions', as
 });
 
 test('card actions sit on their own row instead of overhanging the card', async ({ page }) => {
-  await openConceptDetail(page);
+  await openTopicDetail(page);
 
   const geometry = await page.evaluate(() => {
     const actions = document.querySelector('app-note-card .note-actions') as HTMLElement | null;

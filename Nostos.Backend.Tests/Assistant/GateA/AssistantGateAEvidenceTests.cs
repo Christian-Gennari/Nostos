@@ -281,13 +281,13 @@ public sealed class AssistantGateAEvidenceTests : IClassFixture<SqliteTestFixtur
 
         var factory = new EvidenceContextFactory(options);
         var db = new NostosDbContext(options);
-        var concepts = new ConceptRepository(db);
+        var topics = new TopicRepository(db);
         var noteRepository = new NoteRepository(db);
         var noteService = new NoteService(
             noteRepository,
             new BookRepository(db),
-            concepts,
-            new NoteProcessorService(concepts),
+            topics,
+            new NoteProcessorService(topics),
             new FakeThoughtProcessor(),
             db,
             NullLogger<NoteService>.Instance);
@@ -304,13 +304,13 @@ public sealed class AssistantGateAEvidenceTests : IClassFixture<SqliteTestFixtur
         var knowledge = new KnowledgeRetrievalService(
             noteService,
             noteRepository,
-            concepts,
+            topics,
             library,
             bookSearch,
             index,
             []);
         var registry = new AssistantCapabilityRegistry(
-            AssistantCapabilities.Build(noteService, library, concepts, knowledge, bookSearch));
+            AssistantCapabilities.Build(noteService, library, topics, knowledge, bookSearch));
 
         return new EvidenceHarness(db, factory, index, knowledge, registry);
     }

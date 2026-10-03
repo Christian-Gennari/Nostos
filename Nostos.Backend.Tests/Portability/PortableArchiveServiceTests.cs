@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
@@ -73,7 +74,7 @@ public sealed class PortableArchiveServiceTests
         (await destination.Db.Works.CountAsync()).Should().Be(3);
         (await destination.Db.Books.CountAsync()).Should().Be(4);
         (await destination.Db.BookCollections.CountAsync()).Should().Be(3);
-        (await destination.Db.NoteConcepts.CountAsync()).Should().Be(1);
+        (await destination.Db.NoteTopics.CountAsync()).Should().Be(1);
         (await destination.Db.Writings.CountAsync()).Should().Be(2);
         (await destination.Db.WritingNotes.CountAsync()).Should().Be(1);
         (await destination.Db.BookAcquisitions.CountAsync()).Should().Be(1);
@@ -151,7 +152,7 @@ public sealed class PortableArchiveServiceTests
         secondImport.Counts.Should().Be(imported.Counts);
         secondImport.MediaFiles.Should().Be(5);
         (await secondDestination.Db.BookCollections.CountAsync()).Should().Be(3);
-        (await secondDestination.Db.NoteConcepts.CountAsync()).Should().Be(1);
+        (await secondDestination.Db.NoteTopics.CountAsync()).Should().Be(1);
         (await secondDestination.Db.Writings
             .AsNoTracking()
             .SingleAsync(x => x.Id == ids.WritingDocumentId))
@@ -186,6 +187,14 @@ public sealed class PortableArchiveServiceTests
         {
             archive.GetEntry("data/library.json").Should().NotBeNull();
             archive.GetEntry("manifest.json").Should().NotBeNull();
+
+            // The Concepts -> Topics rename keeps the on-disk JSON keys so archives
+            // exported before it still import.
+            using var library = JsonDocument.Parse(
+                archive.GetEntry("data/library.json")!.Open());
+            library.RootElement.TryGetProperty("concepts", out _).Should().BeTrue();
+            library.RootElement.TryGetProperty("noteConcepts", out _).Should().BeTrue();
+            library.RootElement.TryGetProperty("topics", out _).Should().BeFalse();
         }
 
         await using var destination = await LocalPortableTestLibrary.CreateAsync();
@@ -445,9 +454,9 @@ public sealed class PortableArchiveServiceTests
     {
         using var archive = await ExportFixtureAsync();
         await using var destination = await LocalPortableTestLibrary.CreateAsync();
-        destination.Db.Concepts.Add(new ConceptModel
+        destination.Db.Topics.Add(new TopicModel
         {
-            Concept = "Existing user content",
+            Topic = "Existing user content",
         });
         await destination.Db.SaveChangesAsync();
 
@@ -457,7 +466,7 @@ public sealed class PortableArchiveServiceTests
 
         exception.Which.Code.Should().Be("destination_not_empty");
         (await destination.Db.Books.CountAsync()).Should().Be(0);
-        (await destination.Db.Concepts.CountAsync()).Should().Be(1);
+        (await destination.Db.Topics.CountAsync()).Should().Be(1);
     }
 
     [Fact]

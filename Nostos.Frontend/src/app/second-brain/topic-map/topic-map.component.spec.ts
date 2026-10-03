@@ -266,18 +266,18 @@ vi.mock('d3-force', () => {
 });
 
 import {
-  ConceptMapComponent,
-  MAX_MAP_CONCEPTS,
-} from './concept-map.component';
-import { ConceptDto, ConceptGraphDto } from '../../core/services/concepts.service';
+  TopicMapComponent,
+  MAX_MAP_TOPICS,
+} from './topic-map.component';
+import { TopicDto, TopicGraphDto } from '../../core/services/topics.service';
 
-const concepts: ConceptDto[] = [
+const topics: TopicDto[] = [
   { id: 'alpha', name: 'Alpha', usageCount: 12 },
   { id: 'beta', name: 'Beta', usageCount: 5 },
   { id: 'gamma', name: 'Gamma', usageCount: 2 },
 ];
 
-const graphResponse: ConceptGraphDto = {
+const graphResponse: TopicGraphDto = {
   nodes: [
     { id: 'alpha', name: 'Alpha', usageCount: 12 },
     { id: 'beta', name: 'Beta', usageCount: 5 },
@@ -289,18 +289,18 @@ const graphResponse: ConceptGraphDto = {
   ],
 };
 
-describe('ConceptMapComponent', () => {
-  let component: ConceptMapComponent;
-  let fixture: ComponentFixture<ConceptMapComponent>;
+describe('TopicMapComponent', () => {
+  let component: TopicMapComponent;
+  let fixture: ComponentFixture<TopicMapComponent>;
   let http: HttpTestingController;
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      imports: [ConceptMapComponent],
+      imports: [TopicMapComponent],
       providers: [provideHttpClient(), provideHttpClientTesting()],
     }).compileComponents();
 
-    fixture = TestBed.createComponent(ConceptMapComponent);
+    fixture = TestBed.createComponent(TopicMapComponent);
     component = fixture.componentInstance;
     http = TestBed.inject(HttpTestingController);
     fixture.detectChanges();
@@ -308,20 +308,20 @@ describe('ConceptMapComponent', () => {
 
   afterEach(() => http.verify());
 
-  function setConcepts(value: ConceptDto[]): void {
-    fixture.componentRef.setInput('concepts', value);
+  function setTopics(value: TopicDto[]): void {
+    fixture.componentRef.setInput('topics', value);
     fixture.detectChanges();
   }
 
-  function flushGraph(data: ConceptGraphDto = graphResponse): void {
-    const req = http.expectOne('/api/concepts/graph');
+  function flushGraph(data: TopicGraphDto = graphResponse): void {
+    const req = http.expectOne('/api/topics/graph');
     req.flush(data);
     fixture.detectChanges();
   }
 
-  it('fetches graph data when concepts are set', () => {
-    setConcepts(concepts);
-    const req = http.expectOne('/api/concepts/graph');
+  it('fetches graph data when topics are set', () => {
+    setTopics(topics);
+    const req = http.expectOne('/api/topics/graph');
     expect(req.request.method).toBe('GET');
     req.flush(graphResponse);
     fixture.detectChanges();
@@ -329,7 +329,7 @@ describe('ConceptMapComponent', () => {
   });
 
   it('maps graph nodes into the accessible list', () => {
-    setConcepts(concepts);
+    setTopics(topics);
     flushGraph();
 
     const accessibleNodes = component.accessibleNodes();
@@ -344,72 +344,72 @@ describe('ConceptMapComponent', () => {
   });
 
   it('handles empty graph state without crashing', () => {
-    setConcepts([]);
+    setTopics([]);
     flushGraph({ nodes: [], edges: [] });
 
     expect(component.accessibleNodes()).toHaveLength(0);
     expect(component.loading()).toBe(false);
   });
 
-  it('handles a single concept with no edges', () => {
-    const singleConcept = [{ id: 'only', name: 'Only Concept', usageCount: 1 }];
-    setConcepts(singleConcept);
-    flushGraph({ nodes: [{ id: 'only', name: 'Only Concept', usageCount: 1 }], edges: [] });
+  it('handles a single topic with no edges', () => {
+    const singleTopic = [{ id: 'only', name: 'Only Topic', usageCount: 1 }];
+    setTopics(singleTopic);
+    flushGraph({ nodes: [{ id: 'only', name: 'Only Topic', usageCount: 1 }], edges: [] });
 
     expect(component.accessibleNodes()).toHaveLength(1);
     expect(component.noConnections()).toBe(true);
   });
 
   it('blames the filter, not missing connections, when a search empties the graph', () => {
-    // The header's search filters the concept set this map draws, and it is
-    // visible in map view too. An empty graph then means either "no concepts
+    // The header's search filters the topic set this map draws, and it is
+    // visible in map view too. An empty graph then means either "no topics
     // match your query" or "you have no connections yet" — reporting the second
     // when the first is true tells the user their data is missing.
-    setConcepts([]);
+    setTopics([]);
     flushGraph({ nodes: [], edges: [] });
-    fixture.componentRef.setInput('searchQuery', '  zzzz-no-such-concept  ');
+    fixture.componentRef.setInput('searchQuery', '  zzzz-no-such-topic  ');
     fixture.detectChanges();
 
     expect(component.noConnections()).toBe(true);
     const status = (fixture.nativeElement as HTMLElement).querySelector('.map-status');
-    expect(status?.textContent).toContain('No concepts match');
+    expect(status?.textContent).toContain('No topics match');
     // The query is trimmed in the copy, so stray whitespace cannot leak in.
-    expect(status?.textContent).toContain('zzzz-no-such-concept');
+    expect(status?.textContent).toContain('zzzz-no-such-topic');
     expect(status?.textContent).not.toContain('No connections yet');
   });
 
   it('reports missing connections when there is no search to blame', () => {
-    setConcepts([]);
+    setTopics([]);
     flushGraph({ nodes: [], edges: [] });
     fixture.componentRef.setInput('searchQuery', '');
     fixture.detectChanges();
 
     const status = (fixture.nativeElement as HTMLElement).querySelector('.map-status');
     expect(status?.textContent).toContain('No connections yet');
-    expect(status?.textContent).not.toContain('No concepts match');
+    expect(status?.textContent).not.toContain('No topics match');
   });
 
-  it('shows the cap note when there are more than 150 concepts', () => {
-    const manyConcepts = Array.from({ length: MAX_MAP_CONCEPTS + 1 }, (_, i) => ({
-      id: `concept-${i}`,
-      name: `Concept ${i}`,
+  it('shows the cap note when there are more than 150 topics', () => {
+    const manyTopics = Array.from({ length: MAX_MAP_TOPICS + 1 }, (_, i) => ({
+      id: `topic-${i}`,
+      name: `Topic ${i}`,
       usageCount: i + 1,
     }));
-    setConcepts(manyConcepts);
+    setTopics(manyTopics);
     flushGraph({
-      nodes: manyConcepts.map((c) => ({ id: c.id, name: c.name, usageCount: c.usageCount })),
+      nodes: manyTopics.map((c) => ({ id: c.id, name: c.name, usageCount: c.usageCount })),
       edges: [],
     });
 
     expect(component.isCapped()).toBe(true);
     expect(fixture.nativeElement.querySelector('.map-limit-note')?.textContent).toContain(
-      '150 most-referenced concepts'
+      '150 most-referenced topics'
     );
   });
 
-  it('filters visible nodes to only include concepts passed as input', () => {
-    // Graph has 3 nodes but we only pass 2 concepts.
-    setConcepts([concepts[0], concepts[1]]);
+  it('filters visible nodes to only include topics passed as input', () => {
+    // Graph has 3 nodes but we only pass 2 topics.
+    setTopics([topics[0], topics[1]]);
     flushGraph();
 
     const nodes = component.accessibleNodes();
@@ -417,11 +417,11 @@ describe('ConceptMapComponent', () => {
     expect(nodes.map((n) => n.id).sort()).toEqual(['alpha', 'beta']);
   });
 
-  it('emits the selected concept when selectAccessibleNode is called', () => {
-    setConcepts(concepts);
+  it('emits the selected topic when selectAccessibleNode is called', () => {
+    setTopics(topics);
     flushGraph();
     const selected = vi.fn();
-    component.conceptSelected.subscribe(selected);
+    component.topicSelected.subscribe(selected);
 
     component.selectAccessibleNode('alpha');
 
@@ -429,7 +429,7 @@ describe('ConceptMapComponent', () => {
     expect(component.selectedNodeId()).toBe('alpha');
   });
 
-  it('leaves the mode switch and the concept search to the surface header', () => {
+  it('leaves the mode switch and the topic search to the surface header', () => {
     // The map used to carry its own copies of both (`.map-view-exit` and a
     // second search field), because map view closes the index rail that
     // previously held them. The surface header now renders in both modes, so
@@ -439,7 +439,7 @@ describe('ConceptMapComponent', () => {
     expect(host.querySelector('.map-toolbar'), 'no second toolbar in the map').toBeNull();
     expect(host.querySelector('input[type="search"]'), 'no second search field').toBeNull();
     expect(
-      host.querySelector('[aria-label="Concept view"]'),
+      host.querySelector('[aria-label="Topic view"]'),
       'the mode switch must not be duplicated inside the map'
     ).toBeNull();
 
@@ -456,11 +456,11 @@ describe('ConceptMapComponent', () => {
   });
 
   it('opens a node on double-click and suppresses Sigma\'s zoom', () => {
-    setConcepts(concepts);
+    setTopics(topics);
     flushGraph();
 
     const emitted = vi.fn();
-    component.openConcept.subscribe(emitted);
+    component.openTopic.subscribe(emitted);
     const preventSigmaDefault = vi.fn();
 
     const sigmaHandlers = (globalThis as unknown as {
@@ -478,11 +478,11 @@ describe('ConceptMapComponent', () => {
   });
 
   it('ignores a double-click that lands at the end of a drag', () => {
-    setConcepts(concepts);
+    setTopics(topics);
     flushGraph();
 
     const emitted = vi.fn();
-    component.openConcept.subscribe(emitted);
+    component.openTopic.subscribe(emitted);
 
     const sigmaHandlers = (globalThis as unknown as {
       __sigmaHandlers: Record<string, (payload?: unknown) => void>;
@@ -503,7 +503,7 @@ describe('ConceptMapComponent', () => {
   });
 
   it('clears the selection when empty space is clicked', () => {
-    setConcepts(concepts);
+    setTopics(topics);
     flushGraph();
 
     // Select a node first, the way a user would.
@@ -526,7 +526,7 @@ describe('ConceptMapComponent', () => {
   });
 
   it('keeps the selection through a camera pan that ends on empty space', () => {
-    setConcepts(concepts);
+    setTopics(topics);
     flushGraph();
 
     const sigmaHandlers = (globalThis as unknown as {
@@ -553,7 +553,7 @@ describe('ConceptMapComponent', () => {
   });
 
   it('reflects externally set selectedId', () => {
-    setConcepts(concepts);
+    setTopics(topics);
     flushGraph();
 
     fixture.componentRef.setInput('selectedId', 'beta');
@@ -563,12 +563,12 @@ describe('ConceptMapComponent', () => {
   });
 
   it('keeps the accessible list in sync with the rendered graph', () => {
-    setConcepts(concepts);
+    setTopics(topics);
     flushGraph();
 
     const accessibleList = fixture.nativeElement.querySelector('.map-accessible-list') as HTMLElement;
     expect(accessibleList).toBeTruthy();
-    expect(accessibleList.getAttribute('aria-label')).toBe('Concepts in this map');
+    expect(accessibleList.getAttribute('aria-label')).toBe('Topics in this map');
     const buttons = accessibleList.querySelectorAll('button');
     expect(buttons).toHaveLength(3);
 
@@ -606,8 +606,8 @@ describe('ConceptMapComponent', () => {
     expect(rail.getAttribute('aria-orientation')).toBe('horizontal');
   });
 
-  it('shows the selected concept in a card with its notes action, not in the camera rail', () => {
-    setConcepts(concepts);
+  it('shows the selected topic in a card with its notes action, not in the camera rail', () => {
+    setTopics(topics);
     flushGraph();
 
     // Nothing selected: no card, and the rail is pure camera.
@@ -626,7 +626,7 @@ describe('ConceptMapComponent', () => {
     // shares notes with beta and gamma.
     expect(card.querySelector('.map-card-meta')?.textContent).toMatch(/12 references\s*·\s*2 connections/);
 
-    // Related concepts, strongest link first (beta shares 3 notes, gamma 1).
+    // Related topics, strongest link first (beta shares 3 notes, gamma 1).
     const related = [...card.querySelectorAll('.map-card-related button')].map((b) => b.textContent?.trim());
     expect(related).toEqual(['Beta', 'Gamma']);
 
@@ -638,14 +638,14 @@ describe('ConceptMapComponent', () => {
     expect(emitted).toHaveBeenCalled();
   });
 
-  it('moves the selection to a related concept from the card', () => {
-    setConcepts(concepts);
+  it('moves the selection to a related topic from the card', () => {
+    setTopics(topics);
     flushGraph();
     component.selectAccessibleNode('alpha');
     fixture.detectChanges();
 
     const selected = vi.fn();
-    component.conceptSelected.subscribe(selected);
+    component.topicSelected.subscribe(selected);
     const beta = [...fixture.nativeElement.querySelectorAll('.map-card-related button')].find(
       (b) => (b as HTMLElement).textContent?.trim() === 'Beta'
     ) as HTMLButtonElement;
@@ -657,7 +657,7 @@ describe('ConceptMapComponent', () => {
   });
 
   it('closes the card and clears the selection from its close button', () => {
-    setConcepts(concepts);
+    setTopics(topics);
     flushGraph();
     component.selectAccessibleNode('alpha');
     fixture.detectChanges();
@@ -672,7 +672,7 @@ describe('ConceptMapComponent', () => {
   });
 
   it('shows loading status while graph data is pending', () => {
-    setConcepts(concepts);
+    setTopics(topics);
 
     expect(component.loading()).toBe(true);
     const status = fixture.nativeElement.querySelector('.map-status');
@@ -683,7 +683,7 @@ describe('ConceptMapComponent', () => {
   });
 
   it('disposes Sigma renderer on component destruction', () => {
-    setConcepts(concepts);
+    setTopics(topics);
     flushGraph();
 
     // The component should not throw when destroyed.
@@ -692,10 +692,10 @@ describe('ConceptMapComponent', () => {
     }).not.toThrow();
   });
 
-  it('makes only a single /api/concepts/graph request, not N+1 related requests', () => {
-    setConcepts(concepts);
-    // Expect exactly one graph request, not per-concept related requests.
-    const graphReqs = http.match('/api/concepts/graph');
+  it('makes only a single /api/topics/graph request, not N+1 related requests', () => {
+    setTopics(topics);
+    // Expect exactly one graph request, not per-topic related requests.
+    const graphReqs = http.match('/api/topics/graph');
     expect(graphReqs).toHaveLength(1);
     graphReqs[0].flush(graphResponse);
 
@@ -713,7 +713,7 @@ describe('ConceptMapComponent', () => {
 
   describe('graph readability', () => {
     it('renders edges at an alpha that is actually visible', () => {
-      setConcepts(concepts);
+      setTopics(topics);
       flushGraph();
 
       const graph = (globalThis as { __nostosGraph?: { forEachEdge: Function } }).__nostosGraph!;
@@ -729,17 +729,17 @@ describe('ConceptMapComponent', () => {
     });
 
     it('shows labels for the smallest drawn nodes too', () => {
-      setConcepts(concepts);
+      setTopics(topics);
       flushGraph();
 
       // The smallest node size must clear the label threshold, or the majority
-      // of concepts are permanently unlabelled (15 of 53 in production).
+      // of topics are permanently unlabelled (15 of 53 in production).
       const settings = (globalThis as { __settings?: Record<string, unknown> }).__settings!;
       expect(settings['labelRenderedSizeThreshold']).toBeLessThanOrEqual(4);
     });
 
     it('does not let autoRescale move nodes the user did not drag', () => {
-      setConcepts(concepts);
+      setTopics(topics);
       flushGraph();
 
       const settings = (globalThis as { __settings?: Record<string, unknown> }).__settings!;
@@ -750,7 +750,7 @@ describe('ConceptMapComponent', () => {
     });
 
     it('keeps unconnected nodes and their labels readable when one is selected', () => {
-      setConcepts(concepts);
+      setTopics(topics);
       flushGraph();
 
       const sigma = (globalThis as {
@@ -766,7 +766,7 @@ describe('ConceptMapComponent', () => {
       component.selectAccessibleNode('alpha');
 
       // 'gamma' IS connected to alpha, so use a node the graph has that is not:
-      // add a fourth concept with no edges.
+      // add a fourth topic with no edges.
       const unconnected = reducer!('lonely', { label: 'Lonely', color: '#000000' });
 
       // The node must not be erased: it keeps a colour and keeps its label.
@@ -782,7 +782,7 @@ describe('ConceptMapComponent', () => {
     });
 
     it('draws the active label on a themed plate, not Sigma\'s hardcoded white box', () => {
-      setConcepts(concepts);
+      setTopics(topics);
       flushGraph();
 
       const settings = (globalThis as { __settings?: Record<string, unknown> }).__settings!;
@@ -807,7 +807,7 @@ describe('ConceptMapComponent', () => {
     });
 
     it('lays the graph out with enough repulsion to avoid an unreadable clump', () => {
-      setConcepts(concepts);
+      setTopics(topics);
       flushGraph();
 
       // The layout is Obsidian's force set, so the guard is that the forces were
@@ -832,7 +832,7 @@ describe('ConceptMapComponent', () => {
     });
 
     it('labels nodes that sit at the small end of the size range', () => {
-      setConcepts(concepts);
+      setTopics(topics);
       flushGraph();
 
       const settings = (globalThis as { __settings?: Record<string, unknown> }).__settings!;
@@ -858,7 +858,7 @@ describe('ConceptMapComponent', () => {
     });
 
     it('draws the focused nodes own edges at full accent contrast', () => {
-      setConcepts(concepts);
+      setTopics(topics);
       flushGraph();
 
       const sigma = (globalThis as {
@@ -912,7 +912,7 @@ describe('ConceptMapComponent', () => {
     }
 
     /**
-     * The simulation node for a concept, so a spec can read the drag pin.
+     * The simulation node for a topic, so a spec can read the drag pin.
      *
      * The pin lives on the d3 simulation (`fx`/`fy`), NOT on the graphology node
      * — ForceAtlas2's `fixed` graph attribute is gone with the layout engine.
@@ -937,7 +937,7 @@ describe('ConceptMapComponent', () => {
     }
 
     it('pins the dragged node with fx/fy and releases it on mouseup', () => {
-      setConcepts(concepts);
+      setTopics(topics);
       flushGraph();
 
       const sigmaHandlers = (globalThis as unknown as {
@@ -965,7 +965,7 @@ describe('ConceptMapComponent', () => {
     });
 
     it('holds alpha up for the whole gesture, then lets it decay on release', () => {
-      setConcepts(concepts);
+      setTopics(topics);
       flushGraph();
 
       const sigmaHandlers = (globalThis as unknown as {
@@ -997,7 +997,7 @@ describe('ConceptMapComponent', () => {
     });
 
     it('stops the layout loop once alpha reaches the floor', () => {
-      setConcepts(concepts);
+      setTopics(topics);
       flushGraph();
 
       const rafSpy = vi.spyOn(window, 'requestAnimationFrame');
@@ -1045,7 +1045,7 @@ describe('ConceptMapComponent', () => {
      * control.
      */
     it('releases the camera and the pin when a TOUCH gesture ends', () => {
-      setConcepts(concepts);
+      setTopics(topics);
       flushGraph();
 
       const camera = (globalThis as unknown as {
@@ -1083,7 +1083,7 @@ describe('ConceptMapComponent', () => {
     });
 
     it('moves a node on a touch drag without leaving it pinned', () => {
-      setConcepts(concepts);
+      setTopics(topics);
       flushGraph();
 
       const graph = (globalThis as {
@@ -1120,7 +1120,7 @@ describe('ConceptMapComponent', () => {
     });
 
     it('recovers from a release that lands outside the canvas', () => {
-      setConcepts(concepts);
+      setTopics(topics);
       flushGraph();
 
       const camera = (globalThis as unknown as {
@@ -1143,7 +1143,7 @@ describe('ConceptMapComponent', () => {
     });
 
     it('clears any stale pin when the layout is reset', () => {
-      setConcepts(concepts);
+      setTopics(topics);
       flushGraph();
 
       const layout = layoutHandle();
@@ -1167,7 +1167,7 @@ describe('ConceptMapComponent', () => {
 
   describe('camera controls', () => {
     it('fits the graph by computing a framing ratio, not by resetting', () => {
-      setConcepts(concepts);
+      setTopics(topics);
       flushGraph();
 
       const camera = (globalThis as { __camera?: { animate: ReturnType<typeof vi.fn>; animatedReset: ReturnType<typeof vi.fn> } })
@@ -1185,7 +1185,7 @@ describe('ConceptMapComponent', () => {
     });
 
     it('centres the selected node in framed coordinates', () => {
-      setConcepts(concepts);
+      setTopics(topics);
       flushGraph();
       component.selectAccessibleNode('alpha');
 
@@ -1207,7 +1207,7 @@ describe('ConceptMapComponent', () => {
     });
 
     it('restores the settled layout on reset, not just the camera', () => {
-      setConcepts(concepts);
+      setTopics(topics);
       flushGraph();
 
       const graph = (globalThis as {

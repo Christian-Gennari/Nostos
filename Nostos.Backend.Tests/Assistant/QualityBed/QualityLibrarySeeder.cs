@@ -58,14 +58,14 @@ internal static class QualityLibrarySeeder
         var b7 = new EBookModel { Id = QualityFixtureIds.BookGranaryLedger, Title = QualityFixtureIds.TitleGranaryLedger, Author = "E. Fors" };
         db.Books.AddRange(b1, b2, b3, b4, b5, b6, b7);
 
-        db.Concepts.AddRange(
-            new ConceptModel { Id = QualityFixtureIds.ConceptAttention, Concept = "Attention" },
-            new ConceptModel { Id = QualityFixtureIds.ConceptSeamanship, Concept = "Seamanship" },
-            new ConceptModel { Id = QualityFixtureIds.ConceptBoatRepair, Concept = "Boat Repair" },
-            new ConceptModel { Id = QualityFixtureIds.ConceptMorningHours, Concept = "Morning Hours" },
-            new ConceptModel { Id = QualityFixtureIds.ConceptRiverMaps, Concept = "River Maps" },
-            new ConceptModel { Id = QualityFixtureIds.ConceptHarborRules, Concept = "Harbor Rules" },
-            new ConceptModel { Id = QualityFixtureIds.ConceptGalleryWatch, Concept = "Gallery Watch" });
+        db.Topics.AddRange(
+            new TopicModel { Id = QualityFixtureIds.TopicAttention, Topic = "Attention" },
+            new TopicModel { Id = QualityFixtureIds.TopicSeamanship, Topic = "Seamanship" },
+            new TopicModel { Id = QualityFixtureIds.TopicBoatRepair, Topic = "Boat Repair" },
+            new TopicModel { Id = QualityFixtureIds.TopicMorningHours, Topic = "Morning Hours" },
+            new TopicModel { Id = QualityFixtureIds.TopicRiverMaps, Topic = "River Maps" },
+            new TopicModel { Id = QualityFixtureIds.TopicHarborRules, Topic = "Harbor Rules" },
+            new TopicModel { Id = QualityFixtureIds.TopicGalleryWatch, Topic = "Gallery Watch" });
 
         // BookCollections is the only membership record (AGENTS.md §7).
         db.Set<BookCollectionModel>().AddRange(
@@ -164,20 +164,20 @@ internal static class QualityLibrarySeeder
         };
         db.Notes.AddRange(notes);
 
-        db.Set<NoteConceptModel>().AddRange(
-            Link(QualityFixtureIds.NoteRopeCoil, QualityFixtureIds.ConceptSeamanship),
-            Link(QualityFixtureIds.NoteKeeper, QualityFixtureIds.ConceptAttention),
-            Link(QualityFixtureIds.NoteGalleryEssay, QualityFixtureIds.ConceptGalleryWatch),
-            Link(QualityFixtureIds.NoteMendingMornings, QualityFixtureIds.ConceptMorningHours),
-            Link(QualityFixtureIds.NoteWalkingMornings, QualityFixtureIds.ConceptMorningHours),
-            Link(QualityFixtureIds.NoteWalkingMornings, QualityFixtureIds.ConceptBoatRepair),
-            Link(QualityFixtureIds.NoteMarginChapterTwo, QualityFixtureIds.ConceptRiverMaps),
-            Link(QualityFixtureIds.NoteApprenticeInk, QualityFixtureIds.ConceptRiverMaps),
-            Link(QualityFixtureIds.NoteInkApprentice, QualityFixtureIds.ConceptRiverMaps),
-            Link(QualityFixtureIds.NoteInjection, QualityFixtureIds.ConceptHarborRules),
-            Link(QualityFixtureIds.NoteRepairPhilosophy, QualityFixtureIds.ConceptBoatRepair),
-            Link(QualityFixtureIds.NoteSaltRain, QualityFixtureIds.ConceptSeamanship));
-        // All 7 concepts linked (Seamanship x2, Attention, GalleryWatch, MorningHours x2,
+        db.Set<NoteTopicModel>().AddRange(
+            Link(QualityFixtureIds.NoteRopeCoil, QualityFixtureIds.TopicSeamanship),
+            Link(QualityFixtureIds.NoteKeeper, QualityFixtureIds.TopicAttention),
+            Link(QualityFixtureIds.NoteGalleryEssay, QualityFixtureIds.TopicGalleryWatch),
+            Link(QualityFixtureIds.NoteMendingMornings, QualityFixtureIds.TopicMorningHours),
+            Link(QualityFixtureIds.NoteWalkingMornings, QualityFixtureIds.TopicMorningHours),
+            Link(QualityFixtureIds.NoteWalkingMornings, QualityFixtureIds.TopicBoatRepair),
+            Link(QualityFixtureIds.NoteMarginChapterTwo, QualityFixtureIds.TopicRiverMaps),
+            Link(QualityFixtureIds.NoteApprenticeInk, QualityFixtureIds.TopicRiverMaps),
+            Link(QualityFixtureIds.NoteInkApprentice, QualityFixtureIds.TopicRiverMaps),
+            Link(QualityFixtureIds.NoteInjection, QualityFixtureIds.TopicHarborRules),
+            Link(QualityFixtureIds.NoteRepairPhilosophy, QualityFixtureIds.TopicBoatRepair),
+            Link(QualityFixtureIds.NoteSaltRain, QualityFixtureIds.TopicSeamanship));
+        // All 7 topics linked (Seamanship x2, Attention, GalleryWatch, MorningHours x2,
         // RiverMaps x3, HarborRules, BoatRepair x2).
 
         await db.SaveChangesAsync(ct);
@@ -217,10 +217,10 @@ internal static class QualityLibrarySeeder
             CollectionId = collectionId,
         };
 
-        static NoteConceptModel Link(Guid noteId, Guid conceptId) => new()
+        static NoteTopicModel Link(Guid noteId, Guid topicId) => new()
         {
             NoteId = noteId,
-            ConceptId = conceptId,
+            TopicId = topicId,
         };
     }
 

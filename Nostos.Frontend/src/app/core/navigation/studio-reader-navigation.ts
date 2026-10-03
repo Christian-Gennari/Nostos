@@ -13,7 +13,7 @@ export interface StudioSourceReturnSnapshotV1 {
     activeLibraryTab: 'brain' | 'notes';
     wasOpen: boolean;
     inspectedSourceId?: string | null;
-    selectedConceptId?: string | null;
+    selectedTopicId?: string | null;
     selectedBookId?: string | null;
   };
 }
@@ -63,7 +63,7 @@ export function readStudioSourceReturnSnapshot(
     const activeLibraryTab = rawReferences['activeLibraryTab'];
     const wasOpen = rawReferences['wasOpen'];
     const inspectedSourceId = rawReferences['inspectedSourceId'];
-    const selectedConceptId = rawReferences['selectedConceptId'];
+    const selectedTopicId = rawReferences['selectedTopicId'];
     const selectedBookId = rawReferences['selectedBookId'];
 
     if (
@@ -71,7 +71,7 @@ export function readStudioSourceReturnSnapshot(
       (activeLibraryTab === 'brain' || activeLibraryTab === 'notes') &&
       typeof wasOpen === 'boolean' &&
       isOptionalString(inspectedSourceId) &&
-      isOptionalString(selectedConceptId) &&
+      isOptionalString(selectedTopicId) &&
       isOptionalString(selectedBookId)
     ) {
       result.references = {
@@ -79,7 +79,7 @@ export function readStudioSourceReturnSnapshot(
         activeLibraryTab,
         wasOpen,
         ...(inspectedSourceId !== undefined ? { inspectedSourceId } : {}),
-        ...(selectedConceptId !== undefined ? { selectedConceptId } : {}),
+        ...(selectedTopicId !== undefined ? { selectedTopicId } : {}),
         ...(selectedBookId !== undefined ? { selectedBookId } : {}),
       };
     }

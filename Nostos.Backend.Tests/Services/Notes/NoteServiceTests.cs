@@ -15,9 +15,9 @@ using Xunit;
 namespace Nostos.Backend.Tests.Services.Notes;
 
 /// <summary>
-/// Canonical note service (issue #260 §1, §5): concept processing on create,
+/// Canonical note service (issue #260 §1, §5): topic processing on create,
 /// capture provenance, and the two capabilities #261 needs — linking a note to
-/// an existing concept and reading it back for review.
+/// an existing topic and reading it back for review.
 /// </summary>
 public sealed class NoteServiceTests : IClassFixture<SqliteTestFixture>
 {
@@ -26,11 +26,11 @@ public sealed class NoteServiceTests : IClassFixture<SqliteTestFixture>
     public NoteServiceTests(SqliteTestFixture fixture) => _fixture = fixture;
 
     // ------------------------------------------------------------------
-    // Create: concept processing + provenance
+    // Create: topic processing + provenance
     // ------------------------------------------------------------------
 
     [Fact]
-    public async Task Create_still_processes_wikilinks_into_concepts()
+    public async Task Create_still_processes_wikilinks_into_topics()
     {
         var h = CreateHarness();
         using var _ = h;
@@ -41,9 +41,9 @@ public sealed class NoteServiceTests : IClassFixture<SqliteTestFixture>
 
         result.Success.Should().BeTrue();
         result.Value!.BookTitle.Should().Be("A Book");
-        (await h.Db.Concepts.Select(c => c.Concept).OrderBy(name => name).ToListAsync())
+        (await h.Db.Topics.Select(c => c.Topic).OrderBy(name => name).ToListAsync())
             .Should().Equal("Courage", "Virtue");
-        (await h.Db.NoteConcepts.CountAsync()).Should().Be(2);
+        (await h.Db.NoteTopics.CountAsync()).Should().Be(2);
     }
 
     [Fact]
@@ -139,52 +139,52 @@ public sealed class NoteServiceTests : IClassFixture<SqliteTestFixture>
     }
 
     // ------------------------------------------------------------------
-    // Link to an existing concept
+    // Link to an existing topic
     // ------------------------------------------------------------------
 
     [Fact]
-    public async Task Link_to_existing_concept_is_idempotent_and_creates_no_concept()
+    public async Task Link_to_existing_topic_is_idempotent_and_creates_no_topic()
     {
         var h = CreateHarness();
         using var _ = h;
         var book = await SeedBookAsync(h);
         var note = await SeedNoteAsync(h, book.Id, "a note");
-        var concept = await SeedConceptAsync(h, "virtue");
+        var topic = await SeedTopicAsync(h, "virtue");
 
-        var first = await h.Service.LinkToExistingConceptAsync(note.Id, concept.Id);
+        var first = await h.Service.LinkToExistingTopicAsync(note.Id, topic.Id);
         first.Success.Should().BeTrue();
         first.Value!.Id.Should().Be(note.Id);
 
-        var second = await h.Service.LinkToExistingConceptAsync(note.Id, concept.Id);
+        var second = await h.Service.LinkToExistingTopicAsync(note.Id, topic.Id);
         second.Success.Should().BeTrue();
         second.Value!.Content.Should().Be("a note\n\n[[virtue]]");
 
-        (await h.Db.NoteConcepts.CountAsync()).Should().Be(1,
-            "the join is keyed (NoteId, ConceptId); a repeat link is a no-op");
-        (await h.Db.Concepts.CountAsync()).Should().Be(1,
-            "linking never creates a concept to satisfy the link");
+        (await h.Db.NoteTopics.CountAsync()).Should().Be(1,
+            "the join is keyed (NoteId, TopicId); a repeat link is a no-op");
+        (await h.Db.Topics.CountAsync()).Should().Be(1,
+            "linking never creates a topic to satisfy the link");
 
         // An ordinary edit reprocesses membership from the note body. The
         // accepted assistant link must remain there after that reprocessing.
         var edited = await h.Service.UpdateAsync(note.Id, new UpdateNoteDto(
             second.Value.Content.Replace("a note", "an edited note"), null));
         edited.Success.Should().BeTrue();
-        (await h.Db.NoteConcepts.CountAsync()).Should().Be(1);
+        (await h.Db.NoteTopics.CountAsync()).Should().Be(1);
     }
 
     [Fact]
-    public async Task Link_unknown_concept_returns_concept_not_found()
+    public async Task Link_unknown_topic_returns_topic_not_found()
     {
         var h = CreateHarness();
         using var _ = h;
         var book = await SeedBookAsync(h);
         var note = await SeedNoteAsync(h, book.Id, "a note");
 
-        var result = await h.Service.LinkToExistingConceptAsync(note.Id, Guid.NewGuid());
+        var result = await h.Service.LinkToExistingTopicAsync(note.Id, Guid.NewGuid());
 
         result.Success.Should().BeFalse();
-        result.ErrorCode.Should().Be("concept_not_found");
-        (await h.Db.NoteConcepts.CountAsync()).Should().Be(0);
+        result.ErrorCode.Should().Be("topic_not_found");
+        (await h.Db.NoteTopics.CountAsync()).Should().Be(0);
     }
 
     [Fact]
@@ -192,37 +192,37 @@ public sealed class NoteServiceTests : IClassFixture<SqliteTestFixture>
     {
         var h = CreateHarness();
         using var _ = h;
-        var concept = await SeedConceptAsync(h, "virtue");
+        var topic = await SeedTopicAsync(h, "virtue");
 
-        var result = await h.Service.LinkToExistingConceptAsync(Guid.NewGuid(), concept.Id);
+        var result = await h.Service.LinkToExistingTopicAsync(Guid.NewGuid(), topic.Id);
 
         result.Success.Should().BeFalse();
         result.ErrorCode.Should().Be("note_not_found");
     }
 
     [Fact]
-    public async Task Link_keeps_the_notes_other_concept_links()
+    public async Task Link_keeps_the_notes_other_topic_links()
     {
         var h = CreateHarness();
         using var _ = h;
         var book = await SeedBookAsync(h);
         var note = await SeedNoteAsync(h, book.Id, "a note");
-        var first = await SeedConceptAsync(h, "courage");
-        var second = await SeedConceptAsync(h, "virtue");
-        h.Db.NoteConcepts.Add(new NoteConceptModel { NoteId = note.Id, ConceptId = first.Id });
+        var first = await SeedTopicAsync(h, "courage");
+        var second = await SeedTopicAsync(h, "virtue");
+        h.Db.NoteTopics.Add(new NoteTopicModel { NoteId = note.Id, TopicId = first.Id });
         await h.Db.SaveChangesAsync();
 
-        var result = await h.Service.LinkToExistingConceptAsync(note.Id, second.Id);
+        var result = await h.Service.LinkToExistingTopicAsync(note.Id, second.Id);
 
         result.Success.Should().BeTrue();
         result.Value!.Content.Should().Contain("[[courage]]").And.Contain("[[virtue]]");
-        var linked = await h.Db.NoteConcepts.Where(nc => nc.NoteId == note.Id)
-            .Select(nc => nc.ConceptId).ToListAsync();
+        var linked = await h.Db.NoteTopics.Where(nc => nc.NoteId == note.Id)
+            .Select(nc => nc.TopicId).ToListAsync();
         linked.Should().BeEquivalentTo(new[] { first.Id, second.Id });
 
         await h.Service.UpdateAsync(note.Id, new UpdateNoteDto(result.Value.Content + "\nAn edit"));
-        (await h.Db.NoteConcepts.Where(nc => nc.NoteId == note.Id)
-            .Select(nc => nc.ConceptId).ToListAsync()).Should().BeEquivalentTo(new[] { first.Id, second.Id });
+        (await h.Db.NoteTopics.Where(nc => nc.NoteId == note.Id)
+            .Select(nc => nc.TopicId).ToListAsync()).Should().BeEquivalentTo(new[] { first.Id, second.Id });
     }
 
     // ------------------------------------------------------------------
@@ -230,17 +230,17 @@ public sealed class NoteServiceTests : IClassFixture<SqliteTestFixture>
     // ------------------------------------------------------------------
 
     [Fact]
-    public async Task Review_read_returns_text_book_title_and_linked_concept_names()
+    public async Task Review_read_returns_text_book_title_and_linked_topic_names()
     {
         var h = CreateHarness();
         using var _ = h;
         var book = await SeedBookAsync(h, "A Book");
         var note = await SeedNoteAsync(h, book.Id, "Some content", "a quoted passage");
-        var alpha = await SeedConceptAsync(h, "alpha");
-        var beta = await SeedConceptAsync(h, "beta");
-        h.Db.NoteConcepts.AddRange(
-            new NoteConceptModel { NoteId = note.Id, ConceptId = alpha.Id },
-            new NoteConceptModel { NoteId = note.Id, ConceptId = beta.Id });
+        var alpha = await SeedTopicAsync(h, "alpha");
+        var beta = await SeedTopicAsync(h, "beta");
+        h.Db.NoteTopics.AddRange(
+            new NoteTopicModel { NoteId = note.Id, TopicId = alpha.Id },
+            new NoteTopicModel { NoteId = note.Id, TopicId = beta.Id });
         await h.Db.SaveChangesAsync();
 
         var review = await h.Service.GetForReviewAsync(note.Id);
@@ -251,7 +251,7 @@ public sealed class NoteServiceTests : IClassFixture<SqliteTestFixture>
         review.BookTitle.Should().Be("A Book");
         review.Content.Should().Be("Some content");
         review.SelectedText.Should().Be("a quoted passage");
-        review.ConceptNames.Should().Equal("alpha", "beta");
+        review.TopicNames.Should().Equal("alpha", "beta");
     }
 
     [Fact]
@@ -279,13 +279,13 @@ public sealed class NoteServiceTests : IClassFixture<SqliteTestFixture>
 
         // The same scoped context backs every repository and the processor, so
         // create/update stay one unit of work exactly as in the web host.
-        var concepts = new ConceptRepository(db);
+        var topics = new TopicRepository(db);
         var thoughts = new FakeThoughtProcessor();
         var service = new NoteService(
             new NoteRepository(db),
             new BookRepository(db),
-            concepts,
-            new NoteProcessorService(concepts),
+            topics,
+            new NoteProcessorService(topics),
             thoughts,
             db,
             NullLogger<NoteService>.Instance);
@@ -317,12 +317,12 @@ public sealed class NoteServiceTests : IClassFixture<SqliteTestFixture>
         return note;
     }
 
-    private static async Task<ConceptModel> SeedConceptAsync(Harness h, string name)
+    private static async Task<TopicModel> SeedTopicAsync(Harness h, string name)
     {
-        var concept = new ConceptModel { Id = Guid.NewGuid(), Concept = name };
-        h.Db.Concepts.Add(concept);
+        var topic = new TopicModel { Id = Guid.NewGuid(), Topic = name };
+        h.Db.Topics.Add(topic);
         await h.Db.SaveChangesAsync();
-        return concept;
+        return topic;
     }
 
     private sealed class Harness(

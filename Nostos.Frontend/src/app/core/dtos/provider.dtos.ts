@@ -2,7 +2,7 @@
 // The wire shape of the provider/acquisition boundary. Deliberately its own
 // small vocabulary rather than a reuse of the library DTOs: these describe
 // something that is NOT yet a Nostos book, which is what keeps provider
-// concepts out of the library contract.
+// topics out of the library contract.
 //
 // Note there is no URL field anywhere a client can *send*: the client names a
 // provider, an item and an asset, and the server resolves the location.

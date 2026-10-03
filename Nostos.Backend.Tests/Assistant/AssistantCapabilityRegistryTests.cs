@@ -45,13 +45,13 @@ public sealed class AssistantCapabilityRegistryTests : IClassFixture<SqliteTestF
         "notes_search",
         "notes_list_unlinked",
         "notes_read_for_review",
-        "concepts_list",
-        "concepts_search",
-        "concepts_propose_links",
+        "topics_list",
+        "topics_search",
+        "topics_propose_links",
         "library_list_collections",
         "library_get_collection",
         "notes_capture",
-        "notes_link_existing_concept",
+        "notes_link_existing_topic",
         "library_create_collection",
         "library_rename_collection",
         "library_move_collection",
@@ -289,12 +289,12 @@ public sealed class AssistantCapabilityRegistryTests : IClassFixture<SqliteTestF
     // ------------------------------------------------------------------
 
     [Fact]
-    public async Task Suggest_capabilities_never_mutate_notes_collections_or_concepts()
+    public async Task Suggest_capabilities_never_mutate_notes_collections_or_topics()
     {
         var h = CreateHarness();
         var book = await SeedBookAsync(h, "Seeded Book");
         var note = await SeedNoteAsync(h, book.Id, "seeded note text");
-        var concept = await SeedConceptAsync(h, "seeded concept");
+        var topic = await SeedTopicAsync(h, "seeded topic");
         var collection = await SeedCollectionAsync(h, "Seeded Collection");
 
         var before = await StoreSnapshotAsync(h);
@@ -312,8 +312,8 @@ public sealed class AssistantCapabilityRegistryTests : IClassFixture<SqliteTestF
             ("notes_search", """{"query":"seeded"}"""),
             ("notes_list_unlinked", "{}"),
             ("notes_read_for_review", $$"""{"noteId":"{{note.Id}}"}"""),
-            ("concepts_list", "{}"),
-            ("concepts_search", """{"term":"seeded"}"""),
+            ("topics_list", "{}"),
+            ("topics_search", """{"term":"seeded"}"""),
             ("library_list_collections", "{}"),
             ("library_get_collection", $$"""{"collectionId":"{{collection.Id}}"}"""),
         };
@@ -514,51 +514,51 @@ public sealed class AssistantCapabilityRegistryTests : IClassFixture<SqliteTestF
     }
 
     // ------------------------------------------------------------------
-    // Linking never creates a concept
+    // Linking never creates a topic
     // ------------------------------------------------------------------
 
     [Fact]
-    public async Task Linking_a_chosen_existing_concept_is_an_immediate_action()
+    public async Task Linking_a_chosen_existing_topic_is_an_immediate_action()
     {
         var h = CreateHarness();
         var book = await SeedBookAsync(h);
         var note = await SeedNoteAsync(h, book.Id, "a note");
-        var concept = await SeedConceptAsync(h, "Alienation");
+        var topic = await SeedTopicAsync(h, "Alienation");
 
         var result = await h.Registry.InvokeAsync(
-            "notes_link_existing_concept",
+            "notes_link_existing_topic",
             Args(JsonSerializer.Serialize(new
             {
                 noteId = note.Id,
-                conceptId = concept.Id,
+                topicId = topic.Id,
             })),
             new AssistantToolContext("client", "link-existing"));
 
         result.Success.Should().BeTrue();
 
         await using var db = await h.Factory.CreateDbContextAsync();
-        (await db.NoteConcepts.CountAsync(link =>
-            link.NoteId == note.Id && link.ConceptId == concept.Id)).Should().Be(1);
+        (await db.NoteTopics.CountAsync(link =>
+            link.NoteId == note.Id && link.TopicId == topic.Id)).Should().Be(1);
     }
 
     [Fact]
-    public async Task Linking_an_unknown_concept_is_a_typed_failure_and_creates_no_concept()
+    public async Task Linking_an_unknown_topic_is_a_typed_failure_and_creates_no_topic()
     {
         var h = CreateHarness();
         var book = await SeedBookAsync(h);
         var note = await SeedNoteAsync(h, book.Id, "a note");
 
         var result = await h.Registry.InvokeAsync(
-            "notes_link_existing_concept",
-            Args($$"""{"noteId":"{{note.Id}}","conceptId":"{{Guid.NewGuid()}}"}"""),
+            "notes_link_existing_topic",
+            Args($$"""{"noteId":"{{note.Id}}","topicId":"{{Guid.NewGuid()}}"}"""),
             new AssistantToolContext("client", "link-key"));
 
         result.Success.Should().BeFalse();
-        result.ErrorCode.Should().Be("concept_not_found");
+        result.ErrorCode.Should().Be("topic_not_found");
 
         await using var db = await h.Factory.CreateDbContextAsync();
-        (await db.Concepts.CountAsync()).Should().Be(0);
-        (await db.NoteConcepts.CountAsync()).Should().Be(0);
+        (await db.Topics.CountAsync()).Should().Be(0);
+        (await db.NoteTopics.CountAsync()).Should().Be(0);
     }
 
     // ------------------------------------------------------------------
@@ -582,13 +582,13 @@ public sealed class AssistantCapabilityRegistryTests : IClassFixture<SqliteTestF
 
         // The same scoped context backs every note repository, exactly as the
         // web host wires it.
-        var concepts = new ConceptRepository(db);
+        var topics = new TopicRepository(db);
         var noteRepository = new NoteRepository(db);
         var noteService = new NoteService(
             noteRepository,
             new BookRepository(db),
-            concepts,
-            new NoteProcessorService(concepts),
+            topics,
+            new NoteProcessorService(topics),
             new FakeThoughtProcessor(),
             db,
             NullLogger<NoteService>.Instance);
@@ -605,14 +605,14 @@ public sealed class AssistantCapabilityRegistryTests : IClassFixture<SqliteTestF
         var knowledge = new KnowledgeRetrievalService(
             noteService,
             noteRepository,
-            concepts,
+            topics,
             libraryService,
             bookText,
             bookTextIndex,
             []);
 
         var registry = new AssistantCapabilityRegistry(
-            AssistantCapabilities.Build(noteService, libraryService, concepts, knowledge));
+            AssistantCapabilities.Build(noteService, libraryService, topics, knowledge));
 
         return new Harness(db, factory, registry);
     }
@@ -643,12 +643,12 @@ public sealed class AssistantCapabilityRegistryTests : IClassFixture<SqliteTestF
         return note;
     }
 
-    private static async Task<ConceptModel> SeedConceptAsync(Harness h, string name)
+    private static async Task<TopicModel> SeedTopicAsync(Harness h, string name)
     {
-        var concept = new ConceptModel { Id = Guid.NewGuid(), Concept = name };
-        h.Db.Concepts.Add(concept);
+        var topic = new TopicModel { Id = Guid.NewGuid(), Topic = name };
+        h.Db.Topics.Add(topic);
         await h.Db.SaveChangesAsync();
-        return concept;
+        return topic;
     }
 
     private static async Task<CollectionModel> SeedCollectionAsync(Harness h, string name)
@@ -674,9 +674,9 @@ public sealed class AssistantCapabilityRegistryTests : IClassFixture<SqliteTestF
             .OrderBy(n => n.Id)
             .Select(n => new { n.Id, n.Content })
             .ToListAsync();
-        var concepts = await db.Concepts.AsNoTracking()
+        var topics = await db.Topics.AsNoTracking()
             .OrderBy(c => c.Id)
-            .Select(c => new { c.Id, c.Concept })
+            .Select(c => new { c.Id, c.Topic })
             .ToListAsync();
         var collections = await db.Collections.AsNoTracking()
             .OrderBy(c => c.Id)
@@ -685,13 +685,13 @@ public sealed class AssistantCapabilityRegistryTests : IClassFixture<SqliteTestF
 
         return new StoreSnapshot(
             notes.Select(n => $"{n.Id}:{n.Content}").ToList(),
-            concepts.Select(c => $"{c.Id}:{c.Concept}").ToList(),
+            topics.Select(c => $"{c.Id}:{c.Topic}").ToList(),
             collections.Select(c => $"{c.Id}:{c.Name}:{c.ParentId}").ToList());
     }
 
     private sealed record StoreSnapshot(
         IReadOnlyList<string> Notes,
-        IReadOnlyList<string> Concepts,
+        IReadOnlyList<string> Topics,
         IReadOnlyList<string> Collections);
 
     private sealed class Harness(

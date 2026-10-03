@@ -42,7 +42,7 @@ public sealed class AssistantOptions
 
     /// <summary>
     /// Model id sent verbatim. It must call tools: capture, reading the
-    /// library and proposing concepts all run through tool calls, and a model
+    /// library and proposing topics all run through tool calls, and a model
     /// that ignores them answers as though it had done the work.
     /// <c>gemini/gemini-3.5-flash-lite</c> is verified calling tools through the
     /// gateway (finish_reason <c>tool_calls</c>, 15 tools offered, ~2.1k prompt

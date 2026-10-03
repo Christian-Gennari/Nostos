@@ -263,7 +263,7 @@
 
         @if (entry.suggestions?.length) {
         <div class="assistant-suggestions" data-testid="assistant-suggestions">
-          <span class="suggestions-title">Existing concepts this note could link to</span>
+          <span class="suggestions-title">Existing topics this note could link to</span>
           <div class="suggestions-list">
             @for (suggestion of entry.suggestions; track suggestion.value ?? suggestion.label) {
             <button type="button" class="suggestion-chip" (click)="assistant.applySuggestion(suggestion)"

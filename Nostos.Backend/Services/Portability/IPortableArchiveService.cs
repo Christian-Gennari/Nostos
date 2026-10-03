@@ -17,8 +17,8 @@ public sealed record PortableArchiveCounts(
     int Collections,
     int BookCollections,
     int Notes,
-    int Concepts,
-    int NoteConcepts,
+    int Topics,
+    int NoteTopics,
     int Writings,
     int BookAcquisitions);
 

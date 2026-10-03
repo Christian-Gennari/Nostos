@@ -23,7 +23,7 @@ internal static class RetrievalQualityMetrics
     public sealed record StrategyReport(
         string Strategy,
         ChannelMetrics Notes,
-        ChannelMetrics Concepts,
+        ChannelMetrics Topics,
         ChannelMetrics Passages);
 
     public sealed record CaseReport(

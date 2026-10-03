@@ -67,7 +67,7 @@ sweep would break them:
   it must not invert with the page.
 - **`--brand-shape` / `--brand-doorway`** — the mark is one forest-tile /
   paper-arch variant in both themes. Listed as `INVARIANT` in the theme guard.
-- **`--graph-node` / `--graph-node-head`** — the concept map sits on its own
+- **`--graph-node` / `--graph-node-head`** — the topic map sits on its own
   stage, not on page chrome. Theme-aware values, but not a surface in the
   app's ladder.
 - **`--modal-scrim` family** — a scrim over arbitrary content, not a surface.
@@ -663,7 +663,7 @@ Book Detail's status confirmation also uses the shared scrim/action vocabulary r
 its former one-off backdrop, so modal appearance follows the same light/dark token graph.
 
 ### What WAS unified: `.visually-hidden`
-It was declared twice, byte-identically (`second-brain` and `concept-map`). A
+It was declared twice, byte-identically (`second-brain` and `topic-map`). A
 utility with no per-surface variation should not be duplicated: the copies give
 no benefit and can drift, at which point one surface renders differently and
 nothing says so. It now lives once in `styles.css`, and `check:design` fails if

@@ -213,7 +213,7 @@ builder.Services.AddSingleton<AcquisitionJobManager>();
 builder.Services.AddSingleton<IAcquisitionJobManager>(sp => sp.GetRequiredService<AcquisitionJobManager>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<AcquisitionJobManager>());
 builder.Services.AddHostedService<AcquisitionReconciliationWorker>();
-builder.Services.AddHostedService<ConceptCleanupWorker>();
+builder.Services.AddHostedService<TopicCleanupWorker>();
 builder.Services.AddHostedService<BackupWorker>();
 builder.Services.AddHostedService<LibraryReceiptRetentionWorker>();
 builder.Services.AddHostedService<BookTextIngestionWorker>();

@@ -46,7 +46,7 @@ Typed/transcribed input equivalence is covered by the frontend assistant request
 tests. Backend regressions cover stored-mode enforcement for text/voice captures,
 quote-only exclusion, fallback acknowledgement, continuation/replay, original-only
 reprocessing, direct note/reader-style saves, KOReader imports, ordinary edits,
-concept regeneration and idempotency.
+topic regeneration and idempotency.
 
 No live microphone, external STT service or paid generation provider was used.
 Model semantic fidelity remains model-dependent and was not certified by these

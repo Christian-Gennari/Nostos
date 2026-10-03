@@ -428,14 +428,14 @@ Drag is disabled during inline rename (`editingId` matches node).
 **Selector:** `app-note-card`  
 **File:** `src/app/ui/note-card.component/`
 
-Displays a single note with rich formatting. Supports inline editing, concept tags, and various display configurations.
+Displays a single note with rich formatting. Supports inline editing, topic tags, and various display configurations.
 
 ### Inputs
 
 | Input            | Type                      | Default | Description                      |
 | ---------------- | ------------------------- | ------- | -------------------------------- |
 | `note`           | `Note` (required)         | —       | Note data                        |
-| `conceptMap`     | `Map<string, ConceptDto>` | `null`  | For rendering `[[Concept]]` tags |
+| `topicMap`     | `Map<string, TopicDto>` | `null`  | For rendering `[[Topic]]` tags |
 | `showNavigation` | `boolean`                 | `true`  | Show "Go to book" link           |
 | `showActions`    | `boolean`                 | `true`  | Show edit/delete buttons         |
 | `showSource`     | `boolean`                 | `false` | Show book title source label     |
@@ -447,7 +447,7 @@ Displays a single note with rich formatting. Supports inline editing, concept ta
 | -------------- | -------------------------------- | ----------------------------- |
 | `update`       | `{ id, content, selectedText? }` | Note edited and saved         |
 | `delete`       | `string` (note ID)               | Delete requested              |
-| `conceptClick` | `ConceptDto`                     | `[[Concept]]` tag clicked     |
+| `topicClick` | `TopicDto`                     | `[[Topic]]` tag clicked     |
 | `quoteClick`   | `Note`                           | "Insert quote" button clicked |
 | `cardClick`    | `Note`                           | Card body clicked             |
 
@@ -455,7 +455,7 @@ Displays a single note with rich formatting. Supports inline editing, concept ta
 
 - **Inline editing:** `startEdit()` → textarea → `saveEdit()` (Enter) / `cancelEdit()` (Escape)
 - **Collapsible:** Notes > 250 chars show "Show more" / "Show less" toggle
-- **Concept tags:** Content rendered via `NoteFormatPipe` — `[[Concept]]` becomes clickable colored spans
+- **Topic tags:** Content rendered via `NoteFormatPipe` — `[[Topic]]` becomes clickable colored spans
 - **Selected text:** Displayed as a quote block above note content
 
 ---
@@ -479,26 +479,26 @@ Click-to-rate stars (0–5). Clicking the same star resets to 0.
 
 ---
 
-## ConceptInputComponent
+## TopicInputComponent
 
-**Selector:** `app-concept-input`  
-**File:** `src/app/ui/concept-input.component/`
+**Selector:** `app-topic-input`  
+**File:** `src/app/ui/topic-input.component/`
 
 Textarea with wiki-link autocomplete. Implements `ControlValueAccessor` for form integration.
 
-- Provides its own `ConceptAutocompleteService` at the component level
+- Provides its own `TopicAutocompleteService` at the component level
 - Typing `[[` triggers the autocomplete panel
-- Selecting a concept replaces `[[partial` with `[[Concept Name]] `
+- Selecting a topic replaces `[[partial` with `[[Topic Name]] `
 - Arrow keys navigate suggestions; Enter selects; Escape dismisses
 
 ---
 
-## ConceptAutocompletePanel
+## TopicAutocompletePanel
 
-**Selector:** `concept-autocomplete-panel`  
-**File:** `src/app/ui/concept-autocomplete-panel/`
+**Selector:** `topic-autocomplete-panel`  
+**File:** `src/app/ui/topic-autocomplete-panel/`
 
-Dropdown overlay rendered by `ConceptInputComponent` and `NoteCardComponent`. Reads `suggestions()` and `activeIndex()` from `ConceptAutocompleteService`.
+Dropdown overlay rendered by `TopicInputComponent` and `NoteCardComponent`. Reads `suggestions()` and `activeIndex()` from `TopicAutocompleteService`.
 
 ---
 
@@ -592,12 +592,12 @@ Attaches an `IntersectionObserver` to the host element (100px rootMargin). Emits
 <div appInfiniteScroll (scrolly)="loadMore()"></div>
 ```
 
-### ConceptAutocompleteDirective
+### TopicAutocompleteDirective
 
 **Selector:** `[noteAutocomplete]`  
-**File:** `src/app/core/directives/concept-autocomplete.directive.ts`
+**File:** `src/app/core/directives/topic-autocomplete.directive.ts`
 
-Applied to a `<textarea>`. Listens for `input` events and pipes text + cursor position into `ConceptAutocompleteService.update()`. Handles keyboard navigation (arrows, Enter) and emits `(insertConcept)`.
+Applied to a `<textarea>`. Listens for `input` events and pipes text + cursor position into `TopicAutocompleteService.update()`. Handles keyboard navigation (arrows, Enter) and emits `(insertTopic)`.
 
 ---
 
@@ -608,10 +608,10 @@ Applied to a `<textarea>`. Listens for `input` events and pipes text + cursor po
 **Name:** `noteFormat`  
 **File:** `src/app/ui/pipes/note-format.pipe.ts`
 
-Transforms note content by replacing `[[Concept Name]]` patterns with clickable HTML spans:
+Transforms note content by replacing `[[Topic Name]]` patterns with clickable HTML spans:
 
 ```html
-{{ note.content | noteFormat: conceptMap }}
+{{ note.content | noteFormat: topicMap }}
 ```
 
-Lookup is case-insensitive. Unresolved concepts render as plain `[[text]]`.
+Lookup is case-insensitive. Unresolved topics render as plain `[[text]]`.

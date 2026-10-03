@@ -9,7 +9,7 @@
  * The class it originally watched was `mobile-hidden`, whose rules WERE
  * width-keyed — so on an 844x390 phone (wider than the 768px breakpoint) the
  * class applied with no CSS honouring it and the rail kept ~40% of the screen.
- * `.index-col.mobile-hidden` is now the concept-DETAIL case only.
+ * `.index-col.mobile-hidden` is now the topic-DETAIL case only.
  */
 import { chromium } from '@playwright/test';
 

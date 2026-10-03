@@ -1,5 +1,5 @@
 :host {
-  /* Must be a flex CONTAINER, not just a flex item: `flex: 1` on `.concept-map`
+  /* Must be a flex CONTAINER, not just a flex item: `flex: 1` on `.topic-map`
      only has meaning if its parent is a flex container. With `display: block`
      here the inner chain silently stopped (measured: the host was 896px while
      the card inside it stayed 392px). */
@@ -23,13 +23,13 @@
  * usable graph.
  */
 :host,
-.concept-map,
+.topic-map,
 .map-stage {
   flex: 1;
   min-height: 0;
 }
 
-.concept-map,
+.topic-map,
 .map-stage {
   display: flex;
   flex-direction: column;
@@ -213,7 +213,7 @@
   min-width: 0;
 }
 
-/* The concept's cluster hue — the card's one link back to the canvas. */
+/* The topic's cluster hue — the card's one link back to the canvas. */
 .map-card-swatch {
   flex: 0 0 auto;
   width: 10px;
@@ -400,7 +400,7 @@
     padding: 0.7rem 0.75rem 0.75rem;
   }
 
-  /* One row of related concepts that scrolls sideways, so the card keeps a
+  /* One row of related topics that scrolls sideways, so the card keeps a
      fixed, small height and the graph keeps the screen. */
   .map-card-related {
     flex-wrap: nowrap;

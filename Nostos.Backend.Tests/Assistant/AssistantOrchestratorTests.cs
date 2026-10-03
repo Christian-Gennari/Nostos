@@ -683,18 +683,18 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
     // ------------------------------------------------------------------
 
     [Fact]
-    public async Task Concept_list_read_changes_nothing_and_does_not_emit_suggestions()
+    public async Task Topic_list_read_changes_nothing_and_does_not_emit_suggestions()
     {
         var h = CreateHarness();
         var book = await SeedBookAsync(h, "Seeded Book");
         await SeedNoteAsync(h, book.Id, "seeded note text");
-        await SeedConceptAsync(h, "Seeded Concept");
+        await SeedTopicAsync(h, "Seeded Topic");
 
         var before = await StoreSnapshotAsync(h);
 
         h.Llm
-            .CallsTool("concepts_list")
-            .Returns("Here are a few concepts from your library.");
+            .CallsTool("topics_list")
+            .Returns("Here are a few topics from your library.");
 
         var response = await h.Orchestrator.HandleTurnAsync(Turn(
             "Where could this note belong?",
@@ -726,27 +726,27 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
     }
 
     // ------------------------------------------------------------------
-    // Brain review — existing-concept suggestions only (#261 §5)
+    // Brain review — existing-topic suggestions only (#261 §5)
     // ------------------------------------------------------------------
 
     [Fact]
-    public async Task Brain_review_note_context_drives_concept_suggestions_without_mutating()
+    public async Task Brain_review_note_context_drives_topic_suggestions_without_mutating()
     {
         var h = CreateHarness();
         var book = await SeedBookAsync(h, "The Magic Mountain");
         var note = await SeedNoteAsync(h, book.Id, "Hans Castorp on the mountain");
-        var mountains = await SeedConceptAsync(h, "Mountains");
-        var alps = await SeedConceptAsync(h, "The Alps");
+        var mountains = await SeedTopicAsync(h, "Mountains");
+        var alps = await SeedTopicAsync(h, "The Alps");
 
         var before = await StoreSnapshotAsync(h);
 
-        // The model reads the reviewed note and lists concepts: the flow the
+        // The model reads the reviewed note and lists topics: the flow the
         // review-note context instructs it to follow.
         h.Llm
             .CallsTool("notes_read_for_review", $$"""{"noteId":"{{note.Id}}"}""")
-            .CallsTool("concepts_list")
-            .CallsTool("concepts_propose_links", $$"""{"noteId":"{{note.Id}}","candidates":[{"conceptId":"{{mountains.Id}}","reason":"Both discuss attention while climbing the mountain."},{"conceptId":"{{alps.Id}}","reason":"The note mentions an Alpine landscape in the book."}]}""")
-            .Returns("A couple of concepts look right.");
+            .CallsTool("topics_list")
+            .CallsTool("topics_propose_links", $$"""{"noteId":"{{note.Id}}","candidates":[{"topicId":"{{mountains.Id}}","reason":"Both discuss attention while climbing the mountain."},{"topicId":"{{alps.Id}}","reason":"The note mentions an Alpine landscape in the book."}]}""")
+            .Returns("A couple of topics look right.");
 
         var response = await h.Orchestrator.HandleTurnAsync(Turn(
             "Where do you think this belongs?",
@@ -756,14 +756,14 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
                 brainReviewNoteId: note.Id.ToString())));
 
         response.Suggestions.Should().NotBeEmpty();
-        response.Suggestions.Should().OnlyContain(s => s.Kind == "concept");
-        response.Suggestions.Should().HaveCountLessThanOrEqualTo(AssistantOrchestrator.MaxConceptSuggestions);
+        response.Suggestions.Should().OnlyContain(s => s.Kind == "topic");
+        response.Suggestions.Should().HaveCountLessThanOrEqualTo(AssistantOrchestrator.MaxTopicSuggestions);
         response.Suggestions.Select(s => s.Label).Should().BeSubsetOf(["Mountains", "The Alps"]);
         response.Suggestions.Should().OnlyContain(s => s.NoteId == note.Id.ToString());
         response.Suggestions.Should().Contain(s => s.Label == "Mountains" && s.Reason.Contains("attention"));
         h.Llm.CallCount.Should().Be(4);
 
-        // Suggesting is not linking: neither the note nor any concept changed.
+        // Suggesting is not linking: neither the note nor any topic changed.
         (await StoreSnapshotAsync(h)).Should().BeEquivalentTo(before);
 
         // The reviewed note id reaches the model so notes_read_for_review can use it.
@@ -772,26 +772,26 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
     }
 
     [Fact]
-    public async Task Concept_suggestions_are_capped_and_never_create_a_concept()
+    public async Task Topic_suggestions_are_capped_and_never_create_a_topic()
     {
         var h = CreateHarness();
         var book = await SeedBookAsync(h);
-        var note = await SeedNoteAsync(h, book.Id, "A note with no concept");
+        var note = await SeedNoteAsync(h, book.Id, "A note with no topic");
         var seeded = new List<string>();
         var candidates = new List<string>();
-        for (var i = 1; i <= AssistantOrchestrator.MaxConceptSuggestions; i++)
+        for (var i = 1; i <= AssistantOrchestrator.MaxTopicSuggestions; i++)
         {
-            var concept = await SeedConceptAsync(h, $"Concept {i}");
-            seeded.Add(concept.Concept);
-            candidates.Add($$"""{"conceptId":"{{concept.Id}}","reason":"The note explicitly compares an existing relationship."}""");
+            var topic = await SeedTopicAsync(h, $"Topic {i}");
+            seeded.Add(topic.Topic);
+            candidates.Add($$"""{"topicId":"{{topic.Id}}","reason":"The note explicitly compares an existing relationship."}""");
         }
 
         var before = await StoreSnapshotAsync(h);
 
         h.Llm
             .CallsTool("notes_read_for_review", $$"""{"noteId":"{{note.Id}}"}""")
-            .CallsTool("concepts_list")
-            .CallsTool("concepts_propose_links", $$"""{"noteId":"{{note.Id}}","candidates":[{{string.Join(",", candidates)}}]}""")
+            .CallsTool("topics_list")
+            .CallsTool("topics_propose_links", $$"""{"noteId":"{{note.Id}}","candidates":[{{string.Join(",", candidates)}}]}""")
             .Returns("Ideas.");
 
         var response = await h.Orchestrator.HandleTurnAsync(Turn(
@@ -801,15 +801,15 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
                 route: "/second-brain",
                 brainReviewNoteId: note.Id.ToString())));
 
-        response.Suggestions.Should().HaveCount(AssistantOrchestrator.MaxConceptSuggestions);
+        response.Suggestions.Should().HaveCount(AssistantOrchestrator.MaxTopicSuggestions);
         response.Suggestions.Select(s => s.Label).Should().BeSubsetOf(seeded);
 
-        // Zero concepts created to satisfy the suggestions.
+        // Zero topics created to satisfy the suggestions.
         (await StoreSnapshotAsync(h)).Should().BeEquivalentTo(before);
     }
 
     [Fact]
-    public async Task Proposal_with_unknown_concept_id_never_becomes_a_clickable_suggestion()
+    public async Task Proposal_with_unknown_topic_id_never_becomes_a_clickable_suggestion()
     {
         var h = CreateHarness();
         var book = await SeedBookAsync(h);
@@ -818,11 +818,11 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
 
         h.Llm
             .CallsTool("notes_read_for_review", $$"""{"noteId":"{{note.Id}}"}""")
-            .CallsTool("concepts_propose_links", $$"""{"noteId":"{{note.Id}}","candidates":[{"conceptId":"{{Guid.NewGuid()}}","reason":"Invented concept."}]}""")
+            .CallsTool("topics_propose_links", $$"""{"noteId":"{{note.Id}}","candidates":[{"topicId":"{{Guid.NewGuid()}}","reason":"Invented topic."}]}""")
             .Returns("No validated suggestion.");
 
         var response = await h.Orchestrator.HandleTurnAsync(Turn(
-            "Suggest concepts for this note.",
+            "Suggest topics for this note.",
             Context(surface: "second-brain", route: "/second-brain", brainReviewNoteId: note.Id.ToString())));
 
         response.Suggestions.Should().BeEmpty();
@@ -830,15 +830,15 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
     }
 
     [Fact]
-    public async Task Proposal_requires_note_and_concept_reads_in_the_same_turn()
+    public async Task Proposal_requires_note_and_topic_reads_in_the_same_turn()
     {
         var h = CreateHarness();
         var book = await SeedBookAsync(h);
         var note = await SeedNoteAsync(h, book.Id, "Attention and reading");
-        var concept = await SeedConceptAsync(h, "Attention");
+        var topic = await SeedTopicAsync(h, "Attention");
 
         h.Llm
-            .CallsTool("concepts_propose_links", $$"""{"noteId":"{{note.Id}}","candidates":[{"conceptId":"{{concept.Id}}","reason":"The note distinguishes attention from reading."}]}""")
+            .CallsTool("topics_propose_links", $$"""{"noteId":"{{note.Id}}","candidates":[{"topicId":"{{topic.Id}}","reason":"The note distinguishes attention from reading."}]}""")
             .Returns("I did not inspect the note.");
 
         var response = await h.Orchestrator.HandleTurnAsync(Turn(
@@ -857,8 +857,8 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
 
         h.Llm
             .CallsTool("notes_read_for_review", $$"""{"noteId":"{{note.Id}}"}""")
-            .CallsTool("concepts_list")
-            .CallsTool("concepts_propose_links", $$"""{"noteId":"{{note.Id}}","candidates":[]}""")
+            .CallsTool("topics_list")
+            .CallsTool("topics_propose_links", $$"""{"noteId":"{{note.Id}}","candidates":[]}""")
             .Returns("No useful matches found.");
 
         var response = await h.Orchestrator.HandleTurnAsync(Turn(
@@ -1093,7 +1093,7 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
                 [
                     new LlmToolCall(
                         Guid.NewGuid().ToString("N"),
-                        "concepts_search",
+                        "topics_search",
                         """{"term":"thought"}"""),
                     new LlmToolCall(
                         Guid.NewGuid().ToString("N"),
@@ -1816,7 +1816,7 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
             "tool_calls",
             [new LlmToolCall(
                 Guid.NewGuid().ToString("N"),
-                "concepts_search",
+                "topics_search",
                 JsonSerializer.Serialize(new { query = $"loop-{call}" }))]);
 
         var response = await h.Orchestrator.HandleTurnAsync(Turn(
@@ -1837,7 +1837,7 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
             "tool_calls",
             [new LlmToolCall(
                 Guid.NewGuid().ToString("N"),
-                "concepts_search",
+                "topics_search",
                 JsonSerializer.Serialize(new { query = $"loop-{call}" }))]);
 
         var response = await h.Orchestrator.HandleTurnAsync(Turn(
@@ -1882,7 +1882,7 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         h.Llm.Responder = _ => new LlmCompletion(
             null,
             "tool_calls",
-            [new LlmToolCall(Guid.NewGuid().ToString("N"), "concepts_list", "{}")]);
+            [new LlmToolCall(Guid.NewGuid().ToString("N"), "topics_list", "{}")]);
 
         var response = await h.Orchestrator.HandleTurnAsync(Turn(
             "Loop, please.",
@@ -1904,7 +1904,7 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
             "tool_calls",
             [new LlmToolCall(
                 Guid.NewGuid().ToString("N"),
-                "concepts_search",
+                "topics_search",
                 JsonSerializer.Serialize(new { query = $"loop-{call}" }))]);
 
         var response = await h.Orchestrator.HandleTurnAsync(Turn(
@@ -1994,7 +1994,7 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
     public async Task The_ceiling_with_nothing_committed_is_still_an_execution_budget_failure()
     {
         var h = CreateHarness(maxToolIterations: 2);
-        h.Llm.Responder = call => ToolRound($"read-{call}", "concepts_search", new { query = $"loop-{call}" });
+        h.Llm.Responder = call => ToolRound($"read-{call}", "topics_search", new { query = $"loop-{call}" });
 
         var response = await h.Orchestrator.HandleTurnAsync(Turn(
             "Loop, please.",
@@ -2203,7 +2203,7 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         prompt.Should().NotContain("library_overview [read-only]");
         prompt.Should().Contain("collectionIds");
         prompt.Should().Contain("Multi-step work is allowed");
-        prompt.Should().Contain("Passage or concept explanations may use as much explanation as genuinely needed");
+        prompt.Should().Contain("Passage or topic explanations may use as much explanation as genuinely needed");
         prompt.Should().Contain("Broad interpretive requests should retrieve and orient first");
         prompt.Should().Contain("Historical application/evidence metadata");
         prompt.Should().NotContain("Keep replies to a sentence or two");
@@ -2514,11 +2514,11 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
     }
 
     [Fact]
-    public async Task Knowledge_search_note_and_concept_results_keep_their_canonical_handles()
+    public async Task Knowledge_search_note_and_topic_results_keep_their_canonical_handles()
     {
         var bookId = Guid.NewGuid();
         var noteId = Guid.NewGuid();
-        var conceptId = Guid.NewGuid();
+        var topicId = Guid.NewGuid();
         var knowledge = new FakeKnowledgeRetrievalService(
             new KnowledgeSearchResponse(
                 ["homecoming"],
@@ -2537,9 +2537,9 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
                         false),
                 ],
                 [
-                    new KnowledgeConceptEvidence(
-                        new KnowledgeEvidenceHandle(KnowledgeEvidenceKinds.Concept, ConceptId: conceptId),
-                        conceptId,
+                    new KnowledgeTopicEvidence(
+                        new KnowledgeEvidenceHandle(KnowledgeEvidenceKinds.Topic, TopicId: topicId),
+                        topicId,
                         "Homecoming",
                         2,
                         1,
@@ -2561,8 +2561,8 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         response.Evidence.Should().HaveCount(2);
         response.Evidence![0].Handle.NoteId.Should().Be(noteId);
         response.Evidence[0].Handle.Kind.Should().Be(KnowledgeEvidenceKinds.Note);
-        response.Evidence[1].Handle.ConceptId.Should().Be(conceptId);
-        response.Evidence[1].Handle.Kind.Should().Be(KnowledgeEvidenceKinds.Concept);
+        response.Evidence[1].Handle.TopicId.Should().Be(topicId);
+        response.Evidence[1].Handle.Kind.Should().Be(KnowledgeEvidenceKinds.Topic);
         response.Suggestions.Should().BeEmpty("ordinary knowledge reads are evidence, not proposals");
     }
 
@@ -3566,12 +3566,12 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         var factory = new TestContextFactory(options);
         var db = new NostosDbContext(options);
 
-        var concepts = new ConceptRepository(db);
+        var topics = new TopicRepository(db);
         var noteService = new NoteService(
             new NoteRepository(db),
             new BookRepository(db),
-            concepts,
-            new NoteProcessorService(concepts),
+            topics,
+            new NoteProcessorService(topics),
             thoughts ?? new FakeThoughtProcessor(),
             db,
             NullLogger<NoteService>.Instance);
@@ -3586,7 +3586,7 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
             AssistantCapabilities.Build(
                 noteService,
                 libraryService,
-                concepts,
+                topics,
                 knowledge ?? NoOpKnowledgeRetrievalService.Instance,
                 bookTextService));
 
@@ -3678,7 +3678,7 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
             AudioChapter: null,
             selectedText,
             BrainReviewNoteId: brainReviewNoteId,
-            Concept: null,
+            Topic: null,
             CollectionId: null,
             anchor,
             CaptureBookTitle: captureBookTitle);
@@ -3770,12 +3770,12 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         return note;
     }
 
-    private static async Task<ConceptModel> SeedConceptAsync(Harness h, string name)
+    private static async Task<TopicModel> SeedTopicAsync(Harness h, string name)
     {
-        var concept = new ConceptModel { Id = Guid.NewGuid(), Concept = name };
-        h.Db.Concepts.Add(concept);
+        var topic = new TopicModel { Id = Guid.NewGuid(), Topic = name };
+        h.Db.Topics.Add(topic);
         await h.Db.SaveChangesAsync();
-        return concept;
+        return topic;
     }
 
     private static async Task<CollectionModel> SeedCollectionAsync(Harness h, string name)
@@ -3806,9 +3806,9 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
             .OrderBy(n => n.Id)
             .Select(n => new { n.Id, n.Content })
             .ToListAsync();
-        var concepts = await db.Concepts.AsNoTracking()
+        var topics = await db.Topics.AsNoTracking()
             .OrderBy(c => c.Id)
-            .Select(c => new { c.Id, c.Concept })
+            .Select(c => new { c.Id, c.Topic })
             .ToListAsync();
         var collections = await db.Collections.AsNoTracking()
             .OrderBy(c => c.Id)
@@ -3817,13 +3817,13 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
 
         return new StoreSnapshot(
             notes.Select(n => $"{n.Id}:{n.Content}").ToList(),
-            concepts.Select(c => $"{c.Id}:{c.Concept}").ToList(),
+            topics.Select(c => $"{c.Id}:{c.Topic}").ToList(),
             collections.Select(c => $"{c.Id}:{c.Name}:{c.ParentId}").ToList());
     }
 
     private sealed record StoreSnapshot(
         IReadOnlyList<string> Notes,
-        IReadOnlyList<string> Concepts,
+        IReadOnlyList<string> Topics,
         IReadOnlyList<string> Collections);
 
     private sealed class Harness(

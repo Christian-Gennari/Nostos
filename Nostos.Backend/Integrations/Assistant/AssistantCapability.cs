@@ -46,7 +46,7 @@ public sealed record AssistantToolResult(
 
 /// <summary>
 /// The typed failure codes the assistant surface emits. Canonical service
-/// failures pass their own code through unchanged (e.g. <c>concept_not_found</c>),
+/// failures pass their own code through unchanged (e.g. <c>topic_not_found</c>),
 /// so a client never has to learn a second vocabulary for the same condition.
 /// </summary>
 public static class AssistantErrorCodes

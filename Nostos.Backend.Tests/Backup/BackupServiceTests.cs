@@ -48,7 +48,7 @@ public sealed class BackupServiceTests
 
         using var zip = ZipFile.OpenRead(archivePath!);
         zip.GetEntry("metadata/notes.json").Should().NotBeNull("the .nostos archive must include metadata/notes.json");
-        zip.GetEntry("metadata/concepts.json").Should().NotBeNull();
+        zip.GetEntry("metadata/topics.json").Should().NotBeNull();
         zip.GetEntry("metadata/collections.json").Should().NotBeNull();
         zip.GetEntry("metadata/writings.json").Should().NotBeNull();
         zip.GetEntry("database/nostos.db").Should().NotBeNull();

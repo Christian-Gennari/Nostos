@@ -1,10 +1,10 @@
 namespace Nostos.Backend.Data.Models;
 
-public class NoteConceptModel
+public class NoteTopicModel
 {
   public Guid NoteId { get; set; }
   public NoteModel Note { get; set; } = null!;
 
-  public Guid ConceptId { get; set; }
-  public ConceptModel Concept { get; set; } = null!;
+  public Guid TopicId { get; set; }
+  public TopicModel Topic { get; set; } = null!;
 }

@@ -19,7 +19,7 @@ internal sealed record PortableFixtureIds(
     Guid ReadingCollectionId,
     Guid NestedCollectionId,
     Guid NoteId,
-    Guid ConceptId,
+    Guid TopicId,
     Guid WritingDocumentId);
 
 internal sealed class LocalPortableTestLibrary : IAsyncDisposable
@@ -247,10 +247,10 @@ internal static class PortableArchiveTestSupport
             AnchorVerified = true,
             CreatedAt = now.AddDays(2),
         };
-        var concept = new ConceptModel
+        var topic = new TopicModel
         {
             Id = Guid.NewGuid(),
-            Concept = "Portability",
+            Topic = "Portability",
         };
 
         var studioFolder = new WritingModel
@@ -302,13 +302,13 @@ internal static class PortableArchiveTestSupport
                 AddedAt = now.AddDays(3),
             });
         db.Notes.Add(note);
-        db.Concepts.Add(concept);
-        db.NoteConcepts.Add(new NoteConceptModel
+        db.Topics.Add(topic);
+        db.NoteTopics.Add(new NoteTopicModel
         {
             NoteId = note.Id,
             Note = note,
-            ConceptId = concept.Id,
-            Concept = concept,
+            TopicId = topic.Id,
+            Topic = topic,
         });
         db.Writings.AddRange(studioFolder, studioDocument);
         db.WritingNotes.Add(new WritingNoteModel
@@ -365,7 +365,7 @@ internal static class PortableArchiveTestSupport
             reading.Id,
             philosophy.Id,
             note.Id,
-            concept.Id,
+            topic.Id,
             studioDocument.Id);
     }
 

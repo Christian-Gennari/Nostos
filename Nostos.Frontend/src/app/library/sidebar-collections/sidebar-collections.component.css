@@ -277,7 +277,7 @@ a.nav-item {
      colour on dark and would make this a washed-out light pill; `--primary-fill`
      is the dark spruce and reads as green against the slate sidebar. This token
      is the single owner of the app's selection treatment, shared with the Brain
-     concept index, and consuming it here means no global dark override has to
+     topic index, and consuming it here means no global dark override has to
      out-specify this rule. */
   background: var(--selection-surface);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);

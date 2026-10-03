@@ -151,7 +151,7 @@ public static class NostosProductComposition
 
         services.AddScoped<IBookRepository, BookRepository>();
         services.AddScoped<INoteRepository, NoteRepository>();
-        services.AddScoped<IConceptRepository, ConceptRepository>();
+        services.AddScoped<ITopicRepository, TopicRepository>();
         services.AddScoped<IWritingRepository, WritingRepository>();
 
         services.AddSingleton<IThoughtProcessor, ThoughtProcessor>();
@@ -164,7 +164,7 @@ public static class NostosProductComposition
         services.AddScoped(sp => new AssistantCapabilityRegistry(AssistantCapabilities.Build(
             sp.GetRequiredService<INoteService>(),
             sp.GetRequiredService<ILibraryService>(),
-            sp.GetRequiredService<IConceptRepository>(),
+            sp.GetRequiredService<ITopicRepository>(),
             sp.GetRequiredService<IKnowledgeRetrievalService>(),
             sp.GetRequiredService<IBookTextSearchService>())));
 
@@ -261,7 +261,7 @@ public static class NostosProductComposition
         routes.MapNotesEndpoints();
         routes.MapNoteProcessingEndpoints();
         routes.MapCollectionsEndpoints();
-        routes.MapConceptsEndpoints();
+        routes.MapTopicsEndpoints();
         routes.MapWritingsEndpoints();
         routes.MapTranscriptionEndpoints();
         routes.MapAssistantEndpoints();

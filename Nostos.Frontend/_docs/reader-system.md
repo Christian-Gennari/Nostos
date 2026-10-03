@@ -86,7 +86,7 @@ Both sidebars are collapsible. On mobile, they overlay the reader.
 
 1. User selects text in the reader (epub/pdf) or clicks "Add note" (audio)
 2. Quick-note textarea appears with the selected text pre-quoted
-3. User types note content, optionally adding `[[Concept]]` tags with autocomplete
+3. User types note content, optionally adding `[[Topic]]` tags with autocomplete
 4. Save → `NotesService.create()` → highlights are updated → sidebar refreshes
 
 ### Progress Sync
@@ -155,6 +155,6 @@ Common across all reader types. Displays all `Note[]` for the book.
 Features:
 
 - **Jump to note:** Clicking a note with a `cfiRange` navigates the epub; clicking one with a page number navigates the PDF
-- **Edit inline:** Uses `NoteCardComponent` with concept tag support
+- **Edit inline:** Uses `NoteCardComponent` with topic tag support
 - **Delete:** With confirmation
-- **Concept tags:** `[[Concept]]` links rendered via `NoteFormatPipe`, clickable to navigate to Second Brain
+- **Topic tags:** `[[Topic]]` links rendered via `NoteFormatPipe`, clickable to navigate to Second Brain

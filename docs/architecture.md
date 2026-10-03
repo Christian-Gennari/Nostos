@@ -9,7 +9,7 @@
 
 ## System Overview
 
-Nostos is a self-hosted personal library and knowledge management platform. It combines an **ebook/audiobook reader**, a **note-taking system with wiki-style concept linking**, a **writing studio**, and a **collection management system** — all in a single deployable application.
+Nostos is a self-hosted personal library and knowledge management platform. It combines an **ebook/audiobook reader**, a **note-taking system with wiki-style topic linking**, a **writing studio**, and a **collection management system** — all in a single deployable application.
 
 ```
 ┌─────────────────────────────────────┐
@@ -51,7 +51,7 @@ Nostos.sln
 │       ├── library/         # Library view + sidebar collections
 │       ├── book-detail/     # Book detail page + store
 │       ├── reader/          # Multi-format reader (epub, pdf, audio)
-│       ├── second-brain/    # Concept explorer
+│       ├── second-brain/    # Topic explorer
 │       ├── writing-studio/  # Markdown writing environment
 │       ├── add-book-modal/  # Book create/edit modal
 │       └── home/            # Landing page
@@ -109,9 +109,9 @@ The backend uses ASP.NET Core Minimal API pattern with extension method groups (
 
 Book files and covers are stored in `Storage/books/{bookId}/` directories on-disk, not in the database. The database stores only metadata and file name references.
 
-### 8. Wiki-Link Concept System
+### 8. Wiki-Link Topic System
 
-Notes use `[[Concept Name]]` syntax. The `NoteProcessorService` parses these on save, auto-creates concepts if new, and maintains a many-to-many `NoteConcepts` join table. A background worker (`ConceptCleanupWorker`) periodically removes orphaned concepts.
+Notes use `[[Topic Name]]` syntax. The `NoteProcessorService` parses these on save, auto-creates topics if new, and maintains a many-to-many `NoteTopics` join table. A background worker (`TopicCleanupWorker`) periodically removes orphaned topics.
 
 ### 10. Automated Backup & Restore
 

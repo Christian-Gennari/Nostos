@@ -82,7 +82,7 @@ public sealed record AssistantHistoricalContextDto(
     string? BookId = null,
     string? BookTitle = null,
     string? BrainReviewNoteId = null,
-    string? Concept = null,
+    string? Topic = null,
     string? CollectionId = null);
 
 /// <summary>
@@ -114,7 +114,7 @@ public sealed record AssistantContextDto(
     string? AudioChapter = null,
     string? SelectedText = null,
     string? BrainReviewNoteId = null,
-    string? Concept = null,
+    string? Topic = null,
     string? CollectionId = null,
     AssistantAnchorDto? Anchor = null,
     // APPENDED (positional record): legacy compatibility for the pre-#560 book
@@ -184,7 +184,7 @@ public sealed record AssistantResolvedBookDto(Guid BookId, string BookTitle);
 public sealed record AssistantEvidenceHandleDto(
     string Kind,
     Guid? NoteId = null,
-    Guid? ConceptId = null,
+    Guid? TopicId = null,
     Guid? BookId = null,
     string? SourceSha256 = null,
     string? ExtractorVersion = null,

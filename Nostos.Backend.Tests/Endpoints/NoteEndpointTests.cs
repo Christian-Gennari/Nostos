@@ -59,7 +59,7 @@ public sealed class NoteEndpointTests : IClassFixture<LibraryEndpointFactory>
         hit.BookId.Should().Be(book.Id);
         hit.BookTitle.Should().Be(book.Title);
         hit.Content.Should().Contain("[[Attention]]");
-        hit.ConceptNames.Should().Contain("Attention");
+        hit.TopicNames.Should().Contain("Attention");
 
         var missing = await Client.GetAsync($"/api/notes/{Guid.NewGuid()}");
         missing.StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -89,7 +89,7 @@ public sealed class NoteEndpointTests : IClassFixture<LibraryEndpointFactory>
     // ------------------------------------------------------------------
 
     [Fact]
-    public async Task Browse_notes_pages_linked_and_unlinked_material_and_filters_without_concepts()
+    public async Task Browse_notes_pages_linked_and_unlinked_material_and_filters_without_topics()
     {
         var book = await CreateBookAsync();
         var linked = await CreateNoteAsync(book.Id, "a thought about [[Attention]]");
@@ -105,10 +105,10 @@ public sealed class NoteEndpointTests : IClassFixture<LibraryEndpointFactory>
         all.Items.Concat(second!.Items).Select(n => n.Id).Should().BeEquivalentTo([linked.Id, unlinked.Id]);
 
         var without = await Client.GetFromJsonAsync<NoteSearchPageDto>(
-            $"/api/notes?bookId={book.Id}&withoutConcepts=true&query=unconnected");
+            $"/api/notes?bookId={book.Id}&withoutTopics=true&query=unconnected");
         without!.TotalCount.Should().Be(1);
         without.Items.Should().ContainSingle().Which.Id.Should().Be(unlinked.Id);
-        without.Items.Single().ConceptNames.Should().BeEmpty();
+        without.Items.Single().TopicNames.Should().BeEmpty();
     }
 
     // ------------------------------------------------------------------

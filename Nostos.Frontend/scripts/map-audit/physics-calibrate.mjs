@@ -1,8 +1,8 @@
 /**
- * Physics calibration for the concept map.
+ * Physics calibration for the topic map.
  *
  * Runs Obsidian's force set (see docs/obsidian-graph-physics.md) over the real
- * concept graph, sweeping the scale-dependent constants, and reports settled
+ * topic graph, sweeping the scale-dependent constants, and reports settled
  * extent / overlap / nearest-neighbour distance for each candidate so the
  * chosen numbers come from a dose-response curve rather than a guess.
  *

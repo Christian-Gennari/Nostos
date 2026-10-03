@@ -36,7 +36,7 @@
 
 Nostos is a personal reading and writing environment built around a simple idea: what you read should be able to stay connected to what you think and what you eventually write.
 
-Instead of splitting that process across a library app, an e-book reader, a notes system, and a writing tool, Nostos keeps the whole path together. You can collect physical books, EPUBs, PDFs, and audiobooks; read or listen inside the app; capture notes and highlights; connect ideas through concepts; and bring that material into the Writing Studio when it is time to turn reading into your own work.
+Instead of splitting that process across a library app, an e-book reader, a notes system, and a writing tool, Nostos keeps the whole path together. You can collect physical books, EPUBs, PDFs, and audiobooks; read or listen inside the app; capture notes and highlights; connect ideas through topics; and bring that material into the Writing Studio when it is time to turn reading into your own work.
 
 The interface is deliberately restrained. There are no social feeds, reading streaks, engagement mechanics, or productivity scores competing for attention. The emphasis stays on the library and the work you are doing with it.
 
@@ -97,20 +97,20 @@ Nostos includes readers for the formats it stores, so notes and progress can sta
 
 ---
 
-### Brain & Concepts
+### Brain & Topics
 
 The Brain is where notes from individual books start to connect.
 
-- **Wiki-links:** Use `[[Concept]]` links in notes to connect recurring ideas.
-- **Concept views:** Browse concepts as a list or explore their relationships in the interactive graph.
+- **Wiki-links:** Use `[[Topic]]` links in notes to connect recurring ideas.
+- **Topic views:** Browse topics as a list or explore their relationships in the interactive graph.
 - **Evidence-first navigation:** Move from an idea back to the notes and reading material that support it.
-- **Automatic cleanup:** Concepts with no remaining references can be cleaned up automatically.
+- **Automatic cleanup:** Topics with no remaining references can be cleaned up automatically.
 
 <div align="center">
   <img
     width="2880"
     height="1800"
-    alt="Nostos Brain concept index and linked notes"
+    alt="Nostos Brain topic index and linked notes"
     src="docs/screenshots/brain-list.png"
   />
 </div>
@@ -119,7 +119,7 @@ The Brain is where notes from individual books start to connect.
   <img
     width="3800"
     height="1820"
-    alt="Nostos Brain interactive concept graph"
+    alt="Nostos Brain interactive topic graph"
     src="docs/screenshots/brain-graph.png"
   />
 </div>
@@ -209,7 +209,7 @@ Nostos/
 - **EPUB:** `epub.js`
 - **PDF:** `ngx-extended-pdf-viewer`
 - **Audio:** `Howler.js`
-- **Concept graph:** Graphology, Sigma.js, and `d3-force`
+- **Topic graph:** Graphology, Sigma.js, and `d3-force`
 - **Editor:** TinyMCE with Turndown for Markdown conversion
 - **Icons:** Phosphor
 - **Typography:** Newsreader and Hanken Grotesk

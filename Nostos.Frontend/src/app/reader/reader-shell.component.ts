@@ -6,8 +6,8 @@ import { FormsModule } from '@angular/forms';
 // Services
 import { BooksService } from '../core/services/books.service';
 import { NotesService } from '../core/services/notes.service';
-import { ConceptsService, ConceptDto } from '../core/services/concepts.service';
-import { ConceptAutocompleteService } from '../ui/concept-autocomplete-panel/concept-autocomplete.service';
+import { TopicsService, TopicDto } from '../core/services/topics.service';
+import { TopicAutocompleteService } from '../ui/topic-autocomplete-panel/topic-autocomplete.service';
 
 // DTOs & Interfaces
 import { Note, noteNavigationTarget } from '../core/dtos/note.dtos';
@@ -29,7 +29,7 @@ import { PdfReader } from './pdf-reader/pdf-reader.component';
 import { EpubReader } from './epub-reader/epub-reader.component';
 import type { SelectionAnchor } from './epub-reader/epub-annotation-manager';
 import { AudioReader } from './audio-reader/audio-reader.component';
-import { ConceptInputComponent } from '../ui/concept-input.component/concept-input.component';
+import { TopicInputComponent } from '../ui/topic-input.component/topic-input.component';
 import { NoteCardComponent } from '../ui/note-card.component/note-card.component';
 import { ConfirmModal } from '../ui/confirm-modal/confirm-modal.component';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
@@ -66,7 +66,7 @@ export function selectionPreview(text: string | null, max = SELECTION_PREVIEW_MA
     PdfReader,
     EpubReader,
     AudioReader,
-    ConceptInputComponent,
+    TopicInputComponent,
     NoteCardComponent,
     IconButtonComponent,
     ButtonComponent,
@@ -166,8 +166,8 @@ export class ReaderShell implements OnInit, OnDestroy {
   private location = inject(Location);
   private booksService = inject(BooksService);
   private notesService = inject(NotesService);
-  private conceptsService = inject(ConceptsService);
-  private autocompleteService = inject(ConceptAutocompleteService);
+  private topicsService = inject(TopicsService);
+  private autocompleteService = inject(TopicAutocompleteService);
 
   private themeService = inject(ThemeService);
   private toast = inject(ToastService);
@@ -303,8 +303,8 @@ export class ReaderShell implements OnInit, OnDestroy {
   /** Note id awaiting delete confirmation (asked through ConfirmModal). */
   pendingNoteDelete = signal<string | null>(null);
 
-  // Concept map for the note cards
-  conceptMap = signal<Map<string, ConceptDto>>(new Map());
+  // Topic map for the note cards
+  topicMap = signal<Map<string, TopicDto>>(new Map());
 
   // --- UNIFIED READER LOGIC ---
   fileType = computed<'pdf' | 'epub' | 'audio' | null>(() => {
@@ -363,7 +363,7 @@ export class ReaderShell implements OnInit, OnDestroy {
   // --- INITIALIZATION ---
 
   ngOnInit() {
-    this.loadConcepts();
+    this.loadTopics();
     this.watchBookNavigation();
     this.watchGroundedSourceNavigation();
   }
@@ -564,16 +564,16 @@ export class ReaderShell implements OnInit, OnDestroy {
     void reader.goToSource(target);
   }
 
-  loadConcepts() {
-    this.conceptsService.list().subscribe({
-      next: (concepts) => {
+  loadTopics() {
+    this.topicsService.list().subscribe({
+      next: (topics) => {
         // Populate service for autocomplete
-        this.autocompleteService.setConcepts(concepts);
+        this.autocompleteService.setTopics(topics);
 
         // Populate map for NoteCard display
-        const map = new Map<string, ConceptDto>();
-        concepts.forEach((c) => map.set(c.name.trim().toLowerCase(), c));
-        this.conceptMap.set(map);
+        const map = new Map<string, TopicDto>();
+        topics.forEach((c) => map.set(c.name.trim().toLowerCase(), c));
+        this.topicMap.set(map);
       },
     });
   }
@@ -797,7 +797,7 @@ export class ReaderShell implements OnInit, OnDestroy {
         if (this.quickNoteContent().trim() === content) this.quickNoteContent.set('');
         this.quickNoteSaving.set(false);
         this.loadNotes(bookId);
-        this.loadConcepts();
+        this.loadTopics();
         this.showSaveFeedback('Note saved');
       },
       error: () => {

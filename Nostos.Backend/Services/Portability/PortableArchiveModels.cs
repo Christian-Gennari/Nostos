@@ -1,4 +1,10 @@
+using System.Text.Json.Serialization;
+
 namespace Nostos.Backend.Services.Portability;
+
+// The archive's JSON keys (concepts / noteConcepts / concept / conceptId) are an
+// on-disk interchange format: they stay as written so archives exported before the
+// Concepts -> Topics rename still import. Only the C# names changed.
 
 internal static class PortableArchiveFormat
 {
@@ -20,8 +26,8 @@ internal sealed record PortableLibraryData(
     List<PortableCollection> Collections,
     List<PortableBookCollection> BookCollections,
     List<PortableNote> Notes,
-    List<PortableConcept> Concepts,
-    List<PortableNoteConcept> NoteConcepts,
+    [property: JsonPropertyName("concepts")] List<PortableTopic> Topics,
+    [property: JsonPropertyName("noteConcepts")] List<PortableNoteTopic> NoteTopics,
     List<PortableWriting> Writings,
     List<PortableBookAcquisition> BookAcquisitions,
     PortableAssistantSettings? AssistantSettings,
@@ -100,13 +106,13 @@ internal sealed record PortableNote(
     string? SourceAnchorValue,
     bool AnchorVerified);
 
-internal sealed record PortableConcept(
+internal sealed record PortableTopic(
     Guid Id,
-    string Concept);
+    [property: JsonPropertyName("concept")] string Topic);
 
-internal sealed record PortableNoteConcept(
+internal sealed record PortableNoteTopic(
     Guid NoteId,
-    Guid ConceptId);
+    [property: JsonPropertyName("conceptId")] Guid TopicId);
 
 internal sealed record PortableWriting(
     Guid Id,

@@ -483,16 +483,16 @@ public class BackupService : IBackupService
 
                 var notes = await db
                     .Notes.Include(n => n.Book)
-                    .Include(n => n.NoteConcepts)
-                    .ThenInclude(nc => nc.Concept)
+                    .Include(n => n.NoteTopics)
+                    .ThenInclude(nc => nc.Topic)
                     .ToListAsync(ct);
                 await WriteJsonAsync(Path.Combine(metadataDir, "notes.json"), notes, ct);
 
-                var concepts = await db
-                    .Concepts.Include(c => c.NoteConcepts)
+                var topics = await db
+                    .Topics.Include(c => c.NoteTopics)
                     .ThenInclude(nc => nc.Note)
                     .ToListAsync(ct);
-                await WriteJsonAsync(Path.Combine(metadataDir, "concepts.json"), concepts, ct);
+                await WriteJsonAsync(Path.Combine(metadataDir, "topics.json"), topics, ct);
 
                 var collections = await db.Collections.ToListAsync(ct);
                 await WriteJsonAsync(Path.Combine(metadataDir, "collections.json"), collections, ct);

@@ -14,7 +14,7 @@ in `SelectedText` are never passed to the thought processor.
 
 Manual Book Detail notes, reader quick notes, highlights, imports and ordinary
 edits do not consult this preference. Changing it never rewrites existing notes.
-Concept extraction is a separate existing operation.
+Topic extraction is a separate existing operation.
 
 The stored default is the only Ask Nostos capture-mode control. There is no
 per-capture override, including natural-language instructions such as “save this
@@ -27,7 +27,7 @@ available. Original wording stays hidden until **View original** opens a modal;
 **Restore original** is available inside that modal. Original text comes from the canonical `/api/notes/{id}/raw` endpoint,
 so this works after reload, without conversation history. Restore replaces the
 current note text, sets the mode to verbatim, retains the original, and rebuilds
-concept links without changing the quote or source anchor.
+topic links without changing the quote or source anchor.
 
 When a capture's provider fails or returns empty output, the original words are
 saved with effective mode `verbatim`. The deterministic capture confirmation

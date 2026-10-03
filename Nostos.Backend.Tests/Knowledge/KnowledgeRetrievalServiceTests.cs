@@ -62,7 +62,7 @@ public sealed class KnowledgeRetrievalServiceTests : IClassFixture<SqliteTestFix
     }
 
     [Fact]
-    public async Task Concept_search_uses_linked_note_evidence_across_multiple_lexical_variants()
+    public async Task Topic_search_uses_linked_note_evidence_across_multiple_lexical_variants()
     {
         await using var h = await CreateHarnessAsync();
         var book = await h.SeedBookAsync("Agency");
@@ -72,30 +72,30 @@ public sealed class KnowledgeRetrievalServiceTests : IClassFixture<SqliteTestFix
         var distractor = await h.SeedNoteAsync(
             book.Id,
             "Decisions about furniture arrangement belong in another notebook.");
-        var agency = await h.SeedConceptAsync("Agency", relevant.Id);
-        await h.SeedConceptAsync("Arrangement", distractor.Id);
+        var agency = await h.SeedTopicAsync("Agency", relevant.Id);
+        await h.SeedTopicAsync("Arrangement", distractor.Id);
 
         var result = await h.Knowledge.SearchAsync(
             new KnowledgeSearchRequest(
                 "freedom requires accepting responsibility for decisions",
                 MaxPerSource: 6));
 
-        result.Concepts.Should().NotBeEmpty();
-        result.Concepts[0].ConceptId.Should().Be(agency.Id);
-        result.Concepts[0].SupportingNotes.Should().Contain(note => note.NoteId == relevant.Id);
-        result.Concepts[0].Handle.Should().Be(
-            new KnowledgeEvidenceHandle(KnowledgeEvidenceKinds.Concept, ConceptId: agency.Id));
+        result.Topics.Should().NotBeEmpty();
+        result.Topics[0].TopicId.Should().Be(agency.Id);
+        result.Topics[0].SupportingNotes.Should().Contain(note => note.NoteId == relevant.Id);
+        result.Topics[0].Handle.Should().Be(
+            new KnowledgeEvidenceHandle(KnowledgeEvidenceKinds.Topic, TopicId: agency.Id));
     }
 
     [Fact]
-    public async Task Explicit_book_scope_applies_to_notes_and_concept_evidence()
+    public async Task Explicit_book_scope_applies_to_notes_and_topic_evidence()
     {
         await using var h = await CreateHarnessAsync();
         var bookA = await h.SeedBookAsync("Book A");
         var bookB = await h.SeedBookAsync("Book B");
         var noteA = await h.SeedNoteAsync(bookA.Id, "Freedom and responsibility belong together.");
         var noteB = await h.SeedNoteAsync(bookB.Id, "Freedom responsibility decisions consequences.");
-        var concept = await h.SeedConceptAsync("Agency", noteA.Id, noteB.Id);
+        var topic = await h.SeedTopicAsync("Agency", noteA.Id, noteB.Id);
 
         var result = await h.Knowledge.SearchAsync(
             new KnowledgeSearchRequest(
@@ -107,8 +107,8 @@ public sealed class KnowledgeRetrievalServiceTests : IClassFixture<SqliteTestFix
         result.Notes[0].NoteId.Should().Be(noteA.Id);
         result.Notes.Should().NotContain(note => note.NoteId == noteB.Id);
 
-        var conceptEvidence = result.Concepts.Single(item => item.ConceptId == concept.Id);
-        conceptEvidence.SupportingNotes.Should().OnlyContain(note => note.BookId == bookA.Id);
+        var topicEvidence = result.Topics.Single(item => item.TopicId == topic.Id);
+        topicEvidence.SupportingNotes.Should().OnlyContain(note => note.BookId == bookA.Id);
     }
 
     [Fact]
@@ -121,19 +121,19 @@ public sealed class KnowledgeRetrievalServiceTests : IClassFixture<SqliteTestFix
         var n1 = await h.SeedNoteAsync(first.Id, "one");
         var n2 = await h.SeedNoteAsync(first.Id, "two");
         await h.SeedNoteAsync(second.Id, "three");
-        await h.SeedConceptAsync("Recurring", n1.Id, n2.Id);
+        await h.SeedTopicAsync("Recurring", n1.Id, n2.Id);
 
         var overview = await h.Knowledge.OverviewAsync();
 
         overview.TotalNotes.Should().Be(3);
         overview.UnlinkedNotes.Should().Be(1);
-        overview.TotalConcepts.Should().Be(1);
-        overview.TotalConceptReferences.Should().Be(2);
-        overview.TopConcepts.Should().ContainSingle(concept => concept.Name == "Recurring");
+        overview.TotalTopics.Should().Be(1);
+        overview.TotalTopicReferences.Should().Be(2);
+        overview.TopTopics.Should().ContainSingle(topic => topic.Name == "Recurring");
         overview.TopBooksByNoteCount[0].Should().Be(
             new KnowledgeBookNoteCount(first.Id, "First", 2));
         overview.TopBooksByNoteCount.Count.Should().BeLessThanOrEqualTo(12);
-        overview.TopConcepts.Count.Should().BeLessThanOrEqualTo(12);
+        overview.TopTopics.Count.Should().BeLessThanOrEqualTo(12);
     }
 
     [Fact]
@@ -148,7 +148,7 @@ public sealed class KnowledgeRetrievalServiceTests : IClassFixture<SqliteTestFix
             sourceAnchorKind: "physical_page",
             sourceAnchorValue: "247",
             anchorVerified: false);
-        await h.SeedConceptAsync("Attention", note.Id);
+        await h.SeedTopicAsync("Attention", note.Id);
 
         var handle = new KnowledgeEvidenceHandle(
             KnowledgeEvidenceKinds.Note,
@@ -164,7 +164,7 @@ public sealed class KnowledgeRetrievalServiceTests : IClassFixture<SqliteTestFix
         read.Note.SourceAnchorKind.Should().Be("physical_page");
         read.Note.SourceAnchorValue.Should().Be("247");
         read.Note.AnchorVerified.Should().BeFalse();
-        read.Note.ConceptNames.Should().Contain("Attention");
+        read.Note.TopicNames.Should().Contain("Attention");
     }
 
     [Fact]
@@ -488,13 +488,13 @@ public sealed class KnowledgeRetrievalServiceTests : IClassFixture<SqliteTestFix
 
         var factory = new TestDbContextFactory(options);
         var db = new NostosDbContext(options);
-        var concepts = new ConceptRepository(db);
+        var topics = new TopicRepository(db);
         var noteRepository = new NoteRepository(db);
         var noteService = new NoteService(
             noteRepository,
             new BookRepository(db),
-            concepts,
-            new NoteProcessorService(concepts),
+            topics,
+            new NoteProcessorService(topics),
             new PassThroughThoughtProcessor(),
             db,
             NullLogger<NoteService>.Instance);
@@ -512,7 +512,7 @@ public sealed class KnowledgeRetrievalServiceTests : IClassFixture<SqliteTestFix
         var knowledge = new KnowledgeRetrievalService(
             noteService,
             noteRepository,
-            concepts,
+            topics,
             library,
             bookSearch,
             index,
@@ -621,26 +621,26 @@ public sealed class KnowledgeRetrievalServiceTests : IClassFixture<SqliteTestFix
             return note;
         }
 
-        public async Task<ConceptModel> SeedConceptAsync(
+        public async Task<TopicModel> SeedTopicAsync(
             string name,
             params Guid[] noteIds)
         {
-            var concept = new ConceptModel
+            var topic = new TopicModel
             {
                 Id = Guid.NewGuid(),
-                Concept = name,
+                Topic = name,
             };
-            Db.Concepts.Add(concept);
+            Db.Topics.Add(topic);
             foreach (var noteId in noteIds)
             {
-                Db.NoteConcepts.Add(new NoteConceptModel
+                Db.NoteTopics.Add(new NoteTopicModel
                 {
                     NoteId = noteId,
-                    ConceptId = concept.Id,
+                    TopicId = topic.Id,
                 });
             }
             await Db.SaveChangesAsync();
-            return concept;
+            return topic;
         }
 
         public ValueTask DisposeAsync()

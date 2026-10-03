@@ -28,12 +28,12 @@ import {
 import { AudioReader } from './audio-reader/audio-reader.component';
 import { PdfReader } from './pdf-reader/pdf-reader.component';
 import { EpubReader } from './epub-reader/epub-reader.component';
-import { ConceptInputComponent } from '../ui/concept-input.component/concept-input.component';
+import { TopicInputComponent } from '../ui/topic-input.component/topic-input.component';
 import { NoteCardComponent } from '../ui/note-card.component/note-card.component';
 import { BooksService } from '../core/services/books.service';
 import { NotesService } from '../core/services/notes.service';
-import { ConceptsService } from '../core/services/concepts.service';
-import { ConceptAutocompleteService } from '../ui/concept-autocomplete-panel/concept-autocomplete.service';
+import { TopicsService } from '../core/services/topics.service';
+import { TopicAutocompleteService } from '../ui/topic-autocomplete-panel/topic-autocomplete.service';
 import { Book } from '../core/dtos/book.dtos';
 import { Note } from '../core/dtos/note.dtos';
 import { ThemeService, THEME_STORAGE_KEY } from '../core/services/theme.service';
@@ -141,21 +141,21 @@ class EpubReaderStub {
   goToSource = vi.fn(() => Promise.resolve());
 }
 
-// The shell binds [(ngModel)] to app-concept-input; the stub must be a
+// The shell binds [(ngModel)] to app-topic-input; the stub must be a
 // ControlValueAccessor so the ngModel directive resolves.
 @Component({
-  selector: 'app-concept-input',
+  selector: 'app-topic-input',
   standalone: true,
   template: '',
   providers: [
     {
       provide: NG_VALUE_ACCESSOR,
-      useExisting: forwardRef(() => ConceptInputStub),
+      useExisting: forwardRef(() => TopicInputStub),
       multi: true,
     },
   ],
 })
-class ConceptInputStub implements ControlValueAccessor {
+class TopicInputStub implements ControlValueAccessor {
   placeholder = input('');
   rows = input(1);
   submitTrigger = output<void>();
@@ -167,7 +167,7 @@ class ConceptInputStub implements ControlValueAccessor {
 @Component({ selector: 'app-note-card', standalone: true, template: '' })
 class NoteCardStub {
   note = input<unknown>(null);
-  conceptMap = input<unknown>(null);
+  topicMap = input<unknown>(null);
   showNavigation = input(false);
   update = output<unknown>();
   delete = output<unknown>();
@@ -244,9 +244,9 @@ async function configureReaderShell(
 
   TestBed.overrideComponent(ReaderShell, {
     remove: {
-      imports: [PdfReader, EpubReader, ConceptInputComponent, NoteCardComponent],
+      imports: [PdfReader, EpubReader, TopicInputComponent, NoteCardComponent],
     },
-    add: { imports: [PdfReaderStub, EpubReaderStub, ConceptInputStub, NoteCardStub] },
+    add: { imports: [PdfReaderStub, EpubReaderStub, TopicInputStub, NoteCardStub] },
   });
 
   await TestBed.configureTestingModule({
@@ -277,8 +277,8 @@ async function configureReaderShell(
           delete: vi.fn(),
         },
       },
-      { provide: ConceptsService, useValue: { list: vi.fn(() => of([])) } },
-      { provide: ConceptAutocompleteService, useValue: { setConcepts: vi.fn() } },
+      { provide: TopicsService, useValue: { list: vi.fn(() => of([])) } },
+      { provide: TopicAutocompleteService, useValue: { setTopics: vi.fn() } },
     ],
   }).compileComponents();
 

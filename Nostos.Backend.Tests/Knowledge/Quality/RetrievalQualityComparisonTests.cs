@@ -43,8 +43,8 @@ public sealed class RetrievalQualityComparisonTests : IClassFixture<SqliteTestFi
         report.LegacyLiteral.Notes.RecallAt6.Should().Be(0d);
         report.LegacyLiteral.Notes.Order.Should().BeEmpty();
 
-        report.MultiQuery.Concepts.FirstGoldRank.Should().Be(1);
-        report.LegacyLiteral.Concepts.Order.Should().BeEmpty();
+        report.MultiQuery.Topics.FirstGoldRank.Should().Be(1);
+        report.LegacyLiteral.Topics.Order.Should().BeEmpty();
     }
 
     [Fact]
@@ -61,7 +61,7 @@ public sealed class RetrievalQualityComparisonTests : IClassFixture<SqliteTestFi
         report.LegacyLiteral.Notes.RecallAt6.Should().Be(0d);
         report.LegacyLiteral.Notes.Order.Should().BeEmpty();
 
-        report.MultiQuery.Concepts.FirstGoldRank.Should().Be(1);
+        report.MultiQuery.Topics.FirstGoldRank.Should().Be(1);
     }
 
     [Fact]
@@ -79,7 +79,7 @@ public sealed class RetrievalQualityComparisonTests : IClassFixture<SqliteTestFi
         report.LegacyLiteral.Passages.RecallAt6.Should().Be(1d);
         report.MultiQuery.Passages.Order.Should().HaveCount(2);
 
-        report.MultiQuery.Concepts.Order.Take(3).Should().Contain("EarlyWater");
+        report.MultiQuery.Topics.Order.Take(3).Should().Contain("EarlyWater");
     }
 
     [Fact]
@@ -127,8 +127,8 @@ public sealed class RetrievalQualityComparisonTests : IClassFixture<SqliteTestFi
 
             first.Notes.Select(note => note.NoteId)
                 .Should().Equal(second.Notes.Select(note => note.NoteId));
-            first.Concepts.Select(concept => concept.ConceptId)
-                .Should().Equal(second.Concepts.Select(concept => concept.ConceptId));
+            first.Topics.Select(topic => topic.TopicId)
+                .Should().Equal(second.Topics.Select(topic => topic.TopicId));
             first.BookPassages.Select(passage => passage.Handle)
                 .Should().Equal(second.BookPassages.Select(passage => passage.Handle));
         }
@@ -163,7 +163,7 @@ public sealed class RetrievalQualityComparisonTests : IClassFixture<SqliteTestFi
             [ids.G9b] = "G9b",
             [ids.D9] = "D9",
         };
-        var conceptLabels = new Dictionary<Guid, string>
+        var topicLabels = new Dictionary<Guid, string>
         {
             [ids.BorrowedJudgment] = "BorrowedJudgment",
             [ids.SafePassage] = "SafePassage",
@@ -176,7 +176,7 @@ public sealed class RetrievalQualityComparisonTests : IClassFixture<SqliteTestFi
         string NoteLabel(Guid id) => noteLabels.TryGetValue(id, out var label)
             ? label
             : $"other:{id:N}"[..14];
-        string ConceptLabel(Guid id) => conceptLabels.TryGetValue(id, out var label)
+        string TopicLabel(Guid id) => topicLabels.TryGetValue(id, out var label)
             ? label
             : $"other:{id:N}"[..14];
         string BookLabel(Guid bookId) =>
@@ -191,14 +191,14 @@ public sealed class RetrievalQualityComparisonTests : IClassFixture<SqliteTestFi
             .Select(key => noteLabels[RetrievalQualityCases.NoteKey(ids, key)])
             .ToHashSet();
 
-        var goldConcepts = kase.GoldConceptKey is null
+        var goldTopics = kase.GoldTopicKey is null
             ? new HashSet<string>()
             : new HashSet<string>
             {
-                conceptLabels[RetrievalQualityCases.ConceptKey(ids, kase.GoldConceptKey)],
+                topicLabels[RetrievalQualityCases.TopicKey(ids, kase.GoldTopicKey)],
             };
-        var distractorConcepts = conceptLabels.Values
-            .Where(label => !goldConcepts.Contains(label))
+        var distractorTopics = topicLabels.Values
+            .Where(label => !goldTopics.Contains(label))
             .ToHashSet();
 
         var goldPassages = kase.GoldPassages
@@ -214,8 +214,8 @@ public sealed class RetrievalQualityComparisonTests : IClassFixture<SqliteTestFi
 
         var multiNotes = RetrievalQualityMetrics.Measure(
             response.Notes.ToList(), note => NoteLabel(note.NoteId), goldNotes, distractorNotes);
-        var multiConcepts = RetrievalQualityMetrics.Measure(
-            response.Concepts.ToList(), concept => ConceptLabel(concept.ConceptId), goldConcepts, distractorConcepts);
+        var multiTopics = RetrievalQualityMetrics.Measure(
+            response.Topics.ToList(), topic => TopicLabel(topic.TopicId), goldTopics, distractorTopics);
         var multiPassages = RetrievalQualityMetrics.Measure(
             response.BookPassages.ToList(),
             passage => $"{BookLabel(passage.BookId)}:{passage.Ordinal}",
@@ -224,8 +224,8 @@ public sealed class RetrievalQualityComparisonTests : IClassFixture<SqliteTestFi
 
         var legacyNotes = RetrievalQualityMetrics.Measure(
             legacy.NoteIds.ToList(), NoteLabel, goldNotes, distractorNotes);
-        var legacyConcepts = RetrievalQualityMetrics.Measure(
-            legacy.ConceptIds.ToList(), ConceptLabel, goldConcepts, distractorConcepts);
+        var legacyTopics = RetrievalQualityMetrics.Measure(
+            legacy.TopicIds.ToList(), TopicLabel, goldTopics, distractorTopics);
         var legacyPassages = RetrievalQualityMetrics.Measure(
             legacy.Passages.ToList(),
             passage => $"{BookLabel(passage.BookId)}:{passage.Ordinal}",
@@ -237,8 +237,8 @@ public sealed class RetrievalQualityComparisonTests : IClassFixture<SqliteTestFi
             kase.Query,
             kase.Description,
             response.QueryVariants,
-            new RetrievalQualityMetrics.StrategyReport("multi-query-562", multiNotes, multiConcepts, multiPassages),
-            new RetrievalQualityMetrics.StrategyReport("legacy-literal", legacyNotes, legacyConcepts, legacyPassages));
+            new RetrievalQualityMetrics.StrategyReport("multi-query-562", multiNotes, multiTopics, multiPassages),
+            new RetrievalQualityMetrics.StrategyReport("legacy-literal", legacyNotes, legacyTopics, legacyPassages));
 
         var path = RetrievalQualityMetrics.WriteRunFile(report);
         _output.WriteLine($"[{kase.Id}] report written to {path}");

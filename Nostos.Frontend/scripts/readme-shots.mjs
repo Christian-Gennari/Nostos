@@ -14,7 +14,7 @@
  * Deliberate choices:
  *  - One viewport (1440x900 @2x) for every shot: the README declares each image
  *    width=2880 height=1800, and a mixed set reads as inconsistent.
- *  - ONE exception: the concept graph is captured at 1900x910 @2x so the frame
+ *  - ONE exception: the topic graph is captured at 1900x910 @2x so the frame
  *    keeps the page chrome (header + dock) and the graph's own aspect, rather
  *    than being cropped to the stage. That is a deliberate readability trade —
  *    see GRAPH_VIEWPORT below.
@@ -38,14 +38,14 @@ mkdirSync(OUT, { recursive: true });
 const VIEWPORT = { width: 1440, height: 900 };
 
 /**
- * The concept graph gets its own viewport.
+ * The topic graph gets its own viewport.
  *
  * The other five shots are 1440x900 so the app's layout matches a real desktop
  * session. The graph does not need that: at 1440x900 the map stage is ~2:1 while
  * a fitted force layout is roughly square, so the stage spent ~53% of its width
  * on dead space and PR #151 worked around it by cropping to the graph's ink.
  *
- * This capture keeps the page chrome instead — header ("Brain · 53 concepts ·
+ * This capture keeps the page chrome instead — header ("Brain · 53 topics ·
  * 61 references") and the dock — because that is what the README's Brain section
  * is illustrating. The trade is legibility: the labels are drawn at a constant
  * 12 CSS px (LABEL_DRAW_SIZE), so a wider image scales down harder at GitHub's
@@ -229,15 +229,15 @@ async function shot(page, name, note, opts = {}) {
   await page.goto(`${BASE}/second-brain`, { waitUntil: 'networkidle' });
   await page.waitForSelector('.index-item', { timeout: 20000 });
   await settle(page, 2000);
-  // Select the top concept so the pane shows the actual reading experience
-  // (quotation + commentary + source), not the "select a concept" empty state.
+  // Select the top topic so the pane shows the actual reading experience
+  // (quotation + commentary + source), not the "select a topic" empty state.
   await page.locator('.index-item').first().click();
   await settle(page, 2500);
   const heading = await page.evaluate(() => document.querySelector('h1')?.innerText ?? '');
   const items = await page.locator('.index-item').count();
-  const empty = await page.locator('text=Select a concept from the index').count();
+  const empty = await page.locator('text=Select a topic from the index').count();
   if (empty) throw new Error('brain list still showing empty state');
-  await shot(page, 'brain-list', `${heading}, ${items} concepts, concept detail open`);
+  await shot(page, 'brain-list', `${heading}, ${items} topics, topic detail open`);
   await ctx.close();
 }
 
@@ -386,7 +386,7 @@ async function shot(page, name, note, opts = {}) {
 
   // The rail has two surfaces: "For this writing" (sources kept with this
   // document — empty for the README's document) and "Library" (browse
-  // concepts and books while writing, which is what the README copy
+  // topics and books while writing, which is what the README copy
   // describes). Switch to Library for the shot.
   const railLibrary = page.locator('.reference-mode-switch button', { hasText: 'Library' }).first();
   if (await railLibrary.count()) {

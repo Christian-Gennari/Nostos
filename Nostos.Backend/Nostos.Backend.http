@@ -109,33 +109,33 @@ Accept: application/json
 
 
 ############################################################
-# CONCEPTS
+# TOPICS
 ############################################################
 
-### List all concepts
-GET {{host}}/api/concepts
+### List all topics
+GET {{host}}/api/topics
 Accept: application/json
 
-### Create a new concept
-POST {{host}}/api/concepts
+### Create a new topic
+POST {{host}}/api/topics
 Content-Type: application/json
 
 {
-  "concept": "Virtue ethics"
+  "topic": "Virtue ethics"
 }
 
-### Get a concept by ID
-GET {{host}}/api/concepts/CONCEPT_ID
+### Get a topic by ID
+GET {{host}}/api/topics/TOPIC_ID
 Accept: application/json
 
-### Update a concept
-PUT {{host}}/api/concepts/CONCEPT_ID
+### Update a topic
+PUT {{host}}/api/topics/TOPIC_ID
 Content-Type: application/json
 
 {
-  "concept": "Revised concept text"
+  "topic": "Revised topic text"
 }
 
-### Delete a concept
-DELETE {{host}}/api/concepts/CONCEPT_ID
+### Delete a topic
+DELETE {{host}}/api/topics/TOPIC_ID
 Accept: application/json

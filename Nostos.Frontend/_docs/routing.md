@@ -8,7 +8,7 @@
 | `"read/:id"`     | `ReaderShell`          | Yes  | Full-screen reader (outside workspace layout) |
 | `""` (parent)    | `WorkspaceLayout`      | No   | Shell with router-outlet + dock bar           |
 | `"library"`      | `Library`              | Yes  | Book grid / list                              |
-| `"second-brain"` | `SecondBrain`          | Yes  | Concept explorer                              |
+| `"second-brain"` | `SecondBrain`          | Yes  | Topic explorer                              |
 | `"studio"`       | `WritingStudio`        | Yes  | Writing environment                           |
 | `"library/:id"`  | `BookDetail`           | Yes  | Single book detail                            |
 | `"**"`           | redirect → `"library"` | —    | Catch-all wildcard                            |

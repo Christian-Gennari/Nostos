@@ -317,13 +317,13 @@ public sealed class NoteProcessingModeTests : IClassFixture<SqliteTestFixture>
         var db = new NostosDbContext(options);
         db.Database.EnsureCreated();
 
-        var concepts = new ConceptRepository(db);
+        var topics = new TopicRepository(db);
         var llm = new FakeLlmProvider();
         var service = new NoteService(
             new NoteRepository(db),
             new BookRepository(db),
-            concepts,
-            new NoteProcessorService(concepts),
+            topics,
+            new NoteProcessorService(topics),
             new ThoughtProcessor(llm),
             db,
             NullLogger<NoteService>.Instance);

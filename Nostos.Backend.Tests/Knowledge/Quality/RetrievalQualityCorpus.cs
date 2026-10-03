@@ -114,24 +114,24 @@ internal static class RetrievalQualityCorpus
             return note;
         }
 
-        async Task<ConceptModel> ConceptAsync(string name, params Guid[] noteIds)
+        async Task<TopicModel> TopicAsync(string name, params Guid[] noteIds)
         {
-            var concept = new ConceptModel
+            var topic = new TopicModel
             {
                 Id = Guid.NewGuid(),
-                Concept = name,
+                Topic = name,
             };
-            h.Db.Concepts.Add(concept);
+            h.Db.Topics.Add(topic);
             foreach (var noteId in noteIds)
             {
-                h.Db.NoteConcepts.Add(new NoteConceptModel
+                h.Db.NoteTopics.Add(new NoteTopicModel
                 {
                     NoteId = noteId,
-                    ConceptId = concept.Id,
+                    TopicId = topic.Id,
                 });
             }
             await h.Db.SaveChangesAsync();
-            return concept;
+            return topic;
         }
 
         var green = await BookAsync(GreenLedger);
@@ -152,12 +152,12 @@ internal static class RetrievalQualityCorpus
         var g9a = await NoteAsync(gray.Id, G9aText);
         var g9b = await NoteAsync(red.Id, G9bText);
 
-        var borrowedJudgment = await ConceptAsync("Borrowed Judgment", g7.Id);
-        var safePassage = await ConceptAsync("Safe Passage", g8.Id);
-        var marketDay = await ConceptAsync("Market Day", d8a.Id);
-        var earlyWater = await ConceptAsync("Early Water", g9a.Id, g9b.Id);
-        var narrowMargin = await ConceptAsync("Narrow Margin", g9b.Id);
-        var vineyardHours = await ConceptAsync("Vineyard Hours", d9.Id);
+        var borrowedJudgment = await TopicAsync("Borrowed Judgment", g7.Id);
+        var safePassage = await TopicAsync("Safe Passage", g8.Id);
+        var marketDay = await TopicAsync("Market Day", d8a.Id);
+        var earlyWater = await TopicAsync("Early Water", g9a.Id, g9b.Id);
+        var narrowMargin = await TopicAsync("Narrow Margin", g9b.Id);
+        var vineyardHours = await TopicAsync("Vineyard Hours", d9.Id);
 
         await SeedBookTextAsync(h, gray.Id, "gray-ledger.pdf", P3aText, P3FillerText);
         await SeedBookTextAsync(h, red.Id, "red-ledger.pdf", P4FillerText, P4bText);

@@ -96,7 +96,7 @@ const snap = () => page.evaluate(() => {
       selectionName: document.querySelector('.map-selection-name')?.textContent?.trim() ?? null,
       hasMap: !!document.querySelector('.sigma-container'),
     }));
-    rec('Read notes leaves the map for the concept pane', opened.url.includes('second-brain'), JSON.stringify(opened));
+    rec('Read notes leaves the map for the topic pane', opened.url.includes('second-brain'), JSON.stringify(opened));
     await page.screenshot({ path: path.join(OUT, '2-after-read-notes.png') });
     // Return to the MAP VIEW for the remaining steps. The back button goes to
     // the index, not the map, so use the view-mode toggle — and confirm the

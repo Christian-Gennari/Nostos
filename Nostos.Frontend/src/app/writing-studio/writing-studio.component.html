@@ -183,7 +183,7 @@
             (click)="setLibraryTab('brain')"
           >
             <nostos-icon name="sparkle" [size]="14" weight="light"></nostos-icon>
-            <span>Concepts</span>
+            <span>Topics</span>
           </button>
           <button
             class="tab-btn toggle-opt"
@@ -226,7 +226,7 @@
         <app-note-card
           class="inspected-source-card"
           [note]="source"
-          [conceptMap]="conceptMap()"
+          [topicMap]="topicMap()"
           [showActions]="false"
           [showSource]="true"
           [showDate]="false"
@@ -288,7 +288,7 @@
                   role="button"
                   tabindex="0"
                   [note]="note"
-                  [conceptMap]="conceptMap()"
+                  [topicMap]="topicMap()"
                   [showActions]="false"
                   [showSource]="true"
                   (click)="inspectSource(note)"
@@ -321,17 +321,17 @@
             appInput
             controlSize="compact"
             type="text"
-            placeholder="Search concepts..."
+            placeholder="Search topics..."
             [ngModel]="brainQuery()"
             (ngModelChange)="brainQuery.set($event)"
           />
         </div>
 
         <div class="brain-content">
-          @if (!selectedConceptId()) {
+          @if (!selectedTopicId()) {
             <div class="index-list">
-              @for (c of filteredConcepts(); track c.id) {
-                <button class="list-item" (click)="selectConcept(c.id)">
+              @for (c of filteredTopics(); track c.id) {
+                <button class="list-item" (click)="selectTopic(c.id)">
                   <div class="list-item-content">
                     <span class="name">{{ c.name }}</span>
                   </div>
@@ -341,19 +341,19 @@
             </div>
           } @else {
             <div class="brain-detail-header">
-              <button appButton variant="ghost" size="sm" class="goto-btn" (click)="selectedConceptId.set(null)">
+              <button appButton variant="ghost" size="sm" class="goto-btn" (click)="selectedTopicId.set(null)">
                 <nostos-icon name="arrow-left" [size]="16"></nostos-icon>
                 Back
               </button>
-              <span class="detail-title">Concept Notes</span>
+              <span class="detail-title">Topic Notes</span>
             </div>
 
             <div class="notes-list">
-              @for (note of selectedConceptNotes(); track note.id) {
+              @for (note of selectedTopicNotes(); track note.id) {
                 <div class="library-note-row">
                   <app-note-card
                     [note]="note"
-                    [conceptMap]="conceptMap()"
+                    [topicMap]="topicMap()"
                     [showActions]="false"
                     [showSource]="true"
                     (click)="inspectSource(note)"
@@ -378,8 +378,8 @@
                   </div>
                 </div>
               }
-              @if (selectedConceptNotes().length === 0) {
-                <p class="empty-index">No notes linked to this concept.</p>
+              @if (selectedTopicNotes().length === 0) {
+                <p class="empty-index">No notes linked to this topic.</p>
               }
             </div>
           }
@@ -429,7 +429,7 @@
                 <div class="library-note-row">
                   <app-note-card
                     [note]="note"
-                    [conceptMap]="conceptMap()"
+                    [topicMap]="topicMap()"
                     [showActions]="false"
                     [showSource]="true"
                     [showDate]="false"

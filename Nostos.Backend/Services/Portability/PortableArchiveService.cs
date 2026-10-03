@@ -416,23 +416,23 @@ public sealed class PortableArchiveService(
                 x.AnchorVerified))
             .ToList();
 
-        var concepts = (await _db.Concepts
+        var topics = (await _db.Topics
             .AsNoTracking()
             .OrderBy(x => x.Id)
             .ToListAsync(ct))
-            .Select(x => new PortableConcept(
+            .Select(x => new PortableTopic(
                 x.Id,
-                x.Concept))
+                x.Topic))
             .ToList();
 
-        var noteConcepts = (await _db.NoteConcepts
+        var noteTopics = (await _db.NoteTopics
             .AsNoTracking()
             .OrderBy(x => x.NoteId)
-            .ThenBy(x => x.ConceptId)
+            .ThenBy(x => x.TopicId)
             .ToListAsync(ct))
-            .Select(x => new PortableNoteConcept(
+            .Select(x => new PortableNoteTopic(
                 x.NoteId,
-                x.ConceptId))
+                x.TopicId))
             .ToList();
 
         var writings = (await _db.Writings
@@ -489,8 +489,8 @@ public sealed class PortableArchiveService(
             collections,
             bookCollections,
             notes,
-            concepts,
-            noteConcepts,
+            topics,
+            noteTopics,
             writings,
             acquisitions,
             assistant is null
@@ -1074,8 +1074,8 @@ public sealed class PortableArchiveService(
             || data.Collections is null
             || data.BookCollections is null
             || data.Notes is null
-            || data.Concepts is null
-            || data.NoteConcepts is null
+            || data.Topics is null
+            || data.NoteTopics is null
             || data.Writings is null
             || data.BookAcquisitions is null
             || (data.Version == 2 && data.WritingNotes is null))
@@ -1089,7 +1089,7 @@ public sealed class PortableArchiveService(
         RequireUniqueGuids(data.Books.Select(x => x.Id), "book");
         RequireUniqueGuids(data.Collections.Select(x => x.Id), "collection");
         RequireUniqueGuids(data.Notes.Select(x => x.Id), "note");
-        RequireUniqueGuids(data.Concepts.Select(x => x.Id), "concept");
+        RequireUniqueGuids(data.Topics.Select(x => x.Id), "topic");
         RequireUniqueGuids(data.Writings.Select(x => x.Id), "writing");
         RequireUniqueGuids(data.BookAcquisitions.Select(x => x.Id), "book acquisition");
 
@@ -1097,7 +1097,7 @@ public sealed class PortableArchiveService(
         var bookIds = data.Books.Select(x => x.Id).ToHashSet();
         var collectionIds = data.Collections.Select(x => x.Id).ToHashSet();
         var noteIds = data.Notes.Select(x => x.Id).ToHashSet();
-        var conceptIds = data.Concepts.Select(x => x.Id).ToHashSet();
+        var topicIds = data.Topics.Select(x => x.Id).ToHashSet();
         var writingIds = data.Writings.Select(x => x.Id).ToHashSet();
 
         var normalizedIsbns = new HashSet<string>(StringComparer.Ordinal);
@@ -1196,32 +1196,32 @@ public sealed class PortableArchiveService(
             }
         }
 
-        var conceptNames = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var concept in data.Concepts)
+        var topicNames = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var topic in data.Topics)
         {
-            if (!conceptNames.Add(concept.Concept))
+            if (!topicNames.Add(topic.Topic))
             {
                 throw new PortableArchiveException(
-                    "duplicate_concept",
-                    $"Portable archive contains duplicate concept '{concept.Concept}'.");
+                    "duplicate_topic",
+                    $"Portable archive contains duplicate topic '{topic.Topic}'.");
             }
         }
 
-        var noteConceptKeys = new HashSet<(Guid NoteId, Guid ConceptId)>();
-        foreach (var link in data.NoteConcepts)
+        var noteTopicKeys = new HashSet<(Guid NoteId, Guid TopicId)>();
+        foreach (var link in data.NoteTopics)
         {
-            if (!noteIds.Contains(link.NoteId) || !conceptIds.Contains(link.ConceptId))
+            if (!noteIds.Contains(link.NoteId) || !topicIds.Contains(link.TopicId))
             {
                 throw new PortableArchiveException(
                     "malformed_relationship",
-                    "Portable archive contains a note/concept link with a missing endpoint.");
+                    "Portable archive contains a note/topic link with a missing endpoint.");
             }
 
-            if (!noteConceptKeys.Add((link.NoteId, link.ConceptId)))
+            if (!noteTopicKeys.Add((link.NoteId, link.TopicId)))
             {
                 throw new PortableArchiveException(
                     "duplicate_relationship",
-                    "Portable archive contains a duplicate note/concept link.");
+                    "Portable archive contains a duplicate note/topic link.");
             }
         }
 
@@ -1304,8 +1304,8 @@ public sealed class PortableArchiveService(
             || await _db.Collections.AnyAsync(ct)
             || await _db.BookCollections.AnyAsync(ct)
             || await _db.Notes.AnyAsync(ct)
-            || await _db.Concepts.AnyAsync(ct)
-            || await _db.NoteConcepts.AnyAsync(ct)
+            || await _db.Topics.AnyAsync(ct)
+            || await _db.NoteTopics.AnyAsync(ct)
             || await _db.Writings.AnyAsync(ct)
             || await _db.WritingNotes.AnyAsync(ct)
             || await _db.BookAcquisitions.AnyAsync(ct)
@@ -1496,23 +1496,23 @@ public sealed class PortableArchiveService(
             });
         _db.Notes.AddRange(notes.Values);
 
-        var concepts = data.Concepts.ToDictionary(
+        var topics = data.Topics.ToDictionary(
             x => x.Id,
-            x => new ConceptModel
+            x => new TopicModel
             {
                 Id = x.Id,
-                Concept = x.Concept,
+                Topic = x.Topic,
             });
-        _db.Concepts.AddRange(concepts.Values);
+        _db.Topics.AddRange(topics.Values);
 
-        foreach (var source in data.NoteConcepts)
+        foreach (var source in data.NoteTopics)
         {
-            _db.NoteConcepts.Add(new NoteConceptModel
+            _db.NoteTopics.Add(new NoteTopicModel
             {
                 NoteId = source.NoteId,
                 Note = notes[source.NoteId],
-                ConceptId = source.ConceptId,
-                Concept = concepts[source.ConceptId],
+                TopicId = source.TopicId,
+                Topic = topics[source.TopicId],
             });
         }
 
@@ -1579,8 +1579,8 @@ public sealed class PortableArchiveService(
             await _db.Collections.CountAsync(ct),
             await _db.BookCollections.CountAsync(ct),
             await _db.Notes.CountAsync(ct),
-            await _db.Concepts.CountAsync(ct),
-            await _db.NoteConcepts.CountAsync(ct),
+            await _db.Topics.CountAsync(ct),
+            await _db.NoteTopics.CountAsync(ct),
             await _db.Writings.CountAsync(ct),
             await _db.BookAcquisitions.CountAsync(ct));
 
@@ -1595,7 +1595,7 @@ public sealed class PortableArchiveService(
         var bookRows = await _db.Books.AsNoTracking().ToListAsync(ct);
         var collectionIds = await _db.Collections.AsNoTracking().Select(x => x.Id).ToListAsync(ct);
         var noteIds = await _db.Notes.AsNoTracking().Select(x => x.Id).ToListAsync(ct);
-        var conceptIds = await _db.Concepts.AsNoTracking().Select(x => x.Id).ToListAsync(ct);
+        var topicIds = await _db.Topics.AsNoTracking().Select(x => x.Id).ToListAsync(ct);
         var writingRows = await _db.Writings.AsNoTracking().ToListAsync(ct);
         var acquisitionIds = await _db.BookAcquisitions.AsNoTracking().Select(x => x.Id).ToListAsync(ct);
 
@@ -1603,7 +1603,7 @@ public sealed class PortableArchiveService(
         RequireSameIds(source.Books.Select(x => x.Id), bookRows.Select(x => x.Id), "book");
         RequireSameIds(source.Collections.Select(x => x.Id), collectionIds, "collection");
         RequireSameIds(source.Notes.Select(x => x.Id), noteIds, "note");
-        RequireSameIds(source.Concepts.Select(x => x.Id), conceptIds, "concept");
+        RequireSameIds(source.Topics.Select(x => x.Id), topicIds, "topic");
         RequireSameIds(source.Writings.Select(x => x.Id), writingRows.Select(x => x.Id), "writing");
         RequireSameIds(source.BookAcquisitions.Select(x => x.Id), acquisitionIds, "acquisition");
 
@@ -1636,20 +1636,20 @@ public sealed class PortableArchiveService(
                 "Imported collection memberships do not match the archive.");
         }
 
-        var expectedLinks = source.NoteConcepts
-            .Select(x => (x.NoteId, x.ConceptId))
+        var expectedLinks = source.NoteTopics
+            .Select(x => (x.NoteId, x.TopicId))
             .ToHashSet();
-        var actualLinks = (await _db.NoteConcepts
+        var actualLinks = (await _db.NoteTopics
             .AsNoTracking()
-            .Select(x => new { x.NoteId, x.ConceptId })
+            .Select(x => new { x.NoteId, x.TopicId })
             .ToListAsync(ct))
-            .Select(x => (x.NoteId, x.ConceptId))
+            .Select(x => (x.NoteId, x.TopicId))
             .ToHashSet();
         if (!expectedLinks.SetEquals(actualLinks))
         {
             throw new PortableArchiveException(
                 "integrity_failed",
-                "Imported Note/Concept links do not match the archive.");
+                "Imported Note/Topic links do not match the archive.");
         }
 
         var expectedWritingNotes = (source.WritingNotes ?? [])
@@ -1778,8 +1778,8 @@ public sealed class PortableArchiveService(
             data.Collections.Count,
             data.BookCollections.Count,
             data.Notes.Count,
-            data.Concepts.Count,
-            data.NoteConcepts.Count,
+            data.Topics.Count,
+            data.NoteTopics.Count,
             data.Writings.Count,
             data.BookAcquisitions.Count);
 

@@ -2,7 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 
-export interface ConceptDto {
+export interface TopicDto {
   id: string;
   name: string;
   usageCount: number;
@@ -13,15 +13,15 @@ export interface ConceptDto {
   noteMatchSnippet?: string | null;
 }
 
-export interface ConceptStatsDto {
-  totalConcepts: number;
+export interface TopicStatsDto {
+  totalTopics: number;
   totalReferences: number;
-  singleNoteConcepts: number;
+  singleNoteTopics: number;
   mostUsedName: string | null;
   mostUsedCount: number;
 }
 
-export interface RelatedConceptDto {
+export interface RelatedTopicDto {
   id: string;
   name: string;
   sharedNotes: number;
@@ -29,21 +29,21 @@ export interface RelatedConceptDto {
   sharedNoteIds?: string[];
 }
 
-export interface ConceptGraphNodeDto {
+export interface TopicGraphNodeDto {
   id: string;
   name: string;
   usageCount: number;
 }
 
-export interface ConceptGraphEdgeDto {
+export interface TopicGraphEdgeDto {
   sourceId: string;
   targetId: string;
   sharedNotes: number;
 }
 
-export interface ConceptGraphDto {
-  nodes: ConceptGraphNodeDto[];
-  edges: ConceptGraphEdgeDto[];
+export interface TopicGraphDto {
+  nodes: TopicGraphNodeDto[];
+  edges: TopicGraphEdgeDto[];
 }
 
 export interface NoteContextDto {
@@ -58,55 +58,55 @@ export interface NoteContextDto {
   createdAt?: string;
 }
 
-export interface ConceptDetailDto {
+export interface TopicDetailDto {
   id: string;
   name: string;
   notes: NoteContextDto[];
 }
 
 @Injectable({ providedIn: 'root' })
-export class ConceptsService {
+export class TopicsService {
   private http = inject(HttpClient);
 
-  list(): Observable<ConceptDto[]> {
-    return this.http.get<ConceptDto[]>('/api/concepts');
+  list(): Observable<TopicDto[]> {
+    return this.http.get<TopicDto[]>('/api/topics');
   }
 
   /**
-   * Note-text search for the index (issue #158). `GET /api/concepts` carries no
+   * Note-text search for the index (issue #158). `GET /api/topics` carries no
    * note text at all, so the term is matched server-side against note content,
    * quote text and book title — the same three fields the note-level search inside
-   * a concept already matches.
+   * a topic already matches.
    */
-  searchNotes(term: string): Observable<ConceptDto[]> {
-    return this.http.get<ConceptDto[]>('/api/concepts', { params: { search: term } });
+  searchNotes(term: string): Observable<TopicDto[]> {
+    return this.http.get<TopicDto[]>('/api/topics', { params: { search: term } });
   }
 
-  getStats(): Observable<ConceptStatsDto> {
-    return this.http.get<ConceptStatsDto>('/api/concepts/stats');
+  getStats(): Observable<TopicStatsDto> {
+    return this.http.get<TopicStatsDto>('/api/topics/stats');
   }
 
-  get(id: string): Observable<ConceptDetailDto> {
-    return this.http.get<ConceptDetailDto>(`/api/concepts/${id}`);
+  get(id: string): Observable<TopicDetailDto> {
+    return this.http.get<TopicDetailDto>(`/api/topics/${id}`);
   }
 
-  getRelated(id: string): Observable<RelatedConceptDto[]> {
-    return this.http.get<RelatedConceptDto[]>(`/api/concepts/${id}/related`);
+  getRelated(id: string): Observable<RelatedTopicDto[]> {
+    return this.http.get<RelatedTopicDto[]>(`/api/topics/${id}/related`);
   }
 
-  getGraph(): Observable<ConceptGraphDto> {
-    return this.http.get<ConceptGraphDto>('/api/concepts/graph');
+  getGraph(): Observable<TopicGraphDto> {
+    return this.http.get<TopicGraphDto>('/api/topics/graph');
   }
 
-  rename(id: string, concept: string): Observable<ConceptDto> {
-    return this.http.put<ConceptDto>(`/api/concepts/${id}`, { concept });
+  rename(id: string, topic: string): Observable<TopicDto> {
+    return this.http.put<TopicDto>(`/api/topics/${id}`, { topic });
   }
 
-  merge(sourceId: string, targetId: string): Observable<ConceptDto> {
-    return this.http.post<ConceptDto>(`/api/concepts/${sourceId}/merge`, { targetId });
+  merge(sourceId: string, targetId: string): Observable<TopicDto> {
+    return this.http.post<TopicDto>(`/api/topics/${sourceId}/merge`, { targetId });
   }
 
   delete(id: string): Observable<void> {
-    return this.http.delete<void>(`/api/concepts/${id}`);
+    return this.http.delete<void>(`/api/topics/${id}`);
   }
 }

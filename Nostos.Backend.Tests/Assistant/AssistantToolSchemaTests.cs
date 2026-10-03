@@ -115,7 +115,7 @@ public sealed class AssistantToolSchemaTests : IClassFixture<SqliteTestFixture>
             {
                 ["kind"] = "string",
                 ["noteId"] = "string",
-                ["conceptId"] = "string",
+                ["topicId"] = "string",
                 ["bookId"] = "string",
                 ["sourceSha256"] = "string",
                 ["extractorVersion"] = "string",
@@ -134,11 +134,11 @@ public sealed class AssistantToolSchemaTests : IClassFixture<SqliteTestFixture>
         ["notes_read_for_review"] = new(
             Properties: new() { ["noteId"] = "string" },
             Required: ["noteId"]),
-        ["concepts_list"] = new(Properties: new(), Required: []),
-        ["concepts_search"] = new(
+        ["topics_list"] = new(Properties: new(), Required: []),
+        ["topics_search"] = new(
             Properties: new() { ["term"] = "string" },
             Required: ["term"]),
-        ["concepts_propose_links"] = new(
+        ["topics_propose_links"] = new(
             Properties: new() { ["noteId"] = "string", ["candidates"] = "array" },
             Required: ["noteId", "candidates"]),
         ["library_list_collections"] = new(Properties: new(), Required: []),
@@ -153,9 +153,9 @@ public sealed class AssistantToolSchemaTests : IClassFixture<SqliteTestFixture>
                 ["captureSource"] = "string",
             },
             Required: []),
-        ["notes_link_existing_concept"] = new(
-            Properties: new() { ["noteId"] = "string", ["conceptId"] = "string" },
-            Required: ["noteId", "conceptId"]),
+        ["notes_link_existing_topic"] = new(
+            Properties: new() { ["noteId"] = "string", ["topicId"] = "string" },
+            Required: ["noteId", "topicId"]),
         ["library_create_collection"] = new(
             Properties: new() { ["name"] = "string", ["parentId"] = "string" },
             Required: ["name"]),
@@ -251,7 +251,7 @@ public sealed class AssistantToolSchemaTests : IClassFixture<SqliteTestFixture>
         Required(byName["knowledge_search"]).Should().Contain("query");
         Required(byName["knowledge_read_evidence"]).Should().Contain("kind");
         Required(byName["notes_search"]).Should().Contain("query");
-        Required(byName["concepts_search"]).Should().Contain("term");
+        Required(byName["topics_search"]).Should().Contain("term");
 
         // The capture declares only the user's own words; the book is not an
         // argument at all. Requiring bookId told the model it had to produce one
@@ -436,12 +436,12 @@ public sealed class AssistantToolSchemaTests : IClassFixture<SqliteTestFixture>
         var factory = new TestContextFactory(options);
         var db = new NostosDbContext(options);
 
-        var concepts = new ConceptRepository(db);
+        var topics = new TopicRepository(db);
         var noteService = new NoteService(
             new NoteRepository(db),
             new BookRepository(db),
-            concepts,
-            new NoteProcessorService(concepts),
+            topics,
+            new NoteProcessorService(topics),
             new FakeThoughtProcessor(),
             db,
             NullLogger<NoteService>.Instance);
@@ -451,7 +451,7 @@ public sealed class AssistantToolSchemaTests : IClassFixture<SqliteTestFixture>
             new BookLookupService(new NoopHttpClientFactory(), new SilentLogger<BookLookupService>()));
 
         var registry = new AssistantCapabilityRegistry(
-            AssistantCapabilities.Build(noteService, libraryService, concepts));
+            AssistantCapabilities.Build(noteService, libraryService, topics));
 
         var llm = new FakeLlmProvider();
         var orchestrator = new AssistantOrchestrator(

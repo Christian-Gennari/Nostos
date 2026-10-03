@@ -359,12 +359,12 @@
 
       <div class="quick-note">
         <div class="input-wrapper">
-          <app-concept-input
+          <app-topic-input
             [(ngModel)]="quickNoteContent"
             placeholder="Add a quick note..."
             [rows]="2"
             (submitTrigger)="saveQuickNote()"
-          ></app-concept-input>
+          ></app-topic-input>
         </div>
         <div class="quick-actions">
           @if (fileType() === 'audio') {
@@ -390,7 +390,7 @@
         @for (note of dbNotes(); track note.id) {
         <app-note-card
           [note]="note"
-          [conceptMap]="conceptMap()"
+          [topicMap]="topicMap()"
           [showNavigation]="true"
           (update)="onUpdateNote($event)"
           (delete)="onDeleteNote($event)"

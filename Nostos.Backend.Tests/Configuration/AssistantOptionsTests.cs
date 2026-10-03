@@ -6,7 +6,7 @@ namespace Nostos.Backend.Tests.Configuration;
 
 /// <summary>
 /// The assistant's default model is a load-bearing choice, not a preference: its
-/// whole job — capture a thought, read the library, propose concepts — runs
+/// whole job — capture a thought, read the library, propose topics — runs
 /// through tool calls, and a model that ignores the tool definitions answers as
 /// though it had done the work. The 9Router free pool did exactly that, which is
 /// why it is not the default any more. These tests exist so nobody quietly puts

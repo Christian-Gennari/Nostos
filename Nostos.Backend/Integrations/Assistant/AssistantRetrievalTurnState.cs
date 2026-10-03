@@ -243,9 +243,9 @@ internal sealed class AssistantRetrievalTurnState(AssistantContextDto context)
         if (data.ValueKind != JsonValueKind.Object)
             return false;
 
-        // A concept hit can be a useful orientation clue without containing
+        // A topic hit can be a useful orientation clue without containing
         // the continuity evidence itself. Treat the reader lookup as weak when
-        // it has at most one concrete note/passage, so a concept-only or
+        // it has at most one concrete note/passage, so a topic-only or
         // one-note distractor cannot prevent the bounded library fallback.
         var concreteEvidenceCount =
             ArrayLength(data, "notes")

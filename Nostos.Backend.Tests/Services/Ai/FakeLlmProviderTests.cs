@@ -103,18 +103,18 @@ public sealed class FakeLlmProviderTests
     {
         var provider = new FakeLlmProvider()
             .Returns("first")
-            .CallsTool("concepts_list", """{"limit":5}""");
+            .CallsTool("topics_list", """{"limit":5}""");
 
         var request = new LlmCompletionRequest(
             [LlmMessage.System("sys"), LlmMessage.User("hello")],
-            [new LlmToolDefinition("concepts_list", "Lists concepts.", """{"type":"object"}""")],
+            [new LlmToolDefinition("topics_list", "Lists topics.", """{"type":"object"}""")],
             1234);
 
         var first = await provider.CompleteAsync(request);
         var second = await provider.CompleteAsync(request);
 
         first.Content.Should().Be("first");
-        second.ToolCalls.Should().ContainSingle().Which.Name.Should().Be("concepts_list");
+        second.ToolCalls.Should().ContainSingle().Which.Name.Should().Be("topics_list");
         second.ToolCalls[0].ArgumentsJson.Should().Be("""{"limit":5}""");
 
         provider.CallCount.Should().Be(2);

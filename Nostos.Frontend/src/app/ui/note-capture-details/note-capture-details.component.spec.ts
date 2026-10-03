@@ -8,7 +8,7 @@ describe('NoteCaptureDetailsComponent', () => {
   let http: HttpTestingController;
   const note: NoteSearchHit = {
     id: 'captured-note', bookId: 'book', bookTitle: 'A book', content: 'Polished thought.',
-    selectedText: 'An exact quotation.', snippet: null, conceptNames: [], createdAt: '2026-10-01',
+    selectedText: 'An exact quotation.', snippet: null, topicNames: [], createdAt: '2026-10-01',
     captureSource: 'voice', processingMode: 'light_polish', hasRawContent: true,
   };
 

@@ -67,7 +67,7 @@ export class NotesService {
   browse(options: {
     query?: string;
     bookId?: string;
-    withoutConcepts?: boolean;
+    withoutTopics?: boolean;
     oldestFirst?: boolean;
     limit?: number;
     offset?: number;
@@ -78,13 +78,13 @@ export class NotesService {
     };
     if (options.query?.trim()) params['query'] = options.query.trim();
     if (options.bookId) params['bookId'] = options.bookId;
-    if (options.withoutConcepts) params['withoutConcepts'] = true;
+    if (options.withoutTopics) params['withoutTopics'] = true;
     if (options.oldestFirst) params['oldestFirst'] = true;
     return this.http.get<NoteSearchPage>('/api/notes', { params });
   }
 
   /**
-   * Notes linked to no concept — an exception queue, not a second content type.
+   * Notes linked to no topic — an exception queue, not a second content type.
    *
    * Since issue #256 this is paged rather than a single capped list. The page
    * carries the total, because review mode traverses the whole set and must never

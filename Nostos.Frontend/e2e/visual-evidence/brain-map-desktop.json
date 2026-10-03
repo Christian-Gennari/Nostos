@@ -12,11 +12,11 @@
     {
       "id": "brain-map-geometry",
       "pass": true,
-      "message": "map renders 3 node(s), matching the 3-concept index; sizes stay within 3–20px and all nodes are on screen",
+      "message": "map renders 3 node(s), matching the 3-topic index; sizes stay within 3–20px and all nodes are on screen",
       "metrics": {
-        "conceptCount": 3,
+        "topicCount": 3,
         "nodeCount": 3,
-        "accessibleConceptCount": 3,
+        "accessibleTopicCount": 3,
         "sizes": [
           4,
           4,

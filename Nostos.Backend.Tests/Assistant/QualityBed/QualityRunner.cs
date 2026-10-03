@@ -766,7 +766,7 @@ internal static class QualityRunner
                         foreach (var evidence in response.Evidence)
                             output.AppendLine(
                                 $"- [{evidence.Handle.Kind}] {evidence.Label} " +
-                                $"(note={evidence.Handle.NoteId}, concept={evidence.Handle.ConceptId}, " +
+                                $"(note={evidence.Handle.NoteId}, topic={evidence.Handle.TopicId}, " +
                                 $"book={evidence.Handle.BookId})");
                         output.AppendLine();
                     }
