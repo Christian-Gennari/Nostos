@@ -27,6 +27,11 @@ jobs:
           cache: npm
           cache-dependency-path: Nostos.Frontend/package-lock.json
 
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
       - name: Install dependencies
         run: npm ci
 
@@ -38,3 +43,25 @@ jobs:
 
       - name: Production build
         run: npm run build
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Launcher lifecycle regression
+        run: node e2e/support/launch-regression.mjs
+
+      - name: Capture source Studio smoke
+        env:
+          E2E_SKIP_BUILDS: "1"
+        run: npx playwright test e2e/capture-source-studio-smoke.spec.ts --project=desktop-chromium
+
+      - name: Upload E2E failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-e2e-failure-artifacts
+          if-no-files-found: ignore
+          path: |
+            Nostos.Frontend/e2e/test-results/artifacts/**
+            Nostos.Frontend/e2e/test-results/playwright-report/**
+            Nostos.Frontend/e2e/test-results/**/*.log
