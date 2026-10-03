@@ -1,17 +1,36 @@
 # Product source ownership inventory
 
-Baseline: `c22a8b42600123e45cdedfeb837997ca00e97cf8`
+Historical inventory baseline: `c22a8b42600123e45cdedfeb837997ca00e97cf8`
 
-This document records the current source-ownership topology and a bounded plan for
-mechanically relocating product-owned source into `Nostos.Product`. It is an
-inventory and migration manifest only. It does not move source, rename namespaces
-or assemblies, change schemas, change runtime behavior, or prove that later move
-batches are compatible with every consumer.
+This document preserves the evaluated source-ownership snapshot and the 151-row
+migration manifest created at that baseline. The row-level manifest is
+[`docs/product-source-ownership.csv`](product-source-ownership.csv); it remains
+historical provenance, not a live source allowlist or a count that current topology
+must continue to match.
 
-The row-level manifest is
-[`docs/product-source-ownership.csv`](product-source-ownership.csv).
+At current public main `d69e7dfab978475ad26f5750115b3925942a4302`, batches
+02.2 through 02.5 have completed. All 151 manifest source blobs have been moved to
+their recorded `Nostos.Product` destinations, the temporary Product `Compile
+Include`/`Link` and Backend `Compile Remove` scaffolding is exhausted, and the
+existing namespaces and assembly identity remain intentionally unchanged.
+The evaluated graphs at that finishing point are Product 166 / Backend 97 with
+zero linked Product items and no Product/Backend source overlap.
 
-## Current evaluated Compile graph
+Ongoing proof is topology-based rather than manifest-count-based.
+`scripts/guard-product-source-ownership.py` evaluates the current `Compile` items
+for both projects with `dotnet msbuild -getItem:Compile` and rejects missing
+physical inputs, Compile items outside their owning project root, duplicate paths,
+case-fold collisions, and exact or case-fold Product/Backend overlap. Because it
+uses resolved filesystem paths from the evaluated graph, retained
+`Nostos.Backend.*` namespaces do not affect the check and future source additions
+do not require updating the historical 151-row manifest.
+
+`Nostos.Backend.Tests/Architecture/ProductBoundaryTests.cs` remains complementary
+runtime/assembly evidence: representative canonical types are still owned by
+`Nostos.Product`, Product does not reference the public host assembly, and hosted
+implementation namespaces remain excluded.
+
+## Historical evaluated Compile graph at the inventory baseline
 
 The inventory is based on evaluated
 
@@ -44,7 +63,7 @@ consumer evidence for future source-path moves. Full private compatibility evide
 is still required for each physical move batch before that batch can be treated as
 accepted.
 
-## Current ownership model
+## Historical ownership model at the inventory baseline
 
 At this baseline, physical path and compilation ownership intentionally differ.
 
@@ -88,8 +107,9 @@ The classification deliberately keeps Library, Notes, portability and knowledge
 services in `02.3 services-ai-assistant`. Data, configuration, mapping, search and
 serialization remain in `02.2 foundation`.
 
-The batches describe safe refactoring order, not completion status. No whole
-workstream is claimed complete by this document.
+At the inventory baseline, the batches described the intended safe refactoring
+order. Batches 02.2 through 02.5 are now complete; the CSV and row counts remain
+the historical migration snapshot rather than an ongoing topology contract.
 
 ## Host-owned source that stays in `Nostos.Backend`
 
@@ -140,14 +160,16 @@ dependencies but does not own the host's SQLite migration history.
 Moving the canonical context source therefore does not imply moving migrations or
 changing migration ownership. No schema change is part of batches 02.2–02.5.
 
-## Path-dependent references
+## Historical path-dependent references
 
-Physical source moves are not only filesystem operations. Several repository rules
-currently depend on the historical topology.
+Physical source moves were not only filesystem operations. The following
+subsections preserve the path-dependent constraints recorded at the inventory
+baseline; the temporary mirror rules described here were removed as their batches
+completed.
 
 ### Product/Backend project mirror rules
 
-`Nostos.Product.csproj` currently contains the `Compile Include`/`Link` rules for
+At the inventory baseline, `Nostos.Product.csproj` contained the `Compile Include`/`Link` rules for
 the 151 historical Backend paths. `Nostos.Backend.csproj` contains matching
 `Compile Remove` rules.
 
@@ -186,7 +208,11 @@ replacement. A path should be edited only when the document is intended to
 describe the current physical source location rather than historical context,
 runtime ownership, or an earlier architecture state.
 
-## Sequential move plan
+## Historical sequential move plan
+
+Batches 02.2 through 02.5 have completed. The steps below are retained as migration
+provenance and should not be treated as current instructions or as a live path
+allowlist.
 
 ### 02.2 foundation
 

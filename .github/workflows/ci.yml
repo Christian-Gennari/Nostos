@@ -42,6 +42,9 @@ jobs:
       - name: Restore
         run: dotnet restore Nostos.sln
 
+      - name: Guard Product source ownership
+        run: python3 scripts/guard-product-source-ownership.py
+
       - name: Build solution
         run: dotnet build Nostos.sln --configuration Debug --no-restore
 
