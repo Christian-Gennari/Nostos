@@ -32,33 +32,10 @@
   </ItemGroup>
 
   <!--
-    Canonical product source is compiled by Nostos.Product. The 02.2 foundation,
-    02.3 services/AI/assistant and 02.4 provider batches have moved physically
-    into that project. The remaining rules below cover endpoint and health
-    sources that still reside at historical Backend paths during the transitional
-    move batches; do not compile a second copy into the host assembly.
+    Canonical product source for the 02.2 foundation, 02.3
+    services/AI/assistant, 02.4 provider and 02.5 endpoint/health batches is
+    physically owned and compiled by Nostos.Product.
   -->
-  <ItemGroup>
-    <Compile Remove="Endpoints\BooksEndpoints.cs" />
-    <Compile Remove="Endpoints\ProviderEndpoints.cs" />
-    <Compile Remove="Endpoints\ImportEndpoints.cs" />
-    <Compile Remove="Endpoints\NotesEndpoints.cs" />
-    <Compile Remove="Endpoints\NoteProcessingEndpoints.cs" />
-    <Compile Remove="Endpoints\CollectionsEndpoints.cs" />
-    <Compile Remove="Endpoints\TopicsEndpoints.cs" />
-    <Compile Remove="Endpoints\WritingsEndpoints.cs" />
-    <Compile Remove="Endpoints\TranscriptionEndpoints.cs" />
-    <Compile Remove="Endpoints\AssistantEndpoints.cs" />
-    <Compile Remove="Endpoints\AiProviderSettingsEndpoints.cs" />
-    <Compile Remove="Endpoints\AssistantSettingsEndpoints.cs" />
-    <Compile Remove="Endpoints\DeploymentCapabilitiesEndpoints.cs" />
-    <Compile Remove="Endpoints\PortabilityEndpoints.cs" />
-    <Compile Remove="Endpoints\OpdsEndpoints.cs" />
-    <Compile Remove="Endpoints\LibraryHttpMapper.cs" />
-    <Compile Remove="Endpoints\StoredAssetHttpResult.cs" />
-
-    <Compile Remove="Health\NostosHealthChecks.cs" />
-  </ItemGroup>
 
   <ItemGroup>
     <Folder Include="Storage\" />
