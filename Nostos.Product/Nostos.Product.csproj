@@ -26,32 +26,16 @@
 
   <!--
     #459 establishes project ownership without a mass namespace/path rewrite.
-    The 02.2 foundation and 02.3 services/AI/assistant batches are now physically
-    owned by Nostos.Product and included by the SDK's default Compile items.
-    The remaining entries below are provider, endpoint and health sources that
-    stay at their historical Backend paths during the transitional move batches,
-    but Nostos.Product is their only compiling project. Nostos.Backend references
-    this project and explicitly removes those remaining linked files from its
-    default Compile items, so there is one implementation rather than a copied
-    facade.
+    The 02.2 foundation, 02.3 services/AI/assistant and 02.4 provider batches are
+    now physically owned by Nostos.Product and included by the SDK's default
+    Compile items. The remaining entries below are endpoint and health sources
+    that stay at their historical Backend paths during the transitional move
+    batches, but Nostos.Product is their only compiling project. Nostos.Backend
+    references this project and explicitly removes those remaining linked files
+    from its default Compile items, so there is one implementation rather than a
+    copied facade.
   -->
   <ItemGroup>
-    <Compile Include="..\Nostos.Backend\Providers\ProviderRegistry.cs" Link="Providers\ProviderRegistry.cs" />
-    <Compile Include="..\Nostos.Backend\Providers\Contracts\**\*.cs" Link="Providers\Contracts\%(RecursiveDir)%(Filename)%(Extension)" />
-    <Compile Include="..\Nostos.Backend\Providers\Acquisition\AcquisitionJobStatus.cs" Link="Providers\Acquisition\AcquisitionJobStatus.cs" />
-    <Compile Include="..\Nostos.Backend\Providers\Acquisition\AcquisitionModels.cs" Link="Providers\Acquisition\AcquisitionModels.cs" />
-    <Compile Include="..\Nostos.Backend\Providers\Acquisition\AcquisitionOptions.cs" Link="Providers\Acquisition\AcquisitionOptions.cs" />
-    <Compile Include="..\Nostos.Backend\Providers\Acquisition\AcquisitionService.cs" Link="Providers\Acquisition\AcquisitionService.cs" />
-    <Compile Include="..\Nostos.Backend\Providers\Acquisition\ProviderContentDownloader.cs" Link="Providers\Acquisition\ProviderContentDownloader.cs" />
-    <Compile Include="..\Nostos.Backend\Providers\Acquisition\ProviderHostPolicy.cs" Link="Providers\Acquisition\ProviderHostPolicy.cs" />
-    <Compile Include="..\Nostos.Backend\Providers\Acquisition\TranscodeLimiter.cs" Link="Providers\Acquisition\TranscodeLimiter.cs" />
-    <Compile Include="..\Nostos.Backend\Providers\Acquisition\Media\**\*.cs" Link="Providers\Acquisition\Media\%(RecursiveDir)%(Filename)%(Extension)" />
-    <Compile Include="..\Nostos.Backend\Providers\Discovery\**\*.cs" Link="Providers\Discovery\%(RecursiveDir)%(Filename)%(Extension)" />
-    <Compile Include="..\Nostos.Backend\Providers\Gutenberg\**\*.cs" Link="Providers\Gutenberg\%(RecursiveDir)%(Filename)%(Extension)" />
-    <Compile Include="..\Nostos.Backend\Providers\LibriVox\**\*.cs" Link="Providers\LibriVox\%(RecursiveDir)%(Filename)%(Extension)" />
-    <Compile Include="..\Nostos.Backend\Providers\StandardEbooks\**\*.cs" Link="Providers\StandardEbooks\%(RecursiveDir)%(Filename)%(Extension)" />
-    <Compile Include="..\Nostos.Backend\Providers\Wikisource\**\*.cs" Link="Providers\Wikisource\%(RecursiveDir)%(Filename)%(Extension)" />
-
     <Compile Include="..\Nostos.Backend\Endpoints\BooksEndpoints.cs" Link="Endpoints\BooksEndpoints.cs" />
     <Compile Include="..\Nostos.Backend\Endpoints\ProviderEndpoints.cs" Link="Endpoints\ProviderEndpoints.cs" />
     <Compile Include="..\Nostos.Backend\Endpoints\ImportEndpoints.cs" Link="Endpoints\ImportEndpoints.cs" />

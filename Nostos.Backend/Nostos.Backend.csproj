@@ -32,30 +32,13 @@
   </ItemGroup>
 
   <!--
-    Canonical product source is compiled by Nostos.Product. The 02.2 foundation
-    and 02.3 services/AI/assistant batches have moved physically into that
-    project. The remaining rules below cover provider, endpoint and health
-    sources that still reside at historical Backend paths during the
-    transitional move batches; do not compile a second copy into the host
-    assembly.
+    Canonical product source is compiled by Nostos.Product. The 02.2 foundation,
+    02.3 services/AI/assistant and 02.4 provider batches have moved physically
+    into that project. The remaining rules below cover endpoint and health
+    sources that still reside at historical Backend paths during the transitional
+    move batches; do not compile a second copy into the host assembly.
   -->
   <ItemGroup>
-    <Compile Remove="Providers\ProviderRegistry.cs" />
-    <Compile Remove="Providers\Contracts\**\*.cs" />
-    <Compile Remove="Providers\Acquisition\AcquisitionJobStatus.cs" />
-    <Compile Remove="Providers\Acquisition\AcquisitionModels.cs" />
-    <Compile Remove="Providers\Acquisition\AcquisitionOptions.cs" />
-    <Compile Remove="Providers\Acquisition\AcquisitionService.cs" />
-    <Compile Remove="Providers\Acquisition\ProviderContentDownloader.cs" />
-    <Compile Remove="Providers\Acquisition\ProviderHostPolicy.cs" />
-    <Compile Remove="Providers\Acquisition\TranscodeLimiter.cs" />
-    <Compile Remove="Providers\Acquisition\Media\**\*.cs" />
-    <Compile Remove="Providers\Discovery\**\*.cs" />
-    <Compile Remove="Providers\Gutenberg\**\*.cs" />
-    <Compile Remove="Providers\LibriVox\**\*.cs" />
-    <Compile Remove="Providers\StandardEbooks\**\*.cs" />
-    <Compile Remove="Providers\Wikisource\**\*.cs" />
-
     <Compile Remove="Endpoints\BooksEndpoints.cs" />
     <Compile Remove="Endpoints\ProviderEndpoints.cs" />
     <Compile Remove="Endpoints\ImportEndpoints.cs" />
