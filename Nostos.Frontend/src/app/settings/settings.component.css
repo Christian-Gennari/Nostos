@@ -556,6 +556,23 @@
   border-left: 1px solid var(--border-light);
 }
 
+/* A section that takes a full row of its own under the two-column pair. */
+.provider-section + .provider-section.provider-section--wide {
+  grid-column: 1 / -1;
+  padding-top: 20px;
+  padding-left: 0;
+  border-top: 1px solid var(--border-light);
+  border-left: 0;
+}
+
+.provider-wide-fields {
+  display: grid;
+  /* Lines the two columns up with the bordered pair above: half the grid
+     minus half its 24px gap, then gap + divider + the pair's 24px padding. */
+  grid-template-columns: calc(50% - 12px) minmax(0, 1fr);
+  column-gap: 49px;
+}
+
 .provider-heading {
   margin: 0 0 14px;
   font-size: 0.85rem;
@@ -710,6 +727,7 @@
   }
 
   .provider-grid,
+  .provider-wide-fields,
   .theme-grid {
     grid-template-columns: 1fr;
   }

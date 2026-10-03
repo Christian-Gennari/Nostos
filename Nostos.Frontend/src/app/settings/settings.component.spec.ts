@@ -189,6 +189,13 @@ const aiProviderSettings: AiProviderSettings = {
     hasKey: true,
     keyFromServerEnv: true,
   },
+  embedding: {
+    enabled: false,
+    baseUrl: 'https://ai-gateway.vercel.sh/v1',
+    model: 'alibaba/qwen3-embedding-0-6b',
+    hasKey: false,
+    keyFromServerEnv: false,
+  },
 };
 
 const aiProviderServiceMock = {
@@ -779,9 +786,9 @@ describe('SettingsComponent backup-only surface', () => {
   it('exposes the automatic-backup toggle and manual backup action', () => {
     const toggles = fixture.debugElement.queryAll(By.css('input[type="checkbox"]'));
     // Automatic Backup + Include Book Files + the Reading assistant toggle (W1)
-    // + the AI provider card's voice transcription toggle.
-    expect(toggles.length).toBe(4);
-    expect(fixture.debugElement.queryAll(By.css('label.nostos-switch')).length).toBe(4);
+    // + the AI provider card's voice transcription and embeddings toggles.
+    expect(toggles.length).toBe(5);
+    expect(fixture.debugElement.queryAll(By.css('label.nostos-switch')).length).toBe(5);
     const buttons = fixture.debugElement
       .queryAll(By.css('button'))
       .map((b) => b.nativeElement.textContent.trim());
@@ -1244,7 +1251,7 @@ describe('SettingsComponent backup-only surface', () => {
   it('renders the reviewed intro and field helpers on both sections', () => {
     const card = aiCard()!;
     expect(card.textContent).toContain(
-      'Notes and voice recordings are sent directly to the OpenAI-compatible endpoints configured below.',
+      'Notes, voice recordings and book passages are sent directly to the OpenAI-compatible endpoints configured below.',
     );
     expect(card.textContent).toContain('Base URL, including /v1.');
     expect(card.textContent).toContain('Exact model name expected by the endpoint.');
@@ -1405,6 +1412,95 @@ describe('SettingsComponent backup-only surface', () => {
 
     clickSave();
     expect(aiProviderServiceMock.update.mock.calls[0][0]).toEqual({ stt: { enabled: true } });
+  });
+
+  it('renders the embeddings section with its effective values and an empty key', () => {
+    const section = cardSection('ai-provider-embedding');
+    expect(section).not.toBeNull();
+    expect(section.textContent).toContain('Embeddings');
+    expect(section.textContent).toContain('Ask Nostos keeps using keyword search');
+
+    expect(inputValue('#ai-embedding-base-url')).toBe(aiProviderSettings.embedding!.baseUrl);
+    expect(inputValue('#ai-embedding-model')).toBe(aiProviderSettings.embedding!.model);
+    expect(inputValue('#ai-embedding-api-key')).toBe('');
+    expect(input('#ai-embedding-api-key').type).toBe('password');
+    expect(input('#ai-embedding-base-url').placeholder).toBe('https://ai-gateway.vercel.sh/v1');
+    expect(input('#ai-embedding-model').placeholder).toBe('e.g. alibaba/qwen3-embedding-0-6b');
+    // No key is configured for this section, so there is nothing to clear.
+    expect(buttonByText('ai-provider-embedding', 'Clear')).toBeNull();
+  });
+
+  it('hides the embeddings section when the host does not report one', () => {
+    aiProviderServiceMock.get.mockReturnValueOnce(
+      of<AiProviderSettings>({ llm: aiProviderSettings.llm, stt: aiProviderSettings.stt }),
+    );
+    render();
+
+    expect(cardSection('ai-provider-embedding')).toBeNull();
+    expect(cardSection('ai-provider-llm')).not.toBeNull();
+
+    setInputValue('#ai-llm-model', 'gpt-4o');
+    clickSave();
+    expect(aiProviderServiceMock.update.mock.calls[0][0]).toEqual({ llm: { model: 'gpt-4o' } });
+  });
+
+  it('saves the embedding endpoint, model, key and toggle as the embedding section only', () => {
+    setInputValue('#ai-embedding-base-url', 'http://ollama.lan:11434/v1');
+    setInputValue('#ai-embedding-model', 'qwen3-embedding:0.6b');
+    setInputValue('#ai-embedding-api-key', 'sk-embedding');
+    const toggle = fixture.nativeElement.querySelector(
+      '[data-testid="embedding-toggle"]',
+    ) as HTMLInputElement;
+    expect(toggle.checked).toBe(false);
+    toggle.checked = true;
+    toggle.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+
+    clickSave();
+
+    expect(aiProviderServiceMock.update.mock.calls[0][0]).toEqual({
+      embedding: {
+        enabled: true,
+        baseUrl: 'http://ollama.lan:11434/v1',
+        model: 'qwen3-embedding:0.6b',
+        apiKey: 'sk-embedding',
+      },
+    });
+    // Re-seeded from the response: the typed key never stays in the DOM.
+    expect(inputValue('#ai-embedding-api-key')).toBe('');
+  });
+
+  it('tests and loads models for the embedding kind with the unsaved field values', () => {
+    aiProviderServiceMock.test.mockReturnValueOnce(
+      of<AiProviderTestResult>({
+        ok: true,
+        detail: 'Reached alibaba/qwen3-embedding-0-6b (1024 dimensions).',
+      }),
+    );
+
+    clickButton('ai-provider-embedding', 'Test connection');
+
+    expect(aiProviderServiceMock.test.mock.calls[0][0]).toEqual({
+      kind: 'embedding',
+      baseUrl: aiProviderSettings.embedding!.baseUrl,
+      model: aiProviderSettings.embedding!.model,
+      apiKey: undefined,
+    });
+    const status = statusElement('ai-provider-embedding');
+    expect(status.textContent).toContain('1024 dimensions');
+    expect(status.classList.contains('is-ok')).toBe(true);
+    // The outcome belongs to this section, not its neighbours.
+    expect(statusElement('ai-provider-llm')).toBeNull();
+
+    aiProviderServiceMock.loadModels.mockReturnValueOnce(
+      of<AiProviderModelsResponse>({ models: ['alibaba/qwen3-embedding-0-6b'] }),
+    );
+    clickButton('ai-provider-embedding', 'Load models');
+
+    expect(aiProviderServiceMock.loadModels.mock.calls[0][0]).toMatchObject({ kind: 'embedding' });
+    expect(
+      fixture.nativeElement.querySelectorAll('#ai-embedding-model-options option').length,
+    ).toBe(1);
   });
 
   it('disables Save, Load and Test while a request is in flight', () => {
