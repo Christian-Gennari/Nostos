@@ -316,7 +316,7 @@ Read the [Design Manifesto](docs/design-manifesto.md) for the product's visual a
 
 ## Documentation
 
-- **[Changelog](CHANGELOG.md):** Reader-facing changes to Nostos.
+- **[Releases](https://github.com/Christian-Gennari/Nostos/releases):** Reader-facing changes to Nostos.
 - **[Releases](docs/releases.md):** CalVer tags and the release notes workflow.
 - **[Design Manifesto](docs/design-manifesto.md):** Product, visual, and interaction principles.
 - **[Content Providers & Acquisition](docs/content-providers.md):** Provider architecture and import behavior for external catalogues.
