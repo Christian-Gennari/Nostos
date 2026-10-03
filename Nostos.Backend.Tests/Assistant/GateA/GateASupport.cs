@@ -75,12 +75,12 @@ internal sealed class GateAHost : IDisposable
         var factory = new GateAContextFactory(options);
         var db = new NostosDbContext(options);
 
-        var concepts = new ConceptRepository(db);
+        var topics = new TopicRepository(db);
         var noteService = new NoteService(
             new NoteRepository(db),
             new BookRepository(db),
-            concepts,
-            new NoteProcessorService(concepts),
+            topics,
+            new NoteProcessorService(topics),
             new FakeThoughtProcessor(),
             db,
             NullLogger<NoteService>.Instance);
@@ -93,7 +93,7 @@ internal sealed class GateAHost : IDisposable
             AssistantCapabilities.Build(
                 noteService,
                 libraryService,
-                concepts,
+                topics,
                 knowledge ?? NoOpKnowledgeRetrievalService.Instance,
                 bookText));
 
@@ -210,7 +210,7 @@ internal static class GateATurns
             AudioChapter: null,
             selectedText,
             BrainReviewNoteId: null,
-            Concept: null,
+            Topic: null,
             CollectionId: null,
             anchor,
             CaptureBookTitle: captureBookTitle);

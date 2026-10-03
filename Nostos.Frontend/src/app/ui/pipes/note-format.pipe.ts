@@ -1,29 +1,29 @@
 import { Pipe, PipeTransform } from '@angular/core';
-import { ConceptDto } from '../../core/services/concepts.service';
+import { TopicDto } from '../../core/services/topics.service';
 
 @Pipe({
   name: 'noteFormat',
   standalone: true,
 })
 export class NoteFormatPipe implements PipeTransform {
-  transform(content: string, conceptMap: Map<string, ConceptDto> | null): string {
+  transform(content: string, topicMap: Map<string, TopicDto> | null): string {
     if (!content) return '';
 
-    const concepts = conceptMap ?? new Map<string, ConceptDto>();
+    const topics = topicMap ?? new Map<string, TopicDto>();
 
-    return content.replace(/\[\[(.*?)\]\]/g, (_match, conceptName: string) => {
-      const trimmedName = conceptName.trim();
+    return content.replace(/\[\[(.*?)\]\]/g, (_match, topicName: string) => {
+      const trimmedName = topicName.trim();
       const escapedName = this.escapeHtml(trimmedName);
-      const concept = concepts.get(trimmedName.toLocaleLowerCase());
+      const topic = topics.get(trimmedName.toLocaleLowerCase());
 
-      if (concept) {
-        const href = `/second-brain?conceptId=${encodeURIComponent(concept.id)}`;
-        return `<a class="concept-tag clickable" href="${href}" data-concept-id="${concept.id}" aria-label="${escapedName} — open concept evidence in Brain">${escapedName}</a>`;
+      if (topic) {
+        const href = `/second-brain?topicId=${encodeURIComponent(topic.id)}`;
+        return `<a class="topic-tag clickable" href="${href}" data-topic-id="${topic.id}" aria-label="${escapedName} — open topic evidence in Brain">${escapedName}</a>`;
       }
 
-      // Keep the link identity visible even when its backing concept is missing.
+      // Keep the link identity visible even when its backing topic is missing.
       // Silent plain text made a broken relationship look intentional.
-      return `<span class="concept-tag concept-tag--unresolved" aria-label="Unresolved concept: ${escapedName}" title="Concept not found">${escapedName}<span class="concept-unresolved-label"> · unresolved</span></span>`;
+      return `<span class="topic-tag topic-tag--unresolved" aria-label="Unresolved topic: ${escapedName}" title="Topic not found">${escapedName}<span class="topic-unresolved-label"> · unresolved</span></span>`;
     });
   }
 

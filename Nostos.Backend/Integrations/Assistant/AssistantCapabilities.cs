@@ -13,7 +13,7 @@ namespace Nostos.Backend.Integrations.Assistant;
 /// The complete assistant action surface (issue #260 §5, §6). It is
 /// deliberately small: every capability delegates to a canonical service
 /// (<see cref="INoteService"/>, <see cref="ILibraryService"/>, or the existing
-/// concept read repository) and nothing here reimplements library or note
+/// topic read repository) and nothing here reimplements library or note
 /// logic.
 ///
 /// Trust classes: read-only capabilities are <see cref="AssistantTrustClass.Suggest"/>
@@ -34,35 +34,35 @@ public static partial class AssistantCapabilities
     public static IReadOnlyList<AssistantCapability> Build(
         INoteService notes,
         ILibraryService library,
-        IConceptRepository concepts) =>
+        ITopicRepository topics) =>
         Build(
             notes,
             library,
-            concepts,
+            topics,
             NoOpKnowledgeRetrievalService.Instance,
             bookText: null);
 
     public static IReadOnlyList<AssistantCapability> Build(
         INoteService notes,
         ILibraryService library,
-        IConceptRepository concepts,
+        ITopicRepository topics,
         IBookTextSearchService bookText) =>
         Build(
             notes,
             library,
-            concepts,
+            topics,
             NoOpKnowledgeRetrievalService.Instance,
             bookText);
 
     public static IReadOnlyList<AssistantCapability> Build(
         INoteService notes,
         ILibraryService library,
-        IConceptRepository concepts,
+        ITopicRepository topics,
         IKnowledgeRetrievalService knowledge,
         IBookTextSearchService? bookText = null)
     {
         var capabilities = BuildLibraryBookCapabilities(library)
-            .Concat(BuildKnowledgeCapabilities(notes, concepts, knowledge))
+            .Concat(BuildKnowledgeCapabilities(notes, topics, knowledge))
             .Concat(BuildCollectionAndCaptureCapabilities(notes, library))
             .ToList();
 

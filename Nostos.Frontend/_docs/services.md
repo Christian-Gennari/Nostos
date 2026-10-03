@@ -58,19 +58,19 @@ All HTTP services are `providedIn: 'root'` singletons using Angular `HttpClient`
 
 ---
 
-## ConceptsService
+## TopicsService
 
-**File:** `src/app/core/services/concepts.service.ts`
+**File:** `src/app/core/services/topics.service.ts`
 
 | Method | Signature      | Return                         | Purpose                                  |
 | ------ | -------------- | ------------------------------ | ---------------------------------------- |
-| `list` | `()`           | `Observable<ConceptDto[]>`     | All concepts with `usageCount`           |
-| `get`  | `(id: string)` | `Observable<ConceptDetailDto>` | Concept detail with all associated notes |
+| `list` | `()`           | `Observable<TopicDto[]>`     | All topics with `usageCount`           |
+| `get`  | `(id: string)` | `Observable<TopicDetailDto>` | Topic detail with all associated notes |
 
 **Inline DTOs:**
 
 ```ts
-interface ConceptDto {
+interface TopicDto {
   id: string;
   name: string;
   usageCount: number;
@@ -83,7 +83,7 @@ interface NoteContextDto {
   bookId;
   bookTitle;
 }
-interface ConceptDetailDto {
+interface TopicDetailDto {
   id;
   name;
   notes: NoteContextDto[];
@@ -136,16 +136,16 @@ Subscribes to `NavigationEnd` router events. Maintains a `Record<string, string>
 
 ---
 
-## ConceptAutocompleteService
+## TopicAutocompleteService
 
-**File:** `src/app/ui/concept-autocomplete-panel/concept-autocomplete.service.ts`
+**File:** `src/app/ui/topic-autocomplete-panel/topic-autocomplete.service.ts`
 
 | Method                | Signature                   | Purpose                               |
 | --------------------- | --------------------------- | ------------------------------------- |
-| `setConcepts`         | `(list: ConceptDto[])`      | Set master list                       |
+| `setTopics`         | `(list: TopicDto[])`      | Set master list                       |
 | `update`              | `(text, cursorPos)`         | Parse `[[` prefix, filter suggestions |
 | `moveUp` / `moveDown` | `()`                        | Keyboard navigation                   |
-| `choose`              | `()` → `ConceptDto \| null` | Return selected concept               |
+| `choose`              | `()` → `TopicDto \| null` | Return selected topic               |
 | `clear`               | `()`                        | Reset                                 |
 
 ---
@@ -167,6 +167,6 @@ Subscribes to `NavigationEnd` router events. Maintains a `Record<string, string>
 | `importExisting` | `Observable<imported[]>`     | Scan server disk for untracked archives      |
 | `getProgress`    | `Observable<BackupProgress>` | Poll current step/percentage (every 1s)      |
 
-**Signals:** `suggestions = signal<ConceptDto[]>([])`, `activeIndex = signal<number>(0)`
+**Signals:** `suggestions = signal<TopicDto[]>([])`, `activeIndex = signal<number>(0)`
 
-> **Note:** Declared `providedIn: 'root'` but `ConceptInputComponent` provides it at the component level, so each textarea gets independent autocomplete state.
+> **Note:** Declared `providedIn: 'root'` but `TopicInputComponent` provides it at the component level, so each textarea gets independent autocomplete state.

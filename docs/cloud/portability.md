@@ -51,7 +51,9 @@ It preserves stable IDs and relationships for:
 - works, books, and book metadata;
 - reading progress, ratings, favorites, reviews, and timestamps;
 - collections and nested collection membership;
-- notes, source anchors, capture provenance, concepts, and note links;
+- notes, source anchors, capture provenance, topics, and note links (stored under the
+  archive's original `concepts` / `noteConcepts` JSON keys, which the Concepts → Topics
+  rename deliberately left unchanged so older archives still import);
 - Writing Studio documents and folder hierarchy;
 - generic acquisition provenance and assistant capture-processing preference.
 

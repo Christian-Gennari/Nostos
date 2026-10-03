@@ -6,25 +6,25 @@ namespace Nostos.Backend.Services;
 
 public partial class NoteProcessorService
 {
-    private readonly IConceptRepository _conceptRepo;
+    private readonly ITopicRepository _topicRepo;
 
-    public NoteProcessorService(IConceptRepository conceptRepo)
+    public NoteProcessorService(ITopicRepository topicRepo)
     {
-        _conceptRepo = conceptRepo;
+        _topicRepo = topicRepo;
     }
 
     // 1. Encapsulate the Regex here
     [GeneratedRegex(@"\[\[(.*?)\]\]", RegexOptions.Compiled)]
-    private static partial Regex ConceptRegex();
+    private static partial Regex TopicRegex();
 
     /// <summary>
-    /// Parses the note content for [[Concepts]], creates them if missing,
+    /// Parses the note content for [[Topics]], creates them if missing,
     /// and updates the Many-to-Many links.
     /// </summary>
     public async Task ProcessNoteAsync(NoteModel note)
     {
         // A. Parse content
-        var matches = ConceptRegex().Matches(note.Content);
+        var matches = TopicRegex().Matches(note.Content);
 
         var foundNames = matches
             .Select(m => m.Groups[1].Value.Trim())
@@ -33,35 +33,35 @@ public partial class NoteProcessorService
             .ToList();
 
         // B. Clear existing links for this note (Full refresh strategy)
-        await _conceptRepo.ClearNoteLinksAsync(note.Id);
+        await _topicRepo.ClearNoteLinksAsync(note.Id);
 
         if (foundNames.Count == 0)
             return;
 
-        // C. Find existing concepts in DB to reuse
-        var existingConcepts = await _conceptRepo.GetByNamesAsync(foundNames);
+        // C. Find existing topics in DB to reuse
+        var existingTopics = await _topicRepo.GetByNamesAsync(foundNames);
 
-        var existingNames = existingConcepts
-            .Select(c => c.Concept)
+        var existingNames = existingTopics
+            .Select(c => c.Topic)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        // D. Create new concepts
-        var newConcepts = foundNames
+        // D. Create new topics
+        var newTopics = foundNames
             .Where(name => !existingNames.Contains(name))
-            .Select(name => new ConceptModel { Concept = name })
+            .Select(name => new TopicModel { Topic = name })
             .ToList();
 
-        if (newConcepts.Count != 0)
+        if (newTopics.Count != 0)
         {
-            _conceptRepo.AddRange(newConcepts);
+            _topicRepo.AddRange(newTopics);
         }
 
         // E. Create Links
-        var allRelevantConcepts = existingConcepts.Concat(newConcepts);
+        var allRelevantTopics = existingTopics.Concat(newTopics);
 
-        foreach (var concept in allRelevantConcepts)
+        foreach (var topic in allRelevantTopics)
         {
-            _conceptRepo.AddNoteLink(new NoteConceptModel { Note = note, Concept = concept });
+            _topicRepo.AddNoteLink(new NoteTopicModel { Note = note, Topic = topic });
         }
     }
 }

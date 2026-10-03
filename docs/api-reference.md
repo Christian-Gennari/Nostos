@@ -5,7 +5,7 @@ at `/mcp`).
 
 > **Coverage note (2026-08-12):** this reference predates several shipped
 > surfaces — Backup, MCP, and the issue #34 canonical
-> library service. The Books / Notes / Collections / Concepts / Writings /
+> library service. The Books / Notes / Collections / Topics / Writings /
 > OPDS sections below remain accurate (inline corrections noted where the
 > library service changed behavior); the sections at the end cover Backup,
 > MCP, and Library. The authoritative route tables live in
@@ -223,7 +223,7 @@ List all notes for a book.
 
 ### `POST /api/books/{bookId}/notes`
 
-Create a note. Concepts wrapped in `[[double brackets]]` are auto-extracted and linked.
+Create a note. Topics wrapped in `[[double brackets]]` are auto-extracted and linked.
 
 **Body:**
 
@@ -239,20 +239,20 @@ Create a note. Concepts wrapped in `[[double brackets]]` are auto-extracted and 
 
 ### `PUT /api/notes/{id}`
 
-Update a note. Re-processes `[[concept]]` links.
+Update a note. Re-processes `[[topic]]` links.
 
 **Body:**
 
 ```json
 {
-  "content": "Updated content with [[NewConcept]]",
+  "content": "Updated content with [[NewTopic]]",
   "selectedText": "string?"
 }
 ```
 
 ### `DELETE /api/notes/{id}`
 
-Delete a note and its concept links.
+Delete a note and its topic links.
 
 **Response:** `204 No Content`
 
@@ -335,19 +335,23 @@ collection still has child collections.
 
 ---
 
-## Concepts — `/api/concepts`
+## Topics — `/api/topics`
 
-Read-only. Concepts are created automatically when notes with `[[brackets]]` are saved.
+Read-only. Topics are created automatically when notes with `[[brackets]]` are saved.
 
-### `GET /api/concepts`
+> Topics were formerly called Concepts. `/api/concepts` remains as a transition alias that
+> reaches the same handlers; request and response bodies use the new `topic` field names on
+> both prefixes (e.g. `{ "topic": "Virtue ethics" }`, `totalTopics`, `topicNames`).
 
-List all concepts with usage count, sorted by most-used first.
+### `GET /api/topics`
 
-**Response:** `ConceptDto[]` — `{ id, name, usageCount }`
+List all topics with usage count, sorted by most-used first.
 
-### `GET /api/concepts/{id}`
+**Response:** `TopicDto[]` — `{ id, name, usageCount }`
 
-Get concept detail with all related notes across books.
+### `GET /api/topics/{id}`
+
+Get topic detail with all related notes across books.
 
 **Response:**
 

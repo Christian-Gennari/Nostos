@@ -249,7 +249,7 @@ public sealed class NoteProcessingEndpointTests : IClassFixture<LibraryEndpointF
         read!.CaptureSource.Should().Be("voice");
         read.ProcessingMode.Should().Be("light_polish");
         read.HasRawContent.Should().BeTrue();
-        read.ConceptNames.Should().Contain("Attention");
+        read.TopicNames.Should().Contain("Attention");
         var browse = await client.GetFromJsonAsync<NoteSearchPageDto>($"/api/notes?bookId={book.Id}");
         browse!.Items.Should().ContainSingle(n => n.Id == created.Id && n.HasRawContent);
 
@@ -269,7 +269,7 @@ public sealed class NoteProcessingEndpointTests : IClassFixture<LibraryEndpointF
         var after = await reloaded.GetFromJsonAsync<NoteSearchHitDto>($"/api/notes/{created.Id}");
         after!.HasRawContent.Should().BeTrue();
         after.ProcessingMode.Should().Be("verbatim");
-        after.ConceptNames.Should().Contain("Memory").And.NotContain("Attention");
+        after.TopicNames.Should().Contain("Memory").And.NotContain("Attention");
         provider.CallCount.Should().Be(1, "restore must not invoke thought processing");
     }
 

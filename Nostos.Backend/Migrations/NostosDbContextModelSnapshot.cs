@@ -275,24 +275,6 @@ namespace Nostos.Backend.Migrations
                     b.ToTable("Collections");
                 });
 
-            modelBuilder.Entity("Nostos.Backend.Data.Models.ConceptModel", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Concept")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Concept")
-                        .IsUnique();
-
-                    b.ToTable("Concepts");
-                });
-
             modelBuilder.Entity("Nostos.Backend.Data.Models.LibraryCommandReceipt", b =>
                 {
                     b.Property<Guid>("Id")
@@ -402,21 +384,6 @@ namespace Nostos.Backend.Migrations
                         {
                             t.HasCheckConstraint("CK_NoteCommandReceipts_Bounds", "length(\"ClientId\") <= 64 AND length(\"IdempotencyKey\") <= 128 AND length(\"Command\") <= 32 AND length(\"ResultJson\") <= 131072");
                         });
-                });
-
-            modelBuilder.Entity("Nostos.Backend.Data.Models.NoteConceptModel", b =>
-                {
-                    b.Property<Guid>("NoteId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("ConceptId")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("NoteId", "ConceptId");
-
-                    b.HasIndex("ConceptId");
-
-                    b.ToTable("NoteConcepts");
                 });
 
             modelBuilder.Entity("Nostos.Backend.Data.Models.NoteImportBatch", b =>
@@ -555,6 +522,39 @@ namespace Nostos.Backend.Migrations
                     b.HasIndex("BookId");
 
                     b.ToTable("Notes");
+                });
+
+            modelBuilder.Entity("Nostos.Backend.Data.Models.NoteTopicModel", b =>
+                {
+                    b.Property<Guid>("NoteId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("TopicId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("NoteId", "TopicId");
+
+                    b.HasIndex("TopicId");
+
+                    b.ToTable("NoteTopics");
+                });
+
+            modelBuilder.Entity("Nostos.Backend.Data.Models.TopicModel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Topic")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Topic")
+                        .IsUnique();
+
+                    b.ToTable("Topics");
                 });
 
             modelBuilder.Entity("Nostos.Backend.Data.Models.WorkModel", b =>
@@ -861,25 +861,6 @@ namespace Nostos.Backend.Migrations
                     b.Navigation("Parent");
                 });
 
-            modelBuilder.Entity("Nostos.Backend.Data.Models.NoteConceptModel", b =>
-                {
-                    b.HasOne("Nostos.Backend.Data.Models.ConceptModel", "Concept")
-                        .WithMany("NoteConcepts")
-                        .HasForeignKey("ConceptId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Nostos.Backend.Data.Models.NoteModel", "Note")
-                        .WithMany("NoteConcepts")
-                        .HasForeignKey("NoteId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Concept");
-
-                    b.Navigation("Note");
-                });
-
             modelBuilder.Entity("Nostos.Backend.Data.Models.NoteImportBatchNote", b =>
                 {
                     b.HasOne("Nostos.Backend.Data.Models.NoteImportBatch", "Batch")
@@ -919,6 +900,25 @@ namespace Nostos.Backend.Migrations
                         .IsRequired();
 
                     b.Navigation("Book");
+                });
+
+            modelBuilder.Entity("Nostos.Backend.Data.Models.NoteTopicModel", b =>
+                {
+                    b.HasOne("Nostos.Backend.Data.Models.NoteModel", "Note")
+                        .WithMany("NoteTopics")
+                        .HasForeignKey("NoteId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Nostos.Backend.Data.Models.TopicModel", "Topic")
+                        .WithMany("NoteTopics")
+                        .HasForeignKey("TopicId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Note");
+
+                    b.Navigation("Topic");
                 });
 
             modelBuilder.Entity("Nostos.Backend.Data.Models.WritingModel", b =>
@@ -962,11 +962,6 @@ namespace Nostos.Backend.Migrations
                     b.Navigation("Children");
                 });
 
-            modelBuilder.Entity("Nostos.Backend.Data.Models.ConceptModel", b =>
-                {
-                    b.Navigation("NoteConcepts");
-                });
-
             modelBuilder.Entity("Nostos.Backend.Data.Models.NoteImportBatch", b =>
                 {
                     b.Navigation("Notes");
@@ -974,7 +969,12 @@ namespace Nostos.Backend.Migrations
 
             modelBuilder.Entity("Nostos.Backend.Data.Models.NoteModel", b =>
                 {
-                    b.Navigation("NoteConcepts");
+                    b.Navigation("NoteTopics");
+                });
+
+            modelBuilder.Entity("Nostos.Backend.Data.Models.TopicModel", b =>
+                {
+                    b.Navigation("NoteTopics");
                 });
 
             modelBuilder.Entity("Nostos.Backend.Data.Models.WorkModel", b =>

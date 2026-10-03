@@ -67,7 +67,7 @@ export interface NoteSearchHit {
   content: string;
   selectedText: string | null;
   snippet: string | null;
-  conceptNames: string[];
+  topicNames: string[];
   createdAt: string;
   cfiRange?: string | null;
   sourceAnchorKind?: string;

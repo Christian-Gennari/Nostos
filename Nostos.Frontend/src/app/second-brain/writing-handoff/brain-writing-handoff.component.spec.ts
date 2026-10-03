@@ -263,7 +263,7 @@ describe('BrainWritingHandoffComponent', () => {
     http.expectOne('/api/writings/writing-1/notes').flush(source('note-1'));
 
     http.expectNone((request) =>
-      request.url.startsWith('/api/notes') || request.url.startsWith('/api/concepts')
+      request.url.startsWith('/api/notes') || request.url.startsWith('/api/topics')
     );
   });
 });

@@ -28,26 +28,26 @@ public static class NotesEndpoints
             }
         );
 
-        // SEARCH notes by text (issue #158). The index could only ever match concept
+        // SEARCH notes by text (issue #158). The index could only ever match topic
         // NAMES, so a word living only in a note's body or quote was unreachable —
-        // and 44 of this library's 63 notes belong to no concept at all, which no
-        // concept row can ever lead to.
+        // and 44 of this library's 63 notes belong to no topic at all, which no
+        // topic row can ever lead to.
         group.MapGet(
             "/notes/search",
             async (string? query, INoteService notes, int? limit) =>
                 Results.Ok(await notes.SearchAsync(query ?? string.Empty, limit ?? 50))
         );
 
-        // A paged, searchable home for every saved note, whether or not it has a concept.
+        // A paged, searchable home for every saved note, whether or not it has a topic.
         group.MapGet(
             "/notes",
-            async (INoteService notes, string? query, Guid? bookId, bool? withoutConcepts,
+            async (INoteService notes, string? query, Guid? bookId, bool? withoutTopics,
                 bool? oldestFirst, int? limit, int? offset) =>
-                Results.Ok(await notes.BrowseAsync(query, bookId, withoutConcepts ?? false,
+                Results.Ok(await notes.BrowseAsync(query, bookId, withoutTopics ?? false,
                     oldestFirst ?? false, limit ?? 25, offset ?? 0))
         );
 
-        // Notes linked to no concept, so they can be read at all.
+        // Notes linked to no topic, so they can be read at all.
         //
         // Paged on purpose. This used to answer with a bare list capped at 50,
         // which the Brain's permanent sidebar section then rendered as if it were

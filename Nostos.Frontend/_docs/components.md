@@ -23,8 +23,8 @@ App (app-root)
     │       ├── BookDetail (app-book-detail)     [route: /library/:id]
     │       │   ├── StarRatingComponent
     │       │   ├── NoteCardComponent (many)
-    │       │   │   └── ConceptInputComponent
-    │       │   │       └── ConceptAutocompletePanel
+    │       │   │   └── TopicInputComponent
+    │       │   │       └── TopicAutocompletePanel
     │       │   └── AddBookModal (edit mode)
     │       │
     │       ├── SecondBrain (app-brain)          [route: /second-brain]
@@ -40,8 +40,8 @@ App (app-root)
         ├── PdfReader (app-pdf-reader)
         ├── AudioReader (app-audio-reader)
         ├── NoteCardComponent (many)
-        └── ConceptInputComponent
-            └── ConceptAutocompletePanel
+        └── TopicInputComponent
+            └── TopicAutocompletePanel
 ```
 
 ## Page Components
@@ -71,18 +71,18 @@ Full book detail with metadata, notes, and file management. Uses `BookDetailStor
 - **File upload** with progress bar
 - **Star rating** (0-5, click to toggle)
 - **Favorite / Finished** toggles
-- **Notes list** with inline editing, concept tags, expand/collapse
+- **Notes list** with inline editing, topic tags, expand/collapse
 - **Description** with expandable overflow
 - **Metadata edit** via `AddBookModal` in edit mode
 - **Reader navigation** (opens `/read/:id`)
 
 ### SecondBrain (`/second-brain`)
 
-Master-detail concept explorer. Features:
+Master-detail topic explorer. Features:
 
-- **Left pane:** Searchable concept index (sorted by usage count)
-- **Right pane:** All notes linked to selected concept
-- **Concept tag navigation** — clicking a tag in a note switches to that concept
+- **Left pane:** Searchable topic index (sorted by usage count)
+- **Right pane:** All notes linked to selected topic
+- **Topic tag navigation** — clicking a tag in a note switches to that topic
 - **Note card actions** — navigate to source book
 
 ### WritingStudio (`/studio`)
@@ -92,7 +92,7 @@ Three-panel writing environment. Features:
 - **Left sidebar:** File tree (FlatTreeComponent) with folders/documents
 - **Center:** TinyMCE editor with auto-save (2s debounce, markdown round-trip)
 - **Right sidebar:** Context panel with two tabs:
-  - **Concepts:** Browse concepts → see linked notes → click to insert quote
+  - **Topics:** Browse topics → see linked notes → click to insert quote
   - **Books:** Browse books → see notes → click to insert quote
 - **Mobile responsive** — sidebars collapse to overlays
 
@@ -108,7 +108,7 @@ Unified features across all reader types:
 
 - **TOC sidebar** — collapsible table of contents
 - **Notes sidebar** — view/create/edit/delete notes
-- **Quick note** — text selection → note creation with optional concept autocomplete
+- **Quick note** — text selection → note creation with optional topic autocomplete
 - **Progress tracking** — debounced sync to backend
 - **Zoom controls** — reader-type-specific zoom
 - **Keyboard navigation** — arrows / page controls

@@ -103,7 +103,7 @@ export interface CaptureMeta {
  * Bounds for a rendered node's size, in screen pixels.
  *
  * These are SIGMA node sizes (the graph's `size` attribute), not the radii the
- * pre-rewrite SVG circles carried: the map draws its smallest concept at 4px and
+ * pre-rewrite SVG circles carried: the map draws its smallest topic at 4px and
  * its largest at 16px. The old 14-34 range described the SVG circles and made
  * every node fail the check once the map moved to Sigma.
  */
@@ -851,19 +851,19 @@ function r1(value: number): number {
 
 /**
  * The Brain detail pane swaps content in place. This is the permanent visual
- * guard for the original flash complaint: a selected concept must not leave a
+ * guard for the original flash complaint: a selected topic must not leave a
  * covering wait field, an `is-waiting` dim state, or an arrival animation
  * behind. The check is intentionally scoped to `.content-col`; the index is
  * allowed to retain its own shell animation.
  */
 export async function checkBrainNoArrivalAnimation(page: Page): Promise<GeometryCheck> {
   const pane = page.locator('.content-col');
-  await pane.locator('.concept-header').waitFor({ timeout: 30_000 });
+  await pane.locator('.topic-header').waitFor({ timeout: 30_000 });
   await pane.locator('.note-card').first().waitFor({ timeout: 30_000 });
 
   const state = await pane.evaluate((element) => {
     const animationNames: Record<string, string> = {};
-    for (const selector of ['.concept-header', '.note-card']) {
+    for (const selector of ['.topic-header', '.note-card']) {
       const target = element.querySelector(selector);
       animationNames[selector] = target ? getComputedStyle(target).animationName : '<absent>';
     }
@@ -894,7 +894,7 @@ export async function checkBrainNoArrivalAnimation(page: Page): Promise<Geometry
     animationViolations.length === 0 &&
     state.runningAnimations.length === 0;
   const message = ok
-    ? 'selected concept pane has no covering wait field, waiting class, or running arrival animation'
+    ? 'selected topic pane has no covering wait field, waiting class, or running arrival animation'
     : `Brain pane flash guard failed: wait elements [${state.waitElements.join(', ') || '—'}], ` +
       `animation names [${animationViolations.map(([selector, name]) => `${selector}=${name}`).join(', ') || '—'}], ` +
       `running animations [${state.runningAnimations.join(', ') || '—'}]`;
@@ -977,15 +977,15 @@ export async function checkBrainLayoutOverflow(page: Page): Promise<GeometryChec
 
 /**
  * The map layout is hand-rolled SVG, so its evidence check verifies the DOM
- * graph rather than relying on pixels: every filtered concept has one node
+ * graph rather than relying on pixels: every filtered topic has one node
  * and every rendered radius stays in the component's documented 14–34px
  * bounds.
  */
 export async function checkBrainMapGeometry(page: Page): Promise<GeometryCheck> {
-  const map = page.locator('.concept-map');
+  const map = page.locator('.topic-map');
   await map.waitFor({ timeout: 30_000 });
   await page.waitForFunction(
-    () => document.querySelector('.concept-map')?.getAttribute('aria-busy') === 'false',
+    () => document.querySelector('.topic-map')?.getAttribute('aria-busy') === 'false',
     undefined,
     { timeout: 30_000 }
   );
@@ -997,7 +997,7 @@ export async function checkBrainMapGeometry(page: Page): Promise<GeometryCheck> 
   // version of this check read `circle.map-node-visual`, which no longer exists).
   const measured = await page.evaluate(() => {
     const badgeText = document.querySelector('.badge-count')?.textContent?.trim() ?? '';
-    const conceptCount = Number.parseInt(badgeText, 10);
+    const topicCount = Number.parseInt(badgeText, 10);
 
     const globals = globalThis as unknown as {
       __nostosSigma?: {
@@ -1032,9 +1032,9 @@ export async function checkBrainMapGeometry(page: Page): Promise<GeometryCheck> 
     }
 
     return {
-      conceptCount,
+      topicCount,
       nodeCount: graph ? graph.order : 0,
-      accessibleConceptCount: document.querySelectorAll('.map-accessible-list li').length,
+      accessibleTopicCount: document.querySelectorAll('.map-accessible-list li').length,
       sizes,
       onScreen: margins.every((v) => v >= -1),
     };
@@ -1044,14 +1044,14 @@ export async function checkBrainMapGeometry(page: Page): Promise<GeometryCheck> 
     (size) => Number.isFinite(size) && size >= BRAIN_MAP_NODE_RADIUS.min && size <= BRAIN_MAP_NODE_RADIUS.max
   );
   const countMatches =
-    Number.isFinite(measured.conceptCount) &&
-    measured.nodeCount === measured.conceptCount &&
-    measured.accessibleConceptCount === measured.conceptCount;
+    Number.isFinite(measured.topicCount) &&
+    measured.nodeCount === measured.topicCount &&
+    measured.accessibleTopicCount === measured.topicCount;
   const ok = countMatches && sizesInBounds && measured.onScreen;
   const message = ok
-    ? `map renders ${measured.nodeCount} node(s), matching the ${measured.conceptCount}-concept index; sizes stay within ${BRAIN_MAP_NODE_RADIUS.min}–${BRAIN_MAP_NODE_RADIUS.max}px and all nodes are on screen`
-    : `map geometry mismatch: ${measured.nodeCount} node(s), ${measured.conceptCount} concept(s), ` +
-      `${measured.accessibleConceptCount} accessible node(s), sizes [${measured.sizes.map((s) => s.toFixed(1)).join(', ')}], onScreen=${measured.onScreen}`;
+    ? `map renders ${measured.nodeCount} node(s), matching the ${measured.topicCount}-topic index; sizes stay within ${BRAIN_MAP_NODE_RADIUS.min}–${BRAIN_MAP_NODE_RADIUS.max}px and all nodes are on screen`
+    : `map geometry mismatch: ${measured.nodeCount} node(s), ${measured.topicCount} topic(s), ` +
+      `${measured.accessibleTopicCount} accessible node(s), sizes [${measured.sizes.map((s) => s.toFixed(1)).join(', ')}], onScreen=${measured.onScreen}`;
 
   return ok
     ? passCheck('brain-map-geometry', message, { ...measured, sizeBounds: BRAIN_MAP_NODE_RADIUS })

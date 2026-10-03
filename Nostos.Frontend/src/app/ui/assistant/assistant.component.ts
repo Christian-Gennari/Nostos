@@ -78,7 +78,7 @@ function canonicalEvidenceKey(evidence: AssistantEvidenceReferenceDto): string {
   return [
     handle.kind,
     handle.noteId ?? '',
-    handle.conceptId ?? '',
+    handle.topicId ?? '',
     handle.bookId ?? '',
     handle.sourceSha256 ?? '',
     handle.extractorVersion ?? '',
@@ -347,7 +347,7 @@ export class AssistantComponent {
 
     // Following the newest turn is a DOM measurement, so it belongs after
     // render, and it must run for every block that can add height under the
-    // transcript: the reply, a capture acknowledgement, the concept
+    // transcript: the reply, a capture acknowledgement, the topic
     // suggestions, a proposed plan, a follow-up question, or the original-text
     // panel opening. The scroll container is read and written in one go, which
     // is what the mixed phase is for.
@@ -440,7 +440,7 @@ export class AssistantComponent {
   canOpenEvidence(evidence: AssistantEvidenceReferenceDto): boolean {
     if (!this.router) return false;
     if (evidence.handle.kind === 'note') return !!evidence.handle.noteId;
-    if (evidence.handle.kind === 'concept') return !!evidence.handle.conceptId;
+    if (evidence.handle.kind === 'topic') return !!evidence.handle.topicId;
     return !!evidence.handle.bookId
       && !!evidence.locators?.some((locator) => locator.type === 'pdf' || locator.type === 'epub');
   }
@@ -458,10 +458,10 @@ export class AssistantComponent {
       return;
     }
 
-    if (evidence.handle.kind === 'concept' && evidence.handle.conceptId) {
+    if (evidence.handle.kind === 'topic' && evidence.handle.topicId) {
       void this.router.navigate(
         ['/second-brain'],
-        { queryParams: { conceptId: evidence.handle.conceptId } },
+        { queryParams: { topicId: evidence.handle.topicId } },
       ).then((navigated) => {
         if (navigated && this.isPhoneViewport()) this.close();
       });
@@ -518,7 +518,7 @@ export class AssistantComponent {
 
   private humanizeCapability(capability: string): string {
     const labels: Record<string, string> = {
-      notes_link_existing_concept: 'note linked to concept',
+      notes_link_existing_topic: 'note linked to topic',
       library_update_book: 'book updated',
       library_move_book: 'book moved',
       library_create_collection: 'collection created',

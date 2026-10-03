@@ -14,7 +14,7 @@ namespace Nostos.Backend.Services.Notes;
 
 /// <summary>
 /// Canonical note service (issue #260 §1, §5). Owns every note write —
-/// including concept processing — so an endpoint (or a future assistant
+/// including topic processing — so an endpoint (or a future assistant
 /// capability) can never orchestrate the repositories itself. The scoped
 /// <see cref="NostosDbContext"/> is shared with the repositories and the
 /// <see cref="NoteProcessorService"/>, so a create/update stays one unit of
@@ -42,7 +42,7 @@ public sealed class NoteService : INoteService
 
     private readonly INoteRepository _notes;
     private readonly IBookRepository _books;
-    private readonly IConceptRepository _concepts;
+    private readonly ITopicRepository _topics;
     private readonly NoteProcessorService _processor;
     private readonly IThoughtProcessor _thoughts;
     private readonly NostosDbContext _db;
@@ -51,7 +51,7 @@ public sealed class NoteService : INoteService
     public NoteService(
         INoteRepository notes,
         IBookRepository books,
-        IConceptRepository concepts,
+        ITopicRepository topics,
         NoteProcessorService processor,
         IThoughtProcessor thoughts,
         NostosDbContext db,
@@ -59,7 +59,7 @@ public sealed class NoteService : INoteService
     {
         _notes = notes;
         _books = books;
-        _concepts = concepts;
+        _topics = topics;
         _processor = processor;
         _thoughts = thoughts;
         _db = db;
@@ -81,8 +81,8 @@ public sealed class NoteService : INoteService
         var note = await _db.Notes
             .AsNoTracking()
             .Include(n => n.Book)
-            .Include(n => n.NoteConcepts)
-            .ThenInclude(nc => nc.Concept)
+            .Include(n => n.NoteTopics)
+            .ThenInclude(nc => nc.Topic)
             .FirstOrDefaultAsync(n => n.Id == noteId, ct);
 
         return note is null ? null : ByText(note, null);
@@ -92,19 +92,19 @@ public sealed class NoteService : INoteService
     {
         var take = Clamp(limit);
         var skip = Math.Max(offset, 0);
-        var total = await _notes.CountWithoutConceptsAsync();
-        var notes = await _notes.GetWithoutConceptsAsync(take, skip);
+        var total = await _notes.CountWithoutTopicsAsync();
+        var notes = await _notes.GetWithoutTopicsAsync(take, skip);
         return new NoteSearchPageDto(notes.Select(n => ByText(n, null)).ToList(), total, skip, take);
     }
 
     public async Task<NoteSearchPageDto> BrowseAsync(
-        string? query, Guid? bookId, bool withoutConcepts, bool oldestFirst,
+        string? query, Guid? bookId, bool withoutTopics, bool oldestFirst,
         int limit, int offset, CancellationToken ct = default)
     {
         var take = Clamp(limit);
         var skip = Math.Max(offset, 0);
         var (items, total) = await _notes.BrowseAsync(
-            query, bookId, withoutConcepts, oldestFirst, take, skip);
+            query, bookId, withoutTopics, oldestFirst, take, skip);
         return new NoteSearchPageDto(items.Select(n => ByText(n, query?.Trim())).ToList(), total, skip, take);
     }
 
@@ -333,13 +333,13 @@ public sealed class NoteService : INoteService
 
     public async Task<NoteCommandResult<NoteDto>> UpdateAsync(Guid noteId, UpdateNoteDto dto, CancellationToken ct = default)
     {
-        var existing = await _notes.GetByIdWithConceptsAsync(noteId);
+        var existing = await _notes.GetByIdWithTopicsAsync(noteId);
         if (existing is null)
             return NoteCommandResult<NoteDto>.Fail(NoteErrorCodes.NoteNotFound, "Note not found.");
 
         existing.Apply(dto);
 
-        // Re-process concepts (the processor clears old links then re-adds).
+        // Re-process topics (the processor clears old links then re-adds).
         await _processor.ProcessNoteAsync(existing);
 
         await _notes.SaveChangesAsync();
@@ -353,8 +353,8 @@ public sealed class NoteService : INoteService
         if (existing is null)
             return NoteCommandResult<bool>.Fail(NoteErrorCodes.NoteNotFound, "Note not found.");
 
-        // Remove concept links first: the join table's note FK is Restrict.
-        await _notes.DeleteConceptLinksAsync(noteId);
+        // Remove topic links first: the join table's note FK is Restrict.
+        await _notes.DeleteTopicLinksAsync(noteId);
 
         await _notes.DeleteAsync(existing);
 
@@ -365,29 +365,29 @@ public sealed class NoteService : INoteService
     // Capabilities for the note-review flow (issue #261)
     // ------------------------------------------------------------------
 
-    public async Task<NoteCommandResult<NoteDto>> LinkToExistingConceptAsync(
+    public async Task<NoteCommandResult<NoteDto>> LinkToExistingTopicAsync(
         Guid noteId,
-        Guid conceptId,
+        Guid topicId,
         CancellationToken ct = default)
     {
-        var note = await _notes.GetByIdWithConceptsAsync(noteId);
+        var note = await _notes.GetByIdWithTopicsAsync(noteId);
         if (note is null)
             return NoteCommandResult<NoteDto>.Fail(NoteErrorCodes.NoteNotFound, "Note not found.");
 
-        // Never creates a concept: the link target must already exist.
-        var concept = await _db.Concepts.AsNoTracking().FirstOrDefaultAsync(c => c.Id == conceptId, ct);
-        if (concept is null)
-            return NoteCommandResult<NoteDto>.Fail(NoteErrorCodes.ConceptNotFound, "Concept not found.");
+        // Never creates a topic: the link target must already exist.
+        var topic = await _db.Topics.AsNoTracking().FirstOrDefaultAsync(c => c.Id == topicId, ct);
+        if (topic is null)
+            return NoteCommandResult<NoteDto>.Fail(NoteErrorCodes.TopicNotFound, "Topic not found.");
 
-        // Idempotent. The join is keyed (NoteId, ConceptId); inserting a second
+        // Idempotent. The join is keyed (NoteId, TopicId); inserting a second
         // row would be a duplicate key. The check runs against the database, not
         // the tracked navigation, so a repeated call sees the committed link.
-        var existingNames = await _db.NoteConcepts
+        var existingNames = await _db.NoteTopics
             .AsNoTracking()
             .Where(nc => nc.NoteId == noteId)
-            .Select(nc => new { nc.ConceptId, Name = nc.Concept!.Concept })
+            .Select(nc => new { nc.TopicId, Name = nc.Topic!.Topic })
             .ToListAsync(ct);
-        var alreadyLinked = existingNames.Any(link => link.ConceptId == conceptId);
+        var alreadyLinked = existingNames.Any(link => link.TopicId == topicId);
 
         // The note body is the canonical source of membership on every later
         // edit. A join-only Act link would disappear when UpdateAsync reprocesses
@@ -397,7 +397,7 @@ public sealed class NoteService : INoteService
             .Select(match => match.Groups[1].Value.Trim())
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var contentChanged = false;
-        foreach (var name in existingNames.Select(link => link.Name).Append(concept.Concept))
+        foreach (var name in existingNames.Select(link => link.Name).Append(topic.Topic))
         {
             if (!references.Add(name)) continue;
             var body = note.Content.TrimEnd();
@@ -408,7 +408,7 @@ public sealed class NoteService : INoteService
         if (!alreadyLinked)
         {
             // Keep other links and save the text and join in one unit of work.
-            _concepts.AddNoteLink(new NoteConceptModel { NoteId = noteId, ConceptId = conceptId });
+            _topics.AddNoteLink(new NoteTopicModel { NoteId = noteId, TopicId = topicId });
         }
         if (!alreadyLinked || contentChanged)
             await _notes.SaveChangesAsync();
@@ -421,8 +421,8 @@ public sealed class NoteService : INoteService
         var note = await _db.Notes
             .AsNoTracking()
             .Include(n => n.Book)
-            .Include(n => n.NoteConcepts)
-            .ThenInclude(nc => nc.Concept)
+            .Include(n => n.NoteTopics)
+            .ThenInclude(nc => nc.Topic)
             .FirstOrDefaultAsync(n => n.Id == noteId, ct);
 
         if (note is null)
@@ -434,9 +434,9 @@ public sealed class NoteService : INoteService
             note.Book?.Title,
             note.Content,
             note.SelectedText,
-            note.NoteConcepts
-                .Where(nc => nc.Concept is not null)
-                .Select(nc => nc.Concept!.Concept)
+            note.NoteTopics
+                .Where(nc => nc.Topic is not null)
+                .Select(nc => nc.Topic!.Topic)
                 .OrderBy(name => name)
                 .ToList());
     }
@@ -457,7 +457,7 @@ public sealed class NoteService : INoteService
                 $"Unknown processing mode '{processingMode}'.");
         }
 
-        var note = await _notes.GetByIdWithConceptsAsync(noteId);
+        var note = await _notes.GetByIdWithTopicsAsync(noteId);
         if (note is null)
             return NoteCommandResult<NoteDto>.Fail(NoteErrorCodes.NoteNotFound, "Note not found.");
 
@@ -488,7 +488,7 @@ public sealed class NoteService : INoteService
             note.ProcessingMode = result.Mode;
         }
 
-        // Content may have changed, so the concept links are re-derived from it.
+        // Content may have changed, so the topic links are re-derived from it.
         await _processor.ProcessNoteAsync(note);
         await _notes.SaveChangesAsync();
 
@@ -511,7 +511,7 @@ public sealed class NoteService : INoteService
         Guid noteId,
         CancellationToken ct = default)
     {
-        var note = await _notes.GetByIdWithConceptsAsync(noteId);
+        var note = await _notes.GetByIdWithTopicsAsync(noteId);
         if (note is null)
             return NoteCommandResult<NoteDto>.Fail(NoteErrorCodes.NoteNotFound, "Note not found.");
 
@@ -614,9 +614,9 @@ public sealed class NoteService : INoteService
         n.Content,
         n.SelectedText,
         Snippet(n.Content, n.SelectedText, term),
-        n.NoteConcepts
-            .Where(nc => nc.Concept != null)
-            .Select(nc => nc.Concept!.Concept)
+        n.NoteTopics
+            .Where(nc => nc.Topic != null)
+            .Select(nc => nc.Topic!.Topic)
             .OrderBy(name => name)
             .ToList(),
         n.CreatedAt,

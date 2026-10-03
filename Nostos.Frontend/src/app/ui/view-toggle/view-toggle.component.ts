@@ -254,7 +254,7 @@ export class ViewToggleComponent {
    * selection, it only emits, and the surface re-binds `value`. That keeps the
    * persisted preference (LibraryPreferencesService / Brain localStorage) the
    * single source of truth and a `viewMode` changed elsewhere — the Brain's
-   * "read this concept's notes" rail action switches back to list — animating
+   * "read this topic's notes" rail action switches back to list — animating
    * the thumb like any other change.
    */
   readonly value = input.required<string>();

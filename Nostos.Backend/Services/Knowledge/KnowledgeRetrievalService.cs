@@ -14,7 +14,7 @@ namespace Nostos.Backend.Services.Knowledge;
 public static class KnowledgeEvidenceKinds
 {
     public const string Note = "note";
-    public const string Concept = "concept";
+    public const string Topic = "topic";
     public const string BookText = "book_text";
 }
 
@@ -26,7 +26,7 @@ public static class KnowledgeEvidenceKinds
 public sealed record KnowledgeEvidenceHandle(
     string Kind,
     Guid? NoteId = null,
-    Guid? ConceptId = null,
+    Guid? TopicId = null,
     Guid? BookId = null,
     string? SourceSha256 = null,
     string? ExtractorVersion = null,
@@ -44,28 +44,28 @@ public sealed record KnowledgeNoteEvidence(
     Guid BookId,
     string? BookTitle,
     string Snippet,
-    IReadOnlyList<string> ConceptNames,
+    IReadOnlyList<string> TopicNames,
     DateTime CreatedAt,
     string? CfiRange,
     string SourceAnchorKind,
     string? SourceAnchorValue,
     bool AnchorVerified);
 
-public sealed record KnowledgeConceptSupportingNote(
+public sealed record KnowledgeTopicSupportingNote(
     KnowledgeEvidenceHandle Handle,
     Guid NoteId,
     Guid BookId,
     string? BookTitle,
     string Snippet);
 
-public sealed record KnowledgeConceptEvidence(
+public sealed record KnowledgeTopicEvidence(
     KnowledgeEvidenceHandle Handle,
-    Guid ConceptId,
+    Guid TopicId,
     string Name,
     int UsageCount,
     int NoteMatchCount,
     string? MatchSnippet,
-    IReadOnlyList<KnowledgeConceptSupportingNote> SupportingNotes);
+    IReadOnlyList<KnowledgeTopicSupportingNote> SupportingNotes);
 
 public sealed record KnowledgeBookEvidence(
     KnowledgeEvidenceHandle Handle,
@@ -83,7 +83,7 @@ public sealed record KnowledgeBookEvidence(
 public sealed record KnowledgeSearchResponse(
     IReadOnlyList<string> QueryVariants,
     IReadOnlyList<KnowledgeNoteEvidence> Notes,
-    IReadOnlyList<KnowledgeConceptEvidence> Concepts,
+    IReadOnlyList<KnowledgeTopicEvidence> Topics,
     IReadOnlyList<KnowledgeBookEvidence> BookPassages,
     IReadOnlyList<BookTextIngestionState> BookTextStates,
     bool EvidenceAvailable);
@@ -93,15 +93,15 @@ public sealed record KnowledgeBookNoteCount(Guid BookId, string BookTitle, int N
 public sealed record KnowledgeOverview(
     int TotalNotes,
     int UnlinkedNotes,
-    int TotalConcepts,
-    int TotalConceptReferences,
-    IReadOnlyList<ConceptDto> TopConcepts,
+    int TotalTopics,
+    int TotalTopicReferences,
+    IReadOnlyList<TopicDto> TopTopics,
     IReadOnlyList<KnowledgeBookNoteCount> TopBooksByNoteCount);
 
 public sealed record KnowledgeReadResponse(
     KnowledgeEvidenceHandle Handle,
     KnowledgeNoteRead? Note = null,
-    KnowledgeConceptRead? Concept = null,
+    KnowledgeTopicRead? Topic = null,
     KnowledgeBookEvidence? BookPassage = null);
 
 public sealed record KnowledgeNoteRead(
@@ -110,18 +110,18 @@ public sealed record KnowledgeNoteRead(
     string? BookTitle,
     string Content,
     string? SelectedText,
-    IReadOnlyList<string> ConceptNames,
+    IReadOnlyList<string> TopicNames,
     DateTime CreatedAt,
     string? CfiRange,
     string SourceAnchorKind,
     string? SourceAnchorValue,
     bool AnchorVerified);
 
-public sealed record KnowledgeConceptRead(
-    Guid ConceptId,
+public sealed record KnowledgeTopicRead(
+    Guid TopicId,
     string Name,
     int UsageCount,
-    IReadOnlyList<KnowledgeConceptSupportingNote> Notes);
+    IReadOnlyList<KnowledgeTopicSupportingNote> Notes);
 
 /// <summary>
 /// Optional provider-neutral extension point for future semantic/hybrid
@@ -173,7 +173,7 @@ public sealed class NoOpKnowledgeRetrievalService : IKnowledgeRetrievalService
 public sealed class KnowledgeRetrievalService(
     INoteService notes,
     INoteRepository noteRepository,
-    IConceptRepository concepts,
+    ITopicRepository topics,
     ILibraryService library,
     IBookTextSearchService bookText,
     IBookTextIndex bookTextIndex,
@@ -192,7 +192,7 @@ public sealed class KnowledgeRetrievalService(
 
     private const int DefaultMaxPerSource = 6;
     private const int MaximumMaxPerSource = 8;
-    private const int SupportingNotesPerConcept = 3;
+    private const int SupportingNotesPerTopic = 3;
     private const int OverviewTopCount = 12;
 
     public async Task<KnowledgeSearchResponse> SearchAsync(
@@ -220,7 +220,7 @@ public sealed class KnowledgeRetrievalService(
             scopedBookIds,
             ct);
 
-        var conceptHits = await concepts.SearchByNoteTextAsync(
+        var topicHits = await topics.SearchByNoteTextAsync(
             request.Query,
             scopedBookIds,
             max);
@@ -237,11 +237,11 @@ public sealed class KnowledgeRetrievalService(
             .Select(ToNoteEvidence)
             .ToList();
 
-        var conceptEvidence = new List<KnowledgeConceptEvidence>(conceptHits.Count);
-        foreach (var concept in conceptHits)
+        var topicEvidence = new List<KnowledgeTopicEvidence>(topicHits.Count);
+        foreach (var topic in topicHits)
         {
-            conceptEvidence.Add(await ToConceptEvidenceAsync(
-                concept,
+            topicEvidence.Add(await ToTopicEvidenceAsync(
+                topic,
                 variants,
                 scopedBookIds,
                 ct));
@@ -273,13 +273,13 @@ public sealed class KnowledgeRetrievalService(
                 {
                     noteEvidence.Add(ToNoteEvidence(note));
                 }
-                else if (resolved.Concept is { } concept
-                    && conceptEvidence.Count < max
-                    && conceptEvidence.All(item => item.ConceptId != concept.ConceptId))
+                else if (resolved.Topic is { } topic
+                    && topicEvidence.Count < max
+                    && topicEvidence.All(item => item.TopicId != topic.TopicId))
                 {
-                    var scopedConcept = ToConceptEvidence(concept, scopedBookIds);
-                    if (scopedConcept is not null)
-                        conceptEvidence.Add(scopedConcept);
+                    var scopedTopic = ToTopicEvidence(topic, scopedBookIds);
+                    if (scopedTopic is not null)
+                        topicEvidence.Add(scopedTopic);
                 }
                 else if (resolved.BookPassage is { } passage
                     && IsBookAllowed(passage.BookId, scopedBookIds)
@@ -294,18 +294,18 @@ public sealed class KnowledgeRetrievalService(
         return new KnowledgeSearchResponse(
             variants.Select(variant => variant.Text).ToList(),
             noteEvidence.Take(max).ToList(),
-            conceptEvidence.Take(max).ToList(),
+            topicEvidence.Take(max).ToList(),
             bookEvidence.Take(max).ToList(),
             bookResponse.States,
-            noteEvidence.Count > 0 || conceptEvidence.Count > 0 || bookEvidence.Count > 0);
+            noteEvidence.Count > 0 || topicEvidence.Count > 0 || bookEvidence.Count > 0);
     }
 
     public async Task<KnowledgeOverview> OverviewAsync(CancellationToken ct = default)
     {
         var totalNotes = await noteRepository.CountAsync();
-        var unlinkedNotes = await noteRepository.CountWithoutConceptsAsync();
-        var conceptStats = await concepts.GetStatsAsync();
-        var topConcepts = (await concepts.GetAllWithUsageCountAsync())
+        var unlinkedNotes = await noteRepository.CountWithoutTopicsAsync();
+        var topicStats = await topics.GetStatsAsync();
+        var topTopics = (await topics.GetAllWithUsageCountAsync())
             .Take(OverviewTopCount)
             .ToList();
         var topBooks = await noteRepository.GetBookCountsAsync(OverviewTopCount);
@@ -313,9 +313,9 @@ public sealed class KnowledgeRetrievalService(
         return new KnowledgeOverview(
             totalNotes,
             unlinkedNotes,
-            conceptStats.TotalConcepts,
-            conceptStats.TotalReferences,
-            topConcepts,
+            topicStats.TotalTopics,
+            topicStats.TotalReferences,
+            topTopics,
             topBooks
                 .Select(item => new KnowledgeBookNoteCount(
                     item.BookId,
@@ -335,24 +335,24 @@ public sealed class KnowledgeRetrievalService(
             if (handle.NoteId is not { } noteId)
                 return null;
 
-            var note = await noteRepository.GetByIdWithConceptsAsync(noteId);
+            var note = await noteRepository.GetByIdWithTopicsAsync(noteId);
             return note is null
                 ? null
                 : new KnowledgeReadResponse(handle, Note: ToNoteRead(note));
         }
 
-        if (string.Equals(handle.Kind, KnowledgeEvidenceKinds.Concept, StringComparison.Ordinal))
+        if (string.Equals(handle.Kind, KnowledgeEvidenceKinds.Topic, StringComparison.Ordinal))
         {
-            if (handle.ConceptId is not { } conceptId)
+            if (handle.TopicId is not { } topicId)
                 return null;
 
-            var concept = await concepts.GetByIdWithNotesAsync(conceptId);
-            if (concept is null)
+            var topic = await topics.GetByIdWithNotesAsync(topicId);
+            if (topic is null)
                 return null;
 
             return new KnowledgeReadResponse(
                 handle,
-                Concept: ToConceptRead(concept));
+                Topic: ToTopicRead(topic));
         }
 
         if (string.Equals(handle.Kind, KnowledgeEvidenceKinds.BookText, StringComparison.Ordinal))
@@ -414,38 +414,38 @@ public sealed class KnowledgeRetrievalService(
         return ids;
     }
 
-    private async Task<KnowledgeConceptEvidence> ToConceptEvidenceAsync(
-        ConceptDto concept,
+    private async Task<KnowledgeTopicEvidence> ToTopicEvidenceAsync(
+        TopicDto topic,
         IReadOnlyList<LexicalQueryVariant> variants,
         IReadOnlyList<Guid>? scopedBookIds,
         CancellationToken ct)
     {
-        var model = await concepts.GetByIdWithNotesAsync(concept.Id);
-        IReadOnlyList<KnowledgeConceptSupportingNote> supporting = model is null
+        var model = await topics.GetByIdWithNotesAsync(topic.Id);
+        IReadOnlyList<KnowledgeTopicSupportingNote> supporting = model is null
             ? []
             : SupportingNotes(
                 model,
                 variants.Select(variant => variant.Text).ToList(),
                 scopedBookIds,
-                SupportingNotesPerConcept);
+                SupportingNotesPerTopic);
 
-        return new KnowledgeConceptEvidence(
-            ConceptHandle(concept.Id),
-            concept.Id,
-            concept.Name,
-            concept.UsageCount,
-            concept.NoteMatchCount,
-            concept.NoteMatchSnippet,
+        return new KnowledgeTopicEvidence(
+            TopicHandle(topic.Id),
+            topic.Id,
+            topic.Name,
+            topic.UsageCount,
+            topic.NoteMatchCount,
+            topic.NoteMatchSnippet,
             supporting);
     }
 
-    private static IReadOnlyList<KnowledgeConceptSupportingNote> SupportingNotes(
-        ConceptModel concept,
+    private static IReadOnlyList<KnowledgeTopicSupportingNote> SupportingNotes(
+        TopicModel topic,
         IReadOnlyList<string> variants,
         IReadOnlyList<Guid>? scopedBookIds,
         int limit)
     {
-        return concept.NoteConcepts
+        return topic.NoteTopics
             .Select(link => link.Note)
             .Where(note => note is not null)
             .Cast<NoteModel>()
@@ -460,7 +460,7 @@ public sealed class KnowledgeRetrievalService(
             .ThenByDescending(candidate => candidate.Note.CreatedAt)
             .ThenBy(candidate => candidate.Note.Id)
             .Take(limit)
-            .Select(candidate => new KnowledgeConceptSupportingNote(
+            .Select(candidate => new KnowledgeTopicSupportingNote(
                 NoteHandle(candidate.Note.Id),
                 candidate.Note.Id,
                 candidate.Note.BookId,
@@ -678,7 +678,7 @@ public sealed class KnowledgeRetrievalService(
             note.BookId,
             note.BookTitle,
             note.Snippet ?? Clip(note.SelectedText ?? note.Content, 240),
-            note.ConceptNames,
+            note.TopicNames,
             note.CreatedAt,
             note.CfiRange,
             note.SourceAnchorKind,
@@ -692,29 +692,29 @@ public sealed class KnowledgeRetrievalService(
             note.BookId,
             note.BookTitle,
             Clip(note.SelectedText ?? note.Content, 240),
-            note.ConceptNames,
+            note.TopicNames,
             note.CreatedAt,
             note.CfiRange,
             note.SourceAnchorKind,
             note.SourceAnchorValue,
             note.AnchorVerified);
 
-    private static KnowledgeConceptEvidence? ToConceptEvidence(
-        KnowledgeConceptRead concept,
+    private static KnowledgeTopicEvidence? ToTopicEvidence(
+        KnowledgeTopicRead topic,
         IReadOnlyList<Guid>? scopedBookIds)
     {
-        var notes = concept.Notes
+        var notes = topic.Notes
             .Where(note => IsBookAllowed(note.BookId, scopedBookIds))
             .ToList();
 
         if (scopedBookIds is not null && notes.Count == 0)
             return null;
 
-        return new KnowledgeConceptEvidence(
-            ConceptHandle(concept.ConceptId),
-            concept.ConceptId,
-            concept.Name,
-            concept.UsageCount,
+        return new KnowledgeTopicEvidence(
+            TopicHandle(topic.TopicId),
+            topic.TopicId,
+            topic.Name,
+            topic.UsageCount,
             notes.Count,
             notes.FirstOrDefault()?.Snippet,
             notes);
@@ -751,9 +751,9 @@ public sealed class KnowledgeRetrievalService(
             note.Book?.Title,
             note.Content,
             note.SelectedText,
-            note.NoteConcepts
-                .Where(link => link.Concept is not null)
-                .Select(link => link.Concept!.Concept)
+            note.NoteTopics
+                .Where(link => link.Topic is not null)
+                .Select(link => link.Topic!.Topic)
                 .OrderBy(name => name)
                 .ToList(),
             note.CreatedAt,
@@ -762,16 +762,16 @@ public sealed class KnowledgeRetrievalService(
             note.SourceAnchorValue,
             note.AnchorVerified);
 
-    private static KnowledgeConceptRead ToConceptRead(ConceptModel concept)
+    private static KnowledgeTopicRead ToTopicRead(TopicModel topic)
     {
-        var notes = concept.NoteConcepts
+        var notes = topic.NoteTopics
             .Select(link => link.Note)
             .Where(note => note is not null)
             .Cast<NoteModel>()
             .OrderByDescending(note => note.CreatedAt)
             .ThenBy(note => note.Id)
             .Take(12)
-            .Select(note => new KnowledgeConceptSupportingNote(
+            .Select(note => new KnowledgeTopicSupportingNote(
                 NoteHandle(note.Id),
                 note.Id,
                 note.BookId,
@@ -779,18 +779,18 @@ public sealed class KnowledgeRetrievalService(
                 Clip(note.SelectedText ?? note.Content, 240)))
             .ToList();
 
-        return new KnowledgeConceptRead(
-            concept.Id,
-            concept.Concept,
-            concept.NoteConcepts.Count,
+        return new KnowledgeTopicRead(
+            topic.Id,
+            topic.Topic,
+            topic.NoteTopics.Count,
             notes);
     }
 
     private static KnowledgeEvidenceHandle NoteHandle(Guid noteId) =>
         new(KnowledgeEvidenceKinds.Note, NoteId: noteId);
 
-    private static KnowledgeEvidenceHandle ConceptHandle(Guid conceptId) =>
-        new(KnowledgeEvidenceKinds.Concept, ConceptId: conceptId);
+    private static KnowledgeEvidenceHandle TopicHandle(Guid topicId) =>
+        new(KnowledgeEvidenceKinds.Topic, TopicId: topicId);
 
     private static KnowledgeEvidenceHandle BookHandle(BookTextIndexedChunk chunk) =>
         new(

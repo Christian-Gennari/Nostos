@@ -1,7 +1,7 @@
 import type { SimulationNodeDatum } from 'd3-force';
-import type { ConceptDto } from '../../core/services/concepts.service';
+import type { TopicDto } from '../../core/services/topics.service';
 
-export const MAX_MAP_CONCEPTS = 150;
+export const MAX_MAP_TOPICS = 150;
 
 /* ── Visual constants ── */
 export const NODE_SIZE_MIN = 4;
@@ -70,14 +70,14 @@ export const EDGE_ALPHA_DIM = 0.34;
  *
  * The previous value (3.2) was calibrated when radii did not scale with the
  * camera, so the floor was exactly `NODE_SIZE_MIN` = 4.0. Leaving it at 3.2 after
- * switching to `Math.sqrt` silenced 47 of 53 labels, because most concepts share
+ * switching to `Math.sqrt` silenced 47 of 53 labels, because most topics share
  * the minimum usage count and sit exactly at the 4px floor once scaled.
  *
  * 2.4 clears that 2.89px floor with margin at the fit, so every node is labelled
  * on open, while still letting labels recede as the user zooms out (a larger
  * ratio shrinks drawn radii past the threshold) — which is Obsidian's behaviour,
  * where labels fade with zoom rather than being pinned on forever.
- * `concept-map.component.spec.ts` asserts the relationship so it cannot regress:
+ * `topic-map.component.spec.ts` asserts the relationship so it cannot regress:
  * the threshold must stay below `NODE_SIZE_MIN / sqrt(fitted ratio)`.
  */
 export const LABEL_RENDER_MIN_SIZE = 2.4;
@@ -86,7 +86,7 @@ export const LABEL_RENDER_MIN_SIZE = 2.4;
  * Edge allowance, as a fraction of stage width, so the outermost nodes' discs are
  * not flush against the canvas.
  *
- * This used to be a label gutter deliberately sized to the widest concept name,
+ * This used to be a label gutter deliberately sized to the widest topic name,
  * because Sigma's label drawer only ever drew to the RIGHT of a node and anything
  * past the canvas edge was silently truncated. That reservation is no longer
  * needed: `drawFlipsAtEdgeNodeLabel` moves a label to the other side of its node
@@ -331,7 +331,7 @@ export const COMMUNITY_HUES = 3;
 /** Light-theme values, used only when the CSS tokens cannot be read. */
 const COMMUNITY_FALLBACK = ['#2f6e4e', '#b06a30', '#5560a8'];
 
-/** A cluster needs at least this many concepts before it earns a hue. */
+/** A cluster needs at least this many topics before it earns a hue. */
 export const COMMUNITY_MIN_SIZE = 3;
 
 export interface ThemeColors {
@@ -475,7 +475,7 @@ export function drawThemeNodeHover(
   }
 }
 
-export function compareConcepts(a: ConceptDto, b: ConceptDto): number {
+export function compareTopics(a: TopicDto, b: TopicDto): number {
   return (
     b.usageCount - a.usageCount ||
     (a.name < b.name ? -1 : a.name > b.name ? 1 : 0) ||
@@ -494,7 +494,7 @@ export function compareConcepts(a: ConceptDto, b: ConceptDto): number {
  *
  * So the component no longer lets Sigma draw labels. Its `defaultDrawNodeLabel`
  * only COLLECTS each candidate, and after the frame `placeLabels` lays them out
- * in priority order — the active neighbourhood first, then hub concepts, then
+ * in priority order — the active neighbourhood first, then hub topics, then
  * the rest by size — skipping any label that would collide with one already
  * placed. `drawPlacedLabels` then paints each one over a halo in the field
  * colour, so edges pass behind words instead of through them.
@@ -505,7 +505,7 @@ export const LABEL_PRIORITY = {
   /** Not part of the active neighbourhood while something is active. */
   dimmed: 0,
   normal: 1,
-  /** The most-referenced concepts: always candidates, drawn bolder. */
+  /** The most-referenced topics: always candidates, drawn bolder. */
   hub: 2,
   /** The hovered/selected node and its neighbours. Never culled. */
   active: 3,
@@ -684,7 +684,7 @@ export function drawPlacedLabels(
   context.restore();
 }
 
-/** Ids of the most-referenced concepts, `HUB_FRACTION` of the graph. */
+/** Ids of the most-referenced topics, `HUB_FRACTION` of the graph. */
 export function pickHubs(nodes: Array<{ id: string; usageCount: number }>): Set<string> {
   const count = Math.min(HUB_MAX, Math.max(HUB_MIN, Math.round(nodes.length * HUB_FRACTION)));
   return new Set(
@@ -698,7 +698,7 @@ export function pickHubs(nodes: Array<{ id: string; usageCount: number }>): Set<
 /* ── Clusters ── */
 
 /**
- * Weighted label propagation: each concept repeatedly joins the cluster its
+ * Weighted label propagation: each topic repeatedly joins the cluster its
  * neighbours share the most notes with, until nothing changes.
  *
  * Deterministic — nodes are visited in `hashSeed` order and ties go to the
@@ -780,9 +780,9 @@ export function centerStrengths(width: number, height: number): { x: number; y: 
 }
 
 /**
- * Positions for concepts with no connections: a tidy shelf under the graph.
+ * Positions for topics with no connections: a tidy shelf under the graph.
  *
- * Left to the physics, an unconnected concept is pushed away by everything and
+ * Left to the physics, an unconnected topic is pushed away by everything and
  * held only by the weak centre force, so it drifts to a corner — measured two
  * isolates settling well outside the main body, where the fit then had to frame
  * them and shrank everything else. Shelved in rows the width of the graph, they

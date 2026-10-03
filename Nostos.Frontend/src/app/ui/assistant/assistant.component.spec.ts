@@ -43,7 +43,7 @@ function context(overrides: Partial<AssistantContext> = {}): AssistantContext {
     selectedText: null,
     readingTarget: 'b1',
     brainReviewNoteId: null,
-    concept: null,
+    topic: null,
     collectionId: null,
     anchor: null,
     ...overrides,
@@ -218,16 +218,16 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     );
   });
 
-  it('opens note and concept evidence on canonical Brain deep-links', () => {
+  it('opens note and topic evidence on canonical Brain deep-links', () => {
     const note: AssistantEvidenceReferenceDto = {
       handle: { kind: 'note', noteId: 'note-42' },
       label: 'Note · The Magic Mountain',
       excerpt: 'A canonical note.',
     };
-    const concept: AssistantEvidenceReferenceDto = {
-      handle: { kind: 'concept', conceptId: 'concept-7' },
+    const topic: AssistantEvidenceReferenceDto = {
+      handle: { kind: 'topic', topicId: 'topic-7' },
       label: 'Attention',
-      excerpt: 'Canonical concept evidence.',
+      excerpt: 'Canonical topic evidence.',
     };
 
     expect(fixture.componentInstance.canOpenEvidence(note)).toBe(true);
@@ -237,11 +237,11 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
       { queryParams: { noteId: 'note-42' } },
     );
 
-    expect(fixture.componentInstance.canOpenEvidence(concept)).toBe(true);
-    fixture.componentInstance.openEvidence(concept);
+    expect(fixture.componentInstance.canOpenEvidence(topic)).toBe(true);
+    fixture.componentInstance.openEvidence(topic);
     expect(router.navigate).toHaveBeenCalledWith(
       ['/second-brain'],
-      { queryParams: { conceptId: 'concept-7' } },
+      { queryParams: { topicId: 'topic-7' } },
     );
   });
 
@@ -1412,7 +1412,7 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="assistant-raw"]')).toBeNull();
   });
 
-  it('renders suggestion chips and links the chosen existing concept without a second approval', () => {
+  it('renders suggestion chips and links the chosen existing topic without a second approval', () => {
     fake.set({
       surface: 'reader',
       route: '/read/b1',
@@ -1426,7 +1426,7 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     assistant.submit();
     http.expectOne('/api/assistant/turn/stream').flush(turn({
       suggestions: [
-        { kind: 'concept', label: 'Mountains', reason: 'Evidence relationship.', value: 'c-alpha', noteId: 'note-1' },
+        { kind: 'topic', label: 'Mountains', reason: 'Evidence relationship.', value: 'c-alpha', noteId: 'note-1' },
       ],
     }));
     fixture.detectChanges();
@@ -1506,11 +1506,11 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
 
   it('leaves the note unlinked when the user dismisses the suggestions', () => {
     assistant.open();
-    assistant.updateDraft('Suggest a concept');
+    assistant.updateDraft('Suggest a topic');
     assistant.submit();
     http.expectOne('/api/assistant/turn/stream').flush(turn({
       suggestions: [
-        { kind: 'concept', label: 'Mountains', reason: 'Evidence relationship.', value: 'c-alpha', noteId: 'note-1' },
+        { kind: 'topic', label: 'Mountains', reason: 'Evidence relationship.', value: 'c-alpha', noteId: 'note-1' },
       ],
     }));
     fixture.detectChanges();

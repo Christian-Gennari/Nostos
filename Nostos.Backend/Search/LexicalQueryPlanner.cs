@@ -3,7 +3,7 @@ using System.Text.RegularExpressions;
 namespace Nostos.Backend.Search;
 
 /// <summary>
-/// Deterministic, provider-free lexical decomposition shared by note, concept
+/// Deterministic, provider-free lexical decomposition shared by note, topic
 /// and unified knowledge retrieval.
 ///
 /// The original phrase stays first. A small number of content-word and adjacent

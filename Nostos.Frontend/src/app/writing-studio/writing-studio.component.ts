@@ -19,7 +19,7 @@ import { firstValueFrom } from 'rxjs';
 
 import { WritingsService } from '../core/services/writings.service';
 import { ToastService } from '../core/services/toast.service';
-import { ConceptsService, ConceptDto, NoteContextDto } from '../core/services/concepts.service';
+import { TopicsService, TopicDto, NoteContextDto } from '../core/services/topics.service';
 import { BooksService, Book as BookDto } from '../core/services/books.service';
 import { NotesService } from '../core/services/notes.service';
 import { NoteCardComponent } from '../ui/note-card.component/note-card.component';
@@ -113,7 +113,7 @@ function readTypewriter(): boolean {
 export class WritingStudio implements OnInit, AfterViewInit {
   private writingsService = inject(WritingsService);
   private toast = inject(ToastService);
-  private conceptsService = inject(ConceptsService);
+  private topicsService = inject(TopicsService);
   private booksService = inject(BooksService);
   private notesService = inject(NotesService);
   private route = inject(ActivatedRoute, { optional: true });
@@ -287,11 +287,11 @@ export class WritingStudio implements OnInit, AfterViewInit {
   editorWordCount = signal<number | null>(null);
   displayWordCount = computed(() => this.editorWordCount() ?? this.wordCount());
 
-  // Brain / Concepts State
+  // Brain / Topics State
   brainQuery = signal('');
-  concepts = signal<ConceptDto[]>([]);
-  selectedConceptId = signal<string | null>(null);
-  selectedConceptNotes = signal<Note[]>([]);
+  topics = signal<TopicDto[]>([]);
+  selectedTopicId = signal<string | null>(null);
+  selectedTopicNotes = signal<Note[]>([]);
 
   // Books / Notes State
   books = signal<BookDto[]>([]);
@@ -302,16 +302,16 @@ export class WritingStudio implements OnInit, AfterViewInit {
   /**
    * Label for the surface an inspected source drills down from.
    * Inspection is a temporary child state: closing it returns to the exact
-   * kept-source / concept / book context rather than to a generic Library root.
+   * kept-source / topic / book context rather than to a generic Library root.
    */
   inspectionReturnLabel = computed(() => {
     if (this.referenceMode() === 'writing') return 'For this writing';
 
     if (this.activeSidebarTab() === 'brain') {
-      const conceptId = this.selectedConceptId();
+      const topicId = this.selectedTopicId();
       return (
-        this.concepts().find((concept) => concept.id === conceptId)?.name ??
-        'Concept notes'
+        this.topics().find((topic) => topic.id === topicId)?.name ??
+        'Topic notes'
       );
     }
 
@@ -319,18 +319,18 @@ export class WritingStudio implements OnInit, AfterViewInit {
     return this.books().find((book) => book.id === bookId)?.title ?? 'Book notes';
   });
 
-  // Computed Map for highlighting concepts in notes
-  conceptMap = computed(() => {
-    const map = new Map<string, ConceptDto>();
-    for (const c of this.concepts()) {
+  // Computed Map for highlighting topics in notes
+  topicMap = computed(() => {
+    const map = new Map<string, TopicDto>();
+    for (const c of this.topics()) {
       map.set(c.name.toLowerCase(), c);
     }
     return map;
   });
 
-  filteredConcepts = computed(() => {
+  filteredTopics = computed(() => {
     const q = this.brainQuery().toLowerCase();
-    const list = this.concepts();
+    const list = this.topics();
     if (!q) return list;
     return list.filter((c) => c.name.toLowerCase().includes(q));
   });
@@ -714,7 +714,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
   // --- Brain & Notes Logic ---
 
   loadBrain() {
-    this.conceptsService.list().subscribe((data) => this.concepts.set(data));
+    this.topicsService.list().subscribe((data) => this.topics.set(data));
   }
 
   loadBooks() {
@@ -738,10 +738,10 @@ export class WritingStudio implements OnInit, AfterViewInit {
     this.activeSidebarTab.set(tab);
   }
 
-  selectConcept(id: string) {
+  selectTopic(id: string) {
     this.inspectedSource.set(null);
-    this.selectedConceptId.set(id);
-    this.conceptsService.get(id).subscribe((d) => {
+    this.selectedTopicId.set(id);
+    this.topicsService.get(id).subscribe((d) => {
       // Map NoteContextDto (noteId) → Note (id) for NoteCardComponent compatibility
       const mapped: Note[] = d.notes.map((n: NoteContextDto) => ({
         id: n.noteId,
@@ -752,7 +752,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
         createdAt: '',
         bookTitle: n.bookTitle,
       }));
-      this.selectedConceptNotes.set(mapped);
+      this.selectedTopicNotes.set(mapped);
       const pendingInspection = this.pendingInspectedSourceRestore;
       if (pendingInspection?.mode === 'library' && pendingInspection.tab === 'brain') {
         const match = mapped.find((note) => note.id === pendingInspection.id);
@@ -896,7 +896,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
         activeLibraryTab: this.activeSidebarTab(),
         wasOpen: this.showBrainSidebar(),
         inspectedSourceId: this.inspectedSource()?.id ?? null,
-        selectedConceptId: this.selectedConceptId(),
+        selectedTopicId: this.selectedTopicId(),
         selectedBookId: this.selectedBookId(),
       },
     };
@@ -1036,7 +1036,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
     if (references) {
       this.referenceMode.set(references.mode);
       this.activeSidebarTab.set(references.activeLibraryTab);
-      this.selectedConceptId.set(references.selectedConceptId ?? null);
+      this.selectedTopicId.set(references.selectedTopicId ?? null);
       this.selectedBookId.set(references.selectedBookId ?? null);
       this.pendingInspectedSourceRestore = references.inspectedSourceId
         ? {
@@ -1057,8 +1057,8 @@ export class WritingStudio implements OnInit, AfterViewInit {
       }
 
       if (references.mode === 'library') {
-        if (references.activeLibraryTab === 'brain' && references.selectedConceptId) {
-          this.selectConcept(references.selectedConceptId);
+        if (references.activeLibraryTab === 'brain' && references.selectedTopicId) {
+          this.selectTopic(references.selectedTopicId);
         } else if (references.activeLibraryTab === 'notes' && references.selectedBookId) {
           this.selectBook(references.selectedBookId);
         } else {

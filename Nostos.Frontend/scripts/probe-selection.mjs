@@ -40,14 +40,14 @@ try {
     await page.goto(BASE + '/library', { waitUntil: 'domcontentloaded' });
     await page.evaluate((t) => localStorage.setItem('nostos.theme', t), theme);
 
-    // ---- Brain concept index: .index-item.active, hover + focus-within ----
+    // ---- Brain topic index: .index-item.active, hover + focus-within ----
     await page.goto(BASE + '/second-brain', { waitUntil: 'networkidle' });
     await page.waitForTimeout(1200);
 
     const activeSel = '.index-item.active';
     const haveActive = await page.locator(activeSel).count();
     if (!haveActive) {
-      console.log(`  [${theme}] no concept selected; selecting the first index row`);
+      console.log(`  [${theme}] no topic selected; selecting the first index row`);
       await page.locator('.index-item').first().click();
       await page.waitForTimeout(600);
     }

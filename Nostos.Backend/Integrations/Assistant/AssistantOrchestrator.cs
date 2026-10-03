@@ -57,11 +57,11 @@ public sealed class AssistantOrchestrator(
     public const int MaxResponseTokens = 4096;
 
     /// <summary>
-    /// The review flow's "small set": at most three candidate concepts are shown
+    /// The review flow's "small set": at most three candidate topics are shown
     /// for one unlinked note. A longer list is a search result, not a suggestion
     /// (issue #261 §5).
     /// </summary>
-    public const int MaxConceptSuggestions = 3;
+    public const int MaxTopicSuggestions = 3;
 
     /// <summary>
     /// A turn keeps only a small bounded set of evidence artifacts. Stable
@@ -130,7 +130,7 @@ public sealed class AssistantOrchestrator(
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
-    private const string ConceptProposalCapability = "concepts_propose_links";
+    private const string TopicProposalCapability = "topics_propose_links";
 
     // ------------------------------------------------------------------
     // A turn
@@ -229,8 +229,8 @@ public sealed class AssistantOrchestrator(
 
         var suggestions = new List<AssistantSuggestionDto>();
         var reviewedNoteIds = new HashSet<Guid>();
-        var inspectedConceptIds = new HashSet<Guid>();
-        var conceptsInspected = false;
+        var inspectedTopicIds = new HashSet<Guid>();
+        var topicsInspected = false;
         var executedCapabilities = new List<string>();
         var successfulCapabilities = new HashSet<string>(StringComparer.Ordinal);
         var sourceReferences = new List<AssistantSourceReferenceDto>();
@@ -528,13 +528,13 @@ public sealed class AssistantOrchestrator(
                 AssistantToolResult result;
                 try
                 {
-                    result = string.Equals(capability.Name, ConceptProposalCapability, StringComparison.Ordinal)
+                    result = string.Equals(capability.Name, TopicProposalCapability, StringComparison.Ordinal)
                         && !ProposalUsesReadEvidence(
                             args, turnContext.BrainReviewNoteId,
-                            reviewedNoteIds, inspectedConceptIds, conceptsInspected)
+                            reviewedNoteIds, inspectedTopicIds, topicsInspected)
                         ? AssistantToolResult.Fail(
                             AssistantErrorCodes.InvalidArguments,
-                            "Read the target note and existing concept evidence in this turn before proposing those IDs.")
+                            "Read the target note and existing topic evidence in this turn before proposing those IDs.")
                         : await registry.InvokeAsync(
                             capability.Name,
                             args,
@@ -626,15 +626,15 @@ public sealed class AssistantOrchestrator(
                         && Guid.TryParse(ReadString(args, "noteId"), out var readNoteId))
                         reviewedNoteIds.Add(readNoteId);
 
-                    if (string.Equals(capability.Name, "concepts_list", StringComparison.Ordinal)
-                        || string.Equals(capability.Name, "concepts_search", StringComparison.Ordinal))
+                    if (string.Equals(capability.Name, "topics_list", StringComparison.Ordinal)
+                        || string.Equals(capability.Name, "topics_search", StringComparison.Ordinal))
                     {
-                        conceptsInspected = true;
-                        if (result.Data is { } conceptRows && conceptRows.ValueKind == JsonValueKind.Array)
-                            foreach (var row in conceptRows.EnumerateArray())
+                        topicsInspected = true;
+                        if (result.Data is { } topicRows && topicRows.ValueKind == JsonValueKind.Array)
+                            foreach (var row in topicRows.EnumerateArray())
                                 if (row.ValueKind == JsonValueKind.Object
-                                    && Guid.TryParse(ReadString(row, "id"), out var readConceptId))
-                                    inspectedConceptIds.Add(readConceptId);
+                                    && Guid.TryParse(ReadString(row, "id"), out var readTopicId))
+                                    inspectedTopicIds.Add(readTopicId);
                     }
 
                     MergeSuggestions(suggestions, ExtractSuggestions(capability.Name, result.Data));
@@ -1145,33 +1145,33 @@ public sealed class AssistantOrchestrator(
         JsonElement args,
         string? currentReviewNoteId,
         HashSet<Guid> reviewedNoteIds,
-        HashSet<Guid> inspectedConceptIds,
-        bool conceptsInspected)
+        HashSet<Guid> inspectedTopicIds,
+        bool topicsInspected)
     {
         if (args.ValueKind != JsonValueKind.Object
             || !Guid.TryParse(ReadString(args, "noteId"), out var noteId)
             || !reviewedNoteIds.Contains(noteId)
             || (Guid.TryParse(currentReviewNoteId, out var currentNoteId) && currentNoteId != noteId)
-            || !conceptsInspected
+            || !topicsInspected
             || !args.TryGetProperty("candidates", out var candidates)
             || candidates.ValueKind != JsonValueKind.Array)
             return false;
 
         return candidates.EnumerateArray().All(candidate =>
             candidate.ValueKind == JsonValueKind.Object
-            && Guid.TryParse(ReadString(candidate, "conceptId"), out var conceptId)
-            && inspectedConceptIds.Contains(conceptId));
+            && Guid.TryParse(ReadString(candidate, "topicId"), out var topicId)
+            && inspectedTopicIds.Contains(topicId));
     }
 
     /// <summary>
     /// Only an explicit, validated proposal capability can produce suggestions.
-    /// Ordinary concept reads are evidence, never implicit clickable actions.
+    /// Ordinary topic reads are evidence, never implicit clickable actions.
     /// </summary>
     private static IEnumerable<AssistantSuggestionDto> ExtractSuggestions(
         string capabilityName,
         JsonElement? data)
     {
-        if (!string.Equals(capabilityName, ConceptProposalCapability, StringComparison.Ordinal)
+        if (!string.Equals(capabilityName, TopicProposalCapability, StringComparison.Ordinal)
             || data is not { } element
             || element.ValueKind != JsonValueKind.Object
             || !element.TryGetProperty("candidates", out var candidates)
@@ -1198,7 +1198,7 @@ public sealed class AssistantOrchestrator(
             if (string.IsNullOrWhiteSpace(reason)) continue;
 
             yield return new AssistantSuggestionDto(
-                "concept",
+                "topic",
                 name,
                 reason,
                 ReadString(item, "id"),
@@ -1208,7 +1208,7 @@ public sealed class AssistantOrchestrator(
 
     /// <summary>
     /// Adds incoming suggestions to the response, de-duplicated by identity and
-    /// capped for concepts. The cap is what makes the review a small set rather
+    /// capped for topics. The cap is what makes the review a small set rather
     /// than a dump of the library; de-duplication handles repeated explicit
     /// proposals in one turn. Nothing here creates or mutates anything.
     /// </summary>
@@ -1226,9 +1226,9 @@ public sealed class AssistantOrchestrator(
                 continue;
             }
 
-            if (string.Equals(suggestion.Kind, "concept", StringComparison.Ordinal)
-                && target.Count(existing => string.Equals(existing.Kind, "concept", StringComparison.Ordinal))
-                    >= MaxConceptSuggestions)
+            if (string.Equals(suggestion.Kind, "topic", StringComparison.Ordinal)
+                && target.Count(existing => string.Equals(existing.Kind, "topic", StringComparison.Ordinal))
+                    >= MaxTopicSuggestions)
             {
                 continue;
             }
@@ -1321,7 +1321,7 @@ public sealed class AssistantOrchestrator(
             "|",
             handle.Kind,
             handle.NoteId,
-            handle.ConceptId,
+            handle.TopicId,
             handle.BookId,
             handle.SourceSha256,
             handle.ExtractorVersion,
@@ -1331,7 +1331,7 @@ public sealed class AssistantOrchestrator(
         new(
             handle.Kind,
             handle.NoteId,
-            handle.ConceptId,
+            handle.TopicId,
             handle.BookId,
             handle.SourceSha256,
             handle.ExtractorVersion,
@@ -1367,13 +1367,13 @@ public sealed class AssistantOrchestrator(
                 BookTitle: note.BookTitle);
         }
 
-        foreach (var concept in response.Concepts)
+        foreach (var topic in response.Topics)
         {
-            var excerpt = concept.MatchSnippet
-                ?? concept.SupportingNotes.FirstOrDefault()?.Snippet;
+            var excerpt = topic.MatchSnippet
+                ?? topic.SupportingNotes.FirstOrDefault()?.Snippet;
             yield return new AssistantEvidenceReferenceDto(
-                ToEvidenceHandle(concept.Handle),
-                concept.Name,
+                ToEvidenceHandle(topic.Handle),
+                topic.Name,
                 ClipEvidence(excerpt));
         }
 
@@ -1476,12 +1476,12 @@ public sealed class AssistantOrchestrator(
                 ClipEvidence(note.SelectedText ?? note.Content),
                 BookTitle: note.BookTitle);
         }
-        else if (response.Concept is { } concept)
+        else if (response.Topic is { } topic)
         {
             yield return new AssistantEvidenceReferenceDto(
                 ToEvidenceHandle(response.Handle),
-                concept.Name,
-                ClipEvidence(concept.Notes.FirstOrDefault()?.Snippet));
+                topic.Name,
+                ClipEvidence(topic.Notes.FirstOrDefault()?.Snippet));
         }
         else if (response.BookPassage is { } passage)
         {

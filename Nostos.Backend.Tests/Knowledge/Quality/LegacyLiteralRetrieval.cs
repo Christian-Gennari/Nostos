@@ -14,11 +14,11 @@ namespace Nostos.Backend.Tests.Knowledge.Quality;
 /// The repository predicate itself is unchanged by #562, so legacy notes are
 /// reproduced by calling <c>INoteRepository.SearchByTextAsync</c> with the raw
 /// query directly.</item>
-/// <item>Concepts: <c>ConceptRepository.SearchByNoteTextAsync</c> at 49f86a9^
+/// <item>Topics: <c>TopicRepository.SearchByNoteTextAsync</c> at 49f86a9^
 /// was a single unescaped <c>LIKE %term%</c> over linked-note Content/
-/// SelectedText/Book.Title only (concept names were NOT matched), ordered by
+/// SelectedText/Book.Title only (topic names were NOT matched), ordered by
 /// NoteMatchCount desc then Name, Take(50). The current repository always
-/// expands through <c>LexicalQueryPlanner</c>, so the legacy concept ranking
+/// expands through <c>LexicalQueryPlanner</c>, so the legacy topic ranking
 /// is replicated inline below with the exact old predicate.</item>
 /// <item>Book text: #562 (commit 49f86a9) contains no change to
 /// <c>BookTextSearchService</c> or the FTS index query — both eras pass the
@@ -31,7 +31,7 @@ internal static class LegacyLiteralRetrieval
 {
     public sealed record LegacyResult(
         IReadOnlyList<Guid> NoteIds,
-        IReadOnlyList<Guid> ConceptIds,
+        IReadOnlyList<Guid> TopicIds,
         IReadOnlyList<(Guid BookId, int Ordinal)> Passages);
 
     public static async Task<LegacyResult> SearchAsync(
@@ -42,27 +42,27 @@ internal static class LegacyLiteralRetrieval
     {
         var noteModels = await h.NoteRepository.SearchByTextAsync(
             query, maxPerSource, bookIds: null);
-        var conceptIds = await SearchConceptsSinglePhraseAsync(h, query);
+        var topicIds = await SearchTopicsSinglePhraseAsync(h, query);
         var passages = await h.BookTextSearch.SearchAsync(
             new BookTextSearchRequest(query, MaxPassages: maxPerSource), ct);
 
         return new LegacyResult(
             noteModels.Select(note => note.Id).ToList(),
-            conceptIds,
+            topicIds,
             passages.Passages
                 .Select(passage => (passage.BookId, passage.Ordinal))
                 .ToList());
     }
 
     /// <summary>
-    /// Exact replica of the pre-#562 concept search predicate
-    /// (49f86a9^:Nostos.Backend/Data/Repositories/ConceptRepository.cs):
+    /// Exact replica of the pre-#562 topic search predicate
+    /// (49f86a9^:Nostos.Backend/Data/Repositories/TopicRepository.cs):
     /// one unescaped LIKE over the linked note's text columns, no planner
-    /// variants, no concept-name matching, NoteMatchCount desc then Name.
+    /// variants, no topic-name matching, NoteMatchCount desc then Name.
     /// The fixture queries contain no LIKE wildcards, so the missing escape
     /// is behaviourally irrelevant here; it is preserved for fidelity.
     /// </summary>
-    private static async Task<IReadOnlyList<Guid>> SearchConceptsSinglePhraseAsync(
+    private static async Task<IReadOnlyList<Guid>> SearchTopicsSinglePhraseAsync(
         RetrievalQualityHarness h,
         string term)
     {
@@ -72,7 +72,7 @@ internal static class LegacyLiteralRetrieval
         var cleanTerm = term.Trim();
         var pattern = $"%{cleanTerm}%";
 
-        var matchingRows = await h.Db.NoteConcepts
+        var matchingRows = await h.Db.NoteTopics
             .AsNoTracking()
             .Where(nc =>
                 EF.Functions.Like(nc.Note.Content, pattern) ||
@@ -80,25 +80,25 @@ internal static class LegacyLiteralRetrieval
                 (nc.Note.Book != null && EF.Functions.Like(nc.Note.Book.Title, pattern)))
             .Select(nc => new
             {
-                nc.ConceptId,
-                ConceptName = nc.Concept.Concept,
-                TotalUsageCount = nc.Concept.NoteConcepts.Count(),
+                nc.TopicId,
+                TopicName = nc.Topic.Topic,
+                TotalUsageCount = nc.Topic.NoteTopics.Count(),
                 nc.NoteId,
             })
             .ToListAsync();
 
         return matchingRows
-            .GroupBy(row => row.ConceptId)
+            .GroupBy(row => row.TopicId)
             .Select(group => new
             {
-                ConceptId = group.Key,
+                TopicId = group.Key,
                 NoteMatchCount = group.Select(row => row.NoteId).Distinct().Count(),
-                Name = group.First().ConceptName,
+                Name = group.First().TopicName,
             })
             .OrderByDescending(item => item.NoteMatchCount)
             .ThenBy(item => item.Name)
             .Take(50)
-            .Select(item => item.ConceptId)
+            .Select(item => item.TopicId)
             .ToList();
     }
 }

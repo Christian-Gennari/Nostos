@@ -27,8 +27,8 @@ public class NostosDbContext : DbContext
     public DbSet<NoteModel> Notes => Set<NoteModel>();
     public DbSet<CollectionModel> Collections => Set<CollectionModel>();
     public DbSet<BookCollectionModel> BookCollections => Set<BookCollectionModel>();
-    public DbSet<ConceptModel> Concepts => Set<ConceptModel>();
-    public DbSet<NoteConceptModel> NoteConcepts => Set<NoteConceptModel>();
+    public DbSet<TopicModel> Topics => Set<TopicModel>();
+    public DbSet<NoteTopicModel> NoteTopics => Set<NoteTopicModel>();
     public DbSet<BackupRecord> BackupRecords => Set<BackupRecord>();
 
     // Provenance for externally acquired books (issue #166). Generic columns
@@ -194,20 +194,20 @@ public class NostosDbContext : DbContext
             .HasForeignKey(w => w.ParentId)
             .OnDelete(DeleteBehavior.Cascade); // If you delete a folder, delete its contents
 
-        // Configure Many-to-Many for Notes <-> Concepts
-        modelBuilder.Entity<NoteConceptModel>().HasKey(nc => new { nc.NoteId, nc.ConceptId });
+        // Configure Many-to-Many for Notes <-> Topics
+        modelBuilder.Entity<NoteTopicModel>().HasKey(nc => new { nc.NoteId, nc.TopicId });
 
         modelBuilder
-            .Entity<NoteConceptModel>()
+            .Entity<NoteTopicModel>()
             .HasOne(nc => nc.Note)
-            .WithMany(n => n.NoteConcepts)
+            .WithMany(n => n.NoteTopics)
             .HasForeignKey(nc => nc.NoteId);
 
         modelBuilder
-            .Entity<NoteConceptModel>()
-            .HasOne(nc => nc.Concept)
-            .WithMany(c => c.NoteConcepts)
-            .HasForeignKey(nc => nc.ConceptId);
+            .Entity<NoteTopicModel>()
+            .HasOne(nc => nc.Topic)
+            .WithMany(c => c.NoteTopics)
+            .HasForeignKey(nc => nc.TopicId);
 
         // --- INDEXES ---
         modelBuilder.Entity<BookModel>().HasIndex(b => b.Title);
@@ -298,7 +298,7 @@ public class NostosDbContext : DbContext
         // Both sides cascade: deleting a writing (or folder) removes membership
         // rows; deleting a note removes its membership rows; and deleting a book
         // cascades to its notes, which would throw an FK violation if NoteId were
-        // restrictive. NoteConceptModel is the precedent here.
+        // restrictive. NoteTopicModel is the precedent here.
         modelBuilder.Entity<WritingNoteModel>(e =>
         {
             e.HasKey(wn => new { wn.WritingId, wn.NoteId });
@@ -336,7 +336,7 @@ public class NostosDbContext : DbContext
             e.HasIndex(a => new { a.ProviderId, a.ExternalId, a.AssetId }).IsUnique();
         });
 
-        modelBuilder.Entity<ConceptModel>().HasIndex(c => c.Concept).IsUnique();
+        modelBuilder.Entity<TopicModel>().HasIndex(c => c.Topic).IsUnique();
 
         // Idempotent receipt with bounded inputs (SQLite enforces the limits
         // via the CHECK constraint, not the metadata-only MaxLength). The

@@ -144,7 +144,7 @@ The old H-suite lived in `nostos-cloud/docs/research/issue-10-nostos-intelligenc
 | H | Property class | Preserved by |
 | --- | --- | --- |
 | H1 | cross-book synthesis (as **evidence preservation**) | C9; C7 |
-| H2 | semantic/concept matching without keyword overlap | C7; `Knowledge/Quality` concept-channel fixtures |
+| H2 | semantic/topic matching without keyword overlap | C7; `Knowledge/Quality` topic-channel fixtures |
 | H3 | open-reader capture obeys the deterministic target policy | C4/C5/C6; Gate A 5–7; `AssistantOrchestratorTests` capture/anchor tests |
 | H4 | mixed capture + question intent | C1 fillers (10 captures interleaved with 10 lookups); `AssistantOrchestratorTests` capture-intent tests |
 | H5 | evidence insufficiency / refusal to invent | C10; C15; Gate A 17 |
@@ -438,8 +438,8 @@ Deterministic fixtures in `Nostos.Backend.Tests/Knowledge/Quality/` (synthetic c
 only; tests + machine-readable JSON output). Strategies compared:
 
 1. **legacy literal** — the pre-#562 single-query behaviour, reproduced faithfully from git history
-   (`49f86a9^`): notes = single whole-phrase `SearchByTextAsync(rawQuery)`; concepts = single unescaped
-   `LIKE %term%` over linked-note text (concept names not matched); book text = unchanged service call
+   (`49f86a9^`): notes = single whole-phrase `SearchByTextAsync(rawQuery)`; topics = single unescaped
+   `LIKE %term%` over linked-note text (topic names not matched); book text = unchanged service call
    (#562 touched no book-text service/index code).
 2. **multi-query lexical (#562)** — `KnowledgeRetrievalService.SearchAsync` with `LexicalQueryPlanner`
    variants (response `QueryVariants`, e.g. `["reading replaces thinking","reading","replaces","thinking","reading replaces","replaces thinking"]`).
@@ -458,7 +458,7 @@ Measured (MaxPerSource = 6; notes channel):
 | C11 `neap tides bar` | multi-query #562 | 1 | 1 | 1 | 1 (G9b) | 0 |
 | C11 | legacy literal | 0 | 0 | 0 | — (empty) | 0 |
 
-- Concepts: legacy returns nothing in all four cases; multi-query ranks the gold concept first in
+- Topics: legacy returns nothing in all four cases; multi-query ranks the gold topic first in
   C7/C8/C9 (in C11 the broader `EarlyWater` outranks the more specific `NarrowMargin` — a legitimate
   linked-evidence ranking, scored via `NoteMatchCount`).
 - Passages: identical across strategies (book-text path byte-identical pre/post #562); C9 recalls both

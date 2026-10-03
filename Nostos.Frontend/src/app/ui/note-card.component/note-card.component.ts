@@ -5,8 +5,8 @@ import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 
 import { Note } from '../../core/dtos/note.dtos';
-import { ConceptDto } from '../../core/services/concepts.service';
-import { ConceptInputComponent } from '../concept-input.component/concept-input.component';
+import { TopicDto } from '../../core/services/topics.service';
+import { TopicInputComponent } from '../topic-input.component/topic-input.component';
 import { IconButtonComponent } from '../icon-button/icon-button.component';
 import { NoteFormatPipe } from '../pipes/note-format.pipe';
 import { NostosIconComponent } from '../icon/nostos-icon.component';
@@ -19,7 +19,7 @@ import { NostosIconComponent } from '../icon/nostos-icon.component';
     FormsModule,
     NostosIconComponent,
     IconButtonComponent,
-    ConceptInputComponent,
+    TopicInputComponent,
     NoteFormatPipe,
     RouterLink,
   ],
@@ -28,7 +28,7 @@ import { NostosIconComponent } from '../icon/nostos-icon.component';
 })
 export class NoteCardComponent {
   @Input({ required: true }) note!: Note;
-  @Input() conceptMap: Map<string, ConceptDto> = new Map();
+  @Input() topicMap: Map<string, TopicDto> = new Map();
   @Input() showNavigation = false;
   @Input() showActions = true;
   @Input() showSource = false;
@@ -37,7 +37,7 @@ export class NoteCardComponent {
   // Updated Output signature to match UpdateNoteDto
   @Output() update = new EventEmitter<{ id: string; content: string; selectedText?: string }>();
   @Output() delete = new EventEmitter<string>();
-  @Output() conceptClick = new EventEmitter<string>();
+  @Output() topicClick = new EventEmitter<string>();
   @Output() quoteClick = new EventEmitter<void>();
   @Output() cardClick = new EventEmitter<void>();
 
@@ -128,12 +128,12 @@ export class NoteCardComponent {
 
   onContentClick(event: MouseEvent) {
     const target = event.target as HTMLElement;
-    if (target.classList.contains('concept-tag')) {
-      const id = target.getAttribute('data-concept-id');
+    if (target.classList.contains('topic-tag')) {
+      const id = target.getAttribute('data-topic-id');
       if (id) {
         event.preventDefault();
         event.stopPropagation();
-        this.conceptClick.emit(id);
+        this.topicClick.emit(id);
       }
     }
   }

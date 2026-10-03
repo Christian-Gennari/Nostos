@@ -211,7 +211,7 @@
  * Sort row: the list's own header, not a boxed control above it.
  *
  * Two earlier attempts failed for the same reason, and it is worth recording:
- * the concept rows are TRANSPARENT and BORDERLESS (`.index-item` carries
+ * the topic rows are TRANSPARENT and BORDERLESS (`.index-item` carries
  * `border: none; background: transparent`). Any enclosed input-shaped box placed
  * above them is therefore the only closed shape in the panel, and its outline
  * pulls the eye away from the list — so re-placing and re-sizing that box could
@@ -273,7 +273,7 @@
 }
 
 /* Shell fills the list's content track, so the control's text and chevron line up
- * with the concept rows rather than stopping in mid-air. Kept as a stable hook
+ * with the topic rows rather than stopping in mid-air. Kept as a stable hook
  * (the template and tests reference it) even though the borderless select no
  * longer needs a box of its own. */
 .sort-shell {
@@ -292,7 +292,7 @@
   position: relative;
   /* Padding matches header horizontal padding exactly.
      The top padding is what keeps the first row off the sort row's hairline: with
-     none, the first concept row's box began 1px under the rule, so the list
+     none, the first topic row's box began 1px under the rule, so the list
      appeared to start flush against the boundary and a row's hover surface
      touched it. */
   padding: 0.5rem 1.25rem 1.5rem;
@@ -791,8 +791,8 @@
 }
 
 /* The map's selection card (with Read notes) and camera rail live inside
-   `app-concept-map`, so this view no longer owns a floating selection bar.
-   See concept-map.component.css. */
+   `app-topic-map`, so this view no longer owns a floating selection bar.
+   See topic-map.component.css. */
 
 /* The map takes the stage it is now on: it is the whole point of this view, so
    give it the available height and width rather than the ~360px it needed as a
@@ -812,7 +812,7 @@
    `:host` rule (`[_nghost]` is specificity 0,1,0 versus this rule's 0,1,1) and
    silently stopped the height chain — the host measured 896px while the card
    inside it stayed at 392px. */
-.map-wrapper app-concept-map {
+.map-wrapper app-topic-map {
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -823,14 +823,14 @@
  * Desktop: hand the map the column's height so it can fill it.
  *
  * Only the OUTER chain is here — the map's own internals are styled in
- * concept-map.component.css, because Angular view encapsulation rewrites that
+ * topic-map.component.css, because Angular view encapsulation rewrites that
  * component's selectors with its host attribute and these rules cannot reach
  * them.
  *
  * The phone rule at the end of this file still overrides the padding for a
  * full-bleed map on a handset.
  */
-.content-col.mobile-visible:has(app-concept-map) {
+.content-col.mobile-visible:has(app-topic-map) {
   display: flex;
   flex-direction: column;
   /* Dock clearance, not the reading layout's 136px.
@@ -845,7 +845,7 @@
   padding-bottom: 5.5rem;
 }
 
-.content-col.mobile-visible:has(app-concept-map) .map-wrapper {
+.content-col.mobile-visible:has(app-topic-map) .map-wrapper {
   flex: 1;
   min-height: 0;
   display: flex;
@@ -855,24 +855,24 @@
 
 /* HEADER */
 /* No arrival animation on the detail pane.
-   Every concept is rendered against exactly the same background, so an
+   Every topic is rendered against exactly the same background, so an
    entrance effect here animates between two states that are visually identical
    and only ever reads as a flash. The previous implementation stacked a
-   `pane-in` blur on `.concept-header`/`.cards-grid` on top of a `slideUpFade`
+   `pane-in` blur on `.topic-header`/`.cards-grid` on top of a `slideUpFade`
    on every `.note-card` (with `forwards` fill pinning the final opacity), so
    each index click replayed a blur-and-rise across the whole pane. The pane now
    simply swaps its content in place. */
-/* The concept header is editorial, not a marketing hero: the title anchors the
+/* The topic header is editorial, not a marketing hero: the title anchors the
    left edge like a chapter opening, its actions sit quietly opposite it, and the
    title's own baseline does the work instead of a stack of centred blocks. */
-.concept-header {
+.topic-header {
   margin-bottom: 1.5rem;
   max-width: 1100px;
   margin-left: auto;
   margin-right: auto;
 }
 
-.concept-head-row {
+.topic-head-row {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -888,7 +888,7 @@
   margin-bottom: 0.4rem;
 }
 
-.concept-title {
+.topic-title {
   font-family: 'Newsreader', serif;
   font-size: 2.4rem;
   font-weight: 500;
@@ -899,7 +899,7 @@
 }
 
 /* Metadata reads as a quiet editorial caption, not a dashboard stat. */
-.concept-meta {
+.topic-meta {
   font-size: 0.82rem;
   color: var(--color-text-light);
 }
@@ -907,7 +907,7 @@
 /* Actions are quiet until needed: no border at rest, so the header is type and
    air rather than three competing boxes. The hairline and fill arrive on hover,
    which keeps the destructive action from carrying the same weight as the rest. */
-.concept-actions,
+.topic-actions,
 .review-actions {
   display: flex;
   align-items: center;
@@ -940,8 +940,8 @@
 }
 
 /* --- Notes inspector -------------------------------------------------------
-   Notes and Concepts are two entrances to the same saved material. The inspector
-   therefore uses the Concept pane's editorial width and the exact shared NoteCard
+   Notes and Topics are two entrances to the same saved material. The inspector
+   therefore uses the Topic pane's editorial width and the exact shared NoteCard
    presentation rather than maintaining a second quote/reflection recipe. */
 .note-inspector {
   max-width: 1100px;
@@ -1025,7 +1025,7 @@
   align-self: auto;
 }
 
-.note-concept-link {
+.note-topic-link {
   max-width: none;
   padding-inline: 0.25rem;
   color: var(--color-brand-accent);
@@ -1146,7 +1146,7 @@
 
 .brain-proposals-question { margin-top: 0.65rem; }
 
-.concept-management {
+.topic-management {
   max-width: 1100px;
   margin: 2rem auto 0;
   padding-top: 0.9rem;
@@ -1154,7 +1154,7 @@
   color: var(--color-text-muted);
 }
 
-.concept-management summary {
+.topic-management summary {
   width: fit-content;
   min-height: 36px;
   padding: 0.45rem 0;
@@ -1164,17 +1164,17 @@
   font-weight: var(--fw-medium);
 }
 
-.concept-management summary:hover,
-.concept-management summary:focus-visible {
+.topic-management summary:hover,
+.topic-management summary:focus-visible {
   color: var(--color-text-main);
 }
 
-.concept-management .concept-actions {
+.topic-management .topic-actions {
   margin-top: 0.35rem;
   flex-wrap: wrap;
 }
 
-.concept-management .merge-picker {
+.topic-management .merge-picker {
   margin-left: 0;
 }
 
@@ -1305,7 +1305,7 @@
 .merge-picker-cancel,
 .merge-picker-confirm { min-height: 36px; }
 
-/* Related concepts are evidence-backed structural paths. Their names remain
+/* Related topics are evidence-backed structural paths. Their names remain
    quiet links, while the shared-note control explains and opens the evidence
    without pretending co-occurrence carries semantic meaning. */
 .related-section {
@@ -1527,7 +1527,7 @@
    single column of full-width rows.
  *
  * `auto-fit` (not `auto-fill`) is what makes the board adapt to how many notes a
- * concept actually has: an unused track collapses to zero, so the remaining
+ * topic actually has: an unused track collapses to zero, so the remaining
  * tracks take the whole pane. Measured on live data at 1440px: 1 note -> one
  * 704px column; 2 notes -> 500px each side by side; 3 notes -> 496px with the
  * third wrapping under the first, exactly the "notes pinned to a board" feel.
@@ -1546,7 +1546,7 @@
    one: a 340px card adrift in an 1100px field. Contract the GRID to the reading
    measure instead and let the card fill it — the note then reads as a deliberate
    page rather than a failed multi-column layout. This is the common case: 47 of
-   the 53 concepts in the live library hold exactly one note. */
+   the 53 topics in the live library hold exactly one note. */
 .cards-grid:has(> :only-child) {
   max-width: 44rem;
 }
@@ -1588,7 +1588,7 @@
   transform: translateY(-2px);
 }
 
-/* The shared note card owns editing, concept input and source navigation. The
+/* The shared note card owns editing, topic input and source navigation. The
    host wrapper supplies the grid boundary; these deep rules give each child a
    full-height track and enforce the detail pane's hover/focus action contract. */
 :host ::ng-deep app-note-card {
@@ -1686,7 +1686,7 @@
   transition: opacity var(--motion-fast) var(--ease-out);
 }
 
-:host ::ng-deep a.concept-tag {
+:host ::ng-deep a.topic-tag {
   color: var(--color-brand-accent);
   font-weight: var(--fw-medium);
   background: transparent;
@@ -1694,7 +1694,7 @@
   padding-bottom: 1px;
 }
 
-:host ::ng-deep .concept-tag--unresolved {
+:host ::ng-deep .topic-tag--unresolved {
   color: var(--color-text-muted);
   font-weight: var(--fw-regular);
   border-bottom-style: dashed;
@@ -1963,9 +1963,9 @@
     flex: 1;
   }
 
-  /* The concept detail sheet scrolls, and it opens at its top. "Back to Index"
+  /* The topic detail sheet scrolls, and it opens at its top. "Back to Index"
      is the only way back to the list (the index column is display:none while a
-     concept is open), so a static back control makes the list unreachable from
+     topic is open), so a static back control makes the list unreachable from
      any scrolled position. Pin it to the top of the scrolling column and mask
      the content passing under it.
 
@@ -2047,7 +2047,7 @@
   }
 
   /* 6. Adjust Typography for Mobile */
-  .concept-title {
+  .topic-title {
     font-size: 2rem;
   }
 
@@ -2059,11 +2059,11 @@
     width: 100%;
   }
 
-  .concept-actions {
+  .topic-actions {
     justify-content: stretch;
   }
 
-  .concept-action {
+  .topic-action {
     flex: 1 1 30%;
     min-height: 44px;
   }
@@ -2120,7 +2120,7 @@
     min-height: 44px;
   }
 
-  /* Give the footer and the concept header room to lay out as ROWS instead of
+  /* Give the footer and the topic header room to lay out as ROWS instead of
      a single cramped line. Before this, each row was a nowrap flex whose two
      44px buttons needed 102px of a 287px footer that was pinned to 32px tall:
      the action cluster overhung the card by 49px, the header cluster by 69px,
@@ -2151,7 +2151,7 @@
     padding: 0;
   }
 
-  .concept-head-row {
+  .topic-head-row {
     flex-wrap: wrap;
     row-gap: 0.75rem;
   }
@@ -2160,15 +2160,15 @@
      min-content width that runs past the column, and nothing could break it, so
      the detail column grew a horizontal scrollbar for a long name (measured
      73px of overhang). */
-  .concept-head-copy {
+  .topic-head-copy {
     min-width: 0;
   }
 
-  .concept-title {
+  .topic-title {
     overflow-wrap: break-word;
   }
 
-  .concept-actions {
+  .topic-actions {
     flex: 1 1 100%;
     justify-content: flex-end;
   }
@@ -2193,9 +2193,9 @@
    lost) and a 523px stage ending 163px above the dock — a third of the screen
    was empty band while the graph was squeezed into the rest.
 
-   `.content-col:has(app-concept-map)` targets only the map view, so the
-   concept-reading layout keeps its padding. */
-.content-col.mobile-visible:has(app-concept-map) {
+   `.content-col:has(app-topic-map)` targets only the map view, so the
+   topic-reading layout keeps its padding. */
+.content-col.mobile-visible:has(app-topic-map) {
   display: flex;
   flex-direction: column;
   /* Absorb the space under the persistent header, exactly as the reading
@@ -2213,7 +2213,7 @@
   padding-bottom: 0;
 }
 
-/* The `.map-wrapper` and `app-concept-map` flex chain above applies at every
+/* The `.map-wrapper` and `app-topic-map` flex chain above applies at every
    width (no max-width centring, host as the flex container), so the phone
    needs no copy of it. */
 
@@ -2248,7 +2248,7 @@
     display: none;
   }
 
-  .content-col.mobile-visible:has(app-concept-map) {
+  .content-col.mobile-visible:has(app-topic-map) {
     /* The column must claim the height left under the header. `flex: 1` (with
        `min-height: 0`) is what does that; relying on `height: 100%` measured a
        117px column (mostly its own bottom padding) and a 2px stage. */
@@ -2271,7 +2271,7 @@
     animation: none;
   }
 
-  .concept-action,
+  .topic-action,
   .row-actions,
   .row-action,
   .index-item,
@@ -2298,7 +2298,7 @@
 
 .brain-section-title,
 .brain-section-count,
-.brain-note-concept-tag {
+.brain-note-topic-tag {
   font-weight: var(--fw-semibold);
 }
 
@@ -2453,14 +2453,14 @@
   white-space: pre-wrap;
 }
 
-.brain-note-panel-concepts {
+.brain-note-panel-topics {
   display: flex;
   flex-wrap: wrap;
   gap: 0.4rem;
   align-items: center;
 }
 
-.brain-note-panel-empty-concepts {
+.brain-note-panel-empty-topics {
   font-size: 0.8rem;
   color: var(--color-text-muted);
   margin: 0;
@@ -2473,12 +2473,12 @@
  * pane becomes one focused note, for as long as the user has chosen to review.
  *
  * Built from tokens and recipes the surface already has — the rail's list, the
- * concept pane's header and action row, the merge picker — so the mode reads as
- * the same product as the concept index it temporarily replaces. */
+ * topic pane's header and action row, the merge picker — so the mode reads as
+ * the same product as the topic index it temporarily replaces. */
 
-/* The reviewed row. Same fill the concept index gives its active row, so
+/* The reviewed row. Same fill the topic index gives its active row, so
    "where am I" reads identically in both rails.
-   Keep the explicit hover/focus variants in lockstep with the concept row above:
+   Keep the explicit hover/focus variants in lockstep with the topic row above:
    Angular's scoped attributes make the shell hover/focus selector more specific
    than a bare `.note-row-item.active`. Without these variants, clicking or
    hovering a selected note repaints its dark selection fill with `--bg-hover`
@@ -2520,31 +2520,31 @@
  *
  * `.content-col` supplies the padding, so the pane only centres the task and
  * holds it to a reading measure. The quote, the note text and the action row are
- * recipes the surface already has (`.brain-note-panel-*`, `.concept-action`), so
+ * recipes the surface already has (`.brain-note-panel-*`, `.topic-action`), so
  * what is left here is a measure and one hairline. */
 
-/* The committing action carries a hairline, so "Link to concept" is separable
+/* The committing action carries a hairline, so "Link to topic" is separable
  * from "Skip" without becoming the only filled CTA on a housekeeping surface. */
-.concept-action.primary {
+.topic-action.primary {
   border-color: var(--border-color);
   color: var(--color-text-main);
 }
 
-/* --- The concept picker ---
+/* --- The topic picker ---
  *
- * The deliberate half of the two write paths: the user names the concept the
+ * The deliberate half of the two write paths: the user names the topic the
  * note belongs to, and nothing is written until they confirm.
  *
  * It deliberately carries NO styles of its own. It is the merge picker's
  * markup and the merge picker's classes, because it is the same job in the same
- * surface — pick one existing concept from a searchable list — and a second
+ * surface — pick one existing topic from a searchable list — and a second
  * near-identical recipe is how the two would drift apart. `.merge-picker-hint`
  * below is the one new line of copy it needed. */
 
 @media (max-width: 768px) {
 
   .related-section,
-  .concept-management {
+  .topic-management {
     margin-top: 1.5rem;
   }
 
@@ -2555,8 +2555,8 @@
   .related-chip,
   .related-evidence-toggle,
   .related-more,
-  .concept-management summary,
-  .concept-action {
+  .topic-management summary,
+  .topic-action {
     min-height: 44px;
   }
 
@@ -2672,7 +2672,7 @@
 
 /* Map view on a phone: a one-row header. The stacked header took 188px of an
    844px screen (and left ~125px of graph in landscape); in map view it only
-   needs the title, search and the way back. The Notes/Concepts switch is one
+   needs the title, search and the way back. The Notes/Topics switch is one
    tap away in the list view. */
 @media (max-width: 768px), (max-height: 500px) {
   .brain-layout.map-view .brain-header {

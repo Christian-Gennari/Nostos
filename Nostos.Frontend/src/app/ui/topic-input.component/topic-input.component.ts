@@ -15,36 +15,36 @@ import { ControlValueAccessor, NG_VALUE_ACCESSOR, FormsModule } from '@angular/f
 import { CommonModule } from '@angular/common';
 import { Subscription } from 'rxjs';
 
-import { ConceptAutocompleteDirective } from '../../core/directives/concept-autocomplete.directive';
-import { ConceptAutocompletePanel } from '../concept-autocomplete-panel/concept-autocomplete-panel.component';
-import { ConceptDto, ConceptsService } from '../../core/services/concepts.service';
-import { ConceptAutocompleteService } from '../concept-autocomplete-panel/concept-autocomplete.service';
+import { TopicAutocompleteDirective } from '../../core/directives/topic-autocomplete.directive';
+import { TopicAutocompletePanel } from '../topic-autocomplete-panel/topic-autocomplete-panel.component';
+import { TopicDto, TopicsService } from '../../core/services/topics.service';
+import { TopicAutocompleteService } from '../topic-autocomplete-panel/topic-autocomplete.service';
 
 @Component({
-  selector: 'app-concept-input',
+  selector: 'app-topic-input',
   standalone: true,
-  imports: [CommonModule, FormsModule, ConceptAutocompleteDirective, ConceptAutocompletePanel],
-  templateUrl: './concept-input.component.html',
-  styleUrls: ['./concept-input.component.css'],
+  imports: [CommonModule, FormsModule, TopicAutocompleteDirective, TopicAutocompletePanel],
+  templateUrl: './topic-input.component.html',
+  styleUrls: ['./topic-input.component.css'],
   providers: [
     {
       provide: NG_VALUE_ACCESSOR,
-      useExisting: forwardRef(() => ConceptInputComponent),
+      useExisting: forwardRef(() => TopicInputComponent),
       multi: true,
     },
-    ConceptAutocompleteService,
+    TopicAutocompleteService,
   ],
 })
-export class ConceptInputComponent implements ControlValueAccessor, OnInit, OnDestroy {
+export class TopicInputComponent implements ControlValueAccessor, OnInit, OnDestroy {
   @Input() placeholder = '';
   @Input() rows = 3;
   @Output() submitTrigger = new EventEmitter<void>();
 
   @ViewChild('textarea') textarea!: ElementRef<HTMLTextAreaElement>;
-  @ViewChild(ConceptAutocompletePanel) private conceptPanel!: ConceptAutocompletePanel;
+  @ViewChild(TopicAutocompletePanel) private topicPanel!: TopicAutocompletePanel;
 
-  private readonly autocompleteService = inject(ConceptAutocompleteService);
-  private readonly conceptsService = inject(ConceptsService);
+  private readonly autocompleteService = inject(TopicAutocompleteService);
+  private readonly topicsService = inject(TopicsService);
   private readonly cdr = inject(ChangeDetectorRef);
   private sub?: Subscription;
   private pickerSelection: { start: number; end: number } | null = null;
@@ -56,8 +56,8 @@ export class ConceptInputComponent implements ControlValueAccessor, OnInit, OnDe
   onTouched = () => {};
 
   ngOnInit(): void {
-    this.sub = this.conceptsService.list().subscribe((list) => {
-      this.autocompleteService.setConcepts(list);
+    this.sub = this.topicsService.list().subscribe((list) => {
+      this.autocompleteService.setTopics(list);
     });
   }
 
@@ -74,7 +74,7 @@ export class ConceptInputComponent implements ControlValueAccessor, OnInit, OnDe
     };
   }
 
-  openConceptPicker(): void {
+  openTopicPicker(): void {
     this.rememberSelection();
     const selection = this.pickerSelection;
     const prefill = selection
@@ -82,10 +82,10 @@ export class ConceptInputComponent implements ControlValueAccessor, OnInit, OnDe
       : '';
 
     this.autocompleteService.openPicker(prefill);
-    this.conceptPanel.focusSearch();
+    this.topicPanel.focusSearch();
   }
 
-  cancelConceptPicker(): void {
+  cancelTopicPicker(): void {
     const selection = this.pickerSelection;
     this.autocompleteService.clear();
     this.pickerSelection = null;
@@ -97,11 +97,11 @@ export class ConceptInputComponent implements ControlValueAccessor, OnInit, OnDe
     }, 0);
   }
 
-  insertConcept(concept: ConceptDto): void {
-    this.insertConceptName(concept.name);
+  insertTopic(topic: TopicDto): void {
+    this.insertTopicName(topic.name);
   }
 
-  insertConceptName(rawName: string): void {
+  insertTopicName(rawName: string): void {
     const name = rawName.trim();
     if (!name) return;
 

@@ -360,12 +360,12 @@
             </div>
 
             <div class="new-note-box">
-              <app-concept-input
+              <app-topic-input
                 placeholder="Jot down a thought..."
                 [(ngModel)]="newNote"
                 [rows]="1"
                 (submitTrigger)="addNote()"
-              ></app-concept-input>
+              ></app-topic-input>
 
               @if (newNote().length > 0) {
               <button appButton variant="primary" size="sm" (click)="addNote()">Save</button>
@@ -376,10 +376,10 @@
               @for (note of store.notes(); track note.id) {
               <app-note-card
                 [note]="note"
-                [conceptMap]="store.conceptMap()"
+                [topicMap]="store.topicMap()"
                 (update)="onUpdateNote($event)"
                 (delete)="onDeleteNote($event)"
-                (conceptClick)="onConceptClick($event)"
+                (topicClick)="onTopicClick($event)"
               ></app-note-card>
               } @empty {
               <p class="notes-empty">No notes yet — jot down your first thought above.</p>

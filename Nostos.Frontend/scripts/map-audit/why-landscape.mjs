@@ -50,8 +50,8 @@ const info = await page.evaluate(() => {
   return {
     viewport: `${innerWidth}x${innerHeight}`,
     matchingQueries: matches.sort((a, b) => (b.matches ? 1 : 0) - (a.matches ? 1 : 0)),
-    chain: ['.sigma-container', '.map-stage', '.concept-map', 'app-concept-map', '.map-wrapper', '.content-col', '.brain-layout'].map(row),
-    contentColHasMap: !!document.querySelector('.content-col:has(app-concept-map)'),
+    chain: ['.sigma-container', '.map-stage', '.topic-map', 'app-topic-map', '.map-wrapper', '.content-col', '.brain-layout'].map(row),
+    contentColHasMap: !!document.querySelector('.content-col:has(app-topic-map)'),
   };
 });
 
@@ -60,5 +60,5 @@ console.log('\nwidth/height media queries (matching first):');
 for (const q of info.matchingQueries) console.log(`  ${q.matches ? 'MATCH  ' : 'no     '} ${q.q}  (${q.rules} rules)`);
 console.log('\nresolved chain:');
 for (const r of info.chain) console.log('  ' + JSON.stringify(r));
-console.log('\n.content-col:has(app-concept-map) matched by selector engine:', info.contentColHasMap);
+console.log('\n.content-col:has(app-topic-map) matched by selector engine:', info.contentColHasMap);
 await browser.close();

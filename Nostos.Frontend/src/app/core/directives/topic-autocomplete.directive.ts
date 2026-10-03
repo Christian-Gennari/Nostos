@@ -1,18 +1,18 @@
 import { Directive, ElementRef, EventEmitter, HostListener, Output } from '@angular/core';
-import { ConceptAutocompleteService } from '../../ui/concept-autocomplete-panel/concept-autocomplete.service';
-import { ConceptDto } from '../services/concepts.service';
+import { TopicAutocompleteService } from '../../ui/topic-autocomplete-panel/topic-autocomplete.service';
+import { TopicDto } from '../services/topics.service';
 
 @Directive({
   selector: '[noteAutocomplete]',
   standalone: true,
 })
-export class ConceptAutocompleteDirective {
-  @Output() insertConcept = new EventEmitter<ConceptDto>();
-  @Output() insertConceptName = new EventEmitter<string>();
+export class TopicAutocompleteDirective {
+  @Output() insertTopic = new EventEmitter<TopicDto>();
+  @Output() insertTopicName = new EventEmitter<string>();
 
   constructor(
     private el: ElementRef<HTMLTextAreaElement>,
-    private auto: ConceptAutocompleteService,
+    private auto: TopicAutocompleteService,
   ) {}
 
   @HostListener('input')
@@ -50,8 +50,8 @@ export class ConceptAutocompleteDirective {
     if (!chosen && !query) return;
 
     event.preventDefault();
-    if (chosen) this.insertConcept.emit(chosen);
-    else this.insertConceptName.emit(query);
+    if (chosen) this.insertTopic.emit(chosen);
+    else this.insertTopicName.emit(query);
     this.auto.clear();
   }
 }

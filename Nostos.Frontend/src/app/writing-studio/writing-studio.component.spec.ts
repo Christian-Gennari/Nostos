@@ -6,7 +6,7 @@ import { ActivatedRoute, convertToParamMap } from '@angular/router';
 import { WritingStudio } from './writing-studio.component';
 import { WritingsService } from '../core/services/writings.service';
 import { ToastService } from '../core/services/toast.service';
-import { ConceptsService } from '../core/services/concepts.service';
+import { TopicsService } from '../core/services/topics.service';
 import { BooksService } from '../core/services/books.service';
 import { NotesService } from '../core/services/notes.service';
 import { FlatTreeComponent } from '../ui/flat-tree/flat-tree.component';
@@ -47,7 +47,7 @@ class FlatTreeStub {
 @Component({ selector: 'app-note-card', standalone: true, template: '' })
 class NoteCardStub {
   @Input() note: unknown;
-  @Input() conceptMap: Map<string, unknown> = new Map();
+  @Input() topicMap: Map<string, unknown> = new Map();
   @Input() showActions = true;
   @Input() showSource = false;
   @Input() showDate = true;
@@ -94,7 +94,7 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
           },
         },
         { provide: ToastService, useValue: { error: vi.fn(), success: vi.fn() } },
-        { provide: ConceptsService, useValue: { list: vi.fn(() => of([])), get: vi.fn() } },
+        { provide: TopicsService, useValue: { list: vi.fn(() => of([])), get: vi.fn() } },
         { provide: BooksService, useValue: { list: vi.fn(() => of({ items: [] })) } },
         { provide: NotesService, useValue: { list: vi.fn(() => of([])) } },
       ],
@@ -137,7 +137,7 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
   it('uses canonical UI primitives for ordinary Studio controls', () => {
     component.isMobile.set(true);
     component.referenceMode.set('library');
-    component.concepts.set([{ id: 'concept-1', name: 'Memory', usageCount: 3 } as any]);
+    component.topics.set([{ id: 'topic-1', name: 'Memory', usageCount: 3 } as any]);
     fixture.detectChanges();
 
     const openSidebar = fixture.nativeElement.querySelector('.btn-outline') as HTMLButtonElement;
@@ -145,7 +145,7 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
     expect(openSidebar.classList.contains('nostos-button--secondary')).toBe(true);
 
     const search = fixture.nativeElement.querySelector(
-      'input[placeholder="Search concepts..."]',
+      'input[placeholder="Search topics..."]',
     ) as HTMLInputElement;
     expect(search.classList.contains('nostos-form-control')).toBe(true);
     expect(search.classList.contains('nostos-form-control--compact')).toBe(true);
@@ -163,7 +163,7 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
 
   it('keeps reference tabs and navigation rows product-owned while preserving their semantics', () => {
     component.referenceMode.set('library');
-    component.concepts.set([{ id: 'concept-1', name: 'Memory', usageCount: 3 } as any]);
+    component.topics.set([{ id: 'topic-1', name: 'Memory', usageCount: 3 } as any]);
     fixture.detectChanges();
 
     const tabs = Array.from(
@@ -176,9 +176,9 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
     expect(tabs.every((tab) => !tab.classList.contains('nostos-button'))).toBe(true);
     expect(tabs.every((tab) => !tab.classList.contains('nostos-chip'))).toBe(true);
 
-    const conceptRow = fixture.nativeElement.querySelector('.list-item') as HTMLButtonElement;
-    expect(conceptRow.tagName).toBe('BUTTON');
-    expect(conceptRow.classList.contains('nostos-button')).toBe(false);
+    const topicRow = fixture.nativeElement.querySelector('.list-item') as HTMLButtonElement;
+    expect(topicRow.tagName).toBe('BUTTON');
+    expect(topicRow.classList.contains('nostos-button')).toBe(false);
 
     tabs[1].click();
     fixture.detectChanges();
@@ -593,7 +593,7 @@ describe('WritingStudio typewriter mode', () => {
           },
         },
         { provide: ToastService, useValue: { error: vi.fn(), success: vi.fn() } },
-        { provide: ConceptsService, useValue: { list: vi.fn(() => of([])), get: vi.fn() } },
+        { provide: TopicsService, useValue: { list: vi.fn(() => of([])), get: vi.fn() } },
         { provide: BooksService, useValue: { list: vi.fn(() => of({ items: [] })) } },
         { provide: NotesService, useValue: { list: vi.fn(() => of([])) } },
       ],
@@ -665,7 +665,7 @@ describe('WritingStudio delete (no window.confirm)', () => {
           },
         },
         { provide: ToastService, useValue: { error: vi.fn(), success: vi.fn() } },
-        { provide: ConceptsService, useValue: { list: vi.fn(() => of([])), get: vi.fn() } },
+        { provide: TopicsService, useValue: { list: vi.fn(() => of([])), get: vi.fn() } },
         { provide: BooksService, useValue: { list: vi.fn(() => of({ items: [] })) } },
         { provide: NotesService, useValue: { list: vi.fn(() => of([])) } },
       ],
@@ -804,7 +804,7 @@ describe('WritingStudio kept sources (#491)', () => {
         { provide: WritingsService, useValue: writingsService },
         { provide: ToastService, useValue: toastService },
         {
-          provide: ConceptsService,
+          provide: TopicsService,
           useValue: {
             list: vi.fn(() => of([{ id: 'c-1', name: 'Philosophy', usageCount: 1 }])),
             get: vi.fn(() =>
@@ -840,8 +840,8 @@ describe('WritingStudio kept sources (#491)', () => {
   });
 
   // 1. the References surface renders For this writing and Library as distinct surfaces,
-  // and Concepts/Books browsing is inside Library (not beside it).
-  it('renders For this writing and Library as distinct surfaces, and Concepts/Books browsing inside Library', () => {
+  // and Topics/Books browsing is inside Library (not beside it).
+  it('renders For this writing and Library as distinct surfaces, and Topics/Books browsing inside Library', () => {
     const referenceTabs = Array.from(
       fixture.nativeElement.querySelectorAll('.reference-mode-switch .tab-btn'),
     ) as HTMLButtonElement[];
@@ -849,7 +849,7 @@ describe('WritingStudio kept sources (#491)', () => {
     expect(referenceTabs[0].textContent?.trim()).toBe('For this writing');
     expect(referenceTabs[1].textContent?.trim()).toBe('Library');
 
-    // In 'writing' mode, inner Library tabs (Concepts/Books) are not rendered
+    // In 'writing' mode, inner Library tabs (Topics/Books) are not rendered
     expect(component.referenceMode()).toBe('writing');
     expect(fixture.nativeElement.querySelector('.library-tabs')).toBeNull();
     expect(fixture.nativeElement.querySelector('.kept-sources-content')).toBeTruthy();
@@ -863,7 +863,7 @@ describe('WritingStudio kept sources (#491)', () => {
       fixture.nativeElement.querySelectorAll('.library-tabs .tab-btn'),
     ) as HTMLButtonElement[];
     expect(libraryTabs).toHaveLength(2);
-    expect(libraryTabs[0].textContent).toContain('Concepts');
+    expect(libraryTabs[0].textContent).toContain('Topics');
     expect(libraryTabs[1].textContent).toContain('Books');
     expect(fixture.nativeElement.querySelector('.kept-sources-content')).toBeNull();
   });
@@ -898,7 +898,7 @@ describe('WritingStudio kept sources (#491)', () => {
   it('keep action calls addSource with active document id and note id', () => {
     component.activeItem.set(sampleDoc1);
     component.referenceMode.set('library');
-    component.selectConcept('c-1');
+    component.selectTopic('c-1');
     fixture.detectChanges();
 
     writingsService.addSource.mockReturnValue(of(sourceAlpha));
@@ -920,7 +920,7 @@ describe('WritingStudio kept sources (#491)', () => {
     component.activeItem.set(sampleDoc1);
     component.keptSources.set([sourceAlpha]);
     component.referenceMode.set('library');
-    component.selectConcept('c-1');
+    component.selectTopic('c-1');
     fixture.detectChanges();
 
     const keepBtn = fixture.nativeElement.querySelector(
@@ -939,7 +939,7 @@ describe('WritingStudio kept sources (#491)', () => {
   it('keep action is disabled with documented reason when no document is open', () => {
     component.activeItem.set(null);
     component.referenceMode.set('library');
-    component.selectConcept('c-1');
+    component.selectTopic('c-1');
     fixture.detectChanges();
 
     const keepBtn = fixture.nativeElement.querySelector(
@@ -1001,7 +1001,7 @@ describe('WritingStudio kept sources (#491)', () => {
   it('a failing addSource surfaces an error toast and does not fake the kept state', () => {
     component.activeItem.set(sampleDoc1);
     component.referenceMode.set('library');
-    component.selectConcept('c-1');
+    component.selectTopic('c-1');
     fixture.detectChanges();
 
     writingsService.addSource.mockReturnValue(
@@ -1038,7 +1038,7 @@ describe('WritingStudio kept sources (#491)', () => {
 
     component.activeItem.set(sampleDoc1);
     component.referenceMode.set('library');
-    component.selectConcept('c-1');
+    component.selectTopic('c-1');
     fixture.detectChanges();
 
     const keepBtn = fixture.nativeElement.querySelector(
@@ -1112,7 +1112,7 @@ describe('WritingStudio kept sources (#491)', () => {
     component.activeItem.set(sampleDoc1);
     component.editorText.set(sampleDoc1.content);
     component.referenceMode.set('library');
-    component.selectConcept('c-1');
+    component.selectTopic('c-1');
     fixture.detectChanges();
 
     const editor = (component as any).markdownEditor as MarkdownEditorStub;
@@ -1156,10 +1156,10 @@ describe('WritingStudio kept sources (#491)', () => {
     expect(fixture.nativeElement.querySelectorAll('.kept-note-row')).toHaveLength(1);
   });
 
-  it('treats Library concept inspection as a child view without duplicating the selected note', () => {
+  it('treats Library topic inspection as a child view without duplicating the selected note', () => {
     component.activeItem.set(sampleDoc1);
     component.referenceMode.set('library');
-    component.selectConcept('c-1');
+    component.selectTopic('c-1');
     fixture.detectChanges();
 
     const card = fixture.nativeElement.querySelector(
@@ -1169,11 +1169,11 @@ describe('WritingStudio kept sources (#491)', () => {
     fixture.detectChanges();
 
     expect(component.inspectedSource()?.id).toBe('note-alpha');
-    expect(component.selectedConceptId()).toBe('c-1');
+    expect(component.selectedTopicId()).toBe('c-1');
     expect(fixture.nativeElement.querySelector('.inspected-source-panel')).toBeTruthy();
     expect(fixture.nativeElement.querySelectorAll('.library-note-row')).toHaveLength(0);
     expect(
-      fixture.nativeElement.querySelector('input[placeholder="Search concepts..."]'),
+      fixture.nativeElement.querySelector('input[placeholder="Search topics..."]'),
     ).toBeNull();
 
     const back = fixture.nativeElement.querySelector(
@@ -1186,10 +1186,10 @@ describe('WritingStudio kept sources (#491)', () => {
     fixture.detectChanges();
 
     expect(component.inspectedSource()).toBeNull();
-    expect(component.selectedConceptId()).toBe('c-1');
+    expect(component.selectedTopicId()).toBe('c-1');
     expect(fixture.nativeElement.querySelectorAll('.library-note-row')).toHaveLength(1);
     expect(
-      fixture.nativeElement.querySelector('input[placeholder="Search concepts..."]'),
+      fixture.nativeElement.querySelector('input[placeholder="Search topics..."]'),
     ).toBeTruthy();
   });
 
@@ -1600,7 +1600,7 @@ describe('WritingStudio writingId handoff (#492/#493 seam)', () => {
           queryParamMap: queryParams.asObservable(),
           snapshot: { queryParamMap: queryParams.value },
         } },
-        { provide: ConceptsService, useValue: { list: vi.fn(() => of([])), get: vi.fn() } },
+        { provide: TopicsService, useValue: { list: vi.fn(() => of([])), get: vi.fn() } },
         { provide: BooksService, useValue: { list: vi.fn(() => of({ items: [] })) } },
         { provide: NotesService, useValue: { list: vi.fn(() => of([])) } },
       ],
@@ -1700,7 +1700,7 @@ describe('WritingStudio writingId handoff (#492/#493 seam)', () => {
             activeLibraryTab: 'brain',
             wasOpen: true,
             inspectedSourceId: kept.id,
-            selectedConceptId: null,
+            selectedTopicId: null,
             selectedBookId: null,
           },
         },
@@ -1761,7 +1761,7 @@ describe('WritingStudio writingId handoff (#492/#493 seam)', () => {
             activeLibraryTab: 'brain',
             wasOpen: true,
             inspectedSourceId: null,
-            selectedConceptId: null,
+            selectedTopicId: null,
             selectedBookId: null,
           },
         },

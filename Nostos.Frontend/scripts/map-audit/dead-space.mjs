@@ -61,7 +61,7 @@ for (const dev of [{ n: 'iphone-14', w: 390, h: 844 }, { n: 'pixel-7', w: 412, h
         layoutWrapper: box('.layout-wrapper'),
         contentCol: box('.content-col'),
         // The white panel the reader actually sees inside the reading view.
-        panel: box('.concept-reading, .note-card, .content-col > *'),
+        panel: box('.topic-reading, .note-card, .content-col > *'),
       };
     });
 

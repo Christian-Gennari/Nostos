@@ -1,5 +1,5 @@
 /**
- * Exploratory hunt for remaining concept-map bugs.
+ * Exploratory hunt for remaining topic-map bugs.
  *
  * The user reported the map as "still rather buggy" and asked for a second look,
  * so exercise every surface and report what is actually broken rather than
@@ -77,7 +77,7 @@ async function openMap(page, baseUrl, wait = 3000) {
   record('focus', 'graph fills the viewport in focus mode',
     (fs.canvasH ?? 0) >= fs.viewportH * 0.9, `canvas ${fs.canvasH}px of ${fs.viewportH}px`);
 
-  // 5. Search in focus mode finds and selects a concept.
+  // 5. Search in focus mode finds and selects a topic.
   if (fs.searchPresent) {
     await page.locator('.map-search input').fill('virtue');
     await page.waitForTimeout(800);

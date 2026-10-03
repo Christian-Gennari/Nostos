@@ -114,29 +114,29 @@ public static partial class AssistantCapabilities
         // ------------------------------------------------------------------
 
         new AssistantCapability(
-            "notes_link_existing_concept",
+            "notes_link_existing_topic",
             AssistantTrustClass.Act,
             AssistantCapabilityCategory.Organization,
-            "Links a note to an existing concept. Never creates a concept.",
+            "Links a note to an existing topic. Never creates a topic.",
             """
             {
               "type": "object",
               "properties": {
                 "noteId": { "type": "string", "format": "uuid", "description": "The id of the note to link. Required." },
-                "conceptId": { "type": "string", "format": "uuid", "description": "The id of an existing concept to link the note to. Never invent one; find it with concepts_list or concepts_search. Required." }
+                "topicId": { "type": "string", "format": "uuid", "description": "The id of an existing topic to link the note to. Never invent one; find it with topics_list or topics_search. Required." }
               },
-              "required": ["noteId", "conceptId"],
+              "required": ["noteId", "topicId"],
               "additionalProperties": true
             }
             """,
             async (context, args, ct) =>
             {
-                if (Id(args, "noteId") is not { } noteId || Id(args, "conceptId") is not { } conceptId)
+                if (Id(args, "noteId") is not { } noteId || Id(args, "topicId") is not { } topicId)
                 {
-                    return Invalid("'noteId' and 'conceptId' are required.");
+                    return Invalid("'noteId' and 'topicId' are required.");
                 }
 
-                var result = await notes.LinkToExistingConceptAsync(noteId, conceptId, ct);
+                var result = await notes.LinkToExistingTopicAsync(noteId, topicId, ct);
                 return NoteResult(result);
             }),
 

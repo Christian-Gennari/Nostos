@@ -16,7 +16,7 @@ public sealed class AssistantExecutionMeterTests
         meter.RecordCompletion(new LlmCompletion(
             null,
             "tool_calls",
-            [new LlmToolCall("one", "concepts_list", "{}")],
+            [new LlmToolCall("one", "topics_list", "{}")],
             PromptTokens: 120,
             CompletionTokens: 30,
             ThinkingTokens: 10));
@@ -53,7 +53,7 @@ public sealed class AssistantExecutionMeterTests
         meter.RecordCompletion(new LlmCompletion(
             null,
             "tool_calls",
-            [new LlmToolCall("one", "concepts_list", "{}")],
+            [new LlmToolCall("one", "topics_list", "{}")],
             PromptTokens: 100,
             CompletionTokens: 25));
 

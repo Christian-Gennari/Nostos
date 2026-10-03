@@ -1,5 +1,5 @@
 /**
- * Evidence that the concept map occupies the main stage and is framed sensibly.
+ * Evidence that the topic map occupies the main stage and is framed sensibly.
  *
  * This spec targets the Sigma/Graphology renderer. It replaces the earlier
  * SVG-based version, whose selectors (`.map-svg`, `circle.map-node-visual`)
@@ -54,9 +54,9 @@ test('map fills the main stage on desktop', async ({ browser }) => {
     await openMap(page, fixture.baseUrl);
 
     const geo = await page.evaluate(() => {
-      const map = document.querySelector('app-concept-map') as HTMLElement;
-      const stage = document.querySelector('app-concept-map .map-stage') as HTMLElement;
-      const container = document.querySelector('app-concept-map .sigma-container') as HTMLElement;
+      const map = document.querySelector('app-topic-map') as HTMLElement;
+      const stage = document.querySelector('app-topic-map .map-stage') as HTMLElement;
+      const container = document.querySelector('app-topic-map .sigma-container') as HTMLElement;
       const index = document.querySelector('.index-col') as HTMLElement;
       const col = document.querySelector('.content-col') as HTMLElement;
       const dock = document.querySelector('app-app-dock') as HTMLElement | null;
@@ -146,7 +146,7 @@ test('map fills the main stage on desktop', async ({ browser }) => {
     expect(geo.vOverflow, 'a taller map must not create page overflow').toBe(false);
 
     // The seeded brain must actually be in the graph.
-    expect(geo.graphOrder, 'seeded concepts must render as nodes').toBeGreaterThanOrEqual(5);
+    expect(geo.graphOrder, 'seeded topics must render as nodes').toBeGreaterThanOrEqual(5);
     expect(geo.graphSize, 'seeded notes must produce edges').toBeGreaterThan(0);
     expect(geo.cameraRatio, 'camera must have a real zoom ratio').toBeGreaterThan(0);
   } finally {
@@ -219,7 +219,7 @@ test('graph is framed and centred when the map opens', async ({ browser }) => {
 
 test('graph has no overlapping nodes and uses the stage aspect', async ({ browser }) => {
   const fixture = loadFixture();
-  // This test needs real concepts to measure, and it must not rely on the
+  // This test needs real topics to measure, and it must not rely on the
   // serial ordering of the other tests (the fixture is shared and cleaned up
   // between spec files), so seed and tear down locally.
   const seed = await seedBrain(
@@ -315,9 +315,9 @@ test('map fills the stage on mobile', async ({ browser }) => {
     await openMap(page, fixture.baseUrl);
 
     const geo = await page.evaluate(() => {
-      const map = document.querySelector('app-concept-map') as HTMLElement;
-      const stage = document.querySelector('app-concept-map .map-stage') as HTMLElement;
-      const container = document.querySelector('app-concept-map .sigma-container') as HTMLElement;
+      const map = document.querySelector('app-topic-map') as HTMLElement;
+      const stage = document.querySelector('app-topic-map .map-stage') as HTMLElement;
+      const container = document.querySelector('app-topic-map .sigma-container') as HTMLElement;
       const index = document.querySelector('.index-col') as HTMLElement;
       const rect = container.getBoundingClientRect();
       const viewportHeight = window.innerHeight;
@@ -331,7 +331,7 @@ test('map fills the stage on mobile', async ({ browser }) => {
       // so text past the edge is cut off with no DOM trace. Count ink touching
       // the canvas border — the only reliable symptom.
       let labelInkOnEdge = 0;
-      const labelLayer = document.querySelector('app-concept-map .sigma-labels') as HTMLCanvasElement | null;
+      const labelLayer = document.querySelector('app-topic-map .sigma-labels') as HTMLCanvasElement | null;
       if (labelLayer && labelLayer.width > 0 && labelLayer.height > 0) {
         const scratch = document.createElement('canvas');
         scratch.width = labelLayer.width;
@@ -384,7 +384,7 @@ test('map fills the stage on mobile', async ({ browser }) => {
     expect(geo.indexHidden, 'index rail must be hidden so the map owns the screen').toBe(true);
     expect(geo.docScrollWidth, 'no horizontal overflow on mobile').toBeLessThanOrEqual(geo.clientWidth);
 
-    // The map used to inherit the concept-reading layout, which reserved 96px
+    // The map used to inherit the topic-reading layout, which reserved 96px
     // below the card for the dock and 1.5rem of gutter each side. Both left the
     // graph squeezed into a band: 37px gutters and a stage ending 163px above the
     // dock. Assert the reclaimed space so a future reading-layout change cannot
@@ -412,7 +412,7 @@ test('map fills the stage on mobile', async ({ browser }) => {
 test('map does not hide behind the dock in landscape', async ({ browser }) => {
   const fixture = loadFixture();
   // Seed locally rather than relying on a previously-run test's data: without
-  // concepts the graph has no nodes, Sigma is never constructed, and the canvas
+  // topics the graph has no nodes, Sigma is never constructed, and the canvas
   // wait times out in a way that looks like a layout bug.
   const seed = await seedBrain(
     fixture.baseUrl,
@@ -435,7 +435,7 @@ test('map does not hide behind the dock in landscape', async ({ browser }) => {
     await openMap(page, fixture.baseUrl);
 
     const geo = await page.evaluate(() => {
-      const stage = document.querySelector('app-concept-map .sigma-container') as HTMLElement;
+      const stage = document.querySelector('app-topic-map .sigma-container') as HTMLElement;
       const dock = document.querySelector('app-app-dock') as HTMLElement | null;
       const rect = stage.getBoundingClientRect();
       const dockRect = dock ? dock.getBoundingClientRect() : null;

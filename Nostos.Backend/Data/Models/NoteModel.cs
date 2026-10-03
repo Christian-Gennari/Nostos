@@ -17,7 +17,7 @@ public class NoteModel
     public Guid BookId { get; set; }
     public BookModel? Book { get; set; }
 
-    public ICollection<NoteConceptModel> NoteConcepts { get; set; } = new List<NoteConceptModel>();
+    public ICollection<NoteTopicModel> NoteTopics { get; set; } = new List<NoteTopicModel>();
 
     // Assistant capture provenance. These fields record where a captured note
     // came from and how it was processed, while allowing RawContent to preserve

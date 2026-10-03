@@ -26,7 +26,7 @@ function context(overrides: Partial<AssistantContext> = {}): AssistantContext {
     selectedText: null,
     readingTarget: null,
     brainReviewNoteId: null,
-    concept: null,
+    topic: null,
     collectionId: null,
     anchor: null,
     ...overrides,
@@ -88,11 +88,11 @@ describe('AssistantContextService', () => {
 
   it('stops using a provider once it is unregistered', () => {
     const service = configure('/library');
-    const off = service.register(() => ({ concept: 'stoicism' }));
+    const off = service.register(() => ({ topic: 'stoicism' }));
 
-    expect(service.context().concept).toBe('stoicism');
+    expect(service.context().topic).toBe('stoicism');
     off();
-    expect(service.context().concept).toBeNull();
+    expect(service.context().topic).toBeNull();
   });
 
   it('survives a provider that throws', () => {
@@ -100,9 +100,9 @@ describe('AssistantContextService', () => {
     service.register(() => {
       throw new Error('one broken reader must not blank the context');
     });
-    service.register(() => ({ concept: 'resilience' }));
+    service.register(() => ({ topic: 'resilience' }));
 
-    expect(service.context().concept).toBe('resilience');
+    expect(service.context().topic).toBe('resilience');
   });
 
   it('reads a book title and format from the route book id', () => {

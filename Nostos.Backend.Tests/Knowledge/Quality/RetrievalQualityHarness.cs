@@ -17,7 +17,7 @@ namespace Nostos.Backend.Tests.Knowledge.Quality;
 /// Test-only harness for the retrieval-quality fixtures (issue #566).
 /// Mirrors the construction in <c>KnowledgeRetrievalServiceTests</c> without
 /// touching it: a real temp-file SQLite database plus the production note,
-/// concept, library and book-text services. The book-text options disable
+/// topic, library and book-text services. The book-text options disable
 /// neighbor expansion so passage metrics measure FTS hits only.
 /// </summary>
 internal sealed class RetrievalQualityHarness : IAsyncDisposable
@@ -26,7 +26,7 @@ internal sealed class RetrievalQualityHarness : IAsyncDisposable
         NostosDbContext db,
         TestDbContextFactory factory,
         NoteRepository noteRepository,
-        ConceptRepository conceptRepository,
+        TopicRepository topicRepository,
         NoteService noteService,
         SqliteBookTextIndex bookTextIndex,
         BookTextSearchService bookTextSearch,
@@ -35,7 +35,7 @@ internal sealed class RetrievalQualityHarness : IAsyncDisposable
         Db = db;
         Factory = factory;
         NoteRepository = noteRepository;
-        ConceptRepository = conceptRepository;
+        TopicRepository = topicRepository;
         NoteService = noteService;
         BookTextIndex = bookTextIndex;
         BookTextSearch = bookTextSearch;
@@ -45,7 +45,7 @@ internal sealed class RetrievalQualityHarness : IAsyncDisposable
     public NostosDbContext Db { get; }
     public TestDbContextFactory Factory { get; }
     public NoteRepository NoteRepository { get; }
-    public ConceptRepository ConceptRepository { get; }
+    public TopicRepository TopicRepository { get; }
     public NoteService NoteService { get; }
     public SqliteBookTextIndex BookTextIndex { get; }
     public BookTextSearchService BookTextSearch { get; }
@@ -63,13 +63,13 @@ internal sealed class RetrievalQualityHarness : IAsyncDisposable
 
         var factory = new TestDbContextFactory(options);
         var db = new NostosDbContext(options);
-        var concepts = new ConceptRepository(db);
+        var topics = new TopicRepository(db);
         var noteRepository = new NoteRepository(db);
         var noteService = new NoteService(
             noteRepository,
             new BookRepository(db),
-            concepts,
-            new NoteProcessorService(concepts),
+            topics,
+            new NoteProcessorService(topics),
             new PassThroughThoughtProcessor(),
             db,
             NullLogger<NoteService>.Instance);
@@ -89,14 +89,14 @@ internal sealed class RetrievalQualityHarness : IAsyncDisposable
         var knowledge = new KnowledgeRetrievalService(
             noteService,
             noteRepository,
-            concepts,
+            topics,
             library,
             bookSearch,
             index,
             Array.Empty<IKnowledgeRetrievalContributor>());
 
         return new RetrievalQualityHarness(
-            db, factory, noteRepository, concepts, noteService, index, bookSearch, knowledge);
+            db, factory, noteRepository, topics, noteService, index, bookSearch, knowledge);
     }
 
     public ValueTask DisposeAsync()

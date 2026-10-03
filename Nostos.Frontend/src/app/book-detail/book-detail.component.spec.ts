@@ -71,7 +71,7 @@ describe('BookDetail reset progress', () => {
     httpMock.expectOne('/api/books/b1').flush(initial);
     httpMock.expectOne('/api/books/b1/notes').flush([]);
     httpMock.expectOne('/api/collections').flush([]);
-    httpMock.match('/api/concepts').forEach((request) => request.flush([]));
+    httpMock.match('/api/topics').forEach((request) => request.flush([]));
     fixture.detectChanges();
   }
 
@@ -120,7 +120,7 @@ describe('BookDetail reset progress', () => {
   });
 
   afterEach(() => {
-    httpMock.match('/api/concepts').forEach((request) => request.flush([]));
+    httpMock.match('/api/topics').forEach((request) => request.flush([]));
     httpMock.verify();
   });
 
@@ -893,7 +893,7 @@ describe('BookDetail confirm-modal deletes (no window.confirm)', () => {
     httpMock.expectOne('/api/books/b1').flush(initial);
     httpMock.expectOne('/api/books/b1/notes').flush([note]);
     httpMock.expectOne('/api/collections').flush([]);
-    httpMock.match('/api/concepts').forEach((request) => request.flush([]));
+    httpMock.match('/api/topics').forEach((request) => request.flush([]));
     fixture.detectChanges();
   }
 
@@ -901,10 +901,10 @@ describe('BookDetail confirm-modal deletes (no window.confirm)', () => {
     return Array.from(fixture.nativeElement.querySelectorAll('.confirm-modal-card')) as HTMLElement[];
   }
 
-  /** The detail page reloads concepts on several paths; drain stragglers so
+  /** The detail page reloads topics on several paths; drain stragglers so
       httpMock.verify() only judges the requests each test cares about. */
-  function drainConcepts(): void {
-    httpMock.match('/api/concepts').forEach((request) => request.flush([]));
+  function drainTopics(): void {
+    httpMock.match('/api/topics').forEach((request) => request.flush([]));
   }
 
   beforeEach(async () => {
@@ -939,11 +939,11 @@ describe('BookDetail confirm-modal deletes (no window.confirm)', () => {
 
     component.confirmNoteDelete();
     httpMock.expectOne('/api/notes/n1').flush(null);
-    // The store reloads notes + concepts after the delete.
+    // The store reloads notes + topics after the delete.
     httpMock.expectOne('/api/books/b1/notes').flush([]);
-    httpMock.match('/api/concepts').forEach((request) => request.flush([]));
+    httpMock.match('/api/topics').forEach((request) => request.flush([]));
     expect(component.pendingNoteDelete()).toBeNull();
-    drainConcepts();
+    drainTopics();
   });
 
   it('cancelling note delete performs nothing', async () => {
@@ -955,7 +955,7 @@ describe('BookDetail confirm-modal deletes (no window.confirm)', () => {
     expect(component.pendingNoteDelete()).toBeNull();
     expect(openModals().length).toBe(0);
     httpMock.expectNone('/api/notes/n1');
-    drainConcepts();
+    drainTopics();
   });
 
   it('cover remove opens the modal and only deletes on confirm', async () => {
@@ -976,6 +976,6 @@ describe('BookDetail confirm-modal deletes (no window.confirm)', () => {
       .expectOne((req) => req.url === '/api/books/b1' && req.method === 'GET')
       .flush({ ...book, hasFile: true, coverUrl: null });
     expect(component.coverDeletePending()).toBe(false);
-    drainConcepts();
+    drainTopics();
   });
 });

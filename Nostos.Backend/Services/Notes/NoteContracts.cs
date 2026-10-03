@@ -26,7 +26,7 @@ public static class NoteErrorCodes
     public const string BookNotFound = "book_not_found";
     public const string NoteNotFound = "note_not_found";
     public const string EmptyNote = "empty_note";
-    public const string ConceptNotFound = "concept_not_found";
+    public const string TopicNotFound = "topic_not_found";
 
     // Post-processing (issue #262 §7, §8): an unknown mode is a typed refusal
     // rather than a silent downgrade to verbatim, and a restore of a note that
@@ -67,7 +67,7 @@ public sealed record CaptureNoteRequest(
 
 /// <summary>
 /// Read model for the note-review flow (issue #261): what the note says, which
-/// book it belongs to, and the concepts it is currently linked to. Service
+/// book it belongs to, and the topics it is currently linked to. Service
 /// internal — no client contract is defined for it yet.
 /// </summary>
 public sealed record NoteReviewDto(
@@ -76,4 +76,4 @@ public sealed record NoteReviewDto(
     string? BookTitle,
     string Content,
     string? SelectedText,
-    IReadOnlyList<string> ConceptNames);
+    IReadOnlyList<string> TopicNames);

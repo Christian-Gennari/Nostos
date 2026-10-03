@@ -75,8 +75,8 @@ export interface AssistantContext {
   readingTarget: string | null;
   /** Brain review note in view; a provider supplies it in a later stream. */
   brainReviewNoteId: string | null;
-  /** Current concept; a provider supplies it in a later stream. */
-  concept: string | null;
+  /** Current topic; a provider supplies it in a later stream. */
+  topic: string | null;
   collectionId: string | null;
   anchor: AssistantAnchor | null;
 }
@@ -238,7 +238,7 @@ export class AssistantContextService {
       selectedText: null,
       readingTarget: null,
       brainReviewNoteId: null,
-      concept: null,
+      topic: null,
       collectionId: null,
       anchor: null,
     };

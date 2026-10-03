@@ -92,7 +92,7 @@
     <Compile Include="..\Nostos.Backend\Endpoints\NotesEndpoints.cs" Link="Endpoints\NotesEndpoints.cs" />
     <Compile Include="..\Nostos.Backend\Endpoints\NoteProcessingEndpoints.cs" Link="Endpoints\NoteProcessingEndpoints.cs" />
     <Compile Include="..\Nostos.Backend\Endpoints\CollectionsEndpoints.cs" Link="Endpoints\CollectionsEndpoints.cs" />
-    <Compile Include="..\Nostos.Backend\Endpoints\ConceptsEndpoints.cs" Link="Endpoints\ConceptsEndpoints.cs" />
+    <Compile Include="..\Nostos.Backend\Endpoints\TopicsEndpoints.cs" Link="Endpoints\TopicsEndpoints.cs" />
     <Compile Include="..\Nostos.Backend\Endpoints\WritingsEndpoints.cs" Link="Endpoints\WritingsEndpoints.cs" />
     <Compile Include="..\Nostos.Backend\Endpoints\TranscriptionEndpoints.cs" Link="Endpoints\TranscriptionEndpoints.cs" />
     <Compile Include="..\Nostos.Backend\Endpoints\AssistantEndpoints.cs" Link="Endpoints\AssistantEndpoints.cs" />

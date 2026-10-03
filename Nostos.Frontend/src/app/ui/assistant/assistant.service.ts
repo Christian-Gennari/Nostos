@@ -8,7 +8,7 @@
  *
  * Trust is structural, not cosmetic:
  *   - Suggestions never mutate merely by being shown.
- *   - Choosing a normal reversible action (for example an existing concept link)
+ *   - Choosing a normal reversible action (for example an existing topic link)
  *     is sufficient authorization for the backend's immediate Act path.
  *   - Only destructive/high-impact pending plans use `approvePlan` with the
  *     exact plan id and approval token.
@@ -69,9 +69,9 @@ export interface AssistantSourceReferenceDto {
 
 /** Exact #562 identity for canonical evidence; never mutation authority. */
 export interface AssistantEvidenceHandleDto {
-  kind: 'note' | 'concept' | 'book_text' | string;
+  kind: 'note' | 'topic' | 'book_text' | string;
   noteId?: string | null;
-  conceptId?: string | null;
+  topicId?: string | null;
   bookId?: string | null;
   sourceSha256?: string | null;
   extractorVersion?: string | null;
@@ -118,7 +118,7 @@ export interface AssistantHistoricalContextDto {
   bookId: string | null;
   bookTitle: string | null;
   brainReviewNoteId: string | null;
-  concept: string | null;
+  topic: string | null;
   collectionId: string | null;
 }
 
@@ -298,7 +298,7 @@ interface AssistantContextDto {
   audioChapter: string | null;
   selectedText: string | null;
   brainReviewNoteId: string | null;
-  concept: string | null;
+  topic: string | null;
   collectionId: string | null;
   anchor: { kind: string; value: string | null; verified: boolean } | null;
   /**
@@ -449,7 +449,7 @@ export class AssistantService {
 
   /** The most recent turn, for the transcript and live verification. */
   readonly lastTurn = signal<AssistantTurnResponse | null>(null);
-  /** Non-mutating concept suggestions for the current turn. */
+  /** Non-mutating topic suggestions for the current turn. */
   readonly suggestions = signal<AssistantSuggestionDto[]>([]);
   /** The destructive plan (if any) waiting for explicit approval. */
   readonly pendingPlan = signal<AssistantPendingPlanDto | null>(null);
@@ -982,12 +982,12 @@ export class AssistantService {
   }
 
   /** Request the same assistant proposal artifact while keeping the Brain note in place. */
-  requestConceptProposals(noteId: string): string | null {
+  requestTopicProposals(noteId: string): string | null {
     const context = this.context();
     if (this.sending() || !noteId || context.brainReviewNoteId !== noteId) return null;
 
     return this.startPreparedTurn({
-      text: `Suggest up to three existing concepts for note ${noteId}. Read the note and existing concept evidence, then explicitly propose only grounded links. If none fit, return no proposals. Do not link anything.`,
+      text: `Suggest up to three existing topics for note ${noteId}. Read the note and existing topic evidence, then explicitly propose only grounded links. If none fit, return no proposals. Do not link anything.`,
       context,
       requestAnchor: this.effectiveAnchor(context),
       captureBookTitle: null,
@@ -999,11 +999,11 @@ export class AssistantService {
 
   /**
    * Choose a non-mutating suggestion. The click is the user's explicit choice,
-   * so the resulting existing-concept link may execute through the normal Act
+   * so the resulting existing-topic link may execute through the normal Act
    * path without asking for a second approval.
    */
   applySuggestion(suggestion: AssistantSuggestionDto): string | null {
-    if (this.sending() || suggestion.kind !== 'concept' || !suggestion.value) return null;
+    if (this.sending() || suggestion.kind !== 'topic' || !suggestion.value) return null;
 
     const context = this.context();
     if (!suggestion.noteId || context.brainReviewNoteId !== suggestion.noteId) {
@@ -1012,7 +1012,7 @@ export class AssistantService {
     }
 
     return this.dispatchTurn(
-      `Link note ${suggestion.noteId} to the existing concept “${suggestion.label}” (ID ${suggestion.value}).`,
+      `Link note ${suggestion.noteId} to the existing topic “${suggestion.label}” (ID ${suggestion.value}).`,
       this.effectiveAnchor(context),
     );
   }
@@ -1587,7 +1587,7 @@ export class AssistantService {
 
     for (const capability of response.executedCapabilities ?? []) {
       this.actionExecuted.next({ capability, context: turn.context });
-      if (capability === 'notes_link_existing_concept' && turn.context.brainReviewNoteId) {
+      if (capability === 'notes_link_existing_topic' && turn.context.brainReviewNoteId) {
         const linkedNoteId = turn.context.brainReviewNoteId;
         this.eventLedger.update((events) => events.map((event) => ({
           ...event,
@@ -1868,7 +1868,7 @@ function toContextDto(
     audioChapter: context.audioChapter,
     selectedText: context.selectedText,
     brainReviewNoteId: context.brainReviewNoteId,
-    concept: context.concept,
+    topic: context.topic,
     collectionId: context.collectionId,
     anchor: anchor ? { kind: anchor.kind, value: anchor.value, verified: anchor.verified } : null,
     captureBookTitle,
@@ -1881,7 +1881,7 @@ function toHistoricalContext(context: AssistantContext): AssistantHistoricalCont
     bookId: context.bookId,
     bookTitle: context.bookTitle,
     brainReviewNoteId: context.brainReviewNoteId,
-    concept: context.concept,
+    topic: context.topic,
     collectionId: context.collectionId,
   };
 }
@@ -2036,7 +2036,7 @@ function evidenceHandleKey(handle: AssistantEvidenceHandleDto): string {
   return [
     handle.kind,
     handle.noteId ?? '',
-    handle.conceptId ?? '',
+    handle.topicId ?? '',
     handle.bookId ?? '',
     handle.sourceSha256 ?? '',
     handle.extractorVersion ?? '',

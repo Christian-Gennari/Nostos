@@ -199,8 +199,8 @@ public static class MappingExtensions
     public static CollectionDto ToDto(this CollectionModel model) =>
         new CollectionDto(model.Id, model.Name, model.ParentId);
 
-    public static ConceptDto ToDto(this ConceptModel model) =>
-        new ConceptDto(model.Id, model.Concept, model.NoteConcepts?.Count ?? 0);
+    public static TopicDto ToDto(this TopicModel model) =>
+        new TopicDto(model.Id, model.Topic, model.NoteTopics?.Count ?? 0);
 
     public static WritingDto ToDto(this WritingModel model)
     {
@@ -304,8 +304,8 @@ public static class MappingExtensions
             ParentId = dto.ParentId,
         };
 
-    public static ConceptModel ToModel(this CreateConceptDto dto) =>
-        new ConceptModel { Id = Guid.NewGuid(), Concept = dto.Concept };
+    public static TopicModel ToModel(this CreateTopicDto dto) =>
+        new TopicModel { Id = Guid.NewGuid(), Topic = dto.Topic };
 
     // Helper: treats empty string as null (allows clearing optional fields)
     private static string? NullIfEmpty(string? value) =>
@@ -414,9 +414,9 @@ public static class MappingExtensions
         }
     }
 
-    public static void Apply(this ConceptModel model, UpdateConceptDto dto)
+    public static void Apply(this TopicModel model, UpdateTopicDto dto)
     {
-        model.Concept = dto.Concept;
+        model.Topic = dto.Topic;
     }
 
     public static void Apply(this NoteModel model, UpdateNoteDto dto)

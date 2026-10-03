@@ -242,8 +242,8 @@ test('the shell reserves exactly the dock height, leaving no dead band', async (
 });
 
 test('the Brain dock restores a remembered query-param deep-link', async ({ page }) => {
-  const conceptId = '11111111-1111-1111-1111-111111111111';
-  const brainUrl = `${fixture.baseUrl}/second-brain?conceptId=${conceptId}`;
+  const topicId = '11111111-1111-1111-1111-111111111111';
+  const brainUrl = `${fixture.baseUrl}/second-brain?topicId=${topicId}`;
 
   await page.goto(brainUrl);
   await expect(page.locator('app-app-dock')).toBeVisible();
@@ -257,7 +257,7 @@ test('the Brain dock restores a remembered query-param deep-link', async ({ page
 });
 
 test('content can be scrolled clear of the dock on the reading view', async ({ page }) => {
-  // Seed locally: without concepts the index is empty, the click has nothing to
+  // Seed locally: without topics the index is empty, the click has nothing to
   // open, and the failure looks like a layout bug rather than missing fixture data.
   const seed = await seedBrain(
     fixture.baseUrl,
@@ -273,8 +273,8 @@ test('content can be scrolled clear of the dock on the reading view', async ({ p
   try {
   await page.goto(`${fixture.baseUrl}/second-brain`);
   await expect(page.locator('.index-item').first()).toBeVisible();
-  // Open a concept this test seeded rather than whatever happens to sort first:
-  // the fixture is shared, and an unrelated leftover concept with no notes would
+  // Open a topic this test seeded rather than whatever happens to sort first:
+  // the fixture is shared, and an unrelated leftover topic with no notes would
   // render the empty state instead of cards.
   await page.locator('.index-item', { hasText: 'Attention' }).first().click();
 

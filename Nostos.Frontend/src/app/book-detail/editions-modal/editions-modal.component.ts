@@ -16,7 +16,7 @@ export interface WorkMember {
 
 /**
  * The advanced work-membership surface: which books are editions of the same
- * conceptual work, and the explicit override for when automatic grouping got it
+ * topicual work, and the explicit override for when automatic grouping got it
  * wrong.
  *
  * It is a modal rather than a panel in the details rail because the job needs

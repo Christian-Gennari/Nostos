@@ -142,7 +142,7 @@ describe('Book Details — long review collapse (issue #159)', () => {
     httpMock.expectOne('/api/books/b1').flush({ ...book, personalReview: review, description });
     httpMock.expectOne('/api/books/b1/notes').flush([]);
     httpMock.expectOne('/api/collections').flush([]);
-    httpMock.match('/api/concepts').forEach((r) => r.flush([]));
+    httpMock.match('/api/topics').forEach((r) => r.flush([]));
 
     // Settle the `afterNextRender` measurement pass and the render it triggers.
     await fixture.whenStable();
@@ -179,7 +179,7 @@ describe('Book Details — long review collapse (issue #159)', () => {
   });
 
   afterEach(() => {
-    httpMock.match('/api/concepts').forEach((r) => r.flush([]));
+    httpMock.match('/api/topics').forEach((r) => r.flush([]));
     httpMock.verify();
     restoreLayoutStubs();
   });
@@ -297,7 +297,7 @@ describe('Book Details — coordinated disclosure affordance (#159 follow-up)', 
     httpMock.expectOne('/api/books/b1').flush({ ...book, personalReview: review, description });
     httpMock.expectOne('/api/books/b1/notes').flush([]);
     httpMock.expectOne('/api/collections').flush([]);
-    httpMock.match('/api/concepts').forEach((r) => r.flush([]));
+    httpMock.match('/api/topics').forEach((r) => r.flush([]));
 
     await fixture.whenStable();
     fixture.detectChanges();
@@ -330,7 +330,7 @@ describe('Book Details — coordinated disclosure affordance (#159 follow-up)', 
   });
 
   afterEach(() => {
-    httpMock.match('/api/concepts').forEach((r) => r.flush([]));
+    httpMock.match('/api/topics').forEach((r) => r.flush([]));
     httpMock.verify();
     restoreLayoutStubs();
   });

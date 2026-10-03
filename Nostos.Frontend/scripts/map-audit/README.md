@@ -1,6 +1,6 @@
-# Concept-map audit probes
+# Topic-map audit probes
 
-Measurement scripts for the Second Brain concept map (Sigma.js + Graphology).
+Measurement scripts for the Second Brain topic map (Sigma.js + Graphology).
 They exist because a WebGL graph cannot be inspected the way a DOM surface can:
 there is no per-node element, no computed style to read, and a vision read of a
 screenshot is unreliable — these probes were built after a vision pass called a
@@ -125,7 +125,7 @@ introspection; no application behaviour depends on them.
   alone. A component can write a per-node label size onto every node and have it
   silently ignored.
 - **A label drawn to the right of its node cannot be kept on a narrow canvas by
-  reserving a gutter.** A long concept name needs ~140px of a 369px phone stage, so
+  reserving a gutter.** A long topic name needs ~140px of a 369px phone stage, so
   the reservation becomes the fit's binding axis and shrinks every node rather than
   the one word that overflows. Flip the label to the other side instead — that is
   what `drawFlipsAtEdgeNodeLabel` does, and it took edge ink on the label canvas

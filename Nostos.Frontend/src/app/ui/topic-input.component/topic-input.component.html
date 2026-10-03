@@ -1,0 +1,36 @@
+<div class="topic-input-wrapper">
+  <div class="topic-link-toolbar">
+    <button
+      type="button"
+      class="topic-link-action"
+      [disabled]="isDisabled"
+      (pointerdown)="rememberSelection()"
+      (click)="openTopicPicker()"
+    >
+      Link a topic
+    </button>
+    <span class="topic-link-hint">Find related notes across your reading.</span>
+  </div>
+
+  <textarea
+    #textarea
+    class="note-input"
+    [class.disabled]="isDisabled"
+    [rows]="rows"
+    [placeholder]="placeholder"
+    [value]="value"
+    [disabled]="isDisabled"
+    (input)="handleInput($event)"
+    (blur)="onTouched()"
+    noteAutocomplete
+    (insertTopic)="insertTopic($event)"
+    (insertTopicName)="insertTopicName($event)"
+    (keydown.control.enter)="submitTrigger.emit()"
+  ></textarea>
+
+  <topic-autocomplete-panel
+    (topicSelected)="insertTopic($event)"
+    (topicNameSelected)="insertTopicName($event)"
+    (cancelled)="cancelTopicPicker()"
+  ></topic-autocomplete-panel>
+</div>

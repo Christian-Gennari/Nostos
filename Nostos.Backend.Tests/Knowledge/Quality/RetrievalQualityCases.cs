@@ -12,7 +12,7 @@ internal sealed record RetrievalQualityCase(
     string Query,
     IReadOnlyList<string> GoldNoteKeys,
     IReadOnlyList<string> DistractorNoteKeys,
-    string? GoldConceptKey,
+    string? GoldTopicKey,
     IReadOnlyList<(string BookKey, int Ordinal)> GoldPassages);
 
 internal static class RetrievalQualityCases
@@ -25,7 +25,7 @@ internal static class RetrievalQualityCases
         Query: "reading replaces thinking",
         GoldNoteKeys: ["G7"],
         DistractorNoteKeys: ["D7"],
-        GoldConceptKey: "BorrowedJudgment",
+        GoldTopicKey: "BorrowedJudgment",
         GoldPassages: []);
 
     public static readonly RetrievalQualityCase C8Distractors = new(
@@ -35,7 +35,7 @@ internal static class RetrievalQualityCases
         Query: "harbor lighthouse storm",
         GoldNoteKeys: ["G8"],
         DistractorNoteKeys: ["D8a", "D8b"],
-        GoldConceptKey: "SafePassage",
+        GoldTopicKey: "SafePassage",
         GoldPassages: []);
 
     public static readonly RetrievalQualityCase C9CrossBook = new(
@@ -46,7 +46,7 @@ internal static class RetrievalQualityCases
         Query: "dawn launching tides",
         GoldNoteKeys: ["G9a", "G9b"],
         DistractorNoteKeys: ["D9"],
-        GoldConceptKey: "EarlyWater",
+        GoldTopicKey: "EarlyWater",
         GoldPassages: [("GrayBook", 0), ("RedBook", 1)]);
 
     public static readonly RetrievalQualityCase C11FollowUp = new(
@@ -56,7 +56,7 @@ internal static class RetrievalQualityCases
         Query: "neap tides bar",
         GoldNoteKeys: ["G9b"],
         DistractorNoteKeys: ["D9"],
-        GoldConceptKey: "NarrowMargin",
+        GoldTopicKey: "NarrowMargin",
         GoldPassages: [("RedBook", 1)]);
 
     public static IReadOnlyList<RetrievalQualityCase> All =>
@@ -76,7 +76,7 @@ internal static class RetrievalQualityCases
         _ => throw new ArgumentOutOfRangeException(nameof(key), key, null),
     };
 
-    public static Guid ConceptKey(
+    public static Guid TopicKey(
         RetrievalQualityCorpus.CorpusIds ids, string key) => key switch
     {
         "BorrowedJudgment" => ids.BorrowedJudgment,

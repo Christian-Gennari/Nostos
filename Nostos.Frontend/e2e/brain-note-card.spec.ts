@@ -24,7 +24,7 @@ test('brain note cards hug their content (no hollow middle)', async ({ browser }
   // both tall and short cards and any forced height shows up immediately.
   // `seedBrain` records what already existed so `cleanupBrain` can restore the
   // fixture: the visual matrix's empty-state test runs later against this same
-  // database and requires it to be free of concepts.
+  // database and requires it to be free of topics.
   const seed = await seedBrain(
     fixture.baseUrl,
     `Hollow Check ${Date.now().toString(36)}`,
@@ -40,7 +40,7 @@ test('brain note cards hug their content (no hollow middle)', async ({ browser }
   const { context, page } = await newCapturePage(browser, DESKTOP_VIEWPORT);
   try {
     await page.goto(`${fixture.baseUrl}/second-brain`, { waitUntil: 'domcontentloaded' });
-    // Select the seeded concept so its notes render.
+    // Select the seeded topic so its notes render.
     await page.locator('.index-item', { hasText: 'Gapcheck' }).first().click();
     await page.locator('.note-card').first().waitFor({ timeout: 30_000 });
     await page.waitForTimeout(600);

@@ -242,7 +242,7 @@ test('a long name dissolves into the actions instead of hard-cutting', async ({ 
     // A name long enough to run into the actions slot — the case the fade is for.
     await page.evaluate(() => {
       const n = document.querySelector('.index-item .name') as HTMLElement;
-      n.textContent = 'A Very Long Concept Name That Overflows The Rail';
+      n.textContent = 'A Very Long Topic Name That Overflows The Rail';
     });
     await page.waitForTimeout(200);
 

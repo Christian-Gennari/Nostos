@@ -23,10 +23,10 @@ public class NoteRepository : INoteRepository
         return await _db.Notes.FindAsync(id);
     }
 
-    public async Task<NoteModel?> GetByIdWithConceptsAsync(Guid id)
+    public async Task<NoteModel?> GetByIdWithTopicsAsync(Guid id)
     {
         return await _db
-            .Notes.Include(n => n.NoteConcepts)
+            .Notes.Include(n => n.NoteTopics)
             .Include(n => n.Book)
             .FirstOrDefaultAsync(n => n.Id == id);
     }
@@ -74,9 +74,9 @@ public class NoteRepository : INoteRepository
         await _db.SaveChangesAsync();
     }
 
-    public async Task DeleteConceptLinksAsync(Guid noteId)
+    public async Task DeleteTopicLinksAsync(Guid noteId)
     {
-        await _db.NoteConcepts.Where(nc => nc.NoteId == noteId).ExecuteDeleteAsync();
+        await _db.NoteTopics.Where(nc => nc.NoteId == noteId).ExecuteDeleteAsync();
     }
     public async Task<List<NoteModel>> SearchByTextAsync(
         string query,
@@ -92,8 +92,8 @@ public class NoteRepository : INoteRepository
         var pattern = $"%{Escape(term)}%";
         var notes = _db
             .Notes.Include(n => n.Book)
-            .Include(n => n.NoteConcepts)
-            .ThenInclude(nc => nc.Concept)
+            .Include(n => n.NoteTopics)
+            .ThenInclude(nc => nc.Topic)
             .AsQueryable();
 
         if (bookIds is { Count: > 0 })
@@ -110,11 +110,11 @@ public class NoteRepository : INoteRepository
             .ToListAsync();
     }
 
-    public async Task<List<NoteModel>> GetWithoutConceptsAsync(int limit, int offset)
+    public async Task<List<NoteModel>> GetWithoutTopicsAsync(int limit, int offset)
     {
         return await _db
             .Notes.Include(n => n.Book)
-            .Where(n => !n.NoteConcepts.Any())
+            .Where(n => !n.NoteTopics.Any())
             // `Id` breaks CreatedAt ties. Without it two notes saved in the same
             // tick can swap places between two page requests, which makes an
             // offset page skip one row and show another twice.
@@ -126,11 +126,11 @@ public class NoteRepository : INoteRepository
     }
 
     public async Task<(List<NoteModel> Items, int Total)> BrowseAsync(
-        string? query, Guid? bookId, bool withoutConcepts, bool oldestFirst, int limit, int offset)
+        string? query, Guid? bookId, bool withoutTopics, bool oldestFirst, int limit, int offset)
     {
         var notes = _db.Notes.AsNoTracking().AsQueryable();
         if (bookId.HasValue) notes = notes.Where(n => n.BookId == bookId.Value);
-        if (withoutConcepts) notes = notes.Where(n => !n.NoteConcepts.Any());
+        if (withoutTopics) notes = notes.Where(n => !n.NoteTopics.Any());
         var term = query?.Trim();
         if (!string.IsNullOrEmpty(term))
         {
@@ -147,14 +147,14 @@ public class NoteRepository : INoteRepository
             : notes.OrderByDescending(n => n.CreatedAt).ThenBy(n => n.Id);
         var items = await ordered.Skip(offset).Take(limit)
             .Include(n => n.Book)
-            .Include(n => n.NoteConcepts).ThenInclude(nc => nc.Concept)
+            .Include(n => n.NoteTopics).ThenInclude(nc => nc.Topic)
             .ToListAsync();
         return (items, total);
     }
 
-    public async Task<int> CountWithoutConceptsAsync()
+    public async Task<int> CountWithoutTopicsAsync()
     {
-        return await _db.Notes.CountAsync(n => !n.NoteConcepts.Any());
+        return await _db.Notes.CountAsync(n => !n.NoteTopics.Any());
     }
 
     public Task<int> CountAsync() => _db.Notes.CountAsync();

@@ -8,14 +8,14 @@ public static partial class AssistantCapabilities
 {
     private static IReadOnlyList<AssistantCapability> BuildKnowledgeCapabilities(
         INoteService notes,
-        IConceptRepository concepts,
+        ITopicRepository topics,
         IKnowledgeRetrievalService knowledge) =>
     [
         new AssistantCapability(
             "knowledge_search",
             AssistantTrustClass.Suggest,
             AssistantCapabilityCategory.KnowledgeRetrieval,
-            "Searches the user's own notes, concepts-through-linked-notes, and indexed imported PDF/EPUB text through one bounded retrieval path. Prefer this for questions that may span the user's reading and thinking. Results include canonical evidence handles that can be re-read exactly.",
+            "Searches the user's own notes, topics-through-linked-notes, and indexed imported PDF/EPUB text through one bounded retrieval path. Prefer this for questions that may span the user's reading and thinking. Results include canonical evidence handles that can be re-read exactly.",
             """
             {
               "type": "object",
@@ -24,7 +24,7 @@ public static partial class AssistantCapabilities
                 "bookIds": {
                   "type": "array",
                   "items": { "type": "string", "format": "uuid" },
-                  "description": "Explicit book scope. When present and non-empty, note/concept/book-text evidence is restricted to these books. Omit to keep current/recent conversational book scope; pass an empty array only when the user explicitly broadens to the whole library."
+                  "description": "Explicit book scope. When present and non-empty, note/topic/book-text evidence is restricted to these books. Omit to keep current/recent conversational book scope; pass an empty array only when the user explicitly broadens to the whole library."
                 },
                 "collectionId": { "type": "string", "format": "uuid", "description": "Optional collection scope when bookIds are omitted." },
                 "maxPerSource": { "type": "integer", "minimum": 1, "maximum": 8, "description": "Maximum evidence items per source type. Defaults to 6." }
@@ -61,7 +61,7 @@ public static partial class AssistantCapabilities
             "knowledge_overview",
             AssistantTrustClass.Suggest,
             AssistantCapabilityCategory.KnowledgeRetrieval,
-            "Returns a compact structural overview of the user's notes and concepts: totals, unlinked notes, top concepts, and books with the most notes. Use this for whole-knowledge questions before making broad claims; it is structure, not an AI-generated insight.",
+            "Returns a compact structural overview of the user's notes and topics: totals, unlinked notes, top topics, and books with the most notes. Use this for whole-knowledge questions before making broad claims; it is structure, not an AI-generated insight.",
             """
             {
               "type": "object",
@@ -80,14 +80,14 @@ public static partial class AssistantCapabilities
             "knowledge_read_evidence",
             AssistantTrustClass.Suggest,
             AssistantCapabilityCategory.SourceNavigation,
-            "Re-reads one canonical evidence handle returned by knowledge_search. Use it when a later turn needs the exact note, concept, or imported-book chunk again instead of trusting an old excerpt.",
+            "Re-reads one canonical evidence handle returned by knowledge_search. Use it when a later turn needs the exact note, topic, or imported-book chunk again instead of trusting an old excerpt.",
             """
             {
               "type": "object",
               "properties": {
-                "kind": { "type": "string", "enum": ["note", "concept", "book_text"], "description": "Evidence kind from the handle. Required." },
+                "kind": { "type": "string", "enum": ["note", "topic", "book_text"], "description": "Evidence kind from the handle. Required." },
                 "noteId": { "type": "string", "format": "uuid", "description": "Required for kind=note." },
-                "conceptId": { "type": "string", "format": "uuid", "description": "Required for kind=concept." },
+                "topicId": { "type": "string", "format": "uuid", "description": "Required for kind=topic." },
                 "bookId": { "type": "string", "format": "uuid", "description": "Required for kind=book_text." },
                 "sourceSha256": { "type": "string", "description": "Exact source revision hash for kind=book_text." },
                 "extractorVersion": { "type": "string", "description": "Exact extractor version for kind=book_text." },
@@ -106,7 +106,7 @@ public static partial class AssistantCapabilities
                 var handle = new KnowledgeEvidenceHandle(
                     kind,
                     NoteId: Id(args, "noteId"),
-                    ConceptId: Id(args, "conceptId"),
+                    TopicId: Id(args, "topicId"),
                     BookId: Id(args, "bookId"),
                     SourceSha256: Str(args, "sourceSha256"),
                     ExtractorVersion: Str(args, "extractorVersion"),
@@ -150,7 +150,7 @@ public static partial class AssistantCapabilities
             "notes_search",
             AssistantTrustClass.Suggest,
             AssistantCapabilityCategory.KnowledgeRetrieval,
-            "Searches only note text and book titles. For questions that may span notes, concepts, or imported-book text, prefer knowledge_search.",
+            "Searches only note text and book titles. For questions that may span notes, topics, or imported-book text, prefer knowledge_search.",
             """
             {
               "type": "object",
@@ -178,7 +178,7 @@ public static partial class AssistantCapabilities
             "notes_list_unlinked",
             AssistantTrustClass.Suggest,
             AssistantCapabilityCategory.KnowledgeRetrieval,
-            "Lists notes that belong to no concept, for the review queue.",
+            "Lists notes that belong to no topic, for the review queue.",
             """
             {
               "type": "object",
@@ -204,7 +204,7 @@ public static partial class AssistantCapabilities
             "notes_read_for_review",
             AssistantTrustClass.Suggest,
             AssistantCapabilityCategory.KnowledgeRetrieval,
-            "Reads one note (text, book, linked concepts) for the review flow.",
+            "Reads one note (text, book, linked topics) for the review flow.",
             """
             {
               "type": "object",
@@ -231,10 +231,10 @@ public static partial class AssistantCapabilities
             }),
 
         new AssistantCapability(
-            "concepts_list",
+            "topics_list",
             AssistantTrustClass.Suggest,
             AssistantCapabilityCategory.KnowledgeRetrieval,
-            "Lists concepts ordered by usage.",
+            "Lists topics ordered by usage.",
             """
             {
               "type": "object",
@@ -245,20 +245,20 @@ public static partial class AssistantCapabilities
             """,
             async (context, args, ct) =>
             {
-                var result = await concepts.GetAllWithUsageCountAsync();
+                var result = await topics.GetAllWithUsageCountAsync();
                 return AssistantToolResult.Ok(Element(result));
             }),
 
         new AssistantCapability(
-            "concepts_search",
+            "topics_search",
             AssistantTrustClass.Suggest,
             AssistantCapabilityCategory.KnowledgeRetrieval,
-            "Searches concepts through their linked note evidence. For questions that may span notes, concepts, or imported-book text, prefer knowledge_search.",
+            "Searches topics through their linked note evidence. For questions that may span notes, topics, or imported-book text, prefer knowledge_search.",
             """
             {
               "type": "object",
               "properties": {
-                "term": { "type": "string", "description": "The search term to match against the text of notes linked to concepts. This is a search term, not a question for you to answer. Required." }
+                "term": { "type": "string", "description": "The search term to match against the text of notes linked to topics. This is a search term, not a question for you to answer. Required." }
               },
               "required": ["term"],
               "additionalProperties": true
@@ -272,15 +272,15 @@ public static partial class AssistantCapabilities
                     return Invalid("'term' is required.");
                 }
 
-                var result = await concepts.SearchByNoteTextAsync(term);
+                var result = await topics.SearchByNoteTextAsync(term);
                 return AssistantToolResult.Ok(Element(result));
             }),
 
         new AssistantCapability(
-            "concepts_propose_links",
+            "topics_propose_links",
             AssistantTrustClass.Suggest,
             AssistantCapabilityCategory.Organization,
-            "Explicitly proposes up to three existing concepts for one real note, each with a concrete evidence-based reason. Use only after reading the note and relevant concept material. Ordinary concept listing/search never creates suggestions. This tool does not link or create anything.",
+            "Explicitly proposes up to three existing topics for one real note, each with a concrete evidence-based reason. Use only after reading the note and relevant topic material. Ordinary topic listing/search never creates suggestions. This tool does not link or create anything.",
             """
             {
               "type": "object",
@@ -291,13 +291,13 @@ public static partial class AssistantCapabilities
                   "items": {
                     "type": "object",
                     "properties": {
-                      "conceptId": { "type": "string", "format": "uuid", "description": "Existing concept ID obtained from Nostos. Required." },
-                      "reason": { "type": "string", "description": "One brief, concrete relationship between the note and this concept's evidence. Required." }
+                      "topicId": { "type": "string", "format": "uuid", "description": "Existing topic ID obtained from Nostos. Required." },
+                      "reason": { "type": "string", "description": "One brief, concrete relationship between the note and this topic's evidence. Required." }
                     },
-                    "required": ["conceptId", "reason"],
+                    "required": ["topicId", "reason"],
                     "additionalProperties": false
                   },
-                  "description": "Zero to three relevant existing concepts; an empty list means no useful match."
+                  "description": "Zero to three relevant existing topics; an empty list means no useful match."
                 }
               },
               "required": ["noteId", "candidates"],
@@ -319,22 +319,22 @@ public static partial class AssistantCapabilities
                     || candidates.GetArrayLength() > 3)
                     return Invalid("'candidates' must be an array of at most three proposals.");
 
-                var available = (await concepts.GetAllWithUsageCountAsync())
-                    .ToDictionary(concept => concept.Id);
+                var available = (await topics.GetAllWithUsageCountAsync())
+                    .ToDictionary(topic => topic.Id);
                 var seen = new HashSet<Guid>();
                 var proposals = new List<object>();
                 foreach (var item in candidates.EnumerateArray())
                 {
-                    if (Id(item, "conceptId") is not { } conceptId
-                        || !seen.Add(conceptId)
-                        || !available.TryGetValue(conceptId, out var concept))
-                        return Invalid("Every proposed concept must be a distinct existing concept ID.");
+                    if (Id(item, "topicId") is not { } topicId
+                        || !seen.Add(topicId)
+                        || !available.TryGetValue(topicId, out var topic))
+                        return Invalid("Every proposed topic must be a distinct existing topic ID.");
 
                     var reason = Str(item, "reason")?.Trim();
                     if (string.IsNullOrWhiteSpace(reason) || reason.Length > 240)
                         return Invalid("Every proposal needs a brief evidence-based reason.");
 
-                    proposals.Add(new { id = concept.Id, name = concept.Name, reason });
+                    proposals.Add(new { id = topic.Id, name = topic.Name, reason });
                 }
 
                 return AssistantToolResult.Ok(Element(new { noteId, candidates = proposals }));

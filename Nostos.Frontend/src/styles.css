@@ -35,7 +35,7 @@
 
   /* ── Selection surface ──
      The ONE owner of "this row is selected" across the app. Two consumers:
-     `.index-item.active` (Brain concept index) and `.nav-item.active::before`
+     `.index-item.active` (Brain topic index) and `.nav-item.active::before`
      (Library sidebar). Both are selection states, so they must resolve
      identically — and they are the only two sites; every other `--primary-fill`
      use in the codebase is a button, CTA, badge or active tool state that is
@@ -166,7 +166,7 @@
   --color-brand-accent: #293E32;
   --color-brand-accent-fill: #293E32;
 
-  /* ── Concept graph ──
+  /* ── Topic graph ──
      The Second Brain's map was a wireframe of hollow rings: nodes are filled
      discs now, and a fill is the one place a graph earns a token of its own
      because it sits ON neither paper nor chrome — it must read as ink against
@@ -184,7 +184,7 @@
      built-in hover drawer hardcodes #FFF, which is correct here and a white
      block on dark; this token lets the fill follow the theme instead. */
   --graph-label-box: #ffffff;
-  /* Cluster hues for the concept map: the manifesto's own accents — pine,
+  /* Cluster hues for the topic map: the manifesto's own accents — pine,
      clay and slate — deepened just enough to read as ink on the stage. Three,
      because every pair can sit side by side on a graph: run through the
      data-viz palette validator on all pairs they clear lightness, contrast
@@ -657,7 +657,7 @@
   --color-brand-accent: var(--color-primary);
   --color-brand-accent-fill: var(--primary-fill);
 
-  /* ── Concept graph ──
+  /* ── Topic graph ──
      The palette's on-surface-variant, which is near-NEUTRAL (R − B = −3): a
      warm sand disc made sense on a cool slate stage, but the whole point of
      this palette is "no warm undercurrents", and a warm node would be the last
@@ -680,8 +680,8 @@
 
   /* ── Accent — the palette's own primary, used as the accent role ──
      The artifact's prose accent is spruce #3a5d53, but spruce on this ground
-     is only 2.64:1 and --color-accent is read as INK at 13 sites (the concept
-     tag, note-card's left border, flat-tree concept ink, the dock dot and
+     is only 2.64:1 and --color-accent is read as INK at 13 sites (the topic
+     tag, note-card's left border, flat-tree topic ink, the dock dot and
      focus outline, the route-progress gradient). So the accent takes the
      frontmatter's `primary` #a9cfc2 instead — which is the SAME HUE family as
      the prose spruce (hue 159.5 against 162.9), i.e. a lightening of the
@@ -1294,7 +1294,7 @@
   --glass-blur: blur(14px);
 
   /* ── Editorial gradient ──
-     `--gradient-pastel` is still consumed (the concept map's panel edge), so it
+     `--gradient-pastel` is still consumed (the topic map's panel edge), so it
      stays — carrying its own literal stops rather than referencing the
      `--pastel-*` tokens, none of which had a reader. `--gradient-pastel-soft`
      and `--gradient-accent` were removed: nothing referenced them, and the
@@ -1402,7 +1402,7 @@ p {
    --------------------------------------------------------------------------- */
 
 /* Screen-reader-only. Declared ONCE, globally: it was duplicated in
-   second-brain.component.css and concept-map.component.css with byte-identical
+   second-brain.component.css and topic-map.component.css with byte-identical
    bodies. Duplicated utilities are a drift risk with no upside — the copies do
    not vary per surface, and Angular's encapsulation means a global rule is
    exactly how a shared utility should be expressed. `check:design` fails if a
@@ -1595,9 +1595,9 @@ input[type='file']::file-selector-button:hover {
 }
 
 /* ------------------------------
-   CONCEPTS & LINKS
+   TOPICS & LINKS
 ------------------------------ */
-.concept-tag {
+.topic-tag {
   color: var(--color-accent);
   font-weight: var(--fw-regular);
   cursor: pointer;
@@ -1606,25 +1606,25 @@ input[type='file']::file-selector-button:hover {
   border-bottom: 1px solid var(--color-accent-faint);
 }
 
-a.concept-tag:hover {
+a.topic-tag:hover {
   color: var(--color-accent-hover);
   border-bottom-color: var(--color-accent-hover);
 }
 
-a.concept-tag:focus-visible {
+a.topic-tag:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: 2px;
   border-radius: 2px;
 }
 
-.concept-tag--unresolved {
+.topic-tag--unresolved {
   color: var(--color-text-muted);
   cursor: default;
   border-bottom-style: dashed;
   border-bottom-color: var(--border-color);
 }
 
-.concept-unresolved-label {
+.topic-unresolved-label {
   color: var(--color-text-light);
   font-size: 0.82em;
   font-weight: var(--fw-regular);

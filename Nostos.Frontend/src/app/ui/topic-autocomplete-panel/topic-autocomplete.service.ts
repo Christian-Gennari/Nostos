@@ -1,17 +1,17 @@
 import { Injectable, signal } from '@angular/core';
-import { ConceptDto } from '../../core/services/concepts.service';
+import { TopicDto } from '../../core/services/topics.service';
 
 @Injectable({ providedIn: 'root' })
-export class ConceptAutocompleteService {
-  suggestions = signal<ConceptDto[]>([]);
+export class TopicAutocompleteService {
+  suggestions = signal<TopicDto[]>([]);
   activeIndex = signal(0);
   pickerOpen = signal(false);
   query = signal('');
 
-  private concepts: ConceptDto[] = [];
+  private topics: TopicDto[] = [];
 
-  setConcepts(list: ConceptDto[]): void {
-    this.concepts = list;
+  setTopics(list: TopicDto[]): void {
+    this.topics = list;
     if (this.pickerOpen()) this.setQuery(this.query());
   }
 
@@ -24,10 +24,10 @@ export class ConceptAutocompleteService {
     this.query.set(query);
     const normalized = query.trim().toLocaleLowerCase();
     const matches = normalized
-      ? this.concepts.filter((concept) =>
-          concept.name.toLocaleLowerCase().includes(normalized)
+      ? this.topics.filter((topic) =>
+          topic.name.toLocaleLowerCase().includes(normalized)
         )
-      : this.concepts;
+      : this.topics;
 
     this.suggestions.set(matches.slice(0, 50));
     this.activeIndex.set(0);
@@ -69,7 +69,7 @@ export class ConceptAutocompleteService {
     this.activeIndex.update((current) => (current + 1) % list.length);
   }
 
-  choose(): ConceptDto | null {
+  choose(): TopicDto | null {
     const list = this.suggestions();
     if (list.length === 0) return null;
     return list[this.activeIndex()] ?? null;

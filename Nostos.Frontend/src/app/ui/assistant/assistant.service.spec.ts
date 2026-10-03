@@ -36,7 +36,7 @@ function context(overrides: Partial<AssistantContext> = {}): AssistantContext {
     selectedText: null,
     readingTarget: 'b1',
     brainReviewNoteId: null,
-    concept: null,
+    topic: null,
     collectionId: null,
     anchor: null,
     ...overrides,
@@ -482,14 +482,14 @@ describe('AssistantService voice transcript alignment', () => {
       turn({
         reply: 'Mountains looks right.',
         suggestions: [
-          { kind: 'concept', label: 'Mountains', reason: 'The note discusses the same climb.', value: 'c-alpha', noteId: 'note-1' },
+          { kind: 'topic', label: 'Mountains', reason: 'The note discusses the same climb.', value: 'c-alpha', noteId: 'note-1' },
         ],
         pendingPlan: {
           planId: 'plan-1',
           summary: 'Link the note to Mountains',
           steps: [
             {
-              capability: 'notes_link_existing_concept',
+              capability: 'notes_link_existing_topic',
               summary: 'Link the note to Mountains',
               argumentsJson: '{}',
             },
@@ -1022,7 +1022,7 @@ describe('AssistantService voice transcript alignment', () => {
       capturedNoteId: 'note-42',
       executedCapabilities: ['library_update_book'],
       suggestions: [
-        { kind: 'concept', label: 'Homecoming', reason: 'Shared evidence.', value: 'concept-1', noteId: 'note-42' },
+        { kind: 'topic', label: 'Homecoming', reason: 'Shared evidence.', value: 'topic-1', noteId: 'note-42' },
       ],
       evidence: [
         {
@@ -1043,7 +1043,7 @@ describe('AssistantService voice transcript alignment', () => {
       'proposal',
     ]);
     expect(firstArtifacts.find((artifact) => artifact.kind === 'proposal')).toMatchObject({
-      proposal: { noteId: 'note-42', value: 'concept-1' },
+      proposal: { noteId: 'note-42', value: 'topic-1' },
     });
 
     // Route/navigation context can change without moving history to the new turn.
@@ -1070,7 +1070,7 @@ describe('AssistantService voice transcript alignment', () => {
 
   it('restores inert artifacts in order but not executable proposal chips', () => {
     fake.set({ brainReviewNoteId: 'note-1' });
-    service.updateDraft('Suggest concepts from this evidence');
+    service.updateDraft('Suggest topics from this evidence');
     service.submit();
     const request = http.expectOne('/api/assistant/turn/stream');
     const turnId = request.request.body.turnId as string;
@@ -1082,7 +1082,7 @@ describe('AssistantService voice transcript alignment', () => {
         { handle: { kind: 'note', noteId: 'source-note' }, label: 'Source note', excerpt: 'Evidence.' },
       ],
       suggestions: [
-        { kind: 'concept', label: 'Homecoming', reason: 'Same theme.', value: 'concept-1', noteId: 'note-1' },
+        { kind: 'topic', label: 'Homecoming', reason: 'Same theme.', value: 'topic-1', noteId: 'note-1' },
       ],
     }));
 
@@ -1206,18 +1206,18 @@ describe('AssistantService voice transcript alignment', () => {
     expect(service.rawTranscript()?.processingMode).toBe('verbatim');
   });
 
-  it('ignores a suggestion that is not a concept and does nothing on the wire', () => {
+  it('ignores a suggestion that is not a topic and does nothing on the wire', () => {
     service.applySuggestion({ kind: 'collection', label: 'Essays', reason: 'A collection.', value: 'col-1' });
 
     expect(service.lastError()).toBeNull();
     http.expectNone('/api/assistant/turn/stream');
   });
 
-  it('needs a review target before it will request a concept link', () => {
+  it('needs a review target before it will request a topic link', () => {
     service.applySuggestion({
-      kind: 'concept',
+      kind: 'topic',
       label: 'Mountains',
-      reason: 'Existing concept.',
+      reason: 'Existing topic.',
       value: 'c-alpha',
       noteId: 'note-1',
     });
@@ -1225,7 +1225,7 @@ describe('AssistantService voice transcript alignment', () => {
     http.expectNone('/api/assistant/turn/stream');
   });
 
-  it('requests an immediate concept link and emits only a backend-confirmed action receipt', () => {
+  it('requests an immediate topic link and emits only a backend-confirmed action receipt', () => {
     fake.set({ brainReviewNoteId: 'note-1' });
     const receipts: Array<{ capability: string; noteId: string | null | undefined }> = [];
     const subscription = service.actionExecuted.subscribe((event) =>
@@ -1236,9 +1236,9 @@ describe('AssistantService voice transcript alignment', () => {
     );
 
     service.applySuggestion({
-      kind: 'concept',
+      kind: 'topic',
       label: 'Mountains',
-      reason: 'Existing concept.',
+      reason: 'Existing topic.',
       value: 'c-alpha',
       noteId: 'note-1',
     });
@@ -1247,12 +1247,12 @@ describe('AssistantService voice transcript alignment', () => {
     expect(request.request.body.context.brainReviewNoteId).toBe('note-1');
     expect(request.request.body.message).toContain('Mountains');
     expect(request.request.body.message).toContain('c-alpha');
-    service.applySuggestion({ kind: 'concept', label: 'Mountains', reason: 'Existing concept.', value: 'c-alpha', noteId: 'note-1' });
+    service.applySuggestion({ kind: 'topic', label: 'Mountains', reason: 'Existing topic.', value: 'c-alpha', noteId: 'note-1' });
     http.expectNone('/api/assistant/turn/stream');
-    request.flush(turn({ executedCapabilities: ['notes_link_existing_concept'] }));
+    request.flush(turn({ executedCapabilities: ['notes_link_existing_topic'] }));
 
     expect(receipts).toEqual([
-      { capability: 'notes_link_existing_concept', noteId: 'note-1' },
+      { capability: 'notes_link_existing_topic', noteId: 'note-1' },
     ]);
     subscription.unsubscribe();
   });
@@ -1260,7 +1260,7 @@ describe('AssistantService voice transcript alignment', () => {
   it('does not apply a proposal after the user changes to another review note', () => {
     fake.set({ brainReviewNoteId: 'note-2' });
     service.applySuggestion({
-      kind: 'concept', label: 'Mountains', reason: 'Evidence relationship.',
+      kind: 'topic', label: 'Mountains', reason: 'Evidence relationship.',
       value: 'c-alpha', noteId: 'note-1',
     });
     expect(service.lastError()).toContain('suggested note');
@@ -1429,7 +1429,7 @@ describe('AssistantService voice transcript alignment', () => {
 
   it('dismisses suggestions without touching the note', () => {
     service.suggestions.set([
-      { kind: 'concept', label: 'Mountains', reason: 'Existing concept.', value: 'c-alpha' },
+      { kind: 'topic', label: 'Mountains', reason: 'Existing topic.', value: 'c-alpha' },
     ]);
 
     service.dismissSuggestions();
@@ -1440,11 +1440,11 @@ describe('AssistantService voice transcript alignment', () => {
 
   it('keeps dismissed proposal chips dismissed after reopening the conversation', () => {
     service.open();
-    service.updateDraft('Suggest concepts');
+    service.updateDraft('Suggest topics');
     service.submit();
     http.expectOne('/api/assistant/turn/stream').flush(turn({
       reply: 'A possible connection.',
-      suggestions: [{ kind: 'concept', label: 'Mountains', reason: 'Shared ascent.', value: 'c-alpha', noteId: 'note-1' }],
+      suggestions: [{ kind: 'topic', label: 'Mountains', reason: 'Shared ascent.', value: 'c-alpha', noteId: 'note-1' }],
     }));
     const proposal = service.entries().find((entry) => entry.suggestions?.length);
     expect(proposal).toBeDefined();

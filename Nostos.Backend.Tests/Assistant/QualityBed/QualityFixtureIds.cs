@@ -33,14 +33,14 @@ internal static class QualityFixtureIds
     public const string TitleMarginalia = "Commonplace Book";
     public const string TitleGranaryLedger = "The Granary Ledger";
 
-    // --- Concepts (>=6, all linked) ---
-    public static readonly Guid ConceptAttention = Guid.Parse("d1111111-1111-4111-8111-111111111111");
-    public static readonly Guid ConceptSeamanship = Guid.Parse("d2222222-2222-4222-8222-222222222222");
-    public static readonly Guid ConceptBoatRepair = Guid.Parse("d3333333-3333-4333-8333-333333333333");
-    public static readonly Guid ConceptMorningHours = Guid.Parse("d4444444-4444-4444-8444-444444444444");
-    public static readonly Guid ConceptRiverMaps = Guid.Parse("d5555555-5555-4555-8555-555555555555");
-    public static readonly Guid ConceptHarborRules = Guid.Parse("d6666666-6666-4666-8666-666666666666");
-    public static readonly Guid ConceptGalleryWatch = Guid.Parse("d7777777-7777-4777-8777-777777777777");
+    // --- Topics (>=6, all linked) ---
+    public static readonly Guid TopicAttention = Guid.Parse("d1111111-1111-4111-8111-111111111111");
+    public static readonly Guid TopicSeamanship = Guid.Parse("d2222222-2222-4222-8222-222222222222");
+    public static readonly Guid TopicBoatRepair = Guid.Parse("d3333333-3333-4333-8333-333333333333");
+    public static readonly Guid TopicMorningHours = Guid.Parse("d4444444-4444-4444-8444-444444444444");
+    public static readonly Guid TopicRiverMaps = Guid.Parse("d5555555-5555-4555-8555-555555555555");
+    public static readonly Guid TopicHarborRules = Guid.Parse("d6666666-6666-4666-8666-666666666666");
+    public static readonly Guid TopicGalleryWatch = Guid.Parse("d7777777-7777-4777-8777-777777777777");
 
     // --- Notes (>=20, all anchored) ---
     public static readonly Guid NoteRopeCoil = Guid.Parse("e0000001-0001-4001-8001-000000000001"); // C1/C3 gold

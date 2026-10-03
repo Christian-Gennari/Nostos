@@ -11,7 +11,7 @@
  *  2. The map's own toolbar carries a way back to the list. In map view the
  *     page-level view toggle lives inside the rail that is now closed, so
  *     without this control the mode would be a one-way door.
- *  3. Double-clicking a node opens that concept's detail — the same destination
+ *  3. Double-clicking a node opens that topic's detail — the same destination
  *     an index row click reaches — and leaves map view.
  *
  * Node ids are read from the live renderer (`__nostosGraph`), which is the only
@@ -89,7 +89,7 @@ async function openMap(page: import('@playwright/test').Page, baseUrl: string) {
   await page.locator('.view-mode-control .vt-opt:last-child').click();
   await page.locator('.sigma-container canvas').first().waitFor({ timeout: 30_000 });
   await page.waitForFunction(
-    () => document.querySelector('.concept-map')?.getAttribute('aria-busy') === 'false',
+    () => document.querySelector('.topic-map')?.getAttribute('aria-busy') === 'false',
     undefined,
     { timeout: 30_000 }
   );
@@ -112,7 +112,7 @@ async function nodeScreenPosition(
     };
     const sigma = globals.__nostosSigma;
     const graph = globals.__nostosGraph;
-    const container = document.querySelector('app-concept-map .sigma-container');
+    const container = document.querySelector('app-topic-map .sigma-container');
     if (!sigma || !graph || !container) return null;
 
     const box = container.getBoundingClientRect();
@@ -176,8 +176,8 @@ test('map view closes the index rail and hands its space to the graph', async ({
         searchBox: box(search),
         toggleBox: box(toggle),
         // The header must be the ONLY home for the switch and the search.
-        modeSwitchCount: document.querySelectorAll('[aria-label="Concept view"]').length,
-        searchInputCount: document.querySelectorAll('input[aria-label="Search concepts"]').length,
+        modeSwitchCount: document.querySelectorAll('[aria-label="Topic view"]').length,
+        searchInputCount: document.querySelectorAll('input[aria-label="Search topics"]').length,
         mapToolbarCount: document.querySelectorAll('.map-toolbar').length,
       };
     });
@@ -203,7 +203,7 @@ test('map view closes the index rail and hands its space to the graph', async ({
     // place, so the map no longer needs a second copy of it.
     expect(after.headerBox, 'the surface header stays in map view').not.toBeNull();
     expect(after.modeSwitchCount, 'exactly one mode switch, not one per mode').toBe(1);
-    expect(after.searchInputCount, 'exactly one concept search').toBe(1);
+    expect(after.searchInputCount, 'exactly one topic search').toBe(1);
     expect(after.mapToolbarCount, 'the map must not carry a duplicate toolbar').toBe(0);
     expect(after.headerBox!.y, 'the header stays pinned at the top').toBe(0);
 
@@ -227,7 +227,7 @@ test('the header\'s mode switch returns to the list view with the rail restored'
     // The switch lives in the persistent header now, and there is exactly one of
     // it — the map's duplicate `.map-view-exit` is gone, so no disambiguation is
     // needed here any more.
-    await page.locator('.brain-header .view-mode-control [aria-label="Concept view"]').click();
+    await page.locator('.brain-header .view-mode-control [aria-label="Topic view"]').click();
 
     await page.locator('.index-item').first().waitFor({ timeout: 30_000 });
     const restored = await page.evaluate(() => {
@@ -237,7 +237,7 @@ test('the header\'s mode switch returns to the list view with the rail restored'
         indexWidth: index ? Math.round(index.getBoundingClientRect().width) : 0,
         indexDisplay: index ? getComputedStyle(index).display : 'absent',
         columns: layout ? getComputedStyle(layout).gridTemplateColumns : '',
-        mapGone: !document.querySelector('app-concept-map'),
+        mapGone: !document.querySelector('app-topic-map'),
       };
     });
     console.log('MAP FOCUS RESTORED:', JSON.stringify(restored, null, 1));
@@ -269,8 +269,8 @@ test('the mode switch is reachable and tappable on a phone in both modes', async
         return { w: Math.round(r.width), h: Math.round(r.height) };
       };
       return {
-        exit: box('.brain-header .view-mode-control [aria-label="Concept view"]'),
-        search: box('.brain-header input[aria-label="Search concepts"]'),
+        exit: box('.brain-header .view-mode-control [aria-label="Topic view"]'),
+        search: box('.brain-header input[aria-label="Search topics"]'),
         indexHidden:
           getComputedStyle(document.querySelector('.index-col') as HTMLElement).display === 'none',
         overflowX: document.documentElement.scrollWidth > window.innerWidth,
@@ -300,9 +300,9 @@ test('the mode switch is reachable and tappable on a phone in both modes', async
     expect(measured.overflowX, 'the header must not overflow a 390px viewport').toBe(false);
 
     // And it actually works from this layout.
-    await page.locator('.brain-header .view-mode-control [aria-label="Concept view"]').click();
+    await page.locator('.brain-header .view-mode-control [aria-label="Topic view"]').click();
     await page.locator('.index-item').first().waitFor({ timeout: 30_000 });
-    expect(await page.locator('app-concept-map').count(), 'the map must be gone').toBe(0);
+    expect(await page.locator('app-topic-map').count(), 'the map must be gone').toBe(0);
 
     // Back on the list, the same control is still there — the rail it lives
     // beside is the rail it must not disappear with.
@@ -330,7 +330,7 @@ test('clicking empty space clears the selection', async ({ browser }) => {
 
     const target = 'Attention';
     const point = await nodeScreenPosition(page, target);
-    expect(point, `the seeded concept "${target}" must be rendered`).not.toBeNull();
+    expect(point, `the seeded topic "${target}" must be rendered`).not.toBeNull();
 
     // Select the node. A single click selects without leaving the map.
     await page.mouse.click(point!.x, point!.y);
@@ -357,7 +357,7 @@ test('clicking empty space clears the selection', async ({ browser }) => {
       };
       const sigma = globals.__nostosSigma;
       const graph = globals.__nostosGraph;
-      const container = document.querySelector('app-concept-map .sigma-container');
+      const container = document.querySelector('app-topic-map .sigma-container');
       if (!sigma || !graph || !container) return null;
       const box = container.getBoundingClientRect();
       const nodes: Array<{ x: number; y: number }> = [];
@@ -389,7 +389,7 @@ test('clicking empty space clears the selection', async ({ browser }) => {
 
     const after = await page.evaluate(() => ({
       chip: document.querySelector('.map-selection-name')?.textContent?.trim() ?? null,
-      mapStillThere: !!document.querySelector('app-concept-map'),
+      mapStillThere: !!document.querySelector('app-topic-map'),
     }));
     console.log('AFTER EMPTY CLICK:', JSON.stringify(after));
 
@@ -424,7 +424,7 @@ test('a camera pan does not clear the selection', async ({ browser }) => {
     // suppresses the click that follows a drag (its `draggedEvents` counter runs
     // past `draggedEventsTolerance`), so the selection must survive. This is the
     // regression a naive `mousedown`/`mouseup` deselect would introduce.
-    const canvas = page.locator('app-concept-map .sigma-container');
+    const canvas = page.locator('app-topic-map .sigma-container');
     const box = (await canvas.boundingBox())!;
     await page.mouse.move(box.x + box.width * 0.2, box.y + box.height * 0.75);
     await page.mouse.down();
@@ -440,13 +440,13 @@ test('a camera pan does not clear the selection', async ({ browser }) => {
     expect(after.chip, 'a camera pan must not drop the selection').toBe(target);
   } finally {
     // No cleanup here: this is not the last test in the serial spec, and
-    // `cleanupBrain` would delete the concepts `ensureSeed` caches for the tests
+    // `cleanupBrain` would delete the topics `ensureSeed` caches for the tests
     // that follow (leaving them with an empty graph and no canvas to wait for).
     await context.close();
   }
 });
 
-test('double-clicking a node opens that concept\'s notes', async ({ browser }) => {
+test('double-clicking a node opens that topic\'s notes', async ({ browser }) => {
   const fixture = loadFixture();
   await ensureSeed(fixture);
   const { context, page } = await newCapturePage(browser, DESKTOP_VIEWPORT);
@@ -455,7 +455,7 @@ test('double-clicking a node opens that concept\'s notes', async ({ browser }) =
 
     const target = 'Attention';
     const point = await nodeScreenPosition(page, target);
-    expect(point, `the seeded concept "${target}" must be rendered on the map`).not.toBeNull();
+    expect(point, `the seeded topic "${target}" must be rendered on the map`).not.toBeNull();
 
     // Two real clicks at the node's screen position. Sigma counts clicks on its
     // own captor, so this is the gesture a user actually performs — a
@@ -463,20 +463,20 @@ test('double-clicking a node opens that concept\'s notes', async ({ browser }) =
     await page.mouse.click(point!.x, point!.y);
     await page.mouse.click(point!.x, point!.y);
 
-    await page.locator('.concept-title').waitFor({ timeout: 30_000 });
+    await page.locator('.topic-title').waitFor({ timeout: 30_000 });
     const result = await page.evaluate(() => ({
-      title: document.querySelector('.concept-title')?.textContent?.trim() ?? '',
-      mapGone: !document.querySelector('app-concept-map'),
+      title: document.querySelector('.topic-title')?.textContent?.trim() ?? '',
+      mapGone: !document.querySelector('app-topic-map'),
       indexVisible: !!document.querySelector('.index-col') &&
         getComputedStyle(document.querySelector('.index-col') as HTMLElement).display !== 'none',
     }));
     console.log('MAP DOUBLE-CLICK:', JSON.stringify(result, null, 1));
     await capturePng(page, 'brain-map-focus-double-click');
 
-    // The concept's notes are the destination — exactly where an index row
+    // The topic's notes are the destination — exactly where an index row
     // click lands, which is the parity the request asked for.
-    expect(result.title, 'double-click must open the concept that was clicked').toBe(target);
-    expect(result.mapGone, 'opening a concept leaves map view').toBe(true);
+    expect(result.title, 'double-click must open the topic that was clicked').toBe(target);
+    expect(result.mapGone, 'opening a topic leaves map view').toBe(true);
     expect(result.indexVisible, 'the list view is back behind the detail').toBe(true);
   } finally {
     await context.close();

@@ -95,7 +95,7 @@
     <Compile Remove="Endpoints\NotesEndpoints.cs" />
     <Compile Remove="Endpoints\NoteProcessingEndpoints.cs" />
     <Compile Remove="Endpoints\CollectionsEndpoints.cs" />
-    <Compile Remove="Endpoints\ConceptsEndpoints.cs" />
+    <Compile Remove="Endpoints\TopicsEndpoints.cs" />
     <Compile Remove="Endpoints\WritingsEndpoints.cs" />
     <Compile Remove="Endpoints\TranscriptionEndpoints.cs" />
     <Compile Remove="Endpoints\AssistantEndpoints.cs" />

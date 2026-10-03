@@ -38,7 +38,7 @@ class HostComponent {
   ] satisfies readonly ViewToggleOption[];
 
   readonly brainOptions = [
-    { value: 'list', icon: 'list-bullets', label: 'Concept view' },
+    { value: 'list', icon: 'list-bullets', label: 'Topic view' },
     { value: 'map', icon: 'map-trifold', label: 'Map view' },
   ] satisfies readonly ViewToggleOption[];
 

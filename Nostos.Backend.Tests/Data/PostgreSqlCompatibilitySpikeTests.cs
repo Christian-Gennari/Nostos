@@ -37,7 +37,7 @@ public sealed class PostgreSqlCompatibilitySpikeTests
         Guid audioId;
         Guid collectionId;
         Guid noteId;
-        Guid conceptId;
+        Guid topicId;
         Guid writingFolderId;
         Guid writingDocumentId;
         Guid sharedWorkId;
@@ -127,7 +127,7 @@ public sealed class PostgreSqlCompatibilitySpikeTests
                 AnchorVerified = true,
                 CreatedAt = createdAt,
             };
-            var concept = new ConceptModel { Concept = "Justice" };
+            var topic = new TopicModel { Topic = "Justice" };
             var writingFolder = new WritingModel
             {
                 Name = "Republic notes",
@@ -153,11 +153,11 @@ public sealed class PostgreSqlCompatibilitySpikeTests
                 AddedAt = createdAt,
             });
             db.Notes.Add(note);
-            db.Concepts.Add(concept);
-            db.NoteConcepts.Add(new NoteConceptModel
+            db.Topics.Add(topic);
+            db.NoteTopics.Add(new NoteTopicModel
             {
                 Note = note,
-                Concept = concept,
+                Topic = topic,
             });
             db.Writings.AddRange(writingFolder, writingDocument);
             db.WritingNotes.Add(new WritingNoteModel
@@ -194,7 +194,7 @@ public sealed class PostgreSqlCompatibilitySpikeTests
 
             collectionId = collection.Id;
             noteId = note.Id;
-            conceptId = concept.Id;
+            topicId = topic.Id;
             writingFolderId = writingFolder.Id;
             writingDocumentId = writingDocument.Id;
         }
@@ -223,13 +223,13 @@ public sealed class PostgreSqlCompatibilitySpikeTests
             reloadedEbook.BookCollections.Should().ContainSingle(x => x.CollectionId == collectionId);
 
             var reloadedNote = await db.Notes
-                .Include(n => n.NoteConcepts)
-                .ThenInclude(nc => nc.Concept)
+                .Include(n => n.NoteTopics)
+                .ThenInclude(nc => nc.Topic)
                 .SingleAsync(n => n.Id == noteId);
             reloadedNote.BookId.Should().Be(ebookId);
-            reloadedNote.NoteConcepts.Should().ContainSingle();
-            reloadedNote.NoteConcepts.Single().ConceptId.Should().Be(conceptId);
-            reloadedNote.NoteConcepts.Single().Concept.Concept.Should().Be("Justice");
+            reloadedNote.NoteTopics.Should().ContainSingle();
+            reloadedNote.NoteTopics.Single().TopicId.Should().Be(topicId);
+            reloadedNote.NoteTopics.Single().Topic.Topic.Should().Be("Justice");
 
             var writingDocument = await db.Writings.SingleAsync(w => w.Id == writingDocumentId);
             writingDocument.ParentId.Should().Be(writingFolderId);
@@ -284,14 +284,14 @@ public sealed class PostgreSqlCompatibilitySpikeTests
         await using (var db = new NostosDbContext(options))
         await using (var transaction = await db.Database.BeginTransactionAsync())
         {
-            db.Concepts.Add(new ConceptModel { Concept = "Rolled back concept" });
+            db.Topics.Add(new TopicModel { Topic = "Rolled back topic" });
             await db.SaveChangesAsync();
             await transaction.RollbackAsync();
         }
 
         await using (var db = new NostosDbContext(options))
         {
-            (await db.Concepts.AnyAsync(c => c.Concept == "Rolled back concept"))
+            (await db.Topics.AnyAsync(c => c.Topic == "Rolled back topic"))
                 .Should().BeFalse("a rolled-back PostgreSQL transaction must not leak writes");
 
             var folder = await db.Writings.SingleAsync(w => w.Id == writingFolderId);
