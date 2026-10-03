@@ -15,8 +15,8 @@ split:
 
 | Concern | Question it answers | Where it lives |
 | --- | --- | --- |
-| **Provider** | *What content exists outside Nostos?* | `Nostos.Backend/Providers/Contracts/` + `Nostos.Backend/Providers/<Name>/` |
-| **Acquisition** | *How does a chosen external item become an ordinary local book?* | `Nostos.Backend/Providers/Acquisition/` |
+| **Provider** | *What content exists outside Nostos?* | `Nostos.Product/Providers/Contracts/` + `Nostos.Product/Providers/<Name>/` |
+| **Acquisition** | *How does a chosen external item become an ordinary local book?* | `Nostos.Product/Providers/Acquisition/` |
 
 A provider **describes** remote content. It returns data and nothing else: no
 database writes, no storage paths, no reader behaviour, no knowledge of
@@ -321,7 +321,7 @@ and the library row is attached.
 
 ## Adding a built-in provider
 
-1. Create `Nostos.Backend/Providers/<Name>/<Name>Provider.cs`.
+1. Create `Nostos.Product/Providers/<Name>/<Name>Provider.cs`.
 2. Implement `IContentProvider` (`Id` lowercase and hyphenated, e.g.
    `gutenberg`) plus whichever capability interfaces the source supports.
 3. Normalize the source's own catalogue into the contracts. Keep its DTOs
