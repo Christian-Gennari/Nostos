@@ -221,6 +221,50 @@ List all notes for a book.
 }
 ```
 
+### `GET /api/notes/{id}`
+
+Get one canonical note for exact note/evidence deep-links.
+
+**Response:** [`NoteSearchHitDto`](../Nostos.Shared/Dtos/NoteDto.cs) — produced by
+[`NotesEndpoints`](../Nostos.Backend/Endpoints/NotesEndpoints.cs).
+
+```json
+{
+  "id": "guid",
+  "bookId": "guid",
+  "bookTitle": "string?",
+  "content": "string",
+  "selectedText": "string?",
+  "snippet": "string?",
+  "topicNames": ["string"],
+  "createdAt": "datetime",
+  "cfiRange": "string?",
+  "sourceAnchorKind": "string",
+  "sourceAnchorValue": "string?",
+  "anchorVerified": false,
+  "captureSource": "string",
+  "processingMode": "string",
+  "hasRawContent": true
+}
+```
+
+`hasRawContent` only reports whether an original raw capture exists; the raw
+text itself is not included in this canonical response.
+
+### `GET /api/notes/{id}/raw`
+
+Get the explicit raw transcript for a note, alongside the current stored text
+and processing mode.
+
+**Response:** [`NoteRawTranscriptDto`](../Nostos.Shared/Dtos/NoteDto.cs) —
+produced by
+[`NoteProcessingEndpoints`](../Nostos.Backend/Endpoints/NoteProcessingEndpoints.cs).
+
+`{ id, rawContent, content, processingMode }`
+
+Unlike the canonical note response's `hasRawContent` marker, this route carries
+the nullable `rawContent` value itself.
+
 ### `POST /api/books/{bookId}/notes`
 
 Create a note. Topics wrapped in `[[double brackets]]` are auto-extracted and linked.
@@ -339,9 +383,11 @@ collection still has child collections.
 
 Read-only. Topics are created automatically when notes with `[[brackets]]` are saved.
 
-> Topics were formerly called Concepts. `/api/concepts` remains as a transition alias that
-> reaches the same handlers; request and response bodies use the new `topic` field names on
-> both prefixes (e.g. `{ "topic": "Virtue ethics" }`, `totalTopics`, `topicNames`).
+> Topics were formerly called Concepts. `/api/concepts` remains a transition
+> prefix alias to the identical handlers in
+> [`TopicsEndpoints`](../Nostos.Backend/Endpoints/TopicsEndpoints.cs). Both prefixes
+> use the current topic request/response field names; the alias does not restore
+> old `concept` payload field names.
 
 ### `GET /api/topics`
 
