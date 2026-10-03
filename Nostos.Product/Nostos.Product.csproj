@@ -25,36 +25,9 @@
   </ItemGroup>
 
   <!--
-    #459 establishes project ownership without a mass namespace/path rewrite.
-    The 02.2 foundation, 02.3 services/AI/assistant and 02.4 provider batches are
-    now physically owned by Nostos.Product and included by the SDK's default
-    Compile items. The remaining entries below are endpoint and health sources
-    that stay at their historical Backend paths during the transitional move
-    batches, but Nostos.Product is their only compiling project. Nostos.Backend
-    references this project and explicitly removes those remaining linked files
-    from its default Compile items, so there is one implementation rather than a
-    copied facade.
+    The 02.2 foundation, 02.3 services/AI/assistant, 02.4 provider and 02.5
+    endpoint/health batches are physically owned by Nostos.Product and included
+    by the SDK's default Compile items.
   -->
-  <ItemGroup>
-    <Compile Include="..\Nostos.Backend\Endpoints\BooksEndpoints.cs" Link="Endpoints\BooksEndpoints.cs" />
-    <Compile Include="..\Nostos.Backend\Endpoints\ProviderEndpoints.cs" Link="Endpoints\ProviderEndpoints.cs" />
-    <Compile Include="..\Nostos.Backend\Endpoints\ImportEndpoints.cs" Link="Endpoints\ImportEndpoints.cs" />
-    <Compile Include="..\Nostos.Backend\Endpoints\NotesEndpoints.cs" Link="Endpoints\NotesEndpoints.cs" />
-    <Compile Include="..\Nostos.Backend\Endpoints\NoteProcessingEndpoints.cs" Link="Endpoints\NoteProcessingEndpoints.cs" />
-    <Compile Include="..\Nostos.Backend\Endpoints\CollectionsEndpoints.cs" Link="Endpoints\CollectionsEndpoints.cs" />
-    <Compile Include="..\Nostos.Backend\Endpoints\TopicsEndpoints.cs" Link="Endpoints\TopicsEndpoints.cs" />
-    <Compile Include="..\Nostos.Backend\Endpoints\WritingsEndpoints.cs" Link="Endpoints\WritingsEndpoints.cs" />
-    <Compile Include="..\Nostos.Backend\Endpoints\TranscriptionEndpoints.cs" Link="Endpoints\TranscriptionEndpoints.cs" />
-    <Compile Include="..\Nostos.Backend\Endpoints\AssistantEndpoints.cs" Link="Endpoints\AssistantEndpoints.cs" />
-    <Compile Include="..\Nostos.Backend\Endpoints\AiProviderSettingsEndpoints.cs" Link="Endpoints\AiProviderSettingsEndpoints.cs" />
-    <Compile Include="..\Nostos.Backend\Endpoints\AssistantSettingsEndpoints.cs" Link="Endpoints\AssistantSettingsEndpoints.cs" />
-    <Compile Include="..\Nostos.Backend\Endpoints\DeploymentCapabilitiesEndpoints.cs" Link="Endpoints\DeploymentCapabilitiesEndpoints.cs" />
-    <Compile Include="..\Nostos.Backend\Endpoints\PortabilityEndpoints.cs" Link="Endpoints\PortabilityEndpoints.cs" />
-    <Compile Include="..\Nostos.Backend\Endpoints\OpdsEndpoints.cs" Link="Endpoints\OpdsEndpoints.cs" />
-    <Compile Include="..\Nostos.Backend\Endpoints\LibraryHttpMapper.cs" Link="Endpoints\LibraryHttpMapper.cs" />
-    <Compile Include="..\Nostos.Backend\Endpoints\StoredAssetHttpResult.cs" Link="Endpoints\StoredAssetHttpResult.cs" />
-
-    <Compile Include="..\Nostos.Backend\Health\NostosHealthChecks.cs" Link="Health\NostosHealthChecks.cs" />
-  </ItemGroup>
 
 </Project>

@@ -1,7 +1,7 @@
 /**
  * Shared Task 13 E2E helpers: fixture state access + thin REST client for the
  * supported Nostos API surface (contracts mirror Nostos.Shared/Dtos and
- * Nostos.Backend/Endpoints — nothing here invents endpoints).
+ * Nostos.Product/Endpoints — nothing here invents endpoints).
  */
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
