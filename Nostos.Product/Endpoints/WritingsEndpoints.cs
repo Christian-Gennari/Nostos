@@ -1,3 +1,5 @@
+using System.Text.Json;
+using Microsoft.Extensions.Options;
 using Nostos.Backend.Data.Interfaces;
 using Nostos.Backend.Data.Models;
 using Nostos.Backend.Mapping;
@@ -67,21 +69,41 @@ public static class WritingsEndpoints
         // PUT: Update Name or Content (Auto-save)
         group.MapPut(
             "/{id}",
-            async (Guid id, UpdateWritingDto dto, IWritingRepository repo) =>
+            async (
+                Guid id,
+                JsonElement body,
+                IWritingRepository repo,
+                IOptions<Microsoft.AspNetCore.Http.Json.JsonOptions> jsonOptions) =>
             {
+                UpdateWritingDto? dto;
+                try
+                {
+                    dto = body.Deserialize<UpdateWritingDto>(
+                        jsonOptions.Value.SerializerOptions);
+                }
+                catch (JsonException)
+                {
+                    return Results.BadRequest();
+                }
+
+                if (dto is null || body.ValueKind != JsonValueKind.Object)
+                    return Results.BadRequest();
+
                 var item = await repo.GetByIdAsync(id);
                 if (item is null)
                     return Results.NotFound();
 
                 item.Name = dto.Name;
-                item.Content = dto.Content;
+                if (HasPropertyIgnoreCase(body, "content"))
+                    item.Content = dto.Content;
                 item.UpdatedAt = DateTime.UtcNow;
 
                 await repo.UpdateAsync(item);
 
                 return Results.Ok(item.ToContentDto());
             }
-        );
+        )
+        .Accepts<UpdateWritingDto>("application/json");
 
         // PUT: Move (Drag & Drop)
         group.MapPut(
@@ -188,5 +210,14 @@ public static class WritingsEndpoints
         );
 
         return routes;
+    }
+
+    private static bool HasPropertyIgnoreCase(JsonElement element, string propertyName)
+    {
+        return element.EnumerateObject().Any(
+            property => string.Equals(
+                property.Name,
+                propertyName,
+                StringComparison.OrdinalIgnoreCase));
     }
 }
