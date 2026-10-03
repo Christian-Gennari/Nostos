@@ -31,9 +31,15 @@ public sealed record AiProviderSectionDto(
     bool HasKey,
     bool KeyFromServerEnv);
 
+/// <summary>
+/// <see cref="Embedding"/> is appended and optional: a host that manages
+/// embeddings itself omits it, and the settings page then shows no card.
+/// </summary>
 public sealed record AiProviderSettingsResponse(
     AiProviderSectionDto Llm,
-    AiProviderSectionDto Stt);
+    AiProviderSectionDto Stt,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    AiProviderSectionDto? Embedding = null);
 
 public sealed record AiProviderSectionUpdate(
     bool? Enabled,
@@ -43,7 +49,8 @@ public sealed record AiProviderSectionUpdate(
 
 public sealed record AiProviderSettingsUpdateRequest(
     AiProviderSectionUpdate? Llm,
-    AiProviderSectionUpdate? Stt);
+    AiProviderSectionUpdate? Stt,
+    AiProviderSectionUpdate? Embedding = null);
 
 public sealed record AiProviderModelsRequest(
     string Kind,

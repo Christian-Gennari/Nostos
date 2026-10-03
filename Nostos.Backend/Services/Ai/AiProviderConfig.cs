@@ -1,14 +1,15 @@
 namespace Nostos.Backend.Services.Ai;
 
-/// <summary>The two provider surfaces the settings page owns.</summary>
+/// <summary>The provider surfaces the settings page owns.</summary>
 public enum AiProviderKind
 {
     Llm,
     Stt,
+    Embedding,
 }
 
 /// <summary>
-/// The effective configuration for one provider surface (LLM or STT): the
+/// The effective configuration for one provider surface (LLM, STT or embeddings): the
 /// stored override when set, otherwise the existing appsettings/env fallback.
 ///
 /// <see cref="IsAvailable"/> is the ONE definition of "this surface can run",
@@ -50,6 +51,21 @@ public interface IAiProviderConfigResolver
     Task<EffectiveAiProviderConfig> GetEffectiveLlmAsync(CancellationToken ct = default);
 
     Task<EffectiveAiProviderConfig> GetEffectiveSttAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// The embedding surface (issue #683). Defaults to "not configured" so a
+    /// host that predates embeddings — or one that supplies them through a
+    /// managed <c>IEmbeddingProvider</c> instead of BYOK settings — keeps
+    /// compiling and simply reports the surface as unavailable.
+    /// </summary>
+    Task<EffectiveAiProviderConfig> GetEffectiveEmbeddingAsync(CancellationToken ct = default) =>
+        Task.FromResult(new EffectiveAiProviderConfig(
+            Enabled: false,
+            BaseUrl: string.Empty,
+            Model: string.Empty,
+            ApiKeyEnvironmentVariable: string.Empty,
+            ApiKey: null,
+            KeyFromServerEnv: false));
 }
 
 /// <summary>

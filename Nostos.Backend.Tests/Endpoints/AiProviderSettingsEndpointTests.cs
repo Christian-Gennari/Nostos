@@ -67,6 +67,12 @@ public sealed class AiProviderSettingsEndpointTests
         body.Stt.BaseUrl.Should().Be(SttBaseUrl);
         body.Stt.Model.Should().Be(SttModel);
         body.Stt.HasKey.Should().BeFalse();
+
+        // Embeddings ship unconfigured: a model default, no endpoint, no key.
+        body.Embedding.Should().NotBeNull();
+        body.Embedding!.BaseUrl.Should().BeEmpty();
+        body.Embedding.Model.Should().Be("alibaba/qwen3-embedding-0-6b");
+        body.Embedding.HasKey.Should().BeFalse();
     }
 
     [Fact]

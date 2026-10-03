@@ -26,9 +26,20 @@ internal sealed class StubAiProviderConfigResolver : IAiProviderConfigResolver
         ApiKey: null,
         KeyFromServerEnv: false);
 
+    public EffectiveAiProviderConfig Embedding { get; set; } = new(
+        Enabled: true,
+        BaseUrl: "https://ai-gateway.vercel.sh/v1",
+        Model: "alibaba/qwen3-embedding-0-6b",
+        ApiKeyEnvironmentVariable: "NOSTOS_TEST_TOKEN",
+        ApiKey: null,
+        KeyFromServerEnv: false);
+
     public Task<EffectiveAiProviderConfig> GetEffectiveLlmAsync(CancellationToken ct = default) =>
         Task.FromResult(Llm);
 
     public Task<EffectiveAiProviderConfig> GetEffectiveSttAsync(CancellationToken ct = default) =>
         Task.FromResult(Stt);
+
+    public Task<EffectiveAiProviderConfig> GetEffectiveEmbeddingAsync(CancellationToken ct = default) =>
+        Task.FromResult(Embedding);
 }
