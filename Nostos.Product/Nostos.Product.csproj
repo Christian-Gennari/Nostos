@@ -26,8 +26,9 @@
 
   <!--
     #459 establishes project ownership without a mass namespace/path rewrite.
-    The 02.2 foundation batch is now physically owned by Nostos.Product and is
-    included by the SDK's default Compile items. The remaining entries below
+    The 02.2 foundation and 02.3 services/AI/assistant batches are now physically
+    owned by Nostos.Product and included by the SDK's default Compile items.
+    The remaining entries below are provider, endpoint and health sources that
     stay at their historical Backend paths during the transitional move batches,
     but Nostos.Product is their only compiling project. Nostos.Backend references
     this project and explicitly removes those remaining linked files from its
@@ -35,27 +36,6 @@
     facade.
   -->
   <ItemGroup>
-    <Compile Include="..\Nostos.Backend\Services\BookAssetFormats.cs" Link="Services\BookAssetFormats.cs" />
-    <Compile Include="..\Nostos.Backend\Services\BookLookupService.cs" Link="Services\BookLookupService.cs" />
-    <Compile Include="..\Nostos.Backend\Services\IBookAssetStorage.cs" Link="Services\IBookAssetStorage.cs" />
-    <Compile Include="..\Nostos.Backend\Services\MediaMetadataService.cs" Link="Services\MediaMetadataService.cs" />
-    <Compile Include="..\Nostos.Backend\Services\MediaTypeMap.cs" Link="Services\MediaTypeMap.cs" />
-    <Compile Include="..\Nostos.Backend\Services\NoteProcessorService.cs" Link="Services\NoteProcessorService.cs" />
-    <Compile Include="..\Nostos.Backend\Services\Knowledge\**\*.cs" Link="Services\Knowledge\%(RecursiveDir)%(Filename)%(Extension)" />
-    <Compile Include="..\Nostos.Backend\Services\Library\**\*.cs" Link="Services\Library\%(RecursiveDir)%(Filename)%(Extension)" />
-    <Compile Include="..\Nostos.Backend\Services\Notes\**\*.cs" Link="Services\Notes\%(RecursiveDir)%(Filename)%(Extension)" />
-    <Compile Include="..\Nostos.Backend\Services\Portability\**\*.cs" Link="Services\Portability\%(RecursiveDir)%(Filename)%(Extension)" />
-
-    <Compile Include="..\Nostos.Backend\Services\Ai\AiProviderConfig.cs" Link="Services\Ai\AiProviderConfig.cs" />
-    <Compile Include="..\Nostos.Backend\Services\Ai\ILlmProvider.cs" Link="Services\Ai\ILlmProvider.cs" />
-    <Compile Include="..\Nostos.Backend\Services\Ai\ISTtProvider.cs" Link="Services\Ai\ISTtProvider.cs" />
-    <Compile Include="..\Nostos.Backend\Services\Ai\IThoughtProcessor.cs" Link="Services\Ai\IThoughtProcessor.cs" />
-    <Compile Include="..\Nostos.Backend\Services\Ai\OpenAiCompatibleChatCompletions.cs" Link="Services\Ai\OpenAiCompatibleChatCompletions.cs" />
-    <Compile Include="..\Nostos.Backend\Services\Ai\SttErrorCodes.cs" Link="Services\Ai\SttErrorCodes.cs" />
-    <Compile Include="..\Nostos.Backend\Services\Ai\ThoughtProcessor.cs" Link="Services\Ai\ThoughtProcessor.cs" />
-
-    <Compile Include="..\Nostos.Backend\Integrations\Assistant\**\*.cs" Link="Integrations\Assistant\%(RecursiveDir)%(Filename)%(Extension)" />
-
     <Compile Include="..\Nostos.Backend\Providers\ProviderRegistry.cs" Link="Providers\ProviderRegistry.cs" />
     <Compile Include="..\Nostos.Backend\Providers\Contracts\**\*.cs" Link="Providers\Contracts\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\Nostos.Backend\Providers\Acquisition\AcquisitionJobStatus.cs" Link="Providers\Acquisition\AcquisitionJobStatus.cs" />
