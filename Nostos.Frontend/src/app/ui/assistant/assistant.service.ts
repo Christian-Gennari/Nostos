@@ -25,6 +25,13 @@ import {
   AssistantContext,
   AssistantContextService,
 } from './assistant-context.service';
+import {
+  projectContextualModelHistory,
+  projectPlainModelHistory,
+  projectVisibleTranscript,
+  type AssistantConversationEvent,
+  type AssistantEventDelivery,
+} from './assistant-history';
 
 export interface AssistantEntry {
   /** UI/event identity. Deliberately distinct from the logical TurnId. */
@@ -358,25 +365,6 @@ function createId(): string {
   return `id-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 }
 
-type AssistantEventDelivery = 'sending' | 'complete' | 'retryable';
-
-interface AssistantConversationEvent extends AssistantEntry {
-  /** Whether this event belongs in the model-facing history. */
-  remember: boolean;
-  /** Transport state for user turns; assistant/server events are complete. */
-  delivery: AssistantEventDelivery;
-  /** Compact app snapshot owned by the user-turn root of this event group. */
-  historyContext: AssistantHistoricalContextDto | null;
-  /** Compact source handles surfaced by the completed turn. */
-  historyEvidence: AssistantHistoricalEvidenceDto[];
-  /** Canonical immediate actions reported as completed by the backend. */
-  historyActions: string[];
-  /** Captured note identity when this turn created one (legacy v1 restore fallback). */
-  historyCapturedNoteId: string | null;
-  /** Durable, inert results for this exact TurnId. */
-  artifacts: AssistantTurnArtifact[];
-}
-
 interface PreparedAssistantTurn {
   turnId: string;
   text: string;
@@ -423,17 +411,7 @@ export class AssistantService {
    * supplies model history. UI event ids remain distinct from TurnIds.
    */
   readonly entries = computed<AssistantEntry[]>(() =>
-    this.eventLedger().map(
-      ({
-        remember: _remember,
-        delivery: _delivery,
-        historyContext: _historyContext,
-        historyEvidence: _historyEvidence,
-        historyActions: _historyActions,
-        historyCapturedNoteId: _historyCapturedNoteId,
-        ...entry
-      }) => entry,
-    ),
+    projectVisibleTranscript(this.eventLedger()),
   );
   readonly sending = signal(false);
   readonly lastError = signal<string | null>(null);
@@ -495,48 +473,13 @@ export class AssistantService {
    * completes, so the next genuinely new turn never pretends delivery was known.
    */
   readonly history = computed<AssistantHistoryMessage[]>(() =>
-    this.eventLedger()
-      .filter((event) => event.remember && event.delivery !== 'retryable')
-      .map((event) => ({
-        role: event.kind === 'user' ? 'user' : 'assistant',
-        text: event.text,
-      })),
+    projectPlainModelHistory(this.eventLedger()),
   );
 
   /** Enriched wire history; historical artifacts are reduced to inert reference metadata. */
-  private readonly contextualHistory = computed<AssistantHistoryMessage[]>(() => {
-    const ledger = this.eventLedger();
-    return ledger
-      .filter((event) => event.remember && event.delivery !== 'retryable')
-      .map((event) => {
-        const turnArtifacts = ledger
-          .filter((candidate) => candidate.turnId === event.turnId)
-          .flatMap((candidate) => candidate.artifacts ?? []);
-        const facts = historyFactsFromArtifacts(turnArtifacts);
-        return {
-          role: event.kind === 'user' ? 'user' as const : 'assistant' as const,
-          text: event.text,
-          ...(event.kind === 'user' && event.historyContext
-            ? { context: event.historyContext }
-            : {}),
-          // Turn facts travel once, on the historical user root. Assistant
-          // prose stays text-only, which keeps repeated session payloads bounded.
-          ...(event.kind === 'user' && event.historyEvidence.length > 0
-            ? { evidence: event.historyEvidence }
-            : {}),
-          ...(event.kind === 'user' && facts.evidenceHandles.length > 0
-            ? { evidenceHandles: facts.evidenceHandles }
-            : {}),
-          ...(event.kind === 'user'
-            && (facts.actions.length > 0 ? facts.actions : event.historyActions).length > 0
-            ? { actions: facts.actions.length > 0 ? facts.actions : event.historyActions }
-            : {}),
-          ...(event.kind === 'user' && (facts.capturedNoteId ?? event.historyCapturedNoteId)
-            ? { capturedNoteId: facts.capturedNoteId ?? event.historyCapturedNoteId }
-            : {}),
-        };
-      });
-  });
+  private readonly contextualHistory = computed<AssistantHistoryMessage[]>(() =>
+    projectContextualModelHistory(this.eventLedger()),
+  );
 
   /**
    * The note the last turn captured, if any (issue #262 §8). Its raw transcript
@@ -1980,34 +1923,6 @@ function cloneEvidence(evidence: AssistantEvidenceReferenceDto): AssistantEviden
     ...evidence,
     handle: { ...evidence.handle },
     locators: evidence.locators?.map((locator) => ({ ...locator })) ?? [],
-  };
-}
-
-function historyFactsFromArtifacts(artifacts: readonly AssistantTurnArtifact[]): {
-  evidenceHandles: AssistantEvidenceHandleDto[];
-  actions: string[];
-  capturedNoteId: string | null;
-} {
-  const evidenceHandles = artifacts
-    .filter((artifact): artifact is Extract<AssistantTurnArtifact, { kind: 'evidence' }> =>
-      artifact.kind === 'evidence')
-    .map((artifact) => ({ ...artifact.evidence.handle }));
-  const actions = artifacts
-    .flatMap((artifact) => {
-      if (artifact.kind === 'action') return [artifact.capability];
-      if (artifact.kind === 'destructive-result' && artifact.outcome === 'applied')
-        return artifact.capabilities;
-      return [];
-    });
-  const capturedNoteId = artifacts.find(
-    (artifact): artifact is Extract<AssistantTurnArtifact, { kind: 'capture' }> =>
-      artifact.kind === 'capture',
-  )?.noteId ?? null;
-
-  return {
-    evidenceHandles: uniqueBy(evidenceHandles, evidenceHandleKey),
-    actions: [...new Set(actions)],
-    capturedNoteId,
   };
 }
 
