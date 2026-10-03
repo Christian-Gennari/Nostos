@@ -1,0 +1,95 @@
+name: Scheduled weekly release
+
+on:
+  schedule:
+    # Run every Sunday at 18:00 UTC
+    - cron: '0 18 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Publish weekly CalVer release
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.12"
+
+      - name: Determine release range and generate notes
+        id: notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          # Find the latest CalVer tag (vYYYY.MM.DD[.N]) on main
+          # If no CalVer tag exists yet, fall back to the initial baseline pin
+          LATEST_TAG=$(git tag -l 'v[0-9][0-9][0-9][0-9].[0-9][0-9].[0-9][0-9]*' --sort=-v:refname | head -n 1 || true)
+          if [ -z "$LATEST_TAG" ]; then
+            BASE_REF="7db4e3ddd484f1c56486d92a24475c6df544c570"
+          else
+            BASE_REF="$LATEST_TAG"
+          fi
+
+          HEAD_REF=$(git rev-parse HEAD)
+          echo "Base ref: $BASE_REF"
+          echo "Head ref: $HEAD_REF"
+
+          # Compute today's CalVer tag
+          TODAY=$(date -u +'%Y.%m.%d')
+          CALVER="v${TODAY}"
+          SUFFIX=1
+          while git rev-parse -q --verify "refs/tags/${CALVER}" >/dev/null; do
+            CALVER="v${TODAY}.${SUFFIX}"
+            SUFFIX=$((SUFFIX + 1))
+          done
+          echo "Target version: $CALVER"
+
+          # Generate notes to a temporary file
+          python3 scripts/generate-release-notes.py \
+            --from "$BASE_REF" \
+            --to "$HEAD_REF" \
+            --version "$CALVER" > /tmp/release-notes.md
+
+          # Check if there are actual reader-facing changes (beyond headers/empty notice)
+          if grep -q "No reader-facing changes in this range." /tmp/release-notes.md; then
+            echo "No reader-facing changes found in range. Skipping release."
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "has_changes=true" >> "$GITHUB_OUTPUT"
+          echo "version=$CALVER" >> "$GITHUB_OUTPUT"
+          echo "head_ref=$HEAD_REF" >> "$GITHUB_OUTPUT"
+
+      - name: Publish tag and GitHub Release
+        if: steps.notes.outputs.has_changes == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.notes.outputs.version }}"
+          HEAD_REF="${{ steps.notes.outputs.head_ref }}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          echo "Tagging $HEAD_REF as $VERSION..."
+          git tag -a "$VERSION" "$HEAD_REF" -m "Nostos $VERSION"
+          git push origin "refs/tags/$VERSION"
+
+          echo "Creating GitHub Release $VERSION..."
+          gh release create "$VERSION" \
+            --verify-tag \
+            --title "Nostos $VERSION" \
+            --notes-file /tmp/release-notes.md

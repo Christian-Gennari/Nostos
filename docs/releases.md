@@ -7,10 +7,11 @@ has no suffix; further releases are `.1`, `.2`, and so on, for example
 dates. A tag identifies one immutable revision on `main`; never move a published
 tag. CalVer records when a release shipped, not API compatibility.
 
-Merges remain continuous. A merge is not automatically a release. The maintainer
-chooses a deployment revision after public product CI passes and publishes its
-tag and notes. The existing `latest` and `selfhosted-sha-<commit>` container tags
-keep their current meaning; this spike does not add CalVer container aliases.
+Merges remain continuous. Releases are published automatically on a weekly
+schedule using CalVer tags and GitHub Releases, or manually when cutting an off-schedule release.
+The maintainer can also trigger the release workflow on-demand via `workflow_dispatch`.
+The existing `latest` and `selfhosted-sha-<commit>` container tags
+keep their current meaning.
 
 ## Generator choice
 
@@ -69,77 +70,34 @@ or release tooling, are omitted. A `release-note:skip`, `release-note:none`, or
 `skip-changelog` label explicitly suppresses an entry. Empty sections are omitted.
 Every GitHub PR entry links to its source.
 
-## Preview and update
+## Automated weekly release workflow
 
-From the repository root:
+A GitHub Actions workflow (`.github/workflows/scheduled-release.yml`) runs weekly
+(Sundays at 18:00 UTC) and can also be triggered manually via `workflow_dispatch`.
+
+It executes the following steps:
+1. Determines the latest CalVer tag (or fallback baseline pin).
+2. Checks if any new reader-facing changes have landed on `main`.
+3. If no changes exist, it exits cleanly without publishing an empty release.
+4. Generates reader-facing release notes using `scripts/generate-release-notes.py`.
+5. Computes the release version `vYYYY.MM.DD` (or `.1`, `.2` for same-day releases).
+6. Creates and pushes the tag, and publishes the GitHub Release with the notes.
+
+## Manual release
+
+To preview or publish a release manually:
 
 ```bash
 git fetch origin --tags
 python3 scripts/generate-release-notes.py \
-  --from v2026.10.01 --to <target-main-sha> --version v2026.10.02
+  --from <previous-tag-or-pin> --to <target-main-sha> --version vYYYY.MM.DD > /tmp/release-notes.md
 
-# After reviewing the preview, write the same range on a release-notes worktree.
-python3 scripts/generate-release-notes.py \
-  --from v2026.10.01 --to <target-main-sha> --version v2026.10.02 \
-  --write CHANGELOG.md
+# Publish tag and release
+git tag -a vYYYY.MM.DD <target-main-sha> -m "Nostos vYYYY.MM.DD"
+git push origin refs/tags/vYYYY.MM.DD
+gh release create vYYYY.MM.DD --verify-tag \
+  --title "Nostos vYYYY.MM.DD" --notes-file /tmp/release-notes.md
 ```
-
-Writing prepends the version and keeps older releases. Re-running that version
-replaces its section rather than duplicating it. Writing a dated version replaces
-the `Unreleased` draft; ensure the chosen range includes all draft changes before
-writing. The range pins are recorded in an HTML comment for reproducibility.
-Stdout contains only the generated Markdown section and can be redirected to a
-notes file for GitHub Releases or a future website / What's New view.
-
-For an offline clone, explicitly choose `--source git`. This reads non-merge
-commits across the same range, including commits from merged branches, and
-deduplicates identical descriptions. It lacks PR labels and PR summaries, so the
-wording and granularity can differ. GitHub failures never silently switch modes.
-An optional `--repo owner/repo` avoids repository inference and adds a compare
-link in git mode too.
-
-## Publish a release
-
-1. Choose a full target SHA on `origin/main` with passing CI and the next unused
-   CalVer for the UTC deployment date. Use the preceding release tag as `--from`.
-2. Create an isolated worktree with `agent-worktree new release-notes-<date>`.
-   Preview, review, and write the changelog. Commit it, push, and open a PR. The
-   human reviews and merges; agents do not merge or enable auto-merge.
-3. Fetch the merged `main`, run CI for that exact revision, and deploy it. The
-   notes PR may add only documentation / release tooling after the chosen target;
-   if product changes intervened, regenerate notes through the actual deployment
-   revision before releasing.
-4. The maintainer tags the **actual deployed main revision**, not the notes branch:
-
-   ```bash
-   git fetch origin --tags
-   git merge-base --is-ancestor <deployed-main-sha> origin/main
-   git tag -a v2026.10.02 <deployed-main-sha> -m "Nostos v2026.10.02"
-   git push origin refs/tags/v2026.10.02
-   python3 scripts/generate-release-notes.py \
-     --from v2026.10.01 --to v2026.10.02 --version v2026.10.02 > /tmp/nostos-release-notes.md
-   gh release create v2026.10.02 --verify-tag \
-     --title "Nostos v2026.10.02" --notes-file /tmp/nostos-release-notes.md
-   ```
-
-The committed changelog and release section should describe the same product
-changes; the notes-only commit is filtered from the GitHub release output.
-Use the immutable full revision when a downstream deployment updates its pin;
-the public generator accepts old/new pins without requiring private-repo access.
-
-## Initial snapshot and checks
-
-There were no CalVer tags or published GitHub releases when this spike ran. The
-initial `CHANGELOG.md` is therefore an **Unreleased** snapshot of recent merges,
-not an assertion that a release shipped. It covers the commits after
-`7db4e3ddd484f1c56486d92a24475c6df544c570` through
-`b2c48819df931dbb61756062ea65cf78f0e39167` (29 September–2 October 2026).
-For the first release, use that same baseline pin to retain the seeded changes,
-then use published CalVer tags thereafter. The initial scope is deliberately
-recent history rather than a retroactive account of every past merge.
-Its 16 entries were generated from merged PRs, then edited against those PRs for
-reader-facing wording. Re-running the range replaces that editorial pass with
-the current PR summaries or titles; older release sections retain their wording.
 
 ```bash
 python3 -m unittest discover -s scripts/tests -v
