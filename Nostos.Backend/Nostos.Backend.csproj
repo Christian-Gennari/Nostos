@@ -33,33 +33,13 @@
 
   <!--
     Canonical product source is compiled by Nostos.Product. The 02.2 foundation
-    batch has moved physically into that project. The remaining rules below
-    cover product-owned files that still reside at historical Backend paths
-    during the transitional move batches; do not compile a second copy into
-    the host assembly.
+    and 02.3 services/AI/assistant batches have moved physically into that
+    project. The remaining rules below cover provider, endpoint and health
+    sources that still reside at historical Backend paths during the
+    transitional move batches; do not compile a second copy into the host
+    assembly.
   -->
   <ItemGroup>
-    <Compile Remove="Services\BookAssetFormats.cs" />
-    <Compile Remove="Services\BookLookupService.cs" />
-    <Compile Remove="Services\IBookAssetStorage.cs" />
-    <Compile Remove="Services\MediaMetadataService.cs" />
-    <Compile Remove="Services\MediaTypeMap.cs" />
-    <Compile Remove="Services\NoteProcessorService.cs" />
-    <Compile Remove="Services\Knowledge\**\*.cs" />
-    <Compile Remove="Services\Library\**\*.cs" />
-    <Compile Remove="Services\Notes\**\*.cs" />
-    <Compile Remove="Services\Portability\**\*.cs" />
-
-    <Compile Remove="Services\Ai\AiProviderConfig.cs" />
-    <Compile Remove="Services\Ai\ILlmProvider.cs" />
-    <Compile Remove="Services\Ai\ISTtProvider.cs" />
-    <Compile Remove="Services\Ai\IThoughtProcessor.cs" />
-    <Compile Remove="Services\Ai\OpenAiCompatibleChatCompletions.cs" />
-    <Compile Remove="Services\Ai\SttErrorCodes.cs" />
-    <Compile Remove="Services\Ai\ThoughtProcessor.cs" />
-
-    <Compile Remove="Integrations\Assistant\**\*.cs" />
-
     <Compile Remove="Providers\ProviderRegistry.cs" />
     <Compile Remove="Providers\Contracts\**\*.cs" />
     <Compile Remove="Providers\Acquisition\AcquisitionJobStatus.cs" />
