@@ -28,6 +28,18 @@ import { IReader, ReaderProgress, ReaderSourceTarget, TocItem } from '../reader.
 import { isInteractiveTarget, isTypingTarget, pageActionForKey } from '../reader-keyboard';
 import { AssistantContextService } from '../../ui/assistant/assistant-context.service';
 
+import {
+  normalizeEpubHrefForComparison,
+  rangeAtNormalizedResourceOffset,
+  resolveGroundedEpubResourceHref,
+  type EpubSpineSource,
+} from './epub-grounded-source';
+
+export {
+  resolveGroundedEpubResourceHref,
+  type EpubSpineSource,
+} from './epub-grounded-source';
+
 /**
  * Rendition theme names. Both Nostos normalizations are registered once per
  * rendition; the selected one always mirrors the app theme (ThemeService),
@@ -315,68 +327,6 @@ export function progressLabel(percent: number, chapter: string | null): string {
   return chapter ? `${percent}% • ${chapter}` : `${percent}%`;
 }
 
-
-export interface EpubSpineSource {
-  href: string;
-  index: number;
-}
-
-/**
- * Resolve a stored grounded EPUB href against epub.js's OPF-relative spine.
- *
- * New v2 book-text indexes store the manifest href directly. Older indexes
- * stored the archive-root path, so a nested OPF can leave a deterministic
- * directory prefix in front of the href epub.js knows. Comparison is path-only
- * and exact/suffix based; ambiguity fails closed and a supplied spine index is
- * treated as an additional provenance constraint, never as permission to guess.
- */
-export function resolveGroundedEpubResourceHref(
-  storedHref: string,
-  storedSpineIndex: number | null | undefined,
-  spineItems: readonly EpubSpineSource[],
-): string | null {
-  const stored = normalizeEpubHrefForComparison(storedHref);
-  if (!stored) return null;
-
-  const matches = spineItems.filter((item) => {
-    const candidate = normalizeEpubHrefForComparison(item.href);
-    if (!candidate) return false;
-    return (
-      candidate === stored ||
-      stored.endsWith(`/${candidate}`) ||
-      candidate.endsWith(`/${stored}`)
-    );
-  });
-
-  if (storedSpineIndex !== null && storedSpineIndex !== undefined) {
-    const indexed = matches.filter((item) => item.index === storedSpineIndex);
-    return indexed.length === 1 ? indexed[0].href : null;
-  }
-
-  return matches.length === 1 ? matches[0].href : null;
-}
-
-function normalizeEpubHrefForComparison(value: string): string {
-  const pathOnly = value.split('#')[0].split('?')[0].replace(/\\/g, '/');
-  let decoded = pathOnly;
-  try {
-    decoded = decodeURIComponent(pathOnly);
-  } catch {
-    // A malformed escape should not make source navigation throw. Comparison
-    // can still use the literal path and fail closed if it does not match.
-  }
-
-  const parts: string[] = [];
-  for (const part of decoded.split('/')) {
-    if (!part || part === '.') continue;
-    if (part === '..') {
-      if (parts.length > 0) parts.pop();
-      continue;
-    }
-    parts.push(part);
-  }
-  return parts.join('/');
-}
 
 /**
  * Quiet window used to decide that epub.js has finished re-laying-out after a
@@ -728,7 +678,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
         return;
       }
 
-      const range = this.rangeAtNormalizedResourceOffset(
+      const range = rangeAtNormalizedResourceOffset(
         content.document,
         Math.max(0, target.epubTextOffset),
       );
@@ -778,77 +728,6 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     if (error !== undefined) {
       console.warn('Could not navigate to the grounded EPUB source:', error);
     }
-  }
-
-  private rangeAtNormalizedResourceOffset(document: Document, targetOffset: number): Range | null {
-    const selector = 'h1,h2,h3,h4,h5,h6,p,li,blockquote,pre,figcaption,dt,dd,aside';
-    const ignored = 'script,style,nav,svg,math';
-    const blocks = Array.from(document.body?.querySelectorAll(selector) ?? []).filter((element) => {
-      if (element.closest(ignored)) return false;
-      return !element.parentElement?.closest(selector);
-    });
-
-    let resourceOffset = 0;
-    for (const block of blocks) {
-      const normalized = this.normalizeSourceText(block.textContent ?? '');
-      if (!normalized) continue;
-
-      const end = resourceOffset + normalized.length;
-      if (targetOffset <= end) {
-        const local = Math.max(0, Math.min(normalized.length - 1, targetOffset - resourceOffset));
-        return this.rangeAtNormalizedElementOffset(document, block, local);
-      }
-      resourceOffset = end + 1;
-    }
-    return null;
-  }
-
-  private rangeAtNormalizedElementOffset(
-    document: Document,
-    element: Element,
-    targetOffset: number,
-  ): Range | null {
-    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
-    let normalizedOffset = 0;
-    let pendingSpace = false;
-    let node = walker.nextNode();
-
-    while (node) {
-      const text = node.textContent ?? '';
-      for (let rawOffset = 0; rawOffset < text.length; rawOffset++) {
-        const char = text[rawOffset];
-        if (/\s/.test(char)) {
-          pendingSpace = true;
-          continue;
-        }
-
-        if (pendingSpace && normalizedOffset > 0) {
-          if (normalizedOffset >= targetOffset) {
-            const range = document.createRange();
-            range.setStart(node, rawOffset);
-            range.collapse(true);
-            return range;
-          }
-          normalizedOffset++;
-          pendingSpace = false;
-        }
-
-        if (normalizedOffset >= targetOffset) {
-          const range = document.createRange();
-          range.setStart(node, rawOffset);
-          range.collapse(true);
-          return range;
-        }
-        normalizedOffset++;
-      }
-      node = walker.nextNode();
-    }
-
-    return null;
-  }
-
-  private normalizeSourceText(value: string): string {
-    return value.replace(/\r\n?/g, '\n').replace(/[ \t\f\v]+/g, ' ').replace(/ *\n+ */g, '\n').trim();
   }
 
   // --- Grounded source navigation protection ---
@@ -1060,7 +939,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
 
     for (const content of candidates) {
       if (target.offset !== null) {
-        const range = this.rangeAtNormalizedResourceOffset(
+        const range = rangeAtNormalizedResourceOffset(
           content.document,
           Math.max(0, target.offset),
         );
