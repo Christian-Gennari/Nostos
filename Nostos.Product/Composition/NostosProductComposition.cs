@@ -107,9 +107,11 @@ public static class NostosProductComposition
         services.TryAddScoped<IBookTextIngestionScheduler, NoOpBookTextIngestionScheduler>();
         services.TryAddScoped<IBookTextLifecycle, BookTextLifecycle>();
         services.AddScoped<BookTextIngestionEngine>();
-        // Embeddings are optional: a host that supplies no provider gets one
-        // that reports no active model.
+        // Embeddings are optional: with no host-supplied provider or vector
+        // store these fallbacks keep the embedding pass a no-op.
         services.TryAddSingleton<IEmbeddingProvider, NoOpEmbeddingProvider>();
+        services.TryAddScoped<IBookTextEmbeddingIndex, NoOpBookTextEmbeddingIndex>();
+        services.AddScoped<BookTextEmbeddingEngine>();
         services.AddScoped<IBookTextSearchService, BookTextSearchService>();
         services.AddScoped<BookTextBackfillService>();
 

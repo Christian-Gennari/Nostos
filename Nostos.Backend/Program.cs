@@ -43,7 +43,9 @@ builder.Services.AddSingleton<
 
 // SelfHosted owns the concrete local book-text persistence boundary. Register
 // these before AddNostosProduct so its TryAdd no-op fallbacks are never selected.
-builder.Services.AddScoped<IBookTextIndex, SqliteBookTextIndex>();
+builder.Services.AddScoped<SqliteBookTextIndex>();
+builder.Services.AddScoped<IBookTextIndex>(sp => sp.GetRequiredService<SqliteBookTextIndex>());
+builder.Services.AddScoped<IBookTextEmbeddingIndex>(sp => sp.GetRequiredService<SqliteBookTextIndex>());
 builder.Services.AddScoped<IBookDerivedArtifactStorage, FileBookTextArtifactStorage>();
 builder.Services.AddScoped<IBookTextIngestionScheduler, BookTextIngestionScheduler>();
 

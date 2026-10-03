@@ -114,7 +114,7 @@ public sealed class FileBookTextArtifactStorage(
         string.Concat(value.Select(ch => char.IsLetterOrDigit(ch) || ch is '-' or '_' or '.' ? ch : '_'));
 }
 
-public sealed class SqliteBookTextIndex(
+public sealed partial class SqliteBookTextIndex(
     IDbContextFactory<NostosDbContext> contexts) : IBookTextIndex
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
@@ -170,6 +170,8 @@ public sealed class SqliteBookTextIndex(
                 CREATE VIRTUAL TABLE IF NOT EXISTS BookTextChunksFts
                 USING fts5(ChunkId UNINDEXED, BookId UNINDEXED, Text, HeadingPath, tokenize='unicode61');
                 """, ct);
+
+            await EnsureEmbeddingSchemaAsync(db, ct);
         }
         finally
         {
@@ -531,6 +533,8 @@ public sealed class SqliteBookTextIndex(
 
     private static async Task DeleteChunksAsync(NostosDbContext db, Guid bookId, CancellationToken ct)
     {
+        // Vectors are derived from chunks: they never outlive the chunk they embed.
+        await ExecuteAsync(db, "DELETE FROM BookTextChunkEmbeddings WHERE BookId=@bookId;", ct, ("@bookId", bookId.ToString("D")));
         await ExecuteAsync(db, "DELETE FROM BookTextChunksFts WHERE BookId=@bookId;", ct, ("@bookId", bookId.ToString("D")));
         await ExecuteAsync(db, "DELETE FROM BookTextChunks WHERE BookId=@bookId;", ct, ("@bookId", bookId.ToString("D")));
     }
