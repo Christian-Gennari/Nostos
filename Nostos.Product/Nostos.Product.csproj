@@ -26,29 +26,15 @@
 
   <!--
     #459 establishes project ownership without a mass namespace/path rewrite.
-    These files remain at their historical paths for this behavior-preserving
-    wave, but Nostos.Product is now their only compiling project. Nostos.Backend
-    references this project and explicitly removes the same files from its
+    The 02.2 foundation batch is now physically owned by Nostos.Product and is
+    included by the SDK's default Compile items. The remaining entries below
+    stay at their historical Backend paths during the transitional move batches,
+    but Nostos.Product is their only compiling project. Nostos.Backend references
+    this project and explicitly removes those remaining linked files from its
     default Compile items, so there is one implementation rather than a copied
-    facade. Later physical moves can therefore be mechanical.
+    facade.
   -->
   <ItemGroup>
-    <Compile Include="..\Nostos.Backend\Configuration\AssistantOptions.cs" Link="Configuration\AssistantOptions.cs" />
-    <Compile Include="..\Nostos.Backend\Configuration\DeploymentConfiguration.cs" Link="Configuration\DeploymentConfiguration.cs" />
-    <Compile Include="..\Nostos.Backend\Configuration\LibraryReceiptRetentionOptions.cs" Link="Configuration\LibraryReceiptRetentionOptions.cs" />
-    <Compile Include="..\Nostos.Backend\Configuration\OpdsOptions.cs" Link="Configuration\OpdsOptions.cs" />
-    <Compile Include="..\Nostos.Backend\Configuration\SpeechOptions.cs" Link="Configuration\SpeechOptions.cs" />
-
-    <Compile Include="..\Nostos.Backend\Data\NostosDbContext.cs" Link="Data\NostosDbContext.cs" />
-    <Compile Include="..\Nostos.Backend\Data\UtcDateTimeValueConverters.cs" Link="Data\UtcDateTimeValueConverters.cs" />
-    <Compile Include="..\Nostos.Backend\Data\Interfaces\**\*.cs" Link="Data\Interfaces\%(RecursiveDir)%(Filename)%(Extension)" />
-    <Compile Include="..\Nostos.Backend\Data\Models\**\*.cs" Link="Data\Models\%(RecursiveDir)%(Filename)%(Extension)" />
-    <Compile Include="..\Nostos.Backend\Data\Repositories\**\*.cs" Link="Data\Repositories\%(RecursiveDir)%(Filename)%(Extension)" />
-
-    <Compile Include="..\Nostos.Backend\Mapping\**\*.cs" Link="Mapping\%(RecursiveDir)%(Filename)%(Extension)" />
-    <Compile Include="..\Nostos.Backend\Search\**\*.cs" Link="Search\%(RecursiveDir)%(Filename)%(Extension)" />
-    <Compile Include="..\Nostos.Backend\Serialization\**\*.cs" Link="Serialization\%(RecursiveDir)%(Filename)%(Extension)" />
-
     <Compile Include="..\Nostos.Backend\Services\BookAssetFormats.cs" Link="Services\BookAssetFormats.cs" />
     <Compile Include="..\Nostos.Backend\Services\BookLookupService.cs" Link="Services\BookLookupService.cs" />
     <Compile Include="..\Nostos.Backend\Services\IBookAssetStorage.cs" Link="Services\IBookAssetStorage.cs" />
