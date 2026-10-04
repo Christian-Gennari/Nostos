@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Nostos.Backend.Data;
 using Nostos.Backend.Data.Models;
 using Nostos.Backend.Services.Portability;
+using Nostos.Backend.Services.Portability.Migration;
 using Xunit;
 
 namespace Nostos.Backend.Tests.Data;
@@ -726,6 +727,213 @@ public sealed class PostgreSqlCompatibilitySpikeTests
             await staleSave.Should().ThrowAsync<DbUpdateConcurrencyException>(
                 "the integer Version concurrency token must be enforced by PostgreSQL");
         }
+
+        // --- Slice 5: EfMigrationJobStore on the real Npgsql provider ---
+        // The same contract-critical guarded statements the SQLite store tests
+        // exercise must translate and run on PostgreSQL: idempotent create,
+        // conditional lease acquire/steal-after-expiry, lease-guarded progress
+        // and transition, direction-aware invalid transitions, cancel, retry
+        // and recovery discovery.
+        var storeClock = new ManualTimeProvider(
+            new DateTimeOffset(2026, 10, 4, 12, 0, 0, TimeSpan.Zero));
+        var storeKey = "pg-store-job-" + Guid.NewGuid().ToString("N");
+
+        await using (var db = new NostosDbContext(options))
+        {
+            var store = new EfMigrationJobStore(db, storeClock);
+
+            var created = await store.CreateAsync(
+                MigrationDirection.Import,
+                storeKey,
+                CancellationToken.None);
+            created.IsConflict.Should().BeFalse();
+            created.WasReplay.Should().BeFalse();
+            created.Resource!.State.Should().Be(MigrationJobState.Pending);
+            var storeJobId = created.Resource.Id;
+
+            var replay = await store.CreateAsync(
+                MigrationDirection.Import,
+                storeKey,
+                CancellationToken.None);
+            replay.WasReplay.Should().BeTrue();
+            replay.Resource!.Id.Should().Be(storeJobId);
+
+            var conflict = await store.CreateAsync(
+                MigrationDirection.Export,
+                storeKey,
+                CancellationToken.None);
+            conflict.IsConflict.Should().BeTrue();
+            conflict.Conflict!.Kind.Should().Be(
+                MigrationIdempotencyConflictKind.KeyReusedWithDifferentPayload);
+
+            // A real two-creator race exercises the PostgreSQL unique-violation
+            // detection and replay classification on the provider itself.
+            var raceKey = "pg-store-race-" + Guid.NewGuid().ToString("N");
+            await using (var firstRaceDb = new NostosDbContext(options))
+            await using (var secondRaceDb = new NostosDbContext(options))
+            {
+                var firstRaceStore = new EfMigrationJobStore(firstRaceDb, storeClock);
+                var secondRaceStore = new EfMigrationJobStore(secondRaceDb, storeClock);
+                var raceResults = await Task.WhenAll(
+                    firstRaceStore.CreateAsync(
+                        MigrationDirection.Import,
+                        raceKey,
+                        CancellationToken.None),
+                    secondRaceStore.CreateAsync(
+                        MigrationDirection.Import,
+                        raceKey,
+                        CancellationToken.None));
+
+                raceResults.Count(result => result.IsConflict).Should().Be(0);
+                raceResults.Count(result => !result.WasReplay).Should().Be(1);
+                raceResults.Count(result => result.WasReplay).Should().Be(1);
+            }
+
+            var token = await store.TryAcquireLeaseAsync(
+                storeJobId,
+                TimeSpan.FromMinutes(5),
+                CancellationToken.None);
+            token.Should().NotBeNull("the first guarded lease acquisition must win on PostgreSQL");
+
+            var secondAcquire = await store.TryAcquireLeaseAsync(
+                storeJobId,
+                TimeSpan.FromMinutes(5),
+                CancellationToken.None);
+            secondAcquire.Should().BeNull("an unexpired lease must block on PostgreSQL");
+
+            await store.UpdateProgressAsync(
+                storeJobId,
+                new MigrationProgress(MigrationProgressPhase.Preparing, 5, 10),
+                token!,
+                CancellationToken.None);
+
+            var preparing = await store.TransitionAsync(
+                storeJobId,
+                MigrationJobState.Preparing,
+                token!,
+                CancellationToken.None);
+            preparing.State.Should().Be(MigrationJobState.Preparing);
+
+            var wrongTokenRenew = await store.RenewLeaseAsync(
+                storeJobId,
+                "pg-wrong-token",
+                TimeSpan.FromMinutes(5),
+                CancellationToken.None);
+            wrongTokenRenew.Should().BeFalse("a superseded token must never renew");
+
+            var renewed = await store.RenewLeaseAsync(
+                storeJobId,
+                token!,
+                TimeSpan.FromMinutes(5),
+                CancellationToken.None);
+            renewed.Should().BeTrue("the current owner must renew on PostgreSQL");
+
+            var illegalTransition = () => store.TransitionAsync(
+                storeJobId,
+                MigrationJobState.Completed,
+                token!,
+                CancellationToken.None);
+            var illegalException =
+                await illegalTransition.Should().ThrowAsync<MigrationJobStoreException>();
+            illegalException.Which.Code.Should().Be(
+                MigrationJobStoreErrorCodes.InvalidState,
+                "import Preparing -> Completed is not an allowed transition");
+
+            storeClock.Advance(TimeSpan.FromMinutes(6));
+            var stolen = await store.TryAcquireLeaseAsync(
+                storeJobId,
+                TimeSpan.FromMinutes(5),
+                CancellationToken.None);
+            stolen.Should().NotBeNull("an expired lease must be reclaimable on PostgreSQL");
+            stolen.Should().NotBe(token);
+
+            var staleRenew = await store.RenewLeaseAsync(
+                storeJobId,
+                token!,
+                TimeSpan.FromMinutes(5),
+                CancellationToken.None);
+            staleRenew.Should().BeFalse("the superseded owner must not renew after takeover");
+
+            await store.ReleaseLeaseAsync(storeJobId, stolen!, CancellationToken.None);
+            (await store.GetAsync(storeJobId, CancellationToken.None))!
+                .LeaseToken.Should().BeNull();
+
+            await store.CancelAsync(
+                storeJobId,
+                new MigrationCancelRequest("pg spike"),
+                CancellationToken.None);
+            (await store.GetAsync(storeJobId, CancellationToken.None))!
+                .State.Should().Be(MigrationJobState.Cancelled);
+
+            var retried = await store.RetryAsync(
+                storeJobId,
+                new MigrationRetryRequest(),
+                CancellationToken.None);
+            retried.State.Should().Be(MigrationJobState.Pending);
+
+            var boundaryCreated = await store.CreateAsync(
+                MigrationDirection.Import,
+                "pg-store-boundary-" + Guid.NewGuid().ToString("N"),
+                CancellationToken.None);
+            var boundaryId = boundaryCreated.Resource!.Id;
+            var boundaryToken = await store.TryAcquireLeaseAsync(
+                boundaryId,
+                TimeSpan.FromMinutes(5),
+                CancellationToken.None);
+            boundaryToken.Should().NotBeNull();
+            await store.TransitionAsync(
+                boundaryId,
+                MigrationJobState.Preparing,
+                boundaryToken!,
+                CancellationToken.None);
+            await store.TransitionAsync(
+                boundaryId,
+                MigrationJobState.Transferring,
+                boundaryToken!,
+                CancellationToken.None);
+            await store.TransitionAsync(
+                boundaryId,
+                MigrationJobState.Validating,
+                boundaryToken!,
+                CancellationToken.None);
+            await store.TransitionAsync(
+                boundaryId,
+                MigrationJobState.ReadyToActivate,
+                boundaryToken!,
+                CancellationToken.None);
+            await store.TransitionAsync(
+                boundaryId,
+                MigrationJobState.Activating,
+                boundaryToken!,
+                CancellationToken.None);
+
+            var cannotCancel = () => store.CancelAsync(
+                boundaryId,
+                new MigrationCancelRequest(),
+                CancellationToken.None);
+            var cannotCancelException =
+                await cannotCancel.Should().ThrowAsync<MigrationJobStoreException>();
+            cannotCancelException.Which.Code.Should().Be(
+                MigrationJobStoreErrorCodes.CannotCancel,
+                "the activation boundary is a point of no return");
+
+            storeClock.Advance(TimeSpan.FromMinutes(6));
+            var recovery = await store.GetJobsNeedingRecoveryAsync(
+                storeClock.GetUtcNow(),
+                CancellationToken.None);
+            recovery.Should().Contain(
+                job => job.Id == boundaryId,
+                "a leased activating job past its lease expiry must be recoverable");
+        }
+    }
+
+    private sealed class ManualTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        private DateTimeOffset _utcNow = utcNow;
+
+        public override DateTimeOffset GetUtcNow() => _utcNow;
+
+        public void Advance(TimeSpan delta) => _utcNow = _utcNow.Add(delta);
     }
 
     private static async Task<long> ScalarCountAsync(NostosDbContext db, string sql)
