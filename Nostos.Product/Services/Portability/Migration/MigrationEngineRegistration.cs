@@ -11,6 +11,9 @@ public static class MigrationEngineRegistration
         services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton<MigrationJobCancellationRegistry>();
         services.AddSingleton<MigrationProcessingSlots>();
+        services.AddSingleton<MigrationFileMutex>();
+        services.AddScoped<EfMigrationJobStore>();
+        services.AddScoped<IMigrationJobStore, MigrationEngineJobStore>();
         services.AddScoped<FileMigrationUploadStore>();
         services.AddScoped<MigrationTransferCleanup>();
         services.AddScoped<SelfHostedMigrationTransferService>();
@@ -20,7 +23,7 @@ public static class MigrationEngineRegistration
         services.AddScoped<MigrationJobProcessor>();
         services.AddHostedService(s => new MigrationJobWorker(s.GetRequiredService<IServiceScopeFactory>(),
             s.GetRequiredService<TimeProvider>(), s.GetRequiredService<MigrationJobCancellationRegistry>(),
-            s.GetRequiredService<MigrationProcessingSlots>(), s.GetRequiredService<Microsoft.Extensions.Logging.ILogger<MigrationJobWorker>>()));
+            s.GetRequiredService<MigrationProcessingSlots>(), s.GetRequiredService<Microsoft.Extensions.Logging.ILogger<MigrationJobWorker>>(), s.GetRequiredService<IMigrationMaintenanceGate>()));
         services.AddHostedService<MigrationTransferCleanupWorker>();
         return services;
     }

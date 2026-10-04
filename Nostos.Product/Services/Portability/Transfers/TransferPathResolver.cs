@@ -130,6 +130,16 @@ public sealed class TransferPathResolver
         token is { Length: > 0 and <= MaxTokenLength }
         && token.All(static c => c is >= '0' and <= '9' or >= 'a' and <= 'f');
 
+    /// <summary>Persistent mutex files are never unlinked, avoiding split locks on different inodes.</summary>
+    public string GetMigrationLockPath(Guid scopeId) =>
+        Path.Combine(_rootPath, "locks", FormatScopeId(scopeId, nameof(scopeId)) + ".lock");
+
+    public string GetDetachedScopesRoot() => Path.Combine(_rootPath, "detached");
+
+    /// <summary>A generated, detached cleanup scope, never reused by a running job.</summary>
+    public string GetDetachedScopeDirectory(Guid deletionId) =>
+        Path.Combine(GetDetachedScopesRoot(), FormatScopeId(deletionId, nameof(deletionId)));
+
     public string GetUploadsRoot() => Path.Combine(_rootPath, UploadsDirectoryName);
 
     public string GetUploadSessionDirectory(Guid sessionId) =>

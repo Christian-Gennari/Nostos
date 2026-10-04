@@ -67,7 +67,7 @@ public sealed class MigrationWorkerEngineTests
         await h.InitializeAsync(); var id = await h.NewJobAsync(MigrationDirection.Export);
         var scopeFactory = h.Provider.GetRequiredService<IServiceScopeFactory>();
         var workers = Enumerable.Range(0, 4).Select(_ => new MigrationJobWorker(scopeFactory, h.Clock,
-            new MigrationJobCancellationRegistry(), new MigrationProcessingSlots(Options.Create(h.Settings)), NullLogger<MigrationJobWorker>.Instance)).ToArray();
+            new MigrationJobCancellationRegistry(), new MigrationProcessingSlots(Options.Create(h.Settings)), NullLogger<MigrationJobWorker>.Instance, h.Provider.GetRequiredService<IMigrationMaintenanceGate>())).ToArray();
         var first = Task.Run(() => workers[0].RunCycleAsync(default)); await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
         await Task.WhenAll(workers.Skip(1).Select(w => Task.Run(() => w.RunCycleAsync(default))));
         executions.Should().Be(1); release.SetResult(); await first;

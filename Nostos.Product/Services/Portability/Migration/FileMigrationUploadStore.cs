@@ -4,8 +4,8 @@ using Nostos.Backend.Services.Portability.Transfers;
 namespace Nostos.Backend.Services.Portability.Migration;
 
 /// <summary>
-/// One ranged archive file per session, with at most one chunk-sized temporary
-/// file under the database job lock. Uses one 128 KiB budgeted copy buffer;
+/// One ranged archive file per session, with unique chunk-sized temporary
+/// files received without database write locks. Uses one 128 KiB budgeted copy buffer;
 /// request streams are read asynchronously. FlushAsync followed by Flush(true)
 /// is required before a receipt commits. This protects process restart; directory
 /// fsync/power-loss durability of rename is filesystem dependent. Recovery accepts
@@ -17,6 +17,14 @@ public class FileMigrationUploadStore(TransferPathResolver paths)
 {
     internal const int BufferBytes = 128 * 1024;
     internal TransferPathResolver Paths => paths;
+    private readonly MigrationFileMutex _mutex = new(paths);
+    internal Task<IAsyncDisposable> EnterJobAsync(Guid jobId, CancellationToken ct) => _mutex.EnterAsync(jobId, ct);
+
+    /// <summary>Deterministic storage checkpoints; production performs no extra work.</summary>
+    internal Task BeforeDetachedDeleteAsync(CancellationToken ct) => BeforeScopeDeleteAsync(ct);
+    protected virtual Task BeforeScopeDeleteAsync(CancellationToken ct) => Task.CompletedTask;
+    protected virtual Task BeforeHashAsync(CancellationToken ct) => Task.CompletedTask;
+    protected virtual Task AfterChunkFlushAsync(CancellationToken ct) => Task.CompletedTask;
 
     internal FileStream Open(string path, FileAccess access)
     {
@@ -83,11 +91,13 @@ public class FileMigrationUploadStore(TransferPathResolver paths)
         while ((read = await source.ReadAsync(buffer.Memory, ct)) != 0)
             await target.WriteAsync(buffer.Memory[..read], ct);
         await DurableFlushAsync(target, ct);
+        await AfterChunkFlushAsync(ct);
     }
 
     internal async Task<bool> VerifyAsync(Guid sessionId, long size, string checksum,
         PortableArchiveBufferBudget budget, CancellationToken ct)
     {
+        await BeforeHashAsync(ct);
         var part = paths.VerifyPathWithinRoot(paths.GetUploadArchivePartPath(sessionId));
         var final = paths.VerifyPathWithinRoot(paths.GetUploadArchivePath(sessionId));
         // A crash may occur after rename and before the DB commit.

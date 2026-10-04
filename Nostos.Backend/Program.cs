@@ -238,6 +238,7 @@ builder.Services.AddSingleton(sp => new LibraryMaintenanceCoordinator(
     builder.Configuration.GetSection(LibraryMaintenanceOptions.SectionName).Get<LibraryMaintenanceOptions>(),
     marker: sp.GetRequiredService<LibraryMaintenanceMarker>()));
 builder.Services.AddSingleton<ILibraryMaintenanceCoordinator>(sp => sp.GetRequiredService<LibraryMaintenanceCoordinator>());
+builder.Services.AddSingleton<Nostos.Backend.Services.Portability.Migration.IMigrationMaintenanceGate, MigrationMaintenanceGate>();
 builder.Services.AddScoped<IBackupService, BackupService>();
 
 // One instance serves as the job store, the hosted worker that drains it, and

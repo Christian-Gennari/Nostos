@@ -5,6 +5,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Nostos.Backend.Data;
 using Nostos.Backend.Data.Models;
+using Nostos.Backend.Services;
 using Nostos.Backend.Services.Portability;
 using Nostos.Backend.Services.Portability.Migration;
 using Nostos.Backend.Services.Portability.Transfers;
@@ -19,6 +20,8 @@ internal sealed class MigrationEngineHarness : IAsyncDisposable
     internal TestVolume Volume { get; } = new();
     internal ServiceProvider Provider { get; private set; } = null!;
     internal TransferPathResolver Paths => Provider.GetRequiredService<TransferPathResolver>();
+    internal LibraryMaintenanceCoordinator Maintenance => Provider.GetRequiredService<LibraryMaintenanceCoordinator>();
+    internal MigrationTransferCleanupWorker CleanupWorker => Provider.GetServices<IHostedService>().OfType<MigrationTransferCleanupWorker>().Single();
     internal MigrationJobWorker Worker => Provider.GetServices<IHostedService>().OfType<MigrationJobWorker>().Single();
     internal Action<IServiceCollection>? Configure { get; set; }
     internal string ConnectionString => $"Data Source={Path.Combine(DirectoryPath, "jobs.db")};Pooling=False;Default Timeout=5";
@@ -38,6 +41,9 @@ internal sealed class MigrationEngineHarness : IAsyncDisposable
     {
         var services = new ServiceCollection();
         services.AddLogging();
+        services.AddSingleton(new LibraryMaintenanceCoordinator(clock: Clock));
+        services.AddSingleton<ILibraryMaintenanceCoordinator>(s => s.GetRequiredService<LibraryMaintenanceCoordinator>());
+        services.AddSingleton<IMigrationMaintenanceGate, MigrationMaintenanceGate>();
         services.AddDbContext<NostosDbContext>(o => o.UseSqlite(ConnectionString));
         services.AddSingleton<TimeProvider>(Clock);
         services.AddSingleton(Options.Create(Settings));

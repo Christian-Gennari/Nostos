@@ -29,10 +29,11 @@ public sealed class MigrationJobWorker : BackgroundService
     private readonly MigrationJobCancellationRegistry _cancellations;
     private readonly MigrationProcessingSlots _slots;
     private readonly ILogger<MigrationJobWorker> _logger;
+    private readonly IMigrationMaintenanceGate _maintenance;
 
     internal MigrationJobWorker(IServiceScopeFactory scopes, TimeProvider clock, MigrationJobCancellationRegistry cancellations,
-        MigrationProcessingSlots slots, ILogger<MigrationJobWorker> logger)
-    { _scopes = scopes; _clock = clock; _cancellations = cancellations; _slots = slots; _logger = logger; }
+        MigrationProcessingSlots slots, ILogger<MigrationJobWorker> logger, IMigrationMaintenanceGate maintenance)
+    { _scopes = scopes; _clock = clock; _cancellations = cancellations; _slots = slots; _logger = logger; _maintenance = maintenance; }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -50,6 +51,7 @@ public sealed class MigrationJobWorker : BackgroundService
     internal async Task<int> RunCycleAsync(CancellationToken ct)
     {
         IReadOnlyList<MigrationJob> candidates;
+        await using (var operation = await _maintenance.EnterAsync(ct))
         await using (var scope = _scopes.CreateAsyncScope())
         {
             var store = scope.ServiceProvider.GetRequiredService<IMigrationJobStore>();
@@ -79,6 +81,18 @@ public sealed class MigrationJobWorker : BackgroundService
 
     private async Task RunJobAsync(Guid id, CancellationToken stoppingToken)
     {
+        try
+        {
+            while (await RunPhaseUnitAsync(id, stoppingToken)) { }
+        }
+        finally { _slots.Gate.Release(); }
+    }
+
+    private async Task<bool> RunPhaseUnitAsync(Guid id, CancellationToken stoppingToken)
+    {
+        // Admission precedes every DI scope. Release/cleanup happens inside this
+        // unit, then all scopes dispose, then admission releases. No sleep here.
+        await using var operation = await _maintenance.EnterAsync(stoppingToken);
         string? token = null;
         using var running = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
         Task? heartbeat = null;
@@ -88,19 +102,18 @@ public sealed class MigrationJobWorker : BackgroundService
             await using var scope = _scopes.CreateAsyncScope();
             var store = scope.ServiceProvider.GetRequiredService<IMigrationJobStore>();
             token = await store.TryAcquireLeaseAsync(id, LeaseDuration, stoppingToken);
-            if (token is null) return;
+            if (token is null) return false;
             var job = await store.GetAsync(id, running.Token) ?? throw MigrationJobStoreException.NotFound(id);
             // Never borrow a successor's token from this post-acquisition read.
-            // The process may have paused long enough for takeover in between.
-            if (job.LeaseToken != token || job.LeaseExpiresAtUtc is null || job.LeaseExpiresAtUtc <= _clock.GetUtcNow()) return;
+            if (job.LeaseToken != token || job.LeaseExpiresAtUtc is null || job.LeaseExpiresAtUtc <= _clock.GetUtcNow()) return false;
             registration = _cancellations.Register(id, running, job.LeaseExpiresAtUtc.Value);
             running.Token.ThrowIfCancellationRequested();
             heartbeat = HeartbeatAsync(id, token, running);
-            await scope.ServiceProvider.GetRequiredService<MigrationJobProcessor>().ProcessAsync(job, running);
+            return await scope.ServiceProvider.GetRequiredService<MigrationJobProcessor>().ProcessStepAsync(job, running);
         }
-        catch (OperationCanceledException) when (running.IsCancellationRequested) { }
+        catch (OperationCanceledException) when (running.IsCancellationRequested) { return false; }
         catch (MigrationJobStoreException ex) when (ex.Code == MigrationJobStoreErrorCodes.LeaseConflict
-            || ex.Code == MigrationJobStoreErrorCodes.InvalidState) { running.Cancel(); }
+            || ex.Code == MigrationJobStoreErrorCodes.InvalidState) { running.Cancel(); return false; }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Migration job {JobId} failed", id);
@@ -109,6 +122,7 @@ public sealed class MigrationJobWorker : BackgroundService
                 try { await FailAsync(id, token, ex); }
                 catch (Exception failure) { _logger.LogWarning(failure, "Could not record migration failure {JobId}; recovery will retry", id); }
             }
+            return false;
         }
         finally
         {
@@ -121,11 +135,15 @@ public sealed class MigrationJobWorker : BackgroundService
                 {
                     await using var scope = _scopes.CreateAsyncScope();
                     await scope.ServiceProvider.GetRequiredService<IMigrationJobStore>().ReleaseLeaseAsync(id, token, CancellationToken.None);
-                    await scope.ServiceProvider.GetRequiredService<MigrationTransferCleanup>().CleanupJobAsync(id, CancellationToken.None);
+                    // A maintenance request checkpoints here too. Terminal rows
+                    // retain the cleanup queue until admission reopens.
+                    var released = await scope.ServiceProvider.GetRequiredService<IMigrationJobStore>().GetAsync(id, CancellationToken.None);
+                    if (!_maintenance.IsMaintenanceRequested && released is not null && MigrationJobTransitions.IsTerminal(released.State))
+                        await scope.ServiceProvider.GetRequiredService<MigrationTransferCleanup>().CleanupJobAsync(id, CancellationToken.None);
                 }
+                catch (MigrationMaintenanceRequestedException) { }
                 catch (Exception ex) { _logger.LogWarning(ex, "Migration release/cleanup will retry {JobId}", id); }
             }
-            _slots.Gate.Release();
         }
     }
 
@@ -136,6 +154,8 @@ public sealed class MigrationJobWorker : BackgroundService
             while (true)
             {
                 await Task.Delay(HeartbeatInterval, _clock, running.Token);
+                if (_maintenance.IsMaintenanceRequested) { running.Cancel(); return; }
+                await using var operation = await _maintenance.EnterAsync(running.Token);
                 await using var scope = _scopes.CreateAsyncScope();
                 if (!await scope.ServiceProvider.GetRequiredService<IMigrationJobStore>().RenewLeaseAsync(id, token, LeaseDuration, running.Token))
                 { running.Cancel(); return; }

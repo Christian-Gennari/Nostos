@@ -22,10 +22,10 @@ public interface ISelfHostedMigrationUploads : IMigrationTransferService
 }
 
 /// <summary>
-/// Installation-scoped durable uploads. Every file mutation holds the database
-/// job write lock; session state, receipts and capped materialization commit as
-/// one unit. Duplicate receipt hashes never rewrite archive bytes. Store and
-/// engine clocks must be synchronized on every host sharing the database.
+/// Installation-scoped durable uploads. Request reads and file IO run outside
+/// database transactions. Cross-process job file exclusion protects verified
+/// bytes; short guarded transactions publish state, receipts and accounting.
+/// Store and engine clocks must agree on every host sharing the database/files.
 /// </summary>
 public sealed class SelfHostedMigrationTransferService(
     NostosDbContext db,
@@ -51,11 +51,12 @@ public sealed class SelfHostedMigrationTransferService(
             var conflict = CheckPayload(existing, request, hash);
             if (conflict is not null) return conflict;
             var current = await jobs.GetAsync(jobId, ct) ?? throw MigrationJobStoreException.NotFound(jobId);
-            if (existing.State == (int)MigrationSessionState.Complete && !MigrationJobTransitions.IsRetryable(current.State))
+            if (existing.State == (int)MigrationSessionState.Complete
+                && current.State is MigrationJobState.ReadyToActivate or MigrationJobState.Activating or MigrationJobState.Completed)
                 return MigrationIdempotencyResult<MigrationSessionStatus>.Replayed(await StatusAsync(existing, ct));
         }
 
-        // Reserve before the file/DB transaction: admission owns its own serializable
+        // Reserve before the short publication transaction: admission owns its own serializable
         // transaction. Any losing creator releases its unclaimed candidate below.
         var job = await db.MigrationJobRecords.AsNoTracking().SingleOrDefaultAsync(j => j.Id == jobId, ct)
             ?? throw MigrationJobStoreException.NotFound(jobId);
@@ -82,8 +83,7 @@ public sealed class SelfHostedMigrationTransferService(
         Guid? newScope = null;
         try
         {
-            await using var transaction = await MigrationMutation.BeginAsync(db, ct);
-            await MigrationMutation.LockUploadJobAsync(db, jobId, Now, ct);
+            await using var fileLease = await files.EnterJobAsync(jobId, ct);
             job = await db.MigrationJobRecords.AsNoTracking().SingleAsync(j => j.Id == jobId, ct);
             existing = await db.MigrationSessionRecords.AsNoTracking().SingleOrDefaultAsync(s => s.JobId == jobId, ct);
             if (existing is not null)
@@ -91,55 +91,23 @@ public sealed class SelfHostedMigrationTransferService(
                 var conflict = CheckPayload(existing, request, hash);
                 if (conflict is not null) return conflict;
             }
-            var live = job.ReservationId is { } liveId
-                ? await db.MigrationStorageReservations.AsNoTracking().SingleOrDefaultAsync(r => r.Id == liveId
-                    && r.ClaimedJobId == jobId && r.ReleasedAtUtc == null, ct) : null;
-            if (live is null)
-            {
-                if (candidate is null) throw MigrationTransferException.Error(MigrationTransferException.StorageExhausted);
-                await capacity.ClaimAsync(candidate.Value, jobId, ct);
-                await db.MigrationJobRecords.Where(j => j.Id == jobId && j.Version == job.Version)
-                    .ExecuteUpdateAsync(s => s.SetProperty(j => j.ReservationId, candidate)
-                        .SetProperty(j => j.ReservedStorageBytes, required)
-                        .SetProperty(j => j.Version, j => j.Version + 1), ct);
-                live = await db.MigrationStorageReservations.AsNoTracking().SingleAsync(r => r.Id == candidate.Value, ct);
-            }
-            if (live.ReservedBytes < required)
-                throw MigrationTransferException.Error(MigrationTransferException.StorageExhausted);
-
+            await using var creationLease = existing is null
+                ? await files.EnterJobAsync((newScope = Guid.NewGuid()).Value, ct) : null;
             var replay = existing is not null;
-            if (existing is not null && (existing.State is (int)MigrationSessionState.Cancelled or (int)MigrationSessionState.Expired
-                || existing.ExpiresAtUtc <= Now))
-            {
-                // Only RetryAsync opens a new Pending attempt; ordinary resume
-                // cannot revive a cancelled/expired session.
-                if (job.State != (int)MigrationJobState.Pending || job.AttemptNumber <= 1)
-                    throw MigrationTransferException.Error(MigrationTransferException.InvalidState);
-                var present = files.HasArchive(existing.Id);
-                if (present && existing.CompletedAtUtc is not null && !await files.VerifyAsync(existing.Id,
-                    existing.TotalBytes, existing.FileIdentitySha256, new PortableArchiveBufferBudget(FileMigrationUploadStore.BufferBytes), ct))
-                    throw MigrationTransferException.Error(MigrationTransferException.IdentityMismatch);
-                if (!present)
-                {
-                    await db.MigrationChunkReceiptRecords.Where(r => r.SessionId == existing.Id).ExecuteDeleteAsync(ct);
-                    await files.CreateAsync(existing.Id, existing.TotalBytes, ct);
-                }
-                await db.MigrationSessionRecords.Where(s => s.Id == existing.Id && s.Version == existing.Version)
-                    .ExecuteUpdateAsync(s => s.SetProperty(s => s.State, present && existing.CompletedAtUtc != null
-                            ? (int)MigrationSessionState.Complete : (int)MigrationSessionState.Receiving)
-                        .SetProperty(s => s.ReceivedBytes, present ? existing.ReceivedBytes : 0)
-                        .SetProperty(s => s.CompletedAtUtc, present ? existing.CompletedAtUtc : null)
-                        .SetProperty(s => s.ExpiresAtUtc, Now.AddHours(MigrationContractLimits.SessionExpiryHours))
-                        .SetProperty(s => s.UpdatedAtUtc, Now).SetProperty(s => s.Version, s => s.Version + 1), ct);
-                existing = await SessionAsync(jobId, existing.Id, ct);
-                if (present && candidate == live.Id && existing.ReceivedBytes > 0)
-                    await capacity.AddMaterializedBytesAsync(live.Id, existing.ReceivedBytes, ct);
-            }
+            var reactivating = existing is not null && (existing.State is (int)MigrationSessionState.Cancelled or (int)MigrationSessionState.Expired
+                || existing.ExpiresAtUtc <= Now);
+            if (reactivating && (job.State != (int)MigrationJobState.Pending || job.AttemptNumber <= 1))
+                throw MigrationTransferException.Error(MigrationTransferException.InvalidState);
+            var present = existing is not null && files.HasArchive(existing.Id);
+            if (existing is not null && present && existing.CompletedAtUtc is not null
+                && !await files.VerifyAsync(existing.Id, existing.TotalBytes, existing.FileIdentitySha256,
+                    new PortableArchiveBufferBudget(FileMigrationUploadStore.BufferBytes), ct))
+                throw MigrationTransferException.Error(MigrationTransferException.IdentityMismatch);
             if (existing is null)
             {
                 existing = new MigrationSessionRecord
                 {
-                    Id = Guid.NewGuid(), JobId = jobId, Purpose = (int)request.Purpose,
+                    Id = newScope!.Value, JobId = jobId, Purpose = (int)request.Purpose,
                     State = (int)MigrationSessionState.Created, TotalBytes = request.TotalBytes,
                     ChunkSize = request.ChunkSize, TotalChunks = request.TotalChunks,
                     FileIdentitySizeBytes = request.TotalBytes, FileIdentitySha256 = request.FileIdentity.Sha256Checksum.ToLowerInvariant(),
@@ -150,14 +118,63 @@ public sealed class SelfHostedMigrationTransferService(
                 newScope = existing.Id;
                 await files.CreateAsync(existing.Id, existing.TotalBytes, ct);
                 existing.StorageKey = files.Paths.ToStorageKey(files.Paths.GetUploadArchivePartPath(existing.Id));
-                db.MigrationSessionRecords.Add(existing);
-                await db.SaveChangesAsync(ct);
-                db.Entry(existing).State = EntityState.Detached;
             }
-            await transaction.CommitAsync(ct);
-            committed = true;
-            claimed = candidate == live.Id;
-            var status = await StatusAsync(existing, ct);
+            else if (reactivating && !present) await files.CreateAsync(existing.Id, existing.TotalBytes, ct);
+
+            var partKey = files.Paths.ToStorageKey(files.Paths.GetUploadArchivePartPath(existing.Id));
+            // Files above are prepared under filesystem exclusion, with no DB transaction.
+            await using (var transaction = await MigrationMutation.BeginAsync(db, ct))
+            {
+                await MigrationMutation.LockUploadJobAsync(db, jobId, Now, ct);
+                var currentJob = await db.MigrationJobRecords.AsNoTracking().SingleAsync(j => j.Id == jobId, ct);
+                if (currentJob.AttemptNumber != job.AttemptNumber)
+                    throw MigrationTransferException.Error(MigrationTransferException.InvalidState);
+                var live = currentJob.ReservationId is { } liveId
+                    ? await db.MigrationStorageReservations.AsNoTracking().SingleOrDefaultAsync(r => r.Id == liveId
+                        && r.ClaimedJobId == jobId && r.ReleasedAtUtc == null, ct) : null;
+                var newReservation = live is null;
+                if (newReservation)
+                {
+                    if (candidate is null) throw MigrationTransferException.Error(MigrationTransferException.StorageExhausted);
+                    await capacity.ClaimAsync(candidate.Value, jobId, ct);
+                    await db.MigrationJobRecords.Where(j => j.Id == jobId && j.Version == currentJob.Version)
+                        .ExecuteUpdateAsync(set => set.SetProperty(j => j.ReservationId, candidate)
+                            .SetProperty(j => j.ReservedStorageBytes, required).SetProperty(j => j.Version, j => j.Version + 1), ct);
+                    live = await db.MigrationStorageReservations.AsNoTracking().SingleAsync(r => r.Id == candidate.Value, ct);
+                }
+                if (live!.ReservedBytes < required) throw MigrationTransferException.Error(MigrationTransferException.StorageExhausted);
+                if (!replay)
+                {
+                    db.MigrationSessionRecords.Add(existing);
+                    await db.SaveChangesAsync(ct);
+                    db.Entry(existing).State = EntityState.Detached;
+                }
+                else if (reactivating)
+                {
+                    if (!present) await db.MigrationChunkReceiptRecords.Where(r => r.SessionId == existing.Id).ExecuteDeleteAsync(ct);
+                    if (await db.MigrationSessionRecords.Where(s => s.Id == existing.Id && s.Version == existing.Version)
+                        .ExecuteUpdateAsync(set => set.SetProperty(s => s.State, present && existing.CompletedAtUtc != null
+                                ? (int)MigrationSessionState.Complete : (int)MigrationSessionState.Receiving)
+                            .SetProperty(s => s.ReceivedBytes, present ? existing.ReceivedBytes : 0)
+                            .SetProperty(s => s.CompletedAtUtc, present ? existing.CompletedAtUtc : null)
+                            .SetProperty(s => s.StorageKey, present && existing.CompletedAtUtc != null
+                                ? files.Paths.GetUploadArchiveStorageKey(existing.Id)
+                                : partKey)
+                            .SetProperty(s => s.ExpiresAtUtc, Now.AddHours(MigrationContractLimits.SessionExpiryHours))
+                            .SetProperty(s => s.UpdatedAtUtc, Now).SetProperty(s => s.Version, s => s.Version + 1), ct) != 1)
+                        throw MigrationTransferException.Error(MigrationTransferException.InvalidState);
+                }
+                else if (!await db.MigrationSessionRecords.AnyAsync(s => s.Id == existing.Id && s.Version == existing.Version, ct))
+                    throw MigrationTransferException.Error(MigrationTransferException.InvalidState);
+                // Every fresh reservation restores retained bytes, including a Complete
+                // session retried after worker failure. Replay never charges them again.
+                if (newReservation && present && existing.ReceivedBytes > 0)
+                    await capacity.AddMaterializedBytesAsync(live.Id, existing.ReceivedBytes, ct);
+                await transaction.CommitAsync(ct);
+                committed = true;
+                claimed = candidate == live.Id;
+            }
+            var status = await GetSessionAsync(jobId, existing.Id, ct);
             return replay ? MigrationIdempotencyResult<MigrationSessionStatus>.Replayed(status)
                 : MigrationIdempotencyResult<MigrationSessionStatus>.Created(status);
         }
@@ -202,31 +219,44 @@ public sealed class SelfHostedMigrationTransferService(
         using var registration = cancellations.RegisterUpload(jobId, uploading);
         ct = uploading.Token;
         string? temp = null;
+        IAsyncDisposable? receiveSlot = null;
         try
         {
-            await using var transaction = await MigrationMutation.BeginAsync(db, ct);
             var session = await SessionAsync(jobId, sessionId, ct);
             RequireReceiving(session);
-            await MigrationMutation.LockUploadJobAsync(db, jobId, Now, ct);
+            var (offset, length, checksum) = ValidateChunk(session, chunkIndex, metadata);
+            var attempt = await MigrationMutation.Active(db, jobId, Now).Select(j => (int?)j.AttemptNumber).SingleOrDefaultAsync(ct)
+                ?? throw MigrationTransferException.Error(MigrationTransferException.InvalidState);
+            // The reservation allows one temporary chunk. This filesystem slot
+            // bounds temp disk across hosts without locking the archive or DB.
+            receiveSlot = await files.EnterJobAsync(sessionId, ct);
+            RequireReceiving(await SessionAsync(jobId, sessionId, ct));
+            if (!await MigrationMutation.Active(db, jobId, Now).AnyAsync(j => j.AttemptNumber == attempt, ct))
+                throw MigrationTransferException.Error(MigrationTransferException.InvalidState);
+            var budget = new PortableArchiveBufferBudget(FileMigrationUploadStore.BufferBytes);
+            // No writer transaction or archive mutex while a client supplies its body.
+            temp = await files.ReceiveAsync(sessionId, chunkIndex, length, checksum, content, budget, ct);
+            await using var fileLease = await files.EnterJobAsync(jobId, ct);
             session = await SessionAsync(jobId, sessionId, ct);
             RequireReceiving(session);
-            var (offset, length, checksum) = ValidateChunk(session, chunkIndex, metadata);
-            var budget = new PortableArchiveBufferBudget(FileMigrationUploadStore.BufferBytes);
-            // Even duplicate bodies are verified; a matching header alone is no proof.
-            temp = await files.ReceiveAsync(sessionId, chunkIndex, length, checksum, content, budget, ct);
+            if (!await MigrationMutation.Active(db, jobId, Now).AnyAsync(j => j.AttemptNumber == attempt, ct))
+                throw MigrationTransferException.Error(MigrationTransferException.InvalidState);
             var receipt = await db.MigrationChunkReceiptRecords.AsNoTracking()
                 .SingleOrDefaultAsync(r => r.SessionId == sessionId && r.ChunkIndex == chunkIndex, ct);
             if (receipt is not null)
             {
                 if (receipt.LengthBytes != length || receipt.Sha256 != checksum)
                     throw MigrationTransferException.Error(MigrationTransferException.ChunkConflict);
-                await transaction.CommitAsync(ct);
                 return new(sessionId, chunkIndex, true);
             }
+            // Only the mutex owner may place bytes. A loser observes the winning
+            // receipt before placement; it cannot overwrite that receipt's bytes.
             await files.PlaceAsync(sessionId, temp, offset, budget, ct);
-            RequireReceiving(session); // The clock may have advanced during IO.
-            if (await MigrationMutation.Active(db, jobId, Now).AnyAsync(ct) == false)
-                throw MigrationTransferException.Error(MigrationTransferException.InvalidState);
+            await using var transaction = await MigrationMutation.BeginAsync(db, ct);
+            await MigrationMutation.LockUploadJobAsync(db, jobId, Now, ct, attempt);
+            RequireReceiving(await SessionAsync(jobId, sessionId, ct));
+            if (await db.MigrationChunkReceiptRecords.AnyAsync(r => r.SessionId == sessionId && r.ChunkIndex == chunkIndex, ct))
+                throw MigrationTransferException.Error(MigrationTransferException.ChunkConflict);
             var reservationId = await db.MigrationJobRecords.Where(j => j.Id == jobId).Select(j => j.ReservationId).SingleAsync(ct)
                 ?? throw MigrationTransferException.Error(MigrationTransferException.StorageExhausted);
             await capacity.AddMaterializedBytesAsync(reservationId, length, ct);
@@ -256,7 +286,11 @@ public sealed class SelfHostedMigrationTransferService(
             await FailUploadAsync(jobId, MigrationTransferException.StorageExhausted);
             throw new MigrationTransferException(MigrationTransferException.StorageExhausted, "Upload storage is unavailable.", ex);
         }
-        finally { if (temp is not null) files.TryDelete(temp); }
+        finally
+        {
+            if (temp is not null) files.TryDelete(temp);
+            if (receiveSlot is not null) await receiveSlot.DisposeAsync();
+        }
     }
 
     public async Task<MigrationSessionStatus> CompleteSessionAsync(Guid jobId, Guid sessionId, CancellationToken ct)
@@ -267,40 +301,57 @@ public sealed class SelfHostedMigrationTransferService(
         ct = completing.Token;
         try
         {
-            await using var transaction = await MigrationMutation.BeginAsync(db, ct);
+            await SessionAsync(jobId, sessionId, ct); // Reject unknown scope ids before filesystem admission.
+            await using var fileLease = await files.EnterJobAsync(jobId, ct);
             var session = await SessionAsync(jobId, sessionId, ct);
             if (session.ExpiresAtUtc <= Now || session.State == (int)MigrationSessionState.Expired)
                 throw MigrationTransferException.Error(MigrationTransferException.Expired);
-            if (session.State == (int)MigrationSessionState.Complete && await db.MigrationJobRecords.AnyAsync(j => j.Id == jobId
-                && j.ExpiresAtUtc > Now && (j.State == (int)MigrationJobState.ReadyToActivate || j.State == (int)MigrationJobState.Activating
-                    || j.State == (int)MigrationJobState.Completed), ct))
-                return await StatusAsync(session, ct); // Read-only replay after the worker has moved on.
-            await MigrationMutation.LockUploadJobAsync(db, jobId, Now, ct);
-            session = await SessionAsync(jobId, sessionId, ct);
             if (session.State == (int)MigrationSessionState.Complete)
+            {
+                if (!await db.MigrationJobRecords.AnyAsync(j => j.Id == jobId && j.ExpiresAtUtc > Now
+                    && (j.State <= (int)MigrationJobState.Activating || j.State == (int)MigrationJobState.Completed), ct))
+                    throw MigrationTransferException.Error(MigrationTransferException.InvalidState);
                 return await StatusAsync(session, ct);
-            RequireReceiving(session);
+            }
+            RequireReceiving(session, allowCompleting: true);
             var receipts = await db.MigrationChunkReceiptRecords.AsNoTracking().Where(r => r.SessionId == sessionId)
                 .OrderBy(r => r.ChunkIndex).ToListAsync(ct);
             if (receipts.Count != session.TotalChunks || session.ReceivedBytes != session.TotalBytes
                 || receipts.Where((r, i) => r.ChunkIndex != i || r.OffsetBytes != checked((long)i * session.ChunkSize)
                     || r.LengthBytes != (int)Math.Min(session.ChunkSize, session.TotalBytes - r.OffsetBytes)).Any())
                 throw MigrationTransferException.Error(MigrationTransferException.MissingChunks);
+            var finalKey = files.Paths.GetUploadArchiveStorageKey(sessionId);
+            // Existing StorageKey is the durable completion fence. Receiving + final
+            // key means hashing/sealing is in progress; late chunks are rejected.
+            // A crash leaves this fence and CompleteAsync safely repeats verification.
+            await using (var fence = await MigrationMutation.BeginAsync(db, ct))
+            {
+                await MigrationMutation.LockUploadJobAsync(db, jobId, Now, ct);
+                if (await db.MigrationSessionRecords.Where(s => s.Id == sessionId && s.Version == session.Version
+                        && s.ExpiresAtUtc > Now && (s.State == (int)MigrationSessionState.Created || s.State == (int)MigrationSessionState.Receiving))
+                    .ExecuteUpdateAsync(set => set.SetProperty(s => s.StorageKey, finalKey)
+                        .SetProperty(s => s.UpdatedAtUtc, Now).SetProperty(s => s.Version, s => s.Version + 1), ct) != 1)
+                    throw MigrationTransferException.Error(MigrationTransferException.InvalidState);
+                await fence.CommitAsync(ct);
+            }
+            session = await SessionAsync(jobId, sessionId, ct);
             var budget = new PortableArchiveBufferBudget(FileMigrationUploadStore.BufferBytes);
             if (!await files.VerifyAsync(sessionId, session.TotalBytes, session.FileIdentitySha256, budget, ct))
                 throw MigrationTransferException.Error(MigrationTransferException.IdentityMismatch);
-            RequireReceiving(session);
-            if (!await MigrationMutation.Active(db, jobId, Now).AnyAsync(ct))
-                throw MigrationTransferException.Error(MigrationTransferException.InvalidState);
-            files.Seal(sessionId);
-            if (await db.MigrationSessionRecords.Where(s => s.Id == sessionId && s.Version == session.Version
-                    && s.ExpiresAtUtc > Now && (s.State == (int)MigrationSessionState.Created || s.State == (int)MigrationSessionState.Receiving))
-                .ExecuteUpdateAsync(s => s.SetProperty(s => s.State, (int)MigrationSessionState.Complete)
-                    .SetProperty(s => s.CompletedAtUtc, Now).SetProperty(s => s.UpdatedAtUtc, Now)
-                    .SetProperty(s => s.StorageKey, files.Paths.GetUploadArchiveStorageKey(sessionId))
-                    .SetProperty(s => s.Version, s => s.Version + 1), ct) != 1)
-                throw MigrationTransferException.Error(MigrationTransferException.InvalidState);
-            await transaction.CommitAsync(ct);
+            ct.ThrowIfCancellationRequested();
+            files.Seal(sessionId); // No DB transaction across file/hash/rename work.
+            await using (var publication = await MigrationMutation.BeginAsync(db, ct))
+            {
+                await MigrationMutation.LockUploadJobAsync(db, jobId, Now, ct);
+                if (await db.MigrationSessionRecords.Where(s => s.Id == sessionId && s.Version == session.Version
+                        && s.ExpiresAtUtc > Now && s.StorageKey == finalKey
+                        && (s.State == (int)MigrationSessionState.Created || s.State == (int)MigrationSessionState.Receiving))
+                    .ExecuteUpdateAsync(set => set.SetProperty(s => s.State, (int)MigrationSessionState.Complete)
+                        .SetProperty(s => s.CompletedAtUtc, Now).SetProperty(s => s.UpdatedAtUtc, Now)
+                        .SetProperty(s => s.Version, s => s.Version + 1), ct) != 1)
+                    throw MigrationTransferException.Error(MigrationTransferException.InvalidState);
+                await publication.CommitAsync(ct);
+            }
             return await GetSessionAsync(jobId, sessionId, ct);
         }
         catch (OperationCanceledException) when (!requestToken.IsCancellationRequested && completing.IsCancellationRequested)
@@ -390,10 +441,12 @@ public sealed class SelfHostedMigrationTransferService(
         JsonSerializer.SerializeToUtf8Bytes(new { r.Purpose, r.TotalBytes, r.ChunkSize, r.TotalChunks,
             Identity = new MigrationFileIdentity(r.FileIdentity.TotalSizeBytes, r.FileIdentity.Sha256Checksum.ToLowerInvariant(), r.FileIdentity.ClientFingerprint) })));
 
-    private void RequireReceiving(MigrationSessionRecord session)
+    private void RequireReceiving(MigrationSessionRecord session, bool allowCompleting = false)
     {
         if (session.ExpiresAtUtc <= Now || session.State == (int)MigrationSessionState.Expired)
             throw MigrationTransferException.Error(MigrationTransferException.Expired);
+        if (!allowCompleting && session.StorageKey == files.Paths.GetUploadArchiveStorageKey(session.Id))
+            throw MigrationTransferException.Error(MigrationTransferException.InvalidState);
         if (session.State is not ((int)MigrationSessionState.Created) and not ((int)MigrationSessionState.Receiving))
             throw MigrationTransferException.Error(MigrationTransferException.InvalidState);
     }

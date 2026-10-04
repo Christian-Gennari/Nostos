@@ -6,10 +6,9 @@ using Nostos.Backend.Data.Models;
 
 namespace Nostos.Backend.Services.Portability.Migration;
 
-// All filesystem-changing operations first lock the owning job row with a
-// conditional UPDATE. SQLite uses BEGIN IMMEDIATE (no read-to-write upgrade);
-// other providers lock that row on UPDATE. Session/receipt/accounting changes
-// commit in the same transaction. Local locks are never the correctness boundary.
+// Short DB-only publications. Filesystem exclusion is independent: no database
+// write transaction may span request reads, file IO, hashing, or cleanup hooks.
+// Session/receipt/accounting metadata commits in the same transaction.
 internal static class MigrationMutation
 {
     internal static async Task<IDbContextTransaction> BeginAsync(NostosDbContext db, CancellationToken ct)
@@ -23,9 +22,9 @@ internal static class MigrationMutation
         db.MigrationJobRecords.Where(j => j.Id == jobId && j.ExpiresAtUtc > now
             && j.State >= (int)MigrationJobState.Pending && j.State <= (int)MigrationJobState.Validating);
 
-    internal static async Task LockUploadJobAsync(NostosDbContext db, Guid jobId, DateTime now, CancellationToken ct)
+    internal static async Task LockUploadJobAsync(NostosDbContext db, Guid jobId, DateTime now, CancellationToken ct, int? attempt = null)
     {
-        if (await Active(db, jobId, now).Where(j => j.Direction == (int)MigrationDirection.Import)
+        if (await Active(db, jobId, now).Where(j => j.Direction == (int)MigrationDirection.Import && (attempt == null || j.AttemptNumber == attempt))
             .ExecuteUpdateAsync(s => s.SetProperty(j => j.Version, j => j.Version + 1), ct) != 1)
             throw MigrationTransferException.Error(MigrationTransferException.InvalidState);
     }
