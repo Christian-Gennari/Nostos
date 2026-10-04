@@ -83,9 +83,11 @@ Operational state is excluded: local backup records and paths, absolute media pa
 
 ## Export guarantees
 
-`PortableArchiveService` currently exports the portable relational state by issuing its database queries sequentially through the active `NostosDbContext`, reads media through `IBookAssetStorage`, and writes a manifest only after every referenced media stream succeeds. It never changes or removes source library data.
+`PortableArchiveService` materializes the portable relational state inside one serializable read transaction through the active `NostosDbContext`. Every relational export query therefore observes a single revision; no media is read, hashed or copied while that transaction is open.
 
-This is the behaviour of the shipped exporter today. It must not be described as an atomic relational snapshot unless and until the planned migration snapshot contract in Part 2 is implemented.
+After the relational snapshot closes, referenced media is pinned by length, last-modified, entity tag and SHA-256. Each pin is re-verified immediately before the bytes are copied into the archive, the copied bytes are checked against the pinned length and hash, and storage metadata is observed again after the copy. If referenced media changes or disappears while an export is in progress, the export fails closed with typed error `source_media_changed` instead of emitting an inconsistent archive. The manifest `ExportedAtUtc` records the relational snapshot boundary.
+
+Media is read through `IBookAssetStorage`, the manifest is written only after every referenced media stream succeeds, and the exporter never changes or removes source library data.
 
 ## Import guarantees and restore mechanism
 
@@ -203,7 +205,7 @@ A migration records the destination revision observed during preflight. That rev
 For planned issue #678, export consistency guarantees:
 
 1. **Relational consistency boundary:** Export reads a single consistent relational snapshot under a read snapshot / transaction. It never mixes rows from different revisions.
-2. **Media change detection and pinning:** Source media files referenced by the relational snapshot are verified during export. Media entries are checked for size, mtime, and SHA-256 between initial indexing and copy. If any source file is mutated or removed while export is in progress, the export fails closed with typed error `source_media_mutated` rather than emitting an inconsistent archive.
+2. **Media change detection and pinning:** Source media files referenced by the relational snapshot are verified during export. Media entries are checked for size, mtime, and SHA-256 between initial indexing and copy. If any source file is mutated or removed while export is in progress, the export fails closed with typed error `source_media_changed` rather than emitting an inconsistent archive.
 3. **Manifest snapshot records:** The generated manifest records the snapshot timestamp and exact source revisions.
 
 ---

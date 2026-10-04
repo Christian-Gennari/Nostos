@@ -39,9 +39,14 @@ public sealed class PortableArchiveService(
         if (!destination.CanWrite)
             throw new ArgumentException("The export destination must be writable.", nameof(destination));
 
-        var data = await SnapshotAsync(cancellationToken);
-        PortableArchiveValidation.ValidatePortableData(data);
-        var counts = CountsFor(data);
+        var snapshot = await CaptureSnapshotAsync(cancellationToken);
+        PortableArchiveValidation.ValidatePortableData(snapshot.Data);
+        var counts = snapshot.Counts;
+
+        // Media is pinned by an initial hash pass after the relational
+        // transaction has closed. The archive copy pass below re-verifies the
+        // pin so an archive can never mix two media revisions.
+        var pinned = await PinSourceMediaAsync(snapshot, cancellationToken);
 
         var tempRoot = Path.Combine(
             Path.GetTempPath(),
@@ -61,7 +66,7 @@ public sealed class PortableArchiveService(
             {
                 await JsonSerializer.SerializeAsync(
                     dataStream,
-                    data,
+                    snapshot.Data,
                     JsonOptions,
                     cancellationToken);
             }
@@ -112,32 +117,19 @@ public sealed class PortableArchiveService(
                     await source.CopyToAsync(target, CopyBufferSize, cancellationToken);
                 }
 
-                foreach (var book in data.Books.OrderBy(x => x.Id))
+                foreach (var item in pinned)
                 {
-                    if (book.HasBookFile)
-                    {
-                        media.Add(await AppendStoredAssetAsync(
-                            archive,
-                            book.Id,
-                            PortableArchiveFormat.BookMediaKind,
-                            cancellationToken));
-                    }
-
-                    if (book.HasCover)
-                    {
-                        media.Add(await AppendStoredAssetAsync(
-                            archive,
-                            book.Id,
-                            PortableArchiveFormat.CoverMediaKind,
-                            cancellationToken));
-                    }
+                    media.Add(await AppendPinnedAssetAsync(
+                        archive,
+                        item,
+                        cancellationToken));
                 }
 
                 var manifest = new PortableArchiveManifest(
                     Format: PortableArchiveFormat.Name,
                     FormatVersion: PortableArchiveFormat.Version,
                     DataVersion: PortableArchiveFormat.DataVersion,
-                    ExportedAtUtc: DateTime.UtcNow,
+                    ExportedAtUtc: snapshot.SnapshotAtUtc,
                     ApplicationVersion:
                         typeof(PortableArchiveService).Assembly.GetName().Version?.ToString()
                         ?? "unknown",
@@ -344,8 +336,16 @@ public sealed class PortableArchiveService(
         }
     }
 
-    private async Task<PortableLibraryData> SnapshotAsync(CancellationToken ct)
+    private async Task<PortableExportSnapshot> CaptureSnapshotAsync(CancellationToken ct)
     {
+        var snapshotAtUtc = DateTime.UtcNow;
+
+        // One serializable read transaction owns every relational query for the
+        // export. Media is never read, hashed or copied while it is open.
+        await using var transaction = await _db.Database.BeginTransactionAsync(
+            IsolationLevel.Serializable,
+            ct);
+
         var works = (await _db.Works
             .AsNoTracking()
             .OrderBy(x => x.Id)
@@ -482,7 +482,7 @@ public sealed class PortableArchiveService(
             .AsNoTracking()
             .SingleOrDefaultAsync(ct);
 
-        return new PortableLibraryData(
+        var data = new PortableLibraryData(
             PortableArchiveFormat.DataVersion,
             works,
             books,
@@ -500,6 +500,32 @@ public sealed class PortableArchiveService(
                     assistant.UpdatedAtUtc),
             writingNotes,
             noteImportBookLinks);
+
+        var media = new List<PortableSourceMedia>();
+        foreach (var book in books)
+        {
+            if (book.HasBookFile)
+            {
+                media.Add(new PortableSourceMedia(
+                    book.Id,
+                    PortableArchiveFormat.BookMediaKind));
+            }
+
+            if (book.HasCover)
+            {
+                media.Add(new PortableSourceMedia(
+                    book.Id,
+                    PortableArchiveFormat.CoverMediaKind));
+            }
+        }
+
+        await transaction.CommitAsync(ct);
+
+        return new PortableExportSnapshot(
+            snapshotAtUtc,
+            data,
+            CountsFor(data),
+            media);
     }
 
     private static PortableBook ToPortableBook(BookModel book)
@@ -568,44 +594,95 @@ public sealed class PortableArchiveService(
             !string.IsNullOrWhiteSpace(book.FileDetails.CoverFileName));
     }
 
-    private async Task<PortableArchiveMediaEntry> AppendStoredAssetAsync(
-        ZipArchive archive,
-        Guid bookId,
-        string kind,
+    private async Task<IReadOnlyList<PinnedPortableSourceMedia>> PinSourceMediaAsync(
+        PortableExportSnapshot snapshot,
         CancellationToken ct)
     {
-        var info = kind == PortableArchiveFormat.BookMediaKind
-            ? await _assets.GetBookFileInfoAsync(bookId, ct)
-            : await _assets.GetBookCoverInfoAsync(bookId, ct);
+        var pinned = new List<PinnedPortableSourceMedia>(snapshot.Media.Count);
 
+        foreach (var source in snapshot.Media)
+        {
+            var info = await GetAssetInfoAsync(source.BookId, source.Kind, ct);
+            if (info is null)
+            {
+                throw new PortableArchiveException(
+                    "source_media_missing",
+                    $"Book {source.BookId} references a {source.Kind} asset that is missing from storage.");
+            }
+
+            var extension = Path.GetExtension(info.FileName).ToLowerInvariant();
+            if (source.Kind == PortableArchiveFormat.BookMediaKind)
+                BookAssetFormats.RequireBookExtension($"book{extension}");
+            else
+                BookAssetFormats.RequireCoverExtension($"cover{extension}");
+
+            await using var opened = await OpenAssetAsync(source.BookId, source.Kind, ct);
+            if (opened is null)
+            {
+                throw new PortableArchiveException(
+                    "source_media_missing",
+                    $"Book {source.BookId} references a {source.Kind} asset that could not be opened.");
+            }
+
+            var hashed = await HashStreamAsync(
+                opened.Content,
+                PortableArchiveLimits.MaxSingleEntryBytes,
+                ct);
+
+            var after = await GetAssetInfoAsync(source.BookId, source.Kind, ct);
+            if (after is null
+                || after.Length != info.Length
+                || after.LastModified != info.LastModified
+                || !string.Equals(after.EntityTag, info.EntityTag, StringComparison.Ordinal)
+                || hashed.Length != info.Length)
+            {
+                throw SourceMediaChanged(source.BookId, source.Kind);
+            }
+
+            pinned.Add(new PinnedPortableSourceMedia(
+                source.BookId,
+                source.Kind,
+                PortableArchiveValidation.MediaPath(source.BookId, source.Kind, extension),
+                $"{source.Kind}{extension}",
+                info.ContentType,
+                info.Length,
+                info.LastModified,
+                info.EntityTag,
+                hashed.Sha256));
+        }
+
+        return pinned;
+    }
+
+    private async Task<PortableArchiveMediaEntry> AppendPinnedAssetAsync(
+        ZipArchive archive,
+        PinnedPortableSourceMedia pinned,
+        CancellationToken ct)
+    {
+        var info = await GetAssetInfoAsync(pinned.BookId, pinned.Kind, ct);
         if (info is null)
         {
             throw new PortableArchiveException(
                 "source_media_missing",
-                $"Book {bookId} references a {kind} asset that is missing from storage.");
+                $"Book {pinned.BookId} references a {pinned.Kind} asset that is missing from storage.");
         }
 
-        var extension = Path.GetExtension(info.FileName).ToLowerInvariant();
-        if (kind == PortableArchiveFormat.BookMediaKind)
-            BookAssetFormats.RequireBookExtension($"book{extension}");
-        else
-            BookAssetFormats.RequireCoverExtension($"cover{extension}");
+        if (info.Length != pinned.Length
+            || info.LastModified != pinned.LastModified
+            || !string.Equals(info.EntityTag, pinned.EntityTag, StringComparison.Ordinal))
+        {
+            throw SourceMediaChanged(pinned.BookId, pinned.Kind);
+        }
 
-        var fileName = $"{kind}{extension}";
-        var path = PortableArchiveValidation.MediaPath(bookId, kind, extension);
-
-        await using var opened = kind == PortableArchiveFormat.BookMediaKind
-            ? await _assets.OpenBookFileAsync(bookId, null, ct)
-            : await _assets.OpenBookCoverAsync(bookId, ct);
-
+        await using var opened = await OpenAssetAsync(pinned.BookId, pinned.Kind, ct);
         if (opened is null)
         {
             throw new PortableArchiveException(
                 "source_media_missing",
-                $"Book {bookId} references a {kind} asset that could not be opened.");
+                $"Book {pinned.BookId} references a {pinned.Kind} asset that could not be opened.");
         }
 
-        var entry = archive.CreateEntry(path, CompressionLevel.NoCompression);
+        var entry = archive.CreateEntry(pinned.ArchivePath, CompressionLevel.NoCompression);
         await using var target = entry.Open();
         var copied = await CopyAndHashAsync(
             opened.Content,
@@ -613,22 +690,51 @@ public sealed class PortableArchiveService(
             PortableArchiveLimits.MaxSingleEntryBytes,
             ct);
 
-        if (copied.Length != opened.Info.Length)
+        if (copied.Length != pinned.Length
+            || !string.Equals(copied.Sha256, pinned.Sha256, StringComparison.Ordinal))
         {
-            throw new PortableArchiveException(
-                "source_media_changed",
-                $"Book {bookId} {kind} changed while the archive was being exported.");
+            throw SourceMediaChanged(pinned.BookId, pinned.Kind);
+        }
+
+        var afterCopy = await GetAssetInfoAsync(pinned.BookId, pinned.Kind, ct);
+        if (afterCopy is null
+            || afterCopy.Length != pinned.Length
+            || afterCopy.LastModified != pinned.LastModified
+            || !string.Equals(afterCopy.EntityTag, pinned.EntityTag, StringComparison.Ordinal))
+        {
+            throw SourceMediaChanged(pinned.BookId, pinned.Kind);
         }
 
         return new PortableArchiveMediaEntry(
-            bookId,
-            kind,
-            path,
-            fileName,
-            opened.Info.ContentType,
-            copied.Length,
-            copied.Sha256);
+            pinned.BookId,
+            pinned.Kind,
+            pinned.ArchivePath,
+            pinned.FileName,
+            pinned.ContentType,
+            pinned.Length,
+            pinned.Sha256);
     }
+
+    private Task<StoredAssetInfo?> GetAssetInfoAsync(
+        Guid bookId,
+        string kind,
+        CancellationToken ct) =>
+        kind == PortableArchiveFormat.BookMediaKind
+            ? _assets.GetBookFileInfoAsync(bookId, ct)
+            : _assets.GetBookCoverInfoAsync(bookId, ct);
+
+    private Task<StoredAssetRead?> OpenAssetAsync(
+        Guid bookId,
+        string kind,
+        CancellationToken ct) =>
+        kind == PortableArchiveFormat.BookMediaKind
+            ? _assets.OpenBookFileAsync(bookId, null, ct)
+            : _assets.OpenBookCoverAsync(bookId, ct);
+
+    private static PortableArchiveException SourceMediaChanged(Guid bookId, string kind) =>
+        new(
+            "source_media_changed",
+            $"Book {bookId} {kind} changed while the archive was being exported.");
 
     private async Task StageArchiveAsync(
         Stream source,

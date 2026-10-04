@@ -38,7 +38,8 @@ internal sealed class LocalPortableTestLibrary : IAsyncDisposable
     public NostosDbContext Db { get; }
     public FileStorageService Storage { get; }
 
-    public static async Task<LocalPortableTestLibrary> CreateAsync()
+    public static async Task<LocalPortableTestLibrary> CreateAsync(
+        Action<DbContextOptionsBuilder<NostosDbContext>>? configureOptions = null)
     {
         var root = Path.Combine(
             Path.GetTempPath(),
@@ -46,10 +47,10 @@ internal sealed class LocalPortableTestLibrary : IAsyncDisposable
         Directory.CreateDirectory(root);
 
         var dbPath = Path.Combine(root, "nostos.db");
-        var options = new DbContextOptionsBuilder<NostosDbContext>()
-            .UseSqlite($"Data Source={dbPath}")
-            .Options;
-        var db = new NostosDbContext(options);
+        var optionsBuilder = new DbContextOptionsBuilder<NostosDbContext>()
+            .UseSqlite($"Data Source={dbPath}");
+        configureOptions?.Invoke(optionsBuilder);
+        var db = new NostosDbContext(optionsBuilder.Options);
         await db.Database.EnsureCreatedAsync();
 
         var env = new PortableTestWebHostEnvironment(root);
