@@ -104,6 +104,8 @@ internal sealed class InMemoryPortableImportStaging : IPortableImportStaging
     private readonly InMemoryPortableImportStagingStore _store;
     private readonly InMemoryPortableImportStagingHooks? _hooks;
 
+    internal InMemoryPortableImportStagingStore Store => _store;
+
     internal InMemoryPortableImportStaging(
         InMemoryPortableImportStagingStore store,
         InMemoryPortableImportStagingHooks? hooks = null)
