@@ -1,125 +1,183 @@
-# Portable Nostos archive & migration contracts
+# Portability and migration
 
-Issue: #677  
-Epic: #676
+Nostos portable archives are the provider-neutral format for moving user-owned library state between installations.
 
-Nostos supports portable library migration between supported deployments without exposing hosting-provider internals or coupling the archive format to a particular database, object store, authentication provider, or billing system.
+This document deliberately separates:
 
-This document defines the portability boundary, archive compatibility guarantees, migration lifecycle, preflight behavior, completeness inventory, and operational constraints established for issue #677.
+1. **Current behaviour (shipped)** — what the existing portability API and `PortableArchiveService` do today.
+2. **Migration contract (planned, epic #676 — not yet implemented)** — the contract for one-click SelfHosted ↔ Cloud migration being developed across issues #677–#682.
 
-The portable archive format is intended for:
-
-- SelfHosted → Cloud migration.
-- Cloud → SelfHosted migration where export is available.
-- SelfHosted → SelfHosted migration.
-- Moving a complete Nostos library between compatible installations.
-- Recovery or explicit replacement of a destination library using a portable `.nostos` archive.
-
-It is distinct from host-local operational backups.
+Do not treat Part 2 as documentation of the currently deployed HTTP API.
 
 ---
 
-## 1. Design principles
+# Part 1: Current behaviour (shipped)
 
-Portable migration follows these rules:
+## Current HTTP API
 
-1. **Provider-neutral contracts.** Public migration APIs and archive schemas must not expose private hosting implementation details.
-2. **Versioned interchange.** Archive format and portable data versions are explicit and independently validated.
-3. **Complete user-owned state.** Portable archives preserve all supported user-owned library state unless a field or entity is explicitly classified as excluded.
-4. **No implicit merge.** Import into a populated destination is an explicit replacement/recovery operation, not an automatic merge.
-5. **Bounded resource usage.** Large archives and media are streamed in chunks rather than buffered in memory.
-6. **Restartable transfers.** Completed transfer work survives process interruption and can be resumed.
-7. **Concurrency-safe activation.** Destination revision checks prevent an import prepared against stale destination state from silently overwriting newer writes.
-8. **Atomic activation.** Validation completes before the destination is replaced. Activation is treated as an atomic point-of-no-return boundary.
-9. **Fail closed.** Unknown archive versions, malformed manifests, corrupt content, invalid checksums, and unsupported compatibility combinations are rejected rather than guessed at.
-10. **Public/private ownership separation.** Portable data semantics belong to the public product; host-specific infrastructure remains private.
+The shipped portability API exposes:
 
----
+```text
+GET  /api/portability/export
+POST /api/portability/import
+```
 
-## 2. Portable archive identity
+Import uses `multipart/form-data` and uploads the portable archive as one HTTP request.
 
-Portable exports use the `.nostos` archive format.
+The backend currently configures Kestrel with a 4 GiB maximum request body size in `Nostos.Backend/Program.cs`:
 
-A portable archive contains:
+```csharp
+MaxRequestBodySize = 4L * 1024L * 1024L * 1024L;
+```
 
-- A versioned manifest.
-- Portable relational/domain data.
-- Referenced media.
-- Integrity metadata required to validate the archive before activation.
+Therefore, although the archive service itself has larger validation limits, the currently shipped import endpoint **does not support portable archives larger than 4 GiB**. A larger archive cannot reach the import service through the existing single-request HTTP endpoint.
 
-The archive is designed as an interchange format rather than a raw database backup.
+This is one of the constraints the planned migration transfer protocol in Part 2 is intended to remove.
 
-The current archive family uses:
+## Current export behaviour
 
-- **Archive format version:** `1`
-- **Supported portable data versions:** `1`, `2`, and the current data version when newer than those legacy versions.
+`PortableArchiveService` currently exports the portable relational state by issuing its database queries sequentially and assembling the resulting portable archive.
 
-Format version and data version have separate meanings:
+This is the behaviour of the shipped exporter today. It must not be described as an atomic relational snapshot unless and until the planned migration snapshot contract in Part 2 is implemented.
 
-- **Format version** describes the outer archive/container contract.
-- **Data version** describes the portable domain payload and which portable entities or fields are available.
+The current archive format is provider-neutral and carries portable user-owned state rather than host-specific database or storage identifiers.
 
-Readers must reject unknown future format or data versions unless support for those versions has been implemented explicitly.
+## Current import behaviour
 
----
+Portable archive restore targets an empty destination library.
 
-## 3. Portable archives are not operational backups
+For SQLite restores, the import path uses a database transaction and validates the destination through `EnsureDatabaseEmptyAsync` before restoring portable records.
 
-A portable `.nostos` archive must not be confused with Nostos host-local operational backups.
+The current API is therefore an **empty-library restore mechanism**. It is not an implicit merge API and it does not implement the replacement/recovery workflow described in Part 2.
 
-Portable archives:
+## Current archive safety limits
 
-- Contain provider-neutral portable domain state.
-- Use versioned public archive and JSON contracts.
-- Can be imported into another compatible Nostos deployment.
-- Do not expose host-specific paths, tenant identifiers, storage keys, or provider APIs.
+`PortableArchiveService` enforces the following service-level bounds:
 
-Operational backup files may contain implementation-specific state such as:
+| Limit | Value |
+|---|---:|
+| `MaxSingleEntryBytes` | 16 GiB |
+| `MaxExtractedMediaBytes` | 512 GiB |
+| `MaxUncompressedArchiveBytes` | 1 TiB |
+| `MaxDataBytes` | 128 MiB |
 
-- SQLite paths.
-- Host-local backup metadata.
-- `BackupRecord` rows.
-- Deployment-specific storage information.
-- Other host recovery details.
+These limits protect archive validation and extraction.
 
-Operational backups are for restoring the deployment that created them and are **not** part of the portable migration contract.
+They do **not** override the current HTTP request limit. In particular:
 
----
+> The shipped `/api/portability/import` endpoint cannot import archives larger than 4 GiB because the complete multipart archive must pass through a single Kestrel request whose `MaxRequestBodySize` is 4 GiB.
 
-## 4. Provider-neutral migration contracts
+## Current archive data versions
 
-Migration contracts are shared public models used by migration producers, consumers, and compatible hosts.
+The portable archive currently supports:
 
-They must not expose:
+- Format version 1 / DataVersion 1
+- Format version 1 / DataVersion 2
+- Format version 1 / DataVersion 3
 
-- Internal account IDs.
-- Tenant database names.
-- SQLite or PostgreSQL connection information.
-- Object storage bucket names.
-- Object storage keys.
-- Provider-specific object URIs.
-- Authentication-provider identifiers.
-- Billing-provider identifiers.
-- Internal worker identities.
-- Cloud-provider APIs.
+DataVersion 3 adds portable `NoteImportBookLink` records.
 
-Where correlation is required, the contracts use opaque values such as:
-
-- `JobId`
-- `TransferId`
-- `SessionId`
-- Resume tokens.
-- Revision tokens.
-- Continuation tokens.
-- Relative archive paths.
-
-Consumers may retain and return these values but must not depend on their internal representation.
+Older DataVersion 1 and DataVersion 2 archives do not contain those records. Import treats the missing collection as empty.
 
 ---
 
-## 5. Migration job lifecycle
+# Part 2: Migration contract (planned, epic #676 — not yet implemented)
 
-Migration jobs expose the following shared lifecycle states:
+Epic #676 defines the planned one-click migration system between Nostos SelfHosted and Nostos Cloud.
+
+The implementation is split across issues #677–#682.
+
+This section defines the target contract. These jobs, transfer sessions, chunk APIs, recovery snapshots, and activation semantics are **not yet the behaviour of the shipped `/api/portability/export` and `/api/portability/import` endpoints**.
+
+## Goals
+
+The migration system must:
+
+- remain provider-neutral;
+- support large libraries without one giant HTTP request;
+- survive interruption and worker restarts;
+- make retries safe;
+- detect destination changes before destructive activation;
+- make populated-library replacement explicit;
+- preserve a recoverable copy before replacing existing data;
+- keep public product contracts independent of private Cloud infrastructure.
+
+No contract exposed to the public product may require knowledge of database names, tenant/account database identifiers, object-storage bucket names, object keys, provider URLs, or vendor-specific APIs.
+
+Opaque IDs and tokens are used instead.
+
+---
+
+## Migration flow
+
+### Empty destination
+
+If the destination contains no portable user-owned state, a compatible migration may proceed after successful preflight, transfer, validation, and destination revision verification.
+
+Typical lifecycle:
+
+```text
+Pending
+  -> Preparing
+  -> Transferring
+  -> Validating
+  -> ReadyToActivate
+  -> Activating
+  -> Completed
+```
+
+### Populated destination
+
+A populated destination is never silently merged with the incoming library.
+
+Preflight must return an explicit replacement-required decision.
+
+If the user explicitly chooses replacement:
+
+1. the destination revision is verified;
+2. a recovery snapshot of the existing portable library is created;
+3. the incoming migration is validated;
+4. the destination revision is checked again immediately before activation;
+5. activation atomically replaces the destination portable state.
+
+A populated-library replacement therefore always creates a recovery snapshot before destructive activation.
+
+There is **no implicit merge mode** in the migration contract.
+
+---
+
+## Destination revision
+
+Each destination exposes an opaque revision token representing its current portable user-owned state.
+
+The token is implementation-defined and must not expose database internals.
+
+It must change after **any create, update, or delete affecting portable user-owned state**, including modifications to an already-existing row.
+
+Examples include:
+
+- adding or deleting a book;
+- editing a book title or metadata;
+- changing reading state or other portable book fields;
+- editing a note;
+- changing note topics;
+- editing writing;
+- modifying collection membership;
+- changing an acquisition record;
+- changing portable assistant settings;
+- changing a `NoteImportBookLink`.
+
+A migration records the destination revision observed during preflight.
+
+That revision must be checked again at activation.
+
+If the destination has changed, activation fails closed rather than overwriting intervening user changes. Implementation lands with #679/#681.
+
+---
+
+## Job state machine
+
+Planned migration jobs use these states:
 
 ```text
 Pending
@@ -134,994 +192,337 @@ Cancelled
 Expired
 ```
 
-### `Pending`
+### Legal transitions
 
-The migration request has been accepted but preparation has not started.
+| Current state | Allowed next states |
+|---|---|
+| `Pending` | `Preparing`, `Cancelled`, `Expired`, `Failed` |
+| `Preparing` | `Transferring`, `Failed`, `Cancelled`, `Expired` |
+| `Transferring` | `Validating`, `Failed`, `Cancelled`, `Expired` |
+| `Validating` | `ReadyToActivate`, `Failed`, `Cancelled`, `Expired` |
+| `ReadyToActivate` | `Activating`, `Failed`, `Cancelled`, `Expired` |
+| `Activating` | `Completed`, `Failed` |
+| `Completed` | none |
+| `Failed` | none |
+| `Cancelled` | none |
+| `Expired` | none |
 
-### `Preparing`
+`Completed`, `Failed`, `Cancelled`, and `Expired` are terminal states.
 
-The system is preparing the operation.
-
-Examples include:
-
-- Capturing an export snapshot.
-- Evaluating source state.
-- Reserving destination scratch capacity.
-- Preparing transfer metadata.
-- Building an archive manifest.
-
-### `Transferring`
-
-Archive or media bytes are actively being transferred.
-
-Transfers are chunked and restartable.
-
-### `Validating`
-
-The server is validating the completed transfer.
-
-Validation may include:
-
-- Archive structure.
-- Format and data versions.
-- Manifest consistency.
-- Declared versus observed sizes.
-- Entry paths.
-- Media presence.
-- Checksums.
-- Portable payload invariants.
-- Destination capacity.
-- Import compatibility.
-
-### `ReadyToActivate`
-
-All required transfer and validation work has completed successfully.
-
-The imported library is staged but has not yet replaced the active destination.
-
-### `Activating`
-
-The staged library is being atomically made active.
-
-Activation is the point-of-no-return boundary for cancellation.
-
-### `Completed`
-
-The migration has finished successfully.
-
-### `Failed`
-
-The migration terminated because of a typed migration, validation, compatibility, storage, or infrastructure failure.
-
-Failure does not imply that a partially prepared library became active.
-
-### `Cancelled`
-
-The job was cancelled before activation crossed its atomic boundary.
-
-### `Expired`
-
-The transfer or migration session exceeded its allowed lifetime and its staging resources are eligible for automatic cleanup.
-
----
-
-## 6. Job ownership and worker leases
-
-A migration job may be processed by at most one active worker lease at a time.
-
-The lease contract provides:
-
-- Exclusive ownership for a bounded period.
-- An expiration time.
-- Periodic heartbeat renewal while work is active.
-- Safe reclamation when the lease expires.
-
-A worker crash must not permanently lock a migration job.
-
-If the current worker stops renewing its lease, another worker may acquire the expired job and continue from its persisted progress.
-
-The public state machine defines the semantics of job ownership and resumability. The private host owns the actual worker scheduler and lease coordination mechanism.
-
----
-
-## 7. Idempotency and restart recovery
-
-Migration work must be safe to retry.
-
-Completed chunks and durable migration progress survive:
-
-- Worker restarts.
-- Process crashes.
-- Temporary network interruption.
-- Re-reading the source file.
-- Re-opening a transfer session where the session remains valid.
-
-Restarting a worker must not require already completed chunks to be transferred again when their completion has been durably recorded and validated.
-
-Chunk acceptance is idempotent.
-
-A retry of already accepted content must either:
-
-- Be recognized as already complete; or
-- Be verified to be identical before being accepted.
-
-Retries must not create duplicate logical library data.
-
----
-
-## 8. Cancellation boundaries
-
-Cancellation is supported while a job is in:
-
-- `Pending`
-- `Preparing`
-- `Transferring`
-- `Validating`
-- `ReadyToActivate`
-
-Cancellation during these phases leaves the currently active destination library unchanged.
-
-`Activating` is an atomic point-of-no-return boundary.
-
-Once activation has started, the system must complete or recover the atomic swap rather than attempt a best-effort partial cancellation.
-
-The migration therefore behaves conceptually as:
+The directly retryable terminal outcomes are:
 
 ```text
-prepare
-  → transfer
-  → validate
-  → ready
-  → atomic activation
+Failed
+Cancelled
+Expired
 ```
 
-rather than modifying the active library incrementally during transfer.
+Retry creates or resets migration work according to the migration recovery contract rather than illegally transitioning a terminal job back into an active state.
+
+Cancellation is supported during preparation, transfer, and validation.
+
+Activation is the atomic point-of-no-return boundary and is not cancellable once entered.
 
 ---
 
-## 9. Consistent export snapshot semantics
+## Job ownership and leases
 
-An export represents one consistent logical library revision.
+Only one worker may actively own a migration job at a time.
 
-The exporter must capture an atomic relational snapshot with a consistent:
-
-- Snapshot timestamp.
-- Source revision or equivalent source fingerprint.
-- Portable relational state.
-
-The export must not combine unrelated database states caused by concurrent writes occurring during serialization.
-
-Media is validated as part of export finalization.
-
-Before the archive manifest is finalized, the exporter verifies that every media object referenced by the portable snapshot exists and is available for export.
-
-An export must not advertise a successfully finalized manifest whose required media is already known to be absent.
-
-The manifest therefore describes a coherent portable snapshot, not merely a best-effort enumeration of whatever files happened to be readable at different times.
-
----
-
-## 10. Destination revision tokens
-
-Preflight evaluates the destination state before an import is allowed to proceed.
-
-The preflight result returns an opaque destination revision token.
-
-The token represents the destination state against which the operation was evaluated.
-
-Clients:
-
-- May store the token.
-- May return the token in subsequent migration requests.
-- Must treat the token as opaque.
-- Must not attempt to parse or synthesize it.
-
-Before import or activation proceeds, the server re-verifies that the destination revision still matches the preflight expectation.
-
-This catches concurrent writes such as:
-
-- A book being added.
-- A note being changed.
-- A collection being edited.
-- Reading progress changing.
-- Another migration completing.
-- Any other destination mutation represented by the destination revision.
-
-If the destination revision has changed, the operation fails closed and requires a new preflight or explicit reevaluation.
-
-This prevents a replacement approved against one destination state from silently overwriting a newer one.
-
----
-
-## 11. Empty destination import
-
-Import into an empty destination is the simple migration path.
-
-When the destination library is empty:
-
-- No existing user library state needs to be replaced.
-- `confirmReplacement` is not required.
-- No recovery snapshot of existing user data is necessary.
-- Validated portable data can be activated automatically after normal compatibility and capacity checks.
-
-This path is intentionally non-destructive.
-
----
-
-## 12. Populated destination replacement
-
-Import into a populated destination is never interpreted as an implicit merge.
-
-Nostos does not silently combine arbitrary portable archives with existing destination state.
-
-A populated destination requires explicit replacement confirmation:
-
-```json
-{
-  "confirmReplacement": true
-}
-```
-
-Without explicit confirmation, preflight or activation must refuse the destructive replacement.
-
-Before replacing a populated library, the destination creates a retained recovery snapshot of the currently active library.
-
-The intended sequence is:
+Worker ownership uses a lease with:
 
 ```text
-preflight populated destination
-  → explicit replacement confirmation
-  → create retained recovery snapshot
-  → transfer and validate replacement
-  → re-check destination revision
-  → atomically activate replacement
+Lease duration: 5 minutes
 ```
 
-This gives the user a recovery path if the replacement itself was intentional but the imported content later proves unsuitable.
+The active worker renews the lease through heartbeat updates.
 
-Replacement semantics are deliberately separate from any future merge feature.
+If the worker disappears and the lease expires, another worker may safely recover the job from its durable migration state.
 
----
-
-## 13. Bounded metadata preflight
-
-Preflight operates on bounded metadata and does not trust client declarations as authoritative.
-
-Expected archive metadata may include:
-
-- Archive format identity.
-- Archive format version.
-- Portable data version.
-- Media entry count.
-- Declared aggregate media bytes.
-- Maximum declared single-entry size.
-- Other bounded archive/library metadata needed for capacity evaluation.
-- Client-observed destination revision or fingerprint when applicable.
-
-For the current format family, preflight understands:
-
-- Archive format version `1`.
-- Legacy data version `1`.
-- Legacy data version `2`.
-- The current supported data version.
-
-Preflight validates declared metadata against:
-
-- Supported format versions.
-- Supported data versions.
-- Target plan or destination capacity.
-- Single-entry size limits.
-- Aggregate archive limits.
-- Scratch-space requirements.
-- Migration policy.
-
-Preflight is an admission and compatibility check, not proof that the archive is valid.
-
-All untrusted declarations are revalidated from the actual transferred archive during transfer and validation.
-
-A client cannot bypass server limits by lying about:
-
-- Entry size.
-- Aggregate bytes.
-- Counts.
-- Versions.
-- Checksums.
-- Manifest contents.
+A lease is operational ownership only. It lives strictly within internal store/worker models and is never exposed through the public `MigrationJobStatus` contract.
 
 ---
 
-## 14. Legacy data compatibility
+## Idempotency and resumability
 
-Portable archive readers preserve explicit compatibility with supported legacy data versions.
+Migration transfer must tolerate retries, duplicate requests, network interruption, and worker restart.
 
-### DataVersion 1
+### Idempotency key
 
-DataVersion `1` predates newer portable entities including `WritingNotes` and `NoteImportBookLinks`.
+Session creation and job creation may carry an idempotency key.
 
-When importing a DataVersion 1 archive:
+Repeating the same logically identical session request with the same key must not create duplicate migration work.
 
-- The archive remains valid if all DataVersion 1 requirements are satisfied.
-- Missing fields or entities introduced in later versions default safely.
-- Missing `WritingNotes` are treated as empty/no writing-note associations.
-- Missing remembered e-reader mappings are treated as empty.
-- Existing DataVersion 1 user data must not be discarded merely because newer optional state did not yet exist.
+### File fingerprint
 
-### DataVersion 2
-
-DataVersion `2` includes `WritingNotes` but predates `NoteImportBookLinks`.
-
-When importing a DataVersion 2 archive:
-
-- `WritingNotes` are preserved.
-- Missing `NoteImportBookLinks` default safely to empty.
-- Other DataVersion 2 portable fields retain their interchange semantics.
-
-### Current data version
-
-Current archives include the full current portable completeness inventory.
-
-A current archive must support:
-
-- Export.
-- Import into a compatible empty destination.
-- Explicit populated-library replacement.
-- Round-trip export/import without silently dropping portable user-owned state.
-
----
-
-## 15. Incompatible and corrupt archives
-
-Malformed or unsupported archives fail closed.
-
-Examples include:
-
-- DataVersion `0`.
-- Unknown future DataVersion values.
-- Unknown archive format versions.
-- Missing required manifest fields.
-- Invalid manifest structure.
-- Invalid paths.
-- Duplicate or inconsistent entries.
-- Missing required portable payloads.
-- Missing required media.
-- Declared versus observed size inconsistencies.
-- Corrupt hashes.
-- Checksum mismatches.
-- Incompatible portable schema combinations.
-
-Compatibility failures are surfaced as typed portability/migration failures rather than arbitrary low-level parsing exceptions where the public API exposes a portability error contract.
-
-Validation failure must occur before activation.
-
-A corrupt archive must never become the active destination library.
-
----
-
-## 16. Media size guarantees
-
-Portable migration must support large Nostos libraries without hidden legacy 4 GiB ceilings.
-
-The portability design supports:
-
-- Individual media entries up to **16 GiB**.
-- Aggregate archives larger than **4 GiB**.
-- Up to **512 GiB** of migration staging where the target host allows it.
-- Up to **1 TiB** declared uncompressed archive content under the portability contract.
-
-These are protocol and implementation bounds, not an entitlement to storage beyond the destination account's actual capacity.
-
-The effective accepted archive remains constrained by:
-
-- Destination plan storage.
-- Available destination storage.
-- Available scratch/staging space.
-- Host policy.
-- Per-entry limits.
-- Aggregate portability limits.
-
-For example, a destination with 15 GiB available storage cannot import 40 GiB of media merely because the archive protocol can represent it.
-
-The important guarantee is that migrations are governed by explicit capacity checks rather than accidental:
-
-- 32-bit length fields.
-- HTTP request buffering limits.
-- In-memory byte arrays.
-- ZIP implementation assumptions around 4 GiB.
-- Hidden temporary-file limits.
-
----
-
-## 17. Streaming and memory bounds
-
-Archive and media processing must use bounded memory.
-
-Large entries are processed using chunked streaming, typically with chunks in the approximate **5–8 MiB** range.
-
-Implementations must not require:
-
-- Loading an entire media file into memory.
-- Loading an entire multi-gigabyte archive into memory.
-- Seeking over the whole source solely to stage it in RAM.
-- Converting large payloads to single in-memory byte arrays.
-
-The portability pipeline supports non-seekable streaming where practical.
-
-The design therefore permits migration of archives much larger than the process memory limit.
-
-Chunk size is an implementation detail and may evolve while preserving the bounded-streaming guarantee.
-
----
-
-## 18. Scratch-space admission
-
-Transfers may require temporary staging before validation and atomic activation.
-
-Before allocating large staging resources, the host performs scratch-space admission checks.
-
-Checks account for relevant constraints such as:
-
-- Declared transfer bytes.
-- Expected uncompressed bytes.
-- Currently available scratch capacity.
-- Per-job staging quota.
-- Host-wide staging quota.
-- Destination capacity.
-- Existing concurrent migration reservations.
-
-A job that cannot be staged safely must be rejected before consuming unbounded disk space.
-
-Metadata admission is still followed by actual size validation as bytes arrive.
-
----
-
-## 19. Transfer session lifetime and cleanup
-
-Long-running transfer sessions have a bounded lifetime.
-
-A typical transfer session expiry is approximately **24 hours**.
-
-The exact host policy may vary, but sessions must not reserve staging resources indefinitely.
-
-Expired or cancelled jobs are eligible for automatic cleanup of:
-
-- Partial archive staging.
-- Uncommitted media chunks.
-- Temporary validation output.
-- Other migration-only scratch resources.
-
-Cleanup must not remove:
-
-- The currently active library.
-- A retained populated-library recovery snapshot still covered by retention policy.
-- Successfully activated user data.
-
-Lease expiry and transfer-session expiry are separate concepts:
-
-- A worker lease may expire and be reacquired while the migration remains resumable.
-- A migration session itself may eventually expire and become non-resumable.
-
----
-
-## 20. Portable completeness guarantee
-
-Nostos maintains an executable completeness inventory for portable user-owned state.
-
-Every relevant entity and field in the application data model must be classified as either:
-
-- **Portable**, or
-- **ExplicitlyExcluded**, with a documented architectural reason.
-
-Adding a new user-owned entity or field without classifying it must fail the completeness contract tests.
-
-This prevents new features from silently becoming non-portable.
-
-The inventory is based on semantic ownership, not merely current database tables.
-
-Provider implementation details and derived caches are not made portable simply because they happen to be stored in the same database.
-
----
-
-## 21. Portable user-owned state
-
-The current portable domain includes the following state.
-
-### Works
-
-Logical work identity and associated portable work-level state.
-
-### Books
-
-Portable book state includes all supported book forms and their user-owned fields.
-
-This includes shared book fields and subtype-specific information.
-
-For audiobooks, portable state includes fields such as:
-
-- Duration.
-- Narrator.
-- ASIN.
-
-For physical books and ebooks, portable state includes fields such as:
-
-- ISBN.
-- Page count.
-
-Other portable book identity/status metadata classified by the completeness inventory is preserved as part of the versioned portable contract.
-
-### BookMetadata
-
-Portable book metadata owned by the user/library.
-
-Host-only or derived implementation state is not implied merely by being attached to a book model.
-
-### ReadingProgress
-
-Reading position and progress state associated with portable books.
-
-### Chapters
-
-Portable chapter information required to preserve the user's library representation.
-
-### Collections
-
-User-created collections.
-
-### BookCollections
-
-Book-to-collection memberships.
-
-Collection membership is portable state and must round-trip with the library.
-
-### Notes
-
-Portable notes include note content and source anchoring information.
-
-Relevant anchor fields include:
-
-- `CfiRange`
-- `SourceAnchorKind`
-- `SourceAnchorValue`
-- `AnchorVerified`
-
-This allows both EPUB-style CFI anchors and other supported source/page anchor forms to survive migration.
-
-### Topics
-
-The current domain name is `Topics`.
-
-For archive compatibility, the interchange key remains:
+A transferred archive is identified using a file fingerprint derived from:
 
 ```text
-concepts
+declared file size + SHA-256 checksum
 ```
 
-The legacy interchange key is retained intentionally so domain renaming does not unnecessarily break the portable wire format.
+The fingerprint prevents an interrupted session from being accidentally resumed using different archive bytes.
 
-### NoteTopics
+### Upload chunks
 
-Associations between notes and topics are portable.
-
-Their interchange key remains:
+The standard migration transfer chunk size is:
 
 ```text
-noteConcepts
+8 MiB
 ```
 
-As with `concepts`, this preserves archive compatibility across the Concepts → Topics domain rename.
+Re-sending an already accepted chunk with the same session, chunk identity/range, and bytes is idempotent.
 
-### Writings
+A conflicting re-send fails closed.
 
-Studio writing state is portable.
+Completed chunks survive interruption and worker restart.
 
-This includes:
+### Download resume
 
-- Studio documents.
-- Studio folders.
-- Their portable hierarchy and user-owned content.
+Export/download transfer supports resumable range or offset requests.
 
-### WritingNotes
+A client may continue from the last verified byte boundary instead of restarting the entire archive transfer.
 
-Relationships between writings and notes are portable in data versions that support them.
+### Session expiry
 
-Legacy DataVersion 1 archives legitimately omit this state.
-
-### BookAcquisitions
-
-Book acquisition/source provenance is portable.
-
-This preserves supported information about where an imported or discovered book originated rather than reducing every migrated book to anonymous local content.
-
-### AssistantSettings
-
-Portable assistant settings include user-owned assistant behavior such as the capture-processing preference.
-
-Provider credentials are explicitly separate and excluded.
-
-### NoteImportBookLink
-
-Remembered e-reader book mappings are portable.
-
-These mappings allow future e-reader annotation imports to retain the user's established correspondence between an external reader book and a Nostos book.
-
-Legacy archive versions that predate this entity default to no remembered mappings.
-
----
-
-## 22. Explicitly excluded state
-
-The following state is deliberately excluded from portable archives.
-
-### EPUB locations cache
-
-`LocationsJson` is excluded.
-
-It is a derived/cache representation that can be rebuilt and is not authoritative user-owned content.
-
-### E-reader import batch undo history
-
-The following operational import-history entities are excluded:
-
-- `NoteImportBatch`
-- `NoteImportBatchNote`
-
-These records represent transient import/undo bookkeeping rather than the resulting user notes themselves.
-
-The resulting portable notes and supported mappings remain portable.
-
-### AI provider configuration and credentials
-
-`AiProviderSettings` is excluded.
-
-Portable archives must not contain:
-
-- API keys.
-- Provider credentials.
-- Host-managed AI secrets.
-- Deployment-specific AI configuration.
-
-A migrated library may therefore require AI provider configuration to be established independently on the destination.
-
-### Local backup logs
-
-`BackupRecord` is excluded.
-
-Backup execution history belongs to the host that performed the backup and has no portable user-library meaning.
-
-### Command receipts
-
-The following command/idempotency bookkeeping is excluded:
-
-- `LibraryCommandReceipt`
-- `NoteCommandReceipt`
-
-These receipts exist to implement command-processing guarantees within a deployment and are not part of the user's portable library state.
-
-### Event synchronization state
-
-`LibraryState` is excluded.
-
-Synchronization/event-processing state is deployment operational state and must be recreated by the destination rather than imported as authoritative state from another host.
-
----
-
-## 23. Portable relationships and owned EF state
-
-The portability inventory is defined in terms of logical portable data, not direct serialization of EF Core's internal representation.
-
-Consequently:
-
-- EF shadow foreign keys may be represented by their logical portable relationship rather than copied as implementation artifacts.
-- Owned navigations may serialize through their portable value fields.
-- TPH discriminator implementation details do not automatically become public archive fields.
-- Navigation properties themselves are not duplicated when the relationship is already represented by portable scalar keys or join records.
-
-The completeness tests therefore distinguish between:
-
-- User-owned portable data.
-- Relationship/navigation structure.
-- EF implementation metadata.
-- Explicitly excluded derived or operational state.
-
-This keeps the archive provider-neutral and resilient to persistence-layer refactoring.
-
----
-
-## 24. Round-trip guarantees
-
-For the current supported data version, a valid portable library must survive:
+Transfer sessions expire after:
 
 ```text
-source
-  → portable export
-  → validation
-  → import
-  → portable export
+24 hours
 ```
 
-without silent loss of classified portable user-owned state.
-
-Round-trip equivalence does not require byte-for-byte archive identity.
-
-Differences are permitted for values that are intentionally regenerated or deployment-local, including:
-
-- Archive creation timestamps.
-- Opaque migration IDs.
-- Destination revision tokens.
-- ZIP entry ordering where semantically irrelevant.
-- Recomputed integrity metadata.
-- Explicitly excluded state.
-
-Semantic portable content must remain equivalent.
+Expired sessions may no longer accept transfer activity and follow the explicit retry/recovery path.
 
 ---
 
-## 25. Public product ownership
+## Preflight contract
 
-The public Nostos product owns the portable migration semantics.
+Preflight is a pure product-level decision over declared incoming archive properties and destination state.
 
-Public responsibilities include:
+It evaluates at least:
 
-- `.nostos` ZIP/archive format.
-- Archive manifest format.
-- Versioned JSON schemas.
-- Portable domain serializers and deserializers.
-- Archive format-version compatibility.
-- Data-version compatibility.
-- Portable completeness inventory.
-- Portable invariant validation.
-- Checksum/integrity validation rules.
-- Bounded metadata preflight logic.
-- Migration request/result models.
-- Shared migration lifecycle states.
-- Provider-neutral state-machine semantics.
-- Destination revision contract semantics.
-- Replacement confirmation semantics.
-- Restart/idempotency contract semantics.
-- Cancellation boundaries.
+### Incoming archive
 
-These contracts must remain usable without knowledge of the hosted Nostos Cloud implementation.
+- entity counts (`MigrationArchiveCounts`);
+- declared archive bytes;
+- declared media bytes;
+- largest single entry;
+- archive format version;
+- archive data version.
 
----
+Entity counts include the relevant portable record categories: works, books, notes, writings, topics, collections, collection memberships, acquisitions, assistant settings, and note import book links.
 
-## 26. Private host ownership
+### Destination
 
-The private hosted implementation owns infrastructure concerns that are not part of the portable product contract.
+- destination entity counts (`MigrationExistingCounts`);
+- whether the destination is empty or populated;
+- destination revision token;
+- available storage capacity.
 
-Private host responsibilities include:
+### Capacity
 
-- Tenant isolation.
-- Authentication and authorization.
-- Account ownership checks.
-- Billing-plan enforcement.
-- Hosted storage quotas.
-- Physical block/object storage implementation.
-- Provider-specific multipart upload APIs.
-- Temporary object/staging placement.
-- Background worker scheduling.
-- Physical worker lease coordination.
-- Host-specific cleanup scheduling.
-- Hosted observability and alerts.
-- Hosted recovery-snapshot retention policy.
+Preflight reports:
 
-The private host may implement these responsibilities using any suitable provider as long as the public migration behavior remains conformant.
+- required storage;
+- available storage;
+- compatibility;
+- destination status;
+- typed errors;
+- warnings;
+- resulting preflight decision.
 
-A migration client should not be able to determine from the public portability contract whether the destination uses, for example:
+Typed decisions include:
 
-- SQLite or PostgreSQL.
-- Local disk or object storage.
-- One object-storage provider or another.
-- One worker scheduler or another.
+```text
+AllowedEmpty
+AllowedReplacementRequired
+RejectedIncompatible
+RejectedInsufficientStorage
+RejectedDestinationConflict
+RejectedOperationalBackupNotPortable
+```
+
+A rejection reason is part of the contract. Callers must not infer failure categories by parsing human-readable error strings.
 
 ---
 
-## 27. Preflight versus validation
+## Capacity and scratch-space bound
 
-Preflight and validation intentionally serve different purposes.
+Migration staging must account for both:
 
-### Preflight
+1. the archive bytes being transferred; and
+2. the extracted media represented by that archive.
 
-Preflight answers questions such as:
+The staging capacity bound formula is:
 
-- Is this archive version potentially supported?
-- Does the declared archive fit the target plan?
-- Is the destination empty or populated?
-- Is explicit replacement confirmation required?
-- Is sufficient staging capacity available?
-- What destination revision is this decision based on?
+```text
+RequiredStorageBytes =
+    DeclaredArchiveBytes
+    + DeclaredMediaBytes
+```
 
-Preflight uses bounded metadata and can reject obviously impossible migrations before expensive transfer work begins.
+A preflight must reject the migration if the destination cannot provide at least that required capacity.
 
-### Validation
-
-Validation answers:
-
-- Is the actual archive structurally correct?
-- Do the observed bytes match the declarations?
-- Are checksums correct?
-- Are all required entries present?
-- Are all portable invariants satisfied?
-- Is the actual data version supported?
-- Is referenced media present?
-- Does the staged import fit the destination?
-- Is the archive safe to activate?
-
-A successful preflight does not guarantee a successful validation.
+This is a firm bound for the transfer/staging contract.
 
 ---
 
-## 28. Activation safety
+## Validation and activation
 
-No imported library becomes active merely because transfer completed.
+A transferred archive is not active user data merely because every chunk arrived.
 
-Activation requires:
+The migration must first validate:
 
-1. Transfer completion.
-2. Archive validation.
-3. Portable invariant validation.
-4. Capacity validation.
-5. Any required explicit replacement confirmation.
-6. Recovery snapshot creation for populated replacement.
-7. Destination revision re-verification.
-8. Entry into the atomic activation phase.
+- archive format compatibility;
+- data-version compatibility;
+- declared and computed checksums;
+- archive structural integrity;
+- entry bounds;
+- portable data integrity;
+- media completeness;
+- destination conditions required for activation.
 
-Only after these conditions are satisfied may the staged library replace the active destination.
+Only a successfully validated migration may enter `ReadyToActivate`.
 
-This keeps potentially corrupt or stale imports isolated from the active library.
+At activation:
 
----
+1. the destination revision is checked again;
+2. any required recovery snapshot must already have been created successfully;
+3. the incoming portable state is activated atomically.
 
-## 29. Concurrency behavior
-
-Migration does not require users to stop using Nostos merely because a long transfer exists.
-
-Instead:
-
-- Preflight records the destination revision.
-- Transfer and validation may continue against staging.
-- Normal destination activity may change the destination revision.
-- Activation rechecks that revision.
-- A mismatch prevents stale replacement.
-
-The system therefore prefers detecting concurrent mutation over silently discarding it.
-
-A failed revision check does not imply that the uploaded archive is corrupt; it means the destructive action must be reconsidered against the destination's newer state.
+A mismatch or incomplete prerequisite fails closed.
 
 ---
 
-## 30. Security and trust model
+## Recovery snapshots
 
-All migration input is untrusted.
+Replacing a populated destination always requires a recovery snapshot of the outgoing portable user-owned state (`confirmReplacement: true`). Client requests cannot bypass recovery snapshot retention.
 
-That includes:
+Recovery snapshots are retained for:
 
-- Client preflight metadata.
-- Archive manifests.
-- ZIP entry metadata.
-- Relative paths.
-- Counts.
-- Sizes.
-- Hashes supplied by the producer.
-- Resume/chunk metadata.
-- Revision tokens returned by clients.
-- Replacement confirmation flags.
+```text
+7 days
+```
 
-Servers independently enforce:
+Retained snapshots count against host storage accounting until expired or purged.
 
-- Authorization.
-- Ownership.
-- Capacity.
-- Version compatibility.
-- Path safety.
-- Size limits.
-- Hash validation.
-- Destination revision validity.
-- State-machine transitions.
+They exist to recover from an explicitly requested destructive replacement.
 
-Opaque tokens must not be treated as authority merely because the client possesses them.
+They are distinct from routine operator backups.
+
+An operational database or infrastructure backup is **not automatically a portable migration archive** and must not be presented as one unless it satisfies the portable archive contract.
 
 ---
 
-## 31. Compatibility evolution
+## Public product and private host ownership
 
-Future portability changes should prefer additive evolution within a data version only when old readers can safely ignore the addition and all required semantics remain unambiguous.
+The migration contract is owned by the public Nostos product.
 
-A new data version is required when compatibility semantics materially change, for example when:
+Public product code owns concepts such as:
 
-- New required portable state is introduced.
-- Existing fields change meaning.
-- A formerly optional structure becomes mandatory.
-- A relationship requires new interpretation.
-- An old reader could otherwise silently lose user-owned state.
+- archive format and versions;
+- portable data records;
+- migration job states;
+- state transitions;
+- preflight inputs and decisions;
+- opaque destination revisions;
+- transfer/session contracts;
+- chunk semantics;
+- checksums and fingerprints;
+- retry and resumability semantics;
+- recovery status;
+- activation guarantees.
 
-A new archive format version is reserved for changes to the outer archive/container contract that cannot be represented compatibly within format version `1`.
+Private Cloud infrastructure owns provider-specific implementation details such as:
 
-Unknown future versions must fail closed.
+- tenant lookup;
+- Cloud account mapping;
+- worker scheduling;
+- database provisioning;
+- private storage locations;
+- presigned/provider transfer mechanics;
+- provider credentials;
+- operational monitoring.
 
----
+Private host details must not leak into public migration contracts.
 
-## 32. Required compatibility fixtures
-
-The portability test suite maintains redistributable synthetic fixtures covering supported compatibility generations.
-
-At minimum, fixtures cover:
-
-- Format 1 / DataVersion 1:
-  - Legacy archive.
-  - No `WritingNotes`.
-  - No `NoteImportBookLinks`.
-
-- Format 1 / DataVersion 2:
-  - Legacy archive.
-  - Includes `WritingNotes`.
-  - No `NoteImportBookLinks`.
-
-- Current format/current data:
-  - Full current portable inventory.
-
-Current-format fixtures should exercise representative state including:
-
-- Books and supported media.
-- EPUB/CFI note anchors.
-- Page/source anchors.
-- Topics and note-topic relationships.
-- Writings.
-- Writing-note relationships.
-- Collection memberships.
-- Acquisition provenance.
-- Assistant settings.
-- Remembered e-reader mappings.
-
-The fixtures are synthetic and redistributable so compatibility tests do not depend on private user data.
+The same product contract must remain implementable by another host or by SelfHosted without depending on the Cloud provider stack.
 
 ---
 
-## 33. Required contract test guarantees
+## User-owned portability completeness
 
-The portability contract tests are expected to verify at least the following behavior:
+The portable archive is an explicit inventory of user-owned state.
 
-- DataVersion 1 imports successfully.
-- Fields introduced after DataVersion 1 default safely.
-- DataVersion 2 imports successfully.
-- `WritingNotes` survive DataVersion 2 import.
-- Current archives import successfully.
-- Current archives round-trip successfully.
-- Invalid archive versions are rejected.
-- Unknown future versions are rejected.
-- Corrupt checksums are rejected.
-- Empty-library preflight is distinguished from populated-library preflight.
-- Populated replacement requires explicit confirmation.
-- Destination revisions are tracked and rechecked.
-- Compatibility decisions fail closed.
-- The completeness inventory fails when new EF/domain state is added without classification.
+Every portable entity and field must be classified and covered by the archive model. New user-owned state must not silently become non-portable.
 
-These tests are part of the portability contract rather than incidental implementation coverage.
+| User-owned state | Portable archive representation | Availability |
+|---|---|---|
+| Works | `PortableWork` | DataVersion 1+ |
+| Books and portable book metadata/state | `PortableBook` | DataVersion 1+ |
+| Collections | `PortableCollection` | DataVersion 1+ |
+| Book/collection memberships | `PortableBookCollection` | DataVersion 1+ |
+| Notes, including supported book anchors | `PortableNote` | DataVersion 1+ |
+| Topics | `PortableTopic` | DataVersion 1+ |
+| Note/topic relationships | `PortableNoteTopic` | DataVersion 1+ |
+| Writings | `PortableWriting` | DataVersion 1+ |
+| Writing/note relationships | `PortableWritingNote` | DataVersion 2+ |
+| Book acquisitions | `PortableBookAcquisition` | versioned portable data |
+| Portable assistant settings | `PortableAssistantSettings` | versioned portable data |
+| Remembered note-import book mappings | `PortableNoteImportBookLink` | **DataVersion 3+** |
+| Portable media referenced by books | archive media entries | versioned portable data |
+
+`NoteImportBookLink` carries:
+
+```text
+Id
+Source
+SourceKey
+BookId
+CreatedAtUtc
+```
+
+DataVersion 1 and DataVersion 2 archives predate this collection. Importing either version must therefore default `NoteImportBookLinks` to an empty collection.
+
+The executable completeness inventory and archive-model parity tests are the enforcement mechanism for this contract: adding new mapped user-owned state without classifying its portability must fail the test suite.
 
 ---
 
-## 34. Summary
+## Version compatibility
 
-The Nostos portable migration contract provides a stable boundary between user-owned library data and deployment-specific infrastructure.
+Portable format and data versions are explicit compatibility boundaries.
 
-A conforming migration:
+A migration must:
 
-- Uses versioned `.nostos` archives.
-- Preserves classified portable user state.
-- Supports legacy DataVersion 1 and 2 imports.
-- Uses provider-neutral public contracts.
-- Streams large media with bounded resources.
-- Supports archives beyond 4 GiB.
-- Checks target and scratch capacity explicitly.
-- Captures exports from a consistent source snapshot.
-- Validates media before finalizing exports.
-- Uses opaque destination revision tokens to detect concurrent writes.
-- Imports automatically into an empty destination.
-- Never implicitly merges into a populated destination.
-- Requires explicit confirmation and a recovery snapshot before populated replacement.
-- Is resumable and idempotent across worker interruption.
-- Uses worker leases with expiry and heartbeat renewal.
-- Allows cancellation until the atomic activation boundary.
-- Cleans up expired or cancelled staging.
-- Rejects unsupported or corrupt archives before activation.
-- Keeps host-specific credentials, backup records, caches, receipts, and synchronization state outside the portable archive.
+- accept supported historical versions;
+- apply defined safe defaults for fields introduced in later data versions;
+- reject unknown future versions;
+- reject invalid or corrupt archives;
+- reject checksum mismatches;
+- fail closed rather than partially activating an incompatible archive.
 
-The result is a migration format that belongs to Nostos itself rather than to whichever database, storage provider, or hosted deployment happens to be running it.
+For the current format line:
+
+```text
+Format 1 / DataVersion 1
+Format 1 / DataVersion 2
+Format 1 / DataVersion 3
+```
+
+DataVersion 3 is the current version and includes `NoteImportBookLink`.
+
+---
+
+## Summary of fixed migration contract values
+
+| Contract | Value |
+|---|---:|
+| Transfer chunk size | 8 MiB |
+| Worker lease duration | 5 minutes |
+| Transfer session expiry | 24 hours |
+| Recovery snapshot retention | 7 days |
+| Staging capacity bound | `DeclaredArchiveBytes + DeclaredMediaBytes` |
+
+These are contract values, not approximate operational guidance.
+
+The current shipped portability API remains subject to the separate 4 GiB Kestrel single-request import limit described in Part 1.

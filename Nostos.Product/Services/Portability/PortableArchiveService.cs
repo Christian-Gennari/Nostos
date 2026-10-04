@@ -478,6 +478,18 @@ public sealed class PortableArchiveService(
                 x.AddedAt))
             .ToList();
 
+        var noteImportBookLinks = (await _db.NoteImportBookLinks
+            .AsNoTracking()
+            .OrderBy(x => x.Id)
+            .ToListAsync(ct))
+            .Select(x => new PortableNoteImportBookLink(
+                x.Id,
+                x.Source,
+                x.SourceKey,
+                x.BookId,
+                x.CreatedAtUtc))
+            .ToList();
+
         var assistant = await _db.AssistantSettings
             .AsNoTracking()
             .SingleOrDefaultAsync(ct);
@@ -498,7 +510,8 @@ public sealed class PortableArchiveService(
                 : new PortableAssistantSettings(
                     assistant.CaptureProcessingMode,
                     assistant.UpdatedAtUtc),
-            writingNotes);
+            writingNotes,
+            noteImportBookLinks);
     }
 
     private static PortableBook ToPortableBook(BookModel book)
@@ -904,7 +917,7 @@ public sealed class PortableArchiveService(
                 + $"This build supports version {PortableArchiveFormat.Version}.");
         }
 
-        if (manifest.DataVersion is not (1 or 2))
+        if (manifest.DataVersion is not (1 or 2 or 3))
         {
             throw new PortableArchiveException(
                 "unsupported_data_version",
@@ -1062,7 +1075,7 @@ public sealed class PortableArchiveService(
 
     private static void ValidatePortableData(PortableLibraryData data)
     {
-        if (data.Version is not (1 or 2))
+        if (data.Version is not (1 or 2 or 3))
         {
             throw new PortableArchiveException(
                 "unsupported_data_version",
@@ -1078,7 +1091,8 @@ public sealed class PortableArchiveService(
             || data.NoteTopics is null
             || data.Writings is null
             || data.BookAcquisitions is null
-            || (data.Version == 2 && data.WritingNotes is null))
+            || (data.Version >= 2 && data.WritingNotes is null)
+            || (data.Version >= 3 && data.NoteImportBookLinks is null))
         {
             throw new PortableArchiveException(
                 "malformed_data",
@@ -1092,6 +1106,10 @@ public sealed class PortableArchiveService(
         RequireUniqueGuids(data.Topics.Select(x => x.Id), "topic");
         RequireUniqueGuids(data.Writings.Select(x => x.Id), "writing");
         RequireUniqueGuids(data.BookAcquisitions.Select(x => x.Id), "book acquisition");
+        if (data.NoteImportBookLinks is not null)
+        {
+            RequireUniqueGuids(data.NoteImportBookLinks.Select(x => x.Id), "note import book link");
+        }
 
         var workIds = data.Works.Select(x => x.Id).ToHashSet();
         var bookIds = data.Books.Select(x => x.Id).ToHashSet();
@@ -1294,6 +1312,27 @@ public sealed class PortableArchiveService(
                     "Portable archive contains duplicate acquisition provenance.");
             }
         }
+
+        if (data.NoteImportBookLinks is not null)
+        {
+            var importLinkKeys = new HashSet<(string Source, string SourceKey)>();
+            foreach (var link in data.NoteImportBookLinks)
+            {
+                if (!bookIds.Contains(link.BookId))
+                {
+                    throw new PortableArchiveException(
+                        "malformed_relationship",
+                        $"Note import book link {link.Id} references an unknown book.");
+                }
+
+                if (!importLinkKeys.Add((link.Source, link.SourceKey)))
+                {
+                    throw new PortableArchiveException(
+                        "duplicate_relationship",
+                        $"Portable archive contains duplicate note import book link for source '{link.Source}' and key '{link.SourceKey}'.");
+                }
+            }
+        }
     }
 
     private async Task EnsureDestinationIsEmptyAsync(CancellationToken ct)
@@ -1309,6 +1348,7 @@ public sealed class PortableArchiveService(
             || await _db.Writings.AnyAsync(ct)
             || await _db.WritingNotes.AnyAsync(ct)
             || await _db.BookAcquisitions.AnyAsync(ct)
+            || await _db.NoteImportBookLinks.AnyAsync(ct)
             || await _db.AssistantSettings.AnyAsync(
                 x => x.CaptureProcessingMode != null,
                 ct);
@@ -1531,6 +1571,22 @@ public sealed class PortableArchiveService(
             }
         }
 
+        if (data.NoteImportBookLinks is not null)
+        {
+            foreach (var source in data.NoteImportBookLinks)
+            {
+                _db.NoteImportBookLinks.Add(new NoteImportBookLink
+                {
+                    Id = source.Id,
+                    Source = source.Source,
+                    SourceKey = source.SourceKey,
+                    BookId = source.BookId,
+                    Book = books[source.BookId],
+                    CreatedAtUtc = source.CreatedAtUtc,
+                });
+            }
+        }
+
         foreach (var source in data.BookAcquisitions)
         {
             _db.BookAcquisitions.Add(new BookAcquisitionModel
@@ -1666,6 +1722,22 @@ public sealed class PortableArchiveService(
             throw new PortableArchiveException(
                 "integrity_failed",
                 "Imported Writing/Note links do not match the archive.");
+        }
+
+        var expectedImportLinks = (source.NoteImportBookLinks ?? [])
+            .Select(x => (x.Id, x.Source, x.SourceKey, x.BookId))
+            .ToHashSet();
+        var actualImportLinks = (await _db.NoteImportBookLinks
+            .AsNoTracking()
+            .Select(x => new { x.Id, x.Source, x.SourceKey, x.BookId })
+            .ToListAsync(ct))
+            .Select(x => (x.Id, x.Source, x.SourceKey, x.BookId))
+            .ToHashSet();
+        if (!expectedImportLinks.SetEquals(actualImportLinks))
+        {
+            throw new PortableArchiveException(
+                "integrity_failed",
+                "Imported note import book links do not match the archive.");
         }
 
         var sourceBooks = source.Books.ToDictionary(x => x.Id);

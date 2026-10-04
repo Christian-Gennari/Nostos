@@ -276,134 +276,261 @@ public sealed class PortableMigrationFixtureAndCompatTests
     }
 
     [Fact]
-    public async Task Preflight_accepts_compatible_archive_for_empty_library()
+    public void Job_transitions_validate_legal_state_machine_and_reject_illegal()
     {
-        using var fixture = await CreateFixtureAsync(
-            "portable-format1-data2.nostos",
-            CurrentDataVersion);
+        var legalTransitions = new (MigrationJobState From, MigrationJobState To)[]
+        {
+            (MigrationJobState.Pending, MigrationJobState.Preparing),
+            (MigrationJobState.Preparing, MigrationJobState.Transferring),
+            (MigrationJobState.Transferring, MigrationJobState.Validating),
+            (MigrationJobState.Validating, MigrationJobState.ReadyToActivate),
+            (MigrationJobState.ReadyToActivate, MigrationJobState.Activating),
+            (MigrationJobState.Activating, MigrationJobState.Completed),
+        };
 
-        await using var destination = await LocalPortableTestLibrary.CreateAsync();
+        foreach (var (from, to) in legalTransitions)
+        {
+            MigrationJobTransitions.CanTransition(from, to).Should().BeTrue(
+                because: $"{from} -> {to} is a legal migration transition");
 
-        var result = await PreflightAsync(destination, fixture.Bytes);
+            var act = () => MigrationJobTransitions.ValidateTransition(from, to);
+            act.Should().NotThrow();
+        }
 
-        result.IsCompatible.Should().BeTrue();
-        result.DestinationIsEmpty.Should().BeTrue();
-        result.RequiresReplacementConfirmation.Should().BeFalse();
-        result.IncompatibilityCode.Should().BeNull();
+        var terminalStates = new[]
+        {
+            MigrationJobState.Completed,
+            MigrationJobState.Failed,
+            MigrationJobState.Cancelled,
+            MigrationJobState.Expired,
+        };
 
-        result.Format.Should().Be(PortableFormat);
-        result.FormatVersion.Should().Be(SupportedFormatVersion);
-        result.DataVersion.Should().Be(CurrentDataVersion);
+        var retryableStates = new[]
+        {
+            MigrationJobState.Failed,
+            MigrationJobState.Cancelled,
+            MigrationJobState.Expired,
+        };
 
-        result.Counts.Books.Should().Be(4);
-        result.Counts.Notes.Should().Be(1);
-        result.Counts.Writings.Should().Be(2);
+        foreach (var state in Enum.GetValues<MigrationJobState>())
+        {
+            MigrationJobTransitions.IsTerminal(state)
+                .Should()
+                .Be(terminalStates.Contains(state), because: $"{state} has a defined terminal-state contract");
 
-        result.MediaFiles.Should().Be(5);
-        result.MediaBytes.Should().BeGreaterThan(0);
-        result.MaxSingleEntryBytes.Should().BeGreaterThan(0);
+            MigrationJobTransitions.IsRetryable(state)
+                .Should()
+                .Be(retryableStates.Contains(state), because: $"{state} has a defined retryability contract");
+        }
 
-        result.DestinationRevision.Should().NotBeNullOrWhiteSpace();
+        foreach (var terminal in terminalStates)
+        {
+            MigrationJobTransitions.AllowedTransitions[terminal].Should().BeEmpty();
+
+            foreach (var target in Enum.GetValues<MigrationJobState>())
+            {
+                MigrationJobTransitions.CanTransition(terminal, target).Should().BeFalse();
+
+                var act = () => MigrationJobTransitions.ValidateTransition(terminal, target);
+                act.Should().Throw<InvalidOperationException>();
+            }
+        }
+
+        foreach (var current in Enum.GetValues<MigrationJobState>())
+        {
+            foreach (var target in Enum.GetValues<MigrationJobState>())
+            {
+                var declaredLegal = MigrationJobTransitions.AllowedTransitions[current].Contains(target);
+
+                MigrationJobTransitions.CanTransition(current, target)
+                    .Should()
+                    .Be(declaredLegal);
+
+                if (!declaredLegal)
+                {
+                    var act = () => MigrationJobTransitions.ValidateTransition(current, target);
+                    act.Should().Throw<InvalidOperationException>();
+                }
+            }
+        }
     }
 
     [Fact]
-    public async Task Preflight_marks_populated_library_as_requiring_explicit_replacement()
+    public void Preflight_evaluator_returns_expected_decisions_for_various_inputs()
     {
-        using var fixture = await CreateFixtureAsync(
-            "portable-format1-data2.nostos",
-            CurrentDataVersion);
+        MigrationPreflightRequest CompatibleRequest(
+            string? clientDestinationRevision = "revision-1",
+            long declaredArchiveBytes = 1_024,
+            long declaredMediaBytes = 2_048,
+            string? declaredFormatName = null,
+            int declaredFormatVersion = PortableArchiveFormat.Version,
+            int declaredDataVersion = PortableArchiveFormat.DataVersion) =>
+            new(
+                Direction: MigrationDirection.Import,
+                IncomingCounts: new MigrationArchiveCounts(
+                    Works: 1,
+                    Books: 1,
+                    Notes: 1,
+                    Writings: 1,
+                    Topics: 1,
+                    Collections: 1,
+                    CollectionMemberships: 1,
+                    Acquisitions: 1,
+                    AssistantSettings: 1,
+                    NoteImportBookLinks: 1),
+                DeclaredArchiveBytes: declaredArchiveBytes,
+                DeclaredMediaBytes: declaredMediaBytes,
+                MaxSingleEntryBytes: 1_024,
+                DeclaredFormatVersion: declaredFormatVersion,
+                DeclaredDataVersion: declaredDataVersion,
+                DeclaredFormatName: declaredFormatName,
+                ClientDestinationRevision: clientDestinationRevision);
 
-        await using var destination = await LocalPortableTestLibrary.CreateAsync();
+        MigrationPreflightResult Evaluate(
+            MigrationPreflightRequest request,
+            bool destinationIsEmpty = true,
+            MigrationExistingCounts? existingCounts = null,
+            long availableStorageBytes = long.MaxValue,
+            string destinationRevision = "revision-1") =>
+            MigrationPreflightEvaluator.Evaluate(
+                new MigrationPreflightEvaluationInput(
+                    Request: request,
+                    DestinationRevision: destinationRevision,
+                    DestinationIsEmpty: destinationIsEmpty,
+                    ExistingCounts: existingCounts ?? new MigrationExistingCounts(),
+                    AvailableStorageBytes: availableStorageBytes));
 
-        destination.Db.Topics.Add(new TopicModel
-        {
-            Topic = "Existing destination content",
-        });
-        await destination.Db.SaveChangesAsync();
+        Evaluate(CompatibleRequest())
+            .Decision.Should().Be(MigrationPreflightDecision.AllowedEmpty);
 
-        var result = await PreflightAsync(destination, fixture.Bytes);
+        Evaluate(
+                CompatibleRequest(),
+                destinationIsEmpty: false,
+                existingCounts: new MigrationExistingCounts(Books: 1))
+            .Decision.Should().Be(MigrationPreflightDecision.AllowedReplacementRequired);
 
-        result.IsCompatible.Should().BeTrue();
-        result.DestinationIsEmpty.Should().BeFalse();
-        result.RequiresReplacementConfirmation.Should().BeTrue();
-        result.IncompatibilityCode.Should().BeNull();
+        Evaluate(
+                CompatibleRequest(declaredDataVersion: 999))
+            .Decision.Should().Be(MigrationPreflightDecision.RejectedIncompatible);
 
-        result.ExistingCounts.Topics.Should().Be(1);
-        result.ExistingCounts.TotalUserOwnedRows.Should().BeGreaterThan(0);
+        Evaluate(
+                CompatibleRequest(
+                    declaredArchiveBytes: 10_000,
+                    declaredMediaBytes: 20_000),
+                availableStorageBytes: 1)
+            .Decision.Should().Be(MigrationPreflightDecision.RejectedInsufficientStorage);
+
+        Evaluate(
+                CompatibleRequest(clientDestinationRevision: "stale-revision"),
+                destinationRevision: "current-revision")
+            .Decision.Should().Be(MigrationPreflightDecision.RejectedDestinationConflict);
+
+        Evaluate(
+                CompatibleRequest(declaredFormatName: "nostos-operational-backup"))
+            .Decision.Should().Be(MigrationPreflightDecision.RejectedOperationalBackupNotPortable);
     }
 
     [Fact]
-    public async Task Destination_revision_changes_when_destination_user_data_changes()
+    public async Task Round_trip_exports_and_imports_note_import_book_links_in_data_version_3()
     {
-        using var fixture = await CreateFixtureAsync(
-            "portable-format1-data2.nostos",
-            CurrentDataVersion);
+        await using var source = await LocalPortableTestLibrary.CreateAsync();
+
+        await PortableArchiveTestSupport.PopulateRepresentativeAsync(source.Db, source.Storage);
+
+        var book = await source.Db.Books
+            .OrderBy(x => x.Id)
+            .FirstAsync();
+
+        var expected = new NoteImportBookLink
+        {
+            Id = Guid.NewGuid(),
+            Source = "koreader",
+            SourceKey = "device-book-42",
+            BookId = book.Id,
+            Book = book,
+            CreatedAtUtc = new DateTime(2026, 10, 4, 4, 30, 0, DateTimeKind.Utc),
+        };
+
+        source.Db.NoteImportBookLinks.Add(expected);
+        await source.Db.SaveChangesAsync();
+
+        await using var archive = new MemoryStream();
+        await source.Portability().ExportAsync(archive);
+
+        archive.Position = 0;
 
         await using var destination = await LocalPortableTestLibrary.CreateAsync();
+        await destination.Portability().ImportAsync(archive);
 
-        var before = await PreflightAsync(destination, fixture.Bytes);
+        var imported = await destination.Db.NoteImportBookLinks
+            .AsNoTracking()
+            .SingleAsync();
 
-        destination.Db.Topics.Add(new TopicModel
-        {
-            Id = Guid.Parse("68b40886-92fc-40a5-b293-6a77dc78c411"),
-            Topic = "Destination revision marker",
-        });
-        await destination.Db.SaveChangesAsync();
+        imported.Id.Should().Be(expected.Id);
+        imported.Source.Should().Be(expected.Source);
+        imported.SourceKey.Should().Be(expected.SourceKey);
+        imported.BookId.Should().Be(expected.BookId);
+        imported.CreatedAtUtc.Should().Be(expected.CreatedAtUtc);
 
-        var after = await PreflightAsync(destination, fixture.Bytes);
+        await using var reExported = new MemoryStream();
+        await destination.Portability().ExportAsync(reExported);
 
-        before.DestinationRevision.Should().NotBeNullOrWhiteSpace();
-        after.DestinationRevision.Should().NotBeNullOrWhiteSpace();
-        after.DestinationRevision.Should().NotBe(before.DestinationRevision);
+        reExported.Position = 0;
 
-        before.DestinationIsEmpty.Should().BeTrue();
-        after.DestinationIsEmpty.Should().BeFalse();
-        after.RequiresReplacementConfirmation.Should().BeTrue();
+        await using var secondDestination = await LocalPortableTestLibrary.CreateAsync();
+        await secondDestination.Portability().ImportAsync(reExported);
+
+        var roundTripped = await secondDestination.Db.NoteImportBookLinks
+            .AsNoTracking()
+            .SingleAsync();
+
+        roundTripped.Should().BeEquivalentTo(
+            imported,
+            options => options.Excluding(x => x.Book));
     }
 
-    [Theory]
-    [InlineData(2, CurrentDataVersion, "unsupported_format_version")]
-    [InlineData(SupportedFormatVersion, 0, "unsupported_data_version")]
-    [InlineData(SupportedFormatVersion, 999, "unsupported_data_version")]
-    public async Task Preflight_detects_incompatible_archive_versions_without_mutating_destination(
-        int formatVersion,
-        int dataVersion,
-        string expectedCode)
+    [Fact]
+    public async Task Legacy_archives_without_note_import_book_links_import_cleanly_with_defaults()
     {
-        using var fixture = await CreateFixtureAsync(
-            "portable-format1-data2.nostos",
-            CurrentDataVersion);
-
-        var entries = ReadEntries(fixture.Bytes);
-
-        MutateJsonEntry(entries, ManifestPath, root =>
+        foreach (var dataVersion in new[] { 1, 2 })
         {
-            root["formatVersion"] = formatVersion;
-            root["dataVersion"] = dataVersion;
-        });
+            using var fixture = await CreateFixtureAsync(
+                $"legacy-v{dataVersion}.nostos",
+                dataVersion);
 
-        MutateJsonEntry(entries, DataPath, root =>
-        {
-            root["version"] = dataVersion;
-        });
+            await using var destination = await LocalPortableTestLibrary.CreateAsync();
 
-        RehashDataDescriptor(entries);
+            using var archiveStream = new MemoryStream(fixture.Bytes);
 
-        using var incompatible = BuildArchive(entries);
-        var bytes = incompatible.ToArray();
+            var act = async () => await destination.Portability().ImportAsync(archiveStream);
 
-        await using var destination = await LocalPortableTestLibrary.CreateAsync();
+            await act.Should().NotThrowAsync();
 
-        var result = await PreflightAsync(destination, bytes);
+            (await destination.Db.NoteImportBookLinks.CountAsync())
+                .Should()
+                .Be(0, because: $"DataVersion {dataVersion} predates NoteImportBookLink portability");
 
-        result.IsCompatible.Should().BeFalse();
-        result.IncompatibilityCode.Should().Be(expectedCode);
-        result.DestinationIsEmpty.Should().BeTrue();
-        result.RequiresReplacementConfirmation.Should().BeFalse();
+            (await destination.Db.Books.CountAsync())
+                .Should()
+                .BeGreaterThan(0);
 
-        (await destination.Db.Books.CountAsync()).Should().Be(0);
-        (await destination.Db.Notes.CountAsync()).Should().Be(0);
-        (await destination.Db.Writings.CountAsync()).Should().Be(0);
+            (await destination.Db.Notes.CountAsync())
+                .Should()
+                .BeGreaterThan(0);
+
+            if (dataVersion == 1)
+            {
+                (await destination.Db.WritingNotes.CountAsync())
+                    .Should()
+                    .Be(0);
+            }
+            else
+            {
+                (await destination.Db.WritingNotes.CountAsync())
+                    .Should()
+                    .BeGreaterThan(0);
+            }
+        }
     }
 
     [Fact]
@@ -508,178 +635,6 @@ public sealed class PortableMigrationFixtureAndCompatTests
 
         using var rebuilt = BuildArchive(entries);
         return new SyntheticFixture(name, rebuilt.ToArray());
-    }
-
-    private static async Task<PreflightProbeResult> PreflightAsync(
-        LocalPortableTestLibrary destination,
-        byte[] archiveBytes)
-    {
-        using var archive = OpenArchive(archiveBytes);
-        var manifest = await ReadJsonObjectAsync(archive, ManifestPath);
-
-        var format = manifest["format"]?.GetValue<string>();
-        var formatVersion = manifest["formatVersion"]?.GetValue<int>() ?? 0;
-        var dataVersion = manifest["dataVersion"]?.GetValue<int>() ?? 0;
-
-        var compatibleFormat =
-            string.Equals(format, PortableFormat, StringComparison.Ordinal)
-            && formatVersion == SupportedFormatVersion;
-
-        var compatibleDataVersion =
-            dataVersion is LegacyDataVersion or CurrentDataVersion;
-
-        var incompatibilityCode = !compatibleFormat
-            ? "unsupported_format_version"
-            : !compatibleDataVersion
-                ? "unsupported_data_version"
-                : null;
-
-        var countsNode = manifest["counts"]?.AsObject()
-            ?? throw new InvalidDataException("Portable manifest is missing counts.");
-
-        var media = manifest["media"]?.AsArray()
-            ?? throw new InvalidDataException("Portable manifest is missing media.");
-
-        var counts = new FixtureArchiveCounts(
-            Works: ReadInt(countsNode, "works"),
-            Books: ReadInt(countsNode, "books"),
-            Collections: ReadInt(countsNode, "collections"),
-            BookCollections: ReadInt(countsNode, "bookCollections"),
-            Notes: ReadInt(countsNode, "notes"),
-            Topics: ReadInt(countsNode, "topics"),
-            NoteTopics: ReadInt(countsNode, "noteTopics"),
-            Writings: ReadInt(countsNode, "writings"),
-            BookAcquisitions: ReadInt(countsNode, "bookAcquisitions"));
-
-        var mediaLengths = media
-            .Select(x => x?["length"]?.GetValue<long>() ?? 0)
-            .ToArray();
-
-        var existingCounts = await ReadDestinationCountsAsync(destination);
-
-        return new PreflightProbeResult(
-            IsCompatible: incompatibilityCode is null,
-            IncompatibilityCode: incompatibilityCode,
-            Format: format,
-            FormatVersion: formatVersion,
-            DataVersion: dataVersion,
-            Counts: counts,
-            MediaFiles: media.Count,
-            MediaBytes: mediaLengths.Sum(),
-            MaxSingleEntryBytes: mediaLengths.DefaultIfEmpty(0).Max(),
-            DestinationIsEmpty: existingCounts.TotalUserOwnedRows == 0,
-            RequiresReplacementConfirmation:
-                incompatibilityCode is null
-                && existingCounts.TotalUserOwnedRows != 0,
-            DestinationRevision: await ComputeDestinationRevisionAsync(destination),
-            ExistingCounts: existingCounts);
-    }
-
-    private static async Task<DestinationCounts> ReadDestinationCountsAsync(
-        LocalPortableTestLibrary destination)
-    {
-        var db = destination.Db;
-
-        return new DestinationCounts(
-            Works: await db.Works.CountAsync(),
-            Books: await db.Books.CountAsync(),
-            Collections: await db.Collections.CountAsync(),
-            BookCollections: await db.BookCollections.CountAsync(),
-            Notes: await db.Notes.CountAsync(),
-            Topics: await db.Topics.CountAsync(),
-            NoteTopics: await db.NoteTopics.CountAsync(),
-            Writings: await db.Writings.CountAsync(),
-            WritingNotes: await db.WritingNotes.CountAsync(),
-            BookAcquisitions: await db.BookAcquisitions.CountAsync());
-    }
-
-    private static async Task<string> ComputeDestinationRevisionAsync(
-        LocalPortableTestLibrary destination)
-    {
-        var db = destination.Db;
-
-        var parts = new List<string>();
-
-        parts.AddRange(
-            await db.Works
-                .AsNoTracking()
-                .OrderBy(x => x.Id)
-                .Select(x => $"work:{x.Id:N}")
-                .ToListAsync());
-
-        parts.AddRange(
-            await db.Books
-                .AsNoTracking()
-                .OrderBy(x => x.Id)
-                .Select(x => $"book:{x.Id:N}")
-                .ToListAsync());
-
-        parts.AddRange(
-            await db.Collections
-                .AsNoTracking()
-                .OrderBy(x => x.Id)
-                .Select(x => $"collection:{x.Id:N}")
-                .ToListAsync());
-
-        parts.AddRange(
-            await db.Notes
-                .AsNoTracking()
-                .OrderBy(x => x.Id)
-                .Select(x => $"note:{x.Id:N}")
-                .ToListAsync());
-
-        parts.AddRange(
-            await db.Topics
-                .AsNoTracking()
-                .OrderBy(x => x.Id)
-                .Select(x => $"topic:{x.Id:N}")
-                .ToListAsync());
-
-        parts.AddRange(
-            await db.Writings
-                .AsNoTracking()
-                .OrderBy(x => x.Id)
-                .Select(x => $"writing:{x.Id:N}")
-                .ToListAsync());
-
-        parts.AddRange(
-            await db.BookAcquisitions
-                .AsNoTracking()
-                .OrderBy(x => x.Id)
-                .Select(x => $"acquisition:{x.Id:N}")
-                .ToListAsync());
-
-        parts.AddRange(
-            await db.BookCollections
-                .AsNoTracking()
-                .OrderBy(x => x.BookId)
-                .ThenBy(x => x.CollectionId)
-                .Select(x =>
-                    $"bookCollection:{x.BookId:N}:{x.CollectionId:N}")
-                .ToListAsync());
-
-        parts.AddRange(
-            await db.NoteTopics
-                .AsNoTracking()
-                .OrderBy(x => x.NoteId)
-                .ThenBy(x => x.TopicId)
-                .Select(x =>
-                    $"noteTopic:{x.NoteId:N}:{x.TopicId:N}")
-                .ToListAsync());
-
-        parts.AddRange(
-            await db.WritingNotes
-                .AsNoTracking()
-                .OrderBy(x => x.WritingId)
-                .ThenBy(x => x.NoteId)
-                .Select(x =>
-                    $"writingNote:{x.WritingId:N}:{x.NoteId:N}")
-                .ToListAsync());
-
-        var canonical = string.Join('\n', parts);
-        return Convert.ToHexString(
-                SHA256.HashData(Encoding.UTF8.GetBytes(canonical)))
-            .ToLowerInvariant();
     }
 
     private static void AssertFixtureIsRedistributable(byte[] bytes)
@@ -932,55 +887,4 @@ public sealed class PortableMigrationFixtureAndCompatTests
     private sealed record TestArchiveEntry(
         string Name,
         byte[] Bytes);
-
-    private sealed record FixtureArchiveCounts(
-        int Works,
-        int Books,
-        int Collections,
-        int BookCollections,
-        int Notes,
-        int Topics,
-        int NoteTopics,
-        int Writings,
-        int BookAcquisitions);
-
-    private sealed record DestinationCounts(
-        int Works,
-        int Books,
-        int Collections,
-        int BookCollections,
-        int Notes,
-        int Topics,
-        int NoteTopics,
-        int Writings,
-        int WritingNotes,
-        int BookAcquisitions)
-    {
-        public int TotalUserOwnedRows =>
-            Works
-            + Books
-            + Collections
-            + BookCollections
-            + Notes
-            + Topics
-            + NoteTopics
-            + Writings
-            + WritingNotes
-            + BookAcquisitions;
-    }
-
-    private sealed record PreflightProbeResult(
-        bool IsCompatible,
-        string? IncompatibilityCode,
-        string? Format,
-        int FormatVersion,
-        int DataVersion,
-        FixtureArchiveCounts Counts,
-        int MediaFiles,
-        long MediaBytes,
-        long MaxSingleEntryBytes,
-        bool DestinationIsEmpty,
-        bool RequiresReplacementConfirmation,
-        string DestinationRevision,
-        DestinationCounts ExistingCounts);
 }

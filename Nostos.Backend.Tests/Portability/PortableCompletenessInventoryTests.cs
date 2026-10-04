@@ -1,9 +1,11 @@
 // Nostos.Backend.Tests/Portability/PortableCompletenessInventoryTests.cs
 
+using System.Reflection;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Nostos.Backend.Data;
+using Nostos.Backend.Services.Portability;
 using Xunit;
 
 namespace Nostos.Backend.Tests.Portability;
@@ -26,14 +28,18 @@ public sealed class PortableCompletenessInventoryTests
                     "Title",
                     "Author",
                     "CreatedAt",
-                    "NormalizedIsbn",
-                    "NormalizedAsin",
                 ],
                 excluded:
                 [
                     Excluded(
                         "BookType",
                         "EF Core TPH inheritance discriminator ('physical', 'ebook', 'audiobook'); represented in archive by explicit PortableBook.Type field."),
+                    Excluded(
+                        "NormalizedIsbn",
+                        "Derived search optimization index column; recomputed from Isbn on import/save."),
+                    Excluded(
+                        "NormalizedAsin",
+                        "Derived search optimization index column; recomputed from Asin on import/save."),
                 ],
                 excludedNavigations:
                 [
@@ -139,8 +145,15 @@ public sealed class PortableCompletenessInventoryTests
                     "Title",
                     "Author",
                     "CreatedAt",
-                    "NormalizedTitle",
-                    "NormalizedAuthor",
+                ],
+                excluded:
+                [
+                    Excluded(
+                        "NormalizedTitle",
+                        "Derived search optimization index column; recomputed from Title on import/save."),
+                    Excluded(
+                        "NormalizedAuthor",
+                        "Derived search optimization index column; recomputed from Author on import/save."),
                 ],
                 excludedNavigations:
                 [
@@ -282,7 +295,14 @@ public sealed class PortableCompletenessInventoryTests
                 ]),
 
             ["NoteImportBookLink"] = PortableEntity(
-                portableAllMappedProperties: true,
+                portable:
+                [
+                    "Id",
+                    "Source",
+                    "SourceKey",
+                    "BookId",
+                    "CreatedAtUtc",
+                ],
                 excludedNavigations:
                 [
                     Excluded("Book", NavigationReason),
@@ -358,6 +378,46 @@ public sealed class PortableCompletenessInventoryTests
             string.Join(Environment.NewLine, failures.Select(x => $" - {x}")));
     }
 
+    [Fact]
+    public void Portable_classifications_match_portable_archive_record_properties()
+    {
+        var portableRecordByEntity = new Dictionary<string, Type>(StringComparer.Ordinal)
+        {
+            ["WorkModel"] = typeof(PortableWork),
+            ["BookModel"] = typeof(PortableBook),
+            ["CollectionModel"] = typeof(PortableCollection),
+            ["BookCollectionModel"] = typeof(PortableBookCollection),
+            ["NoteModel"] = typeof(PortableNote),
+            ["TopicModel"] = typeof(PortableTopic),
+            ["NoteTopicModel"] = typeof(PortableNoteTopic),
+            ["WritingModel"] = typeof(PortableWriting),
+            ["WritingNoteModel"] = typeof(PortableWritingNote),
+            ["BookAcquisitionModel"] = typeof(PortableBookAcquisition),
+            ["AssistantSettingsModel"] = typeof(PortableAssistantSettings),
+            ["NoteImportBookLink"] = typeof(PortableNoteImportBookLink),
+        };
+
+        foreach (var (entityName, portableRecordType) in portableRecordByEntity)
+        {
+            Inventory.Should().ContainKey(
+                entityName,
+                $"{entityName} must have an explicit portability classification");
+
+            var classifiedPortableProperties = Inventory[entityName]
+                .PortableProperties
+                .ToHashSet(StringComparer.Ordinal);
+
+            var archiveProperties = portableRecordType
+                .GetProperties(BindingFlags.Instance | BindingFlags.Public)
+                .Select(property => property.Name)
+                .ToHashSet(StringComparer.Ordinal);
+
+            archiveProperties.Should().Contain(
+                classifiedPortableProperties,
+                $"{entityName} properties classified Portable must be carried by {portableRecordType.Name}");
+        }
+    }
+
     private static void ValidateEntity(
         IEntityType entityType,
         EntityClassification classification,
@@ -389,18 +449,6 @@ public sealed class PortableCompletenessInventoryTests
             var isPortable = classification.PortableProperties.Contains(propName);
             var isExcluded = classification.ExcludedProperties.TryGetValue(propName, out var reason);
 
-            if (classification.PortableAllMappedProperties)
-            {
-                if (isExcluded)
-                {
-                    failures.Add(
-                        $"CONFLICTING CLASSIFICATION: {entityName}.{propName} is on an entity marked " +
-                        "portableAllMappedProperties but is also listed as excluded.");
-                }
-
-                continue;
-            }
-
             if (!isPortable && !isExcluded)
             {
                 failures.Add(
@@ -419,25 +467,22 @@ public sealed class PortableCompletenessInventoryTests
             }
         }
 
-        if (!classification.PortableAllMappedProperties)
+        foreach (var staleProp in classification.PortableProperties
+                     .Where(name => !mappedPropertyNames.Contains(name))
+                     .OrderBy(name => name, StringComparer.Ordinal))
         {
-            foreach (var staleProp in classification.PortableProperties
-                         .Where(name => !mappedPropertyNames.Contains(name))
-                         .OrderBy(name => name, StringComparer.Ordinal))
-            {
-                failures.Add(
-                    $"STALE PORTABLE PROPERTY: {entityName}.{staleProp} does not exist on the EF model. " +
-                    "Update the inventory after property removals/renames.");
-            }
+            failures.Add(
+                $"STALE PORTABLE PROPERTY: {entityName}.{staleProp} does not exist on the EF model. " +
+                "Update the inventory after property removals/renames.");
+        }
 
-            foreach (var staleExcluded in classification.ExcludedProperties.Keys
-                         .Where(name => !mappedPropertyNames.Contains(name))
-                         .OrderBy(name => name, StringComparer.Ordinal))
-            {
-                failures.Add(
-                    $"STALE EXCLUDED PROPERTY: {entityName}.{staleExcluded} does not exist on the EF model. " +
-                    "Update the inventory after property removals/renames.");
-            }
+        foreach (var staleExcluded in classification.ExcludedProperties.Keys
+                     .Where(name => !mappedPropertyNames.Contains(name))
+                     .OrderBy(name => name, StringComparer.Ordinal))
+        {
+            failures.Add(
+                $"STALE EXCLUDED PROPERTY: {entityName}.{staleExcluded} does not exist on the EF model. " +
+                "Update the inventory after property removals/renames.");
         }
 
         var navigations = entityType
@@ -514,8 +559,7 @@ public sealed class PortableCompletenessInventoryTests
                 new Dictionary<string, string>(StringComparer.Ordinal),
             ExcludedNavigations:
                 excludedNavigations?.ToDictionary(x => x.Key, x => x.Value, StringComparer.Ordinal) ??
-                new Dictionary<string, string>(StringComparer.Ordinal),
-            PortableAllMappedProperties: portableAllMappedProperties);
+                new Dictionary<string, string>(StringComparer.Ordinal));
 
     private static EntityClassification ExcludedEntity(string reason) =>
         new(
@@ -523,14 +567,12 @@ public sealed class PortableCompletenessInventoryTests
             ExclusionReason: reason,
             PortableProperties: new HashSet<string>(StringComparer.Ordinal),
             ExcludedProperties: new Dictionary<string, string>(StringComparer.Ordinal),
-            ExcludedNavigations: new Dictionary<string, string>(StringComparer.Ordinal),
-            PortableAllMappedProperties: false);
+            ExcludedNavigations: new Dictionary<string, string>(StringComparer.Ordinal));
 
     private sealed record EntityClassification(
         bool IsEntityExcluded,
         string? ExclusionReason,
         HashSet<string> PortableProperties,
         Dictionary<string, string> ExcludedProperties,
-        Dictionary<string, string> ExcludedNavigations,
-        bool PortableAllMappedProperties);
+        Dictionary<string, string> ExcludedNavigations);
 }
