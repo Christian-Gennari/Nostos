@@ -301,6 +301,7 @@ public sealed class PortableArchiveServiceTests
         {
             root["version"] = 1;
             root.Remove("writingNotes");
+            root.Remove("noteImportBookLinks");
         });
 
         RehashDataDescriptor(entries);

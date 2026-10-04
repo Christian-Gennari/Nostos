@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -18,7 +19,8 @@ public sealed class PortableMigrationFixtureAndCompatTests
     private const string PortableFormat = "nostos-portable";
     private const int SupportedFormatVersion = 1;
     private const int LegacyDataVersion = 1;
-    private const int CurrentDataVersion = 2;
+    private const int IntermediateDataVersion = 2;
+    private const int CurrentDataVersion = 3;
 
     [Fact]
     public async Task Generated_legacy_data_v1_fixture_is_redistributable_and_contains_no_writing_notes()
@@ -366,7 +368,6 @@ public sealed class PortableMigrationFixtureAndCompatTests
             int declaredFormatVersion = PortableArchiveFormat.Version,
             int declaredDataVersion = PortableArchiveFormat.DataVersion) =>
             new(
-                Direction: MigrationDirection.Import,
                 IncomingCounts: new MigrationArchiveCounts(
                     Works: 1,
                     Books: 1,
@@ -388,26 +389,34 @@ public sealed class PortableMigrationFixtureAndCompatTests
 
         MigrationPreflightResult Evaluate(
             MigrationPreflightRequest request,
-            bool destinationIsEmpty = true,
+            MigrationDestinationStatus destinationStatus = MigrationDestinationStatus.Empty,
             MigrationExistingCounts? existingCounts = null,
             long availableStorageBytes = long.MaxValue,
             string destinationRevision = "revision-1") =>
             MigrationPreflightEvaluator.Evaluate(
                 new MigrationPreflightEvaluationInput(
                     Request: request,
-                    DestinationRevision: destinationRevision,
-                    DestinationIsEmpty: destinationIsEmpty,
+                    DestinationStatus: destinationStatus,
                     ExistingCounts: existingCounts ?? new MigrationExistingCounts(),
-                    AvailableStorageBytes: availableStorageBytes));
+                    AvailableStorageBytes: availableStorageBytes,
+                    DestinationRevision: destinationRevision));
 
         Evaluate(CompatibleRequest())
             .Decision.Should().Be(MigrationPreflightDecision.AllowedEmpty);
 
         Evaluate(
                 CompatibleRequest(),
-                destinationIsEmpty: false,
+                destinationStatus: MigrationDestinationStatus.Populated,
                 existingCounts: new MigrationExistingCounts(Books: 1))
             .Decision.Should().Be(MigrationPreflightDecision.AllowedReplacementRequired);
+
+        var populatedResult = Evaluate(
+            CompatibleRequest(declaredArchiveBytes: 1_000_000, declaredMediaBytes: 2_000_000),
+            destinationStatus: MigrationDestinationStatus.Populated,
+            existingCounts: new MigrationExistingCounts(Books: 2, Notes: 10));
+
+        populatedResult.EstimatedRecoveryBytes.Should().Be(100_000_000L + (12 * 1024L));
+        populatedResult.RequiredStorageBytes.Should().Be(1_000_000L + 2_000_000L + 100_000_000L + (12 * 1024L));
 
         Evaluate(
                 CompatibleRequest(declaredDataVersion: 999))
@@ -490,47 +499,124 @@ public sealed class PortableMigrationFixtureAndCompatTests
     }
 
     [Fact]
-    public async Task Legacy_archives_without_note_import_book_links_import_cleanly_with_defaults()
+    public async Task Legacy_v1_and_v2_fixtures_strictly_omit_unsupported_fields()
     {
-        foreach (var dataVersion in new[] { 1, 2 })
+        using var v1 = await CreateFixtureAsync("v1.nostos", LegacyDataVersion);
+        using var v2 = await CreateFixtureAsync("v2.nostos", IntermediateDataVersion);
+
+        using (var archive = OpenArchive(v1.Bytes))
         {
-            using var fixture = await CreateFixtureAsync(
-                $"legacy-v{dataVersion}.nostos",
-                dataVersion);
-
-            await using var destination = await LocalPortableTestLibrary.CreateAsync();
-
-            using var archiveStream = new MemoryStream(fixture.Bytes);
-
-            var act = async () => await destination.Portability().ImportAsync(archiveStream);
-
-            await act.Should().NotThrowAsync();
-
-            (await destination.Db.NoteImportBookLinks.CountAsync())
-                .Should()
-                .Be(0, because: $"DataVersion {dataVersion} predates NoteImportBookLink portability");
-
-            (await destination.Db.Books.CountAsync())
-                .Should()
-                .BeGreaterThan(0);
-
-            (await destination.Db.Notes.CountAsync())
-                .Should()
-                .BeGreaterThan(0);
-
-            if (dataVersion == 1)
-            {
-                (await destination.Db.WritingNotes.CountAsync())
-                    .Should()
-                    .Be(0);
-            }
-            else
-            {
-                (await destination.Db.WritingNotes.CountAsync())
-                    .Should()
-                    .BeGreaterThan(0);
-            }
+            var library = await ReadJsonObjectAsync(archive, DataPath);
+            library.ContainsKey("writingNotes").Should().BeFalse();
+            library.ContainsKey("noteImportBookLinks").Should().BeFalse();
         }
+
+        using (var archive = OpenArchive(v2.Bytes))
+        {
+            var library = await ReadJsonObjectAsync(archive, DataPath);
+            library.ContainsKey("writingNotes").Should().BeTrue();
+            library.ContainsKey("noteImportBookLinks").Should().BeFalse();
+        }
+    }
+
+    [Fact]
+    public async Task Import_rejects_archive_when_manifest_and_payload_data_version_mismatch()
+    {
+        using var fixture = await CreateFixtureAsync("compat.nostos", CurrentDataVersion);
+        var entries = ReadEntries(fixture.Bytes);
+
+        MutateJsonEntry(entries, DataPath, json => json["version"] = LegacyDataVersion);
+        RehashDataDescriptor(entries);
+
+        using var corruptArchive = BuildArchive(entries);
+        await using var destination = await LocalPortableTestLibrary.CreateAsync();
+
+        var act = async () => await destination.Portability().ImportAsync(corruptArchive);
+        var exception = await act.Should().ThrowAsync<PortableArchiveException>();
+        exception.Which.Code.Should().Be("data_version_mismatch");
+
+        (await destination.Db.Works.CountAsync()).Should().Be(0);
+        (await destination.Db.Books.CountAsync()).Should().Be(0);
+        (await destination.Db.Notes.CountAsync()).Should().Be(0);
+        (await destination.Db.Writings.CountAsync()).Should().Be(0);
+        (await destination.Db.NoteImportBookLinks.CountAsync()).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Import_rejects_payload_with_unexpected_version_data_for_declared_version()
+    {
+        using var v1 = await CreateFixtureAsync("v1.nostos", LegacyDataVersion);
+        var v1Entries = ReadEntries(v1.Bytes);
+
+        MutateJsonEntry(v1Entries, DataPath, json => json["writingNotes"] = new JsonArray());
+        RehashDataDescriptor(v1Entries);
+
+        using (var corruptV1 = BuildArchive(v1Entries))
+        {
+            await using var destination = await LocalPortableTestLibrary.CreateAsync();
+            var act = async () => await destination.Portability().ImportAsync(corruptV1);
+            var exception = await act.Should().ThrowAsync<PortableArchiveException>();
+            exception.Which.Code.Should().Be("unexpected_version_data");
+
+            (await destination.Db.Works.CountAsync()).Should().Be(0);
+            (await destination.Db.Books.CountAsync()).Should().Be(0);
+            (await destination.Db.WritingNotes.CountAsync()).Should().Be(0);
+        }
+
+        using var v2 = await CreateFixtureAsync("v2.nostos", IntermediateDataVersion);
+        var v2Entries = ReadEntries(v2.Bytes);
+
+        MutateJsonEntry(v2Entries, DataPath, json => json["noteImportBookLinks"] = new JsonArray
+        {
+            new JsonObject
+            {
+                ["id"] = Guid.NewGuid(),
+                ["source"] = "koreader",
+                ["sourceKey"] = "unexpected-v2-link",
+                ["bookId"] = Guid.NewGuid(),
+                ["createdAtUtc"] = DateTime.UtcNow,
+            }
+        });
+        RehashDataDescriptor(v2Entries);
+
+        using (var corruptV2 = BuildArchive(v2Entries))
+        {
+            await using var destination = await LocalPortableTestLibrary.CreateAsync();
+            var act = async () => await destination.Portability().ImportAsync(corruptV2);
+            var exception = await act.Should().ThrowAsync<PortableArchiveException>();
+            exception.Which.Code.Should().Be("unexpected_version_data");
+
+            (await destination.Db.Works.CountAsync()).Should().Be(0);
+            (await destination.Db.Books.CountAsync()).Should().Be(0);
+            (await destination.Db.NoteImportBookLinks.CountAsync()).Should().Be(0);
+        }
+    }
+
+    [Fact]
+    public void Completeness_inventory_covers_all_destination_counts_properties()
+    {
+        var expectedProperties = new[]
+        {
+            nameof(MigrationExistingCounts.Works),
+            nameof(MigrationExistingCounts.Books),
+            nameof(MigrationExistingCounts.Notes),
+            nameof(MigrationExistingCounts.Topics),
+            nameof(MigrationExistingCounts.Writings),
+            nameof(MigrationExistingCounts.WritingNotes),
+            nameof(MigrationExistingCounts.Collections),
+            nameof(MigrationExistingCounts.BookCollections),
+            nameof(MigrationExistingCounts.Acquisitions),
+            nameof(MigrationExistingCounts.NoteImportBookLinks),
+            nameof(MigrationExistingCounts.AssistantSettings),
+            nameof(MigrationExistingCounts.TotalRows),
+        };
+
+        var actualProperties = typeof(MigrationExistingCounts)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .Select(property => property.Name)
+            .ToHashSet(StringComparer.Ordinal);
+
+        actualProperties.Should().BeEquivalentTo(expectedProperties);
     }
 
     [Fact]
@@ -588,7 +674,7 @@ public sealed class PortableMigrationFixtureAndCompatTests
         string name,
         int dataVersion)
     {
-        if (dataVersion is not (LegacyDataVersion or CurrentDataVersion))
+        if (dataVersion is not (LegacyDataVersion or IntermediateDataVersion or CurrentDataVersion))
             throw new ArgumentOutOfRangeException(nameof(dataVersion));
 
         await using var source = await LocalPortableTestLibrary.CreateAsync();
@@ -613,6 +699,23 @@ public sealed class PortableMigrationFixtureAndCompatTests
             {
                 root["version"] = LegacyDataVersion;
                 root.Remove("writingNotes");
+                root.Remove("noteImportBookLinks");
+            });
+
+            RehashDataDescriptor(entries);
+        }
+        else if (dataVersion == IntermediateDataVersion)
+        {
+            MutateJsonEntry(entries, ManifestPath, root =>
+            {
+                root["formatVersion"] = SupportedFormatVersion;
+                root["dataVersion"] = IntermediateDataVersion;
+            });
+
+            MutateJsonEntry(entries, DataPath, root =>
+            {
+                root["version"] = IntermediateDataVersion;
+                root.Remove("noteImportBookLinks");
             });
 
             RehashDataDescriptor(entries);

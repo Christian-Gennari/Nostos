@@ -801,6 +801,13 @@ public sealed class PortableArchiveService(
                 "malformed_data",
                 "Portable archive relational payload is malformed.");
 
+            if (manifest.DataVersion != data.Version)
+            {
+                throw new PortableArchiveException(
+                    "data_version_mismatch",
+                    $"Portable archive manifest data version {manifest.DataVersion} does not match payload version {data.Version}.");
+            }
+
             ValidatePortableData(data);
 
             var actualCounts = CountsFor(data);
@@ -1097,6 +1104,20 @@ public sealed class PortableArchiveService(
             throw new PortableArchiveException(
                 "malformed_data",
                 "Portable relational data is incomplete.");
+        }
+
+        if (data.Version < 2 && data.WritingNotes is not null)
+        {
+            throw new PortableArchiveException(
+                "unexpected_version_data",
+                $"Portable relational data version {data.Version} must not carry writing notes.");
+        }
+
+        if (data.Version < 3 && data.NoteImportBookLinks is not null)
+        {
+            throw new PortableArchiveException(
+                "unexpected_version_data",
+                $"Portable relational data version {data.Version} must not carry note import book links.");
         }
 
         RequireUniqueGuids(data.Works.Select(x => x.Id), "work");
@@ -1725,13 +1746,13 @@ public sealed class PortableArchiveService(
         }
 
         var expectedImportLinks = (source.NoteImportBookLinks ?? [])
-            .Select(x => (x.Id, x.Source, x.SourceKey, x.BookId))
+            .Select(x => (x.Id, x.Source, x.SourceKey, x.BookId, x.CreatedAtUtc))
             .ToHashSet();
         var actualImportLinks = (await _db.NoteImportBookLinks
             .AsNoTracking()
-            .Select(x => new { x.Id, x.Source, x.SourceKey, x.BookId })
+            .Select(x => new { x.Id, x.Source, x.SourceKey, x.BookId, x.CreatedAtUtc })
             .ToListAsync(ct))
-            .Select(x => (x.Id, x.Source, x.SourceKey, x.BookId))
+            .Select(x => (x.Id, x.Source, x.SourceKey, x.BookId, x.CreatedAtUtc))
             .ToHashSet();
         if (!expectedImportLinks.SetEquals(actualImportLinks))
         {

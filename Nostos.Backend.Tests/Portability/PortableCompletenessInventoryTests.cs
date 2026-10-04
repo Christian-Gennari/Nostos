@@ -378,10 +378,8 @@ public sealed class PortableCompletenessInventoryTests
             string.Join(Environment.NewLine, failures.Select(x => $" - {x}")));
     }
 
-    [Fact]
-    public void Portable_classifications_match_portable_archive_record_properties()
-    {
-        var portableRecordByEntity = new Dictionary<string, Type>(StringComparer.Ordinal)
+    private static readonly IReadOnlyDictionary<string, Type> PortableArchiveRecordTypes =
+        new Dictionary<string, Type>(StringComparer.Ordinal)
         {
             ["WorkModel"] = typeof(PortableWork),
             ["BookModel"] = typeof(PortableBook),
@@ -397,24 +395,83 @@ public sealed class PortableCompletenessInventoryTests
             ["NoteImportBookLink"] = typeof(PortableNoteImportBookLink),
         };
 
-        foreach (var (entityName, portableRecordType) in portableRecordByEntity)
+    private static readonly IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>>
+        AllowedDerivedArchiveRecordFields =
+            new Dictionary<string, IReadOnlyDictionary<string, string>>(StringComparer.Ordinal)
+            {
+                [nameof(PortableBook)] = new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["Type"] = "TPH discriminator serialized as explicit book type string.",
+                    ["Metadata"] = "Owned entity BookMetadata serialized as nested object.",
+                    ["Progress"] = "Owned entity ReadingProgress serialized as nested object.",
+                    ["HasBookFile"] = "Derived boolean indicating whether physical/ebook asset exists.",
+                    ["HasCover"] = "Derived boolean indicating whether book cover asset exists.",
+                    ["ChaptersJson"] = "Owned entity FileInfoDetails.ChaptersJson serialized on book.",
+                    ["Isbn"] = "TPH subclass physical/ebook ISBN property serialized on book.",
+                    ["PageCount"] = "TPH subclass physical/ebook page count serialized on book.",
+                    ["Asin"] = "TPH subclass audiobook ASIN serialized on book.",
+                    ["Duration"] = "TPH subclass audiobook duration serialized on book.",
+                    ["Narrator"] = "TPH subclass audiobook narrator serialized on book.",
+                },
+            };
+
+    [Fact]
+    public void Portable_classification_and_archive_records_have_two_way_property_parity()
+    {
+        foreach (var (entityName, archiveRecordType) in PortableArchiveRecordTypes)
         {
             Inventory.Should().ContainKey(
                 entityName,
-                $"{entityName} must have an explicit portability classification");
+                $"archive record {archiveRecordType.Name} must correspond to a classified entity");
 
-            var classifiedPortableProperties = Inventory[entityName]
-                .PortableProperties
+            var classification = Inventory[entityName];
+
+            var classifiedPortableProperties = classification.PortableProperties
                 .ToHashSet(StringComparer.Ordinal);
 
-            var archiveProperties = portableRecordType
-                .GetProperties(BindingFlags.Instance | BindingFlags.Public)
+            var archiveProperties = archiveRecordType
+                .GetProperties(
+                    BindingFlags.Public |
+                    BindingFlags.Instance)
+                .Where(property => property.GetMethod is not null)
                 .Select(property => property.Name)
                 .ToHashSet(StringComparer.Ordinal);
 
-            archiveProperties.Should().Contain(
-                classifiedPortableProperties,
-                $"{entityName} properties classified Portable must be carried by {portableRecordType.Name}");
+            // Direction 1: Every entity property classified as Portable must be carried by the Portable* record
+            foreach (var portableProperty in classifiedPortableProperties)
+            {
+                archiveProperties.Should().Contain(
+                    portableProperty,
+                    $"{entityName}.{portableProperty} is classified Portable, so {archiveRecordType.Name} must carry it");
+            }
+
+            AllowedDerivedArchiveRecordFields.TryGetValue(
+                archiveRecordType.Name,
+                out var allowedDerivedFields);
+
+            allowedDerivedFields ??= new Dictionary<string, string>(StringComparer.Ordinal);
+
+            // Direction 2: Every property exposed by the archive record must map to Portable entity property or be in AllowedDerivedArchiveRecordFields
+            foreach (var archiveProperty in archiveProperties)
+            {
+                if (classifiedPortableProperties.Contains(archiveProperty))
+                    continue;
+
+                allowedDerivedFields.Should().ContainKey(
+                    archiveProperty,
+                    $"UNACCOUNTED ARCHIVE PROPERTY: {archiveRecordType.Name}.{archiveProperty}. " +
+                    "Every public instance property on a Portable* archive record must either map to an entity property classified Portable or be explicitly listed in AllowedDerivedArchiveRecordFields with an architectural reason.");
+            }
+
+            foreach (var (allowedField, reason) in allowedDerivedFields)
+            {
+                reason.Should().NotBeNullOrWhiteSpace(
+                    $"{archiveRecordType.Name}.{allowedField} requires a documented reason");
+
+                archiveProperties.Should().Contain(
+                    allowedField,
+                    $"STALE DERIVED ARCHIVE FIELD: {archiveRecordType.Name}.{allowedField} is listed in AllowedDerivedArchiveRecordFields but no such public instance property exists on the archive record.");
+            }
         }
     }
 
