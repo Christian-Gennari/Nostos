@@ -18,3 +18,18 @@ public sealed class MigrationPhaseAvailabilityNone : IMigrationPhaseAvailability
 
     public bool IsAvailable(MigrationDirection direction) => false;
 }
+
+/// <summary>
+/// Reports both directions wired. Slices 9/10 register the real import and
+/// export phase handlers together with this availability, so the API may create
+/// jobs and preflight may reserve; the deployment-capabilities flag the
+/// frontend reads is deliberately decoupled (see
+/// <c>DeploymentCapabilitiesEndpoints.AdvertiseLibraryMigration</c>).
+/// </summary>
+public sealed class MigrationPhaseAvailabilityAll : IMigrationPhaseAvailability
+{
+    public static MigrationPhaseAvailabilityAll Instance { get; } = new();
+
+    public bool IsAvailable(MigrationDirection direction) =>
+        direction is MigrationDirection.Import or MigrationDirection.Export;
+}

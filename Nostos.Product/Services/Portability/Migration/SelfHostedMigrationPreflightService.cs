@@ -5,6 +5,7 @@ using Microsoft.Extensions.Options;
 using Nostos.Backend.Data;
 using Nostos.Backend.Data.Models;
 using Nostos.Backend.Endpoints;
+using Nostos.Backend.Services.Library;
 using Nostos.Backend.Services.Portability.Transfers;
 
 namespace Nostos.Backend.Services.Portability.Migration;
@@ -26,6 +27,7 @@ public sealed class SelfHostedMigrationPreflightService(
     NostosDbContext db,
     ITransferStorageCapacity capacity,
     IMigrationPhaseAvailability phaseAvailability,
+    ILibraryDestinationRevisionProvider revisionProvider,
     IOptions<TransferStorageOptions> options) : IMigrationPreflightService
 {
     public async Task<MigrationPreflightResponse> EvaluateAsync(
@@ -115,8 +117,6 @@ public sealed class SelfHostedMigrationPreflightService(
             NoteImportBookLinks: await db.NoteImportBookLinks.CountAsync(ct),
             AssistantSettings: await db.AssistantSettings.CountAsync(ct));
 
-        var state = await db.LibraryStates.AsNoTracking()
-            .SingleOrDefaultAsync(s => s.Id == LibraryState.WellKnownId, ct);
         var status = counts.TotalRows > 0
             ? MigrationDestinationStatus.Populated
             : MigrationDestinationStatus.Empty;
@@ -124,7 +124,7 @@ public sealed class SelfHostedMigrationPreflightService(
         return new DestinationSnapshot(
             status,
             counts,
-            MigrationDestinationRevision.Compute(state?.StateVersion ?? "0", counts));
+            await revisionProvider.GetCurrentAsync(ct));
     }
 
     private sealed record DestinationSnapshot(
@@ -168,9 +168,10 @@ public sealed class SelfHostedMigrationPreflightService(
 
 /// <summary>
 /// Opaque destination revision bound into preflight/activation comparisons.
-/// The singleton library <c>StateVersion</c> bumps on every committed library
+/// The singleton library state version bumps on every committed library
 /// mutation; the counts make the revision change even if a mutation path
-/// bypassed that counter.
+/// bypassed that counter. Read through
+/// <see cref="Nostos.Backend.Services.Library.ILibraryDestinationRevisionProvider"/>.
 /// </summary>
 public static class MigrationDestinationRevision
 {

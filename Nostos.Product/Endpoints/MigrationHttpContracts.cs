@@ -219,6 +219,8 @@ public static class MigrationHttpErrors
     public const string StorageContended = "migration_storage_contended";
     public const string ImportPreparationUnavailable = "migration_import_preparation_unavailable";
     public const string ExportArtifactUnavailable = "migration_export_artifact_unavailable";
+    public const string ExportNotAvailable = "migration_export_not_available";
+    public const string ExportExpired = "migration_export_expired";
     public const string Unexpected = "unexpected_error";
 
     private static readonly Dictionary<string, string> Messages = new(StringComparer.Ordinal)
@@ -240,6 +242,8 @@ public static class MigrationHttpErrors
         [StorageContended] = "Transfer capacity is busy. Retry shortly.",
         [ImportPreparationUnavailable] = "Import preparation is not available on this deployment yet.",
         [ExportArtifactUnavailable] = "Export preparation is not available on this deployment yet.",
+        [ExportNotAvailable] = "This export job has no downloadable artifact.",
+        [ExportExpired] = "The export artifact has expired.",
         [Unexpected] = "The migration request failed unexpectedly.",
     };
 

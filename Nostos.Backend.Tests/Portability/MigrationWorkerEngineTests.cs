@@ -3,6 +3,7 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Nostos.Backend.Data;
@@ -36,16 +37,56 @@ public sealed class MigrationWorkerEngineTests
             : new[] { MigrationJobState.Preparing, MigrationJobState.Transferring, MigrationJobState.Validating });
     }
 
-    [Theory]
-    [InlineData(MigrationDirection.Import, MigrationTransferException.ImportPreparationUnavailable)]
-    [InlineData(MigrationDirection.Export, MigrationTransferException.ExportArtifactUnavailable)]
-    public async Task Missing_integrations_fail_truthfully_and_release_resources(MigrationDirection direction, string code)
+    [Fact]
+    public async Task Invalid_import_archive_fails_truthfully_and_releases_resources()
     {
-        await using var h = new MigrationEngineHarness(); await h.InitializeAsync(); var id = await Runnable(h, direction);
+        await using var h = new MigrationEngineHarness(); await h.InitializeAsync();
+        var archive = MigrationArchiveJobTestSupport.CorruptData(
+            await MigrationArchiveJobTestSupport.ExportRepresentativeAsync());
+        var id = await h.NewJobAsync();
+        var session = await h.StartAsync(id, archive);
+        await h.Upload(id, session, archive);
+        await h.Complete(id, session);
         await h.Worker.RunCycleAsync(default);
-        var job = await h.WithJobs(s => s.GetAsync(id, default)); job!.State.Should().Be(MigrationJobState.Failed); job.FailureCode.Should().Be(code); job.LeaseToken.Should().BeNull();
+        var job = await h.WithJobs(s => s.GetAsync(id, default));
+        job!.State.Should().Be(MigrationJobState.Failed);
+        job.FailureCode.Should().Be("malformed_data");
+        job.LeaseToken.Should().BeNull();
         (await h.WithDb(db => db.MigrationStorageReservations.Where(r => r.ClaimedJobId == id).ToListAsync()))
             .Should().OnlyContain(r => r.ReleasedAtUtc != null);
+    }
+
+    [Fact]
+    public async Task Export_source_media_failure_fails_truthfully_and_releases_resources()
+    {
+        var failure = new SourceMediaFailureArchiveService();
+        await using var h = new MigrationEngineHarness();
+        h.Configure = s =>
+        {
+            s.RemoveAll<IPortableArchiveService>();
+            s.AddScoped<IPortableArchiveService>(_ => failure);
+        };
+        await h.InitializeAsync(); var id = await Runnable(h, MigrationDirection.Export);
+        await h.Worker.RunCycleAsync(default);
+        var job = await h.WithJobs(s => s.GetAsync(id, default));
+        job!.State.Should().Be(MigrationJobState.Failed);
+        job.FailureCode.Should().Be("source_media_missing");
+        job.LeaseToken.Should().BeNull();
+        (await h.WithDb(db => db.MigrationStorageReservations.Where(r => r.ClaimedJobId == id).ToListAsync()))
+            .Should().OnlyContain(r => r.ReleasedAtUtc != null);
+    }
+
+    private sealed class SourceMediaFailureArchiveService : IPortableArchiveService
+    {
+        public Task<PortableExportResult> ExportAsync(Stream destination, CancellationToken cancellationToken = default) =>
+            throw Failure();
+        public Task<PortableExportResult> ExportAsync(IPortableArchiveSink destination,
+            IProgress<PortableArchiveProgress>? progress = null, CancellationToken cancellationToken = default) =>
+            throw Failure();
+        public Task<PortableImportResult> ImportAsync(Stream source, CancellationToken cancellationToken = default) =>
+            throw Failure();
+        private static PortableArchiveException Failure() =>
+            new("source_media_missing", "Book media is missing from storage.");
     }
 
     [Fact]

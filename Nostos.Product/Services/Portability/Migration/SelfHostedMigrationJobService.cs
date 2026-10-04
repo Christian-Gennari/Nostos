@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Nostos.Backend.Data;
 using Nostos.Backend.Data.Models;
 using Nostos.Backend.Endpoints;
+using Nostos.Backend.Services.Library;
 using Nostos.Backend.Services.Portability.Transfers;
 
 namespace Nostos.Backend.Services.Portability.Migration;
@@ -22,6 +23,7 @@ public sealed class SelfHostedMigrationJobService(
     ISelfHostedMigrationUploads uploads,
     MigrationTransferCleanup cleanup,
     IMigrationPhaseAvailability phaseAvailability,
+    ILibraryDestinationRevisionProvider revisionProvider,
     TimeProvider? timeProvider = null)
 {
     private const int MaxIdempotencyKeyLength = 128;
@@ -53,6 +55,10 @@ public sealed class SelfHostedMigrationJobService(
         var id = Guid.NewGuid();
         var now = Now;
         var reservedBytes = 0L;
+        // The revision is the destination at the moment the job is accepted,
+        // before any upload or preparation work. Preparation must never
+        // substitute a later value; activation compares this baseline.
+        var destinationRevision = await revisionProvider.GetCurrentAsync(ct);
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         if (request.ReservationId is { } reservationId)
         {
@@ -89,6 +95,7 @@ public sealed class SelfHostedMigrationJobService(
             AttemptNumber = 1,
             ReservationId = request.ReservationId,
             ReservedStorageBytes = reservedBytes,
+            DestinationRevision = destinationRevision,
         };
 
         db.MigrationJobRecords.Add(record);

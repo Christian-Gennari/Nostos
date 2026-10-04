@@ -178,6 +178,8 @@ public sealed class MigrationJobWorker : BackgroundService
         {
             MigrationTransferException typed => typed.Code,
             PortableArchiveException archive => archive.Code,
+            PortableStagingException staging => staging.Code,
+            TransferReservationException => MigrationTransferException.StorageExhausted,
             IOException => MigrationTransferException.StorageExhausted,
             _ => "migration_processing_failed",
         };
