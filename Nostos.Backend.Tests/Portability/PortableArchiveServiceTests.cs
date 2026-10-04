@@ -450,6 +450,85 @@ public sealed class PortableArchiveServiceTests
         (await traversalDestination.Db.Books.CountAsync()).Should().Be(0);
     }
 
+    [Theory]
+    [InlineData("/absolute")]
+    [InlineData("\\absolute")]
+    [InlineData("C:\\absolute")]
+    [InlineData("../escape")]
+    [InlineData("./escape")]
+    [InlineData("foo/../bar")]
+    [InlineData("foo\\..\\bar")]
+    [InlineData("foo//bar")]
+    public async Task Import_rejects_hostile_entry_paths_before_manifest_lookup(string path)
+    {
+        using var archive = await BuildArchiveAsync(
+            [new TestArchiveEntry(path, [1, 2, 3])]);
+        await using var destination = await LocalPortableTestLibrary.CreateAsync();
+
+        var action = () => destination.Portability().ImportAsync(archive);
+        var exception = await action.Should().ThrowAsync<PortableArchiveException>();
+
+        exception.Which.Code.Should().Be("unsafe_archive_path");
+    }
+
+    [Fact]
+    public async Task Import_rejects_case_insensitive_duplicate_entry_paths()
+    {
+        using var archive = await BuildArchiveAsync(
+        [
+            new TestArchiveEntry("payload.bin", [1]),
+            new TestArchiveEntry("PAYLOAD.BIN", [2]),
+        ]);
+        await using var destination = await LocalPortableTestLibrary.CreateAsync();
+
+        var action = () => destination.Portability().ImportAsync(archive);
+        var exception = await action.Should().ThrowAsync<PortableArchiveException>();
+
+        exception.Which.Code.Should().Be("duplicate_path");
+        exception.Which.Message.Should()
+            .Be("Portable archive contains duplicate path 'PAYLOAD.BIN'.");
+    }
+
+    [Fact]
+    public async Task Import_rejects_manifest_and_payload_data_version_disagreement()
+    {
+        using var archive = await ExportFixtureAsync();
+        var entries = await ReadEntriesAsync(archive);
+        MutateJsonEntry(entries, "manifest.json", root =>
+        {
+            root["dataVersion"] = 2;
+        });
+        using var mismatch = await BuildArchiveAsync(entries);
+        await using var destination = await LocalPortableTestLibrary.CreateAsync();
+
+        var action = () => destination.Portability().ImportAsync(mismatch);
+        var exception = await action.Should().ThrowAsync<PortableArchiveException>();
+
+        exception.Which.Code.Should().Be("data_version_mismatch");
+        (await destination.Db.Books.CountAsync()).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Import_rejects_duplicate_relationships_before_mutating_destination()
+    {
+        using var archive = await ExportFixtureAsync();
+        var entries = await ReadEntriesAsync(archive);
+        MutateJsonEntry(entries, "data/library.json", root =>
+        {
+            var writingNotes = root["writingNotes"]!.AsArray();
+            writingNotes.Add(writingNotes[0]!.DeepClone());
+        });
+        RehashDataDescriptor(entries);
+        using var duplicate = await BuildArchiveAsync(entries);
+        await using var destination = await LocalPortableTestLibrary.CreateAsync();
+
+        var action = () => destination.Portability().ImportAsync(duplicate);
+        var exception = await action.Should().ThrowAsync<PortableArchiveException>();
+
+        exception.Which.Code.Should().Be("duplicate_relationship");
+        (await destination.Db.Books.CountAsync()).Should().Be(0);
+    }
+
     [Fact]
     public async Task Import_requires_empty_destination()
     {
