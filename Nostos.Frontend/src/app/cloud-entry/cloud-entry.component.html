@@ -253,8 +253,10 @@
         <h1>How would you like to begin?</h1>
 
         @if (sharedImportOpen()) {
+          <!-- Slice B8 owns activation: hard-code false until the activation
+               calls are wired, so the flow always shows its gated explanation. -->
           <app-library-import-flow
-            [supportsSafeActivation]="entry.supportsSafeActivation()"
+            [supportsSafeActivation]="false"
             (importCompleted)="entry.finishFirstRunAfterImport()"
           />
           <div class="cloud-entry__actions">
@@ -280,20 +282,17 @@
               type="button"
               [disabled]="entry.actionPending()"
               (click)="openImport()"
-              data-testid="cloud-entry-import"
             >
               Import an existing Nostos library
             </button>
           </div>
-          @if (!entry.supportsLibraryMigration()) {
-            <input
-              #archiveInput
-              class="cloud-entry__file"
-              type="file"
-              accept=".nostos,application/vnd.nostos.portable+zip"
-              (change)="importSelected($event)"
-            />
-          }
+          <input
+            #archiveInput
+            class="cloud-entry__file"
+            type="file"
+            accept=".nostos,application/vnd.nostos.portable+zip"
+            (change)="importSelected($event)"
+          />
         }
       }
 

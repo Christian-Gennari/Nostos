@@ -60,9 +60,6 @@ export class CloudEntryService {
   readonly supportsLibraryMigration = computed(
     () => this.deploymentCapabilities()?.supportsLibraryMigration === true,
   );
-  readonly supportsSafeActivation = computed(
-    () => this.deploymentCapabilities()?.supportsSafeActivation === true,
-  );
 
   constructor(
     private readonly capabilities: DeploymentCapabilitiesService,

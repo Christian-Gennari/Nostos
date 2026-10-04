@@ -392,7 +392,6 @@ describe('CloudEntryService', () => {
 
     await service.initialize();
     expect(service.supportsLibraryMigration()).toBe(false);
-    expect(service.supportsSafeActivation()).toBe(false);
 
     capabilities.get.mockReturnValue(
       of({
@@ -406,7 +405,6 @@ describe('CloudEntryService', () => {
     await service.initialize(true);
 
     expect(service.supportsLibraryMigration()).toBe(true);
-    expect(service.supportsSafeActivation()).toBe(true);
     expect(service.view().kind).toBe('first_run');
 
     service.finishFirstRunAfterImport();

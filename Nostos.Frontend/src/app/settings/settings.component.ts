@@ -230,16 +230,15 @@ export class SettingsComponent implements OnInit, OnDestroy {
   readonly cloudAccountManagementUrl = computed(() =>
     this.isCloud() ? (this.deploymentCapabilities()?.accountManagementUrl ?? null) : null,
   );
+  readonly supportsCloudPortableExport = computed(() => this.isCloud());
   /**
-   * Server-authoritative migration capability (#680 plan §4). False or absent
-   * keeps the existing portable controls; true mounts the shared transfer
-   * flows. Never inferred from `deploymentMode`.
+   * Server-authoritative migration capability (#680 plan §4). Only a true
+   * value renders the shared "Move your library" card; false or absent keeps
+   * this surface exactly as it is on main. Never inferred from
+   * `deploymentMode`.
    */
   readonly supportsLibraryMigration = computed(
     () => this.deploymentCapabilities()?.supportsLibraryMigration === true,
-  );
-  readonly supportsSafeActivation = computed(
-    () => this.deploymentCapabilities()?.supportsSafeActivation === true,
   );
   readonly cloudSession = signal<CloudSession | null>(null);
   readonly managedEreaderAccess = computed(
@@ -401,8 +400,6 @@ export class SettingsComponent implements OnInit, OnDestroy {
   readonly portableExportBusy = signal(false);
   readonly portableExportProgress = signal<number | null>(null);
   readonly portableExportError = signal<string | null>(null);
-  readonly portableImportBusy = signal(false);
-  readonly portableImportError = signal<string | null>(null);
 
   readonly managedAiUsage = signal<CloudManagedAiUsage | null>(null);
   readonly managedAiUsageFailed = signal(false);
@@ -955,7 +952,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
   }
 
   exportAllNostosData(): void {
-    if (this.portableExportBusy()) return;
+    if (this.portableExportBusy() || !this.supportsCloudPortableExport()) return;
 
     this.portableExportBusy.set(true);
     this.portableExportProgress.set(null);
@@ -1032,54 +1029,12 @@ export class SettingsComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * Legacy portable import, kept unchanged until the host advertises
-   * `supportsLibraryMigration`; then the shared import flow renders instead.
-   */
-  importPortableArchive(event: Event): void {
-    const input = event.target as HTMLInputElement;
-    const file = input.files?.[0];
-    input.value = '';
-    if (!file || this.portableImportBusy()) return;
-
-    this.portableImportBusy.set(true);
-    this.portableImportError.set(null);
-
-    this.portableLibrary.importArchive(file).subscribe({
-      next: () => {
-        this.portableImportBusy.set(false);
-        this.toast.success('Your library was imported.');
-        this.onLibraryTransferCompleted();
-      },
-      error: (error) => {
-        this.portableImportBusy.set(false);
-        this.portableImportError.set(this.portableImportFailureMessage(error));
-        this.toast.error('Could not import your Nostos library.');
-      },
-    });
-  }
-
-  /**
-   * A completed import replaced the server library, so refresh what Settings
-   * reads from the server rather than leaving a stale card on screen.
+   * Capability-on only: a completed shared import replaced the server library,
+   * so refresh what Settings reads from the server rather than leaving stale
+   * data on screen.
    */
   onLibraryTransferCompleted(): void {
     this.loadData();
-  }
-
-  private portableImportFailureMessage(error: unknown): string {
-    if (error instanceof HttpErrorResponse) {
-      if (error.status === 409) {
-        return 'This library already contains data, so the archive was not imported. Import into an empty Nostos library instead.';
-      }
-      if (error.status === 400) {
-        return 'That file could not be imported as a Nostos portable library.';
-      }
-      if (error.status === 401 || error.status === 403) {
-        return 'Your session no longer allows this import. Sign in again, then retry.';
-      }
-    }
-
-    return 'Nostos could not import that library. Your existing library was not changed. Try again.';
   }
 
   loadData(): void {

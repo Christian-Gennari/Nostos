@@ -42,6 +42,7 @@ import {
 } from '../library-transfer/services/transfer-resume-store.service';
 import {
   TRANSFER_TAB_LEASE_KEY,
+  TransferTabLease,
 } from '../library-transfer/services/transfer-tab-lease.service';
 import { DelegatingTransport } from '../library-transfer/testing/delegating-transport';
 import {
@@ -121,7 +122,6 @@ const portableLibraryServiceMock = {
         }),
       ),
   ),
-  importArchive: vi.fn((): Observable<unknown> => of({})),
 };
 
 const cloudAuthServiceMock = {
@@ -337,8 +337,6 @@ describe('SettingsComponent backup-only surface', () => {
         }),
       ),
     );
-    portableLibraryServiceMock.importArchive.mockClear();
-    portableLibraryServiceMock.importArchive.mockReturnValue(of({}));
     cloudAuthServiceMock.getSession.mockClear();
     cloudAuthServiceMock.getSession.mockReturnValue(
       of({
@@ -670,31 +668,20 @@ describe('SettingsComponent backup-only surface', () => {
         .map((item) => item.nativeElement.textContent.trim()),
     ).toEqual(['Library & data', 'Assistant', 'Account', 'Appearance']);
     expect(fixture.nativeElement.querySelector('#library-data')).not.toBeNull();
-    expect(fixture.nativeElement.querySelector('[data-testid="library-transfer-card"]')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('[data-testid="cloud-portable-export-card"]')).toBeTruthy();
     expect(fixture.nativeElement.querySelector('[data-testid="ereader-access-card"]')).toBeNull();
     expect(opdsServiceMock.getInfo).not.toHaveBeenCalled();
     expect(opdsServiceMock.getManagedAccess).not.toHaveBeenCalled();
   });
 
-  it('offers the permanent library transfer actions in both deployment modes when migration is off', () => {
-    // SelfHosted (the default fixture) must expose both portable actions even
-    // though the host does not advertise migration yet (issue #680 checklist).
-    let card = fixture.nativeElement.querySelector(
-      '[data-testid="library-transfer-card"]',
-    ) as HTMLElement;
-    expect(card).toBeTruthy();
-    expect(card.textContent).toContain('Move your library');
-    expect(card.textContent).toContain('Export library');
-    expect(card.textContent).toContain('Import library');
-    expect(card.querySelector('[data-testid="cloud-portable-export-action"]')).toBeTruthy();
-    expect(card.querySelector('[data-testid="portable-import-action"]')).toBeTruthy();
-    expect(card.querySelector('app-library-transfer-host')).toBeNull();
+  it('offers one Cloud export action and keeps it out of SelfHosted settings', () => {
+    expect(fixture.nativeElement.querySelector('[data-testid="cloud-portable-export-card"]')).toBeNull();
 
     capabilitiesServiceMock.get.mockReturnValueOnce(of(cloudCapabilities));
     render();
 
-    card = fixture.nativeElement.querySelector(
-      '[data-testid="library-transfer-card"]',
+    const card = fixture.nativeElement.querySelector(
+      '[data-testid="cloud-portable-export-card"]',
     ) as HTMLElement;
     const action = card.querySelector(
       '[data-testid="cloud-portable-export-action"]',
@@ -703,8 +690,6 @@ describe('SettingsComponent backup-only surface', () => {
     expect(card.textContent).toContain('one portable .nostos file');
     expect(card.textContent).toContain('stored EPUB, PDF, and audiobook files');
     expect(action.textContent).toContain('Export all my Nostos data');
-    expect(card.querySelector('[data-testid="portable-import-action"]')).toBeTruthy();
-    expect(card.querySelector('app-library-transfer-host')).toBeNull();
   });
 
   it('shows export progress and completes the download through the portability service', () => {
@@ -814,35 +799,6 @@ describe('SettingsComponent backup-only surface', () => {
     expect(headers).toContain('Backup History');
     // No empty section/divider where Appearance was: the first card is Backup.
     expect(headers[0]).toBe('Backup');
-  });
-
-  it('separates portable library transfer from the local operational Backup', () => {
-    const pageText = (fixture.nativeElement.textContent ?? '').replace(/\s+/g, ' ');
-    expect(pageText).toContain(
-      'Portable library archives are for moving your library between Nostos installations.',
-    );
-    expect(pageText).toContain(
-      'Backups are for recovering this SelfHosted installation. They are not portable library exports.',
-    );
-
-    const transferCard = fixture.nativeElement.querySelector(
-      '[data-testid="library-transfer-card"]',
-    ) as HTMLElement;
-    const backupPurpose = fixture.nativeElement.querySelector(
-      '[data-testid="backup-purpose"]',
-    ) as HTMLElement;
-    expect(transferCard).toBeTruthy();
-    expect(backupPurpose).toBeTruthy();
-    expect(transferCard.contains(backupPurpose)).toBe(false);
-
-    // Backup controls keep working and stay out of the transfer card.
-    const backupButtons = Array.from(
-      fixture.nativeElement.querySelectorAll('button'),
-    ).map((button: any) => (button.textContent ?? '').trim());
-    expect(backupButtons).toContain('Back up now');
-    expect(backupButtons).toContain('Scan for Backups');
-    expect(transferCard.textContent).not.toContain('Back up now');
-    expect(transferCard.textContent).not.toContain('Scan for Backups');
   });
 
   it('exposes the automatic-backup toggle and manual backup action', () => {
@@ -1815,11 +1771,11 @@ describe('SettingsComponent shared library transfer host', () => {
     options: ConstructorParameters<typeof MockLibraryTransferTransport>[0] = {},
     wrap?: (inner: MockLibraryTransferTransport) => DelegatingTransport,
   ): Promise<void> {
+    TestBed.resetTestingModule();
     localStorage.clear();
     capabilitiesServiceMock.get.mockClear();
     capabilitiesServiceMock.get.mockReturnValue(of(capabilities));
     portableLibraryServiceMock.exportArchive.mockClear();
-    portableLibraryServiceMock.importArchive.mockClear();
     toastMock.success.mockClear();
     toastMock.error.mockClear();
 
@@ -1888,14 +1844,30 @@ describe('SettingsComponent shared library transfer host', () => {
     vi.useRealTimers();
   });
 
-  it('mounts the shared export and import flows in both modes when the host advertises migration', async () => {
-    await configure({ ...selfHostedCapabilities, supportsLibraryMigration: true });
+  it('renders the card only when migration is advertised, in both modes', async () => {
+    // Capability off (every real deployment today): exactly main's surface.
+    await configure(selfHostedCapabilities);
+    expect(testId('library-transfer-card')).toBeNull();
+    expect(testId('library-transfer-host')).toBeNull();
+    expect(testId('cloud-portable-export-card')).toBeNull();
+    expect(testId('cloud-portable-export-action')).toBeNull();
+    expect(mock.calls.preflight).toBe(0);
+    expect(mock.calls.createJob).toBe(0);
+    expect(mock.calls.getJob).toBe(0);
+    expect(mock.calls.uploadChunk).toBe(0);
 
-    // A returning account that already finished onboarding has no first-run
-    // marker; the card is still reachable and offers both actions.
-    expect(
-      Object.keys(localStorage).filter((key) => key.startsWith('nostos.cloud.first-run.')),
-    ).toEqual([]);
+    await configure(cloudCapabilities);
+    expect(testId('library-transfer-card')).toBeNull();
+    expect(testId('library-transfer-host')).toBeNull();
+    expect(testId('cloud-portable-export-card')).toBeTruthy();
+    expect(testId('cloud-portable-export-action')).toBeTruthy();
+
+    // Capability on: the shared host replaces the Cloud-only card in both modes.
+    await configure({
+      ...selfHostedCapabilities,
+      supportsLibraryMigration: true,
+      supportsSafeActivation: true,
+    });
 
     const card = testId('library-transfer-card') as HTMLElement;
     expect(card).toBeTruthy();
@@ -1908,8 +1880,8 @@ describe('SettingsComponent shared library transfer host', () => {
     expect(host).toBeTruthy();
     expect(testId('library-export-flow')).toBeTruthy();
     expect(testId('library-import-flow')).toBeTruthy();
+    expect(testId('cloud-portable-export-card')).toBeNull();
     expect(testId('cloud-portable-export-action')).toBeNull();
-    expect(testId('portable-import-action')).toBeNull();
 
     // Entries are real buttons; the file input is triggered from the picker.
     expect((testId('export-start') as HTMLButtonElement).tagName).toBe('BUTTON');
@@ -1922,37 +1894,48 @@ describe('SettingsComponent shared library transfer host', () => {
     );
     expect(groups).toEqual(['Export library', 'Import library']);
 
-    capabilitiesServiceMock.get.mockClear();
-    capabilitiesServiceMock.get.mockReturnValue(
-      of({ ...cloudCapabilities, supportsLibraryMigration: true }),
-    );
-    fixture = TestBed.createComponent(SettingsComponent);
-    fixture.detectChanges();
+    // Slice B8 owns activation: the host hard-codes false even though the
+    // capabilities object advertises supportsSafeActivation.
+    expect(importFlow().supportsSafeActivation()).toBe(false);
 
+    await configure({ ...cloudCapabilities, supportsLibraryMigration: true });
     expect(testId('library-transfer-host')).toBeTruthy();
     expect(testId('library-export-flow')).toBeTruthy();
     expect(testId('library-import-flow')).toBeTruthy();
-    expect(testId('cloud-portable-export-action')).toBeNull();
+    expect(testId('cloud-portable-export-card')).toBeNull();
   });
 
-  it('keeps the legacy controls and never runs a transport when migration is off', async () => {
-    await configure(selfHostedCapabilities);
+  it('separates portable library transfer from the local operational Backup when migration is on', async () => {
+    await configure({ ...selfHostedCapabilities, supportsLibraryMigration: true });
 
-    expect(testId('library-transfer-card')).toBeTruthy();
-    expect(testId('library-transfer-host')).toBeNull();
-    expect(testId('cloud-portable-export-action')).toBeTruthy();
-    expect(testId('portable-import-action')).toBeTruthy();
-    expect(fixture.debugElement.query(By.directive(LibraryImportFlowComponent))).toBeNull();
+    const pageText = (fixture.nativeElement.textContent ?? '').replace(/\s+/g, ' ');
+    expect(pageText).toContain(
+      'Portable library archives are for moving your library between Nostos installations.',
+    );
+    expect(pageText).toContain(
+      'Backups are for recovering this SelfHosted installation. They are not portable library exports.',
+    );
 
-    // No migration endpoint was touched by rendering the legacy branch.
-    expect(mock.calls.preflight).toBe(0);
-    expect(mock.calls.createJob).toBe(0);
-    expect(mock.calls.getJob).toBe(0);
-    expect(mock.calls.uploadChunk).toBe(0);
+    const transferCard = testId('library-transfer-card') as HTMLElement;
+    const backupPurpose = testId('backup-purpose') as HTMLElement;
+    expect(backupPurpose).toBeTruthy();
+    expect(transferCard.contains(backupPurpose)).toBe(false);
+
+    const backupButtons = Array.from(
+      fixture.nativeElement.querySelectorAll('button'),
+    ).map((button: any) => (button.textContent ?? '').trim());
+    expect(backupButtons).toContain('Back up now');
+    expect(backupButtons).toContain('Scan for Backups');
+    expect(transferCard.textContent).not.toContain('Back up now');
+    expect(transferCard.textContent).not.toContain('Scan for Backups');
   });
 
   it('runs the import happy path through the Settings host with the mock transport', async () => {
-    await configure({ ...selfHostedCapabilities, supportsLibraryMigration: true });
+    await configure({
+      ...selfHostedCapabilities,
+      supportsLibraryMigration: true,
+      supportsSafeActivation: true,
+    });
     const completed = vi.spyOn(fixture.componentInstance, 'onLibraryTransferCompleted');
 
     const file = await portableFile();
@@ -1978,7 +1961,11 @@ describe('SettingsComponent shared library transfer host', () => {
 
   it('gates replacement confirmation when safe activation is unavailable', async () => {
     await configure(
-      { ...selfHostedCapabilities, supportsLibraryMigration: true },
+      {
+        ...selfHostedCapabilities,
+        supportsLibraryMigration: true,
+        supportsSafeActivation: true,
+      },
       { destinationStatus: 'Populated', existingCounts: { books: 1 } },
     );
 
@@ -1998,29 +1985,42 @@ describe('SettingsComponent shared library transfer host', () => {
     expect(mock.calls.cancelJob).toBe(0);
   });
 
-  it('keeps an active import when Settings is left and re-entered', async () => {
+  it('adopts the tab lease after leaving and re-entering Settings and releases it on completion', async () => {
     await configure(
       { ...selfHostedCapabilities, supportsLibraryMigration: true },
       {},
       (inner) => new HeldUploadTransport(inner),
     );
     const transport = TestBed.inject(LIBRARY_TRANSFER_TRANSPORT) as HeldUploadTransport;
+    const lease = TestBed.inject(TransferTabLease);
 
     const file = await portableFile();
     selectFile(file);
     await waitForKind('uploading');
     await vi.waitFor(() => expect(transport.pending.length).toBeGreaterThan(0));
+    expect(localStorage.getItem(TRANSFER_TAB_LEASE_KEY)).not.toBeNull();
+    expect(lease.heartbeatActive).toBe(true);
 
     fixture.destroy();
     fixture = TestBed.createComponent(SettingsComponent);
     fixture.detectChanges();
 
-    // The root-scoped coordinator still owns the transfer; the new host shows it.
+    // The root-scoped coordinator still owns the transfer; the new host adopts
+    // the same-tab lease and shows the running state.
     expect(coordinator().state().kind).toBe('uploading');
     expect(testId('import-uploading')).toBeTruthy();
 
     await transport.releaseAll();
     await waitForKind('ready-empty');
+
+    const state = coordinator().state();
+    const jobId = state.kind === 'ready-empty' ? state.jobId : '';
+    mock.setJobState(jobId, 'Completed');
+    await coordinator().refreshStatus();
+    await waitForKind('completed');
+
+    expect(localStorage.getItem(TRANSFER_TAB_LEASE_KEY)).toBeNull();
+    expect(lease.heartbeatActive).toBe(false);
   });
 
   it('offers sign-in recovery after a 401 and resumes after re-authentication', async () => {

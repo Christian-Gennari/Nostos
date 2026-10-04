@@ -7,7 +7,7 @@
  * B1-B3 can be built and tested before #679's endpoints merge.
  */
 
-import { InjectionToken, isDevMode } from '@angular/core';
+import { InjectionToken } from '@angular/core';
 
 import {
   BrowserMigrationChunk,
@@ -22,7 +22,6 @@ import {
   MigrationUploadSessionResponseDto,
 } from '../models/migration-http.dtos';
 import { LibraryTransferFailure, TransferCancelledError } from '../models/library-transfer.models';
-import { MockLibraryTransferTransport } from './mock-library-transfer-transport.service';
 
 /** Transport-level error carrying the stable #679 error code. */
 export class MigrationTransportError extends Error {
@@ -137,48 +136,20 @@ export interface LibraryTransferTransport {
 export type PortableTransferClient = LibraryTransferTransport;
 
 /**
- * Explicit opt-in that lets a production-configured build deliberately run the
- * in-memory mock (local smoke tests only). Tests and dev builds are covered by
- * `isDevMode()` and never need this flag.
+ * Production DI default until slice B7 wires the real #679 adapter. It fails
+ * closed instead of falling back to an in-memory mock, so a deployment that
+ * advertises `supportsLibraryMigration` before B7 lands reports a clear
+ * configuration error rather than a fake transfer UI. Tests provide their own
+ * transport through `LIBRARY_TRANSFER_TRANSPORT`.
  */
-export const MOCK_TRANSFER_TRANSPORT_OPT_IN = '__NOSTOS_ALLOW_MOCK_LIBRARY_TRANSFER__';
-
-/** True when the in-memory mock may be the active transport. */
-export function mockTransferTransportAllowed(devMode: boolean, explicitOptIn: boolean): boolean {
-  return devMode || explicitOptIn;
-}
-
-function mockTransferTransportOptedIn(): boolean {
-  return (
-    (globalThis as Record<string, unknown>)[MOCK_TRANSFER_TRANSPORT_OPT_IN] === true
-  );
+export function createLibraryTransferTransport(): LibraryTransferTransport {
+  throw new Error('library transfer transport is not configured');
 }
 
 /**
- * Creates the transport the DI token provides. The in-memory mock must never
- * be the active transport of a real deployment: until slice B7 wires the real
- * #679 API this factory fails closed outside dev/test builds unless a caller
- * explicitly opts in (plan §4; B5/B6 capability gating).
- */
-export function createLibraryTransferTransport(
-  devMode: boolean = isDevMode(),
-  explicitOptIn: boolean = mockTransferTransportOptedIn(),
-): LibraryTransferTransport {
-  if (!mockTransferTransportAllowed(devMode, explicitOptIn)) {
-    throw new Error(
-      'The in-memory library-transfer transport cannot be the active transport in a ' +
-        `production build. Wire the real #679 transport (slice B7) or set ` +
-        `globalThis.${MOCK_TRANSFER_TRANSPORT_OPT_IN} = true for a deliberate local run.`,
-    );
-  }
-  return new MockLibraryTransferTransport();
-}
-
-/**
- * DI seam. Until #679's HTTP endpoints and #681's activation land, the default
- * provider is the in-memory mock (dev/test only); slice B7 replaces this
- * factory with the real SelfHosted adapter and B8 extends the interface with
- * activation.
+ * DI seam. The real SelfHosted adapter arrives in slice B7 and the private
+ * Cloud adapter in B9; until then the production provider above throws and
+ * tests inject a fake.
  */
 export const LIBRARY_TRANSFER_TRANSPORT = new InjectionToken<LibraryTransferTransport>(
   'NOSTOS_LIBRARY_TRANSFER_TRANSPORT',

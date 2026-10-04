@@ -1,33 +1,49 @@
+import { TestBed } from '@angular/core/testing';
+
 import {
-  MOCK_TRANSFER_TRANSPORT_OPT_IN,
+  LIBRARY_TRANSFER_TRANSPORT,
   createLibraryTransferTransport,
-  mockTransferTransportAllowed,
 } from './library-transfer-transport';
-import { MockLibraryTransferTransport } from './mock-library-transfer-transport.service';
 
-describe('library transfer transport guard', () => {
-  afterEach(() => {
-    delete (globalThis as Record<string, unknown>)[MOCK_TRANSFER_TRANSPORT_OPT_IN];
-  });
+/**
+ * Raw source text of every application module, keyed by path. The in-memory
+ * mock transport is test-only: no non-spec, non-testing file may import it, or
+ * the production bundle could ship fake migration state (slice B7 owns the
+ * real adapter).
+ */
+const appSources = import.meta.glob('../../**/*.ts', {
+  query: '?raw',
+  import: 'default',
+  eager: true,
+}) as Record<string, string>;
 
-  it('refuses the in-memory mock in a production build without an explicit opt-in', () => {
-    expect(mockTransferTransportAllowed(false, false)).toBe(false);
-    expect(() => createLibraryTransferTransport(false, false)).toThrowError(
-      /production build/,
+describe('library transfer transport DI', () => {
+  it('fails closed when no real transport is configured', () => {
+    expect(() => createLibraryTransferTransport()).toThrowError(
+      'library transfer transport is not configured',
+    );
+    expect(() => TestBed.inject(LIBRARY_TRANSFER_TRANSPORT)).toThrowError(
+      'library transfer transport is not configured',
     );
   });
 
-  it('allows the mock in development and test builds', () => {
-    expect(mockTransferTransportAllowed(true, false)).toBe(true);
-    expect(createLibraryTransferTransport(true, false)).toBeInstanceOf(
-      MockLibraryTransferTransport,
-    );
-  });
+  it('never imports the in-memory mock from a non-test source file', () => {
+    const paths = Object.keys(appSources);
+    // Prove the raw-source scan is not vacuous before trusting the filter.
+    expect(paths.length).toBeGreaterThan(100);
+    expect(
+      paths.some((path) => path.endsWith('mock-library-transfer-transport.service.ts')),
+    ).toBe(true);
 
-  it('allows an explicit production opt-in for deliberate local runs', () => {
-    expect(mockTransferTransportAllowed(false, true)).toBe(true);
-    expect(createLibraryTransferTransport(false, true)).toBeInstanceOf(
-      MockLibraryTransferTransport,
-    );
+    const offenders = Object.entries(appSources)
+      .filter(([path]) => !path.includes('.spec.'))
+      .filter(([path]) => !path.includes('/testing/'))
+      .filter(([path]) => !path.endsWith('mock-library-transfer-transport.service.ts'))
+      .filter(([, source]) =>
+        /mock-library-transfer-transport|MockLibraryTransferTransport/.test(source),
+      )
+      .map(([path]) => path);
+
+    expect(offenders).toEqual([]);
   });
 });
