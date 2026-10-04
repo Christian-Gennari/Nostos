@@ -74,6 +74,10 @@ test('desktop Brain header stays anchored while Notes search fills the Topics vi
   ).toBeGreaterThan(50);
   expectNear(notes!.search.right, notes!.tools.right, 'Notes search should reach the toolbar edge');
   await expect(noteSearch).toHaveAttribute('placeholder', 'Search notes, quotes, books…');
+  expect(
+    await noteSearch.evaluate((input) => getComputedStyle(input).textOverflow),
+    'a constrained placeholder should ellipsize instead of clipping mid-word',
+  ).toBe('ellipsis');
 
   await page.getByRole('button', { name: 'Topics', exact: true }).click();
   await topicSearch.waitFor();
