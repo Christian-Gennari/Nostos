@@ -317,7 +317,7 @@ test('the Brain index exposes a 44px search target', async ({ page }) => {
   ).toEqual([]);
 });
 
-test('Notes collapses the dormant view slot on phones while Map keeps its return control', async ({ page }) => {
+test('Notes uses the full phone toolbar while Map keeps its return control', async ({ page }) => {
   await page.goto(`${fixture.baseUrl}/second-brain`, { waitUntil: 'domcontentloaded' });
   await page.locator('.brain-header').waitFor({ timeout: 30_000 });
 
@@ -326,10 +326,9 @@ test('Notes collapses the dormant view slot on phones while Map keeps its return
   await noteSearch.waitFor();
 
   const portrait = await page.evaluate(() => {
-    const control = document.querySelector('.view-mode-control') as HTMLElement | null;
     const search = document.querySelector('#brain-all-notes-search') as HTMLElement | null;
     return {
-      controlDisplay: control ? getComputedStyle(control).display : null,
+      viewControlPresent: !!document.querySelector('.view-mode-control'),
       search: search
         ? {
             width: Math.round(search.getBoundingClientRect().width),
@@ -340,19 +339,16 @@ test('Notes collapses the dormant view slot on phones while Map keeps its return
     };
   });
 
-  expect(portrait.controlDisplay).toBe('none');
+  expect(portrait.viewControlPresent).toBe(false);
   expect(portrait.search, 'Notes search must remain rendered on a phone').not.toBeNull();
   expect(portrait.search!.width, 'Notes search should use the available tools-row width').toBeGreaterThan(250);
   expect(portrait.search!.height).toBeGreaterThanOrEqual(MIN_TAP_TARGET);
   expect(portrait.overflow, 'Notes must not create horizontal page overflow').toBeLessThanOrEqual(1);
 
   // The Brain has a separate short-viewport treatment for landscape phones.
-  // The dormant slot must collapse there too rather than consuming 76px of the
-  // already constrained tools row.
+  // Notes still has no meaningless list/map control there.
   await page.setViewportSize({ width: 844, height: 390 });
-  expect(
-    await page.locator('.view-mode-control').evaluate((el) => getComputedStyle(el).display),
-  ).toBe('none');
+  await expect(page.locator('.view-mode-control')).toHaveCount(0);
 
   await page.getByRole('button', { name: 'Topics', exact: true }).click();
   const mapButton = page.getByRole('button', { name: 'Map view', exact: true });

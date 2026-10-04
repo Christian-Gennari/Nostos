@@ -113,16 +113,15 @@
              header used to carry a hand-copy of its markup and CSS. Icon-only
              with no text labels: at this size two labelled segments read as a
              button pair rather than one segmented control. -->
+        @if (!isBrowsingNotes() && !isReviewing()) {
         <nostos-view-toggle
           class="control-group view-mode-control"
-          [class.view-mode-control--inactive]="isBrowsingNotes() || isReviewing()"
-          [attr.aria-hidden]="isBrowsingNotes() || isReviewing() ? 'true' : null"
-          [attr.inert]="isBrowsingNotes() || isReviewing() ? '' : null"
           aria-label="Brain view"
           [options]="viewToggleOptions"
-          [value]="viewMode() === 'map' ? 'map' : 'list'"
+          [value]="viewMode()"
           (valueChange)="setViewMode($event)"
         />
+        }
       </div>
     </header>
 
