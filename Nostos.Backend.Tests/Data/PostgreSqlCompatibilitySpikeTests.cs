@@ -1,9 +1,12 @@
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Nostos.Backend.Data;
 using Nostos.Backend.Data.Models;
 using Nostos.Backend.Services.Portability;
 using Nostos.Backend.Services.Portability.Migration;
+using Nostos.Backend.Services.Portability.Transfers;
+using Npgsql;
 using Xunit;
 
 namespace Nostos.Backend.Tests.Data;
@@ -936,6 +939,94 @@ public sealed class PostgreSqlCompatibilitySpikeTests
         public void Advance(TimeSpan delta) => _utcNow = _utcNow.Add(delta);
     }
 
+    // Slice 3 review fix 2: PostgreSQL serializable isolation prevents the
+    // over-reservation by aborting one admission with SQLSTATE 40001. The
+    // capacity service must retry that abort and surface a normal rejection,
+    // so two concurrent admissions end as one admitted + one rejected.
+    [Fact]
+    [Trait("Category", "PostgresSpike")]
+    public async Task Concurrent_capacity_admissions_end_as_one_admission_and_one_rejection_on_postgresql()
+    {
+        var connectionString = Environment.GetEnvironmentVariable(ConnectionStringEnvironmentVariable);
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            return;
+        }
+
+        // A dedicated schema keeps this case independent of the shared public
+        // schema the compatibility spike bootstraps, and keeps its tables out
+        // of the other test's HasTables() bootstrap decision regardless of
+        // execution order.
+        var schema = "nostos_capacity_" + Guid.NewGuid().ToString("N");
+        var connectionBuilder = new NpgsqlConnectionStringBuilder(connectionString)
+        {
+            SearchPath = schema,
+        };
+        var options = new DbContextOptionsBuilder<NostosDbContext>()
+            .UseNpgsql(connectionBuilder.ConnectionString)
+            .Options;
+
+        try
+        {
+            await using (var setup = new NostosDbContext(options))
+            {
+                await setup.Database.ExecuteSqlRawAsync($"CREATE SCHEMA \"{schema}\"");
+                await setup.Database.ExecuteSqlRawAsync(setup.Database.GenerateCreateScript());
+            }
+
+            var volume = new FixedTransferVolume(freeBytes: 100_000_000);
+            var storageOptions = new TransferStorageOptions
+            {
+                DiskSafetyMarginBytes = 0,
+                DiskSafetyMarginPercent = 0,
+            };
+
+            var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            async Task<TransferReservationResult> ReserveAsync()
+            {
+                await using var db = new NostosDbContext(options);
+                var capacity = new TransferStorageCapacity(
+                    db,
+                    volume,
+                    Options.Create(storageOptions),
+                    timeProvider: null);
+                await gate.Task;
+                return await capacity.TryReserveAsync(
+                    60_000_000,
+                    MigrationSessionPurpose.Import,
+                    TimeSpan.FromMinutes(15),
+                    default);
+            }
+
+            var first = ReserveAsync();
+            var second = ReserveAsync();
+            gate.SetResult();
+            var results = await Task.WhenAll(first, second);
+
+            results.Count(result => result.IsAdmitted).Should().Be(
+                1,
+                "the serialization abort must be retried into a normal capacity rejection");
+
+            await using var verify = new NostosDbContext(options);
+            (await verify.MigrationStorageReservations.CountAsync()).Should().Be(1);
+        }
+        finally
+        {
+            try
+            {
+                await using var cleanup = new NostosDbContext(options);
+                await cleanup.Database.ExecuteSqlRawAsync(
+                    $"DROP SCHEMA IF EXISTS \"{schema}\" CASCADE");
+            }
+            catch (Exception)
+            {
+                // Best-effort cleanup of the disposable schema; the CI
+                // PostgreSQL container is discarded with the job.
+            }
+        }
+    }
+
     private static async Task<long> ScalarCountAsync(NostosDbContext db, string sql)
     {
         var connection = db.Database.GetDbConnection();
@@ -946,5 +1037,12 @@ public sealed class PostgreSqlCompatibilitySpikeTests
         command.CommandText = sql;
         var value = await command.ExecuteScalarAsync();
         return Convert.ToInt64(value);
+    }
+
+    private sealed class FixedTransferVolume(long freeBytes) : ITransferVolume
+    {
+        public long AvailableFreeSpaceBytes => freeBytes;
+
+        public long TotalSizeBytes => freeBytes;
     }
 }

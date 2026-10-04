@@ -24,6 +24,7 @@ using Nostos.Backend.Services.Ai;
 using Nostos.Backend.Services.Library;
 using Nostos.Backend.Services.Notes;
 using Nostos.Backend.Services.Portability;
+using Nostos.Backend.Services.Portability.Transfers;
 using Nostos.Backend.Services.BookText;
 using Nostos.Product.BookText;
 using Nostos.Backend.Workers;
@@ -74,6 +75,28 @@ builder.Services.Configure<BackupSettings>(builder.Configuration.GetSection("Bac
 // `Storage/books` under the content root stays the default.
 builder.Services.Configure<FileStorageOptions>(
     builder.Configuration.GetSection(FileStorageOptions.SectionName));
+
+// Transfer storage for library migration jobs (issue #679, Slice 3). The root
+// is validated before startup and created when missing; every transfer service
+// resolves paths through this one resolver, and admission accounting measures
+// the volume that actually holds it.
+builder.Services.Configure<TransferStorageOptions>(
+    builder.Configuration.GetSection(TransferStorageOptions.SectionName));
+var fileStorageOptions =
+    builder.Configuration.GetSection(FileStorageOptions.SectionName).Get<FileStorageOptions>()
+    ?? new FileStorageOptions();
+var transferStorageOptions =
+    builder.Configuration.GetSection(TransferStorageOptions.SectionName).Get<TransferStorageOptions>()
+    ?? new TransferStorageOptions();
+TransferStorageOptions.Validate(transferStorageOptions);
+var transferRootPath = TransferStorageOptions.ResolveRoot(
+    builder.Environment.ContentRootPath,
+    FileStorageOptions.ResolveBooksRoot(builder.Environment.ContentRootPath, fileStorageOptions),
+    transferStorageOptions);
+TransferPathResolver.EnsureRootDirectory(transferRootPath);
+builder.Services.AddSingleton(new TransferPathResolver(transferRootPath));
+builder.Services.AddSingleton<ITransferVolume>(new DriveInfoTransferVolume(transferRootPath));
+builder.Services.AddScoped<ITransferStorageCapacity, TransferStorageCapacity>();
 
 // --- MCP (Model Context Protocol) Streamable HTTP foundation (Task 9A) ---
 // Opt-in and disabled by default. When enabled, the bearer token is resolved
