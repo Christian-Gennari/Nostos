@@ -85,6 +85,8 @@ export const SERVER_MIGRATION_ERROR_CODES = [
   'migration_storage_contended',
   'migration_import_preparation_unavailable',
   'migration_export_artifact_unavailable',
+  'migration_export_not_available',
+  'migration_export_expired',
   'migration_activation_busy',
   'unexpected_error',
 ] as const;
@@ -101,6 +103,8 @@ export const CLIENT_MIGRATION_ERROR_CODES = [
   'archive_operational_backup',
   'archive_unsupported_version',
   'migration_destination_conflict',
+  'migration_not_supported',
+  'migration_maintenance_timeout',
   'portable_import_failed',
   'portable_export_failed',
   'network_error',

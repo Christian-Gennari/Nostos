@@ -25,6 +25,7 @@ import { HttpLibraryTransferTransport } from './http-library-transfer-transport'
 
 export {
   MigrationTransportError,
+  isMaintenanceBusy,
   isTransientStatus,
   toTransferFailure,
 } from './migration-transport-error';

@@ -25,6 +25,9 @@ export class MigrationTransportError extends Error {
 
   /** True only for the transient statuses the plan allows to be retried (plan §22). */
   get retryable(): boolean {
+    // A browser cancellation is a deliberate act, never a transient failure,
+    // even though it carries status 0.
+    if (this.code === 'request_aborted') return false;
     return isTransientStatus(this.status);
   }
 }
@@ -39,6 +42,15 @@ export function isTransientStatus(status: number): boolean {
     status === 503 ||
     status === 504
   );
+}
+
+/**
+ * The two 503 maintenance codes the coordinator waits out and re-attempts on
+ * the same operation: exclusive library maintenance and host storage
+ * contention.
+ */
+export function isMaintenanceBusy(code: MigrationErrorCode): boolean {
+  return code === 'migration_activation_busy' || code === 'migration_storage_contended';
 }
 
 /** Normalises any thrown value into the UI-facing failure model. */

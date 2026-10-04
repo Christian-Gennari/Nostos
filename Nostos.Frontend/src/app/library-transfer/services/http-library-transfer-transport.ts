@@ -14,17 +14,19 @@
  * GET  /jobs/{id}/upload-session
  * PUT  /jobs/{id}/upload-session/chunks/{index}   (Blob slice + range/hash headers)
  * POST /jobs/{id}/upload-session/complete
+ * GET|HEAD /jobs/{id}/export-download
  * ```
  *
  * The chunk body is the `Blob` slice itself: Angular's XHR backend hands it to
  * `XMLHttpRequest.send`, which streams the file reference instead of
  * materialising an `ArrayBuffer`. The transport never retries; the chunk
- * upload engine owns retry/backoff (plan §22).
+ * upload engine and the coordinator own retry/backoff (plan §22).
  *
- * The export-download endpoint (`GET /jobs/{id}/export-download`) is not
- * merged on this revision (#679 slice 10); `getExportDownloadUrl` therefore
- * fails with the server's own `migration_export_artifact_unavailable` code so
- * the export UI reports "not available" instead of serving a dead URL.
+ * `getExportDownloadUrl` returns the same-origin download URL for the native
+ * browser download path; the route is served from the migration group so
+ * `Content-Disposition: attachment`, range requests and the migration error
+ * body (`migration_not_found`, `migration_export_not_available`,
+ * `migration_export_expired`) all apply to the browser's own request.
  */
 
 import {
@@ -218,15 +220,11 @@ export class HttpLibraryTransferTransport implements LibraryTransferTransport {
     });
   }
 
-  getExportDownloadUrl(_jobId: string): string {
-    // #679 slice 10 (`GET /jobs/{id}/export-download`) is not merged on this
-    // revision. Fail with the server's own stable code rather than returning a
-    // URL that resolves to the framework's HTML 404.
-    throw new MigrationTransportError(
-      'migration_export_artifact_unavailable',
-      404,
-      'Export downloads are not available on this host yet.',
-    );
+  getExportDownloadUrl(jobId: string): string {
+    // Same-origin and relative, so the export flow's URL validation always
+    // accepts it and the browser performs a native streaming download (range
+    // requests and resume included) instead of buffering the archive.
+    return `${this.jobUrl(jobId)}/export-download`;
   }
 
   // --------------------------------------------------------------- internals --
@@ -345,6 +343,13 @@ export class HttpLibraryTransferTransport implements LibraryTransferTransport {
   ): MigrationUploadSessionResponseDto {
     const ranges = response.receivedRanges;
     if (Array.isArray(ranges)) {
+      if (!areRangesValid(ranges, response.session.totalChunks)) {
+        throw new MigrationTransportError(
+          'migration_invalid_state',
+          409,
+          'The server returned inconsistent upload receipt ranges.',
+        );
+      }
       const receivedChunks = fromChunkRanges(ranges);
       const session: MigrationSessionStatusDto = {
         ...response.session,
@@ -416,9 +421,21 @@ export class HttpLibraryTransferTransport implements LibraryTransferTransport {
       );
     }
 
-    // Empty/non-JSON bodies (framework 404 for an unknown route, HTML proxy
-    // errors, auth middleware pages) still become a typed, status-preserving
-    // failure instead of an unhandled rejection.
+    // A bare framework 404 on a migration route means this server does not
+    // expose the migration API at all (older/mismatched host). Say so instead
+    // of a generic transfer failure.
+    if (error.status === 404) {
+      return new MigrationTransportError(
+        'migration_not_supported',
+        404,
+        'This Nostos host does not support library migration.',
+        { retryAfterMs, cause: error },
+      );
+    }
+
+    // Empty/non-JSON bodies (HTML proxy errors, auth middleware pages) still
+    // become a typed, status-preserving failure instead of an unhandled
+    // rejection.
     return new MigrationTransportError(
       'unexpected_error',
       error.status,
@@ -443,6 +460,22 @@ function isChunkValid(session: MigrationSessionStatusDto, request: BrowserMigrat
     request.lengthBytes === expectedLength &&
     request.blob.size === expectedLength &&
     SHA256_PATTERN.test(request.sha256)
+  );
+}
+
+/** Receipt ranges are inclusive chunk indexes and must fit the session contract. */
+function areRangesValid(
+  ranges: readonly { startIndex: number; endIndex: number }[],
+  totalChunks: number,
+): boolean {
+  if (!Number.isInteger(totalChunks) || totalChunks < 0) return false;
+  return ranges.every(
+    (range) =>
+      Number.isInteger(range.startIndex) &&
+      Number.isInteger(range.endIndex) &&
+      range.startIndex >= 0 &&
+      range.startIndex <= range.endIndex &&
+      range.endIndex < totalChunks,
   );
 }
 

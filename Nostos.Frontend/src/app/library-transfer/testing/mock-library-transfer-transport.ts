@@ -122,6 +122,8 @@ interface MockJob {
   reservationId?: string;
   session?: MockSession;
   downloadAvailable: boolean;
+  /** Mirrors the artifact expiry state the download endpoint reports as 410. */
+  artifactExpired: boolean;
   validationPollsRemaining: number;
   /** Mirrors the server's attempt counter used by the session-reactivation rule. */
   attempt: number;
@@ -168,6 +170,8 @@ const ERROR_MESSAGES: Partial<Record<MigrationErrorCode, string>> = {
     'Import preparation is not available on this deployment yet.',
   migration_export_artifact_unavailable:
     'Export preparation is not available on this deployment yet.',
+  migration_export_not_available: 'This export job has no downloadable artifact.',
+  migration_export_expired: 'The export artifact has expired.',
   migration_invalid_request: 'The migration request is malformed.',
   network_error: 'The network request failed.',
   request_aborted: 'The request was aborted.',
@@ -284,6 +288,15 @@ export class MockLibraryTransferTransport implements LibraryTransferTransport {
     const job = this.requireJob(jobId);
     job.state = 'Completed';
     job.downloadAvailable = true;
+    job.artifactExpired = false;
+  }
+
+  /** Simulates the artifact retention window passing. */
+  expireExportArtifact(jobId: string): void {
+    const job = this.requireJob(jobId);
+    if (job.direction !== 'Export') return;
+    job.artifactExpired = true;
+    job.downloadAvailable = false;
   }
 
   resolveReservationId(jobId: string): string | undefined {
@@ -388,6 +401,7 @@ export class MockLibraryTransferTransport implements LibraryTransferTransport {
       createdAt: timestamp,
       updatedAt: timestamp,
       downloadAvailable: false,
+      artifactExpired: false,
       validationPollsRemaining: this.options.validationPolls ?? 0,
       reservationId: request.reservationId ?? undefined,
       attempt: 1,
@@ -684,10 +698,12 @@ export class MockLibraryTransferTransport implements LibraryTransferTransport {
     this.calls.getExportDownloadUrl += 1;
     const job = this.jobs.get(jobId);
     if (!job || job.direction !== 'Export') throw this.typedError('migration_not_found', 404);
+    if (job.artifactExpired) throw this.typedError('migration_export_expired', 410);
     if (!job.downloadAvailable) {
-      // The server maps a missing/unavailable export artifact to its stable
-      // `migration_export_artifact_unavailable` outcome (409).
-      throw this.typedError('migration_export_artifact_unavailable', 409);
+      // The merged download route answers 404 migration_export_not_available
+      // while no artifact is sealed and 410 migration_export_expired after the
+      // retention window.
+      throw this.typedError('migration_export_not_available', 404);
     }
     return `/api/portability/migration/jobs/${jobId}/export-download`;
   }

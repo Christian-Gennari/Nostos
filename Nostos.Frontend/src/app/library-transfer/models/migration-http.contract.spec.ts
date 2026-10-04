@@ -235,6 +235,7 @@ describe('migration HTTP contract parity with the backend source', () => {
     );
     expect(ENDPOINTS).toContain('"/jobs/{id}/upload-session/chunks/{index}"');
     expect(ENDPOINTS).toContain('/jobs/{id}/upload-session/complete');
+    expect(ENDPOINTS).toContain('"/jobs/{id}/export-download"');
   });
 
   it('keeps the maintenance 503 migration-shaped with Retry-After', () => {

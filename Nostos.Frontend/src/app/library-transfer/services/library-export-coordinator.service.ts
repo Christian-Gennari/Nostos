@@ -21,10 +21,20 @@ import {
   LIBRARY_TRANSFER_TRANSPORT,
   LibraryTransferTransport,
   MigrationTransportError,
+  isMaintenanceBusy,
   toTransferFailure,
 } from './library-transfer-transport';
+import {
+  MAINTENANCE_FALLBACK_BASE_MS,
+  MAINTENANCE_MAX_WAIT_MS,
+} from './library-transfer-coordinator.service';
 
 export const DEFAULT_EXPORT_POLL_MS = 1_500;
+
+export interface ExportMaintenanceWait {
+  operation: string;
+  retryAfterMs: number | null;
+}
 
 export type LibraryExportState =
   | { kind: 'idle' }
@@ -41,6 +51,9 @@ export class LibraryExportCoordinator {
   private readonly stateSignal = signal<LibraryExportState>({ kind: 'idle' });
   readonly state = this.stateSignal.asReadonly();
 
+  /** Set while the coordinator waits out server maintenance and re-attempts. */
+  readonly maintenanceWaiting = signal<ExportMaintenanceWait | null>(null);
+
   /** Injectable for fake-timer tests; the coordinator owns the scheduling. */
   pollIntervalMs = DEFAULT_EXPORT_POLL_MS;
 
@@ -52,12 +65,14 @@ export class LibraryExportCoordinator {
   async startExport(): Promise<void> {
     const { token, signal } = this.beginOperation();
     this.jobId = null;
+    const idempotencyKey = newIdempotencyKey();
 
     try {
       this.setState({ kind: 'preparing', jobId: null });
-      const created = await this.transport.createJob(
-        { direction: 'Export', idempotencyKey: newIdempotencyKey() },
-        signal,
+      const created = await this.withBusyRetry(
+        'createJob',
+        token,
+        () => this.transport.createJob({ direction: 'Export', idempotencyKey }, signal),
       );
       if (!this.isCurrent(token)) return;
       this.jobId = created.job.id;
@@ -70,7 +85,11 @@ export class LibraryExportCoordinator {
 
         await this.sleep(this.pollIntervalMs, signal);
         if (!this.isCurrent(token)) return;
-        status = await this.transport.getJob(created.job.id, signal);
+        status = await this.withBusyRetry(
+          'getJob',
+          token,
+          () => this.transport.getJob(created.job.id, signal),
+        );
       }
     } catch (error) {
       if (!this.isCurrent(token)) return;
@@ -84,7 +103,9 @@ export class LibraryExportCoordinator {
     const jobId = this.jobId;
     this.operationToken += 1;
     this.operationAbort?.abort();
-    this.operationAbort = null;
+    this.operationAbort = new AbortController();
+    const token = this.operationToken;
+    const signal = this.operationAbort.signal;
 
     if (!jobId) {
       this.setState({ kind: 'cancelled', jobId: '' });
@@ -92,9 +113,16 @@ export class LibraryExportCoordinator {
     }
 
     try {
-      await this.transport.cancelJob(jobId);
+      await this.withBusyRetry(
+        'cancelJob',
+        token,
+        () => this.transport.cancelJob(jobId, undefined, signal),
+      );
+      if (!this.isCurrent(token)) return;
       this.setState({ kind: 'cancelled', jobId });
     } catch (error) {
+      if (!this.isCurrent(token)) return;
+      if (isAborted(error)) return;
       this.failWith(toTransferFailure(error), jobId);
     }
   }
@@ -168,6 +196,67 @@ export class LibraryExportCoordinator {
 
   private failWith(failure: LibraryTransferFailure, jobId: string | undefined): void {
     this.setState({ kind: 'failed', jobId, failure });
+  }
+
+  /**
+   * Waits out exclusive server maintenance and re-attempts the same operation.
+   * The export job-creation key is held across re-attempts, so a lost response
+   * can never create a second logical export.
+   */
+  private async withBusyRetry<T>(
+    operation: string,
+    token: number,
+    call: () => Promise<T>,
+  ): Promise<T> {
+    const startedAt = Date.now();
+    let attempt = 0;
+    for (;;) {
+      try {
+        const result = await call();
+        this.maintenanceWaiting.set(null);
+        return result;
+      } catch (error) {
+        this.maintenanceWaiting.set(null);
+        if (!this.isCurrent(token)) throw new TransferCancelledError('Export was cancelled.');
+        const failure = toTransferFailure(error);
+        if (!isMaintenanceBusy(failure.code)) throw error;
+
+        const delay =
+          failure.retryAfterMs ?? Math.min(MAINTENANCE_FALLBACK_BASE_MS * 2 ** attempt, 8_000);
+        attempt += 1;
+        if (Date.now() - startedAt + delay > MAINTENANCE_MAX_WAIT_MS) {
+          throw new MigrationTransportError(
+            'migration_maintenance_timeout',
+            0,
+            'The host stayed busy finishing another library operation.',
+          );
+        }
+
+        this.maintenanceWaiting.set({ operation, retryAfterMs: failure.retryAfterMs ?? delay });
+        await this.maintenanceSleep(delay);
+      }
+    }
+  }
+
+  private maintenanceSleep(ms: number): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      const signal = this.operationAbort?.signal;
+      if (signal?.aborted) {
+        reject(new TransferCancelledError('Export was cancelled.'));
+        return;
+      }
+      const timer = setTimeout(() => {
+        cleanup();
+        resolve();
+      }, ms);
+      const onAbort = () => {
+        clearTimeout(timer);
+        cleanup();
+        reject(new TransferCancelledError('Export was cancelled.'));
+      };
+      const cleanup = () => signal?.removeEventListener('abort', onAbort);
+      signal?.addEventListener('abort', onAbort, { once: true });
+    });
   }
 
   private sleep(ms: number, signal: AbortSignal): Promise<void> {

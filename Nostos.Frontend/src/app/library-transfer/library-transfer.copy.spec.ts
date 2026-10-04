@@ -133,6 +133,26 @@ describe('library-transfer.copy', () => {
       expect(
         libraryTransferFailureCopy(failure('migration_export_artifact_unavailable')).action,
       ).toBe('none');
+      expect(libraryTransferFailureCopy(failure('migration_not_supported')).action).toBe('none');
+      expect(libraryTransferFailureCopy(failure('migration_not_supported')).message).toContain(
+        'does not support library migration',
+      );
+      expect(libraryTransferFailureCopy(failure('migration_maintenance_timeout')).action).toBe(
+        'retry',
+      );
+      expect(libraryTransferFailureCopy(failure('migration_export_not_available')).action).toBe(
+        'start-over',
+      );
+      expect(libraryTransferFailureCopy(failure('migration_export_expired')).action).toBe(
+        'start-over',
+      );
+    });
+
+    it('does not promise automatic retry where the user must act', () => {
+      for (const code of ['migration_storage_contended', 'migration_lease_conflict'] as const) {
+        const copy = libraryTransferFailureCopy(failure(code));
+        expect(copy.message, code).not.toMatch(/will retry|will keep checking/i);
+      }
     });
 
     it('maps a stale job to a new import', () => {

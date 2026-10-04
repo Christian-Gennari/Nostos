@@ -148,21 +148,38 @@ export function libraryTransferFailureCopy(failure: LibraryTransferFailure): Tra
     case 'migration_storage_contended':
       return {
         title: 'The host is busy',
-        message: 'Another transfer is using this host’s storage. Nostos will retry shortly.',
+        message:
+          'Another transfer is using this host’s storage. Try again in a moment.',
         action: 'retry',
       };
     case 'migration_activation_busy':
       return {
         title: 'The library is finishing another operation',
         message:
-          'This host is completing a library operation right now. The import is kept and ' +
-          'will continue automatically.',
+          'This host is completing a library operation right now. Nostos is retrying ' +
+          'automatically and nothing has been lost.',
         action: 'retry',
+      };
+    case 'migration_maintenance_timeout':
+      return {
+        title: 'The host stayed busy',
+        message:
+          'This host was busy finishing another library operation for several minutes. ' +
+          'Nothing was lost; try again to continue where the import stopped.',
+        action: 'retry',
+      };
+    case 'migration_not_supported':
+      return {
+        title: 'Library migration is not available',
+        message:
+          'This Nostos host does not support library migration. Update the server to use ' +
+          'this feature.',
+        action: 'none',
       };
     case 'migration_lease_conflict':
       return {
         title: 'Another process is working on this import',
-        message: 'This import is being processed elsewhere. Nostos will keep checking.',
+        message: 'This import is being processed elsewhere. Try again in a moment.',
         action: 'retry',
       };
     case 'migration_import_preparation_unavailable':
@@ -180,6 +197,18 @@ export function libraryTransferFailureCopy(failure: LibraryTransferFailure): Tra
           'This Nostos host cannot prepare a downloadable export archive yet. Update the ' +
           'server, or export from a host with library migration enabled.',
         action: 'none',
+      };
+    case 'migration_export_not_available':
+      return {
+        title: 'The export isn’t ready yet',
+        message: 'This export has no downloadable archive yet. Wait for it to finish, then try again.',
+        action: 'start-over',
+      };
+    case 'migration_export_expired':
+      return {
+        title: 'This export expired',
+        message: 'The downloadable archive has expired. Prepare a new export.',
+        action: 'start-over',
       };
     case 'migration_session_expired':
       return {
@@ -290,4 +319,13 @@ export function transferProgressValueText(
 ): string {
   if (percent === null) return `${TRANSFER_PROGRESS_LABELS[phase]}…`;
   return `${TRANSFER_PROGRESS_LABELS[phase]}, ${percent} percent complete.`;
+}
+
+/**
+ * Status line while the coordinator waits out exclusive server maintenance
+ * (`migration_activation_busy` / `migration_storage_contended`) and re-attempts
+ * the interrupted operation.
+ */
+export function maintenanceRetryMessage(): string {
+  return 'Nostos is busy finishing another library operation. Retrying automatically…';
 }

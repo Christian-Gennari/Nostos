@@ -35,7 +35,6 @@ import {
   portableArchiveFixture,
   portableManifest,
 } from '../testing/zip-archive.fixture';
-import { DelegatingTransport } from '../testing/delegating-transport';
 
 const CHUNK = 4 * 1024 * 1024;
 const encoder = new TextEncoder();
@@ -705,48 +704,6 @@ describe('LibraryTransferCoordinator — reattach and resume', () => {
     harness.coordinator.dismiss();
     expect(harness.coordinator.state().kind).toBe('idle');
     expect(harness.store.load()).toBeNull();
-  });
-});
-
-describe('LibraryTransferCoordinator — maintenance status responses', () => {
-  afterEach(reset);
-
-  class MaintenanceTransport extends DelegatingTransport {
-    busyOnce = true;
-
-    override getJob(
-      jobId: string,
-      signal?: AbortSignal,
-    ): Promise<MigrationJobStatusResponseDto> {
-      if (this.busyOnce) {
-        this.busyOnce = false;
-        return Promise.reject(
-          new MigrationTransportError(
-            'migration_activation_busy',
-            503,
-            'The library is in maintenance. Try again later.',
-            { retryAfterMs: 1 },
-          ),
-        );
-      }
-      return super.getJob(jobId, signal);
-    }
-  }
-
-  it('keeps polling after a 503 migration_activation_busy instead of failing', async () => {
-    const mock = new MockLibraryTransferTransport({ chunkSizeBytes: CHUNK, validationPolls: 1 });
-    const transport = new MaintenanceTransport(mock);
-    const harness = configure(mock, transport);
-    harness.coordinator.pollIntervalMs = 1;
-
-    await harness.coordinator.startImport(await portableFile());
-
-    // The exclusive-maintenance 503 for GET /jobs/{id} is "still working", so
-    // the flow remains in checking with a retry scheduled from Retry-After.
-    expect(harness.coordinator.state().kind).toBe('checking');
-
-    await new Promise((resolve) => setTimeout(resolve, 25));
-    expect(harness.coordinator.state()).toMatchObject({ kind: 'ready-empty' });
   });
 });
 

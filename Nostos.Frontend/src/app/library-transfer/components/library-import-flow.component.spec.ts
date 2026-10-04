@@ -1110,8 +1110,14 @@ describe('LibraryImportFlowComponent', () => {
     TestBed.configureTestingModule({
       providers: [
         { provide: LIBRARY_TRANSFER_TRANSPORT, useValue: new MockLibraryTransferTransport() },
-        { provide: LibraryTransferCoordinator, useValue: { state: state.asReadonly() } },
-      ],
+        {
+          provide: LibraryTransferCoordinator,
+          useValue: {
+            state: state.asReadonly(),
+            maintenanceWaiting: signal(null),
+            hasInterruptedOperation: signal(false),
+          },
+        },      ],
     });
     const fixture = TestBed.createComponent(LibraryImportFlowComponent);
     fixture.detectChanges();

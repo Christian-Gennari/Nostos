@@ -38,6 +38,7 @@ import {
   TransferFailureCopy,
   TransferProgressPhase,
   libraryTransferFailureCopy,
+  maintenanceRetryMessage,
 } from '../library-transfer.copy';
 import { LibraryTransferCoordinator } from '../services/library-transfer-coordinator.service';
 import { TransferResumeStore } from '../services/transfer-resume-store.service';
@@ -131,6 +132,10 @@ export class LibraryImportFlowComponent implements OnInit, OnDestroy {
   readonly replacement = computed(() => asKind(this.state(), 'replacement-confirmation'));
   readonly failed = computed(() => asKind(this.state(), 'failed'));
   readonly cancelled = computed(() => asKind(this.state(), 'cancelled'));
+
+  /** True while the coordinator waits out server maintenance and re-attempts. */
+  readonly maintenanceWaiting = this.coordinator.maintenanceWaiting;
+  readonly maintenanceMessage = maintenanceRetryMessage();
 
   /**
    * The completed surface: either the coordinator reached Completed, or the
@@ -373,7 +378,7 @@ export class LibraryImportFlowComponent implements OnInit, OnDestroy {
 
     switch (copy.action) {
       case 'retry':
-        if (state.jobId) {
+        if (state.jobId || this.coordinator.hasInterruptedOperation()) {
           this.retry();
         } else {
           this.startOver();

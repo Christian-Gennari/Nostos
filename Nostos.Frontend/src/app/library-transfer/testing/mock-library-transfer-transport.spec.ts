@@ -750,20 +750,30 @@ describe('MockLibraryTransferTransport — completion and export', () => {
     expect(status.progress.phase).toBe('Validating');
   });
 
-  it('exposes the native export URL only when the artifact is available', async () => {
+  it('exposes the native export URL only when the artifact is live', async () => {
     const mock = new MockLibraryTransferTransport();
     const created = await mock.createJob({ direction: 'Export', idempotencyKey: key('export') });
     const jobId = created.job.id;
 
+    // The merged download route answers 404 migration_export_not_available
+    // while no artifact is sealed, and 410 migration_export_expired after the
+    // retention window.
     await expectTypedError(
       Promise.resolve().then(() => mock.getExportDownloadUrl(jobId)),
-      'migration_export_artifact_unavailable',
-      409,
+      'migration_export_not_available',
+      404,
     );
 
     mock.markExportReady(jobId);
     expect(mock.getExportDownloadUrl(jobId)).toBe(
       `/api/portability/migration/jobs/${jobId}/export-download`,
+    );
+
+    mock.expireExportArtifact(jobId);
+    await expectTypedError(
+      Promise.resolve().then(() => mock.getExportDownloadUrl(jobId)),
+      'migration_export_expired',
+      410,
     );
   });
 

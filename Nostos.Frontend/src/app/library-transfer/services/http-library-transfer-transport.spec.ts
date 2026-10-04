@@ -165,6 +165,8 @@ const SERVER_CODE_STATUS: ReadonlyArray<readonly [MigrationErrorCode, number]> =
   ['migration_storage_contended', 503],
   ['migration_import_preparation_unavailable', 409],
   ['migration_export_artifact_unavailable', 409],
+  ['migration_export_not_available', 404],
+  ['migration_export_expired', 410],
   ['migration_activation_busy', 503],
   ['unexpected_error', 500],
 ];
@@ -298,9 +300,15 @@ describe('HttpLibraryTransferTransport', () => {
   });
 
   it('creates an upload session and takes receivedRanges as the receipt authority', async () => {
-    const request = sessionRequest(100);
+    const totalBytes = CHUNK * 17;
+    const request = sessionRequest(totalBytes);
     const response: MigrationUploadSessionResponseDto = {
-      session: sessionStatus({ receivedChunks: [], receivedChunkCount: 0 }),
+      session: sessionStatus({
+        totalBytes,
+        totalChunks: 17,
+        receivedChunks: [],
+        receivedChunkCount: 0,
+      }),
       receivedRanges: [
         { startIndex: 0, endIndex: 14 },
         { startIndex: 16, endIndex: 16 },
@@ -326,13 +334,25 @@ describe('HttpLibraryTransferTransport', () => {
     const req = http.expectOne(SESSION_URL);
     expect(req.request.method).toBe('GET');
     req.flush({
-      session: sessionStatus({ receivedChunks: [] }),
+      session: sessionStatus({ totalBytes: CHUNK * 4, totalChunks: 4, receivedChunks: [] }),
       receivedRanges: [{ startIndex: 2, endIndex: 3 }],
     });
 
     const result = await promise;
     expect(result.session.receivedChunks).toEqual([2, 3]);
     expect(result.session.receivedChunkCount).toBe(2);
+  });
+
+  it('fails closed when server receipt ranges do not fit the session contract', async () => {
+    const promise = transport.getUploadSession(JOB_ID);
+    http.expectOne(SESSION_URL).flush({
+      session: sessionStatus({ totalBytes: 100, totalChunks: 1, receivedChunks: [] }),
+      receivedRanges: [{ startIndex: 0, endIndex: 14 }],
+    });
+
+    const error = await rejectionOf(promise);
+    expect(error.code).toBe('migration_invalid_state');
+    expect(error.status).toBe(409);
   });
 
   it('PUTs the Blob slice itself with exact range and hash headers and reports progress', async () => {
@@ -552,13 +572,14 @@ describe('HttpLibraryTransferTransport', () => {
     expect(error.status).toBe(409);
   });
 
-  it('treats a framework 404 with no migration body as unexpected, not a stale job', async () => {
+  it('treats a framework 404 with no migration body as an unsupported host', async () => {
     const promise = transport.getJob(JOB_ID);
     http.expectOne(JOB_URL).flush(null, { status: 404, statusText: 'Not Found' });
 
     const error = await rejectionOf(promise);
-    expect(error.code).toBe('unexpected_error');
+    expect(error.code).toBe('migration_not_supported');
     expect(error.status).toBe(404);
+    expect(error.message).toContain('does not support library migration');
   });
 
   it('rejects with request_aborted and cancels the in-flight request', async () => {
@@ -572,6 +593,7 @@ describe('HttpLibraryTransferTransport', () => {
     const error = await rejection;
     expect(error.code).toBe('request_aborted');
     expect(error.status).toBe(0);
+    expect(error.retryable).toBe(false);
     expect(req.cancelled).toBe(true);
   });
 
@@ -581,13 +603,9 @@ describe('HttpLibraryTransferTransport', () => {
     http.expectNone(JOB_URL);
   });
 
-  it('fails export downloads with the server code while slice 10 is absent', () => {
-    expect(() => transport.getExportDownloadUrl(JOB_ID)).toThrowError(
-      expect.objectContaining({
-        name: 'MigrationTransportError',
-        code: 'migration_export_artifact_unavailable',
-        status: 404,
-      }),
+  it('returns the same-origin native download URL for a sealed export', () => {
+    expect(transport.getExportDownloadUrl(JOB_ID)).toBe(
+      `${MIGRATION_BASE_PATH}/jobs/${JOB_ID}/export-download`,
     );
   });
 });
