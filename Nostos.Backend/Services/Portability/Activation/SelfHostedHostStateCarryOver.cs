@@ -4,7 +4,7 @@ namespace Nostos.Backend.Services.Portability.Activation;
 
 internal enum HostStateCarryOverKind
 {
-    /// <summary>Rows are copied from the live database into the candidate.</summary>
+    /// <summary>Rows are copied from the live database into the candidate at finalization.</summary>
     Carry,
 
     /// <summary>Rows are deliberately not copied; the rationale records why.</summary>
@@ -27,11 +27,12 @@ internal sealed record HostStateCarryOverDecision(
 }
 
 /// <summary>
-/// The candidate database's host-state copy list, derived from the portability
+/// The candidate database's host-state decision list, derived from the portability
 /// completeness inventory. The candidate is built from a fresh bootstrap plus the
 /// prepared portable payload, so unlike a whole-file clone this registry is what
-/// keeps installation-local operational state (settings, credentials, job tables,
-/// import undo history) from being lost at activation.
+/// decides which installation-local operational state survives activation.
+/// <c>Carry</c> rows are copied from a live snapshot under the exclusive
+/// maintenance lease; <c>Clear</c> rows are deliberately dropped.
 /// </summary>
 internal static class SelfHostedHostStateCarryOver
 {
@@ -44,52 +45,52 @@ internal static class SelfHostedHostStateCarryOver
     [
         new(
             typeof(NoteImportBatch),
-            HostStateCarryOverKind.Carry,
-            "Import-undo batch history is host operational state; the batch row itself carries no portable reference."),
+            HostStateCarryOverKind.Clear,
+            "Import undo batches describe notes of the replaced library generation; a whole-library replacement must not leave stale batches that claim ownership of the new generation."),
         new(
             typeof(NoteImportBatchNote),
-            HostStateCarryOverKind.Carry,
-            "Only batch-to-note links whose note survives the portable replacement are copied; a link to a replaced note cannot be restored without a foreign-key violation."),
+            HostStateCarryOverKind.Clear,
+            "Undo batch-to-note links carry the old generation's note identity. A matching GUID is not provenance into the imported library, so all links are cleared with their batches."),
         new(
             typeof(AiProviderSettingsModel),
             HostStateCarryOverKind.Carry,
-            "Host credentials and provider configuration are deployment-local and must never be imported from a portable archive."),
+            "Host credentials and provider configuration are deployment-local, contain no foreign key, and must never be imported from a portable archive."),
         new(
             typeof(BackupRecord),
             HostStateCarryOverKind.Carry,
-            "Local backup history references deployment-specific archives and remains discoverable after activation."),
+            "Local backup history references deployment-specific archives, has no foreign key, and intentionally may describe older library generations."),
         new(
             typeof(LibraryCommandReceipt),
             HostStateCarryOverKind.Carry,
-            "Command idempotency receipts must survive activation so a retried command cannot replay a portable mutation."),
+            "Pure idempotency key plus stored response; no foreign key or id column references portable state. Carrying it prevents a pre-activation retry from replaying a library mutation against the imported generation."),
         new(
             typeof(NoteCommandReceipt),
             HostStateCarryOverKind.Carry,
-            "Note-command idempotency receipts must survive activation so a retried note command cannot replay against the imported library."),
+            "Pure idempotency key plus stored result; no foreign key or id column references portable state. Carrying it prevents a pre-activation note command from replaying against the imported generation."),
         new(
             typeof(LibraryState),
             HostStateCarryOverKind.Carry,
-            "The singleton library revision row is host infrastructure; the candidate advances the revision to represent the newly activated portable state."),
+            "Singleton revision row is host infrastructure with no foreign key; finalization advances the revision from the authoritative live value so the candidate represents the newly activated portable state."),
         new(
             typeof(MigrationJobRecord),
             HostStateCarryOverKind.Carry,
-            "Migration job lifecycle rows are host control state and include the job performing this activation."),
+            "Migration job lifecycle rows reference only migration operational records (and opaque staging identifiers), and include the job performing this activation. Finalized from the live snapshot after the job transition."),
         new(
             typeof(MigrationSessionRecord),
             HostStateCarryOverKind.Carry,
-            "Resumable transfer session bookkeeping is host control state."),
+            "Transfer session bookkeeping; its only foreign key targets MigrationJobRecord, which is also carried."),
         new(
             typeof(MigrationChunkReceiptRecord),
             HostStateCarryOverKind.Carry,
-            "Accepted transfer chunk receipts are host control state."),
+            "Accepted transfer receipts; the foreign key targets MigrationSessionRecord, which is also carried."),
         new(
             typeof(MigrationExportArtifactRecord),
             HostStateCarryOverKind.Carry,
-            "Export artifact retention metadata is host control state."),
+            "Export artifact retention metadata; the foreign key targets MigrationJobRecord, and storage keys refer to host export files outside the library."),
         new(
             typeof(MigrationStorageReservationRecord),
             HostStateCarryOverKind.Carry,
-            "Storage admission and reservation accounting is host control state."),
+            "Storage admission and reservation accounting; no foreign key and no portability semantics, so it must survive the replacement unchanged."),
     ];
 
     internal static IReadOnlyList<HostStateCarryOverDecision> CarryDecisions { get; } =

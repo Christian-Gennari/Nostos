@@ -338,3 +338,33 @@ internal static class PortableLibraryDatabaseMaterializer
         }
     }
 }
+
+/// <summary>
+/// Narrow public seam for hosts that must materialize a hash-verified portable
+/// relational payload through the exact same restore as the compatibility import
+/// endpoint. The SelfHosted activation candidate builder uses this instead of a
+/// friend-assembly grant, so no Nostos.Product internals are exposed.
+/// </summary>
+public static class PortableLibraryRelationalRestore
+{
+    /// <summary>
+    /// Deserializes and applies one already hash-verified relational payload
+    /// stream. The caller owns the transaction and the <c>SaveChangesAsync</c>
+    /// call, exactly like the compatibility import path.
+    /// </summary>
+    public static async Task ApplyVerifiedPayloadAsync(
+        NostosDbContext db,
+        Stream verifiedRelationalPayload,
+        IReadOnlyList<PortablePreparedMedia> stagedMedia,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(db);
+        ArgumentNullException.ThrowIfNull(verifiedRelationalPayload);
+        ArgumentNullException.ThrowIfNull(stagedMedia);
+
+        var data = await PortableLibraryDatabaseMaterializer
+            .ReadRelationalDataAsync(verifiedRelationalPayload, cancellationToken);
+        await PortableLibraryDatabaseMaterializer
+            .ApplyRelationalDataAsync(db, data, stagedMedia, cancellationToken);
+    }
+}

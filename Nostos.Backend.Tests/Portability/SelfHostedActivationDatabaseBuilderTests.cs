@@ -15,13 +15,13 @@ namespace Nostos.Backend.Tests.Portability;
 public sealed class SelfHostedActivationDatabaseBuilderTests
 {
     [Fact]
-    public async Task Build_IsSchemaIdenticalToNormalBootstrap_AndCarriesPreparedPayloadAndLiveHostState()
+    public async Task BuildPortableCandidate_IsSchemaIdenticalAndUnfinalized_WithExactPayloadAndNoHostState()
     {
         await using var fixture = await ActivationBuildFixture.CreateAsync();
         var liveBefore = ActivationBuildFixture.Sha256(fixture.Paths.LiveDatabase);
         var liveMediaBefore = ActivationBuildFixture.MediaSnapshot(fixture.Paths.LiveMedia);
         var builder = fixture.CreateBuilder();
-        await builder.BuildAsync(fixture.JobId, fixture.Prepared);
+        await builder.BuildPortableCandidateAsync(fixture.JobId, fixture.Prepared);
 
         var candidatePath = fixture.Paths.CandidateDatabase(fixture.JobId);
         File.Exists(candidatePath).Should().BeTrue();
@@ -29,8 +29,9 @@ public sealed class SelfHostedActivationDatabaseBuilderTests
         File.Exists(candidatePath + "-shm").Should().BeFalse();
         Directory.GetFiles(Path.GetDirectoryName(candidatePath)!, "*")
             .Should().BeEquivalentTo([candidatePath], "the candidate area holds only the finished database");
+        builder.IsFinalized(fixture.JobId).Should().BeFalse("host state is only frozen at the activation boundary");
 
-        await using (var candidate = fixture.OpenCandidate())
+        await using (var candidate = builder.OpenCandidate(fixture.JobId))
         {
             var counts = fixture.Prepared.Metadata.Counts;
             (await candidate.Works.CountAsync()).Should().Be((int)counts.Works);
@@ -46,7 +47,6 @@ public sealed class SelfHostedActivationDatabaseBuilderTests
             (await candidate.NoteImportBookLinks.CountAsync()).Should().Be((int)counts.NoteImportBookLinks);
             (await candidate.AssistantSettings.CountAsync()).Should().Be((int)counts.AssistantSettings);
 
-            // Exact portable field classes survive the shared restore.
             var expectedNote = fixture.Data.Notes.Single();
             var note = await candidate.Notes.AsNoTracking().SingleAsync();
             note.Id.Should().Be(expectedNote.Id);
@@ -113,34 +113,447 @@ public sealed class SelfHostedActivationDatabaseBuilderTests
                 .Should().BeFalse("the previous live library must be replaced entirely");
             (await candidate.Notes.AnyAsync(x => x.Id == fixture.LiveOnlyNoteId)).Should().BeFalse();
 
-            // Host operational state was carried from the live database, not from
-            // the portable archive (provider secrets belong to the host).
-            var provider = await candidate.AiProviderSettings.AsNoTracking().SingleAsync();
-            provider.LlmModel.Should().Be(ActivationBuildFixture.LiveProviderModel);
-            provider.LlmApiKeyEncrypted.Should().Be(ActivationBuildFixture.LiveProviderSecret);
-            provider.LlmModel.Should().NotBe("portable-private-model");
+            // No host operational state is frozen into the pre-build candidate.
+            (await candidate.BackupRecords.CountAsync()).Should().Be(0);
+            (await candidate.MigrationJobRecords.CountAsync()).Should().Be(0);
+            (await candidate.MigrationStorageReservations.CountAsync()).Should().Be(0);
+            (await candidate.AiProviderSettings.CountAsync()).Should().Be(0);
+            (await candidate.LibraryCommandReceipts.CountAsync()).Should().Be(0);
+            (await candidate.NoteCommandReceipts.CountAsync()).Should().Be(0);
+            (await candidate.NoteImportBatches.CountAsync()).Should().Be(0);
+            (await candidate.NoteImportBatchNotes.CountAsync()).Should().Be(0);
         }
 
-        // Every excluded host entity round-trips byte-for-byte except the
-        // singleton revision (advanced) and the batch-note links (filtered).
-        await ActivationBuildFixture.AssertHostStateCarriedAsync(
-            fixture,
-            candidatePath,
-            fixture.Paths.LiveDatabase);
-
-        // The candidate schema and migration history are indistinguishable from a
-        // normally bootstrapped database at the current schema.
         var referencePath = Path.Combine(fixture.DatabaseRoot, "reference.db");
         await ActivationBuildFixture.BootstrapAsync(referencePath);
         ActivationBuildFixture.SchemaFingerprint(candidatePath)
             .Should().Be(ActivationBuildFixture.SchemaFingerprint(referencePath));
 
-        // The builder never writes into the live database or media territory.
+        // The build never writes into the live database or media territory.
         ActivationBuildFixture.Sha256(fixture.Paths.LiveDatabase).Should().Be(liveBefore);
         File.Exists(fixture.Paths.LiveDatabase + "-wal").Should().BeFalse();
         File.Exists(fixture.Paths.LiveDatabase + "-shm").Should().BeFalse();
         ActivationBuildFixture.MediaSnapshot(fixture.Paths.LiveMedia)
             .Should().BeEquivalentTo(liveMediaBefore);
+    }
+
+    [Fact]
+    public async Task Finalize_ImportsAuthoritativeLiveHostState_AndNeverRevertsOperationalWrites()
+    {
+        await using var fixture = await ActivationBuildFixture.CreateAsync();
+        var builder = fixture.CreateBuilder();
+        await builder.BuildPortableCandidateAsync(fixture.JobId, fixture.Prepared);
+
+        // Everything below happens while the live library keeps serving, after
+        // the long build phase. A correct finalizer must not revert any of it.
+        await using (var live = fixture.OpenLive())
+        {
+            var provider = await live.AiProviderSettings.SingleAsync();
+            provider.LlmModel = "post-build-model";
+            provider.LlmApiKeyEncrypted = "POST-BUILD-SECRET";
+
+            var backup = new BackupRecord
+            {
+                Id = Guid.NewGuid(),
+                CreatedAt = ActivationBuildFixture.FixedNow.AddMinutes(30),
+                SizeBytes = 777,
+                Status = BackupStatus.Completed,
+                Provider = BackupProvider.Local,
+                IncludeBookFiles = false,
+            };
+            live.BackupRecords.Add(backup);
+
+            var job = await live.MigrationJobRecords.SingleAsync(x => x.Id == fixture.JobId);
+            job.State = (int)MigrationJobState.Activating;
+            job.Version = 4;
+            job.MigrationLeaseToken = "post-build-lease";
+            job.UpdatedAtUtc = ActivationBuildFixture.FixedNow.AddMinutes(31);
+
+            var reservation = await live.MigrationStorageReservations.SingleAsync();
+            reservation.MaterializedBytes = 4096;
+            reservation.Version = 2;
+
+            await live.SaveChangesAsync();
+        }
+
+        await using var lease = await fixture.EnterExclusiveAsync();
+        await builder.FinalizeCandidateAsync(fixture.JobId, lease);
+        builder.IsFinalized(fixture.JobId).Should().BeTrue();
+
+        await using var candidate = builder.OpenCandidate(fixture.JobId);
+        var finalizedProvider = await candidate.AiProviderSettings.AsNoTracking().SingleAsync();
+        finalizedProvider.LlmModel.Should().Be("post-build-model");
+        finalizedProvider.LlmApiKeyEncrypted.Should().Be("POST-BUILD-SECRET");
+
+        var finalizedJob = await candidate.MigrationJobRecords.AsNoTracking().SingleAsync(x => x.Id == fixture.JobId);
+        finalizedJob.State.Should().Be((int)MigrationJobState.Activating);
+        finalizedJob.Version.Should().Be(4);
+        finalizedJob.MigrationLeaseToken.Should().Be("post-build-lease");
+
+        (await candidate.BackupRecords.CountAsync())
+            .Should().Be(ActivationBuildFixture.LiveBackupCount + 1);
+        (await candidate.MigrationStorageReservations.AsNoTracking().SingleAsync())
+            .MaterializedBytes.Should().Be(4096);
+        (await candidate.LibraryStates.AsNoTracking().SingleAsync())
+            .StateVersion.Should().Be("8", "finalization advances the authoritative live revision");
+
+        // Everything in the final live host snapshot is represented.
+        ActivationBuildFixture.AssertCarriedTablesMatch(
+            fixture.Paths.LiveDatabase,
+            fixture.Paths.CandidateDatabase(fixture.JobId));
+    }
+
+    [Fact]
+    public async Task Finalize_WithoutACurrentExclusiveLease_IsRejected_AndCandidateStaysUnfinalized()
+    {
+        await using var fixture = await ActivationBuildFixture.CreateAsync();
+        var builder = fixture.CreateBuilder();
+        await builder.BuildPortableCandidateAsync(fixture.JobId, fixture.Prepared);
+
+        Func<Task> noLease = () => builder.FinalizeCandidateAsync(fixture.JobId, null!);
+        await noLease.Should().ThrowAsync<InvalidOperationException>();
+
+        var foreignGate = new LibraryMaintenanceCoordinator();
+        await using (var foreign = await foreignGate.EnterExclusiveAsync(LibraryMaintenanceReason.Activation))
+        {
+            Func<Task> foreignLease = () => builder.FinalizeCandidateAsync(fixture.JobId, foreign);
+            await foreignLease.Should().ThrowAsync<InvalidOperationException>();
+        }
+
+        var disposed = await fixture.EnterExclusiveAsync();
+        await disposed.DisposeAsync();
+        Func<Task> disposedLease = () => builder.FinalizeCandidateAsync(fixture.JobId, disposed);
+        await disposedLease.Should().ThrowAsync<InvalidOperationException>();
+
+        builder.IsFinalized(fixture.JobId).Should().BeFalse();
+        (await fixture.CountCandidateRowsAsync(fixture.JobId, "BackupRecords")).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Finalize_IsRepeatableUnderTheLease_AndReplacesRatherThanAppendsHostState()
+    {
+        await using var fixture = await ActivationBuildFixture.CreateAsync();
+        var builder = fixture.CreateBuilder();
+        await builder.BuildPortableCandidateAsync(fixture.JobId, fixture.Prepared);
+
+        await using var lease = await fixture.EnterExclusiveAsync();
+        await builder.FinalizeCandidateAsync(fixture.JobId, lease);
+
+        // More live host state changes while the exclusive lease is held; the
+        // repeated finalization must reflect the newest snapshot, not append to
+        // the previous candidate content.
+        await using (var live = fixture.OpenLive())
+        {
+            var provider = await live.AiProviderSettings.SingleAsync();
+            provider.LlmModel = "second-finalize-model";
+            var state = await live.LibraryStates.SingleAsync();
+            state.StateVersion = "9";
+            live.BackupRecords.Add(new BackupRecord
+            {
+                Id = Guid.NewGuid(),
+                CreatedAt = ActivationBuildFixture.FixedNow.AddMinutes(40),
+                SizeBytes = 888,
+                Status = BackupStatus.Completed,
+                Provider = BackupProvider.Local,
+                IncludeBookFiles = false,
+            });
+            await live.SaveChangesAsync();
+        }
+
+        await builder.FinalizeCandidateAsync(fixture.JobId, lease);
+        builder.IsFinalized(fixture.JobId).Should().BeTrue();
+
+        await using var candidate = builder.OpenCandidate(fixture.JobId);
+        (await candidate.AiProviderSettings.AsNoTracking().SingleAsync()).LlmModel
+            .Should().Be("second-finalize-model");
+        (await candidate.LibraryStates.AsNoTracking().SingleAsync()).StateVersion.Should().Be("10");
+        (await candidate.BackupRecords.CountAsync())
+            .Should().Be(ActivationBuildFixture.LiveBackupCount + 1, "replacement must not duplicate rows");
+    }
+
+    [Fact]
+    public async Task Finalize_WithInvalidLiveLibraryRevision_FailsClosed_AndLeavesCandidateUnfinalized()
+    {
+        await using var fixture = await ActivationBuildFixture.CreateAsync();
+        var builder = fixture.CreateBuilder();
+        await builder.BuildPortableCandidateAsync(fixture.JobId, fixture.Prepared);
+
+        await using (var live = fixture.OpenLive())
+        {
+            (await live.LibraryStates.SingleAsync()).StateVersion = "not-a-number";
+            await live.SaveChangesAsync();
+        }
+
+        await using (var lease = await fixture.EnterExclusiveAsync())
+        {
+            Func<Task> invalid = () => builder.FinalizeCandidateAsync(fixture.JobId, lease);
+            (await invalid.Should().ThrowAsync<MigrationActivationException>())
+                .Which.Code.Should().Be(MigrationActivationErrorCodes.Failed);
+            builder.IsFinalized(fixture.JobId).Should().BeFalse();
+
+            // A missing singleton is equally authoritative and equally fatal.
+            await using (var live = fixture.OpenLive())
+            {
+                live.LibraryStates.RemoveRange(live.LibraryStates);
+                await live.SaveChangesAsync();
+            }
+
+            Func<Task> missing = () => builder.FinalizeCandidateAsync(fixture.JobId, lease);
+            (await missing.Should().ThrowAsync<MigrationActivationException>())
+                .Which.Code.Should().Be(MigrationActivationErrorCodes.Failed);
+            builder.IsFinalized(fixture.JobId).Should().BeFalse();
+
+            await using (var live = fixture.OpenLive())
+            {
+                live.LibraryStates.Add(new LibraryState
+                {
+                    Id = LibraryState.WellKnownId,
+                    SingletonSlot = LibraryState.SingletonSentinel,
+                    StateVersion = "7",
+                });
+                await live.SaveChangesAsync();
+            }
+
+            await builder.FinalizeCandidateAsync(fixture.JobId, lease);
+            builder.IsFinalized(fixture.JobId).Should().BeTrue();
+        }
+    }
+
+    [Fact]
+    public async Task BuildAndFinalize_LeaveTheLiveDatabaseByteForByteUnchanged()
+    {
+        await using var fixture = await ActivationBuildFixture.CreateAsync();
+        var builder = fixture.CreateBuilder();
+        var before = ActivationBuildFixture.Sha256(fixture.Paths.LiveDatabase);
+
+        await builder.BuildPortableCandidateAsync(fixture.JobId, fixture.Prepared);
+        ActivationBuildFixture.Sha256(fixture.Paths.LiveDatabase)
+            .Should().Be(before, "the build reads the live database read-only");
+
+        await using (var lease = await fixture.EnterExclusiveAsync())
+        {
+            await builder.FinalizeCandidateAsync(fixture.JobId, lease);
+        }
+
+        ActivationBuildFixture.Sha256(fixture.Paths.LiveDatabase)
+            .Should().Be(before, "finalization reads the authoritative snapshot read-only");
+    }
+
+    [Fact]
+    public async Task OpenCandidateAndFinalize_LeaveNoOpenHandle_SoTheCandidateCanBeRenamedImmediately()
+    {
+        await using var fixture = await ActivationBuildFixture.CreateAsync();
+        var builder = fixture.CreateBuilder();
+        await builder.BuildPortableCandidateAsync(fixture.JobId, fixture.Prepared);
+        var candidatePath = fixture.Paths.CandidateDatabase(fixture.JobId);
+
+        // Verification access must not pool a handle on the file to be renamed.
+        await using (var candidate = builder.OpenCandidate(fixture.JobId))
+        {
+            (await candidate.Books.CountAsync()).Should().BeGreaterThan(0);
+        }
+
+        var probe = candidatePath + ".probe";
+        File.Move(candidatePath, probe);
+        File.Move(probe, candidatePath);
+
+        // Even a deliberately pooled candidate handle must be released by finalize.
+        using (var pooled = new SqliteConnection($"Data Source={candidatePath}"))
+        {
+            pooled.Open();
+            using var command = pooled.CreateCommand();
+            command.CommandText = "SELECT COUNT(*) FROM \"Books\";";
+            Convert.ToInt32(command.ExecuteScalar()).Should().BeGreaterThan(0);
+        }
+
+        await using (var lease = await fixture.EnterExclusiveAsync())
+        {
+            await builder.FinalizeCandidateAsync(fixture.JobId, lease);
+        }
+
+        var moved = candidatePath + ".moved";
+        File.Move(candidatePath, moved);
+        File.Exists(moved).Should().BeTrue();
+        if (OperatingSystem.IsLinux())
+        {
+            HasOpenDescriptor(candidatePath).Should().BeFalse();
+            HasOpenDescriptor(moved).Should().BeFalse();
+        }
+    }
+
+    [Fact]
+    public async Task Finalize_ClearsImportUndoHistory_AndCarriesNoRowReferencingMissingPortableState()
+    {
+        await using var fixture = await ActivationBuildFixture.CreateAsync();
+        var builder = fixture.CreateBuilder();
+        await builder.BuildPortableCandidateAsync(fixture.JobId, fixture.Prepared);
+        await using (var lease = await fixture.EnterExclusiveAsync())
+        {
+            await builder.FinalizeCandidateAsync(fixture.JobId, lease);
+        }
+
+        var candidatePath = fixture.Paths.CandidateDatabase(fixture.JobId);
+
+        // Old-generation undo ownership is cleared, even when a GUID collides
+        // with an imported note, while the rest of the host state was carried.
+        await using (var candidate = builder.OpenCandidate(fixture.JobId))
+        {
+            (await candidate.MigrationJobRecords.CountAsync()).Should().BeGreaterThan(0);
+            (await candidate.NoteImportBatches.CountAsync()).Should().Be(0);
+            (await candidate.NoteImportBatchNotes.CountAsync()).Should().Be(0);
+            (await candidate.Notes.AnyAsync(x => x.Id == fixture.Data.Notes.Single().Id)).Should().BeTrue();
+        }
+
+        ActivationBuildFixture.ForeignKeyCheckClean(candidatePath).Should().BeTrue();
+        ActivationBuildFixture.QueryLong(
+                candidatePath,
+                "SELECT COUNT(*) FROM \"MigrationJobRecords\" j " +
+                "WHERE j.\"ReservationId\" IS NOT NULL AND NOT EXISTS " +
+                "(SELECT 1 FROM \"MigrationStorageReservations\" r WHERE r.\"Id\" = j.\"ReservationId\");")
+            .Should().Be(0, "no carried job may reference a missing carried reservation");
+        ActivationBuildFixture.QueryLong(
+                candidatePath,
+                "SELECT COUNT(*) FROM \"MigrationStorageReservations\" r " +
+                "WHERE r.\"ClaimedJobId\" IS NOT NULL AND NOT EXISTS " +
+                "(SELECT 1 FROM \"MigrationJobRecords\" j WHERE j.\"Id\" = r.\"ClaimedJobId\");")
+            .Should().Be(0, "no carried reservation may reference a missing carried job");
+    }
+
+    [Theory]
+    [InlineData("data")]
+    [InlineData("portable")]
+    public async Task Build_CrashAtEachStep_RebuildsFromScratch_WithIdenticalContent(string crashStep)
+    {
+        await using var fixture = await ActivationBuildFixture.CreateAsync();
+        var cleanJob = Guid.NewGuid();
+        var cleanBuilder = fixture.CreateBuilder();
+        await cleanBuilder.BuildPortableCandidateAsync(cleanJob, fixture.Prepared);
+
+        var crashedBuilder = fixture.CreateBuilder();
+        crashedBuilder.AfterBuildStepForTesting = step =>
+        {
+            if (step == crashStep)
+            {
+                throw new SimulatedBuildCrash();
+            }
+        };
+
+        var act = () => crashedBuilder.BuildPortableCandidateAsync(fixture.JobId, fixture.Prepared);
+        await act.Should().ThrowAsync<SimulatedBuildCrash>();
+        File.Exists(fixture.Paths.CandidateDatabase(fixture.JobId))
+            .Should().BeFalse("a failed build removes its partial candidate");
+
+        var rebuiltBuilder = fixture.CreateBuilder();
+        await rebuiltBuilder.BuildPortableCandidateAsync(fixture.JobId, fixture.Prepared);
+
+        // Finalization stamps host state from the fixed clock, so both candidates
+        // are fully deterministic and must be byte-identical table dumps.
+        await using (var lease = await fixture.EnterExclusiveAsync())
+        {
+            await cleanBuilder.FinalizeCandidateAsync(cleanJob, lease);
+        }
+
+        cleanBuilder.IsFinalized(cleanJob).Should().BeTrue();
+        ActivationBuildFixture.QueryLong(
+                fixture.Paths.CandidateDatabase(cleanJob),
+                "SELECT COUNT(*) FROM \"MigrationJobRecords\";")
+            .Should().BeGreaterThan(0);
+        ActivationBuildFixture.QueryLong(
+                fixture.Paths.CandidateDatabase(cleanJob),
+                "SELECT CAST(\"StateVersion\" AS INTEGER) FROM \"LibraryStates\";")
+            .Should().Be(8);
+
+        await using (var lease = await fixture.EnterExclusiveAsync())
+        {
+            await rebuiltBuilder.FinalizeCandidateAsync(fixture.JobId, lease);
+        }
+
+        rebuiltBuilder.IsFinalized(fixture.JobId).Should().BeTrue();
+        ActivationBuildFixture.QueryLong(
+                fixture.Paths.CandidateDatabase(fixture.JobId),
+                "SELECT CAST(\"StateVersion\" AS INTEGER) FROM \"LibraryStates\";")
+            .Should().Be(8);
+
+        ActivationBuildFixture.DumpAllTables(fixture.Paths.CandidateDatabase(cleanJob))["LibraryStates"]
+            .Should().ContainSingle().Which.Should().Contain("|8|");
+        ActivationBuildFixture.DumpAllTables(fixture.Paths.CandidateDatabase(fixture.JobId))["LibraryStates"]
+            .Should().ContainSingle().Which.Should().Contain("|8|");
+
+        ActivationBuildFixture.DumpAllTables(fixture.Paths.CandidateDatabase(fixture.JobId))
+            .Should().BeEquivalentTo(
+                ActivationBuildFixture.DumpAllTables(fixture.Paths.CandidateDatabase(cleanJob)),
+                "a rebuilt candidate must be identical to a clean build");
+    }
+
+    [Theory]
+    [InlineData("write")]
+    [InlineData("verify")]
+    [InlineData("marker")]
+    public async Task Finalize_CrashBeforeMarker_LeavesCandidateUnfinalized_AndReFinalizeSucceeds(string crashStep)
+    {
+        await using var fixture = await ActivationBuildFixture.CreateAsync();
+        var builder = fixture.CreateBuilder();
+        await builder.BuildPortableCandidateAsync(fixture.JobId, fixture.Prepared);
+
+        await using var lease = await fixture.EnterExclusiveAsync();
+        builder.BeforeFinalizeStepForTesting = step =>
+        {
+            if (step == crashStep)
+            {
+                throw new SimulatedBuildCrash();
+            }
+        };
+
+        Func<Task> act = () => builder.FinalizeCandidateAsync(fixture.JobId, lease);
+        await act.Should().ThrowAsync<SimulatedBuildCrash>();
+        builder.IsFinalized(fixture.JobId).Should().BeFalse("only a complete finalization may mark the candidate");
+
+        builder.BeforeFinalizeStepForTesting = null;
+        await builder.FinalizeCandidateAsync(fixture.JobId, lease);
+        builder.IsFinalized(fixture.JobId).Should().BeTrue();
+        await using var candidate = builder.OpenCandidate(fixture.JobId);
+        (await candidate.MigrationJobRecords.CountAsync()).Should().BeGreaterThan(0);
+        (await candidate.BackupRecords.CountAsync()).Should().Be(ActivationBuildFixture.LiveBackupCount);
+    }
+
+    [Fact]
+    public async Task Build_DiscardsAnAbandonedCrashLeftoverCandidate()
+    {
+        await using var fixture = await ActivationBuildFixture.CreateAsync();
+        var candidatePath = fixture.Paths.CandidateDatabase(fixture.JobId);
+        fixture.Paths.Prepare(fixture.JobId);
+        await File.WriteAllTextAsync(candidatePath, "torn sqlite bytes");
+        await File.WriteAllTextAsync(candidatePath + "-wal", "orphaned wal");
+        await File.WriteAllTextAsync(
+            fixture.Paths.CandidateFinalizationMarker(fixture.JobId),
+            "{torn marker");
+
+        var builder = fixture.CreateBuilder();
+        await builder.BuildPortableCandidateAsync(fixture.JobId, fixture.Prepared);
+
+        File.Exists(candidatePath + "-wal").Should().BeFalse();
+        builder.IsFinalized(fixture.JobId).Should().BeFalse();
+        await using var candidate = builder.OpenCandidate(fixture.JobId);
+        (await candidate.Books.CountAsync()).Should().Be((int)fixture.Prepared.Metadata.Counts.Books);
+        ActivationBuildFixture.IntegrityOk(candidatePath).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Build_StagedDataHashMismatch_FailsClosed_WithoutTouchingTheLiveDatabase()
+    {
+        await using var fixture = await ActivationBuildFixture.CreateAsync();
+        var liveBefore = ActivationBuildFixture.Sha256(fixture.Paths.LiveDatabase);
+        var tampered = new PortablePreparedImport(
+            fixture.Prepared.Metadata with { DataSha256 = new string('0', 64) },
+            fixture.Prepared.Media);
+
+        var builder = fixture.CreateBuilder();
+        var act = () => builder.BuildPortableCandidateAsync(fixture.JobId, tampered);
+        var failure = await act.Should().ThrowAsync<MigrationActivationException>();
+        failure.Which.Code.Should().Be(MigrationActivationErrorCodes.Failed);
+
+        File.Exists(fixture.Paths.CandidateDatabase(fixture.JobId)).Should().BeFalse();
+        ActivationBuildFixture.Sha256(fixture.Paths.LiveDatabase).Should().Be(liveBefore);
     }
 
     [Fact]
@@ -168,7 +581,7 @@ public sealed class SelfHostedActivationDatabaseBuilderTests
             }
         };
 
-        var build = builder.BuildAsync(fixture.JobId, fixture.Prepared);
+        var build = builder.BuildPortableCandidateAsync(fixture.JobId, fixture.Prepared);
         await reachedPortable.Task.WaitAsync(TimeSpan.FromSeconds(30));
 
         var writes = 0;
@@ -206,78 +619,33 @@ public sealed class SelfHostedActivationDatabaseBuilderTests
         }
     }
 
-    [Theory]
-    [InlineData("data")]
-    [InlineData("portable")]
-    [InlineData("host-state")]
-    [InlineData("verify")]
-    public async Task Build_CrashAtEachStep_RebuildsFromScratch_WithIdenticalContent(string crashStep)
+    private static bool HasOpenDescriptor(string path)
     {
-        await using var fixture = await ActivationBuildFixture.CreateAsync();
-        var cleanJob = Guid.NewGuid();
-        var cleanBuilder = fixture.CreateBuilder();
-        await cleanBuilder.BuildAsync(cleanJob, fixture.Prepared);
-
-        var crashedBuilder = fixture.CreateBuilder();
-        crashedBuilder.AfterBuildStepForTesting = step =>
+        var full = Path.GetFullPath(path);
+        foreach (var descriptor in Directory.EnumerateFiles("/proc/self/fd"))
         {
-            if (step == crashStep)
+            string? target;
+            try
             {
-                throw new SimulatedBuildCrash();
+                target = File.ResolveLinkTarget(descriptor, returnFinalTarget: true)?.FullName;
             }
-        };
+            catch (IOException)
+            {
+                continue;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                continue;
+            }
 
-        var act = () => crashedBuilder.BuildAsync(fixture.JobId, fixture.Prepared);
-        await act.Should().ThrowAsync<SimulatedBuildCrash>();
-        File.Exists(fixture.Paths.CandidateDatabase(fixture.JobId))
-            .Should().BeFalse("a failed build removes its partial candidate");
+            if (string.Equals(target, full, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
 
-        var rebuiltBuilder = fixture.CreateBuilder();
-        await rebuiltBuilder.BuildAsync(fixture.JobId, fixture.Prepared);
-
-        ActivationBuildFixture.DumpAllTables(fixture.Paths.CandidateDatabase(fixture.JobId))
-            .Should().BeEquivalentTo(
-                ActivationBuildFixture.DumpAllTables(fixture.Paths.CandidateDatabase(cleanJob)),
-                "a rebuilt candidate must be identical to a clean build");
+        return false;
     }
-
-    [Fact]
-    public async Task Build_DiscardsAnAbandonedCrashLeftoverCandidate()
-    {
-        await using var fixture = await ActivationBuildFixture.CreateAsync();
-        var candidatePath = fixture.Paths.CandidateDatabase(fixture.JobId);
-        fixture.Paths.Prepare(fixture.JobId);
-        await File.WriteAllTextAsync(candidatePath, "torn sqlite bytes");
-        await File.WriteAllTextAsync(candidatePath + "-wal", "orphaned wal");
-
-        var builder = fixture.CreateBuilder();
-        await builder.BuildAsync(fixture.JobId, fixture.Prepared);
-
-        File.Exists(candidatePath + "-wal").Should().BeFalse();
-        await using var candidate = fixture.OpenCandidate();
-        (await candidate.Books.CountAsync()).Should().Be((int)fixture.Prepared.Metadata.Counts.Books);
-        ActivationBuildFixture.IntegrityOk(candidatePath).Should().BeTrue();
-    }
-
-    [Fact]
-    public async Task Build_StagedDataHashMismatch_FailsClosed_WithoutTouchingTheLiveDatabase()
-    {
-        await using var fixture = await ActivationBuildFixture.CreateAsync();
-        var liveBefore = ActivationBuildFixture.Sha256(fixture.Paths.LiveDatabase);
-        var tampered = new PortablePreparedImport(
-            fixture.Prepared.Metadata with { DataSha256 = new string('0', 64) },
-            fixture.Prepared.Media);
-
-        var builder = fixture.CreateBuilder();
-        var act = () => builder.BuildAsync(fixture.JobId, tampered);
-        var failure = await act.Should().ThrowAsync<MigrationActivationException>();
-        failure.Which.Code.Should().Be(MigrationActivationErrorCodes.Failed);
-
-        File.Exists(fixture.Paths.CandidateDatabase(fixture.JobId)).Should().BeFalse();
-        ActivationBuildFixture.Sha256(fixture.Paths.LiveDatabase).Should().Be(liveBefore);
-    }
-
-    private sealed class SimulatedBuildCrash : Exception;
 
     private static void Execute(SqliteConnection connection, string sql)
     {
@@ -285,11 +653,14 @@ public sealed class SelfHostedActivationDatabaseBuilderTests
         command.CommandText = sql;
         command.ExecuteNonQuery();
     }
+
+    private sealed class SimulatedBuildCrash : Exception;
 }
 
 /// <summary>
 /// One live database, one fully prepared import staged on disk, and the paths
-/// needed to build a candidate beside them.
+/// and maintenance coordinator needed to build and finalize a candidate beside
+/// them.
 /// </summary>
 internal sealed class ActivationBuildFixture : IAsyncDisposable
 {
@@ -330,6 +701,7 @@ internal sealed class ActivationBuildFixture : IAsyncDisposable
     internal Guid JobId { get; } = Guid.NewGuid();
     internal Guid LiveOnlyNoteId { get; private set; }
     internal SelfHostedActivationPaths Paths { get; }
+    internal LibraryMaintenanceCoordinator Maintenance { get; } = new();
     internal LocalPortableTestLibrary Source { get; }
     internal LocalPortableImportStaging Staging { get; }
     internal IPreparedPortableImport Prepared { get; }
@@ -410,16 +782,18 @@ internal sealed class ActivationBuildFixture : IAsyncDisposable
     }
 
     internal SelfHostedActivationDatabaseBuilder CreateBuilder() =>
-        new(Paths, Staging, new FixedBuildTimeProvider(FixedBuildTime));
+        new(Paths, Staging, Maintenance, new FixedBuildTimeProvider(FixedBuildTime));
+
+    internal Task<IAsyncDisposable> EnterExclusiveAsync() =>
+        Maintenance.EnterExclusiveAsync(LibraryMaintenanceReason.Activation);
 
     internal NostosDbContext OpenLive() => Open(Paths.LiveDatabase);
 
-    internal NostosDbContext OpenCandidate() =>
-        new(new DbContextOptionsBuilder<NostosDbContext>()
-            .UseSqlite(
-                $"Data Source={Paths.CandidateDatabase(JobId)};Mode=ReadOnly",
-                sqlite => sqlite.MigrationsAssembly(typeof(Program).Assembly.FullName))
-            .Options);
+    internal async Task<long> CountCandidateRowsAsync(Guid jobId, string table)
+    {
+        await Task.CompletedTask;
+        return QueryLong(Paths.CandidateDatabase(jobId), $"SELECT COUNT(*) FROM \"{table}\";");
+    }
 
     private static NostosDbContext Open(string path) =>
         new(new DbContextOptionsBuilder<NostosDbContext>()
@@ -478,6 +852,17 @@ internal sealed class ActivationBuildFixture : IAsyncDisposable
         });
 
         // The job performing activation and its transfer bookkeeping.
+        var reservation = new MigrationStorageReservationRecord
+        {
+            Id = Guid.NewGuid(),
+            Purpose = 0,
+            ReservedBytes = 20480,
+            MaterializedBytes = 1024,
+            CreatedAtUtc = new DateTime(2026, 9, 25, 4, 0, 0, DateTimeKind.Utc),
+            ExpiresAtUtc = new DateTime(2026, 10, 25, 4, 0, 0, DateTimeKind.Utc),
+            ClaimedJobId = JobId,
+            Version = 1,
+        };
         var activationJob = new MigrationJobRecord
         {
             Id = JobId,
@@ -495,6 +880,7 @@ internal sealed class ActivationBuildFixture : IAsyncDisposable
             ReservedStorageBytes = 12345,
             PreparedStagingId = Prepared.Metadata.StagingId.Value,
             PreparedImportMetadataJson = "{\"integrity\":true}",
+            ReservationId = reservation.Id,
             Version = 3,
         };
         var exportJob = new MigrationJobRecord
@@ -512,6 +898,7 @@ internal sealed class ActivationBuildFixture : IAsyncDisposable
             Version = 2,
         };
         live.MigrationJobRecords.AddRange(activationJob, exportJob);
+        live.MigrationStorageReservations.Add(reservation);
 
         var session = new MigrationSessionRecord
         {
@@ -559,21 +946,10 @@ internal sealed class ActivationBuildFixture : IAsyncDisposable
             ExpiresAtUtc = new DateTime(2026, 9, 29, 3, 0, 0, DateTimeKind.Utc),
             Version = 1,
         });
-        live.MigrationStorageReservations.Add(new MigrationStorageReservationRecord
-        {
-            Id = Guid.NewGuid(),
-            Purpose = 0,
-            ReservedBytes = 20480,
-            MaterializedBytes = 1024,
-            CreatedAtUtc = new DateTime(2026, 9, 25, 4, 0, 0, DateTimeKind.Utc),
-            ExpiresAtUtc = new DateTime(2026, 10, 25, 4, 0, 0, DateTimeKind.Utc),
-            ClaimedJobId = JobId,
-            Version = 1,
-        });
 
         // Import undo history: one link whose note also arrives with the portable
-        // payload (preserved) and one link whose note only exists in the old live
-        // library (must be dropped).
+        // payload (GUID collision) and one link whose note only exists in the old
+        // live library. Both must be cleared by finalization.
         var work = new WorkModel
         {
             Id = Guid.NewGuid(),
@@ -668,48 +1044,25 @@ internal sealed class ActivationBuildFixture : IAsyncDisposable
     }
 
     /// <summary>
-    /// Every carry-over table must be byte-identical between live and candidate,
-    /// except the singleton revision (advanced) and the filtered undo links.
+    /// Every carried table must be byte-identical between the live snapshot and
+    /// the finalized candidate; the singleton revision is asserted separately.
     /// </summary>
-    internal static async Task AssertHostStateCarriedAsync(
-        ActivationBuildFixture fixture,
-        string candidatePath,
-        string livePath)
+    internal static void AssertCarriedTablesMatch(string livePath, string candidatePath)
     {
         var tables = CarryTables();
         var live = DumpTables(livePath, tables);
         var candidate = DumpTables(candidatePath, tables);
         foreach (var table in tables)
         {
-            switch (table)
+            if (table == "LibraryStates")
             {
-                case "LibraryStates":
-                {
-                    var liveState = live["LibraryStates"].Single().Split('|');
-                    var candidateState = candidate["LibraryStates"].Single().Split('|');
-                    candidateState[2].Should().Be("8", "activation advances the library revision");
-                    DateTime.Parse(candidateState[3], System.Globalization.CultureInfo.InvariantCulture,
-                            System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal)
-                        .Should().Be(FixedBuildTime);
-                    liveState[2].Should().Be("7");
-                    break;
-                }
-                case "NoteImportBatchNotes":
-                {
-                    candidate["NoteImportBatchNotes"].Should().HaveCount(1);
-                    candidate["NoteImportBatchNotes"][0].Should().ContainEquivalentOf(
-                        fixture.Data.Notes.Single().Id.ToString());
-                    break;
-                }
-                default:
-                    candidate[table].Should().BeEquivalentTo(
-                        live[table],
-                        $"carry-over table {table} must survive activation unchanged");
-                    break;
+                continue; // advanced by finalization; asserted explicitly
             }
-        }
 
-        await Task.CompletedTask;
+            candidate[table].Should().BeEquivalentTo(
+                live[table],
+                $"carry-over table {table} must survive activation unchanged");
+        }
     }
 
     internal static IReadOnlyList<string> CarryTables()
@@ -733,9 +1086,6 @@ internal sealed class ActivationBuildFixture : IAsyncDisposable
             using var command = connection.CreateCommand();
             command.CommandText = $"SELECT * FROM \"{table}\";";
             using var reader = command.ExecuteReader();
-            var columns = Enumerable.Range(0, reader.FieldCount)
-                .Select(index => reader.GetName(index))
-                .ToArray();
             var rows = new List<string>();
             while (reader.Read())
             {
@@ -747,7 +1097,9 @@ internal sealed class ActivationBuildFixture : IAsyncDisposable
                     {
                         null => "null",
                         byte[] bytes => Convert.ToHexString(bytes),
-                        IFormattable formattable => formattable.ToString(null, System.Globalization.CultureInfo.InvariantCulture),
+                        IFormattable formattable => formattable.ToString(
+                            null,
+                            System.Globalization.CultureInfo.InvariantCulture),
                         _ => value.ToString() ?? string.Empty,
                     });
                 }
@@ -821,6 +1173,25 @@ internal sealed class ActivationBuildFixture : IAsyncDisposable
         using var command = connection.CreateCommand();
         command.CommandText = "PRAGMA integrity_check;";
         return string.Equals(command.ExecuteScalar() as string, "ok", StringComparison.Ordinal);
+    }
+
+    internal static bool ForeignKeyCheckClean(string path)
+    {
+        using var connection = new SqliteConnection($"Data Source={path};Mode=ReadOnly;Pooling=False");
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "PRAGMA foreign_key_check;";
+        using var reader = command.ExecuteReader();
+        return !reader.Read();
+    }
+
+    internal static long QueryLong(string path, string sql)
+    {
+        using var connection = new SqliteConnection($"Data Source={path};Mode=ReadOnly;Pooling=False");
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        return Convert.ToInt64(command.ExecuteScalar());
     }
 
     internal static string Sha256(string path) =>

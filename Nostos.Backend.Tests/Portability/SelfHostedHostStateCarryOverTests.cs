@@ -17,7 +17,7 @@ public sealed class SelfHostedHostStateCarryOverTests
         decisions.Select(decision => decision.EntityName)
             .Should().OnlyHaveUniqueItems("a carry-over decision may only appear once");
 
-        // The completeness inventory and the candidate builder's copy list are
+        // The completeness inventory and the candidate finalizer's copy list are
         // two views of the same fact. A new excluded entity without a decision
         // fails the first assertion; a stale decision fails the second.
         decisions.Select(decision => decision.EntityName)
@@ -55,8 +55,6 @@ public sealed class SelfHostedHostStateCarryOverTests
 
         carried.Should().BeEquivalentTo(
         [
-            nameof(Nostos.Backend.Data.Models.NoteImportBatch),
-            nameof(Nostos.Backend.Data.Models.NoteImportBatchNote),
             nameof(Nostos.Backend.Data.Models.AiProviderSettingsModel),
             nameof(Nostos.Backend.Data.Models.BackupRecord),
             nameof(Nostos.Backend.Data.Models.LibraryCommandReceipt),
@@ -68,5 +66,40 @@ public sealed class SelfHostedHostStateCarryOverTests
             nameof(Nostos.Backend.Data.Models.MigrationExportArtifactRecord),
             nameof(Nostos.Backend.Data.Models.MigrationStorageReservationRecord),
         ]);
+    }
+
+    [Fact]
+    public void Cleared_entities_are_the_import_undo_history()
+    {
+        var cleared = SelfHostedHostStateCarryOver.Decisions
+            .Where(decision => decision.Kind == HostStateCarryOverKind.Clear)
+            .Select(decision => decision.EntityName)
+            .ToHashSet(StringComparer.Ordinal);
+
+        cleared.Should().BeEquivalentTo(
+        [
+            nameof(Nostos.Backend.Data.Models.NoteImportBatch),
+            nameof(Nostos.Backend.Data.Models.NoteImportBatchNote),
+        ]);
+    }
+
+    [Fact]
+    public void No_carried_entity_declares_a_foreign_key_into_portable_or_cleared_state()
+    {
+        using var db = new NostosDbContext(
+            new DbContextOptionsBuilder<NostosDbContext>().UseSqlite("Data Source=:memory:").Options);
+        var carried = SelfHostedHostStateCarryOver.CarryDecisions
+            .Select(decision => decision.EntityType)
+            .ToHashSet();
+
+        foreach (var decision in SelfHostedHostStateCarryOver.CarryDecisions)
+        {
+            var entity = db.Model.FindEntityType(decision.EntityType)!;
+            var principals = entity.GetForeignKeys()
+                .Select(foreignKey => foreignKey.PrincipalEntityType.ClrType)
+                .ToArray();
+            principals.Should().BeSubsetOf(carried,
+                $"{decision.EntityName} must not reference portable or cleared state through a foreign key");
+        }
     }
 }

@@ -48,9 +48,8 @@ internal static class SelfHostedSqliteFile
 
     internal static string ConnectionString(string databasePath, bool readOnly, bool pooling)
     {
-        // Deliberately the same shape as the host persistence registration
-        // ("Data Source=<path>"), so pool clearing by connection string matches
-        // the connections EF actually uses. Defaults are never spelled out.
+        // Same shape as the host persistence registration ("Data Source=<path>").
+        // Pool release uses the global primitive, not exact-string lookup.
         var connectionString = $"Data Source={databasePath}";
         if (readOnly)
         {
@@ -66,19 +65,29 @@ internal static class SelfHostedSqliteFile
     }
 
     /// <summary>
-    /// Clears the Microsoft.Data.Sqlite pools associated with the configured
-    /// connection strings. EF scopes never prove physical connections are gone;
-    /// this releases every idle pooled handle for the database, including
-    /// read-only verification connections. Pool lookup is exact-string, so every
-    /// shape this host opens is cleared explicitly.
+    /// Empties every Microsoft.Data.Sqlite pool. EF scopes never prove physical
+    /// connections are gone, and pool lookup is exact-string (logically
+    /// equivalent connection strings can form distinct pools), so the cutover
+    /// boundary uses the global primitive. Checked-out connections are
+    /// unaffected; the exclusive maintenance lease is what proves active owners
+    /// have drained. Closing idle pooled WAL connections can checkpoint the
+    /// database, so this is only used under the exclusive lease.
     /// </summary>
-    internal static void ClearPool(string databasePath)
+    internal static void ClearPools() => SqliteConnection.ClearAllPools();
+
+    /// <summary>
+    /// Clears only the pools for the connection strings this host opens for one
+    /// database. Safe to call while the live library serves because it cannot
+    /// close unrelated connections; the candidate builder owns every candidate
+    /// connection string, so exact lookup is complete there.
+    /// </summary>
+    internal static void ClearPoolFor(string databasePath)
     {
-        ClearPoolFor($"Data Source={databasePath}");
-        ClearPoolFor($"Data Source={databasePath};Mode=ReadOnly");
+        ClearPoolForConnectionString($"Data Source={databasePath}");
+        ClearPoolForConnectionString($"Data Source={databasePath};Mode=ReadOnly");
     }
 
-    private static void ClearPoolFor(string connectionString)
+    private static void ClearPoolForConnectionString(string connectionString)
     {
         using var connection = new SqliteConnection(connectionString);
         SqliteConnection.ClearPool(connection);
@@ -92,16 +101,16 @@ internal static class SelfHostedSqliteFile
     }
 
     /// <summary>
-    /// Quiesces the live path under the caller's exclusive lease: clear the pool,
-    /// TRUNCATE-checkpoint the WAL, close the administrative connection, then
-    /// require that no sidecar remains that could hold committed writes or an
-    /// open handle. Fails closed with <c>migration_activation_busy</c>.
+    /// Quiesces the live path under the caller's exclusive lease: clear every
+    /// idle pooled handle, TRUNCATE-checkpoint the WAL, close the administrative
+    /// connection, then require that no sidecar remains that could hold committed
+    /// writes or an open handle. Fails closed with <c>migration_activation_busy</c>.
     /// </summary>
     internal static void QuiesceLive(string databasePath)
     {
         try
         {
-            ClearPool(databasePath);
+            ClearPools();
             using (var connection = Open(databasePath, readOnly: false))
             {
                 var busy = CheckpointTruncate(connection);
@@ -111,7 +120,7 @@ internal static class SelfHostedSqliteFile
                 }
             }
 
-            ClearPool(databasePath);
+            ClearPools();
             if (RemainingSidecarProblem(databasePath) is { } problem)
             {
                 throw Busy(problem);
@@ -142,7 +151,7 @@ internal static class SelfHostedSqliteFile
     {
         try
         {
-            ClearPool(databasePath);
+            ClearPools();
             if (!File.Exists(databasePath))
             {
                 throw new MigrationActivationException(
@@ -171,7 +180,7 @@ internal static class SelfHostedSqliteFile
                 }
             }
 
-            ClearPool(databasePath);
+            ClearPools();
         }
         catch (SqliteException)
         {
@@ -218,7 +227,17 @@ internal static class SelfHostedSqliteFile
             return "The SQLite WAL still contains committed frames. The library is busy; retry activation later.";
         }
 
-        File.Delete(wal);
+        try
+        {
+            File.Delete(wal);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            // A handle can still pin the remnant on Windows; fail closed typed
+            // instead of leaking a raw filesystem exception.
+            return "The zero-length SQLite WAL remnant could not be removed. The library is busy; retry activation later.";
+        }
+
         return null;
     }
 

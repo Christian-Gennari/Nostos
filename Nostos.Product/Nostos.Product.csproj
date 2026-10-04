@@ -24,12 +24,6 @@
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
       <_Parameter1>Nostos.Backend.Tests</_Parameter1>
     </AssemblyAttribute>
-    <!-- The SelfHosted activation candidate database builder materializes the
-         portable payload through the same internal relational restore the
-         compatibility import endpoint uses, so the two paths cannot drift. -->
-    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
-      <_Parameter1>Nostos.Backend</_Parameter1>
-    </AssemblyAttribute>
   </ItemGroup>
 
   <ItemGroup>

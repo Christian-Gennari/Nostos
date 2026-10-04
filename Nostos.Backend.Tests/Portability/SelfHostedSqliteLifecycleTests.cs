@@ -66,6 +66,38 @@ public sealed class SelfHostedSqliteLifecycleTests
     }
 
     [Fact]
+    public async Task QuiesceLive_ClearsPoolsOpenedWithADifferentButEquivalentConnectionString()
+    {
+        using var env = new LifecycleEnvironment();
+        env.Execute("PRAGMA journal_mode=WAL;");
+        env.Execute("CREATE TABLE Marker(Id INTEGER PRIMARY KEY, Value TEXT NOT NULL);");
+
+        // Exact-string pool lookup would miss this spelling; the global pool
+        // primitive must still release the idle handle.
+        using (var pooled = new SqliteConnection($"Data Source={env.Live};Default Timeout=30"))
+        {
+            pooled.Open();
+            env.ExecuteOn(pooled, "INSERT INTO Marker(Value) VALUES ('committed');");
+        }
+
+        var gate = new LibraryMaintenanceCoordinator();
+        var lifecycle = new SelfHostedSqliteLifecycle(env.Paths, gate);
+        await using (var lease = await gate.EnterExclusiveAsync(LibraryMaintenanceReason.Activation))
+        {
+            lifecycle.QuiesceLive(lease);
+        }
+
+        File.Exists(env.Live + "-wal").Should().BeFalse();
+        File.Exists(env.Live + "-shm").Should().BeFalse();
+
+        // The live file itself can now be renamed without a leaked handle.
+        var moved = env.Live + ".moved";
+        File.Move(env.Live, moved);
+        File.Move(moved, env.Live);
+        env.ExecuteScalar("SELECT Value FROM Marker;").Should().Be("committed");
+    }
+
+    [Fact]
     public async Task QuiesceLive_WithoutACurrentExclusiveLease_IsRejectedWithoutSideEffects()
     {
         using var env = new LifecycleEnvironment();

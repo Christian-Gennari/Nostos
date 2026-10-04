@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Nostos.Backend.Configuration;
@@ -7,32 +9,65 @@ using Nostos.Backend.Data.Models;
 namespace Nostos.Backend.Services.Portability.Activation;
 
 /// <summary>
-/// Builds the activation candidate database beside the live one. The candidate is
-/// created through the same documented bootstrap path as a fresh installation at
-/// the current schema, then receives the hash-verified prepared portable payload
-/// through the shared relational restore and finally the live host operational
-/// state through one consistent read transaction. The live database file is only
-/// ever opened read-only and never moved by this component.
+/// Builds the activation candidate database beside the live one in two phases.
+/// <see cref="BuildPortableCandidateAsync"/> is the long phase and runs while the
+/// live library keeps serving: a fresh current-schema bootstrap plus the
+/// hash-verified prepared portable payload, and no host operational state.
+/// <see cref="FinalizeCandidateAsync"/> is the short phase and requires the
+/// current exclusive maintenance lease: it replaces the candidate's host
+/// operational state from ONE authoritative live snapshot and durably marks the
+/// candidate finalized. The live database file is only ever opened read-only and
+/// never moved by this component.
 /// </summary>
 internal interface ISelfHostedActivationDatabaseBuilder
 {
     /// <summary>
-    /// Builds (or rebuilds from scratch after a crash) the candidate database for
-    /// the job. Idempotent: an existing candidate is discarded and rebuilt. On
-    /// failure the partial candidate is removed and the error is rethrown.
+    /// Builds (or rebuilds from scratch after a crash) the portable part of the
+    /// candidate database for the job. Idempotent and crash-safe: an existing
+    /// candidate, its sidecars, its temporary payload and any finalization marker
+    /// are discarded first. The result is deliberately NOT cutover-ready.
     /// </summary>
-    Task BuildAsync(
+    Task BuildPortableCandidateAsync(
         Guid jobId,
         IPreparedPortableImport prepared,
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Opens the built candidate for read-only verification. The caller owns the
-    /// returned context. Slice 4's portable verifier reads the candidate through
-    /// this method.
+    /// Imports the live host operational state into the candidate under the
+    /// caller's current exclusive maintenance lease and marks the candidate
+    /// finalized. Must run after every pre-cutover live mutation and before
+    /// <c>QuiesceLive</c>. Repeatable: re-running replaces the previous
+    /// host-state rows from a fresh live snapshot. On any failure the candidate
+    /// is left reported as unfinalized.
+    /// </summary>
+    Task FinalizeCandidateAsync(
+        Guid jobId,
+        IAsyncDisposable exclusiveLease,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// True only when the durable finalization marker exists, validates for this
+    /// job, and the candidate database is present. A corrupt or inconsistent
+    /// marker fails closed with <c>migration_activation_failed</c>; the cutover
+    /// slice must refuse any candidate that is not finalized.
+    /// </summary>
+    bool IsFinalized(Guid jobId);
+
+    /// <summary>
+    /// Opens the built candidate for read-only verification with pooling
+    /// disabled, so disposing the context leaves no pooled handle on a file that
+    /// will later be renamed. The caller owns the returned context. Slice 4's
+    /// portable verifier reads the candidate through this method.
     /// </summary>
     NostosDbContext OpenCandidate(Guid jobId);
 }
+
+/// <summary>Durable marker that the candidate's host state came from the activation boundary.</summary>
+internal sealed record SelfHostedCandidateFinalization(
+    Guid JobId,
+    string Revision,
+    DateTimeOffset FinalizedAtUtc,
+    int MarkerVersion = 1);
 
 internal sealed class SelfHostedActivationDatabaseBuilder : ISelfHostedActivationDatabaseBuilder
 {
@@ -40,22 +75,28 @@ internal sealed class SelfHostedActivationDatabaseBuilder : ISelfHostedActivatio
 
     private readonly SelfHostedActivationPaths _paths;
     private readonly IPortableImportStaging _staging;
+    private readonly LibraryMaintenanceCoordinator _maintenance;
     private readonly TimeProvider _clock;
 
     internal SelfHostedActivationDatabaseBuilder(
         SelfHostedActivationPaths paths,
         IPortableImportStaging staging,
+        LibraryMaintenanceCoordinator maintenance,
         TimeProvider? clock = null)
     {
         _paths = paths;
         _staging = staging;
+        _maintenance = maintenance;
         _clock = clock ?? TimeProvider.System;
     }
 
-    /// <summary>Test seam: invoked with the step name after each durable build step.</summary>
+    /// <summary>Test seam: invoked with the step name after each portable build step.</summary>
     internal Action<string>? AfterBuildStepForTesting { get; set; }
 
-    public async Task BuildAsync(
+    /// <summary>Test seam: invoked with the step name immediately BEFORE each finalization step.</summary>
+    internal Action<string>? BeforeFinalizeStepForTesting { get; set; }
+
+    public async Task BuildPortableCandidateAsync(
         Guid jobId,
         IPreparedPortableImport prepared,
         CancellationToken cancellationToken = default)
@@ -64,104 +105,188 @@ internal sealed class SelfHostedActivationDatabaseBuilder : ISelfHostedActivatio
         var candidate = _paths.CandidateDatabase(jobId);
         var dataPath = Path.Combine(Path.GetDirectoryName(candidate)!, PortableDataFileName);
         _paths.Prepare(jobId);
-        RemoveCandidateArtifacts(candidate, dataPath);
+        RemoveCandidateArtifacts(jobId, candidate, dataPath);
         try
         {
-            var data = await ReadVerifiedDataAsync(prepared, dataPath, cancellationToken);
+            await CopyVerifiedDataAsync(prepared, dataPath, cancellationToken);
             AfterBuildStepForTesting?.Invoke("data");
 
-            await ApplyPortableAsync(candidate, data, prepared, cancellationToken);
+            await ApplyPortableAsync(candidate, dataPath, prepared, cancellationToken);
             File.Delete(dataPath); // the verified payload is now materialized; keep the candidate area clean
             AfterBuildStepForTesting?.Invoke("portable");
-
-            CopyHostState(candidate, cancellationToken);
-            AfterBuildStepForTesting?.Invoke("host-state");
-
-            VerifySelfContained(candidate);
-            AfterBuildStepForTesting?.Invoke("verify");
         }
         catch
         {
-            TryRemoveCandidateArtifacts(candidate, dataPath);
+            TryRemoveCandidateArtifacts(jobId, candidate, dataPath);
             throw;
         }
     }
 
-    public NostosDbContext OpenCandidate(Guid jobId) =>
-        CreateContext(_paths.CandidateDatabase(jobId), readOnly: true);
-
-    private async Task<PortableLibraryData> ReadVerifiedDataAsync(
-        IPreparedPortableImport prepared,
-        string dataPath,
-        CancellationToken cancellationToken)
+    public Task FinalizeCandidateAsync(
+        Guid jobId,
+        IAsyncDisposable exclusiveLease,
+        CancellationToken cancellationToken = default)
     {
-        var metadata = prepared.Metadata;
-        await using (var source = await _staging.OpenDataReadAsync(metadata.StagingId, cancellationToken))
+        _maintenance.WithExclusiveLease(exclusiveLease, () => FinalizeCore(jobId, cancellationToken));
+        return Task.CompletedTask;
+    }
+
+    public bool IsFinalized(Guid jobId)
+    {
+        var markerPath = _paths.CandidateFinalizationMarker(jobId);
+        _paths.VerifyDatabasePath(markerPath);
+        if (!File.Exists(markerPath))
         {
-            var (length, sha256) = await SelfHostedSqliteFile.CopyAndHashAsync(
-                source,
-                dataPath,
-                metadata.DataBytes,
-                cancellationToken);
-            if (length != metadata.DataBytes
-                || !string.Equals(sha256, metadata.DataSha256, StringComparison.OrdinalIgnoreCase))
+            if (Directory.Exists(markerPath))
             {
-                throw new MigrationActivationException(
-                    MigrationActivationErrorCodes.Failed,
-                    "The prepared import's relational payload failed hash verification.");
+                throw CorruptMarker();
             }
+
+            return false;
         }
 
-        await using var staged = new FileStream(
-            dataPath,
-            FileMode.Open,
-            FileAccess.Read,
-            FileShare.Read,
-            128 * 1024,
-            FileOptions.Asynchronous | FileOptions.SequentialScan);
-        return await PortableLibraryDatabaseMaterializer.ReadRelationalDataAsync(staged, cancellationToken);
-    }
-
-    private static async Task ApplyPortableAsync(
-        string candidate,
-        PortableLibraryData data,
-        IPreparedPortableImport prepared,
-        CancellationToken cancellationToken)
-    {
-        await using (var db = CreateContext(candidate))
+        SelfHostedCandidateFinalization marker;
+        try
         {
-            // Documented bootstrap path: a fresh candidate gets the complete
-            // current schema plus an accurate migration-history baseline, exactly
-            // like a normally bootstrapped database. Do not rebaseline a clone.
-            await new DatabaseBootstrapService(db).EnsureReadyAsync(cancellationToken);
-            db.ChangeTracker.Clear();
-            await PortableLibraryDatabaseMaterializer.ApplyRelationalDataAsync(
-                db,
-                data,
-                prepared.Media,
-                cancellationToken);
-            await db.SaveChangesAsync(cancellationToken);
+            marker = JsonSerializer.Deserialize<SelfHostedCandidateFinalization>(File.ReadAllBytes(markerPath))
+                ?? throw CorruptMarker();
+        }
+        catch (JsonException)
+        {
+            throw CorruptMarker();
         }
 
-        SelfHostedSqliteFile.ClearPool(candidate);
+        if (marker.MarkerVersion != 1 || marker.JobId != jobId)
+        {
+            throw CorruptMarker();
+        }
+
+        if (!File.Exists(_paths.CandidateDatabase(jobId)))
+        {
+            throw new MigrationActivationException(
+                MigrationActivationErrorCodes.Failed,
+                "The finalized activation candidate database is missing.");
+        }
+
+        return true;
     }
 
-    /// <summary>
-    /// Reads every carry-over table inside ONE deferred read transaction, so the
-    /// snapshot cannot mix rows from before and after a concurrent commit. In WAL
-    /// mode readers do not block writers; the main live file is never written.
-    /// </summary>
-    private void CopyHostState(string candidate, CancellationToken cancellationToken)
+    public NostosDbContext OpenCandidate(Guid jobId) =>
+        CreateContext(_paths.CandidateDatabase(jobId), readOnly: true, pooling: false);
+
+    private void FinalizeCore(Guid jobId, CancellationToken cancellationToken)
     {
-        using var model = CreateContext(candidate);
+        cancellationToken.ThrowIfCancellationRequested();
+        var candidate = _paths.CandidateDatabase(jobId);
+        var markerPath = _paths.CandidateFinalizationMarker(jobId);
+        _paths.Prepare(jobId);
+        _paths.VerifyDatabasePath(markerPath);
+        if (!File.Exists(candidate))
+        {
+            throw new MigrationActivationException(
+                MigrationActivationErrorCodes.Failed,
+                "The activation candidate database has not been built.");
+        }
+
+        // From here on any failure must leave the candidate reported as
+        // unfinalized, so the durable marker is removed before new host state is
+        // written; it is only rewritten after every check succeeds.
+        File.Delete(markerPath);
+
+        using var model = CreateContext(candidate, readOnly: false, pooling: false);
         var decisions = SelfHostedHostStateCarryOver.CarryDecisions;
         var ordered = OrderForInsertion(model, decisions);
         var schemas = ordered.ToDictionary(
             decision => decision.EntityType,
             decision => SchemaFor(model, decision.EntityType));
 
+        var snapshot = ReadLiveHostState(ordered, schemas, out var liveLibraryState);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var advancedRevision = AdvanceLiveRevision(
+            schemas[typeof(LibraryState)].Columns,
+            liveLibraryState);
+
+        BeforeFinalizeStepForTesting?.Invoke("write");
+        WriteCandidateHostState(candidate, ordered, schemas, snapshot, liveLibraryState, advancedRevision);
+
+        cancellationToken.ThrowIfCancellationRequested();
+        BeforeFinalizeStepForTesting?.Invoke("verify");
+        VerifySelfContained(candidate);
+
+        BeforeFinalizeStepForTesting?.Invoke("marker");
+        WriteFinalizationMarker(jobId, advancedRevision);
+    }
+
+    private async Task CopyVerifiedDataAsync(
+        IPreparedPortableImport prepared,
+        string dataPath,
+        CancellationToken cancellationToken)
+    {
+        var metadata = prepared.Metadata;
+        await using var source = await _staging.OpenDataReadAsync(metadata.StagingId, cancellationToken);
+        var (length, sha256) = await SelfHostedSqliteFile.CopyAndHashAsync(
+            source,
+            dataPath,
+            metadata.DataBytes,
+            cancellationToken);
+        if (length != metadata.DataBytes
+            || !string.Equals(sha256, metadata.DataSha256, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new MigrationActivationException(
+                MigrationActivationErrorCodes.Failed,
+                "The prepared import's relational payload failed hash verification.");
+        }
+    }
+
+    private static async Task ApplyPortableAsync(
+        string candidate,
+        string dataPath,
+        IPreparedPortableImport prepared,
+        CancellationToken cancellationToken)
+    {
+        await using (var db = CreateContext(candidate, readOnly: false, pooling: true))
+        {
+            // Documented bootstrap path: a fresh candidate gets the complete
+            // current schema plus an accurate migration-history baseline, exactly
+            // like a normally bootstrapped database. Do not rebaseline a clone.
+            await new DatabaseBootstrapService(db).EnsureReadyAsync(cancellationToken);
+            db.ChangeTracker.Clear();
+
+            // The same relational restore the compatibility import endpoint uses,
+            // applied to the exact bytes just hash-verified.
+            await using var verified = new FileStream(
+                dataPath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read,
+                128 * 1024,
+                FileOptions.Asynchronous | FileOptions.SequentialScan);
+            await PortableLibraryRelationalRestore.ApplyVerifiedPayloadAsync(
+                db,
+                verified,
+                prepared.Media,
+                cancellationToken);
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
+        SelfHostedSqliteFile.ClearPoolFor(candidate);
+    }
+
+    /// <summary>
+    /// Reads every carry-over table inside ONE deferred read transaction, so the
+    /// snapshot cannot mix rows from before and after a concurrent commit, and
+    /// the caller runs it under the exclusive maintenance lease so it is also the
+    /// authoritative activation-boundary snapshot. In WAL mode readers do not
+    /// block writers; the main live file is never written.
+    /// </summary>
+    private Dictionary<Type, List<object?[]>> ReadLiveHostState(
+        IReadOnlyList<HostStateCarryOverDecision> ordered,
+        IReadOnlyDictionary<Type, (string Table, IReadOnlyList<string> Columns)> schemas,
+        out object?[] liveLibraryState)
+    {
         var snapshot = new Dictionary<Type, List<object?[]>>();
-        object?[]? liveLibraryState = null;
+        List<object?[]>? liveStateRows = null;
         using (var live = SelfHostedSqliteFile.Open(_paths.LiveDatabase, readOnly: true))
         using (var transaction = live.BeginTransaction(deferred: true))
         {
@@ -171,7 +296,7 @@ internal sealed class SelfHostedActivationDatabaseBuilder : ISelfHostedActivatio
                 var rows = ReadRows(live, transaction, table, columns);
                 if (decision.EntityType == typeof(LibraryState))
                 {
-                    liveLibraryState = rows.Count == 1 ? rows[0] : null;
+                    liveStateRows = rows;
                 }
                 else
                 {
@@ -182,87 +307,99 @@ internal sealed class SelfHostedActivationDatabaseBuilder : ISelfHostedActivatio
             transaction.Commit();
         }
 
-        cancellationToken.ThrowIfCancellationRequested();
+        if (liveStateRows is not { Count: 1 })
+        {
+            throw new MigrationActivationException(
+                MigrationActivationErrorCodes.Failed,
+                "The live library revision row is missing or duplicated.");
+        }
 
-        using var target = SelfHostedSqliteFile.Open(candidate, readOnly: false);
-        Execute(target, "PRAGMA foreign_keys = ON;");
-        var survivingNoteIds = SelfHostedSqliteFile
-            .QueryStrings(target, "SELECT \"Id\" FROM \"Notes\";")
-            .ToHashSet(StringComparer.Ordinal);
+        liveLibraryState = liveStateRows[0];
+        return snapshot;
+    }
+
+    /// <summary>
+    /// Advances the singleton library revision from the authoritative live value:
+    /// one activation is one committed library-state mutation. Missing,
+    /// non-numeric, negative or non-incrementable revisions fail closed.
+    /// </summary>
+    private static string AdvanceLiveRevision(IReadOnlyList<string> columns, object?[] liveRow)
+    {
+        var raw = liveRow[IndexOf(columns, "StateVersion")] as string;
+        if (raw is null
+            || !long.TryParse(raw, NumberStyles.None, CultureInfo.InvariantCulture, out var version)
+            || version == long.MaxValue)
+        {
+            throw new MigrationActivationException(
+                MigrationActivationErrorCodes.Failed,
+                "The live library revision is missing, invalid, or cannot be advanced.");
+        }
+
+        return (version + 1).ToString(CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>
+    /// Replaces the candidate's carried host-state rows from one snapshot inside
+    /// ONE candidate transaction: children are deleted first, all rows are then
+    /// reinserted in dependency order (with the advanced singleton revision), and
+    /// the transaction commits atomically. Re-running can never duplicate rows.
+    /// </summary>
+    private void WriteCandidateHostState(
+        string candidate,
+        IReadOnlyList<HostStateCarryOverDecision> ordered,
+        IReadOnlyDictionary<Type, (string Table, IReadOnlyList<string> Columns)> schemas,
+        IReadOnlyDictionary<Type, List<object?[]>> snapshot,
+        object?[] liveLibraryState,
+        string advancedRevision)
+    {
+        using var connection = SelfHostedSqliteFile.Open(candidate, readOnly: false);
+        Execute(connection, "PRAGMA foreign_keys = ON;");
+        using var transaction = connection.BeginTransaction(deferred: false);
+
+        for (var index = ordered.Count - 1; index >= 0; index--)
+        {
+            var (table, _) = schemas[ordered[index].EntityType];
+            Execute(connection, transaction, $"DELETE FROM {Quote(table)};");
+        }
 
         foreach (var decision in ordered)
         {
             var (table, columns) = schemas[decision.EntityType];
             if (decision.EntityType == typeof(LibraryState))
             {
-                ApplyLibraryState(target, schemas, liveLibraryState);
-            }
-            else if (decision.EntityType == typeof(NoteImportBatchNote))
-            {
-                // Undo links to notes replaced by the imported library cannot be
-                // restored without a foreign-key violation; links whose note does
-                // survive (same portable ID) are preserved.
-                var noteIdIndex = IndexOf(columns, "NoteId");
-                var rows = snapshot[decision.EntityType]
-                    .Where(row => row[noteIdIndex] is string noteId && survivingNoteIds.Contains(noteId))
-                    .ToArray();
-                InsertRows(target, table, columns, rows);
+                var row = (object?[])liveLibraryState.Clone();
+                row[IndexOf(columns, "StateVersion")] = advancedRevision;
+                row[IndexOf(columns, "UpdatedAt")] = _clock.GetUtcNow().UtcDateTime;
+                InsertRows(connection, transaction, table, columns, [row]);
             }
             else
             {
-                InsertRows(target, table, columns, snapshot[decision.EntityType]);
+                InsertRows(connection, transaction, table, columns, snapshot[decision.EntityType]);
             }
         }
+
+        transaction.Commit();
     }
 
-    /// <summary>
-    /// Advances the singleton library revision so the candidate represents the
-    /// newly activated portable state; the row itself is host infrastructure and
-    /// is never imported from a portable archive.
-    /// </summary>
-    private void ApplyLibraryState(
-        SqliteConnection candidate,
-        IReadOnlyDictionary<Type, (string Table, IReadOnlyList<string> Columns)> schemas,
-        object?[]? liveRow)
+    private void WriteFinalizationMarker(Guid jobId, string revision)
     {
-        if (liveRow is null)
+        var markerPath = _paths.CandidateFinalizationMarker(jobId);
+        _paths.VerifyDatabasePath(markerPath);
+        var temporary = markerPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        _paths.VerifyDatabasePath(temporary);
+        var marker = new SelfHostedCandidateFinalization(jobId, revision, _clock.GetUtcNow());
+        using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
         {
-            return; // the fresh bootstrap already seeded the singleton row
+            stream.Write(JsonSerializer.SerializeToUtf8Bytes(marker));
+            stream.Flush(flushToDisk: true);
         }
 
-        var (stateTable, columns) = schemas[typeof(LibraryState)];
-        var version = NextVersion(liveRow[IndexOf(columns, "StateVersion")] as string);
-        var updatedAt = _clock.GetUtcNow().UtcDateTime;
-        var slot = liveRow[IndexOf(columns, "SingletonSlot")];
-
-        using (var update = candidate.CreateCommand())
-        {
-            update.CommandText =
-                $"UPDATE {Quote(stateTable)} SET \"StateVersion\" = $version, \"UpdatedAt\" = $updated " +
-                "WHERE \"SingletonSlot\" = $slot;";
-            update.Parameters.AddWithValue("$version", version);
-            update.Parameters.AddWithValue("$updated", updatedAt);
-            update.Parameters.AddWithValue("$slot", slot ?? DBNull.Value);
-            if (update.ExecuteNonQuery() > 0)
-            {
-                return;
-            }
-        }
-
-        using var insert = candidate.CreateCommand();
-        insert.CommandText =
-            $"INSERT INTO {Quote(stateTable)} (\"Id\", \"SingletonSlot\", \"StateVersion\", \"UpdatedAt\") " +
-            "VALUES ($id, $slot, $version, $updated);";
-        insert.Parameters.AddWithValue("$id", liveRow[IndexOf(columns, "Id")] ?? DBNull.Value);
-        insert.Parameters.AddWithValue("$slot", slot ?? DBNull.Value);
-        insert.Parameters.AddWithValue("$version", version);
-        insert.Parameters.AddWithValue("$updated", updatedAt);
-        insert.ExecuteNonQuery();
+        ActivationFileSystem.Rename(temporary, markerPath, overwrite: true);
     }
 
     private void VerifySelfContained(string candidate)
     {
-        SelfHostedSqliteFile.ClearPool(candidate);
+        SelfHostedSqliteFile.ClearPools();
         using (var connection = SelfHostedSqliteFile.Open(candidate, readOnly: false))
         {
             var integrity = SelfHostedSqliteFile.QueryStrings(connection, "PRAGMA integrity_check;");
@@ -294,27 +431,35 @@ internal sealed class SelfHostedActivationDatabaseBuilder : ISelfHostedActivatio
             }
         }
 
-        SelfHostedSqliteFile.ClearPool(candidate);
+        SelfHostedSqliteFile.ClearPools();
         if (SelfHostedSqliteFile.RemainingSidecarProblem(candidate) is { } problem)
         {
             throw new MigrationActivationException(MigrationActivationErrorCodes.Failed, problem);
         }
     }
 
-    private void RemoveCandidateArtifacts(string candidate, string dataPath)
+    private void RemoveCandidateArtifacts(Guid jobId, string candidate, string dataPath)
     {
-        SelfHostedSqliteFile.ClearPool(candidate);
+        SelfHostedSqliteFile.ClearPoolFor(candidate);
         File.Delete(candidate);
         File.Delete(candidate + "-wal");
         File.Delete(candidate + "-shm");
         File.Delete(dataPath);
+        var marker = _paths.CandidateFinalizationMarker(jobId);
+        File.Delete(marker);
+        foreach (var temporary in Directory.EnumerateFiles(
+                     Path.GetDirectoryName(marker)!,
+                     Path.GetFileName(marker) + ".*"))
+        {
+            File.Delete(temporary);
+        }
     }
 
-    private void TryRemoveCandidateArtifacts(string candidate, string dataPath)
+    private void TryRemoveCandidateArtifacts(Guid jobId, string candidate, string dataPath)
     {
         try
         {
-            RemoveCandidateArtifacts(candidate, dataPath);
+            RemoveCandidateArtifacts(jobId, candidate, dataPath);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
@@ -322,10 +467,10 @@ internal sealed class SelfHostedActivationDatabaseBuilder : ISelfHostedActivatio
         }
     }
 
-    private static NostosDbContext CreateContext(string path, bool readOnly = false) =>
+    private static NostosDbContext CreateContext(string path, bool readOnly, bool pooling) =>
         new(new DbContextOptionsBuilder<NostosDbContext>()
             .UseSqlite(
-                SelfHostedSqliteFile.ConnectionString(path, readOnly, pooling: true),
+                SelfHostedSqliteFile.ConnectionString(path, readOnly, pooling),
                 sqlite => sqlite.MigrationsAssembly(typeof(PersistenceRegistration).Assembly.FullName))
             .Options);
 
@@ -409,6 +554,7 @@ internal sealed class SelfHostedActivationDatabaseBuilder : ISelfHostedActivatio
 
     private static void InsertRows(
         SqliteConnection connection,
+        SqliteTransaction transaction,
         string table,
         IReadOnlyList<string> columns,
         IEnumerable<object?[]> rows)
@@ -420,6 +566,7 @@ internal sealed class SelfHostedActivationDatabaseBuilder : ISelfHostedActivatio
         }
 
         using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText =
             $"INSERT INTO {Quote(table)} ({string.Join(", ", columns.Select(Quote))}) " +
             $"VALUES ({string.Join(", ", columns.Select((_, index) => "$p" + index))});";
@@ -447,6 +594,14 @@ internal sealed class SelfHostedActivationDatabaseBuilder : ISelfHostedActivatio
         command.ExecuteNonQuery();
     }
 
+    private static void Execute(SqliteConnection connection, SqliteTransaction transaction, string sql)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = sql;
+        command.ExecuteNonQuery();
+    }
+
     private static int IndexOf(IReadOnlyList<string> columns, string column)
     {
         for (var index = 0; index < columns.Count; index++)
@@ -462,6 +617,7 @@ internal sealed class SelfHostedActivationDatabaseBuilder : ISelfHostedActivatio
 
     private static string Quote(string identifier) => $"\"{identifier}\"";
 
-    private static string NextVersion(string? version) =>
-        (long.TryParse(version, out var parsed) ? parsed + 1 : 1).ToString();
+    private static MigrationActivationException CorruptMarker() => new(
+        MigrationActivationErrorCodes.Failed,
+        "The activation candidate finalization marker is corrupt or does not belong to this job.");
 }
