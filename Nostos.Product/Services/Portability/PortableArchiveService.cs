@@ -33,13 +33,56 @@ public sealed class PortableArchiveService(
     private readonly IBookTextIngestionScheduler? _bookTextScheduler = bookTextScheduler;
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
 
-    public async Task<PortableExportResult> ExportAsync(
+    public Task<PortableExportResult> ExportAsync(
         Stream destination,
+        CancellationToken cancellationToken = default) =>
+        ExportAsync(
+            destination,
+            progress: null,
+            CreateExportBufferBudget(),
+            cancellationToken);
+
+    public async Task<PortableExportResult> ExportAsync(
+        IPortableArchiveSink destination,
+        IProgress<PortableArchiveProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(destination);
+        await using var writer = await destination.OpenWriteAsync(cancellationToken);
+        return await ExportAsync(
+            writer,
+            progress,
+            CreateExportBufferBudget(),
+            cancellationToken);
+    }
+
+    // Shared-budget overload for callers that must account the export against
+    // an operation-wide PortableArchiveBufferBudget (and for the adapter
+    // high-water tests).
+    internal Task<PortableExportResult> ExportAsync(
+        Stream destination,
+        PortableArchiveBufferBudget exportBufferBudget,
+        CancellationToken cancellationToken = default) =>
+        ExportAsync(destination, progress: null, exportBufferBudget, cancellationToken);
+
+    private static PortableArchiveBufferBudget CreateExportBufferBudget() =>
+        new(PortableArchiveLimits.MaxExplicitBufferBytes);
+
+    private async Task<PortableExportResult> ExportAsync(
+        Stream destination,
+        IProgress<PortableArchiveProgress>? progress,
+        PortableArchiveBufferBudget bufferBudget,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(destination);
+        ArgumentNullException.ThrowIfNull(bufferBudget);
         if (!destination.CanWrite)
             throw new ArgumentException("The export destination must be writable.", nameof(destination));
+
+        progress?.Report(new PortableArchiveProgress(
+            PortableArchiveProgressPhase.Snapshotting,
+            0,
+            null));
 
         var snapshot = await CaptureSnapshotAsync(cancellationToken);
         PortableArchiveValidation.ValidatePortableData(snapshot.Data);
@@ -47,126 +90,46 @@ public sealed class PortableArchiveService(
 
         // Media is pinned by an initial hash pass after the relational
         // transaction has closed. The archive copy pass below re-verifies the
-        // pin so an archive can never mix two media revisions.
+        // pin so an archive can never mix two media revisions. Both passes run
+        // before the archive is opened, so every failure that can be detected
+        // up front (snapshot, missing media, pin mismatch) happens before the
+        // first destination byte is written.
+        progress?.Report(new PortableArchiveProgress(
+            PortableArchiveProgressPhase.IndexingMedia,
+            0,
+            null,
+            0,
+            snapshot.Media.Count));
         var pinned = await PinSourceMediaAsync(snapshot, cancellationToken);
 
-        var tempRoot = Path.Combine(
-            Path.GetTempPath(),
-            $"nostos-portable-export-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(tempRoot);
+        var media = new List<PortableArchiveMediaEntry>(pinned.Count);
 
+        // Native ZipArchive finalization performs small synchronous writes
+        // (data descriptors, Deflate purge, central directory). The bounded
+        // capture sink absorbs them in memory and drains them with
+        // asynchronous destination writes, so the destination never sees
+        // synchronous IO. Native Create mode over this non-seekable view also
+        // means entries carry ZIP data descriptors, which is the standard
+        // streaming framing and is handled by native readers and historical
+        // Nostos import.
+        var buffered = new BoundedSynchronousCaptureSink(destination, bufferBudget, leaveOpen: true);
         try
         {
-            var dataPath = Path.Combine(tempRoot, "library.json");
-            await using (var dataStream = new FileStream(
-                dataPath,
-                FileMode.CreateNew,
-                FileAccess.Write,
-                FileShare.None,
-                CopyBufferSize,
-                FileOptions.Asynchronous | FileOptions.SequentialScan))
-            {
-                await JsonSerializer.SerializeAsync(
-                    dataStream,
-                    snapshot.Data,
-                    JsonOptions,
-                    cancellationToken);
-            }
+            using var copyBuffer = bufferBudget.Rent(
+                PortableArchiveLimits.CopyBufferBytes,
+                cancellationToken);
 
-            var dataInfo = await DescribeFileAsync(dataPath, cancellationToken);
-            PortableArchiveValidation.ValidateExportDataSize(dataInfo.Length);
+            var dataInfo = await WriteArchiveAsync(
+                buffered,
+                snapshot,
+                pinned,
+                media,
+                copyBuffer.Memory,
+                progress,
+                cancellationToken);
 
-            var media = new List<PortableArchiveMediaEntry>();
-
-            // A non-seekable destination (an HTTP response body) cannot be used
-            // as the archive target directly: ZipArchiveMode.Create on a
-            // non-seekable stream writes ZIP data descriptors, and finalizing
-            // them performs synchronous writes. Kestrel disallows synchronous IO
-            // on response streams, so the export would abort mid-response.
-            // Stage the archive in a seekable temp file and copy it out
-            // asynchronously after the archive is fully finalized.
-            var stageArchive = !destination.CanSeek;
-            var archivePath = Path.Combine(tempRoot, "export.nostos");
-            Stream archiveTarget = destination;
-            if (stageArchive)
-            {
-                archiveTarget = new FileStream(
-                    archivePath,
-                    FileMode.CreateNew,
-                    FileAccess.Write,
-                    FileShare.None,
-                    CopyBufferSize,
-                    FileOptions.Asynchronous | FileOptions.SequentialScan);
-            }
-
-            using (var archive = new ZipArchive(
-                archiveTarget,
-                ZipArchiveMode.Create,
-                leaveOpen: !stageArchive))
-            {
-                var dataEntry = archive.CreateEntry(
-                    PortableArchiveFormat.DataPath,
-                    CompressionLevel.Optimal);
-                await using (var source = new FileStream(
-                    dataPath,
-                    FileMode.Open,
-                    FileAccess.Read,
-                    FileShare.Read,
-                    CopyBufferSize,
-                    FileOptions.Asynchronous | FileOptions.SequentialScan))
-                await using (var target = dataEntry.Open())
-                {
-                    await source.CopyToAsync(target, CopyBufferSize, cancellationToken);
-                }
-
-                foreach (var item in pinned)
-                {
-                    media.Add(await AppendPinnedAssetAsync(
-                        archive,
-                        item,
-                        cancellationToken));
-                }
-
-                var manifest = new PortableArchiveManifest(
-                    Format: PortableArchiveFormat.Name,
-                    FormatVersion: PortableArchiveFormat.Version,
-                    DataVersion: PortableArchiveFormat.DataVersion,
-                    ExportedAtUtc: snapshot.SnapshotAtUtc,
-                    ApplicationVersion:
-                        typeof(PortableArchiveService).Assembly.GetName().Version?.ToString()
-                        ?? "unknown",
-                    Counts: counts,
-                    Data: new PortableArchivePayload(
-                        PortableArchiveFormat.DataPath,
-                        dataInfo.Length,
-                        dataInfo.Sha256),
-                    Media: media);
-
-                var manifestEntry = archive.CreateEntry(
-                    PortableArchiveFormat.ManifestPath,
-                    CompressionLevel.Optimal);
-                await using var manifestStream = manifestEntry.Open();
-                await JsonSerializer.SerializeAsync(
-                    manifestStream,
-                    manifest,
-                    JsonOptions,
-                    cancellationToken);
-            }
-
-            if (stageArchive)
-            {
-                await using var staged = new FileStream(
-                    archivePath,
-                    FileMode.Open,
-                    FileAccess.Read,
-                    FileShare.Read,
-                    CopyBufferSize,
-                    FileOptions.Asynchronous | FileOptions.SequentialScan);
-                await staged.CopyToAsync(
-                    destination,
-                    CopyBufferSize,
-                    cancellationToken);
-            }
+            await buffered.CompleteAsync(cancellationToken);
+            await buffered.DisposeAsync();
 
             return new PortableExportResult(
                 PortableArchiveFormat.Version,
@@ -174,9 +137,143 @@ public sealed class PortableArchiveService(
                 media.Count,
                 media.Sum(x => x.Length));
         }
-        finally
+        catch
         {
-            TryDeleteDirectory(tempRoot);
+            // Output may already have been streamed. Abort the capture sink so
+            // native ZIP finalization cannot publish a central directory for an
+            // incomplete archive, then release the capture lease and rethrow
+            // the original failure. A truncated download must never be
+            // mistaken for a complete export.
+            buffered.Abort();
+            await DisposeQuietlyAsync(buffered);
+            throw;
+        }
+    }
+
+    private async Task<(long Length, string Sha256)> WriteArchiveAsync(
+        BoundedSynchronousCaptureSink buffered,
+        PortableExportSnapshot snapshot,
+        IReadOnlyList<PinnedPortableSourceMedia> pinned,
+        List<PortableArchiveMediaEntry> media,
+        Memory<byte> copyBuffer,
+        IProgress<PortableArchiveProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        var archive = await ZipArchive.CreateAsync(
+            buffered,
+            ZipArchiveMode.Create,
+            leaveOpen: true,
+            entryNameEncoding: null,
+            cancellationToken);
+
+        try
+        {
+            var dataEntry = archive.CreateEntry(
+                PortableArchiveFormat.DataPath,
+                CompressionLevel.Optimal);
+            long dataLength;
+            string dataSha256;
+            var dataStream = await dataEntry.OpenAsync(cancellationToken);
+            try
+            {
+                await using var hashing = new HashingWriteStream(
+                    dataStream,
+                    PortableArchiveLimits.MaxDataBytes,
+                    "data_too_large",
+                    $"Portable relational data exceeds the {PortableArchiveLimits.MaxDataBytes} byte v1 limit.");
+                await JsonSerializer.SerializeAsync(
+                    hashing,
+                    snapshot.Data,
+                    JsonOptions,
+                    cancellationToken);
+                (dataLength, dataSha256) = hashing.Complete();
+            }
+            catch
+            {
+                await DisposeQuietlyAsync(dataStream);
+                throw;
+            }
+
+            await dataStream.DisposeAsync();
+
+            var totalItems = pinned.Count + 2;
+            progress?.Report(new PortableArchiveProgress(
+                PortableArchiveProgressPhase.WritingArchive,
+                0,
+                null,
+                1,
+                totalItems));
+
+            long mediaBytes = 0;
+            foreach (var item in pinned)
+            {
+                media.Add(await AppendPinnedAssetAsync(
+                    archive,
+                    item,
+                    copyBuffer,
+                    cancellationToken));
+                mediaBytes = checked(mediaBytes + item.Length);
+                progress?.Report(new PortableArchiveProgress(
+                    PortableArchiveProgressPhase.WritingArchive,
+                    mediaBytes,
+                    null,
+                    media.Count + 1,
+                    totalItems));
+            }
+
+            // The manifest is written last because it carries the data hash
+            // and every pinned media hash.
+            var manifest = new PortableArchiveManifest(
+                Format: PortableArchiveFormat.Name,
+                FormatVersion: PortableArchiveFormat.Version,
+                DataVersion: PortableArchiveFormat.DataVersion,
+                ExportedAtUtc: snapshot.SnapshotAtUtc,
+                ApplicationVersion:
+                    typeof(PortableArchiveService).Assembly.GetName().Version?.ToString()
+                    ?? "unknown",
+                Counts: snapshot.Counts,
+                Data: new PortableArchivePayload(
+                    PortableArchiveFormat.DataPath,
+                    dataLength,
+                    dataSha256),
+                Media: media);
+
+            var manifestEntry = archive.CreateEntry(
+                PortableArchiveFormat.ManifestPath,
+                CompressionLevel.Optimal);
+            var manifestStream = await manifestEntry.OpenAsync(cancellationToken);
+            try
+            {
+                await using var bounded = new HashingWriteStream(
+                    manifestStream,
+                    PortableArchiveLimits.MaxManifestBytes,
+                    "entry_too_large",
+                    $"Portable archive entry '{PortableArchiveFormat.ManifestPath}' exceeds its v1 limit.");
+                await JsonSerializer.SerializeAsync(
+                    bounded,
+                    manifest,
+                    JsonOptions,
+                    cancellationToken);
+            }
+            catch
+            {
+                await DisposeQuietlyAsync(manifestStream);
+                throw;
+            }
+
+            await manifestStream.DisposeAsync();
+
+            await archive.DisposeAsync();
+            return (dataLength, dataSha256);
+        }
+        catch
+        {
+            // Abort before finalizing: a failed export must not publish a
+            // central directory for an incomplete archive. The caller repeats
+            // the abort and releases the capture lease.
+            buffered.Abort();
+            await DisposeQuietlyAsync(archive);
+            throw;
         }
     }
 
@@ -662,6 +759,7 @@ public sealed class PortableArchiveService(
     private async Task<PortableArchiveMediaEntry> AppendPinnedAssetAsync(
         ZipArchive archive,
         PinnedPortableSourceMedia pinned,
+        Memory<byte> copyBuffer,
         CancellationToken ct)
     {
         var info = await GetAssetInfoAsync(pinned.BookId, pinned.Kind, ct);
@@ -688,12 +786,24 @@ public sealed class PortableArchiveService(
         }
 
         var entry = archive.CreateEntry(pinned.ArchivePath, CompressionLevel.NoCompression);
-        await using var target = entry.Open();
-        var copied = await CopyAndHashAsync(
-            opened.Content,
-            target,
-            PortableArchiveLimits.MaxSingleEntryBytes,
-            ct);
+        var target = await entry.OpenAsync(ct);
+        (long Length, string Sha256) copied;
+        try
+        {
+            copied = await CopyAndHashAsync(
+                opened.Content,
+                target,
+                PortableArchiveLimits.MaxSingleEntryBytes,
+                copyBuffer,
+                ct);
+        }
+        catch
+        {
+            await DisposeQuietlyAsync(target);
+            throw;
+        }
+
+        await target.DisposeAsync();
 
         if (copied.Length != pinned.Length
             || !string.Equals(copied.Sha256, pinned.Sha256, StringComparison.Ordinal))
@@ -1475,46 +1585,56 @@ public sealed class PortableArchiveService(
         return output.ToArray();
     }
 
-    private static async Task<(long Length, string Sha256)> DescribeFileAsync(
-        string path,
-        CancellationToken ct)
-    {
-        await using var stream = new FileStream(
-            path,
-            FileMode.Open,
-            FileAccess.Read,
-            FileShare.Read,
-            CopyBufferSize,
-            FileOptions.Asynchronous | FileOptions.SequentialScan);
-        return await HashStreamAsync(stream, PortableArchiveLimits.MaxDataBytes, ct);
-    }
-
     private static async Task<(long Length, string Sha256)> CopyAndHashAsync(
         Stream source,
         Stream destination,
         long maxBytes,
+        Memory<byte> buffer,
         CancellationToken ct)
     {
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        var buffer = new byte[CopyBufferSize];
         long total = 0;
 
         while (true)
         {
-            var read = await source.ReadAsync(buffer.AsMemory(), ct);
+            var read = await source.ReadAsync(buffer, ct);
             if (read == 0)
                 break;
 
             total = checked(total + read);
             PortableArchiveValidation.ValidateCopiedMediaSize(total, maxBytes);
 
-            hash.AppendData(buffer, 0, read);
-            await destination.WriteAsync(buffer.AsMemory(0, read), ct);
+            hash.AppendData(buffer.Span[..read]);
+            await destination.WriteAsync(buffer[..read], ct);
         }
 
         return (
             total,
             Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant());
+    }
+
+    private static Task<(long Length, string Sha256)> CopyAndHashAsync(
+        Stream source,
+        Stream destination,
+        long maxBytes,
+        CancellationToken ct) =>
+        CopyAndHashAsync(
+            source,
+            destination,
+            maxBytes,
+            new byte[CopyBufferSize],
+            ct);
+
+    private static async Task DisposeQuietlyAsync(IAsyncDisposable disposable)
+    {
+        try
+        {
+            await disposable.DisposeAsync();
+        }
+        catch
+        {
+            // Cleanup only; the primary export failure is authoritative.
+        }
     }
 
     private static async Task<(long Length, string Sha256)> HashStreamAsync(
@@ -1559,4 +1679,136 @@ public sealed class PortableArchiveService(
             // the user's source library or destination durable storage.
         }
     }
+}
+
+/// <summary>
+/// Serializes relational JSON straight into a ZIP entry while counting and
+/// hashing the exact bytes that will be stored. Only asynchronous writes are
+/// forwarded; the archived entry never needs a temporary file. Exceeding
+/// <paramref name="maxBytes"/> fails the export before more than the limit is
+/// written.
+/// </summary>
+internal sealed class HashingWriteStream : Stream
+{
+    private readonly Stream _destination;
+    private readonly long _maxBytes;
+    private readonly string _limitCode;
+    private readonly string _limitMessage;
+    private readonly IncrementalHash _hash =
+        IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+    private long _length;
+    private bool _completed;
+    private bool _disposed;
+
+    public HashingWriteStream(
+        Stream destination,
+        long maxBytes,
+        string limitCode,
+        string limitMessage)
+    {
+        ArgumentNullException.ThrowIfNull(destination);
+        _destination = destination;
+        _maxBytes = maxBytes;
+        _limitCode = limitCode;
+        _limitMessage = limitMessage;
+    }
+
+    public override bool CanRead => false;
+    public override bool CanSeek => false;
+    public override bool CanWrite => !_disposed && !_completed;
+    public override long Length => _length;
+
+    public override long Position
+    {
+        get => throw new NotSupportedException();
+        set => throw new NotSupportedException();
+    }
+
+    public (long Length, string Sha256) Complete()
+    {
+        if (_completed)
+            throw new InvalidOperationException("The hashing stream is already complete.");
+        if (_disposed)
+            throw new ObjectDisposedException(nameof(HashingWriteStream));
+
+        _completed = true;
+        return (
+            _length,
+            Convert.ToHexString(_hash.GetHashAndReset()).ToLowerInvariant());
+    }
+
+    public override async ValueTask WriteAsync(
+        ReadOnlyMemory<byte> buffer,
+        CancellationToken cancellationToken = default)
+    {
+        Observe(buffer.Span);
+        await _destination.WriteAsync(buffer, cancellationToken).ConfigureAwait(false);
+    }
+
+    public override Task WriteAsync(
+        byte[] buffer,
+        int offset,
+        int count,
+        CancellationToken cancellationToken) =>
+        WriteAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+
+    public override void Write(byte[] buffer, int offset, int count) =>
+        throw new NotSupportedException(
+            "Portable archive serialization must use asynchronous writes.");
+
+    public override void Write(ReadOnlySpan<byte> buffer) =>
+        throw new NotSupportedException(
+            "Portable archive serialization must use asynchronous writes.");
+
+    public override void WriteByte(byte value) =>
+        throw new NotSupportedException(
+            "Portable archive serialization must use asynchronous writes.");
+
+    public override Task FlushAsync(CancellationToken cancellationToken) =>
+        _destination.FlushAsync(cancellationToken);
+
+    public override void Flush() =>
+        throw new NotSupportedException(
+            "Portable archive serialization must use asynchronous writes.");
+
+    public override ValueTask DisposeAsync()
+    {
+        Dispose(disposing: true);
+        return ValueTask.CompletedTask;
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (_disposed)
+            return;
+
+        _disposed = true;
+        if (disposing)
+            _hash.Dispose();
+        base.Dispose(disposing);
+    }
+
+    private void Observe(ReadOnlySpan<byte> buffer)
+    {
+        if (_disposed)
+            throw new ObjectDisposedException(nameof(HashingWriteStream));
+        if (_completed)
+            throw new InvalidOperationException("The hashing stream is already complete.");
+
+        var next = checked(_length + buffer.Length);
+        if (next > _maxBytes)
+            throw new PortableArchiveException(_limitCode, _limitMessage);
+
+        _hash.AppendData(buffer);
+        _length = next;
+    }
+
+    public override int Read(byte[] buffer, int offset, int count) =>
+        throw new NotSupportedException();
+
+    public override long Seek(long offset, SeekOrigin origin) =>
+        throw new NotSupportedException();
+
+    public override void SetLength(long value) =>
+        throw new NotSupportedException();
 }
