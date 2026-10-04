@@ -44,7 +44,7 @@ public sealed class PortableExportSnapshotTests
     }
 
     [Fact]
-    public async Task Export_data_reflects_snapshot_and_ignores_relational_writes_during_archive_copy()
+    public async Task Export_data_reflects_snapshot_and_ignores_relational_writes_during_archive_copy_pass()
     {
         await using var source = await LocalPortableTestLibrary.CreateAsync();
         var bookId = await PopulateMinimalLibraryAsync(source);
