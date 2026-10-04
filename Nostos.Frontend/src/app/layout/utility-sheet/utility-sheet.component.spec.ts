@@ -42,6 +42,7 @@ describe('UtilitySheetComponent', () => {
   let capabilities: DeploymentCapabilities;
   let sheet: UtilitySheetService;
   let fixture: ComponentFixture<UtilitySheetComponent>;
+  let trigger: HTMLButtonElement;
 
   beforeEach(async () => {
     capabilities = cloudCapabilities;
@@ -55,14 +56,36 @@ describe('UtilitySheetComponent', () => {
       ],
     }).compileComponents();
 
+    // CDK's interactivity checker needs real geometry; jsdom reports 0x0.
+    Object.defineProperty(HTMLElement.prototype, 'offsetWidth', {
+      configurable: true,
+      get: () => 1,
+    });
+    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
+      configurable: true,
+      get: () => 1,
+    });
+
     await TestBed.inject(Router).navigateByUrl('/library');
     sheet = TestBed.inject(UtilitySheetService);
     fixture = TestBed.createComponent(UtilitySheetComponent);
     fixture.detectChanges();
+
+    trigger = document.createElement('button');
+    trigger.type = 'button';
+    trigger.setAttribute('data-testid', 'more-trigger');
+    document.body.appendChild(trigger);
   });
 
-  function open(): void {
+  afterEach(() => {
+    trigger.remove();
+  });
+
+  async function open(): Promise<void> {
+    trigger.focus();
     sheet.open.set(true);
+    fixture.detectChanges();
+    await fixture.whenStable();
     fixture.detectChanges();
   }
 
@@ -71,75 +94,107 @@ describe('UtilitySheetComponent', () => {
     element.click();
   }
 
-  it('renders nothing until the dock trigger opens it', () => {
-    expect(fixture.nativeElement.querySelector('[data-testid="utility-sheet"]')).toBeNull();
+  function query<T extends Element>(selector: string): T {
+    return fixture.nativeElement.querySelector(selector) as T;
+  }
 
-    open();
-    expect(fixture.nativeElement.querySelector('[data-testid="utility-sheet"]')).toBeTruthy();
+  it('renders nothing until the dock trigger opens it', () => {
+    expect(query('[data-testid="utility-sheet"]')).toBeNull();
+
+    sheet.open.set(true);
+    fixture.detectChanges();
+    expect(query('[data-testid="utility-sheet"]')).toBeTruthy();
   });
 
-  it('exposes Feedback with the current origin and canonical external-link behavior', () => {
-    open();
+  it('exposes Feedback with the current origin and canonical external-link behavior', async () => {
+    await open();
 
-    const feedback = fixture.nativeElement.querySelector(
-      '[data-testid="utility-sheet-feedback"]',
-    ) as HTMLAnchorElement;
+    const feedback = query<HTMLAnchorElement>('[data-testid="utility-sheet-feedback"]');
     expect(feedback.textContent).toContain('Send feedback');
     expect(feedback.href).toBe('https://nostos.page/feedback?from=library');
     expect(feedback.target).toBe('_blank');
     expect(feedback.rel).toBe('noopener noreferrer');
 
-    const settings = fixture.nativeElement.querySelector(
-      '[data-testid="utility-sheet-settings"]',
-    ) as HTMLAnchorElement;
+    const settings = query<HTMLAnchorElement>('[data-testid="utility-sheet-settings"]');
     expect(settings.textContent).toContain('Settings');
     expect(settings.getAttribute('href')).toBe('/settings');
   });
 
-  it('closes the sheet, with no lingering overlay, when Feedback opens', () => {
-    open();
-    clickWithoutNavigating(
-      fixture.nativeElement.querySelector('[data-testid="utility-sheet-feedback"]'),
+  it('moves focus to the first sheet item on open', async () => {
+    await open();
+
+    expect(document.activeElement).toBe(
+      query('[data-testid="utility-sheet-feedback"]'),
     );
-    fixture.detectChanges();
-
-    expect(sheet.open()).toBe(false);
-    expect(fixture.nativeElement.querySelector('[data-testid="utility-sheet"]')).toBeNull();
-    expect(fixture.nativeElement.querySelector('.utility-sheet-scrim')).toBeNull();
   });
 
-  it('closes the sheet when Settings is chosen', () => {
-    open();
-    clickWithoutNavigating(
-      fixture.nativeElement.querySelector('[data-testid="utility-sheet-settings"]'),
+  it('wraps Tab forward and Shift+Tab backward inside the sheet', async () => {
+    await open();
+
+    const anchors = fixture.nativeElement.querySelectorAll(
+      '.cdk-focus-trap-anchor',
+    ) as NodeListOf<HTMLElement>;
+    expect(anchors.length).toBe(2);
+
+    // Tabbing off the last item lands on the end anchor, which redirects to the
+    // first item; Shift+Tab off the first lands on the start anchor and wraps
+    // back to the last.
+    anchors[1].focus();
+    expect(document.activeElement).toBe(
+      query('[data-testid="utility-sheet-feedback"]'),
     );
+
+    anchors[0].focus();
+    expect(document.activeElement).toBe(
+      query('[data-testid="utility-sheet-settings"]'),
+    );
+  });
+
+  it('closes the sheet, with no lingering overlay, when Feedback opens', async () => {
+    await open();
+    clickWithoutNavigating(query('[data-testid="utility-sheet-feedback"]'));
     fixture.detectChanges();
 
     expect(sheet.open()).toBe(false);
+    expect(query('[data-testid="utility-sheet"]')).toBeNull();
+    expect(query('.utility-sheet-scrim')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
   });
 
-  it('closes on a backdrop tap', () => {
-    open();
-    (fixture.nativeElement.querySelector('.utility-sheet-scrim') as HTMLElement).click();
+  it('closes the sheet when Settings is chosen and restores the trigger focus', async () => {
+    await open();
+    clickWithoutNavigating(query('[data-testid="utility-sheet-settings"]'));
     fixture.detectChanges();
 
     expect(sheet.open()).toBe(false);
+    expect(document.activeElement).toBe(trigger);
   });
 
-  it('closes on Escape', () => {
-    open();
+  it('closes on a backdrop tap and restores the trigger focus', async () => {
+    await open();
+    query<HTMLElement>('.utility-sheet-scrim').click();
+    fixture.detectChanges();
+
+    expect(sheet.open()).toBe(false);
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it('closes on Escape and restores the trigger focus', async () => {
+    await open();
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
     fixture.detectChanges();
 
     expect(sheet.open()).toBe(false);
+    expect(document.activeElement).toBe(trigger);
   });
 
-  it('closes when the route changes underneath it', async () => {
-    open();
+  it('closes when the route changes underneath it and restores the trigger focus', async () => {
+    await open();
     await TestBed.inject(Router).navigateByUrl('/settings');
     fixture.detectChanges();
 
     expect(sheet.open()).toBe(false);
+    expect(document.activeElement).toBe(trigger);
   });
 
   it('shows only Settings when the deployment has no feedback destination', async () => {

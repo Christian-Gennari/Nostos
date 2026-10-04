@@ -37,6 +37,7 @@ import { TextareaDirective } from '../ui/form-control/form-control.directive';
 import { readReaderReturnOrigin } from '../core/navigation/studio-reader-navigation';
 import { Theme, ThemeService } from '../core/services/theme.service';
 import { ToastService } from '../core/services/toast.service';
+import { FeedbackLinkService } from '../core/services/feedback-link.service';
 
 /** Longest quote a selection surface renders (#657); the full text is still saved. */
 export const SELECTION_PREVIEW_MAX = 320;
@@ -171,6 +172,13 @@ export class ReaderShell implements OnInit, OnDestroy {
 
   private themeService = inject(ThemeService);
   private toast = inject(ToastService);
+
+  /**
+   * The Cloud feedback destination for the Reader (`?from=reader`), or null on
+   * SelfHosted. The Reader is its own immersive shell, so it owns this utility
+   * entry rather than the workspace dock.
+   */
+  readonly feedbackUrl = inject(FeedbackLinkService).url;
 
   /** View settings panel (EPUB and PDF) toggled by the Aa control. */
   typoOpen = signal(false);

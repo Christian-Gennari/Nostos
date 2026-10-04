@@ -131,6 +131,10 @@ describe('App shell utility area', () => {
     }).compileComponents();
   });
 
+  afterEach(() => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1024 });
+  });
+
   it('keeps Send feedback in the shell with Ask Nostos disabled and enabled', async () => {
     const fixture = TestBed.createComponent(App);
     await TestBed.inject(Router).navigateByUrl('/library');
@@ -153,6 +157,29 @@ describe('App shell utility area', () => {
     fixture.detectChanges();
 
     expect(fixture.nativeElement.querySelector('[data-testid="assistant-trigger"]')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('[data-testid="dock-feedback"]')).toBeTruthy();
+  });
+
+  it('closes the More sheet and its scrim when the viewport crosses to wide', async () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 });
+    const fixture = TestBed.createComponent(App);
+    await TestBed.inject(Router).navigateByUrl('/library');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    (fixture.nativeElement.querySelector('[data-testid="dock-more"]') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-testid="utility-sheet"]')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('.utility-sheet-scrim')).toBeTruthy();
+
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1280 });
+    window.dispatchEvent(new Event('resize'));
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="utility-sheet"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('.utility-sheet-scrim')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="dock-more"]')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="dock-feedback"]')).toBeTruthy();
   });
 });

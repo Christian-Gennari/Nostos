@@ -401,7 +401,12 @@ export class AppDockComponent {
 
   @HostListener('window:resize')
   onResize(): void {
-    this.isNarrow.set(isNarrowViewport());
+    const narrow = isNarrowViewport();
+    this.isNarrow.set(narrow);
+    // Crossing to the wide shell removes the More trigger, so the narrow sheet
+    // must not survive the breakpoint. CDK's trap restores focus only if the
+    // trigger still exists; a detached trigger is a safe no-op.
+    if (!narrow) this.sheet.close();
     this.movePill();
   }
 

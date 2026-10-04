@@ -338,6 +338,13 @@
   border-color: var(--primary-fill);
 }
 
+/* The feedback utility is an anchor, not a button, so it opts into the shared
+   focus ring explicitly (all: unset on .icon-btn drops the UA outline). */
+.reader-feedback:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
 .reader-load-error {
   margin: auto;
   width: min(32rem, calc(100% - 2rem));

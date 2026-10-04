@@ -1,5 +1,6 @@
 import { Component, HostListener, inject } from '@angular/core';
 import { NavigationEnd, Router, RouterLink } from '@angular/router';
+import { A11yModule } from '@angular/cdk/a11y';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { filter } from 'rxjs';
 
@@ -19,7 +20,7 @@ import { UtilitySheetService } from './utility-sheet.service';
 @Component({
   selector: 'app-utility-sheet',
   standalone: true,
-  imports: [RouterLink, NostosIconComponent],
+  imports: [RouterLink, NostosIconComponent, A11yModule],
   template: `
     @if (sheet.open()) {
       <div class="utility-sheet-scrim" (click)="sheet.close()" aria-hidden="true"></div>
@@ -28,6 +29,8 @@ import { UtilitySheetService } from './utility-sheet.service';
         role="dialog"
         aria-modal="true"
         aria-label="More"
+        [cdkTrapFocus]="true"
+        [cdkTrapFocusAutoCapture]="true"
         data-testid="utility-sheet"
       >
         @if (feedbackUrl(); as feedbackHref) {
@@ -37,6 +40,7 @@ import { UtilitySheetService } from './utility-sheet.service';
             target="_blank"
             rel="noopener noreferrer"
             (click)="sheet.close()"
+            cdkFocusInitial
             data-testid="utility-sheet-feedback"
           >
             <nostos-icon name="paper-plane-tilt" [size]="18" weight="light"></nostos-icon>

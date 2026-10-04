@@ -1,7 +1,7 @@
 import { Component } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
-import { of } from 'rxjs';
+import { Subject, of } from 'rxjs';
 
 import { AppDockComponent } from './app-dock.component';
 import { DeploymentCapabilitiesService } from '../../core/services/deployment-capabilities.service';
@@ -156,5 +156,45 @@ describe('AppDockComponent', () => {
     more.click();
     fixture.detectChanges();
     expect(sheet.open()).toBe(false);
+  });
+
+  it('adopts the Cloud utility when capabilities resolve late', () => {
+    const pending = new Subject<DeploymentCapabilities>();
+    TestBed.overrideProvider(DeploymentCapabilitiesService, {
+      useValue: { get: () => pending.asObservable() },
+    });
+
+    const fixture = render(390);
+
+    // Before the answer, the shipped SelfHosted shape stands (no guessed URL).
+    expect(fixture.nativeElement.querySelector('[data-testid="dock-more"]')).toBeNull();
+    const labels = () =>
+      Array.from<Element>(fixture.nativeElement.querySelectorAll('.dock-item .label')).map(
+        (label) => label.textContent?.trim(),
+      );
+    expect(labels()).toEqual(['Library', 'Brain', 'Studio', 'Settings']);
+
+    pending.next(cloudCapabilities);
+    fixture.detectChanges();
+
+    expect(labels()).toEqual(['Library', 'Brain', 'Studio', 'More']);
+    expect(fixture.nativeElement.querySelector('[data-testid="dock-more"]')).toBeTruthy();
+  });
+
+  it('closes the More sheet when the viewport crosses to the wide shell', () => {
+    const fixture = render(390);
+    const sheet = TestBed.inject(UtilitySheetService);
+
+    (fixture.nativeElement.querySelector('[data-testid="dock-more"]') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(sheet.open()).toBe(true);
+
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1280 });
+    window.dispatchEvent(new Event('resize'));
+    fixture.detectChanges();
+
+    expect(sheet.open()).toBe(false);
+    expect(fixture.nativeElement.querySelector('[data-testid="dock-more"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="dock-feedback"]')).toBeTruthy();
   });
 });
