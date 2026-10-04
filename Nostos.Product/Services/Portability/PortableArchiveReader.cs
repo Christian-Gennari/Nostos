@@ -431,6 +431,12 @@ internal sealed class PortableArchiveReader
                     .ConfigureAwait(false);
 
                 mediaBytesCompleted += total;
+                if (mediaBytesCompleted > PortableArchiveLimits.MaxUncompressedBytes)
+                {
+                    throw new PortableArchiveException(
+                        "archive_expands_too_large",
+                        "Portable archive declares too much uncompressed data.");
+                }
             }
 
             media.Add(new PortablePreparedMedia(descriptor, write.Reference));
