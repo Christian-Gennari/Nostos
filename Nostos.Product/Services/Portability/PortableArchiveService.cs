@@ -18,13 +18,6 @@ public sealed class PortableArchiveService(
     IBookTextIngestionScheduler? bookTextScheduler = null)
     : IPortableArchiveService
 {
-    private const int MaxArchiveEntries = 20_000;
-    private const long MaxManifestBytes = 4L * 1024 * 1024;
-    private const long MaxDataBytes = 64L * 1024 * 1024;
-    private const long MaxSingleEntryBytes = 16L * 1024 * 1024 * 1024;
-    private const long MaxArchiveBytes = 512L * 1024 * 1024 * 1024;
-    private const long MaxUncompressedBytes = 1024L * 1024 * 1024 * 1024;
-    private const double MaxCompressionRatio = 1000d;
     private const int CopyBufferSize = 128 * 1024;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -74,11 +67,11 @@ public sealed class PortableArchiveService(
             }
 
             var dataInfo = await DescribeFileAsync(dataPath, cancellationToken);
-            if (dataInfo.Length > MaxDataBytes)
+            if (dataInfo.Length > PortableArchiveLimits.MaxDataBytes)
             {
                 throw new PortableArchiveException(
                     "data_too_large",
-                    $"Portable relational data exceeds the {MaxDataBytes} byte v1 limit.");
+                    $"Portable relational data exceeds the {PortableArchiveLimits.MaxDataBytes} byte v1 limit.");
             }
 
             var media = new List<PortableArchiveMediaEntry>();
@@ -622,7 +615,7 @@ public sealed class PortableArchiveService(
         var copied = await CopyAndHashAsync(
             opened.Content,
             target,
-            MaxSingleEntryBytes,
+            PortableArchiveLimits.MaxSingleEntryBytes,
             ct);
 
         if (copied.Length != opened.Info.Length)
@@ -664,11 +657,11 @@ public sealed class PortableArchiveService(
                 break;
 
             total = checked(total + read);
-            if (total > MaxArchiveBytes)
+            if (total > PortableArchiveLimits.MaxArchiveBytes)
             {
                 throw new PortableArchiveException(
                     "archive_too_large",
-                    $"Portable archive exceeds the {MaxArchiveBytes} byte v1 compressed-size limit.");
+                    $"Portable archive exceeds the {PortableArchiveLimits.MaxArchiveBytes} byte v1 compressed-size limit.");
             }
 
             await target.WriteAsync(buffer.AsMemory(0, read), ct);
@@ -698,11 +691,11 @@ public sealed class PortableArchiveService(
 
         using (archive)
         {
-            if (archive.Entries.Count > MaxArchiveEntries)
+            if (archive.Entries.Count > PortableArchiveLimits.MaxArchiveEntries)
             {
                 throw new PortableArchiveException(
                     "too_many_entries",
-                    $"Portable archive contains more than {MaxArchiveEntries} entries.");
+                    $"Portable archive contains more than {PortableArchiveLimits.MaxArchiveEntries} entries.");
             }
 
             var entries = new Dictionary<string, ZipArchiveEntry>(
@@ -726,7 +719,7 @@ public sealed class PortableArchiveService(
                         $"Portable archive contains duplicate path '{path}'.");
                 }
 
-                if (entry.Length < 0 || entry.Length > MaxSingleEntryBytes)
+                if (entry.Length < 0 || entry.Length > PortableArchiveLimits.MaxSingleEntryBytes)
                 {
                     throw new PortableArchiveException(
                         "entry_too_large",
@@ -734,7 +727,7 @@ public sealed class PortableArchiveService(
                 }
 
                 totalUncompressed = checked(totalUncompressed + entry.Length);
-                if (totalUncompressed > MaxUncompressedBytes)
+                if (totalUncompressed > PortableArchiveLimits.MaxUncompressedBytes)
                 {
                     throw new PortableArchiveException(
                         "archive_expands_too_large",
@@ -744,7 +737,7 @@ public sealed class PortableArchiveService(
                 if (entry.Length > 1024 * 1024)
                 {
                     if (entry.CompressedLength <= 0
-                        || entry.Length / (double)entry.CompressedLength > MaxCompressionRatio)
+                        || entry.Length / (double)entry.CompressedLength > PortableArchiveLimits.MaxCompressionRatio)
                     {
                         throw new PortableArchiveException(
                             "suspicious_compression",
@@ -764,7 +757,7 @@ public sealed class PortableArchiveService(
 
             var manifestBytes = await ReadEntryBytesAsync(
                 manifestEntry,
-                MaxManifestBytes,
+                PortableArchiveLimits.MaxManifestBytes,
                 ct);
             var manifest = Deserialize<PortableArchiveManifest>(
                 manifestBytes,
@@ -787,7 +780,7 @@ public sealed class PortableArchiveService(
                     "Portable archive relational payload length does not match its manifest.");
             }
 
-            var dataBytes = await ReadEntryBytesAsync(dataEntry, MaxDataBytes, ct);
+            var dataBytes = await ReadEntryBytesAsync(dataEntry, PortableArchiveLimits.MaxDataBytes, ct);
             var dataHash = Sha256(dataBytes);
             if (!FixedHashEquals(dataHash, manifest.Data.Sha256))
             {
@@ -948,7 +941,7 @@ public sealed class PortableArchiveService(
                 "Portable archive relational payload path is not canonical.");
         }
 
-        if (manifest.Data.Length < 0 || manifest.Data.Length > MaxDataBytes)
+        if (manifest.Data.Length < 0 || manifest.Data.Length > PortableArchiveLimits.MaxDataBytes)
         {
             throw new PortableArchiveException(
                 "data_too_large",
@@ -1045,7 +1038,7 @@ public sealed class PortableArchiveService(
                     $"Portable media path '{media.Path}' is not canonical.");
             }
 
-            if (media.Length < 0 || media.Length > MaxSingleEntryBytes)
+            if (media.Length < 0 || media.Length > PortableArchiveLimits.MaxSingleEntryBytes)
             {
                 throw new PortableArchiveException(
                     "entry_too_large",
@@ -2102,7 +2095,7 @@ public sealed class PortableArchiveService(
             FileShare.Read,
             CopyBufferSize,
             FileOptions.Asynchronous | FileOptions.SequentialScan);
-        return await HashStreamAsync(stream, MaxDataBytes, ct);
+        return await HashStreamAsync(stream, PortableArchiveLimits.MaxDataBytes, ct);
     }
 
     private static async Task<(long Length, string Sha256)> CopyAndHashAsync(
