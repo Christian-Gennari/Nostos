@@ -712,20 +712,22 @@ public abstract class PortableImportStagingContractTests
         var id = await staging.CreateAsync();
         var staged = await StageCompleteImportAsync(staging, id);
 
+        // The normative contract requires a typed conflict for every
+        // descriptor-versus-staged-state disagreement, not an integrity mismatch.
         var wrongMediaCount = staged.Metadata with { MediaFiles = staged.Metadata.MediaFiles + 1 };
         var countFailure = await Assert.ThrowsAsync<PortableStagingException>(
             () => staging.CommitPreparedImportAsync(id, wrongMediaCount));
-        countFailure.Code.Should().Be(PortableStagingException.IntegrityMismatchCode);
+        countFailure.Code.Should().Be(PortableStagingException.ConflictCode);
 
         var wrongDataHash = staged.Metadata with { DataSha256 = new string('0', 64) };
         var dataFailure = await Assert.ThrowsAsync<PortableStagingException>(
             () => staging.CommitPreparedImportAsync(id, wrongDataHash));
-        dataFailure.Code.Should().Be(PortableStagingException.IntegrityMismatchCode);
+        dataFailure.Code.Should().Be(PortableStagingException.ConflictCode);
 
         var wrongMediaBytes = staged.Metadata with { MediaBytes = staged.Metadata.MediaBytes + 1 };
         var mediaBytesFailure = await Assert.ThrowsAsync<PortableStagingException>(
             () => staging.CommitPreparedImportAsync(id, wrongMediaBytes));
-        mediaBytesFailure.Code.Should().Be(PortableStagingException.IntegrityMismatchCode);
+        mediaBytesFailure.Code.Should().Be(PortableStagingException.ConflictCode);
 
         var wrongCounts = staged.Metadata with
         {
@@ -733,7 +735,13 @@ public abstract class PortableImportStagingContractTests
         };
         var countsFailure = await Assert.ThrowsAsync<PortableStagingException>(
             () => staging.CommitPreparedImportAsync(id, wrongCounts));
-        countsFailure.Code.Should().Be(PortableStagingException.IntegrityMismatchCode);
+        countsFailure.Code.Should().Be(PortableStagingException.ConflictCode);
+
+        // A descriptor for another staging area is likewise a conflict.
+        var wrongStaging = staged.Metadata with { StagingId = new PortableStagingId(Guid.NewGuid()) };
+        var stagingFailure = await Assert.ThrowsAsync<PortableStagingException>(
+            () => staging.CommitPreparedImportAsync(id, wrongStaging));
+        stagingFailure.Code.Should().Be(PortableStagingException.ConflictCode);
 
         await staging.CommitPreparedImportAsync(id, staged.Metadata);
     }

@@ -100,6 +100,12 @@ builder.Services.AddSingleton(new TransferPathResolver(transferRootPath));
 builder.Services.AddSingleton<ITransferVolume>(new DriveInfoTransferVolume(transferRootPath));
 builder.Services.AddScoped<ITransferStorageCapacity, TransferStorageCapacity>();
 
+// Durable prepared-import staging for restart-survivable migration jobs
+// (issue #679, Slice 4). The immediate import endpoint keeps constructing its
+// process-local scratch staging directly; this registration is what a migration
+// worker resolves.
+builder.Services.AddScoped<IPortableImportStaging, FilePortableImportStaging>();
+
 // --- MCP (Model Context Protocol) Streamable HTTP foundation (Task 9A) ---
 // Opt-in and disabled by default. When enabled, the bearer token is resolved
 // ONLY from the configured environment variable at startup; a missing token
