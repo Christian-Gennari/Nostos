@@ -1,4 +1,5 @@
 using Nostos.Backend.Configuration;
+using Nostos.Backend.Endpoints;
 using Nostos.Backend.Services;
 using Nostos.Backend.Services.Portability;
 
@@ -14,6 +15,8 @@ public sealed class LibraryMaintenanceControl;
 /// </summary>
 public sealed class LibraryMaintenanceMiddleware(RequestDelegate next)
 {
+    private const string MigrationBasePath = "/api/portability/migration";
+
     public async Task InvokeAsync(HttpContext context, ILibraryMaintenanceCoordinator maintenance, McpOptions mcp)
     {
         var path = context.Request.Path;
@@ -26,11 +29,12 @@ public sealed class LibraryMaintenanceMiddleware(RequestDelegate next)
             return;
         }
 
+        var migrationPath = path.StartsWithSegments(MigrationBasePath);
         var control = context.GetEndpoint()?.Metadata.GetMetadata<LibraryMaintenanceControl>() is not null;
         await using var lease = control ? null : maintenance.TryEnterOperation();
         if ((control && maintenance.IsMaintenanceActive) || (!control && lease is null))
         {
-            await WriteBusyAsync(context);
+            await WriteBusyAsync(context, migrationPath);
             return;
         }
 
@@ -44,16 +48,28 @@ public sealed class LibraryMaintenanceMiddleware(RequestDelegate next)
             try { await next(context); }
             catch (MigrationActivationException ex) when (ex.Code == MigrationActivationErrorCodes.Busy && !context.Response.HasStarted)
             {
-                await WriteBusyAsync(context);
+                await WriteBusyAsync(context, migrationPath);
             }
         }
         finally { context.RequestServices = previousServices; }
     }
 
-    private static Task WriteBusyAsync(HttpContext context)
+    // Every other route keeps the historical { code, error } body; migration
+    // routes use the migration transport contract { error, message } with the
+    // stable code in `error`, so the frontend adapter decodes one shape.
+    private static Task WriteBusyAsync(HttpContext context, bool migrationPath)
     {
         context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
         context.Response.Headers.RetryAfter = "5";
+        if (migrationPath)
+        {
+            return context.Response.WriteAsJsonAsync(
+                new MigrationErrorResponse(
+                    "migration_activation_busy",
+                    "The library is in maintenance. Try again later."),
+                context.RequestAborted);
+        }
+
         return context.Response.WriteAsJsonAsync(new
         {
             code = MigrationActivationErrorCodes.Busy,

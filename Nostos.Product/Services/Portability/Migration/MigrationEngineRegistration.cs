@@ -9,6 +9,9 @@ public static class MigrationEngineRegistration
     public static IServiceCollection AddSelfHostedMigrationEngine(this IServiceCollection services)
     {
         services.TryAddSingleton(TimeProvider.System);
+        // Job creation refuses directions without a real phase handler. Slices
+        // 9/10 replace this registration together with the unavailable handler.
+        services.TryAddSingleton<IMigrationPhaseAvailability>(MigrationPhaseAvailabilityNone.Instance);
         services.AddSingleton<MigrationJobCancellationRegistry>();
         services.AddSingleton<MigrationProcessingSlots>();
         services.AddSingleton<MigrationFileMutex>();
@@ -19,6 +22,11 @@ public static class MigrationEngineRegistration
         services.AddScoped<SelfHostedMigrationTransferService>();
         services.AddScoped<IMigrationTransferService>(s => s.GetRequiredService<SelfHostedMigrationTransferService>());
         services.AddScoped<ISelfHostedMigrationUploads>(s => s.GetRequiredService<SelfHostedMigrationTransferService>());
+        // Slice 8 transport orchestration. Job creation refuses directions whose
+        // phase handler is not wired (Slices 9/10 replace the unavailable handler
+        // and the availability registration together).
+        services.AddScoped<IMigrationPreflightService, SelfHostedMigrationPreflightService>();
+        services.AddScoped<SelfHostedMigrationJobService>();
         services.AddScoped<IMigrationPhaseHandler, ArchiveIntegrationNotYetAvailableHandler>();
         services.AddScoped<MigrationJobProcessor>();
         services.AddHostedService(s => new MigrationJobWorker(s.GetRequiredService<IServiceScopeFactory>(),

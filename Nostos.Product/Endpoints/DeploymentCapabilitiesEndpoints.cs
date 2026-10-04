@@ -1,4 +1,6 @@
 using Nostos.Backend.Configuration;
+using Nostos.Backend.Services.Portability;
+using Nostos.Backend.Services.Portability.Migration;
 
 namespace Nostos.Backend.Endpoints;
 
@@ -17,13 +19,15 @@ public static class DeploymentCapabilitiesEndpoints
     public static IEndpointRouteBuilder MapDeploymentCapabilitiesEndpoints(
         this IEndpointRouteBuilder routes)
     {
-        routes.MapGet(Route, (DeploymentDescriptor deployment) =>
-            Results.Ok(ToResponse(deployment)))
+        routes.MapGet(Route, (DeploymentDescriptor deployment, IServiceProvider services) =>
+            Results.Ok(ToResponse(deployment, services.GetService<IMigrationPhaseAvailability>())))
             .AllowAnonymous();
         return routes;
     }
 
-    public static DeploymentCapabilitiesResponse ToResponse(DeploymentDescriptor deployment) =>
+    public static DeploymentCapabilitiesResponse ToResponse(
+        DeploymentDescriptor deployment,
+        IMigrationPhaseAvailability? migrationAvailability = null) =>
         new(
             DeploymentMode: deployment.Mode.ToString(),
             RequiresAuthentication: deployment.Capabilities.RequiresAuthentication,
@@ -36,7 +40,15 @@ public static class DeploymentCapabilitiesEndpoints
             SupportsEreaderAccess: deployment.Capabilities.SupportsEreaderAccess,
             UsageMeteringAvailable: deployment.Capabilities.UsageMeteringAvailable,
             AccountManagementUrl: deployment.Capabilities.AccountManagementUrl,
-            FeedbackUrl: deployment.Capabilities.FeedbackUrl);
+            FeedbackUrl: deployment.Capabilities.FeedbackUrl,
+            // Library migration is advertised only while this host can actually
+            // finish a job for at least one direction; a missing phase handler
+            // also makes job creation refuse up front. Safe activation (#681)
+            // is not available yet on any host.
+            SupportsLibraryMigration: migrationAvailability is not null
+                && (migrationAvailability.IsAvailable(MigrationDirection.Import)
+                    || migrationAvailability.IsAvailable(MigrationDirection.Export)),
+            SupportsSafeActivation: false);
 }
 
 public sealed record DeploymentCapabilitiesResponse(
@@ -51,4 +63,6 @@ public sealed record DeploymentCapabilitiesResponse(
     bool SupportsEreaderAccess,
     bool UsageMeteringAvailable,
     string? AccountManagementUrl,
-    string? FeedbackUrl);
+    string? FeedbackUrl,
+    bool SupportsLibraryMigration = false,
+    bool SupportsSafeActivation = false);

@@ -75,6 +75,8 @@ export type MigrationErrorCode =
   | 'migration_storage_exhausted'
   | 'migration_cannot_cancel'
   | 'migration_not_retryable'
+  | 'migration_activation_busy'
+  | 'migration_storage_contended'
   | 'migration_export_not_available'
   | 'migration_invalid_request'
   | 'migration_destination_conflict'

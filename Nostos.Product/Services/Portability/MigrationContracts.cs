@@ -1,6 +1,7 @@
 // Nostos.Product/Services/Portability/MigrationContracts.cs
 
 using System.Collections.Frozen;
+using System.Text.Json.Serialization;
 
 namespace Nostos.Backend.Services.Portability;
 
@@ -46,12 +47,14 @@ public static class MigrationContractLimits
         (isFinalChunk ? chunkBytes <= chunkSize : chunkBytes == chunkSize);
 }
 
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum MigrationDirection
 {
     Import = 0,
     Export = 1,
 }
 
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum MigrationJobState
 {
     Pending = 0,
@@ -186,6 +189,7 @@ public static class MigrationJobTransitions
         states.ToFrozenSet();
 }
 
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum MigrationPreflightDecision
 {
     AllowedEmpty = 0,
@@ -196,12 +200,14 @@ public enum MigrationPreflightDecision
     RejectedOperationalBackupNotPortable = 5,
 }
 
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum MigrationDestinationStatus
 {
     Empty = 0,
     Populated = 1,
 }
 
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum MigrationSessionPurpose
 {
     Import = 0,
@@ -216,6 +222,7 @@ public enum MigrationSessionPurpose
     RecoveryRetention = 2,
 }
 
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum MigrationSessionState
 {
     Created = 0,
@@ -225,6 +232,7 @@ public enum MigrationSessionState
     Cancelled = 4,
 }
 
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum MigrationProgressPhase
 {
     Pending = 0,
@@ -236,6 +244,7 @@ public enum MigrationProgressPhase
     Completed = 6,
 }
 
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum MigrationRecoveryStatus
 {
     NotRequired = 0,
