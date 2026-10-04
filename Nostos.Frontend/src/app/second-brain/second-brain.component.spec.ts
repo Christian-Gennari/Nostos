@@ -337,6 +337,41 @@ describe('SecondBrain', () => {
       expect(tabs.every((tab) => !tab.classList.contains('nostos-button'))).toBe(true);
     });
 
+    it('keeps the desktop view-mode slot mounted but inert while browsing Notes', () => {
+      fixture.detectChanges();
+
+      const topicsControl = fixture.nativeElement.querySelector(
+        '.brain-header .view-mode-control',
+      ) as HTMLElement;
+      expect(topicsControl).toBeTruthy();
+      expect(topicsControl.classList.contains('view-mode-control--inactive')).toBe(false);
+      expect(topicsControl.hasAttribute('aria-hidden')).toBe(false);
+      expect(topicsControl.hasAttribute('inert')).toBe(false);
+
+      component.setViewMode('notes');
+      browse([]);
+
+      const notesControl = fixture.nativeElement.querySelector(
+        '.brain-header .view-mode-control',
+      ) as HTMLElement;
+      expect(notesControl).toBe(topicsControl);
+      expect(notesControl.classList.contains('view-mode-control--inactive')).toBe(true);
+      expect(notesControl.getAttribute('aria-hidden')).toBe('true');
+      expect(notesControl.hasAttribute('inert')).toBe(true);
+
+      const hiddenOptions = [...notesControl.querySelectorAll('.vt-opt')] as HTMLButtonElement[];
+      expect(hiddenOptions).toHaveLength(2);
+      expect(hiddenOptions[0].getAttribute('aria-pressed')).toBe('true');
+      expect(hiddenOptions[1].getAttribute('aria-pressed')).toBe('false');
+
+      component.setViewMode('list');
+      fixture.detectChanges();
+
+      expect(notesControl.classList.contains('view-mode-control--inactive')).toBe(false);
+      expect(notesControl.hasAttribute('aria-hidden')).toBe(false);
+      expect(notesControl.hasAttribute('inert')).toBe(false);
+    });
+
     it('opens a bounded all-notes view and finds linked and unlinked material without a search', () => {
       fixture.detectChanges();
       expect(http.match((request) => request.url === '/api/notes')).toEqual([]);
