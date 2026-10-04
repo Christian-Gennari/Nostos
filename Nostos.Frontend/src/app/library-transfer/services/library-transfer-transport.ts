@@ -3,8 +3,8 @@
  *
  * Components and the coordinator only ever talk to this interface. The
  * SelfHosted HTTP adapter (#680 slice B7) and the private Cloud adapter
- * implement the same contract; the in-repo mock below implements it today so
- * B1-B3 can be built and tested before #679's endpoints merge.
+ * implement the same contract. Tests provide the in-memory mock under
+ * `testing/`; no production module imports it.
  */
 
 import { InjectionToken } from '@angular/core';
