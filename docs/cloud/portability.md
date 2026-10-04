@@ -115,6 +115,45 @@ Import validates the archive structure, versions, checksums, sizes, IDs, relatio
 
 These limits protect archive validation and extraction. They do **not** override the current HTTP request limit (4 GiB Kestrel body limit).
 
+## Measured resource bounds
+
+The export and prepared-import paths were measured on a generated library whose media total exceeds 4 GiB. No large archive is committed to the repository; the media is deterministic patterned data produced on demand by a synthetic `IBookAssetStorage`, and the SHA-256 of each entry is computed while the bytes are generated.
+
+Measured on one machine and one run:
+
+```text
+hardware:  AMD Ryzen 5 4600H, 12 logical cores, 14 GiB RAM, NVMe storage
+OS:        Ubuntu 24.04.4 LTS (X64)
+runtime:   .NET 10.0.12
+library:   97 media entries = 1 x 4,563,402,752-byte entry + 96 x 1 MiB entries
+           (4,664,066,048 media bytes total)
+```
+
+| Metric | Export | Import preparation |
+|---|---:|---:|
+| archive bytes | 4,664,097,715 | 4,664,097,715 |
+| explicit operation buffer high-water | 17,825,792 B (17 MiB) | 17,842,176 B (17 MiB) |
+| buffer cap | 67,108,864 B (64 MiB) | 67,108,864 B (64 MiB) |
+| physical synchronous sink writes | 0 | 0 (all source access is `ReadAtAsync`) |
+| engine scratch | 0 bytes | 0 bytes |
+| managed heap growth | 1,484,328 B | 387,216 B |
+| process working-set growth (sampled) | 52,957,184 B | 72,216,576 B |
+| duration | 10.75 s | 12.26 s |
+| throughput | ~414 MiB/s | ~363 MiB/s |
+
+The measured export budget high-water is the capture sink's 16 MiB synchronous-write buffer plus the 1 MiB copy buffer. A writer-only stress with the same entry inventory through `BoundedSynchronousCaptureSink` recorded a capture pending high-water of 7,750 bytes and a maximum single synchronous framework write of 7,734 bytes — the 16 MiB cap exists for a future runtime change and is not approached by current `System.IO.Compression` finalization. The import source observed 4,551 range reads, a maximum single request of 1,048,576 bytes, and 4,765,916,863 total bytes read (about 1.02x the archive size); the archive is never fetched whole and media is never buffered whole. The archive carried a ZIP64 end-of-central-directory record, and import preparation read it through the ZIP64 tail path.
+
+The table is one representative run of four on the same machine; durations varied between about 11 s and 38 s with machine load, while the recorded high-water, call-count and scratch values were identical on every run.
+
+How it was measured: export streamed to a counting, non-seekable, sync-forbidding sink that hashes and discards every byte. Prepared import ran over `FilePortableArchiveSource` (which reads with `RandomAccess.ReadAsync`) into a test staging provider that verifies each media item's declared length and SHA-256 and discards the bytes. The import measurement served the same archive from one test-owned temporary file (about 4.35 GiB, deleted afterwards); the engine itself wrote no scratch. The opt-in test is `PortableArchiveLargeMeasurementTests.Export_and_prepare_of_greater_than_4gib_archive_keep_bounded_memory_and_zero_scratch`, enabled with `NOSTOS_RUN_LARGE_PORTABILITY_TESTS=1`. A scaled 96 MiB variant runs in ordinary CI continuously.
+
+What this does **not** claim or measure:
+
+- It is not a process RSS ceiling. The 64 MiB contract covers Nostos-owned archive-I/O buffers; the CLR, EF Core and `ZipArchive`/`DeflateStream` runtime buffers are outside it.
+- The legacy `POST /api/portability/import` endpoint is still limited by the 4 GiB Kestrel request-body cap and still stages a full local copy of the archive and its media in scratch. Only the range-backed prepared-import path measured here avoids that copy; large hosted transfers belong to the chunked migration protocol (epic #676).
+- Remote/object-storage `IPortableArchiveSource` implementations, hosted providers, compression-heavy libraries, concurrent archive operations, and the EF object graph at the 20,000-entry limit were not measured.
+- The real-Kestrel regression proves the shipped endpoint streams the archive without synchronous response IO; it does not measure network throughput.
+
 ## Archive hardening
 
 Before writing imported library data, the reader rejects malformed manifests, unsupported format or data versions, duplicate or unexpected ZIP entries, unsafe paths, excessive entry counts or sizes, suspicious compression ratios, empty or duplicate IDs, invalid relationships, hierarchy cycles, missing referenced media, and data or media length/SHA-256 mismatches.
@@ -178,11 +217,11 @@ Preflight returns `AllowedReplacementRequired`.
 
 If the user explicitly confirms replacement (`confirmReplacement: true`):
 
-1. The preflight destination revision is verified.
-2. A mandatory recovery snapshot of the existing portable library is created via `IMigrationRecoveryService.CreateRecoverySnapshotAsync`. Client requests cannot bypass recovery copy creation.
-3. The incoming migration is validated and staging prepared via `IMigrationTransferService.PrepareActivationAsync`.
-4. The destination revision is verified again immediately before entering activation.
-5. Activation atomically replaces the destination portable state.
+1. The incoming migration is validated and durable staging prepared via `IMigrationTransferService.PrepareActivationAsync`.
+2. `MigrationActivateRequest` binds explicit confirmation to the job's exact preflight destination revision. A preliminary revision mismatch rejects admission.
+3. The activation worker drains library readers and writers under exclusive maintenance and rechecks that same revision. It never silently updates the job to a newer revision.
+4. A mandatory recovery generation of the existing populated portable library is retained via the recovery subsystem. Client requests cannot bypass recovery creation.
+5. A verified candidate database and media root replace the destination through the durable cutover protocol below. This protocol is planned; the contracts and maintenance barrier are implemented independently of the switch engine.
 
 There is **no implicit merge mode** in the migration contract.
 
@@ -325,6 +364,91 @@ When replacing a populated destination, `IMigrationRecoveryService.CreateRecover
 - **Retention duration:** 7 days (`RecoveryRetentionDays = 7`).
 - **Storage accounting:** Retained recovery snapshots count against host storage accounting until expired and purged via `DeleteExpiredRecoverySnapshotsAsync`.
 - **Operational backups distinction:** Host operational backups are local SQLite/infrastructure dumps. Preflight explicitly rejects operational backups (`RejectedOperationalBackupNotPortable`).
+
+### SelfHosted activation foundation (#681, Slices 1–2)
+
+The provider-neutral activation/recovery DTOs are `MigrationActivateRequest`,
+`MigrationRecoveryRestoreRequest`, and `MigrationRecoveryStatusResponse`. Public
+DTOs expose no local paths or provider/account identifiers. `IMigrationActivationService`
+consumes an owned job already admitted durably to `Activating`; its implementation
+and HTTP activation routes belong to later slices. Recovery continues to use
+`IMigrationRecoveryService` and `MigrationRecoverySnapshot`.
+
+`MigrationActivationAdmission` implements pure confirmation and revision rules.
+An empty destination may activate without confirmation; a populated destination
+requires confirmation. Requested, stored, and current revisions must all match
+ordinally. Recovery restore always requires confirmation bound to the current
+revision. These checks do not replace ownership, staging integrity, capacity, or
+worker lease checks in the later orchestrator.
+
+The existing direction-aware frozen job transition table remains authoritative:
+imports take `ReadyToActivate -> Activating -> Completed`, while exports never
+activate. User cancellation ends at `Activating`. This cancellation boundary is
+distinct from the later durable filesystem commit. The executable journal model
+allows a completed job outcome only with `Committed`; a failed activation outcome
+requires untouched live paths or a completed rollback. A cutover failure must
+restore the original generation before releasing exclusive maintenance.
+
+The filesystem journal and recovery manifest are version 1 documents outside the
+active SQLite database. Their checksum envelope contains `Version`, `PayloadJson`,
+and a lowercase SHA-256 over the exact UTF-8 payload JSON. Unknown payload fields
+round-trip; unsupported versions, unknown phases, missing required journal fields,
+and checksum mismatches fail closed. Checksums detect corruption and do not
+authenticate documents. Journals contain generated job/operation identifiers,
+phase, opaque destination revision, retention intent and timestamp. Recovery
+manifests contain the matching generation IDs, counts, DB/media lengths and hashes,
+status and seven-day expiry. They contain no user content or absolute paths.
+
+| Durable journal phase | Startup decision |
+| --- | --- |
+| `CandidatePrepared`, `ExclusiveEntered`, `DatabaseCheckpointed` | Nothing; original paths untouched |
+| `CutoverPrepared`, `PreviousMediaRetained`, `PreviousDatabaseRetained`, `CandidateMediaActivated`, `CandidateDatabaseActivated`, `PostActivationVerified`, `RollingBack` | Roll back original generation |
+| `Committed` | Roll forward verified candidate; finalize job if necessary |
+| `RolledBack` | Nothing; original generation already restored |
+| Unknown/unsupported/corrupt | Fail closed |
+
+Each phase is durable intent for the next rename, so rollback must also handle a
+rename that finished before the following phase write. File existence validates
+the chosen recovery action; it cannot determine which generation wins. Slice 3
+implements temp-write/flush/rename journal persistence and the actual startup
+reconciler. Slices 1–2 contain the model and pure decisions only.
+
+SelfHosted now uses one singleton `ILibraryMaintenanceCoordinator`. HTTP operations
+take shared leases across their complete response/stream and request-scope
+disposal. REST, OPDS, MCP and database readiness traffic all participate. During
+drain/exclusivity new operations receive HTTP 503, stable code
+`migration_activation_busy`, and `Retry-After: 5`. Process liveness, static UI and
+the GET backup-progress endpoint remain available without opening the library.
+Migration status endpoints currently have no exemption: a later implementation
+must prove they avoid the active DB before adding one.
+
+Background acquisition, reconciliation, topic cleanup, receipt retention,
+book-text extraction/embedding/backfill and scheduled backup operations take
+shared leases before opening their work scopes. They quiesce at operation
+boundaries and resume when admission reopens. New background operations wait
+outside the gate; existing long operations or long-lived streams can make
+activation time out. `LibraryMaintenance:DrainTimeout` defaults to `00:00:30`,
+must be positive and at most ten minutes, and bounds drain acquisition. Timeout
+or cancellation releases admission without granting exclusivity. Contending
+exclusive attempts fail immediately; an acquired exclusive lease stays held
+until its owner disposes it, even if its cancellation token fires.
+
+`BackupSettingsProvider.IsInMaintenanceMode` projects this same coordinator.
+Its compatibility enter/exit methods own one reference-counted coordinator
+lease. Backup creation participates as shared work; local backup restore uses
+the exclusive drain barrier instead of a fixed delay. The restore HTTP endpoint
+delegates admission to the service so it never waits on its own request lease.
+The existing archive restore protocol remains operational backup functionality;
+it is not the migration cutover engine.
+
+The advisory maintenance marker is `.nostos-activation/maintenance.json` beside
+the configured database. Startup clears stale markers before bootstrap/workers
+and never reconstitutes process-local leases. An unresolved actionable or corrupt
+activation journal fails startup closed until Slice 3 reconciles it; this PR does
+not attempt a generation switch or rollback. No schema additions are needed:
+existing job fields hold state, recovery projection, destination revision and
+prepared staging facts. WAL checkpointing and SQLite pool lifecycle belong to
+Slice 5, rather than the maintenance coordinator.
 
 ---
 

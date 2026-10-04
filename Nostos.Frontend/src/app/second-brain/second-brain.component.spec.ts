@@ -337,6 +337,30 @@ describe('SecondBrain', () => {
       expect(tabs.every((tab) => !tab.classList.contains('nostos-button'))).toBe(true);
     });
 
+    it('keeps the list/map control scoped to Topics while Notes uses the shared toolbar', () => {
+      fixture.detectChanges();
+
+      const topicsControl = fixture.nativeElement.querySelector(
+        '.brain-header .view-mode-control',
+      ) as HTMLElement;
+      expect(topicsControl).toBeTruthy();
+
+      component.setViewMode('notes');
+      browse([]);
+
+      expect(fixture.nativeElement.querySelector('.brain-header .view-mode-control')).toBeNull();
+      const noteSearch = fixture.nativeElement.querySelector(
+        '#brain-all-notes-search',
+      ) as HTMLInputElement;
+      expect(noteSearch).toBeTruthy();
+      expect(noteSearch.placeholder).toBe('Search notes, quotes, books…');
+
+      component.setViewMode('list');
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('.brain-header .view-mode-control')).toBeTruthy();
+    });
+
     it('opens a bounded all-notes view and finds linked and unlinked material without a search', () => {
       fixture.detectChanges();
       expect(http.match((request) => request.url === '/api/notes')).toEqual([]);

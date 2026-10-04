@@ -317,6 +317,59 @@ test('the Brain index exposes a 44px search target', async ({ page }) => {
   ).toEqual([]);
 });
 
+test('Notes uses the full phone toolbar while Map keeps its return control', async ({ page }) => {
+  await page.goto(`${fixture.baseUrl}/second-brain`, { waitUntil: 'domcontentloaded' });
+  await page.locator('.brain-header').waitFor({ timeout: 30_000 });
+
+  await page.getByRole('button', { name: 'Notes', exact: true }).click();
+  const noteSearch = page.locator('#brain-all-notes-search');
+  await noteSearch.waitFor();
+
+  const portrait = await page.evaluate(() => {
+    const search = document.querySelector('#brain-all-notes-search') as HTMLElement | null;
+    return {
+      viewControlPresent: !!document.querySelector('.view-mode-control'),
+      search: search
+        ? {
+            width: Math.round(search.getBoundingClientRect().width),
+            height: Math.round(search.getBoundingClientRect().height),
+          }
+        : null,
+      overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    };
+  });
+
+  expect(portrait.viewControlPresent).toBe(false);
+  expect(portrait.search, 'Notes search must remain rendered on a phone').not.toBeNull();
+  expect(portrait.search!.width, 'Notes search should use the available tools-row width').toBeGreaterThan(250);
+  expect(portrait.search!.height).toBeGreaterThanOrEqual(MIN_TAP_TARGET);
+  expect(portrait.overflow, 'Notes must not create horizontal page overflow').toBeLessThanOrEqual(1);
+
+  // The Brain has a separate short-viewport treatment for landscape phones.
+  // Notes still has no meaningless list/map control there.
+  await page.setViewportSize({ width: 844, height: 390 });
+  await expect(page.locator('.view-mode-control')).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Topics', exact: true }).click();
+  const mapButton = page.getByRole('button', { name: 'Map view', exact: true });
+  await expect(mapButton).toBeVisible();
+  await mapButton.click();
+
+  // Map's compact phone header intentionally hides Notes/Topics, but the
+  // list/map control is the way back and must remain visible and operable.
+  const topicView = page.getByRole('button', { name: 'Topic view', exact: true });
+  await expect(topicView).toBeVisible();
+  await expect(page.locator('.brain-areas')).toBeHidden();
+
+  await topicView.click();
+  await expect(page.locator('.index-col')).toBeVisible();
+
+  const landscapeOverflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+  expect(landscapeOverflow, 'short-landscape Brain must not overflow horizontally').toBeLessThanOrEqual(1);
+});
+
 /**
  * Mobile parity for the view-mode toggle.
  *

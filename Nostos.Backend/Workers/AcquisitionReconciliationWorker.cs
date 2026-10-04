@@ -23,7 +23,8 @@ public sealed class AcquisitionReconciliationWorker(
     IWebHostEnvironment environment,
     IOptions<FileStorageOptions> storageOptions,
     IOptions<AcquisitionOptions> options,
-    ILogger<AcquisitionReconciliationWorker> logger) : IHostedService
+    ILogger<AcquisitionReconciliationWorker> logger,
+    ILibraryMaintenanceCoordinator? maintenance = null) : IHostedService
 {
     /// <summary>
     /// The exact StatusMessage written onto a book whose import a restart cut
@@ -55,6 +56,7 @@ public sealed class AcquisitionReconciliationWorker(
 
     public async Task ReconcileAsync(CancellationToken cancellationToken = default)
     {
+        await using var operation = maintenance is null ? null : await maintenance.EnterOperationAsync(cancellationToken);
         // 1. Clean up the acquisition working/staging root directory if it exists.
         var localBooksRoot = FileStorageOptions.ResolveBooksRoot(
             environment.ContentRootPath,

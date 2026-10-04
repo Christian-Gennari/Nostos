@@ -1,5 +1,6 @@
 using Nostos.Backend.Configuration;
 using Nostos.Backend.Services.Library;
+using Nostos.Backend.Services;
 
 namespace Nostos.Backend.Workers;
 
@@ -13,7 +14,8 @@ public class LibraryReceiptRetentionWorker(
     IServiceScopeFactory scopeFactory,
     LibraryReceiptRetentionOptions options,
     IHostApplicationLifetime lifetime,
-    ILogger<LibraryReceiptRetentionWorker> logger) : BackgroundService
+    ILogger<LibraryReceiptRetentionWorker> logger,
+    ILibraryMaintenanceCoordinator? maintenance = null) : BackgroundService
 {
     // The interval is clamped to a calm 1..720h window regardless of
     // configuration, so a misconfigured value can never turn the worker into
@@ -38,6 +40,7 @@ public class LibraryReceiptRetentionWorker(
     /// </summary>
     public async Task ScanOnceAsync(CancellationToken cancellationToken = default)
     {
+        await using var operation = maintenance is null ? null : await maintenance.EnterOperationAsync(cancellationToken);
         using var scope = scopeFactory.CreateScope();
         var service = scope.ServiceProvider.GetRequiredService<LibraryReceiptRetentionService>();
         await service.PruneAsync(cancellationToken);
