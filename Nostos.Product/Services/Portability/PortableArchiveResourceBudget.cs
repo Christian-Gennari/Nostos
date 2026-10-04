@@ -39,21 +39,25 @@ internal sealed class PortableArchiveBufferBudget
     }
 
     public ValueTask<PortableBufferLease> RentAsync(int bytes, CancellationToken cancellationToken)
+        => ValueTask.FromResult(Rent(bytes, cancellationToken));
+
+    // Allocation is synchronous memory work; no blocking async bridge is needed by the ZIP sink.
+    internal PortableBufferLease Rent(int bytes, CancellationToken cancellationToken = default)
     {
         if (bytes <= 0 || bytes > PortableArchiveLimits.MaxExplicitBufferBytes)
             throw new ArgumentOutOfRangeException(nameof(bytes));
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        var reservedBytes = GetPoolBucketLength(bytes);
+        var reservedBytes = GetAllocationLength(bytes);
         Reserve(reservedBytes);
 
         try
         {
-            // ArrayPool only guarantees a minimum length; allocate the exact reserved bucket.
+            // Allocate exactly the reserved power-of-two bucket; accounting includes all padding.
             var buffer = new byte[reservedBytes];
             cancellationToken.ThrowIfCancellationRequested();
-            return ValueTask.FromResult(new PortableBufferLease(this, buffer, bytes, reservedBytes));
+            return new PortableBufferLease(this, buffer, bytes, reservedBytes);
         }
         catch
         {
@@ -87,7 +91,7 @@ internal sealed class PortableArchiveBufferBudget
         }
     }
 
-    internal static int GetPoolBucketLength(int bytes)
+    internal static int GetAllocationLength(int bytes)
     {
         if (bytes <= 16)
             return 16;
@@ -154,6 +158,10 @@ internal sealed class PortableBufferLease : IDisposable, IAsyncDisposable
     }
 }
 
+/// <summary>
+/// Serializes asynchronous reads. The source delegate must not re-enter this cache instance,
+/// including disposal, while a read is active. TryRead only copies resident pages and never fetches.
+/// </summary>
 internal sealed class PortableArchiveRangeCache : IAsyncDisposable
 {
     private readonly object _gate = new();
@@ -183,10 +191,12 @@ internal sealed class PortableArchiveRangeCache : IAsyncDisposable
             throw new ArgumentOutOfRangeException(nameof(pageBytes));
         if (maxBytes <= 0 || maxBytes > PortableArchiveLimits.RangeCacheBytes)
             throw new ArgumentOutOfRangeException(nameof(maxBytes));
-        if (PortableArchiveBufferBudget.GetPoolBucketLength(pageBytes) > maxBytes)
+        if (pageBytes > maxBytes)
+            throw new ArgumentOutOfRangeException(nameof(pageBytes));
+        if (PortableArchiveBufferBudget.GetAllocationLength(pageBytes) > maxBytes)
         {
             throw new ArgumentException(
-                "The range-cache cap must be at least one pooled page buffer.",
+                "The range-cache cap must be at least one allocated page buffer.",
                 nameof(maxBytes));
         }
 
@@ -347,7 +357,7 @@ internal sealed class PortableArchiveRangeCache : IAsyncDisposable
         if (pageLength <= 0)
             throw new InvalidOperationException("The archive range cache requested a page outside the source length.");
 
-        var reservedBytes = PortableArchiveBufferBudget.GetPoolBucketLength(pageLength);
+        var reservedBytes = PortableArchiveBufferBudget.GetAllocationLength(pageLength);
         lock (_gate)
         {
             EvictUntilFits(reservedBytes);

@@ -99,6 +99,7 @@ public sealed class RangePortableArchiveSource : IPortableArchiveSource
     private readonly Func<ValueTask>? _disposeAsync;
     private int _disposed;
 
+    /// <summary>The read delegate must not re-enter a range cache that is calling it.</summary>
     public RangePortableArchiveSource(
         long length,
         Func<long, Memory<byte>, CancellationToken, ValueTask<int>> readAtAsync,
