@@ -2,6 +2,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Component, input, output, Input } from '@angular/core';
 import { BehaviorSubject, Observable, Subject, of, throwError } from 'rxjs';
 import { ActivatedRoute, convertToParamMap } from '@angular/router';
+import { By } from '@angular/platform-browser';
 
 import { WritingStudio } from './writing-studio.component';
 import { WritingsService } from '../core/services/writings.service';
@@ -175,6 +176,11 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
     expect(tabs.every((tab) => tab.classList.contains('toggle-opt'))).toBe(true);
     expect(tabs.every((tab) => !tab.classList.contains('nostos-button'))).toBe(true);
     expect(tabs.every((tab) => !tab.classList.contains('nostos-chip'))).toBe(true);
+
+    const tabIcons = fixture.debugElement.queryAll(
+      By.css('.library-tabs .tab-btn nostos-icon'),
+    );
+    expect(tabIcons.map((icon) => icon.componentInstance.name())).toEqual(['hash', 'book']);
 
     const topicRow = fixture.nativeElement.querySelector('.list-item') as HTMLButtonElement;
     expect(topicRow.tagName).toBe('BUTTON');
