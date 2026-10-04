@@ -22,7 +22,8 @@ namespace Nostos.Backend.Services.Portability;
 /// the scratch root, including after a failure.
 /// </para>
 /// </remarks>
-internal sealed class LocalPortableImportStaging : IPortableImportStaging
+internal sealed class LocalPortableImportStaging
+    : IPortableImportStaging, IPortableStagingCapacityAdmission
 {
     private const int StreamBufferBytes = 128 * 1024;
 
@@ -32,15 +33,64 @@ internal sealed class LocalPortableImportStaging : IPortableImportStaging
     };
 
     private readonly string _root;
+    private readonly Func<string, long?> _availableBytesProbe;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly Dictionary<Guid, LocalArea> _areas = [];
     private readonly HashSet<Guid> _deleted = [];
 
     public LocalPortableImportStaging(string root)
+        : this(root, availableBytesProbe: null)
+    {
+    }
+
+    internal LocalPortableImportStaging(
+        string root,
+        Func<string, long?>? availableBytesProbe)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(root);
         _root = Path.GetFullPath(root);
+        _availableBytesProbe = availableBytesProbe ?? DefaultAvailableBytesProbe;
         Directory.CreateDirectory(_root);
+    }
+
+    /// <summary>
+    /// Compatibility admission restored from the legacy extraction path: refuse an
+    /// import before bulk staging when the staging volume cannot hold the declared
+    /// staged bytes while preserving 20% of its remaining free space. A probe failure
+    /// keeps the legacy <c>temp_space_unavailable</c> outcome.
+    /// </summary>
+    public void EnsureCapacity(long bytesToStage)
+    {
+        if (bytesToStage <= 0)
+            return;
+
+        long? available;
+        try
+        {
+            available = _availableBytesProbe(_root);
+        }
+        catch (Exception exception) when (
+            exception is IOException
+            or UnauthorizedAccessException
+            or ArgumentException)
+        {
+            available = null;
+        }
+
+        if (available is null)
+        {
+            throw new PortableArchiveException(
+                "temp_space_unavailable",
+                "Portable archive extraction cannot determine temporary-storage capacity.");
+        }
+
+        var extractionBudget = available.Value - (available.Value / 5);
+        if (bytesToStage > extractionBudget)
+        {
+            throw new PortableArchiveException(
+                "insufficient_temp_space",
+                "Portable archive media cannot be staged safely with the temporary storage currently available.");
+        }
     }
 
     public async Task<PortableStagingId> CreateAsync(
@@ -325,12 +375,27 @@ internal sealed class LocalPortableImportStaging : IPortableImportStaging
                     "The staged relational payload does not match the prepared descriptor.");
             }
 
+            // Publish the committed descriptor durably before the instance treats the
+            // area as committed, so a failed or cancelled descriptor write leaves the
+            // previous (uncommitted) visible state.
+            var preparedPath = PreparedPath(area);
+            var preparedTempPath = preparedPath + ".tmp";
+            try
+            {
+                await File.WriteAllTextAsync(
+                        preparedTempPath,
+                        JsonSerializer.Serialize(metadata, JsonOptions),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                File.Move(preparedTempPath, preparedPath, overwrite: true);
+            }
+            catch
+            {
+                TryDeleteFile(preparedTempPath);
+                throw;
+            }
+
             area.Prepared = metadata;
-            await File.WriteAllTextAsync(
-                    PreparedPath(area),
-                    JsonSerializer.Serialize(metadata, JsonOptions),
-                    cancellationToken)
-                .ConfigureAwait(false);
         }
         finally
         {
@@ -733,6 +798,25 @@ internal sealed class LocalPortableImportStaging : IPortableImportStaging
 
     private string AreaDirectory(PortableStagingId stagingId) =>
         Path.Combine(_root, stagingId.Value.ToString("N"));
+
+    private static long? DefaultAvailableBytesProbe(string root)
+    {
+        var volumeRoot = Path.GetPathRoot(Path.GetFullPath(root));
+        if (string.IsNullOrWhiteSpace(volumeRoot))
+            return null;
+
+        try
+        {
+            return new DriveInfo(volumeRoot).AvailableFreeSpace;
+        }
+        catch (Exception exception) when (
+            exception is IOException
+            or UnauthorizedAccessException
+            or ArgumentException)
+        {
+            return null;
+        }
+    }
 
     private static string MetaPath(LocalArea area, string reference) =>
         Path.Combine(area.MediaDirectory, reference + ".json");

@@ -943,6 +943,196 @@ public sealed class PortableArchiveServiceTests
             .Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task Import_insufficient_scratch_space_fails_before_media_staging_and_cleans_up()
+    {
+        var scratchRoot = Path.Combine(
+            Path.GetTempPath(),
+            $"nostos-s8-scratch-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(scratchRoot);
+
+        try
+        {
+            using var archive = await ExportFixtureAsync();
+            await using var destination = await LocalPortableTestLibrary.CreateAsync();
+            IReadOnlyList<string>? atAdmission = null;
+            var service = new PortableArchiveService(
+                destination.Db,
+                destination.Storage,
+                NullLogger<PortableArchiveService>.Instance)
+            {
+                ScratchRoot = scratchRoot,
+                ScratchFreeSpaceProbe = _ =>
+                {
+                    atAdmission = SnapshotScratch(scratchRoot);
+                    return 1;
+                },
+            };
+
+            var action = () => service.ImportAsync(archive);
+            var exception = await action.Should().ThrowAsync<PortableArchiveException>();
+            exception.Which.Code.Should().Be("insufficient_temp_space");
+
+            // The admission runs after the manifest/payload are staged but before
+            // any media entry is copied, matching the legacy ordering.
+            atAdmission.Should().NotBeNull();
+            atAdmission!.Should().NotContain(path =>
+                path.Contains(
+                    $"{Path.DirectorySeparatorChar}media{Path.DirectorySeparatorChar}",
+                    StringComparison.Ordinal));
+
+            Directory.EnumerateFileSystemEntries(scratchRoot).Should().BeEmpty();
+
+            destination.Db.ChangeTracker.Clear();
+            (await destination.Db.Books.CountAsync()).Should().Be(0);
+            Directory.EnumerateFiles(
+                    destination.Storage.StorageRoot,
+                    "*",
+                    SearchOption.AllDirectories)
+                .Should().BeEmpty();
+        }
+        finally
+        {
+            try
+            {
+                if (Directory.Exists(scratchRoot))
+                    Directory.Delete(scratchRoot, recursive: true);
+            }
+            catch
+            {
+                // Test cleanup only.
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Import_accepts_the_exact_admitted_scratch_budget()
+    {
+        var scratchRoot = Path.Combine(
+            Path.GetTempPath(),
+            $"nostos-s8-scratch-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(scratchRoot);
+
+        try
+        {
+            using var archive = await ExportFixtureAsync();
+            var required = RequiredStagedBytes(archive);
+
+            // Smallest free-space value whose 20% margin admits exactly the bytes
+            // this import stages.
+            var available = required;
+            while (available - (available / 5) < required)
+                available++;
+            (available - (available / 5)).Should().Be(required);
+
+            await using var destination = await LocalPortableTestLibrary.CreateAsync();
+            var service = new PortableArchiveService(
+                destination.Db,
+                destination.Storage,
+                NullLogger<PortableArchiveService>.Instance)
+            {
+                ScratchRoot = scratchRoot,
+                ScratchFreeSpaceProbe = _ => available,
+            };
+
+            var imported = await service.ImportAsync(archive);
+
+            imported.IntegrityVerified.Should().BeTrue();
+            imported.MediaFiles.Should().Be(5);
+            Directory.EnumerateFileSystemEntries(scratchRoot).Should().BeEmpty();
+        }
+        finally
+        {
+            try
+            {
+                if (Directory.Exists(scratchRoot))
+                    Directory.Delete(scratchRoot, recursive: true);
+            }
+            catch
+            {
+                // Test cleanup only.
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Import_mid_staging_io_failure_is_cleaned_up_and_surfaces_as_io_failure()
+    {
+        var scratchRoot = Path.Combine(
+            Path.GetTempPath(),
+            $"nostos-s8-scratch-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(scratchRoot);
+
+        try
+        {
+            using var archive = await ExportFixtureAsync();
+            await using var destination = await LocalPortableTestLibrary.CreateAsync();
+            var service = new PortableArchiveService(
+                destination.Db,
+                destination.Storage,
+                NullLogger<PortableArchiveService>.Instance)
+            {
+                ScratchRoot = scratchRoot,
+
+                // Pass admission, then break the staging volume before the first
+                // media copy so a filesystem failure happens mid-preparation.
+                ScratchFreeSpaceProbe = stagingRoot =>
+                {
+                    if (Directory.Exists(stagingRoot))
+                        Directory.Delete(stagingRoot, recursive: true);
+                    File.WriteAllText(stagingRoot, "simulated full volume");
+                    return long.MaxValue;
+                },
+            };
+
+            var action = () => service.ImportAsync(archive);
+
+            // Main surfaced a filesystem failure during validation/extraction as a
+            // raw IOException (HTTP 500); the compatibility path still does.
+            await action.Should().ThrowAsync<IOException>();
+
+            destination.Db.ChangeTracker.Clear();
+            (await destination.Db.Books.CountAsync()).Should().Be(0);
+            Directory.EnumerateFiles(
+                    destination.Storage.StorageRoot,
+                    "*",
+                    SearchOption.AllDirectories)
+                .Should().BeEmpty();
+            Directory.EnumerateFileSystemEntries(scratchRoot).Should().BeEmpty();
+        }
+        finally
+        {
+            try
+            {
+                if (Directory.Exists(scratchRoot))
+                    Directory.Delete(scratchRoot, recursive: true);
+            }
+            catch
+            {
+                // Test cleanup only.
+            }
+        }
+    }
+
+    private static long RequiredStagedBytes(MemoryStream archive)
+    {
+        archive.Position = 0;
+        using var zip = new ZipArchive(archive, ZipArchiveMode.Read, leaveOpen: true);
+        var manifestEntry = zip.GetEntry("manifest.json")!;
+        var dataLength = zip.GetEntry("data/library.json")!.Length;
+
+        long mediaBytes;
+        using (var manifest = manifestEntry.Open())
+        {
+            var root = JsonNode.Parse(manifest)!;
+            mediaBytes = root["media"]!.AsArray()
+                .Sum(item => item!["length"]!.GetValue<long>());
+        }
+
+        archive.Position = 0;
+        return manifestEntry.Length + dataLength + mediaBytes;
+    }
+
     private static IReadOnlyList<string> SnapshotScratch(string root) =>
         Directory.Exists(root)
             ? Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories).ToArray()

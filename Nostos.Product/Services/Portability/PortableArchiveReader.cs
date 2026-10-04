@@ -197,6 +197,13 @@ internal sealed class PortableArchiveReader
         PortableArchiveValidation.ValidatePortableData(data);
         PortableArchiveValidation.ValidateManifestCounts(CountsFor(data), manifest.Counts);
         PortableArchiveValidation.ValidateMediaManifest(manifest, data);
+
+        // Local capacity admission (compatibility staging): after every manifest and
+        // relational guard has passed, before the archive inventory and any media
+        // staging, so that a volume that cannot hold the staged bytes fails with the
+        // legacy typed space errors instead of being driven to exhaustion.
+        EnsureStagingCapacity(staging, manifest, dataLength, manifestBytes.LongLength);
+
         PortableArchiveValidation.ValidateArchiveInventory(manifest, entries.Keys);
 
         var media = await StageMediaAsync(
@@ -346,6 +353,19 @@ internal sealed class PortableArchiveReader
             force: true);
 
         return (total, sha256);
+    }
+
+    private static void EnsureStagingCapacity(
+        IPortableImportStaging staging,
+        PortableArchiveManifest manifest,
+        long dataBytes,
+        long manifestBytes)
+    {
+        if (staging is not IPortableStagingCapacityAdmission admission)
+            return;
+
+        admission.EnsureCapacity(checked(
+            manifest.Media.Sum(item => item.Length) + dataBytes + manifestBytes));
     }
 
     private static async Task<IReadOnlyList<PortablePreparedMedia>> StageMediaAsync(

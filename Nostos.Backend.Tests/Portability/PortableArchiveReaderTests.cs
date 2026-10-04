@@ -518,7 +518,15 @@ public sealed class PortableArchiveReaderTests(ITestOutputHelper output)
     [InlineData("unexpected_entry", "unexpected_entry")]
     [InlineData("duplicate_path", "duplicate_path")]
     [InlineData("unsafe_archive_path", "unsafe_archive_path")]
+    // Main's legacy ImportAsync rejects an explicit directory entry as
+    // directory_entry_not_allowed (native ZipArchiveEntry.Name is empty); main's
+    // newer reader reports unsafe_archive_path. The legacy client-observable code
+    // wins, so both paths here report directory_entry_not_allowed.
     [InlineData("directory_entry", "directory_entry_not_allowed")]
+    // Multi-fault precedence captured from main: the manifest-count guard and the
+    // data-hash guard each win over the later media faults.
+    [InlineData("count_mismatch_and_corrupt_media", "count_mismatch")]
+    [InlineData("data_hash_mismatch_and_missing_media", "data_checksum_mismatch")]
     [InlineData("data_checksum_mismatch", "data_checksum_mismatch")]
     [InlineData("data_length_mismatch", "data_length_mismatch")]
     [InlineData("media_checksum_mismatch", "media_checksum_mismatch")]
@@ -740,6 +748,25 @@ public sealed class PortableArchiveReaderTests(ITestOutputHelper output)
                 break;
             case "directory_entry":
                 entries.Add(new TestArchiveEntry("dir/", []));
+                break;
+            case "count_mismatch_and_corrupt_media":
+                MutateJsonEntry(entries, ManifestPath, root =>
+                    root["counts"]!["works"] =
+                        root["counts"]!["works"]!.GetValue<int>() + 1);
+                ReplaceEntry(
+                    entries,
+                    media.Name,
+                    GenerateBytes(media.Bytes.Length, seed: 55));
+                break;
+            case "data_hash_mismatch_and_missing_media":
+                MutateJsonEntry(entries, DataPath, root =>
+                    root["works"]!.AsArray()[0]!["title"] = "Tampered after hashing");
+                MutateJsonEntry(
+                    entries,
+                    ManifestPath,
+                    root => root["data"]!["length"] =
+                        entries.Single(entry => entry.Name == DataPath).Bytes.LongLength);
+                entries.RemoveAll(entry => entry.Name == media.Name);
                 break;
             case "data_checksum_mismatch":
                 MutateJsonEntry(entries, DataPath, root =>

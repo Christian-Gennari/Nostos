@@ -274,6 +274,23 @@ public interface IPortableImportStaging : IAsyncDisposable
 }
 
 /// <summary>
+/// Optional admission contract for staging providers that spill into a shared local
+/// volume. The streaming reader invokes it after the manifest, relational payload and
+/// media manifest have been validated and before any media entry is staged, so a
+/// provider can refuse an import that cannot fit without first consuming the volume.
+/// Providers with unbounded or remote staging simply do not implement it.
+/// </summary>
+internal interface IPortableStagingCapacityAdmission
+{
+    /// <summary>
+    /// Throws a typed <see cref="PortableArchiveException"/> when the staging volume
+    /// cannot safely hold <paramref name="bytesToStage"/> more bytes while preserving
+    /// the provider's free-space safety margin.
+    /// </summary>
+    void EnsureCapacity(long bytesToStage);
+}
+
+/// <summary>
 /// A single sequential write opened for one archive media entry.
 /// </summary>
 /// <remarks>

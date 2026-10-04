@@ -1,5 +1,6 @@
 using System.Data;
 using System.IO.Compression;
+using System.Runtime.ExceptionServices;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
@@ -40,6 +41,9 @@ public sealed class PortableArchiveService(
     // Test seam: the directory that receives the per-import scratch directory
     // (upload spool plus local staging). Production uses the process temp path.
     internal string ScratchRoot { get; init; } = Path.GetTempPath();
+
+    // Test seam: free-space probe for the scratch volume. Production uses DriveInfo.
+    internal Func<string, long?>? ScratchFreeSpaceProbe { get; init; }
 
     public Task<PortableExportResult> ExportAsync(
         Stream destination,
@@ -347,13 +351,14 @@ public sealed class PortableArchiveService(
 
             await using var archiveSource = new FilePortableArchiveSource(archivePath);
             await using var staging = new LocalPortableImportStaging(
-                Path.Combine(tempRoot, "staging"));
+                Path.Combine(tempRoot, "staging"),
+                ScratchFreeSpaceProbe);
             var reader = new PortableArchiveReader(timeProvider: _timeProvider);
 
-            var prepared = await reader.PrepareImportAsync(
+            var prepared = await PrepareStagedImportAsync(
+                reader,
                 archiveSource,
                 staging,
-                progress: null,
                 cancellationToken);
 
             var data = await ReadStagedDataAsync(staging, prepared.StagingId, cancellationToken);
@@ -488,6 +493,33 @@ public sealed class PortableArchiveService(
         finally
         {
             TryDeleteDirectory(tempRoot);
+        }
+    }
+
+    private static async Task<PortablePreparedImport> PrepareStagedImportAsync(
+        PortableArchiveReader reader,
+        IPortableArchiveSource archiveSource,
+        IPortableImportStaging staging,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await reader.PrepareImportAsync(
+                archiveSource,
+                staging,
+                progress: null,
+                cancellationToken);
+        }
+        catch (PortableArchiveException exception) when (
+            exception.Code == "import_failed"
+            && exception.InnerException is IOException ioException)
+        {
+            // The legacy validation/extraction phase surfaced a filesystem failure
+            // as a raw IOException (unhandled -> HTTP 500). The reader wraps
+            // unexpected failures as import_failed; unwrap the original I/O failure
+            // so the compatibility endpoint keeps the pre-slice observable outcome.
+            ExceptionDispatchInfo.Capture(ioException).Throw();
+            throw;
         }
     }
 
