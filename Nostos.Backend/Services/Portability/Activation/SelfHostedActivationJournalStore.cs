@@ -121,6 +121,48 @@ internal sealed class SelfHostedActivationJournalStore(
         else maintenance.WithExclusiveLease(lease, WriteCore);
     }
 
+    /// <summary>
+    /// Clears a crash-terminated attempt so a new attempt for the same job may
+    /// begin. Only phases that can never have renamed a live component
+    /// (<c>CandidatePrepared</c>, <c>ExclusiveEntered</c>,
+    /// <c>DatabaseCheckpointed</c>) or a completed rollback
+    /// (<c>RolledBack</c>, live or resolved) are clearable; retained previous
+    /// material still on disk fails closed, and a resolved <c>Committed</c>
+    /// journal is never cleared (it is resumed, not replayed). Runs outside the
+    /// maintenance lease because it touches only control files.
+    /// </summary>
+    internal void PrepareForRetry(Guid id)
+    {
+        lock (_writer)
+        {
+            paths.Verify(id);
+            var current = Read(id);
+            var resolved = ReadResolved(id);
+            if (current is not null && resolved is not null) throw Corrupt();
+            var journal = current ?? resolved;
+            if (journal is null) return;
+            if (journal.JobId != id || journal.OperationId == Guid.Empty) throw Corrupt();
+            if (journal.Phase is not (SelfHostedActivationPhase.CandidatePrepared
+                or SelfHostedActivationPhase.ExclusiveEntered
+                or SelfHostedActivationPhase.DatabaseCheckpointed
+                or SelfHostedActivationPhase.RolledBack))
+            {
+                throw new InvalidOperationException(
+                    "A non-terminal activation journal must be reconciled before a retry.");
+            }
+
+            if (File.Exists(paths.PreviousDatabase(id)) || Directory.Exists(paths.PreviousMedia(id)))
+            {
+                throw Corrupt();
+            }
+
+            var path = current is not null ? paths.Journal(id) : paths.ResolvedJournal(id);
+            paths.VerifyDatabasePath(path);
+            File.Delete(path);
+            ActivationFileSystem.FlushDirectory(Path.GetDirectoryName(path)!);
+        }
+    }
+
     internal SelfHostedActivationJournal Advance(Guid id, SelfHostedActivationPhase phase, IAsyncDisposable lease)
     {
         SelfHostedActivationJournal? result = null;

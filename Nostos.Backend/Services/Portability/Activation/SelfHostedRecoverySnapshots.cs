@@ -193,7 +193,7 @@ internal sealed class SelfHostedMigrationRecoveryService :
     /// <summary>Test seam: throws at named finalization steps to simulate a crash.</summary>
     internal Action<SelfHostedRecoveryFinalizeStep>? FinalizeStepForTesting { get; set; }
 
-    internal SelfHostedMigrationRecoveryService(
+    public SelfHostedMigrationRecoveryService(
         SelfHostedActivationPaths paths,
         SelfHostedRecoveryManifestStore manifests,
         SelfHostedActivationJournalStore journals,
@@ -724,7 +724,7 @@ internal sealed class SelfHostedMigrationRecoveryService :
             if (File.Exists(directory)) throw Flaw("The media root contains an unexpected file.");
             if (!Directory.Exists(directory)) throw Flaw("The media root contains an unexpected entry.");
             var name = Path.GetFileName(directory);
-            if (!Guid.TryParseExact(name, "N", out var bookId) || bookId == Guid.Empty || name != bookId.ToString("N"))
+            if (!TryReadBookDirectoryName(name, out var bookId))
                 throw Flaw("The media root contains an unexpected directory.");
 
             foreach (var entry in Directory.EnumerateFileSystemEntries(directory).Order(StringComparer.Ordinal))
@@ -752,7 +752,7 @@ internal sealed class SelfHostedMigrationRecoveryService :
             _paths.VerifyMediaPath(directory);
             if (!Directory.Exists(directory)) continue;
             var name = Path.GetFileName(directory);
-            if (!Guid.TryParseExact(name, "N", out var bookId)) continue;
+            if (!TryReadBookDirectoryName(name, out var bookId)) continue;
             foreach (var entry in Directory.EnumerateFileSystemEntries(directory).Order(StringComparer.Ordinal))
             {
                 _paths.VerifyMediaPath(entry);
@@ -817,6 +817,26 @@ internal sealed class SelfHostedMigrationRecoveryService :
         if (after.Length != length || after.LastWriteTimeUtc != lastWrite)
             throw Conflict("A library file changed while it was being hashed for recovery.");
         return Convert.ToHexString(digest).ToLowerInvariant();
+    }
+
+    /// <summary>
+    /// A media directory whose name is one canonical rendering of a nonempty
+    /// book identifier. The live <c>FileStorageService</c> layout and the
+    /// activation candidate builder both use the default "D" rendering, so the
+    /// recovery retention pass must accept exactly that form; the compact "N"
+    /// form stays accepted because the protocol fixtures and any pre-existing
+    /// control trees use it. Any other spelling fails closed.
+    /// </summary>
+    private static bool TryReadBookDirectoryName(string name, out Guid bookId)
+    {
+        bookId = Guid.Empty;
+        if (!Guid.TryParse(name, out var parsed) || parsed == Guid.Empty)
+            return false;
+        if (!string.Equals(name, parsed.ToString("D"), StringComparison.Ordinal)
+            && !string.Equals(name, parsed.ToString("N"), StringComparison.Ordinal))
+            return false;
+        bookId = parsed;
+        return true;
     }
 
     private static (string Kind, string Extension) ClassifyMediaFile(string fileName)
