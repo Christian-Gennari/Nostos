@@ -237,9 +237,11 @@ public sealed class PortableZipAdapterTests(ITestOutputHelper output)
             var calls = physical.AsyncCalls;
             Assert.Equal(3, reader.Archive.Entries.Count);
             Assert.Equal(calls, physical.AsyncCalls);
+            AssertNativeLayout(reader);
             foreach (var item in reader.Archive.Entries)
             {
                 await using var entry = await item.OpenAsync();
+                AssertNativeDataOffset(reader, item);
                 using var contents = new MemoryStream();
                 await entry.CopyToAsync(contents);
                 Assert.Equal(payload, contents.ToArray());
@@ -488,6 +490,7 @@ public sealed class PortableZipAdapterTests(ITestOutputHelper output)
         {
             await using (var reader = await PortableArchiveZipReader.OpenAsync(source, budget))
             {
+                AssertNativeLayout(reader);
                 Assert.True(reader.TailLayout.IsZip64);
                 Assert.True(reader.TailLayout.CentralDirectoryOffset > uint.MaxValue);
                 var calls = sourceCalls;
@@ -529,12 +532,14 @@ public sealed class PortableZipAdapterTests(ITestOutputHelper output)
         await using (var reader = await PortableArchiveZipReader.OpenAsync(source, budget))
         {
             Assert.Equal(native.Entries.Count, reader.Archive.Entries.Count);
+            AssertNativeLayout(reader);
             foreach (var item in reader.Archive.Entries)
             {
                 using var expected = native.GetEntry(item.FullName)!.Open();
                 using var expectedBytes = new MemoryStream();
                 await expected.CopyToAsync(expectedBytes);
                 await using var actual = await item.OpenAsync();
+                AssertNativeDataOffset(reader, item);
                 using var actualBytes = new MemoryStream();
                 await actual.CopyToAsync(actualBytes);
                 Assert.Equal(expectedBytes.ToArray(), actualBytes.ToArray());
@@ -571,6 +576,7 @@ public sealed class PortableZipAdapterTests(ITestOutputHelper output)
         var budget = Budget();
         await using (var reader = await PortableArchiveZipReader.OpenAsync(source, budget))
         {
+            AssertNativeLayout(reader);
             Assert.Equal(32 * 1024 * 1024, reader.PrefetchedTailAllocatedBytes);
             for (var page = 1; page <= 16; page++)
             {
@@ -741,6 +747,493 @@ public sealed class PortableZipAdapterTests(ITestOutputHelper output)
         Assert.Equal(0, budget.CurrentBytes);
     }
 
+    [Fact]
+    public async Task Dual_eocd_offset_differential_is_rejected_before_factory_returns()
+    {
+        var (bytes, firstCd, secondCd, secondLocal) = await DualViewAsync(true, false);
+        using var native = new ZipArchive(new MemoryStream(bytes), ZipArchiveMode.Read);
+        Assert.Equal(secondCd, NativeField<long>(native, "_centralDirectoryStart"));
+        Assert.Equal(secondLocal, NativeField<long>(Assert.Single(native.Entries), "_offsetOfLocalHeader"));
+        using var physical = new CountingReadStream(bytes);
+        await using var source = Source(physical);
+        var budget = Budget();
+        await AssertCodeAsync("invalid_zip", () => PortableArchiveZipReader.OpenAsync(source, budget));
+        Assert.Equal(0, budget.CurrentBytes);
+        Assert.Equal(0, physical.SyncCalls);
+        using var entry = native.Entries[0].Open();
+        using var contents = new MemoryStream();
+        entry.CopyTo(contents);
+        Assert.Equal(Enumerable.Repeat((byte)'B', 40).ToArray(), contents.ToArray());
+        output.WriteLine($"Closed EOCD differential: legacy validated CD={firstCd}, local=0; real runtime selects CD={secondCd}, local={secondLocal}; factory rejects invalid_zip before returning.");
+    }
+
+    [Fact]
+    public async Task Surplus_zip64_offset_differential_is_rejected_before_factory_returns()
+    {
+        var (bytes, cd, alternateLocal) = await SurplusZip64OffsetAsync();
+        using var native = new ZipArchive(new MemoryStream(bytes), ZipArchiveMode.Read);
+        Assert.Equal(cd, NativeField<long>(native, "_centralDirectoryStart"));
+        Assert.Equal(alternateLocal, NativeField<long>(Assert.Single(native.Entries), "_offsetOfLocalHeader"));
+        using var physical = new CountingReadStream(bytes);
+        await using var source = Source(physical);
+        var budget = Budget();
+        await AssertCodeAsync("invalid_zip", () => PortableArchiveZipReader.OpenAsync(source, budget));
+        Assert.Equal(0, budget.CurrentBytes);
+        Assert.Equal(0, physical.SyncCalls);
+        output.WriteLine($"Closed ZIP64 surplus differential: CD={cd}, legacy validated local=0, native local={alternateLocal}; factory rejects invalid_zip before returning.");
+    }
+
+    private static async Task<(byte[] Bytes, long Cd, long AlternateLocal)> SurplusZip64OffsetAsync()
+    {
+        var first = await NativeZipAsync(Enumerable.Repeat((byte)'A', 40).ToArray(), CompressionLevel.NoCompression, false);
+        var second = await NativeZipAsync(Enumerable.Repeat((byte)'B', 40).ToArray(), CompressionLevel.NoCompression, false);
+        var localLength = (int)U32(first, first.Length - 6);
+        var central = first.AsSpan(localLength, first.Length - localLength - 22).ToArray();
+        W32(central, 42, uint.MaxValue);
+        W16(central, 30, 32);
+        var extra = new byte[32];
+        W16(extra, 0, 1); W16(extra, 2, 28);
+        // Only offset is a sentinel: our old parser consumed the first value, while native
+        // skips the first two slots for a >=28-byte "all fields" ZIP64 extra.
+        W64(extra, 4, 0); W64(extra, 12, 40); W64(extra, 20, (ulong)localLength);
+        using var buffer = new MemoryStream();
+        buffer.Write(first.AsSpan(0, localLength)); buffer.Write(second.AsSpan(0, localLength));
+        var cd = buffer.Length;
+        buffer.Write(central); buffer.Write(extra); buffer.Write(first.AsSpan(first.Length - 22));
+        var bytes = buffer.ToArray();
+        W32(bytes, bytes.Length - 10, (uint)(central.Length + extra.Length));
+        W32(bytes, bytes.Length - 6, (uint)cd);
+        return (bytes, cd, localLength);
+    }
+
+    [Theory]
+    [InlineData("outer_eof_inner_short")]
+    [InlineData("outer_eof_inner_eof")]
+    [InlineData("outer_short_inner_eof")]
+    [InlineData("outer_eof_inner_long")]
+    [InlineData("signature_in_comment")]
+    [InlineData("signature_in_payload")]
+    [InlineData("signature_in_directory_comment")]
+    [InlineData("signature_in_directory_crc")]
+    public async Task Ambiguous_eocd_candidates_are_rejected_before_factory_returns(string scenario)
+    {
+        byte[] bytes;
+        if (scenario.StartsWith("outer_", StringComparison.Ordinal))
+        {
+            var fixture = await DualViewAsync(scenario != "outer_short_inner_eof", scenario != "outer_eof_inner_short");
+            bytes = fixture.Bytes;
+            if (scenario == "outer_eof_inner_long")
+            {
+                W16(bytes, bytes.Length - 32 - 2, 33);
+                await Assert.ThrowsAsync<InvalidDataException>(async () =>
+                {
+                    await using var native = await ZipArchive.CreateAsync(new MemoryStream(bytes), ZipArchiveMode.Read, false, null);
+                });
+                output.WriteLine("inner comment longer than EOF: native rejects the last candidate; no fallback to the valid outer EOCD");
+            }
+            else
+            {
+                await using var native = await ZipArchive.CreateAsync(new MemoryStream(bytes), ZipArchiveMode.Read, false, null);
+                Assert.Equal(fixture.SecondCd, NativeField<long>(native, "_centralDirectoryStart"));
+                Assert.Equal(fixture.SecondLocal, NativeField<long>(Assert.Single(native.Entries), "_offsetOfLocalHeader"));
+                output.WriteLine($"{scenario}: real native selects later CD={fixture.SecondCd}, local={fixture.SecondLocal} regardless of EOF comment validity.");
+            }
+        }
+        else
+        {
+            var payload = new byte[64];
+            if (scenario == "signature_in_payload") W32(payload, 7, 0x06054b50);
+            bytes = await NativeZipAsync(payload, CompressionLevel.NoCompression, false);
+            var cd = (int)U32(bytes, bytes.Length - 6);
+            if (scenario == "signature_in_comment")
+            {
+                W16(bytes, bytes.Length - 2, 64);
+                var comment = new byte[64];
+                W32(comment, 0, 0x06054b50);
+                bytes = bytes.Concat(comment).ToArray();
+            }
+            else if (scenario == "signature_in_directory_comment")
+            {
+                W16(bytes, cd + 32, 64);
+                W32(bytes, bytes.Length - 10, U32(bytes, bytes.Length - 10) + 64);
+                var comment = new byte[64];
+                W32(comment, 0, 0x06054b50);
+                bytes = InsertBytes(bytes, bytes.Length - 22, comment);
+            }
+            else if (scenario == "signature_in_directory_crc")
+            {
+                W32(bytes, cd + 16, 0x06054b50); W32(bytes, 14, 0x06054b50);
+            }
+            await using var native = await ZipArchive.CreateAsync(new MemoryStream(bytes), ZipArchiveMode.Read, false, null);
+            var nativeCd = NativeField<long>(native, "_centralDirectoryStart");
+            Assert.Equal(scenario == "signature_in_comment" ? 0 : cd, nativeCd);
+            output.WriteLine($"{scenario}: real native CD={nativeCd}; conservative duplicate-signature policy rejects.");
+        }
+        using var physical = new CountingReadStream(bytes);
+        await using var source = Source(physical);
+        var budget = Budget();
+        var exception = await Assert.ThrowsAsync<PortableArchiveException>(() => PortableArchiveZipReader.OpenAsync(source, budget));
+        Assert.Equal("invalid_zip", exception.Code);
+        Assert.Contains("ambiguous EOCD", exception.Message);
+        Assert.Equal(1, physical.AsyncCalls); // Rejected in discovery before prefetch/local-header reads.
+        Assert.Equal(0, physical.SyncCalls);
+        Assert.Equal(0, budget.CurrentBytes);
+    }
+
+    [Theory]
+    [InlineData(4090)]
+    [InlineData(4092)]
+    [InlineData(4094)]
+    [InlineData(65500)]
+    public async Task Eocd_candidates_across_native_backward_search_blocks_are_rejected(int distanceFromEnd)
+    {
+        var bytes = await NativeZipAsync(new byte[40], CompressionLevel.NoCompression, false);
+        var eocd = bytes.AsSpan(bytes.Length - 22, 22).ToArray();
+        const int commentLength = ushort.MaxValue;
+        W16(bytes, bytes.Length - 2, commentLength);
+        var comment = new byte[commentLength];
+        eocd.CopyTo(comment.AsSpan(commentLength - distanceFromEnd));
+        bytes = bytes.Concat(comment).ToArray();
+        await using var native = await ZipArchive.CreateAsync(new MemoryStream(bytes), ZipArchiveMode.Read, false, null);
+        Assert.Equal(string.Empty, native.Comment); // Later fake EOCD declares no comment, despite trailer bytes.
+        Assert.Single(native.Entries);
+        output.WriteLine($"native selected fake EOCD at EOF-{distanceFromEnd}, including 4096-byte search-block boundaries");
+        using var physical = new CountingReadStream(bytes);
+        await using var source = Source(physical);
+        var budget = Budget();
+        await AssertCodeAsync("invalid_zip", () => PortableArchiveZipReader.OpenAsync(source, budget));
+        Assert.Equal(0, budget.CurrentBytes);
+        Assert.Equal(0, physical.SyncCalls);
+    }
+
+    [Theory]
+    [InlineData("trailing_bytes")]
+    [InlineData("directory_gap")]
+    [InlineData("prepended_absolute_offsets")]
+    [InlineData("prepended_unadjusted_offsets")]
+    [InlineData("short_signature_comment")]
+    public async Task Eocd_boundaries_and_prepended_data_have_explicit_policy(string scenario)
+    {
+        var payload = Payload(40, false);
+        var bytes = await NativeZipAsync(payload, CompressionLevel.NoCompression, false);
+        var cd = (int)U32(bytes, bytes.Length - 6);
+        var accepted = scenario == "prepended_absolute_offsets";
+        switch (scenario)
+        {
+            case "trailing_bytes": bytes = bytes.Concat(new byte[32]).ToArray(); break;
+            case "directory_gap": bytes = InsertBytes(bytes, bytes.Length - 22, new byte[16]); break;
+            case "short_signature_comment":
+                W16(bytes, bytes.Length - 2, 4);
+                bytes = bytes.Concat(new byte[] { 0x50, 0x4b, 0x05, 0x06 }).ToArray(); break;
+            default:
+                var prefix = Encoding.ASCII.GetBytes("Nostos synthetic prefix");
+                if (accepted)
+                {
+                    W32(bytes, cd + 42, (uint)prefix.Length);
+                    W32(bytes, bytes.Length - 6, (uint)(cd + prefix.Length));
+                }
+                bytes = prefix.Concat(bytes).ToArray(); break;
+        }
+        if (scenario == "short_signature_comment")
+        {
+            await Assert.ThrowsAsync<InvalidDataException>(async () =>
+            {
+                await using var native = await ZipArchive.CreateAsync(new MemoryStream(bytes), ZipArchiveMode.Read, false, null);
+            });
+        }
+        else if (scenario == "prepended_unadjusted_offsets")
+        {
+            await using var native = await ZipArchive.CreateAsync(new MemoryStream(bytes), ZipArchiveMode.Read, false, null);
+            Assert.Throws<InvalidDataException>(() => _ = native.Entries);
+        }
+        else
+        {
+            await using var native = await ZipArchive.CreateAsync(new MemoryStream(bytes), ZipArchiveMode.Read, false, null);
+            Assert.Single(native.Entries);
+            Assert.Equal(scenario == "prepended_absolute_offsets" ? cd + "Nostos synthetic prefix".Length : cd,
+                NativeField<long>(native, "_centralDirectoryStart"));
+        }
+        if (accepted) await ReadValidatedAsync(bytes, payload);
+        else
+        {
+            using var physical = new CountingReadStream(bytes);
+            await using var source = Source(physical);
+            var budget = Budget();
+            await AssertCodeAsync("invalid_zip", () => PortableArchiveZipReader.OpenAsync(source, budget));
+            Assert.Equal(0, budget.CurrentBytes);
+            Assert.Equal(0, physical.SyncCalls);
+        }
+        output.WriteLine($"{scenario}: {(accepted ? "validated native directory/local/data offsets agree" : "factory rejects invalid_zip before returning")}");
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task Native_zip64_selection_and_classic_disagreement_are_proven(bool sentinels, bool disagree)
+    {
+        var payload = Payload(40, false);
+        var normal = await NativeZipAsync(payload, CompressionLevel.NoCompression, false);
+        var cd = (int)U32(normal, normal.Length - 6);
+        var directory = normal[cd..^22];
+        var tail = Zip64Tail(directory, cd);
+        if (!sentinels)
+        {
+            W16(tail, tail.Length - 14, 1); W16(tail, tail.Length - 12, 1);
+            W32(tail, tail.Length - 10, (uint)directory.Length); W32(tail, tail.Length - 6, (uint)cd);
+        }
+        if (disagree) W64(tail, directory.Length + 48, 0);
+        var bytes = normal[..cd].Concat(tail).ToArray();
+        await using var native = await ZipArchive.CreateAsync(new MemoryStream(bytes), ZipArchiveMode.Read, false, null);
+        Assert.Equal(sentinels && disagree ? 0 : cd, NativeField<long>(native, "_centralDirectoryStart"));
+        output.WriteLine($"ZIP64: sentinels={sentinels}, disagreement={disagree}, native CD={NativeField<long>(native, "_centralDirectoryStart")}; locator only consulted when native classic sentinel trigger is present.");
+        if (!disagree) await ReadValidatedAsync(bytes, payload);
+        else
+        {
+            using var physical = new CountingReadStream(bytes);
+            await using var source = Source(physical);
+            var budget = Budget();
+            await AssertCodeAsync("invalid_zip", () => PortableArchiveZipReader.OpenAsync(source, budget));
+            Assert.Equal(0, budget.CurrentBytes);
+            Assert.Equal(0, physical.SyncCalls);
+        }
+    }
+
+    [Fact]
+    public async Task Changed_prefetched_eocd_view_is_rejected_before_native_construction()
+    {
+        var (changed, _, _, _) = await DualViewAsync(true, false);
+        var initial = (byte[])changed.Clone();
+        W32(initial, changed.Length - 32 - 22, 0); // Hide the second signature during initial discovery.
+        var calls = 0;
+        await using var source = new RangePortableArchiveSource(initial.Length, (offset, buffer, _) =>
+        {
+            var view = ++calls >= 3 ? changed : initial;
+            view.AsMemory((int)offset, buffer.Length).CopyTo(buffer);
+            return ValueTask.FromResult(buffer.Length);
+        });
+        var budget = Budget();
+        await AssertCodeAsync("invalid_zip", () => PortableArchiveZipReader.OpenAsync(source, budget));
+        Assert.Equal(3, calls); // Discovery, locator probe, tail prefetch; no local-header/native reads.
+        Assert.Equal(0, budget.CurrentBytes);
+    }
+
+    [Theory]
+    [InlineData("locator_record_offset")]
+    [InlineData("record_directory_offset")]
+    [InlineData("record_length")]
+    public async Task Changed_prefetched_zip64_view_is_rejected_before_native_construction(string mutation)
+    {
+        var normal = await NativeZipAsync(Payload(40, false), CompressionLevel.NoCompression, false);
+        var cd = (int)U32(normal, normal.Length - 6);
+        var directory = normal[cd..^22];
+        var initial = normal[..cd].Concat(Zip64Tail(directory, cd)).ToArray();
+        var changed = (byte[])initial.Clone();
+        var record = cd + directory.Length;
+        switch (mutation)
+        {
+            case "locator_record_offset": W64(changed, record + 56 + 8, (ulong)(record + 1)); break;
+            case "record_directory_offset": W64(changed, record + 48, 0); break;
+            default: W64(changed, record + 4, 45); break;
+        }
+        var calls = 0;
+        await using var source = new RangePortableArchiveSource(initial.Length, (offset, buffer, _) =>
+        {
+            var view = ++calls >= 4 ? changed : initial;
+            view.AsMemory((int)offset, buffer.Length).CopyTo(buffer);
+            return ValueTask.FromResult(buffer.Length);
+        });
+        var budget = Budget();
+        await AssertCodeAsync("invalid_zip", () => PortableArchiveZipReader.OpenAsync(source, budget));
+        Assert.Equal(4, calls); // Initial search/locator/record, then snapshot; no entry/native construction.
+        Assert.Equal(0, budget.CurrentBytes);
+    }
+
+    [Theory]
+    [InlineData("local_name_length", "invalid_zip")]
+    [InlineData("local_name_case", "invalid_zip")]
+    [InlineData("local_name_separator", "invalid_zip")]
+    [InlineData("local_extra_length_overrun", "invalid_zip")]
+    [InlineData("valid_local_extra", null)]
+    [InlineData("descriptor_zero_sizes", null)]
+    [InlineData("zip64_without_central_sentinel", "invalid_zip")]
+    [InlineData("zip64_without_local_sentinel", "invalid_zip")]
+    [InlineData("central_sentinel_without_zip64", "invalid_zip")]
+    [InlineData("local_sentinel_without_zip64", "invalid_zip")]
+    [InlineData("case_duplicate", "duplicate_path")]
+    [InlineData("separator_alias", "unsafe_archive_path")]
+    public async Task Entry_level_parser_differentials_are_agreed_or_rejected(string scenario, string? code)
+    {
+        var payload = Payload(40, false);
+        var bytes = await NativeZipAsync(payload, CompressionLevel.NoCompression, scenario == "descriptor_zero_sizes",
+            scenario is "case_duplicate" or "separator_alias" ? 2 : 1);
+        var cd = (int)U32(bytes, bytes.Length - 6);
+        switch (scenario)
+        {
+            case "local_name_length": W16(bytes, 26, (ushort)(U16(bytes, 26) + 1)); break;
+            case "local_name_case": bytes[30] = (byte)'M'; break;
+            case "local_name_separator": bytes[35] = (byte)'\\'; break;
+            case "local_extra_length_overrun": W16(bytes, 28, ushort.MaxValue); break;
+            case "valid_local_extra":
+                var extra = new byte[] { 0xff, 0xff, 4, 0, 1, 2, 3, 4 };
+                W16(bytes, 28, (ushort)extra.Length);
+                W32(bytes, bytes.Length - 6, (uint)(cd + extra.Length));
+                bytes = InsertBytes(bytes, 30 + U16(bytes, 26), extra); break;
+            case "descriptor_zero_sizes":
+                Assert.Equal(0u, U32(bytes, 14)); Assert.Equal(0u, U32(bytes, 18)); Assert.Equal(0u, U32(bytes, 22));
+                Assert.NotEqual(0, U16(bytes, 6) & 8); break;
+            case "zip64_without_central_sentinel":
+                var centralExtra = new byte[20]; W16(centralExtra, 0, 1); W16(centralExtra, 2, 16);
+                W64(centralExtra, 4, 999); W64(centralExtra, 12, 888);
+                W16(bytes, cd + 30, 20); W32(bytes, bytes.Length - 10, U32(bytes, bytes.Length - 10) + 20);
+                bytes = InsertBytes(bytes, cd + 46 + U16(bytes, cd + 28), centralExtra); break;
+            case "zip64_without_local_sentinel":
+                var localExtra = new byte[20]; W16(localExtra, 0, 1); W16(localExtra, 2, 16);
+                W64(localExtra, 4, 999); W64(localExtra, 12, 888);
+                W16(bytes, 28, 20); W32(bytes, bytes.Length - 6, (uint)(cd + 20));
+                bytes = InsertBytes(bytes, 30 + U16(bytes, 26), localExtra); break;
+            case "central_sentinel_without_zip64": W32(bytes, cd + 42, uint.MaxValue); break;
+            case "local_sentinel_without_zip64": W32(bytes, 22, uint.MaxValue); break;
+            default:
+                var secondCd = cd + 46 + U16(bytes, cd + 28);
+                var secondLocal = (int)U32(bytes, secondCd + 42);
+                var firstName = bytes.AsSpan(cd + 46, U16(bytes, cd + 28)).ToArray();
+                var otherName = Encoding.UTF8.GetBytes(scenario == "case_duplicate"
+                    ? Encoding.UTF8.GetString(firstName).ToUpperInvariant()
+                    : Encoding.UTF8.GetString(firstName).Replace('/', '\\'));
+                otherName.CopyTo(bytes.AsSpan(secondCd + 46)); otherName.CopyTo(bytes.AsSpan(secondLocal + 30)); break;
+        }
+        if (code is null) await ReadValidatedAsync(bytes, payload);
+        else
+        {
+            using var physical = new CountingReadStream(bytes);
+            await using var source = Source(physical);
+            var budget = Budget();
+            await AssertCodeAsync(code, () => PortableArchiveZipReader.OpenAsync(source, budget));
+            Assert.Equal(0, budget.CurrentBytes);
+            Assert.Equal(0, physical.SyncCalls);
+        }
+        if (code is not null)
+        {
+            try
+            {
+                await using var native = await ZipArchive.CreateAsync(new MemoryStream(bytes), ZipArchiveMode.Read, false, null);
+                var nativeEntries = native.Entries;
+                output.WriteLine($"native {scenario}: CD={NativeField<long>(native, "_centralDirectoryStart")}, local offsets={string.Join(',', nativeEntries.Select(x => NativeField<long>(x, "_offsetOfLocalHeader")))}");
+            }
+            catch (InvalidDataException) { output.WriteLine($"native {scenario}: rejects metadata before opening an entry"); }
+        }
+        output.WriteLine($"{scenario}: {(code is null ? "validated native local/data offsets agree" : $"rejected {code} before factory return")}");
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    [InlineData(5)]
+    [InlineData(7)]
+    [InlineData(15)]
+    public async Task Canonical_zip64_sentinel_subsets_match_native_local_offsets(int fields)
+    {
+        var payload = Payload(40, false);
+        var bytes = await NativeZipAsync(payload, CompressionLevel.NoCompression, false);
+        var cd = (int)U32(bytes, bytes.Length - 6);
+        var values = new List<byte>();
+        for (var bit = 0; bit < 4; bit++)
+        {
+            if ((fields & (1 << bit)) == 0) continue;
+            if (bit == 3) { W16(bytes, cd + 34, ushort.MaxValue); values.AddRange(new byte[4]); }
+            else
+            {
+                W32(bytes, cd + (bit == 0 ? 24 : bit == 1 ? 20 : 42), uint.MaxValue);
+                var value = new byte[8]; W64(value, 0, bit == 2 ? 0UL : 40UL); values.AddRange(value);
+            }
+        }
+        var extra = new byte[4 + values.Count]; W16(extra, 0, 1); W16(extra, 2, (ushort)values.Count);
+        values.ToArray().CopyTo(extra.AsSpan(4));
+        W16(bytes, cd + 30, (ushort)extra.Length); W32(bytes, bytes.Length - 10, U32(bytes, bytes.Length - 10) + (uint)extra.Length);
+        bytes = InsertBytes(bytes, cd + 46 + U16(bytes, cd + 28), extra);
+        await ReadValidatedAsync(bytes, payload);
+    }
+
+    [Theory]
+    [InlineData(40)]
+    [InlineData(8192)]
+    public async Task Native_incomplete_comment_signature_probe_is_rejected_by_structural_policy(int payloadLength)
+    {
+        var bytes = await NativeZipAsync(new byte[payloadLength], CompressionLevel.NoCompression, false);
+        W16(bytes, bytes.Length - 2, 4);
+        bytes = bytes.Concat(new byte[] { 0x50, 0x4b, 0x05, 0x06 }).ToArray();
+        if (payloadLength == 40)
+        {
+            await Assert.ThrowsAsync<InvalidDataException>(async () =>
+            {
+                await using var native = await ZipArchive.CreateAsync(new MemoryStream(bytes), ZipArchiveMode.Read, false, null);
+            });
+        }
+        else
+        {
+            await using var native = await ZipArchive.CreateAsync(new MemoryStream(bytes), ZipArchiveMode.Read, false, null);
+            Assert.Single(native.Entries);
+        }
+        using var physical = new CountingReadStream(bytes);
+        await using var source = Source(physical);
+        var budget = Budget();
+        await AssertCodeAsync("invalid_zip", () => PortableArchiveZipReader.OpenAsync(source, budget));
+        Assert.Equal(1, physical.AsyncCalls);
+        Assert.Equal(0, physical.SyncCalls);
+        Assert.Equal(0, budget.CurrentBytes);
+        output.WriteLine($"incomplete last-comment signature: payload={payloadLength}, native={(payloadLength == 40 ? "rejects buffered over-read candidate" : "chooses actual EOCD")}; factory uniformly rejects ambiguity");
+    }
+
+    private static byte[] InsertBytes(byte[] bytes, int offset, byte[] inserted) =>
+        bytes[..offset].Concat(inserted).Concat(bytes[offset..]).ToArray();
+
+    private static void AssertNativeLayout(PortableArchiveZipReader reader)
+    {
+        Assert.Equal(reader.TailLayout.CentralDirectoryOffset, NativeField<long>(reader.Archive, "_centralDirectoryStart"));
+        Assert.Equal(reader.Directory.Count, reader.Archive.Entries.Count);
+        for (var i = 0; i < reader.Directory.Count; i++)
+        {
+            var expected = reader.Directory[i];
+            var native = reader.Archive.Entries[i];
+            Assert.Equal(expected.LocalHeaderOffset, NativeField<long>(native, "_offsetOfLocalHeader"));
+            Assert.Equal(expected.Flags, Convert.ToUInt16(NativeField<object>(native, "_generalPurposeBitFlag")));
+            Assert.Equal(expected.CompressionMethod, Convert.ToUInt16(NativeField<object>(native, "_storedCompressionMethod")));
+            Assert.Equal(expected.Crc32, native.Crc32);
+        }
+    }
+    private static void AssertNativeDataOffset(PortableArchiveZipReader reader, ZipArchiveEntry native)
+    {
+        var expected = Assert.Single(reader.EntryLayouts, x => x.Path == native.FullName);
+        Assert.Equal(expected.DataOffset, NativeField<long>(native, "_storedOffsetOfCompressedData"));
+    }
+
+    private static T NativeField<T>(object instance, string name)
+    {
+        // Test-only runtime characterization. Product code never reflects native private state.
+        var field = instance.GetType().GetField(name, BindingFlags.NonPublic | BindingFlags.Instance);
+        Assert.NotNull(field);
+        return (T)field.GetValue(instance)!;
+    }
+
+    private static async Task<(byte[] Bytes, long FirstCd, long SecondCd, long SecondLocal)> DualViewAsync(bool firstEndsAtEof, bool secondEndsAtEof)
+    {
+        var first = await NativeZipAsync(Enumerable.Repeat((byte)'A', 40).ToArray(), CompressionLevel.NoCompression, false);
+        var second = await NativeZipAsync(Enumerable.Repeat((byte)'B', 40).ToArray(), CompressionLevel.NoCompression, false);
+        const int trailerLength = 32;
+        var firstCd = U32(first, first.Length - 6);
+        var secondOffset = first.Length;
+        var secondCd = U32(second, second.Length - 6);
+        W32(second, (int)secondCd + 42, (uint)secondOffset);
+        W32(second, second.Length - 6, (uint)(secondCd + secondOffset));
+        W16(second, second.Length - 2, (ushort)(secondEndsAtEof ? trailerLength : 0));
+        W16(first, first.Length - 2, (ushort)(firstEndsAtEof ? second.Length + trailerLength : 0));
+        return (first.Concat(second).Concat(new byte[trailerLength]).ToArray(), firstCd, secondCd + secondOffset, secondOffset);
+    }
+
     private async Task ReadValidatedAsync(byte[] bytes, byte[] payload)
     {
         using var physical = new CountingReadStream(bytes);
@@ -748,9 +1241,11 @@ public sealed class PortableZipAdapterTests(ITestOutputHelper output)
         var budget = Budget();
         await using (var reader = await PortableArchiveZipReader.OpenAsync(source, budget))
         {
+            AssertNativeLayout(reader);
             foreach (var item in reader.Archive.Entries)
             {
                 await using var entry = await item.OpenAsync();
+                AssertNativeDataOffset(reader, item);
                 using var contents = new MemoryStream();
                 await entry.CopyToAsync(contents);
                 Assert.Equal(payload, contents.ToArray());

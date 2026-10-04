@@ -104,6 +104,9 @@ internal sealed class PrefetchedZipTailSourceStream : Stream
 /// <summary>
 /// Owns the prefetched tail, cache, facade and native archive, but borrows the source.
 /// Structural validation and native metadata cross-check finish before returning entries.
+/// The measured 32 MiB tail + 16 MiB cache footprint belongs to the supplied budget instance.
+/// Concurrent operations need separate budgets or host-level admission/concurrency control;
+/// this is not a process-wide memory limit.
 /// </summary>
 internal sealed class PortableArchiveZipReader : IAsyncDisposable
 {
@@ -138,6 +141,7 @@ internal sealed class PortableArchiveZipReader : IAsyncDisposable
         try
         {
             await PortableZipMetadata.ReadExactlyAsync(source, layout.CentralDirectoryOffset, tail.Memory, cancellationToken).ConfigureAwait(false);
+            PortableZipTailLocator.ValidatePrefetchedTail(tail.Memory.Span, layout);
             var directory = PortableZipDirectoryParser.Parse(tail.Memory[..(int)layout.CentralDirectorySize], layout.EntryCount, layout.CentralDirectoryOffset);
             cache = new PortableArchiveRangeCache(source, budget);
             var entries = await PortableZipEntryLayoutValidator.ValidateAsync(cache, budget, directory,
@@ -172,6 +176,9 @@ internal sealed class PortableArchiveZipReader : IAsyncDisposable
             }
         }
     }
+    // No public native local-header offset API exists. A unique EOCD, contiguous metadata,
+    // snapshot revalidation and exact ZIP64 replacements force the same directory/offsets.
+    // Tests additionally compare native private offsets; product code uses no reflection.
     private static void CrossCheck(ZipArchive archive, IReadOnlyList<PortableZipDirectoryEntry> directory)
     {
         var native = archive.Entries;
@@ -179,7 +186,7 @@ internal sealed class PortableArchiveZipReader : IAsyncDisposable
             throw PortableZipMetadata.Invalid("Native and defensive ZIP entry counts disagree.");
         for (var i = 0; i < native.Count; i++)
             if (native[i].FullName != directory[i].Path || native[i].Length != directory[i].Length
-                || native[i].CompressedLength != directory[i].CompressedLength)
+                || native[i].CompressedLength != directory[i].CompressedLength || native[i].Crc32 != directory[i].Crc32)
                 throw PortableZipMetadata.Invalid("Native and defensive ZIP directory interpretations disagree.");
     }
     public async ValueTask DisposeAsync()

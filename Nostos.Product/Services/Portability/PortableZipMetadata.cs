@@ -77,17 +77,15 @@ internal static class PortableZipTailLocator
             PortableZipMetadata.RequireRange(recordOffset, 56, eocdOffset - 20);
             await PortableZipMetadata.ReadExactlyAsync(source, recordOffset, scratch.Memory, ct).ConfigureAwait(false);
             (count, size, offset) = ParseZip64(scratch.Memory.Span, recordOffset, eocdOffset - 20);
-            if ((classic.Count != ushort.MaxValue && classic.Count != count)
-                || (classic.Size != uint.MaxValue && classic.Size != size)
-                || (classic.Offset != uint.MaxValue && classic.Offset != offset)
-                || (classic.DiskCount != ushort.MaxValue && classic.DiskCount != count))
-                throw PortableZipMetadata.Invalid("Classic and ZIP64 EOCD declarations disagree.");
+            RequireClassicAgreement(classic, count, size, offset);
             metadataStart = recordOffset;
         }
         PortableArchiveValidation.ValidateArchiveEntryCount(count > int.MaxValue ? int.MaxValue : (int)count);
         if (size > PortableArchiveLimits.MaxCentralDirectoryBytes)
             throw PortableZipMetadata.Invalid("ZIP central directory exceeds its bounded cache limit.");
         PortableZipMetadata.RequireRange(offset, size, metadataStart);
+        if (offset + size != metadataStart)
+            throw PortableZipMetadata.Invalid("ZIP central directory must end exactly at its end-record region.");
         if (offset >= source.Length)
             throw PortableZipMetadata.Invalid("ZIP central directory starts outside the archive.");
         var tailLength = source.Length - offset;
@@ -96,13 +94,73 @@ internal static class PortableZipTailLocator
         return new(offset, size, count, eocdOffset, zip64, (int)tailLength);
     }
 
+    // Recheck the owned snapshot, not just the earlier source reads. This also closes a
+    // discovery/prefetch change of view: native sees only the checked metadata in this lease.
+    internal static void ValidatePrefetchedTail(ReadOnlySpan<byte> tail, PortableZipTailLayout layout)
+    {
+        if (tail.Length != layout.PrefetchLength)
+            throw PortableZipMetadata.Invalid("ZIP prefetched tail length changed.");
+        var searchLength = Math.Min(tail.Length, PortableArchiveLimits.MaxEocdSearchBytes);
+        var searchStart = tail.Length - searchLength;
+        var index = FindEocd(tail[searchStart..]);
+        if (index < 0 || layout.CentralDirectoryOffset + searchStart + index != layout.EocdOffset)
+            throw PortableZipMetadata.Invalid("ZIP EOCD view changed between discovery and prefetch.");
+        var eocdIndex = searchStart + index;
+        var classic = ParseClassic(tail[eocdIndex..]);
+        RequireClassicAgreement(classic, layout.EntryCount, layout.CentralDirectorySize, layout.CentralDirectoryOffset);
+        var hasLocator = eocdIndex >= 20 && PortableZipMetadata.U32(tail, eocdIndex - 20) == 0x07064b50;
+        if (layout.IsZip64 != (classic.NeedsZip64 || hasLocator))
+            throw PortableZipMetadata.Invalid("ZIP64 view changed between discovery and prefetch.");
+        if (!layout.IsZip64)
+        {
+            if (layout.CentralDirectorySize != eocdIndex)
+                throw PortableZipMetadata.Invalid("ZIP central directory is not contiguous with EOCD.");
+            return;
+        }
+        if (!hasLocator)
+            throw PortableZipMetadata.Invalid("ZIP64 locator is missing from the prefetched snapshot.");
+        var locator = tail.Slice(eocdIndex - 20, 20);
+        if (PortableZipMetadata.U32(locator, 4) != 0 || PortableZipMetadata.U32(locator, 16) != 1)
+            throw PortableZipMetadata.Invalid("Multi-disk ZIP64 archives are not supported.");
+        var recordOffset = PortableZipMetadata.U64(locator, 8);
+        if (recordOffset != layout.CentralDirectoryOffset + layout.CentralDirectorySize)
+            throw PortableZipMetadata.Invalid("ZIP64 record changed the validated directory boundary.");
+        PortableZipMetadata.RequireRange(layout.CentralDirectorySize, 56, tail.Length);
+        var (count, size, offset) = ParseZip64(tail.Slice((int)layout.CentralDirectorySize, 56), recordOffset, layout.EocdOffset - 20);
+        if (count != layout.EntryCount || size != layout.CentralDirectorySize || offset != layout.CentralDirectoryOffset)
+            throw PortableZipMetadata.Invalid("ZIP64 directory view changed between discovery and prefetch.");
+    }
+
+    private static void RequireClassicAgreement(
+        (ushort DiskCount, ushort Count, uint Size, uint Offset, bool NeedsZip64) classic,
+        long count, long size, long offset)
+    {
+        if ((classic.Count != ushort.MaxValue && classic.Count != count)
+            || (classic.Size != uint.MaxValue && classic.Size != size)
+            || (classic.Offset != uint.MaxValue && classic.Offset != offset)
+            || (classic.DiskCount != ushort.MaxValue && classic.DiskCount != count))
+            throw PortableZipMetadata.Invalid("Classic and ZIP64 EOCD declarations disagree.");
+    }
+
     private static int FindEocd(ReadOnlySpan<byte> bytes)
     {
-        for (var i = bytes.Length - 22; i >= 0; i--)
-            if (PortableZipMetadata.U32(bytes, i) == 0x06054b50
-                && PortableZipMetadata.U16(bytes, i + 20) == bytes.Length - i - 22)
-                return i;
-        return -1;
+        // Do not fall back from a later signature with a bad comment to an earlier EOCD.
+        // Reject every second raw signature, even incomplete or implausible candidates:
+        // native selects signatures before validating fields and its buffered probes can
+        // over-read into the final comment bytes on small sources.
+        var candidate = -1;
+        for (var i = bytes.Length - 4; i >= 0; i--)
+        {
+            if (PortableZipMetadata.U32(bytes, i) != 0x06054b50)
+                continue;
+            if (candidate >= 0)
+                throw PortableZipMetadata.Invalid("ZIP tail contains ambiguous EOCD signatures.");
+            candidate = i;
+        }
+        if (candidate >= 0 && (bytes.Length - candidate < 22
+            || PortableZipMetadata.U16(bytes, candidate + 20) != bytes.Length - candidate - 22))
+            throw PortableZipMetadata.Invalid("ZIP EOCD comment must end exactly at EOF.");
+        return candidate;
     }
     private static (ushort DiskCount, ushort Count, uint Size, uint Offset, bool NeedsZip64) ParseClassic(ReadOnlySpan<byte> bytes)
     {
@@ -216,6 +274,13 @@ internal static class PortableZipDirectoryParser
                 if (found)
                     throw PortableZipMetadata.Invalid("Duplicate ZIP64 extra field.");
                 found = true;
+                // Native has a permissive >=28-byte "all fields" path that can skip surplus
+                // sizes before an offset. Only accept the canonical sentinel-requested form,
+                // so neither parser can substitute a different local header offset.
+                var requiredSize = (needsLength ? 8 : 0) + (needsCompressed ? 8 : 0)
+                    + (needsOffset ? 8 : 0) + (needsDisk ? 4 : 0);
+                if (requiredSize == 0 || size != requiredSize)
+                    throw PortableZipMetadata.Invalid("ZIP64 extra must contain exactly its sentinel replacement fields.");
                 var values = extras.Slice(4, size);
                 if (needsLength) length = Take64(ref values);
                 if (needsCompressed) compressed = Take64(ref values);
