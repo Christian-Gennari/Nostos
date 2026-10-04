@@ -206,6 +206,14 @@ public enum MigrationSessionPurpose
 {
     Import = 0,
     Export = 1,
+
+    /// <summary>
+    /// Claimed, non-expiring capacity for a retained recovery copy (#681
+    /// Slice 6). Distinct from the job's transfer reservation so a retry can
+    /// find the existing retention claim deterministically by job and purpose
+    /// instead of creating a second one.
+    /// </summary>
+    RecoveryRetention = 2,
 }
 
 public enum MigrationSessionState
