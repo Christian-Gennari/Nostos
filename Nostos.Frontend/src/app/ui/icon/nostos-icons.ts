@@ -68,6 +68,7 @@ import folderOpenLight from '@phosphor-icons/core/light/folder-open-light.svg';
 import gearSixLight from '@phosphor-icons/core/light/gear-six-light.svg';
 import headphonesLight from '@phosphor-icons/core/light/headphones-light.svg';
 import heartLight from '@phosphor-icons/core/light/heart-light.svg';
+import hashLight from '@phosphor-icons/core/light/hash-light.svg';
 import listBulletsLight from '@phosphor-icons/core/light/list-bullets-light.svg';
 import mapTrifoldLight from '@phosphor-icons/core/light/map-trifold-light.svg';
 import paletteLight from '@phosphor-icons/core/light/palette-light.svg';
@@ -236,7 +237,7 @@ export const NOSTOS_ICONS = {
   'gear-six': { regular: gearSix, light: gearSixLight, },
   'git-merge': { regular: gitMerge, },
   'globe': { regular: globe, },
-  'hash': { regular: hash, },
+  'hash': { regular: hash, light: hashLight, },
   'headphones': { regular: headphones, light: headphonesLight, },
   'heart': { regular: heart, light: heartLight, },
   'highlighter': { regular: highlighter, },
