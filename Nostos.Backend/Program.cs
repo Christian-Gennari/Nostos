@@ -97,6 +97,7 @@ TransferPathResolver.EnsureRootDirectory(transferRootPath);
 builder.Services.AddSingleton(new TransferPathResolver(transferRootPath));
 builder.Services.AddSingleton<ITransferVolume>(new DriveInfoTransferVolume(transferRootPath));
 builder.Services.AddScoped<ITransferStorageCapacity, TransferStorageCapacity>();
+Nostos.Backend.Services.Portability.Migration.MigrationEngineRegistration.AddSelfHostedMigrationEngine(builder.Services);
 
 // --- MCP (Model Context Protocol) Streamable HTTP foundation (Task 9A) ---
 // Opt-in and disabled by default. When enabled, the bearer token is resolved
