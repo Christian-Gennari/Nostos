@@ -86,13 +86,18 @@ internal static class PortableArchiveValidation
         }
     }
 
-    internal static void ValidateExportDataSize(long length)
+    internal static void ValidateStreamedDataMatchesPreflight(
+        long streamedLength,
+        string streamedSha256,
+        long preflightLength,
+        string preflightSha256)
     {
-        if (length > PortableArchiveLimits.MaxDataBytes)
+        if (streamedLength != preflightLength
+            || !FixedHashEquals(streamedSha256, preflightSha256))
         {
             throw new PortableArchiveException(
-                "data_too_large",
-                $"Portable relational data exceeds the {PortableArchiveLimits.MaxDataBytes} byte v1 limit.");
+                "data_serialization_mismatch",
+                "Portable relational data serialized differently between the preflight and the archive write.");
         }
     }
 
