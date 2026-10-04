@@ -41,6 +41,7 @@ public sealed class LibraryMaintenanceCoordinator : ILibraryMaintenanceCoordinat
     private int _operations;
     private bool _closed;
     private bool _startupPending;
+    private ExclusiveLease? _exclusive;
     private TaskCompletionSource _changed = NewSignal();
     private TaskCompletionSource _drained = NewSignal();
 
@@ -118,7 +119,7 @@ public sealed class LibraryMaintenanceCoordinator : ILibraryMaintenanceCoordinat
             _marker?.Write(reason);
             await drained.WaitAsync(_timeout, _clock, ct);
             ct.ThrowIfCancellationRequested();
-            return new ExclusiveLease(this);
+            lock (_sync) return _exclusive = new ExclusiveLease(this);
         }
         catch (TimeoutException)
         {
@@ -132,18 +133,55 @@ public sealed class LibraryMaintenanceCoordinator : ILibraryMaintenanceCoordinat
         }
     }
 
+    // Host-local proof: disposal and journal/rename operations serialize on the
+    // same monitor. A closed admission flag alone does not prove drain/ownership.
+    internal void WithExclusiveLease(IAsyncDisposable? lease, Action action)
+    {
+        lock (_sync)
+        {
+            if (lease is null || !ReferenceEquals(_exclusive, lease))
+                throw new InvalidOperationException("A current exclusive maintenance lease is required.");
+            action();
+        }
+    }
+
+    internal IAsyncDisposable EnterStartupRecovery()
+    {
+        lock (_sync)
+        {
+            if (!_startupPending || _exclusive is not null || _operations != 0)
+                throw new InvalidOperationException("Recovery must run before startup admission.");
+            return _exclusive = new ExclusiveLease(this);
+        }
+    }
+
+    internal void CompleteStartupRecovery()
+    {
+        lock (_sync)
+        {
+            if (!_startupPending || _exclusive is not null)
+                throw new InvalidOperationException("Startup recovery has not released its lease.");
+            _marker!.Clear();
+            _startupPending = false;
+            OpenAdmission();
+        }
+    }
+
     private void ReleaseOperation()
     {
         lock (_sync)
             if (--_operations == 0) _drained.TrySetResult();
     }
 
-    private void ExitExclusive()
+    private void ExitExclusive(ExclusiveLease? lease = null)
     {
         // Serialize marker deletion with reopening: an old owner must never delete
         // the next owner's marker or reopen that owner's gate.
         lock (_sync)
         {
+            if (lease is not null && !ReferenceEquals(_exclusive, lease)) return;
+            _exclusive = null;
+            if (_startupPending) return; // a failed startup must remain closed
             try { _marker?.Clear(); }
             finally { OpenAdmission(); }
         }
@@ -172,7 +210,7 @@ public sealed class LibraryMaintenanceCoordinator : ILibraryMaintenanceCoordinat
         private LibraryMaintenanceCoordinator? _owner = owner;
         public ValueTask DisposeAsync()
         {
-            Interlocked.Exchange(ref _owner, null)?.ExitExclusive();
+            Interlocked.Exchange(ref _owner, null)?.ExitExclusive(this);
             return ValueTask.CompletedTask;
         }
     }
