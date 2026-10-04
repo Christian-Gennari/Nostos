@@ -61,6 +61,13 @@ export interface LibraryTransferFailure {
   retryable: boolean;
   status?: number;
   retryAfterMs?: number;
+  /**
+   * Structured capacity facts for `migration_storage_exhausted`, so the B4
+   * copy can state human-readable amounts instead of the raw backend message
+   * (plan §33).
+   */
+  requiredStorageBytes?: number;
+  availableStorageBytes?: number;
 }
 
 /** Derived identity of the selected archive. */
@@ -171,12 +178,16 @@ export type TransferFlowState =
       jobId: string;
       jobState: MigrationJobState;
       preflight?: MigrationPreflightResponseDto;
+      /** Server-derived prepared-import facts when the host reports them. */
+      preparedImport?: unknown;
     }
   | {
       kind: 'replacement-confirmation';
       jobId: string;
       jobState: MigrationJobState;
       preflight?: MigrationPreflightResponseDto;
+      /** Server-derived prepared-import facts when the host reports them. */
+      preparedImport?: unknown;
     }
   | { kind: 'completed'; jobId: string }
   | { kind: 'failed'; jobId?: string; failure: LibraryTransferFailure }
@@ -195,8 +206,8 @@ const FLOW_TRANSITIONS: Record<TransferFlowState['kind'], readonly TransferFlowS
     'failed',
     'cancelled',
   ],
-  inspecting: ['preflighting', 'failed'],
-  preflighting: ['ready-to-upload', 'failed'],
+  inspecting: ['preflighting', 'failed', 'cancelled'],
+  preflighting: ['ready-to-upload', 'failed', 'cancelled'],
   'ready-to-upload': ['uploading', 'failed', 'cancelled', 'ready-to-upload'],
   uploading: ['checking', 'failed', 'cancelled', 'ready-to-upload', 'uploading'],
   checking: [
@@ -207,8 +218,12 @@ const FLOW_TRANSITIONS: Record<TransferFlowState['kind'], readonly TransferFlowS
     'failed',
     'cancelled',
   ],
-  'ready-empty': [],
-  'replacement-confirmation': [],
+  // A verified job can still be cancelled while it is waiting to activate,
+  // and activation (B8) moves it to checking/completed or fails it (plan §32).
+  // Dismissing a verified-but-not-yet-activatable job returns to idle while
+  // keeping its resume record (review-730 item 2).
+  'ready-empty': ['idle', 'checking', 'completed', 'cancelled', 'failed'],
+  'replacement-confirmation': ['idle', 'checking', 'completed', 'cancelled', 'failed'],
   completed: ['idle'],
   failed: ['inspecting', 'uploading', 'checking', 'ready-to-upload'],
   cancelled: ['idle', 'inspecting'],

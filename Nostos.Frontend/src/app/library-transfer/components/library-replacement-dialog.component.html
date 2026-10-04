@@ -1,0 +1,108 @@
+@if (isOpen()) {
+  <div [cdkTrapFocus]="true" [cdkTrapFocusAutoCapture]="true">
+    <app-modal-shell
+      [isOpen]="true"
+      variant="dialog"
+      cardClass="replacement-dialog-card"
+      [maxWidth]="'560px'"
+      [layer]="120"
+      [busy]="busy()"
+      dialogRole="alertdialog"
+      ariaLabelledBy="replacement-dialog-title"
+      ariaDescribedBy="replacement-dialog-description"
+      [headDivider]="false"
+      [style.--modal-card-padding]="'1.5rem'"
+      [style.--modal-card-padding-narrow]="'1.25rem 1.15rem'"
+      (closed)="cancelled.emit()"
+    >
+      <div class="replacement-head" shellHeader>
+        <span class="replacement-mark" aria-hidden="true">
+          <nostos-icon name="warning" [size]="15"></nostos-icon>
+        </span>
+        <h2 id="replacement-dialog-title" class="replacement-title">Replace this library?</h2>
+      </div>
+
+      <p id="replacement-dialog-description" class="replacement-description">
+        The imported library is verified and ready.
+      </p>
+
+      <div class="replacement-counts" data-testid="replacement-counts">
+        <div class="replacement-counts-group">
+          <h3 class="replacement-counts-heading">Current library</h3>
+          @if (existingSummary()) {
+            <p class="replacement-counts-value" data-testid="replacement-existing">
+              {{ existingSummary() }}
+            </p>
+          } @else {
+            <p class="replacement-counts-value">This library has no library data yet.</p>
+          }
+        </div>
+
+        <div class="replacement-counts-group">
+          <h3 class="replacement-counts-heading">Incoming library</h3>
+          <p class="replacement-counts-value" data-testid="replacement-incoming">
+            {{ incomingSummary() }}
+          </p>
+          <p class="replacement-counts-source" data-testid="replacement-counts-source">
+            {{ incomingSourceLabel() }}
+          </p>
+        </div>
+      </div>
+
+      @if (supportsSafeActivation()) {
+        <p class="replacement-recovery" data-testid="replacement-recovery">
+          Your current library will be kept as a recovery copy for 7 days before it expires.
+        </p>
+        <p class="replacement-note">
+          Changes made to this library after the import started can prevent replacement. Nostos
+          will check again before activating the imported library.
+        </p>
+      } @else {
+        <p class="replacement-blocked" role="alert" data-testid="replacement-blocked">
+          This library already contains data. Replacement is not available on this Nostos host
+          yet, so nothing has been changed.
+        </p>
+      }
+
+      @if (errorMessage(); as error) {
+        <p class="replacement-error" role="alert" data-testid="replacement-error">{{ error }}</p>
+      }
+
+      @if (busy()) {
+        <p class="replacement-note" role="status" data-testid="replacement-sealed">
+          The replacement is in progress. This dialog stays open until it finishes.
+        </p>
+      }
+
+      <app-dialog-actions shellActions variant="inset" [stackOnNarrow]="true">
+        <button
+          appButton
+          type="button"
+          variant="secondary"
+          class="replacement-cancel"
+          cdkFocusInitial
+          [disabled]="busy()"
+          (click)="cancelled.emit()"
+        >
+          Cancel
+        </button>
+        <button
+          appButton
+          type="button"
+          variant="danger"
+          class="replacement-confirm"
+          [disabled]="!supportsSafeActivation() || busy()"
+          [busy]="busy()"
+          (click)="confirm()"
+        >
+          @if (busy()) {
+            <nostos-icon name="circle-notch" [size]="14" class="spin-icon" />
+            <span>{{ busyLabel() }}</span>
+          } @else {
+            Replace library
+          }
+        </button>
+      </app-dialog-actions>
+    </app-modal-shell>
+  </div>
+}

@@ -1,0 +1,40 @@
+<div class="transfer-progress">
+  <div class="transfer-progress-head">
+    <span class="transfer-progress-label">{{ phaseLabel() }}</span>
+    @if (percentage() !== null) {
+      <span class="transfer-progress-percent">{{ percentage() }}%</span>
+    }
+  </div>
+
+  <div
+    class="transfer-progress-track"
+    [class.is-indeterminate]="percentage() === null"
+    [class.is-paused]="paused()"
+    role="progressbar"
+    aria-valuemin="0"
+    aria-valuemax="100"
+    [attr.aria-valuenow]="percentage()"
+    [attr.aria-valuetext]="ariaValueText()"
+    [attr.aria-label]="phaseLabel()"
+    data-testid="transfer-progress"
+  >
+    <span
+      class="transfer-progress-fill"
+      [style.width.%]="percentage() ?? 0"
+      aria-hidden="true"
+    ></span>
+  </div>
+
+  @if (detailText()) {
+    <p class="transfer-progress-detail" data-testid="transfer-progress-detail">{{ detailText() }}</p>
+  }
+
+  <p
+    class="visually-hidden"
+    aria-live="polite"
+    aria-atomic="true"
+    data-testid="transfer-progress-live"
+  >
+    {{ liveText() }}
+  </p>
+</div>

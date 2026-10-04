@@ -350,6 +350,12 @@ public sealed class PortableCompletenessInventoryTests
                 "This is local operational capacity-accounting state, not user library content, and must never be serialized into portable archives."),
         };
 
+    internal static IReadOnlySet<string> ExcludedEntityNames =>
+        Inventory
+            .Where(entry => entry.Value.IsEntityExcluded)
+            .Select(entry => entry.Key)
+            .ToHashSet(StringComparer.Ordinal);
+
     [Fact]
     public void Every_mapped_entity_property_and_navigation_has_a_portability_classification()
     {
@@ -564,6 +570,21 @@ public sealed class PortableCompletenessInventoryTests
         GetCountProperties(classification => classification.DestinationCountKind)
             .Append(nameof(MigrationExistingCounts.TotalRows))
             .ToHashSet(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Portable EF entity properties by entity name. Verifier candidate coverage is
+    /// asserted against this projection so a classified portable property that no
+    /// executable comparison checks fails the verifier coverage tests.
+    /// </summary>
+    internal static IReadOnlyDictionary<string, IReadOnlyList<string>> PortablePropertiesByEntity =>
+        Inventory
+            .Where(pair => !pair.Value.IsEntityExcluded)
+            .ToDictionary(
+                pair => pair.Key,
+                pair => (IReadOnlyList<string>)pair.Value.PortableProperties
+                    .OrderBy(name => name, StringComparer.Ordinal)
+                    .ToList(),
+                StringComparer.Ordinal);
 
     [Fact]
     public void Portable_classification_and_archive_records_have_two_way_property_parity()

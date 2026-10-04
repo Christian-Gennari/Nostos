@@ -358,11 +358,21 @@ export class LibraryTransferCoordinator {
     }
   }
 
-  /** Clears the local resume record once a terminal state is acknowledged. */
+  /**
+   * Acknowledges a terminal state and returns to idle. For a verified but
+   * un-activatable job (`ready-empty` / `replacement-confirmation`) the resume
+   * record is deliberately kept, so dismissing the UI does not throw away the
+   * server job (review-730 item 2); cancel clears it instead.
+   */
   dismiss(): void {
-    this.resumeStore.clear();
-    this.file = null;
-    if (this.stateSignal().kind === 'completed' || this.stateSignal().kind === 'cancelled') {
+    const state = this.stateSignal();
+    if (state.kind === 'completed' || state.kind === 'cancelled') {
+      this.resumeStore.clear();
+      this.file = null;
+      this.setState({ kind: 'idle' });
+      return;
+    }
+    if (state.kind === 'ready-empty' || state.kind === 'replacement-confirmation') {
       this.setState({ kind: 'idle' });
     }
   }
@@ -506,6 +516,7 @@ export class LibraryTransferCoordinator {
             jobId: status.job.id,
             jobState: status.job.state,
             preflight,
+            preparedImport: status.preparedImport ?? undefined,
           });
         } else {
           this.setState({
@@ -513,6 +524,7 @@ export class LibraryTransferCoordinator {
             jobId: status.job.id,
             jobState: status.job.state,
             preflight,
+            preparedImport: status.preparedImport ?? undefined,
           });
         }
         return;
@@ -662,11 +674,15 @@ export class LibraryTransferCoordinator {
           'This is a SelfHosted backup, not a portable library archive.',
         );
       case 'RejectedInsufficientStorage':
-        return this.failure(
-          'migration_storage_exhausted',
-          `This import needs about ${evaluation.requiredStorageBytes} bytes of available ` +
-            `storage. ${evaluation.availableStorageBytes} bytes are available.`,
-        );
+        return {
+          ...this.failure(
+            'migration_storage_exhausted',
+            `This import needs about ${evaluation.requiredStorageBytes} bytes of available ` +
+              `storage. ${evaluation.availableStorageBytes} bytes are available.`,
+          ),
+          requiredStorageBytes: evaluation.requiredStorageBytes,
+          availableStorageBytes: evaluation.availableStorageBytes,
+        };
       case 'RejectedDestinationConflict':
         return this.failure(
           'migration_destination_conflict',
