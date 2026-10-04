@@ -169,6 +169,10 @@ public sealed class StreamPortableArchiveSink : IPortableArchiveSink
         _leaveOpen = leaveOpen;
     }
 
+    /// <summary>
+    /// Opens an async-only writer. Use DisposeAsync on the writer or sink to complete
+    /// owned-stream disposal; synchronous writer disposal only closes the writer.
+    /// </summary>
     public ValueTask<Stream> OpenWriteAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -303,9 +307,7 @@ public sealed class StreamPortableArchiveSink : IPortableArchiveSink
 
         public override ValueTask DisposeAsync()
         {
-            if (Interlocked.Exchange(ref _writerDisposed, 1) != 0)
-                return ValueTask.CompletedTask;
-
+            Interlocked.Exchange(ref _writerDisposed, 1);
             return owner.CompleteWriterAsync();
         }
 

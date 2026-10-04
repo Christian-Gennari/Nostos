@@ -90,4 +90,111 @@ public sealed class PortableArchiveResourceBudgetTests
         budget.HighWaterBytes.Should().BeLessThanOrEqualTo(PortableArchiveLimits.MaxExplicitBufferBytes);
         budget.HighWaterBytes.Should().Be(PortableArchiveLimits.MaxExplicitBufferBytes);
     }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(0)]
+    [InlineData(int.MaxValue)]
+    public async Task Budget_rejects_invalid_rent_sizes_without_overflow(int bytes)
+    {
+        var budget = new PortableArchiveBufferBudget(1024);
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
+            () => budget.RentAsync(bytes, CancellationToken.None).AsTask());
+        budget.CurrentBytes.Should().Be(0);
+        budget.HighWaterBytes.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Budget_rejects_a_request_larger_than_the_whole_budget()
+    {
+        var budget = new PortableArchiveBufferBudget(1024);
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => budget.RentAsync(1025, CancellationToken.None).AsTask());
+        budget.CurrentBytes.Should().Be(0);
+        budget.HighWaterBytes.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Lease_concurrent_sync_and_async_disposal_returns_bytes_once()
+    {
+        var budget = new PortableArchiveBufferBudget(32);
+        using var otherLease = await budget.RentAsync(16, CancellationToken.None);
+        var lease = await budget.RentAsync(16, CancellationToken.None);
+        var start = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var disposers = Enumerable.Range(0, 32).Select(index => Task.Run(async () =>
+        {
+            await start.Task;
+            if (index % 2 == 0)
+                lease.Dispose();
+            else
+                await lease.DisposeAsync();
+        })).ToArray();
+
+        start.SetResult();
+        await Task.WhenAll(disposers);
+
+        budget.CurrentBytes.Should().Be(16);
+        using (await budget.RentAsync(16, CancellationToken.None))
+            budget.CurrentBytes.Should().Be(32);
+        otherLease.Dispose();
+        budget.CurrentBytes.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Concurrent_over_cap_rents_fail_without_exceeding_64_mib()
+    {
+        const int leaseBytes = 4 * 1024 * 1024;
+        const int renterCount = 17;
+        var budget = new PortableArchiveBufferBudget(PortableArchiveLimits.MaxExplicitBufferBytes);
+        var start = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var allAttempted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var attemptedCount = 0;
+        var acquiredCount = 0;
+        var rejectedCount = 0;
+        var renters = Enumerable.Range(0, renterCount).Select(_ => Task.Run(async () =>
+        {
+            await start.Task;
+            PortableBufferLease? lease = null;
+            try
+            {
+                try
+                {
+                    lease = await budget.RentAsync(leaseBytes, CancellationToken.None);
+                    Interlocked.Increment(ref acquiredCount);
+                }
+                catch (InvalidOperationException)
+                {
+                    Interlocked.Increment(ref rejectedCount);
+                }
+
+                budget.CurrentBytes.Should().BeLessThanOrEqualTo(PortableArchiveLimits.MaxExplicitBufferBytes);
+            }
+            finally
+            {
+                if (Interlocked.Increment(ref attemptedCount) == renterCount)
+                    allAttempted.TrySetResult();
+                await release.Task;
+                lease?.Dispose();
+            }
+        })).ToArray();
+
+        start.SetResult();
+        try
+        {
+            await allAttempted.Task;
+            acquiredCount.Should().Be(16);
+            rejectedCount.Should().Be(1);
+            budget.CurrentBytes.Should().Be(PortableArchiveLimits.MaxExplicitBufferBytes);
+            budget.HighWaterBytes.Should().BeLessThanOrEqualTo(PortableArchiveLimits.MaxExplicitBufferBytes);
+        }
+        finally
+        {
+            release.TrySetResult();
+            await Task.WhenAll(renters);
+        }
+
+        budget.CurrentBytes.Should().Be(0);
+    }
+
 }

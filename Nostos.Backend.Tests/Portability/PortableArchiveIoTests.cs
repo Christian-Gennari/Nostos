@@ -213,6 +213,259 @@ public sealed class PortableArchiveIoTests
         await sink.DisposeAsync();
     }
 
+    [Fact]
+    public async Task Range_cache_concurrent_misses_account_for_in_flight_bytes_within_cap()
+    {
+        const int pageBytes = 16;
+        const int pageCount = 12;
+        const int cap = 2 * pageBytes;
+        var entered = Enumerable.Range(0, pageCount).Select(_ =>
+            new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously)).ToArray();
+        var release = Enumerable.Range(0, pageCount).Select(_ =>
+            new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously)).ToArray();
+        var budget = new PortableArchiveBufferBudget(1024);
+        await using var source = new RangePortableArchiveSource(pageCount * pageBytes,
+            async (offset, buffer, cancellationToken) =>
+            {
+                var index = checked((int)(offset / pageBytes));
+                entered[index].TrySetResult();
+                await release[index].Task.WaitAsync(cancellationToken);
+                buffer.Span.Fill((byte)index);
+                return buffer.Length;
+            });
+        var cache = new PortableArchiveRangeCache(source, budget, pageBytes, cap);
+        var destinations = Enumerable.Range(0, pageCount).Select(_ => new byte[pageBytes]).ToArray();
+        var readers = Enumerable.Range(0, pageCount).Select(index =>
+            cache.ReadAsync(index * pageBytes, destinations[index], CancellationToken.None).AsTask()).ToArray();
+        long maxObservedBytes = 0;
+        try
+        {
+            for (var index = 0; index < pageCount; index++)
+            {
+                await entered[index].Task;
+                // This budget belongs only to the cache: it includes resident and in-flight arrays.
+                var ownedBytes = budget.CurrentBytes;
+                maxObservedBytes = Math.Max(maxObservedBytes, ownedBytes);
+                ownedBytes.Should().BeLessThanOrEqualTo(cap);
+                cache.CurrentBytes.Should().Be(ownedBytes, "resident and in-flight bytes must both be reported");
+                cache.HighWaterBytes.Should().Be(maxObservedBytes);
+                cache.HighWaterBytes.Should().BeLessThanOrEqualTo(cap);
+                release[index].TrySetResult();
+            }
+
+            (await Task.WhenAll(readers)).Should().OnlyContain(count => count == pageBytes);
+            for (var index = 0; index < pageCount; index++)
+                destinations[index].Should().OnlyContain(value => value == index);
+            maxObservedBytes.Should().Be(cap);
+            budget.HighWaterBytes.Should().Be(cap);
+        }
+        finally
+        {
+            foreach (var gate in release)
+                gate.TrySetResult();
+            await Task.WhenAll(readers);
+            await cache.DisposeAsync();
+        }
+
+        cache.CurrentBytes.Should().Be(0);
+        budget.CurrentBytes.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Range_cache_concurrent_same_page_misses_share_one_source_read()
+    {
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var calls = 0;
+        await using var source = new RangePortableArchiveSource(16,
+            async (offset, buffer, cancellationToken) =>
+            {
+                Interlocked.Increment(ref calls);
+                entered.TrySetResult();
+                await release.Task.WaitAsync(cancellationToken);
+                buffer.Span.Fill(42);
+                return buffer.Length;
+            });
+        var budget = new PortableArchiveBufferBudget(1024);
+        await using var cache = new PortableArchiveRangeCache(source, budget, pageBytes: 16, maxBytes: 16);
+        var destinations = Enumerable.Range(0, 12).Select(_ => new byte[16]).ToArray();
+        var readers = destinations.Select(destination =>
+            cache.ReadAsync(0, destination, CancellationToken.None).AsTask()).ToArray();
+        try
+        {
+            await entered.Task;
+            calls.Should().Be(1);
+            budget.CurrentBytes.Should().Be(16);
+        }
+        finally
+        {
+            release.TrySetResult();
+            await Task.WhenAll(readers);
+        }
+
+        calls.Should().Be(1);
+        cache.PageCount.Should().Be(1);
+        cache.CurrentBytes.Should().Be(16);
+        foreach (var destination in destinations)
+            destination.Should().OnlyContain(value => value == 42);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Range_cache_failed_or_cancelled_fetch_releases_reservation(bool cancel)
+    {
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var calls = 0;
+        await using var source = new RangePortableArchiveSource(16,
+            async (offset, buffer, cancellationToken) =>
+            {
+                if (Interlocked.Increment(ref calls) == 1)
+                {
+                    entered.TrySetResult();
+                    await release.Task.WaitAsync(cancellationToken);
+                    throw new IOException("Gated source failed.");
+                }
+
+                buffer.Span.Fill(42);
+                return buffer.Length;
+            });
+        var budget = new PortableArchiveBufferBudget(1024);
+        var cache = new PortableArchiveRangeCache(source, budget, pageBytes: 16, maxBytes: 16);
+        using var cancellation = new CancellationTokenSource();
+        var reader = cache.ReadAsync(0, new byte[16], cancellation.Token).AsTask();
+        try
+        {
+            await entered.Task;
+            cache.CurrentBytes.Should().Be(16);
+            budget.CurrentBytes.Should().Be(16);
+            if (cancel)
+            {
+                cancellation.Cancel();
+                await Assert.ThrowsAnyAsync<OperationCanceledException>(() => reader);
+            }
+            else
+            {
+                release.SetResult();
+                await Assert.ThrowsAsync<IOException>(() => reader);
+            }
+
+            cache.CurrentBytes.Should().Be(0);
+            budget.CurrentBytes.Should().Be(0);
+            cache.PageCount.Should().Be(0);
+            (await cache.ReadAsync(0, new byte[16], CancellationToken.None)).Should().Be(16);
+        }
+        finally
+        {
+            release.TrySetResult();
+            cancellation.Cancel();
+            try { await reader; }
+            catch (IOException) { }
+            catch (OperationCanceledException) { }
+            await cache.DisposeAsync();
+        }
+
+        cache.CurrentBytes.Should().Be(0);
+        budget.CurrentBytes.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Range_cache_failed_rent_releases_reservation_without_fetching()
+    {
+        var calls = 0;
+        await using var source = new RangePortableArchiveSource(16, (offset, buffer, cancellationToken) =>
+        {
+            calls++;
+            return ValueTask.FromResult(buffer.Length);
+        });
+        var budget = new PortableArchiveBufferBudget(16);
+        using var lease = await budget.RentAsync(16, CancellationToken.None);
+        await using var cache = new PortableArchiveRangeCache(source, budget, pageBytes: 16, maxBytes: 16);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => cache.ReadAsync(0, new byte[16], CancellationToken.None).AsTask());
+        cache.CurrentBytes.Should().Be(0);
+        cache.PageCount.Should().Be(0);
+        calls.Should().Be(0);
+        lease.Dispose();
+        (await cache.ReadAsync(0, new byte[16], CancellationToken.None)).Should().Be(16);
+        await cache.DisposeAsync();
+        budget.CurrentBytes.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Range_cache_multi_page_sync_miss_leaves_destination_untouched()
+    {
+        var calls = 0;
+        await using var source = new RangePortableArchiveSource(32, (offset, buffer, cancellationToken) =>
+        {
+            calls++;
+            buffer.Span.Fill(42);
+            return ValueTask.FromResult(buffer.Length);
+        });
+        var budget = new PortableArchiveBufferBudget(1024);
+        await using var cache = new PortableArchiveRangeCache(source, budget, pageBytes: 16, maxBytes: 32);
+        await cache.ReadAsync(0, new byte[16], CancellationToken.None);
+        var destination = Enumerable.Repeat((byte)99, 16).ToArray();
+
+        cache.TryRead(8, destination, out var bytesRead).Should().BeFalse();
+
+        bytesRead.Should().Be(0);
+        destination.Should().OnlyContain(value => value == 99);
+        calls.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Range_cache_final_short_page_clips_async_and_sync_reads()
+    {
+        var payload = Enumerable.Range(0, 18).Select(value => (byte)value).ToArray();
+        var calls = new List<(long Offset, int Length)>();
+        await using var source = new RangePortableArchiveSource(payload.Length, (offset, buffer, cancellationToken) =>
+        {
+            calls.Add((offset, buffer.Length));
+            payload.AsMemory(checked((int)offset), buffer.Length).CopyTo(buffer);
+            return ValueTask.FromResult(buffer.Length);
+        });
+        var budget = new PortableArchiveBufferBudget(1024);
+        await using var cache = new PortableArchiveRangeCache(source, budget, pageBytes: 16, maxBytes: 32);
+        var asyncDestination = Enumerable.Repeat((byte)99, 8).ToArray();
+        (await cache.ReadAsync(16, asyncDestination, CancellationToken.None)).Should().Be(2);
+        asyncDestination.Should().Equal(16, 17, 99, 99, 99, 99, 99, 99);
+        var syncDestination = Enumerable.Repeat((byte)99, 8).ToArray();
+
+        cache.TryRead(16, syncDestination, out var bytesRead).Should().BeTrue();
+        bytesRead.Should().Be(2);
+        syncDestination.Should().Equal(asyncDestination);
+        calls.Should().ContainSingle().Which.Should().Be((16L, 2));
+        (await cache.ReadAsync(18, new byte[8], CancellationToken.None)).Should().Be(0);
+        cache.TryRead(18, syncDestination, out bytesRead).Should().BeTrue();
+        bytesRead.Should().Be(0);
+        syncDestination.Should().Equal(asyncDestination);
+    }
+
+    [Fact]
+    public async Task Stream_sink_sync_writer_disposal_only_closes_until_async_completion()
+    {
+        var stream = new SyncForbiddenWriteStream();
+        await using var sink = new StreamPortableArchiveSink(stream, leaveOpen: false);
+        var writer = await sink.OpenWriteAsync();
+        await writer.WriteAsync(new byte[] { 1, 2 }, CancellationToken.None);
+
+        writer.Dispose();
+
+        writer.CanWrite.Should().BeFalse();
+        stream.IsDisposed.Should().BeFalse();
+        stream.SynchronousCalls.Should().Be(0);
+        await Assert.ThrowsAsync<ObjectDisposedException>(
+            () => writer.WriteAsync(new byte[] { 3 }, CancellationToken.None).AsTask());
+        await writer.DisposeAsync();
+        await writer.DisposeAsync();
+        stream.IsDisposed.Should().BeTrue();
+        stream.AsyncDisposeCalls.Should().Be(1);
+        stream.SynchronousCalls.Should().Be(0);
+    }
+
     private static async Task<byte[]> ReadRangeAsync(IPortableArchiveSource source, long offset, int length)
     {
         var buffer = new byte[length];
@@ -226,6 +479,7 @@ public sealed class PortableArchiveIoTests
 
         public int SynchronousCalls { get; private set; }
         public bool IsDisposed { get; private set; }
+        public int AsyncDisposeCalls { get; private set; }
 
         public override bool CanRead => false;
         public override bool CanSeek => false;
@@ -293,15 +547,12 @@ public sealed class PortableArchiveIoTests
 
         public override ValueTask DisposeAsync()
         {
+            AsyncDisposeCalls++;
             IsDisposed = true;
             return ValueTask.CompletedTask;
         }
 
-        protected override void Dispose(bool disposing)
-        {
-            IsDisposed = true;
-            base.Dispose(disposing);
-        }
+        protected override void Dispose(bool disposing) => RecordSynchronousCall();
 
         private void RecordSynchronousCall()
         {

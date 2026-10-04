@@ -1,5 +1,3 @@
-using System.Buffers;
-
 namespace Nostos.Backend.Services.Portability;
 
 internal sealed class PortableArchiveBufferBudget
@@ -42,7 +40,7 @@ internal sealed class PortableArchiveBufferBudget
 
     public ValueTask<PortableBufferLease> RentAsync(int bytes, CancellationToken cancellationToken)
     {
-        if (bytes <= 0)
+        if (bytes <= 0 || bytes > PortableArchiveLimits.MaxExplicitBufferBytes)
             throw new ArgumentOutOfRangeException(nameof(bytes));
 
         cancellationToken.ThrowIfCancellationRequested();
@@ -50,33 +48,16 @@ internal sealed class PortableArchiveBufferBudget
         var reservedBytes = GetPoolBucketLength(bytes);
         Reserve(reservedBytes);
 
-        byte[]? buffer = null;
-        var accountedBytes = reservedBytes;
         try
         {
-            buffer = ArrayPool<byte>.Shared.Rent(bytes);
-            if (buffer.Length < bytes)
-                throw new InvalidOperationException("The shared byte pool returned a buffer that was too small.");
-
-            if (buffer.Length > accountedBytes)
-            {
-                var additionalBytes = buffer.Length - accountedBytes;
-                Reserve(additionalBytes);
-                accountedBytes = buffer.Length;
-            }
-
+            // ArrayPool only guarantees a minimum length; allocate the exact reserved bucket.
+            var buffer = new byte[reservedBytes];
             cancellationToken.ThrowIfCancellationRequested();
-
-            var lease = new PortableBufferLease(this, buffer, bytes, accountedBytes);
-            buffer = null;
-            return ValueTask.FromResult(lease);
+            return ValueTask.FromResult(new PortableBufferLease(this, buffer, bytes, reservedBytes));
         }
         catch
         {
-            if (buffer is not null)
-                ArrayPool<byte>.Shared.Return(buffer, clearArray: true);
-
-            Release(accountedBytes);
+            Release(reservedBytes);
             throw;
         }
     }
@@ -124,7 +105,7 @@ internal sealed class PortableArchiveBufferBudget
     {
         try
         {
-            ArrayPool<byte>.Shared.Return(buffer, clearArray: true);
+            Array.Clear(buffer);
         }
         finally
         {
@@ -186,6 +167,7 @@ internal sealed class PortableArchiveRangeCache : IAsyncDisposable
     private readonly TaskCompletionSource _disposeCompletion = new(
         TaskCreationOptions.RunContinuationsAsynchronously);
     private long _residentBytes;
+    private long _reservedBytes;
     private long _highWaterBytes;
     private int _disposeStarted;
 
@@ -219,7 +201,7 @@ internal sealed class PortableArchiveRangeCache : IAsyncDisposable
         get
         {
             lock (_gate)
-                return _residentBytes;
+                return _residentBytes + _reservedBytes;
         }
     }
 
@@ -365,19 +347,19 @@ internal sealed class PortableArchiveRangeCache : IAsyncDisposable
         if (pageLength <= 0)
             throw new InvalidOperationException("The archive range cache requested a page outside the source length.");
 
-        var anticipatedPageBytes = PortableArchiveBufferBudget.GetPoolBucketLength(pageLength);
+        var reservedBytes = PortableArchiveBufferBudget.GetPoolBucketLength(pageLength);
         lock (_gate)
-            EvictUntilFits(anticipatedPageBytes);
+        {
+            EvictUntilFits(reservedBytes);
+            _reservedBytes += reservedBytes;
+            _highWaterBytes = Math.Max(_highWaterBytes, _residentBytes + _reservedBytes);
+        }
 
-        var lease = await _budget.RentAsync(pageLength, cancellationToken).ConfigureAwait(false);
+        PortableBufferLease? lease = null;
+        var reservationPending = true;
         try
         {
-            if (lease.AccountedBytes > anticipatedPageBytes)
-            {
-                lock (_gate)
-                    EvictUntilFits(checked((int)lease.AccountedBytes));
-            }
-
+            lease = await _budget.RentAsync(pageLength, cancellationToken).ConfigureAwait(false);
             var bytesRead = 0;
             while (bytesRead < pageLength)
             {
@@ -401,31 +383,27 @@ internal sealed class PortableArchiveRangeCache : IAsyncDisposable
             }
 
             cancellationToken.ThrowIfCancellationRequested();
-            ThrowIfDisposing();
-        }
-        catch
-        {
-            lease.Dispose();
-            throw;
-        }
-
-        try
-        {
             lock (_gate)
             {
                 ThrowIfDisposing();
                 var lruNode = _lru.AddLast(pageIndex);
                 var page = new CachePage(pageIndex, lease, pageLength, lruNode);
                 _pages.Add(pageIndex, page);
+                _reservedBytes -= reservedBytes;
                 _residentBytes += lease.AccountedBytes;
-                _highWaterBytes = Math.Max(_highWaterBytes, _residentBytes);
+                reservationPending = false;
+                lease = null;
                 return page;
             }
         }
-        catch
+        finally
         {
-            lease.Dispose();
-            throw;
+            lease?.Dispose();
+            if (reservationPending)
+            {
+                lock (_gate)
+                    _reservedBytes -= reservedBytes;
+            }
         }
     }
 
@@ -489,7 +467,7 @@ internal sealed class PortableArchiveRangeCache : IAsyncDisposable
 
     private void EvictUntilFits(int pageLength)
     {
-        while (_residentBytes + pageLength > _maxBytes)
+        while (_residentBytes + _reservedBytes + pageLength > _maxBytes)
         {
             var oldest = _lru.First
                 ?? throw new InvalidOperationException("The archive range cache cannot evict enough space.");
