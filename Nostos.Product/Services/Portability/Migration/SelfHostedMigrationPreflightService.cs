@@ -33,6 +33,8 @@ public sealed class SelfHostedMigrationPreflightService(
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(request.IncomingCounts);
+        if (HasNegativeCounts(request.IncomingCounts))
+            throw MigrationTransferException.Error(MigrationTransferException.InvalidRequest);
 
         var destination = await ReadDestinationAsync(ct);
         var snapshot = await capacity.GetSnapshotAsync(ct);
@@ -116,6 +118,21 @@ public sealed class SelfHostedMigrationPreflightService(
         MigrationDestinationStatus Status,
         MigrationExistingCounts Counts,
         string Revision);
+
+    private static bool HasNegativeCounts(MigrationArchiveCounts counts) =>
+        counts.Works < 0
+        || counts.Books < 0
+        || counts.Notes < 0
+        || counts.Topics < 0
+        || counts.NoteTopics < 0
+        || counts.Writings < 0
+        || counts.WritingNotes < 0
+        || counts.Collections < 0
+        || counts.CollectionMemberships < 0
+        || counts.Acquisitions < 0
+        || counts.AssistantSettings < 0
+        || counts.NoteImportBookLinks < 0
+        || counts.MediaEntries < 0;
 }
 
 /// <summary>

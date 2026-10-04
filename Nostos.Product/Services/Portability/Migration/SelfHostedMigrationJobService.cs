@@ -25,6 +25,7 @@ public sealed class SelfHostedMigrationJobService(
     TimeProvider? timeProvider = null)
 {
     private const int MaxIdempotencyKeyLength = 128;
+    private static readonly JsonSerializerOptions PreparedImportJson = new(JsonSerializerDefaults.Web);
     private readonly TimeProvider _clock = timeProvider ?? TimeProvider.System;
 
     private DateTime Now => _clock.GetUtcNow().UtcDateTime;
@@ -126,7 +127,10 @@ public sealed class SelfHostedMigrationJobService(
             && artifact.ExpiresAtUtc > Now;
 
         return new MigrationJobStatusResponse(
-            job,
+            // The worker lease token is an internal concurrency capability: no
+            // route accepts it, the browser derives processing state from the
+            // job state, and it never crosses the transport.
+            job with { LeaseToken = null, LeaseExpiresAtUtc = null },
             BuildProgress(record, sessionRecord, session),
             session,
             downloadAvailable,
@@ -140,10 +144,12 @@ public sealed class SelfHostedMigrationJobService(
         CancellationToken ct)
     {
         var job = await jobs.GetAsync(jobId, ct) ?? throw MigrationJobStoreException.NotFound(jobId);
-        if (MigrationJobTransitions.IsTerminal(job.State))
+        if (job.State != MigrationJobState.Cancelled
+            && MigrationJobTransitions.IsTerminal(job.State))
         {
             // Activation is the point of no return; terminal history is never
             // rewritten. Both are the plan's "cannot cancel" transport outcome.
+            // An already-cancelled job replays idempotently through the store.
             throw new MigrationJobStoreException(
                 MigrationJobStoreErrorCodes.CannotCancel,
                 "The migration job is terminal and cannot be cancelled.");
@@ -342,7 +348,8 @@ public sealed class SelfHostedMigrationJobService(
         try
         {
             return JsonSerializer.Deserialize<PreparedPortableImportMetadata>(
-                record.PreparedImportMetadataJson);
+                record.PreparedImportMetadataJson,
+                PreparedImportJson);
         }
         catch (JsonException)
         {

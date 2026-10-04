@@ -151,7 +151,7 @@ public static class MigrationEndpoints
         // refused before any byte is read; a chunked body that grows past the
         // limit makes Kestrel throw 413, mapped below.
         var bodyLimit = options.Value.MaxChunkBytes;
-        if (request.ContentLength is > 0 && request.ContentLength > bodyLimit)
+        if (request.ContentLength > bodyLimit)
             return ChunkTooLarge();
 
         var bodySizeFeature = request.HttpContext.Features.Get<IHttpMaxRequestBodySizeFeature>();

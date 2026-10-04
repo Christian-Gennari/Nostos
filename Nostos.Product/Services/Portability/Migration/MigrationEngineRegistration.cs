@@ -9,6 +9,9 @@ public static class MigrationEngineRegistration
     public static IServiceCollection AddSelfHostedMigrationEngine(this IServiceCollection services)
     {
         services.TryAddSingleton(TimeProvider.System);
+        // Job creation refuses directions without a real phase handler. Slices
+        // 9/10 replace this registration together with the unavailable handler.
+        services.TryAddSingleton<IMigrationPhaseAvailability>(MigrationPhaseAvailabilityNone.Instance);
         services.AddSingleton<MigrationJobCancellationRegistry>();
         services.AddSingleton<MigrationProcessingSlots>();
         services.AddSingleton<MigrationFileMutex>();
