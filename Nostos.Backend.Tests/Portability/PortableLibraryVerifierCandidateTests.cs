@@ -1,8 +1,12 @@
 using System.Security.Cryptography;
+using System.Text;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Nostos.Backend.Data.Models;
+using Nostos.Backend.Services;
 using Nostos.Backend.Services.Portability;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.PixelFormats;
 using Xunit;
 
 namespace Nostos.Backend.Tests.Portability;
@@ -27,6 +31,8 @@ public sealed class PortableLibraryVerificationCollection
 public sealed class CandidateVerificationFixture : IAsyncLifetime
 {
     public byte[] ArchiveBytes { get; private set; } = [];
+
+    public PortablePreparedImport Prepared { get; private set; } = null!;
 
     public PortablePreparedImportVerification Expected { get; private set; } = null!;
 
@@ -85,10 +91,10 @@ public sealed class CandidateVerificationFixture : IAsyncLifetime
 
         var store = new InMemoryPortableImportStagingStore();
         await using var staging = new InMemoryPortableImportStaging(store);
-        var prepared = await SelfHostedActivationTestSupport.PrepareStagedAsync(
+        Prepared = await SelfHostedActivationTestSupport.PrepareStagedAsync(
             ArchiveBytes,
             staging);
-        Expected = await Verifier.VerifyPreparedImportAsync(staging, prepared);
+        Expected = await Verifier.VerifyPreparedImportAsync(staging, Prepared);
         Expected.Passed.Should().BeTrue(
             string.Join("; ", Expected.Failures.Select(failure => failure.Code)));
     }
@@ -126,11 +132,13 @@ public sealed class PortableLibraryVerifierCandidateTests(CandidateVerificationF
         var report = await _fixture.Verifier.VerifyCandidateAsync(
             candidate.Db,
             candidate.Storage.StorageRoot,
+            _fixture.Prepared,
             _fixture.Expected);
 
         report.Passed.Should().BeTrue(
             string.Join("; ", report.Failures.Select(failure => $"{failure.Code}:{failure.Entity}:{failure.Field}")));
         report.Failures.Should().BeEmpty();
+        report.FailureCount.Should().Be(0);
         report.VerifiedKinds.Should().BeEquivalentTo(PortableLibraryVerifier.CandidateVerifiedKinds);
         report.MediaFilesVerified.Should().Be(_fixture.Expected.Media.Count);
         report.MediaBytesVerified.Should().Be(_fixture.Expected.Media.Sum(item => item.Length));
@@ -164,6 +172,7 @@ public sealed class PortableLibraryVerifierCandidateTests(CandidateVerificationF
         var report = await _fixture.Verifier.VerifyCandidateAsync(
             candidate.Db,
             candidate.Storage.StorageRoot,
+            _fixture.Prepared,
             _fixture.Expected);
 
         report.Passed.Should().BeTrue(
@@ -435,6 +444,7 @@ public sealed class PortableLibraryVerifierCandidateTests(CandidateVerificationF
         report.Failures.Should().Contain(failure =>
             failure.Code == PortableLibraryVerificationErrorCodes.MediaHashMismatch
             && failure.Entity == "media");
+        report.MediaFilesVerified.Should().Be(_fixture.Expected.Media.Count - 1);
     }
 
     [Fact]
@@ -495,17 +505,303 @@ public sealed class PortableLibraryVerifierCandidateTests(CandidateVerificationF
             candidate.Db.AssistantSettings.Add(row);
         }
 
+        row.CaptureProcessingMode = null;
+        await candidate.Db.SaveChangesAsync();
+
+        var report = await _fixture.Verifier.VerifyCandidateAsync(
+            candidate.Db,
+            candidate.Storage.StorageRoot,
+            prepared,
+            expected);
+
+        report.Passed.Should().BeFalse();
+        report.Failures.Should().Contain(failure =>
+            failure.Code == PortableLibraryVerificationErrorCodes.SingletonMismatch);
+    }
+
+    [Fact]
+    public async Task Book_file_name_change_is_detected()
+    {
+        var report = await VerifyAsync(async candidate =>
+        {
+            var book = await candidate.Db.Books.SingleAsync(item => item.Id == _fixture.EpubBookId);
+            book.FileDetails.FileName = "book.pdf";
+            await candidate.Db.SaveChangesAsync();
+        });
+
+        ShouldFail(report, "book", nameof(FileInfoDetails.FileName));
+    }
+
+    [Fact]
+    public async Task Book_cover_file_name_change_is_detected()
+    {
+        var report = await VerifyAsync(async candidate =>
+        {
+            var book = await candidate.Db.Books.SingleAsync(item => item.Id == _fixture.EpubBookId);
+            book.FileDetails.CoverFileName = "cover.png";
+            await candidate.Db.SaveChangesAsync();
+        });
+
+        ShouldFail(report, "book", nameof(FileInfoDetails.CoverFileName));
+    }
+
+    [Fact]
+    public async Task Stale_cover_thumbnail_is_rejected()
+    {
+        var report = await VerifyAsync(candidate =>
+        {
+            var cover = _fixture.Expected.Media.Single(descriptor => descriptor.Kind == "cover"
+                && descriptor.BookId == _fixture.EpubBookId);
+            var folder = Path.Combine(candidate.Storage.StorageRoot, cover.BookId.ToString());
+            Directory.CreateDirectory(folder);
+            File.WriteAllText(Path.Combine(folder, "cover-thumb-320.webp"), "stale thumbnail");
+            return Task.CompletedTask;
+        });
+
+        report.Passed.Should().BeFalse();
+        report.Failures.Should().Contain(failure =>
+            failure.Code == PortableLibraryVerificationErrorCodes.MediaUnexpectedFile);
+    }
+
+    [Fact]
+    public async Task Assistant_updated_at_change_is_detected()
+    {
+        var report = await VerifyAsync(async candidate =>
+        {
+            var row = await candidate.Db.AssistantSettings.SingleAsync();
+            row.UpdatedAtUtc = row.UpdatedAtUtc.AddDays(1);
+            await candidate.Db.SaveChangesAsync();
+        });
+
+        ShouldFail(report, "assistantSettings", nameof(AssistantSettingsModel.UpdatedAtUtc));
+    }
+
+    [Fact]
+    public async Task Null_mode_singleton_baseline_passes()
+    {
+        var (candidate, prepared, expected) = await CreateNullModeScenarioAsync();
+        await using var _ = candidate;
+
+        var report = await _fixture.Verifier.VerifyCandidateAsync(
+            candidate.Db,
+            candidate.Storage.StorageRoot,
+            prepared,
+            expected);
+
+        report.Passed.Should().BeTrue(
+            string.Join("; ", report.Failures.Select(failure => $"{failure.Code}:{failure.Field}")));
+    }
+
+    [Fact]
+    public async Task Null_mode_singleton_row_removal_is_detected()
+    {
+        var (candidate, prepared, expected) = await CreateNullModeScenarioAsync();
+        await using var _ = candidate;
+        candidate.Db.AssistantSettings.RemoveRange(candidate.Db.AssistantSettings);
+        await candidate.Db.SaveChangesAsync();
+
+        var report = await _fixture.Verifier.VerifyCandidateAsync(
+            candidate.Db,
+            candidate.Storage.StorageRoot,
+            prepared,
+            expected);
+
+        report.Passed.Should().BeFalse();
+        report.Failures.Should().Contain(failure =>
+            failure.Code == PortableLibraryVerificationErrorCodes.SingletonMismatch);
+    }
+
+    [Fact]
+    public async Task Null_mode_singleton_timestamp_change_is_detected()
+    {
+        var (candidate, prepared, expected) = await CreateNullModeScenarioAsync();
+        await using var _ = candidate;
+        var row = await candidate.Db.AssistantSettings.SingleAsync();
+        row.UpdatedAtUtc = row.UpdatedAtUtc.AddDays(1);
+        await candidate.Db.SaveChangesAsync();
+
+        var report = await _fixture.Verifier.VerifyCandidateAsync(
+            candidate.Db,
+            candidate.Storage.StorageRoot,
+            prepared,
+            expected);
+
+        ShouldFail(report, "assistantSettings", nameof(AssistantSettingsModel.UpdatedAtUtc));
+    }
+
+    [Fact]
+    public async Task Null_mode_singleton_mode_swap_is_detected()
+    {
+        var (candidate, prepared, expected) = await CreateNullModeScenarioAsync();
+        await using var _ = candidate;
+        var row = await candidate.Db.AssistantSettings.SingleAsync();
         row.CaptureProcessingMode = "verbatim";
         await candidate.Db.SaveChangesAsync();
 
         var report = await _fixture.Verifier.VerifyCandidateAsync(
             candidate.Db,
             candidate.Storage.StorageRoot,
+            prepared,
             expected);
+
+        ShouldFail(report, "assistantSettings", nameof(AssistantSettingsModel.CaptureProcessingMode));
+    }
+
+    [Fact]
+    public async Task Verification_handle_from_another_prepared_import_is_rejected()
+    {
+        await using var candidate = await _fixture.CreateCandidateAsync();
+        var store = new InMemoryPortableImportStagingStore();
+        await using var otherStaging = new InMemoryPortableImportStaging(store);
+        var otherPrepared = await SelfHostedActivationTestSupport.PrepareStagedAsync(
+            _fixture.ArchiveBytes,
+            otherStaging);
+
+        var report = await _fixture.Verifier.VerifyCandidateAsync(
+            candidate.Db,
+            candidate.Storage.StorageRoot,
+            otherPrepared,
+            _fixture.Expected);
 
         report.Passed.Should().BeFalse();
         report.Failures.Should().Contain(failure =>
-            failure.Code == PortableLibraryVerificationErrorCodes.SingletonMismatch);
+            failure.Code == PortableLibraryVerificationErrorCodes.ExpectedStateMismatch);
+    }
+
+    [Fact]
+    public async Task Divergent_candidate_failure_details_are_bounded()
+    {
+        var report = await VerifyAsync(async candidate =>
+        {
+            for (var index = 0; index < 200; index++)
+            {
+                candidate.Db.Topics.Add(new TopicModel { Topic = $"unexpected-{index}" });
+            }
+
+            await candidate.Db.SaveChangesAsync();
+        });
+
+        report.Passed.Should().BeFalse();
+        report.FailureCount.Should().BeGreaterThan(PortableLibraryVerifier.MaxRetainedFailures);
+        report.Failures.Count.Should().BeLessThanOrEqualTo(PortableLibraryVerifier.MaxRetainedFailures);
+    }
+
+    [Fact]
+    public async Task Candidate_media_is_served_by_live_storage_and_thumbnails_generate_on_demand()
+    {
+        await using var source = await LocalPortableTestLibrary.CreateAsync();
+        var now = DateTime.UtcNow.AddDays(-1);
+        var work = new WorkModel
+        {
+            Id = Guid.NewGuid(),
+            Title = "Real image",
+            NormalizedTitle = "REAL IMAGE",
+            NormalizedAuthor = string.Empty,
+            CreatedAt = now,
+        };
+        var book = new EBookModel
+        {
+            Id = Guid.NewGuid(),
+            WorkId = work.Id,
+            Work = work,
+            Title = "Real image",
+            CreatedAt = now,
+            FileDetails = new FileInfoDetails
+            {
+                HasFile = true,
+                FileName = "book.epub",
+                CoverFileName = "cover.png",
+            },
+        };
+        source.Db.Works.Add(work);
+        source.Db.Books.Add(book);
+        await source.Db.SaveChangesAsync();
+
+        using var image = new Image<Rgba32>(4, 4);
+        image[0, 0] = new Rgba32(10, 20, 30);
+        using var png = new MemoryStream();
+        await image.SaveAsPngAsync(png);
+        png.Position = 0;
+        await source.Storage.SaveBookCoverAsync(book.Id, png, "cover.png");
+        await source.Storage.SaveBookFileAsync(
+            book.Id,
+            new MemoryStream(Encoding.UTF8.GetBytes("EPUB-BYTES")),
+            "book.epub");
+
+        var archive = await SelfHostedActivationTestSupport.ExportArchiveAsync(source);
+        var store = new InMemoryPortableImportStagingStore();
+        await using var staging = new InMemoryPortableImportStaging(store);
+        var prepared = await SelfHostedActivationTestSupport.PrepareStagedAsync(archive, staging);
+        var verifier = new PortableLibraryVerifier();
+        var expected = await verifier.VerifyPreparedImportAsync(staging, prepared);
+        expected.Passed.Should().BeTrue();
+
+        await using var candidate = await LocalPortableTestLibrary.CreateAsync();
+        using var stream = new MemoryStream(archive, writable: false);
+        await candidate.Portability().ImportAsync(stream);
+
+        var report = await verifier.VerifyCandidateAsync(
+            candidate.Db,
+            candidate.Storage.StorageRoot,
+            prepared,
+            expected);
+        report.Passed.Should().BeTrue(
+            string.Join("; ", report.Failures.Select(failure => $"{failure.Code}:{failure.Field}")));
+
+        foreach (var descriptor in expected.Media)
+        {
+            StoredAssetRead? opened = descriptor.Kind == "book"
+                ? await candidate.Storage.OpenBookFileAsync(descriptor.BookId)
+                : await candidate.Storage.OpenBookCoverAsync(descriptor.BookId);
+            opened.Should().NotBeNull();
+            await using (opened!)
+            {
+                var payload = await SelfHostedActivationTestSupport.ReadAllAsync(opened.Content);
+                payload.LongLength.Should().Be(descriptor.Length);
+                SelfHostedActivationTestSupport.Sha256Hex(payload).Should().Be(descriptor.Sha256);
+            }
+        }
+
+        var thumbnail = await candidate.Storage.GetBookCoverThumbnailInfoAsync(book.Id, 320);
+        thumbnail.Should().NotBeNull();
+        File.Exists(Path.Combine(
+            candidate.Storage.StorageRoot,
+            book.Id.ToString(),
+            "cover-thumb-320.webp")).Should().BeTrue();
+
+        await using var thumbnailRead = await candidate.Storage.OpenBookCoverThumbnailAsync(book.Id, 320);
+        thumbnailRead.Should().NotBeNull();
+        thumbnailRead!.Info.Length.Should().BeGreaterThan(0);
+    }
+
+    private static async Task<(
+        LocalPortableTestLibrary Candidate,
+        PortablePreparedImport Prepared,
+        PortablePreparedImportVerification Expected)> CreateNullModeScenarioAsync()
+    {
+        await using var source = await LocalPortableTestLibrary.CreateAsync();
+        await PortableArchiveTestSupport.PopulateRepresentativeAsync(source.Db, source.Storage);
+        var assistant = await source.Db.AssistantSettings.SingleAsync();
+        assistant.CaptureProcessingMode = null;
+        assistant.UpdatedAtUtc = new DateTime(2026, 9, 1, 12, 0, 0, DateTimeKind.Utc);
+        await source.Db.SaveChangesAsync();
+        var archive = await SelfHostedActivationTestSupport.ExportArchiveAsync(source);
+
+        PortablePreparedImport prepared;
+        PortablePreparedImportVerification expected;
+        var store = new InMemoryPortableImportStagingStore();
+        await using (var staging = new InMemoryPortableImportStaging(store))
+        {
+            prepared = await SelfHostedActivationTestSupport.PrepareStagedAsync(archive, staging);
+            expected = await new PortableLibraryVerifier().VerifyPreparedImportAsync(staging, prepared);
+            expected.Passed.Should().BeTrue(
+                string.Join("; ", expected.Failures.Select(failure => failure.Code)));
+        }
+
+        var candidate = await LocalPortableTestLibrary.CreateAsync();
+        using var stream = new MemoryStream(archive, writable: false);
+        await candidate.Portability().ImportAsync(stream);
+        return (candidate, prepared, expected);
     }
 
     private async Task<PortableLibraryVerificationReport> VerifyAsync(
@@ -516,6 +812,7 @@ public sealed class PortableLibraryVerifierCandidateTests(CandidateVerificationF
         return await _fixture.Verifier.VerifyCandidateAsync(
             candidate.Db,
             candidate.Storage.StorageRoot,
+            _fixture.Prepared,
             _fixture.Expected);
     }
 

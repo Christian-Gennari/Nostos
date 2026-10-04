@@ -31,6 +31,7 @@ public static class PortableLibraryVerificationErrorCodes
     public const string SingletonMismatch = "portable_verify_singleton_mismatch";
     public const string MediaUnexpectedFile = "portable_verify_media_unexpected";
     public const string ExpectedStateInvalid = "portable_verify_expected_invalid";
+    public const string ExpectedStateMismatch = "portable_verify_expected_mismatch";
 }
 
 /// <summary>
@@ -56,7 +57,9 @@ public sealed record PortableLibraryVerificationFailure(
 /// <summary>
 /// Typed verification outcome. A report passes only when every recognized portable
 /// kind and field was compared and no mismatch was found; any unverifiable
-/// dimension is itself a failure.
+/// dimension is itself a failure. <see cref="Failures"/> retains a bounded number of
+/// specific details (<see cref="FailureCount"/> is the total detected), so a
+/// heavily divergent candidate cannot exhaust memory with failure records.
 /// </summary>
 public sealed record PortableLibraryVerificationReport(
     bool Passed,
@@ -64,7 +67,8 @@ public sealed record PortableLibraryVerificationReport(
     IReadOnlyList<string> VerifiedKinds,
     long PortableRowsVerified,
     long MediaFilesVerified,
-    long MediaBytesVerified);
+    long MediaBytesVerified,
+    long FailureCount);
 
 /// <summary>
 /// Successful (or failed) verification of a prepared import, carrying an opaque
@@ -100,6 +104,17 @@ public sealed class PortablePreparedImportVerification
 
     public IReadOnlyList<PortableArchiveMediaEntry> Media => Descriptors;
 
+    /// <summary>
+    /// The committed staged descriptor this handle verified: staging identifier,
+    /// relational payload length and SHA-256. Candidate verification refuses a
+    /// handle that does not match the supplied prepared import.
+    /// </summary>
+    internal PortableStagingId StagingId => Metadata.StagingId;
+
+    internal long DataBytes => Metadata.DataBytes;
+
+    internal string DataSha256 => Metadata.DataSha256;
+
     internal IReadOnlyList<PortablePreparedMedia> StagedMedia { get; }
 
     internal IReadOnlyList<PortableArchiveMediaEntry> Descriptors { get; }
@@ -114,6 +129,8 @@ public sealed class PortablePreparedImportVerification
 /// mandatory). <see cref="VerifyCandidateAsync"/> compares the fully materialized
 /// candidate database and media root against the verified prepared import using
 /// read-only queries; it never mutates the candidate or any host operational table.
+/// The supplied expected state must be bound to the same committed prepared
+/// descriptor (staging identifier and relational data hash) as <c>prepared</c>.
 /// </summary>
 public interface IPortableLibraryVerifier
 {
@@ -125,6 +142,7 @@ public interface IPortableLibraryVerifier
     Task<PortableLibraryVerificationReport> VerifyCandidateAsync(
         NostosDbContext candidateDatabase,
         string candidateMediaRoot,
+        IPreparedPortableImport prepared,
         PortablePreparedImportVerification expected,
         CancellationToken ct = default);
 

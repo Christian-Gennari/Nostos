@@ -565,6 +565,21 @@ public sealed class PortableCompletenessInventoryTests
             .Append(nameof(MigrationExistingCounts.TotalRows))
             .ToHashSet(StringComparer.Ordinal);
 
+    /// <summary>
+    /// Portable EF entity properties by entity name. Verifier candidate coverage is
+    /// asserted against this projection so a classified portable property that no
+    /// executable comparison checks fails the verifier coverage tests.
+    /// </summary>
+    internal static IReadOnlyDictionary<string, IReadOnlyList<string>> PortablePropertiesByEntity =>
+        Inventory
+            .Where(pair => !pair.Value.IsEntityExcluded)
+            .ToDictionary(
+                pair => pair.Key,
+                pair => (IReadOnlyList<string>)pair.Value.PortableProperties
+                    .OrderBy(name => name, StringComparer.Ordinal)
+                    .ToList(),
+                StringComparer.Ordinal);
+
     [Fact]
     public void Portable_classification_and_archive_records_have_two_way_property_parity()
     {

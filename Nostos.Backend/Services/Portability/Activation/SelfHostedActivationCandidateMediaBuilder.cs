@@ -44,11 +44,23 @@ internal interface ISelfHostedActivationCandidateMediaBuilder
 /// item at a time through one bounded buffer, hashing while copying and verifying
 /// exact length and SHA-256 against the committed descriptor. Each file is written
 /// to a sibling <c>.partial</c>, flushed to disk, then renamed into place, so a
-/// crash leaves either no candidate file or a complete one. Rerunning after a crash
-/// reuses an already-complete, hash-verified file and discards any partial file.
-/// Cancellation is cleanup-safe. The builder never touches the live media root and
-/// confines every write to the candidate root.
+/// crash leaves either no candidate file or a complete one. Before copying, every
+/// file in the candidate root that is not a planned primary media file is deleted,
+/// so reconstructible leftovers (for example <c>cover-thumb-*.webp</c>) and partial
+/// scratch from an earlier attempt can never survive into the activated
+/// generation. Rerunning after a crash reuses an already-complete, hash-verified
+/// file and discards any partial file. Cancellation is cleanup-safe. The builder
+/// never touches the live media root and confines every write to the candidate
+/// root.
 /// </summary>
+/// <remarks>
+/// Durability: file contents are flushed with <c>Flush(flushToDisk: true)</c>
+/// before each rename. <see cref="ActivationFileSystem.Rename"/> fsyncs the source
+/// and target parent directories on Linux and uses <c>MoveFileEx</c>
+/// <c>WRITE_THROUGH</c> on Windows. The builder does not separately fsync the
+/// directory entry of a newly created per-book folder; a process crash that
+/// loses that entry simply leaves the candidate media to be rebuilt.
+/// </remarks>
 internal sealed class SelfHostedActivationCandidateMediaBuilder(
     SelfHostedActivationPaths paths,
     IPortableImportStaging staging) : ISelfHostedActivationCandidateMediaBuilder
@@ -94,6 +106,7 @@ internal sealed class SelfHostedActivationCandidateMediaBuilder(
 
         Directory.CreateDirectory(root);
         paths.VerifyMediaPath(root);
+        DeleteUnplannedFiles(root, planned);
 
         var buffer = new byte[CopyBufferBytes];
         long bytes = 0;
@@ -198,6 +211,40 @@ internal sealed class SelfHostedActivationCandidateMediaBuilder(
             copiedBytes,
             reusedFiles,
             reusedBytes);
+    }
+
+    private void DeleteUnplannedFiles(string root, IReadOnlyList<PlannedMedia> planned)
+    {
+        var fullRoot = Path.GetFullPath(root);
+        var comparison = OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+        var targets = new HashSet<string>(
+            planned.Select(item => item.TargetPath),
+            OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+        var options = new EnumerationOptions
+        {
+            RecurseSubdirectories = true,
+            AttributesToSkip = FileAttributes.ReparsePoint,
+            IgnoreInaccessible = false,
+        };
+
+        foreach (var file in Directory.EnumerateFiles(fullRoot, "*", options))
+        {
+            var full = Path.GetFullPath(file);
+            if (!full.StartsWith(fullRoot + Path.DirectorySeparatorChar, comparison))
+            {
+                throw Failure("A candidate media file resolves outside the candidate media root.");
+            }
+
+            if (targets.Contains(full))
+            {
+                continue;
+            }
+
+            paths.VerifyMediaPath(full);
+            File.Delete(full);
+        }
     }
 
     private PlannedMedia[] Plan(

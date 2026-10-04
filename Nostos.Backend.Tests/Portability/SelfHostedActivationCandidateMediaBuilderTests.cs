@@ -298,6 +298,40 @@ public sealed class SelfHostedActivationCandidateMediaBuilderTests
         Directory.Exists(paths.CandidateMedia(files.Id)).Should().BeFalse();
     }
 
+    [Fact]
+    public async Task Build_removes_unplanned_and_reconstructible_leftovers_from_the_candidate_root()
+    {
+        using var files = new ActivationFiles();
+        ResetCandidate(files);
+        var (staging, prepared) = await PrepareAsync();
+        await using var _ = staging;
+        var root = files.Paths.CandidateMedia(files.Id);
+        var descriptor = prepared.Media[0].Descriptor;
+        var folder = Path.Combine(root, descriptor.BookId.ToString());
+        Directory.CreateDirectory(folder);
+        File.WriteAllText(Path.Combine(folder, "cover-thumb-320.webp"), "stale thumbnail");
+        File.WriteAllText(Path.Combine(folder, "stray.bin"), "stray");
+        File.WriteAllText(Path.Combine(folder, descriptor.FileName + ".partial"), "partial");
+        var strayFolder = Path.Combine(root, Guid.NewGuid().ToString());
+        Directory.CreateDirectory(strayFolder);
+        File.WriteAllText(Path.Combine(strayFolder, "book.epub"), "stray book");
+
+        var result = await new SelfHostedActivationCandidateMediaBuilder(files.Paths, staging)
+            .BuildMediaAsync(files.Id, prepared);
+
+        var remaining = Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
+            .Select(Path.GetFullPath)
+            .ToHashSet();
+        var expected = prepared.Media
+            .Select(item => Path.GetFullPath(Path.Combine(
+                root,
+                item.Descriptor.BookId.ToString(),
+                item.Descriptor.FileName)))
+            .ToHashSet();
+        remaining.Should().BeEquivalentTo(expected);
+        result.FileCount.Should().Be(prepared.Media.Count);
+    }
+
     private sealed class RefusingVolume : IActivationVolume
     {
         public bool SameVolume(string first, string second) => false;
