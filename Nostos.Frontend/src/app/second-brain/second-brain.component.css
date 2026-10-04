@@ -104,7 +104,16 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  flex-shrink: 0;
+  /*
+   * Keep the right-side toolbar itself at one stable desktop measure. Topics
+   * uses that room for Notes/Topics + search + list/map; Notes uses the same
+   * room but lets search absorb the list/map space instead of leaving a blank
+   * 68px hole. The width may still shrink on narrower desktops and becomes
+   * full-width in the existing mobile stack.
+   */
+  width: 100%;
+  max-width: 560px;
+  flex-shrink: 1;
   min-width: 0;
 }
 
@@ -157,7 +166,7 @@
 .brain-source-link { align-self: flex-start; }
 
 .brain-header-tools .search-box {
-  flex: 0 1 320px;
+  flex: 1 1 320px;
   min-width: 140px;
 }
 
@@ -247,35 +256,10 @@
   flex: 0 0 auto;
 }
 
-/*
- * Notes and review do not have a list/map presentation choice, but removing this
- * host on desktop changes the width of the right-aligned header-tools flex item
- * and makes the tabs/search jump. Keep the real shared control in layout so its
- * component-owned geometry remains the source of truth; make the dormant slot
- * completely non-interactive and invisible instead.
- */
-.view-mode-control--inactive {
-  visibility: hidden;
-  pointer-events: none;
-}
-
-/*
- * On a phone the shared toggle is wider (76px total) and the tools row already
- * reflows. Reserving an invisible slot there would only steal useful search
- * width, so collapse the dormant slot at the same narrow/short breakpoints the
- * Brain already treats as a phone layout. Map mode is unaffected because this
- * class is applied only in Notes/review.
- */
-@media (max-width: 768px), (max-height: 500px) {
-  .view-mode-control--inactive {
-    display: none;
-  }
-}
-
-/* The Brain renders `nostos-view-toggle`, and that component still owns the
-   control's chrome and geometry (including the 34x32-in-38px mobile rung, which
-   both surfaces get from one place). This file owns only surface layout: the flex
-   hook plus the inactive-slot visibility rules above.
+/* Nothing below styles the view control any more: the Brain renders
+   `nostos-view-toggle`, and that component owns its own chrome and its own
+   geometry (including the 34x32-in-38px mobile rung, which both surfaces now get
+   from one place). This file keeps only the flex hook above.
 
    `.toggle-opt` in styles.css is NOT dead, and is deliberately not what the Brain
    uses: it is the recipe for the segmented surfaces this component does not
