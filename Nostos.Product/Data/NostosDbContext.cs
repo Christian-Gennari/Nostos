@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Nostos.Backend.Data.Models;
 using Nostos.Backend.Services.Library;
+using Nostos.Backend.Services.Portability;
 
 namespace Nostos.Backend.Data;
 
@@ -56,6 +57,16 @@ public class NostosDbContext : DbContext
     // own row: the provider table above holds provider configuration and
     // encrypted keys, so reusing it would make its name a lie.
     public DbSet<AssistantSettingsModel> AssistantSettings => Set<AssistantSettingsModel>();
+
+    // Durable operational transfer records for library migration jobs
+    // (issue #679). Host-local state — leases, sessions, chunk receipts,
+    // export artifacts and storage reservations — explicitly excluded from
+    // portable archives.
+    public DbSet<MigrationJobRecord> MigrationJobRecords => Set<MigrationJobRecord>();
+    public DbSet<MigrationSessionRecord> MigrationSessionRecords => Set<MigrationSessionRecord>();
+    public DbSet<MigrationChunkReceiptRecord> MigrationChunkReceiptRecords => Set<MigrationChunkReceiptRecord>();
+    public DbSet<MigrationExportArtifactRecord> MigrationExportArtifactRecords => Set<MigrationExportArtifactRecord>();
+    public DbSet<MigrationStorageReservationRecord> MigrationStorageReservations => Set<MigrationStorageReservationRecord>();
 
     // A few legacy import/repository paths still add a BookModel directly.
     // Keep those writes valid now that WorkId is a required foreign key. The
@@ -430,6 +441,132 @@ public class NostosDbContext : DbContext
             e.ToTable(t => t.HasCheckConstraint(
                 "CK_AssistantSettings_SingletonId",
                 $"\"Id\" = {AssistantSettingsModel.SingletonId}"));
+        });
+
+        // --- DURABLE MIGRATION TRANSFER RECORDS (issue #679) ---
+        // Provider-portable operational state: Guid keys, int enums, long byte
+        // counts and concurrency versions, and UTC DateTime instants converted
+        // by UtcDateTimeValueConverter (the repo-wide convention, see
+        // ConfigureConventions). DateTime — not DateTimeOffset — because the
+        // SQLite provider can compare and order DateTime in SQL, which the
+        // lease/expiry conditional updates and sweeps require. Bounded strings
+        // and JSON recovery state as ordinary text. Check constraints use only
+        // SQL accepted by both SQLite and PostgreSQL; semantic validation
+        // remains in services. No absolute paths and no account identifiers
+        // are persisted here.
+
+        modelBuilder.Entity<MigrationJobRecord>(e =>
+        {
+            e.HasKey(j => j.Id);
+            e.Property(j => j.IdempotencyKey).IsRequired();
+            e.Property(j => j.CreationPayloadHash).IsRequired();
+            e.Property(j => j.Version).IsConcurrencyToken();
+
+            // Installation-scoped owner uniqueness; the private hosted adapter
+            // applies its own owner-scoped uniqueness behind the same contract.
+            e.HasIndex(j => j.IdempotencyKey).IsUnique();
+            e.HasIndex(j => new { j.State, j.LeaseExpiresAtUtc });
+            e.HasIndex(j => j.ExpiresAtUtc);
+            e.HasIndex(j => j.UpdatedAtUtc);
+
+            e.ToTable(t =>
+            {
+                t.HasCheckConstraint(
+                    "CK_MigrationJobRecords_ReservedStorageBytes",
+                    "\"ReservedStorageBytes\" >= 0");
+                t.HasCheckConstraint(
+                    "CK_MigrationJobRecords_AttemptNumber",
+                    "\"AttemptNumber\" >= 1");
+                t.HasCheckConstraint(
+                    "CK_MigrationJobRecords_IdempotencyKey",
+                    "length(\"IdempotencyKey\") > 0 AND length(\"IdempotencyKey\") <= 128");
+                t.HasCheckConstraint(
+                    "CK_MigrationJobRecords_LeaseToken",
+                    "\"MigrationLeaseToken\" IS NULL OR " +
+                    "(length(\"MigrationLeaseToken\") > 0 AND length(\"MigrationLeaseToken\") <= 128)");
+            });
+        });
+
+        modelBuilder.Entity<MigrationSessionRecord>(e =>
+        {
+            e.HasKey(s => s.Id);
+            e.Property(s => s.FileIdentitySha256).IsRequired();
+            e.Property(s => s.IdempotencyKey).IsRequired();
+            e.Property(s => s.CreationPayloadHash).IsRequired();
+            e.Property(s => s.StorageKey).IsRequired();
+            e.Property(s => s.Version).IsConcurrencyToken();
+
+            // Sessions are owned by their job; explicit retention cleanup
+            // deletes the job and cascades to its sessions and receipts.
+            e.HasOne<MigrationJobRecord>()
+                .WithMany()
+                .HasForeignKey(s => s.JobId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasIndex(s => new { s.JobId, s.IdempotencyKey }).IsUnique();
+            e.HasIndex(s => new { s.JobId, s.State });
+            e.HasIndex(s => s.ExpiresAtUtc);
+
+            e.ToTable(t =>
+            {
+                t.HasCheckConstraint(
+                    "CK_MigrationSessionRecords_TotalBytes",
+                    "\"TotalBytes\" > 0");
+                t.HasCheckConstraint(
+                    "CK_MigrationSessionRecords_ChunkSize",
+                    $"\"ChunkSize\" >= {MigrationContractLimits.MinChunkBytes} AND " +
+                    $"\"ChunkSize\" <= {MigrationContractLimits.MaxChunkBytes}");
+                t.HasCheckConstraint(
+                    "CK_MigrationSessionRecords_TotalChunks",
+                    "\"TotalChunks\" > 0");
+                t.HasCheckConstraint(
+                    "CK_MigrationSessionRecords_FileIdentitySize",
+                    "\"FileIdentitySizeBytes\" = \"TotalBytes\"");
+                t.HasCheckConstraint(
+                    "CK_MigrationSessionRecords_ReceivedBytes",
+                    "\"ReceivedBytes\" >= 0 AND \"ReceivedBytes\" <= \"TotalBytes\"");
+            });
+        });
+
+        modelBuilder.Entity<MigrationChunkReceiptRecord>(e =>
+        {
+            e.HasKey(c => new { c.SessionId, c.ChunkIndex });
+            e.Property(c => c.Sha256).IsRequired();
+
+            e.HasOne<MigrationSessionRecord>()
+                .WithMany()
+                .HasForeignKey(c => c.SessionId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            e.ToTable(t => t.HasCheckConstraint(
+                "CK_MigrationChunkReceiptRecords_Bounds",
+                "\"ChunkIndex\" >= 0 AND \"OffsetBytes\" >= 0 AND \"LengthBytes\" > 0"));
+        });
+
+        modelBuilder.Entity<MigrationExportArtifactRecord>(e =>
+        {
+            e.HasKey(a => a.JobId);
+            e.Property(a => a.StorageKey).IsRequired();
+            e.Property(a => a.FileName).IsRequired();
+            e.Property(a => a.ContentType).IsRequired();
+            e.Property(a => a.Version).IsConcurrencyToken();
+
+            e.HasOne<MigrationJobRecord>()
+                .WithMany()
+                .HasForeignKey(a => a.JobId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasIndex(a => new { a.State, a.ExpiresAtUtc });
+        });
+
+        modelBuilder.Entity<MigrationStorageReservationRecord>(e =>
+        {
+            e.HasKey(r => r.Id);
+            e.Property(r => r.Version).IsConcurrencyToken();
+
+            // Expired/unclaimed reservation sweep and capacity accounting both
+            // filter on the expiry instant.
+            e.HasIndex(r => r.ExpiresAtUtc);
         });
     }
 }
