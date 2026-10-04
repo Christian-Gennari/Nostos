@@ -47,6 +47,8 @@ import {
   MigrationTransportError,
 } from './library-transfer-transport';
 import { sha256ChunkHex } from './hash/chunk-digest';
+import { readBlobBytes } from './hash/blob-bytes';
+import { Sha256 } from './hash/sha256';
 
 export type MockTransportOperation =
   | 'preflight'
@@ -100,9 +102,13 @@ interface MockSession {
   totalChunks: number;
   fileIdentity: MigrationFileIdentityDto;
   idempotencyKey: string;
+  /** Canonical creation payload the key is bound to (server `CreationPayloadHash`). */
+  creationPayload: string;
   createdAt: number;
   expiresAt: number;
   receipts: Map<number, { lengthBytes: number; sha256: string }>;
+  /** Received bytes, retained so completion can re-hash the whole file. */
+  chunkBlobs: Map<number, Blob>;
 }
 
 interface MockJob {
@@ -174,7 +180,7 @@ function randomId(): string {
 export class MockLibraryTransferTransport implements LibraryTransferTransport {
   private readonly jobs = new Map<string, MockJob>();
   private readonly jobIdByIdempotencyKey = new Map<string, string>();
-  private readonly jobDirectionByIdempotencyKey = new Map<string, string>();
+  private readonly jobPayloadByIdempotencyKey = new Map<string, string>();
   private readonly reservations = new Map<string, MockReservation>();
   private readonly failures: MockTransportFailure[] = [];
   private readonly createId: () => string;
@@ -202,7 +208,11 @@ export class MockLibraryTransferTransport implements LibraryTransferTransport {
 
   constructor(private readonly options: MockLibraryTransferTransportOptions = {}) {
     const chunkSize = options.chunkSizeBytes ?? MIGRATION_LIMITS.defaultChunkBytes;
-    if (!Number.isInteger(chunkSize) || chunkSize < MIGRATION_LIMITS.minChunkBytes) {
+    if (
+      !Number.isInteger(chunkSize) ||
+      chunkSize < MIGRATION_LIMITS.minChunkBytes ||
+      chunkSize > MIGRATION_LIMITS.maxChunkBytes
+    ) {
       throw new Error(`Mock chunk size ${chunkSize} is outside the contract bounds.`);
     }
     this.createId = options.createId ?? randomId;
@@ -229,13 +239,26 @@ export class MockLibraryTransferTransport implements LibraryTransferTransport {
     this.failures.push({ times: 1, ...failure });
   }
 
-  /** Marks chunks as already received by the server, bypassing upload. */
-  seedReceivedChunks(jobId: string, chunkIndexes: readonly number[]): void {
+  /**
+   * Marks chunks as already received by the server, bypassing upload. When the
+   * file is supplied the exact slices are retained so a later `completeUpload`
+   * can re-hash the whole file, exactly as the server does.
+   */
+  async seedReceivedChunks(
+    jobId: string,
+    chunkIndexes: readonly number[],
+    file?: Blob,
+  ): Promise<void> {
     const session = this.requireSession(jobId);
     for (const index of chunkIndexes) {
+      const lengthBytes = chunkLength(index, session.totalBytes, session.chunkSize);
+      const blob = file
+        ? file.slice(index * session.chunkSize, index * session.chunkSize + lengthBytes)
+        : null;
+      if (blob) session.chunkBlobs.set(index, blob);
       session.receipts.set(index, {
-        lengthBytes: chunkLength(index, session.totalBytes, session.chunkSize),
-        sha256: '0'.repeat(64),
+        lengthBytes,
+        sha256: blob ? await sha256ChunkHex(blob) : '0'.repeat(64),
       });
     }
   }
@@ -309,10 +332,10 @@ export class MockLibraryTransferTransport implements LibraryTransferTransport {
       throw this.typedError('migration_invalid_request', 400);
     }
 
+    const payload = jobCreationPayload(request);
     const existingId = this.jobIdByIdempotencyKey.get(request.idempotencyKey);
     if (existingId) {
-      const direction = this.jobDirectionByIdempotencyKey.get(request.idempotencyKey);
-      if (direction !== request.direction) {
+      if (this.jobPayloadByIdempotencyKey.get(request.idempotencyKey) !== payload) {
         throw this.typedError('migration_idempotency_conflict', 409);
       }
       return this.status(this.requireJob(existingId));
@@ -345,7 +368,7 @@ export class MockLibraryTransferTransport implements LibraryTransferTransport {
 
     this.jobs.set(job.id, job);
     this.jobIdByIdempotencyKey.set(request.idempotencyKey, job.id);
-    this.jobDirectionByIdempotencyKey.set(request.idempotencyKey, request.direction);
+    this.jobPayloadByIdempotencyKey.set(request.idempotencyKey, payload);
     this.jobCreationCount += 1;
 
     return this.status(job);
@@ -439,14 +462,24 @@ export class MockLibraryTransferTransport implements LibraryTransferTransport {
 
     this.validateSessionRequest(request);
 
+    const creationPayload = sessionCreationPayload(request);
     const existing = job.session;
     if (existing) {
-      const sameKey = existing.idempotencyKey === request.idempotencyKey;
-      if (sameKey && identityEquals(existing.fileIdentity, request.fileIdentity)) {
+      if (existing.idempotencyKey === request.idempotencyKey) {
+        // Same key binds the complete creation payload (server CreationPayloadHash).
+        if (existing.creationPayload !== creationPayload) {
+          throw this.typedError('migration_idempotency_conflict', 409);
+        }
         return this.sessionResponse(existing);
       }
-      if (sameKey) throw this.typedError('migration_idempotency_conflict', 409);
-      if (identityEquals(existing.fileIdentity, request.fileIdentity)) {
+
+      // A new key may only reattach to the existing session when identity and
+      // chunking match; otherwise it is a different file transfer.
+      const sameChunking =
+        existing.chunkSize === request.chunkSize &&
+        existing.totalChunks === request.totalChunks &&
+        existing.totalBytes === request.totalBytes;
+      if (sameChunking && identityEquals(existing.fileIdentity, request.fileIdentity)) {
         return this.sessionResponse(existing);
       }
       throw this.typedError('migration_file_identity_mismatch', 409);
@@ -462,9 +495,11 @@ export class MockLibraryTransferTransport implements LibraryTransferTransport {
       totalChunks: request.totalChunks,
       fileIdentity: { ...request.fileIdentity },
       idempotencyKey: request.idempotencyKey,
+      creationPayload,
       createdAt: timestamp,
       expiresAt: timestamp + 24 * 60 * 60 * 1000,
       receipts: new Map(),
+      chunkBlobs: new Map(),
     };
 
     job.session = session;
@@ -537,6 +572,7 @@ export class MockLibraryTransferTransport implements LibraryTransferTransport {
         lengthBytes: request.lengthBytes,
         sha256: request.sha256,
       });
+      session.chunkBlobs.set(request.index, request.blob);
       session.state = 'Receiving';
       this.uploadedChunks.push(request.index);
 
@@ -560,6 +596,20 @@ export class MockLibraryTransferTransport implements LibraryTransferTransport {
     );
     if (session.receipts.size !== session.totalChunks || receivedBytes !== session.totalBytes) {
       throw this.typedError('migration_invalid_state', 409);
+    }
+
+    // The server streams SHA-256 over the sealed bytes and compares them with
+    // the identity bound at session creation. The mock hashes its received
+    // chunk blobs in index order with the same incremental primitive, never
+    // materialising the whole file.
+    const wholeFile = new Sha256();
+    for (let index = 0; index < session.totalChunks; index += 1) {
+      const blob = session.chunkBlobs.get(index);
+      if (!blob) throw this.typedError('migration_invalid_state', 409);
+      wholeFile.update(await readBlobBytes(blob));
+    }
+    if (wholeFile.hex().toLowerCase() !== session.fileIdentity.sha256Checksum.toLowerCase()) {
+      throw this.typedError('migration_file_identity_mismatch', 409);
     }
 
     session.state = 'Complete';
@@ -830,6 +880,27 @@ function existingCountsTotal(counts: MigrationExistingCountsDto): number {
     counts.noteImportBookLinks +
     counts.assistantSettings
   );
+}
+
+function jobCreationPayload(request: MigrationCreateJobRequestDto): string {
+  return JSON.stringify({
+    direction: request.direction,
+    reservationId: request.reservationId ?? null,
+  });
+}
+
+function sessionCreationPayload(request: MigrationSessionRequestDto): string {
+  return JSON.stringify({
+    purpose: request.purpose,
+    totalBytes: request.totalBytes,
+    chunkSize: request.chunkSize,
+    totalChunks: request.totalChunks,
+    fileIdentity: {
+      totalSizeBytes: request.fileIdentity.totalSizeBytes,
+      sha256Checksum: request.fileIdentity.sha256Checksum.toLowerCase(),
+      clientFingerprint: request.fileIdentity.clientFingerprint ?? null,
+    },
+  });
 }
 
 function identityEquals(

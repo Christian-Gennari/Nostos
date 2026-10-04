@@ -2,12 +2,27 @@ import { TestBed } from '@angular/core/testing';
 
 import { FileDigestService } from './file-digest.service';
 import { HASH_WORKER_FACTORY } from './hash/hash-worker';
-import { MockLibraryTransferTransport, MockLibraryTransferTransportOptions } from './mock-library-transfer-transport.service';
-import { LIBRARY_TRANSFER_TRANSPORT } from './library-transfer-transport';
+import {
+  MockLibraryTransferTransport,
+  MockLibraryTransferTransportOptions,
+} from './mock-library-transfer-transport.service';
+import {
+  LibraryTransferTransport,
+  LIBRARY_TRANSFER_TRANSPORT,
+  MigrationTransportError,
+} from './library-transfer-transport';
 import { LibraryTransferCoordinator } from './library-transfer-coordinator.service';
 import { TransferResumeStore, TRANSFER_RESUME_STORAGE_KEY } from './transfer-resume-store.service';
 import {
+  MigrationArchiveCountsDto,
+  MigrationCreateJobRequestDto,
+  MigrationJobStatusResponseDto,
   MigrationPreflightDecision,
+  MigrationPreflightRequestDto,
+  MigrationPreflightResponseDto,
+  MigrationSessionRequestDto,
+  MigrationSessionStatusDto,
+  MigrationUploadSessionResponseDto,
   chunkCount,
 } from '../models/migration-http.dtos';
 import {
@@ -31,11 +46,10 @@ interface Harness {
   store: TransferResumeStore;
 }
 
-function setup(options: MockLibraryTransferTransportOptions = {}): Harness {
-  const mock = new MockLibraryTransferTransport({ chunkSizeBytes: CHUNK, ...options });
+function configure(mock: MockLibraryTransferTransport, transport: LibraryTransferTransport): Harness {
   TestBed.configureTestingModule({
     providers: [
-      { provide: LIBRARY_TRANSFER_TRANSPORT, useValue: mock },
+      { provide: LIBRARY_TRANSFER_TRANSPORT, useValue: transport },
       { provide: HASH_WORKER_FACTORY, useValue: () => null },
     ],
   });
@@ -47,9 +61,53 @@ function setup(options: MockLibraryTransferTransportOptions = {}): Harness {
   };
 }
 
+function setup(options: MockLibraryTransferTransportOptions = {}): Harness {
+  const mock = new MockLibraryTransferTransport({ chunkSizeBytes: CHUNK, ...options });
+  return configure(mock, mock);
+}
+
+/** Simulated reload: same durable mock/transport, a fresh TestBed and coordinator. */
+function reload(mock: MockLibraryTransferTransport, transport: LibraryTransferTransport): Harness {
+  TestBed.resetTestingModule();
+  return configure(mock, transport);
+}
+
 function reset(): void {
   TestBed.resetTestingModule();
   localStorage.removeItem(TRANSFER_RESUME_STORAGE_KEY);
+}
+
+function emptyCounts(): MigrationArchiveCountsDto {
+  return {
+    works: 0,
+    books: 0,
+    notes: 0,
+    topics: 0,
+    noteTopics: 0,
+    writings: 0,
+    writingNotes: 0,
+    collections: 0,
+    collectionMemberships: 0,
+    acquisitions: 0,
+    assistantSettings: 0,
+    noteImportBookLinks: 0,
+    mediaEntries: 0,
+    totalRows: 0,
+  };
+}
+
+function preflightRequest(archiveBytes: number): MigrationPreflightRequestDto {
+  return {
+    incomingCounts: emptyCounts(),
+    declaredArchiveBytes: archiveBytes,
+    declaredMediaBytes: 0,
+    maxSingleEntryBytes: 0,
+    declaredFormatVersion: 1,
+    declaredDataVersion: 3,
+    declaredFormatName: 'nostos-portable',
+    clientDestinationRevision: null,
+    isOperationalBackup: false,
+  };
 }
 
 async function portableFile(overrides: Record<string, unknown> = {}): Promise<File> {
@@ -85,94 +143,166 @@ async function largePortableFile(): Promise<File> {
   return createFile(archive);
 }
 
+async function identityFor(harness: Harness, file: File): Promise<TransferFileIdentity> {
+  return {
+    totalSizeBytes: file.size,
+    sha256Checksum: await harness.digest.sha256(file),
+    clientFingerprint: await harness.digest.fingerprint(file),
+  };
+}
+
+function networkFailure(): MigrationTransportError {
+  return new MigrationTransportError('network_error', 0, 'connection lost');
+}
+
+/**
+ * A transport wrapper that simulates responses lost after the server has
+ * created state, and GETs that resolve after a later operation has won.
+ */
+class FlakyTransport implements LibraryTransferTransport {
+  loseJobCreateResponse = false;
+  failSessionCreateBeforeSend = false;
+  loseSessionCreateResponse = false;
+
+  private deferNextGetJob = false;
+  private pendingGetJob:
+    | { resolve: (status: MigrationJobStatusResponseDto) => void; reject: (error: unknown) => void }
+    | null = null;
+
+  constructor(private readonly inner: MockLibraryTransferTransport) {}
+
+  preflight(
+    request: MigrationPreflightRequestDto,
+    signal?: AbortSignal,
+  ): Promise<MigrationPreflightResponseDto> {
+    return this.inner.preflight(request, signal);
+  }
+
+  async createJob(
+    request: MigrationCreateJobRequestDto,
+    signal?: AbortSignal,
+  ): Promise<MigrationJobStatusResponseDto> {
+    if (!this.loseJobCreateResponse) return this.inner.createJob(request, signal);
+    // The server creates the job; the response never reaches the browser.
+    await this.inner.createJob(request, signal);
+    throw networkFailure();
+  }
+
+  getJob(jobId: string, signal?: AbortSignal): Promise<MigrationJobStatusResponseDto> {
+    if (this.deferNextGetJob) {
+      this.deferNextGetJob = false;
+      return new Promise<MigrationJobStatusResponseDto>((resolve, reject) => {
+        this.pendingGetJob = { resolve, reject };
+      });
+    }
+    return this.inner.getJob(jobId, signal);
+  }
+
+  deferStatusResponse(): void {
+    this.deferNextGetJob = true;
+  }
+
+  resolveDeferredStatus(status: MigrationJobStatusResponseDto): void {
+    this.pendingGetJob?.resolve(status);
+    this.pendingGetJob = null;
+  }
+
+  cancelJob(
+    jobId: string,
+    reason?: string,
+    signal?: AbortSignal,
+  ): Promise<MigrationJobStatusResponseDto> {
+    return this.inner.cancelJob(jobId, reason, signal);
+  }
+
+  retryJob(
+    jobId: string,
+    idempotencyKey?: string,
+    signal?: AbortSignal,
+  ): Promise<MigrationJobStatusResponseDto> {
+    return this.inner.retryJob(jobId, idempotencyKey, signal);
+  }
+
+  async createUploadSession(
+    jobId: string,
+    request: MigrationSessionRequestDto,
+    signal?: AbortSignal,
+  ): Promise<MigrationUploadSessionResponseDto> {
+    if (this.failSessionCreateBeforeSend) throw networkFailure();
+    const response = await this.inner.createUploadSession(jobId, request, signal);
+    if (this.loseSessionCreateResponse) throw networkFailure();
+    return response;
+  }
+
+  getUploadSession(
+    jobId: string,
+    signal?: AbortSignal,
+  ): Promise<MigrationUploadSessionResponseDto> {
+    return this.inner.getUploadSession(jobId, signal);
+  }
+
+  uploadChunk(
+    jobId: string,
+    sessionId: string,
+    request: Parameters<LibraryTransferTransport['uploadChunk']>[2],
+    onProgress: (loaded: number, total: number) => void,
+    signal: AbortSignal,
+  ) {
+    return this.inner.uploadChunk(jobId, sessionId, request, onProgress, signal);
+  }
+
+  completeUpload(jobId: string, signal?: AbortSignal): Promise<MigrationSessionStatusDto> {
+    return this.inner.completeUpload(jobId, signal);
+  }
+
+  getExportDownloadUrl(jobId: string): string {
+    return this.inner.getExportDownloadUrl(jobId);
+  }
+}
+
 async function stageResumableJob(
   harness: Harness,
   file: File,
   missingStart: number,
 ): Promise<PersistedTransferResumeState> {
-  const preflight = await harness.mock.preflight({
-    incomingCounts: {
-      works: 0,
-      books: 0,
-      notes: 0,
-      topics: 0,
-      noteTopics: 0,
-      writings: 0,
-      writingNotes: 0,
-      collections: 0,
-      collectionMemberships: 0,
-      acquisitions: 0,
-      assistantSettings: 0,
-      noteImportBookLinks: 0,
-      mediaEntries: 0,
-      totalRows: 0,
-    },
-    declaredArchiveBytes: file.size,
-    declaredMediaBytes: 0,
-    maxSingleEntryBytes: 0,
-    declaredFormatVersion: 1,
-    declaredDataVersion: 3,
-    declaredFormatName: 'nostos-portable',
-    clientDestinationRevision: null,
-    isOperationalBackup: false,
-  });
+  const preflight = await harness.mock.preflight(preflightRequest(file.size));
+  const jobKey = `stage-job-${missingStart}-${Date.now()}`;
   const job = await harness.mock.createJob({
     direction: 'Import',
-    idempotencyKey: `stage-${missingStart}-${Date.now()}`,
+    idempotencyKey: jobKey,
     reservationId: preflight.reservationId,
   });
   const totalChunks = chunkCount(file.size, CHUNK);
-  const identity: TransferFileIdentity = {
-    totalSizeBytes: file.size,
-    sha256Checksum: await harness.digest.sha256(file),
-    clientFingerprint: await harness.digest.fingerprint(file),
-  };
-  const session = await harness.mock.createUploadSession(job.job.id, {
+  const identity: TransferFileIdentity = await identityFor(harness, file);
+  const sessionKey = `stage-session-${missingStart}-${Date.now()}`;
+  const sessionRequest: MigrationSessionRequestDto = {
     purpose: 'Import',
     totalBytes: file.size,
     chunkSize: CHUNK,
     totalChunks,
     fileIdentity: identity,
-    idempotencyKey: `stage-session-${missingStart}-${Date.now()}`,
-  });
-  harness.mock.seedReceivedChunks(
+    idempotencyKey: sessionKey,
+  };
+  const session = await harness.mock.createUploadSession(job.job.id, sessionRequest);
+  await harness.mock.seedReceivedChunks(
     job.job.id,
     Array.from({ length: missingStart }, (_, index) => index),
+    file,
   );
 
   const record: PersistedTransferResumeState = {
     schemaVersion: 1,
     jobId: job.job.id,
+    jobCreationIdempotencyKey: jobKey,
+    reservationId: preflight.reservationId,
     sessionId: session.session.sessionId,
+    sessionCreationIdempotencyKey: sessionKey,
+    sessionRequest,
+    chunkSizeBytes: CHUNK,
     direction: 'import',
     fileIdentity: identity,
     fileName: file.name,
-    preflightRequest: {
-      incomingCounts: {
-        works: 0,
-        books: 0,
-        notes: 0,
-        topics: 0,
-        noteTopics: 0,
-        writings: 0,
-        writingNotes: 0,
-        collections: 0,
-        collectionMemberships: 0,
-        acquisitions: 0,
-        assistantSettings: 0,
-        noteImportBookLinks: 0,
-        mediaEntries: 0,
-        totalRows: 0,
-      },
-      declaredArchiveBytes: file.size,
-      declaredMediaBytes: 0,
-      maxSingleEntryBytes: 0,
-      declaredFormatVersion: 1,
-      declaredDataVersion: 3,
-      declaredFormatName: 'nostos-portable',
-      clientDestinationRevision: null,
-      isOperationalBackup: false,
-    },
+    preflightRequest: preflightRequest(file.size),
     preflightDecision: 'AllowedEmpty' satisfies MigrationPreflightDecision,
     createdAt: new Date().toISOString(),
   };
@@ -194,6 +324,10 @@ describe('LibraryTransferCoordinator — fresh import', () => {
     const record = harness.store.load();
     expect(record?.jobId).toBeTruthy();
     expect(record?.sessionId).toBeTruthy();
+    expect(record?.jobCreationIdempotencyKey).toBeTruthy();
+    expect(record?.sessionCreationIdempotencyKey).toBeTruthy();
+    expect(record?.sessionRequest?.idempotencyKey).toBe(record?.sessionCreationIdempotencyKey);
+    expect(record?.chunkSizeBytes).toBe(CHUNK);
     expect(record?.fileIdentity.totalSizeBytes).toBe(file.size);
     expect(record?.preflightDecision).toBe('AllowedEmpty');
   });
@@ -225,7 +359,14 @@ describe('LibraryTransferCoordinator — fresh import', () => {
     const archive = await buildZipArchive([
       {
         name: 'manifest.json',
-        data: encoder.encode(JSON.stringify({ version: '1', timestamp: 'x', databaseSizeBytes: 1, checksum: 'a'.repeat(64) })),
+        data: encoder.encode(
+          JSON.stringify({
+            version: '1',
+            timestamp: 'x',
+            databaseSizeBytes: 1,
+            checksum: 'a'.repeat(64),
+          }),
+        ),
       },
     ]);
 
@@ -286,6 +427,95 @@ describe('LibraryTransferCoordinator — fresh import', () => {
   });
 });
 
+describe('LibraryTransferCoordinator — crash-safe creation', () => {
+  afterEach(reset);
+
+  it('persists the job key before createJob and replays it when the response is lost', async () => {
+    const mock = new MockLibraryTransferTransport({ chunkSizeBytes: CHUNK });
+    const flaky = new FlakyTransport(mock);
+    const harness = configure(mock, flaky);
+    flaky.loseJobCreateResponse = true;
+    const file = await portableFile();
+
+    await harness.coordinator.startImport(file);
+
+    expect(harness.coordinator.state().kind).toBe('failed');
+    const provisional = harness.store.load();
+    expect(provisional?.jobId).toBeUndefined();
+    expect(provisional?.jobCreationIdempotencyKey).toBeTruthy();
+    expect(provisional?.sessionRequest?.idempotencyKey).toBe(
+      provisional?.sessionCreationIdempotencyKey,
+    );
+
+    // Reload: the persisted key must replay the job the server already created.
+    flaky.loseJobCreateResponse = false;
+    const reloaded = reload(mock, flaky);
+    await reloaded.coordinator.resume();
+
+    expect(mock.jobCreationCount).toBe(1);
+    expect(reloaded.coordinator.state().kind).toBe('ready-to-upload');
+
+    await reloaded.coordinator.resumeWithFile(file);
+    expect(reloaded.coordinator.state().kind).toBe('ready-empty');
+    expect(mock.uploadedChunks.length).toBeGreaterThan(0);
+  });
+
+  it('creates a missing upload session on reload with the persisted key', async () => {
+    const mock = new MockLibraryTransferTransport({ chunkSizeBytes: CHUNK });
+    const flaky = new FlakyTransport(mock);
+    const harness = configure(mock, flaky);
+    flaky.failSessionCreateBeforeSend = true;
+    const file = await portableFile();
+
+    await harness.coordinator.startImport(file);
+
+    expect(harness.coordinator.state().kind).toBe('failed');
+    expect(mock.calls.createUploadSession).toBe(0);
+    const record = harness.store.load();
+    expect(record?.jobId).toBeTruthy();
+    expect(record?.sessionId).toBeUndefined();
+    expect(record?.sessionCreationIdempotencyKey).toBeTruthy();
+
+    flaky.failSessionCreateBeforeSend = false;
+    const reloaded = reload(mock, flaky);
+    await reloaded.coordinator.resume();
+
+    expect(mock.calls.createUploadSession).toBe(1);
+    expect(reloaded.store.load()?.sessionId).toBeTruthy();
+    expect(reloaded.coordinator.state().kind).toBe('ready-to-upload');
+
+    await reloaded.coordinator.resumeWithFile(file);
+    expect(reloaded.coordinator.state().kind).toBe('ready-empty');
+  });
+
+  it('replays the same session key when the session response was lost', async () => {
+    const mock = new MockLibraryTransferTransport({ chunkSizeBytes: CHUNK });
+    const flaky = new FlakyTransport(mock);
+    const harness = configure(mock, flaky);
+    flaky.loseSessionCreateResponse = true;
+    const file = await portableFile();
+
+    await harness.coordinator.startImport(file);
+
+    expect(harness.coordinator.state().kind).toBe('failed');
+    const jobId = harness.store.load()?.jobId ?? '';
+    expect(jobId).toBeTruthy();
+    const serverSessionId = (await mock.getUploadSession(jobId)).session.sessionId;
+    const record = harness.store.load();
+    expect(record?.sessionId).toBeUndefined();
+    expect(record?.sessionCreationIdempotencyKey).toBeTruthy();
+
+    flaky.loseSessionCreateResponse = false;
+    const reloaded = reload(mock, flaky);
+    await reloaded.coordinator.resume();
+    await reloaded.coordinator.resumeWithFile(file);
+
+    expect(mock.calls.createUploadSession).toBe(2);
+    expect(reloaded.store.load()?.sessionId).toBe(serverSessionId);
+    expect(reloaded.coordinator.state().kind).toBe('ready-empty');
+  });
+});
+
 describe('LibraryTransferCoordinator — reattach and resume', () => {
   afterEach(reset);
 
@@ -296,8 +526,7 @@ describe('LibraryTransferCoordinator — reattach and resume', () => {
     expect(totalChunks).toBeGreaterThan(1);
     const staged = await stageResumableJob(harness, file, totalChunks - 1);
 
-    // Simulated reload: a fresh coordinator reads the persisted record.
-    const reloaded = setupWithExistingMock(harness.mock);
+    const reloaded = reload(harness.mock, harness.mock);
     await reloaded.coordinator.resume();
     expect(reloaded.coordinator.state()).toMatchObject({
       kind: 'ready-to-upload',
@@ -316,10 +545,13 @@ describe('LibraryTransferCoordinator — reattach and resume', () => {
     const totalChunks = chunkCount(file.size, CHUNK);
     await stageResumableJob(harness, file, totalChunks - 1);
 
-    const reloaded = setupWithExistingMock(harness.mock);
+    const reloaded = reload(harness.mock, harness.mock);
     await reloaded.coordinator.resume();
 
-    const different = new File([new Uint8Array(file.size).fill(3) as unknown as BlobPart], file.name);
+    const different = new File(
+      [new Uint8Array(file.size).fill(3) as unknown as BlobPart],
+      file.name,
+    );
     await reloaded.coordinator.resumeWithFile(different);
 
     const state = reloaded.coordinator.state();
@@ -337,9 +569,9 @@ describe('LibraryTransferCoordinator — reattach and resume', () => {
     const totalChunks = chunkCount(file.size, CHUNK);
     const staged = await stageResumableJob(harness, file, totalChunks - 1);
 
-    const reloaded = setupWithExistingMock(harness.mock);
+    const reloaded = reload(harness.mock, harness.mock);
     await reloaded.coordinator.resume();
-    harness.mock.expireSession(staged.jobId);
+    harness.mock.expireSession(staged.jobId!);
 
     await reloaded.coordinator.resumeWithFile(file);
 
@@ -355,6 +587,7 @@ describe('LibraryTransferCoordinator — reattach and resume', () => {
     harness.store.save({
       schemaVersion: 1,
       jobId: 'deleted-job',
+      jobCreationIdempotencyKey: 'deleted-job-key',
       direction: 'import',
       fileIdentity: { totalSizeBytes: file.size, sha256Checksum: 'a'.repeat(64) },
       fileName: file.name,
@@ -377,28 +610,14 @@ describe('LibraryTransferCoordinator — reattach and resume', () => {
     harness.store.save({
       schemaVersion: 1,
       jobId: 'retryable',
+      jobCreationIdempotencyKey: 'retryable-key',
       direction: 'import',
       fileIdentity: { totalSizeBytes: file.size, sha256Checksum: 'a'.repeat(64) },
       fileName: file.name,
       preflightRequest: {} as never,
       createdAt: new Date().toISOString(),
     });
-    // Create the job the record points at, then make it terminally failed.
-    const preflight = await harness.mock.preflight({
-      incomingCounts: {
-        works: 0, books: 0, notes: 0, topics: 0, noteTopics: 0, writings: 0, writingNotes: 0,
-        collections: 0, collectionMemberships: 0, acquisitions: 0, assistantSettings: 0,
-        noteImportBookLinks: 0, mediaEntries: 0, totalRows: 0,
-      },
-      declaredArchiveBytes: file.size,
-      declaredMediaBytes: 0,
-      maxSingleEntryBytes: 0,
-      declaredFormatVersion: 1,
-      declaredDataVersion: 3,
-      declaredFormatName: 'nostos-portable',
-      clientDestinationRevision: null,
-      isOperationalBackup: false,
-    });
+    const preflight = await harness.mock.preflight(preflightRequest(file.size));
     const job = await harness.mock.createJob({
       direction: 'Import',
       idempotencyKey: 'retryable-job',
@@ -418,38 +637,37 @@ describe('LibraryTransferCoordinator — reattach and resume', () => {
   it('dismisses a cancelled flow and clears the record', async () => {
     const harness = setup();
     const file = await portableFile();
-    harness.store.save({
-      schemaVersion: 1,
-      jobId: 'cancel-me',
-      direction: 'import',
-      fileIdentity: { totalSizeBytes: file.size, sha256Checksum: 'a'.repeat(64) },
-      fileName: file.name,
-      preflightRequest: {} as never,
-      createdAt: new Date().toISOString(),
-    });
-    const preflight = await harness.mock.preflight({
-      incomingCounts: {
-        works: 0, books: 0, notes: 0, topics: 0, noteTopics: 0, writings: 0, writingNotes: 0,
-        collections: 0, collectionMemberships: 0, acquisitions: 0, assistantSettings: 0,
-        noteImportBookLinks: 0, mediaEntries: 0, totalRows: 0,
-      },
-      declaredArchiveBytes: file.size,
-      declaredMediaBytes: 0,
-      maxSingleEntryBytes: 0,
-      declaredFormatVersion: 1,
-      declaredDataVersion: 3,
-      declaredFormatName: 'nostos-portable',
-      clientDestinationRevision: null,
-      isOperationalBackup: false,
-    });
+    const preflight = await harness.mock.preflight(preflightRequest(file.size));
     const job = await harness.mock.createJob({
       direction: 'Import',
       idempotencyKey: 'cancel-job',
       reservationId: preflight.reservationId,
     });
-    harness.store.update({ jobId: job.job.id });
+    const identity = await identityFor(harness, file);
+    harness.store.save({
+      schemaVersion: 1,
+      jobId: job.job.id,
+      jobCreationIdempotencyKey: 'cancel-job-key',
+      reservationId: preflight.reservationId,
+      sessionCreationIdempotencyKey: 'cancel-session-key',
+      sessionRequest: {
+        purpose: 'Import',
+        totalBytes: file.size,
+        chunkSize: CHUNK,
+        totalChunks: 1,
+        fileIdentity: identity,
+        idempotencyKey: 'cancel-session-key',
+      },
+      chunkSizeBytes: CHUNK,
+      direction: 'import',
+      fileIdentity: identity,
+      fileName: file.name,
+      preflightRequest: preflightRequest(file.size),
+      createdAt: new Date().toISOString(),
+    });
 
     await harness.coordinator.resume();
+    expect(harness.coordinator.state().kind).toBe('ready-to-upload');
     await harness.coordinator.cancel();
     expect(harness.coordinator.state().kind).toBe('cancelled');
 
@@ -459,18 +677,36 @@ describe('LibraryTransferCoordinator — reattach and resume', () => {
   });
 });
 
-function setupWithExistingMock(mock: MockLibraryTransferTransport): Harness {
-  TestBed.resetTestingModule();
-  TestBed.configureTestingModule({
-    providers: [
-      { provide: LIBRARY_TRANSFER_TRANSPORT, useValue: mock },
-      { provide: HASH_WORKER_FACTORY, useValue: () => null },
-    ],
+describe('LibraryTransferCoordinator — stale status responses', () => {
+  afterEach(reset);
+
+  it('discards a getJob response that resolves after a newer operation wins', async () => {
+    const mock = new MockLibraryTransferTransport({ chunkSizeBytes: CHUNK });
+    const flaky = new FlakyTransport(mock);
+    const harness = configure(mock, flaky);
+    const file = await largePortableFile();
+    const totalChunks = chunkCount(file.size, CHUNK);
+    await stageResumableJob(harness, file, totalChunks - 1);
+
+    await harness.coordinator.resume();
+    expect(harness.coordinator.state().kind).toBe('ready-to-upload');
+
+    const jobId = harness.store.load()?.jobId ?? '';
+    const current = await mock.getJob(jobId);
+
+    flaky.deferStatusResponse();
+    const stale = harness.coordinator.refreshStatus();
+    await harness.coordinator.cancel();
+    expect(harness.coordinator.state().kind).toBe('cancelled');
+
+    // The old GET resolves with a pre-cancellation ReadyToActivate status. It
+    // must not overwrite the newer cancelled state (nor throw).
+    flaky.resolveDeferredStatus({
+      ...current,
+      job: { ...current.job, state: 'ReadyToActivate' },
+    });
+    await stale;
+
+    expect(harness.coordinator.state().kind).toBe('cancelled');
   });
-  return {
-    mock,
-    coordinator: TestBed.inject(LibraryTransferCoordinator),
-    digest: TestBed.inject(FileDigestService),
-    store: TestBed.inject(TransferResumeStore),
-  };
-}
+});

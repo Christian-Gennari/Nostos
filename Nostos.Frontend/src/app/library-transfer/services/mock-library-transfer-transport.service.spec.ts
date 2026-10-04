@@ -1,4 +1,5 @@
 import {
+  MIGRATION_LIMITS,
   MigrationArchiveCountsDto,
   MigrationPreflightRequestDto,
   MigrationSessionRequestDto,
@@ -50,6 +51,17 @@ function preflightRequest(size = 1000): MigrationPreflightRequestDto {
 
 function fileOfSize(size: number): File {
   return new File([new Uint8Array(size).fill(9) as unknown as BlobPart], 'library.nostos');
+}
+
+async function verifiedSessionRequest(
+  file: Blob,
+  overrides: Partial<MigrationSessionRequestDto> = {},
+): Promise<MigrationSessionRequestDto> {
+  const identity = {
+    totalSizeBytes: file.size,
+    sha256Checksum: await sha256ChunkHex(file),
+  };
+  return sessionRequest(file, { fileIdentity: identity, ...overrides });
 }
 
 function sessionRequest(file: Blob, overrides: Partial<MigrationSessionRequestDto> = {}): MigrationSessionRequestDto {
@@ -250,7 +262,6 @@ describe('MockLibraryTransferTransport — jobs', () => {
     const mock = new MockLibraryTransferTransport();
     const jobId = await importJob(mock);
     const file = fileOfSize(100);
-    await mock.createUploadSession(jobId, sessionRequest(file));
     await uploadSingleChunk(mock, jobId, file);
     mock.expireSession(jobId);
     mock.setJobState(jobId, 'Failed');
@@ -266,7 +277,7 @@ async function uploadSingleChunk(
   jobId: string,
   file: Blob,
 ): Promise<void> {
-  const session = await mock.createUploadSession(jobId, sessionRequest(file));
+  const session = await mock.createUploadSession(jobId, await verifiedSessionRequest(file));
   const blob = file.slice(0, file.size);
   await mock.uploadChunk(
     jobId,
@@ -376,7 +387,7 @@ describe('MockLibraryTransferTransport — upload sessions', () => {
     const jobId = await importJob(mock);
     const file = fileOfSize(100);
     const session = await mock.createUploadSession(jobId, sessionRequest(file));
-    mock.seedReceivedChunks(jobId, [0]);
+    await mock.seedReceivedChunks(jobId, [0]);
 
     const fetched = await mock.getUploadSession(jobId);
     expect(fetched.session.receivedChunkCount).toBe(1);
@@ -661,6 +672,157 @@ describe('MockLibraryTransferTransport — completion and export', () => {
     expect(mock.getExportDownloadUrl(jobId)).toBe(
       `/api/portability/migration/jobs/${jobId}/export-download`,
     );
+  });
+
+  it('verifies the whole-file SHA-256 across multiple chunks at completion', async () => {
+    const mock = new MockLibraryTransferTransport();
+    const file = fileOfSize(CHUNK + 100);
+    const jobId = await importJob(mock, file.size);
+    const session = await mock.createUploadSession(jobId, await verifiedSessionRequest(file));
+    const signal = new AbortController().signal;
+
+    for (const [index, start] of [
+      [0, 0],
+      [1, CHUNK],
+    ] as const) {
+      const blob = file.slice(start, start + (index === 0 ? CHUNK : 100));
+      await mock.uploadChunk(
+        jobId,
+        session.session.sessionId,
+        {
+          index,
+          offsetBytes: start,
+          lengthBytes: blob.size,
+          sha256: await sha256ChunkHex(blob),
+          blob,
+        },
+        () => undefined,
+        signal,
+      );
+    }
+
+    const completed = await mock.completeUpload(jobId);
+    expect(completed.state).toBe('Complete');
+    expect(completed.receivedChunkCount).toBe(2);
+  });
+
+  it('rejects completion when the full identity hash differs despite valid chunk hashes', async () => {
+    const mock = new MockLibraryTransferTransport();
+    const file = fileOfSize(100);
+    const jobId = await importJob(mock);
+    const session = await mock.createUploadSession(jobId, sessionRequest(file));
+    const blob = file.slice(0, 100);
+
+    await mock.uploadChunk(
+      jobId,
+      session.session.sessionId,
+      { index: 0, offsetBytes: 0, lengthBytes: 100, sha256: await sha256ChunkHex(blob), blob },
+      () => undefined,
+      new AbortController().signal,
+    );
+
+    await expectTypedError(
+      mock.completeUpload(jobId),
+      'migration_file_identity_mismatch',
+      409,
+    );
+    expect((await mock.getJob(jobId)).session?.state).toBe('Receiving');
+  });
+
+  it('rejects the same session key reused with a different chunk sizing', async () => {
+    const mock = new MockLibraryTransferTransport();
+    const file = fileOfSize(CHUNK + 100);
+    const jobId = await importJob(mock, file.size);
+    const first = sessionRequest(file, { idempotencyKey: 'sizing-key' });
+    await mock.createUploadSession(jobId, first);
+
+    await expectTypedError(
+      mock.createUploadSession(jobId, {
+        ...first,
+        chunkSize: 8 * 1024 * 1024,
+        totalChunks: 1,
+      }),
+      'migration_idempotency_conflict',
+      409,
+    );
+  });
+
+  it('rejects a new session key whose chunking differs from the existing session', async () => {
+    const mock = new MockLibraryTransferTransport();
+    const file = fileOfSize(CHUNK + 100);
+    const jobId = await importJob(mock, file.size);
+    await mock.createUploadSession(jobId, sessionRequest(file));
+
+    await expectTypedError(
+      mock.createUploadSession(
+        jobId,
+        sessionRequest(file, {
+          chunkSize: 8 * 1024 * 1024,
+          totalChunks: 1,
+        }),
+      ),
+      'migration_file_identity_mismatch',
+      409,
+    );
+  });
+
+  it('rejects the same job key reused with a different reservation payload', async () => {
+    const mock = new MockLibraryTransferTransport();
+    const firstReservation = await mock.preflight(preflightRequest());
+    const secondReservation = await mock.preflight(preflightRequest());
+    const request = {
+      direction: 'Import' as const,
+      idempotencyKey: 'job-payload-key',
+      reservationId: firstReservation.reservationId,
+    };
+    await mock.createJob(request);
+
+    await expectTypedError(
+      mock.createJob({ ...request, reservationId: secondReservation.reservationId }),
+      'migration_idempotency_conflict',
+      409,
+    );
+  });
+
+  it('rejects negative and out-of-range chunk indexes', async () => {
+    const mock = new MockLibraryTransferTransport();
+    const totalBytes = CHUNK + 100;
+    const file = fileOfSize(totalBytes);
+    const jobId = await importJob(mock, totalBytes);
+    const session = await mock.createUploadSession(jobId, sessionRequest(file));
+    const signal = new AbortController().signal;
+
+    await expectTypedError(
+      mock.uploadChunk(
+        jobId,
+        session.session.sessionId,
+        { index: -1, offsetBytes: -CHUNK, lengthBytes: CHUNK, sha256: 'a'.repeat(64), blob: file.slice(0, CHUNK) },
+        () => undefined,
+        signal,
+      ),
+      'migration_chunk_range_invalid',
+      416,
+    );
+    await expectTypedError(
+      mock.uploadChunk(
+        jobId,
+        session.session.sessionId,
+        { index: 2, offsetBytes: 2 * CHUNK, lengthBytes: 100, sha256: 'a'.repeat(64), blob: file.slice(CHUNK + 100) },
+        () => undefined,
+        signal,
+      ),
+      'migration_chunk_range_invalid',
+      416,
+    );
+  });
+
+  it('refuses a configured chunk size above the contract maximum', () => {
+    expect(
+      () => new MockLibraryTransferTransport({ chunkSizeBytes: MIGRATION_LIMITS.maxChunkBytes + 1 }),
+    ).toThrow(/outside the contract bounds/);
+    expect(
+      () => new MockLibraryTransferTransport({ chunkSizeBytes: MIGRATION_LIMITS.minChunkBytes - 1 }),
+    ).toThrow(/outside the contract bounds/);
   });
 
   it('keeps a validation window before ReadyToActivate when configured', async () => {

@@ -28,6 +28,20 @@ function rotr(value: number, bits: number): number {
   return (value >>> bits) | (value << (32 - bits));
 }
 
+/**
+ * Bit length of the message as the two big-endian words SHA-256 appends.
+ *
+ * `bytesHashed < 2^53` (the migration contract caps archives at 512 GiB), so
+ * splitting on 2^29 bytes keeps both words exact in 32-bit math. Exported so
+ * the 2^29/2^32 length boundaries can be asserted without hashing gigabytes.
+ */
+export function sha256LengthWords(bytesHashed: number): { highBits: number; lowBits: number } {
+  return {
+    highBits: Math.floor(bytesHashed / 0x20000000),
+    lowBits: (bytesHashed % 0x20000000) * 8,
+  };
+}
+
 export class Sha256 {
   private readonly state = Uint32Array.from(INITIAL_STATE);
   private readonly buffer = new Uint8Array(64);
@@ -70,14 +84,11 @@ export class Sha256 {
     return this;
   }
 
-  /** Finalises and returns the 32-byte digest. Idempotent. */
+  /** Finalises and returns the 32-byte digest. Idempotent; callers get a copy. */
   digest(): Uint8Array {
-    if (this.finalized) return this.finalized;
+    if (this.finalized) return Uint8Array.from(this.finalized);
 
-    // Bit length as two big-endian words: bytesHashed < 2^53, so splitting on
-    // 2^29 bytes keeps both words exact in 32-bit math (plan §82 bounds).
-    const highBits = Math.floor(this.bytesHashed / 0x20000000);
-    const lowBits = (this.bytesHashed % 0x20000000) * 8;
+    const { highBits, lowBits } = sha256LengthWords(this.bytesHashed);
 
     const padLength = this.bufferLength < 56 ? 64 : 128;
     const padding = new Uint8Array(padLength);
@@ -103,11 +114,24 @@ export class Sha256 {
     }
 
     this.finalized = digest;
-    return digest;
+    return Uint8Array.from(digest);
   }
 
   hex(): string {
     return toHex(this.digest());
+  }
+
+  /**
+   * Test seam: finalises a fresh instance as if `byteCount` bytes had been fed,
+   * without running any rounds. Used to prove the 64-bit length field at the
+   * 2^29- and 2^32-byte boundaries without allocating gigabytes.
+   */
+  finalizeWithByteCount(byteCount: number): string {
+    if (this.bytesHashed !== 0 || this.bufferLength !== 0 || this.finalized) {
+      throw new Error('finalizeWithByteCount requires a fresh, unfinalized Sha256.');
+    }
+    this.bytesHashed = byteCount;
+    return this.hex();
   }
 
   private processBlock(data: Uint8Array, offset: number): void {

@@ -1,4 +1,4 @@
-import { Sha256, sha256Hex } from './sha256';
+import { Sha256, sha256Hex, sha256LengthWords } from './sha256';
 
 const encoder = new TextEncoder();
 
@@ -26,12 +26,16 @@ describe('Sha256', () => {
     expect(incremental.hex()).toBe(oneShot);
   });
 
-  it('handles every padding boundary (55/56/63/64/65 bytes)', () => {
+  it('matches WebCrypto across every padding boundary (55/56/63/64/65 bytes)', async () => {
     const digests = new Map<string, string>();
     for (const length of [0, 1, 55, 56, 63, 64, 65, 127, 128, 129]) {
       const bytes = new Uint8Array(length).fill(0x61);
       const digest = new Sha256().update(bytes).hex();
-      expect(digest).toHaveLength(64);
+      const expected = new Uint8Array(
+        await crypto.subtle.digest('SHA-256', bytes as unknown as BufferSource),
+      );
+      const expectedHex = [...expected].map((b) => b.toString(16).padStart(2, '0')).join('');
+      expect(digest, `${length}-byte input`).toBe(expectedHex);
       digests.set(`${length}`, digest);
     }
     expect(new Set(digests.values()).size).toBe(digests.size);
@@ -55,6 +59,42 @@ describe('Sha256', () => {
     );
     const expectedHex = [...expected].map((b) => b.toString(16).padStart(2, '0')).join('');
     expect(sha256Hex(bytes)).toBe(expectedHex);
+  });
+
+  it('encodes the 64-bit length field correctly at the 2^29- and 2^32-byte boundaries', () => {
+    // 55/56 are the padding transitions; 2^29 and 2^32 are where the high
+    // 32-bit word of the bit length first becomes 1 and 8.
+    expect(sha256LengthWords(55)).toEqual({ highBits: 0, lowBits: 440 });
+    expect(sha256LengthWords(56)).toEqual({ highBits: 0, lowBits: 448 });
+    expect(sha256LengthWords(0x20000000 - 1)).toEqual({
+      highBits: 0,
+      lowBits: (0x20000000 - 1) * 8,
+    });
+    expect(sha256LengthWords(0x20000000)).toEqual({ highBits: 1, lowBits: 0 });
+    expect(sha256LengthWords(0x20000000 + 1)).toEqual({ highBits: 1, lowBits: 8 });
+    expect(sha256LengthWords(0x100000000)).toEqual({ highBits: 8, lowBits: 0 });
+    expect(sha256LengthWords(512 * 1024 * 1024 * 1024)).toEqual({
+      highBits: 1024,
+      lowBits: 0,
+    });
+  });
+
+  it('finalises a synthetic byte count through the length seam at both boundaries', () => {
+    const below = new Sha256().finalizeWithByteCount(0x20000000 - 1);
+    const at = new Sha256().finalizeWithByteCount(0x20000000);
+    const above = new Sha256().finalizeWithByteCount(0x20000000 + 1);
+    const fourGiB = new Sha256().finalizeWithByteCount(0x100000000);
+
+    for (const digest of [below, at, above, fourGiB]) expect(digest).toHaveLength(64);
+    expect(new Set([below, at, above, fourGiB]).size).toBe(4);
+    expect(() => new Sha256().update(encoder.encode('x')).finalizeWithByteCount(1)).toThrow();
+  });
+
+  it('returns an immutable copy from digest()', () => {
+    const sha = new Sha256().update(encoder.encode('abc'));
+    const first = sha.digest();
+    first.fill(0);
+    expect(sha.hex()).toBe('ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
   });
 
   it('rejects updates after finalization', () => {

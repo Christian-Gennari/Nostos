@@ -24,12 +24,14 @@ import {
 } from '../models/library-transfer.models';
 import {
   MigrationErrorCode,
+  MigrationJobState,
   MigrationJobStatusResponseDto,
   MigrationPreflightDecision,
   MigrationPreflightRequestDto,
   MigrationPreflightResponseDto,
   MigrationSessionRequestDto,
   MigrationSessionStatusDto,
+  MigrationUploadSessionResponseDto,
   chunkCount,
   chunkLength,
 } from '../models/migration-http.dtos';
@@ -37,6 +39,7 @@ import { FileDigestService } from './file-digest.service';
 import {
   LIBRARY_TRANSFER_TRANSPORT,
   LibraryTransferTransport,
+  MigrationTransportError,
   toTransferFailure,
 } from './library-transfer-transport';
 import { ChunkUploadEngine, ChunkUploadRun } from './chunk-upload-engine.service';
@@ -149,20 +152,43 @@ export class LibraryTransferCoordinator {
         return;
       }
 
+      // Persist the creation keys BEFORE any request can create server state
+      // (plan §16, §17): if the response is lost, a reload must replay the same
+      // keys rather than stranding the job (and its reservation).
+      this.preflightDecision = preflight.evaluation.decision;
+      const chunkSizeBytes = preflight.chunkSizeBytes;
+      const jobCreationIdempotencyKey = newIdempotencyKey();
+      const sessionCreationIdempotencyKey = newIdempotencyKey();
+      const sessionRequest = this.sessionRequest(
+        file,
+        identity,
+        chunkSizeBytes,
+        sessionCreationIdempotencyKey,
+      );
+      this.resumeStore.save(
+        this.provisionalResumeRecord(
+          file,
+          identity,
+          request,
+          preflight,
+          jobCreationIdempotencyKey,
+          sessionCreationIdempotencyKey,
+          sessionRequest,
+        ),
+      );
+
       const created = await this.transport.createJob(
         {
           direction: 'Import',
-          idempotencyKey: newIdempotencyKey(),
+          idempotencyKey: jobCreationIdempotencyKey,
           reservationId: preflight.reservationId,
         },
         signal,
       );
       if (!this.isCurrent(token)) return;
       this.jobId = created.job.id;
-      this.preflightDecision = preflight.evaluation.decision;
-      this.saveResumeRecord(file, identity, request, created.job.id, preflight.evaluation.decision);
+      this.resumeStore.update({ jobId: created.job.id });
 
-      const sessionRequest = this.sessionRequest(file, identity, preflight.chunkSizeBytes);
       const sessionResponse = await this.transport.createUploadSession(
         created.job.id,
         sessionRequest,
@@ -202,15 +228,35 @@ export class LibraryTransferCoordinator {
     }
 
     const { token, signal } = this.beginOperation();
-    this.jobId = record.jobId;
+    this.jobId = record.jobId ?? null;
     this.preflightDecision = record.preflightDecision ?? null;
 
     try {
-      const status = await this.transport.getJob(record.jobId, signal);
+      if (!this.jobId) {
+        const recovered = await this.replayJobCreation(record, signal);
+        if (!this.isCurrent(token)) return;
+        if (!recovered) return;
+      }
+
+      const jobId = this.jobId;
+      if (!jobId) return;
+      const status = await this.transport.getJob(jobId, signal);
       if (!this.isCurrent(token)) return;
+
+      if (!status.session && isPreActivationJobState(status.job.state)) {
+        const sessionResponse = await this.ensureUploadSession(record, signal);
+        if (!this.isCurrent(token)) return;
+        status.session = sessionResponse.session;
+      }
+
       this.applyJobStatus(status);
     } catch (error) {
       if (!this.isCurrent(token)) return;
+      if (error instanceof TransferCancelledError) {
+        this.cancelRun();
+        this.setState({ kind: 'cancelled', jobId: this.jobId ?? '' });
+        return;
+      }
       const failure = this.failureFromError(error);
       if (failure.code === 'migration_not_found') this.resumeStore.clear();
       this.failWith(failure, record.jobId);
@@ -227,7 +273,7 @@ export class LibraryTransferCoordinator {
     if (!record || state.kind !== 'ready-to-upload' || !state.reselectionRequired) return;
 
     const { token, signal } = this.beginOperation();
-    this.jobId = record.jobId;
+    this.jobId = record.jobId ?? null;
     this.file = file;
 
     try {
@@ -238,14 +284,14 @@ export class LibraryTransferCoordinator {
         return;
       }
 
-      const sessionResponse = await this.transport.getUploadSession(record.jobId, signal);
+      const sessionResponse = await this.ensureUploadSession(record, signal);
       if (!this.isCurrent(token)) return;
       await this.uploadSession(token, signal, sessionResponse.session);
     } catch (error) {
       if (!this.isCurrent(token)) return;
       if (error instanceof TransferCancelledError) {
         this.cancelRun();
-        this.setState({ kind: 'cancelled', jobId: record.jobId });
+        this.setState({ kind: 'cancelled', jobId: record.jobId ?? '' });
         return;
       }
       this.failWith(this.failureFromError(error), record.jobId);
@@ -323,12 +369,15 @@ export class LibraryTransferCoordinator {
 
   /** One guarded polling step; public so the UI can refresh on visibility. */
   async refreshStatus(): Promise<void> {
+    const token = this.operationToken;
     const jobId = this.jobId ?? this.resumeStore.load()?.jobId;
     if (!jobId) return;
     try {
       const status = await this.transport.getJob(jobId);
+      if (token !== this.operationToken) return;
       this.applyJobStatus(status);
     } catch (error) {
+      if (token !== this.operationToken) return;
       const failure = this.failureFromError(error);
       if (failure.code === 'migration_not_found') this.resumeStore.clear();
       this.failWith(failure, jobId);
@@ -652,6 +701,7 @@ export class LibraryTransferCoordinator {
     file: File,
     identity: TransferFileIdentity,
     chunkSize: number,
+    idempotencyKey: string,
   ): MigrationSessionRequestDto {
     return {
       purpose: 'Import',
@@ -659,29 +709,125 @@ export class LibraryTransferCoordinator {
       chunkSize,
       totalChunks: chunkCount(file.size, chunkSize),
       fileIdentity: identity,
-      idempotencyKey: newIdempotencyKey(),
+      idempotencyKey,
     };
   }
 
-  private saveResumeRecord(
+  private provisionalResumeRecord(
     file: File,
     identity: TransferFileIdentity,
     preflightRequest: MigrationPreflightRequestDto,
-    jobId: string,
-    decision: MigrationPreflightDecision,
-  ): void {
-    const record: PersistedTransferResumeState = {
+    preflight: MigrationPreflightResponseDto,
+    jobCreationIdempotencyKey: string,
+    sessionCreationIdempotencyKey: string,
+    sessionRequest: MigrationSessionRequestDto,
+  ): PersistedTransferResumeState {
+    return {
       schemaVersion: 1,
-      jobId,
+      jobCreationIdempotencyKey,
+      reservationId: preflight.reservationId,
+      sessionCreationIdempotencyKey,
+      sessionRequest,
+      chunkSizeBytes: preflight.chunkSizeBytes,
       direction: 'import',
       fileIdentity: identity,
       fileName: file.name,
       preflightRequest,
-      preflightDecision: decision,
+      preflightDecision: preflight.evaluation.decision,
       createdAt: new Date().toISOString(),
     };
-    this.resumeStore.save(record);
   }
+
+  /** Replays a persisted job-creation request after a lost response. */
+  private async replayJobCreation(
+    record: PersistedTransferResumeState,
+    signal: AbortSignal,
+  ): Promise<boolean> {
+    try {
+      const created = await this.transport.createJob(
+        {
+          direction: 'Import',
+          idempotencyKey: record.jobCreationIdempotencyKey,
+          reservationId: record.reservationId ?? null,
+        },
+        signal,
+      );
+      this.jobId = created.job.id;
+      this.resumeStore.update({ jobId: created.job.id });
+      return true;
+    } catch (error) {
+      if (error instanceof TransferCancelledError) throw error;
+      this.failWith(this.failureFromError(error), undefined);
+      return false;
+    }
+  }
+
+  /**
+   * Returns the job's upload session, replaying the persisted creation request
+   * with its persisted key when the server has none (or the earlier response
+   * was lost). The server's idempotency then returns the original session.
+   */
+  private async ensureUploadSession(
+    record: PersistedTransferResumeState,
+    signal: AbortSignal,
+  ): Promise<MigrationUploadSessionResponseDto> {
+    const jobId = this.jobId ?? record.jobId;
+    if (!jobId) throw new Error('No migration job to attach an upload session to.');
+
+    if (record.sessionId) {
+      try {
+        const existing = await this.transport.getUploadSession(jobId, signal);
+        return existing;
+      } catch (error) {
+        const failure = toTransferFailure(error);
+        if (failure.code !== 'migration_invalid_state') throw error;
+        // The server has no session for this job; fall through and replay.
+      }
+    }
+
+    const sessionRequest = record.sessionRequest ?? this.sessionRequestFromRecord(record);
+    if (!sessionRequest) {
+      throw new MigrationTransportError(
+        'migration_invalid_state',
+        409,
+        'The upload session request was not persisted; start the import again.',
+      );
+    }
+
+    const response = await this.transport.createUploadSession(jobId, sessionRequest, signal);
+    this.jobId = jobId;
+    this.resumeStore.update({
+      jobId,
+      sessionId: response.session.sessionId,
+      sessionCreationIdempotencyKey: sessionRequest.idempotencyKey,
+      sessionRequest,
+    });
+    return response;
+  }
+
+  private sessionRequestFromRecord(
+    record: PersistedTransferResumeState,
+  ): MigrationSessionRequestDto | null {
+    const chunkSize = record.chunkSizeBytes;
+    if (!chunkSize) return null;
+    return {
+      purpose: 'Import',
+      totalBytes: record.fileIdentity.totalSizeBytes,
+      chunkSize,
+      totalChunks: chunkCount(record.fileIdentity.totalSizeBytes, chunkSize),
+      fileIdentity: record.fileIdentity,
+      idempotencyKey: record.sessionCreationIdempotencyKey ?? newIdempotencyKey(),
+    };
+  }
+}
+
+function isPreActivationJobState(state: MigrationJobState): boolean {
+  return (
+    state === 'Pending' ||
+    state === 'Preparing' ||
+    state === 'Transferring' ||
+    state === 'Validating'
+  );
 }
 
 function newIdempotencyKey(): string {

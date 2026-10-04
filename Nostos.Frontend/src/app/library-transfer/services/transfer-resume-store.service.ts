@@ -66,9 +66,12 @@ function isResumeState(value: unknown): value is PersistedTransferResumeState {
   const record = value as Record<string, unknown>;
   const identity = record['fileIdentity'];
   const preflight = record['preflightRequest'];
+  const jobId = record['jobId'];
   return (
     record['schemaVersion'] === 1 &&
-    typeof record['jobId'] === 'string' &&
+    (jobId === undefined || typeof jobId === 'string') &&
+    typeof record['jobCreationIdempotencyKey'] === 'string' &&
+    (record['jobCreationIdempotencyKey'] as string).length > 0 &&
     record['direction'] === 'import' &&
     typeof record['fileName'] === 'string' &&
     typeof record['createdAt'] === 'string' &&

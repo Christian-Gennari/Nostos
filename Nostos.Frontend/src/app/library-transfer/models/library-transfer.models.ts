@@ -12,6 +12,7 @@ import type {
   MigrationPreflightDecision,
   MigrationPreflightRequestDto,
   MigrationPreflightResponseDto,
+  MigrationSessionRequestDto,
 } from './migration-http.dtos';
 
 /** Read block for whole-file hashing: bounded regardless of archive size (plan §11.3). */
@@ -114,11 +115,28 @@ export interface FileDigest {
   fingerprint(file: Blob): Promise<string>;
 }
 
-/** Persisted resume metadata (plan §13). Never contains file bytes or URLs. */
+/**
+ * Persisted resume metadata (plan §13, §16, §17). Never contains file bytes or
+ * URLs.
+ *
+ * The record is written in stages so no crash window loses a creation
+ * idempotency key:
+ *
+ * 1. after preflight, before `createJob()`: the job-creation key, reservation,
+ *    identity, preflight request and the prepared upload-session request/key;
+ * 2. after `createJob()` returns: `jobId` is promoted;
+ * 3. after `createUploadSession()` returns: `sessionId` is promoted.
+ */
 export interface PersistedTransferResumeState {
   schemaVersion: 1;
-  jobId: string;
+  /** Absent until the create-job response has been observed. */
+  jobId?: string;
+  jobCreationIdempotencyKey: string;
+  reservationId?: string | null;
   sessionId?: string;
+  sessionCreationIdempotencyKey?: string;
+  sessionRequest?: MigrationSessionRequestDto;
+  chunkSizeBytes?: number;
   direction: 'import';
   fileIdentity: TransferFileIdentity;
   fileName: string;
