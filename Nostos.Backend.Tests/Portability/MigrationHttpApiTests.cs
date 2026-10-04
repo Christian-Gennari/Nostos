@@ -1,4 +1,6 @@
 using System.Net;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
@@ -109,7 +111,6 @@ public sealed class MigrationHttpApiTests
     {
         await using var h = new MigrationHttpHarness().Start();
         var reservationA = await h.ReserveAsync("job-replay-a");
-        var reservationB = await h.ReserveAsync("job-replay-b");
 
         var first = await h.CreateJobAsync("Import", "job-replay", reservationA);
         first.Status.Should().Be(HttpStatusCode.Created);
@@ -119,6 +120,9 @@ public sealed class MigrationHttpApiTests
         replay.Status.Should().Be(HttpStatusCode.OK);
         JobIdOf(replay.Body).Should().Be(jobId);
 
+        // A later preflight supersedes only unclaimed holds; the claimed one
+        // stays bound to its job.
+        var reservationB = await h.ReserveAsync("job-replay-b");
         var differentReservation = await h.CreateJobAsync("Import", "job-replay", reservationB);
         differentReservation.Status.Should().Be(HttpStatusCode.Conflict);
         CodeOf(differentReservation.Body).Should().Be("migration_idempotency_conflict");
@@ -127,7 +131,9 @@ public sealed class MigrationHttpApiTests
         differentDirection.Status.Should().Be(HttpStatusCode.Conflict);
         CodeOf(differentDirection.Body).Should().Be("migration_idempotency_conflict");
 
-        (await h.WithDb(db => db.MigrationJobRecords.CountAsync())).Should().Be(1);
+        var second = await h.CreateJobAsync("Import", "job-replay-2", reservationB);
+        second.Status.Should().Be(HttpStatusCode.Created);
+        (await h.WithDb(db => db.MigrationJobRecords.CountAsync())).Should().Be(2);
     }
 
     [Fact]
@@ -596,7 +602,11 @@ public sealed class MigrationHttpApiTests
             .Should().Be("AllowedEmpty");
         fresh.Body.RootElement.GetProperty("reservationId").ValueKind.Should().Be(JsonValueKind.String);
 
-        (await h.WithDb(db => db.MigrationStorageReservations.CountAsync())).Should().Be(2);
+        // Superseding keeps exactly one live unclaimed hold; the earlier one is
+        // released but retained as a row.
+        var reservations = await h.WithDb(db => db.MigrationStorageReservations.AsNoTracking().ToListAsync());
+        reservations.Count.Should().Be(2);
+        reservations.Count(r => r.ReleasedAtUtc == null && r.ClaimedJobId == null).Should().Be(1);
     }
 
     [Fact]
@@ -617,9 +627,11 @@ public sealed class MigrationHttpApiTests
             {
                 var response = await h.SendAsync(method, path, content);
                 response.Status.Should().Be(HttpStatusCode.ServiceUnavailable, $"{method} {path}");
-                response.Body.RootElement.GetProperty("code").GetString()
-                    .Should().Be("migration_activation_busy");
+                response.Body.RootElement.EnumerateObject().Select(property => property.Name)
+                    .Should().Equal(new[] { "error", "message" }, $"{method} {path}");
                 response.Body.RootElement.GetProperty("error").GetString()
+                    .Should().Be("migration_activation_busy");
+                response.Body.RootElement.GetProperty("message").GetString()
                     .Should().Contain("maintenance");
             }
 
@@ -629,6 +641,16 @@ public sealed class MigrationHttpApiTests
             using var statusResponse = await h.Client.SendAsync(statusRequest);
             statusResponse.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
             statusResponse.Headers.RetryAfter!.Delta.Should().Be(TimeSpan.FromSeconds(5));
+
+            // Non-migration routes keep their historical { code, error } body.
+            using var legacyRequest = new HttpRequestMessage(HttpMethod.Get, "/api/portability/export");
+            using var legacyResponse = await h.Client.SendAsync(legacyRequest);
+            legacyResponse.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+            using var legacyBody = JsonDocument.Parse(await legacyResponse.Content.ReadAsStringAsync());
+            legacyBody.RootElement.EnumerateObject().Select(property => property.Name)
+                .Should().Equal("code", "error");
+            legacyBody.RootElement.GetProperty("code").GetString()
+                .Should().Be("migration_activation_busy");
         }
 
         var after = await h.SendAsync(HttpMethod.Get, $"/api/portability/migration/jobs/{job}");
@@ -688,7 +710,7 @@ public sealed class MigrationHttpApiTests
     }
 
     [Fact]
-    public async Task Capability_flags_and_missing_phase_handlers_refuse_job_creation_up_front()
+    public async Task Capability_flags_and_missing_phase_handlers_refuse_work_up_front()
     {
         await using var h = new MigrationHttpHarness { PhasesAvailable = false }.Start();
 
@@ -697,8 +719,14 @@ public sealed class MigrationHttpApiTests
         capabilities.Body.RootElement.GetProperty("supportsLibraryMigration").GetBoolean().Should().BeFalse();
         capabilities.Body.RootElement.GetProperty("supportsSafeActivation").GetBoolean().Should().BeFalse();
 
-        var reservation = await h.ReserveAsync("unavailable-key");
-        var import = await h.CreateJobAsync("Import", "unavailable-key", reservation);
+        // Preflight refuses and creates no durable reservation while the import
+        // phase handler is unavailable.
+        var preflight = await h.PreflightAsync(archiveBytes: 8L * 1024 * 1024);
+        preflight.Status.Should().Be(HttpStatusCode.Conflict);
+        CodeOf(preflight.Body).Should().Be("migration_import_preparation_unavailable");
+        (await h.WithDb(db => db.MigrationStorageReservations.CountAsync())).Should().Be(0);
+
+        var import = await h.CreateJobAsync("Import", "unavailable-key", null);
         import.Status.Should().Be(HttpStatusCode.Conflict);
         CodeOf(import.Body).Should().Be("migration_import_preparation_unavailable");
 
@@ -707,11 +735,13 @@ public sealed class MigrationHttpApiTests
         CodeOf(export.Body).Should().Be("migration_export_artifact_unavailable");
         (await h.WithDb(db => db.MigrationJobRecords.CountAsync())).Should().Be(0);
 
-        // Once a host wires a handler, both the capability and job creation flip.
+        // Once a host wires a handler, both the capability and the write paths
+        // flip, and preflight can reserve again.
         h.PhasesAvailable = true;
         var nowAvailable = await h.SendAsync(HttpMethod.Get, "/api/runtime/capabilities");
         nowAvailable.Body.RootElement.GetProperty("supportsLibraryMigration").GetBoolean().Should().BeTrue();
         nowAvailable.Body.RootElement.GetProperty("supportsSafeActivation").GetBoolean().Should().BeFalse();
+        var reservation = await h.ReserveAsync("unavailable-key");
         var created = await h.CreateJobAsync("Import", "unavailable-key", reservation);
         created.Status.Should().Be(HttpStatusCode.Created);
     }
@@ -774,6 +804,233 @@ public sealed class MigrationHttpApiTests
             payload.Should().NotContain("MigrationJobRecord");
         }
     }
+
+    [Fact]
+    public async Task Repeated_preflights_keep_exactly_one_unclaimed_hold()
+    {
+        await using var h = new MigrationHttpHarness().Start();
+
+        Guid lastReservation = default;
+        for (var attempt = 0; attempt < 100; attempt++)
+        {
+            var (status, body) = await h.PreflightAsync(archiveBytes: 8L * 1024 * 1024);
+            status.Should().Be(HttpStatusCode.OK);
+            lastReservation = body.RootElement.GetProperty("reservationId").GetGuid();
+        }
+
+        var reservations = await h.WithDb(db => db.MigrationStorageReservations.AsNoTracking().ToListAsync());
+        reservations.Count.Should().Be(100);
+        reservations.Count(r => r.ReleasedAtUtc == null && r.ClaimedJobId == null).Should().Be(1);
+        reservations.Count(r => r.ReleasedAtUtc != null).Should().Be(99);
+        var live = reservations.Single(r => r.ReleasedAtUtc == null && r.ClaimedJobId == null);
+        live.Id.Should().Be(lastReservation);
+
+        // Capacity usage equals exactly one hold, not 100.
+        var snapshot = await h.WithCapacityAsync(capacity => capacity.GetSnapshotAsync(default));
+        snapshot.ActiveReservationCount.Should().Be(1);
+        snapshot.OutstandingReservedBytes.Should().Be(live.ReservedBytes);
+    }
+
+    [Fact]
+    public async Task Preflight_supersedes_only_unclaimed_reservations()
+    {
+        await using var h = new MigrationHttpHarness().Start();
+
+        var firstReservation = await h.ReserveAsync("claimed-first");
+        var job = await h.CreateJobAsync("Import", "claimed-first", firstReservation);
+        job.Status.Should().Be(HttpStatusCode.Created);
+        var jobId = JobIdOf(job.Body);
+
+        var second = await h.PreflightAsync(archiveBytes: 8L * 1024 * 1024);
+        second.Status.Should().Be(HttpStatusCode.OK);
+        var secondReservation = second.Body.RootElement.GetProperty("reservationId").GetGuid();
+        secondReservation.Should().NotBe(firstReservation);
+
+        var claimed = await h.WithDb(db => db.MigrationStorageReservations.AsNoTracking()
+            .SingleAsync(r => r.Id == firstReservation));
+        claimed.ClaimedJobId.Should().Be(jobId);
+        claimed.ReleasedAtUtc.Should().BeNull();
+        var replacement = await h.WithDb(db => db.MigrationStorageReservations.AsNoTracking()
+            .SingleAsync(r => r.Id == secondReservation));
+        replacement.ClaimedJobId.Should().BeNull();
+        replacement.ReleasedAtUtc.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Preflight_rejects_out_of_contract_and_overflowing_declared_values()
+    {
+        await using var h = new MigrationHttpHarness().Start();
+        var maxArchiveBytes = 512L * 1024 * 1024 * 1024;
+        var maxEntryBytes = 16L * 1024 * 1024 * 1024;
+
+        var cases = new[]
+        {
+            // Counts bounded by the archive entry ceiling.
+            PreflightJson(Counts(books: "20001")),
+            PreflightJson(Counts(works: "-1")),
+            // Byte totals bounded by the contract limits.
+            PreflightJson(Counts(), archiveBytes: (maxArchiveBytes + 1).ToString()),
+            PreflightJson(Counts(), mediaBytes: "-1"),
+            PreflightJson(Counts(), maxEntry: (maxEntryBytes + 1).ToString()),
+            // Numeric overflow in JSON is a parse failure, not a default.
+            PreflightJson(Counts(), archiveBytes: "99999999999999999999999999"),
+        };
+
+        foreach (var payload in cases)
+        {
+            using var content = Json(payload);
+            var response = await h.SendAsync(
+                HttpMethod.Post,
+                "/api/portability/migration/preflight",
+                content);
+            response.Status.Should().Be(HttpStatusCode.BadRequest, payload);
+            response.Body.RootElement.EnumerateObject().Select(property => property.Name)
+                .Should().Equal(new[] { "error", "message" }, payload);
+            CodeOf(response.Body).Should().Be("migration_invalid_request", payload);
+        }
+
+        (await h.WithDb(db => db.MigrationStorageReservations.CountAsync())).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Malformed_inputs_on_migration_routes_use_the_migration_error_body()
+    {
+        await using var h = new MigrationHttpHarness().Start();
+        var jobId = await h.CreateImportJobAsync("binding-key");
+
+        var sessionPrefix = $"/api/portability/migration/jobs/{jobId}/upload-session";
+        var cases = new (string Path, HttpContent Content)[]
+        {
+            ("/api/portability/migration/preflight", Json("{not json")),
+            ("/api/portability/migration/preflight", Json("{}")),
+            ("/api/portability/migration/preflight",
+                Json(PreflightJson(Counts()).Replace("\"declaredArchiveBytes\":1024", "\"declaredArchiveBytes\":\"lots\""))),
+            ("/api/portability/migration/jobs",
+                Json("""{"direction":"DefinitelyNotADirection","idempotencyKey":"x"}""")),
+            ("/api/portability/migration/jobs", Json("{}")),
+            ("/api/portability/migration/jobs", Json("""{"direction":5,"idempotencyKey":"x"}""")),
+            ("/api/portability/migration/jobs", Json("""{"direction":"Import"}""")),
+            (sessionPrefix, Json("{}")),
+            (sessionPrefix, Json("""{"purpose":"Import","totalBytes":"many"}""")),
+            (sessionPrefix, Json("""
+                {"purpose":"Bogus","totalBytes":1,"chunkSize":4194304,"totalChunks":1,
+                 "fileIdentity":{"totalSizeBytes":1,"sha256Checksum":"aa"},"idempotencyKey":"k"}
+                """)),
+            (sessionPrefix, Json("""
+                {"purpose":"Import","totalBytes":99999999999999999999,"chunkSize":4194304,
+                 "totalChunks":1,"fileIdentity":{"totalSizeBytes":1,"sha256Checksum":"aa"},"idempotencyKey":"k"}
+                """)),
+            (sessionPrefix, Json("""
+                {"purpose":"Import","totalBytes":1,"chunkSize":4194304,"totalChunks":1,"idempotencyKey":"k"}
+                """)),
+            ("/api/portability/migration/jobs",
+                new StringContent("""{"direction":"Import","idempotencyKey":"x"}""", Encoding.UTF8, "text/plain")),
+            ($"/api/portability/migration/jobs/{jobId}/cancel", Json("{bad")),
+            ($"/api/portability/migration/jobs/{jobId}/retry", Json("{bad")),
+        };
+
+        foreach (var (path, content) in cases)
+        {
+            using (content)
+            {
+                var response = await h.SendAsync(HttpMethod.Post, path, content);
+                response.Status.Should().Be(HttpStatusCode.BadRequest, path);
+                response.Body.RootElement.EnumerateObject().Select(property => property.Name)
+                    .Should().Equal(new[] { "error", "message" }, path);
+                CodeOf(response.Body).Should().Be("migration_invalid_request", path);
+            }
+        }
+
+        // No malformed request created a durable row before validation.
+        (await h.WithDb(db => db.MigrationJobRecords.CountAsync())).Should().Be(1);
+        (await h.WithDb(db => db.MigrationSessionRecords.CountAsync())).Should().Be(0);
+        var reservations = await h.WithDb(db => db.MigrationStorageReservations.AsNoTracking().ToListAsync());
+        reservations.Should().ContainSingle().Which.ClaimedJobId.Should().Be(jobId);
+    }
+
+    [Fact]
+    public async Task Invalid_route_values_are_400_and_unknown_routes_stay_404()
+    {
+        await using var h = new MigrationHttpHarness().Start();
+
+        foreach (var (method, path) in new (HttpMethod, string)[]
+        {
+            (HttpMethod.Get, "/api/portability/migration/jobs/not-a-guid"),
+            (HttpMethod.Post, "/api/portability/migration/jobs/not-a-guid/cancel"),
+            (HttpMethod.Post, "/api/portability/migration/jobs/not-a-guid/retry"),
+            (HttpMethod.Get, "/api/portability/migration/jobs/not-a-guid/upload-session"),
+            (HttpMethod.Post, "/api/portability/migration/jobs/not-a-guid/upload-session"),
+            (HttpMethod.Post, "/api/portability/migration/jobs/not-a-guid/upload-session/complete"),
+        })
+        {
+            var response = method == HttpMethod.Get
+                ? await h.SendAsync(method, path)
+                : await h.SendAsync(method, path, new ByteArrayContent([]));
+            response.Status.Should().Be(HttpStatusCode.BadRequest, $"{method} {path}");
+            CodeOf(response.Body).Should().Be("migration_invalid_request", $"{method} {path}");
+        }
+
+        var badIndex = await h.SendAsync(
+            HttpMethod.Put,
+            $"/api/portability/migration/jobs/{Guid.NewGuid()}/upload-session/chunks/not-an-int",
+            new ByteArrayContent([]));
+        badIndex.Status.Should().Be(HttpStatusCode.BadRequest);
+        CodeOf(badIndex.Body).Should().Be("migration_invalid_request");
+
+        // Unknown routes under the group are not mapped and stay 404.
+        var unknown = await h.SendAsync(
+            HttpMethod.Get,
+            $"/api/portability/migration/jobs/{Guid.NewGuid()}/definitely-not-a-route");
+        unknown.Status.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public void Session_payload_hash_is_independent_of_json_enum_formatting()
+    {
+        var request = new MigrationSessionRequest(
+            MigrationSessionPurpose.Import,
+            4 * 1024 * 1024 + 100,
+            4 * 1024 * 1024,
+            2,
+            new MigrationFileIdentity(4 * 1024 * 1024 + 100, new string('a', 64), "fingerprint"),
+            "canonical-key");
+
+        var hash = SelfHostedMigrationTransferService.PayloadHash(request);
+        var canonical = Convert.ToHexStringLower(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new
+        {
+            Purpose = (int)request.Purpose,
+            request.TotalBytes,
+            request.ChunkSize,
+            request.TotalChunks,
+            Identity = new MigrationFileIdentity(
+                request.FileIdentity.TotalSizeBytes,
+                request.FileIdentity.Sha256Checksum.ToLowerInvariant(),
+                request.FileIdentity.ClientFingerprint),
+        })));
+
+        hash.Should().Be(canonical);
+    }
+
+    private static StringContent Json(string payload) =>
+        new(payload, Encoding.UTF8, "application/json");
+
+    private static string Counts(string works = "0", string books = "0") =>
+        $$"""
+        {"works":{{works}},"books":{{books}},"notes":0,"topics":0,"noteTopics":0,"writings":0,
+         "writingNotes":0,"collections":0,"collectionMemberships":0,"acquisitions":0,
+         "assistantSettings":0,"noteImportBookLinks":0,"mediaEntries":0}
+        """;
+
+    private static string PreflightJson(
+        string counts,
+        string archiveBytes = "1024",
+        string mediaBytes = "0",
+        string maxEntry = "1024") =>
+        $$"""
+        {"incomingCounts":{{counts}},"declaredArchiveBytes":{{archiveBytes}},
+         "declaredMediaBytes":{{mediaBytes}},"maxSingleEntryBytes":{{maxEntry}},
+         "declaredFormatVersion":1,"declaredDataVersion":1,"isOperationalBackup":false}
+        """;
 
     private static Guid JobIdOf(JsonDocument body) =>
         body.RootElement.GetProperty("job").GetProperty("id").GetGuid();

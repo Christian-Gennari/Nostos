@@ -25,6 +25,7 @@ public interface IMigrationPreflightService
 public sealed class SelfHostedMigrationPreflightService(
     NostosDbContext db,
     ITransferStorageCapacity capacity,
+    IMigrationPhaseAvailability phaseAvailability,
     IOptions<TransferStorageOptions> options) : IMigrationPreflightService
 {
     public async Task<MigrationPreflightResponse> EvaluateAsync(
@@ -33,8 +34,17 @@ public sealed class SelfHostedMigrationPreflightService(
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(request.IncomingCounts);
-        if (HasNegativeCounts(request.IncomingCounts))
-            throw MigrationTransferException.Error(MigrationTransferException.InvalidRequest);
+
+        // Preflight must never materialize a durable reservation while the
+        // import phase handler is unavailable: that would be a cheap,
+        // authenticated-or-not capacity-exhaustion primitive.
+        if (!phaseAvailability.IsAvailable(MigrationDirection.Import))
+        {
+            throw MigrationTransferException.Error(
+                MigrationTransferException.ImportPreparationUnavailable);
+        }
+
+        ValidateDeclaredBounds(request);
 
         var destination = await ReadDestinationAsync(ct);
         var snapshot = await capacity.GetSnapshotAsync(ct);
@@ -55,7 +65,10 @@ public sealed class SelfHostedMigrationPreflightService(
             evaluation.RequiredStorageBytes,
             options.Value.ChunkBytes,
             options.Value);
-        var admitted = await capacity.TryReserveAsync(
+        // Installation-scoped: the new accepted preflight atomically supersedes
+        // the previous unclaimed hold, so repeated preflights cannot pile up
+        // reservations; claimed holds are untouched.
+        var admitted = await capacity.TryReplaceUnclaimedAsync(
             hostPeakBytes,
             MigrationSessionPurpose.Import,
             options.Value.PreflightReservationTtl,
@@ -119,20 +132,38 @@ public sealed class SelfHostedMigrationPreflightService(
         MigrationExistingCounts Counts,
         string Revision);
 
-    private static bool HasNegativeCounts(MigrationArchiveCounts counts) =>
-        counts.Works < 0
-        || counts.Books < 0
-        || counts.Notes < 0
-        || counts.Topics < 0
-        || counts.NoteTopics < 0
-        || counts.Writings < 0
-        || counts.WritingNotes < 0
-        || counts.Collections < 0
-        || counts.CollectionMemberships < 0
-        || counts.Acquisitions < 0
-        || counts.AssistantSettings < 0
-        || counts.NoteImportBookLinks < 0
-        || counts.MediaEntries < 0;
+    /// <summary>
+    /// Bounds every client-declared number before it participates in evaluation
+    /// or reservation arithmetic: counts are entry-bounded, byte totals are
+    /// contract-bounded, and overflow cannot be constructed because each value
+    /// is checked before any sum.
+    /// </summary>
+    private static void ValidateDeclaredBounds(MigrationPreflightRequest request)
+    {
+        var counts = request.IncomingCounts;
+        if (OutOfEntryRange(counts.Works)
+            || OutOfEntryRange(counts.Books)
+            || OutOfEntryRange(counts.Notes)
+            || OutOfEntryRange(counts.Topics)
+            || OutOfEntryRange(counts.NoteTopics)
+            || OutOfEntryRange(counts.Writings)
+            || OutOfEntryRange(counts.WritingNotes)
+            || OutOfEntryRange(counts.Collections)
+            || OutOfEntryRange(counts.CollectionMemberships)
+            || OutOfEntryRange(counts.Acquisitions)
+            || OutOfEntryRange(counts.AssistantSettings)
+            || OutOfEntryRange(counts.NoteImportBookLinks)
+            || OutOfEntryRange(counts.MediaEntries)
+            || request.DeclaredArchiveBytes is < 0 or > MigrationContractLimits.MaxArchiveBytes
+            || request.DeclaredMediaBytes is < 0 or > MigrationContractLimits.MaxMediaBytes
+            || request.MaxSingleEntryBytes is < 0 or > MigrationContractLimits.MaxSingleEntryBytes)
+        {
+            throw MigrationTransferException.Error(MigrationTransferException.InvalidRequest);
+        }
+    }
+
+    private static bool OutOfEntryRange(long count) =>
+        count < 0 || count > MigrationContractLimits.MaxArchiveEntries;
 }
 
 /// <summary>

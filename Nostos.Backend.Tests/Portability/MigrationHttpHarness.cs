@@ -80,6 +80,12 @@ internal sealed class MigrationHttpHarness : IAsyncDisposable
     internal T GetService<T>() where T : notnull =>
         _factory!.Services.GetRequiredService<T>();
 
+    internal async Task<T> WithCapacityAsync<T>(Func<ITransferStorageCapacity, Task<T>> action)
+    {
+        await using var scope = _factory!.Services.CreateAsyncScope();
+        return await action(scope.ServiceProvider.GetRequiredService<ITransferStorageCapacity>());
+    }
+
     internal static async Task<JsonDocument> ReadJsonAsync(HttpResponseMessage response)
     {
         var payload = await response.Content.ReadAsStringAsync();

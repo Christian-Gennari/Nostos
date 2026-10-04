@@ -75,13 +75,34 @@ public sealed class MigrationHttpErrorMappingTests
     }
 
     [Fact]
-    public async Task Capacity_reservation_failures_map_to_reservation_required()
+    public async Task Reservation_claim_failures_map_to_reservation_required()
     {
-        var (status, code, _) = await ExecuteAsync(
-            MigrationHttpErrors.From(TransferReservationException.AdmissionContended(3)));
+        var exception = new TransferReservationException(
+            TransferReservationConflictKind.AlreadyClaimed,
+            Guid.NewGuid());
+
+        var (status, code, _) = await ExecuteAsync(MigrationHttpErrors.From(exception));
 
         status.Should().Be(409);
         code.Should().Be("migration_reservation_required");
+    }
+
+    [Fact]
+    public async Task Admission_contention_maps_to_retryable_503_with_retry_after()
+    {
+        var context = NewContext(out var body);
+        await MigrationHttpErrors
+            .From(TransferReservationException.AdmissionContended(3))
+            .ExecuteAsync(context);
+        body.Position = 0;
+        var payload = await JsonSerializer.DeserializeAsync<MigrationErrorResponse>(
+            body,
+            MigrationHttpHarness.Json);
+
+        context.Response.StatusCode.Should().Be(503);
+        context.Response.Headers.RetryAfter.ToString().Should().Be("1");
+        payload!.Error.Should().Be("migration_storage_contended");
+        payload.Message.Should().NotContain("AdmissionContended");
     }
 
     [Fact]
@@ -95,7 +116,7 @@ public sealed class MigrationHttpErrorMappingTests
         message.Should().NotContain("secret").And.NotContain("library.db");
     }
 
-    private static async Task<(int Status, string Code, string Message)> ExecuteAsync(IResult result)
+    private static DefaultHttpContext NewContext(out MemoryStream body)
     {
         var services = new ServiceCollection();
         services.AddOptions();
@@ -104,8 +125,14 @@ public sealed class MigrationHttpErrorMappingTests
         {
             RequestServices = services.BuildServiceProvider(),
         };
-        await using var body = new MemoryStream();
+        body = new MemoryStream();
         context.Response.Body = body;
+        return context;
+    }
+
+    private static async Task<(int Status, string Code, string Message)> ExecuteAsync(IResult result)
+    {
+        var context = NewContext(out var body);
         await result.ExecuteAsync(context);
         body.Position = 0;
         var payload = await JsonSerializer.DeserializeAsync<MigrationErrorResponse>(

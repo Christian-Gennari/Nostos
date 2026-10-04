@@ -97,40 +97,24 @@ public sealed class MigrationHttpAuthTests
     public async Task Authenticated_requests_reach_the_handler_normally()
     {
         await using var host = await AuthHost.StartAsync();
+        const string payload = """
+            {"incomingCounts":{"works":0,"books":0,"notes":0,"topics":0,"noteTopics":0,
+             "writings":0,"writingNotes":0,"collections":0,"collectionMemberships":0,
+             "acquisitions":0,"assistantSettings":0,"noteImportBookLinks":0,"mediaEntries":0},
+             "declaredArchiveBytes":1024,"declaredMediaBytes":0,"maxSingleEntryBytes":1024,
+             "declaredFormatVersion":1,"declaredDataVersion":1,"isOperationalBackup":false}
+            """;
         using var request = new HttpRequestMessage(
             HttpMethod.Post,
             "/api/portability/migration/preflight")
         {
-            Content = JsonContent.Create(new
-            {
-                incomingCounts = new
-                {
-                    works = 0,
-                    books = 0,
-                    notes = 0,
-                    topics = 0,
-                    noteTopics = 0,
-                    writings = 0,
-                    writingNotes = 0,
-                    collections = 0,
-                    collectionMemberships = 0,
-                    acquisitions = 0,
-                    assistantSettings = 0,
-                    noteImportBookLinks = 0,
-                    mediaEntries = 0,
-                },
-                declaredArchiveBytes = 1024,
-                declaredMediaBytes = 0,
-                maxSingleEntryBytes = 1024,
-                declaredFormatVersion = 1,
-                declaredDataVersion = 1,
-                isOperationalBackup = false,
-            }),
+            Content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json"),
         };
         request.Headers.Add("X-Test-Authenticated", "1");
         using var response = await host.Client.SendAsync(request);
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var bodyText = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, bodyText);
+        using var body = JsonDocument.Parse(bodyText);
         body.RootElement.GetProperty("evaluation").GetProperty("decision").GetString()
             .Should().Be("AllowedEmpty");
     }

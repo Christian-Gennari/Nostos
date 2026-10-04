@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Nostos.Backend.Services.Portability;
 using Nostos.Backend.Services.Portability.Migration;
@@ -38,6 +40,85 @@ public sealed record MigrationUploadSessionResponse(
     IReadOnlyList<MigrationChunkRange> ReceivedRanges);
 
 public sealed record MigrationErrorResponse(string Error, string Message);
+
+/// <summary>
+/// Explicit request-body shapes for the migration routes. Every required
+/// member is nullable so a missing JSON property is distinguishable from a
+/// default value and is rejected with the migration 400 error model instead of
+/// silently defaulting.
+/// </summary>
+public sealed record MigrationPreflightBody(
+    MigrationArchiveCounts? IncomingCounts = null,
+    long? DeclaredArchiveBytes = null,
+    long? DeclaredMediaBytes = null,
+    long? MaxSingleEntryBytes = null,
+    int? DeclaredFormatVersion = null,
+    int? DeclaredDataVersion = null,
+    string? DeclaredFormatName = null,
+    string? ClientDestinationRevision = null,
+    bool? IsOperationalBackup = null);
+
+public sealed record MigrationCreateJobBody(
+    MigrationDirection? Direction = null,
+    string? IdempotencyKey = null,
+    Guid? ReservationId = null);
+
+public sealed record MigrationFileIdentityBody(
+    long? TotalSizeBytes = null,
+    string? Sha256Checksum = null,
+    string? ClientFingerprint = null);
+
+public sealed record MigrationSessionBody(
+    MigrationSessionPurpose? Purpose = null,
+    long? TotalBytes = null,
+    int? ChunkSize = null,
+    int? TotalChunks = null,
+    MigrationFileIdentityBody? FileIdentity = null,
+    string? IdempotencyKey = null);
+
+public sealed record MigrationCancelBody(string? Reason = null);
+
+public sealed record MigrationRetryBody(string? IdempotencyKey = null);
+
+/// <summary>
+/// Explicit, uniform JSON parsing for the migration routes. Model binding
+/// failures (malformed JSON, wrong value type, invalid enum string, numeric
+/// overflow, missing body) never escape as generic Problem Details; callers
+/// answer 400 with the migration error body. A non-JSON content type is
+/// rejected the same way.
+/// </summary>
+public static class MigrationHttpBodies
+{
+    private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web);
+
+    public static async Task<(bool Ok, T? Value)> TryReadAsync<T>(
+        HttpRequest request,
+        CancellationToken ct) where T : class
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (request.ContentLength is null or 0) return (true, null);
+        if (!IsJsonContentType(request.ContentType)) return (false, null);
+
+        try
+        {
+            var value = await JsonSerializer.DeserializeAsync<T>(request.Body, Options, ct);
+            return (value is not null, value);
+        }
+        catch (JsonException)
+        {
+            return (false, null);
+        }
+        catch (BadHttpRequestException)
+        {
+            return (false, null);
+        }
+    }
+
+    private static bool IsJsonContentType(string? contentType) =>
+        string.IsNullOrWhiteSpace(contentType)
+        || contentType.StartsWith("application/json", StringComparison.OrdinalIgnoreCase)
+        || contentType.Contains("+json", StringComparison.OrdinalIgnoreCase);
+}
 
 /// <summary>
 /// Compresses sorted chunk indexes into inclusive ranges for HTTP efficiency.
@@ -135,6 +216,7 @@ public static class MigrationHttpErrors
     public const string CannotCancel = "migration_cannot_cancel";
     public const string NotRetryable = "migration_not_retryable";
     public const string InvalidRequest = "migration_invalid_request";
+    public const string StorageContended = "migration_storage_contended";
     public const string ImportPreparationUnavailable = "migration_import_preparation_unavailable";
     public const string ExportArtifactUnavailable = "migration_export_artifact_unavailable";
     public const string Unexpected = "unexpected_error";
@@ -155,6 +237,7 @@ public static class MigrationHttpErrors
         [CannotCancel] = "The job can no longer be cancelled.",
         [NotRetryable] = "Only failed, cancelled or expired jobs can be retried.",
         [InvalidRequest] = "The migration request is malformed.",
+        [StorageContended] = "Transfer capacity is busy. Retry shortly.",
         [ImportPreparationUnavailable] = "Import preparation is not available on this deployment yet.",
         [ExportArtifactUnavailable] = "Export preparation is not available on this deployment yet.",
         [Unexpected] = "The migration request failed unexpectedly.",
@@ -164,9 +247,20 @@ public static class MigrationHttpErrors
     {
         MigrationJobStoreException store => FromStore(store),
         MigrationTransferException transfer => FromTransfer(transfer),
-        TransferReservationException => Result(ReservationRequired, StatusCodes.Status409Conflict),
+        TransferReservationException reservation => FromReservation(reservation),
         _ => Result(Unexpected, StatusCodes.Status500InternalServerError),
     };
+
+    /// <summary>
+    /// Admission contention is transient, not a missing reservation: it answers
+    /// 503 + Retry-After so the client retries instead of treating it as a
+    /// permanent conflict. Every other reservation failure is the documented
+    /// 409 reservation-required outcome.
+    /// </summary>
+    public static IResult FromReservation(TransferReservationException exception) =>
+        exception.Kind == TransferReservationConflictKind.Contended
+            ? Retryable(StorageContended)
+            : Result(ReservationRequired, StatusCodes.Status409Conflict);
 
     public static IResult FromStore(MigrationJobStoreException exception) => exception.Code switch
     {
@@ -217,4 +311,30 @@ public static class MigrationHttpErrors
 
     public static IResult Result(string code, int statusCode) =>
         Results.Json(new MigrationErrorResponse(code, Messages.GetValueOrDefault(code, code)), statusCode: statusCode);
+
+    /// <summary>Transient outcome with Retry-After, still using the migration error body.</summary>
+    public static IResult Retryable(string code, int retryAfterSeconds = 1) =>
+        new RetryAfterJsonResult(
+            code,
+            Messages.GetValueOrDefault(code, code),
+            StatusCodes.Status503ServiceUnavailable,
+            retryAfterSeconds);
+
+    private sealed class RetryAfterJsonResult(
+        string code,
+        string message,
+        int statusCode,
+        int retryAfterSeconds) : IResult
+    {
+        public Task ExecuteAsync(HttpContext httpContext)
+        {
+            ArgumentNullException.ThrowIfNull(httpContext);
+            httpContext.Response.StatusCode = statusCode;
+            httpContext.Response.Headers.RetryAfter =
+                retryAfterSeconds.ToString(CultureInfo.InvariantCulture);
+            return httpContext.Response.WriteAsJsonAsync(
+                new MigrationErrorResponse(code, message),
+                httpContext.RequestAborted);
+        }
+    }
 }

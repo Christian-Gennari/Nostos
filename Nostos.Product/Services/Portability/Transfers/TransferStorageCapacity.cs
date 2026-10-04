@@ -134,6 +134,19 @@ public interface ITransferStorageCapacity
         CancellationToken ct);
 
     /// <summary>
+    /// Installation-scoped preflight admission: atomically releases every live
+    /// unclaimed reservation and creates the new one in a single transaction,
+    /// so at most one unclaimed preflight hold exists at a time. Claimed
+    /// reservations are never touched. When the new hold cannot be admitted the
+    /// transaction rolls back and the previous unclaimed hold stays in place.
+    /// </summary>
+    Task<TransferReservationResult> TryReplaceUnclaimedAsync(
+        long requiredBytes,
+        MigrationSessionPurpose purpose,
+        TimeSpan ttl,
+        CancellationToken ct);
+
+    /// <summary>
     /// Atomically claims an unexpired, unreleased, unclaimed reservation for a
     /// job. Exactly one concurrent caller can win; every loser receives a
     /// typed <see cref="TransferReservationException"/>. A claimed reservation
@@ -290,6 +303,42 @@ public sealed class TransferStorageCapacity : ITransferStorageCapacity
         }
     }
 
+    public async Task<TransferReservationResult> TryReplaceUnclaimedAsync(
+        long requiredBytes,
+        MigrationSessionPurpose purpose,
+        TimeSpan ttl,
+        CancellationToken ct)
+    {
+        if (requiredBytes <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(requiredBytes),
+                requiredBytes,
+                "A storage reservation must request at least one byte.");
+        }
+
+        if (ttl <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(ttl),
+                ttl,
+                "A storage reservation must have a positive lifetime.");
+        }
+
+        try
+        {
+            return await TransferAdmissionRetry.ExecuteAsync(
+                token => TryReplaceUnclaimedOnceAsync(requiredBytes, purpose, ttl, token),
+                onRetry: _db.ChangeTracker.Clear,
+                ct);
+        }
+        catch (Exception exception) when (TransferAdmissionRetry.IsTransientContention(exception))
+        {
+            throw TransferReservationException.AdmissionContended(
+                TransferAdmissionRetry.MaxAttempts);
+        }
+    }
+
     public async Task ClaimAsync(Guid reservationId, Guid jobId, CancellationToken ct)
     {
         if (reservationId == Guid.Empty)
@@ -389,6 +438,65 @@ public sealed class TransferStorageCapacity : ITransferStorageCapacity
         var now = nowOffset.UtcDateTime;
 
         await using var transaction = await BeginAdmissionTransactionAsync(ct);
+        var snapshot = await ReadSnapshotAsync(now, ct);
+        if (requiredBytes > snapshot.UsableAvailableBytes)
+        {
+            await transaction.RollbackAsync(ct);
+            return new TransferReservationResult(
+                IsAdmitted: false,
+                ReservationId: null,
+                RequestedBytes: requiredBytes,
+                OutstandingAfter: snapshot.OutstandingReservedBytes,
+                ExpiresAtUtc: null,
+                Snapshot: snapshot with { MeasuredAtUtc = nowOffset });
+        }
+
+        var reservation = new MigrationStorageReservationRecord
+        {
+            Id = Guid.NewGuid(),
+            Purpose = (int)purpose,
+            ReservedBytes = requiredBytes,
+            MaterializedBytes = 0,
+            CreatedAtUtc = now,
+            ExpiresAtUtc = now.Add(ttl),
+        };
+
+        _db.MigrationStorageReservations.Add(reservation);
+        await _db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+
+        return new TransferReservationResult(
+            IsAdmitted: true,
+            ReservationId: reservation.Id,
+            RequestedBytes: requiredBytes,
+            OutstandingAfter: snapshot.OutstandingReservedBytes + requiredBytes,
+            ExpiresAtUtc: new DateTimeOffset(
+                DateTime.SpecifyKind(reservation.ExpiresAtUtc, DateTimeKind.Utc)),
+            Snapshot: snapshot with { MeasuredAtUtc = nowOffset });
+    }
+
+    private async Task<TransferReservationResult> TryReplaceUnclaimedOnceAsync(
+        long requiredBytes,
+        MigrationSessionPurpose purpose,
+        TimeSpan ttl,
+        CancellationToken ct)
+    {
+        var nowOffset = _timeProvider.GetUtcNow();
+        var now = nowOffset.UtcDateTime;
+
+        await using var transaction = await BeginAdmissionTransactionAsync(ct);
+
+        // Installation-scoped bound: at most one live unclaimed preflight hold.
+        // Claimed reservations are untouched; a rejected replacement rolls back
+        // with the previous unclaimed hold still live.
+        await _db.MigrationStorageReservations
+            .Where(r => r.ReleasedAtUtc == null && r.ClaimedJobId == null)
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(r => r.ReleasedAtUtc, now)
+                    .SetProperty(r => r.Version, r => r.Version + 1),
+                ct);
+
         var snapshot = await ReadSnapshotAsync(now, ct);
         if (requiredBytes > snapshot.UsableAvailableBytes)
         {

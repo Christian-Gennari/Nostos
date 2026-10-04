@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.Options;
 using Nostos.Backend.Services.Portability;
@@ -12,7 +13,9 @@ namespace Nostos.Backend.Endpoints;
 /// <c>GET /api/portability/export</c> and <c>POST /api/portability/import</c>
 /// routes are untouched; this group adds the durable job/session/chunk API.
 /// No route here owns admission: they are ordinary library requests under the
-/// ambient shared maintenance lease, and exclusive maintenance answers 503.
+/// ambient shared maintenance lease, and exclusive maintenance answers a
+/// migration-shaped 503. Every binding/validation failure on these routes —
+/// body, header, or route value — answers the migration error body.
 /// </summary>
 public static class MigrationEndpoints
 {
@@ -32,13 +35,13 @@ public static class MigrationEndpoints
 
         group.MapPost("/preflight", PreflightAsync);
         group.MapPost("/jobs", CreateJobAsync);
-        group.MapGet("/jobs/{id:guid}", GetJobAsync);
-        group.MapPost("/jobs/{id:guid}/cancel", CancelAsync);
-        group.MapPost("/jobs/{id:guid}/retry", RetryAsync);
-        group.MapPost("/jobs/{id:guid}/upload-session", CreateUploadSessionAsync);
-        group.MapGet("/jobs/{id:guid}/upload-session", GetUploadSessionAsync);
-        group.MapPut("/jobs/{id:guid}/upload-session/chunks/{index:int}", UploadChunkAsync);
-        group.MapPost("/jobs/{id:guid}/upload-session/complete", CompleteUploadAsync);
+        group.MapGet("/jobs/{id}", GetJobAsync);
+        group.MapPost("/jobs/{id}/cancel", CancelAsync);
+        group.MapPost("/jobs/{id}/retry", RetryAsync);
+        group.MapPost("/jobs/{id}/upload-session", CreateUploadSessionAsync);
+        group.MapGet("/jobs/{id}/upload-session", GetUploadSessionAsync);
+        group.MapPut("/jobs/{id}/upload-session/chunks/{index}", UploadChunkAsync);
+        group.MapPost("/jobs/{id}/upload-session/complete", CompleteUploadAsync);
 
         // Slice 10 adds GET /jobs/{id}/export-download in this group once the
         // export artifact writer exists. It is intentionally not mapped here.
@@ -46,24 +49,52 @@ public static class MigrationEndpoints
     }
 
     private static Task<IResult> PreflightAsync(
-        MigrationPreflightRequest? request,
+        HttpRequest http,
         IMigrationPreflightService preflight,
         CancellationToken ct) => GuardAsync(async () =>
     {
-        if (request?.IncomingCounts is null)
-            return MigrationHttpErrors.Result(MigrationHttpErrors.InvalidRequest, StatusCodes.Status400BadRequest);
+        var (ok, body) = await MigrationHttpBodies.TryReadAsync<MigrationPreflightBody>(http, ct);
+        if (!ok || body is null
+            || body.IncomingCounts is null
+            || body.DeclaredArchiveBytes is not { } archiveBytes
+            || body.DeclaredMediaBytes is not { } mediaBytes
+            || body.MaxSingleEntryBytes is not { } maxEntryBytes
+            || body.DeclaredFormatVersion is not { } formatVersion
+            || body.DeclaredDataVersion is not { } dataVersion)
+        {
+            return InvalidRequest();
+        }
+
+        var request = new MigrationPreflightRequest(
+            body.IncomingCounts,
+            archiveBytes,
+            mediaBytes,
+            maxEntryBytes,
+            formatVersion,
+            dataVersion,
+            body.DeclaredFormatName,
+            body.ClientDestinationRevision,
+            body.IsOperationalBackup ?? false);
         return Results.Ok(await preflight.EvaluateAsync(request, ct));
     });
 
     private static Task<IResult> CreateJobAsync(
-        MigrationCreateJobRequest? request,
+        HttpRequest http,
         SelfHostedMigrationJobService service,
         CancellationToken ct) => GuardAsync(async () =>
     {
-        if (request is null)
-            return MigrationHttpErrors.Result(MigrationHttpErrors.InvalidRequest, StatusCodes.Status400BadRequest);
+        var (ok, body) = await MigrationHttpBodies.TryReadAsync<MigrationCreateJobBody>(http, ct);
+        if (!ok || body is null
+            || body.Direction is not { } direction
+            || !Enum.IsDefined(direction)
+            || string.IsNullOrWhiteSpace(body.IdempotencyKey))
+        {
+            return InvalidRequest();
+        }
 
-        var result = await service.CreateAsync(request, ct);
+        var result = await service.CreateAsync(
+            new MigrationCreateJobRequest(direction, body.IdempotencyKey, body.ReservationId),
+            ct);
         if (result.IsConflict)
         {
             return MigrationHttpErrors.Result(
@@ -78,35 +109,74 @@ public static class MigrationEndpoints
     });
 
     private static Task<IResult> GetJobAsync(
-        Guid id,
-        SelfHostedMigrationJobService service,
-        CancellationToken ct) => GuardAsync(async () =>
-        Results.Ok(await service.GetStatusAsync(id, ct)));
-
-    private static Task<IResult> CancelAsync(
-        Guid id,
-        MigrationCancelRequest? request,
-        SelfHostedMigrationJobService service,
-        CancellationToken ct) => GuardAsync(async () =>
-        Results.Ok(await service.CancelAsync(id, request ?? new MigrationCancelRequest(), ct)));
-
-    private static Task<IResult> RetryAsync(
-        Guid id,
-        MigrationRetryRequest? request,
-        SelfHostedMigrationJobService service,
-        CancellationToken ct) => GuardAsync(async () =>
-        Results.Ok(await service.RetryAsync(id, request ?? new MigrationRetryRequest(), ct)));
-
-    private static Task<IResult> CreateUploadSessionAsync(
-        Guid id,
-        MigrationSessionRequest? request,
+        string id,
         SelfHostedMigrationJobService service,
         CancellationToken ct) => GuardAsync(async () =>
     {
-        if (request is null)
-            return MigrationHttpErrors.Result(MigrationHttpErrors.InvalidRequest, StatusCodes.Status400BadRequest);
+        if (!TryParseJobId(id, out var jobId)) return InvalidRequest();
+        return Results.Ok(await service.GetStatusAsync(jobId, ct));
+    });
 
-        var result = await service.CreateUploadSessionAsync(id, request, ct);
+    private static Task<IResult> CancelAsync(
+        string id,
+        HttpRequest http,
+        SelfHostedMigrationJobService service,
+        CancellationToken ct) => GuardAsync(async () =>
+    {
+        if (!TryParseJobId(id, out var jobId)) return InvalidRequest();
+        var (ok, body) = await MigrationHttpBodies.TryReadAsync<MigrationCancelBody>(http, ct);
+        if (!ok) return InvalidRequest();
+        return Results.Ok(await service.CancelAsync(
+            jobId,
+            new MigrationCancelRequest(body?.Reason),
+            ct));
+    });
+
+    private static Task<IResult> RetryAsync(
+        string id,
+        HttpRequest http,
+        SelfHostedMigrationJobService service,
+        CancellationToken ct) => GuardAsync(async () =>
+    {
+        if (!TryParseJobId(id, out var jobId)) return InvalidRequest();
+        var (ok, body) = await MigrationHttpBodies.TryReadAsync<MigrationRetryBody>(http, ct);
+        if (!ok) return InvalidRequest();
+        return Results.Ok(await service.RetryAsync(
+            jobId,
+            new MigrationRetryRequest(body?.IdempotencyKey),
+            ct));
+    });
+
+    private static Task<IResult> CreateUploadSessionAsync(
+        string id,
+        HttpRequest http,
+        SelfHostedMigrationJobService service,
+        CancellationToken ct) => GuardAsync(async () =>
+    {
+        if (!TryParseJobId(id, out var jobId)) return InvalidRequest();
+        var (ok, body) = await MigrationHttpBodies.TryReadAsync<MigrationSessionBody>(http, ct);
+        if (!ok || body is null
+            || body.Purpose is not { } purpose
+            || !Enum.IsDefined(purpose)
+            || body.TotalBytes is not { } totalBytes
+            || body.ChunkSize is not { } chunkSize
+            || body.TotalChunks is not { } totalChunks
+            || body.FileIdentity is not { } identity
+            || identity.TotalSizeBytes is not { } identitySize
+            || identity.Sha256Checksum is null
+            || body.IdempotencyKey is null)
+        {
+            return InvalidRequest();
+        }
+
+        var request = new MigrationSessionRequest(
+            purpose,
+            totalBytes,
+            chunkSize,
+            totalChunks,
+            new MigrationFileIdentity(identitySize, identity.Sha256Checksum, identity.ClientFingerprint),
+            body.IdempotencyKey);
+        var result = await service.CreateUploadSessionAsync(jobId, request, ct);
         if (result.IsConflict)
         {
             return MigrationHttpErrors.Result(
@@ -116,23 +186,32 @@ public static class MigrationEndpoints
 
         return result.WasReplay
             ? Results.Ok(result.Resource)
-            : Results.Created($"{BasePath}/jobs/{id}/upload-session", result.Resource);
+            : Results.Created($"{BasePath}/jobs/{jobId}/upload-session", result.Resource);
     });
 
     private static Task<IResult> GetUploadSessionAsync(
-        Guid id,
+        string id,
         SelfHostedMigrationJobService service,
         CancellationToken ct) => GuardAsync(async () =>
-        Results.Ok(await service.GetUploadSessionAsync(id, ct)));
+    {
+        if (!TryParseJobId(id, out var jobId)) return InvalidRequest();
+        return Results.Ok(await service.GetUploadSessionAsync(jobId, ct));
+    });
 
     private static Task<IResult> UploadChunkAsync(
-        Guid id,
-        int index,
+        string id,
+        string index,
         HttpRequest request,
         SelfHostedMigrationJobService service,
         IOptions<TransferStorageOptions> options,
         CancellationToken ct) => GuardAsync(async () =>
     {
+        if (!TryParseJobId(id, out var jobId)
+            || !TryParseChunkIndex(index, out var chunkIndex))
+        {
+            return InvalidRequest();
+        }
+
         if (!MigrationChunkHeaders.TryParseContentRange(
                 request.Headers["Content-Range"],
                 out var start,
@@ -141,9 +220,7 @@ public static class MigrationEndpoints
             || !MigrationChunkHeaders.IsSha256(
                 request.Headers[MigrationChunkHeaders.ChunkHashHeaderName]))
         {
-            return MigrationHttpErrors.Result(
-                MigrationHttpErrors.InvalidRequest,
-                StatusCodes.Status400BadRequest);
+            return InvalidRequest();
         }
 
         // Endpoint-specific body limit: one configured chunk, never the global
@@ -168,7 +245,7 @@ public static class MigrationEndpoints
         {
             // The request body is handed to the upload engine as a stream: the
             // endpoint never buffers, materializes or seeks a chunk.
-            var result = await service.UploadChunkAsync(id, index, metadata, request.Body, ct);
+            var result = await service.UploadChunkAsync(jobId, chunkIndex, metadata, request.Body, ct);
             return Results.Ok(result);
         }
         catch (BadHttpRequestException exception)
@@ -179,10 +256,24 @@ public static class MigrationEndpoints
     });
 
     private static Task<IResult> CompleteUploadAsync(
-        Guid id,
+        string id,
         SelfHostedMigrationJobService service,
         CancellationToken ct) => GuardAsync(async () =>
-        Results.Ok(await service.CompleteUploadAsync(id, ct)));
+    {
+        if (!TryParseJobId(id, out var jobId)) return InvalidRequest();
+        return Results.Ok(await service.CompleteUploadAsync(jobId, ct));
+    });
+
+    private static bool TryParseJobId(string id, out Guid jobId) =>
+        Guid.TryParse(id, out jobId);
+
+    private static bool TryParseChunkIndex(string index, out int chunkIndex) =>
+        int.TryParse(index, NumberStyles.None, CultureInfo.InvariantCulture, out chunkIndex);
+
+    private static IResult InvalidRequest() =>
+        MigrationHttpErrors.Result(
+            MigrationHttpErrors.InvalidRequest,
+            StatusCodes.Status400BadRequest);
 
     private static IResult ChunkTooLarge() =>
         Results.Json(
@@ -205,11 +296,9 @@ public static class MigrationEndpoints
         {
             return MigrationHttpErrors.FromTransfer(exception);
         }
-        catch (TransferReservationException)
+        catch (TransferReservationException exception)
         {
-            return MigrationHttpErrors.Result(
-                MigrationHttpErrors.ReservationRequired,
-                StatusCodes.Status409Conflict);
+            return MigrationHttpErrors.FromReservation(exception);
         }
     }
 }
