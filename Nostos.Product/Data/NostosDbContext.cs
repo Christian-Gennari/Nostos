@@ -445,11 +445,15 @@ public class NostosDbContext : DbContext
 
         // --- DURABLE MIGRATION TRANSFER RECORDS (issue #679) ---
         // Provider-portable operational state: Guid keys, int enums, long byte
-        // counts and concurrency versions, DateTimeOffset UTC timestamps,
-        // bounded strings, and JSON recovery state as ordinary text. Check
-        // constraints use only SQL accepted by both SQLite and PostgreSQL;
-        // semantic validation remains in services. No absolute paths and no
-        // account identifiers are persisted here.
+        // counts and concurrency versions, and UTC DateTime instants converted
+        // by UtcDateTimeValueConverter (the repo-wide convention, see
+        // ConfigureConventions). DateTime — not DateTimeOffset — because the
+        // SQLite provider can compare and order DateTime in SQL, which the
+        // lease/expiry conditional updates and sweeps require. Bounded strings
+        // and JSON recovery state as ordinary text. Check constraints use only
+        // SQL accepted by both SQLite and PostgreSQL; semantic validation
+        // remains in services. No absolute paths and no account identifiers
+        // are persisted here.
 
         modelBuilder.Entity<MigrationJobRecord>(e =>
         {
@@ -559,6 +563,10 @@ public class NostosDbContext : DbContext
         {
             e.HasKey(r => r.Id);
             e.Property(r => r.Version).IsConcurrencyToken();
+
+            // Expired/unclaimed reservation sweep and capacity accounting both
+            // filter on the expiry instant.
+            e.HasIndex(r => r.ExpiresAtUtc);
         });
     }
 }

@@ -42,7 +42,7 @@ public sealed class PortableExportExcludesMigrationRecordsTests
         source.Db.Works.Add(work);
         source.Db.Books.Add(book);
 
-        var now = DateTimeOffset.UtcNow;
+        var now = DateTime.UtcNow;
         var job = new MigrationJobRecord
         {
             Direction = 0,

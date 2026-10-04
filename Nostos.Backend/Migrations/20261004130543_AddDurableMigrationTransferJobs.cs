@@ -25,16 +25,16 @@ namespace Nostos.Backend.Migrations
                     ProgressCompletedChunks = table.Column<int>(type: "INTEGER", nullable: true),
                     ProgressTotalChunks = table.Column<int>(type: "INTEGER", nullable: true),
                     ProgressMessage = table.Column<string>(type: "TEXT", maxLength: 512, nullable: true),
-                    CreatedAtUtc = table.Column<DateTimeOffset>(type: "TEXT", nullable: false),
-                    UpdatedAtUtc = table.Column<DateTimeOffset>(type: "TEXT", nullable: false),
-                    HeartbeatAtUtc = table.Column<DateTimeOffset>(type: "TEXT", nullable: true),
+                    CreatedAtUtc = table.Column<DateTime>(type: "TEXT", nullable: false),
+                    UpdatedAtUtc = table.Column<DateTime>(type: "TEXT", nullable: false),
+                    HeartbeatAtUtc = table.Column<DateTime>(type: "TEXT", nullable: true),
                     MigrationLeaseToken = table.Column<string>(type: "TEXT", maxLength: 128, nullable: true),
-                    LeaseExpiresAtUtc = table.Column<DateTimeOffset>(type: "TEXT", nullable: true),
+                    LeaseExpiresAtUtc = table.Column<DateTime>(type: "TEXT", nullable: true),
                     IdempotencyKey = table.Column<string>(type: "TEXT", maxLength: 128, nullable: false),
                     CreationPayloadHash = table.Column<string>(type: "TEXT", maxLength: 64, nullable: false),
                     FailureCode = table.Column<string>(type: "TEXT", maxLength: 96, nullable: true),
                     FailureMessage = table.Column<string>(type: "TEXT", maxLength: 1024, nullable: true),
-                    ExpiresAtUtc = table.Column<DateTimeOffset>(type: "TEXT", nullable: false),
+                    ExpiresAtUtc = table.Column<DateTime>(type: "TEXT", nullable: false),
                     AttemptNumber = table.Column<int>(type: "INTEGER", nullable: false),
                     DestinationRevision = table.Column<string>(type: "TEXT", maxLength: 256, nullable: true),
                     PreparedStagingId = table.Column<Guid>(type: "TEXT", nullable: true),
@@ -42,8 +42,8 @@ namespace Nostos.Backend.Migrations
                     ReservedStorageBytes = table.Column<long>(type: "INTEGER", nullable: false),
                     ReservationId = table.Column<Guid>(type: "TEXT", nullable: true),
                     CancellationReason = table.Column<string>(type: "TEXT", maxLength: 512, nullable: true),
-                    CancelledAtUtc = table.Column<DateTimeOffset>(type: "TEXT", nullable: true),
-                    CompletedAtUtc = table.Column<DateTimeOffset>(type: "TEXT", nullable: true),
+                    CancelledAtUtc = table.Column<DateTime>(type: "TEXT", nullable: true),
+                    CompletedAtUtc = table.Column<DateTime>(type: "TEXT", nullable: true),
                     Version = table.Column<long>(type: "INTEGER", nullable: false)
                 },
                 constraints: table =>
@@ -63,10 +63,10 @@ namespace Nostos.Backend.Migrations
                     Purpose = table.Column<int>(type: "INTEGER", nullable: false),
                     ReservedBytes = table.Column<long>(type: "INTEGER", nullable: false),
                     MaterializedBytes = table.Column<long>(type: "INTEGER", nullable: false),
-                    CreatedAtUtc = table.Column<DateTimeOffset>(type: "TEXT", nullable: false),
-                    ExpiresAtUtc = table.Column<DateTimeOffset>(type: "TEXT", nullable: false),
+                    CreatedAtUtc = table.Column<DateTime>(type: "TEXT", nullable: false),
+                    ExpiresAtUtc = table.Column<DateTime>(type: "TEXT", nullable: false),
                     ClaimedJobId = table.Column<Guid>(type: "TEXT", nullable: true),
-                    ReleasedAtUtc = table.Column<DateTimeOffset>(type: "TEXT", nullable: true),
+                    ReleasedAtUtc = table.Column<DateTime>(type: "TEXT", nullable: true),
                     Version = table.Column<long>(type: "INTEGER", nullable: false)
                 },
                 constraints: table =>
@@ -85,10 +85,10 @@ namespace Nostos.Backend.Migrations
                     ContentType = table.Column<string>(type: "TEXT", maxLength: 128, nullable: false),
                     SizeBytes = table.Column<long>(type: "INTEGER", nullable: false),
                     Sha256 = table.Column<string>(type: "TEXT", maxLength: 64, nullable: true),
-                    CreatedAtUtc = table.Column<DateTimeOffset>(type: "TEXT", nullable: false),
-                    AvailableAtUtc = table.Column<DateTimeOffset>(type: "TEXT", nullable: true),
-                    ExpiresAtUtc = table.Column<DateTimeOffset>(type: "TEXT", nullable: false),
-                    DeletedAtUtc = table.Column<DateTimeOffset>(type: "TEXT", nullable: true),
+                    CreatedAtUtc = table.Column<DateTime>(type: "TEXT", nullable: false),
+                    AvailableAtUtc = table.Column<DateTime>(type: "TEXT", nullable: true),
+                    ExpiresAtUtc = table.Column<DateTime>(type: "TEXT", nullable: false),
+                    DeletedAtUtc = table.Column<DateTime>(type: "TEXT", nullable: true),
                     Version = table.Column<long>(type: "INTEGER", nullable: false)
                 },
                 constraints: table =>
@@ -119,10 +119,10 @@ namespace Nostos.Backend.Migrations
                     IdempotencyKey = table.Column<string>(type: "TEXT", maxLength: 128, nullable: false),
                     CreationPayloadHash = table.Column<string>(type: "TEXT", maxLength: 64, nullable: false),
                     ReceivedBytes = table.Column<long>(type: "INTEGER", nullable: false),
-                    CreatedAtUtc = table.Column<DateTimeOffset>(type: "TEXT", nullable: false),
-                    UpdatedAtUtc = table.Column<DateTimeOffset>(type: "TEXT", nullable: false),
-                    ExpiresAtUtc = table.Column<DateTimeOffset>(type: "TEXT", nullable: false),
-                    CompletedAtUtc = table.Column<DateTimeOffset>(type: "TEXT", nullable: true),
+                    CreatedAtUtc = table.Column<DateTime>(type: "TEXT", nullable: false),
+                    UpdatedAtUtc = table.Column<DateTime>(type: "TEXT", nullable: false),
+                    ExpiresAtUtc = table.Column<DateTime>(type: "TEXT", nullable: false),
+                    CompletedAtUtc = table.Column<DateTime>(type: "TEXT", nullable: true),
                     StorageKey = table.Column<string>(type: "TEXT", maxLength: 512, nullable: false),
                     Version = table.Column<long>(type: "INTEGER", nullable: false)
                 },
@@ -151,7 +151,7 @@ namespace Nostos.Backend.Migrations
                     OffsetBytes = table.Column<long>(type: "INTEGER", nullable: false),
                     LengthBytes = table.Column<int>(type: "INTEGER", nullable: false),
                     Sha256 = table.Column<string>(type: "TEXT", maxLength: 64, nullable: false),
-                    ReceivedAtUtc = table.Column<DateTimeOffset>(type: "TEXT", nullable: false)
+                    ReceivedAtUtc = table.Column<DateTime>(type: "TEXT", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -206,6 +206,11 @@ namespace Nostos.Backend.Migrations
                 name: "IX_MigrationSessionRecords_JobId_State",
                 table: "MigrationSessionRecords",
                 columns: new[] { "JobId", "State" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_MigrationStorageReservations_ExpiresAtUtc",
+                table: "MigrationStorageReservations",
+                column: "ExpiresAtUtc");
         }
 
         /// <inheritdoc />

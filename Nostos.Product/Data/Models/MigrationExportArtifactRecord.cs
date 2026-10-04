@@ -36,13 +36,13 @@ public class MigrationExportArtifactRecord
     [MaxLength(64)]
     public string? Sha256 { get; set; }
 
-    public DateTimeOffset CreatedAtUtc { get; set; } = DateTimeOffset.UtcNow;
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 
-    public DateTimeOffset? AvailableAtUtc { get; set; }
+    public DateTime? AvailableAtUtc { get; set; }
 
-    public DateTimeOffset ExpiresAtUtc { get; set; }
+    public DateTime ExpiresAtUtc { get; set; }
 
-    public DateTimeOffset? DeletedAtUtc { get; set; }
+    public DateTime? DeletedAtUtc { get; set; }
 
     public long Version { get; set; }
 }

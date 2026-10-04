@@ -80,7 +80,7 @@ public sealed class MigrationTransferRecordsSchemaTests : IDisposable
         AssertColumn(job, "IdempotencyKey", typeof(string), nullable: false, maxLength: 128);
         AssertColumn(job, "CreationPayloadHash", typeof(string), nullable: false, maxLength: 64);
         AssertColumn(job, "FailureMessage", typeof(string), nullable: true, maxLength: 1024);
-        AssertColumn(job, "CreatedAtUtc", typeof(DateTimeOffset), nullable: false);
+        AssertColumn(job, "CreatedAtUtc", typeof(DateTime), nullable: false);
         AssertColumn(job, "PreparedImportMetadataJson", typeof(string), nullable: true);
         AssertColumn(job, "Version", typeof(long), nullable: false);
 
@@ -96,7 +96,7 @@ public sealed class MigrationTransferRecordsSchemaTests : IDisposable
         AssertColumn(receipt, "OffsetBytes", typeof(long), nullable: false);
         AssertColumn(receipt, "LengthBytes", typeof(int), nullable: false);
         AssertColumn(receipt, "Sha256", typeof(string), nullable: false, maxLength: 64);
-        AssertColumn(receipt, "ReceivedAtUtc", typeof(DateTimeOffset), nullable: false);
+        AssertColumn(receipt, "ReceivedAtUtc", typeof(DateTime), nullable: false);
 
         AssertColumn(artifact, "JobId", typeof(Guid), nullable: false);
         AssertColumn(artifact, "StorageKey", typeof(string), nullable: false, maxLength: 512);
@@ -108,7 +108,7 @@ public sealed class MigrationTransferRecordsSchemaTests : IDisposable
         AssertColumn(reservation, "ReservedBytes", typeof(long), nullable: false);
         AssertColumn(reservation, "MaterializedBytes", typeof(long), nullable: false);
         AssertColumn(reservation, "ClaimedJobId", typeof(Guid?), nullable: true);
-        AssertColumn(reservation, "ReleasedAtUtc", typeof(DateTimeOffset?), nullable: true);
+        AssertColumn(reservation, "ReleasedAtUtc", typeof(DateTime?), nullable: true);
         AssertColumn(reservation, "Version", typeof(long), nullable: false);
 
         receipt.FindPrimaryKey()!.Properties.Select(p => p.Name)
@@ -120,6 +120,9 @@ public sealed class MigrationTransferRecordsSchemaTests : IDisposable
             "JobId,IdempotencyKey unique", "JobId,State", "ExpiresAtUtc");
         artifact.GetIndexes().Select(DescribeIndex).Should().BeEquivalentTo("State,ExpiresAtUtc");
         receipt.GetIndexes().Should().BeEmpty();
+        reservation.GetIndexes().Select(DescribeIndex).Should().BeEquivalentTo(
+            ["ExpiresAtUtc"],
+            "the reservation expiry sweep needs this index");
 
         job.GetCheckConstraints().Select(c => c.Name).Should().BeEquivalentTo(
             "CK_MigrationJobRecords_ReservedStorageBytes",
@@ -405,6 +408,198 @@ public sealed class MigrationTransferRecordsSchemaTests : IDisposable
         await AssertReceiptRejectedAsync(receipt => receipt.OffsetBytes = -1);
     }
 
+    [Fact]
+    public void Migrations_and_model_have_no_pending_changes()
+    {
+        var options = new DbContextOptionsBuilder<NostosDbContext>()
+            .UseSqlite(
+                "Data Source=:memory:",
+                sqlite => sqlite.MigrationsAssembly(typeof(Program).Assembly.FullName))
+            .Options;
+        using var db = new NostosDbContext(options);
+
+        db.Database.HasPendingModelChanges().Should().BeFalse(
+            "the generated migration and model snapshot must match the model; " +
+            "a drifted snapshot means the migration must be regenerated");
+    }
+
+    // Slices 5/7 acquire, renew and reclaim worker leases with single atomic
+    // conditional UPDATE statements. These are the exact predicates, executed
+    // as real SQL against a real SQLite file — not in-memory LINQ evaluation.
+    [Fact]
+    public async Task Sqlite_lease_acquire_and_renew_predicates_run_as_single_statements()
+    {
+        var options = await CreateFileDatabaseAsync();
+        var now = DateTime.UtcNow;
+        var jobId = Guid.NewGuid();
+
+        await using (var seed = new NostosDbContext(options))
+        {
+            var job = NewJob("lease-predicate-job");
+            job.Id = jobId;
+            job.State = (int)MigrationJobState.Transferring;
+            job.ExpiresAtUtc = now.AddDays(1);
+            seed.MigrationJobRecords.Add(job);
+            await seed.SaveChangesAsync();
+        }
+
+        // First caller: no lease exists -> acquires.
+        await using (var db = new NostosDbContext(options))
+        {
+            var acquired = await db.MigrationJobRecords
+                .Where(j => j.Id == jobId
+                    && (j.MigrationLeaseToken == null || j.LeaseExpiresAtUtc <= now))
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(j => j.MigrationLeaseToken, "lease-1")
+                    .SetProperty(j => j.LeaseExpiresAtUtc, now.AddMinutes(5))
+                    .SetProperty(j => j.Version, j => j.Version + 1));
+
+            acquired.Should().Be(1, "the unleased job must be acquirable in one SQL statement");
+        }
+
+        // Second caller while the lease is unexpired -> rejected.
+        await using (var db = new NostosDbContext(options))
+        {
+            var acquired = await db.MigrationJobRecords
+                .Where(j => j.Id == jobId
+                    && (j.MigrationLeaseToken == null || j.LeaseExpiresAtUtc <= now))
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(j => j.MigrationLeaseToken, "lease-2")
+                    .SetProperty(j => j.LeaseExpiresAtUtc, now.AddMinutes(5))
+                    .SetProperty(j => j.Version, j => j.Version + 1));
+
+            acquired.Should().Be(0, "an unexpired lease must block a second caller");
+        }
+
+        // Renewal requires the matching token and an unexpired lease.
+        await using (var db = new NostosDbContext(options))
+        {
+            var renewed = await db.MigrationJobRecords
+                .Where(j => j.Id == jobId
+                    && j.MigrationLeaseToken == "lease-1"
+                    && j.LeaseExpiresAtUtc > now)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(j => j.LeaseExpiresAtUtc, now.AddMinutes(10))
+                    .SetProperty(j => j.Version, j => j.Version + 1));
+
+            renewed.Should().Be(1, "the current owner must be able to renew");
+
+            var wrongToken = await db.MigrationJobRecords
+                .Where(j => j.Id == jobId
+                    && j.MigrationLeaseToken == "lease-2"
+                    && j.LeaseExpiresAtUtc > now)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(j => j.LeaseExpiresAtUtc, now.AddMinutes(10)));
+
+            wrongToken.Should().Be(0, "a superseded token must never renew");
+        }
+
+        // Once the lease instant has passed, another caller may reclaim it.
+        await using (var db = new NostosDbContext(options))
+        {
+            var afterExpiry = now.AddMinutes(11);
+            var acquired = await db.MigrationJobRecords
+                .Where(j => j.Id == jobId
+                    && (j.MigrationLeaseToken == null || j.LeaseExpiresAtUtc <= afterExpiry))
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(j => j.MigrationLeaseToken, "lease-3")
+                    .SetProperty(j => j.LeaseExpiresAtUtc, afterExpiry.AddMinutes(5))
+                    .SetProperty(j => j.Version, j => j.Version + 1));
+
+            acquired.Should().Be(1, "an expired lease must be reclaimable");
+        }
+    }
+
+    // Slices 5/7 discover stale jobs, expired sessions and sweepable artifacts
+    // and reservations with range predicates and order by UpdatedAtUtc. All of
+    // those must translate to SQL on SQLite.
+    [Fact]
+    public async Task Sqlite_expiry_sweep_and_ordering_predicates_run_in_sql()
+    {
+        var options = await CreateFileDatabaseAsync();
+        var now = DateTime.UtcNow;
+        var expiredJobId = Guid.NewGuid();
+        var freshJobId = Guid.NewGuid();
+        var expiredSessionId = Guid.NewGuid();
+        var freshSessionId = Guid.NewGuid();
+        var expiredReservationId = Guid.NewGuid();
+
+        await using (var seed = new NostosDbContext(options))
+        {
+            var expiredJob = NewJob("expired-job");
+            expiredJob.Id = expiredJobId;
+            expiredJob.ExpiresAtUtc = now.AddMinutes(-1);
+            expiredJob.UpdatedAtUtc = now.AddMinutes(-10);
+
+            var freshJob = NewJob("fresh-job");
+            freshJob.Id = freshJobId;
+            freshJob.ExpiresAtUtc = now.AddMinutes(10);
+            freshJob.UpdatedAtUtc = now.AddMinutes(-5);
+
+            var expiredSession = NewSession(expiredJobId, "expired-session");
+            expiredSession.Id = expiredSessionId;
+            expiredSession.ExpiresAtUtc = now.AddMinutes(-2);
+
+            var freshSession = NewSession(freshJobId, "fresh-session");
+            freshSession.Id = freshSessionId;
+            freshSession.ExpiresAtUtc = now.AddMinutes(30);
+
+            var artifact = NewArtifact(expiredJobId);
+            artifact.State = (int)MigrationExportArtifactState.Available;
+            artifact.ExpiresAtUtc = now.AddMinutes(-3);
+
+            var reservation = new MigrationStorageReservationRecord
+            {
+                Id = expiredReservationId,
+                Purpose = (int)MigrationSessionPurpose.Import,
+                ReservedBytes = 1024,
+                MaterializedBytes = 0,
+                CreatedAtUtc = now.AddMinutes(-4),
+                ExpiresAtUtc = now.AddMinutes(-4),
+            };
+
+            seed.MigrationJobRecords.AddRange(expiredJob, freshJob);
+            seed.MigrationSessionRecords.AddRange(expiredSession, freshSession);
+            seed.MigrationExportArtifactRecords.Add(artifact);
+            seed.MigrationStorageReservations.Add(reservation);
+            await seed.SaveChangesAsync();
+        }
+
+        await using (var db = new NostosDbContext(options))
+        {
+            (await db.MigrationJobRecords
+                    .Where(j => j.ExpiresAtUtc < now)
+                    .Select(j => j.Id)
+                    .ToListAsync())
+                .Should().Equal([expiredJobId], "only the expired job must be discovered");
+
+            (await db.MigrationSessionRecords
+                    .Where(s => s.ExpiresAtUtc < now)
+                    .Select(s => s.Id)
+                    .ToListAsync())
+                .Should().Equal([expiredSessionId], "only the expired session must be discovered");
+
+            (await db.MigrationExportArtifactRecords
+                    .Where(a => a.State == (int)MigrationExportArtifactState.Available
+                        && a.ExpiresAtUtc < now)
+                    .Select(a => a.JobId)
+                    .ToListAsync())
+                .Should().Equal([expiredJobId], "only the expired artifact must be swept");
+
+            (await db.MigrationStorageReservations
+                    .Where(r => r.ReleasedAtUtc == null && r.ExpiresAtUtc < now)
+                    .Select(r => r.Id)
+                    .ToListAsync())
+                .Should().Equal([expiredReservationId], "only the expired reservation must be swept");
+
+            (await db.MigrationJobRecords
+                    .OrderBy(j => j.UpdatedAtUtc)
+                    .Select(j => j.Id)
+                    .ToListAsync())
+                .Should().Equal([expiredJobId, freshJobId], "UpdatedAtUtc must be orderable in SQL");
+        }
+    }
+
     private async Task AssertJobRejectedAsync(Action<MigrationJobRecord> mutate)
     {
         var options = await CreateFileDatabaseAsync();
@@ -456,9 +651,9 @@ public sealed class MigrationTransferRecordsSchemaTests : IDisposable
         ProgressPhase = (int)MigrationProgressPhase.Pending,
         IdempotencyKey = idempotencyKey,
         CreationPayloadHash = new string('a', 64),
-        CreatedAtUtc = DateTimeOffset.UtcNow,
-        UpdatedAtUtc = DateTimeOffset.UtcNow,
-        ExpiresAtUtc = DateTimeOffset.UtcNow.AddDays(7),
+        CreatedAtUtc = DateTime.UtcNow,
+        UpdatedAtUtc = DateTime.UtcNow,
+        ExpiresAtUtc = DateTime.UtcNow.AddDays(7),
         AttemptNumber = 1,
         ReservedStorageBytes = 32 * 1024 * 1024,
     };
@@ -476,7 +671,7 @@ public sealed class MigrationTransferRecordsSchemaTests : IDisposable
         IdempotencyKey = idempotencyKey,
         CreationPayloadHash = new string('c', 64),
         ReceivedBytes = 0,
-        ExpiresAtUtc = DateTimeOffset.UtcNow.AddHours(24),
+        ExpiresAtUtc = DateTime.UtcNow.AddHours(24),
         StorageKey = $"uploads/session-{Guid.NewGuid():N}/archive.part",
     };
 
@@ -487,7 +682,7 @@ public sealed class MigrationTransferRecordsSchemaTests : IDisposable
         OffsetBytes = chunkIndex * 16L * 1024 * 1024,
         LengthBytes = 16 * 1024 * 1024,
         Sha256 = new string('d', 64),
-        ReceivedAtUtc = DateTimeOffset.UtcNow,
+        ReceivedAtUtc = DateTime.UtcNow,
     };
 
     private static MigrationExportArtifactRecord NewArtifact(Guid jobId) => new()
@@ -497,8 +692,8 @@ public sealed class MigrationTransferRecordsSchemaTests : IDisposable
         StorageKey = $"exports/job-{Guid.NewGuid():N}/library.nostos",
         FileName = "library.nostos",
         ContentType = "application/vnd.nostos.portable+zip",
-        CreatedAtUtc = DateTimeOffset.UtcNow,
-        ExpiresAtUtc = DateTimeOffset.UtcNow.AddDays(7),
+        CreatedAtUtc = DateTime.UtcNow,
+        ExpiresAtUtc = DateTime.UtcNow.AddDays(7),
     };
 
     private static void AssertColumn(

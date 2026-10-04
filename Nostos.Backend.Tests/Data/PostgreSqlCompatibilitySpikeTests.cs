@@ -25,7 +25,9 @@ public sealed class PostgreSqlCompatibilitySpikeTests
         }
 
         var options = new DbContextOptionsBuilder<NostosDbContext>()
-            .UseNpgsql(connectionString)
+            .UseNpgsql(
+                connectionString,
+                npgsql => npgsql.MigrationsAssembly(typeof(Program).Assembly.FullName))
             .Options;
 
         var createdAt = new DateTime(2026, 9, 22, 12, 34, 56, DateTimeKind.Utc);
@@ -47,9 +49,14 @@ public sealed class PostgreSqlCompatibilitySpikeTests
         {
             (await db.Database.CanConnectAsync()).Should().BeTrue();
 
-            var created = await db.Database.EnsureCreatedAsync();
-            created.Should().BeTrue(
-                "the dedicated spike database must start empty so the current model is what creates it");
+            // Create the schema exactly the way the product bootstraps a fresh
+            // database (DatabaseBootstrapService.EnsureReadyAsync: generated
+            // model script plus the migration-history baseline). PostgreSQL is a
+            // compatibility provider behind the same product model, not an
+            // EF-migration target — see docs/cloud/postgresql-compatibility-spike.md
+            // and PersistenceRegistration (migrations assembly is configured
+            // only in the SQLite branch).
+            await new DatabaseBootstrapService(db).EnsureReadyAsync();
 
             var createScript = db.Database.GenerateCreateScript();
             createScript.Should().Contain("CREATE TABLE \"Books\"");
@@ -181,13 +188,6 @@ public sealed class PostgreSqlCompatibilitySpikeTests
                 Writing = writingDocument,
                 Note = note,
                 AddedAt = createdAt,
-            });
-            db.LibraryStates.Add(new LibraryState
-            {
-                Id = LibraryState.WellKnownId,
-                SingletonSlot = LibraryState.SingletonSentinel,
-                StateVersion = "1",
-                UpdatedAt = createdAt,
             });
             db.LibraryCommandReceipts.Add(new LibraryCommandReceipt
             {
@@ -351,10 +351,14 @@ public sealed class PostgreSqlCompatibilitySpikeTests
         // --- Durable migration transfer records (issue #679) ---
         // Representative lease/session/receipt/artifact/reservation writes on
         // the real Npgsql provider, including unique keys, the composite chunk
-        // primary key, and integer-version concurrency.
+        // primary key, integer-version concurrency, and the lease/expiry
+        // predicates the later slices execute as single SQL statements.
         Guid migrationJobId;
         Guid migrationSessionId;
-        var migrationNow = DateTimeOffset.UtcNow;
+        Guid expiredJobId;
+        Guid expiredSessionId;
+        Guid expiredReservationId;
+        var migrationNow = DateTime.UtcNow;
 
         await using (var db = new NostosDbContext(options))
         {
@@ -391,9 +395,45 @@ public sealed class PostgreSqlCompatibilitySpikeTests
                 ExpiresAtUtc = migrationNow.AddHours(24),
                 StorageKey = "uploads/pg-spike/session-1/archive.part",
             };
+            var expiredJob = new MigrationJobRecord
+            {
+                Direction = (int)MigrationDirection.Import,
+                State = (int)MigrationJobState.Transferring,
+                IdempotencyKey = "pg-spike-expired-job",
+                CreationPayloadHash = new string('a', 64),
+                CreatedAtUtc = migrationNow.AddMinutes(-20),
+                UpdatedAtUtc = migrationNow.AddMinutes(-20),
+                ExpiresAtUtc = migrationNow.AddMinutes(-5),
+                AttemptNumber = 1,
+            };
+            var expiredSession = new MigrationSessionRecord
+            {
+                JobId = expiredJob.Id,
+                Purpose = (int)MigrationSessionPurpose.Import,
+                State = (int)MigrationSessionState.Expired,
+                TotalBytes = 16L * 1024 * 1024,
+                ChunkSize = MigrationContractLimits.DefaultChunkBytes,
+                TotalChunks = 1,
+                FileIdentitySizeBytes = 16L * 1024 * 1024,
+                FileIdentitySha256 = new string('b', 64),
+                IdempotencyKey = "pg-spike-expired-session",
+                CreationPayloadHash = new string('c', 64),
+                CreatedAtUtc = migrationNow.AddMinutes(-20),
+                UpdatedAtUtc = migrationNow.AddMinutes(-20),
+                ExpiresAtUtc = migrationNow.AddMinutes(-5),
+                StorageKey = "uploads/pg-spike/expired/archive.part",
+            };
+            var expiredReservation = new MigrationStorageReservationRecord
+            {
+                Purpose = (int)MigrationSessionPurpose.Import,
+                ReservedBytes = 1024,
+                MaterializedBytes = 0,
+                CreatedAtUtc = migrationNow.AddMinutes(-5),
+                ExpiresAtUtc = migrationNow.AddMinutes(-1),
+            };
 
-            db.MigrationJobRecords.Add(job);
-            db.MigrationSessionRecords.Add(session);
+            db.MigrationJobRecords.AddRange(job, expiredJob);
+            db.MigrationSessionRecords.AddRange(session, expiredSession);
             db.MigrationChunkReceiptRecords.Add(new MigrationChunkReceiptRecord
             {
                 SessionId = session.Id,
@@ -414,20 +454,25 @@ public sealed class PostgreSqlCompatibilitySpikeTests
                 CreatedAtUtc = migrationNow,
                 ExpiresAtUtc = migrationNow.AddDays(7),
             });
-            db.MigrationStorageReservations.Add(new MigrationStorageReservationRecord
-            {
-                Purpose = (int)MigrationSessionPurpose.Import,
-                ReservedBytes = 64L * 1024 * 1024,
-                MaterializedBytes = 16L * 1024 * 1024,
-                CreatedAtUtc = migrationNow,
-                ExpiresAtUtc = migrationNow.AddMinutes(15),
-                ClaimedJobId = job.Id,
-            });
+            db.MigrationStorageReservations.AddRange(
+                new MigrationStorageReservationRecord
+                {
+                    Purpose = (int)MigrationSessionPurpose.Import,
+                    ReservedBytes = 64L * 1024 * 1024,
+                    MaterializedBytes = 16L * 1024 * 1024,
+                    CreatedAtUtc = migrationNow,
+                    ExpiresAtUtc = migrationNow.AddMinutes(15),
+                    ClaimedJobId = job.Id,
+                },
+                expiredReservation);
 
             await db.SaveChangesAsync();
 
             migrationJobId = job.Id;
             migrationSessionId = session.Id;
+            expiredJobId = expiredJob.Id;
+            expiredSessionId = expiredSession.Id;
+            expiredReservationId = expiredReservation.Id;
 
             var reloadedSession = await db.MigrationSessionRecords
                 .SingleAsync(s => s.Id == migrationSessionId);
@@ -436,7 +481,7 @@ public sealed class PostgreSqlCompatibilitySpikeTests
             reloadedSession.ExpiresAtUtc.Should().BeCloseTo(migrationNow.AddHours(24), TimeSpan.FromMilliseconds(1));
             (await db.MigrationChunkReceiptRecords.CountAsync()).Should().Be(1);
             (await db.MigrationExportArtifactRecords.CountAsync()).Should().Be(1);
-            (await db.MigrationStorageReservations.CountAsync()).Should().Be(1);
+            (await db.MigrationStorageReservations.CountAsync()).Should().Be(2);
         }
 
         await using (var db = new NostosDbContext(options))
@@ -528,6 +573,143 @@ public sealed class PostgreSqlCompatibilitySpikeTests
             stale.Should().Be(0, "a stale guarded lease acquisition must lose on the version predicate");
         }
 
+        // The lease/expiry predicates later slices execute as single SQL
+        // statements must translate on PostgreSQL too.
+        await using (var db = new NostosDbContext(options))
+        {
+            var blocked = await db.MigrationJobRecords
+                .Where(j => j.Id == migrationJobId
+                    && (j.MigrationLeaseToken == null || j.LeaseExpiresAtUtc <= migrationNow))
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(j => j.MigrationLeaseToken, "pg-lease-blocked"));
+            blocked.Should().Be(0, "an unexpired lease must block a second caller");
+
+            var reclaimInstant = migrationNow.AddMinutes(6);
+            var reclaimed = await db.MigrationJobRecords
+                .Where(j => j.Id == migrationJobId
+                    && (j.MigrationLeaseToken == null || j.LeaseExpiresAtUtc <= reclaimInstant))
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(j => j.MigrationLeaseToken, "pg-lease-reclaimed")
+                    .SetProperty(j => j.LeaseExpiresAtUtc, reclaimInstant.AddMinutes(5))
+                    .SetProperty(j => j.Version, j => j.Version + 1));
+            reclaimed.Should().Be(1, "an expired lease must be reclaimable on PostgreSQL");
+
+            var renewed = await db.MigrationJobRecords
+                .Where(j => j.Id == migrationJobId
+                    && j.MigrationLeaseToken == "pg-lease-reclaimed"
+                    && j.LeaseExpiresAtUtc > migrationNow)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(j => j.LeaseExpiresAtUtc, migrationNow.AddMinutes(30)));
+            renewed.Should().Be(1, "the current owner must be able to renew");
+
+            var staleRenewal = await db.MigrationJobRecords
+                .Where(j => j.Id == migrationJobId
+                    && j.MigrationLeaseToken == "pg-lease-superseded"
+                    && j.LeaseExpiresAtUtc > migrationNow)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(j => j.LeaseExpiresAtUtc, migrationNow.AddMinutes(30)));
+            staleRenewal.Should().Be(0, "a superseded token must never renew");
+        }
+
+        await using (var db = new NostosDbContext(options))
+        {
+            (await db.MigrationJobRecords
+                    .Where(j => j.ExpiresAtUtc < migrationNow)
+                    .Select(j => j.Id)
+                    .ToListAsync())
+                .Should().Equal([expiredJobId], "only the expired job must be discovered");
+
+            (await db.MigrationSessionRecords
+                    .Where(s => s.ExpiresAtUtc < migrationNow)
+                    .Select(s => s.Id)
+                    .ToListAsync())
+                .Should().Equal([expiredSessionId], "only the expired session must be discovered");
+
+            (await db.MigrationStorageReservations
+                    .Where(r => r.ReleasedAtUtc == null && r.ExpiresAtUtc < migrationNow)
+                    .Select(r => r.Id)
+                    .ToListAsync())
+                .Should().Equal([expiredReservationId], "only the expired reservation must be swept");
+
+            (await db.MigrationJobRecords
+                    .OrderBy(j => j.UpdatedAtUtc)
+                    .Select(j => j.Id)
+                    .ToListAsync())
+                .Should().Equal([expiredJobId, migrationJobId], "UpdatedAtUtc must order in SQL");
+        }
+
+        // Verify the PostgreSQL physical schema the product bootstrap created:
+        // tables, Npgsql column mappings, unique/sweep indexes, check constraints
+        // and cascading FKs.
+        await using (var db = new NostosDbContext(options))
+        {
+            (await ScalarCountAsync(
+                    db,
+                    "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name IN " +
+                    "('MigrationJobRecords','MigrationSessionRecords','MigrationChunkReceiptRecords','MigrationExportArtifactRecords','MigrationStorageReservations')"))
+                .Should().Be(5, "the product model bootstrap must create all five operational tables");
+
+            (await ScalarCountAsync(
+                    db,
+                    "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='MigrationJobRecords' " +
+                    "AND column_name='Id' AND data_type='uuid'")).Should().Be(1);
+            (await ScalarCountAsync(
+                    db,
+                    "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='MigrationJobRecords' " +
+                    "AND column_name='Version' AND data_type='bigint'")).Should().Be(1);
+            (await ScalarCountAsync(
+                    db,
+                    "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='MigrationJobRecords' " +
+                    "AND column_name IN ('CreatedAtUtc','UpdatedAtUtc','ExpiresAtUtc','LeaseExpiresAtUtc','HeartbeatAtUtc','CancelledAtUtc','CompletedAtUtc') " +
+                    "AND data_type='timestamp with time zone'")).Should().Be(7);
+            (await ScalarCountAsync(
+                    db,
+                    "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='MigrationSessionRecords' " +
+                    "AND column_name='StorageKey' AND data_type='character varying' AND character_maximum_length=512")).Should().Be(1);
+            (await ScalarCountAsync(
+                    db,
+                    "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='MigrationChunkReceiptRecords' " +
+                    "AND column_name='ChunkIndex' AND data_type='integer'")).Should().Be(1);
+            (await ScalarCountAsync(
+                    db,
+                    "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='MigrationStorageReservations' " +
+                    "AND column_name='ReservedBytes' AND data_type='bigint'")).Should().Be(1);
+
+            (await ScalarCountAsync(
+                    db,
+                    "SELECT COUNT(*) FROM pg_indexes WHERE schemaname='public' AND indexname='IX_MigrationJobRecords_IdempotencyKey' " +
+                    "AND indexdef LIKE '%UNIQUE%'"))
+                .Should().Be(1, "the job idempotency index must be unique on PostgreSQL");
+            (await ScalarCountAsync(
+                    db,
+                    "SELECT COUNT(*) FROM pg_indexes WHERE schemaname='public' AND indexname='IX_MigrationSessionRecords_JobId_IdempotencyKey' " +
+                    "AND indexdef LIKE '%UNIQUE%'"))
+                .Should().Be(1, "the per-job session idempotency index must be unique on PostgreSQL");
+            (await ScalarCountAsync(
+                    db,
+                    "SELECT COUNT(*) FROM pg_indexes WHERE schemaname='public' AND indexname IN " +
+                    "('IX_MigrationJobRecords_State_LeaseExpiresAtUtc','IX_MigrationJobRecords_ExpiresAtUtc','IX_MigrationJobRecords_UpdatedAtUtc'," +
+                    "'IX_MigrationSessionRecords_JobId_State','IX_MigrationSessionRecords_ExpiresAtUtc'," +
+                    "'IX_MigrationExportArtifactRecords_State_ExpiresAtUtc','IX_MigrationStorageReservations_ExpiresAtUtc')"))
+                .Should().Be(7, "every declared worker/sweep index must exist on PostgreSQL");
+
+            (await ScalarCountAsync(
+                    db,
+                    "SELECT COUNT(*) FROM pg_constraint WHERE contype='c' AND conname IN " +
+                    "('CK_MigrationJobRecords_ReservedStorageBytes','CK_MigrationJobRecords_AttemptNumber','CK_MigrationJobRecords_IdempotencyKey','CK_MigrationJobRecords_LeaseToken'," +
+                    "'CK_MigrationSessionRecords_TotalBytes','CK_MigrationSessionRecords_ChunkSize','CK_MigrationSessionRecords_TotalChunks'," +
+                    "'CK_MigrationSessionRecords_FileIdentitySize','CK_MigrationSessionRecords_ReceivedBytes'," +
+                    "'CK_MigrationChunkReceiptRecords_Bounds')"))
+                .Should().Be(10, "every declared check constraint must exist on PostgreSQL");
+
+            (await ScalarCountAsync(
+                    db,
+                    "SELECT COUNT(*) FROM pg_constraint c JOIN pg_class t ON t.oid = c.conrelid " +
+                    "WHERE c.contype='f' AND c.confdeltype='c' AND t.relname IN " +
+                    "('MigrationSessionRecords','MigrationExportArtifactRecords','MigrationChunkReceiptRecords')"))
+                .Should().Be(3, "all three operational relationships must cascade on PostgreSQL");
+        }
+
         await using (var first = new NostosDbContext(options))
         await using (var second = new NostosDbContext(options))
         {
@@ -544,5 +726,17 @@ public sealed class PostgreSqlCompatibilitySpikeTests
             await staleSave.Should().ThrowAsync<DbUpdateConcurrencyException>(
                 "the integer Version concurrency token must be enforced by PostgreSQL");
         }
+    }
+
+    private static async Task<long> ScalarCountAsync(NostosDbContext db, string sql)
+    {
+        var connection = db.Database.GetDbConnection();
+        if (connection.State != System.Data.ConnectionState.Open)
+            await connection.OpenAsync();
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        var value = await command.ExecuteScalarAsync();
+        return Convert.ToInt64(value);
     }
 }

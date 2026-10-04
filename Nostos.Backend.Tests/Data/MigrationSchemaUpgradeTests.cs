@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using FluentAssertions;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -121,11 +122,11 @@ public sealed class MigrationSchemaUpgradeTests : IDisposable
                 ProgressBytesProcessed = 8 * 1024 * 1024,
                 IdempotencyKey = "upgrade-test-job",
                 CreationPayloadHash = new string('a', 64),
-                CreatedAtUtc = DateTimeOffset.UtcNow,
-                UpdatedAtUtc = DateTimeOffset.UtcNow,
-                ExpiresAtUtc = DateTimeOffset.UtcNow.AddDays(7),
+                CreatedAtUtc = DateTime.UtcNow,
+                UpdatedAtUtc = DateTime.UtcNow,
+                ExpiresAtUtc = DateTime.UtcNow.AddDays(7),
                 MigrationLeaseToken = "lease-token",
-                LeaseExpiresAtUtc = DateTimeOffset.UtcNow.AddMinutes(5),
+                LeaseExpiresAtUtc = DateTime.UtcNow.AddMinutes(5),
                 AttemptNumber = 1,
                 ReservedStorageBytes = 32 * 1024 * 1024,
             };
@@ -142,9 +143,9 @@ public sealed class MigrationSchemaUpgradeTests : IDisposable
                 IdempotencyKey = "upgrade-test-session",
                 CreationPayloadHash = new string('c', 64),
                 ReceivedBytes = 16 * 1024 * 1024,
-                CreatedAtUtc = DateTimeOffset.UtcNow,
-                UpdatedAtUtc = DateTimeOffset.UtcNow,
-                ExpiresAtUtc = DateTimeOffset.UtcNow.AddHours(24),
+                CreatedAtUtc = DateTime.UtcNow,
+                UpdatedAtUtc = DateTime.UtcNow,
+                ExpiresAtUtc = DateTime.UtcNow.AddHours(24),
                 StorageKey = "uploads/job-upgrade/session-1/archive.part",
             };
             var receipt = new MigrationChunkReceiptRecord
@@ -154,7 +155,7 @@ public sealed class MigrationSchemaUpgradeTests : IDisposable
                 OffsetBytes = 0,
                 LengthBytes = 16 * 1024 * 1024,
                 Sha256 = new string('d', 64),
-                ReceivedAtUtc = DateTimeOffset.UtcNow,
+                ReceivedAtUtc = DateTime.UtcNow,
             };
             var artifact = new MigrationExportArtifactRecord
             {
@@ -165,17 +166,17 @@ public sealed class MigrationSchemaUpgradeTests : IDisposable
                 ContentType = "application/vnd.nostos.portable+zip",
                 SizeBytes = 1024,
                 Sha256 = new string('e', 64),
-                CreatedAtUtc = DateTimeOffset.UtcNow,
-                AvailableAtUtc = DateTimeOffset.UtcNow,
-                ExpiresAtUtc = DateTimeOffset.UtcNow.AddDays(7),
+                CreatedAtUtc = DateTime.UtcNow,
+                AvailableAtUtc = DateTime.UtcNow,
+                ExpiresAtUtc = DateTime.UtcNow.AddDays(7),
             };
             var reservation = new MigrationStorageReservationRecord
             {
                 Purpose = 0,
                 ReservedBytes = 64 * 1024 * 1024,
                 MaterializedBytes = 16 * 1024 * 1024,
-                CreatedAtUtc = DateTimeOffset.UtcNow,
-                ExpiresAtUtc = DateTimeOffset.UtcNow.AddMinutes(15),
+                CreatedAtUtc = DateTime.UtcNow,
+                ExpiresAtUtc = DateTime.UtcNow.AddMinutes(15),
                 ClaimedJobId = job.Id,
             };
 
@@ -196,6 +197,20 @@ public sealed class MigrationSchemaUpgradeTests : IDisposable
             reloaded.StorageKey.Should().Be("uploads/job-upgrade/session-1/archive.part");
             reloaded.FileIdentitySha256.Should().Be(new string('b', 64));
         }
+
+        // 6b. The migrated table shape must equal the shape the current model
+        //     creates (column types/nullability/defaults, PKs, FKs, unique and
+        //     ordinary indexes, check constraints), so a regenerated migration
+        //     cannot silently drift from the model.
+        var modelPath = Path.Combine(directory, "model.db");
+        await using (var db = new NostosDbContext(FileOptions(modelPath)))
+        {
+            (await db.Database.EnsureCreatedAsync()).Should().BeTrue();
+        }
+
+        (await NewTableSchemaAsync(copyPath)).Should().Equal(
+            await NewTableSchemaAsync(modelPath),
+            "the migrated schema must match the schema generated from the current model");
 
         // 7. The original file was not touched: same bytes, same legacy data,
         //    and none of the new tables.
@@ -357,6 +372,97 @@ public sealed class MigrationSchemaUpgradeTests : IDisposable
             NoteContent: (await db.Notes.SingleAsync()).Content,
             WritingContent: (await db.Writings.SingleAsync(w => w.Type == WritingType.Document)).Content
                 ?? string.Empty);
+    }
+
+    // Canonical, order-independent fingerprint of the five new tables: every
+    // column (type, nullability, default, PK position), FK (target and delete
+    // action), index (uniqueness, origin, columns) and check-constraint name.
+    private static async Task<List<string>> NewTableSchemaAsync(string path)
+    {
+        await using var connection = new SqliteConnection($"Data Source={path}");
+        await connection.OpenAsync();
+        var lines = new List<string>();
+
+        foreach (var table in NewTables)
+        {
+            var tableSql = await ScalarTextAsync(
+                connection,
+                "SELECT \"sql\" FROM \"sqlite_master\" WHERE \"type\" = 'table' AND \"name\" = @name",
+                table);
+
+            var checks = Regex.Matches(tableSql ?? string.Empty, @"CK_[A-Za-z0-9_]+")
+                .Select(match => match.Value)
+                .Distinct()
+                .OrderBy(name => name, StringComparer.Ordinal);
+            lines.Add($"{table} checks: {string.Join(",", checks)}");
+
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = $"PRAGMA table_info(\"{table}\")";
+                await using var reader = await command.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    lines.Add(
+                        $"{table} column: {reader.GetString(1)}|{reader.GetString(2)}|" +
+                        $"notnull={reader.GetInt32(3)}|default={reader.GetValue(4)}|pk={reader.GetInt32(5)}");
+                }
+            }
+
+            var indexNames = new List<string>();
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = $"PRAGMA index_list(\"{table}\")";
+                await using var reader = await command.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    var indexName = reader.GetString(1);
+                    var unique = reader.GetInt32(2);
+                    var origin = reader.GetString(3);
+                    indexNames.Add($"{table} index: {indexName}|unique={unique}|origin={origin}");
+                }
+            }
+
+            foreach (var indexLine in indexNames)
+            {
+                var indexName = indexLine.Split('|')[0].Replace($"{table} index: ", string.Empty);
+                var columns = new List<string>();
+                await using (var command = connection.CreateCommand())
+                {
+                    command.CommandText = $"PRAGMA index_info(\"{indexName}\")";
+                    await using var reader = await command.ExecuteReaderAsync();
+                    while (await reader.ReadAsync())
+                        columns.Add(reader.GetString(2));
+                }
+
+                lines.Add($"{indexLine}|{string.Join(",", columns)}");
+            }
+
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = $"PRAGMA foreign_key_list(\"{table}\")";
+                await using var reader = await command.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    lines.Add(
+                        $"{table} fk: {reader.GetString(3)}->{reader.GetString(2)}.{reader.GetString(4)}|" +
+                        $"ondelete={reader.GetString(6)}");
+                }
+            }
+        }
+
+        lines.Sort(StringComparer.Ordinal);
+        return lines;
+    }
+
+    private static async Task<string?> ScalarTextAsync(
+        SqliteConnection connection,
+        string sql,
+        string parameter)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        command.Parameters.AddWithValue("@name", parameter);
+        return await command.ExecuteScalarAsync() as string;
     }
 
     private static async Task<List<string>> TableNamesAsync(string path)

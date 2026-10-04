@@ -17,13 +17,13 @@ public class MigrationStorageReservationRecord
 
     public long MaterializedBytes { get; set; }
 
-    public DateTimeOffset CreatedAtUtc { get; set; } = DateTimeOffset.UtcNow;
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 
-    public DateTimeOffset ExpiresAtUtc { get; set; }
+    public DateTime ExpiresAtUtc { get; set; }
 
     public Guid? ClaimedJobId { get; set; }
 
-    public DateTimeOffset? ReleasedAtUtc { get; set; }
+    public DateTime? ReleasedAtUtc { get; set; }
 
     public long Version { get; set; }
 }

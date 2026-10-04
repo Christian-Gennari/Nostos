@@ -40,13 +40,13 @@ public class MigrationSessionRecord
 
     public long ReceivedBytes { get; set; }
 
-    public DateTimeOffset CreatedAtUtc { get; set; } = DateTimeOffset.UtcNow;
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 
-    public DateTimeOffset UpdatedAtUtc { get; set; } = DateTimeOffset.UtcNow;
+    public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
 
-    public DateTimeOffset ExpiresAtUtc { get; set; }
+    public DateTime ExpiresAtUtc { get; set; }
 
-    public DateTimeOffset? CompletedAtUtc { get; set; }
+    public DateTime? CompletedAtUtc { get; set; }
 
     [MaxLength(512)]
     public string StorageKey { get; set; } = string.Empty;

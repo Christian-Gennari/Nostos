@@ -11,7 +11,7 @@ using Nostos.Backend.Data;
 namespace Nostos.Backend.Migrations
 {
     [DbContext(typeof(NostosDbContext))]
-    [Migration("20261004122543_AddDurableMigrationTransferJobs")]
+    [Migration("20261004130543_AddDurableMigrationTransferJobs")]
     partial class AddDurableMigrationTransferJobs
     {
         /// <inheritdoc />
@@ -361,7 +361,7 @@ namespace Nostos.Backend.Migrations
                     b.Property<long>("OffsetBytes")
                         .HasColumnType("INTEGER");
 
-                    b.Property<DateTimeOffset>("ReceivedAtUtc")
+                    b.Property<DateTime>("ReceivedAtUtc")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Sha256")
@@ -382,7 +382,7 @@ namespace Nostos.Backend.Migrations
                     b.Property<Guid>("JobId")
                         .HasColumnType("TEXT");
 
-                    b.Property<DateTimeOffset?>("AvailableAtUtc")
+                    b.Property<DateTime?>("AvailableAtUtc")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("ContentType")
@@ -390,13 +390,13 @@ namespace Nostos.Backend.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
-                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                    b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("TEXT");
 
-                    b.Property<DateTimeOffset?>("DeletedAtUtc")
+                    b.Property<DateTime?>("DeletedAtUtc")
                         .HasColumnType("TEXT");
 
-                    b.Property<DateTimeOffset>("ExpiresAtUtc")
+                    b.Property<DateTime>("ExpiresAtUtc")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("FileName")
@@ -443,13 +443,13 @@ namespace Nostos.Backend.Migrations
                         .HasMaxLength(512)
                         .HasColumnType("TEXT");
 
-                    b.Property<DateTimeOffset?>("CancelledAtUtc")
+                    b.Property<DateTime?>("CancelledAtUtc")
                         .HasColumnType("TEXT");
 
-                    b.Property<DateTimeOffset?>("CompletedAtUtc")
+                    b.Property<DateTime?>("CompletedAtUtc")
                         .HasColumnType("TEXT");
 
-                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                    b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("CreationPayloadHash")
@@ -464,7 +464,7 @@ namespace Nostos.Backend.Migrations
                     b.Property<int>("Direction")
                         .HasColumnType("INTEGER");
 
-                    b.Property<DateTimeOffset>("ExpiresAtUtc")
+                    b.Property<DateTime>("ExpiresAtUtc")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("FailureCode")
@@ -475,7 +475,7 @@ namespace Nostos.Backend.Migrations
                         .HasMaxLength(1024)
                         .HasColumnType("TEXT");
 
-                    b.Property<DateTimeOffset?>("HeartbeatAtUtc")
+                    b.Property<DateTime?>("HeartbeatAtUtc")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("IdempotencyKey")
@@ -483,7 +483,7 @@ namespace Nostos.Backend.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
-                    b.Property<DateTimeOffset?>("LeaseExpiresAtUtc")
+                    b.Property<DateTime?>("LeaseExpiresAtUtc")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("MigrationLeaseToken")
@@ -527,7 +527,7 @@ namespace Nostos.Backend.Migrations
                     b.Property<int>("State")
                         .HasColumnType("INTEGER");
 
-                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                    b.Property<DateTime>("UpdatedAtUtc")
                         .HasColumnType("TEXT");
 
                     b.Property<long>("Version")
@@ -570,10 +570,10 @@ namespace Nostos.Backend.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("TEXT");
 
-                    b.Property<DateTimeOffset?>("CompletedAtUtc")
+                    b.Property<DateTime?>("CompletedAtUtc")
                         .HasColumnType("TEXT");
 
-                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                    b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("CreationPayloadHash")
@@ -581,7 +581,7 @@ namespace Nostos.Backend.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("TEXT");
 
-                    b.Property<DateTimeOffset>("ExpiresAtUtc")
+                    b.Property<DateTime>("ExpiresAtUtc")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("FileIdentitySha256")
@@ -620,7 +620,7 @@ namespace Nostos.Backend.Migrations
                     b.Property<int>("TotalChunks")
                         .HasColumnType("INTEGER");
 
-                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                    b.Property<DateTime>("UpdatedAtUtc")
                         .HasColumnType("TEXT");
 
                     b.Property<long>("Version")
@@ -659,10 +659,10 @@ namespace Nostos.Backend.Migrations
                     b.Property<Guid?>("ClaimedJobId")
                         .HasColumnType("TEXT");
 
-                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                    b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("TEXT");
 
-                    b.Property<DateTimeOffset>("ExpiresAtUtc")
+                    b.Property<DateTime>("ExpiresAtUtc")
                         .HasColumnType("TEXT");
 
                     b.Property<long>("MaterializedBytes")
@@ -671,7 +671,7 @@ namespace Nostos.Backend.Migrations
                     b.Property<int>("Purpose")
                         .HasColumnType("INTEGER");
 
-                    b.Property<DateTimeOffset?>("ReleasedAtUtc")
+                    b.Property<DateTime?>("ReleasedAtUtc")
                         .HasColumnType("TEXT");
 
                     b.Property<long>("ReservedBytes")
@@ -682,6 +682,8 @@ namespace Nostos.Backend.Migrations
                         .HasColumnType("INTEGER");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ExpiresAtUtc");
 
                     b.ToTable("MigrationStorageReservations");
                 });

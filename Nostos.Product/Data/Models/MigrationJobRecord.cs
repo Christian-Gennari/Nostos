@@ -32,16 +32,16 @@ public class MigrationJobRecord
     [MaxLength(512)]
     public string? ProgressMessage { get; set; }
 
-    public DateTimeOffset CreatedAtUtc { get; set; } = DateTimeOffset.UtcNow;
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 
-    public DateTimeOffset UpdatedAtUtc { get; set; } = DateTimeOffset.UtcNow;
+    public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
 
-    public DateTimeOffset? HeartbeatAtUtc { get; set; }
+    public DateTime? HeartbeatAtUtc { get; set; }
 
     [MaxLength(128)]
     public string? MigrationLeaseToken { get; set; }
 
-    public DateTimeOffset? LeaseExpiresAtUtc { get; set; }
+    public DateTime? LeaseExpiresAtUtc { get; set; }
 
     [MaxLength(128)]
     public string IdempotencyKey { get; set; } = string.Empty;
@@ -55,7 +55,7 @@ public class MigrationJobRecord
     [MaxLength(1024)]
     public string? FailureMessage { get; set; }
 
-    public DateTimeOffset ExpiresAtUtc { get; set; }
+    public DateTime ExpiresAtUtc { get; set; }
 
     public int AttemptNumber { get; set; } = 1;
 
@@ -73,9 +73,9 @@ public class MigrationJobRecord
     [MaxLength(512)]
     public string? CancellationReason { get; set; }
 
-    public DateTimeOffset? CancelledAtUtc { get; set; }
+    public DateTime? CancelledAtUtc { get; set; }
 
-    public DateTimeOffset? CompletedAtUtc { get; set; }
+    public DateTime? CompletedAtUtc { get; set; }
 
     public long Version { get; set; }
 }

@@ -20,5 +20,5 @@ public class MigrationChunkReceiptRecord
     [MaxLength(64)]
     public string Sha256 { get; set; } = string.Empty;
 
-    public DateTimeOffset ReceivedAtUtc { get; set; } = DateTimeOffset.UtcNow;
+    public DateTime ReceivedAtUtc { get; set; } = DateTime.UtcNow;
 }
