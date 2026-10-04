@@ -113,6 +113,10 @@ public class BackupService : IBackupService
 
     public async Task<TriggerBackupResultDto> CreateBackupAsync(CancellationToken ct = default)
     {
+        // Non-waiting admission also permits a call from an already admitted HTTP
+        // request: a closing gate cannot deadlock that request on a nested lease.
+        await using var operation = _settingsProvider.Maintenance.TryEnterOperation()
+            ?? throw LibraryMaintenanceCoordinator.Busy();
         _logger.LogInformation("Starting backup creation...");
 
         _settingsProvider.StartProgress(5);
@@ -223,6 +227,8 @@ public class BackupService : IBackupService
     public async Task<RestoreResultDto> RestoreBackupAsync(Guid backupId, CancellationToken ct = default)
     {
         BackupRecord? record;
+        using (var operation = _settingsProvider.Maintenance.TryEnterOperation()
+            ?? throw LibraryMaintenanceCoordinator.Busy())
         using (var scope = _scopeFactory.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<NostosDbContext>();
@@ -237,7 +243,7 @@ public class BackupService : IBackupService
         _settingsProvider.UpdateProgress("Verifying backup", 5, 1, 3);
 
         string? archivePath = null;
-        var maintenanceEntered = false;
+        IAsyncDisposable? maintenance = null;
         try
         {
             if (!string.IsNullOrEmpty(record.LocalArchivePath) && File.Exists(record.LocalArchivePath))
@@ -262,10 +268,9 @@ public class BackupService : IBackupService
                 return new RestoreResultDto(false, $"Archive integrity check failed. Expected {expectedChecksum} but got {actualChecksum}.");
 
             _settingsProvider.UpdateProgress("Restoring data", 15, 2, 3);
-            _settingsProvider.EnterMaintenanceMode();
-            maintenanceEntered = true;
-            _logger.LogInformation("Restore entering maintenance mode — waiting for in-flight requests to drain.");
-            await Task.Delay(2000, ct);
+            maintenance = await _settingsProvider.Maintenance.EnterExclusiveAsync(
+                LibraryMaintenanceReason.BackupRestore, ct);
+            _logger.LogInformation("Restore acquired exclusive library maintenance after draining operations.");
 
             _settingsProvider.UpdateProgress("Restoring data", 30, 2, 3);
             await RestoreFromArchiveAsync(archivePath, ct);
@@ -274,6 +279,10 @@ public class BackupService : IBackupService
             _logger.LogInformation("Restore from backup {Id} completed.", backupId);
             return new RestoreResultDto(true, "Restore completed successfully. Please restart the application to apply changes.");
         }
+        catch (Portability.MigrationActivationException ex) when (ex.Code == Portability.MigrationActivationErrorCodes.Busy)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Restore from backup {Id} failed", backupId);
@@ -281,12 +290,11 @@ public class BackupService : IBackupService
         }
         finally
         {
-            // Only leave maintenance mode when this call actually entered it:
-            // early returns (missing archive, integrity check failure) never
-            // reached EnterMaintenanceMode and must not unbalance the guard.
-            if (maintenanceEntered)
-                _settingsProvider.ExitMaintenanceMode();
-            _settingsProvider.ClearProgress();
+            try
+            {
+                if (maintenance is not null) await maintenance.DisposeAsync();
+            }
+            finally { _settingsProvider.ClearProgress(); }
         }
     }
 

@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Threading.Channels;
 using Microsoft.Extensions.Options;
 using Nostos.Backend.Configuration;
+using Nostos.Backend.Services;
 
 namespace Nostos.Backend.Providers.Acquisition;
 
@@ -24,15 +25,18 @@ public sealed class AcquisitionJobManager : BackgroundService, IAcquisitionJobMa
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly AcquisitionOptions _options;
     private readonly ILogger<AcquisitionJobManager> _logger;
+    private readonly ILibraryMaintenanceCoordinator? _maintenance;
 
     public AcquisitionJobManager(
         IServiceScopeFactory scopeFactory,
         IOptions<AcquisitionOptions> options,
-        ILogger<AcquisitionJobManager> logger)
+        ILogger<AcquisitionJobManager> logger,
+        ILibraryMaintenanceCoordinator? maintenance = null)
     {
         _scopeFactory = scopeFactory;
         _options = options.Value;
         _logger = logger;
+        _maintenance = maintenance;
         _queue = Channel.CreateBounded<Job>(new BoundedChannelOptions(Math.Max(4, _options.MaxRetainedJobs))
         {
             FullMode = BoundedChannelFullMode.DropWrite,
@@ -156,6 +160,7 @@ public sealed class AcquisitionJobManager : BackgroundService, IAcquisitionJobMa
 
         try
         {
+            await using var operation = _maintenance is null ? null : await _maintenance.EnterOperationAsync(linked.Token);
             // The service is scoped (it uses the scoped library service and a
             // DbContext factory), so each job gets its own scope.
             using var scope = _scopeFactory.CreateScope();

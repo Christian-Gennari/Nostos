@@ -150,7 +150,7 @@ A thread-safe singleton that manages the application's backup configuration and 
 
 ### Responsibilities
 1. **Settings Persistence:** Handles atomic reads/writes of `BackupSettings` to a local JSON file.
-2. **Maintenance Mode:** Manages a reference-counted state (`IsInMaintenanceMode`) using `Interlocked` operations to safely block API access during restoration.
+2. **Maintenance Mode:** Projects the singleton `ILibraryMaintenanceCoordinator` through `IsInMaintenanceMode`. Compatibility enter/exit calls reference-count one exclusive coordinator lease; backup restore uses the asynchronous drain barrier directly.
 3. **Progress Tracking:** Provides a volatile storage for the current backup/restore step, percentage, and step count.
 
 ---
@@ -171,7 +171,7 @@ The core orchestrator for library preservation and recovery.
 
 ### Restore Workflow (3 Steps)
 1. **Verifying:** Validates ZIP structure and checks manifest checksums.
-2. **Restoring Data:** Enters maintenance mode, takes a safety snapshot of the current DB, and overwrites with backup content.
+2. **Restoring Data:** Acquires exclusive library maintenance after request/worker scopes drain, takes a safety snapshot of the current DB, and overwrites with backup content. Drain timeout fails before replacement; a fixed delay is not used for drain proof.
 3. **Completing:** Cleans up temporary files and exits maintenance mode.
 
 ### Storage Scanning

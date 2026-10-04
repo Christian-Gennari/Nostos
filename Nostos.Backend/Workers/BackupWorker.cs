@@ -48,6 +48,7 @@ public class BackupWorker(
             return;
 
         DateTime? lastBackupTime;
+        await using (var operation = await settingsProvider.Maintenance.EnterOperationAsync(ct))
         using (var scope = scopeFactory.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<NostosDbContext>();

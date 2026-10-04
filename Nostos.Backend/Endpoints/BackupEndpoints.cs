@@ -1,4 +1,5 @@
 using Nostos.Backend.Services;
+using Nostos.Backend.Middleware;
 using Nostos.Shared.Dtos;
 
 namespace Nostos.Backend.Endpoints;
@@ -33,14 +34,14 @@ public static class BackupEndpoints
             return Results.Ok(result);
         });
 
-        group.MapPost("/restore/{id:guid}", async (Guid id, IBackupService backupService) =>
+        group.MapPost("/restore/{id:guid}", async (Guid id, IBackupService backupService, CancellationToken ct) =>
         {
-            var result = await backupService.RestoreBackupAsync(id);
+            var result = await backupService.RestoreBackupAsync(id, ct);
             if (!result.Success)
                 return Results.Json(new { error = result.Message }, statusCode: StatusCodes.Status500InternalServerError);
 
             return Results.Ok(result);
-        });
+        }).WithMetadata(new LibraryMaintenanceControl());
 
         group.MapGet("/history", async (IBackupService backupService) =>
         {
