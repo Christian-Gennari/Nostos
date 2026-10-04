@@ -272,10 +272,10 @@
   }
 }
 
-/* Nothing below styles the view control any more: the Brain renders
-   `nostos-view-toggle`, and that component owns its own chrome and its own
-   geometry (including the 34x32-in-38px mobile rung, which both surfaces now get
-   from one place). This file keeps only the flex hook above.
+/* The Brain renders `nostos-view-toggle`, and that component still owns the
+   control's chrome and geometry (including the 34x32-in-38px mobile rung, which
+   both surfaces get from one place). This file owns only surface layout: the flex
+   hook plus the inactive-slot visibility rules above.
 
    `.toggle-opt` in styles.css is NOT dead, and is deliberately not what the Brain
    uses: it is the recipe for the segmented surfaces this component does not
