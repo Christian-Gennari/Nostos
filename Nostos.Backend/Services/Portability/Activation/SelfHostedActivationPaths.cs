@@ -18,6 +18,7 @@ internal sealed class SelfHostedActivationPaths
     internal string LiveDatabase { get; }
     internal string LiveMedia { get; }
     internal string JournalRoot => Db(".nostos-activation");
+    internal string RecoveryRoot => Db(".nostos-recovery");
 
     internal SelfHostedActivationPaths(string database, string media, IActivationVolume? volume = null)
     {
@@ -41,6 +42,9 @@ internal sealed class SelfHostedActivationPaths
     internal string PreviousDatabase(Guid id) => Db($".nostos-recovery/{Id(id)}/nostos.db");
     internal string PreviousMedia(Guid id) => Media($".nostos-recovery/{Id(id)}/books");
     internal string RecoveryManifest(Guid id) => Db($".nostos-recovery/{Id(id)}/recovery.json");
+    internal string RecoveryDeletionMarker(Guid id) => Db($".nostos-recovery/{Id(id)}/recovery.deleting");
+    internal string TemporaryRecoveryManifest(Guid id, Guid writeId) =>
+        Db($".nostos-recovery/{Id(id)}/recovery.{Id(writeId)}.tmp");
     internal string Journal(Guid id) => Db($".nostos-activation/{Id(id)}/activation.json");
     internal string ResolvedJournal(Guid id) => Db($".nostos-activation/{Id(id)}/activation.resolved.json");
     internal string TemporaryJournal(Guid id, Guid writeId) => Db($".nostos-activation/{Id(id)}/activation.{Id(writeId)}.tmp");
@@ -66,6 +70,13 @@ internal sealed class SelfHostedActivationPaths
         EnsureParent(PreviousDatabase(id), _database);
         EnsureParent(PreviousMedia(id), _media);
         Verify(id); // detect mount changes after creation
+    }
+
+    /// <summary>Ensures only the recovery directory exists on the database volume.</summary>
+    internal void PrepareRecovery(Guid id)
+    {
+        EnsureParent(RecoveryManifest(id), _database);
+        Verify(id);
     }
 
     internal void VerifyDatabasePath(string path) => _database.VerifyPathWithinRoot(path);

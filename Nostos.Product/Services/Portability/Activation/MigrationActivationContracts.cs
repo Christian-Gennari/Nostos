@@ -37,6 +37,13 @@ public static class MigrationActivationErrorCodes
     public const string RecoveryExpired = "migration_recovery_expired";
     public const string RecoveryCorrupt = "migration_recovery_corrupt";
     public const string RecoveryRestoreConflict = "migration_recovery_restore_conflict";
+
+    /// <summary>
+    /// Activation admission or retention could not reserve the physical bytes
+    /// required to build the candidate and retain the previous library. No
+    /// cutover may begin (plan section 16.1, error vocabulary of the same name).
+    /// </summary>
+    public const string StorageExhausted = "migration_storage_exhausted";
 }
 
 /// <summary>Safe, provider-neutral error; never carries paths or provider exceptions.</summary>
