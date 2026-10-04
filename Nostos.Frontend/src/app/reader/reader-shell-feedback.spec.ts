@@ -6,6 +6,8 @@ import { BehaviorSubject, of, throwError } from 'rxjs';
 
 import { ReaderShell } from './reader-shell.component';
 import { TopicInputComponent } from '../ui/topic-input.component/topic-input.component';
+import { PdfReader } from './pdf-reader/pdf-reader.component';
+import { AudioReader } from './audio-reader/audio-reader.component';
 import { BooksService } from '../core/services/books.service';
 import { NotesService } from '../core/services/notes.service';
 import { TopicsService } from '../core/services/topics.service';
@@ -38,6 +40,43 @@ class TopicInputStub implements ControlValueAccessor {
   registerOnTouched(): void {}
 }
 
+@Component({ selector: 'app-pdf-reader', standalone: true, template: '' })
+class PdfReaderStub {
+  bookId = input.required<string>();
+  initialLocation = input<string | null>(null);
+  sidebarVisible = input(false);
+  highlightMode = input(false);
+  highlightColour = input<unknown>(null);
+  sidebarVisibleChange = output<boolean>();
+  noteCreated = output<void>();
+  selectionCaptured = output<unknown>();
+  commitFailed = output<unknown>();
+}
+
+@Component({ selector: 'app-audio-reader', standalone: true, template: '' })
+class AudioReaderStub {
+  bookId = input.required<string>();
+  book = input<unknown>(null);
+}
+
+const pdfBook = {
+  id: 'book-1',
+  title: 'A PDF book',
+  type: 'pdf',
+  hasFile: true,
+  fileName: 'book-1.pdf',
+  lastLocation: null,
+};
+
+const audioBook = {
+  id: 'book-1',
+  title: 'An audio book',
+  type: 'audio',
+  hasFile: true,
+  fileName: 'book-1.m4b',
+  lastLocation: null,
+};
+
 const cloudCapabilities: DeploymentCapabilities = {
   deploymentMode: 'Cloud',
   requiresAuthentication: true,
@@ -66,23 +105,43 @@ const selfHostedCapabilities: DeploymentCapabilities = {
 };
 
 /**
- * The Reader is its own shell, so this spec renders the real ReaderShell with a
- * book that fails to load: the header (and its feedback utility) renders while
- * the heavy readers never instantiate. That is also the state where reporting a
- * problem matters most.
+ * The Reader is its own shell, so this spec renders the real ReaderShell. The
+ * book request fails first (that state also renders the header), then the
+ * format is set directly so the maximum PDF tool count is exercised without
+ * loading a real document.
  */
 describe('ReaderShell feedback entry', () => {
   let capabilities: DeploymentCapabilities;
+  let viewportWidth: number;
+
+  function mockMatchMedia(): void {
+    Object.defineProperty(window, 'matchMedia', {
+      writable: true,
+      value: vi.fn().mockImplementation((query: string) => {
+        const max = /\(max-width:\s*(\d+)px\)/.exec(query);
+        return {
+          matches: max ? viewportWidth <= Number(max[1]) : false,
+          media: query,
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+          addListener: vi.fn(),
+          removeListener: vi.fn(),
+          dispatchEvent: vi.fn(),
+        };
+      }),
+    });
+  }
 
   beforeEach(async () => {
     capabilities = cloudCapabilities;
+    viewportWidth = 390;
 
     const paramMap$ = new BehaviorSubject(convertToParamMap({ id: 'book-1' }));
     const queryParamMap$ = new BehaviorSubject(convertToParamMap({}));
 
     TestBed.overrideComponent(ReaderShell, {
-      remove: { imports: [TopicInputComponent] },
-      add: { imports: [TopicInputStub] },
+      remove: { imports: [TopicInputComponent, PdfReader, AudioReader] },
+      add: { imports: [TopicInputStub, PdfReaderStub, AudioReaderStub] },
     });
 
     await TestBed.configureTestingModule({
@@ -123,15 +182,28 @@ describe('ReaderShell feedback entry', () => {
     await TestBed.inject(Router).navigateByUrl('/read/book-1');
   });
 
-  async function render(): Promise<ComponentFixture<ReaderShell>> {
+  async function render(book: unknown = pdfBook): Promise<ComponentFixture<ReaderShell>> {
+    mockMatchMedia();
     const fixture = TestBed.createComponent(ReaderShell);
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
+
+    // The header (and its feedback utility) renders before the book arrives;
+    // give the shell the format so the real tool count is exercised.
+    fixture.componentInstance.book.set(book);
+    fixture.componentInstance.loading.set(false);
+    fixture.componentInstance.loadError.set(null);
+    fixture.detectChanges();
     return fixture;
   }
 
-  it('renders a Cloud feedback link carrying only the reader origin', async () => {
+  function openViewSettings(fixture: ComponentFixture<ReaderShell>): void {
+    (fixture.nativeElement.querySelector('[data-testid="typo-toggle"]') as HTMLButtonElement).click();
+    fixture.detectChanges();
+  }
+
+  it('renders the header entry with the reader origin on a wide Cloud shell', async () => {
     const fixture = await render();
 
     const link = fixture.nativeElement.querySelector(
@@ -142,18 +214,52 @@ describe('ReaderShell feedback entry', () => {
     expect(link.href).toBe('https://nostos.page/feedback?from=reader');
     expect(link.target).toBe('_blank');
     expect(link.rel).toBe('noopener noreferrer');
-
-    // The entry lives in the reader header's utility strip, above the page.
     expect(link.closest('.reader-header-tools')).toBeTruthy();
+
+    openViewSettings(fixture);
+    expect(
+      fixture.nativeElement.querySelector('[data-testid="reader-feedback-panel"]'),
+    ).toBeNull();
   });
 
-  it('omits the feedback entry on SelfHosted', async () => {
-    capabilities = selfHostedCapabilities;
-
+  it('moves the entry into View settings below 360px with the full PDF tool count', async () => {
+    viewportWidth = 320;
     const fixture = await render();
+
+    expect(fixture.nativeElement.querySelectorAll('.reader-header-tools .icon-btn').length).toBe(4);
+    expect(fixture.nativeElement.querySelector('[data-testid="reader-feedback"]')).toBeNull();
+
+    openViewSettings(fixture);
+    const panelLink = fixture.nativeElement.querySelector(
+      '[data-testid="reader-feedback-panel"]',
+    ) as HTMLAnchorElement;
+    expect(panelLink).toBeTruthy();
+    expect(panelLink.href).toBe('https://nostos.page/feedback?from=reader');
+    expect(panelLink.target).toBe('_blank');
+    expect(panelLink.rel).toBe('noopener noreferrer');
+  });
+
+  it('keeps the header entry for audio, which has no View settings panel', async () => {
+    viewportWidth = 320;
+    const fixture = await render(audioBook);
 
     expect(
       fixture.nativeElement.querySelector('[data-testid="reader-feedback"]'),
+    ).toBeTruthy();
+    expect(
+      fixture.nativeElement.querySelector('[data-testid="reader-feedback-panel"]'),
+    ).toBeNull();
+  });
+
+  it('omits both entries on SelfHosted at every width', async () => {
+    capabilities = selfHostedCapabilities;
+    viewportWidth = 320;
+    const fixture = await render();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="reader-feedback"]')).toBeNull();
+    openViewSettings(fixture);
+    expect(
+      fixture.nativeElement.querySelector('[data-testid="reader-feedback-panel"]'),
     ).toBeNull();
   });
 });

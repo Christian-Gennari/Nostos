@@ -1,5 +1,5 @@
 import { Component } from '@angular/core';
-import { TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
 import { signal } from '@angular/core';
 import { SwUpdate } from '@angular/service-worker';
@@ -94,6 +94,16 @@ describe('App shell utility area', () => {
     localStorage.clear();
     assistantAvailable.set(false);
 
+    // CDK's interactivity checker needs real geometry; jsdom reports 0x0.
+    Object.defineProperty(HTMLElement.prototype, 'offsetWidth', {
+      configurable: true,
+      get: () => 1,
+    });
+    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
+      configurable: true,
+      get: () => 1,
+    });
+
     await TestBed.configureTestingModule({
       imports: [App],
       providers: [
@@ -101,7 +111,10 @@ describe('App shell utility area', () => {
           {
             path: '',
             component: WorkspaceLayout,
-            children: [{ path: 'library', component: BlankComponent }],
+            children: [
+              { path: 'library', component: BlankComponent },
+              { path: 'settings', component: BlankComponent },
+            ],
           },
         ]),
         {
@@ -135,6 +148,35 @@ describe('App shell utility area', () => {
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1024 });
   });
 
+  async function renderNarrow(): Promise<ComponentFixture<App>> {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 });
+    const fixture = TestBed.createComponent(App);
+    await TestBed.inject(Router).navigateByUrl('/library');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    return fixture;
+  }
+
+  async function openMore(fixture: ComponentFixture<App>): Promise<HTMLButtonElement> {
+    const more = fixture.nativeElement.querySelector(
+      '[data-testid="dock-more"]',
+    ) as HTMLButtonElement;
+    // Keyboard activation: the trigger owns focus before the sheet opens, which
+    // is exactly the state CDK captures for restoration.
+    more.focus();
+    more.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    return more;
+  }
+
+  const background = (fixture: ComponentFixture<App>): HTMLElement =>
+    fixture.nativeElement.querySelector('.workspace-content');
+  const dock = (fixture: ComponentFixture<App>): HTMLElement =>
+    fixture.nativeElement.querySelector('app-app-dock');
+
   it('keeps Send feedback in the shell with Ask Nostos disabled and enabled', async () => {
     const fixture = TestBed.createComponent(App);
     await TestBed.inject(Router).navigateByUrl('/library');
@@ -160,18 +202,78 @@ describe('App shell utility area', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="dock-feedback"]')).toBeTruthy();
   });
 
-  it('closes the More sheet and its scrim when the viewport crosses to wide', async () => {
-    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 });
-    const fixture = TestBed.createComponent(App);
-    await TestBed.inject(Router).navigateByUrl('/library');
-    fixture.detectChanges();
-    await fixture.whenStable();
+  it('makes the shell inert while the More sheet is open and lifts it on Escape', async () => {
+    const fixture = await renderNarrow();
+    const more = await openMore(fixture);
+
+    expect(background(fixture).hasAttribute('inert')).toBe(true);
+    expect(dock(fixture).hasAttribute('inert')).toBe(true);
+    expect(
+      (fixture.nativeElement.querySelector('app-utility-sheet') as HTMLElement).hasAttribute(
+        'inert',
+      ),
+    ).toBe(false);
+    expect(document.activeElement).toBe(
+      fixture.nativeElement.querySelector('[data-testid="utility-sheet-feedback"]'),
+    );
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
     fixture.detectChanges();
 
-    (fixture.nativeElement.querySelector('[data-testid="dock-more"]') as HTMLButtonElement).click();
+    expect(fixture.nativeElement.querySelector('[data-testid="utility-sheet"]')).toBeNull();
+    expect(background(fixture).hasAttribute('inert')).toBe(false);
+    expect(dock(fixture).hasAttribute('inert')).toBe(false);
+    expect(document.activeElement).toBe(more);
+  });
+
+  it('lifts the inert shell and restores focus when the scrim closes the sheet', async () => {
+    const fixture = await renderNarrow();
+    const more = await openMore(fixture);
+
+    (fixture.nativeElement.querySelector('.utility-sheet-scrim') as HTMLElement).click();
     fixture.detectChanges();
-    expect(fixture.nativeElement.querySelector('[data-testid="utility-sheet"]')).toBeTruthy();
-    expect(fixture.nativeElement.querySelector('.utility-sheet-scrim')).toBeTruthy();
+
+    expect(background(fixture).hasAttribute('inert')).toBe(false);
+    expect(dock(fixture).hasAttribute('inert')).toBe(false);
+    expect(document.activeElement).toBe(more);
+  });
+
+  it('lifts the inert shell when a route change closes the sheet', async () => {
+    const fixture = await renderNarrow();
+    await openMore(fixture);
+
+    await TestBed.inject(Router).navigateByUrl('/settings');
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="utility-sheet"]')).toBeNull();
+    expect(background(fixture).hasAttribute('inert')).toBe(false);
+    expect(dock(fixture).hasAttribute('inert')).toBe(false);
+  });
+
+  it('leaves Ask Nostos usable after the sheet closes', async () => {
+    TestBed.inject(LibraryPreferencesService).assistantEnabled.set(true);
+    assistantAvailable.set(true);
+    const fixture = await renderNarrow();
+
+    await openMore(fixture);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    fixture.detectChanges();
+
+    const trigger = fixture.nativeElement.querySelector(
+      '[data-testid="assistant-trigger"]',
+    ) as HTMLButtonElement;
+    expect(trigger).toBeTruthy();
+    expect(trigger.closest('[inert]')).toBeNull();
+
+    trigger.click();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-testid="assistant-panel"]')).toBeTruthy();
+  });
+
+  it('closes the More sheet, its scrim and the inert shell when the viewport crosses to wide', async () => {
+    const fixture = await renderNarrow();
+    await openMore(fixture);
+    expect(background(fixture).hasAttribute('inert')).toBe(true);
 
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1280 });
     window.dispatchEvent(new Event('resize'));
@@ -179,6 +281,8 @@ describe('App shell utility area', () => {
 
     expect(fixture.nativeElement.querySelector('[data-testid="utility-sheet"]')).toBeNull();
     expect(fixture.nativeElement.querySelector('.utility-sheet-scrim')).toBeNull();
+    expect(background(fixture).hasAttribute('inert')).toBe(false);
+    expect(dock(fixture).hasAttribute('inert')).toBe(false);
     expect(fixture.nativeElement.querySelector('[data-testid="dock-more"]')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="dock-feedback"]')).toBeTruthy();
   });

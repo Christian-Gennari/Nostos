@@ -1,4 +1,12 @@
-import { Component, HostListener, inject } from '@angular/core';
+import {
+  Component,
+  HostListener,
+  Injector,
+  OnDestroy,
+  afterNextRender,
+  effect,
+  inject,
+} from '@angular/core';
 import { NavigationEnd, Router, RouterLink } from '@angular/router';
 import { A11yModule } from '@angular/cdk/a11y';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
@@ -165,11 +173,26 @@ import { UtilitySheetService } from './utility-sheet.service';
     `,
   ],
 })
-export class UtilitySheetComponent {
+export class UtilitySheetComponent implements OnDestroy {
   readonly sheet = inject(UtilitySheetService);
   readonly feedbackUrl = inject(FeedbackLinkService).url;
+  private readonly injector = inject(Injector);
 
   constructor() {
+    // The focus trap captures the More trigger while the shell is still live.
+    // Only after that capture does the workspace behind the sheet become inert,
+    // so inertness can never take the capture away from CDK (and cannot move
+    // focus to body on browsers that blur an inert subtree).
+    effect(() => {
+      if (!this.sheet.open()) return;
+      afterNextRender(
+        () => {
+          if (this.sheet.open()) this.sheet.backgroundInert.set(true);
+        },
+        { injector: this.injector },
+      );
+    });
+
     // A history navigation while the sheet is open must not leave a modal
     // backdrop over the new surface.
     inject(Router)
@@ -178,6 +201,13 @@ export class UtilitySheetComponent {
         takeUntilDestroyed(),
       )
       .subscribe(() => this.sheet.close());
+  }
+
+  ngOnDestroy(): void {
+    // This component owns the sheet's inert state; if the workspace itself is
+    // destroyed (navigating to the Reader), never leave the next shell inert or
+    // the sheet half-open.
+    this.sheet.close();
   }
 
   @HostListener('document:keydown.escape')

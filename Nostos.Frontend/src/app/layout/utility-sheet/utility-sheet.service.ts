@@ -12,11 +12,21 @@ import { Injectable, signal } from '@angular/core';
 export class UtilitySheetService {
   readonly open = signal(false);
 
+  /**
+   * Whether the shell behind the sheet is inert. The sheet sets this only after
+   * its focus trap has captured the More trigger, so applying inertness can
+   * never steal that capture; `close()` clears it before `open`, so the
+   * background is interactive again by the time the trap restores focus.
+   */
+  readonly backgroundInert = signal(false);
+
   toggle(): void {
-    this.open.update((open) => !open);
+    if (this.open()) this.close();
+    else this.open.set(true);
   }
 
   close(): void {
+    this.backgroundInert.set(false);
     this.open.set(false);
   }
 }
