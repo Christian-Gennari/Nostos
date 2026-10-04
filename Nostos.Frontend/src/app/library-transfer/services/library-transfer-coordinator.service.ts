@@ -8,7 +8,7 @@
  * inside `ready-to-upload`.
  */
 
-import { Injectable, computed, inject, signal } from '@angular/core';
+import { Injectable, computed, effect, inject, signal } from '@angular/core';
 
 import {
   ArchiveInspection,
@@ -48,6 +48,7 @@ import {
   preflightRequestFromSummary,
 } from './portable-archive-inspector.service';
 import { TransferResumeStore } from './transfer-resume-store.service';
+import { TransferTabLease } from './transfer-tab-lease.service';
 
 export const DEFAULT_STATUS_POLL_MS = 1_500;
 
@@ -68,9 +69,24 @@ export class LibraryTransferCoordinator {
   private readonly digest = inject(FileDigestService);
   private readonly inspector = inject(PortableArchiveInspector);
   private readonly resumeStore = inject(TransferResumeStore);
+  private readonly tabLease = inject(TransferTabLease);
 
   private readonly stateSignal = signal<TransferFlowState>({ kind: 'idle' });
   private readonly fallbackProgress = signal<TransferProgress>(IDLE_PROGRESS);
+
+  constructor() {
+    // The cross-tab lease belongs to the tab's transfer, not to a particular
+    // mounted flow component: a terminal job must stop the heartbeat even when
+    // Settings or onboarding was left while it was still running (review-736
+    // item 4). `release()` is ownership-checked, so a foreign lease is never
+    // removed.
+    effect(() => {
+      const kind = this.stateSignal().kind;
+      if (kind === 'completed' || kind === 'cancelled' || kind === 'failed') {
+        this.tabLease.release();
+      }
+    });
+  }
 
   /** Current import flow state; the later UI renders this union. */
   readonly state = this.stateSignal.asReadonly();
@@ -358,11 +374,21 @@ export class LibraryTransferCoordinator {
     }
   }
 
-  /** Clears the local resume record once a terminal state is acknowledged. */
+  /**
+   * Acknowledges a terminal state and returns to idle. For a verified but
+   * un-activatable job (`ready-empty` / `replacement-confirmation`) the resume
+   * record is deliberately kept, so dismissing the UI does not throw away the
+   * server job (review-730 item 2); cancel clears it instead.
+   */
   dismiss(): void {
-    this.resumeStore.clear();
-    this.file = null;
-    if (this.stateSignal().kind === 'completed' || this.stateSignal().kind === 'cancelled') {
+    const state = this.stateSignal();
+    if (state.kind === 'completed' || state.kind === 'cancelled') {
+      this.resumeStore.clear();
+      this.file = null;
+      this.setState({ kind: 'idle' });
+      return;
+    }
+    if (state.kind === 'ready-empty' || state.kind === 'replacement-confirmation') {
       this.setState({ kind: 'idle' });
     }
   }
@@ -506,6 +532,7 @@ export class LibraryTransferCoordinator {
             jobId: status.job.id,
             jobState: status.job.state,
             preflight,
+            preparedImport: status.preparedImport ?? undefined,
           });
         } else {
           this.setState({
@@ -513,6 +540,7 @@ export class LibraryTransferCoordinator {
             jobId: status.job.id,
             jobState: status.job.state,
             preflight,
+            preparedImport: status.preparedImport ?? undefined,
           });
         }
         return;
@@ -662,11 +690,15 @@ export class LibraryTransferCoordinator {
           'This is a SelfHosted backup, not a portable library archive.',
         );
       case 'RejectedInsufficientStorage':
-        return this.failure(
-          'migration_storage_exhausted',
-          `This import needs about ${evaluation.requiredStorageBytes} bytes of available ` +
-            `storage. ${evaluation.availableStorageBytes} bytes are available.`,
-        );
+        return {
+          ...this.failure(
+            'migration_storage_exhausted',
+            `This import needs about ${evaluation.requiredStorageBytes} bytes of available ` +
+              `storage. ${evaluation.availableStorageBytes} bytes are available.`,
+          ),
+          requiredStorageBytes: evaluation.requiredStorageBytes,
+          availableStorageBytes: evaluation.availableStorageBytes,
+        };
       case 'RejectedDestinationConflict':
         return this.failure(
           'migration_destination_conflict',

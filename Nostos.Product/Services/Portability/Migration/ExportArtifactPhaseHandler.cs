@@ -1,4 +1,6 @@
+using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Nostos.Backend.Data;
 using Nostos.Backend.Data.Models;
@@ -11,16 +13,25 @@ namespace Nostos.Backend.Services.Portability.Migration;
 /// Slice 10: builds an export artifact independently of any browser request and
 /// publishes it for the range-enabled download endpoint.
 ///
-/// <para><b>Phase protocol.</b> <c>Preparing</c> ensures the artifact row
-/// exists in <see cref="MigrationExportArtifactState.Preparing"/> and discards a
-/// stale attempt-specific <c>library.nostos.tmp</c>. <c>Transferring</c> streams
+/// <para><b>Phase protocol.</b> <c>Preparing</c> ensures the artifact row exists
+/// in <see cref="MigrationExportArtifactState.Preparing"/> and points its
+/// storage key at this attempt's unique temp file. <c>Transferring</c> streams
 /// the #678 export directly into that temp file. <c>Validating</c> hashes the
 /// completed temp once, opens it through the engine's ZIP pre-validation,
-/// atomically renames it to <c>library.nostos</c>, and publishes the artifact
-/// row as <see cref="MigrationExportArtifactState.Available"/> in a short
-/// fenced mutation; the processor then completes the job. A published artifact
-/// is reused after an existence/size check; an incomplete temp is always
-/// discarded and regenerated, and a temp is never downloadable.</para>
+/// re-checks the pinned lease, atomically renames it to an attempt-unique final
+/// name, and publishes the artifact row as
+/// <see cref="MigrationExportArtifactState.Available"/> — including the final
+/// storage key — in a short fenced mutation; the processor then completes the
+/// job. A published artifact is reused after an existence/size check; an
+/// incomplete or stale temp is always discarded and regenerated, and a temp is
+/// never downloadable.</para>
+///
+/// <para><b>Ownership.</b> Every attempt publishes under its own attempt-unique
+/// final name with <c>overwrite: false</c>, so a stale owner can never replace
+/// the successor's bytes. The lease is re-checked through the fencing helper
+/// immediately before the rename; if the fenced row update then fails (lease
+/// lost or state changed), the worker deletes its own file and stops. Files no
+/// row references are removed by the cleanup sweep.</para>
 ///
 /// <para><b>Concurrency and memory.</b> Generation runs outside every database
 /// transaction. The #678 export rents its 16 MiB synchronous capture lease from
@@ -37,12 +48,13 @@ internal sealed class ExportArtifactPhaseHandler(
     ITransferStorageCapacity capacity,
     TransferPathResolver paths,
     IOptions<TransferStorageOptions> options,
-    TimeProvider clock) : IMigrationPhaseHandler
+    TimeProvider clock,
+    IServiceProvider services) : IMigrationPhaseHandler
 {
     /// <summary>Fixed, server-generated download name; never client-supplied.</summary>
     internal const string ArtifactFileName = "library.nostos";
 
-    private const int HashBufferBytes = 128 * 1024;
+    private const int BufferBytes = 128 * 1024;
 
     public bool CanHandle(MigrationDirection direction, MigrationJobState state) =>
         direction == MigrationDirection.Export
@@ -51,33 +63,54 @@ internal sealed class ExportArtifactPhaseHandler(
     public async Task ExecuteAsync(MigrationPhaseContext context, CancellationToken ct)
     {
         var jobId = context.Job.Id;
+        var attempt = await db.MigrationJobRecords.AsNoTracking()
+            .Where(j => j.Id == jobId)
+            .Select(j => (int?)j.AttemptNumber)
+            .SingleOrDefaultAsync(ct) ?? 1;
         var artifact = await db.MigrationExportArtifactRecords.AsNoTracking()
             .SingleOrDefaultAsync(a => a.JobId == jobId, ct);
 
         switch (context.Job.State)
         {
             case MigrationJobState.Preparing:
-                artifact ??= await CreateArtifactRecordAsync(context, jobId, ct);
-                DiscardTemp(jobId);
+                if (artifact is null)
+                {
+                    await CreateArtifactRecordAsync(context, jobId, attempt, ct);
+                }
+                else if (artifact.State == (int)MigrationExportArtifactState.Preparing)
+                {
+                    // A restart may re-enter Preparing with a stale attempt key.
+                    await ResetToPreparingAsync(context, jobId, attempt, ct);
+                }
+
                 return;
 
             case MigrationJobState.Transferring:
-                if (IsAvailableOnDisk(jobId, artifact))
+                if (IsAvailableOnDisk(artifact))
                 {
                     return;
                 }
 
-                DiscardTemp(jobId);
-                await GenerateAsync(context, jobId, ct);
+                if (artifact is { State: (int)MigrationExportArtifactState.Available })
+                {
+                    artifact = await ResetToPreparingAsync(context, jobId, attempt, ct);
+                }
+
+                await GenerateAsync(context, jobId, RequireTempKey(artifact), ct);
                 return;
 
             case MigrationJobState.Validating:
-                if (IsAvailableOnDisk(jobId, artifact))
+                if (IsAvailableOnDisk(artifact))
                 {
                     return;
                 }
 
-                await ValidateAndPublishAsync(context, jobId, artifact, ct);
+                if (artifact is { State: (int)MigrationExportArtifactState.Available })
+                {
+                    artifact = await ResetToPreparingAsync(context, jobId, attempt, ct);
+                }
+
+                await ValidateAndPublishAsync(context, jobId, attempt, artifact, ct);
                 return;
         }
     }
@@ -85,14 +118,16 @@ internal sealed class ExportArtifactPhaseHandler(
     private async Task<MigrationExportArtifactRecord> CreateArtifactRecordAsync(
         MigrationPhaseContext context,
         Guid jobId,
+        int attempt,
         CancellationToken ct)
     {
         var now = clock.GetUtcNow();
+        var tempKey = paths.GetExportAttemptTempStorageKey(jobId, attempt, NewToken());
         var record = new MigrationExportArtifactRecord
         {
             JobId = jobId,
             State = (int)MigrationExportArtifactState.Preparing,
-            StorageKey = paths.GetExportArtifactStorageKey(jobId),
+            StorageKey = tempKey,
             FileName = ArtifactFileName,
             ContentType = PortabilityEndpoints.ArchiveContentType,
             CreatedAtUtc = now.UtcDateTime,
@@ -114,15 +149,71 @@ internal sealed class ExportArtifactPhaseHandler(
             .SingleAsync(a => a.JobId == jobId, ct);
     }
 
-    private async Task GenerateAsync(MigrationPhaseContext context, Guid jobId, CancellationToken ct)
+    /// <summary>
+    /// Points the row back at a fresh attempt temp key and deletes the old
+    /// attempt temp it referenced (a stale owner's writes fail typed once its
+    /// fenced checkpoint runs). Used when the row is Available but the file is
+    /// missing or corrupt, so recovery regenerates instead of failing forever.
+    /// </summary>
+    private async Task<MigrationExportArtifactRecord> ResetToPreparingAsync(
+        MigrationPhaseContext context,
+        Guid jobId,
+        int attempt,
+        CancellationToken ct)
     {
-        var directory = paths.EnsureDirectoryExists(paths.GetExportDirectory(jobId));
-        var tempPath = paths.VerifyPathWithinRoot(Path.Combine(directory, TransferPathResolver.ExportTempFileName));
+        var tempKey = paths.GetExportAttemptTempStorageKey(jobId, attempt, NewToken());
+        await context.ExecuteMutationAsync(async (fenced, token) =>
+        {
+            var updated = await fenced.MigrationExportArtifactRecords
+                .Where(a => a.JobId == jobId
+                    && a.State == (int)MigrationExportArtifactState.Available)
+                .ExecuteUpdateAsync(
+                    set => set
+                        .SetProperty(a => a.State, (int)MigrationExportArtifactState.Preparing)
+                        .SetProperty(a => a.StorageKey, tempKey)
+                        .SetProperty(a => a.Version, a => a.Version + 1),
+                    token);
+            if (updated != 1)
+            {
+                throw MigrationJobStoreException.LeaseConflict(jobId);
+            }
+        }, ct);
+
+        return await db.MigrationExportArtifactRecords.AsNoTracking()
+            .SingleAsync(a => a.JobId == jobId, ct);
+    }
+
+    private string RequireTempKey(MigrationExportArtifactRecord? artifact)
+    {
+        if (artifact is null || !paths.TryResolveStorageKey(artifact.StorageKey, out _))
+        {
+            throw MigrationTransferException.Error(MigrationTransferException.InvalidState);
+        }
+
+        return artifact.StorageKey;
+    }
+
+    private async Task GenerateAsync(
+        MigrationPhaseContext context,
+        Guid jobId,
+        string tempKey,
+        CancellationToken ct)
+    {
+        paths.EnsureDirectoryExists(paths.GetExportDirectory(jobId));
+        var tempPath = paths.VerifyPathWithinRoot(paths.ResolveStorageKey(tempKey));
+
+        // An incomplete temp from a crashed generation is never trusted.
+        if (File.Exists(tempPath))
+        {
+            paths.EnsureFileIsNotReparsePoint(tempPath);
+            File.Delete(tempPath);
+        }
+
         try
         {
             await using var file = paths.CreateNewVerifiedFile(
                 tempPath,
-                HashBufferBytes,
+                BufferBytes,
                 FileOptions.Asynchronous | FileOptions.SequentialScan);
             var sink = new StreamPortableArchiveSink(file, leaveOpen: true);
             await using (sink)
@@ -155,25 +246,15 @@ internal sealed class ExportArtifactPhaseHandler(
     private async Task ValidateAndPublishAsync(
         MigrationPhaseContext context,
         Guid jobId,
+        int attempt,
         MigrationExportArtifactRecord? artifact,
         CancellationToken ct)
     {
-        var directory = paths.EnsureDirectoryExists(paths.GetExportDirectory(jobId));
-        var tempPath = paths.VerifyPathWithinRoot(Path.Combine(directory, TransferPathResolver.ExportTempFileName));
-        var finalPath = paths.VerifyPathWithinRoot(Path.Combine(directory, TransferPathResolver.ExportFileName));
-
-        // A rename that landed before the artifact row was updated is not
-        // published: it has no Available row and no hash/size identity. Remove
-        // it and rebuild rather than ever serving an unverified file.
-        if (File.Exists(finalPath))
-        {
-            paths.EnsureFileIsNotReparsePoint(finalPath);
-            File.Delete(finalPath);
-        }
-
+        var tempKey = RequireTempKey(artifact);
+        var tempPath = paths.VerifyPathWithinRoot(paths.ResolveStorageKey(tempKey));
         if (!File.Exists(tempPath))
         {
-            await GenerateAsync(context, jobId, ct);
+            await GenerateAsync(context, jobId, tempKey, ct);
         }
 
         var (length, sha256) = await PortableStagingFilePrimitives
@@ -193,35 +274,55 @@ internal sealed class ExportArtifactPhaseHandler(
             await reader.DisposeAsync();
         }
 
-        if (File.Exists(finalPath))
-        {
-            File.Delete(finalPath);
-        }
+        var finalKey = paths.GetExportAttemptArtifactStorageKey(jobId, attempt, NewToken());
+        var finalPath = paths.VerifyPathWithinRoot(paths.ResolveStorageKey(finalKey));
+        paths.EnsureParentDirectoryExists(finalPath);
+
+        // Ownership fence immediately before the filesystem mutation: a lease
+        // lost while hashing stops here, before any shared name is touched.
+        services.GetService<MigrationArchivePhaseTestHooks>()?.BeforeExportRename?.Invoke();
+        await context.CheckpointAsync(ct);
 
         paths.EnsureFileIsNotReparsePoint(finalPath);
-        File.Move(tempPath, finalPath, overwrite: true);
+        File.Move(tempPath, finalPath, overwrite: false);
         paths.VerifyPathWithinRoot(finalPath);
 
+        // Test seam: production leaves this null. It lets a test force the
+        // fenced publication below to lose its lease after the rename and prove
+        // the worker deletes its own file.
+        services.GetService<MigrationArchivePhaseTestHooks>()?.AfterExportRename?.Invoke(finalPath);
+
         var now = clock.GetUtcNow();
-        await context.ExecuteMutationAsync(async (fenced, token) =>
+        try
         {
-            var updated = await fenced.MigrationExportArtifactRecords
-                .Where(a => a.JobId == jobId
-                    && a.State == (int)MigrationExportArtifactState.Preparing)
-                .ExecuteUpdateAsync(
-                    set => set
-                        .SetProperty(a => a.State, (int)MigrationExportArtifactState.Available)
-                        .SetProperty(a => a.SizeBytes, length)
-                        .SetProperty(a => a.Sha256, sha256)
-                        .SetProperty(a => a.AvailableAtUtc, now.UtcDateTime)
-                        .SetProperty(a => a.ExpiresAtUtc, now.Add(options.Value.ExportRetentionTtl).UtcDateTime)
-                        .SetProperty(a => a.Version, a => a.Version + 1),
-                    token);
-            if (updated != 1)
+            await context.ExecuteMutationAsync(async (fenced, token) =>
             {
-                throw MigrationJobStoreException.LeaseConflict(jobId);
-            }
-        }, ct);
+                var updated = await fenced.MigrationExportArtifactRecords
+                    .Where(a => a.JobId == jobId
+                        && a.State == (int)MigrationExportArtifactState.Preparing)
+                    .ExecuteUpdateAsync(
+                        set => set
+                            .SetProperty(a => a.State, (int)MigrationExportArtifactState.Available)
+                            .SetProperty(a => a.StorageKey, finalKey)
+                            .SetProperty(a => a.SizeBytes, length)
+                            .SetProperty(a => a.Sha256, sha256)
+                            .SetProperty(a => a.AvailableAtUtc, now.UtcDateTime)
+                            .SetProperty(a => a.ExpiresAtUtc, now.Add(options.Value.ExportRetentionTtl).UtcDateTime)
+                            .SetProperty(a => a.Version, a => a.Version + 1),
+                        token);
+                if (updated != 1)
+                {
+                    throw MigrationJobStoreException.LeaseConflict(jobId);
+                }
+            }, ct);
+        }
+        catch (MigrationJobStoreException)
+        {
+            // The row was not published under this key: remove this attempt's
+            // own file and stop. No successor-owned bytes are ever touched.
+            TryDelete(finalPath);
+            throw;
+        }
 
         await context.ReportProgressAsync(
             new MigrationProgress(
@@ -234,7 +335,7 @@ internal sealed class ExportArtifactPhaseHandler(
         await ReleaseReservationAsync(jobId, ct);
     }
 
-    private bool IsAvailableOnDisk(Guid jobId, MigrationExportArtifactRecord? artifact)
+    private bool IsAvailableOnDisk(MigrationExportArtifactRecord? artifact)
     {
         if (artifact is not { State: (int)MigrationExportArtifactState.Available })
         {
@@ -272,16 +373,8 @@ internal sealed class ExportArtifactPhaseHandler(
         }
     }
 
-    private void DiscardTemp(Guid jobId)
-    {
-        var directory = paths.EnsureDirectoryExists(paths.GetExportDirectory(jobId));
-        var tempPath = paths.VerifyPathWithinRoot(Path.Combine(directory, TransferPathResolver.ExportTempFileName));
-        if (File.Exists(tempPath))
-        {
-            paths.EnsureFileIsNotReparsePoint(tempPath);
-            File.Delete(tempPath);
-        }
-    }
+    private static string NewToken() =>
+        Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32));
 
     private void TryDelete(string path)
     {

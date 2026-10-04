@@ -18,6 +18,7 @@ internal sealed class SelfHostedActivationPaths
     internal string LiveDatabase { get; }
     internal string LiveMedia { get; }
     internal string JournalRoot => Db(".nostos-activation");
+    internal string RecoveryRoot => Db(".nostos-recovery");
 
     internal SelfHostedActivationPaths(string database, string media, IActivationVolume? volume = null)
     {
@@ -38,9 +39,13 @@ internal sealed class SelfHostedActivationPaths
 
     internal string CandidateDatabase(Guid id) => Db($".nostos-activation/{Id(id)}/candidate.db");
     internal string CandidateMedia(Guid id) => Media($".nostos-activation/{Id(id)}/candidate-books");
+    internal string CandidateFinalizationMarker(Guid id) => Db($".nostos-activation/{Id(id)}/candidate.finalized.json");
     internal string PreviousDatabase(Guid id) => Db($".nostos-recovery/{Id(id)}/nostos.db");
     internal string PreviousMedia(Guid id) => Media($".nostos-recovery/{Id(id)}/books");
     internal string RecoveryManifest(Guid id) => Db($".nostos-recovery/{Id(id)}/recovery.json");
+    internal string RecoveryDeletionMarker(Guid id) => Db($".nostos-recovery/{Id(id)}/recovery.deleting");
+    internal string TemporaryRecoveryManifest(Guid id, Guid writeId) =>
+        Db($".nostos-recovery/{Id(id)}/recovery.{Id(writeId)}.tmp");
     internal string Journal(Guid id) => Db($".nostos-activation/{Id(id)}/activation.json");
     internal string ResolvedJournal(Guid id) => Db($".nostos-activation/{Id(id)}/activation.resolved.json");
     internal string TemporaryJournal(Guid id, Guid writeId) => Db($".nostos-activation/{Id(id)}/activation.{Id(writeId)}.tmp");
@@ -49,7 +54,7 @@ internal sealed class SelfHostedActivationPaths
     {
         _database.VerifyPathWithinRoot(LiveDatabase);
         _media.VerifyPathWithinRoot(LiveMedia);
-        foreach (var path in new[] { CandidateDatabase(id), PreviousDatabase(id), Journal(id), ResolvedJournal(id), RecoveryManifest(id) })
+        foreach (var path in new[] { CandidateDatabase(id), PreviousDatabase(id), Journal(id), ResolvedJournal(id), RecoveryManifest(id), CandidateFinalizationMarker(id) })
             _database.VerifyPathWithinRoot(path);
         foreach (var path in new[] { CandidateMedia(id), PreviousMedia(id) }) _media.VerifyPathWithinRoot(path);
         foreach (var (live, other) in new[] { (LiveDatabase, CandidateDatabase(id)), (LiveDatabase, PreviousDatabase(id)),
@@ -66,6 +71,13 @@ internal sealed class SelfHostedActivationPaths
         EnsureParent(PreviousDatabase(id), _database);
         EnsureParent(PreviousMedia(id), _media);
         Verify(id); // detect mount changes after creation
+    }
+
+    /// <summary>Ensures only the recovery directory exists on the database volume.</summary>
+    internal void PrepareRecovery(Guid id)
+    {
+        EnsureParent(RecoveryManifest(id), _database);
+        Verify(id);
     }
 
     internal void VerifyDatabasePath(string path) => _database.VerifyPathWithinRoot(path);

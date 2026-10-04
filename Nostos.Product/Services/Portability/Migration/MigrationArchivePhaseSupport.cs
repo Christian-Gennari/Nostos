@@ -4,6 +4,19 @@ using System.Threading.Channels;
 namespace Nostos.Backend.Services.Portability.Migration;
 
 /// <summary>
+/// Test-only seams for the archive phase handlers. Production never registers
+/// this type, so every lookup returns null and no callback runs.
+/// </summary>
+internal sealed class MigrationArchivePhaseTestHooks
+{
+    /// <summary>Runs after the export hash/pre-validation and before the pre-rename lease fence.</summary>
+    internal Action? BeforeExportRename { get; set; }
+
+    /// <summary>Runs after the export rename and before the fenced row update.</summary>
+    internal Action<string>? AfterExportRename { get; set; }
+}
+
+/// <summary>
 /// Bridges #678 archive-engine progress into durable migration-job progress for
 /// one long phase. Reports are pumped off the engine's synchronous callback:
 /// the pump never blocks the archive loop on a database round-trip, keeps only

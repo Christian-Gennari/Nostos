@@ -1,4 +1,6 @@
 using Nostos.Backend.Configuration;
+using Nostos.Backend.Services.Portability;
+using Nostos.Backend.Services.Portability.Migration;
 
 namespace Nostos.Backend.Endpoints;
 
@@ -14,16 +16,28 @@ public static class DeploymentCapabilitiesEndpoints
 {
     public const string Route = "/api/runtime/capabilities";
 
+    /// <summary>
+    /// Single switch for the frontend-facing library-migration capability. It is
+    /// deliberately decoupled from <see cref="IMigrationPhaseAvailability"/>:
+    /// the backend API can create and process jobs while the frontend's real
+    /// transport is still unmerged, and flipping this to <c>true</c> is the one
+    /// change that advertises the feature to the UI. Flip it here when the
+    /// frontend transport ships (orchestrator-owned).
+    /// </summary>
+    public const bool AdvertiseLibraryMigration = false;
+
     public static IEndpointRouteBuilder MapDeploymentCapabilitiesEndpoints(
         this IEndpointRouteBuilder routes)
     {
-        routes.MapGet(Route, (DeploymentDescriptor deployment) =>
-            Results.Ok(ToResponse(deployment)))
+        routes.MapGet(Route, (DeploymentDescriptor deployment, IServiceProvider services) =>
+            Results.Ok(ToResponse(deployment, services.GetService<IMigrationPhaseAvailability>())))
             .AllowAnonymous();
         return routes;
     }
 
-    public static DeploymentCapabilitiesResponse ToResponse(DeploymentDescriptor deployment) =>
+    public static DeploymentCapabilitiesResponse ToResponse(
+        DeploymentDescriptor deployment,
+        IMigrationPhaseAvailability? migrationAvailability = null) =>
         new(
             DeploymentMode: deployment.Mode.ToString(),
             RequiresAuthentication: deployment.Capabilities.RequiresAuthentication,
@@ -36,7 +50,14 @@ public static class DeploymentCapabilitiesEndpoints
             SupportsEreaderAccess: deployment.Capabilities.SupportsEreaderAccess,
             UsageMeteringAvailable: deployment.Capabilities.UsageMeteringAvailable,
             AccountManagementUrl: deployment.Capabilities.AccountManagementUrl,
-            FeedbackUrl: deployment.Capabilities.FeedbackUrl);
+            FeedbackUrl: deployment.Capabilities.FeedbackUrl,
+            // Library migration is advertised only when the operator/frontend
+            // transport is ready (see AdvertiseLibraryMigration). Phase
+            // availability still gates preflight and job creation server-side;
+            // it is intentionally not what the UI reads. Safe activation (#681)
+            // is not available yet on any host.
+            SupportsLibraryMigration: AdvertiseLibraryMigration,
+            SupportsSafeActivation: false);
 }
 
 public sealed record DeploymentCapabilitiesResponse(
@@ -51,4 +72,6 @@ public sealed record DeploymentCapabilitiesResponse(
     bool SupportsEreaderAccess,
     bool UsageMeteringAvailable,
     string? AccountManagementUrl,
-    string? FeedbackUrl);
+    string? FeedbackUrl,
+    bool SupportsLibraryMigration = false,
+    bool SupportsSafeActivation = false);

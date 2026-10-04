@@ -204,6 +204,52 @@ public sealed class TransferPathResolver
         BuildStorageKey(ExportsDirectoryName, FormatScopeId(jobId, nameof(jobId)), ExportFileName);
 
     /// <summary>
+    /// Attempt-unique temp path for one export generation run. The attempt
+    /// number and an opaque random token make the name unguessable and never
+    /// reusable across runs, so no generation can overwrite another's bytes.
+    /// </summary>
+    public string GetExportAttemptTempPath(Guid jobId, int attempt, string token) =>
+        Path.Combine(GetExportDirectory(jobId), ExportAttemptFileName(attempt, token) + ".tmp");
+
+    /// <summary>Attempt-unique final artifact path published for one run.</summary>
+    public string GetExportAttemptArtifactPath(Guid jobId, int attempt, string token) =>
+        Path.Combine(GetExportDirectory(jobId), ExportAttemptFileName(attempt, token));
+
+    /// <summary>Persisted relative key of an attempt-unique final artifact.</summary>
+    public string GetExportAttemptArtifactStorageKey(Guid jobId, int attempt, string token) =>
+        BuildStorageKey(
+            ExportsDirectoryName,
+            FormatScopeId(jobId, nameof(jobId)),
+            ExportAttemptFileName(attempt, token));
+
+    /// <summary>Persisted relative key of an attempt-unique temp artifact.</summary>
+    public string GetExportAttemptTempStorageKey(Guid jobId, int attempt, string token) =>
+        BuildStorageKey(
+            ExportsDirectoryName,
+            FormatScopeId(jobId, nameof(jobId)),
+            ExportAttemptFileName(attempt, token) + ".tmp");
+
+    private static string ExportAttemptFileName(int attempt, string token)
+    {
+        if (attempt < 1)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(attempt),
+                attempt,
+                "An export attempt number starts at one.");
+        }
+
+        if (!IsValidOpaqueToken(token))
+        {
+            throw new TransferPathException(
+                TransferPathException.InvalidPath,
+                "An export attempt token must be a non-empty lowercase hexadecimal token.");
+        }
+
+        return $"{ExportFileName}.{attempt:D4}.{token}";
+    }
+
+    /// <summary>
     /// Resolves a persisted relative storage key to an absolute path strictly
     /// under the root, rejecting malformed keys and symlinked components. The
     /// string overload exists only because <c>StorageKey</c> columns persist

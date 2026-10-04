@@ -124,6 +124,12 @@
         </div>
 
         <div class="card-body">
+          @if (supportsLibraryMigration()) {
+            <p class="label-desc card-purpose" data-testid="backup-purpose">
+              Backups are for recovering this SelfHosted installation. They are not portable
+              library exports.
+            </p>
+          }
           <!-- Enable Toggle -->
           <div class="setting-row">
             <div class="setting-label">
@@ -332,7 +338,29 @@
       </section>
       }
 
-      @if (supportsCloudPortableExport()) {
+      @if (supportsLibraryMigration()) {
+      <!-- Portable library transfer is deliberately separate from the local
+           operational Backup above: these archives move a library between
+           Nostos installations, they do not recover this installation. -->
+      <section
+        class="settings-card"
+        data-testid="library-transfer-card"
+        aria-labelledby="library-transfer-heading"
+      >
+        <div class="card-header">
+          <div class="card-header-copy">
+            <h2 id="library-transfer-heading">Move your library</h2>
+          </div>
+        </div>
+
+        <div class="card-body">
+          <p class="label-desc card-purpose" data-testid="library-transfer-purpose">
+            Portable library archives are for moving your library between Nostos installations.
+          </p>
+          <app-library-transfer-host (importCompleted)="onLibraryTransferCompleted()" />
+        </div>
+      </section>
+      } @else if (supportsCloudPortableExport()) {
       <section class="settings-card" data-testid="cloud-portable-export-card">
         <div class="card-header">
           <div class="card-header-copy">

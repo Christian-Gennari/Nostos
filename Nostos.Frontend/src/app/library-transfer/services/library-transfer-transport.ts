@@ -3,8 +3,8 @@
  *
  * Components and the coordinator only ever talk to this interface. The
  * SelfHosted HTTP adapter (#680 slice B7) and the private Cloud adapter
- * implement the same contract; the in-repo mock below implements it today so
- * B1-B3 can be built and tested before #679's endpoints merge.
+ * implement the same contract. Tests provide the in-memory mock under
+ * `testing/`; no production module imports it.
  */
 
 import { InjectionToken } from '@angular/core';
@@ -22,7 +22,6 @@ import {
   MigrationUploadSessionResponseDto,
 } from '../models/migration-http.dtos';
 import { LibraryTransferFailure, TransferCancelledError } from '../models/library-transfer.models';
-import { MockLibraryTransferTransport } from './mock-library-transfer-transport.service';
 
 /** Transport-level error carrying the stable #679 error code. */
 export class MigrationTransportError extends Error {
@@ -137,14 +136,25 @@ export interface LibraryTransferTransport {
 export type PortableTransferClient = LibraryTransferTransport;
 
 /**
- * DI seam. Until #679's HTTP endpoints and #681's activation land, the default
- * provider is the in-memory mock; slice B7 replaces this factory with the real
- * SelfHosted adapter and B8 extends the interface with activation.
+ * Production DI default until slice B7 wires the real #679 adapter. It fails
+ * closed instead of falling back to an in-memory mock, so a deployment that
+ * advertises `supportsLibraryMigration` before B7 lands reports a clear
+ * configuration error rather than a fake transfer UI. Tests provide their own
+ * transport through `LIBRARY_TRANSFER_TRANSPORT`.
+ */
+export function createLibraryTransferTransport(): LibraryTransferTransport {
+  throw new Error('library transfer transport is not configured');
+}
+
+/**
+ * DI seam. The real SelfHosted adapter arrives in slice B7 and the private
+ * Cloud adapter in B9; until then the production provider above throws and
+ * tests inject a fake.
  */
 export const LIBRARY_TRANSFER_TRANSPORT = new InjectionToken<LibraryTransferTransport>(
   'NOSTOS_LIBRARY_TRANSFER_TRANSPORT',
   {
     providedIn: 'root',
-    factory: () => new MockLibraryTransferTransport(),
+    factory: createLibraryTransferTransport,
   },
 );

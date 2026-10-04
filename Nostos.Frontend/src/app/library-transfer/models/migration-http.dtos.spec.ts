@@ -104,8 +104,8 @@ describe('import flow transitions', () => {
         'failed',
         'cancelled',
       ],
-      inspecting: ['preflighting', 'failed'],
-      preflighting: ['ready-to-upload', 'failed'],
+      inspecting: ['preflighting', 'failed', 'cancelled'],
+      preflighting: ['ready-to-upload', 'failed', 'cancelled'],
       'ready-to-upload': ['uploading', 'failed', 'cancelled', 'ready-to-upload'],
       uploading: ['checking', 'failed', 'cancelled', 'ready-to-upload', 'uploading'],
       checking: [
@@ -116,10 +116,19 @@ describe('import flow transitions', () => {
         'failed',
         'cancelled',
       ],
-      'ready-empty': [],
-      'replacement-confirmation': [],
+      'ready-empty': ['idle', 'checking', 'completed', 'cancelled', 'failed'],
+      'replacement-confirmation': ['idle', 'checking', 'completed', 'cancelled', 'failed'],
       completed: ['idle'],
-      failed: ['inspecting', 'uploading', 'checking', 'ready-to-upload'],
+      failed: [
+        'inspecting',
+        'uploading',
+        'checking',
+        'ready-to-upload',
+        'ready-empty',
+        'replacement-confirmation',
+        'completed',
+        'cancelled',
+      ],
       cancelled: ['idle', 'inspecting'],
     };
 

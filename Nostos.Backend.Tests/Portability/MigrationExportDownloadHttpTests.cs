@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text.Json;
 using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Nostos.Backend.Data;
 using Nostos.Backend.Data.Models;
@@ -211,6 +212,69 @@ public sealed class MigrationExportDownloadHttpTests
         prefix.Should().Equal(content[..prefix.Length]);
     }
 
+    [Fact]
+    public async Task Head_returns_the_file_headers_without_a_body()
+    {
+        using var factory = new LibraryEndpointFactory();
+        factory.UseKestrel(0);
+        using var host = factory;
+        var content = DeterministicBytes(256 * 1024);
+        var jobId = await SeedArtifactAsync(host, content);
+        using var client = host.CreateClient();
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Head,
+            $"/api/portability/migration/jobs/{jobId}/export-download");
+        using var response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentLength.Should().Be(content.LongLength);
+        response.Headers.AcceptRanges.Should().ContainSingle("bytes");
+        response.Content.Headers.ContentDisposition?.DispositionType.Should().Be("attachment");
+        (await response.Content.ReadAsByteArrayAsync()).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task An_in_flight_download_survives_the_sweep_deleting_the_artifact()
+    {
+        using var factory = new LibraryEndpointFactory();
+        factory.UseKestrel(0);
+        using var host = factory;
+        var content = DeterministicBytes(2 * 1024 * 1024 + 7);
+        var jobId = await SeedArtifactAsync(host, content);
+        using var client = host.CreateClient();
+
+        using var response = await client.GetAsync(
+            $"/api/portability/migration/jobs/{jobId}/export-download",
+            HttpCompletionOption.ResponseHeadersRead);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        await using var stream = await response.Content.ReadAsStreamAsync();
+        var prefix = new byte[4096];
+        (await stream.ReadAtLeastAsync(prefix, prefix.Length)).Should().Be(prefix.Length);
+
+        // Expire the artifact and run the sweep while the response is open. The
+        // endpoint serves from the opened handle, so the rest of the body still
+        // arrives even though the row is now expired/deleted.
+        await using (var scope = host.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<NostosDbContext>();
+            var clock = scope.ServiceProvider.GetRequiredService<TimeProvider>();
+            await db.MigrationExportArtifactRecords
+                .Where(a => a.JobId == jobId)
+                .ExecuteUpdateAsync(s => s.SetProperty(
+                    a => a.ExpiresAtUtc,
+                    clock.GetUtcNow().AddHours(-1).UtcDateTime));
+            var cleanup = scope.ServiceProvider
+                .GetRequiredService<Nostos.Backend.Services.Portability.Migration.MigrationTransferCleanup>();
+            await cleanup.SweepAsync(default);
+        }
+
+        using var rest = new MemoryStream();
+        await stream.CopyToAsync(rest);
+        rest.ToArray().Should().Equal(content[prefix.Length..]);
+    }
+
     private static byte[] DeterministicBytes(int count)
     {
         var bytes = new byte[count];
@@ -233,13 +297,14 @@ public sealed class MigrationExportDownloadHttpTests
 
         db.MigrationJobRecords.Add(NewJob(jobId, state, MigrationDirection.Export, now));
         paths.EnsureDirectoryExists(paths.GetExportDirectory(jobId));
-        var artifactPath = paths.GetExportArtifactPath(jobId);
+        var storageKey = paths.GetExportAttemptArtifactStorageKey(jobId, 1, new string('d', 64));
+        var artifactPath = paths.ResolveStorageKey(storageKey);
         await File.WriteAllBytesAsync(artifactPath, content);
         db.MigrationExportArtifactRecords.Add(new MigrationExportArtifactRecord
         {
             JobId = jobId,
             State = (int)MigrationExportArtifactState.Available,
-            StorageKey = paths.GetExportArtifactStorageKey(jobId),
+            StorageKey = storageKey,
             FileName = "library.nostos",
             ContentType = PortabilityEndpoints.ArchiveContentType,
             SizeBytes = content.LongLength,

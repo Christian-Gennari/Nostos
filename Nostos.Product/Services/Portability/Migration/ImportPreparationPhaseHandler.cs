@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Nostos.Backend.Data;
 using Nostos.Backend.Data.Models;
+using Nostos.Backend.Services.Library;
 using Nostos.Backend.Services.Portability.Transfers;
 
 namespace Nostos.Backend.Services.Portability.Migration;
@@ -12,30 +13,36 @@ namespace Nostos.Backend.Services.Portability.Migration;
 /// the only path to <see cref="MigrationJobState.Completed"/>.
 ///
 /// <para><b>Phase protocol.</b> The handler runs only in <c>Validating</c> for
-/// an import whose session is <c>Complete</c>. It (1) adopts an already
-/// committed staging area for this attempt when one rebuilds and matches the
-/// persisted descriptor, (2) otherwise deletes any recorded staging area and
-/// re-runs <see cref="PortableArchiveReader.PrepareImportAsync"/> entirely
-/// outside any database transaction, and (3) persists the committed descriptor
-/// through a short fenced mutation. The reader owns staging-area creation; a
-/// durable decorator records the identifier the moment it exists and publishes
-/// the committed metadata when the reader commits, so a restart always knows
-/// which single area to delete before preparing again.</para>
+/// an import whose session is <c>Complete</c>. It (1) adopts the recorded
+/// staging area only when it rebuilds and matches the descriptor persisted on
+/// the job (a committed area with no job descriptor is treated as stale and
+/// tombstoned), (2) otherwise deletes any recorded area and re-runs
+/// <see cref="PortableArchiveReader.PrepareImportAsync"/> entirely outside any
+/// database transaction, and (3) persists the committed descriptor through a
+/// short fenced mutation. The reader owns staging-area creation; a durable
+/// decorator records the identifier the moment it exists, checks the pinned
+/// lease between media items and before the staging commit, and publishes the
+/// committed metadata when the reader commits.</para>
 ///
-/// <para><b>Durability.</b> <c>PreparedStagingId</c> records the attempt's
-/// staging area from the moment it exists; <c>PreparedImportMetadataJson</c> is
-/// the commit marker written last. Staging capacity is the reservation claimed
-/// when the upload session was admitted: this phase charges nothing twice and
-/// releases that reservation once the prepared import is durable, because the
-/// retained upload and staging bytes are already visible to physical free-space
-/// accounting. Failures release reservations and delete staging through the
-/// worker's terminal cleanup.</para>
+/// <para><b>Ownership.</b> A successor that does not adopt the recorded area
+/// deletes it (durable tombstone), after which the stale owner's in-flight
+/// staging writes fail typed at the provider. A stale owner can therefore never
+/// commit into or corrupt the area the successor uses, and a staging commit it
+/// did complete is never publishable because the job-side mutation is fenced.</para>
+///
+/// <para><b>Reservation.</b> Staging capacity is the reservation claimed when
+/// the upload session was admitted; this phase charges nothing twice. At commit
+/// the reservation stays claimed: materialized bytes are raised to cover the
+/// retained upload plus staged payload/media, while the unmaterialized
+/// remainder (candidate build and mandatory recovery headroom) remains reserved
+/// for #681. Terminal cleanup releases it on cancel, failure, or expiry.</para>
 /// </summary>
 internal sealed class ImportPreparationPhaseHandler(
     NostosDbContext db,
     IPortableImportStaging staging,
     ITransferStorageCapacity capacity,
     TransferPathResolver paths,
+    ILibraryDestinationRevisionProvider revisionProvider,
     TimeProvider clock) : IMigrationPhaseHandler
 {
     public bool CanHandle(MigrationDirection direction, MigrationJobState state) =>
@@ -66,25 +73,30 @@ internal sealed class ImportPreparationPhaseHandler(
             throw MigrationTransferException.Error(MigrationTransferException.InvalidState);
         }
 
+        // The revision was captured when the job was accepted. Only an older
+        // job with no recorded value captures one here; preparation never
+        // silently substitutes a later revision.
         var revision = string.IsNullOrEmpty(record.DestinationRevision)
-            ? await ReadDestinationRevisionAsync(ct)
+            ? await revisionProvider.GetCurrentAsync(ct)
             : record.DestinationRevision;
 
         if (record.PreparedStagingId is { } existingId)
         {
-            if (await TryAdoptCommittedAsync(context, record, existingId, revision, ct))
+            if (await TryAdoptCommittedAsync(record, existingId, session.TotalBytes, ct))
             {
                 return;
             }
 
-            // Uncommitted, corrupt, or mismatched: discard before the reader
-            // creates a replacement, so one job never owns two staging areas.
+            // Uncommitted, stale-committed, corrupt, or mismatched: tombstone it
+            // before the reader creates a replacement, so one job never owns two
+            // staging areas and a stale owner's in-flight writes fail typed.
             await staging.DeleteAsync(new PortableStagingId(existingId), CancellationToken.None);
         }
 
         var reservation = await RequireReservationAsync(record, session.TotalBytes, ct);
         var durable = new DurableImportStaging(
             staging,
+            checkpoint: context.CheckpointAsync,
             onCreate: id => PublishAsync(context, id.Value, preparedJson: null, revision, ct),
             onCommit: metadata => PublishAsync(
                 context,
@@ -98,37 +110,37 @@ internal sealed class ImportPreparationPhaseHandler(
         await using var progress = new MigrationArchiveProgressPump(
             context,
             MigrationProgressPhase.Validating);
-        _ = await reader.PrepareImportAsync(source, durable, progress, ct);
+        var prepared = await reader.PrepareImportAsync(source, durable, progress, ct);
 
         // The prepared import is durable (staging commit and job descriptor).
-        // Retained bytes now govern physical free space directly, so release the
-        // upload reservation instead of double-counting it against admission.
-        try
-        {
-            await capacity.ReleaseAsync(reservation.Id, ct);
-        }
-        catch (Exception exception) when (
-            exception is TransferReservationException or DbUpdateException)
-        {
-            // Terminal cleanup retries the release; it must never turn a
-            // successfully prepared import into a failure.
-        }
+        // Keep the reservation claimed: materialized bytes now cover the
+        // retained upload plus staged bytes, and the unmaterialized remainder is
+        // the activation/recovery headroom #681 consumes and releases.
+        await EnsureMaterializedAsync(
+            reservation.Id,
+            session.TotalBytes,
+            prepared.Metadata,
+            ct);
     }
 
     /// <summary>
     /// An already committed staging area is adopted only when the provider
     /// rebuilds it and its durable identity matches the descriptor persisted on
-    /// the job. A rebuild with no persisted descriptor happens when a crash
-    /// landed after the staging commit but before the job update; the provider's
-    /// own commit marker and payload verification are the durable authority.
+    /// the job. A committed area with no persisted descriptor is stale (a
+    /// worker whose lease was lost, or a crash before publication): it is
+    /// tombstoned by the caller and re-prepared from the sealed upload.
     /// </summary>
     private async Task<bool> TryAdoptCommittedAsync(
-        MigrationPhaseContext context,
         MigrationJobRecord record,
         Guid existingId,
-        string revision,
+        long archiveBytes,
         CancellationToken ct)
     {
+        if (record.PreparedImportMetadataJson is not { } json)
+        {
+            return false;
+        }
+
         IPreparedPortableImport rebuilt;
         try
         {
@@ -139,19 +151,38 @@ internal sealed class ImportPreparationPhaseHandler(
             return false;
         }
 
-        if (record.PreparedImportMetadataJson is { } json)
+        var persisted = MigrationPreparedMetadata.Deserialize(json);
+        if (persisted is null || !MigrationPreparedMetadata.Matches(rebuilt.Metadata, persisted))
         {
-            var persisted = MigrationPreparedMetadata.Deserialize(json);
-            return persisted is not null && MigrationPreparedMetadata.Matches(rebuilt.Metadata, persisted);
+            return false;
         }
 
-        await PublishAsync(
-            context,
-            existingId,
-            MigrationPreparedMetadata.Serialize(rebuilt.Metadata),
-            revision,
-            ct);
+        if (record.ReservationId is { } reservationId)
+        {
+            try
+            {
+                await EnsureMaterializedAsync(reservationId, archiveBytes, rebuilt.Metadata, ct);
+            }
+            catch (TransferReservationException)
+            {
+                // A pre-retention job may have no live claim; adoption still
+                // succeeds and #681 handles a missing top-up claim.
+            }
+        }
+
         return true;
+    }
+
+    private async Task EnsureMaterializedAsync(
+        Guid reservationId,
+        long archiveBytes,
+        PreparedPortableImportMetadata metadata,
+        CancellationToken ct)
+    {
+        // The manifest allowance is already inside the per-job overhead the
+        // reservation carries; only the durable metadata totals are counted.
+        var target = checked(archiveBytes + metadata.MediaBytes + metadata.DataBytes);
+        await capacity.EnsureMaterializedAtLeastAsync(reservationId, target, ct);
     }
 
     private async Task<MigrationStorageReservationRecord> RequireReservationAsync(
@@ -173,14 +204,6 @@ internal sealed class ImportPreparationPhaseHandler(
         }
 
         return reservation;
-    }
-
-    private async Task<string> ReadDestinationRevisionAsync(CancellationToken ct)
-    {
-        var revision = await db.LibraryStates.AsNoTracking()
-            .Select(s => s.StateVersion)
-            .SingleOrDefaultAsync(ct);
-        return string.IsNullOrEmpty(revision) ? "0" : revision;
     }
 
     // Short fenced publication only: no file IO runs inside this callback.
@@ -215,13 +238,15 @@ internal sealed class ImportPreparationPhaseHandler(
 /// <summary>
 /// Durable staging decorator for import preparation. The archive reader creates
 /// its own staging area; this decorator persists the identifier the moment it
-/// exists (an uncommitted marker a restart can delete) and publishes the
-/// committed descriptor immediately after the staging commit. Both callbacks
-/// are short lease-fenced database mutations; all archive and file IO remains
-/// outside every transaction.
+/// exists (an uncommitted marker a restart can delete), checks the pinned lease
+/// before opening each media item and before the staging commit, and publishes
+/// the committed descriptor immediately after the staging commit. Every
+/// callback is a short lease-fenced database mutation; all archive and file IO
+/// remains outside every transaction.
 /// </summary>
 internal sealed class DurableImportStaging(
     IPortableImportStaging inner,
+    Func<CancellationToken, Task> checkpoint,
     Func<PortableStagingId, Task> onCreate,
     Func<PreparedPortableImportMetadata, Task> onCommit) : IPortableImportStaging
 {
@@ -232,20 +257,26 @@ internal sealed class DurableImportStaging(
         return stagingId;
     }
 
+    public async Task<PortableStagingWrite> OpenMediaWriteAsync(
+        PortableStagingId stagingId,
+        PortableArchiveMediaEntry descriptor,
+        CancellationToken cancellationToken = default)
+    {
+        // One fenced lease check per media item: a stale owner stops before it
+        // can write into an area a successor may already own or delete.
+        await checkpoint(cancellationToken);
+        return await inner.OpenMediaWriteAsync(stagingId, descriptor, cancellationToken);
+    }
+
     public async Task CommitPreparedImportAsync(
         PortableStagingId stagingId,
         PreparedPortableImportMetadata metadata,
         CancellationToken cancellationToken = default)
     {
+        await checkpoint(cancellationToken);
         await inner.CommitPreparedImportAsync(stagingId, metadata, cancellationToken);
         await onCommit(metadata);
     }
-
-    public Task<PortableStagingWrite> OpenMediaWriteAsync(
-        PortableStagingId stagingId,
-        PortableArchiveMediaEntry descriptor,
-        CancellationToken cancellationToken = default) =>
-        inner.OpenMediaWriteAsync(stagingId, descriptor, cancellationToken);
 
     public Task CompleteMediaAsync(
         PortableStagingId stagingId,

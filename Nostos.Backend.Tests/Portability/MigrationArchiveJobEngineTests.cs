@@ -3,9 +3,12 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Nostos.Backend.Data;
 using Nostos.Backend.Data.Models;
+using Nostos.Backend.Endpoints;
 using Nostos.Backend.Services;
+using Nostos.Backend.Services.Library;
 using Nostos.Backend.Services.Portability;
 using Nostos.Backend.Services.Portability.Migration;
 using Nostos.Backend.Services.Portability.Transfers;
@@ -16,9 +19,10 @@ namespace Nostos.Backend.Tests.Portability;
 /// <summary>
 /// Slice 9/10 integration: the real archive engine wired into the durable job
 /// worker over a real SQLite file and a real transfer root. Import preparation
-/// stops at ReadyToActivate with a committed durable staging area; export
-/// publishes exactly one verified artifact. Every restart, cancellation,
-/// maintenance, and lease-loss path is exercised against durable state.
+/// stops at ReadyToActivate with a committed durable staging area and keeps the
+/// activation headroom reserved; export publishes exactly one attempt-unique
+/// verified artifact. Restart, cancellation, maintenance, stale-owner, and
+/// lease-loss paths are exercised against durable state and real files.
 /// </summary>
 public sealed class MigrationArchiveJobEngineTests
 {
@@ -58,8 +62,6 @@ public sealed class MigrationArchiveJobEngineTests
 
         // The live library was not mutated by preparation.
         (await h.WithDb(db => db.Works.CountAsync())).Should().Be(1);
-        (await h.WithDb(db => db.MigrationStorageReservations.SingleAsync(r => r.ClaimedJobId == jobId)))
-            .ReleasedAtUtc.Should().NotBeNull();
     }
 
     [Fact]
@@ -109,7 +111,7 @@ public sealed class MigrationArchiveJobEngineTests
     }
 
     [Fact]
-    public async Task Restart_after_staging_commit_before_job_update_adopts_the_committed_descriptor()
+    public async Task Restart_after_staging_commit_before_job_update_tombstones_the_stale_area_and_reprepares()
     {
         await using var h = new MigrationEngineHarness();
         await h.InitializeAsync();
@@ -118,7 +120,10 @@ public sealed class MigrationArchiveJobEngineTests
         var session = await h.WithDb(db => db.MigrationSessionRecords.SingleAsync(s => s.JobId == jobId));
 
         // Run the real reader to a committed staging area, then simulate the
-        // crash between the staging commit and the fenced job update.
+        // crash between the staging commit and the fenced job update. The area
+        // is not referenced by a durable descriptor, so it is stale: the
+        // successor tombstones it rather than adopting bytes a stale owner
+        // could still delete.
         var committedProvider = new FilePortableImportStaging(h.Paths);
         var reader = new PortableArchiveReader(timeProvider: h.Clock);
         await using var source = new FilePortableArchiveSource(
@@ -132,9 +137,9 @@ public sealed class MigrationArchiveJobEngineTests
         var job = await h.WithJobs(s => s.GetAsync(jobId, default));
         job!.State.Should().Be(MigrationJobState.ReadyToActivate);
         var record = await h.WithDb(db => db.MigrationJobRecords.SingleAsync(j => j.Id == jobId));
-        record.PreparedStagingId.Should().Be(prepared.Metadata.StagingId.Value);
-        var metadata = MigrationPreparedMetadata.Deserialize(record.PreparedImportMetadataJson!);
-        metadata!.PreparedAtUtc.Should().Be(prepared.Metadata.PreparedAtUtc);
+        record.PreparedStagingId.Should().NotBe(prepared.Metadata.StagingId.Value);
+        record.PreparedImportMetadataJson.Should().NotBeNullOrEmpty();
+        Directory.Exists(h.Paths.GetStagingDirectory(prepared.Metadata.StagingId.Value)).Should().BeFalse();
         MigrationArchiveJobTestSupport.CountStagingAreas(h).Should().Be(1);
     }
 
@@ -285,6 +290,212 @@ public sealed class MigrationArchiveJobEngineTests
         MigrationArchiveJobTestSupport.CountStagingAreas(h).Should().Be(1);
     }
 
+    [Fact]
+    public async Task Stale_import_owner_cannot_write_into_or_commit_the_successors_area()
+    {
+        var block = new WriteBarrier();
+        await using var h = new MigrationEngineHarness();
+        ConfigureBarrierStaging(h, block);
+        await h.InitializeAsync();
+        var archive = await MigrationArchiveJobTestSupport.ExportRepresentativeAsync();
+        var jobId = await UploadCompleteImportAsync(h, archive);
+
+        var staleRun = Task.Run(() => h.Worker.RunCycleAsync(default));
+        await block.Entered.Task.WaitAsync(TimeSpan.FromSeconds(20));
+        var staleStagingId = (await h.WithDb(db =>
+            db.MigrationJobRecords.SingleAsync(j => j.Id == jobId))).PreparedStagingId;
+        staleStagingId.Should().NotBeNull();
+
+        // Cross-process takeover: the successor uses its own slots/registry, so
+        // it does not cancel the stale owner in-process.
+        h.Clock.Advance(MigrationJobWorker.LeaseDuration + TimeSpan.FromTicks(1));
+        var successor = NewWorker(h);
+        await successor.RunCycleAsync(default);
+        successor.Dispose();
+
+        var committed = await h.WithDb(db => db.MigrationJobRecords.SingleAsync(j => j.Id == jobId));
+        committed.State.Should().Be((int)MigrationJobState.ReadyToActivate);
+        committed.PreparedStagingId.Should().NotBe(staleStagingId!.Value);
+        Directory.Exists(h.Paths.GetStagingDirectory(staleStagingId.Value)).Should().BeFalse(
+            "the successor tombstones the stale attempt's area");
+
+        block.Release.TrySetResult();
+        await staleRun.WaitAsync(TimeSpan.FromSeconds(20));
+
+        // The stale owner could not write into the successor's area or publish.
+        var after = await h.WithDb(db => db.MigrationJobRecords.SingleAsync(j => j.Id == jobId));
+        after.State.Should().Be((int)MigrationJobState.ReadyToActivate);
+        after.PreparedStagingId.Should().Be(committed.PreparedStagingId);
+        after.PreparedImportMetadataJson.Should().Be(committed.PreparedImportMetadataJson);
+        MigrationArchiveJobTestSupport.CountStagingAreas(h).Should().Be(1);
+
+        await using var scope = h.Provider.CreateAsyncScope();
+        var staging = scope.ServiceProvider.GetRequiredService<IPortableImportStaging>();
+        var rebuilt = await staging.RebuildPreparedImportAsync(
+            new PortableStagingId(after.PreparedStagingId!.Value));
+        rebuilt.Metadata.MediaFiles.Should().Be(5);
+    }
+
+    [Fact]
+    public async Task In_flight_media_stream_rejects_writes_after_the_area_is_tombstoned()
+    {
+        await using var h = new MigrationEngineHarness();
+        await h.InitializeAsync();
+        var provider = new FilePortableImportStaging(h.Paths);
+        var stagingId = await provider.CreateAsync();
+        var bytes = new byte[16];
+        var descriptor = new PortableArchiveMediaEntry(
+            Guid.NewGuid(),
+            "book",
+            "media/books/book.epub",
+            "book.epub",
+            "application/epub+zip",
+            bytes.Length,
+            MigrationEngineHarness.Hash(bytes));
+        var write = await provider.OpenMediaWriteAsync(stagingId, descriptor);
+
+        await provider.DeleteAsync(stagingId);
+
+        var act = async () => await write.Stream.WriteAsync(bytes);
+        (await act.Should().ThrowAsync<PortableStagingException>())
+            .Which.IsNotFound.Should().BeTrue(
+                "a stale in-flight media stream must fail typed once its area is tombstoned");
+    }
+
+    [Fact]
+    public async Task Engine_registration_reports_both_phases_available()
+    {
+        await using var h = new MigrationEngineHarness();
+        await h.InitializeAsync();
+        var availability = h.Provider.GetRequiredService<IMigrationPhaseAvailability>();
+        availability.IsAvailable(MigrationDirection.Import).Should().BeTrue();
+        availability.IsAvailable(MigrationDirection.Export).Should().BeTrue();
+    }
+
+    // ------------------------------------------------------- revision baseline
+
+    [Fact]
+    public async Task Job_creation_captures_the_destination_revision_and_preparation_never_overwrites_it()
+    {
+        await using var h = new MigrationEngineHarness();
+        await h.InitializeAsync();
+        await SeedLiveWorkAsync(h);
+        await h.WithDb(async db =>
+        {
+            db.LibraryStates.Add(new LibraryState { StateVersion = "1" });
+            await db.SaveChangesAsync();
+        });
+        var archive = await MigrationArchiveJobTestSupport.ExportRepresentativeAsync();
+
+        var jobId = await CreateImportJobThroughServiceAsync(h, "revision-key", archive.LongLength);
+        var creationRevision = (await h.WithDb(db =>
+            db.MigrationJobRecords.SingleAsync(j => j.Id == jobId))).DestinationRevision;
+        creationRevision.Should().NotBeNullOrEmpty();
+
+        // A portable mutation between creation and preparation must not be
+        // folded into the baseline: activation's recheck must detect it.
+        await h.WithDb(db => db.LibraryStates
+            .Where(s => s.Id == LibraryState.WellKnownId)
+            .ExecuteUpdateAsync(s => s.SetProperty(x => x.StateVersion, "9999")));
+        await using (var scope = h.Provider.CreateAsyncScope())
+        {
+            var provider = scope.ServiceProvider.GetRequiredService<ILibraryDestinationRevisionProvider>();
+            (await provider.GetCurrentAsync(default)).Should().NotBe(creationRevision);
+        }
+
+        var session = await h.StartAsync(jobId, archive);
+        await h.Upload(jobId, session, archive);
+        await h.Complete(jobId, session);
+        await h.Worker.RunCycleAsync(default);
+
+        var record = await h.WithDb(db => db.MigrationJobRecords.SingleAsync(j => j.Id == jobId));
+        record.State.Should().Be((int)MigrationJobState.ReadyToActivate);
+        record.DestinationRevision.Should().Be(creationRevision);
+    }
+
+    [Fact]
+    public void Destination_revision_is_read_only_through_the_provider()
+    {
+        var directory = FindMigrationSourceDirectory();
+        var offenders = Directory.EnumerateFiles(directory, "*.cs", SearchOption.AllDirectories)
+            .Where(path => File.ReadAllText(path).Contains("StateVersion", StringComparison.Ordinal))
+            .Select(Path.GetFileName)
+            .ToList();
+
+        offenders.Should().BeEmpty(
+            "the revision must be read through ILibraryDestinationRevisionProvider, not directly");
+    }
+
+    // -------------------------------------------------- reservation retention
+
+    [Fact]
+    public async Task Ready_to_activate_keeps_the_activation_headroom_reserved()
+    {
+        await using var h = new MigrationEngineHarness();
+        await h.InitializeAsync();
+        var archive = await MigrationArchiveJobTestSupport.ExportRepresentativeAsync();
+        var jobId = await UploadCompleteImportAsync(h, archive);
+        await h.Worker.RunCycleAsync(default);
+
+        var session = await h.WithDb(db => db.MigrationSessionRecords.SingleAsync(s => s.JobId == jobId));
+        var record = await h.WithDb(db => db.MigrationJobRecords.SingleAsync(j => j.Id == jobId));
+        var metadata = MigrationPreparedMetadata.Deserialize(record.PreparedImportMetadataJson!)!;
+        var reservation = await h.WithDb(db =>
+            db.MigrationStorageReservations.SingleAsync(r => r.ClaimedJobId == jobId));
+
+        reservation.ReleasedAtUtc.Should().BeNull("activation still needs the recovery headroom");
+        var expectedMaterialized = Math.Min(
+            reservation.ReservedBytes,
+            session.TotalBytes + metadata.MediaBytes + metadata.DataBytes);
+        reservation.MaterializedBytes.Should().Be(expectedMaterialized);
+        (reservation.ReservedBytes - reservation.MaterializedBytes).Should().BeGreaterThan(0);
+
+        // A competing admission that exceeds free space minus the remaining
+        // reservation is rejected while the ready job holds its headroom.
+        var outstanding = reservation.ReservedBytes - reservation.MaterializedBytes;
+        h.Volume.AvailableFreeSpaceBytes = outstanding + 1;
+        await using var scope = h.Provider.CreateAsyncScope();
+        var capacity = scope.ServiceProvider.GetRequiredService<ITransferStorageCapacity>();
+        var admitted = await capacity.TryReserveAsync(2, MigrationSessionPurpose.Import, TimeSpan.FromMinutes(15), default);
+        admitted.IsAdmitted.Should().BeFalse(
+            "the unmaterialized recovery headroom stays reserved until activation");
+    }
+
+    [Fact]
+    public async Task Cancel_of_a_ready_import_releases_the_reservation_and_staging()
+    {
+        await using var h = new MigrationEngineHarness();
+        await h.InitializeAsync();
+        var archive = await MigrationArchiveJobTestSupport.ExportRepresentativeAsync();
+        var jobId = await UploadCompleteImportAsync(h, archive);
+        await h.Worker.RunCycleAsync(default);
+
+        await h.WithUploads(s => s.CancelAsync(jobId, new(), default));
+
+        (await h.WithJobs(s => s.GetAsync(jobId, default)))!.State.Should().Be(MigrationJobState.Cancelled);
+        (await h.WithDb(db => db.MigrationStorageReservations.SingleAsync(r => r.ClaimedJobId == jobId)))
+            .ReleasedAtUtc.Should().NotBeNull();
+        MigrationArchiveJobTestSupport.CountStagingAreas(h).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Expiry_of_a_ready_import_releases_the_reservation_and_staging()
+    {
+        await using var h = new MigrationEngineHarness();
+        await h.InitializeAsync();
+        var archive = await MigrationArchiveJobTestSupport.ExportRepresentativeAsync();
+        var jobId = await UploadCompleteImportAsync(h, archive);
+        await h.Worker.RunCycleAsync(default);
+
+        h.Clock.Advance(TimeSpan.FromDays(1) + TimeSpan.FromTicks(1));
+        await h.Sweep();
+
+        (await h.WithJobs(s => s.GetAsync(jobId, default)))!.State.Should().Be(MigrationJobState.Expired);
+        (await h.WithDb(db => db.MigrationStorageReservations.SingleAsync(r => r.ClaimedJobId == jobId)))
+            .ReleasedAtUtc.Should().NotBeNull();
+        MigrationArchiveJobTestSupport.CountStagingAreas(h).Should().Be(0);
+    }
+
     // ---------------------------------------------------------------- exports
 
     [Fact]
@@ -307,11 +518,11 @@ public sealed class MigrationArchiveJobEngineTests
         var artifact = await h.WithDb(db => db.MigrationExportArtifactRecords.SingleAsync(a => a.JobId == jobId));
         artifact.State.Should().Be((int)MigrationExportArtifactState.Available);
         artifact.ExpiresAtUtc.Should().BeAfter(h.Clock.GetUtcNow().UtcDateTime);
-        var artifactPath = h.Paths.GetExportArtifactPath(jobId);
+        var artifactPath = h.Paths.ResolveStorageKey(artifact.StorageKey);
         File.Exists(artifactPath).Should().BeTrue();
         new FileInfo(artifactPath).Length.Should().Be(artifact.SizeBytes);
         MigrationArchiveJobTestSupport.HashFile(artifactPath).Should().Be(artifact.Sha256);
-        File.Exists(h.Paths.GetExportTempPath(jobId)).Should().BeFalse();
+        MigrationArchiveJobTestSupport.CountExportFiles(h, jobId).Should().Be(1);
 
         await using (var stream = File.OpenRead(artifactPath))
         {
@@ -340,15 +551,16 @@ public sealed class MigrationArchiveJobEngineTests
         var token = await h.WithJobs(s => s.TryAcquireLeaseAsync(jobId, MigrationJobWorker.LeaseDuration, default));
         await h.WithJobs(s => s.TransitionAsync(jobId, MigrationJobState.Preparing, token!, default));
         await h.WithJobs(s => s.TransitionAsync(jobId, MigrationJobState.Transferring, token!, default));
+        var tempKey = h.Paths.GetExportAttemptTempStorageKey(jobId, 1, new string('a', 64));
         h.Paths.EnsureDirectoryExists(h.Paths.GetExportDirectory(jobId));
-        await File.WriteAllTextAsync(h.Paths.GetExportTempPath(jobId), "partial");
+        await File.WriteAllTextAsync(h.Paths.ResolveStorageKey(tempKey), "partial");
         await h.WithDb(async db =>
         {
             db.MigrationExportArtifactRecords.Add(new MigrationExportArtifactRecord
             {
                 JobId = jobId,
                 State = (int)MigrationExportArtifactState.Preparing,
-                StorageKey = h.Paths.GetExportArtifactStorageKey(jobId),
+                StorageKey = tempKey,
                 FileName = ExportArtifactPhaseHandler.ArtifactFileName,
                 ContentType = "application/vnd.nostos.portable+zip",
                 CreatedAtUtc = h.Clock.GetUtcNow().UtcDateTime,
@@ -364,10 +576,10 @@ public sealed class MigrationArchiveJobEngineTests
         job!.State.Should().Be(MigrationJobState.Completed);
         var artifact = await h.WithDb(db => db.MigrationExportArtifactRecords.SingleAsync(a => a.JobId == jobId));
         artifact.State.Should().Be((int)MigrationExportArtifactState.Available);
+        artifact.StorageKey.Should().NotBe(tempKey);
         artifact.SizeBytes.Should().BeGreaterThan(16);
-        File.Exists(h.Paths.GetExportTempPath(jobId)).Should().BeFalse();
-        Directory.EnumerateFiles(h.Paths.GetExportDirectory(jobId)).Should().ContainSingle(
-            path => Path.GetFileName(path) == TransferPathResolver.ExportFileName);
+        File.Exists(h.Paths.ResolveStorageKey(artifact.StorageKey)).Should().BeTrue();
+        MigrationArchiveJobTestSupport.CountExportFiles(h, jobId).Should().Be(1);
     }
 
     [Fact]
@@ -381,7 +593,8 @@ public sealed class MigrationArchiveJobEngineTests
         var jobId = await RunnableExportAsync(h);
         await h.Worker.RunCycleAsync(default);
 
-        var artifactPath = h.Paths.GetExportArtifactPath(jobId);
+        var artifact = await h.WithDb(db => db.MigrationExportArtifactRecords.SingleAsync(a => a.JobId == jobId));
+        var artifactPath = h.Paths.ResolveStorageKey(artifact.StorageKey);
         var stamp = File.GetLastWriteTimeUtc(artifactPath);
         await h.WithDb(db => db.MigrationJobRecords.Where(j => j.Id == jobId)
             .ExecuteUpdateAsync(s => s.SetProperty(j => j.State, (int)MigrationJobState.Validating)
@@ -391,7 +604,65 @@ public sealed class MigrationArchiveJobEngineTests
 
         (await h.WithJobs(s => s.GetAsync(jobId, default)))!.State.Should().Be(MigrationJobState.Completed);
         File.GetLastWriteTimeUtc(artifactPath).Should().Be(stamp);
-        File.Exists(h.Paths.GetExportTempPath(jobId)).Should().BeFalse();
+        MigrationArchiveJobTestSupport.CountExportFiles(h, jobId).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Available_row_with_missing_file_is_reset_and_regenerated()
+    {
+        await using var h = new MigrationEngineHarness();
+        var storage = MigrationArchiveJobTestSupport.CreateFileStorage(h.DirectoryPath);
+        ConfigureExportLibrary(h, storage);
+        await h.InitializeAsync();
+        await MigrationArchiveJobTestSupport.SeedRepresentativeAsync(h, storage);
+        var jobId = await RunnableExportAsync(h);
+        await h.Worker.RunCycleAsync(default);
+
+        var before = await h.WithDb(db => db.MigrationExportArtifactRecords.SingleAsync(a => a.JobId == jobId));
+        File.Delete(h.Paths.ResolveStorageKey(before.StorageKey));
+        await h.WithDb(db => db.MigrationJobRecords.Where(j => j.Id == jobId)
+            .ExecuteUpdateAsync(s => s.SetProperty(j => j.State, (int)MigrationJobState.Validating)
+                .SetProperty(j => j.Version, j => j.Version + 1)));
+
+        await h.Worker.RunCycleAsync(default);
+
+        (await h.WithJobs(s => s.GetAsync(jobId, default)))!.State.Should().Be(MigrationJobState.Completed);
+        var after = await h.WithDb(db => db.MigrationExportArtifactRecords.SingleAsync(a => a.JobId == jobId));
+        after.State.Should().Be((int)MigrationExportArtifactState.Available);
+        after.StorageKey.Should().NotBe(before.StorageKey);
+        MigrationArchiveJobTestSupport.HashFile(h.Paths.ResolveStorageKey(after.StorageKey))
+            .Should().Be(after.Sha256);
+    }
+
+    [Fact]
+    public async Task Cleanup_sweep_removes_unreferenced_export_files_but_keeps_the_artifact()
+    {
+        await using var h = new MigrationEngineHarness();
+        var storage = MigrationArchiveJobTestSupport.CreateFileStorage(h.DirectoryPath);
+        ConfigureExportLibrary(h, storage);
+        await h.InitializeAsync();
+        await MigrationArchiveJobTestSupport.SeedRepresentativeAsync(h, storage);
+        var jobId = await RunnableExportAsync(h);
+        await h.Worker.RunCycleAsync(default);
+
+        var artifact = await h.WithDb(db => db.MigrationExportArtifactRecords.SingleAsync(a => a.JobId == jobId));
+        var artifactPath = h.Paths.ResolveStorageKey(artifact.StorageKey);
+        var directory = h.Paths.GetExportDirectory(jobId);
+        var staleTemp = h.Paths.ResolveStorageKey(
+            h.Paths.GetExportAttemptTempStorageKey(jobId, 1, new string('b', 64)));
+        var staleFinal = h.Paths.ResolveStorageKey(
+            h.Paths.GetExportAttemptArtifactStorageKey(jobId, 1, new string('c', 64)));
+        await File.WriteAllTextAsync(staleTemp, "stale");
+        await File.WriteAllTextAsync(staleFinal, "stale");
+
+        await h.Sweep();
+
+        File.Exists(artifactPath).Should().BeTrue();
+        File.Exists(staleTemp).Should().BeFalse();
+        File.Exists(staleFinal).Should().BeFalse();
+        Directory.EnumerateFiles(directory).Should().ContainSingle();
+        (await h.WithDb(db => db.MigrationExportArtifactRecords.SingleAsync(a => a.JobId == jobId)))
+            .State.Should().Be((int)MigrationExportArtifactState.Available);
     }
 
     [Fact]
@@ -425,6 +696,109 @@ public sealed class MigrationArchiveJobEngineTests
     }
 
     [Fact]
+    public async Task Stale_export_owner_cannot_rename_after_a_successor_publishes()
+    {
+        await using var h = new MigrationEngineHarness();
+        IBookAssetStorage storage = MigrationArchiveJobTestSupport.CreateFileStorage(h.DirectoryPath);
+        var hooks = new MigrationArchivePhaseTestHooks();
+        h.Configure = services =>
+        {
+            services.RemoveAll<IBookAssetStorage>();
+            services.AddSingleton(storage);
+            services.AddSingleton(hooks);
+        };
+        await h.InitializeAsync();
+        await MigrationArchiveJobTestSupport.SeedRepresentativeAsync(h, storage);
+        var jobId = await RunnableExportAsync(h);
+
+        var entered = Signal();
+        var release = Signal();
+        var blocked = 0;
+        hooks.BeforeExportRename = () =>
+        {
+            if (Interlocked.Exchange(ref blocked, 1) != 0)
+            {
+                return;
+            }
+
+            entered.TrySetResult();
+            release.Task.Wait(TimeSpan.FromSeconds(30));
+        };
+
+        var staleRun = Task.Run(() => h.Worker.RunCycleAsync(default));
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(20));
+
+        h.Clock.Advance(MigrationJobWorker.LeaseDuration + TimeSpan.FromTicks(1));
+        var successor = NewWorker(h);
+        await successor.RunCycleAsync(default);
+        successor.Dispose();
+
+        var published = await h.WithDb(db => db.MigrationExportArtifactRecords.SingleAsync(a => a.JobId == jobId));
+        published.State.Should().Be((int)MigrationExportArtifactState.Available);
+        var publishedPath = h.Paths.ResolveStorageKey(published.StorageKey);
+        var publishedHash = MigrationArchiveJobTestSupport.HashFile(publishedPath);
+
+        release.TrySetResult();
+        await staleRun.WaitAsync(TimeSpan.FromSeconds(20));
+
+        // The stale owner never renamed: the successor's artifact is untouched.
+        File.Exists(publishedPath).Should().BeTrue();
+        MigrationArchiveJobTestSupport.HashFile(publishedPath).Should().Be(publishedHash);
+        (await h.WithDb(db => db.MigrationExportArtifactRecords.SingleAsync(a => a.JobId == jobId)))
+            .StorageKey.Should().Be(published.StorageKey);
+        (await h.WithJobs(s => s.GetAsync(jobId, default)))!.State.Should().Be(MigrationJobState.Completed);
+
+        await h.Sweep();
+        MigrationArchiveJobTestSupport.CountExportFiles(h, jobId).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Fenced_publication_failure_removes_the_attempts_own_file()
+    {
+        await using var h = new MigrationEngineHarness();
+        IBookAssetStorage storage = MigrationArchiveJobTestSupport.CreateFileStorage(h.DirectoryPath);
+        var hooks = new MigrationArchivePhaseTestHooks();
+        h.Configure = services =>
+        {
+            services.RemoveAll<IBookAssetStorage>();
+            services.AddSingleton(storage);
+            services.AddSingleton(hooks);
+        };
+        await h.InitializeAsync();
+        await MigrationArchiveJobTestSupport.SeedRepresentativeAsync(h, storage);
+        var jobId = await RunnableExportAsync(h);
+
+        string? renamedPath = null;
+        var swapped = 0;
+        hooks.AfterExportRename = path =>
+        {
+            if (Interlocked.Exchange(ref swapped, 1) != 0)
+            {
+                return;
+            }
+
+            renamedPath = path;
+            // Lose the lease between the rename and the fenced row update.
+            h.WithDb(db => db.MigrationJobRecords.Where(j => j.Id == jobId)
+                    .ExecuteUpdateAsync(s => s.SetProperty(j => j.MigrationLeaseToken, "successor")))
+                .GetAwaiter().GetResult();
+        };
+
+        await h.Worker.RunCycleAsync(default);
+
+        renamedPath.Should().NotBeNull();
+        File.Exists(renamedPath!).Should().BeFalse("the worker deletes its own unpublished file");
+        (await h.WithDb(db => db.MigrationExportArtifactRecords.SingleAsync(a => a.JobId == jobId)))
+            .State.Should().Be((int)MigrationExportArtifactState.Preparing);
+        (await h.WithJobs(s => s.GetAsync(jobId, default)))!.State.Should().Be(MigrationJobState.Validating);
+
+        h.Clock.Advance(MigrationJobWorker.LeaseDuration + TimeSpan.FromTicks(1));
+        await h.Worker.RunCycleAsync(default);
+        (await h.WithJobs(s => s.GetAsync(jobId, default)))!.State.Should().Be(MigrationJobState.Completed);
+        MigrationArchiveJobTestSupport.CountExportFiles(h, jobId).Should().Be(1);
+    }
+
+    [Fact]
     public async Task Export_cancellation_mid_generation_leaves_no_artifact_or_temp()
     {
         var blocking = new BlockingArchiveService();
@@ -442,8 +816,7 @@ public sealed class MigrationArchiveJobEngineTests
 
         var job = await h.WithJobs(s => s.GetAsync(jobId, default));
         job!.State.Should().Be(MigrationJobState.Cancelled);
-        File.Exists(h.Paths.GetExportArtifactPath(jobId)).Should().BeFalse();
-        File.Exists(h.Paths.GetExportTempPath(jobId)).Should().BeFalse();
+        MigrationArchiveJobTestSupport.CountExportFiles(h, jobId).Should().Be(0);
         var artifact = await h.WithDb(db => db.MigrationExportArtifactRecords.SingleAsync(a => a.JobId == jobId));
         artifact.State.Should().NotBe((int)MigrationExportArtifactState.Available);
         (await h.WithDb(db => db.MigrationStorageReservations.SingleAsync(r => r.ClaimedJobId == jobId)))
@@ -460,15 +833,40 @@ public sealed class MigrationArchiveJobEngineTests
         await MigrationArchiveJobTestSupport.SeedRepresentativeAsync(h, storage);
         var jobId = await RunnableExportAsync(h);
         await h.Worker.RunCycleAsync(default);
-        File.Exists(h.Paths.GetExportArtifactPath(jobId)).Should().BeTrue();
+        var artifactPath = h.Paths.ResolveStorageKey(
+            (await h.WithDb(db => db.MigrationExportArtifactRecords.SingleAsync(a => a.JobId == jobId))).StorageKey);
+        File.Exists(artifactPath).Should().BeTrue();
 
         h.Clock.Advance(h.Settings.ExportRetentionTtl + TimeSpan.FromTicks(1));
         await h.Sweep();
 
-        File.Exists(h.Paths.GetExportArtifactPath(jobId)).Should().BeFalse();
+        File.Exists(artifactPath).Should().BeFalse();
         (await h.WithDb(db => db.MigrationExportArtifactRecords.SingleAsync(a => a.JobId == jobId)))
             .State.Should().Be((int)MigrationExportArtifactState.Deleted);
         (await h.WithJobs(s => s.GetAsync(jobId, default)))!.State.Should().Be(MigrationJobState.Completed);
+    }
+
+    [Fact]
+    public async Task Export_charges_the_capture_lease_to_the_operation_budget()
+    {
+        await using var h = new MigrationEngineHarness();
+        var storage = MigrationArchiveJobTestSupport.CreateFileStorage(h.DirectoryPath);
+        ConfigureExportLibrary(h, storage);
+        await h.InitializeAsync();
+        await MigrationArchiveJobTestSupport.SeedRepresentativeAsync(h, storage);
+
+        var budget = new PortableArchiveBufferBudget(PortableArchiveLimits.MaxExplicitBufferBytes);
+        await using (var scope = h.Provider.CreateAsyncScope())
+        {
+            var service = (PortableArchiveService)scope.ServiceProvider.GetRequiredService<IPortableArchiveService>();
+            await using var sink = new StreamPortableArchiveSink(Stream.Null, leaveOpen: true);
+            await service.ExportAsync(sink, progress: null, budget, default);
+        }
+
+        budget.HighWaterBytes.Should().BeGreaterThanOrEqualTo(
+            PortableArchiveLimits.MaxSynchronousZipWriteBufferBytes,
+            "the synchronous capture lease must be charged to the caller's operation budget");
+        budget.CurrentBytes.Should().Be(0);
     }
 
     [Fact]
@@ -506,29 +904,6 @@ public sealed class MigrationArchiveJobEngineTests
         await h.Sweep();
     }
 
-    [Fact]
-    public async Task Export_charges_the_capture_lease_to_the_operation_budget()
-    {
-        await using var h = new MigrationEngineHarness();
-        var storage = MigrationArchiveJobTestSupport.CreateFileStorage(h.DirectoryPath);
-        ConfigureExportLibrary(h, storage);
-        await h.InitializeAsync();
-        await MigrationArchiveJobTestSupport.SeedRepresentativeAsync(h, storage);
-
-        var budget = new PortableArchiveBufferBudget(PortableArchiveLimits.MaxExplicitBufferBytes);
-        await using (var scope = h.Provider.CreateAsyncScope())
-        {
-            var service = (PortableArchiveService)scope.ServiceProvider.GetRequiredService<IPortableArchiveService>();
-            await using var sink = new StreamPortableArchiveSink(Stream.Null, leaveOpen: true);
-            await service.ExportAsync(sink, progress: null, budget, default);
-        }
-
-        budget.HighWaterBytes.Should().BeGreaterThanOrEqualTo(
-            PortableArchiveLimits.MaxSynchronousZipWriteBufferBytes,
-            "the synchronous capture lease must be charged to the caller's operation budget");
-        budget.CurrentBytes.Should().Be(0);
-    }
-
     // ---------------------------------------------------------------- helpers
 
     private static async Task<Guid> UploadCompleteImportAsync(MigrationEngineHarness h, byte[] archive)
@@ -538,6 +913,29 @@ public sealed class MigrationArchiveJobEngineTests
         await h.Upload(jobId, session, archive);
         await h.Complete(jobId, session);
         return jobId;
+    }
+
+    private static async Task<Guid> CreateImportJobThroughServiceAsync(
+        MigrationEngineHarness h,
+        string key,
+        long archiveBytes)
+    {
+        await using var scope = h.Provider.CreateAsyncScope();
+        var capacity = scope.ServiceProvider.GetRequiredService<ITransferStorageCapacity>();
+        var required = TransferCapacityMath.CalculateHostPeakReservationBytes(
+            archiveBytes,
+            MigrationContractLimits.MinChunkBytes,
+            h.Settings);
+        var reservation = (await capacity.TryReserveAsync(
+            required,
+            MigrationSessionPurpose.Import,
+            TimeSpan.FromMinutes(15),
+            default)).ReservationId!.Value;
+        var service = scope.ServiceProvider.GetRequiredService<SelfHostedMigrationJobService>();
+        var result = await service.CreateAsync(
+            new MigrationCreateJobRequest(MigrationDirection.Import, key, reservation),
+            default);
+        return result.Resource!.Id;
     }
 
     private static async Task<Guid> RunnableExportAsync(MigrationEngineHarness h)
@@ -614,12 +1012,45 @@ public sealed class MigrationArchiveJobEngineTests
         };
     }
 
+    private static MigrationJobWorker NewWorker(MigrationEngineHarness h) =>
+        new(
+            h.Provider.GetRequiredService<IServiceScopeFactory>(),
+            h.Clock,
+            new MigrationJobCancellationRegistry(),
+            new MigrationProcessingSlots(Options.Create(h.Settings)),
+            NullLogger<MigrationJobWorker>.Instance,
+            h.Provider.GetRequiredService<IMigrationMaintenanceGate>());
+
+    private static string FindMigrationSourceDirectory()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null)
+        {
+            var candidate = Path.Combine(
+                directory.FullName,
+                "Nostos.Product",
+                "Services",
+                "Portability",
+                "Migration");
+            if (Directory.Exists(candidate))
+            {
+                return candidate;
+            }
+
+            directory = directory.Parent;
+        }
+
+        throw new InvalidOperationException("Could not locate the migration source directory.");
+    }
+
+    private static TaskCompletionSource Signal() => new(TaskCreationOptions.RunContinuationsAsynchronously);
+
     /// <summary>Blocks the first staged write until the test releases it.</summary>
     private sealed class WriteBarrier
     {
         private int _waited;
-        internal TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        internal TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal TaskCompletionSource Entered { get; } = Signal();
+        internal TaskCompletionSource Release { get; } = Signal();
 
         internal void WaitOnce()
         {
@@ -638,8 +1069,8 @@ public sealed class MigrationArchiveJobEngineTests
     {
         internal IPortableArchiveService? Inner { get; set; }
 
-        internal TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        internal TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal TaskCompletionSource Entered { get; } = Signal();
+        internal TaskCompletionSource Release { get; } = Signal();
 
         public Task<PortableExportResult> ExportAsync(Stream destination, CancellationToken cancellationToken = default) =>
             Inner!.ExportAsync(destination, cancellationToken);
