@@ -10,7 +10,7 @@ import {
   LIBRARY_TRANSFER_TRANSPORT,
   MigrationTransportError,
 } from '../library-transfer/services/library-transfer-transport';
-import { MockLibraryTransferTransport } from '../library-transfer/services/mock-library-transfer-transport.service';
+import { MockLibraryTransferTransport } from '../library-transfer/testing/mock-library-transfer-transport';
 import { HASH_WORKER_FACTORY } from '../library-transfer/services/hash/hash-worker';
 import {
   TRANSFER_RESUME_STORAGE_KEY,

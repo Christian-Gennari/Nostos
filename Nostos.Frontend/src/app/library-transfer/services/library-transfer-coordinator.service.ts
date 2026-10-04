@@ -405,6 +405,13 @@ export class LibraryTransferCoordinator {
     } catch (error) {
       if (token !== this.operationToken) return;
       const failure = this.failureFromError(error);
+      if (failure.code === 'migration_activation_busy') {
+        // Exclusive maintenance answers 503 for GET /jobs/{id} while the
+        // durable job keeps processing. That is "still working", not a
+        // failure: reschedule using the server's Retry-After delay.
+        this.schedulePoll(failure.retryAfterMs);
+        return;
+      }
       if (failure.code === 'migration_not_found') this.resumeStore.clear();
       this.failWith(failure, jobId);
     }
@@ -609,14 +616,16 @@ export class LibraryTransferCoordinator {
     return kind === 'checking' || kind === 'ready-to-upload';
   }
 
-  private schedulePoll(): void {
+  private schedulePoll(delayMs?: number): void {
     this.stopPolling();
     this.pollTimer = setTimeout(() => {
       this.pollTimer = null;
       void this.refreshStatus().then(() => {
-        if (this.isPollingState()) this.schedulePoll();
+        // A busy-status retry may have scheduled the next poll with the
+        // server's Retry-After; never overwrite that delay.
+        if (this.isPollingState() && this.pollTimer === null) this.schedulePoll();
       });
-    }, this.pollIntervalMs);
+    }, delayMs ?? this.pollIntervalMs);
   }
 
   private stopPolling(): void {

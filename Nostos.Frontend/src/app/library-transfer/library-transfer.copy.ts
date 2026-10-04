@@ -145,6 +145,42 @@ export function libraryTransferFailureCopy(failure: LibraryTransferFailure): Tra
         ),
         action: 'retry',
       };
+    case 'migration_storage_contended':
+      return {
+        title: 'The host is busy',
+        message: 'Another transfer is using this host’s storage. Nostos will retry shortly.',
+        action: 'retry',
+      };
+    case 'migration_activation_busy':
+      return {
+        title: 'The library is finishing another operation',
+        message:
+          'This host is completing a library operation right now. The import is kept and ' +
+          'will continue automatically.',
+        action: 'retry',
+      };
+    case 'migration_lease_conflict':
+      return {
+        title: 'Another process is working on this import',
+        message: 'This import is being processed elsewhere. Nostos will keep checking.',
+        action: 'retry',
+      };
+    case 'migration_import_preparation_unavailable':
+      return {
+        title: 'Import is not available on this host yet',
+        message:
+          'This Nostos host cannot prepare imported libraries yet. Update the server, or ' +
+          'import on a host with library migration enabled.',
+        action: 'none',
+      };
+    case 'migration_export_artifact_unavailable':
+      return {
+        title: 'Export is not available on this host yet',
+        message:
+          'This Nostos host cannot prepare a downloadable export archive yet. Update the ' +
+          'server, or export from a host with library migration enabled.',
+        action: 'none',
+      };
     case 'migration_session_expired':
       return {
         title: 'Import session expired',
@@ -177,20 +213,6 @@ export function libraryTransferFailureCopy(failure: LibraryTransferFailure): Tra
         message:
           'This library changed after the import began, so Nostos did not replace it. ' +
           'Choose your archive again to review the current library.',
-        action: 'start-over',
-      };
-    case 'source_media_missing':
-      return {
-        title: 'A book file is missing',
-        message:
-          'A source file disappeared while the export was being prepared. Check the library ' +
-          'storage, then try the export again.',
-        action: 'start-over',
-      };
-    case 'source_media_changed':
-      return {
-        title: 'A book file changed',
-        message: 'A source file changed while the export was being prepared. Try the export again.',
         action: 'start-over',
       };
     case 'portable_export_failed':

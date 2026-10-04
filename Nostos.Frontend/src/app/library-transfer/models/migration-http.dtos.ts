@@ -37,7 +37,7 @@ export type MigrationPreflightDecision =
 
 export type MigrationDestinationStatus = 'Empty' | 'Populated';
 
-export type MigrationSessionPurpose = 'Import' | 'Export';
+export type MigrationSessionPurpose = 'Import' | 'Export' | 'RecoveryRetention';
 
 export type MigrationSessionState = 'Created' | 'Receiving' | 'Complete' | 'Expired' | 'Cancelled';
 
@@ -60,36 +60,56 @@ export type MigrationRecoveryStatus =
   | 'Failed'
   | 'Expired';
 
-/** Stable machine-readable error codes from the #679 error model. */
-export type MigrationErrorCode =
-  | 'migration_not_found'
-  | 'migration_idempotency_conflict'
-  | 'migration_invalid_state'
-  | 'migration_lease_conflict'
-  | 'migration_reservation_required'
-  | 'migration_file_identity_mismatch'
-  | 'migration_chunk_conflict'
-  | 'migration_chunk_hash_mismatch'
-  | 'migration_chunk_range_invalid'
-  | 'migration_session_expired'
-  | 'migration_storage_exhausted'
-  | 'migration_cannot_cancel'
-  | 'migration_not_retryable'
-  | 'migration_activation_busy'
-  | 'migration_storage_contended'
-  | 'migration_export_not_available'
-  | 'migration_invalid_request'
-  | 'migration_destination_conflict'
-  | 'archive_not_portable'
-  | 'archive_operational_backup'
-  | 'archive_unsupported_version'
-  | 'portable_import_failed'
-  | 'portable_export_failed'
-  | 'source_media_missing'
-  | 'source_media_changed'
-  | 'network_error'
-  | 'request_aborted'
-  | 'unexpected_error';
+/**
+ * Stable machine-readable error codes the server can emit, mirrored from
+ * `MigrationHttpErrors` in
+ * `Nostos.Product/Endpoints/MigrationHttpContracts.cs` plus the
+ * `migration_activation_busy` code the maintenance middleware writes for
+ * migration routes. `unexpected_error` is the server's fail-closed 500 code.
+ */
+export const SERVER_MIGRATION_ERROR_CODES = [
+  'migration_not_found',
+  'migration_idempotency_conflict',
+  'migration_invalid_state',
+  'migration_lease_conflict',
+  'migration_reservation_required',
+  'migration_file_identity_mismatch',
+  'migration_chunk_conflict',
+  'migration_chunk_hash_mismatch',
+  'migration_chunk_range_invalid',
+  'migration_session_expired',
+  'migration_storage_exhausted',
+  'migration_cannot_cancel',
+  'migration_not_retryable',
+  'migration_invalid_request',
+  'migration_storage_contended',
+  'migration_import_preparation_unavailable',
+  'migration_export_artifact_unavailable',
+  'migration_activation_busy',
+  'unexpected_error',
+] as const;
+
+export type ServerMigrationErrorCode = (typeof SERVER_MIGRATION_ERROR_CODES)[number];
+
+/**
+ * Codes produced inside the browser: bounded archive inspection, local mapping
+ * of durable job states, and transport-level failures. The server never emits
+ * these, so they are kept separate from the server table.
+ */
+export const CLIENT_MIGRATION_ERROR_CODES = [
+  'archive_not_portable',
+  'archive_operational_backup',
+  'archive_unsupported_version',
+  'migration_destination_conflict',
+  'portable_import_failed',
+  'portable_export_failed',
+  'network_error',
+  'request_aborted',
+] as const;
+
+export type ClientMigrationErrorCode = (typeof CLIENT_MIGRATION_ERROR_CODES)[number];
+
+export type MigrationErrorCode = ServerMigrationErrorCode | ClientMigrationErrorCode;
 
 /** Mirrors `MigrationContractLimits`; safe as numbers below 2^53 (see file header). */
 export const MIGRATION_LIMITS = {

@@ -5,7 +5,7 @@ import { HASH_WORKER_FACTORY } from './hash/hash-worker';
 import {
   MockLibraryTransferTransport,
   MockLibraryTransferTransportOptions,
-} from './mock-library-transfer-transport.service';
+} from '../testing/mock-library-transfer-transport';
 import {
   LibraryTransferTransport,
   LIBRARY_TRANSFER_TRANSPORT,
@@ -35,6 +35,7 @@ import {
   portableArchiveFixture,
   portableManifest,
 } from '../testing/zip-archive.fixture';
+import { DelegatingTransport } from '../testing/delegating-transport';
 
 const CHUNK = 4 * 1024 * 1024;
 const encoder = new TextEncoder();
@@ -581,6 +582,36 @@ describe('LibraryTransferCoordinator — reattach and resume', () => {
     });
   });
 
+  it('recovers an expired session through the server retry flow', async () => {
+    const harness = setup();
+    const file = await largePortableFile();
+    const totalChunks = chunkCount(file.size, CHUNK);
+    const staged = await stageResumableJob(harness, file, totalChunks - 1);
+
+    const reloaded = reload(harness.mock, harness.mock);
+    await reloaded.coordinator.resume();
+    harness.mock.expireSession(staged.jobId!);
+
+    await reloaded.coordinator.resumeWithFile(file);
+    expect(reloaded.coordinator.state()).toMatchObject({
+      kind: 'failed',
+      failure: { code: 'migration_session_expired' },
+    });
+
+    // Server rule: the expired session is recreated only after the job is
+    // retried (Pending, attempt > 1); the retry discards the expired session
+    // exactly as the server's synchronous cleanup does.
+    await reloaded.coordinator.retry();
+    expect(reloaded.coordinator.state().kind).toBe('ready-to-upload');
+
+    await reloaded.coordinator.resumeWithFile(file);
+    expect(reloaded.coordinator.state().kind).toBe('ready-empty');
+    // The server's retry cleanup discards the expired session, so its receipts
+    // are gone and every chunk is re-uploaded under the recreated session.
+    expect(totalChunks).toBe(3);
+    expect(harness.mock.uploadedChunks).toEqual([0, 1, 2]);
+  });
+
   it('clears a stale record when the job is gone', async () => {
     const harness = setup();
     const file = await portableFile();
@@ -674,6 +705,48 @@ describe('LibraryTransferCoordinator — reattach and resume', () => {
     harness.coordinator.dismiss();
     expect(harness.coordinator.state().kind).toBe('idle');
     expect(harness.store.load()).toBeNull();
+  });
+});
+
+describe('LibraryTransferCoordinator — maintenance status responses', () => {
+  afterEach(reset);
+
+  class MaintenanceTransport extends DelegatingTransport {
+    busyOnce = true;
+
+    override getJob(
+      jobId: string,
+      signal?: AbortSignal,
+    ): Promise<MigrationJobStatusResponseDto> {
+      if (this.busyOnce) {
+        this.busyOnce = false;
+        return Promise.reject(
+          new MigrationTransportError(
+            'migration_activation_busy',
+            503,
+            'The library is in maintenance. Try again later.',
+            { retryAfterMs: 1 },
+          ),
+        );
+      }
+      return super.getJob(jobId, signal);
+    }
+  }
+
+  it('keeps polling after a 503 migration_activation_busy instead of failing', async () => {
+    const mock = new MockLibraryTransferTransport({ chunkSizeBytes: CHUNK, validationPolls: 1 });
+    const transport = new MaintenanceTransport(mock);
+    const harness = configure(mock, transport);
+    harness.coordinator.pollIntervalMs = 1;
+
+    await harness.coordinator.startImport(await portableFile());
+
+    // The exclusive-maintenance 503 for GET /jobs/{id} is "still working", so
+    // the flow remains in checking with a retry scheduled from Retry-After.
+    expect(harness.coordinator.state().kind).toBe('checking');
+
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    expect(harness.coordinator.state()).toMatchObject({ kind: 'ready-empty' });
   });
 });
 

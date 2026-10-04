@@ -9,7 +9,7 @@ import {
   LIBRARY_TRANSFER_TRANSPORT,
   MigrationTransportError,
 } from '../services/library-transfer-transport';
-import { MockLibraryTransferTransport } from '../services/mock-library-transfer-transport.service';
+import { MockLibraryTransferTransport } from '../testing/mock-library-transfer-transport';
 import { DelegatingTransport } from '../testing/delegating-transport';
 
 class ExportTransport extends DelegatingTransport {

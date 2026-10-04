@@ -6,7 +6,7 @@ import {
   DEFAULT_EXPORT_POLL_MS,
   LibraryExportCoordinator,
 } from './library-export-coordinator.service';
-import { MockLibraryTransferTransport } from './mock-library-transfer-transport.service';
+import { MockLibraryTransferTransport } from '../testing/mock-library-transfer-transport';
 
 /** Test control surface over the real mock transport. */
 class ControlledExportTransport extends DelegatingTransport {

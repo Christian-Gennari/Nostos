@@ -4,9 +4,10 @@ import {
   MigrationPreflightRequestDto,
   MigrationSessionRequestDto,
 } from '../models/migration-http.dtos';
-import { MigrationTransportError } from './library-transfer-transport';
-import { MockLibraryTransferTransport } from './mock-library-transfer-transport.service';
-import { sha256ChunkHex } from './hash/chunk-digest';
+import { MigrationTransportError } from '../services/library-transfer-transport';
+import { calculateHostPeakReservationBytes } from '../services/migration-preflight';
+import { MockLibraryTransferTransport } from './mock-library-transfer-transport';
+import { sha256ChunkHex } from '../services/hash/chunk-digest';
 
 const CHUNK = 4 * 1024 * 1024;
 
@@ -243,6 +244,28 @@ describe('MockLibraryTransferTransport — jobs', () => {
     await expectTypedError(mock.cancelJob(third), 'migration_cannot_cancel', 409);
   });
 
+  it('applies the second host-peak capacity admission stage', async () => {
+    const archiveBytes = 1000;
+    const hostPeak = calculateHostPeakReservationBytes(
+      archiveBytes,
+      MIGRATION_LIMITS.defaultChunkBytes,
+    );
+    const borderline = new MockLibraryTransferTransport({
+      availableStorageBytes: archiveBytes + 1,
+    });
+
+    const rejected = await borderline.preflight(preflightRequest(archiveBytes));
+    expect(rejected.evaluation.decision).toBe('RejectedInsufficientStorage');
+    expect(rejected.evaluation.isAllowed).toBe(false);
+    expect(rejected.reservationId).toBeNull();
+    expect(rejected.evaluation.errors.join(' ')).toContain('host peak');
+
+    const fits = new MockLibraryTransferTransport({ availableStorageBytes: hostPeak });
+    const allowed = await fits.preflight(preflightRequest(archiveBytes));
+    expect(allowed.evaluation.decision).toBe('AllowedEmpty');
+    expect(allowed.reservationId).toBeTruthy();
+  });
+
   it('retries only terminal retryable jobs and preserves receipts', async () => {
     const mock = new MockLibraryTransferTransport();
     const jobId = await importJob(mock);
@@ -258,17 +281,43 @@ describe('MockLibraryTransferTransport — jobs', () => {
     expect(retried.session?.sessionId).toBe(session.session.sessionId);
   });
 
-  it('reactivates an expired session on retry while keeping receipts', async () => {
+  it('reactivates an expired session only after the job retry flow', async () => {
     const mock = new MockLibraryTransferTransport();
     const jobId = await importJob(mock);
     const file = fileOfSize(100);
-    await uploadSingleChunk(mock, jobId, file);
+    const request = await verifiedSessionRequest(file, { idempotencyKey: 'expire-session-key' });
+    const session = await mock.createUploadSession(jobId, request);
+    const blob = file.slice(0, file.size);
+    await mock.uploadChunk(
+      jobId,
+      session.session.sessionId,
+      {
+        index: 0,
+        offsetBytes: 0,
+        lengthBytes: file.size,
+        sha256: await sha256ChunkHex(blob),
+        blob,
+      },
+      () => undefined,
+      new AbortController().signal,
+    );
+
     mock.expireSession(jobId);
     mock.setJobState(jobId, 'Failed');
 
-    const retried = await mock.retryJob(jobId);
-    expect(retried.session?.state).toBe('Created');
-    expect(retried.session?.receivedChunkCount).toBe(1);
+    // Server rule: an expired session is not silently replayed; the durable
+    // job must be retried (Pending, attempt > 1) before the session may be
+    // recreated under its persisted key.
+    await expectTypedError(
+      mock.createUploadSession(jobId, request),
+      'migration_invalid_state',
+      409,
+    );
+
+    await mock.retryJob(jobId);
+    const reactivated = await mock.createUploadSession(jobId, request);
+    expect(reactivated.session.state).toBe('Created');
+    expect(reactivated.session.receivedChunkCount).toBe(1);
   });
 });
 
@@ -363,6 +412,50 @@ describe('MockLibraryTransferTransport — upload sessions', () => {
       'migration_idempotency_conflict',
       409,
     );
+  });
+
+  it('rejects a different idempotency key with an identical file identity', async () => {
+    const mock = new MockLibraryTransferTransport();
+    const jobId = await importJob(mock);
+    const file = fileOfSize(100);
+    const identity = { totalSizeBytes: file.size, sha256Checksum: 'd'.repeat(64) };
+    await mock.createUploadSession(
+      jobId,
+      sessionRequest(file, { fileIdentity: identity, idempotencyKey: 'first-key' }),
+    );
+
+    // Server `CheckPayload`: the key binds the complete creation payload, so
+    // an identical file under a different key is not a silent reattach.
+    await expectTypedError(
+      mock.createUploadSession(
+        jobId,
+        sessionRequest(file, { fileIdentity: identity, idempotencyKey: 'second-key' }),
+      ),
+      'migration_idempotency_conflict',
+      409,
+    );
+  });
+
+  it('requires the job retry flow before recreating an expired session on an active job', async () => {
+    const mock = new MockLibraryTransferTransport();
+    const jobId = await importJob(mock);
+    const file = fileOfSize(100);
+    const request = sessionRequest(file, { idempotencyKey: 'expired-active-key' });
+    await mock.createUploadSession(jobId, request);
+    mock.expireSession(jobId);
+    mock.setJobState(jobId, 'Transferring');
+
+    await expectTypedError(
+      mock.createUploadSession(jobId, request),
+      'migration_invalid_state',
+      409,
+    );
+
+    const retried = await mock.retryJob(jobId);
+    expect(retried.job.state).toBe('Pending');
+
+    const recreated = await mock.createUploadSession(jobId, request);
+    expect(recreated.session.state).toBe('Created');
   });
 
   it('rejects a different file against an existing session with a new key', async () => {
@@ -664,8 +757,8 @@ describe('MockLibraryTransferTransport — completion and export', () => {
 
     await expectTypedError(
       Promise.resolve().then(() => mock.getExportDownloadUrl(jobId)),
-      'migration_export_not_available',
-      404,
+      'migration_export_artifact_unavailable',
+      409,
     );
 
     mock.markExportReady(jobId);
@@ -747,12 +840,15 @@ describe('MockLibraryTransferTransport — completion and export', () => {
     );
   });
 
-  it('rejects a new session key whose chunking differs from the existing session', async () => {
+  it('rejects a new session key bound to a different creation payload', async () => {
     const mock = new MockLibraryTransferTransport();
     const file = fileOfSize(CHUNK + 100);
     const jobId = await importJob(mock, file.size);
     await mock.createUploadSession(jobId, sessionRequest(file));
 
+    // Server `CheckPayload`: a different key with an identical file identity
+    // is still an idempotency conflict because the key binds the complete
+    // creation payload, not just the file.
     await expectTypedError(
       mock.createUploadSession(
         jobId,
@@ -761,7 +857,7 @@ describe('MockLibraryTransferTransport — completion and export', () => {
           totalChunks: 1,
         }),
       ),
-      'migration_file_identity_mismatch',
+      'migration_idempotency_conflict',
       409,
     );
   });
