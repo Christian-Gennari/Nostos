@@ -8,6 +8,7 @@ public sealed class MigrationTransferException(string code, string message, Exce
     internal static MigrationTransferException Error(string code) => new(code, code);
     public const string InvalidRequest = "migration_session_invalid";
     public const string InvalidState = "migration_invalid_state";
+    public const string ReservationRequired = "migration_reservation_required";
     public const string Expired = "migration_session_expired";
     public const string IdentityMismatch = "migration_file_identity_mismatch";
     public const string RangeInvalid = "migration_chunk_range_invalid";

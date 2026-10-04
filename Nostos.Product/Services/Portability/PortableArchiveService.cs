@@ -77,6 +77,22 @@ public sealed class PortableArchiveService(
         CancellationToken cancellationToken = default) =>
         ExportAsync(destination, progress: null, exportBufferBudget, cancellationToken);
 
+    // Shared-budget sink overload for the migration export job: the 16 MiB
+    // synchronous capture lease is charged to the caller's per-job operation
+    // budget, so concurrent exports each account their own capture buffer.
+    internal async Task<PortableExportResult> ExportAsync(
+        IPortableArchiveSink destination,
+        IProgress<PortableArchiveProgress>? progress,
+        PortableArchiveBufferBudget exportBufferBudget,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(destination);
+        ArgumentNullException.ThrowIfNull(exportBufferBudget);
+
+        await using var writer = await destination.OpenWriteAsync(cancellationToken);
+        return await ExportAsync(writer, progress, exportBufferBudget, cancellationToken);
+    }
+
     private static PortableArchiveBufferBudget CreateExportBufferBudget() =>
         new(PortableArchiveLimits.MaxExplicitBufferBytes);
 

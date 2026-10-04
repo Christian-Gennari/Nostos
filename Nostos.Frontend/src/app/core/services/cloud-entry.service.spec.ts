@@ -377,6 +377,45 @@ describe('CloudEntryService', () => {
     expect(service.view().kind).toBe('product');
   });
 
+  it('fails closed on the migration capability and finishes first run after a shared import', async () => {
+    capabilities.get.mockReturnValue(of(cloudCapabilities));
+    auth.getSession.mockReturnValue(of({ ...session, accountState: 'Active' }));
+    onboarding.getState.mockReturnValue(of({
+      state: 'ready',
+      subscriptionStatus: 'Active',
+      ready: true,
+      canCheckout: false,
+      canCheckSubscription: false,
+      canManageSubscription: false,
+      canRetry: false,
+    }));
+
+    await service.initialize();
+    expect(service.supportsLibraryMigration()).toBe(false);
+
+    capabilities.get.mockReturnValue(
+      of({
+        ...cloudCapabilities,
+        supportsLibraryMigration: true,
+        supportsSafeActivation: true,
+      }),
+    );
+    localStorage.setItem('nostos.cloud.first-run.1e4df713-1a34-4fc7-9a90-c45169256845', 'pending');
+
+    await service.initialize(true);
+
+    expect(service.supportsLibraryMigration()).toBe(true);
+    expect(service.view().kind).toBe('first_run');
+
+    service.finishFirstRunAfterImport();
+
+    expect(service.view().kind).toBe('product');
+    expect(service.productReady()).toBe(true);
+    expect(
+      localStorage.getItem('nostos.cloud.first-run.1e4df713-1a34-4fc7-9a90-c45169256845'),
+    ).toBeNull();
+  });
+
   it('does not let disabled accounts enter or trigger provisioning', async () => {
     capabilities.get.mockReturnValue(of(cloudCapabilities));
     auth.getSession.mockReturnValue(of({

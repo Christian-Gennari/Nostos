@@ -437,9 +437,27 @@ public sealed class SelfHostedMigrationTransferService(
         return null;
     }
 
-    private static string PayloadHash(MigrationSessionRequest r) => Convert.ToHexStringLower(SHA256.HashData(
-        JsonSerializer.SerializeToUtf8Bytes(new { r.Purpose, r.TotalBytes, r.ChunkSize, r.TotalChunks,
-            Identity = new MigrationFileIdentity(r.FileIdentity.TotalSizeBytes, r.FileIdentity.Sha256Checksum.ToLowerInvariant(), r.FileIdentity.ClientFingerprint) })));
+    /// <summary>
+    /// Canonical creation-payload hash. The purpose is hashed as its typed
+    /// integer value, so the durable hash never depends on the JSON enum
+    /// converter that the HTTP wire layer adds to the shared enum.
+    /// </summary>
+    internal static string PayloadHash(MigrationSessionRequest r)
+    {
+        ArgumentNullException.ThrowIfNull(r);
+        var payload = JsonSerializer.SerializeToUtf8Bytes(new
+        {
+            Purpose = (int)r.Purpose,
+            r.TotalBytes,
+            r.ChunkSize,
+            r.TotalChunks,
+            Identity = new MigrationFileIdentity(
+                r.FileIdentity.TotalSizeBytes,
+                r.FileIdentity.Sha256Checksum.ToLowerInvariant(),
+                r.FileIdentity.ClientFingerprint),
+        });
+        return Convert.ToHexStringLower(SHA256.HashData(payload));
+    }
 
     private void RequireReceiving(MigrationSessionRecord session, bool allowCompleting = false)
     {

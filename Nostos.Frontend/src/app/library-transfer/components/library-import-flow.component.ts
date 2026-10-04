@@ -93,17 +93,19 @@ export class LibraryImportFlowComponent implements OnInit, OnDestroy {
   readonly otherTabActive = this.tabLease.otherTabActive;
   readonly otherTabFileName = this.tabLease.otherTabFileName;
 
-  private readonly leaseClaimed = signal(false);
   private readonly replacementSubmittedJobId = signal<string | null>(null);
   private pendingResume = false;
   private completedEmitted = false;
   private activationRequestedJobId: string | null = null;
   private lastStateKind: TransferFlowState['kind'] = 'idle';
 
-  /** True while this component does not own a transfer the other tab owns. */
-  readonly blockedByOtherTab = computed(
-    () => this.otherTabActive() && !this.leaseClaimed(),
-  );
+  /**
+   * True while a live lease in another tab owns the shared resume record. This
+   * tab's own ownership comes from the root-scoped `TransferTabLease`, so a
+   * flow that remounts mid-transfer (Settings navigation, onboarding Back)
+   * adopts the lease it already holds instead of tracking a local flag.
+   */
+  readonly blockedByOtherTab = computed(() => this.otherTabActive());
 
   readonly pausing = signal(false);
   readonly resuming = signal(false);
@@ -235,13 +237,14 @@ export class LibraryImportFlowComponent implements OnInit, OnDestroy {
 
   constructor() {
     // Release the lease when an active transfer reaches a terminal state (or
-    // is explicitly dismissed). Releasing on the initial idle would cancel the
-    // lease that an in-flight auto-resume/retry just claimed.
+    // is explicitly dismissed). A terminal state on first mount (the transfer
+    // finished while the host was closed) releases too; idle on first mount
+    // must not, because auto-resume may have just claimed the lease.
     effect(() => {
       const kind = this.state().kind;
       const wasActive = this.lastStateKind !== 'idle' && !isTerminalKind(this.lastStateKind);
       this.lastStateKind = kind;
-      if (wasActive && (isTerminalKind(kind) || kind === 'idle')) {
+      if (isTerminalKind(kind) || (wasActive && kind === 'idle')) {
         this.releaseLease();
       }
     });
@@ -285,8 +288,9 @@ export class LibraryImportFlowComponent implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     // The coordinator is root-scoped: if a transfer is still active the host is
     // only being torn down, not the transfer, so the lease must stay (and the
-    // root service keeps heartbeating it).
-    if (this.leaseClaimed() && this.transferActive()) return;
+    // root service keeps heartbeating it). A later remount adopts it through
+    // `TransferTabLease.ownsLease`.
+    if (this.transferActive() && this.tabLease.ownsLease()) return;
     this.releaseLease();
   }
 
@@ -422,11 +426,9 @@ export class LibraryImportFlowComponent implements OnInit, OnDestroy {
 
   /** Claims the lease before any action that continues or starts a transfer. */
   private claimForAction(): boolean {
-    if (this.leaseClaimed()) return true;
+    if (this.tabLease.ownsLease()) return true;
     const fileName = this.resumeStore.load()?.fileName;
-    if (!this.tabLease.claim(fileName)) return false;
-    this.leaseClaimed.set(true);
-    return true;
+    return this.tabLease.claim(fileName);
   }
 
   private startOver(): void {
@@ -443,9 +445,8 @@ export class LibraryImportFlowComponent implements OnInit, OnDestroy {
   }
 
   private releaseLease(): void {
-    if (!this.leaseClaimed()) return;
+    // Ownership-checked by the root service, so this is safe after a remount.
     this.tabLease.release();
-    this.leaseClaimed.set(false);
   }
 
   private activationFailure(): LibraryTransferFailure {

@@ -28,6 +28,33 @@ import { DeploymentCapabilities } from '../core/dtos/deployment-capabilities.dto
 import { CloudAiRefillService } from '../core/services/cloud-ai-refill.service';
 import { CloudAuthService } from '../core/services/cloud-auth.service';
 import { PortableLibraryService } from '../core/services/portable-library.service';
+import { LibraryImportFlowComponent } from '../library-transfer/components/library-import-flow.component';
+import {
+  LIBRARY_TRANSFER_TRANSPORT,
+  LibraryTransferTransport,
+  MigrationTransportError,
+} from '../library-transfer/services/library-transfer-transport';
+import { MockLibraryTransferTransport } from '../library-transfer/services/mock-library-transfer-transport.service';
+import { LibraryTransferCoordinator } from '../library-transfer/services/library-transfer-coordinator.service';
+import { HASH_WORKER_FACTORY } from '../library-transfer/services/hash/hash-worker';
+import {
+  TRANSFER_RESUME_STORAGE_KEY,
+} from '../library-transfer/services/transfer-resume-store.service';
+import {
+  TRANSFER_TAB_LEASE_KEY,
+  TransferTabLease,
+} from '../library-transfer/services/transfer-tab-lease.service';
+import { DelegatingTransport } from '../library-transfer/testing/delegating-transport';
+import {
+  BrowserMigrationChunk,
+  MigrationChunkUploadResultDto,
+  MigrationJobStatusResponseDto,
+} from '../library-transfer/models/migration-http.dtos';
+import {
+  createFile,
+  portableArchiveFixture,
+  portableManifest,
+} from '../library-transfer/testing/zip-archive.fixture';
 import { CloudManagedAiUsage } from '../core/dtos/cloud-ai-refill.dtos';
 import {
   AiProviderModelsRequest,
@@ -1666,4 +1693,357 @@ describe('SettingsComponent backup-only surface', () => {
     fixture = TestBed.createComponent(SettingsComponent);
     fixture.detectChanges();
   }
+});
+
+describe('SettingsComponent shared library transfer host', () => {
+  const CHUNK = 4 * 1024 * 1024;
+  let fixture: ComponentFixture<SettingsComponent>;
+  let mock: MockLibraryTransferTransport;
+
+  interface PendingUpload {
+    jobId: string;
+    sessionId: string;
+    request: BrowserMigrationChunk;
+    onProgress: (loaded: number, total: number) => void;
+    signal: AbortSignal;
+    resolve: (result: MigrationChunkUploadResultDto) => void;
+    reject: (error: unknown) => void;
+  }
+
+  /** Holds upload requests so a transfer can be observed while it is active. */
+  class HeldUploadTransport extends DelegatingTransport {
+    readonly pending: PendingUpload[] = [];
+
+    override uploadChunk(
+      jobId: string,
+      sessionId: string,
+      request: BrowserMigrationChunk,
+      onProgress: (loaded: number, total: number) => void,
+      signal: AbortSignal,
+    ): Promise<MigrationChunkUploadResultDto> {
+      return new Promise<MigrationChunkUploadResultDto>((resolve, reject) => {
+        signal.addEventListener(
+          'abort',
+          () => reject(new MigrationTransportError('request_aborted', 0, 'aborted')),
+          { once: true },
+        );
+        this.pending.push({ jobId, sessionId, request, onProgress, signal, resolve, reject });
+      });
+    }
+
+    async releaseAll(): Promise<void> {
+      const items = this.pending.splice(0);
+      await Promise.all(
+        items.map(async (item) => {
+          try {
+            const result = await this.inner.uploadChunk(
+              item.jobId,
+              item.sessionId,
+              item.request,
+              item.onProgress,
+              item.signal,
+            );
+            item.resolve(result);
+          } catch (error) {
+            item.reject(error);
+          }
+        }),
+      );
+    }
+  }
+
+  /** Rejects the first status read with a 401, then behaves normally. */
+  class UnauthorizedOnceTransport extends DelegatingTransport {
+    unauthorized = true;
+
+    override getJob(jobId: string, signal?: AbortSignal): Promise<MigrationJobStatusResponseDto> {
+      if (this.unauthorized) {
+        return Promise.reject(
+          new MigrationTransportError('unexpected_error', 401, 'sign in required'),
+        );
+      }
+      return this.inner.getJob(jobId, signal);
+    }
+  }
+
+  async function configure(
+    capabilities: DeploymentCapabilities,
+    options: ConstructorParameters<typeof MockLibraryTransferTransport>[0] = {},
+    wrap?: (inner: MockLibraryTransferTransport) => DelegatingTransport,
+  ): Promise<void> {
+    TestBed.resetTestingModule();
+    localStorage.clear();
+    capabilitiesServiceMock.get.mockClear();
+    capabilitiesServiceMock.get.mockReturnValue(of(capabilities));
+    portableLibraryServiceMock.exportArchive.mockClear();
+    toastMock.success.mockClear();
+    toastMock.error.mockClear();
+
+    mock = new MockLibraryTransferTransport({ chunkSizeBytes: CHUNK, ...options });
+    const transport: LibraryTransferTransport = wrap ? wrap(mock) : mock;
+
+    await TestBed.configureTestingModule({
+      imports: [SettingsComponent],
+      providers: [
+        { provide: BackupService, useValue: backupServiceMock },
+        { provide: OpdsService, useValue: opdsServiceMock },
+        { provide: ToastService, useValue: toastMock },
+        { provide: AssistantStatusService, useValue: assistantStatusMock },
+        { provide: AssistantSettingsService, useValue: assistantSettingsMock },
+        { provide: AiProviderService, useValue: aiProviderServiceMock },
+        { provide: DeploymentCapabilitiesService, useValue: capabilitiesServiceMock },
+        { provide: CloudAiRefillService, useValue: cloudAiRefillServiceMock },
+        { provide: CloudAuthService, useValue: cloudAuthServiceMock },
+        { provide: PortableLibraryService, useValue: portableLibraryServiceMock },
+        { provide: LIBRARY_TRANSFER_TRANSPORT, useValue: transport },
+        { provide: HASH_WORKER_FACTORY, useValue: () => null },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(SettingsComponent);
+    fixture.detectChanges();
+  }
+
+  function coordinator(): LibraryTransferCoordinator {
+    return TestBed.inject(LibraryTransferCoordinator);
+  }
+
+  function importFlow(): LibraryImportFlowComponent {
+    return fixture.debugElement.query(By.directive(LibraryImportFlowComponent))
+      .componentInstance;
+  }
+
+  function testId(id: string): HTMLElement | null {
+    return fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
+  }
+
+  async function portableFile(): Promise<File> {
+    return createFile(await portableArchiveFixture(portableManifest()));
+  }
+
+  function selectFile(file: File): void {
+    importFlow().onFileSelected({
+      target: { files: [file], value: 'picked' },
+    } as unknown as Event);
+    fixture.detectChanges();
+  }
+
+  async function waitForKind(kind: string): Promise<void> {
+    await vi.waitFor(() => expect(coordinator().state().kind).toBe(kind), { timeout: 5_000 });
+    fixture.detectChanges();
+  }
+
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  afterEach(() => {
+    fixture?.destroy();
+    localStorage.removeItem(TRANSFER_RESUME_STORAGE_KEY);
+    localStorage.removeItem(TRANSFER_TAB_LEASE_KEY);
+    vi.useRealTimers();
+  });
+
+  it('renders the card only when migration is advertised, in both modes', async () => {
+    // Capability off (every real deployment today): exactly main's surface.
+    await configure(selfHostedCapabilities);
+    expect(testId('library-transfer-card')).toBeNull();
+    expect(testId('library-transfer-host')).toBeNull();
+    expect(testId('cloud-portable-export-card')).toBeNull();
+    expect(testId('cloud-portable-export-action')).toBeNull();
+    expect(mock.calls.preflight).toBe(0);
+    expect(mock.calls.createJob).toBe(0);
+    expect(mock.calls.getJob).toBe(0);
+    expect(mock.calls.uploadChunk).toBe(0);
+
+    await configure(cloudCapabilities);
+    expect(testId('library-transfer-card')).toBeNull();
+    expect(testId('library-transfer-host')).toBeNull();
+    expect(testId('cloud-portable-export-card')).toBeTruthy();
+    expect(testId('cloud-portable-export-action')).toBeTruthy();
+
+    // Capability on: the shared host replaces the Cloud-only card in both modes.
+    await configure({
+      ...selfHostedCapabilities,
+      supportsLibraryMigration: true,
+      supportsSafeActivation: true,
+    });
+
+    const card = testId('library-transfer-card') as HTMLElement;
+    expect(card).toBeTruthy();
+    expect(card.getAttribute('aria-labelledby')).toBe('library-transfer-heading');
+    expect(card.querySelector('#library-transfer-heading')?.textContent).toContain(
+      'Move your library',
+    );
+
+    const host = testId('library-transfer-host') as HTMLElement;
+    expect(host).toBeTruthy();
+    expect(testId('library-export-flow')).toBeTruthy();
+    expect(testId('library-import-flow')).toBeTruthy();
+    expect(testId('cloud-portable-export-card')).toBeNull();
+    expect(testId('cloud-portable-export-action')).toBeNull();
+
+    // Entries are real buttons; the file input is triggered from the picker.
+    expect((testId('export-start') as HTMLButtonElement).tagName).toBe('BUTTON');
+    expect((testId('import-choose-file') as HTMLButtonElement).tagName).toBe('BUTTON');
+    expect(
+      fixture.nativeElement.querySelector('input[type="file"][data-testid="library-import-file-input"]'),
+    ).toBeTruthy();
+    const groups = Array.from(host.querySelectorAll('[role="group"]')).map((group) =>
+      group.getAttribute('aria-label'),
+    );
+    expect(groups).toEqual(['Export library', 'Import library']);
+
+    // Slice B8 owns activation: the host hard-codes false even though the
+    // capabilities object advertises supportsSafeActivation.
+    expect(importFlow().supportsSafeActivation()).toBe(false);
+
+    await configure({ ...cloudCapabilities, supportsLibraryMigration: true });
+    expect(testId('library-transfer-host')).toBeTruthy();
+    expect(testId('library-export-flow')).toBeTruthy();
+    expect(testId('library-import-flow')).toBeTruthy();
+    expect(testId('cloud-portable-export-card')).toBeNull();
+  });
+
+  it('separates portable library transfer from the local operational Backup when migration is on', async () => {
+    await configure({ ...selfHostedCapabilities, supportsLibraryMigration: true });
+
+    const pageText = (fixture.nativeElement.textContent ?? '').replace(/\s+/g, ' ');
+    expect(pageText).toContain(
+      'Portable library archives are for moving your library between Nostos installations.',
+    );
+    expect(pageText).toContain(
+      'Backups are for recovering this SelfHosted installation. They are not portable library exports.',
+    );
+
+    const transferCard = testId('library-transfer-card') as HTMLElement;
+    const backupPurpose = testId('backup-purpose') as HTMLElement;
+    expect(backupPurpose).toBeTruthy();
+    expect(transferCard.contains(backupPurpose)).toBe(false);
+
+    const backupButtons = Array.from(
+      fixture.nativeElement.querySelectorAll('button'),
+    ).map((button: any) => (button.textContent ?? '').trim());
+    expect(backupButtons).toContain('Back up now');
+    expect(backupButtons).toContain('Scan for Backups');
+    expect(transferCard.textContent).not.toContain('Back up now');
+    expect(transferCard.textContent).not.toContain('Scan for Backups');
+  });
+
+  it('runs the import happy path through the Settings host with the mock transport', async () => {
+    await configure({
+      ...selfHostedCapabilities,
+      supportsLibraryMigration: true,
+      supportsSafeActivation: true,
+    });
+    const completed = vi.spyOn(fixture.componentInstance, 'onLibraryTransferCompleted');
+
+    const file = await portableFile();
+    selectFile(file);
+    await waitForKind('ready-empty');
+
+    expect(testId('import-ready-empty')).toBeTruthy();
+    expect(testId('import-activation-unavailable')?.textContent).toContain(
+      'can’t finish the import automatically yet',
+    );
+    expect(mock.calls.createJob).toBe(1);
+    expect(mock.uploadedChunks.length).toBeGreaterThan(0);
+
+    const state = coordinator().state();
+    const jobId = state.kind === 'ready-empty' ? state.jobId : '';
+    mock.setJobState(jobId, 'Completed');
+    await coordinator().refreshStatus();
+    await vi.waitFor(() => expect(completed).toHaveBeenCalledTimes(1));
+    fixture.detectChanges();
+
+    expect(testId('import-completed')).toBeTruthy();
+  });
+
+  it('gates replacement confirmation when safe activation is unavailable', async () => {
+    await configure(
+      {
+        ...selfHostedCapabilities,
+        supportsLibraryMigration: true,
+        supportsSafeActivation: true,
+      },
+      { destinationStatus: 'Populated', existingCounts: { books: 1 } },
+    );
+
+    const file = await portableFile();
+    selectFile(file);
+    await waitForKind('replacement-confirmation');
+
+    expect(testId('replacement-blocked')).toBeTruthy();
+    const confirm = fixture.nativeElement.querySelector(
+      '.replacement-confirm',
+    ) as HTMLButtonElement;
+    expect(confirm.disabled).toBe(true);
+    confirm.click();
+    fixture.detectChanges();
+
+    expect(coordinator().state().kind).toBe('replacement-confirmation');
+    expect(mock.calls.cancelJob).toBe(0);
+  });
+
+  it('adopts the tab lease after leaving and re-entering Settings and releases it on completion', async () => {
+    await configure(
+      { ...selfHostedCapabilities, supportsLibraryMigration: true },
+      {},
+      (inner) => new HeldUploadTransport(inner),
+    );
+    const transport = TestBed.inject(LIBRARY_TRANSFER_TRANSPORT) as HeldUploadTransport;
+    const lease = TestBed.inject(TransferTabLease);
+
+    const file = await portableFile();
+    selectFile(file);
+    await waitForKind('uploading');
+    await vi.waitFor(() => expect(transport.pending.length).toBeGreaterThan(0));
+    expect(localStorage.getItem(TRANSFER_TAB_LEASE_KEY)).not.toBeNull();
+    expect(lease.heartbeatActive).toBe(true);
+
+    fixture.destroy();
+    fixture = TestBed.createComponent(SettingsComponent);
+    fixture.detectChanges();
+
+    // The root-scoped coordinator still owns the transfer; the new host adopts
+    // the same-tab lease and shows the running state.
+    expect(coordinator().state().kind).toBe('uploading');
+    expect(testId('import-uploading')).toBeTruthy();
+
+    await transport.releaseAll();
+    await waitForKind('ready-empty');
+
+    const state = coordinator().state();
+    const jobId = state.kind === 'ready-empty' ? state.jobId : '';
+    mock.setJobState(jobId, 'Completed');
+    await coordinator().refreshStatus();
+    await waitForKind('completed');
+
+    expect(localStorage.getItem(TRANSFER_TAB_LEASE_KEY)).toBeNull();
+    expect(lease.heartbeatActive).toBe(false);
+  });
+
+  it('offers sign-in recovery after a 401 and resumes after re-authentication', async () => {
+    await configure(
+      { ...selfHostedCapabilities, supportsLibraryMigration: true },
+      {},
+      (inner) => new UnauthorizedOnceTransport(inner),
+    );
+    const transport = TestBed.inject(LIBRARY_TRANSFER_TRANSPORT) as UnauthorizedOnceTransport;
+
+    const file = await portableFile();
+    selectFile(file);
+    await waitForKind('failed');
+
+    expect(testId('import-failed')?.textContent).toContain('Sign in again');
+    const action = testId('import-failure-action') as HTMLButtonElement;
+    expect(action.textContent).toContain('Try again');
+
+    transport.unauthorized = false;
+    action.click();
+    await waitForKind('ready-empty');
+
+    expect(testId('import-ready-empty')).toBeTruthy();
+    expect(testId('import-activation-unavailable')).toBeTruthy();
+  });
 });

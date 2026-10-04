@@ -8,7 +8,7 @@
  * inside `ready-to-upload`.
  */
 
-import { Injectable, computed, inject, signal } from '@angular/core';
+import { Injectable, computed, effect, inject, signal } from '@angular/core';
 
 import {
   ArchiveInspection,
@@ -48,6 +48,7 @@ import {
   preflightRequestFromSummary,
 } from './portable-archive-inspector.service';
 import { TransferResumeStore } from './transfer-resume-store.service';
+import { TransferTabLease } from './transfer-tab-lease.service';
 
 export const DEFAULT_STATUS_POLL_MS = 1_500;
 
@@ -68,9 +69,24 @@ export class LibraryTransferCoordinator {
   private readonly digest = inject(FileDigestService);
   private readonly inspector = inject(PortableArchiveInspector);
   private readonly resumeStore = inject(TransferResumeStore);
+  private readonly tabLease = inject(TransferTabLease);
 
   private readonly stateSignal = signal<TransferFlowState>({ kind: 'idle' });
   private readonly fallbackProgress = signal<TransferProgress>(IDLE_PROGRESS);
+
+  constructor() {
+    // The cross-tab lease belongs to the tab's transfer, not to a particular
+    // mounted flow component: a terminal job must stop the heartbeat even when
+    // Settings or onboarding was left while it was still running (review-736
+    // item 4). `release()` is ownership-checked, so a foreign lease is never
+    // removed.
+    effect(() => {
+      const kind = this.stateSignal().kind;
+      if (kind === 'completed' || kind === 'cancelled' || kind === 'failed') {
+        this.tabLease.release();
+      }
+    });
+  }
 
   /** Current import flow state; the later UI renders this union. */
   readonly state = this.stateSignal.asReadonly();

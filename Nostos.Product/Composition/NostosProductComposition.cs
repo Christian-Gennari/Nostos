@@ -48,7 +48,8 @@ public sealed record NostosProductEndpointPolicies(
     string? ProviderFetchRateLimitPolicy = null,
     string? LargeTransferRateLimitPolicy = null,
     string? PortableExportAuthorizationPolicy = null,
-    string? OpdsAuthorizationPolicy = null)
+    string? OpdsAuthorizationPolicy = null,
+    string? MigrationAuthorizationPolicy = null)
 {
     public static NostosProductEndpointPolicies None { get; } = new();
 }
@@ -150,6 +151,11 @@ public static class NostosProductComposition
         services.AddScoped<IPortableArchiveService, PortableArchiveService>();
         services.TryAddScoped<IPortableArchiveExporter, DefaultPortableArchiveExporter>();
         services.AddScoped<IMigrationJobStore, EfMigrationJobStore>();
+        // Migration job creation is refused until a host wires a real phase
+        // handler. The SelfHosted engine registers the real Slices 9/10 handlers
+        // and reports both directions available.
+        services.TryAddSingleton<IMigrationPhaseAvailability>(MigrationPhaseAvailabilityAll.Instance);
+        services.TryAddScoped<ILibraryDestinationRevisionProvider, LibraryStateDestinationRevisionProvider>();
         services.AddScoped<PortableArchiveReader>();
 
         services.AddScoped<IBookRepository, BookRepository>();
@@ -272,6 +278,7 @@ public static class NostosProductComposition
         routes.MapAssistantSettingsEndpoints();
         routes.MapDeploymentCapabilitiesEndpoints();
         routes.MapPortabilityEndpoints(policies);
+        routes.MapMigrationEndpoints(policies);
         routes.MapOpdsEndpoints(
             opds,
             policies.OpdsAuthorizationPolicy,

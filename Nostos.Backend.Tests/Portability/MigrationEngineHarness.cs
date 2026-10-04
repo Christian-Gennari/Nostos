@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Nostos.Backend.Data;
 using Nostos.Backend.Data.Models;
@@ -49,8 +50,17 @@ internal sealed class MigrationEngineHarness : IAsyncDisposable
         services.AddSingleton(Options.Create(Settings));
         services.AddSingleton(new TransferPathResolver(TransferPathResolver.EnsureRootDirectory(Path.Combine(DirectoryPath, "transfers"))));
         services.AddSingleton<ITransferVolume>(Volume);
+        services.AddSingleton<IBookAssetStorage, NullBookAssetStorage>();
         services.AddScoped<ITransferStorageCapacity, TransferStorageCapacity>();
         services.AddScoped<IMigrationJobStore, EfMigrationJobStore>();
+        services.AddScoped<IPortableImportStaging>(s => new FilePortableImportStaging(
+            s.GetRequiredService<TransferPathResolver>()));
+        services.AddScoped<IPortableArchiveService>(s => new PortableArchiveService(
+            s.GetRequiredService<NostosDbContext>(),
+            s.GetRequiredService<IBookAssetStorage>(),
+            NullLogger<PortableArchiveService>.Instance,
+            bookTextScheduler: null,
+            timeProvider: s.GetRequiredService<TimeProvider>()));
         services.AddSelfHostedMigrationEngine();
         Configure?.Invoke(services);
         return services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true });
@@ -96,6 +106,24 @@ internal sealed class MigrationEngineHarness : IAsyncDisposable
     { if (Provider is not null) await Provider.DisposeAsync(); if (Directory.Exists(DirectoryPath)) Directory.Delete(DirectoryPath, true); }
     internal sealed class TestVolume : ITransferVolume
     { public long AvailableFreeSpaceBytes { get; set; } = 20L * 1024 * 1024 * 1024; public long TotalSizeBytes => 20L * 1024 * 1024 * 1024; }
+}
+
+// Empty provider-neutral asset storage for engine tests that never read media.
+// Export tests replace this registration with a real FileStorageService.
+internal sealed class NullBookAssetStorage : IBookAssetStorage
+{
+    public Task<string> SaveBookFileAsync(Guid bookId, Stream content, string fileName, CancellationToken ct = default) => Task.FromResult(fileName);
+    public Task<string> AdoptBookFileAsync(Guid bookId, string sourcePath, string fileName, CancellationToken ct = default) => Task.FromResult(fileName);
+    public Task<StoredAssetInfo?> GetBookFileInfoAsync(Guid bookId, CancellationToken ct = default) => Task.FromResult<StoredAssetInfo?>(null);
+    public Task<StoredAssetRead?> OpenBookFileAsync(Guid bookId, StorageByteRange? range = null, CancellationToken ct = default) => Task.FromResult<StoredAssetRead?>(null);
+    public Task<bool> DeleteBookFileAsync(Guid bookId, CancellationToken ct = default) => Task.FromResult(false);
+    public Task DeleteBookFilesAsync(Guid bookId, CancellationToken ct = default) => Task.CompletedTask;
+    public Task<string> SaveBookCoverAsync(Guid bookId, Stream content, string fileName, CancellationToken ct = default) => Task.FromResult(fileName);
+    public Task<StoredAssetInfo?> GetBookCoverInfoAsync(Guid bookId, CancellationToken ct = default) => Task.FromResult<StoredAssetInfo?>(null);
+    public Task<StoredAssetRead?> OpenBookCoverAsync(Guid bookId, CancellationToken ct = default) => Task.FromResult<StoredAssetRead?>(null);
+    public Task<StoredAssetInfo?> GetBookCoverThumbnailInfoAsync(Guid bookId, int width, CancellationToken ct = default) => Task.FromResult<StoredAssetInfo?>(null);
+    public Task<StoredAssetRead?> OpenBookCoverThumbnailAsync(Guid bookId, int width, CancellationToken ct = default) => Task.FromResult<StoredAssetRead?>(null);
+    public Task<bool> DeleteCoverAsync(Guid bookId, CancellationToken ct = default) => Task.FromResult(false);
 }
 
 // A request stream that throws on synchronous reads, seeking and length probes.

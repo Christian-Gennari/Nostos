@@ -225,7 +225,20 @@ const FLOW_TRANSITIONS: Record<TransferFlowState['kind'], readonly TransferFlowS
   'ready-empty': ['idle', 'checking', 'completed', 'cancelled', 'failed'],
   'replacement-confirmation': ['idle', 'checking', 'completed', 'cancelled', 'failed'],
   completed: ['idle'],
-  failed: ['inspecting', 'uploading', 'checking', 'ready-to-upload'],
+  // A failed transfer can reattach to any durable server state after the
+  // problem is fixed (re-authentication, reconnect, retry): the job may have
+  // progressed while the browser showed the failure, so every status target
+  // `resume()` can observe must be reachable (review-730 401 recovery note).
+  failed: [
+    'inspecting',
+    'uploading',
+    'checking',
+    'ready-to-upload',
+    'ready-empty',
+    'replacement-confirmation',
+    'completed',
+    'cancelled',
+  ],
   cancelled: ['idle', 'inspecting'],
 };
 
