@@ -1,0 +1,150 @@
+<div class="transfer-flow" data-testid="library-export-flow">
+  @if (preparing(); as current) {
+    <div class="transfer-state" data-testid="export-preparing">
+      <p class="transfer-headline">{{ preparingHeadline() }}</p>
+      <app-library-transfer-progress
+        [phase]="preparingPhase()"
+        [bytesProcessed]="current.progress?.bytesProcessed ?? null"
+        [totalBytes]="current.progress?.totalBytes ?? null"
+      />
+      <div class="transfer-actions">
+        <button
+          appButton
+          type="button"
+          variant="ghost"
+          (click)="cancel()"
+          data-testid="export-cancel"
+        >
+          Cancel export
+        </button>
+      </div>
+    </div>
+  } @else if (checking(); as current) {
+    <div class="transfer-state" data-testid="export-checking">
+      <p class="transfer-headline">Checking archive…</p>
+      <app-library-transfer-progress
+        phase="checking"
+        [bytesProcessed]="current.progress?.bytesProcessed ?? null"
+        [totalBytes]="current.progress?.totalBytes ?? null"
+      />
+      <div class="transfer-actions">
+        <button
+          appButton
+          type="button"
+          variant="ghost"
+          (click)="cancel()"
+          data-testid="export-cancel"
+        >
+          Cancel export
+        </button>
+      </div>
+    </div>
+  } @else if (ready(); as current) {
+    <div class="transfer-state" data-testid="export-ready">
+      <p class="transfer-headline" role="status">Your export is ready.</p>
+      @if (downloadUrlSafe()) {
+        <div class="transfer-actions">
+          <a
+            appButton
+            variant="primary"
+            [href]="current.downloadUrl"
+            download
+            data-testid="library-export-download"
+          >
+            Download archive
+          </a>
+          <button
+            appButton
+            type="button"
+            variant="ghost"
+            (click)="dismiss()"
+            data-testid="export-close"
+          >
+            Close
+          </button>
+        </div>
+        <p class="transfer-copy">
+          If your browser did not start the download automatically, use Download archive.
+        </p>
+        @if (expiryLabel(); as expiry) {
+          <p class="transfer-copy" data-testid="export-expiry">{{ expiry }}</p>
+        }
+      } @else {
+        <p class="transfer-error" role="alert" data-testid="export-url-error">
+          Nostos returned a download link this browser cannot use safely. Start the export again.
+        </p>
+        <div class="transfer-actions">
+          <button
+            appButton
+            type="button"
+            variant="secondary"
+            (click)="start()"
+            data-testid="export-restart"
+          >
+            Start export again
+          </button>
+          <button
+            appButton
+            type="button"
+            variant="ghost"
+            (click)="dismiss()"
+            data-testid="export-close"
+          >
+            Close
+          </button>
+        </div>
+      }
+    </div>
+  } @else if (failed()) {
+    @if (failureCopy(); as copy) {
+      <div class="transfer-state transfer-state--failed" role="alert" data-testid="export-failed">
+        <p class="transfer-headline">{{ copy.title }}</p>
+        <p class="transfer-copy">{{ copy.message }}</p>
+        <div class="transfer-actions">
+          <button
+            appButton
+            type="button"
+            variant="secondary"
+            (click)="retry()"
+            data-testid="export-retry"
+          >
+            Try export again
+          </button>
+        </div>
+      </div>
+    }
+  } @else if (cancelled()) {
+    <div class="transfer-state" data-testid="export-cancelled">
+      <p class="transfer-headline" role="status">Export cancelled.</p>
+      <div class="transfer-actions">
+        <button
+          appButton
+          type="button"
+          variant="secondary"
+          (click)="start()"
+          data-testid="export-restart"
+        >
+          Start export again
+        </button>
+      </div>
+    </div>
+  } @else {
+    <div class="transfer-state" data-testid="export-idle">
+      <p class="transfer-copy">
+        Create a portable .nostos archive containing your library data and primary book files.
+        Use it to move your library to another Nostos installation.
+      </p>
+      <div class="transfer-actions">
+        <button
+          appButton
+          type="button"
+          variant="secondary"
+          (click)="start()"
+          data-testid="export-start"
+        >
+          Export library
+        </button>
+      </div>
+    </div>
+  }
+</div>

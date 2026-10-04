@@ -1,0 +1,95 @@
+/* Shared geometry for the import and export flow surfaces.
+   Both components include this sheet through `styleUrls`; Angular's view
+   encapsulation scopes it per component, so the two flows cannot drift apart.
+   Component-specific rules live beside each component. */
+
+.transfer-flow {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.transfer-state {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.transfer-headline {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: var(--fw-medium);
+  line-height: 1.4;
+  color: var(--color-text-main);
+}
+
+.transfer-file-name {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: var(--color-text-light);
+  word-break: break-all;
+}
+
+.transfer-copy {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.55;
+  color: var(--color-text-light);
+}
+
+.transfer-error {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: var(--color-danger);
+}
+
+.transfer-state--failed {
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--danger-hairline);
+  border-radius: var(--radius-md);
+  background: var(--danger-surface);
+}
+
+.transfer-state--failed .transfer-headline {
+  color: var(--color-danger);
+}
+
+.transfer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.transfer-other-tab {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--color-info-border);
+  border-radius: var(--radius-md);
+  background: var(--color-info-bg);
+  color: var(--color-info);
+}
+
+.transfer-other-tab-title {
+  margin: 0 0 2px;
+  font-size: 0.84rem;
+  font-weight: var(--fw-medium);
+  color: var(--color-text-main);
+}
+
+.transfer-other-tab-note {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--color-text-light);
+}
+
+@media (max-width: 560px) {
+  .transfer-actions button[appButton] {
+    flex: 1 1 100%;
+    width: 100%;
+  }
+}
