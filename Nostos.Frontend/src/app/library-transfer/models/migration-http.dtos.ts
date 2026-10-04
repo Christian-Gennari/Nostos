@@ -82,6 +82,9 @@ export type MigrationErrorCode =
   | 'archive_operational_backup'
   | 'archive_unsupported_version'
   | 'portable_import_failed'
+  | 'portable_export_failed'
+  | 'source_media_missing'
+  | 'source_media_changed'
   | 'network_error'
   | 'request_aborted'
   | 'unexpected_error';
