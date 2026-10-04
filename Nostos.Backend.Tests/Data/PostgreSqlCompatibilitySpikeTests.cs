@@ -6,6 +6,7 @@ using Nostos.Backend.Data.Models;
 using Nostos.Backend.Services.Portability;
 using Nostos.Backend.Services.Portability.Migration;
 using Nostos.Backend.Services.Portability.Transfers;
+using Npgsql;
 using Xunit;
 
 namespace Nostos.Backend.Tests.Data;
@@ -952,31 +953,33 @@ public sealed class PostgreSqlCompatibilitySpikeTests
             return;
         }
 
-        var options = new DbContextOptionsBuilder<NostosDbContext>()
-            .UseNpgsql(connectionString)
-            .Options;
-
-        await using (var bootstrap = new NostosDbContext(options))
+        // A dedicated schema keeps this case independent of the shared public
+        // schema the compatibility spike bootstraps, and keeps its tables out
+        // of the other test's HasTables() bootstrap decision regardless of
+        // execution order.
+        var schema = "nostos_capacity_" + Guid.NewGuid().ToString("N");
+        var connectionBuilder = new NpgsqlConnectionStringBuilder(connectionString)
         {
-            await new DatabaseBootstrapService(bootstrap).EnsureReadyAsync();
-        }
-
-        var volume = new FixedTransferVolume(freeBytes: 100_000_000);
-        var storageOptions = new TransferStorageOptions
-        {
-            DiskSafetyMarginBytes = 0,
-            DiskSafetyMarginPercent = 0,
+            SearchPath = schema,
         };
+        var options = new DbContextOptionsBuilder<NostosDbContext>()
+            .UseNpgsql(connectionBuilder.ConnectionString)
+            .Options;
 
         try
         {
-            // The spike database is shared across the class; start from a clean
-            // reservation table and leave it clean for the schema test.
-            await using (var cleanup = new NostosDbContext(options))
+            await using (var setup = new NostosDbContext(options))
             {
-                await cleanup.Database.ExecuteSqlRawAsync(
-                    "DELETE FROM \"MigrationStorageReservations\"");
+                await setup.Database.ExecuteSqlRawAsync($"CREATE SCHEMA \"{schema}\"");
+                await setup.Database.ExecuteSqlRawAsync(setup.Database.GenerateCreateScript());
             }
+
+            var volume = new FixedTransferVolume(freeBytes: 100_000_000);
+            var storageOptions = new TransferStorageOptions
+            {
+                DiskSafetyMarginBytes = 0,
+                DiskSafetyMarginPercent = 0,
+            };
 
             var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -1010,9 +1013,17 @@ public sealed class PostgreSqlCompatibilitySpikeTests
         }
         finally
         {
-            await using var cleanup = new NostosDbContext(options);
-            await cleanup.Database.ExecuteSqlRawAsync(
-                "DELETE FROM \"MigrationStorageReservations\"");
+            try
+            {
+                await using var cleanup = new NostosDbContext(options);
+                await cleanup.Database.ExecuteSqlRawAsync(
+                    $"DROP SCHEMA IF EXISTS \"{schema}\" CASCADE");
+            }
+            catch (Exception)
+            {
+                // Best-effort cleanup of the disposable schema; the CI
+                // PostgreSQL container is discarded with the job.
+            }
         }
     }
 
