@@ -65,8 +65,13 @@ internal sealed class LocalPortableTestLibrary : IAsyncDisposable
         return new LocalPortableTestLibrary(root, db, storage);
     }
 
-    public PortableArchiveService Portability() =>
-        new(Db, Storage, NullLogger<PortableArchiveService>.Instance);
+    public PortableArchiveService Portability(TimeProvider? timeProvider = null) =>
+        new(
+            Db,
+            Storage,
+            NullLogger<PortableArchiveService>.Instance,
+            bookTextScheduler: null,
+            timeProvider: timeProvider);
 
     public async ValueTask DisposeAsync()
     {

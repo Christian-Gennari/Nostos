@@ -24,41 +24,83 @@ public sealed class PortableExportSnapshotTests
         Encoding.UTF8.GetBytes("COVER-CONTENT-PORTABLE");
 
     [Fact]
-    public async Task Export_data_reflects_snapshot_and_ignores_relational_writes_during_media_copy()
+    public async Task Export_data_reflects_snapshot_and_ignores_relational_writes_during_media_pinning()
     {
         await using var source = await LocalPortableTestLibrary.CreateAsync();
         var bookId = await PopulateMinimalLibraryAsync(source);
+        var wrote = false;
 
         var storage = new ExportProbeStorage(source.Storage)
         {
             OnFirstOpenAsync = async ct =>
             {
-                // This write happens after CaptureSnapshotAsync committed the
-                // relational snapshot and while media is being pinned/copied.
-                // It must never leak into the exported archive.
-                var lateWork = new WorkModel
-                {
-                    Id = Guid.NewGuid(),
-                    Title = "Late Work",
-                    NormalizedTitle = "LATE WORK",
-                    NormalizedAuthor = string.Empty,
-                    CreatedAt = DateTime.UtcNow,
-                };
-                var lateBook = new PhysicalBookModel
-                {
-                    Id = Guid.NewGuid(),
-                    WorkId = lateWork.Id,
-                    Work = lateWork,
-                    Title = "Late Book",
-                    CreatedAt = DateTime.UtcNow,
-                };
-
-                source.Db.Works.Add(lateWork);
-                source.Db.Books.Add(lateBook);
-                await source.Db.SaveChangesAsync(ct);
+                wrote = true;
+                await WriteLateBookAsync(source, ct);
             },
         };
 
+        await AssertExportExcludesLateBookAsync(source, storage, bookId);
+        wrote.Should().BeTrue("the concurrent write must run during the pin pass");
+    }
+
+    [Fact]
+    public async Task Export_data_reflects_snapshot_and_ignores_relational_writes_during_archive_copy()
+    {
+        await using var source = await LocalPortableTestLibrary.CreateAsync();
+        var bookId = await PopulateMinimalLibraryAsync(source);
+        var wrote = false;
+
+        var storage = new ExportProbeStorage(source.Storage)
+        {
+            TargetBookId = bookId,
+            OnCopyPassOpenAsync = async ct =>
+            {
+                wrote = true;
+                await WriteLateBookAsync(source, ct);
+            },
+        };
+
+        await AssertExportExcludesLateBookAsync(source, storage, bookId);
+        wrote.Should().BeTrue(
+            "the concurrent write must run after pinning, during the archive copy pass");
+    }
+
+    [Fact]
+    public async Task Export_timestamp_is_captured_inside_the_relational_snapshot_boundary()
+    {
+        var clock = new ManualTimeProvider(
+            new DateTimeOffset(2026, 1, 2, 3, 4, 5, TimeSpan.Zero));
+        var interceptor = new TransactionStartClockAdvancer(clock);
+
+        await using var source = await LocalPortableTestLibrary.CreateAsync(
+            options => options.AddInterceptors(interceptor));
+        await PopulateMinimalLibraryAsync(source);
+
+        var beforeExport = clock.GetUtcNow();
+
+        using var archive = new MemoryStream();
+        await source.Portability(clock).ExportAsync(archive);
+
+        // The transaction-start interceptor advances the clock exactly once, so
+        // a timestamp read before BeginTransactionAsync would be beforeExport.
+        clock.GetUtcNow().Should().Be(beforeExport.AddMinutes(1));
+
+        var entries = await ReadArchiveAsync(archive);
+        var manifest = JsonSerializer.Deserialize<PortableArchiveManifest>(
+            entries["manifest.json"],
+            new JsonSerializerOptions
+            {
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+            })!;
+
+        manifest.ExportedAtUtc.Should().Be(clock.GetUtcNow().UtcDateTime);
+    }
+
+    private static async Task AssertExportExcludesLateBookAsync(
+        LocalPortableTestLibrary source,
+        ExportProbeStorage storage,
+        Guid bookId)
+    {
         var service = new PortableArchiveService(
             source.Db,
             storage,
@@ -91,6 +133,32 @@ public sealed class PortableExportSnapshotTests
         imported.IntegrityVerified.Should().BeTrue();
         imported.Counts.Books.Should().Be(1);
         imported.Counts.Works.Should().Be(1);
+    }
+
+    private static async Task WriteLateBookAsync(
+        LocalPortableTestLibrary library,
+        CancellationToken ct)
+    {
+        var lateWork = new WorkModel
+        {
+            Id = Guid.NewGuid(),
+            Title = "Late Work",
+            NormalizedTitle = "LATE WORK",
+            NormalizedAuthor = string.Empty,
+            CreatedAt = DateTime.UtcNow,
+        };
+        var lateBook = new PhysicalBookModel
+        {
+            Id = Guid.NewGuid(),
+            WorkId = lateWork.Id,
+            Work = lateWork,
+            Title = "Late Book",
+            CreatedAt = DateTime.UtcNow,
+        };
+
+        library.Db.Works.Add(lateWork);
+        library.Db.Books.Add(lateBook);
+        await library.Db.SaveChangesAsync(ct);
     }
 
     [Fact]
@@ -355,6 +423,8 @@ public sealed class PortableExportSnapshotTests
 
         public Func<CancellationToken, Task>? OnFirstOpenAsync { get; init; }
 
+        public Func<CancellationToken, Task>? OnCopyPassOpenAsync { get; init; }
+
         public List<bool> TransactionOpenDuringOpen { get; } = [];
 
         public Task<string> SaveBookFileAsync(
@@ -478,10 +548,14 @@ public sealed class PortableExportSnapshotTests
             if (TargetBookId == bookId && TargetKind == kind)
             {
                 var calls = Increment(_openCalls, (bookId, kind));
+
+                // Pin pass open: call 1. Copy pass open: call 2, after every
+                // media item has already been pinned.
+                if (calls == 2 && OnCopyPassOpenAsync is { } onCopyPassOpen)
+                    await onCopyPassOpen(ct);
+
                 if (CopyPassContent is not null && calls == 2)
                 {
-                    // Pin pass open: call 1. Copy pass open: call 2, returning
-                    // bytes that differ from the pinned content.
                     return new StoredAssetRead(
                         await InfoForContentAsync(bookId, kind, ct),
                         new MemoryStream(CopyPassContent, writable: false));
@@ -514,6 +588,42 @@ public sealed class PortableExportSnapshotTests
             var next = counters.GetValueOrDefault(key) + 1;
             counters[key] = next;
             return next;
+        }
+    }
+
+    private sealed class ManualTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        private DateTimeOffset _utcNow = utcNow;
+
+        public override DateTimeOffset GetUtcNow() => _utcNow;
+
+        public void Advance(TimeSpan delta) => _utcNow = _utcNow.Add(delta);
+    }
+
+    private sealed class TransactionStartClockAdvancer(ManualTimeProvider clock)
+        : DbTransactionInterceptor
+    {
+        public override DbTransaction TransactionStarted(
+            DbConnection connection,
+            TransactionEndEventData eventData,
+            DbTransaction result)
+        {
+            clock.Advance(TimeSpan.FromMinutes(1));
+            return base.TransactionStarted(connection, eventData, result);
+        }
+
+        public override ValueTask<DbTransaction> TransactionStartedAsync(
+            DbConnection connection,
+            TransactionEndEventData eventData,
+            DbTransaction result,
+            CancellationToken cancellationToken = default)
+        {
+            clock.Advance(TimeSpan.FromMinutes(1));
+            return base.TransactionStartedAsync(
+                connection,
+                eventData,
+                result,
+                cancellationToken);
         }
     }
 

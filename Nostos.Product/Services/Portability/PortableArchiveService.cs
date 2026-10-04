@@ -15,7 +15,8 @@ public sealed class PortableArchiveService(
     NostosDbContext db,
     IBookAssetStorage assets,
     ILogger<PortableArchiveService> logger,
-    IBookTextIngestionScheduler? bookTextScheduler = null)
+    IBookTextIngestionScheduler? bookTextScheduler = null,
+    TimeProvider? timeProvider = null)
     : IPortableArchiveService
 {
     private const int CopyBufferSize = 128 * 1024;
@@ -30,6 +31,7 @@ public sealed class PortableArchiveService(
     private readonly IBookAssetStorage _assets = assets;
     private readonly ILogger<PortableArchiveService> _logger = logger;
     private readonly IBookTextIngestionScheduler? _bookTextScheduler = bookTextScheduler;
+    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
 
     public async Task<PortableExportResult> ExportAsync(
         Stream destination,
@@ -338,13 +340,16 @@ public sealed class PortableArchiveService(
 
     private async Task<PortableExportSnapshot> CaptureSnapshotAsync(CancellationToken ct)
     {
-        var snapshotAtUtc = DateTime.UtcNow;
-
         // One serializable read transaction owns every relational query for the
         // export. Media is never read, hashed or copied while it is open.
         await using var transaction = await _db.Database.BeginTransactionAsync(
             IsolationLevel.Serializable,
             ct);
+
+        // The timestamp is taken only after the transaction has been acquired:
+        // acquiring it can wait on an active writer, and the manifest must
+        // never claim an earlier revision than the rows that were read.
+        var snapshotAtUtc = _timeProvider.GetUtcNow().UtcDateTime;
 
         var works = (await _db.Works
             .AsNoTracking()
