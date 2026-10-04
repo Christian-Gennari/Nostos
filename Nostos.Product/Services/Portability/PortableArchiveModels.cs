@@ -153,12 +153,3 @@ internal sealed record PortableBookAcquisition(
 internal sealed record PortableAssistantSettings(
     string? CaptureProcessingMode,
     DateTime UpdatedAtUtc);
-
-internal sealed record StagedPortableMedia(
-    PortableArchiveMediaEntry Descriptor,
-    string StagedPath);
-
-internal sealed record ValidatedPortableArchive(
-    PortableArchiveManifest Manifest,
-    PortableLibraryData Data,
-    IReadOnlyList<StagedPortableMedia> Media);

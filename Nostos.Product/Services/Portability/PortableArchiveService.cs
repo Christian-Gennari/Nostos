@@ -37,6 +37,10 @@ public sealed class PortableArchiveService(
     // exercised without serializing a 64 MiB payload.
     internal long MaxExportDataBytes { get; init; } = PortableArchiveLimits.MaxDataBytes;
 
+    // Test seam: the directory that receives the per-import scratch directory
+    // (upload spool plus local staging). Production uses the process temp path.
+    internal string ScratchRoot { get; init; } = Path.GetTempPath();
+
     public Task<PortableExportResult> ExportAsync(
         Stream destination,
         CancellationToken cancellationToken = default) =>
@@ -326,8 +330,13 @@ public sealed class PortableArchiveService(
         if (!source.CanRead)
             throw new ArgumentException("The import source must be readable.", nameof(source));
 
+        // The raw HTTP request body is not seekable and the archive reader needs a
+        // position-independent source, so the compatibility endpoint spools the
+        // compressed archive to one bounded local scratch file. That spool is the
+        // only whole-archive local copy: every media entry then streams from the
+        // archive into local staging and, one item at a time, into asset storage.
         var tempRoot = Path.Combine(
-            Path.GetTempPath(),
+            ScratchRoot,
             $"nostos-portable-import-{Guid.NewGuid():N}");
         Directory.CreateDirectory(tempRoot);
 
@@ -336,10 +345,19 @@ public sealed class PortableArchiveService(
             var archivePath = Path.Combine(tempRoot, "archive.nostos");
             await StageArchiveAsync(source, archivePath, cancellationToken);
 
-            var staged = await ValidateAndStageAsync(
-                archivePath,
-                tempRoot,
+            await using var archiveSource = new FilePortableArchiveSource(archivePath);
+            await using var staging = new LocalPortableImportStaging(
+                Path.Combine(tempRoot, "staging"));
+            var reader = new PortableArchiveReader(timeProvider: _timeProvider);
+
+            var prepared = await reader.PrepareImportAsync(
+                archiveSource,
+                staging,
+                progress: null,
                 cancellationToken);
+
+            var data = await ReadStagedDataAsync(staging, prepared.StagingId, cancellationToken);
+            var manifest = await ReadStagedManifestAsync(staging, prepared.StagingId, cancellationToken);
 
             var uploadedBookIds = new HashSet<Guid>();
             var committed = false;
@@ -351,10 +369,10 @@ public sealed class PortableArchiveService(
             try
             {
                 await EnsureDestinationIsEmptyAsync(cancellationToken);
-                await ApplyRelationalDataAsync(staged.Data, staged.Media, cancellationToken);
+                await ApplyRelationalDataAsync(data, prepared.Media, cancellationToken);
                 await _db.SaveChangesAsync(cancellationToken);
 
-                foreach (var media in staged.Media)
+                foreach (var media in prepared.Media)
                 {
                     // Register the book for compensating cleanup before touching
                     // durable storage. A storage implementation can fail after
@@ -362,13 +380,10 @@ public sealed class PortableArchiveService(
                     // a successful Save* call can strand media on a failed import.
                     uploadedBookIds.Add(media.Descriptor.BookId);
 
-                    await using var content = new FileStream(
-                        media.StagedPath,
-                        FileMode.Open,
-                        FileAccess.Read,
-                        FileShare.Read,
-                        CopyBufferSize,
-                        FileOptions.Asynchronous | FileOptions.SequentialScan);
+                    await using var content = await staging.OpenMediaReadAsync(
+                        prepared.StagingId,
+                        media.Reference,
+                        cancellationToken);
 
                     if (media.Descriptor.Kind == PortableArchiveFormat.BookMediaKind)
                     {
@@ -389,11 +404,11 @@ public sealed class PortableArchiveService(
                 }
 
                 await VerifyRelationalIntegrityAsync(
-                    staged.Data,
-                    staged.Manifest.Counts,
+                    data,
+                    manifest.Counts,
                     cancellationToken);
                 await VerifyStoredMediaAsync(
-                    staged.Manifest.Media,
+                    manifest.Media,
                     cancellationToken);
 
                 await transaction.CommitAsync(cancellationToken);
@@ -405,7 +420,7 @@ public sealed class PortableArchiveService(
                 // succeeded, so a failed import cannot leave searchable ghosts.
                 if (_bookTextScheduler is not null)
                 {
-                    foreach (var media in staged.Media
+                    foreach (var media in prepared.Media
                         .Where(media =>
                             media.Descriptor.Kind == PortableArchiveFormat.BookMediaKind
                             && BookTextFormatResolver.TryResolve(
@@ -436,10 +451,10 @@ public sealed class PortableArchiveService(
                 }
 
                 return new PortableImportResult(
-                    staged.Manifest.FormatVersion,
-                    staged.Manifest.Counts,
-                    staged.Manifest.Media.Count,
-                    staged.Manifest.Media.Sum(x => x.Length),
+                    manifest.FormatVersion,
+                    manifest.Counts,
+                    prepared.MediaFiles,
+                    prepared.MediaBytes,
                     IntegrityVerified: true);
             }
             catch (Exception exception)
@@ -473,6 +488,56 @@ public sealed class PortableArchiveService(
         finally
         {
             TryDeleteDirectory(tempRoot);
+        }
+    }
+
+    // The staged relational payload was already validated by the reader; this
+    // deserializes the same verified bytes for the relational restore.
+    private static async Task<PortableLibraryData> ReadStagedDataAsync(
+        IPortableImportStaging staging,
+        PortableStagingId stagingId,
+        CancellationToken cancellationToken)
+    {
+        await using var staged = await staging
+            .OpenDataReadAsync(stagingId, cancellationToken);
+        try
+        {
+            return await JsonSerializer
+                .DeserializeAsync<PortableLibraryData>(staged, JsonOptions, cancellationToken)
+                ?? throw new PortableArchiveException(
+                    "malformed_data",
+                    "Portable archive relational payload is malformed.");
+        }
+        catch (JsonException exception)
+        {
+            throw new PortableArchiveException(
+                "malformed_data",
+                "Portable archive relational payload is malformed.",
+                exception);
+        }
+    }
+
+    private static async Task<PortableArchiveManifest> ReadStagedManifestAsync(
+        IPortableImportStaging staging,
+        PortableStagingId stagingId,
+        CancellationToken cancellationToken)
+    {
+        await using var staged = await staging
+            .OpenManifestReadAsync(stagingId, cancellationToken);
+        try
+        {
+            return await JsonSerializer
+                .DeserializeAsync<PortableArchiveManifest>(staged, JsonOptions, cancellationToken)
+                ?? throw new PortableArchiveException(
+                    "malformed_manifest",
+                    "Portable archive manifest is malformed.");
+        }
+        catch (JsonException exception)
+        {
+            throw new PortableArchiveException(
+                "malformed_manifest",
+                "Portable archive manifest is malformed.",
+                exception);
         }
     }
 
@@ -923,141 +988,6 @@ public sealed class PortableArchiveService(
             throw new PortableArchiveException("empty_archive", "Portable archive is empty.");
     }
 
-    private async Task<ValidatedPortableArchive> ValidateAndStageAsync(
-        string archivePath,
-        string tempRoot,
-        CancellationToken ct)
-    {
-        ZipArchive archive;
-        try
-        {
-            archive = ZipFile.OpenRead(archivePath);
-        }
-        catch (InvalidDataException exception)
-        {
-            throw new PortableArchiveException(
-                "invalid_zip",
-                "Portable archive is not a valid ZIP container.",
-                exception);
-        }
-
-        using (archive)
-        {
-            PortableArchiveValidation.ValidateArchiveEntryCount(archive.Entries.Count);
-
-            var entries = new Dictionary<string, ZipArchiveEntry>(
-                StringComparer.OrdinalIgnoreCase);
-            long totalUncompressed = 0;
-
-            foreach (var entry in archive.Entries)
-            {
-                PortableArchiveValidation.ValidateDirectoryEntryName(entry.Name);
-
-                var path = PortableArchiveValidation.ValidateArchivePath(entry.FullName);
-                PortableArchiveValidation.ValidateUniqueArchivePath(path, entries.TryAdd(path, entry));
-                totalUncompressed = PortableArchiveValidation.ValidateDeclaredEntry(
-                    path,
-                    entry.Length,
-                    entry.CompressedLength,
-                    totalUncompressed);
-            }
-
-            var hasManifest = entries.TryGetValue(
-                PortableArchiveFormat.ManifestPath,
-                out var manifestEntry);
-            PortableArchiveValidation.ValidateManifestEntryFound(hasManifest);
-
-            var manifestBytes = await ReadEntryBytesAsync(
-                manifestEntry!,
-                PortableArchiveLimits.MaxManifestBytes,
-                ct);
-            var manifest = PortableArchiveValidation.Deserialize<PortableArchiveManifest>(
-                manifestBytes,
-                "malformed_manifest",
-                "Portable archive manifest is malformed.",
-                JsonOptions);
-
-            PortableArchiveValidation.ValidateManifest(manifest);
-
-            var hasData = entries.TryGetValue(manifest.Data.Path, out var dataEntry);
-            PortableArchiveValidation.ValidateDataEntryFound(manifest.Data.Path, hasData);
-
-            PortableArchiveValidation.ValidateDataEntryLength(dataEntry!.Length, manifest.Data.Length);
-
-            var dataBytes = await ReadEntryBytesAsync(
-                dataEntry!,
-                PortableArchiveLimits.MaxDataBytes,
-                ct);
-            var dataHash = Sha256(dataBytes);
-            PortableArchiveValidation.ValidateDataHash(dataHash, manifest.Data.Sha256);
-
-            var data = PortableArchiveValidation.Deserialize<PortableLibraryData>(
-                dataBytes,
-                "malformed_data",
-                "Portable archive relational payload is malformed.",
-                JsonOptions);
-
-            PortableArchiveValidation.ValidateDataVersionAgreement(manifest.DataVersion, data.Version);
-
-            PortableArchiveValidation.ValidatePortableData(data);
-
-            var actualCounts = CountsFor(data);
-            PortableArchiveValidation.ValidateManifestCounts(actualCounts, manifest.Counts);
-
-            PortableArchiveValidation.ValidateMediaManifest(manifest, data);
-
-            var stagedMediaBytes = manifest.Media.Sum(media => media.Length);
-            EnsureTempExtractionCapacity(tempRoot, stagedMediaBytes);
-
-            PortableArchiveValidation.ValidateArchiveInventory(manifest, entries.Keys);
-
-            var stageRoot = Path.Combine(tempRoot, "media-stage");
-            Directory.CreateDirectory(stageRoot);
-            var staged = new List<StagedPortableMedia>(manifest.Media.Count);
-
-            for (var index = 0; index < manifest.Media.Count; index++)
-            {
-                var descriptor = manifest.Media[index];
-                var entry = entries[descriptor.Path];
-
-                PortableArchiveValidation.ValidateMediaEntryLength(
-                    descriptor.Path,
-                    entry.Length,
-                    descriptor.Length);
-
-                var stagedPath = Path.Combine(
-                    stageRoot,
-                    $"{index:D6}{Path.GetExtension(descriptor.FileName).ToLowerInvariant()}");
-
-                await using var input = entry.Open();
-                await using var output = new FileStream(
-                    stagedPath,
-                    FileMode.CreateNew,
-                    FileAccess.Write,
-                    FileShare.None,
-                    CopyBufferSize,
-                    FileOptions.Asynchronous | FileOptions.SequentialScan);
-
-                var copied = await CopyAndHashAsync(
-                    input,
-                    output,
-                    descriptor.Length,
-                    ct);
-
-                PortableArchiveValidation.ValidateMediaHash(
-                    descriptor.Path,
-                    copied.Length,
-                    descriptor.Length,
-                    copied.Sha256,
-                    descriptor.Sha256);
-
-                staged.Add(new StagedPortableMedia(descriptor, stagedPath));
-            }
-
-            return new ValidatedPortableArchive(manifest, data, staged);
-        }
-    }
-
     private async Task EnsureDestinationIsEmptyAsync(CancellationToken ct)
     {
         var hasUserData =
@@ -1086,7 +1016,7 @@ public sealed class PortableArchiveService(
 
     private async Task ApplyRelationalDataAsync(
         PortableLibraryData data,
-        IReadOnlyList<StagedPortableMedia> stagedMedia,
+        IReadOnlyList<PortablePreparedMedia> stagedMedia,
         CancellationToken ct)
     {
         var mediaByKey = stagedMedia.ToDictionary(
@@ -1551,81 +1481,6 @@ public sealed class PortableArchiveService(
             data.Writings.Count,
             data.BookAcquisitions.Count);
 
-    private static void EnsureTempExtractionCapacity(string tempRoot, long bytesToStage)
-    {
-        if (bytesToStage <= 0)
-            return;
-
-        var root = Path.GetPathRoot(Path.GetFullPath(tempRoot));
-        if (string.IsNullOrWhiteSpace(root))
-        {
-            throw new PortableArchiveException(
-                "temp_space_unavailable",
-                "Portable archive extraction cannot determine temporary-storage capacity.");
-        }
-
-        long available;
-        try
-        {
-            available = new DriveInfo(root).AvailableFreeSpace;
-        }
-        catch (Exception exception) when (
-            exception is IOException
-            or UnauthorizedAccessException
-            or ArgumentException)
-        {
-            throw new PortableArchiveException(
-                "temp_space_unavailable",
-                "Portable archive extraction cannot determine temporary-storage capacity.",
-                exception);
-        }
-
-        // The compressed archive is already staged when this runs. Preserve at
-        // least 20% of the remaining temp volume so extraction cannot consume
-        // the host's last bytes and destabilize unrelated requests/workers.
-        var extractionBudget = available - (available / 5);
-        if (bytesToStage > extractionBudget)
-        {
-            throw new PortableArchiveException(
-                "insufficient_temp_space",
-                "Portable archive media cannot be staged safely with the temporary storage currently available.");
-        }
-    }
-
-    private static async Task<byte[]> ReadEntryBytesAsync(
-        ZipArchiveEntry entry,
-        long maxBytes,
-        CancellationToken ct)
-    {
-        PortableArchiveValidation.ValidateDeclaredReadSize(
-            entry.FullName,
-            entry.Length,
-            maxBytes);
-
-        await using var source = entry.Open();
-        using var output = new MemoryStream(
-            checked((int)Math.Min(entry.Length, int.MaxValue)));
-
-        var buffer = new byte[CopyBufferSize];
-        long total = 0;
-        while (true)
-        {
-            var read = await source.ReadAsync(buffer.AsMemory(), ct);
-            if (read == 0)
-                break;
-
-            total = checked(total + read);
-            PortableArchiveValidation.ValidateObservedReadSize(
-                entry.FullName,
-                total,
-                maxBytes);
-
-            await output.WriteAsync(buffer.AsMemory(0, read), ct);
-        }
-
-        return output.ToArray();
-    }
-
     private static async Task<(long Length, string Sha256)> CopyAndHashAsync(
         Stream source,
         Stream destination,
@@ -1653,18 +1508,6 @@ public sealed class PortableArchiveService(
             total,
             Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant());
     }
-
-    private static Task<(long Length, string Sha256)> CopyAndHashAsync(
-        Stream source,
-        Stream destination,
-        long maxBytes,
-        CancellationToken ct) =>
-        CopyAndHashAsync(
-            source,
-            destination,
-            maxBytes,
-            new byte[CopyBufferSize],
-            ct);
 
     private static async Task DisposeQuietlyAsync(IAsyncDisposable disposable)
     {
@@ -1703,9 +1546,6 @@ public sealed class PortableArchiveService(
             total,
             Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant());
     }
-
-    private static string Sha256(byte[] bytes) =>
-        Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
 
     private static void TryDeleteDirectory(string path)
     {
