@@ -99,6 +99,7 @@ TransferPathResolver.EnsureRootDirectory(transferRootPath);
 builder.Services.AddSingleton(new TransferPathResolver(transferRootPath));
 builder.Services.AddSingleton<ITransferVolume>(new DriveInfoTransferVolume(transferRootPath));
 builder.Services.AddScoped<ITransferStorageCapacity, TransferStorageCapacity>();
+Nostos.Backend.Services.Portability.Migration.MigrationEngineRegistration.AddSelfHostedMigrationEngine(builder.Services);
 
 // Durable prepared-import staging for restart-survivable migration jobs
 // (issue #679, Slice 4). The immediate import endpoint keeps constructing its
@@ -244,6 +245,7 @@ builder.Services.AddSingleton(sp => new LibraryMaintenanceCoordinator(
     builder.Configuration.GetSection(LibraryMaintenanceOptions.SectionName).Get<LibraryMaintenanceOptions>(),
     marker: sp.GetRequiredService<LibraryMaintenanceMarker>()));
 builder.Services.AddSingleton<ILibraryMaintenanceCoordinator>(sp => sp.GetRequiredService<LibraryMaintenanceCoordinator>());
+builder.Services.AddSingleton<Nostos.Backend.Services.Portability.Migration.IMigrationMaintenanceGate, MigrationMaintenanceGate>();
 builder.Services.AddSingleton(sp => new SelfHostedActivationPaths(
     PersistenceRegistration.ResolveDatabasePath(
         builder.Configuration[PersistenceRegistration.DatabasePathConfigurationKey], builder.Environment.ContentRootPath),
