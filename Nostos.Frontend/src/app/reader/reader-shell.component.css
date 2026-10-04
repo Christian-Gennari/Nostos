@@ -338,6 +338,13 @@
   border-color: var(--primary-fill);
 }
 
+/* The feedback utility is an anchor, not a button, so it opts into the shared
+   focus ring explicitly (all: unset on .icon-btn drops the UA outline). */
+.reader-feedback:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
 .reader-load-error {
   margin: auto;
   width: min(32rem, calc(100% - 2rem));
@@ -784,6 +791,42 @@
 
 .typo-reset {
   align-self: flex-start;
+}
+
+/* Below 360px the View settings panel becomes the first-level home of the
+   feedback utility (PDF's five 44px header tools cannot fit a 320px header).
+   A quiet link row, not another control language: same panel, one tap to open
+   the panel and one to the link, 44px tall for touch. */
+.typo-feedback {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 44px;
+  margin: 0.125rem -0.25rem -0.25rem;
+  padding: 0 0.25rem;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  font-size: 0.8125rem;
+  text-decoration: none;
+  touch-action: manipulation;
+}
+
+.typo-feedback:hover {
+  background: var(--bg-hover);
+  color: var(--color-text-main);
+}
+
+.typo-feedback:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.typo-feedback-label {
+  flex: 1 1 auto;
+}
+
+.typo-feedback-external {
+  color: var(--color-text-light);
 }
 
 @media (max-width: 768px) {

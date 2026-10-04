@@ -82,6 +82,28 @@
       ></button>
       }
       }
+
+      <!-- A quiet utility beside the reading tools: Cloud only, and available
+           even when the book fails to load, which is exactly when a problem is
+           worth reporting. The Reader is a separate shell, so it owns this
+           entry instead of the workspace dock. Below 360px on a format with a
+           View settings panel it moves into that panel (see .typo-feedback),
+           because five 44px tools do not fit a 320px header. -->
+      @if (showHeaderFeedback()) {
+      @if (feedbackUrl(); as feedbackHref) {
+      <a
+        class="icon-btn reader-feedback"
+        [href]="feedbackHref"
+        target="_blank"
+        rel="noopener noreferrer"
+        title="Send feedback"
+        aria-label="Send feedback"
+        data-testid="reader-feedback"
+      >
+        <nostos-icon name="paper-plane-tilt" [size]="20"></nostos-icon>
+      </a>
+      }
+      }
     </div>
   </header>
 
@@ -664,6 +686,27 @@
       class="typo-reset"
       (click)="epubReader.resetTypography()"
     >Reset</button>
+    }
+
+    @if (showPanelFeedback()) {
+    @if (feedbackUrl(); as feedbackHref) {
+    <a
+      class="typo-feedback"
+      [href]="feedbackHref"
+      target="_blank"
+      rel="noopener noreferrer"
+      title="Send feedback"
+      data-testid="reader-feedback-panel"
+    >
+      <nostos-icon name="paper-plane-tilt" [size]="16"></nostos-icon>
+      <span class="typo-feedback-label">Send feedback</span>
+      <nostos-icon
+        class="typo-feedback-external"
+        name="arrow-square-out"
+        [size]="13"
+      ></nostos-icon>
+    </a>
+    }
     }
   </div>
   }

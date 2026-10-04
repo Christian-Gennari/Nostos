@@ -18,8 +18,19 @@ import {
 } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationHistoryService } from '../../core/services/navigation-history.service';
+import { FeedbackLinkService } from '../../core/services/feedback-link.service';
 import { LibraryFilterService } from '../../library/library-filter.service';
 import { NostosIconComponent } from '../../ui/icon/nostos-icon.component';
+import { UtilitySheetService } from '../utility-sheet/utility-sheet.service';
+
+/** The phone rail's breakpoint, matching the dock's own stylesheet. */
+function isNarrowViewport(): boolean {
+  if (typeof window === 'undefined') return false;
+  if (typeof window.matchMedia === 'function') {
+    return window.matchMedia('(max-width: 768px)').matches;
+  }
+  return window.innerWidth <= 768;
+}
 
 @Component({
   standalone: true,
@@ -65,17 +76,66 @@ import { NostosIconComponent } from '../../ui/icon/nostos-icon.component';
           <span class="label">Studio</span>
         </a>
 
-        <a
-          routerLink="/settings"
-          (click)="handleDockClick('/settings', $event)"
-          routerLinkActive="active"
-          [class.pending]="pendingDestination() === '/settings'"
-          class="dock-item"
-          title="Settings"
-        >
-          <nostos-icon name="gear-six" [size]="20" weight="light"></nostos-icon>
-          <span class="label">Settings</span>
-        </a>
+        @if (isNarrow()) {
+          @if (feedbackUrl()) {
+            <button
+              type="button"
+              class="dock-item"
+              [class.dock-item-open]="sheet.open()"
+              (click)="sheet.toggle()"
+              aria-haspopup="dialog"
+              [attr.aria-expanded]="sheet.open()"
+              title="More"
+              data-testid="dock-more"
+            >
+              <nostos-icon name="dots-three" [size]="20" weight="light"></nostos-icon>
+              <span class="label">More</span>
+            </button>
+          } @else {
+            <a
+              routerLink="/settings"
+              (click)="handleDockClick('/settings', $event)"
+              routerLinkActive="active"
+              [class.pending]="pendingDestination() === '/settings'"
+              class="dock-item"
+              title="Settings"
+            >
+              <nostos-icon name="gear-six" [size]="20" weight="light"></nostos-icon>
+              <span class="label">Settings</span>
+            </a>
+          }
+        } @else {
+          @if (feedbackUrl(); as feedbackHref) {
+            <!-- One hairline sets the utility pair apart from the primary
+                 destinations; without Feedback (SelfHosted) the dock is
+                 unchanged and Settings stays where it always was. -->
+            <span class="dock-divider" aria-hidden="true"></span>
+            <a
+              class="dock-item dock-item-utility"
+              [href]="feedbackHref"
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Send feedback"
+              aria-label="Send feedback"
+              data-testid="dock-feedback"
+            >
+              <nostos-icon name="paper-plane-tilt" [size]="20" weight="light"></nostos-icon>
+              <span class="label">Feedback</span>
+            </a>
+          }
+          <a
+            routerLink="/settings"
+            (click)="handleDockClick('/settings', $event)"
+            routerLinkActive="active"
+            [class.pending]="pendingDestination() === '/settings'"
+            class="dock-item"
+            [class.dock-item-utility]="!!feedbackUrl()"
+            title="Settings"
+          >
+            <nostos-icon name="gear-six" [size]="20" weight="light"></nostos-icon>
+            <span class="label">Settings</span>
+          </a>
+        }
       </div>
     </nav>
   `,
@@ -191,6 +251,32 @@ import { NostosIconComponent } from '../../ui/icon/nostos-icon.component';
         color: var(--dock-item-active-ink);
       }
 
+      /* The narrow-viewport More sheet's trigger while it is open. Deliberately
+         not the active class: that one also owns the sliding route pill. */
+      .dock-item-open {
+        background: var(--bg-hover);
+        color: var(--dock-item-active-ink);
+      }
+
+      /* Feedback and Settings are utilities, not destinations: one hairline
+         separates them from the primary trio, and their labels sit a touch
+         lighter so the dock still reads Library/Brain/Studio first. */
+      .dock-divider {
+        align-self: stretch;
+        width: 1px;
+        margin: 7px 5px;
+        background: var(--dock-border);
+      }
+
+      .dock-item-utility {
+        min-width: 72px;
+      }
+
+      .dock-item-utility .label {
+        font-size: 0.64rem;
+        font-weight: 500;
+      }
+
       .label {
         font-size: 0.68rem;
         font-weight: 600;
@@ -290,8 +376,14 @@ export class AppDockComponent {
   private filters = inject(LibraryFilterService);
   private dockBar = viewChild<ElementRef<HTMLElement>>('dockBar');
 
+  readonly sheet = inject(UtilitySheetService);
+  readonly feedbackUrl = inject(FeedbackLinkService).url;
+
   /** Destination chosen by the pointer but not yet committed by the router. */
   readonly pendingDestination = signal<string | null>(null);
+
+  /** The dock's own breakpoint, because the two branches render different DOM. */
+  readonly isNarrow = signal(isNarrowViewport());
 
   constructor() {
     this.router.events.pipe(takeUntilDestroyed()).subscribe((event) => {
@@ -309,6 +401,12 @@ export class AppDockComponent {
 
   @HostListener('window:resize')
   onResize(): void {
+    const narrow = isNarrowViewport();
+    this.isNarrow.set(narrow);
+    // Crossing to the wide shell removes the More trigger, so the narrow sheet
+    // must not survive the breakpoint. CDK's trap restores focus only if the
+    // trigger still exists; a detached trigger is a safe no-op.
+    if (!narrow) this.sheet.close();
     this.movePill();
   }
 

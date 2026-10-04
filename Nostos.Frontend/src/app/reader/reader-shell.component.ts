@@ -37,6 +37,7 @@ import { TextareaDirective } from '../ui/form-control/form-control.directive';
 import { readReaderReturnOrigin } from '../core/navigation/studio-reader-navigation';
 import { Theme, ThemeService } from '../core/services/theme.service';
 import { ToastService } from '../core/services/toast.service';
+import { FeedbackLinkService } from '../core/services/feedback-link.service';
 
 /** Longest quote a selection surface renders (#657); the full text is still saved. */
 export const SELECTION_PREVIEW_MAX = 320;
@@ -95,6 +96,7 @@ export class ReaderShell implements OnInit, OnDestroy {
     });
 
     this.dockQuery?.addEventListener?.('change', this.onDockQueryChange);
+    this.veryNarrowQuery?.addEventListener?.('change', this.onVeryNarrowChange);
   }
 
   // ------------------------------------------------------------------
@@ -113,6 +115,19 @@ export class ReaderShell implements OnInit, OnDestroy {
   dockedLayout = signal(this.dockQuery?.matches ?? true);
   private readonly onDockQueryChange = (event: MediaQueryListEvent) =>
     this.dockedLayout.set(event.matches);
+
+  /**
+   * The narrowest supported phone width. A PDF header cannot hold five 44px
+   * tools here, so Feedback moves into the existing View settings panel rather
+   * than shrinking touch targets or adding another menu.
+   */
+  private readonly veryNarrowQuery: MediaQueryList | null =
+    typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+      ? window.matchMedia('(max-width: 360px)')
+      : null;
+  readonly veryNarrow = signal(this.veryNarrowQuery?.matches ?? false);
+  private readonly onVeryNarrowChange = (event: MediaQueryListEvent) =>
+    this.veryNarrow.set(event.matches);
 
   /** Where the captured EPUB selection sits; null docks the menu. */
   selectionAnchor = signal<SelectionAnchor | null>(null);
@@ -171,6 +186,32 @@ export class ReaderShell implements OnInit, OnDestroy {
 
   private themeService = inject(ThemeService);
   private toast = inject(ToastService);
+
+  /**
+   * The Cloud feedback destination for the Reader (`?from=reader`), or null on
+   * SelfHosted. The Reader is its own immersive shell, so it owns this utility
+   * entry rather than the workspace dock.
+   */
+  readonly feedbackUrl = inject(FeedbackLinkService).url;
+
+  /** Formats whose View settings panel exists and can host the narrow entry. */
+  private readonly hasViewSettingsPanel = computed(
+    () => this.fileType() === 'epub' || this.fileType() === 'pdf',
+  );
+
+  /**
+   * The header entry hides only where the View settings panel can take over.
+   * Audio keeps it at every width, because that format has no such panel and
+   * its three-tool header never overflows.
+   */
+  readonly showHeaderFeedback = computed(
+    () => !this.veryNarrow() || !this.hasViewSettingsPanel(),
+  );
+
+  /** The narrow replacement, a quiet link row inside the View settings panel. */
+  readonly showPanelFeedback = computed(
+    () => this.veryNarrow() && this.hasViewSettingsPanel(),
+  );
 
   /** View settings panel (EPUB and PDF) toggled by the Aa control. */
   typoOpen = signal(false);
@@ -376,6 +417,7 @@ export class ReaderShell implements OnInit, OnDestroy {
     this.pendingGroundedSourceTarget = null;
     if (this.saveFeedbackTimer) clearTimeout(this.saveFeedbackTimer);
     this.dockQuery?.removeEventListener?.('change', this.onDockQueryChange);
+    this.veryNarrowQuery?.removeEventListener?.('change', this.onVeryNarrowChange);
   }
 
   private watchBookNavigation(): void {
