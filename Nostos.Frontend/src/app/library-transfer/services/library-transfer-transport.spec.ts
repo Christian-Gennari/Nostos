@@ -1,15 +1,17 @@
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 
 import {
   LIBRARY_TRANSFER_TRANSPORT,
-  createLibraryTransferTransport,
+  LibraryTransferTransport,
 } from './library-transfer-transport';
+import { HttpLibraryTransferTransport } from './http-library-transfer-transport';
 
 /**
  * Raw source text of every application module, keyed by path. The in-memory
  * mock transport is test-only: no non-spec, non-testing file may import it, or
- * the production bundle could ship fake migration state (slice B7 owns the
- * real adapter).
+ * the production bundle could ship fake migration state.
  */
 const appSources = import.meta.glob('../../**/*.ts', {
   query: '?raw',
@@ -18,27 +20,27 @@ const appSources = import.meta.glob('../../**/*.ts', {
 }) as Record<string, string>;
 
 describe('library transfer transport DI', () => {
-  it('fails closed when no real transport is configured', () => {
-    expect(() => createLibraryTransferTransport()).toThrowError(
-      'library transfer transport is not configured',
-    );
-    expect(() => TestBed.inject(LIBRARY_TRANSFER_TRANSPORT)).toThrowError(
-      'library transfer transport is not configured',
-    );
+  it('provides the real SelfHosted HTTP adapter by default', () => {
+    TestBed.configureTestingModule({
+      providers: [provideHttpClient(), provideHttpClientTesting()],
+    });
+
+    const transport: LibraryTransferTransport = TestBed.inject(LIBRARY_TRANSFER_TRANSPORT);
+
+    expect(transport).toBeInstanceOf(HttpLibraryTransferTransport);
   });
 
   it('never imports the in-memory mock from a non-test source file', () => {
     const paths = Object.keys(appSources);
     // Prove the raw-source scan is not vacuous before trusting the filter.
     expect(paths.length).toBeGreaterThan(100);
-    expect(
-      paths.some((path) => path.endsWith('mock-library-transfer-transport.service.ts')),
-    ).toBe(true);
+    expect(paths.some((path) => path.endsWith('testing/mock-library-transfer-transport.ts'))).toBe(
+      true,
+    );
 
     const offenders = Object.entries(appSources)
       .filter(([path]) => !path.includes('.spec.'))
       .filter(([path]) => !path.includes('/testing/'))
-      .filter(([path]) => !path.endsWith('mock-library-transfer-transport.service.ts'))
       .filter(([, source]) =>
         /mock-library-transfer-transport|MockLibraryTransferTransport/.test(source),
       )

@@ -5,7 +5,7 @@ import { HASH_WORKER_FACTORY } from './hash/hash-worker';
 import {
   MockLibraryTransferTransport,
   MockLibraryTransferTransportOptions,
-} from './mock-library-transfer-transport.service';
+} from '../testing/mock-library-transfer-transport';
 import {
   LibraryTransferTransport,
   LIBRARY_TRANSFER_TRANSPORT,
@@ -579,6 +579,36 @@ describe('LibraryTransferCoordinator — reattach and resume', () => {
       kind: 'failed',
       failure: { code: 'migration_session_expired', retryable: true },
     });
+  });
+
+  it('recovers an expired session through the server retry flow', async () => {
+    const harness = setup();
+    const file = await largePortableFile();
+    const totalChunks = chunkCount(file.size, CHUNK);
+    const staged = await stageResumableJob(harness, file, totalChunks - 1);
+
+    const reloaded = reload(harness.mock, harness.mock);
+    await reloaded.coordinator.resume();
+    harness.mock.expireSession(staged.jobId!);
+
+    await reloaded.coordinator.resumeWithFile(file);
+    expect(reloaded.coordinator.state()).toMatchObject({
+      kind: 'failed',
+      failure: { code: 'migration_session_expired' },
+    });
+
+    // Server rule: the expired session is recreated only after the job is
+    // retried (Pending, attempt > 1); the retry discards the expired session
+    // exactly as the server's synchronous cleanup does.
+    await reloaded.coordinator.retry();
+    expect(reloaded.coordinator.state().kind).toBe('ready-to-upload');
+
+    await reloaded.coordinator.resumeWithFile(file);
+    expect(reloaded.coordinator.state().kind).toBe('ready-empty');
+    // The server's retry cleanup discards the expired session, so its receipts
+    // are gone and every chunk is re-uploaded under the recreated session.
+    expect(totalChunks).toBe(3);
+    expect(harness.mock.uploadedChunks).toEqual([0, 1, 2]);
   });
 
   it('clears a stale record when the job is gone', async () => {

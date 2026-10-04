@@ -9,6 +9,12 @@
     data-testid="library-import-file-input"
   />
 
+  @if (maintenanceWaiting()) {
+    <p class="transfer-maintenance" role="status" data-testid="transfer-maintenance-status">
+      {{ maintenanceMessage }}
+    </p>
+  }
+
   @if (blockedByOtherTab()) {
     <div class="transfer-other-tab" role="status" data-testid="transfer-other-tab">
       <nostos-icon name="warning-circle" [size]="16" />

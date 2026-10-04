@@ -20,7 +20,7 @@ import {
   LibraryTransferTransport,
   MigrationTransportError,
 } from '../services/library-transfer-transport';
-import { MockLibraryTransferTransport } from '../services/mock-library-transfer-transport.service';
+import { MockLibraryTransferTransport } from '../testing/mock-library-transfer-transport';
 import { FileDigestService } from '../services/file-digest.service';
 import { FileDigest, PersistedTransferResumeState, TransferFileIdentity } from '../models/library-transfer.models';
 import { HASH_WORKER_FACTORY } from '../services/hash/hash-worker';
@@ -1110,8 +1110,14 @@ describe('LibraryImportFlowComponent', () => {
     TestBed.configureTestingModule({
       providers: [
         { provide: LIBRARY_TRANSFER_TRANSPORT, useValue: new MockLibraryTransferTransport() },
-        { provide: LibraryTransferCoordinator, useValue: { state: state.asReadonly() } },
-      ],
+        {
+          provide: LibraryTransferCoordinator,
+          useValue: {
+            state: state.asReadonly(),
+            maintenanceWaiting: signal(null),
+            hasInterruptedOperation: signal(false),
+          },
+        },      ],
     });
     const fixture = TestBed.createComponent(LibraryImportFlowComponent);
     fixture.detectChanges();

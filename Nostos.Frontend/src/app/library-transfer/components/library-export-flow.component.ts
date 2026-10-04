@@ -16,6 +16,7 @@ import {
   TransferFailureCopy,
   TransferProgressPhase,
   libraryTransferFailureCopy,
+  maintenanceRetryMessage,
 } from '../library-transfer.copy';
 import { LibraryTransferProgressComponent } from './library-transfer-progress.component';
 import { ButtonComponent } from '../../ui/button/button.component';
@@ -66,6 +67,10 @@ export class LibraryExportFlowComponent {
   readonly ready = computed(() => asKind(this.state(), 'ready'));
   readonly failed = computed(() => asKind(this.state(), 'failed'));
   readonly cancelled = computed(() => asKind(this.state(), 'cancelled'));
+
+  /** True while the coordinator waits out server maintenance and re-attempts. */
+  readonly maintenanceWaiting = this.coordinator.maintenanceWaiting;
+  readonly maintenanceMessage = maintenanceRetryMessage();
 
   readonly preparingHeadline = computed(() => {
     const state = this.preparing();

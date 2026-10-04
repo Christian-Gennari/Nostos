@@ -41,14 +41,14 @@ import {
   isTerminalJobState,
   toChunkRanges,
 } from '../models/migration-http.dtos';
-import { evaluatePreflight } from './migration-preflight';
+import { calculateHostPeakReservationBytes, evaluatePreflight } from '../services/migration-preflight';
 import {
   LibraryTransferTransport,
   MigrationTransportError,
-} from './library-transfer-transport';
-import { sha256ChunkHex } from './hash/chunk-digest';
-import { readBlobBytes } from './hash/blob-bytes';
-import { Sha256 } from './hash/sha256';
+} from '../services/library-transfer-transport';
+import { sha256ChunkHex } from '../services/hash/chunk-digest';
+import { readBlobBytes } from '../services/hash/blob-bytes';
+import { Sha256 } from '../services/hash/sha256';
 
 export type MockTransportOperation =
   | 'preflight'
@@ -122,7 +122,11 @@ interface MockJob {
   reservationId?: string;
   session?: MockSession;
   downloadAvailable: boolean;
+  /** Mirrors the artifact expiry state the download endpoint reports as 410. */
+  artifactExpired: boolean;
   validationPollsRemaining: number;
+  /** Mirrors the server's attempt counter used by the session-reactivation rule. */
+  attempt: number;
 }
 
 interface MockReservation {
@@ -160,7 +164,14 @@ const ERROR_MESSAGES: Partial<Record<MigrationErrorCode, string>> = {
   migration_storage_exhausted: 'The host ran out of storage during the transfer.',
   migration_cannot_cancel: 'The job can no longer be cancelled.',
   migration_not_retryable: 'Only failed, cancelled or expired jobs can be retried.',
-  migration_export_not_available: 'The export artifact is not available for download.',
+  migration_storage_contended: 'Transfer capacity is busy. Retry shortly.',
+  migration_activation_busy: 'The library is in maintenance. Try again later.',
+  migration_import_preparation_unavailable:
+    'Import preparation is not available on this deployment yet.',
+  migration_export_artifact_unavailable:
+    'Export preparation is not available on this deployment yet.',
+  migration_export_not_available: 'This export job has no downloadable artifact.',
+  migration_export_expired: 'The export artifact has expired.',
   migration_invalid_request: 'The migration request is malformed.',
   network_error: 'The network request failed.',
   request_aborted: 'The request was aborted.',
@@ -277,6 +288,15 @@ export class MockLibraryTransferTransport implements LibraryTransferTransport {
     const job = this.requireJob(jobId);
     job.state = 'Completed';
     job.downloadAvailable = true;
+    job.artifactExpired = false;
+  }
+
+  /** Simulates the artifact retention window passing. */
+  expireExportArtifact(jobId: string): void {
+    const job = this.requireJob(jobId);
+    if (job.direction !== 'Export') return;
+    job.artifactExpired = true;
+    job.downloadAvailable = false;
   }
 
   resolveReservationId(jobId: string): string | undefined {
@@ -296,13 +316,36 @@ export class MockLibraryTransferTransport implements LibraryTransferTransport {
       this.options.destinationStatus === 'Populated' ? 'Populated' : 'Empty';
     const availableStorageBytes = this.options.availableStorageBytes ?? EMPTY_STORAGE;
 
-    const evaluation = evaluatePreflight(request, {
+    let evaluation = evaluatePreflight(request, {
       destinationStatus,
       existingCounts,
       availableStorageBytes,
       destinationRevision: this.destinationRevision,
       operationalBackup: this.options.operationalBackup ?? false,
     });
+
+    // The server admits in two stages: the contract-bytes evaluation first,
+    // then the host peak (contract bytes + one effective chunk + per-job
+    // overhead) against usable capacity. A borderline import can pass the
+    // first and fail the second, so the mock mirrors both.
+    if (evaluation.isAllowed) {
+      const hostPeakBytes = calculateHostPeakReservationBytes(
+        evaluation.requiredStorageBytes,
+        this.chunkSizeBytes,
+      );
+      if (availableStorageBytes < hostPeakBytes) {
+        evaluation = {
+          ...evaluation,
+          decision: 'RejectedInsufficientStorage',
+          isAllowed: false,
+          errors: [
+            ...evaluation.errors,
+            `Migration requires ${hostPeakBytes} bytes of host peak storage, ` +
+              `but only ${availableStorageBytes} bytes are available.`,
+          ],
+        };
+      }
+    }
 
     let reservationId: string | null = null;
     let reservationExpiresAtUtc: string | null = null;
@@ -358,8 +401,10 @@ export class MockLibraryTransferTransport implements LibraryTransferTransport {
       createdAt: timestamp,
       updatedAt: timestamp,
       downloadAvailable: false,
+      artifactExpired: false,
       validationPollsRemaining: this.options.validationPolls ?? 0,
       reservationId: request.reservationId ?? undefined,
+      attempt: 1,
     };
     if (request.reservationId) {
       const reservation = this.reservations.get(request.reservationId);
@@ -428,21 +473,35 @@ export class MockLibraryTransferTransport implements LibraryTransferTransport {
     await this.before('retryJob', signal);
     const job = this.jobs.get(jobId);
     if (!job) throw this.typedError('migration_not_found', 404);
-    if (!isRetryableJobState(job.state)) {
+
+    // The server's retry path first runs the expired-session cleanup for an
+    // active import job, expiring the job so it can be retried. The session
+    // row is discarded with it; the browser then recreates the session through
+    // the persisted request after the job is Pending again.
+    const sessionExpired =
+      job.session !== undefined &&
+      (job.session.state === 'Expired' ||
+        job.session.state === 'Cancelled' ||
+        job.session.expiresAt <= this.now());
+    const activeWithExpiredSession =
+      sessionExpired &&
+      job.direction === 'Import' &&
+      (job.state === 'Pending' ||
+        job.state === 'Preparing' ||
+        job.state === 'Transferring' ||
+        job.state === 'Validating');
+
+    if (!isRetryableJobState(job.state) && !activeWithExpiredSession) {
       throw this.typedError('migration_not_retryable', 409);
     }
 
+    if (activeWithExpiredSession) job.session = undefined;
+    job.attempt += 1;
     job.state = 'Pending';
     job.failureCode = null;
     job.failureMessage = null;
     job.downloadAvailable = false;
     job.updatedAt = this.now();
-
-    const session = job.session;
-    if (session && (session.state === 'Expired' || session.state === 'Cancelled')) {
-      session.state = 'Created';
-      session.expiresAt = this.now() + 24 * 60 * 60 * 1000;
-    }
 
     return this.status(job);
   }
@@ -465,24 +524,39 @@ export class MockLibraryTransferTransport implements LibraryTransferTransport {
     const creationPayload = sessionCreationPayload(request);
     const existing = job.session;
     if (existing) {
-      if (existing.idempotencyKey === request.idempotencyKey) {
-        // Same key binds the complete creation payload (server CreationPayloadHash).
-        if (existing.creationPayload !== creationPayload) {
-          throw this.typedError('migration_idempotency_conflict', 409);
-        }
-        return this.sessionResponse(existing);
+      const sameKey = existing.idempotencyKey === request.idempotencyKey;
+      const samePayload = existing.creationPayload === creationPayload;
+
+      // Server `CheckPayload` order: a reused key with a changed payload is a
+      // conflict; a different file identity is an identity mismatch; then a
+      // different key or payload is still an idempotency conflict.
+      if (sameKey && !samePayload) {
+        throw this.typedError('migration_idempotency_conflict', 409);
+      }
+      if (!identityEquals(existing.fileIdentity, request.fileIdentity)) {
+        throw this.typedError('migration_file_identity_mismatch', 409);
+      }
+      if (!samePayload || !sameKey) {
+        throw this.typedError('migration_idempotency_conflict', 409);
       }
 
-      // A new key may only reattach to the existing session when identity and
-      // chunking match; otherwise it is a different file transfer.
-      const sameChunking =
-        existing.chunkSize === request.chunkSize &&
-        existing.totalChunks === request.totalChunks &&
-        existing.totalBytes === request.totalBytes;
-      if (sameChunking && identityEquals(existing.fileIdentity, request.fileIdentity)) {
-        return this.sessionResponse(existing);
+      const expired =
+        existing.state === 'Expired' ||
+        existing.state === 'Cancelled' ||
+        existing.expiresAt <= this.now();
+      if (expired) {
+        // Reactivation only through the job retry flow: the job must be
+        // Pending again on at least its second attempt. Otherwise the durable
+        // job has to be retried before the browser may recreate the session.
+        if (job.state !== 'Pending' || job.attempt <= 1) {
+          throw this.typedError('migration_invalid_state', 409);
+        }
+        existing.state = 'Created';
+        existing.createdAt = this.now();
+        existing.expiresAt = this.now() + 24 * 60 * 60 * 1000;
       }
-      throw this.typedError('migration_file_identity_mismatch', 409);
+
+      return this.sessionResponse(existing);
     }
 
     const timestamp = this.now();
@@ -623,7 +697,12 @@ export class MockLibraryTransferTransport implements LibraryTransferTransport {
   getExportDownloadUrl(jobId: string): string {
     this.calls.getExportDownloadUrl += 1;
     const job = this.jobs.get(jobId);
-    if (!job || job.direction !== 'Export' || !job.downloadAvailable) {
+    if (!job || job.direction !== 'Export') throw this.typedError('migration_not_found', 404);
+    if (job.artifactExpired) throw this.typedError('migration_export_expired', 410);
+    if (!job.downloadAvailable) {
+      // The merged download route answers 404 migration_export_not_available
+      // while no artifact is sealed and 410 migration_export_expired after the
+      // retention window.
       throw this.typedError('migration_export_not_available', 404);
     }
     return `/api/portability/migration/jobs/${jobId}/export-download`;

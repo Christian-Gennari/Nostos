@@ -1,4 +1,9 @@
 <div class="transfer-flow" data-testid="library-export-flow">
+  @if (maintenanceWaiting()) {
+    <p class="transfer-maintenance" role="status" data-testid="transfer-maintenance-status">
+      {{ maintenanceMessage }}
+    </p>
+  }
   @if (preparing(); as current) {
     <div class="transfer-state" data-testid="export-preparing">
       <p class="transfer-headline">{{ preparingHeadline() }}</p>
