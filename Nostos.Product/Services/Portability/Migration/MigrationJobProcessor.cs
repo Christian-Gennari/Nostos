@@ -77,7 +77,7 @@ internal sealed class MigrationJobProcessor(NostosDbContext db, IMigrationJobSto
         {
             ct.ThrowIfCancellationRequested();
             job = await store.GetAsync(job.Id, ct) ?? throw MigrationJobStoreException.NotFound(job.Id);
-            if (job.LeaseToken != context.Job.LeaseToken || job.LeaseExpiresAtUtc <= clock.GetUtcNow())
+            if (job.LeaseToken != context.Job.LeaseToken || job.LeaseExpiresAtUtc is null || job.LeaseExpiresAtUtc <= clock.GetUtcNow())
                 throw MigrationJobStoreException.LeaseConflict(job.Id);
             context.Job = job;
             if (job.State is MigrationJobState.ReadyToActivate or MigrationJobState.Activating || MigrationJobTransitions.IsTerminal(job.State)) return;

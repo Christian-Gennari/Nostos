@@ -78,6 +78,8 @@ public sealed class SelfHostedMigrationTransferService(
             throw MigrationTransferException.Error(MigrationTransferException.StorageExhausted);
 
         var claimed = false;
+        var committed = false;
+        Guid? newScope = null;
         try
         {
             await using var transaction = await MigrationMutation.BeginAsync(db, ct);
@@ -114,6 +116,9 @@ public sealed class SelfHostedMigrationTransferService(
                 if (job.State != (int)MigrationJobState.Pending || job.AttemptNumber <= 1)
                     throw MigrationTransferException.Error(MigrationTransferException.InvalidState);
                 var present = files.HasArchive(existing.Id);
+                if (present && existing.CompletedAtUtc is not null && !await files.VerifyAsync(existing.Id,
+                    existing.TotalBytes, existing.FileIdentitySha256, new PortableArchiveBufferBudget(FileMigrationUploadStore.BufferBytes), ct))
+                    throw MigrationTransferException.Error(MigrationTransferException.IdentityMismatch);
                 if (!present)
                 {
                     await db.MigrationChunkReceiptRecords.Where(r => r.SessionId == existing.Id).ExecuteDeleteAsync(ct);
@@ -142,6 +147,7 @@ public sealed class SelfHostedMigrationTransferService(
                     CreationPayloadHash = hash, CreatedAtUtc = Now, UpdatedAtUtc = Now,
                     ExpiresAtUtc = Now.AddHours(MigrationContractLimits.SessionExpiryHours),
                 };
+                newScope = existing.Id;
                 await files.CreateAsync(existing.Id, existing.TotalBytes, ct);
                 existing.StorageKey = files.Paths.ToStorageKey(files.Paths.GetUploadArchivePartPath(existing.Id));
                 db.MigrationSessionRecords.Add(existing);
@@ -149,6 +155,7 @@ public sealed class SelfHostedMigrationTransferService(
                 db.Entry(existing).State = EntityState.Detached;
             }
             await transaction.CommitAsync(ct);
+            committed = true;
             claimed = candidate == live.Id;
             var status = await StatusAsync(existing, ct);
             return replay ? MigrationIdempotencyResult<MigrationSessionStatus>.Replayed(status)
@@ -161,6 +168,15 @@ public sealed class SelfHostedMigrationTransferService(
         }
         finally
         {
+            if (!committed && newScope is { } unpublished)
+            {
+                try
+                {
+                    if (!await db.MigrationSessionRecords.AnyAsync(s => s.Id == unpublished, CancellationToken.None))
+                        files.DiscardUnpublishedSession(unpublished);
+                }
+                catch { /* Orphan TTL cleanup is the durable fallback. */ }
+            }
             if (candidate is { } unused && !claimed)
             {
                 try { await capacity.ReleaseAsync(unused, CancellationToken.None); }
@@ -181,17 +197,23 @@ public sealed class SelfHostedMigrationTransferService(
     {
         ArgumentNullException.ThrowIfNull(metadata);
         ArgumentNullException.ThrowIfNull(content);
+        var requestToken = ct;
+        using var uploading = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        using var registration = cancellations.RegisterUpload(jobId, uploading);
+        ct = uploading.Token;
         string? temp = null;
         try
         {
             await using var transaction = await MigrationMutation.BeginAsync(db, ct);
-            await MigrationMutation.LockUploadJobAsync(db, jobId, Now, ct);
             var session = await SessionAsync(jobId, sessionId, ct);
             RequireReceiving(session);
+            await MigrationMutation.LockUploadJobAsync(db, jobId, Now, ct);
+            session = await SessionAsync(jobId, sessionId, ct);
+            RequireReceiving(session);
             var (offset, length, checksum) = ValidateChunk(session, chunkIndex, metadata);
-            using var budget = new BudgetScope();
+            var budget = new PortableArchiveBufferBudget(FileMigrationUploadStore.BufferBytes);
             // Even duplicate bodies are verified; a matching header alone is no proof.
-            temp = await files.ReceiveAsync(sessionId, chunkIndex, length, checksum, content, budget.Value, ct);
+            temp = await files.ReceiveAsync(sessionId, chunkIndex, length, checksum, content, budget, ct);
             var receipt = await db.MigrationChunkReceiptRecords.AsNoTracking()
                 .SingleOrDefaultAsync(r => r.SessionId == sessionId && r.ChunkIndex == chunkIndex, ct);
             if (receipt is not null)
@@ -201,7 +223,7 @@ public sealed class SelfHostedMigrationTransferService(
                 await transaction.CommitAsync(ct);
                 return new(sessionId, chunkIndex, true);
             }
-            await files.PlaceAsync(sessionId, temp, offset, budget.Value, ct);
+            await files.PlaceAsync(sessionId, temp, offset, budget, ct);
             RequireReceiving(session); // The clock may have advanced during IO.
             if (await MigrationMutation.Active(db, jobId, Now).AnyAsync(ct) == false)
                 throw MigrationTransferException.Error(MigrationTransferException.InvalidState);
@@ -222,6 +244,8 @@ public sealed class SelfHostedMigrationTransferService(
             await transaction.CommitAsync(ct);
             return new(sessionId, chunkIndex, false);
         }
+        catch (OperationCanceledException) when (!requestToken.IsCancellationRequested && uploading.IsCancellationRequested)
+        { throw MigrationTransferException.Error(MigrationTransferException.InvalidState); }
         catch (TransferReservationException ex)
         {
             await FailUploadAsync(jobId, MigrationTransferException.StorageExhausted);
@@ -237,11 +261,22 @@ public sealed class SelfHostedMigrationTransferService(
 
     public async Task<MigrationSessionStatus> CompleteSessionAsync(Guid jobId, Guid sessionId, CancellationToken ct)
     {
+        var requestToken = ct;
+        using var completing = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        using var registration = cancellations.RegisterUpload(jobId, completing);
+        ct = completing.Token;
         try
         {
             await using var transaction = await MigrationMutation.BeginAsync(db, ct);
-            await MigrationMutation.LockUploadJobAsync(db, jobId, Now, ct);
             var session = await SessionAsync(jobId, sessionId, ct);
+            if (session.ExpiresAtUtc <= Now || session.State == (int)MigrationSessionState.Expired)
+                throw MigrationTransferException.Error(MigrationTransferException.Expired);
+            if (session.State == (int)MigrationSessionState.Complete && await db.MigrationJobRecords.AnyAsync(j => j.Id == jobId
+                && j.ExpiresAtUtc > Now && (j.State == (int)MigrationJobState.ReadyToActivate || j.State == (int)MigrationJobState.Activating
+                    || j.State == (int)MigrationJobState.Completed), ct))
+                return await StatusAsync(session, ct); // Read-only replay after the worker has moved on.
+            await MigrationMutation.LockUploadJobAsync(db, jobId, Now, ct);
+            session = await SessionAsync(jobId, sessionId, ct);
             if (session.State == (int)MigrationSessionState.Complete)
                 return await StatusAsync(session, ct);
             RequireReceiving(session);
@@ -251,10 +286,12 @@ public sealed class SelfHostedMigrationTransferService(
                 || receipts.Where((r, i) => r.ChunkIndex != i || r.OffsetBytes != checked((long)i * session.ChunkSize)
                     || r.LengthBytes != (int)Math.Min(session.ChunkSize, session.TotalBytes - r.OffsetBytes)).Any())
                 throw MigrationTransferException.Error(MigrationTransferException.MissingChunks);
-            using var budget = new BudgetScope();
-            if (!await files.VerifyAsync(sessionId, session.TotalBytes, session.FileIdentitySha256, budget.Value, ct))
+            var budget = new PortableArchiveBufferBudget(FileMigrationUploadStore.BufferBytes);
+            if (!await files.VerifyAsync(sessionId, session.TotalBytes, session.FileIdentitySha256, budget, ct))
                 throw MigrationTransferException.Error(MigrationTransferException.IdentityMismatch);
             RequireReceiving(session);
+            if (!await MigrationMutation.Active(db, jobId, Now).AnyAsync(ct))
+                throw MigrationTransferException.Error(MigrationTransferException.InvalidState);
             files.Seal(sessionId);
             if (await db.MigrationSessionRecords.Where(s => s.Id == sessionId && s.Version == session.Version
                     && s.ExpiresAtUtc > Now && (s.State == (int)MigrationSessionState.Created || s.State == (int)MigrationSessionState.Receiving))
@@ -266,6 +303,8 @@ public sealed class SelfHostedMigrationTransferService(
             await transaction.CommitAsync(ct);
             return await GetSessionAsync(jobId, sessionId, ct);
         }
+        catch (OperationCanceledException) when (!requestToken.IsCancellationRequested && completing.IsCancellationRequested)
+        { throw MigrationTransferException.Error(MigrationTransferException.InvalidState); }
         catch (MigrationTransferException ex) when (ex.Code == MigrationTransferException.IdentityMismatch)
         { await FailUploadAsync(jobId, ex.Code); throw; }
         catch (IOException ex)
@@ -280,6 +319,7 @@ public sealed class SelfHostedMigrationTransferService(
 
     public async Task CancelAsync(Guid jobId, MigrationCancelRequest request, CancellationToken ct)
     {
+        using var cancellingUploads = cancellations.BeginUploadCancellation(jobId);
         await jobs.CancelAsync(jobId, request, ct);
         cancellations.Cancel(jobId);
         await cleanup.CleanupJobAsync(jobId, ct);
@@ -289,6 +329,7 @@ public sealed class SelfHostedMigrationTransferService(
     public async Task DeleteSessionAsync(Guid jobId, Guid sessionId, CancellationToken ct)
     {
         await SessionAsync(jobId, sessionId, ct);
+        using var cancellingUploads = cancellations.BeginUploadCancellation(jobId);
         await jobs.CancelAsync(jobId, new("Upload abandoned."), ct);
         cancellations.Cancel(jobId);
         await cleanup.CleanupJobAsync(jobId, ct, discardUploads: true);
@@ -382,12 +423,5 @@ public sealed class SelfHostedMigrationTransferService(
         return new(s.Id, (MigrationSessionPurpose)s.Purpose, (MigrationSessionState)s.State, s.TotalBytes, s.ChunkSize,
             s.TotalChunks, new(s.FileIdentitySizeBytes, s.FileIdentitySha256, s.ClientFingerprint), received, received.Count,
             new(DateTime.SpecifyKind(s.CreatedAtUtc, DateTimeKind.Utc)), new(DateTime.SpecifyKind(s.ExpiresAtUtc, DateTimeKind.Utc)), s.IdempotencyKey);
-    }
-    // Each upload/completion has its own budget; no shared allocation pool grows
-    // with archive size or number of sessions.
-    private sealed class BudgetScope : IDisposable
-    {
-        internal PortableArchiveBufferBudget Value { get; } = new(FileMigrationUploadStore.BufferBytes);
-        public void Dispose() { }
     }
 }

@@ -37,6 +37,9 @@ public class FileMigrationUploadStore(TransferPathResolver paths)
     /// <summary>Storage-failure injection seam. Production always uses the verified resolver.</summary>
     protected virtual FileStream CreateChunkFile(string path) => paths.CreateNewVerifiedFile(path);
 
+    /// <summary>Injects write failures without exhausting the host disk in tests.</summary>
+    protected virtual ValueTask WriteChunkBytesAsync(FileStream output, ReadOnlyMemory<byte> bytes, CancellationToken ct) => output.WriteAsync(bytes, ct);
+
     internal async Task<string> ReceiveAsync(Guid sessionId, int index, int expectedBytes,
         string expectedHash, Stream content, PortableArchiveBufferBudget budget, CancellationToken ct)
     {
@@ -57,7 +60,7 @@ public class FileMigrationUploadStore(TransferPathResolver paths)
                 if (received > expectedBytes)
                     throw MigrationTransferException.Error(MigrationTransferException.RangeInvalid);
                 hash.AppendData(buffer.Memory.Span[..read]);
-                await output.WriteAsync(buffer.Memory[..read], ct);
+                await WriteChunkBytesAsync(output, buffer.Memory[..read], ct);
             }
             if (received != expectedBytes)
                 throw MigrationTransferException.Error(MigrationTransferException.RangeInvalid);
@@ -108,6 +111,13 @@ public class FileMigrationUploadStore(TransferPathResolver paths)
     internal bool HasArchive(Guid sessionId) =>
         File.Exists(paths.VerifyPathWithinRoot(paths.GetUploadArchivePartPath(sessionId))) ||
         File.Exists(paths.VerifyPathWithinRoot(paths.GetUploadArchivePath(sessionId)));
+
+    internal void DiscardUnpublishedSession(Guid sessionId)
+    {
+        File.Delete(paths.VerifyPathWithinRoot(paths.GetUploadArchivePartPath(sessionId)));
+        var directory = paths.VerifyPathWithinRoot(paths.GetUploadSessionDirectory(sessionId));
+        if (Directory.Exists(directory)) Directory.Delete(directory); // Empty scope only; never recursive.
+    }
 
     internal void TryDelete(string path)
     {

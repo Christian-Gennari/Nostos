@@ -92,7 +92,7 @@ public sealed class MigrationTransferCleanup(
         var job = await db.MigrationJobRecords.AsNoTracking().SingleAsync(j => j.Id == jobId, ct);
         var sessions = await db.MigrationSessionRecords.AsNoTracking().Where(s => s.JobId == jobId).ToListAsync(ct);
         var terminal = MigrationJobTransitions.IsTerminal((MigrationJobState)job.State);
-        var expires = job.ExpiresAtUtc <= now || sessions.Any(s => s.ExpiresAtUtc <= now);
+        var expires = job.ExpiresAtUtc <= now || job.State <= (int)MigrationJobState.Validating && sessions.Any(s => s.ExpiresAtUtc <= now);
         if (!terminal && expires)
         {
             MigrationJobStateMachine.EnsureTransitionAllowed(jobId, (MigrationDirection)job.Direction,
@@ -107,6 +107,21 @@ public sealed class MigrationTransferCleanup(
         // Commit invalidation before attempting deletion. On failure later, the
         // terminal rows are the durable retry queue. The lock transaction below
         // protects each deletion from concurrent RetryAsync/session reactivation.
+        foreach (var session in sessions)
+        {
+            var expired = session.ExpiresAtUtc <= now || expires;
+            if (expired || discardUploads || job.State >= (int)MigrationJobState.Completed)
+                await db.MigrationSessionRecords.Where(s => s.Id == session.Id && s.Version == session.Version)
+                    .ExecuteUpdateAsync(s => s.SetProperty(s => s.State, expired ? (int)MigrationSessionState.Expired : (int)MigrationSessionState.Cancelled)
+                        .SetProperty(s => s.UpdatedAtUtc, now).SetProperty(s => s.Version, s => s.Version + 1), ct);
+        }
+        var expiringArtifact = await db.MigrationExportArtifactRecords.AsNoTracking().SingleOrDefaultAsync(a => a.JobId == jobId, ct);
+        if (expiringArtifact is not null && expiringArtifact.State != (int)MigrationExportArtifactState.Deleted
+            && (expiringArtifact.State != (int)MigrationExportArtifactState.Available || expiringArtifact.ExpiresAtUtc <= now))
+            await db.MigrationExportArtifactRecords.Where(a => a.JobId == jobId && a.Version == expiringArtifact.Version)
+                .ExecuteUpdateAsync(s => s.SetProperty(a => a.State, (int)MigrationExportArtifactState.Expired)
+                    .SetProperty(a => a.Version, a => a.Version + 1), ct);
+        if (job.ReservationId is { } terminalReservation) await capacity.ReleaseAsync(terminalReservation, ct);
         await transaction.CommitAsync(ct);
         await using var deleteTransaction = await MigrationMutation.BeginAsync(db, ct);
         if (await db.MigrationJobRecords.Where(j => j.Id == jobId && j.State >= (int)MigrationJobState.Completed
@@ -118,12 +133,8 @@ public sealed class MigrationTransferCleanup(
         {
             var expired = session.ExpiresAtUtc <= Now || job.State == (int)MigrationJobState.Expired;
             var remove = discardUploads || expired || job.State == (int)MigrationJobState.Completed;
-            // Cancel/failed chunks may be retained for identity-bound retry until
-            // session TTL, while their peak reservation is released immediately.
-            if (remove || job.State is (int)MigrationJobState.Cancelled or (int)MigrationJobState.Failed)
-                await db.MigrationSessionRecords.Where(s => s.Id == session.Id && s.Version == session.Version)
-                    .ExecuteUpdateAsync(s => s.SetProperty(s => s.State, expired ? (int)MigrationSessionState.Expired : (int)MigrationSessionState.Cancelled)
-                        .SetProperty(s => s.UpdatedAtUtc, Now).SetProperty(s => s.Version, s => s.Version + 1), ct);
+            // Cancelled/failed chunks stay available for identity-bound retry
+            // until TTL; terminal invalidation already committed above.
             if (remove) DeleteScope(paths.GetUploadSessionDirectory(session.Id));
             else DeleteChunkTemps(session.Id);
         }
