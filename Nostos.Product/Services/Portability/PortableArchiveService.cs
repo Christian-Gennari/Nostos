@@ -40,7 +40,7 @@ public sealed class PortableArchiveService(
             throw new ArgumentException("The export destination must be writable.", nameof(destination));
 
         var data = await SnapshotAsync(cancellationToken);
-        ValidatePortableData(data);
+        PortableArchiveValidation.ValidatePortableData(data);
         var counts = CountsFor(data);
 
         var tempRoot = Path.Combine(
@@ -67,12 +67,7 @@ public sealed class PortableArchiveService(
             }
 
             var dataInfo = await DescribeFileAsync(dataPath, cancellationToken);
-            if (dataInfo.Length > PortableArchiveLimits.MaxDataBytes)
-            {
-                throw new PortableArchiveException(
-                    "data_too_large",
-                    $"Portable relational data exceeds the {PortableArchiveLimits.MaxDataBytes} byte v1 limit.");
-            }
+            PortableArchiveValidation.ValidateExportDataSize(dataInfo.Length);
 
             var media = new List<PortableArchiveMediaEntry>();
 
@@ -597,7 +592,7 @@ public sealed class PortableArchiveService(
             BookAssetFormats.RequireCoverExtension($"cover{extension}");
 
         var fileName = $"{kind}{extension}";
-        var path = MediaPath(bookId, kind, extension);
+        var path = PortableArchiveValidation.MediaPath(bookId, kind, extension);
 
         await using var opened = kind == PortableArchiveFormat.BookMediaKind
             ? await _assets.OpenBookFileAsync(bookId, null, ct)
@@ -657,12 +652,7 @@ public sealed class PortableArchiveService(
                 break;
 
             total = checked(total + read);
-            if (total > PortableArchiveLimits.MaxArchiveBytes)
-            {
-                throw new PortableArchiveException(
-                    "archive_too_large",
-                    $"Portable archive exceeds the {PortableArchiveLimits.MaxArchiveBytes} byte v1 compressed-size limit.");
-            }
+            PortableArchiveValidation.ValidateArchiveSize(total);
 
             await target.WriteAsync(buffer.AsMemory(0, read), ct);
         }
@@ -691,12 +681,7 @@ public sealed class PortableArchiveService(
 
         using (archive)
         {
-            if (archive.Entries.Count > PortableArchiveLimits.MaxArchiveEntries)
-            {
-                throw new PortableArchiveException(
-                    "too_many_entries",
-                    $"Portable archive contains more than {PortableArchiveLimits.MaxArchiveEntries} entries.");
-            }
+            PortableArchiveValidation.ValidateArchiveEntryCount(archive.Entries.Count);
 
             var entries = new Dictionary<string, ZipArchiveEntry>(
                 StringComparer.OrdinalIgnoreCase);
@@ -704,148 +689,65 @@ public sealed class PortableArchiveService(
 
             foreach (var entry in archive.Entries)
             {
-                if (string.IsNullOrEmpty(entry.Name))
-                {
-                    throw new PortableArchiveException(
-                        "directory_entry_not_allowed",
-                        "Portable archive v1 does not allow explicit directory entries.");
-                }
+                PortableArchiveValidation.ValidateDirectoryEntryName(entry.Name);
 
-                var path = ValidateArchivePath(entry.FullName);
-                if (!entries.TryAdd(path, entry))
-                {
-                    throw new PortableArchiveException(
-                        "duplicate_path",
-                        $"Portable archive contains duplicate path '{path}'.");
-                }
-
-                if (entry.Length < 0 || entry.Length > PortableArchiveLimits.MaxSingleEntryBytes)
-                {
-                    throw new PortableArchiveException(
-                        "entry_too_large",
-                        $"Portable archive entry '{path}' exceeds the v1 entry-size limit.");
-                }
-
-                totalUncompressed = checked(totalUncompressed + entry.Length);
-                if (totalUncompressed > PortableArchiveLimits.MaxUncompressedBytes)
-                {
-                    throw new PortableArchiveException(
-                        "archive_expands_too_large",
-                        "Portable archive declares too much uncompressed data.");
-                }
-
-                if (entry.Length > 1024 * 1024)
-                {
-                    if (entry.CompressedLength <= 0
-                        || entry.Length / (double)entry.CompressedLength > PortableArchiveLimits.MaxCompressionRatio)
-                    {
-                        throw new PortableArchiveException(
-                            "suspicious_compression",
-                            $"Portable archive entry '{path}' has a suspicious compression ratio.");
-                    }
-                }
+                var path = PortableArchiveValidation.ValidateArchivePath(entry.FullName);
+                PortableArchiveValidation.ValidateUniqueArchivePath(path, entries.TryAdd(path, entry));
+                totalUncompressed = PortableArchiveValidation.ValidateDeclaredEntry(
+                    path,
+                    entry.Length,
+                    entry.CompressedLength,
+                    totalUncompressed);
             }
 
-            if (!entries.TryGetValue(
+            var hasManifest = entries.TryGetValue(
                 PortableArchiveFormat.ManifestPath,
-                out var manifestEntry))
-            {
-                throw new PortableArchiveException(
-                    "missing_manifest",
-                    "Portable archive is missing manifest.json.");
-            }
+                out var manifestEntry);
+            PortableArchiveValidation.ValidateManifestEntryFound(hasManifest);
 
             var manifestBytes = await ReadEntryBytesAsync(
-                manifestEntry,
+                manifestEntry!,
                 PortableArchiveLimits.MaxManifestBytes,
                 ct);
-            var manifest = Deserialize<PortableArchiveManifest>(
+            var manifest = PortableArchiveValidation.Deserialize<PortableArchiveManifest>(
                 manifestBytes,
                 "malformed_manifest",
-                "Portable archive manifest is malformed.");
+                "Portable archive manifest is malformed.",
+                JsonOptions);
 
-            ValidateManifest(manifest);
+            PortableArchiveValidation.ValidateManifest(manifest);
 
-            if (!entries.TryGetValue(manifest.Data.Path, out var dataEntry))
-            {
-                throw new PortableArchiveException(
-                    "missing_data",
-                    $"Portable archive is missing '{manifest.Data.Path}'.");
-            }
+            var hasData = entries.TryGetValue(manifest.Data.Path, out var dataEntry);
+            PortableArchiveValidation.ValidateDataEntryFound(manifest.Data.Path, hasData);
 
-            if (dataEntry.Length != manifest.Data.Length)
-            {
-                throw new PortableArchiveException(
-                    "data_length_mismatch",
-                    "Portable archive relational payload length does not match its manifest.");
-            }
+            PortableArchiveValidation.ValidateDataEntryLength(dataEntry!.Length, manifest.Data.Length);
 
-            var dataBytes = await ReadEntryBytesAsync(dataEntry, PortableArchiveLimits.MaxDataBytes, ct);
+            var dataBytes = await ReadEntryBytesAsync(
+                dataEntry!,
+                PortableArchiveLimits.MaxDataBytes,
+                ct);
             var dataHash = Sha256(dataBytes);
-            if (!FixedHashEquals(dataHash, manifest.Data.Sha256))
-            {
-                throw new PortableArchiveException(
-                    "data_checksum_mismatch",
-                    "Portable archive relational payload failed SHA-256 verification.");
-            }
+            PortableArchiveValidation.ValidateDataHash(dataHash, manifest.Data.Sha256);
 
-            var data = Deserialize<PortableLibraryData>(
+            var data = PortableArchiveValidation.Deserialize<PortableLibraryData>(
                 dataBytes,
                 "malformed_data",
-                "Portable archive relational payload is malformed.");
+                "Portable archive relational payload is malformed.",
+                JsonOptions);
 
-            if (manifest.DataVersion != data.Version)
-            {
-                throw new PortableArchiveException(
-                    "data_version_mismatch",
-                    $"Portable archive manifest data version {manifest.DataVersion} does not match payload version {data.Version}.");
-            }
+            PortableArchiveValidation.ValidateDataVersionAgreement(manifest.DataVersion, data.Version);
 
-            ValidatePortableData(data);
+            PortableArchiveValidation.ValidatePortableData(data);
 
             var actualCounts = CountsFor(data);
-            if (actualCounts != manifest.Counts)
-            {
-                throw new PortableArchiveException(
-                    "count_mismatch",
-                    "Portable archive manifest counts do not match relational data.");
-            }
+            PortableArchiveValidation.ValidateManifestCounts(actualCounts, manifest.Counts);
 
-            ValidateMediaManifest(manifest, data);
+            PortableArchiveValidation.ValidateMediaManifest(manifest, data);
 
             var stagedMediaBytes = manifest.Media.Sum(media => media.Length);
             EnsureTempExtractionCapacity(tempRoot, stagedMediaBytes);
 
-            var expectedPaths = new HashSet<string>(
-                StringComparer.OrdinalIgnoreCase)
-            {
-                PortableArchiveFormat.ManifestPath,
-                PortableArchiveFormat.DataPath,
-            };
-            foreach (var media in manifest.Media)
-                expectedPaths.Add(media.Path);
-
-            var missing = expectedPaths
-                .Where(path => !entries.ContainsKey(path))
-                .OrderBy(path => path)
-                .FirstOrDefault();
-            if (missing is not null)
-            {
-                throw new PortableArchiveException(
-                    "missing_referenced_media",
-                    $"Portable archive is missing referenced entry '{missing}'.");
-            }
-
-            var unexpected = entries.Keys
-                .Where(path => !expectedPaths.Contains(path))
-                .OrderBy(path => path)
-                .FirstOrDefault();
-            if (unexpected is not null)
-            {
-                throw new PortableArchiveException(
-                    "unexpected_entry",
-                    $"Portable archive contains unexpected entry '{unexpected}'.");
-            }
+            PortableArchiveValidation.ValidateArchiveInventory(manifest, entries.Keys);
 
             var stageRoot = Path.Combine(tempRoot, "media-stage");
             Directory.CreateDirectory(stageRoot);
@@ -856,12 +758,10 @@ public sealed class PortableArchiveService(
                 var descriptor = manifest.Media[index];
                 var entry = entries[descriptor.Path];
 
-                if (entry.Length != descriptor.Length)
-                {
-                    throw new PortableArchiveException(
-                        "media_length_mismatch",
-                        $"Portable media '{descriptor.Path}' length does not match its manifest.");
-                }
+                PortableArchiveValidation.ValidateMediaEntryLength(
+                    descriptor.Path,
+                    entry.Length,
+                    descriptor.Length);
 
                 var stagedPath = Path.Combine(
                     stageRoot,
@@ -882,470 +782,17 @@ public sealed class PortableArchiveService(
                     descriptor.Length,
                     ct);
 
-                if (copied.Length != descriptor.Length
-                    || !FixedHashEquals(copied.Sha256, descriptor.Sha256))
-                {
-                    throw new PortableArchiveException(
-                        "media_checksum_mismatch",
-                        $"Portable media '{descriptor.Path}' failed integrity verification.");
-                }
+                PortableArchiveValidation.ValidateMediaHash(
+                    descriptor.Path,
+                    copied.Length,
+                    descriptor.Length,
+                    copied.Sha256,
+                    descriptor.Sha256);
 
                 staged.Add(new StagedPortableMedia(descriptor, stagedPath));
             }
 
             return new ValidatedPortableArchive(manifest, data, staged);
-        }
-    }
-
-    private static void ValidateManifest(PortableArchiveManifest manifest)
-    {
-        if (!string.Equals(
-            manifest.Format,
-            PortableArchiveFormat.Name,
-            StringComparison.Ordinal))
-        {
-            throw new PortableArchiveException(
-                "unsupported_format",
-                "Archive is not a Nostos portable archive.");
-        }
-
-        if (manifest.FormatVersion != PortableArchiveFormat.Version)
-        {
-            throw new PortableArchiveException(
-                "unsupported_version",
-                $"Portable archive format version {manifest.FormatVersion} is not supported. "
-                + $"This build supports version {PortableArchiveFormat.Version}.");
-        }
-
-        if (manifest.DataVersion is not (1 or 2 or 3))
-        {
-            throw new PortableArchiveException(
-                "unsupported_data_version",
-                $"Portable archive data version {manifest.DataVersion} is not supported.");
-        }
-
-        if (manifest.Counts is null || manifest.Data is null || manifest.Media is null)
-        {
-            throw new PortableArchiveException(
-                "malformed_manifest",
-                "Portable archive manifest is incomplete.");
-        }
-
-        if (!string.Equals(
-            manifest.Data.Path,
-            PortableArchiveFormat.DataPath,
-            StringComparison.Ordinal))
-        {
-            throw new PortableArchiveException(
-                "invalid_data_path",
-                "Portable archive relational payload path is not canonical.");
-        }
-
-        if (manifest.Data.Length < 0 || manifest.Data.Length > PortableArchiveLimits.MaxDataBytes)
-        {
-            throw new PortableArchiveException(
-                "data_too_large",
-                "Portable archive relational payload exceeds the v1 limit.");
-        }
-
-        RequireSha256(manifest.Data.Sha256, manifest.Data.Path);
-    }
-
-    private static void ValidateMediaManifest(
-        PortableArchiveManifest manifest,
-        PortableLibraryData data)
-    {
-        var bookIds = data.Books.Select(x => x.Id).ToHashSet();
-        var mediaKeys = new HashSet<(Guid BookId, string Kind)>();
-        var mediaPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var media in manifest.Media)
-        {
-            if (!bookIds.Contains(media.BookId))
-            {
-                throw new PortableArchiveException(
-                    "media_unknown_book",
-                    $"Portable media '{media.Path}' references an unknown book.");
-            }
-
-            if (media.Kind is not (
-                PortableArchiveFormat.BookMediaKind
-                or PortableArchiveFormat.CoverMediaKind))
-            {
-                throw new PortableArchiveException(
-                    "invalid_media_kind",
-                    $"Portable media '{media.Path}' has an unsupported kind.");
-            }
-
-            if (!mediaKeys.Add((media.BookId, media.Kind)))
-            {
-                throw new PortableArchiveException(
-                    "duplicate_media",
-                    $"Book {media.BookId} has duplicate '{media.Kind}' media.");
-            }
-
-            if (!mediaPaths.Add(media.Path))
-            {
-                throw new PortableArchiveException(
-                    "duplicate_path",
-                    $"Portable archive contains duplicate media path '{media.Path}'.");
-            }
-
-            if (Path.GetFileName(media.FileName) != media.FileName
-                || media.FileName.Contains('\\')
-                || media.FileName.Contains('/'))
-            {
-                throw new PortableArchiveException(
-                    "invalid_media_filename",
-                    $"Portable media '{media.Path}' has an unsafe filename.");
-            }
-
-            var extension = Path.GetExtension(media.FileName).ToLowerInvariant();
-            var canonicalFileName = $"{media.Kind}{extension}";
-            if (!string.Equals(
-                media.FileName,
-                canonicalFileName,
-                StringComparison.OrdinalIgnoreCase))
-            {
-                throw new PortableArchiveException(
-                    "invalid_media_filename",
-                    $"Portable media '{media.Path}' filename is not canonical.");
-            }
-
-            try
-            {
-                if (media.Kind == PortableArchiveFormat.BookMediaKind)
-                    BookAssetFormats.RequireBookExtension(media.FileName);
-                else
-                    BookAssetFormats.RequireCoverExtension(media.FileName);
-            }
-            catch (InvalidOperationException exception)
-            {
-                throw new PortableArchiveException(
-                    "invalid_media_filename",
-                    $"Portable media '{media.Path}' uses an unsupported extension.",
-                    exception);
-            }
-
-            var expectedPath = MediaPath(media.BookId, media.Kind, extension);
-            if (!string.Equals(
-                media.Path,
-                expectedPath,
-                StringComparison.Ordinal))
-            {
-                throw new PortableArchiveException(
-                    "invalid_media_path",
-                    $"Portable media path '{media.Path}' is not canonical.");
-            }
-
-            if (media.Length < 0 || media.Length > PortableArchiveLimits.MaxSingleEntryBytes)
-            {
-                throw new PortableArchiveException(
-                    "entry_too_large",
-                    $"Portable media '{media.Path}' exceeds the v1 entry-size limit.");
-            }
-
-            RequireSha256(media.Sha256, media.Path);
-        }
-
-        foreach (var book in data.Books)
-        {
-            var hasBook = mediaKeys.Contains((
-                book.Id,
-                PortableArchiveFormat.BookMediaKind));
-            var hasCover = mediaKeys.Contains((
-                book.Id,
-                PortableArchiveFormat.CoverMediaKind));
-
-            if (book.HasBookFile != hasBook)
-            {
-                throw new PortableArchiveException(
-                    "missing_referenced_media",
-                    $"Book {book.Id} book-file state does not match the archive media manifest.");
-            }
-
-            if (book.HasCover != hasCover)
-            {
-                throw new PortableArchiveException(
-                    "missing_referenced_media",
-                    $"Book {book.Id} cover state does not match the archive media manifest.");
-            }
-        }
-    }
-
-    private static void ValidatePortableData(PortableLibraryData data)
-    {
-        if (data.Version is not (1 or 2 or 3))
-        {
-            throw new PortableArchiveException(
-                "unsupported_data_version",
-                $"Portable relational data version {data.Version} is not supported.");
-        }
-
-        if (data.Works is null
-            || data.Books is null
-            || data.Collections is null
-            || data.BookCollections is null
-            || data.Notes is null
-            || data.Topics is null
-            || data.NoteTopics is null
-            || data.Writings is null
-            || data.BookAcquisitions is null
-            || (data.Version >= 2 && data.WritingNotes is null)
-            || (data.Version >= 3 && data.NoteImportBookLinks is null))
-        {
-            throw new PortableArchiveException(
-                "malformed_data",
-                "Portable relational data is incomplete.");
-        }
-
-        if (data.Version < 2 && data.WritingNotes is not null)
-        {
-            throw new PortableArchiveException(
-                "unexpected_version_data",
-                $"Portable relational data version {data.Version} must not carry writing notes.");
-        }
-
-        if (data.Version < 3 && data.NoteImportBookLinks is not null)
-        {
-            throw new PortableArchiveException(
-                "unexpected_version_data",
-                $"Portable relational data version {data.Version} must not carry note import book links.");
-        }
-
-        RequireUniqueGuids(data.Works.Select(x => x.Id), "work");
-        RequireUniqueGuids(data.Books.Select(x => x.Id), "book");
-        RequireUniqueGuids(data.Collections.Select(x => x.Id), "collection");
-        RequireUniqueGuids(data.Notes.Select(x => x.Id), "note");
-        RequireUniqueGuids(data.Topics.Select(x => x.Id), "topic");
-        RequireUniqueGuids(data.Writings.Select(x => x.Id), "writing");
-        RequireUniqueGuids(data.BookAcquisitions.Select(x => x.Id), "book acquisition");
-        if (data.NoteImportBookLinks is not null)
-        {
-            RequireUniqueGuids(data.NoteImportBookLinks.Select(x => x.Id), "note import book link");
-        }
-
-        var workIds = data.Works.Select(x => x.Id).ToHashSet();
-        var bookIds = data.Books.Select(x => x.Id).ToHashSet();
-        var collectionIds = data.Collections.Select(x => x.Id).ToHashSet();
-        var noteIds = data.Notes.Select(x => x.Id).ToHashSet();
-        var topicIds = data.Topics.Select(x => x.Id).ToHashSet();
-        var writingIds = data.Writings.Select(x => x.Id).ToHashSet();
-
-        var normalizedIsbns = new HashSet<string>(StringComparer.Ordinal);
-        var normalizedAsins = new HashSet<string>(StringComparer.Ordinal);
-
-        foreach (var book in data.Books)
-        {
-            if (!workIds.Contains(book.WorkId))
-            {
-                throw new PortableArchiveException(
-                    "malformed_relationship",
-                    $"Book {book.Id} references unknown work {book.WorkId}.");
-            }
-
-            if (book.Type is not ("physical" or "ebook" or "audiobook"))
-            {
-                throw new PortableArchiveException(
-                    "unsupported_book_type",
-                    $"Book {book.Id} has unsupported type '{book.Type}'.");
-            }
-
-            if (!Enum.TryParse<BookStatus>(book.Status, ignoreCase: true, out _))
-            {
-                throw new PortableArchiveException(
-                    "invalid_book_status",
-                    $"Book {book.Id} has invalid status '{book.Status}'.");
-            }
-
-            if (book.Type is "physical" or "ebook")
-            {
-                var normalized = BookIdentityNormalizer.NormalizeIsbn(book.Isbn);
-                if (normalized is not null && !normalizedIsbns.Add(normalized))
-                {
-                    throw new PortableArchiveException(
-                        "duplicate_book_identity",
-                        $"Portable archive contains duplicate normalized ISBN '{normalized}'.");
-                }
-            }
-
-            if (book.Type == "audiobook")
-            {
-                var normalized = BookIdentityNormalizer.NormalizeAsin(book.Asin);
-                if (normalized is not null && !normalizedAsins.Add(normalized))
-                {
-                    throw new PortableArchiveException(
-                        "duplicate_book_identity",
-                        $"Portable archive contains duplicate normalized ASIN '{normalized}'.");
-                }
-            }
-        }
-
-        var bookCollectionKeys = new HashSet<(Guid BookId, Guid CollectionId)>();
-        foreach (var membership in data.BookCollections)
-        {
-            if (!bookIds.Contains(membership.BookId)
-                || !collectionIds.Contains(membership.CollectionId))
-            {
-                throw new PortableArchiveException(
-                    "malformed_relationship",
-                    "Portable archive contains a collection membership with a missing endpoint.");
-            }
-
-            if (!bookCollectionKeys.Add((
-                membership.BookId,
-                membership.CollectionId)))
-            {
-                throw new PortableArchiveException(
-                    "duplicate_relationship",
-                    "Portable archive contains a duplicate book/collection membership.");
-            }
-        }
-
-        foreach (var collection in data.Collections)
-        {
-            if (collection.ParentId is { } parentId)
-            {
-                if (!collectionIds.Contains(parentId) || parentId == collection.Id)
-                {
-                    throw new PortableArchiveException(
-                        "malformed_relationship",
-                        $"Collection {collection.Id} has an invalid parent.");
-                }
-            }
-        }
-        RequireAcyclic(
-            data.Collections.ToDictionary(x => x.Id, x => x.ParentId),
-            "collection");
-
-        foreach (var note in data.Notes)
-        {
-            if (!bookIds.Contains(note.BookId))
-            {
-                throw new PortableArchiveException(
-                    "malformed_relationship",
-                    $"Note {note.Id} references unknown book {note.BookId}.");
-            }
-        }
-
-        var topicNames = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var topic in data.Topics)
-        {
-            if (!topicNames.Add(topic.Topic))
-            {
-                throw new PortableArchiveException(
-                    "duplicate_topic",
-                    $"Portable archive contains duplicate topic '{topic.Topic}'.");
-            }
-        }
-
-        var noteTopicKeys = new HashSet<(Guid NoteId, Guid TopicId)>();
-        foreach (var link in data.NoteTopics)
-        {
-            if (!noteIds.Contains(link.NoteId) || !topicIds.Contains(link.TopicId))
-            {
-                throw new PortableArchiveException(
-                    "malformed_relationship",
-                    "Portable archive contains a note/topic link with a missing endpoint.");
-            }
-
-            if (!noteTopicKeys.Add((link.NoteId, link.TopicId)))
-            {
-                throw new PortableArchiveException(
-                    "duplicate_relationship",
-                    "Portable archive contains a duplicate note/topic link.");
-            }
-        }
-
-        var writingNoteKeys = new HashSet<(Guid WritingId, Guid NoteId)>();
-        foreach (var link in data.WritingNotes ?? [])
-        {
-            if (!writingIds.Contains(link.WritingId) || !noteIds.Contains(link.NoteId))
-            {
-                throw new PortableArchiveException(
-                    "malformed_relationship",
-                    "Portable archive contains a writing/note link with a missing endpoint.");
-            }
-
-            if (!writingNoteKeys.Add((link.WritingId, link.NoteId)))
-            {
-                throw new PortableArchiveException(
-                    "duplicate_relationship",
-                    "Portable archive contains a duplicate writing/note link.");
-            }
-        }
-
-        foreach (var writing in data.Writings)
-        {
-            if (!Enum.TryParse<WritingType>(writing.Type, ignoreCase: true, out _))
-            {
-                throw new PortableArchiveException(
-                    "invalid_writing_type",
-                    $"Writing {writing.Id} has invalid type '{writing.Type}'.");
-            }
-
-            if (writing.ParentId is { } parentId)
-            {
-                if (!writingIds.Contains(parentId) || parentId == writing.Id)
-                {
-                    throw new PortableArchiveException(
-                        "malformed_relationship",
-                        $"Writing {writing.Id} has an invalid parent.");
-                }
-            }
-        }
-        RequireAcyclic(
-            data.Writings.ToDictionary(x => x.Id, x => x.ParentId),
-            "writing");
-
-        var acquisitionBooks = new HashSet<Guid>();
-        var acquisitionKeys = new HashSet<(string Provider, string External, string Asset)>();
-        foreach (var acquisition in data.BookAcquisitions)
-        {
-            if (!bookIds.Contains(acquisition.BookId))
-            {
-                throw new PortableArchiveException(
-                    "malformed_relationship",
-                    $"Acquisition {acquisition.Id} references an unknown book.");
-            }
-
-            if (!acquisitionBooks.Add(acquisition.BookId))
-            {
-                throw new PortableArchiveException(
-                    "duplicate_relationship",
-                    $"Book {acquisition.BookId} has multiple acquisition records.");
-            }
-
-            if (!acquisitionKeys.Add((
-                acquisition.ProviderId,
-                acquisition.ExternalId,
-                acquisition.AssetId)))
-            {
-                throw new PortableArchiveException(
-                    "duplicate_acquisition",
-                    "Portable archive contains duplicate acquisition provenance.");
-            }
-        }
-
-        if (data.NoteImportBookLinks is not null)
-        {
-            var importLinkKeys = new HashSet<(string Source, string SourceKey)>();
-            foreach (var link in data.NoteImportBookLinks)
-            {
-                if (!bookIds.Contains(link.BookId))
-                {
-                    throw new PortableArchiveException(
-                        "malformed_relationship",
-                        $"Note import book link {link.Id} references an unknown book.");
-                }
-
-                if (!importLinkKeys.Add((link.Source, link.SourceKey)))
-                {
-                    throw new PortableArchiveException(
-                        "duplicate_relationship",
-                        $"Portable archive contains duplicate note import book link for source '{link.Source}' and key '{link.SourceKey}'.");
-                }
-            }
         }
     }
 
@@ -1654,12 +1101,7 @@ public sealed class PortableArchiveService(
             await _db.Writings.CountAsync(ct),
             await _db.BookAcquisitions.CountAsync(ct));
 
-        if (actual != expected)
-        {
-            throw new PortableArchiveException(
-                "integrity_failed",
-                "Imported relational entity counts do not match the archive manifest.");
-        }
+        PortableArchiveValidation.ValidateImportedCounts(actual, expected);
 
         var workIds = await _db.Works.AsNoTracking().Select(x => x.Id).ToListAsync(ct);
         var bookRows = await _db.Books.AsNoTracking().ToListAsync(ct);
@@ -1669,13 +1111,13 @@ public sealed class PortableArchiveService(
         var writingRows = await _db.Writings.AsNoTracking().ToListAsync(ct);
         var acquisitionIds = await _db.BookAcquisitions.AsNoTracking().Select(x => x.Id).ToListAsync(ct);
 
-        RequireSameIds(source.Works.Select(x => x.Id), workIds, "work");
-        RequireSameIds(source.Books.Select(x => x.Id), bookRows.Select(x => x.Id), "book");
-        RequireSameIds(source.Collections.Select(x => x.Id), collectionIds, "collection");
-        RequireSameIds(source.Notes.Select(x => x.Id), noteIds, "note");
-        RequireSameIds(source.Topics.Select(x => x.Id), topicIds, "topic");
-        RequireSameIds(source.Writings.Select(x => x.Id), writingRows.Select(x => x.Id), "writing");
-        RequireSameIds(source.BookAcquisitions.Select(x => x.Id), acquisitionIds, "acquisition");
+        PortableArchiveValidation.RequireSameIds(source.Works.Select(x => x.Id), workIds, "work");
+        PortableArchiveValidation.RequireSameIds(source.Books.Select(x => x.Id), bookRows.Select(x => x.Id), "book");
+        PortableArchiveValidation.RequireSameIds(source.Collections.Select(x => x.Id), collectionIds, "collection");
+        PortableArchiveValidation.RequireSameIds(source.Notes.Select(x => x.Id), noteIds, "note");
+        PortableArchiveValidation.RequireSameIds(source.Topics.Select(x => x.Id), topicIds, "topic");
+        PortableArchiveValidation.RequireSameIds(source.Writings.Select(x => x.Id), writingRows.Select(x => x.Id), "writing");
+        PortableArchiveValidation.RequireSameIds(source.BookAcquisitions.Select(x => x.Id), acquisitionIds, "acquisition");
 
         var expectedBookWorks = source.Books
             .Select(x => (x.Id, x.WorkId))
@@ -1683,12 +1125,10 @@ public sealed class PortableArchiveService(
         var actualBookWorks = bookRows
             .Select(x => (x.Id, x.WorkId))
             .ToHashSet();
-        if (!expectedBookWorks.SetEquals(actualBookWorks))
-        {
-            throw new PortableArchiveException(
-                "integrity_failed",
-                "Imported Work/Book relationships do not match the archive.");
-        }
+        PortableArchiveValidation.ValidateImportedRelationshipSet(
+            expectedBookWorks,
+            actualBookWorks,
+            "Imported Work/Book relationships do not match the archive.");
 
         var expectedMemberships = source.BookCollections
             .Select(x => (x.BookId, x.CollectionId))
@@ -1699,12 +1139,10 @@ public sealed class PortableArchiveService(
             .ToListAsync(ct))
             .Select(x => (x.BookId, x.CollectionId))
             .ToHashSet();
-        if (!expectedMemberships.SetEquals(actualMemberships))
-        {
-            throw new PortableArchiveException(
-                "integrity_failed",
-                "Imported collection memberships do not match the archive.");
-        }
+        PortableArchiveValidation.ValidateImportedRelationshipSet(
+            expectedMemberships,
+            actualMemberships,
+            "Imported collection memberships do not match the archive.");
 
         var expectedLinks = source.NoteTopics
             .Select(x => (x.NoteId, x.TopicId))
@@ -1715,12 +1153,10 @@ public sealed class PortableArchiveService(
             .ToListAsync(ct))
             .Select(x => (x.NoteId, x.TopicId))
             .ToHashSet();
-        if (!expectedLinks.SetEquals(actualLinks))
-        {
-            throw new PortableArchiveException(
-                "integrity_failed",
-                "Imported Note/Topic links do not match the archive.");
-        }
+        PortableArchiveValidation.ValidateImportedRelationshipSet(
+            expectedLinks,
+            actualLinks,
+            "Imported Note/Topic links do not match the archive.");
 
         var expectedWritingNotes = (source.WritingNotes ?? [])
             .Select(x => (x.WritingId, x.NoteId))
@@ -1731,12 +1167,10 @@ public sealed class PortableArchiveService(
             .ToListAsync(ct))
             .Select(x => (x.WritingId, x.NoteId))
             .ToHashSet();
-        if (!expectedWritingNotes.SetEquals(actualWritingNotes))
-        {
-            throw new PortableArchiveException(
-                "integrity_failed",
-                "Imported Writing/Note links do not match the archive.");
-        }
+        PortableArchiveValidation.ValidateImportedRelationshipSet(
+            expectedWritingNotes,
+            actualWritingNotes,
+            "Imported Writing/Note links do not match the archive.");
 
         var expectedImportLinks = (source.NoteImportBookLinks ?? [])
             .Select(x => (x.Id, x.Source, x.SourceKey, x.BookId, x.CreatedAtUtc))
@@ -1747,12 +1181,10 @@ public sealed class PortableArchiveService(
             .ToListAsync(ct))
             .Select(x => (x.Id, x.Source, x.SourceKey, x.BookId, x.CreatedAtUtc))
             .ToHashSet();
-        if (!expectedImportLinks.SetEquals(actualImportLinks))
-        {
-            throw new PortableArchiveException(
-                "integrity_failed",
-                "Imported note import book links do not match the archive.");
-        }
+        PortableArchiveValidation.ValidateImportedRelationshipSet(
+            expectedImportLinks,
+            actualImportLinks,
+            "Imported note import book links do not match the archive.");
 
         var sourceBooks = source.Books.ToDictionary(x => x.Id);
         foreach (var book in bookRows)
@@ -1765,35 +1197,29 @@ public sealed class PortableArchiveService(
                 AudioBookModel => "audiobook",
                 _ => "unknown",
             };
-            if (!string.Equals(actualType, expectedBook.Type, StringComparison.Ordinal)
-                || book.Progress.LastLocation != expectedBook.Progress.LastLocation
-                || book.Progress.ProgressPercent != expectedBook.Progress.ProgressPercent
-                || book.Progress.Rating != expectedBook.Progress.Rating
-                || book.Progress.IsFavorite != expectedBook.Progress.IsFavorite
-                || book.Progress.PersonalReview != expectedBook.Progress.PersonalReview)
-            {
-                throw new PortableArchiveException(
-                    "integrity_failed",
-                    $"Imported book {book.Id} format or reading state does not match the archive.");
-            }
+            PortableArchiveValidation.ValidateImportedBookType(
+                expectedBook.Id,
+                expectedBook.Type,
+                actualType);
+            PortableArchiveValidation.ValidateImportedBookProgress(
+                expectedBook,
+                book.Progress.LastLocation,
+                book.Progress.ProgressPercent,
+                book.Progress.Rating,
+                book.Progress.IsFavorite,
+                book.Progress.PersonalReview);
         }
 
         var sourceWritings = source.Writings.ToDictionary(x => x.Id);
         foreach (var writing in writingRows)
         {
             var expectedWriting = sourceWritings[writing.Id];
-            if (writing.ParentId != expectedWriting.ParentId
-                || writing.Name != expectedWriting.Name
-                || writing.Content != expectedWriting.Content
-                || !string.Equals(
-                    writing.Type.ToString(),
-                    expectedWriting.Type,
-                    StringComparison.OrdinalIgnoreCase))
-            {
-                throw new PortableArchiveException(
-                    "integrity_failed",
-                    $"Imported writing {writing.Id} does not match the archive.");
-            }
+            PortableArchiveValidation.ValidateImportedWritingState(
+                expectedWriting,
+                writing.ParentId,
+                writing.Name,
+                writing.Content,
+                writing.Type.ToString());
         }
     }
 
@@ -1807,35 +1233,29 @@ public sealed class PortableArchiveService(
                 ? await _assets.GetBookFileInfoAsync(descriptor.BookId, ct)
                 : await _assets.GetBookCoverInfoAsync(descriptor.BookId, ct);
 
-            if (info is null || info.Length != descriptor.Length)
-            {
-                throw new PortableArchiveException(
-                    "integrity_failed",
-                    $"Imported media '{descriptor.Path}' is missing or has the wrong length.");
-            }
+            PortableArchiveValidation.ValidateStoredMediaLength(
+                descriptor.Path,
+                info?.Length,
+                descriptor.Length);
 
             await using var opened = descriptor.Kind == PortableArchiveFormat.BookMediaKind
                 ? await _assets.OpenBookFileAsync(descriptor.BookId, null, ct)
                 : await _assets.OpenBookCoverAsync(descriptor.BookId, ct);
 
-            if (opened is null)
-            {
-                throw new PortableArchiveException(
-                    "integrity_failed",
-                    $"Imported media '{descriptor.Path}' could not be reopened.");
-            }
+            PortableArchiveValidation.ValidateStoredMediaCanReopen(
+                descriptor.Path,
+                opened is not null);
 
             var hash = await HashStreamAsync(
-                opened.Content,
+                opened!.Content,
                 descriptor.Length,
                 ct);
-            if (hash.Length != descriptor.Length
-                || !FixedHashEquals(hash.Sha256, descriptor.Sha256))
-            {
-                throw new PortableArchiveException(
-                    "integrity_failed",
-                    $"Imported media '{descriptor.Path}' failed post-write SHA-256 verification.");
-            }
+            PortableArchiveValidation.ValidateStoredMediaHash(
+                descriptor.Path,
+                hash.Length,
+                descriptor.Length,
+                hash.Sha256,
+                descriptor.Sha256);
         }
     }
 
@@ -1868,9 +1288,6 @@ public sealed class PortableArchiveService(
             data.NoteTopics.Count,
             data.Writings.Count,
             data.BookAcquisitions.Count);
-
-    private static string MediaPath(Guid bookId, string kind, string extension) =>
-        $"media/books/{bookId:N}/{kind}{extension.ToLowerInvariant()}";
 
     private static void EnsureTempExtractionCapacity(string tempRoot, long bytesToStage)
     {
@@ -1913,150 +1330,15 @@ public sealed class PortableArchiveService(
         }
     }
 
-    private static string ValidateArchivePath(string path)
-    {
-        if (string.IsNullOrWhiteSpace(path)
-            || path.StartsWith("/", StringComparison.Ordinal)
-            || path.StartsWith('\\')
-            || path.Contains('\\')
-            || path.Contains('\0')
-            || path.Contains(':'))
-        {
-            throw new PortableArchiveException(
-                "unsafe_archive_path",
-                $"Portable archive contains unsafe path '{path}'.");
-        }
-
-        var segments = path.Split('/');
-        if (segments.Any(segment =>
-            segment.Length == 0
-            || segment == "."
-            || segment == ".."
-            || segment.Length > 255))
-        {
-            throw new PortableArchiveException(
-                "unsafe_archive_path",
-                $"Portable archive contains unsafe path '{path}'.");
-        }
-
-        return string.Join('/', segments);
-    }
-
-    private static void RequireUniqueGuids(
-        IEnumerable<Guid> ids,
-        string entityName)
-    {
-        var seen = new HashSet<Guid>();
-        foreach (var id in ids)
-        {
-            if (id == Guid.Empty || !seen.Add(id))
-            {
-                throw new PortableArchiveException(
-                    "duplicate_id",
-                    $"Portable archive contains an empty or duplicate {entityName} ID.");
-            }
-        }
-    }
-
-    private static void RequireAcyclic(
-        IReadOnlyDictionary<Guid, Guid?> parents,
-        string entityName)
-    {
-        var complete = new HashSet<Guid>();
-
-        foreach (var start in parents.Keys)
-        {
-            if (complete.Contains(start))
-                continue;
-
-            var current = start;
-            var chain = new HashSet<Guid>();
-            while (parents.TryGetValue(current, out var parent) && parent is { } parentId)
-            {
-                if (!chain.Add(current))
-                {
-                    throw new PortableArchiveException(
-                        "malformed_relationship",
-                        $"Portable archive contains a cyclic {entityName} hierarchy.");
-                }
-
-                current = parentId;
-            }
-
-            foreach (var visited in chain)
-                complete.Add(visited);
-        }
-    }
-
-    private static void RequireSameIds(
-        IEnumerable<Guid> expected,
-        IEnumerable<Guid> actual,
-        string entityName)
-    {
-        if (!expected.ToHashSet().SetEquals(actual))
-        {
-            throw new PortableArchiveException(
-                "integrity_failed",
-                $"Imported {entityName} IDs do not match the archive.");
-        }
-    }
-
-    private static void RequireSha256(string hash, string path)
-    {
-        if (hash is null
-            || hash.Length != 64
-            || hash.Any(ch => !Uri.IsHexDigit(ch)))
-        {
-            throw new PortableArchiveException(
-                "invalid_checksum",
-                $"Portable archive entry '{path}' has an invalid SHA-256 checksum.");
-        }
-    }
-
-    private static bool FixedHashEquals(string left, string right)
-    {
-        if (left.Length != right.Length)
-            return false;
-
-        return CryptographicOperations.FixedTimeEquals(
-            Convert.FromHexString(left),
-            Convert.FromHexString(right));
-    }
-
-    private static T Deserialize<T>(
-        byte[] bytes,
-        string code,
-        string message)
-        where T : class
-    {
-        try
-        {
-            return JsonSerializer.Deserialize<T>(bytes, JsonOptions)
-                ?? throw new PortableArchiveException(code, message);
-        }
-        catch (PortableArchiveException)
-        {
-            throw;
-        }
-        catch (Exception exception) when (
-            exception is JsonException
-            or NotSupportedException)
-        {
-            throw new PortableArchiveException(code, message, exception);
-        }
-    }
-
     private static async Task<byte[]> ReadEntryBytesAsync(
         ZipArchiveEntry entry,
         long maxBytes,
         CancellationToken ct)
     {
-        if (entry.Length > maxBytes)
-        {
-            throw new PortableArchiveException(
-                "entry_too_large",
-                $"Portable archive entry '{entry.FullName}' exceeds its v1 limit.");
-        }
+        PortableArchiveValidation.ValidateDeclaredReadSize(
+            entry.FullName,
+            entry.Length,
+            maxBytes);
 
         await using var source = entry.Open();
         using var output = new MemoryStream(
@@ -2071,12 +1353,10 @@ public sealed class PortableArchiveService(
                 break;
 
             total = checked(total + read);
-            if (total > maxBytes)
-            {
-                throw new PortableArchiveException(
-                    "entry_too_large",
-                    $"Portable archive entry '{entry.FullName}' expands beyond its v1 limit.");
-            }
+            PortableArchiveValidation.ValidateObservedReadSize(
+                entry.FullName,
+                total,
+                maxBytes);
 
             await output.WriteAsync(buffer.AsMemory(0, read), ct);
         }
@@ -2115,12 +1395,7 @@ public sealed class PortableArchiveService(
                 break;
 
             total = checked(total + read);
-            if (total > maxBytes)
-            {
-                throw new PortableArchiveException(
-                    "entry_too_large",
-                    "Portable media exceeds the v1 entry-size limit.");
-            }
+            PortableArchiveValidation.ValidateCopiedMediaSize(total, maxBytes);
 
             hash.AppendData(buffer, 0, read);
             await destination.WriteAsync(buffer.AsMemory(0, read), ct);
@@ -2147,12 +1422,7 @@ public sealed class PortableArchiveService(
                 break;
 
             total = checked(total + read);
-            if (total > maxBytes)
-            {
-                throw new PortableArchiveException(
-                    "entry_too_large",
-                    "Portable media exceeds the expected size.");
-            }
+            PortableArchiveValidation.ValidateExpectedMediaSize(total, maxBytes);
 
             hash.AppendData(buffer, 0, read);
         }
