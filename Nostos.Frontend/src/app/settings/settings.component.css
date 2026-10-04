@@ -300,6 +300,11 @@
   color: var(--color-danger);
 }
 
+.card-purpose {
+  margin: 0;
+  padding-top: 14px;
+}
+
 /* --- Last Backup Info --- */
 .last-backup-info {
   display: flex;

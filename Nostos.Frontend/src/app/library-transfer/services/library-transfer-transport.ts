@@ -7,7 +7,7 @@
  * B1-B3 can be built and tested before #679's endpoints merge.
  */
 
-import { InjectionToken } from '@angular/core';
+import { InjectionToken, isDevMode } from '@angular/core';
 
 import {
   BrowserMigrationChunk,
@@ -137,14 +137,53 @@ export interface LibraryTransferTransport {
 export type PortableTransferClient = LibraryTransferTransport;
 
 /**
+ * Explicit opt-in that lets a production-configured build deliberately run the
+ * in-memory mock (local smoke tests only). Tests and dev builds are covered by
+ * `isDevMode()` and never need this flag.
+ */
+export const MOCK_TRANSFER_TRANSPORT_OPT_IN = '__NOSTOS_ALLOW_MOCK_LIBRARY_TRANSFER__';
+
+/** True when the in-memory mock may be the active transport. */
+export function mockTransferTransportAllowed(devMode: boolean, explicitOptIn: boolean): boolean {
+  return devMode || explicitOptIn;
+}
+
+function mockTransferTransportOptedIn(): boolean {
+  return (
+    (globalThis as Record<string, unknown>)[MOCK_TRANSFER_TRANSPORT_OPT_IN] === true
+  );
+}
+
+/**
+ * Creates the transport the DI token provides. The in-memory mock must never
+ * be the active transport of a real deployment: until slice B7 wires the real
+ * #679 API this factory fails closed outside dev/test builds unless a caller
+ * explicitly opts in (plan §4; B5/B6 capability gating).
+ */
+export function createLibraryTransferTransport(
+  devMode: boolean = isDevMode(),
+  explicitOptIn: boolean = mockTransferTransportOptedIn(),
+): LibraryTransferTransport {
+  if (!mockTransferTransportAllowed(devMode, explicitOptIn)) {
+    throw new Error(
+      'The in-memory library-transfer transport cannot be the active transport in a ' +
+        `production build. Wire the real #679 transport (slice B7) or set ` +
+        `globalThis.${MOCK_TRANSFER_TRANSPORT_OPT_IN} = true for a deliberate local run.`,
+    );
+  }
+  return new MockLibraryTransferTransport();
+}
+
+/**
  * DI seam. Until #679's HTTP endpoints and #681's activation land, the default
- * provider is the in-memory mock; slice B7 replaces this factory with the real
- * SelfHosted adapter and B8 extends the interface with activation.
+ * provider is the in-memory mock (dev/test only); slice B7 replaces this
+ * factory with the real SelfHosted adapter and B8 extends the interface with
+ * activation.
  */
 export const LIBRARY_TRANSFER_TRANSPORT = new InjectionToken<LibraryTransferTransport>(
   'NOSTOS_LIBRARY_TRANSFER_TRANSPORT',
   {
     providedIn: 'root',
-    factory: () => new MockLibraryTransferTransport(),
+    factory: createLibraryTransferTransport,
   },
 );

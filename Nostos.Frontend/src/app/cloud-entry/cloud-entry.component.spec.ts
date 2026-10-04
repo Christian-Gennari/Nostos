@@ -1,8 +1,25 @@
 import { TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { signal } from '@angular/core';
 import { vi } from 'vitest';
 import { CloudEntryComponent } from './cloud-entry.component';
 import { CloudEntryService, CloudEntryView } from '../core/services/cloud-entry.service';
+import { LibraryImportFlowComponent } from '../library-transfer/components/library-import-flow.component';
+import { LibraryTransferCoordinator } from '../library-transfer/services/library-transfer-coordinator.service';
+import { LIBRARY_TRANSFER_TRANSPORT } from '../library-transfer/services/library-transfer-transport';
+import { MockLibraryTransferTransport } from '../library-transfer/services/mock-library-transfer-transport.service';
+import { HASH_WORKER_FACTORY } from '../library-transfer/services/hash/hash-worker';
+import {
+  TRANSFER_RESUME_STORAGE_KEY,
+} from '../library-transfer/services/transfer-resume-store.service';
+import {
+  TRANSFER_TAB_LEASE_KEY,
+} from '../library-transfer/services/transfer-tab-lease.service';
+import {
+  createFile,
+  portableArchiveFixture,
+  portableManifest,
+} from '../library-transfer/testing/zip-archive.fixture';
 
 describe('CloudEntryComponent', () => {
   let mockEntry: {
@@ -12,12 +29,20 @@ describe('CloudEntryComponent', () => {
     checkoutRedirect: ReturnType<typeof signal<string | null>>;
     productReady: ReturnType<typeof signal<boolean>>;
     selectedOffer: ReturnType<typeof signal<any>>;
+    supportsLibraryMigration: ReturnType<typeof signal<boolean>>;
+    supportsSafeActivation: ReturnType<typeof signal<boolean>>;
     beginCheckout: ReturnType<typeof vi.fn>;
     checkSubscription: ReturnType<typeof vi.fn>;
     loginUrl: ReturnType<typeof vi.fn>;
+    startFresh: ReturnType<typeof vi.fn>;
+    finishFirstRunAfterImport: ReturnType<typeof vi.fn>;
+    importPortableArchive: ReturnType<typeof vi.fn>;
   };
+  let mock: MockLibraryTransferTransport;
 
   beforeEach(() => {
+    localStorage.clear();
+    mock = new MockLibraryTransferTransport({ chunkSizeBytes: 4 * 1024 * 1024 });
     mockEntry = {
       view: signal<CloudEntryView>({
         kind: 'subscription_required',
@@ -45,18 +70,42 @@ describe('CloudEntryComponent', () => {
         planName: 'Standard',
         billingCadence: 'Monthly',
       }),
+      supportsLibraryMigration: signal(false),
+      supportsSafeActivation: signal(false),
       beginCheckout: vi.fn(),
       checkSubscription: vi.fn(),
       loginUrl: vi.fn().mockReturnValue('/api/auth/login'),
+      startFresh: vi.fn(),
+      finishFirstRunAfterImport: vi.fn(),
+      importPortableArchive: vi.fn(),
     };
 
     TestBed.configureTestingModule({
       imports: [CloudEntryComponent],
       providers: [
         { provide: CloudEntryService, useValue: mockEntry },
+        { provide: LIBRARY_TRANSFER_TRANSPORT, useValue: mock },
+        { provide: HASH_WORKER_FACTORY, useValue: () => null },
       ],
     });
   });
+
+  afterEach(() => {
+    localStorage.removeItem(TRANSFER_RESUME_STORAGE_KEY);
+    localStorage.removeItem(TRANSFER_TAB_LEASE_KEY);
+  });
+
+  function renderFirstRun(): void {
+    mockEntry.view.set({ kind: 'first_run' });
+  }
+
+  async function portableFile(): Promise<File> {
+    return createFile(await portableArchiveFixture(portableManifest()));
+  }
+
+  function testId(fixture: ReturnType<typeof TestBed.createComponent>, id: string): HTMLElement | null {
+    return fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
+  }
 
   it('renders plan summary and active Continue to checkout button when selectedOffer is present', () => {
     const fixture = TestBed.createComponent(CloudEntryComponent);
@@ -173,5 +222,90 @@ describe('CloudEntryComponent', () => {
     TestBed.flushEffects();
 
     expect(navigateSpy).toHaveBeenCalledWith('https://nostos.page/pay?_ptxn=txn_123');
+  });
+
+  it('keeps the legacy first-run import picker while migration is off', () => {
+    renderFirstRun();
+    const fixture = TestBed.createComponent(CloudEntryComponent);
+    fixture.detectChanges();
+
+    expect(testId(fixture, 'cloud-entry-import')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('app-library-import-flow')).toBeNull();
+    const input = fixture.nativeElement.querySelector(
+      'input[type="file"]',
+    ) as HTMLInputElement;
+    expect(input).toBeTruthy();
+    expect(input.accept).toContain('.nostos');
+
+    const file = new File(['archive'], 'library.nostos');
+    fixture.componentInstance.importSelected({
+      target: { files: [file] },
+    } as unknown as Event);
+
+    expect(mockEntry.importPortableArchive).toHaveBeenCalledWith(file);
+    expect(mockEntry.finishFirstRunAfterImport).not.toHaveBeenCalled();
+  });
+
+  it('opens the shared import flow when the host advertises migration and finishes first run on completion', async () => {
+    mockEntry.supportsLibraryMigration.set(true);
+    renderFirstRun();
+    const fixture = TestBed.createComponent(CloudEntryComponent);
+    fixture.detectChanges();
+
+    (testId(fixture, 'cloud-entry-import') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('app-library-import-flow')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('input.cloud-entry__file')).toBeNull();
+    expect(
+      fixture.nativeElement.querySelector(
+        'input[data-testid="library-import-file-input"]',
+      ),
+    ).toBeTruthy();
+
+    const flow = fixture.debugElement.query(By.directive(LibraryImportFlowComponent))
+      .componentInstance as LibraryImportFlowComponent;
+    const file = await portableFile();
+    flow.onFileSelected({ target: { files: [file], value: 'picked' } } as unknown as Event);
+
+    const coordinator = TestBed.inject(LibraryTransferCoordinator);
+    await vi.waitFor(() => expect(coordinator.state().kind).toBe('ready-empty'), {
+      timeout: 5_000,
+    });
+    fixture.detectChanges();
+
+    const state = coordinator.state();
+    const jobId = state.kind === 'ready-empty' ? state.jobId : '';
+    mock.setJobState(jobId, 'Completed');
+    await coordinator.refreshStatus();
+    await vi.waitFor(() => expect(mockEntry.finishFirstRunAfterImport).toHaveBeenCalledTimes(1));
+  });
+
+  it('keeps the first-run choice when a shared import fails', async () => {
+    mockEntry.supportsLibraryMigration.set(true);
+    mock.queueFailure({ operation: 'preflight', code: 'migration_storage_exhausted', status: 507 });
+    renderFirstRun();
+    const fixture = TestBed.createComponent(CloudEntryComponent);
+    fixture.detectChanges();
+
+    (testId(fixture, 'cloud-entry-import') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    const flow = fixture.debugElement.query(By.directive(LibraryImportFlowComponent))
+      .componentInstance as LibraryImportFlowComponent;
+    const file = await portableFile();
+    flow.onFileSelected({ target: { files: [file], value: 'picked' } } as unknown as Event);
+
+    const coordinator = TestBed.inject(LibraryTransferCoordinator);
+    await vi.waitFor(() => expect(coordinator.state().kind).toBe('failed'), { timeout: 5_000 });
+    fixture.detectChanges();
+
+    expect(mockEntry.finishFirstRunAfterImport).not.toHaveBeenCalled();
+    expect(mockEntry.view().kind).toBe('first_run');
+    expect(testId(fixture, 'cloud-entry-import-back')).toBeTruthy();
+
+    (testId(fixture, 'cloud-entry-import-back') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(testId(fixture, 'cloud-entry-import')).toBeTruthy();
   });
 });

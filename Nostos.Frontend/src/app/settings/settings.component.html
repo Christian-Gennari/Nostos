@@ -124,6 +124,10 @@
         </div>
 
         <div class="card-body">
+          <p class="label-desc card-purpose" data-testid="backup-purpose">
+            Backups are for recovering this SelfHosted installation. They are not portable
+            library exports.
+          </p>
           <!-- Enable Toggle -->
           <div class="setting-row">
             <div class="setting-label">
@@ -332,54 +336,113 @@
       </section>
       }
 
-      @if (supportsCloudPortableExport()) {
-      <section class="settings-card" data-testid="cloud-portable-export-card">
+      <!-- Portable library transfer is deliberately separate from the local
+           operational Backup above: these archives move a library between
+           Nostos installations, they do not recover this installation. -->
+      <section
+        class="settings-card"
+        data-testid="library-transfer-card"
+        aria-labelledby="library-transfer-heading"
+      >
         <div class="card-header">
           <div class="card-header-copy">
-            <h2>Data export</h2>
+            <h2 id="library-transfer-heading">Move your library</h2>
           </div>
         </div>
 
         <div class="card-body">
-          <div class="setting-row">
-            <div class="setting-label">
-              <span class="label-text">Your complete Nostos archive</span>
-              <span class="label-desc">Download one portable .nostos file containing your library, notes, Writing Studio content, covers, and stored EPUB, PDF, and audiobook files. You can import it into a fresh Nostos installation.</span>
-              @if (portableExportBusy()) {
-                <span class="label-desc portable-export-status" aria-live="polite">
-                  @if (portableExportProgress() !== null) {
-                    Downloading your archive — {{ portableExportProgress() }}%
-                  } @else {
-                    Preparing your archive. Larger libraries can take a little longer.
-                  }
-                </span>
-              }
-              @if (portableExportError(); as exportError) {
-                <span class="label-desc portable-export-status is-error" role="alert">{{ exportError }}</span>
-              }
+          <p class="label-desc card-purpose" data-testid="library-transfer-purpose">
+            Portable library archives are for moving your library between Nostos installations.
+          </p>
+
+          @if (supportsLibraryMigration()) {
+            <app-library-transfer-host
+              [supportsSafeActivation]="supportsSafeActivation()"
+              (importCompleted)="onLibraryTransferCompleted()"
+            />
+          } @else {
+            <!-- The existing portable controls stay in charge until the host
+                 advertises migration; no migration transport is ever
+                 constructed from this branch. -->
+            <div class="setting-row">
+              <div class="setting-label">
+                <span class="label-text">Export library</span>
+                <span class="label-desc">Download one portable .nostos file containing your library, notes, Writing Studio content, covers, and stored EPUB, PDF, and audiobook files. You can import it into a fresh Nostos installation.</span>
+                @if (portableExportBusy()) {
+                  <span class="label-desc portable-export-status" aria-live="polite">
+                    @if (portableExportProgress() !== null) {
+                      Downloading your archive — {{ portableExportProgress() }}%
+                    } @else {
+                      Preparing your archive. Larger libraries can take a little longer.
+                    }
+                  </span>
+                }
+                @if (portableExportError(); as exportError) {
+                  <span class="label-desc portable-export-status is-error" role="alert">{{ exportError }}</span>
+                }
+              </div>
+
+              <button
+                appButton
+                variant="secondary"
+                class="portable-export-action"
+                data-testid="cloud-portable-export-action"
+                [disabled]="portableExportBusy()"
+                [busy]="portableExportBusy()"
+                (click)="exportAllNostosData()"
+              >
+                @if (portableExportBusy()) {
+                  <nostos-icon name="circle-notch" [size]="16" class="spin"></nostos-icon>
+                  Exporting…
+                } @else {
+                  <nostos-icon name="download-simple" [size]="16"></nostos-icon>
+                  Export all my Nostos data
+                }
+              </button>
             </div>
 
-            <button
-              appButton
-              variant="secondary"
-              class="portable-export-action"
-              data-testid="cloud-portable-export-action"
-              [disabled]="portableExportBusy()"
-              [busy]="portableExportBusy()"
-              (click)="exportAllNostosData()"
-            >
-              @if (portableExportBusy()) {
-                <nostos-icon name="circle-notch" [size]="16" class="spin"></nostos-icon>
-                Exporting…
-              } @else {
-                <nostos-icon name="download-simple" [size]="16"></nostos-icon>
-                Export all my Nostos data
-              }
-            </button>
-          </div>
+            <div class="setting-row">
+              <div class="setting-label">
+                <span class="label-text">Import library</span>
+                <span class="label-desc">Import a portable .nostos archive from another Nostos installation.</span>
+                @if (portableImportBusy()) {
+                  <span class="label-desc portable-export-status" aria-live="polite">
+                    Importing your library…
+                  </span>
+                }
+                @if (portableImportError(); as importError) {
+                  <span class="label-desc portable-export-status is-error" role="alert" data-testid="portable-import-error">{{ importError }}</span>
+                }
+              </div>
+
+              <button
+                appButton
+                variant="secondary"
+                data-testid="portable-import-action"
+                [disabled]="portableImportBusy()"
+                [busy]="portableImportBusy()"
+                (click)="portableImportInput.click()"
+              >
+                @if (portableImportBusy()) {
+                  <nostos-icon name="circle-notch" [size]="16" class="spin"></nostos-icon>
+                  Importing…
+                } @else {
+                  <nostos-icon name="upload-simple" [size]="16"></nostos-icon>
+                  Import library…
+                }
+              </button>
+              <input
+                #portableImportInput
+                type="file"
+                class="visually-hidden"
+                accept=".nostos,application/vnd.nostos.portable+zip"
+                (change)="importPortableArchive($event)"
+                data-testid="portable-import-input"
+              />
+            </div>
+          }
         </div>
       </section>
-      }
 
       @if (supportsEreaderAccess()) {
       <!-- E-reader access is one product capability with deployment-specific

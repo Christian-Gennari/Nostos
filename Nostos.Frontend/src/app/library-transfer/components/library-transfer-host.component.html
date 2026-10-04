@@ -1,0 +1,13 @@
+<div class="transfer-host" data-testid="library-transfer-host">
+  <section class="transfer-host__entry" role="group" aria-label="Export library">
+    <app-library-export-flow />
+  </section>
+  <section class="transfer-host__entry" role="group" aria-label="Import library">
+    <app-library-import-flow
+      [supportsSafeActivation]="supportsSafeActivation()"
+      (importCompleted)="importCompleted.emit()"
+      (activationRequested)="onActivationRequested($event)"
+      (replacementConfirmed)="onReplacementConfirmed($event)"
+    />
+  </section>
+</div>

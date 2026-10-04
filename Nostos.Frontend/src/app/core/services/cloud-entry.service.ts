@@ -4,6 +4,7 @@ import { firstValueFrom } from 'rxjs';
 
 import { CloudOnboardingSnapshot } from '../dtos/cloud-onboarding.dtos';
 import { CloudSession } from '../dtos/cloud-auth.dtos';
+import { DeploymentCapabilities } from '../dtos/deployment-capabilities.dtos';
 import { CloudAuthService } from './cloud-auth.service';
 import { CloudOnboardingService } from './cloud-onboarding.service';
 import { DeploymentCapabilitiesService } from './deployment-capabilities.service';
@@ -40,6 +41,7 @@ export interface CloudEntryView {
 export class CloudEntryService {
   private readonly session = signal<CloudSession | null>(null);
   private readonly requestedOffer = signal<string | null>(null);
+  private readonly deploymentCapabilities = signal<DeploymentCapabilities | null>(null);
   private hasAutoAdvancedCheckout = false;
   private pollHandle: ReturnType<typeof setTimeout> | undefined;
 
@@ -49,6 +51,18 @@ export class CloudEntryService {
   readonly checkoutRedirect = signal<string | null>(null);
   readonly productReady = computed(() => this.view().kind === 'product');
   readonly selectedOffer = computed(() => this.view().onboarding?.selectedOffer ?? null);
+
+  /**
+   * Server-authoritative migration capability (#680 plan §4). False or absent
+   * keeps the legacy first-run import; true mounts the shared import flow.
+   * Never inferred from the deployment mode.
+   */
+  readonly supportsLibraryMigration = computed(
+    () => this.deploymentCapabilities()?.supportsLibraryMigration === true,
+  );
+  readonly supportsSafeActivation = computed(
+    () => this.deploymentCapabilities()?.supportsSafeActivation === true,
+  );
 
   constructor(
     private readonly capabilities: DeploymentCapabilitiesService,
@@ -66,6 +80,7 @@ export class CloudEntryService {
 
     try {
       const capabilities = await firstValueFrom(this.capabilities.get(force));
+      this.deploymentCapabilities.set(capabilities);
       if (capabilities.deploymentMode === 'SelfHosted') {
         this.session.set(null);
         this.view.set({ kind: 'product' });
@@ -93,6 +108,7 @@ export class CloudEntryService {
 
       await this.refreshOnboarding();
     } catch {
+      this.deploymentCapabilities.set(null);
       this.view.set({ kind: 'backend_error' });
     }
   }
@@ -179,6 +195,17 @@ export class CloudEntryService {
   }
 
   startFresh(): void {
+    this.completeFirstRun();
+  }
+
+  /**
+   * Completion handoff for the shared import flow: the server job (or the
+   * activation slice) reported a finished import, so the first-run marker can
+   * be cleared and the product entered. Failures never call this, so a failed
+   * transfer keeps the first-run choice on screen.
+   */
+  finishFirstRunAfterImport(): void {
+    this.actionError.set(null);
     this.completeFirstRun();
   }
 

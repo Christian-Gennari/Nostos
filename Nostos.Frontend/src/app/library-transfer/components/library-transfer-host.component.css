@@ -1,0 +1,19 @@
+/* Settings host: two related but independent flows on one card, separated by
+   a hairline so Export library and Import library read as distinct actions. */
+
+.transfer-host {
+  display: flex;
+  flex-direction: column;
+}
+
+.transfer-host__entry {
+  padding: 14px 0;
+}
+
+.transfer-host__entry:last-child {
+  padding-bottom: 0;
+}
+
+.transfer-host__entry + .transfer-host__entry {
+  border-top: 1px solid var(--border-light);
+}
