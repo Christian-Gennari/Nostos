@@ -606,6 +606,538 @@ public sealed class PortableArchiveServiceTests
         (await destination.Db.Notes.CountAsync()).Should().Be(0);
     }
 
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    public async Task Import_round_trips_v1_v2_v3_fixtures_with_media_hashes(
+        int dataVersion)
+    {
+        using var exported = await ExportFixtureAsync();
+        var entries = await ReadEntriesAsync(exported);
+        MutateJsonEntry(entries, "manifest.json", root => root["dataVersion"] = dataVersion);
+        MutateJsonEntry(entries, "data/library.json", root =>
+        {
+            root["version"] = dataVersion;
+            if (dataVersion < 2)
+            {
+                root.Remove("writingNotes");
+                root.Remove("noteImportBookLinks");
+            }
+            else if (dataVersion < 3)
+            {
+                root.Remove("noteImportBookLinks");
+            }
+        });
+        RehashDataDescriptor(entries);
+
+        var manifest = JsonNode.Parse(
+            entries.Single(x => x.Name == "manifest.json").Bytes)!;
+        var media = manifest["media"]!.AsArray();
+
+        using var archive = await BuildArchiveAsync(entries);
+        await using var destination = await LocalPortableTestLibrary.CreateAsync();
+
+        var imported = await destination.Portability().ImportAsync(archive);
+
+        imported.IntegrityVerified.Should().BeTrue();
+        imported.FormatVersion.Should().Be(1);
+        imported.MediaFiles.Should().Be(media.Count);
+
+        destination.Db.ChangeTracker.Clear();
+        (await destination.Db.Books.CountAsync()).Should().Be(4);
+        (await destination.Db.Works.CountAsync()).Should().Be(3);
+        (await destination.Db.Notes.CountAsync()).Should().Be(1);
+        (await destination.Db.WritingNotes.CountAsync())
+            .Should().Be(dataVersion >= 2 ? 1 : 0);
+
+        foreach (var descriptor in media)
+        {
+            var bookId = Guid.Parse(descriptor!["bookId"]!.GetValue<string>());
+            var kind = descriptor["kind"]!.GetValue<string>();
+            var expectedLength = descriptor["length"]!.GetValue<long>();
+            var expectedSha256 = descriptor["sha256"]!.GetValue<string>();
+
+            await using var opened = kind == "book"
+                ? await destination.Storage.OpenBookFileAsync(bookId)
+                : await destination.Storage.OpenBookCoverAsync(bookId);
+            opened.Should().NotBeNull();
+
+            using var content = new MemoryStream();
+            await opened!.Content.CopyToAsync(content);
+            content.Length.Should().Be(expectedLength);
+            Convert.ToHexString(SHA256.HashData(content.ToArray()))
+                .ToLowerInvariant()
+                .Should().Be(expectedSha256);
+        }
+    }
+
+    [Fact]
+    public async Task Import_scratch_holds_only_the_archive_and_local_staging_and_is_deleted()
+    {
+        var scratchRoot = Path.Combine(
+            Path.GetTempPath(),
+            $"nostos-s8-scratch-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(scratchRoot);
+
+        try
+        {
+            using var archive = await ExportFixtureAsync();
+            await using var destination = await LocalPortableTestLibrary.CreateAsync();
+            var inner = destination.Storage;
+            var snapshots = new List<IReadOnlyList<string>>();
+            var storage = new InterceptingStorage(
+                inner,
+                onBookFile: async (bookId, content, fileName, ct) =>
+                {
+                    snapshots.Add(SnapshotScratch(scratchRoot));
+                    return await inner.SaveBookFileAsync(bookId, content, fileName, ct);
+                });
+            var service = new PortableArchiveService(
+                destination.Db,
+                storage,
+                NullLogger<PortableArchiveService>.Instance)
+            {
+                ScratchRoot = scratchRoot,
+            };
+
+            var imported = await service.ImportAsync(archive);
+
+            imported.IntegrityVerified.Should().BeTrue();
+            imported.MediaFiles.Should().Be(5);
+            snapshots.Should().NotBeEmpty();
+
+            var separator = Path.DirectorySeparatorChar;
+            foreach (var snapshot in snapshots)
+            {
+                snapshot.Should().Contain(path => path.EndsWith("archive.nostos", StringComparison.Ordinal));
+
+                // The slice removes the whole-library extraction directory: media
+                // may only exist as the archive spool plus the local staging copy.
+                snapshot.Should().NotContain(path =>
+                    path.Contains($"{separator}media-stage{separator}", StringComparison.Ordinal));
+                snapshot.Count(path =>
+                        path.Contains($"{separator}staging{separator}", StringComparison.Ordinal)
+                        && path.Contains($"{separator}media{separator}", StringComparison.Ordinal)
+                        && path.EndsWith(".bin", StringComparison.Ordinal))
+                    .Should().Be(5);
+                snapshot.Where(path =>
+                        !path.EndsWith(".bin", StringComparison.Ordinal)
+                        && !path.EndsWith(".json", StringComparison.Ordinal)
+                        && !path.EndsWith("archive.nostos", StringComparison.Ordinal))
+                    .Should().BeEmpty("no additional whole-media extraction copy may exist");
+            }
+
+            Directory.EnumerateFileSystemEntries(scratchRoot).Should().BeEmpty();
+        }
+        finally
+        {
+            try
+            {
+                if (Directory.Exists(scratchRoot))
+                    Directory.Delete(scratchRoot, recursive: true);
+            }
+            catch
+            {
+                // Test cleanup only.
+            }
+        }
+    }
+
+    [Theory]
+    [InlineData("invalid_archive", "invalid_zip")]
+    [InlineData("missing_manifest", "missing_manifest")]
+    [InlineData("data_checksum_mismatch", "data_checksum_mismatch")]
+    [InlineData("media_checksum_mismatch", "media_checksum_mismatch")]
+    [InlineData("destination_not_empty", "destination_not_empty")]
+    [InlineData("asset_write_failure", "import_failed")]
+    [InlineData("cancellation", "import_failed")]
+    public async Task Import_failure_leaves_no_database_assets_or_scratch_state(
+        string scenario,
+        string expectedCode)
+    {
+        var scratchRoot = Path.Combine(
+            Path.GetTempPath(),
+            $"nostos-s8-scratch-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(scratchRoot);
+
+        try
+        {
+            var fixture = await ExportFixtureAsync();
+            MemoryStream archive;
+            switch (scenario)
+            {
+                case "invalid_archive":
+                    archive = new MemoryStream(
+                        Encoding.UTF8.GetBytes("this is not a portable archive"),
+                        writable: false);
+                    break;
+                case "missing_manifest":
+                {
+                    var entries = await ReadEntriesAsync(fixture);
+                    archive = await BuildArchiveAsync(
+                        entries.Where(x => x.Name != "manifest.json"));
+                    break;
+                }
+                case "data_checksum_mismatch":
+                {
+                    var entries = await ReadEntriesAsync(fixture);
+                    MutateJsonEntry(entries, "data/library.json", root =>
+                        root["works"]!.AsArray()[0]!["title"] = "Tampered after hashing");
+                    var dataBytes = entries
+                        .Single(x => x.Name == "data/library.json")
+                        .Bytes;
+                    MutateJsonEntry(entries, "manifest.json", root =>
+                        root["data"]!["length"] = dataBytes.LongLength);
+                    archive = await BuildArchiveAsync(entries);
+                    break;
+                }
+                case "media_checksum_mismatch":
+                {
+                    var entries = await ReadEntriesAsync(fixture);
+                    var index = entries.FindIndex(x =>
+                        x.Name.StartsWith("media/books/", StringComparison.Ordinal));
+                    var corrupted = new byte[entries[index].Bytes.Length];
+                    new Random(2026).NextBytes(corrupted);
+                    entries[index] = new TestArchiveEntry(
+                        entries[index].Name,
+                        corrupted);
+                    archive = await BuildArchiveAsync(entries);
+                    break;
+                }
+                default:
+                    archive = fixture;
+                    break;
+            }
+
+            using (archive)
+            {
+                await using var destination = await LocalPortableTestLibrary.CreateAsync();
+                if (scenario == "destination_not_empty")
+                {
+                    destination.Db.Topics.Add(new TopicModel { Topic = "existing" });
+                    await destination.Db.SaveChangesAsync();
+                }
+
+                var inner = destination.Storage;
+                IBookAssetStorage storage = inner;
+                CancellationTokenSource? cancellation = null;
+
+                if (scenario is "asset_write_failure" or "cancellation")
+                {
+                    cancellation = scenario == "cancellation"
+                        ? new CancellationTokenSource()
+                        : null;
+                    var saveCalls = 0;
+                    storage = new InterceptingStorage(
+                        inner,
+                        onBookFile: async (bookId, content, fileName, ct) =>
+                        {
+                            var call = Interlocked.Increment(ref saveCalls);
+                            if (scenario == "cancellation" && call >= 2)
+                            {
+                                cancellation!.Cancel();
+                                return await inner.SaveBookFileAsync(
+                                    bookId,
+                                    content,
+                                    fileName,
+                                    cancellation.Token);
+                            }
+
+                            var saved = await inner.SaveBookFileAsync(
+                                bookId,
+                                content,
+                                fileName,
+                                ct);
+                            if (scenario == "asset_write_failure")
+                            {
+                                throw new IOException(
+                                    "Injected failure after durable media write.");
+                            }
+
+                            return saved;
+                        });
+                }
+
+                using (cancellation)
+                {
+                    var service = new PortableArchiveService(
+                        destination.Db,
+                        storage,
+                        NullLogger<PortableArchiveService>.Instance)
+                    {
+                        ScratchRoot = scratchRoot,
+                    };
+
+                    var action = () => service.ImportAsync(
+                        archive,
+                        cancellation?.Token ?? CancellationToken.None);
+                    var exception = await action.Should().ThrowAsync<PortableArchiveException>();
+                    exception.Which.Code.Should().Be(expectedCode);
+                }
+
+                destination.Db.ChangeTracker.Clear();
+                (await destination.Db.Books.CountAsync()).Should().Be(0);
+                (await destination.Db.Works.CountAsync()).Should().Be(0);
+                (await destination.Db.Notes.CountAsync()).Should().Be(0);
+
+                if (scenario == "destination_not_empty")
+                {
+                    (await destination.Db.Topics.CountAsync()).Should().Be(
+                        1,
+                        "existing destination content must be untouched");
+                }
+
+                Directory.EnumerateFiles(
+                        destination.Storage.StorageRoot,
+                        "*",
+                        SearchOption.AllDirectories)
+                    .Should().BeEmpty();
+                Directory.EnumerateFileSystemEntries(scratchRoot).Should().BeEmpty();
+            }
+        }
+        finally
+        {
+            try
+            {
+                if (Directory.Exists(scratchRoot))
+                    Directory.Delete(scratchRoot, recursive: true);
+            }
+            catch
+            {
+                // Test cleanup only.
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Import_rechecks_empty_destination_inside_the_final_transaction()
+    {
+        using var archive = await ExportFixtureAsync();
+        await using var destination = await LocalPortableTestLibrary.CreateAsync();
+
+        // The reader clocks the prepared metadata immediately before committing
+        // staging; add a competing row at that moment so the transaction's
+        // empty-destination recheck (plan 9.14) is what rejects the import.
+        var race = new CallbackTimeProvider(() =>
+        {
+            destination.Db.Topics.Add(new TopicModel { Topic = "concurrent writer" });
+            destination.Db.SaveChanges();
+        });
+        var service = new PortableArchiveService(
+            destination.Db,
+            destination.Storage,
+            NullLogger<PortableArchiveService>.Instance,
+            timeProvider: race);
+
+        var action = () => service.ImportAsync(archive);
+        var exception = await action.Should().ThrowAsync<PortableArchiveException>();
+
+        exception.Which.Code.Should().Be("destination_not_empty");
+        (await destination.Db.Books.CountAsync()).Should().Be(0);
+        (await destination.Db.Topics.CountAsync()).Should().Be(1);
+        Directory.EnumerateFiles(
+                destination.Storage.StorageRoot,
+                "*",
+                SearchOption.AllDirectories)
+            .Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Import_insufficient_scratch_space_fails_before_media_staging_and_cleans_up()
+    {
+        var scratchRoot = Path.Combine(
+            Path.GetTempPath(),
+            $"nostos-s8-scratch-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(scratchRoot);
+
+        try
+        {
+            using var archive = await ExportFixtureAsync();
+            await using var destination = await LocalPortableTestLibrary.CreateAsync();
+            IReadOnlyList<string>? atAdmission = null;
+            var service = new PortableArchiveService(
+                destination.Db,
+                destination.Storage,
+                NullLogger<PortableArchiveService>.Instance)
+            {
+                ScratchRoot = scratchRoot,
+                ScratchFreeSpaceProbe = _ =>
+                {
+                    atAdmission = SnapshotScratch(scratchRoot);
+                    return 1;
+                },
+            };
+
+            var action = () => service.ImportAsync(archive);
+            var exception = await action.Should().ThrowAsync<PortableArchiveException>();
+            exception.Which.Code.Should().Be("insufficient_temp_space");
+
+            // The admission runs after the manifest/payload are staged but before
+            // any media entry is copied, matching the legacy ordering.
+            atAdmission.Should().NotBeNull();
+            atAdmission!.Should().NotContain(path =>
+                path.Contains(
+                    $"{Path.DirectorySeparatorChar}media{Path.DirectorySeparatorChar}",
+                    StringComparison.Ordinal));
+
+            Directory.EnumerateFileSystemEntries(scratchRoot).Should().BeEmpty();
+
+            destination.Db.ChangeTracker.Clear();
+            (await destination.Db.Books.CountAsync()).Should().Be(0);
+            Directory.EnumerateFiles(
+                    destination.Storage.StorageRoot,
+                    "*",
+                    SearchOption.AllDirectories)
+                .Should().BeEmpty();
+        }
+        finally
+        {
+            try
+            {
+                if (Directory.Exists(scratchRoot))
+                    Directory.Delete(scratchRoot, recursive: true);
+            }
+            catch
+            {
+                // Test cleanup only.
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Import_accepts_the_exact_admitted_scratch_budget()
+    {
+        var scratchRoot = Path.Combine(
+            Path.GetTempPath(),
+            $"nostos-s8-scratch-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(scratchRoot);
+
+        try
+        {
+            using var archive = await ExportFixtureAsync();
+            var required = RequiredStagedBytes(archive);
+
+            // Smallest free-space value whose 20% margin admits exactly the bytes
+            // this import stages.
+            var available = required;
+            while (available - (available / 5) < required)
+                available++;
+            (available - (available / 5)).Should().Be(required);
+
+            await using var destination = await LocalPortableTestLibrary.CreateAsync();
+            var service = new PortableArchiveService(
+                destination.Db,
+                destination.Storage,
+                NullLogger<PortableArchiveService>.Instance)
+            {
+                ScratchRoot = scratchRoot,
+                ScratchFreeSpaceProbe = _ => available,
+            };
+
+            var imported = await service.ImportAsync(archive);
+
+            imported.IntegrityVerified.Should().BeTrue();
+            imported.MediaFiles.Should().Be(5);
+            Directory.EnumerateFileSystemEntries(scratchRoot).Should().BeEmpty();
+        }
+        finally
+        {
+            try
+            {
+                if (Directory.Exists(scratchRoot))
+                    Directory.Delete(scratchRoot, recursive: true);
+            }
+            catch
+            {
+                // Test cleanup only.
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Import_mid_staging_io_failure_is_cleaned_up_and_surfaces_as_io_failure()
+    {
+        var scratchRoot = Path.Combine(
+            Path.GetTempPath(),
+            $"nostos-s8-scratch-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(scratchRoot);
+
+        try
+        {
+            using var archive = await ExportFixtureAsync();
+            await using var destination = await LocalPortableTestLibrary.CreateAsync();
+            var service = new PortableArchiveService(
+                destination.Db,
+                destination.Storage,
+                NullLogger<PortableArchiveService>.Instance)
+            {
+                ScratchRoot = scratchRoot,
+
+                // Pass admission, then break the staging volume before the first
+                // media copy so a filesystem failure happens mid-preparation.
+                ScratchFreeSpaceProbe = stagingRoot =>
+                {
+                    if (Directory.Exists(stagingRoot))
+                        Directory.Delete(stagingRoot, recursive: true);
+                    File.WriteAllText(stagingRoot, "simulated full volume");
+                    return long.MaxValue;
+                },
+            };
+
+            var action = () => service.ImportAsync(archive);
+
+            // Main surfaced a filesystem failure during validation/extraction as a
+            // raw IOException (HTTP 500); the compatibility path still does.
+            await action.Should().ThrowAsync<IOException>();
+
+            destination.Db.ChangeTracker.Clear();
+            (await destination.Db.Books.CountAsync()).Should().Be(0);
+            Directory.EnumerateFiles(
+                    destination.Storage.StorageRoot,
+                    "*",
+                    SearchOption.AllDirectories)
+                .Should().BeEmpty();
+            Directory.EnumerateFileSystemEntries(scratchRoot).Should().BeEmpty();
+        }
+        finally
+        {
+            try
+            {
+                if (Directory.Exists(scratchRoot))
+                    Directory.Delete(scratchRoot, recursive: true);
+            }
+            catch
+            {
+                // Test cleanup only.
+            }
+        }
+    }
+
+    private static long RequiredStagedBytes(MemoryStream archive)
+    {
+        archive.Position = 0;
+        using var zip = new ZipArchive(archive, ZipArchiveMode.Read, leaveOpen: true);
+        var manifestEntry = zip.GetEntry("manifest.json")!;
+        var dataLength = zip.GetEntry("data/library.json")!.Length;
+
+        long mediaBytes;
+        using (var manifest = manifestEntry.Open())
+        {
+            var root = JsonNode.Parse(manifest)!;
+            mediaBytes = root["media"]!.AsArray()
+                .Sum(item => item!["length"]!.GetValue<long>());
+        }
+
+        archive.Position = 0;
+        return manifestEntry.Length + dataLength + mediaBytes;
+    }
+
+    private static IReadOnlyList<string> SnapshotScratch(string root) =>
+        Directory.Exists(root)
+            ? Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories).ToArray()
+            : [];
+
     private static async Task<MemoryStream> ExportFixtureAsync()
     {
         await using var source = await LocalPortableTestLibrary.CreateAsync();
@@ -838,6 +1370,99 @@ public sealed class PortableArchiveServiceTests
             new(
                 "Synchronous operations are disallowed. "
                 + "Call WriteAsync or set AllowSynchronousIO to true instead.");
+    }
+
+    private sealed class InterceptingStorage(
+        IBookAssetStorage inner,
+        Func<Guid, Stream, string, CancellationToken, Task<string>>? onBookFile = null,
+        Func<Guid, Stream, string, CancellationToken, Task<string>>? onCoverFile = null)
+        : IBookAssetStorage
+    {
+        public Task<string> SaveBookFileAsync(
+            Guid bookId,
+            Stream content,
+            string fileName,
+            CancellationToken ct = default) =>
+            onBookFile is null
+                ? inner.SaveBookFileAsync(bookId, content, fileName, ct)
+                : onBookFile(bookId, content, fileName, ct);
+
+        public Task<string> AdoptBookFileAsync(
+            Guid bookId,
+            string sourcePath,
+            string fileName,
+            CancellationToken ct = default) =>
+            inner.AdoptBookFileAsync(bookId, sourcePath, fileName, ct);
+
+        public Task<StoredAssetInfo?> GetBookFileInfoAsync(
+            Guid bookId,
+            CancellationToken ct = default) =>
+            inner.GetBookFileInfoAsync(bookId, ct);
+
+        public Task<StoredAssetRead?> OpenBookFileAsync(
+            Guid bookId,
+            StorageByteRange? range = null,
+            CancellationToken ct = default) =>
+            inner.OpenBookFileAsync(bookId, range, ct);
+
+        public Task<bool> DeleteBookFileAsync(
+            Guid bookId,
+            CancellationToken ct = default) =>
+            inner.DeleteBookFileAsync(bookId, ct);
+
+        public Task DeleteBookFilesAsync(
+            Guid bookId,
+            CancellationToken ct = default) =>
+            inner.DeleteBookFilesAsync(bookId, ct);
+
+        public Task<string> SaveBookCoverAsync(
+            Guid bookId,
+            Stream content,
+            string fileName,
+            CancellationToken ct = default) =>
+            onCoverFile is null
+                ? inner.SaveBookCoverAsync(bookId, content, fileName, ct)
+                : onCoverFile(bookId, content, fileName, ct);
+
+        public Task<StoredAssetInfo?> GetBookCoverInfoAsync(
+            Guid bookId,
+            CancellationToken ct = default) =>
+            inner.GetBookCoverInfoAsync(bookId, ct);
+
+        public Task<StoredAssetRead?> OpenBookCoverAsync(
+            Guid bookId,
+            CancellationToken ct = default) =>
+            inner.OpenBookCoverAsync(bookId, ct);
+
+        public Task<StoredAssetInfo?> GetBookCoverThumbnailInfoAsync(
+            Guid bookId,
+            int width,
+            CancellationToken ct = default) =>
+            inner.GetBookCoverThumbnailInfoAsync(bookId, width, ct);
+
+        public Task<StoredAssetRead?> OpenBookCoverThumbnailAsync(
+            Guid bookId,
+            int width,
+            CancellationToken ct = default) =>
+            inner.OpenBookCoverThumbnailAsync(bookId, width, ct);
+
+        public Task<bool> DeleteCoverAsync(
+            Guid bookId,
+            CancellationToken ct = default) =>
+            inner.DeleteCoverAsync(bookId, ct);
+    }
+
+    private sealed class CallbackTimeProvider(Action onFirstUtcNow) : TimeProvider
+    {
+        private int _called;
+
+        public override DateTimeOffset GetUtcNow()
+        {
+            if (Interlocked.Exchange(ref _called, 1) == 0)
+                onFirstUtcNow();
+
+            return DateTimeOffset.UtcNow;
+        }
     }
 
     private sealed class RecordingBookTextScheduler : IBookTextIngestionScheduler

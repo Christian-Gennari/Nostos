@@ -235,7 +235,13 @@ internal static class PortableZipDirectoryParser
                 throw PortableZipMetadata.Invalid("Invalid or duplicate local header offset.");
             var nameBytes = directory.Slice(position + 46, nameLength);
             // Native .NET defaults to UTF-8, also when the UTF-8 flag is absent.
-            var path = PortableArchiveValidation.ValidateArchivePath(Encoding.UTF8.GetString(nameBytes.Span));
+            var rawPath = Encoding.UTF8.GetString(nameBytes.Span);
+            // Native ZipArchiveEntry.Name is empty for explicit directory entries
+            // (and for an empty name), which is the legacy import's directory
+            // rejection. Match that typed code instead of a path-safety failure.
+            if (rawPath.Length == 0 || rawPath.EndsWith('/'))
+                PortableArchiveValidation.ValidateDirectoryEntryName(string.Empty);
+            var path = PortableArchiveValidation.ValidateArchivePath(rawPath);
             PortableArchiveValidation.ValidateUniqueArchivePath(path, paths.Add(path));
             total = PortableArchiveValidation.ValidateDeclaredEntry(path, length, compressed, total);
             entries.Add(new(path, flags, method, PortableZipMetadata.U32(bytes, 16), compressed, length, offset, nameBytes));

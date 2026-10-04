@@ -1068,3 +1068,27 @@ public sealed class InMemoryPortableImportStagingContractTests : PortableImportS
     protected override IPortableImportStaging CreateStaging() =>
         new InMemoryPortableImportStaging(_store);
 }
+
+public sealed class LocalPortableImportStagingContractTests
+    : PortableImportStagingContractTests, IDisposable
+{
+    private readonly string _root = Path.Combine(
+        Path.GetTempPath(),
+        $"nostos-local-staging-{Guid.NewGuid():N}");
+
+    protected override IPortableImportStaging CreateStaging() =>
+        new LocalPortableImportStaging(_root);
+
+    public void Dispose()
+    {
+        try
+        {
+            if (Directory.Exists(_root))
+                Directory.Delete(_root, recursive: true);
+        }
+        catch
+        {
+            // Test cleanup only.
+        }
+    }
+}

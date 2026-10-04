@@ -503,29 +503,44 @@ public sealed class PortableArchiveReaderTests(ITestOutputHelper output)
         outcome.Budget.CurrentBytes.Should().Be(0);
     }
 
+    // Characterization table captured from the pre-slice legacy ImportAsync on
+    // main: the immediate import and the streaming reader must keep producing
+    // these exact typed codes for the same hostile archives. Immediate import now
+    // runs the reader internally, so the table (not a live comparison against a
+    // second implementation) pins the old observable behaviour.
     [Theory]
-    [InlineData("unsupported_version")]
-    [InlineData("unsupported_data_version")]
-    [InlineData("data_version_mismatch")]
-    [InlineData("malformed_manifest")]
-    [InlineData("missing_manifest")]
-    [InlineData("missing_referenced_media")]
-    [InlineData("unexpected_entry")]
-    [InlineData("duplicate_path")]
-    [InlineData("unsafe_archive_path")]
-    [InlineData("data_checksum_mismatch")]
-    [InlineData("data_length_mismatch")]
-    [InlineData("media_checksum_mismatch")]
-    [InlineData("media_length_mismatch")]
-    [InlineData("entry_too_large")]
-    [InlineData("malformed_relationship")]
-    [InlineData("duplicate_id")]
-    [InlineData("count_mismatch")]
-    [InlineData("suspicious_compression")]
-    [InlineData("not_a_portable_archive")]
-    [InlineData("empty_archive")]
-    public async Task Invalid_archives_fail_with_the_same_typed_code_in_prepare_and_immediate_import(
-        string scenario)
+    [InlineData("unsupported_version", "unsupported_version")]
+    [InlineData("unsupported_data_version", "unsupported_data_version")]
+    [InlineData("data_version_mismatch", "data_version_mismatch")]
+    [InlineData("malformed_manifest", "malformed_manifest")]
+    [InlineData("missing_manifest", "missing_manifest")]
+    [InlineData("missing_referenced_media", "missing_referenced_media")]
+    [InlineData("unexpected_entry", "unexpected_entry")]
+    [InlineData("duplicate_path", "duplicate_path")]
+    [InlineData("unsafe_archive_path", "unsafe_archive_path")]
+    // Main's legacy ImportAsync rejects an explicit directory entry as
+    // directory_entry_not_allowed (native ZipArchiveEntry.Name is empty); main's
+    // newer reader reports unsafe_archive_path. The legacy client-observable code
+    // wins, so both paths here report directory_entry_not_allowed.
+    [InlineData("directory_entry", "directory_entry_not_allowed")]
+    // Multi-fault precedence captured from main: the manifest-count guard and the
+    // data-hash guard each win over the later media faults.
+    [InlineData("count_mismatch_and_corrupt_media", "count_mismatch")]
+    [InlineData("data_hash_mismatch_and_missing_media", "data_checksum_mismatch")]
+    [InlineData("data_checksum_mismatch", "data_checksum_mismatch")]
+    [InlineData("data_length_mismatch", "data_length_mismatch")]
+    [InlineData("media_checksum_mismatch", "media_checksum_mismatch")]
+    [InlineData("media_length_mismatch", "media_length_mismatch")]
+    [InlineData("entry_too_large", "entry_too_large")]
+    [InlineData("malformed_relationship", "malformed_relationship")]
+    [InlineData("duplicate_id", "duplicate_id")]
+    [InlineData("count_mismatch", "count_mismatch")]
+    [InlineData("suspicious_compression", "suspicious_compression")]
+    [InlineData("not_a_portable_archive", "invalid_zip")]
+    [InlineData("empty_archive", "empty_archive")]
+    public async Task Invalid_archives_fail_with_the_characterized_typed_code_in_prepare_and_immediate_import(
+        string scenario,
+        string expectedCode)
     {
         var bytes = await BuildInvalidArchiveAsync(scenario);
 
@@ -534,13 +549,8 @@ public sealed class PortableArchiveReaderTests(ITestOutputHelper output)
 
         outcome.Error.Should().BeOfType<PortableArchiveException>();
         var prepareCode = ((PortableArchiveException)outcome.Error!).Code;
-        prepareCode.Should().Be(scenario switch
-        {
-            "not_a_portable_archive" => "invalid_zip",
-            "empty_archive" => "empty_archive",
-            _ => scenario,
-        });
-        immediateCode.Should().Be(prepareCode);
+        prepareCode.Should().Be(expectedCode);
+        immediateCode.Should().Be(expectedCode);
         outcome.Store.Areas.Should().BeEmpty();
         if (scenario == "empty_archive")
         {
@@ -735,6 +745,28 @@ public sealed class PortableArchiveReaderTests(ITestOutputHelper output)
                 break;
             case "unsafe_archive_path":
                 entries.Add(new TestArchiveEntry("../escape.txt", [1, 2, 3]));
+                break;
+            case "directory_entry":
+                entries.Add(new TestArchiveEntry("dir/", []));
+                break;
+            case "count_mismatch_and_corrupt_media":
+                MutateJsonEntry(entries, ManifestPath, root =>
+                    root["counts"]!["works"] =
+                        root["counts"]!["works"]!.GetValue<int>() + 1);
+                ReplaceEntry(
+                    entries,
+                    media.Name,
+                    GenerateBytes(media.Bytes.Length, seed: 55));
+                break;
+            case "data_hash_mismatch_and_missing_media":
+                MutateJsonEntry(entries, DataPath, root =>
+                    root["works"]!.AsArray()[0]!["title"] = "Tampered after hashing");
+                MutateJsonEntry(
+                    entries,
+                    ManifestPath,
+                    root => root["data"]!["length"] =
+                        entries.Single(entry => entry.Name == DataPath).Bytes.LongLength);
+                entries.RemoveAll(entry => entry.Name == media.Name);
                 break;
             case "data_checksum_mismatch":
                 MutateJsonEntry(entries, DataPath, root =>
