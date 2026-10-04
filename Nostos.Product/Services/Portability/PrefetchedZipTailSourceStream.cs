@@ -176,8 +176,9 @@ internal sealed class PortableArchiveZipReader : IAsyncDisposable
             }
         }
     }
-    // No public native local-header offset API exists. A unique EOCD, contiguous metadata,
-    // snapshot revalidation and exact ZIP64 replacements force the same directory/offsets.
+    // No public native local-header offset API exists. The last eligible EOCD, signature-free
+    // comment, contiguous metadata, snapshot revalidation and exact ZIP64 replacements
+    // force the same directory/offsets.
     // Tests additionally compare native private offsets; product code uses no reflection.
     private static void CrossCheck(ZipArchive archive, IReadOnlyList<PortableZipDirectoryEntry> directory)
     {

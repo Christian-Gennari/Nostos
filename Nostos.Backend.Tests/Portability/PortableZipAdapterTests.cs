@@ -815,9 +815,13 @@ public sealed class PortableZipAdapterTests(ITestOutputHelper output)
     [InlineData("signature_in_payload")]
     [InlineData("signature_in_directory_comment")]
     [InlineData("signature_in_directory_crc")]
-    public async Task Ambiguous_eocd_candidates_are_rejected_before_factory_returns(string scenario)
+    public async Task Eocd_candidates_are_selected_without_fallback_or_payload_rejection(string scenario)
     {
         byte[] bytes;
+        var accepted = scenario is "outer_eof_inner_eof" or "outer_short_inner_eof"
+            or "signature_in_payload" or "signature_in_directory_comment" or "signature_in_directory_crc";
+        var expectedPayload = scenario.StartsWith("outer_", StringComparison.Ordinal)
+            ? Enumerable.Repeat((byte)'B', 40).ToArray() : new byte[64];
         if (scenario.StartsWith("outer_", StringComparison.Ordinal))
         {
             var fixture = await DualViewAsync(scenario != "outer_short_inner_eof", scenario != "outer_eof_inner_short");
@@ -843,6 +847,7 @@ public sealed class PortableZipAdapterTests(ITestOutputHelper output)
         {
             var payload = new byte[64];
             if (scenario == "signature_in_payload") W32(payload, 7, 0x06054b50);
+            expectedPayload = payload;
             bytes = await NativeZipAsync(payload, CompressionLevel.NoCompression, false);
             var cd = (int)U32(bytes, bytes.Length - 6);
             if (scenario == "signature_in_comment")
@@ -867,17 +872,23 @@ public sealed class PortableZipAdapterTests(ITestOutputHelper output)
             await using var native = await ZipArchive.CreateAsync(new MemoryStream(bytes), ZipArchiveMode.Read, false, null);
             var nativeCd = NativeField<long>(native, "_centralDirectoryStart");
             Assert.Equal(scenario == "signature_in_comment" ? 0 : cd, nativeCd);
-            output.WriteLine($"{scenario}: real native CD={nativeCd}; conservative duplicate-signature policy rejects.");
+            output.WriteLine($"{scenario}: real native CD={nativeCd}; last eligible EOCD policy ignores earlier signatures.");
         }
-        using var physical = new CountingReadStream(bytes);
-        await using var source = Source(physical);
-        var budget = Budget();
-        var exception = await Assert.ThrowsAsync<PortableArchiveException>(() => PortableArchiveZipReader.OpenAsync(source, budget));
-        Assert.Equal("invalid_zip", exception.Code);
-        Assert.Contains("ambiguous EOCD", exception.Message);
-        Assert.Equal(1, physical.AsyncCalls); // Rejected in discovery before prefetch/local-header reads.
-        Assert.Equal(0, physical.SyncCalls);
-        Assert.Equal(0, budget.CurrentBytes);
+        if (accepted)
+            await ReadValidatedAsync(bytes, expectedPayload);
+        else
+        {
+            using var physical = new CountingReadStream(bytes);
+            await using var source = Source(physical);
+            var budget = Budget();
+            var exception = await Assert.ThrowsAsync<PortableArchiveException>(() => PortableArchiveZipReader.OpenAsync(source, budget));
+            Assert.Equal("invalid_zip", exception.Code);
+            Assert.Contains("comment must end exactly at EOF", exception.Message);
+            Assert.Equal(1, physical.AsyncCalls); // Reject the selected record, never try an earlier one.
+            Assert.Equal(0, physical.SyncCalls);
+            Assert.Equal(0, budget.CurrentBytes);
+        }
+        output.WriteLine($"{scenario}: {(accepted ? "accepted with identical native directory/local/data offsets" : "rejected selected EOCD whose comment misses EOF")}");
     }
 
     [Theory]
@@ -1181,11 +1192,175 @@ public sealed class PortableZipAdapterTests(ITestOutputHelper output)
         using var physical = new CountingReadStream(bytes);
         await using var source = Source(physical);
         var budget = Budget();
-        await AssertCodeAsync("invalid_zip", () => PortableArchiveZipReader.OpenAsync(source, budget));
+        var exception = await Assert.ThrowsAsync<PortableArchiveException>(() => PortableArchiveZipReader.OpenAsync(source, budget));
+        Assert.Equal("invalid_zip", exception.Code);
+        Assert.Contains("comment contains an EOCD signature", exception.Message);
         Assert.Equal(1, physical.AsyncCalls);
         Assert.Equal(0, physical.SyncCalls);
         Assert.Equal(0, budget.CurrentBytes);
-        output.WriteLine($"incomplete last-comment signature: payload={payloadLength}, native={(payloadLength == 40 ? "rejects buffered over-read candidate" : "chooses actual EOCD")}; factory uniformly rejects ambiguity");
+        output.WriteLine($"incomplete last-comment signature: payload={payloadLength}, native={(payloadLength == 40 ? "rejects buffered over-read candidate" : "chooses actual EOCD")}; factory rejects the selected comment, not an incomplete candidate");
+    }
+
+    [Theory]
+    [InlineData("single_epub", false)]
+    [InlineData("single_epub", true)]
+    [InlineData("two_epubs", false)]
+    [InlineData("two_epubs", true)]
+    [InlineData("signature_at_media_end", false)]
+    [InlineData("signature_at_media_end", true)]
+    [InlineData("many_signatures_and_fake_record", false)]
+    [InlineData("many_signatures_and_fake_record", true)]
+    [InlineData("signature_in_filename", false)]
+    [InlineData("signature_in_filename", true)]
+    public async Task Exporter_shaped_nested_zip_and_signature_media_are_accepted(string shape, bool descriptors)
+    {
+        var epub = CreateEpub();
+        var media = new Dictionary<string, byte[]>();
+        const string firstPath = "media/books/00000000000000000000000000000001/book.epub";
+        switch (shape)
+        {
+            case "single_epub": media.Add(firstPath, epub); break;
+            case "two_epubs":
+                media.Add(firstPath, epub);
+                media.Add("media/books/00000000000000000000000000000002/book.epub", CreateEpub("Second book"));
+                break;
+            case "signature_at_media_end":
+                media.Add(firstPath, Payload(40, false).Concat(new byte[] { 0x50, 0x4b, 5, 6 }).ToArray());
+                break;
+            case "many_signatures_and_fake_record":
+                var payload = new byte[2048];
+                for (var i = 0; i < payload.Length; i += 32) W32(payload, i, 0x06054b50);
+                // Each all-zero suffix is a complete fake EOCD for an empty directory.
+                W16(payload, payload.Length - 32 + 20, 10);
+                media.Add(firstPath, payload);
+                break;
+            default:
+                // UTF-8 encodes these ASCII/control characters as the exact four magic bytes.
+                // ZIP names and the existing path guard permit them; no filesystem name is used.
+                media.Add("media/books/00000000000000000000000000000001/PK\u0005\u0006.epub", epub);
+                break;
+        }
+        var expected = new Dictionary<string, byte[]>
+        {
+            [PortableArchiveFormat.DataPath] = Encoding.UTF8.GetBytes("{\"version\":3,\"books\":[],\"source\":\"native exporter shape\"}"),
+        };
+        foreach (var item in media) expected.Add(item.Key, item.Value);
+        expected.Add(PortableArchiveFormat.ManifestPath, Encoding.UTF8.GetBytes("{\"format\":\"nostos-portable\",\"formatVersion\":1,\"media\":[]}"));
+        using var memory = new MemoryStream();
+        using var nonSeekable = new CountingSink(allowSync: true);
+        // Match the real exporter: deflated library, stored media, deflated manifest last.
+        using (var archive = new ZipArchive(descriptors ? nonSeekable : memory, ZipArchiveMode.Create, true))
+            foreach (var item in expected)
+            {
+                var entry = archive.CreateEntry(item.Key, item.Key.EndsWith(".json", StringComparison.Ordinal)
+                    ? CompressionLevel.Optimal : CompressionLevel.NoCompression);
+                entry.LastWriteTime = Timestamp;
+                await using var target = entry.Open();
+                await target.WriteAsync(item.Value);
+            }
+        var bytes = descriptors ? nonSeekable.ToArray() : memory.ToArray();
+        Assert.True(bytes.Length < 64 * 1024);
+        using (var native = new ZipArchive(new MemoryStream(bytes), ZipArchiveMode.Read))
+        {
+            Assert.Equal(string.Empty, native.Comment);
+            Assert.Equal(PortableArchiveFormat.DataPath, native.Entries[0].FullName);
+            Assert.Equal(PortableArchiveFormat.ManifestPath, native.Entries[^1].FullName);
+            foreach (var item in native.Entries)
+            {
+                var flags = Convert.ToUInt16(NativeField<object>(item, "_generalPurposeBitFlag"));
+                Assert.Equal(descriptors, (flags & 8) != 0);
+                Assert.Equal(item.FullName.EndsWith(".json", StringComparison.Ordinal) ? 8 : 0,
+                    Convert.ToInt32(NativeField<object>(item, "_storedCompressionMethod")));
+            }
+        }
+        await AssertArchiveContentsAsync(bytes, expected);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Real_exporter_with_nested_epub_is_accepted(bool nonSeekable)
+    {
+        await using var library = await LocalPortableTestLibrary.CreateAsync();
+        var ids = await PortableArchiveTestSupport.PopulateRepresentativeAsync(library.Db, library.Storage);
+        var epub = CreateEpub();
+        using (var media = new MemoryStream(epub))
+            await library.Storage.SaveBookFileAsync(ids.EpubBookId, media, "source.epub");
+        using var memory = new MemoryStream();
+        using var sink = new CountingSink(allowSync: true);
+        await library.Portability().ExportAsync(nonSeekable ? sink : memory);
+        var bytes = nonSeekable ? sink.ToArray() : memory.ToArray();
+        Assert.True(bytes.Length < 64 * 1024);
+        var expected = new Dictionary<string, byte[]>();
+        using (var native = new ZipArchive(new MemoryStream(bytes), ZipArchiveMode.Read))
+        {
+            Assert.Equal(string.Empty, native.Comment);
+            Assert.Equal(PortableArchiveFormat.DataPath, native.Entries[0].FullName);
+            Assert.Equal(PortableArchiveFormat.ManifestPath, native.Entries[^1].FullName);
+            foreach (var entry in native.Entries)
+            {
+                await using var input = await entry.OpenAsync();
+                using var contents = new MemoryStream();
+                await input.CopyToAsync(contents);
+                expected.Add(entry.FullName, contents.ToArray());
+            }
+        }
+        Assert.Single(expected.Values, value => value.SequenceEqual(epub));
+        await AssertArchiveContentsAsync(bytes, expected);
+    }
+
+    private static byte[] CreateEpub(string title = "Nested book")
+    {
+        using var bytes = new MemoryStream();
+        using (var archive = new ZipArchive(bytes, ZipArchiveMode.Create, true))
+        {
+            var files = new Dictionary<string, string>
+            {
+                ["mimetype"] = "application/epub+zip",
+                ["META-INF/container.xml"] = "<?xml version=\"1.0\"?><container version=\"1.0\" xmlns=\"urn:oasis:names:tc:opendocument:xmlns:container\"><rootfiles><rootfile full-path=\"OEBPS/content.opf\" media-type=\"application/oebps-package+xml\"/></rootfiles></container>",
+                ["OEBPS/content.opf"] = $"<package version=\"2.0\" unique-identifier=\"id\" xmlns=\"http://www.idpf.org/2007/opf\"><metadata xmlns:dc=\"http://purl.org/dc/elements/1.1/\"><dc:identifier id=\"id\">urn:uuid:00000000-0000-0000-0000-000000000001</dc:identifier><dc:title>{title}</dc:title><dc:language>en</dc:language></metadata><manifest><item id=\"chapter\" href=\"chapter.xhtml\" media-type=\"application/xhtml+xml\"/><item id=\"ncx\" href=\"toc.ncx\" media-type=\"application/x-dtbncx+xml\"/></manifest><spine toc=\"ncx\"><itemref idref=\"chapter\"/></spine></package>",
+                ["OEBPS/chapter.xhtml"] = $"<html xmlns=\"http://www.w3.org/1999/xhtml\"><head><title>{title}</title></head><body><p>Stored EPUB compatibility proof.</p></body></html>",
+                ["OEBPS/toc.ncx"] = $"<ncx version=\"2005-1\" xmlns=\"http://www.daisy.org/z3986/2005/ncx/\"><head><meta name=\"dtb:uid\" content=\"urn:uuid:00000000-0000-0000-0000-000000000001\"/></head><docTitle><text>{title}</text></docTitle><navMap><navPoint id=\"chapter\" playOrder=\"1\"><navLabel><text>{title}</text></navLabel><content src=\"chapter.xhtml\"/></navPoint></navMap></ncx>",
+            };
+            foreach (var file in files)
+            {
+                var entry = archive.CreateEntry(file.Key, file.Key == "mimetype" ? CompressionLevel.NoCompression : CompressionLevel.Optimal);
+                entry.LastWriteTime = Timestamp;
+                using var target = entry.Open();
+                target.Write(Encoding.UTF8.GetBytes(file.Value));
+            }
+        }
+        var result = bytes.ToArray();
+        Assert.Equal(0x06054b50u, U32(result, result.Length - 22));
+        using var native = new ZipArchive(new MemoryStream(result), ZipArchiveMode.Read);
+        Assert.Equal("mimetype", native.Entries[0].FullName);
+        Assert.Equal(5, native.Entries.Count);
+        return result;
+    }
+
+    private static async Task AssertArchiveContentsAsync(byte[] bytes, IReadOnlyDictionary<string, byte[]> expected)
+    {
+        using var physical = new CountingReadStream(bytes);
+        await using var source = Source(physical);
+        var budget = Budget();
+        await using (var reader = await PortableArchiveZipReader.OpenAsync(source, budget))
+        {
+            AssertNativeLayout(reader);
+            Assert.Equal(expected.Count, reader.Archive.Entries.Count);
+            var calls = physical.AsyncCalls;
+            _ = reader.Archive.Entries;
+            Assert.Equal(calls, physical.AsyncCalls);
+            foreach (var item in reader.Archive.Entries)
+            {
+                await using var entry = await item.OpenAsync();
+                AssertNativeDataOffset(reader, item);
+                using var contents = new MemoryStream();
+                await entry.CopyToAsync(contents);
+                Assert.Equal(expected[item.FullName], contents.ToArray());
+            }
+        }
+        Assert.Equal(0, physical.SyncCalls);
+        Assert.Equal(0, budget.CurrentBytes);
     }
 
     private static byte[] InsertBytes(byte[] bytes, int offset, byte[] inserted) =>

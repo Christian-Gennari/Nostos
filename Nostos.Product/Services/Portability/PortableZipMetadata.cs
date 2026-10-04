@@ -144,23 +144,24 @@ internal static class PortableZipTailLocator
 
     private static int FindEocd(ReadOnlySpan<byte> bytes)
     {
-        // Do not fall back from a later signature with a bad comment to an earlier EOCD.
-        // Reject every second raw signature, even incomplete or implausible candidates:
-        // native selects signatures before validating fields and its buffered probes can
-        // over-read into the final comment bytes on small sources.
-        var candidate = -1;
-        for (var i = bytes.Length - 4; i >= 0; i--)
+        // Select the last complete-record start native can reach from EOF-18. Earlier
+        // signatures can belong to stored EPUBs, payloads, names or directory fields.
+        // Validate only this candidate: never fall back to an earlier valid EOCD.
+        for (var i = bytes.Length - 22; i >= 0; i--)
         {
             if (PortableZipMetadata.U32(bytes, i) != 0x06054b50)
                 continue;
-            if (candidate >= 0)
-                throw PortableZipMetadata.Invalid("ZIP tail contains ambiguous EOCD signatures.");
-            candidate = i;
+            if (PortableZipMetadata.U16(bytes, i + 20) != bytes.Length - i - 22)
+                throw PortableZipMetadata.Invalid("ZIP EOCD comment must end exactly at EOF.");
+            // Signature-free comments remain supported. Native's short-source buffered
+            // probe can over-read into the final bytes, so reject comment signatures even
+            // when they cannot start a complete record; do not treat them as candidates.
+            for (var comment = i + 22; comment <= bytes.Length - 4; comment++)
+                if (PortableZipMetadata.U32(bytes, comment) == 0x06054b50)
+                    throw PortableZipMetadata.Invalid("ZIP EOCD comment contains an EOCD signature.");
+            return i;
         }
-        if (candidate >= 0 && (bytes.Length - candidate < 22
-            || PortableZipMetadata.U16(bytes, candidate + 20) != bytes.Length - candidate - 22))
-            throw PortableZipMetadata.Invalid("ZIP EOCD comment must end exactly at EOF.");
-        return candidate;
+        return -1;
     }
     private static (ushort DiskCount, ushort Count, uint Size, uint Offset, bool NeedsZip64) ParseClassic(ReadOnlySpan<byte> bytes)
     {
