@@ -352,7 +352,18 @@ public sealed class TransferPathResolver
     /// discarded, and the just-created file is removed (best effort) before
     /// the typed <see cref="TransferPathException"/> is rethrown.
     /// </summary>
-    public FileStream CreateNewVerifiedFile(string absoluteFilePath)
+    public FileStream CreateNewVerifiedFile(string absoluteFilePath) =>
+        CreateNewVerifiedFile(absoluteFilePath, bufferSize: 4096, options: FileOptions.None);
+
+    /// <summary>
+    /// Opens a brand-new file for write strictly under the root with an explicit
+    /// buffer size and file options, applying the same pre-open component checks and
+    /// post-open verification as <see cref="CreateNewVerifiedFile(string)"/>.
+    /// </summary>
+    internal FileStream CreateNewVerifiedFile(
+        string absoluteFilePath,
+        int bufferSize,
+        FileOptions options)
     {
         var full = EnsureFileIsNotReparsePoint(absoluteFilePath);
         EnsureParentDirectoryExists(full);
@@ -361,7 +372,13 @@ public sealed class TransferPathResolver
         // null, so the open happens immediately after the pre-checks.
         BeforeOpenForTesting?.Invoke(full);
 
-        var stream = new FileStream(full, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+        var stream = new FileStream(
+            full,
+            FileMode.CreateNew,
+            FileAccess.Write,
+            FileShare.None,
+            bufferSize,
+            options);
         try
         {
             EnsureNoReparsePointComponents(full);
