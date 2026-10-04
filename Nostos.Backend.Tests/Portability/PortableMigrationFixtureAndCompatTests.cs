@@ -280,27 +280,118 @@ public sealed class PortableMigrationFixtureAndCompatTests
     }
 
     [Fact]
-    public void Job_transitions_validate_legal_state_machine_and_reject_illegal()
+    public void Job_transitions_are_direction_aware_and_exhaustively_locked()
     {
-        var legalTransitions = new (MigrationJobState From, MigrationJobState To)[]
+        var importTransitions = new Dictionary<MigrationJobState, MigrationJobState[]>
         {
-            (MigrationJobState.Pending, MigrationJobState.Preparing),
-            (MigrationJobState.Preparing, MigrationJobState.Transferring),
-            (MigrationJobState.Transferring, MigrationJobState.Validating),
-            (MigrationJobState.Validating, MigrationJobState.ReadyToActivate),
-            (MigrationJobState.ReadyToActivate, MigrationJobState.Activating),
-            (MigrationJobState.Activating, MigrationJobState.Completed),
+            [MigrationJobState.Pending] = [MigrationJobState.Preparing, MigrationJobState.Cancelled, MigrationJobState.Expired, MigrationJobState.Failed],
+            [MigrationJobState.Preparing] = [MigrationJobState.Transferring, MigrationJobState.Cancelled, MigrationJobState.Expired, MigrationJobState.Failed],
+            [MigrationJobState.Transferring] = [MigrationJobState.Validating, MigrationJobState.Cancelled, MigrationJobState.Expired, MigrationJobState.Failed],
+            [MigrationJobState.Validating] = [MigrationJobState.ReadyToActivate, MigrationJobState.Cancelled, MigrationJobState.Expired, MigrationJobState.Failed],
+            [MigrationJobState.ReadyToActivate] = [MigrationJobState.Activating, MigrationJobState.Cancelled, MigrationJobState.Expired, MigrationJobState.Failed],
+            [MigrationJobState.Activating] = [MigrationJobState.Completed, MigrationJobState.Failed],
+            [MigrationJobState.Completed] = [],
+            [MigrationJobState.Failed] = [],
+            [MigrationJobState.Cancelled] = [],
+            [MigrationJobState.Expired] = [],
         };
 
-        foreach (var (from, to) in legalTransitions)
+        var exportTransitions = new Dictionary<MigrationJobState, MigrationJobState[]>
         {
-            MigrationJobTransitions.CanTransition(from, to).Should().BeTrue(
-                because: $"{from} -> {to} is a legal migration transition");
+            [MigrationJobState.Pending] = [MigrationJobState.Preparing, MigrationJobState.Cancelled, MigrationJobState.Expired, MigrationJobState.Failed],
+            [MigrationJobState.Preparing] = [MigrationJobState.Transferring, MigrationJobState.Cancelled, MigrationJobState.Expired, MigrationJobState.Failed],
+            [MigrationJobState.Transferring] = [MigrationJobState.Validating, MigrationJobState.Cancelled, MigrationJobState.Expired, MigrationJobState.Failed],
+            [MigrationJobState.Validating] = [MigrationJobState.Completed, MigrationJobState.Cancelled, MigrationJobState.Expired, MigrationJobState.Failed],
+            [MigrationJobState.ReadyToActivate] = [],
+            [MigrationJobState.Activating] = [],
+            [MigrationJobState.Completed] = [],
+            [MigrationJobState.Failed] = [],
+            [MigrationJobState.Cancelled] = [],
+            [MigrationJobState.Expired] = [],
+        };
 
-            var act = () => MigrationJobTransitions.ValidateTransition(from, to);
-            act.Should().NotThrow();
+        var expected = new Dictionary<MigrationDirection, Dictionary<MigrationJobState, MigrationJobState[]>>
+        {
+            [MigrationDirection.Import] = importTransitions,
+            [MigrationDirection.Export] = exportTransitions,
+        };
+
+        foreach (var (direction, expectedTransitions) in expected)
+        {
+            foreach (var current in Enum.GetValues<MigrationJobState>())
+            {
+                var declared = MigrationJobTransitions.AllowedTransitions(direction)[current];
+
+                declared.Should().BeEquivalentTo(
+                    expectedTransitions[current],
+                    because: $"{direction} {current} must expose exactly the declared target states");
+
+                foreach (var target in Enum.GetValues<MigrationJobState>())
+                {
+                    var declaredLegal = expectedTransitions[current].Contains(target);
+
+                    MigrationJobTransitions.CanTransition(direction, current, target)
+                        .Should()
+                        .Be(
+                            declaredLegal,
+                            because: $"{direction} {current} -> {target} must be {(declaredLegal ? "legal" : "illegal")}");
+
+                    var act = () => MigrationJobTransitions.ValidateTransition(direction, current, target);
+
+                    if (declaredLegal)
+                    {
+                        act.Should().NotThrow();
+                    }
+                    else
+                    {
+                        act.Should().Throw<InvalidOperationException>();
+                    }
+                }
+            }
         }
 
+        MigrationJobTransitions
+            .CanTransition(MigrationDirection.Import, MigrationJobState.Validating, MigrationJobState.ReadyToActivate)
+            .Should()
+            .BeTrue("import validation must prepare activation and cannot complete directly");
+
+        MigrationJobTransitions
+            .CanTransition(MigrationDirection.Import, MigrationJobState.Validating, MigrationJobState.Completed)
+            .Should()
+            .BeFalse("only #681 activation may complete an import");
+
+        MigrationJobTransitions
+            .CanTransition(MigrationDirection.Export, MigrationJobState.Validating, MigrationJobState.Completed)
+            .Should()
+            .BeTrue("exports have no activation step");
+
+        MigrationJobTransitions
+            .CanTransition(MigrationDirection.Export, MigrationJobState.Validating, MigrationJobState.ReadyToActivate)
+            .Should()
+            .BeFalse("exports never enter the import activation path");
+
+        MigrationJobTransitions
+            .CanTransition(MigrationDirection.Export, MigrationJobState.ReadyToActivate, MigrationJobState.Activating)
+            .Should()
+            .BeFalse("exports never enter the import activation path");
+
+        MigrationJobTransitions
+            .CanTransition(MigrationDirection.Export, MigrationJobState.Activating, MigrationJobState.Completed)
+            .Should()
+            .BeFalse("exports never enter the import activation path");
+
+        var unknownDirection = (MigrationDirection)int.MaxValue;
+        var unknown = () => MigrationJobTransitions.CanTransition(
+            unknownDirection,
+            MigrationJobState.Pending,
+            MigrationJobState.Preparing);
+        unknown.Should().Throw<ArgumentOutOfRangeException>(
+            "an unknown direction must fail closed instead of falling back to a transition table");
+    }
+
+    [Fact]
+    public void Job_terminal_and_retryable_states_within_directions_match_contract()
+    {
         var terminalStates = new[]
         {
             MigrationJobState.Completed,
@@ -327,32 +418,17 @@ public sealed class PortableMigrationFixtureAndCompatTests
                 .Be(retryableStates.Contains(state), because: $"{state} has a defined retryability contract");
         }
 
-        foreach (var terminal in terminalStates)
+        foreach (var direction in new[] { MigrationDirection.Import, MigrationDirection.Export })
         {
-            MigrationJobTransitions.AllowedTransitions[terminal].Should().BeEmpty();
-
-            foreach (var target in Enum.GetValues<MigrationJobState>())
+            foreach (var terminal in terminalStates)
             {
-                MigrationJobTransitions.CanTransition(terminal, target).Should().BeFalse();
+                MigrationJobTransitions.AllowedTransitions(direction)[terminal].Should().BeEmpty();
 
-                var act = () => MigrationJobTransitions.ValidateTransition(terminal, target);
-                act.Should().Throw<InvalidOperationException>();
-            }
-        }
-
-        foreach (var current in Enum.GetValues<MigrationJobState>())
-        {
-            foreach (var target in Enum.GetValues<MigrationJobState>())
-            {
-                var declaredLegal = MigrationJobTransitions.AllowedTransitions[current].Contains(target);
-
-                MigrationJobTransitions.CanTransition(current, target)
-                    .Should()
-                    .Be(declaredLegal);
-
-                if (!declaredLegal)
+                foreach (var target in Enum.GetValues<MigrationJobState>())
                 {
-                    var act = () => MigrationJobTransitions.ValidateTransition(current, target);
+                    MigrationJobTransitions.CanTransition(direction, terminal, target).Should().BeFalse();
+
+                    var act = () => MigrationJobTransitions.ValidateTransition(direction, terminal, target);
                     act.Should().Throw<InvalidOperationException>();
                 }
             }
@@ -671,6 +747,36 @@ public sealed class PortableMigrationFixtureAndCompatTests
             .GetMethod(nameof(IMigrationTransferService.CreateSessionAsync))!
             .ReturnType.Should().Be(
                 typeof(Task<MigrationIdempotencyResult<MigrationSessionStatus>>));
+    }
+
+    [Fact]
+    public void Lease_acquisition_contract_is_non_throwing_and_replaces_throwing_member()
+    {
+        typeof(IMigrationJobStore)
+            .GetMethod("AcquireLeaseAsync")
+            .Should()
+            .BeNull(
+                "lease contention must be reported by TryAcquireLeaseAsync returning null, not by throwing");
+
+        var method = typeof(IMigrationJobStore)
+            .GetMethod(nameof(IMigrationJobStore.TryAcquireLeaseAsync));
+
+        method.Should().NotBeNull();
+        method!.ReturnType.Should().Be(typeof(Task<string>));
+
+        var parameters = method.GetParameters();
+
+        parameters.Select(parameter => parameter.Name).Should().Equal(
+            "jobId",
+            "nowUtc",
+            "expiresAtUtc",
+            "ct");
+
+        parameters.Select(parameter => parameter.ParameterType).Should().Equal(
+            typeof(Guid),
+            typeof(DateTimeOffset),
+            typeof(DateTimeOffset),
+            typeof(CancellationToken));
     }
 
     [Fact]

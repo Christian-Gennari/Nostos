@@ -15,11 +15,17 @@ public static class MigrationContractLimits
     public const long MaxDataBytes = 64L * 1024L * 1024L;
     public const long MaxManifestBytes = 4L * 1024L * 1024L;
     public const int MaxArchiveEntries = 20_000;
-    public const int DefaultChunkBytes = 8 * 1024 * 1024;
+
+    public const int MinChunkBytes = 4 * 1024 * 1024;
+    public const int DefaultChunkBytes = 16 * 1024 * 1024;
+    public const int MaxChunkBytes = 64 * 1024 * 1024;
 
     public const int WorkerLeaseDurationMinutes = 5;
     public const int SessionExpiryHours = 24;
     public const int RecoveryRetentionDays = 7;
+
+    public static bool IsValidChunkBytes(int chunkBytes) =>
+        chunkBytes is >= MinChunkBytes and <= MaxChunkBytes;
 }
 
 public enum MigrationDirection
@@ -47,8 +53,84 @@ public static class MigrationJobTransitions
     private static readonly IReadOnlySet<MigrationJobState> Empty =
         new HashSet<MigrationJobState>();
 
+    private static readonly IReadOnlyDictionary<MigrationJobState, IReadOnlySet<MigrationJobState>>
+        ImportTransitions = CreateTransitions(
+            validating: Set(
+                MigrationJobState.ReadyToActivate,
+                MigrationJobState.Cancelled,
+                MigrationJobState.Expired,
+                MigrationJobState.Failed),
+            readyToActivate: Set(
+                MigrationJobState.Activating,
+                MigrationJobState.Cancelled,
+                MigrationJobState.Expired,
+                MigrationJobState.Failed),
+            // Activation is the atomic point-of-no-return boundary.
+            activating: Set(
+                MigrationJobState.Completed,
+                MigrationJobState.Failed));
+
+    private static readonly IReadOnlyDictionary<MigrationJobState, IReadOnlySet<MigrationJobState>>
+        ExportTransitions = CreateTransitions(
+            validating: Set(
+                MigrationJobState.Completed,
+                MigrationJobState.Cancelled,
+                MigrationJobState.Expired,
+                MigrationJobState.Failed),
+            // Exports have no activation step and never enter the import activation path.
+            readyToActivate: Empty,
+            activating: Empty);
+
+    /// <summary>
+    /// Returns the complete transition table for the given migration direction.
+    /// </summary>
     public static IReadOnlyDictionary<MigrationJobState, IReadOnlySet<MigrationJobState>>
-        AllowedTransitions { get; } =
+        AllowedTransitions(MigrationDirection direction) =>
+        direction switch
+        {
+            MigrationDirection.Import => ImportTransitions,
+            MigrationDirection.Export => ExportTransitions,
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(direction),
+                direction,
+                "Unknown migration direction."),
+        };
+
+    public static bool CanTransition(
+        MigrationDirection direction,
+        MigrationJobState current,
+        MigrationJobState target) =>
+        AllowedTransitions(direction).TryGetValue(current, out var allowed) &&
+        allowed.Contains(target);
+
+    public static void ValidateTransition(
+        MigrationDirection direction,
+        MigrationJobState current,
+        MigrationJobState target)
+    {
+        if (!CanTransition(direction, current, target))
+        {
+            throw new InvalidOperationException(
+                $"Illegal {direction} migration job transition from {current} to {target}.");
+        }
+    }
+
+    public static bool IsTerminal(MigrationJobState state) =>
+        state is MigrationJobState.Completed
+            or MigrationJobState.Failed
+            or MigrationJobState.Cancelled
+            or MigrationJobState.Expired;
+
+    public static bool IsRetryable(MigrationJobState state) =>
+        state is MigrationJobState.Failed
+            or MigrationJobState.Cancelled
+            or MigrationJobState.Expired;
+
+    private static IReadOnlyDictionary<MigrationJobState, IReadOnlySet<MigrationJobState>>
+        CreateTransitions(
+            IReadOnlySet<MigrationJobState> validating,
+            IReadOnlySet<MigrationJobState> readyToActivate,
+            IReadOnlySet<MigrationJobState> activating) =>
         new ReadOnlyDictionary<MigrationJobState, IReadOnlySet<MigrationJobState>>(
             new Dictionary<MigrationJobState, IReadOnlySet<MigrationJobState>>
             {
@@ -70,52 +152,15 @@ public static class MigrationJobTransitions
                     MigrationJobState.Expired,
                     MigrationJobState.Failed),
 
-                [MigrationJobState.Validating] = Set(
-                    MigrationJobState.ReadyToActivate,
-                    MigrationJobState.Cancelled,
-                    MigrationJobState.Expired,
-                    MigrationJobState.Failed),
-
-                [MigrationJobState.ReadyToActivate] = Set(
-                    MigrationJobState.Activating,
-                    MigrationJobState.Cancelled,
-                    MigrationJobState.Expired,
-                    MigrationJobState.Failed),
-
-                // Activation is the atomic point-of-no-return boundary.
-                [MigrationJobState.Activating] = Set(
-                    MigrationJobState.Completed,
-                    MigrationJobState.Failed),
+                [MigrationJobState.Validating] = validating,
+                [MigrationJobState.ReadyToActivate] = readyToActivate,
+                [MigrationJobState.Activating] = activating,
 
                 [MigrationJobState.Completed] = Empty,
                 [MigrationJobState.Failed] = Empty,
                 [MigrationJobState.Cancelled] = Empty,
                 [MigrationJobState.Expired] = Empty,
             });
-
-    public static bool CanTransition(MigrationJobState current, MigrationJobState target) =>
-        AllowedTransitions.TryGetValue(current, out var allowed) &&
-        allowed.Contains(target);
-
-    public static void ValidateTransition(MigrationJobState current, MigrationJobState target)
-    {
-        if (!CanTransition(current, target))
-        {
-            throw new InvalidOperationException(
-                $"Illegal migration job transition from {current} to {target}.");
-        }
-    }
-
-    public static bool IsTerminal(MigrationJobState state) =>
-        state is MigrationJobState.Completed
-            or MigrationJobState.Failed
-            or MigrationJobState.Cancelled
-            or MigrationJobState.Expired;
-
-    public static bool IsRetryable(MigrationJobState state) =>
-        state is MigrationJobState.Failed
-            or MigrationJobState.Cancelled
-            or MigrationJobState.Expired;
 
     private static IReadOnlySet<MigrationJobState> Set(params MigrationJobState[] states) =>
         new HashSet<MigrationJobState>(states);
@@ -707,8 +752,26 @@ public interface IMigrationJobStore
         string leaseToken,
         CancellationToken ct);
 
-    Task<string> AcquireLeaseAsync(
+    /// <summary>
+    /// Attempts to acquire the worker lease for a job. Acquisition succeeds when
+    /// the job is non-terminal and either no lease exists or the current lease
+    /// expired at or before <paramref name="nowUtc"/>. The returned token is the
+    /// concurrency token required by <see cref="TransitionAsync"/>,
+    /// <see cref="UpdateProgressAsync"/>, <see cref="RenewLeaseAsync"/>, and
+    /// <see cref="ReleaseLeaseAsync"/>.
+    /// </summary>
+    /// <param name="jobId">The job to lease.</param>
+    /// <param name="nowUtc">The authoritative current time used to decide lease expiry.</param>
+    /// <param name="expiresAtUtc">The requested new lease expiry, after <paramref name="nowUtc"/>.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>
+    /// The new opaque lease token on success, or <see langword="null"/> when
+    /// another unexpired lease owns the job. This member is non-throwing for
+    /// lease contention.
+    /// </returns>
+    Task<string?> TryAcquireLeaseAsync(
         Guid jobId,
+        DateTimeOffset nowUtc,
         DateTimeOffset expiresAtUtc,
         CancellationToken ct);
 

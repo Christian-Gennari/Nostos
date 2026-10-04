@@ -220,6 +220,10 @@ Pending, Preparing, Transferring, Validating, ReadyToActivate, Activating, Compl
 
 ### Legal transitions
 
+Transition validation (`MigrationJobTransitions`) is direction-aware. Both directions share the same lifecycle before validation and the same terminal states; they diverge at `Validating` because an import cannot complete before activation while an export has no activation step.
+
+Import:
+
 | Current state | Allowed next states |
 |---|---|
 | `Pending` | `Preparing`, `Cancelled`, `Expired`, `Failed` |
@@ -230,10 +234,23 @@ Pending, Preparing, Transferring, Validating, ReadyToActivate, Activating, Compl
 | `Activating` | `Completed`, `Failed` |
 | `Completed`, `Failed`, `Cancelled`, `Expired` | none (Terminal states) |
 
+Export:
+
+| Current state | Allowed next states |
+|---|---|
+| `Pending` | `Preparing`, `Cancelled`, `Expired`, `Failed` |
+| `Preparing` | `Transferring`, `Cancelled`, `Expired`, `Failed` |
+| `Transferring` | `Validating`, `Cancelled`, `Expired`, `Failed` |
+| `Validating` | `Completed`, `Cancelled`, `Expired`, `Failed` |
+| `ReadyToActivate`, `Activating` | none (exports never enter the activation path) |
+| `Completed`, `Failed`, `Cancelled`, `Expired` | none (Terminal states) |
+
+- **Import completion boundary:** Import `Validating -> ReadyToActivate` is mandatory and import `Validating -> Completed` is illegal. Only #681 activation may take an import through `ReadyToActivate -> Activating -> Completed`; #679 import work stops at `ReadyToActivate`.
+- **Export completion:** Export `Validating -> Completed` is legal and is the only successful exit. Export never enters `ReadyToActivate` or `Activating`.
 - **Terminal states:** `Completed`, `Failed`, `Cancelled`, `Expired`. No transitions permitted out of terminal states.
 - **Retryable states:** `Failed`, `Cancelled`, `Expired`. Retrying a job creates a new attempt or resets work from the last verified phase via `IMigrationJobStore.RetryAsync`.
 - **Cancellation boundary:** Cancellation via `IMigrationJobStore.CancelAsync` is allowed from `Pending`, `Preparing`, `Transferring`, `Validating`, and `ReadyToActivate`. It discards uncommitted staging data and sets the job to `Cancelled`.
-- **Activation boundary:** Entering `Activating` is the atomic point-of-no-return; once entered, it cannot be cancelled and must complete or fail.
+- **Activation boundary:** Entering `Activating` is the atomic point-of-no-return; once entered, it cannot be cancelled and must complete or fail. Exports never enter `Activating`.
 
 ---
 
@@ -241,6 +258,7 @@ Pending, Preparing, Transferring, Validating, ReadyToActivate, Activating, Compl
 
 Only one worker may actively process a migration job at a time.
 
+- **Lease acquisition:** `IMigrationJobStore.TryAcquireLeaseAsync(jobId, nowUtc, expiresAtUtc, ct)` is non-throwing for contention. It returns the new opaque lease token when the job is non-terminal and either has no lease or its current lease expired at or before `nowUtc`, and returns `null` when another unexpired lease owns the job. A stale lease may be taken over only after expiry.
 - **Lease duration:** 5 minutes (`WorkerLeaseDurationMinutes = 5`).
 - **Heartbeat renewal:** The active worker renews its lease via `RenewLeaseAsync(jobId, leaseToken, expiresAtUtc)`.
 - **Concurrency control:** All state transitions and progress updates require a `leaseToken` matching the active worker lease. Mismatched or expired tokens fail with concurrency conflict.
@@ -260,7 +278,7 @@ Job creation and transfer session start require a non-empty idempotency key scop
 
 To reliably transfer large libraries without giant HTTP requests, the contract enforces:
 
-- **Fixed-size chunking:** Standard chunk size is 8 MiB (`DefaultChunkBytes = 8 * 1024 * 1024`).
+- **Fixed-size chunking:** Standard chunk size is 16 MiB (`DefaultChunkBytes = 16 * 1024 * 1024`), bounded by a 4 MiB minimum (`MinChunkBytes = 4 * 1024 * 1024`) and a 64 MiB maximum (`MaxChunkBytes = 64 * 1024 * 1024`). `MigrationContractLimits.IsValidChunkBytes` validates the range.
 - **Required file identity:** `MigrationSessionRequest` requires a non-nullable `MigrationFileIdentity(SizeBytes, Sha256Checksum)`. This prevents an interrupted session from being resumed with a different or modified file. File identity mismatch fails closed.
 - **Received chunks tracking:** `MigrationSessionStatus` returns `IReadOnlyList<int> ReceivedChunks` and `ReceivedChunkCount`. Clients query the session to resume exactly from missing chunks.
 - **Per-chunk integrity and idempotency:** Each chunk upload includes its `chunkIndex`. Uploading an already accepted chunk with matching bytes is idempotent and returns `AlreadyPresent: true`. Conflicting chunks fail closed.
@@ -322,7 +340,9 @@ The following normative constants are defined in `MigrationContractLimits`:
 | `MaxDataBytes` | 64 MiB | Maximum relational JSON payload size |
 | `MaxManifestBytes` | 4 MiB | Maximum manifest size |
 | `MaxArchiveEntries` | 20,000 | Maximum total entries in ZIP container |
-| `DefaultChunkBytes` | 8 MiB | Standard transfer chunk size |
+| `MinChunkBytes` | 4 MiB | Minimum accepted transfer chunk size |
+| `DefaultChunkBytes` | 16 MiB | Standard transfer chunk size |
+| `MaxChunkBytes` | 64 MiB | Maximum accepted transfer chunk size |
 | `WorkerLeaseDurationMinutes` | 5 | Worker heartbeat lease duration |
 | `SessionExpiryHours` | 24 | Transfer session lifetime |
 | `RecoveryRetentionDays` | 7 | Mandatory recovery snapshot retention |
