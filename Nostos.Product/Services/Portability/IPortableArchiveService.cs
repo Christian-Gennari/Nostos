@@ -6,6 +6,11 @@ public interface IPortableArchiveService
         Stream destination,
         CancellationToken cancellationToken = default);
 
+    Task<PortableExportResult> ExportAsync(
+        IPortableArchiveSink destination,
+        IProgress<PortableArchiveProgress>? progress = null,
+        CancellationToken cancellationToken = default);
+
     Task<PortableImportResult> ImportAsync(
         Stream source,
         CancellationToken cancellationToken = default);

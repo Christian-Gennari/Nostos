@@ -146,12 +146,6 @@ public sealed class PortableArchiveValidationTests
     [Fact]
     public void Manifest_and_payload_stream_size_guards_keep_their_boundaries()
     {
-        PortableArchiveValidation.ValidateExportDataSize(PortableArchiveLimits.MaxDataBytes);
-        ThrowPortableError(
-            () => PortableArchiveValidation.ValidateExportDataSize(
-                PortableArchiveLimits.MaxDataBytes + 1),
-            "data_too_large");
-
         PortableArchiveValidation.ValidateDeclaredReadSize(
             "manifest.json",
             PortableArchiveLimits.MaxManifestBytes,

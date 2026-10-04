@@ -150,6 +150,7 @@ public static class NostosProductComposition
         services.AddScoped<IPortableArchiveService, PortableArchiveService>();
         services.TryAddScoped<IPortableArchiveExporter, DefaultPortableArchiveExporter>();
         services.AddScoped<IMigrationJobStore, EfMigrationJobStore>();
+        services.AddScoped<PortableArchiveReader>();
 
         services.AddScoped<IBookRepository, BookRepository>();
         services.AddScoped<INoteRepository, NoteRepository>();

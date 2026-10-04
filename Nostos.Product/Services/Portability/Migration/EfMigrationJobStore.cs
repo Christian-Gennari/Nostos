@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Nostos.Backend.Data;
 using Nostos.Backend.Data.Models;
@@ -14,10 +15,20 @@ namespace Nostos.Backend.Services.Portability.Migration;
 /// retry of that statement when the row version moved because of a concurrent
 /// same-owner write; no in-memory lock is ever the correctness boundary. The
 /// store obtains current time exclusively from its injected
-/// <see cref="TimeProvider"/>.
+/// <see cref="TimeProvider"/>. That injected provider is the authoritative
+/// clock for one host only: every store instance sharing one database must be
+/// configured with a synchronized clock, otherwise two hosts can disagree
+/// about lease expiry.
 /// </summary>
 public sealed class EfMigrationJobStore : IMigrationJobStore
 {
+    // SQLite extended result codes (SQLITE_CONSTRAINT_UNIQUE / _PRIMARYKEY)
+    // and the PostgreSQL SQLSTATE for a unique violation. Only these identify
+    // the idempotency-key race; any other database failure must propagate.
+    private const int SqliteConstraintUnique = 2067;
+    private const int SqliteConstraintPrimaryKey = 1555;
+    private const string PostgresUniqueViolation = "23505";
+
     internal static readonly TimeSpan JobLifetime =
         TimeSpan.FromHours(MigrationContractLimits.SessionExpiryHours);
 
@@ -123,17 +134,42 @@ public sealed class EfMigrationJobStore : IMigrationJobStore
             await _db.SaveChangesAsync(ct);
             return MigrationIdempotencyResult<MigrationJob>.Created(Map(record));
         }
-        catch (DbUpdateException)
+        catch (DbUpdateException exception) when (IsUniqueConstraintViolation(exception))
         {
             // A concurrent creator won the unique idempotency-key race. The
             // database is the arbiter; answer replay or conflict from the row
-            // that actually exists.
-            _db.ChangeTracker.Clear();
+            // that actually exists. Detach only the failed insert so unrelated
+            // tracked entities in this scoped context stay intact.
+            _db.Entry(record).State = EntityState.Detached;
             var winner = await FindByIdempotencyKeyAsync(idempotencyKey, ct);
             if (winner is not null)
                 return ResultForExisting(winner, payloadHash);
             throw;
         }
+    }
+
+    internal static bool IsUniqueConstraintViolation(DbUpdateException exception)
+    {
+        for (Exception? current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is SqliteException sqlite
+                && (sqlite.SqliteExtendedErrorCode == SqliteConstraintUnique
+                    || sqlite.SqliteExtendedErrorCode == SqliteConstraintPrimaryKey))
+            {
+                return true;
+            }
+
+            // The product assembly has no Npgsql reference; read SqlState from
+            // the provider exception by reflection so both providers are
+            // recognized without adding a database-provider dependency.
+            var sqlState = current.GetType()
+                .GetProperty("SqlState")
+                ?.GetValue(current) as string;
+            if (string.Equals(sqlState, PostgresUniqueViolation, StringComparison.Ordinal))
+                return true;
+        }
+
+        return false;
     }
 
     public async Task<MigrationJob> TransitionAsync(
@@ -166,37 +202,43 @@ public sealed class EfMigrationJobStore : IMigrationJobStore
                 && j.LeaseExpiresAtUtc != null
                 && j.LeaseExpiresAtUtc > now);
 
-            var updated = targetState switch
+            if (targetState == MigrationJobState.Cancelled)
             {
-                MigrationJobState.Completed => await query.ExecuteUpdateAsync(
-                    s => s
-                        .SetProperty(j => j.State, (int)targetState)
-                        .SetProperty(j => j.CompletedAtUtc, now)
-                        .SetProperty(j => j.UpdatedAtUtc, now)
-                        .SetProperty(j => j.Version, j => j.Version + 1),
-                    ct),
-                MigrationJobState.Cancelled => await query.ExecuteUpdateAsync(
-                    s => s
-                        .SetProperty(j => j.State, (int)targetState)
-                        .SetProperty(j => j.CancelledAtUtc, now)
-                        .SetProperty(j => j.UpdatedAtUtc, now)
-                        .SetProperty(j => j.Version, j => j.Version + 1),
-                    ct),
-                _ => await query.ExecuteUpdateAsync(
-                    s => s
-                        .SetProperty(j => j.State, (int)targetState)
-                        .SetProperty(j => j.UpdatedAtUtc, now)
-                        .SetProperty(j => j.Version, j => j.Version + 1),
-                    ct),
-            };
+                // Cancelled has side effects beyond the job row. Route it
+                // through the same atomic cancellation protocol as
+                // CancelAsync so both ways of entering Cancelled produce the
+                // identical durable state (lease cleared, sessions cancelled).
+                if (await TryCommitCancellationTransitionAsync(query, jobId, now, ct))
+                {
+                    var cancelled = await FindAsync(jobId, ct);
+                    return Map(cancelled!);
+                }
+            }
+            else
+            {
+                var updated = targetState == MigrationJobState.Completed
+                    ? await query.ExecuteUpdateAsync(
+                        s => s
+                            .SetProperty(j => j.State, (int)targetState)
+                            .SetProperty(j => j.CompletedAtUtc, now)
+                            .SetProperty(j => j.UpdatedAtUtc, now)
+                            .SetProperty(j => j.Version, j => j.Version + 1),
+                        ct)
+                    : await query.ExecuteUpdateAsync(
+                        s => s
+                            .SetProperty(j => j.State, (int)targetState)
+                            .SetProperty(j => j.UpdatedAtUtc, now)
+                            .SetProperty(j => j.Version, j => j.Version + 1),
+                        ct);
 
-            if (updated == 1)
-            {
-                var record = await FindAsync(jobId, ct);
-                return Map(record!);
+                if (updated == 1)
+                {
+                    var record = await FindAsync(jobId, ct);
+                    return Map(record!);
+                }
             }
 
-            await EnsureLeaseStillOwnedAsync(jobId, leaseToken, now, ct);
+            await EnsureRetryStillValidAsync(jobId, snapshot, leaseToken, now, ct);
         }
 
         // The lease stayed ours but the row version moved on every attempt:
@@ -223,6 +265,7 @@ public sealed class EfMigrationJobStore : IMigrationJobStore
             var updated = await _db.MigrationJobRecords
                 .Where(j =>
                     j.Id == jobId
+                    && j.State == snapshot.State
                     && j.State != (int)MigrationJobState.Completed
                     && j.State != (int)MigrationJobState.Failed
                     && j.State != (int)MigrationJobState.Cancelled
@@ -247,7 +290,7 @@ public sealed class EfMigrationJobStore : IMigrationJobStore
             if (updated == 1)
                 return;
 
-            await EnsureLeaseStillOwnedAsync(jobId, leaseToken, now, ct);
+            await EnsureRetryStillValidAsync(jobId, snapshot, leaseToken, now, ct);
         }
 
         throw MigrationJobStoreException.LeaseConflict(jobId);
@@ -346,12 +389,16 @@ public sealed class EfMigrationJobStore : IMigrationJobStore
             if (updated == 1)
                 return true;
 
-            if (!IsActiveLeaseOwner(snapshot, leaseToken, now))
+            // Only version churn with an unchanged state/token/expiry may be
+            // retried; a state change means the job moved on and this renewal
+            // must stop (the contract is non-throwing for renewal contention).
+            if (await ClassifyGuardFailureAsync(jobId, snapshot, leaseToken, now, ct)
+                != GuardDisposition.Retry)
+            {
                 return false;
+            }
         }
 
-        // The lease is still ours but the row version moved repeatedly; the
-        // contract is non-throwing for renewal contention.
         return false;
     }
 
@@ -385,6 +432,13 @@ public sealed class EfMigrationJobStore : IMigrationJobStore
             // A superseded or already-released token is a no-op, never an error.
             if (!string.Equals(snapshot.MigrationLeaseToken, leaseToken, StringComparison.Ordinal))
                 return;
+
+            // Only version churn with an unchanged state/token may be retried.
+            if (await ClassifyGuardFailureAsync(jobId, snapshot, leaseToken, now, ct)
+                != GuardDisposition.Retry)
+            {
+                return;
+            }
         }
     }
 
@@ -418,6 +472,7 @@ public sealed class EfMigrationJobStore : IMigrationJobStore
             ThrowIfCannotCancel(jobId, state);
 
             var now = UtcNow();
+            await using var transaction = await _db.Database.BeginTransactionAsync(ct);
             var updated = await _db.MigrationJobRecords
                 .Where(j =>
                     j.Id == jobId
@@ -438,11 +493,17 @@ public sealed class EfMigrationJobStore : IMigrationJobStore
                         .SetProperty(j => j.Version, j => j.Version + 1),
                     ct);
 
-            if (updated == 1)
+            if (updated != 1)
             {
-                await CancelActiveSessionsAsync(jobId, now, ct);
-                return;
+                await transaction.RollbackAsync(ct);
+                continue;
             }
+
+            // Both durable cancellation effects commit or roll back together,
+            // so a crash can never leave a terminal job with active sessions.
+            await CancelActiveSessionsAsync(jobId, now, ct);
+            await transaction.CommitAsync(ct);
+            return;
         }
 
         // The row version moved on every attempt. Classify the current row one
@@ -577,17 +638,97 @@ public sealed class EfMigrationJobStore : IMigrationJobStore
         && expiresAt > nowUtc
         && !MigrationJobStateMachine.IsTerminal((MigrationJobState)record.State);
 
-    private async Task EnsureLeaseStillOwnedAsync(
+    private enum GuardDisposition
+    {
+        Retry,
+        LeaseConflict,
+        StateChanged,
+        NotFound,
+    }
+
+    // A bounded retry may only re-attempt when nothing but the row version
+    // changed. Any change to the lease, its expiry or the job state means the
+    // operation's observation is stale and must be reported, never re-applied.
+    private async Task<GuardDisposition> ClassifyGuardFailureAsync(
         Guid jobId,
+        MigrationJobRecord snapshot,
         string leaseToken,
         DateTime nowUtc,
         CancellationToken ct)
     {
-        var current = await FindAsync(jobId, ct)
-            ?? throw MigrationJobStoreException.NotFound(jobId);
+        var current = await FindAsync(jobId, ct);
+        if (current is null)
+            return GuardDisposition.NotFound;
 
         if (!IsActiveLeaseOwner(current, leaseToken, nowUtc))
-            throw MigrationJobStoreException.LeaseConflict(jobId);
+            return GuardDisposition.LeaseConflict;
+
+        if (current.State != snapshot.State)
+            return GuardDisposition.StateChanged;
+
+        return GuardDisposition.Retry;
+    }
+
+    private async Task EnsureRetryStillValidAsync(
+        Guid jobId,
+        MigrationJobRecord snapshot,
+        string leaseToken,
+        DateTime nowUtc,
+        CancellationToken ct)
+    {
+        var disposition = await ClassifyGuardFailureAsync(
+            jobId,
+            snapshot,
+            leaseToken,
+            nowUtc,
+            ct);
+
+        switch (disposition)
+        {
+            case GuardDisposition.NotFound:
+                throw MigrationJobStoreException.NotFound(jobId);
+            case GuardDisposition.LeaseConflict:
+                throw MigrationJobStoreException.LeaseConflict(jobId);
+            case GuardDisposition.StateChanged:
+                throw MigrationJobStoreException.InvalidState(
+                    jobId,
+                    $"Migration job {jobId} moved from {(MigrationJobState)snapshot.State} " +
+                    "to another state before the mutation committed; the stale operation " +
+                    "was rejected. Re-read the job before retrying.");
+            default:
+                return;
+        }
+    }
+
+    // Job and session cancellation are one durable unit: both conditional
+    // updates run in one transaction and commit together, so a crash between
+    // them cannot publish a terminal job that still owns active sessions.
+    private async Task<bool> TryCommitCancellationTransitionAsync(
+        IQueryable<MigrationJobRecord> query,
+        Guid jobId,
+        DateTime nowUtc,
+        CancellationToken ct)
+    {
+        await using var transaction = await _db.Database.BeginTransactionAsync(ct);
+        var updated = await query.ExecuteUpdateAsync(
+            s => s
+                .SetProperty(j => j.State, (int)MigrationJobState.Cancelled)
+                .SetProperty(j => j.CancelledAtUtc, nowUtc)
+                .SetProperty(j => j.UpdatedAtUtc, nowUtc)
+                .SetProperty(j => j.MigrationLeaseToken, (string?)null)
+                .SetProperty(j => j.LeaseExpiresAtUtc, (DateTime?)null)
+                .SetProperty(j => j.Version, j => j.Version + 1),
+            ct);
+
+        if (updated != 1)
+        {
+            await transaction.RollbackAsync(ct);
+            return false;
+        }
+
+        await CancelActiveSessionsAsync(jobId, nowUtc, ct);
+        await transaction.CommitAsync(ct);
+        return true;
     }
 
     private async Task CancelActiveSessionsAsync(Guid jobId, DateTime nowUtc, CancellationToken ct)

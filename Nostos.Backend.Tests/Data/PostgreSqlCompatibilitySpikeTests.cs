@@ -766,6 +766,29 @@ public sealed class PostgreSqlCompatibilitySpikeTests
             conflict.Conflict!.Kind.Should().Be(
                 MigrationIdempotencyConflictKind.KeyReusedWithDifferentPayload);
 
+            // A real two-creator race exercises the PostgreSQL unique-violation
+            // detection and replay classification on the provider itself.
+            var raceKey = "pg-store-race-" + Guid.NewGuid().ToString("N");
+            await using (var firstRaceDb = new NostosDbContext(options))
+            await using (var secondRaceDb = new NostosDbContext(options))
+            {
+                var firstRaceStore = new EfMigrationJobStore(firstRaceDb, storeClock);
+                var secondRaceStore = new EfMigrationJobStore(secondRaceDb, storeClock);
+                var raceResults = await Task.WhenAll(
+                    firstRaceStore.CreateAsync(
+                        MigrationDirection.Import,
+                        raceKey,
+                        CancellationToken.None),
+                    secondRaceStore.CreateAsync(
+                        MigrationDirection.Import,
+                        raceKey,
+                        CancellationToken.None));
+
+                raceResults.Count(result => result.IsConflict).Should().Be(0);
+                raceResults.Count(result => !result.WasReplay).Should().Be(1);
+                raceResults.Count(result => result.WasReplay).Should().Be(1);
+            }
+
             var token = await store.TryAcquireLeaseAsync(
                 storeJobId,
                 TimeSpan.FromMinutes(5),

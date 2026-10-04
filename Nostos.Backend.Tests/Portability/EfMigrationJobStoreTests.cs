@@ -7,6 +7,7 @@ using Nostos.Backend.Data;
 using Nostos.Backend.Data.Models;
 using Nostos.Backend.Services.Portability;
 using Nostos.Backend.Services.Portability.Migration;
+using Npgsql;
 using Xunit;
 
 namespace Nostos.Backend.Tests.Portability;
@@ -94,6 +95,14 @@ public sealed class EfMigrationJobStoreTests : IDisposable
         await using var harness = await NewHarnessAsync();
         await using var firstDb = new NostosDbContext(harness.Options);
         await using var secondDb = new NostosDbContext(harness.Options);
+
+        // Unrelated tracked work must survive the losing creator's unique-key
+        // recovery; the store detaches only its own failed insert.
+        var firstUnrelated = new TopicModel { Topic = "tracked-unrelated-first" };
+        var secondUnrelated = new TopicModel { Topic = "tracked-unrelated-second" };
+        firstDb.Topics.Add(firstUnrelated);
+        secondDb.Topics.Add(secondUnrelated);
+
         var firstStore = new EfMigrationJobStore(firstDb, harness.Clock);
         var secondStore = new EfMigrationJobStore(secondDb, harness.Clock);
 
@@ -106,6 +115,13 @@ public sealed class EfMigrationJobStoreTests : IDisposable
         results.Count(result => result.WasReplay).Should().Be(1);
         results.Select(result => result.Resource!.Id).Distinct().Should().ContainSingle();
         (await harness.CountJobsAsync()).Should().Be(1);
+
+        firstDb.Entry(firstUnrelated).State.Should().NotBe(
+            EntityState.Detached,
+            "unique-key recovery must not clear unrelated tracked work");
+        secondDb.Entry(secondUnrelated).State.Should().NotBe(
+            EntityState.Detached,
+            "unique-key recovery must not clear unrelated tracked work");
     }
 
     [Fact]
@@ -127,6 +143,53 @@ public sealed class EfMigrationJobStoreTests : IDisposable
             MigrationIdempotencyConflictKind.KeyReusedWithDifferentPayload);
         conflict.Resource.Should().BeNull();
         (await harness.CountJobsAsync()).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Create_rethrows_a_non_unique_database_failure()
+    {
+        var path = NewDatabasePath();
+        var clock = new ManualTimeProvider(T0);
+        await using var harness = new Harness(
+            path,
+            clock,
+            builder => builder.AddInterceptors(new InsertFailingInterceptor()));
+        await harness.InitializeAsync();
+
+        var create = () => harness.Store.CreateAsync(
+            MigrationDirection.Import,
+            "insert-failure-key",
+            CancellationToken.None);
+        await create.Should().ThrowAsync<DbUpdateException>();
+
+        (await harness.CountJobsAsync()).Should().Be(0);
+    }
+
+    [Fact]
+    public void Unique_violation_detection_recognizes_both_providers()
+    {
+        EfMigrationJobStore.IsUniqueConstraintViolation(
+                new DbUpdateException(
+                    "sqlite unique",
+                    new SqliteException("UNIQUE constraint failed", 2067)))
+            .Should().BeTrue();
+        EfMigrationJobStore.IsUniqueConstraintViolation(
+                new DbUpdateException(
+                    "postgres unique",
+                    new PostgresException("duplicate key", "ERROR", "ERROR", "23505")))
+            .Should().BeTrue();
+        EfMigrationJobStore.IsUniqueConstraintViolation(
+                new DbUpdateException(
+                    "sqlite busy",
+                    new SqliteException("database is locked", 5)))
+            .Should().BeFalse("a busy timeout is not the idempotency-key race");
+        EfMigrationJobStore.IsUniqueConstraintViolation(
+                new DbUpdateException(
+                    "postgres fk",
+                    new PostgresException("foreign key violation", "ERROR", "ERROR", "23503")))
+            .Should().BeFalse("a foreign-key violation is not the idempotency-key race");
+        EfMigrationJobStore.IsUniqueConstraintViolation(new DbUpdateException("no inner"))
+            .Should().BeFalse("an unrecognized database failure must propagate");
     }
 
     [Fact]
@@ -439,7 +502,17 @@ public sealed class EfMigrationJobStoreTests : IDisposable
                     job.State.Should().Be(
                         target,
                         $"{direction} {from} -> {target} is legal");
-                    job.LeaseToken.Should().Be(token);
+                    if (target == MigrationJobState.Cancelled)
+                    {
+                        job.LeaseToken.Should().BeNull(
+                            "entering Cancelled always clears the worker lease");
+                        job.LeaseExpiresAtUtc.Should().BeNull();
+                    }
+                    else
+                    {
+                        job.LeaseToken.Should().Be(token);
+                    }
+
                     job.UpdatedAtUtc.Should().Be(harness.Clock.GetUtcNow());
 
                     var record = await harness.GetRecordAsync(jobId);
@@ -544,6 +617,122 @@ public sealed class EfMigrationJobStoreTests : IDisposable
         after.State.Should().Be((int)MigrationJobState.Transferring);
         after.MigrationLeaseToken.Should().Be(token);
         after.Version.Should().BeGreaterThan(before.Version);
+    }
+
+    [Fact]
+    public async Task Progress_is_rejected_when_the_job_advanced_to_another_state_before_the_guarded_update()
+    {
+        var path = NewDatabasePath();
+        var clock = new ManualTimeProvider(T0);
+        var jobId = Guid.NewGuid();
+        var advancing = new StateAdvancingInterceptor(
+            path,
+            jobId,
+            MigrationJobState.Validating);
+        await using var harness = new Harness(
+            path,
+            clock,
+            builder => builder.AddInterceptors(advancing));
+        await harness.InitializeAsync();
+
+        await harness.SeedJobAsync(
+            MigrationDirection.Import,
+            MigrationJobState.Transferring,
+            id: jobId);
+        var token = (await harness.Store.TryAcquireLeaseAsync(
+            jobId,
+            LeaseDuration,
+            CancellationToken.None))!;
+
+        advancing.Enabled = true;
+        var progress = () => harness.Store.UpdateProgressAsync(
+            jobId,
+            new MigrationProgress(MigrationProgressPhase.Transferring, 123, 500),
+            token,
+            CancellationToken.None);
+        var exception = await progress.Should().ThrowAsync<MigrationJobStoreException>();
+        exception.Which.Code.Should().Be(MigrationJobStoreErrorCodes.InvalidState);
+        advancing.Enabled = false;
+
+        var record = await harness.GetRecordAsync(jobId);
+        record.State.Should().Be((int)MigrationJobState.Validating);
+        record.ProgressPhase.Should().Be(
+            (int)MigrationProgressPhase.Pending,
+            "old-phase progress must never be written onto the new phase");
+        record.ProgressBytesProcessed.Should().Be(0);
+        record.ProgressTotalBytes.Should().BeNull();
+        record.ProgressMessage.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Progress_retries_across_benign_version_churn()
+    {
+        var path = NewDatabasePath();
+        var clock = new ManualTimeProvider(T0);
+        var jobId = Guid.NewGuid();
+        var churn = new CountingVersionBumpingInterceptor(path, jobId, bumps: 1);
+        await using var harness = new Harness(
+            path,
+            clock,
+            builder => builder.AddInterceptors(churn));
+        await harness.InitializeAsync();
+
+        await harness.SeedJobAsync(
+            MigrationDirection.Import,
+            MigrationJobState.Transferring,
+            id: jobId);
+        var token = (await harness.Store.TryAcquireLeaseAsync(
+            jobId,
+            LeaseDuration,
+            CancellationToken.None))!;
+
+        await harness.Store.UpdateProgressAsync(
+            jobId,
+            new MigrationProgress(MigrationProgressPhase.Transferring, 123, 500),
+            token,
+            CancellationToken.None);
+
+        var record = await harness.GetRecordAsync(jobId);
+        record.State.Should().Be((int)MigrationJobState.Transferring);
+        record.ProgressBytesProcessed.Should().Be(123);
+        record.ProgressTotalBytes.Should().Be(500);
+        record.Version.Should().Be(3, "one lease, one churn bump and one progress write");
+    }
+
+    [Fact]
+    public async Task Transition_retries_across_version_churn_and_applies_exactly_once()
+    {
+        var path = NewDatabasePath();
+        var clock = new ManualTimeProvider(T0);
+        var jobId = Guid.NewGuid();
+        var churn = new CountingVersionBumpingInterceptor(path, jobId, bumps: 1);
+        await using var harness = new Harness(
+            path,
+            clock,
+            builder => builder.AddInterceptors(churn));
+        await harness.InitializeAsync();
+
+        await harness.SeedJobAsync(
+            MigrationDirection.Import,
+            MigrationJobState.Transferring,
+            id: jobId);
+        var token = (await harness.Store.TryAcquireLeaseAsync(
+            jobId,
+            LeaseDuration,
+            CancellationToken.None))!;
+
+        var transitioned = await harness.Store.TransitionAsync(
+            jobId,
+            MigrationJobState.Validating,
+            token,
+            CancellationToken.None);
+
+        transitioned.State.Should().Be(MigrationJobState.Validating);
+        var record = await harness.GetRecordAsync(jobId);
+        record.State.Should().Be((int)MigrationJobState.Validating);
+        record.Version.Should().Be(
+            3,
+            "the transition is applied exactly once after one benign version bump");
     }
 
     [Fact]
@@ -754,6 +943,131 @@ public sealed class EfMigrationJobStoreTests : IDisposable
             CancellationToken.None);
         var unknownException = await unknown.Should().ThrowAsync<MigrationJobStoreException>();
         unknownException.Which.Code.Should().Be(MigrationJobStoreErrorCodes.NotFound);
+    }
+
+    [Fact]
+    public async Task Transition_to_cancelled_applies_the_same_cancellation_semantics_as_cancel_async()
+    {
+        await using var harness = await NewHarnessAsync();
+        var jobId = await harness.SeedJobAsync(
+            MigrationDirection.Import,
+            MigrationJobState.Transferring);
+        var sessionId = await harness.SeedSessionAsync(
+            jobId,
+            MigrationSessionState.Receiving,
+            withReceipt: true);
+        var token = (await harness.Store.TryAcquireLeaseAsync(
+            jobId,
+            LeaseDuration,
+            CancellationToken.None))!;
+
+        var now = harness.Clock.GetUtcNow().UtcDateTime;
+        var cancelled = await harness.Store.TransitionAsync(
+            jobId,
+            MigrationJobState.Cancelled,
+            token,
+            CancellationToken.None);
+
+        cancelled.State.Should().Be(MigrationJobState.Cancelled);
+        cancelled.LeaseToken.Should().BeNull();
+        cancelled.LeaseExpiresAtUtc.Should().BeNull();
+        cancelled.UpdatedAtUtc.Should().Be(harness.Clock.GetUtcNow());
+
+        var record = await harness.GetRecordAsync(jobId);
+        record.CancelledAtUtc.Should().Be(now);
+        record.MigrationLeaseToken.Should().BeNull();
+        record.LeaseExpiresAtUtc.Should().BeNull();
+        (await harness.GetSessionAsync(sessionId))!.State.Should().Be(
+            (int)MigrationSessionState.Cancelled,
+            "the transition route into Cancelled must cancel sessions too");
+        (await harness.CountReceiptsAsync(sessionId)).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Cancellation_is_atomic_and_rolls_back_the_job_when_the_session_update_fails()
+    {
+        var path = NewDatabasePath();
+        var clock = new ManualTimeProvider(T0);
+        var failingSessions = new SessionUpdateFailingInterceptor();
+        await using var harness = new Harness(
+            path,
+            clock,
+            builder => builder.AddInterceptors(failingSessions));
+        await harness.InitializeAsync();
+
+        var cancelJobId = await harness.SeedJobAsync(
+            MigrationDirection.Import,
+            MigrationJobState.Transferring);
+        var cancelSessionId = await harness.SeedSessionAsync(
+            cancelJobId,
+            MigrationSessionState.Receiving,
+            withReceipt: true);
+        var cancelToken = (await harness.Store.TryAcquireLeaseAsync(
+            cancelJobId,
+            LeaseDuration,
+            CancellationToken.None))!;
+
+        failingSessions.Enabled = true;
+        var cancel = () => harness.Store.CancelAsync(
+            cancelJobId,
+            new MigrationCancelRequest("crash test"),
+            CancellationToken.None);
+        await cancel.Should().ThrowAsync<InvalidOperationException>();
+
+        var jobAfterRollback = await harness.GetRecordAsync(cancelJobId);
+        jobAfterRollback.State.Should().Be(
+            (int)MigrationJobState.Transferring,
+            "the job update must roll back with the failed session update");
+        jobAfterRollback.MigrationLeaseToken.Should().Be(cancelToken);
+        jobAfterRollback.CancelledAtUtc.Should().BeNull();
+        (await harness.GetSessionAsync(cancelSessionId))!.State.Should().Be(
+            (int)MigrationSessionState.Receiving);
+
+        // The TransitionAsync route into Cancelled shares the same atomic
+        // protocol, so the same injected failure must roll both writes back.
+        var transitionJobId = await harness.SeedJobAsync(
+            MigrationDirection.Import,
+            MigrationJobState.Transferring);
+        var transitionSessionId = await harness.SeedSessionAsync(
+            transitionJobId,
+            MigrationSessionState.Receiving,
+            withReceipt: false);
+        var transitionToken = (await harness.Store.TryAcquireLeaseAsync(
+            transitionJobId,
+            LeaseDuration,
+            CancellationToken.None))!;
+
+        var transition = () => harness.Store.TransitionAsync(
+            transitionJobId,
+            MigrationJobState.Cancelled,
+            transitionToken,
+            CancellationToken.None);
+        await transition.Should().ThrowAsync<InvalidOperationException>();
+
+        var transitionAfterRollback = await harness.GetRecordAsync(transitionJobId);
+        transitionAfterRollback.State.Should().Be((int)MigrationJobState.Transferring);
+        transitionAfterRollback.MigrationLeaseToken.Should().Be(transitionToken);
+        (await harness.GetSessionAsync(transitionSessionId))!.State.Should().Be(
+            (int)MigrationSessionState.Receiving);
+
+        failingSessions.Enabled = false;
+        await harness.Store.CancelAsync(
+            cancelJobId,
+            new MigrationCancelRequest("crash test"),
+            CancellationToken.None);
+        var retriedTransition = await harness.Store.TransitionAsync(
+            transitionJobId,
+            MigrationJobState.Cancelled,
+            transitionToken,
+            CancellationToken.None);
+
+        retriedTransition.State.Should().Be(MigrationJobState.Cancelled);
+        (await harness.GetRecordAsync(cancelJobId)).State.Should().Be(
+            (int)MigrationJobState.Cancelled);
+        (await harness.GetSessionAsync(cancelSessionId))!.State.Should().Be(
+            (int)MigrationSessionState.Cancelled);
+        (await harness.GetSessionAsync(transitionSessionId))!.State.Should().Be(
+            (int)MigrationSessionState.Cancelled);
     }
 
     [Fact]
@@ -1098,6 +1412,141 @@ public sealed class EfMigrationJobStoreTests : IDisposable
                     "UPDATE \"MigrationJobRecords\"",
                     StringComparison.Ordinal))
             {
+                using var connection = new SqliteConnection($"Data Source={databasePath}");
+                connection.Open();
+                using var bump = connection.CreateCommand();
+                bump.CommandText =
+                    "UPDATE \"MigrationJobRecords\" " +
+                    "SET \"Version\" = \"Version\" + 1 WHERE \"Id\" = @id";
+                bump.Parameters.AddWithValue("@id", jobId);
+                bump.ExecuteNonQuery();
+            }
+
+            return new ValueTask<InterceptionResult<int>>(result);
+        }
+    }
+
+    private sealed class SessionUpdateFailingInterceptor : DbCommandInterceptor
+    {
+        public bool Enabled { get; set; }
+
+        public override ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (Enabled
+                && command.CommandText.Contains(
+                    "UPDATE \"MigrationSessionRecords\"",
+                    StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("injected session update failure");
+            }
+
+            return new ValueTask<InterceptionResult<int>>(result);
+        }
+    }
+
+    private sealed class InsertFailingInterceptor : DbCommandInterceptor
+    {
+        public override InterceptionResult<DbDataReader> ReaderExecuting(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<DbDataReader> result)
+        {
+            ThrowIfInsert(command);
+            return result;
+        }
+
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<DbDataReader> result,
+            CancellationToken cancellationToken = default)
+        {
+            ThrowIfInsert(command);
+            return new ValueTask<InterceptionResult<DbDataReader>>(result);
+        }
+
+        public override ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            ThrowIfInsert(command);
+            return new ValueTask<InterceptionResult<int>>(result);
+        }
+
+        private static void ThrowIfInsert(DbCommand command)
+        {
+            if (command.CommandText.Contains(
+                    "INSERT INTO \"MigrationJobRecords\"",
+                    StringComparison.Ordinal))
+            {
+                throw new DbUpdateException("injected non-unique database failure");
+            }
+        }
+    }
+
+    // Simulates another connection committing a phase transition between this
+    // store's read and its guarded progress UPDATE.
+    private sealed class StateAdvancingInterceptor(
+        string databasePath,
+        Guid jobId,
+        MigrationJobState targetState) : DbCommandInterceptor
+    {
+        public bool Enabled { get; set; }
+
+        public override ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (Enabled
+                && command.CommandText.Contains(
+                    "UPDATE \"MigrationJobRecords\"",
+                    StringComparison.Ordinal)
+                && command.CommandText.Contains("\"ProgressPhase\"", StringComparison.Ordinal))
+            {
+                using var connection = new SqliteConnection($"Data Source={databasePath}");
+                connection.Open();
+                using var advance = connection.CreateCommand();
+                advance.CommandText =
+                    "UPDATE \"MigrationJobRecords\" " +
+                    "SET \"State\" = @state, \"Version\" = \"Version\" + 1 WHERE \"Id\" = @id";
+                advance.Parameters.AddWithValue("@state", (int)targetState);
+                advance.Parameters.AddWithValue("@id", jobId);
+                advance.ExecuteNonQuery();
+            }
+
+            return new ValueTask<InterceptionResult<int>>(result);
+        }
+    }
+
+    // Simulates benign same-owner version churn (a heartbeat renewal) for the
+    // first N guarded updates, leaving state/token/expiry unchanged.
+    private sealed class CountingVersionBumpingInterceptor(
+        string databasePath,
+        Guid jobId,
+        int bumps) : DbCommandInterceptor
+    {
+        private int _remainingBumps = bumps;
+
+        public override ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (_remainingBumps > 0
+                && command.CommandText.Contains(
+                    "UPDATE \"MigrationJobRecords\"",
+                    StringComparison.Ordinal))
+            {
+                _remainingBumps--;
                 using var connection = new SqliteConnection($"Data Source={databasePath}");
                 connection.Open();
                 using var bump = connection.CreateCommand();
