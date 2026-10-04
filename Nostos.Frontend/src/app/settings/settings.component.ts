@@ -37,6 +37,7 @@ import { CloudAuthService } from '../core/services/cloud-auth.service';
 import { CloudSession } from '../core/dtos/cloud-auth.dtos';
 import { HighlightImportService } from '../core/services/highlight-import.service';
 import { PortableLibraryService } from '../core/services/portable-library.service';
+import { LibraryTransferHostComponent } from '../library-transfer/components/library-transfer-host.component';
 import { CloudManagedAiUsage } from '../core/dtos/cloud-ai-refill.dtos';
 import {
   AiProviderKind,
@@ -187,6 +188,7 @@ const defaultProgress: BackupProgress = {
     InputDirective,
     DropdownComponent,
     ConfirmModal,
+    LibraryTransferHostComponent,
   ],
   templateUrl: './settings.component.html',
   styleUrls: ['./settings.component.css'],
@@ -229,6 +231,15 @@ export class SettingsComponent implements OnInit, OnDestroy {
     this.isCloud() ? (this.deploymentCapabilities()?.accountManagementUrl ?? null) : null,
   );
   readonly supportsCloudPortableExport = computed(() => this.isCloud());
+  /**
+   * Server-authoritative migration capability (#680 plan §4). Only a true
+   * value renders the shared "Move your library" card; false or absent keeps
+   * this surface exactly as it is on main. Never inferred from
+   * `deploymentMode`.
+   */
+  readonly supportsLibraryMigration = computed(
+    () => this.deploymentCapabilities()?.supportsLibraryMigration === true,
+  );
   readonly cloudSession = signal<CloudSession | null>(null);
   readonly managedEreaderAccess = computed(
     () =>
@@ -1015,6 +1026,15 @@ export class SettingsComponent implements OnInit, OnDestroy {
     }
 
     return 'Nostos could not create the export. Your data was not changed. Try again.';
+  }
+
+  /**
+   * Capability-on only: a completed shared import replaced the server library,
+   * so refresh what Settings reads from the server rather than leaving stale
+   * data on screen.
+   */
+  onLibraryTransferCompleted(): void {
+    this.loadData();
   }
 
   loadData(): void {

@@ -62,6 +62,22 @@ export class TransferTabLease implements OnDestroy {
     return record !== null && record.tabId !== this.tabId && this.isFresh(record);
   });
 
+  /**
+   * True when this tab owns the current lease record. The service is
+   * root-scoped and the owner id is per tab, so a flow component that remounts
+   * mid-transfer (Settings navigation, onboarding Back) adopts the lease
+   * implicitly instead of tracking a component-local flag.
+   */
+  readonly ownsLease = computed(() => {
+    const record = this.recordSignal();
+    return record !== null && record.tabId === this.tabId;
+  });
+
+  /** Test seam: true while this tab's heartbeat timer is running. */
+  get heartbeatActive(): boolean {
+    return this.heartbeatTimer !== null;
+  }
+
   /** The archive the other tab is importing, when it wrote one. */
   readonly otherTabFileName = computed(() => {
     const record = this.recordSignal();
