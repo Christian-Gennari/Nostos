@@ -33,6 +33,10 @@ public sealed class PortableArchiveService(
     private readonly IBookTextIngestionScheduler? _bookTextScheduler = bookTextScheduler;
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
 
+    // The relational JSON cap is injectable so the preflight boundary can be
+    // exercised without serializing a 64 MiB payload.
+    internal long MaxExportDataBytes { get; init; } = PortableArchiveLimits.MaxDataBytes;
+
     public Task<PortableExportResult> ExportAsync(
         Stream destination,
         CancellationToken cancellationToken = default) =>
@@ -89,11 +93,13 @@ public sealed class PortableArchiveService(
         var counts = snapshot.Counts;
 
         // Media is pinned by an initial hash pass after the relational
-        // transaction has closed. The archive copy pass below re-verifies the
-        // pin so an archive can never mix two media revisions. Both passes run
-        // before the archive is opened, so every failure that can be detected
-        // up front (snapshot, missing media, pin mismatch) happens before the
-        // first destination byte is written.
+        // transaction has closed. The archive copy pass inside
+        // WriteArchiveAsync re-verifies the pin so an archive can never mix two
+        // media revisions. The pin pass and the relational JSON preflight both
+        // run before the archive is opened, so every failure that can be
+        // detected up front (snapshot, missing media, oversized or
+        // unserializable relational data) happens before the first destination
+        // byte is written.
         progress?.Report(new PortableArchiveProgress(
             PortableArchiveProgressPhase.IndexingMedia,
             0,
@@ -101,6 +107,11 @@ public sealed class PortableArchiveService(
             0,
             snapshot.Media.Count));
         var pinned = await PinSourceMediaAsync(snapshot, cancellationToken);
+
+        var dataPreflight = await PreflightDataJsonAsync(
+            snapshot.Data,
+            MaxExportDataBytes,
+            cancellationToken);
 
         var media = new List<PortableArchiveMediaEntry>(pinned.Count);
 
@@ -123,6 +134,7 @@ public sealed class PortableArchiveService(
                 buffered,
                 snapshot,
                 pinned,
+                dataPreflight,
                 media,
                 copyBuffer.Memory,
                 progress,
@@ -150,10 +162,34 @@ public sealed class PortableArchiveService(
         }
     }
 
+    // Serializes the relational snapshot once into a counting/hashing null
+    // sink, so the size limit is enforced before the archive is opened and
+    // before any destination byte is written. This stores nothing: no temp
+    // file and no whole-JSON buffer. The archive pass must reproduce the same
+    // length and SHA-256 exactly.
+    private static async Task<(long Length, string Sha256)> PreflightDataJsonAsync(
+        PortableLibraryData data,
+        long maxDataBytes,
+        CancellationToken cancellationToken)
+    {
+        await using var preflight = new HashingWriteStream(
+            Stream.Null,
+            maxDataBytes,
+            "data_too_large",
+            $"Portable relational data exceeds the {maxDataBytes} byte v1 limit.");
+        await JsonSerializer.SerializeAsync(
+            preflight,
+            data,
+            JsonOptions,
+            cancellationToken);
+        return preflight.Complete();
+    }
+
     private async Task<(long Length, string Sha256)> WriteArchiveAsync(
         BoundedSynchronousCaptureSink buffered,
         PortableExportSnapshot snapshot,
         IReadOnlyList<PinnedPortableSourceMedia> pinned,
+        (long Length, string Sha256) dataPreflight,
         List<PortableArchiveMediaEntry> media,
         Memory<byte> copyBuffer,
         IProgress<PortableArchiveProgress>? progress,
@@ -178,15 +214,20 @@ public sealed class PortableArchiveService(
             {
                 await using var hashing = new HashingWriteStream(
                     dataStream,
-                    PortableArchiveLimits.MaxDataBytes,
+                    MaxExportDataBytes,
                     "data_too_large",
-                    $"Portable relational data exceeds the {PortableArchiveLimits.MaxDataBytes} byte v1 limit.");
+                    $"Portable relational data exceeds the {MaxExportDataBytes} byte v1 limit.");
                 await JsonSerializer.SerializeAsync(
                     hashing,
                     snapshot.Data,
                     JsonOptions,
                     cancellationToken);
                 (dataLength, dataSha256) = hashing.Complete();
+                PortableArchiveValidation.ValidateStreamedDataMatchesPreflight(
+                    dataLength,
+                    dataSha256,
+                    dataPreflight.Length,
+                    dataPreflight.Sha256);
             }
             catch
             {

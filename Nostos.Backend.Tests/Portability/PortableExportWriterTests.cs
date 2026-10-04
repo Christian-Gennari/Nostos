@@ -5,6 +5,8 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging.Abstractions;
 using Nostos.Backend.Data.Models;
@@ -55,6 +57,8 @@ public sealed class PortableExportWriterTests(ITestOutputHelper output)
             ManifestJsonOptions)!;
         Sha256Hex(entryByPath[PortableArchiveFormat.DataPath].Bytes)
             .Should().Be(manifest.Data.Sha256);
+        entryByPath[PortableArchiveFormat.DataPath].Bytes.LongLength
+            .Should().Be(manifest.Data.Length);
         manifest.Media.Should().HaveCount(5);
         foreach (var media in manifest.Media)
         {
@@ -267,6 +271,97 @@ public sealed class PortableExportWriterTests(ITestOutputHelper output)
         }
 
         destination.ToArray().Should().Equal(1, 2, 3);
+    }
+
+    [Fact]
+    public async Task Export_oversized_relational_data_fails_before_the_first_byte()
+    {
+        await using var library = await LocalPortableTestLibrary.CreateAsync();
+        await PortableArchiveTestSupport.PopulateRepresentativeAsync(library.Db, library.Storage);
+
+        // Inject a small cap instead of serializing a 64 MiB payload.
+        var service = new PortableArchiveService(
+            library.Db,
+            library.Storage,
+            NullLogger<PortableArchiveService>.Instance)
+        {
+            MaxExportDataBytes = 1024,
+        };
+        var destination = new SyncForbiddingSink();
+
+        var exception = await Assert.ThrowsAsync<PortableArchiveException>(
+            () => service.ExportAsync(destination));
+
+        exception.Code.Should().Be("data_too_large");
+        destination.AsyncWriteCalls.Should().Be(0);
+        destination.SyncCalls.Should().Be(0);
+        destination.BytesWritten.Should().Be(0);
+    }
+
+    [Fact]
+    public void Export_data_preflight_mismatch_is_rejected()
+    {
+        var hash = new string('a', 64);
+        var otherHash = new string('b', 64);
+
+        var lengthMismatch = () => PortableArchiveValidation.ValidateStreamedDataMatchesPreflight(
+            10,
+            hash,
+            11,
+            hash);
+        lengthMismatch.Should().Throw<PortableArchiveException>()
+            .Which.Code.Should().Be("data_serialization_mismatch");
+
+        var hashMismatch = () => PortableArchiveValidation.ValidateStreamedDataMatchesPreflight(
+            10,
+            hash,
+            10,
+            otherHash);
+        hashMismatch.Should().Throw<PortableArchiveException>()
+            .Which.Code.Should().Be("data_serialization_mismatch");
+
+        var match = () => PortableArchiveValidation.ValidateStreamedDataMatchesPreflight(
+            10,
+            hash,
+            10,
+            hash);
+        match.Should().NotThrow();
+    }
+
+    [Fact]
+    public async Task Export_destination_flush_failure_after_central_directory_still_throws()
+    {
+        await using var library = await LocalPortableTestLibrary.CreateAsync();
+        await PortableArchiveTestSupport.PopulateRepresentativeAsync(library.Db, library.Storage);
+
+        var destination = new SyncForbiddingSink { FailOnFlush = true };
+
+        await Assert.ThrowsAsync<IOException>(
+            () => library.Portability().ExportAsync(destination));
+
+        destination.SyncCalls.Should().Be(0);
+        destination.FlushCalls.Should().Be(1);
+        destination.BytesWritten.Should().BeGreaterThan(
+            0,
+            "the central directory may already have been drained before the final flush failed");
+    }
+
+    [Fact]
+    public async Task Export_endpoint_aborts_a_started_response_when_the_export_throws()
+    {
+        var context = new DefaultHttpContext();
+        var lifetime = new RecordingLifetimeFeature();
+        context.Features.Set<IHttpRequestLifetimeFeature>(lifetime);
+        context.Features.Set<IHttpResponseFeature>(new StartedHttpResponseFeature());
+        var exporter = new DefaultPortableArchiveExporter(
+            new StreamingThenFailingArchiveService());
+
+        var exception = await Assert.ThrowsAsync<IOException>(
+            () => exporter.ExportAsync(context));
+
+        exception.Message.Should().Be("Injected export failure after the response started.");
+        context.Response.HasStarted.Should().BeTrue();
+        lifetime.Aborted.Should().BeTrue();
     }
 
     [Fact]
@@ -558,7 +653,9 @@ public sealed class PortableExportWriterTests(ITestOutputHelper output)
 
         public int SyncCalls { get; private set; }
         public int AsyncWriteCalls { get; private set; }
+        public int FlushCalls { get; private set; }
         public long BytesWritten => _buffer.Length;
+        public bool FailOnFlush { get; init; }
         public int? FailOnWriteNumber { get; init; }
         public int? CancelAfterWriteNumber { get; init; }
         public CancellationTokenSource? CancellationSource { get; init; }
@@ -582,8 +679,13 @@ public sealed class PortableExportWriterTests(ITestOutputHelper output)
             throw SyncIoDisallowed();
         }
 
-        public override Task FlushAsync(CancellationToken cancellationToken) =>
-            Task.CompletedTask;
+        public override Task FlushAsync(CancellationToken cancellationToken)
+        {
+            FlushCalls++;
+            if (FailOnFlush)
+                throw new IOException("Injected destination flush failure.");
+            return Task.CompletedTask;
+        }
 
         public override ValueTask WriteAsync(
             ReadOnlyMemory<byte> buffer,
@@ -642,5 +744,45 @@ public sealed class PortableExportWriterTests(ITestOutputHelper output)
             new(
                 "Synchronous operations are disallowed. "
                 + "Call WriteAsync or set AllowSynchronousIO to true instead.");
+    }
+
+    private sealed class StreamingThenFailingArchiveService : IPortableArchiveService
+    {
+        public async Task<PortableExportResult> ExportAsync(
+            Stream destination,
+            CancellationToken cancellationToken = default)
+        {
+            await destination.WriteAsync(new byte[16], cancellationToken);
+            throw new IOException("Injected export failure after the response started.");
+        }
+
+        public Task<PortableExportResult> ExportAsync(
+            IPortableArchiveSink destination,
+            IProgress<PortableArchiveProgress>? progress = null,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<PortableImportResult> ImportAsync(
+            Stream source,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+    }
+
+    private sealed class RecordingLifetimeFeature : IHttpRequestLifetimeFeature
+    {
+        public CancellationToken RequestAborted { get; set; }
+        public bool Aborted { get; private set; }
+        public void Abort() => Aborted = true;
+    }
+
+    private sealed class StartedHttpResponseFeature : IHttpResponseFeature
+    {
+        public int StatusCode { get; set; } = StatusCodes.Status200OK;
+        public string? ReasonPhrase { get; set; }
+        public IHeaderDictionary Headers { get; set; } = new HeaderDictionary();
+        public Stream Body { get; set; } = new MemoryStream();
+        public bool HasStarted => true;
+        public void OnStarting(Func<object, Task> callback, object state) { }
+        public void OnCompleted(Func<object, Task> callback, object state) { }
     }
 }
