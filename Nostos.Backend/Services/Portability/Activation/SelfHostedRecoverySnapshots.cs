@@ -22,20 +22,33 @@ internal sealed record SelfHostedRecoveryMediaPin(
     string Sha256);
 
 /// <summary>
-/// In-memory pins of the live previous library, captured before maintenance
-/// and rechecked (path set, bytes, last-write) under the exclusive lease.
+/// In-memory evidence of the live previous library captured before maintenance.
+/// <see cref="CaptureStartedAtUtc"/> is the start of the capture pass: media
+/// last written at or after that instant minus the safety window is re-hashed
+/// under the exclusive lease because its timestamp cannot prove the hashed
+/// bytes are still the retained bytes.
 /// </summary>
 internal sealed record SelfHostedRecoveryCapture(
     Guid JobId,
     Guid OperationId,
     string PreviousDestinationRevision,
     MigrationExistingCounts Counts,
-    DateTimeOffset CapturedAtUtc,
+    DateTimeOffset CaptureStartedAtUtc,
     long DatabaseBytes,
     string DatabaseSchemaVersion,
     int DatabaseMigrationCount,
     long MediaBytes,
     IReadOnlyList<SelfHostedRecoveryMediaPin> Media);
+
+/// <summary>Fault-injection points for the finalization accounting sequence.</summary>
+internal enum SelfHostedRecoveryFinalizeStep
+{
+    BeforeTopUp,
+    AfterTopUp,
+    AfterReservationRecorded,
+    AfterClaim,
+    BeforeAvailable,
+}
 
 /// <summary>
 /// Retention primitives for the activation coordinator (Slice 7). Every method
@@ -43,6 +56,11 @@ internal sealed record SelfHostedRecoveryCapture(
 /// lease; every method is idempotent so a crashed step can be repeated after
 /// the journal reconciler has restored a complete generation. The activation
 /// journal, not this service, is the authority for the cutover phase.
+/// <para>
+/// Each replacement retains its own seven-day copy under
+/// <c>.nostos-recovery/&lt;job-id&gt;/</c>, several can coexist, and each keeps
+/// its own claimed recovery reservation until its own cleanup deletes it.
+/// </para>
 /// </summary>
 internal interface ISelfHostedRecoverySnapshots
 {
@@ -55,7 +73,8 @@ internal interface ISelfHostedRecoverySnapshots
         CancellationToken ct);
 
     /// <summary>
-    /// Under the exclusive lease: recheck the captured media metadata, hash the
+    /// Under the exclusive lease: build the retained-media evidence (re-hashing
+    /// every file whose metadata cannot prove its capture hash), hash the
     /// checkpointed live database, and durably publish the <c>Creating</c>
     /// manifest describing the copy that retention is about to make.
     /// </summary>
@@ -67,7 +86,10 @@ internal interface ISelfHostedRecoverySnapshots
 
     /// <summary>
     /// Rename the live media root into <c>.nostos-recovery/&lt;id&gt;/books</c>.
-    /// Crash-safe: either the live root remains or the retained one exists.
+    /// The first rename requires journal phase <c>CutoverPrepared</c>; if the
+    /// source is already gone and the destination present (the rename completed
+    /// but the manifest flag write crashed), the destination is verified against
+    /// the manifest and the step continues.
     /// </summary>
     Task<SelfHostedRecoveryManifest> RetainMediaAsync(
         Guid jobId,
@@ -76,7 +98,9 @@ internal interface ISelfHostedRecoverySnapshots
 
     /// <summary>
     /// Rename the checkpointed live database into
-    /// <c>.nostos-recovery/&lt;id&gt;/nostos.db</c>. Refuses a nonempty WAL.
+    /// <c>.nostos-recovery/&lt;id&gt;/nostos.db</c>. Refuses a nonempty WAL. An
+    /// already-completed rename is verified by exact length and SHA-256 against
+    /// the manifest before continuing.
     /// </summary>
     Task<SelfHostedRecoveryManifest> RetainDatabaseAsync(
         Guid jobId,
@@ -84,10 +108,11 @@ internal interface ISelfHostedRecoverySnapshots
         CancellationToken ct);
 
     /// <summary>
-    /// After both candidates are active: claim the measured previous bytes as a
-    /// non-expiring recovery reservation (offsetting this job's outstanding
-    /// transfer claim so the same bytes are not charged twice) and publish the
-    /// <c>Available</c> manifest with the seven-day expiry.
+    /// After both candidates are active: settle the one-time absolute offset of
+    /// the job's unmaterialized transfer claim, claim the measured previous
+    /// bytes as a non-expiring recovery reservation, and publish the
+    /// <c>Available</c> manifest with the seven-day expiry. Every step is
+    /// idempotent across retries and crashes.
     /// </summary>
     Task<SelfHostedRecoveryManifest> FinalizeRetentionAsync(
         Guid jobId,
@@ -142,6 +167,16 @@ internal sealed class SelfHostedMigrationRecoveryService :
 {
     private const int CopyBufferSize = 81920;
 
+    /// <summary>
+    /// Conservative timestamp-granularity window: a file last written at or
+    /// after <c>captureStart - this window</c> is re-hashed under the exclusive
+    /// lease. Two seconds covers the coarsest common granularity (FAT/exFAT
+    /// 2 s, HFS+ 1 s; ext4/NTFS are finer), so a same-length rewrite inside one
+    /// timestamp granule can never keep a stale capture hash. Deliberate
+    /// back-dating of timestamps by a local actor is outside the threat model.
+    /// </summary>
+    internal static readonly TimeSpan MediaHashSafetyWindow = TimeSpan.FromSeconds(2);
+
     private readonly SelfHostedActivationPaths _paths;
     private readonly SelfHostedRecoveryManifestStore _manifests;
     private readonly SelfHostedActivationJournalStore _journals;
@@ -151,6 +186,12 @@ internal sealed class SelfHostedMigrationRecoveryService :
     private readonly LibraryMaintenanceCoordinator _maintenance;
     private readonly TransferStorageOptions _options;
     private readonly TimeProvider _clock;
+
+    /// <summary>Test seam: counts hashing work so re-hash bounds can be asserted.</summary>
+    internal Action<string>? HashingForTesting { get; set; }
+
+    /// <summary>Test seam: throws at named finalization steps to simulate a crash.</summary>
+    internal Action<SelfHostedRecoveryFinalizeStep>? FinalizeStepForTesting { get; set; }
 
     internal SelfHostedMigrationRecoveryService(
         SelfHostedActivationPaths paths,
@@ -198,11 +239,23 @@ internal sealed class SelfHostedMigrationRecoveryService :
         ArgumentNullException.ThrowIfNull(counts);
 
         if (!File.Exists(_paths.LiveDatabase)) throw Flaw("The live database is missing.");
-        var media = await EnumerateLiveMediaWithHashesAsync(ct);
+        var captureStartedAtUtc = _clock.GetUtcNow();
+        var files = EnumerateLiveMediaFiles();
+        var pins = new List<SelfHostedRecoveryMediaPin>(files.Count);
+        long mediaBytes = 0;
+        foreach (var file in files)
+        {
+            ct.ThrowIfCancellationRequested();
+            var sha256 = await HashStableFileAsync(file.Path, ct);
+            pins.Add(new SelfHostedRecoveryMediaPin(
+                file.RelativePath, file.BookId, file.Kind, file.Extension, file.Bytes, file.LastWriteUtc, sha256));
+            mediaBytes = AddChecked(mediaBytes, file.Bytes);
+        }
+
         var database = new FileInfo(_paths.LiveDatabase);
         var schema = ReadSchemaLevel(_paths.LiveDatabase);
         return new SelfHostedRecoveryCapture(jobId, operationId, previousDestinationRevision, counts,
-            _clock.GetUtcNow(), database.Length, schema.Version, schema.Count, media.Bytes, media.Pins);
+            captureStartedAtUtc, database.Length, schema.Version, schema.Count, mediaBytes, pins);
     }
 
     public async Task<SelfHostedRecoveryManifest> PrepareRetentionAsync(
@@ -230,10 +283,12 @@ internal sealed class SelfHostedMigrationRecoveryService :
             or SelfHostedActivationPhase.CutoverPrepared))
             throw Flaw("The live database must be checkpointed before recovery retention.");
 
-        RecheckMedia(capture);
+        // Writers are drained: the evidence built here is the final description
+        // of the bytes that the next rename retains.
+        var evidence = await BuildRetainedMediaEvidenceAsync(capture, ct);
         if (!File.Exists(_paths.LiveDatabase)) throw Flaw("The live database is missing.");
         var databaseBytes = new FileInfo(_paths.LiveDatabase).Length;
-        var databaseSha256 = await HashFileAsync(_paths.LiveDatabase, ct);
+        var databaseSha256 = await HashStableFileAsync(_paths.LiveDatabase, ct);
         var schema = ReadSchemaLevel(_paths.LiveDatabase);
         var created = _clock.GetUtcNow();
         var manifest = new SelfHostedRecoveryManifest(
@@ -245,39 +300,51 @@ internal sealed class SelfHostedMigrationRecoveryService :
             capture.PreviousDestinationRevision,
             capture.Counts,
             databaseBytes,
-            capture.MediaBytes,
+            evidence.MediaBytes,
             databaseSha256,
-            capture.Media.Select(pin => new RecoveryMediaDescriptor(pin.BookId, pin.Kind, pin.Extension, pin.Bytes, pin.Sha256)).ToArray(),
+            evidence.Media,
             DatabaseSchemaVersion: schema.Version,
-            DatabaseMigrationCount: schema.Count);
+            DatabaseMigrationCount: schema.Count,
+            MediaRehashedCount: evidence.RehashedCount);
         _manifests.Write(manifest);
         return manifest;
     }
 
-    public Task<SelfHostedRecoveryManifest> RetainMediaAsync(
+    public async Task<SelfHostedRecoveryManifest> RetainMediaAsync(
         Guid jobId,
         IAsyncDisposable lease,
         CancellationToken ct)
     {
         RequireLease(lease);
         var manifest = RequireCreating(jobId);
+        var journal = RequireJournal(jobId, manifest);
         var live = _paths.LiveMedia;
         var previous = _paths.PreviousMedia(jobId);
         _paths.VerifyMediaPath(live);
         _paths.VerifyMediaPath(previous);
 
-        if (manifest.MediaRetained && Directory.Exists(previous) && !Directory.Exists(live))
-            return Task.FromResult(manifest);
-        if (Directory.Exists(previous) && Directory.Exists(live))
-            throw Flaw("Both the live and the retained media roots exist.");
-        if (!Directory.Exists(live))
-            throw Flaw("The live media root is missing.");
+        if (File.Exists(live) || File.Exists(previous))
+            throw Flaw("A media path exists as a file where a directory belongs.");
+        var source = Directory.Exists(live);
+        var destination = Directory.Exists(previous);
+        if (source && destination) throw Flaw("Both the live and the retained media roots exist.");
+        if (!source && !destination) throw Flaw("Neither the live nor the retained media root exists.");
 
-        ActivationFileSystem.Rename(live, previous);
-        return Task.FromResult(Update(jobId, manifest with { MediaRetained = true }));
+        if (source)
+        {
+            RequireJournalPhase(journal, SelfHostedActivationPhase.CutoverPrepared);
+            ActivationFileSystem.Rename(live, previous);
+        }
+        else
+        {
+            RequireJournalPhaseAtLeast(journal, SelfHostedActivationPhase.CutoverPrepared);
+            VerifyRetainedMediaMatchesManifest(jobId, manifest);
+        }
+
+        return Update(jobId, manifest with { MediaRetained = true });
     }
 
-    public Task<SelfHostedRecoveryManifest> RetainDatabaseAsync(
+    public async Task<SelfHostedRecoveryManifest> RetainDatabaseAsync(
         Guid jobId,
         IAsyncDisposable lease,
         CancellationToken ct)
@@ -285,30 +352,52 @@ internal sealed class SelfHostedMigrationRecoveryService :
         RequireLease(lease);
         var manifest = RequireCreating(jobId);
         if (!manifest.MediaRetained) throw Flaw("Media must be retained before the database.");
+        var journal = RequireJournal(jobId, manifest);
         var live = _paths.LiveDatabase;
         var previous = _paths.PreviousDatabase(jobId);
         _paths.VerifyDatabasePath(live);
         _paths.VerifyDatabasePath(previous);
 
-        if (manifest.DatabaseRetained && File.Exists(previous) && !File.Exists(live))
-            return Task.FromResult(manifest);
-        if (File.Exists(previous) && File.Exists(live))
-            throw Flaw("Both the live and the retained databases exist.");
-        if (!File.Exists(live)) throw Flaw("The live database is missing.");
+        var source = File.Exists(live);
+        var destination = File.Exists(previous);
+        if (source && destination) throw Flaw("Both the live and the retained databases exist.");
+        if (!source && !destination) throw Flaw("Neither the live nor the retained database exists.");
 
-        // The retained database must be self-contained: a nonempty WAL would
-        // carry committed rows that the recovery copy cannot replay without it.
-        foreach (var suffix in new[] { "-wal", "-shm" })
+        if (source)
         {
-            var sidecar = live + suffix;
-            if (!File.Exists(sidecar)) continue;
-            if (string.Equals(suffix, "-wal", StringComparison.Ordinal) && new FileInfo(sidecar).Length > 0)
-                throw Flaw("The live database still has an uncheckpointed WAL.");
-            File.Delete(sidecar);
+            RequireJournalPhase(journal, SelfHostedActivationPhase.PreviousMediaRetained);
+            // The retained database must be self-contained: a nonempty WAL would
+            // carry committed rows that the recovery copy cannot replay without it.
+            foreach (var suffix in new[] { "-wal", "-shm" })
+            {
+                var sidecar = live + suffix;
+                if (!File.Exists(sidecar)) continue;
+                if (string.Equals(suffix, "-wal", StringComparison.Ordinal) && new FileInfo(sidecar).Length > 0)
+                    throw Flaw("The live database still has an uncheckpointed WAL.");
+                File.Delete(sidecar);
+            }
+
+            ActivationFileSystem.Rename(live, previous);
+        }
+        else
+        {
+            RequireJournalPhaseAtLeast(journal, SelfHostedActivationPhase.PreviousMediaRetained);
+            foreach (var suffix in new[] { "-wal", "-shm" })
+            {
+                var sidecar = previous + suffix;
+                if (!File.Exists(sidecar)) continue;
+                if (string.Equals(suffix, "-wal", StringComparison.Ordinal) && new FileInfo(sidecar).Length > 0)
+                    throw Flaw("The retained database has an uncheckpointed WAL.");
+                File.Delete(sidecar);
+            }
+
+            var retained = new FileInfo(previous);
+            if (retained.Length != manifest.DatabaseBytes
+                || !string.Equals(await HashStableFileAsync(previous, ct), manifest.DatabaseSha256, StringComparison.Ordinal))
+                throw Flaw("The retained database does not match the recovery manifest.");
         }
 
-        ActivationFileSystem.Rename(live, previous);
-        return Task.FromResult(Update(jobId, manifest with { DatabaseRetained = true }));
+        return Update(jobId, manifest with { DatabaseRetained = true });
     }
 
     public async Task<SelfHostedRecoveryManifest> FinalizeRetentionAsync(
@@ -321,13 +410,8 @@ internal sealed class SelfHostedMigrationRecoveryService :
         var manifest = _manifests.Read(jobId) ?? throw Flaw("A recovery manifest is required before finalization.");
         if (manifest.Status == MigrationRecoveryStatus.Available)
         {
-            var healed = await EnsureRetentionReservationAsync(manifest, transferReservationId, ct);
-            if (healed.RetentionReservationId != manifest.RetentionReservationId)
-            {
-                _manifests.Write(healed);
-                return healed;
-            }
-
+            manifest = await SettleTopUpAsync(manifest, transferReservationId, ct);
+            manifest = await EnsureRetentionReservationAsync(manifest, ct);
             return manifest;
         }
 
@@ -336,7 +420,9 @@ internal sealed class SelfHostedMigrationRecoveryService :
             || !manifest.DatabaseRetained)
             throw Flaw("The retained copy is not complete yet.");
 
-        manifest = await EnsureRetentionReservationAsync(manifest, transferReservationId, ct);
+        manifest = await SettleTopUpAsync(manifest, transferReservationId, ct);
+        manifest = await EnsureRetentionReservationAsync(manifest, ct);
+        FinalizeStepForTesting?.Invoke(SelfHostedRecoveryFinalizeStep.BeforeAvailable);
         var now = _clock.GetUtcNow();
         var available = manifest with
         {
@@ -454,65 +540,319 @@ internal sealed class SelfHostedMigrationRecoveryService :
         _activationCapacity.EnsureRetentionClaimFits(snapshot, sizing.PreviousBytes);
     }
 
-    private async Task<SelfHostedRecoveryManifest> EnsureRetentionReservationAsync(
+    /// <summary>
+    /// Records the one-time absolute offset target for this job's transfer
+    /// reservation before mutating it. The target is durable in the manifest,
+    /// so any retry re-applies the same absolute value (a no-op once reached)
+    /// instead of adding an increment again.
+    /// </summary>
+    private async Task<SelfHostedRecoveryManifest> SettleTopUpAsync(
         SelfHostedRecoveryManifest manifest,
         Guid? transferReservationId,
         CancellationToken ct)
     {
-        var bytes = manifest.TotalBytes;
-        if (bytes <= 0) return manifest with { RetentionReservationId = null };
-
-        if (transferReservationId is { } transferId && transferId != Guid.Empty)
-            await ApplyRetentionTopUpAsync(transferId, bytes, ct);
-
-        if (manifest.RetentionReservationId is { } existing
-            && existing != Guid.Empty
-            && await TryClaimAsync(manifest.JobId, existing, ct))
-            return manifest;
-
-        var reserved = await _capacity.TryReserveAsync(
-            bytes, MigrationSessionPurpose.Import, _options.PreflightReservationTtl, ct);
-        if (!reserved.IsAdmitted || reserved.ReservationId is not { } reservationId)
-            throw SelfHostedActivationCapacity.Exhausted();
-
-        // Record the claim durably before claiming it, so a crash between the
-        // two can reuse the reservation instead of orphaning a claimed row.
-        manifest = manifest with { RetentionReservationId = reservationId };
-        _manifests.Write(manifest);
-        if (!await TryClaimAsync(manifest.JobId, reservationId, ct))
+        if (!manifest.TransferTopUpSettled)
         {
-            await ReleaseAsync(reservationId, ct);
-            throw SelfHostedActivationCapacity.Exhausted();
+            var retainedBytes = TotalRetainedBytes(manifest);
+            if (transferReservationId is not { } transferId || transferId == Guid.Empty || retainedBytes <= 0)
+            {
+                manifest = Update(manifest.JobId, manifest with { TransferTopUpSettled = true });
+            }
+            else
+            {
+                var row = await _db.MigrationStorageReservations
+                    .AsNoTracking()
+                    .Where(r => r.Id == transferId)
+                    .Select(r => new { r.ClaimedJobId, r.ReleasedAtUtc, r.ReservedBytes, r.MaterializedBytes })
+                    .FirstOrDefaultAsync(ct);
+                if (row is null || row.ReleasedAtUtc is not null || row.ClaimedJobId != manifest.JobId)
+                {
+                    // Not this job's live transfer claim: nothing may be offset.
+                    manifest = Update(manifest.JobId, manifest with { TransferTopUpSettled = true });
+                }
+                else
+                {
+                    long target;
+                    try
+                    {
+                        target = Math.Min(row.ReservedBytes, checked(row.MaterializedBytes + retainedBytes));
+                    }
+                    catch (OverflowException)
+                    {
+                        throw SelfHostedActivationCapacity.Exhausted();
+                    }
+
+                    manifest = Update(manifest.JobId, manifest with
+                    {
+                        TransferTopUpSettled = true,
+                        TransferTopUpReservationId = transferId,
+                        TransferTopUpTargetBytes = target,
+                    });
+                }
+            }
+        }
+
+        if (manifest.TransferTopUpReservationId is { } reservationId
+            && reservationId != Guid.Empty
+            && manifest.TransferTopUpTargetBytes > 0)
+        {
+            FinalizeStepForTesting?.Invoke(SelfHostedRecoveryFinalizeStep.BeforeTopUp);
+            try
+            {
+                await _capacity.EnsureMaterializedAtLeastAsync(reservationId, manifest.TransferTopUpTargetBytes, ct);
+            }
+            catch (TransferReservationException exception)
+                when (exception.Kind is TransferReservationConflictKind.NotFound
+                    or TransferReservationConflictKind.Released
+                    or TransferReservationConflictKind.Expired)
+            {
+                // The transfer claim no longer exists: there is nothing to offset.
+            }
+
+            FinalizeStepForTesting?.Invoke(SelfHostedRecoveryFinalizeStep.AfterTopUp);
         }
 
         return manifest;
     }
 
     /// <summary>
-    /// The transfer reservation already charged an estimated recovery in
-    /// preflight. Recording the retained bytes as materialized against it up to
-    /// its outstanding amount makes the combined charge max(transfer, retained)
-    /// instead of their sum, so the same bytes are never charged twice.
+    /// Finds or creates the job's claimed, non-expiring retention reservation.
+    /// A retry finds the existing claim deterministically by
+    /// <c>(ClaimedJobId, Purpose = RecoveryRetention)</c> or by the id recorded
+    /// durably in the manifest before the first claim attempt.
     /// </summary>
-    private async Task ApplyRetentionTopUpAsync(Guid transferReservationId, long previousBytes, CancellationToken ct)
+    private async Task<SelfHostedRecoveryManifest> EnsureRetentionReservationAsync(
+        SelfHostedRecoveryManifest manifest,
+        CancellationToken ct)
     {
-        var reservation = await _db.MigrationStorageReservations
+        var bytes = TotalRetainedBytes(manifest);
+        if (bytes <= 0) return manifest with { RetentionReservationId = null };
+
+        var existing = await _db.MigrationStorageReservations
             .AsNoTracking()
-            .Where(r => r.Id == transferReservationId)
-            .Select(r => new { r.ReservedBytes, r.MaterializedBytes, r.ReleasedAtUtc })
+            .Where(r => r.ClaimedJobId == manifest.JobId
+                && r.Purpose == (int)MigrationSessionPurpose.RecoveryRetention
+                && r.ReleasedAtUtc == null)
+            .Select(r => (Guid?)r.Id)
             .FirstOrDefaultAsync(ct);
-        if (reservation is null || reservation.ReleasedAtUtc is not null) return;
-        var outstanding = Math.Max(reservation.ReservedBytes - reservation.MaterializedBytes, 0);
-        var topUp = Math.Min(previousBytes, outstanding);
-        if (topUp <= 0) return;
+        if (existing is { } claimedId && claimedId != Guid.Empty)
+        {
+            return manifest.RetentionReservationId == claimedId
+                ? manifest
+                : Update(manifest.JobId, manifest with { RetentionReservationId = claimedId });
+        }
+
+        if (manifest.RetentionReservationId is { } recorded
+            && recorded != Guid.Empty
+            && await TryClaimAsync(manifest.JobId, recorded, ct))
+            return manifest;
+
+        var reserved = await _capacity.TryReserveAsync(
+            bytes, MigrationSessionPurpose.RecoveryRetention, _options.PreflightReservationTtl, ct);
+        if (!reserved.IsAdmitted || reserved.ReservationId is not { } reservationId)
+            throw SelfHostedActivationCapacity.Exhausted();
+
+        // Record the claim durably before claiming it, so a crash between the
+        // two reuses the reservation instead of orphaning a claimed row.
+        manifest = Update(manifest.JobId, manifest with { RetentionReservationId = reservationId });
+        FinalizeStepForTesting?.Invoke(SelfHostedRecoveryFinalizeStep.AfterReservationRecorded);
+        if (!await TryClaimAsync(manifest.JobId, reservationId, ct))
+        {
+            await ReleaseAsync(reservationId, ct);
+            throw SelfHostedActivationCapacity.Exhausted();
+        }
+
+        FinalizeStepForTesting?.Invoke(SelfHostedRecoveryFinalizeStep.AfterClaim);
+        return manifest;
+    }
+
+    /// <summary>
+    /// Rebuilds the retained-media descriptors under the exclusive lease. Only
+    /// a file whose path, length and full-precision last-write time are
+    /// unchanged and whose last write is strictly before
+    /// <c>captureStart - MediaHashSafetyWindow</c> keeps its capture hash;
+    /// everything else is re-hashed now. Removed files are dropped and new
+    /// files are added, so the resulting set is exactly the retained set.
+    /// </summary>
+    private async Task<(RecoveryMediaDescriptor[] Media, long MediaBytes, int RehashedCount)> BuildRetainedMediaEvidenceAsync(
+        SelfHostedRecoveryCapture capture,
+        CancellationToken ct)
+    {
+        var pinned = capture.Media.ToDictionary(pin => pin.RelativePath, StringComparer.Ordinal);
+        var threshold = capture.CaptureStartedAtUtc - MediaHashSafetyWindow;
+        var files = EnumerateLiveMediaFiles();
+        var descriptors = new List<RecoveryMediaDescriptor>(files.Count);
+        var rehashed = 0;
+        long mediaBytes = 0;
+        foreach (var file in files)
+        {
+            ct.ThrowIfCancellationRequested();
+            string sha256;
+            if (pinned.TryGetValue(file.RelativePath, out var pin)
+                && pin.Bytes == file.Bytes
+                && pin.LastWriteUtc == file.LastWriteUtc
+                && file.LastWriteUtc < threshold)
+            {
+                sha256 = pin.Sha256;
+            }
+            else
+            {
+                sha256 = await HashStableFileAsync(file.Path, ct);
+                rehashed++;
+            }
+
+            descriptors.Add(new RecoveryMediaDescriptor(file.BookId, file.Kind, file.Extension, file.Bytes, sha256));
+            mediaBytes = AddChecked(mediaBytes, file.Bytes);
+        }
+
+        return (descriptors.ToArray(), mediaBytes, rehashed);
+    }
+
+    /// <summary>
+    /// Structural enumeration of the live media root. Fails closed on
+    /// unexpected entries so the retained set is exactly describable.
+    /// </summary>
+    private List<LiveMediaFile> EnumerateLiveMediaFiles()
+    {
+        var root = _paths.LiveMedia;
+        if (!Directory.Exists(root)) throw Flaw("The live media root is missing.");
+        _paths.VerifyMediaPath(root);
+        var files = new List<LiveMediaFile>();
+        foreach (var directory in Directory.EnumerateFileSystemEntries(root).Order(StringComparer.Ordinal))
+        {
+            _paths.VerifyMediaPath(directory);
+            if (File.Exists(directory)) throw Flaw("The media root contains an unexpected file.");
+            if (!Directory.Exists(directory)) throw Flaw("The media root contains an unexpected entry.");
+            var name = Path.GetFileName(directory);
+            if (!Guid.TryParseExact(name, "N", out var bookId) || bookId == Guid.Empty || name != bookId.ToString("N"))
+                throw Flaw("The media root contains an unexpected directory.");
+
+            foreach (var entry in Directory.EnumerateFileSystemEntries(directory).Order(StringComparer.Ordinal))
+            {
+                _paths.VerifyMediaPath(entry);
+                if (Directory.Exists(entry)) throw Flaw("A book folder contains an unexpected directory.");
+                if (!File.Exists(entry)) throw Flaw("The media root contains an unexpected entry.");
+                var info = new FileInfo(entry);
+                var (kind, extension) = ClassifyMediaFile(Path.GetFileName(entry));
+                files.Add(new LiveMediaFile(
+                    entry, Path.GetRelativePath(root, entry), bookId, kind, extension, info.Length, info.LastWriteTimeUtc));
+            }
+        }
+
+        return files;
+    }
+
+    private void VerifyRetainedMediaMatchesManifest(Guid jobId, SelfHostedRecoveryManifest manifest)
+    {
+        var root = _paths.PreviousMedia(jobId);
+        _paths.VerifyMediaPath(root);
+        var retained = new List<(Guid BookId, string Kind, string Extension, long Bytes)>();
+        foreach (var directory in Directory.EnumerateFileSystemEntries(root).Order(StringComparer.Ordinal))
+        {
+            _paths.VerifyMediaPath(directory);
+            if (!Directory.Exists(directory)) continue;
+            var name = Path.GetFileName(directory);
+            if (!Guid.TryParseExact(name, "N", out var bookId)) continue;
+            foreach (var entry in Directory.EnumerateFileSystemEntries(directory).Order(StringComparer.Ordinal))
+            {
+                _paths.VerifyMediaPath(entry);
+                if (!File.Exists(entry)) continue;
+                var (kind, extension) = ClassifyMediaFile(Path.GetFileName(entry));
+                retained.Add((bookId, kind, extension, new FileInfo(entry).Length));
+            }
+        }
+
+        var expected = manifest.Media
+            .Select(descriptor => (descriptor.BookId, descriptor.Kind, descriptor.Extension, descriptor.Bytes))
+            .OrderBy(item => item.BookId).ThenBy(item => item.Kind)
+            .ThenBy(item => item.Extension).ThenBy(item => item.Bytes)
+            .ToArray();
+        var actual = retained
+            .OrderBy(item => item.BookId).ThenBy(item => item.Kind)
+            .ThenBy(item => item.Extension).ThenBy(item => item.Bytes)
+            .ToArray();
+        if (!expected.SequenceEqual(actual))
+            throw Flaw("The retained media directory does not match the recovery manifest.");
+    }
+
+    private SelfHostedActivationJournal RequireJournal(Guid jobId, SelfHostedRecoveryManifest manifest)
+    {
+        var journal = _journals.Read(jobId) ?? throw Flaw("An activation journal is required for recovery retention.");
+        if (journal.OperationId != manifest.OperationId
+            || journal.DestinationRevision != manifest.PreviousDestinationRevision
+            || !journal.RetainPreviousLibrary)
+            throw Flaw("The recovery manifest does not match the activation journal.");
+        return journal;
+    }
+
+    private static void RequireJournalPhase(SelfHostedActivationJournal journal, SelfHostedActivationPhase phase)
+    {
+        if (journal.Phase != phase)
+            throw Flaw($"Recovery retention requires journal phase {phase}.");
+    }
+
+    private static void RequireJournalPhaseAtLeast(SelfHostedActivationJournal journal, SelfHostedActivationPhase phase)
+    {
+        if (journal.Phase < phase || journal.Phase > SelfHostedActivationPhase.Committed)
+            throw Flaw("The activation journal is not in the retention window for this recovery step.");
+    }
+
+    /// <summary>
+    /// Hashes a file and proves it did not change while being read (length and
+    /// last-write before and after must match). Called only under the exclusive
+    /// lease for live-library files, and for the retained database when
+    /// verifying an already-completed rename.
+    /// </summary>
+    private async Task<string> HashStableFileAsync(string path, CancellationToken ct)
+    {
+        HashingForTesting?.Invoke(path);
+        var before = new FileInfo(path);
+        var length = before.Length;
+        var lastWrite = before.LastWriteTimeUtc;
+        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read,
+            CopyBufferSize, FileOptions.Asynchronous | FileOptions.SequentialScan);
+        using var sha256 = SHA256.Create();
+        var digest = await sha256.ComputeHashAsync(stream, ct);
+        var after = new FileInfo(path);
+        if (after.Length != length || after.LastWriteTimeUtc != lastWrite)
+            throw Conflict("A library file changed while it was being hashed for recovery.");
+        return Convert.ToHexString(digest).ToLowerInvariant();
+    }
+
+    private static (string Kind, string Extension) ClassifyMediaFile(string fileName)
+    {
+        var extension = Path.GetExtension(fileName).ToLowerInvariant();
+        if (fileName.EndsWith(".partial", StringComparison.OrdinalIgnoreCase)) return ("partial", extension);
+        var stem = Path.GetFileNameWithoutExtension(fileName);
+        if (string.Equals(stem, "book", StringComparison.OrdinalIgnoreCase)) return ("book", extension);
+        if (string.Equals(stem, "cover", StringComparison.OrdinalIgnoreCase)) return ("cover", extension);
+        if (stem.StartsWith("cover-thumb-", StringComparison.OrdinalIgnoreCase)) return ("thumbnail", extension);
+        return ("other", extension);
+    }
+
+    private (string Version, int Count) ReadSchemaLevel(string databasePath)
+    {
         try
         {
-            await _capacity.AddMaterializedBytesAsync(transferReservationId, topUp, ct);
+            using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+            {
+                DataSource = databasePath,
+                Pooling = false,
+            }.ToString());
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = "SELECT COUNT(*), MAX(MigrationId) FROM __EFMigrationsHistory";
+            using var reader = command.ExecuteReader();
+            if (!reader.Read()) return ("", 0);
+            var count = reader.IsDBNull(0) ? 0 : reader.GetInt32(0);
+            var version = reader.IsDBNull(1) ? "" : reader.GetString(1);
+            return (version, count);
         }
-        catch (TransferReservationException)
+        catch (SqliteException exception) when (exception.SqliteErrorCode == 1)
         {
-            // Fully materialized, released or gone: there is no unmaterialized
-            // transfer claim left to offset.
+            // No EF migration history table (for example an EnsureCreated test
+            // database): record the absence rather than inventing a level.
+            return ("", 0);
         }
     }
 
@@ -568,133 +908,6 @@ internal sealed class SelfHostedMigrationRecoveryService :
         if (File.Exists(path)) File.Delete(path);
     }
 
-    private (string Version, int Count) ReadSchemaLevel(string databasePath)
-    {
-        try
-        {
-            using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
-            {
-                DataSource = databasePath,
-                Pooling = false,
-            }.ToString());
-            connection.Open();
-            using var command = connection.CreateCommand();
-            command.CommandText = "SELECT COUNT(*), MAX(MigrationId) FROM __EFMigrationsHistory";
-            using var reader = command.ExecuteReader();
-            if (!reader.Read()) return ("", 0);
-            var count = reader.IsDBNull(0) ? 0 : reader.GetInt32(0);
-            var version = reader.IsDBNull(1) ? "" : reader.GetString(1);
-            return (version, count);
-        }
-        catch (SqliteException exception) when (exception.SqliteErrorCode == 1)
-        {
-            // No EF migration history table (for example an EnsureCreated test
-            // database): record the absence rather than inventing a level.
-            return ("", 0);
-        }
-    }
-
-    private async Task<(List<SelfHostedRecoveryMediaPin> Pins, long Bytes)> EnumerateLiveMediaWithHashesAsync(
-        CancellationToken ct)
-    {
-        var root = _paths.LiveMedia;
-        if (!Directory.Exists(root)) throw Flaw("The live media root is missing.");
-        _paths.VerifyMediaPath(root);
-        var pins = new List<SelfHostedRecoveryMediaPin>();
-        long total = 0;
-        foreach (var directory in Directory.EnumerateFileSystemEntries(root).Order(StringComparer.Ordinal))
-        {
-            ct.ThrowIfCancellationRequested();
-            _paths.VerifyMediaPath(directory);
-            if (File.Exists(directory)) throw Flaw("The media root contains an unexpected file.");
-            if (!Directory.Exists(directory)) throw Flaw("The media root contains an unexpected entry.");
-            var name = Path.GetFileName(directory);
-            if (!Guid.TryParseExact(name, "N", out var bookId) || bookId == Guid.Empty || name != bookId.ToString("N"))
-                throw Flaw("The media root contains an unexpected directory.");
-
-            foreach (var entry in Directory.EnumerateFileSystemEntries(directory).Order(StringComparer.Ordinal))
-            {
-                ct.ThrowIfCancellationRequested();
-                _paths.VerifyMediaPath(entry);
-                if (Directory.Exists(entry)) throw Flaw("A book folder contains an unexpected directory.");
-                if (!File.Exists(entry)) throw Flaw("The media root contains an unexpected entry.");
-                var before = new FileInfo(entry);
-                var length = before.Length;
-                var lastWrite = before.LastWriteTimeUtc;
-                var sha256 = await HashFileAsync(entry, ct);
-                var after = new FileInfo(entry);
-                if (after.Length != length || after.LastWriteTimeUtc != lastWrite)
-                    throw Conflict("The live media changed while recovery pins were captured.");
-                var (kind, extension) = ClassifyMediaFile(Path.GetFileName(entry));
-                pins.Add(new SelfHostedRecoveryMediaPin(
-                    Path.GetRelativePath(root, entry), bookId, kind, extension, length, lastWrite, sha256));
-                total += length;
-            }
-        }
-
-        return (pins, total);
-    }
-
-    private void RecheckMedia(SelfHostedRecoveryCapture capture)
-    {
-        var root = _paths.LiveMedia;
-        if (!Directory.Exists(root)) throw Conflict("The live media root changed after recovery pins were captured.");
-        _paths.VerifyMediaPath(root);
-        var current = new List<(string Relative, long Bytes, DateTime LastWrite)>();
-        foreach (var directory in Directory.EnumerateFileSystemEntries(root).Order(StringComparer.Ordinal))
-        {
-            _paths.VerifyMediaPath(directory);
-            if (!Directory.Exists(directory) || File.Exists(directory))
-                throw Conflict("The live media layout changed after recovery pins were captured.");
-            var name = Path.GetFileName(directory);
-            if (!Guid.TryParseExact(name, "N", out _))
-                throw Conflict("The live media layout changed after recovery pins were captured.");
-            foreach (var entry in Directory.EnumerateFileSystemEntries(directory).Order(StringComparer.Ordinal))
-            {
-                _paths.VerifyMediaPath(entry);
-                if (!File.Exists(entry) || Directory.Exists(entry))
-                    throw Conflict("The live media layout changed after recovery pins were captured.");
-                var info = new FileInfo(entry);
-                current.Add((Path.GetRelativePath(root, entry), info.Length, info.LastWriteTimeUtc));
-            }
-        }
-
-        var expected = capture.Media
-            .Select(pin => (pin.RelativePath, pin.Bytes, pin.LastWriteUtc))
-            .OrderBy(pin => pin.RelativePath, StringComparer.Ordinal)
-            .ToArray();
-        current.Sort((left, right) => string.CompareOrdinal(left.Relative, right.Relative));
-        if (current.Count != expected.Length)
-            throw Conflict("The live media changed after recovery pins were captured.");
-        for (var index = 0; index < current.Count; index++)
-        {
-            if (current[index].Relative != expected[index].RelativePath
-                || current[index].Bytes != expected[index].Bytes
-                || current[index].LastWrite != expected[index].LastWriteUtc)
-                throw Conflict("The live media changed after recovery pins were captured.");
-        }
-    }
-
-    private static (string Kind, string Extension) ClassifyMediaFile(string fileName)
-    {
-        var extension = Path.GetExtension(fileName).ToLowerInvariant();
-        if (fileName.EndsWith(".partial", StringComparison.OrdinalIgnoreCase)) return ("partial", extension);
-        var stem = Path.GetFileNameWithoutExtension(fileName);
-        if (string.Equals(stem, "book", StringComparison.OrdinalIgnoreCase)) return ("book", extension);
-        if (string.Equals(stem, "cover", StringComparison.OrdinalIgnoreCase)) return ("cover", extension);
-        if (stem.StartsWith("cover-thumb-", StringComparison.OrdinalIgnoreCase)) return ("thumbnail", extension);
-        return ("other", extension);
-    }
-
-    private static async Task<string> HashFileAsync(string path, CancellationToken ct)
-    {
-        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read,
-            CopyBufferSize, FileOptions.Asynchronous | FileOptions.SequentialScan);
-        using var sha256 = SHA256.Create();
-        var digest = await sha256.ComputeHashAsync(stream, ct);
-        return Convert.ToHexString(digest).ToLowerInvariant();
-    }
-
     private SelfHostedRecoveryManifest RequireCreating(Guid jobId) =>
         _manifests.Read(jobId) is { Status: MigrationRecoveryStatus.Creating } manifest
             ? manifest
@@ -713,6 +926,30 @@ internal sealed class SelfHostedMigrationRecoveryService :
         _maintenance.WithExclusiveLease(lease, static () => { });
     }
 
+    private static long TotalRetainedBytes(SelfHostedRecoveryManifest manifest)
+    {
+        try
+        {
+            return checked(manifest.DatabaseBytes + manifest.MediaBytes);
+        }
+        catch (OverflowException)
+        {
+            throw SelfHostedActivationCapacity.Exhausted();
+        }
+    }
+
+    private static long AddChecked(long total, long bytes)
+    {
+        try
+        {
+            return checked(total + bytes);
+        }
+        catch (OverflowException)
+        {
+            throw SelfHostedActivationCapacity.Exhausted();
+        }
+    }
+
     private static MigrationRecoveryStatusResponse ToResponse(SelfHostedRecoveryManifest manifest) =>
         new(manifest.JobId, manifest.Status, manifest.CreatedAtUtc, manifest.ExpiresAtUtc,
             manifest.TotalBytes, manifest.Counts);
@@ -722,4 +959,13 @@ internal sealed class SelfHostedMigrationRecoveryService :
 
     private static MigrationActivationException Conflict(string message) =>
         new(MigrationActivationErrorCodes.DestinationConflict, message);
+
+    private sealed record LiveMediaFile(
+        string Path,
+        string RelativePath,
+        Guid BookId,
+        string Kind,
+        string Extension,
+        long Bytes,
+        DateTime LastWriteUtc);
 }

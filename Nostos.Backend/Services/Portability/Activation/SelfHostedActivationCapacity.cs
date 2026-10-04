@@ -80,7 +80,20 @@ internal sealed record SelfHostedActivationSizing(
     long PreviousMediaBytes,
     long StagedBytes = 0)
 {
-    internal long PreviousBytes => PreviousDatabaseBytes + PreviousMediaBytes;
+    internal long PreviousBytes
+    {
+        get
+        {
+            try
+            {
+                return checked(PreviousDatabaseBytes + PreviousMediaBytes);
+            }
+            catch (OverflowException)
+            {
+                throw SelfHostedActivationCapacity.Exhausted();
+            }
+        }
+    }
 }
 
 /// <summary>
@@ -121,8 +134,21 @@ internal sealed class SelfHostedActivationCapacity(
         {
             if (component.Bytes <= 0) continue;
             var index = groups.FindIndex(group => probe.AreSameVolume(group.Path, component.Path));
-            if (index >= 0) groups[index] = (groups[index].Path, checked(groups[index].Bytes + component.Bytes));
-            else groups.Add(component);
+            if (index >= 0)
+            {
+                try
+                {
+                    groups[index] = (groups[index].Path, checked(groups[index].Bytes + component.Bytes));
+                }
+                catch (OverflowException)
+                {
+                    throw Exhausted();
+                }
+            }
+            else
+            {
+                groups.Add(component);
+            }
         }
 
         foreach (var group in groups) EnsureFitsOnVolume(group.Path, group.Bytes);

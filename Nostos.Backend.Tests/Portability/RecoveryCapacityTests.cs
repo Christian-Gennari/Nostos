@@ -151,6 +151,35 @@ public sealed class RecoveryCapacityTests
     }
 
     [Fact]
+    public async Task EnsureMaterializedAtLeast_is_an_absolute_idempotent_target_capped_at_the_reservation()
+    {
+        using var bed = new RecoveryTestBed();
+        await bed.SeedLiveLibraryAsync();
+        await using var db = bed.OpenDatabase();
+        var capacity = new TransferStorageCapacity(db, bed.TransferVolume, Options.Create(bed.Options), bed.Clock);
+        var reserved = await capacity.TryReserveAsync(1_000, MigrationSessionPurpose.Import, TimeSpan.FromMinutes(15), default);
+        var reservationId = reserved.ReservationId!.Value;
+        await capacity.ClaimAsync(reservationId, bed.JobId, default);
+        await capacity.AddMaterializedBytesAsync(reservationId, 200, default);
+
+        await capacity.EnsureMaterializedAtLeastAsync(reservationId, 400, default);
+        await capacity.EnsureMaterializedAtLeastAsync(reservationId, 400, default);
+        await capacity.EnsureMaterializedAtLeastAsync(reservationId, 250, default);
+        await capacity.EnsureMaterializedAtLeastAsync(reservationId, 5_000, default);
+        var row = await db.MigrationStorageReservations.AsNoTracking().SingleAsync(r => r.Id == reservationId);
+        row.MaterializedBytes.Should().Be(1_000, "the absolute target is capped at the reserved amount and never regresses");
+
+        var missing = () => capacity.EnsureMaterializedAtLeastAsync(Guid.NewGuid(), 1, default);
+        (await missing.Should().ThrowAsync<TransferReservationException>())
+            .Which.Kind.Should().Be(TransferReservationConflictKind.NotFound);
+
+        await capacity.ReleaseAsync(reservationId, default);
+        var released = () => capacity.EnsureMaterializedAtLeastAsync(reservationId, 1, default);
+        (await released.Should().ThrowAsync<TransferReservationException>())
+            .Which.Kind.Should().Be(TransferReservationConflictKind.Released);
+    }
+
+    [Fact]
     public async Task FullLifecycle_NoDoubleCharge_KeepsCountingAfterTransferRelease_AndCleanupReleases()
     {
         using var bed = new RecoveryTestBed();
@@ -175,6 +204,7 @@ public sealed class RecoveryCapacityTests
         var lease = await bed.Gate.EnterExclusiveAsync(LibraryMaintenanceReason.Activation);
         journal = await bed.AdvanceJournalAsync(journal, SelfHostedActivationPhase.DatabaseCheckpointed, lease);
         await service.PrepareRetentionAsync(bed.JobId, capture, lease, default);
+        journal = await bed.AdvanceJournalAsync(journal, SelfHostedActivationPhase.CutoverPrepared, lease);
         await service.RetainMediaAsync(bed.JobId, lease, default);
         journal = await bed.AdvanceJournalAsync(journal, SelfHostedActivationPhase.PreviousMediaRetained, lease);
         await service.RetainDatabaseAsync(bed.JobId, lease, default);

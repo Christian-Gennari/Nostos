@@ -26,6 +26,7 @@ public sealed class RecoveryRetentionTests
 
         capture.OperationId.Should().Be(bed.OperationId);
         capture.PreviousDestinationRevision.Should().Be(bed.Revision);
+        capture.CaptureStartedAtUtc.Should().Be(bed.Clock.UtcNow);
         capture.DatabaseSchemaVersion.Should().Be("20260101000000_Initial");
         capture.DatabaseMigrationCount.Should().Be(1);
         capture.DatabaseBytes.Should().Be(new FileInfo(bed.Paths.LiveDatabase).Length);
@@ -45,7 +46,7 @@ public sealed class RecoveryRetentionTests
     }
 
     [Fact]
-    public async Task PrepareRetention_RequiresJournalIdentityAndLease_AndRechecksMedia()
+    public async Task PrepareRetention_RequiresJournalIdentityAndExclusiveLease()
     {
         using var bed = new RecoveryTestBed();
         await bed.SeedLiveLibraryAsync();
@@ -69,18 +70,8 @@ public sealed class RecoveryRetentionTests
         await foreignLease.DisposeAsync();
 
         File.Delete(bed.Paths.Journal(bed.JobId));
-        var correctJournal = bed.SeedJournal();
-        correctJournal = await bed.AdvanceJournalAsync(correctJournal,
-            SelfHostedActivationPhase.DatabaseCheckpointed, lease);
-        var file = Path.Combine(bed.Paths.LiveMedia, FirstBook.ToString("N"), "book.epub");
-        var before = await File.ReadAllBytesAsync(file);
-        await File.AppendAllTextAsync(file, "changed");
-        Func<Task> changed = () => service.PrepareRetentionAsync(bed.JobId, capture, lease, default);
-        await changed.Should().ThrowAsync<MigrationActivationException>()
-            .Where(exception => exception.Code == MigrationActivationErrorCodes.DestinationConflict);
-        await File.WriteAllBytesAsync(file, before);
-        capture = await service.CaptureAsync(bed.JobId, bed.OperationId, bed.Revision, new(Books: 2), default);
-
+        var journal = bed.SeedJournal();
+        journal = await bed.AdvanceJournalAsync(journal, SelfHostedActivationPhase.DatabaseCheckpointed, lease);
         var manifest = await service.PrepareRetentionAsync(bed.JobId, capture, lease, default);
         manifest.Status.Should().Be(MigrationRecoveryStatus.Creating);
         manifest.MediaRetained.Should().BeFalse();
@@ -104,9 +95,9 @@ public sealed class RecoveryRetentionTests
         var journal = bed.SeedJournal();
         var lease = await bed.Gate.EnterExclusiveAsync(LibraryMaintenanceReason.Activation);
         journal = await bed.AdvanceJournalAsync(journal, SelfHostedActivationPhase.DatabaseCheckpointed, lease);
-
         var manifest = await service.PrepareRetentionAsync(bed.JobId, capture, lease, default);
         AssertComponentLocationsAreIntact(bed, manifest);
+        journal = await bed.AdvanceJournalAsync(journal, SelfHostedActivationPhase.CutoverPrepared, lease);
 
         if (crashPoint is "media" or "database")
         {
@@ -131,16 +122,9 @@ public sealed class RecoveryRetentionTests
 
         RecoveryTestBed.DatabaseGeneration(bed.Paths.LiveDatabase).Should().Be("original");
         AssertMediaGeneration(bed.Paths.LiveMedia, "original");
-        if (crashPoint == "prepared")
-        {
-            File.Exists(bed.Paths.Journal(bed.JobId)).Should().BeTrue(
-                "a pre-cutover journal has no rollback to record and stays for history");
-        }
-        else
-        {
-            File.Exists(bed.Paths.Journal(bed.JobId)).Should().BeFalse();
-            File.Exists(bed.Paths.ResolvedJournal(bed.JobId)).Should().BeTrue();
-        }
+        File.Exists(bed.Paths.Journal(bed.JobId)).Should().BeFalse(
+            "a cutover-prepared journal rolls back and resolves even when no rename happened");
+        File.Exists(bed.Paths.ResolvedJournal(bed.JobId)).Should().BeTrue();
     }
 
     [Fact]
@@ -158,7 +142,9 @@ public sealed class RecoveryRetentionTests
         Func<Task> beforeMedia = () => service.RetainDatabaseAsync(bed.JobId, lease, default);
         await beforeMedia.Should().ThrowAsync<MigrationActivationException>();
 
+        journal = await bed.AdvanceJournalAsync(journal, SelfHostedActivationPhase.CutoverPrepared, lease);
         await service.RetainMediaAsync(bed.JobId, lease, default);
+        journal = await bed.AdvanceJournalAsync(journal, SelfHostedActivationPhase.PreviousMediaRetained, lease);
         await File.WriteAllTextAsync(bed.Paths.LiveDatabase + "-wal", "committed frames");
         Func<Task> hotWal = () => service.RetainDatabaseAsync(bed.JobId, lease, default);
         await hotWal.Should().ThrowAsync<MigrationActivationException>()
@@ -195,6 +181,7 @@ public sealed class RecoveryRetentionTests
         var lease = await bed.Gate.EnterExclusiveAsync(LibraryMaintenanceReason.Activation);
         journal = await bed.AdvanceJournalAsync(journal, SelfHostedActivationPhase.DatabaseCheckpointed, lease);
         await service.PrepareRetentionAsync(bed.JobId, capture, lease, default);
+        journal = await bed.AdvanceJournalAsync(journal, SelfHostedActivationPhase.CutoverPrepared, lease);
         await service.RetainMediaAsync(bed.JobId, lease, default);
         journal = await bed.AdvanceJournalAsync(journal, SelfHostedActivationPhase.PreviousMediaRetained, lease);
         await service.RetainDatabaseAsync(bed.JobId, lease, default);
@@ -240,6 +227,7 @@ public sealed class RecoveryRetentionTests
         bed.Manifests.Read(bed.JobId).Should().BeNull();
 
         await service.PrepareRetentionAsync(bed.JobId, capture, lease, default);
+        journal = await bed.AdvanceJournalAsync(journal, SelfHostedActivationPhase.CutoverPrepared, lease);
         await service.RetainMediaAsync(bed.JobId, lease, default);
         Func<Task> withMaterial = () => service.AbandonAsync(bed.JobId, lease, default);
         await withMaterial.Should().ThrowAsync<MigrationActivationException>()

@@ -152,6 +152,19 @@ public interface ITransferStorageCapacity
     Task AddMaterializedBytesAsync(Guid reservationId, long deltaBytes, CancellationToken ct);
 
     /// <summary>
+    /// Ensures at least <paramref name="targetBytes"/> are recorded as
+    /// materialized on a live reservation, as one conditional UPDATE.
+    /// <paramref name="targetBytes"/> is an absolute target, capped at the
+    /// reserved amount, and the call is idempotent: repeating it with the same
+    /// target never moves materialization backwards or forwards again, and a
+    /// reservation already at or above the effective target is a no-op. A
+    /// missing, released or expired reservation fails with a typed
+    /// <see cref="TransferReservationException"/> instead of being treated as
+    /// a fresh reservation.
+    /// </summary>
+    Task EnsureMaterializedAtLeastAsync(Guid reservationId, long targetBytes, CancellationToken ct);
+
+    /// <summary>
     /// Releases a reservation out of capacity accounting. Idempotent: an
     /// already-released or unknown reservation is a no-op so cleanup sweeps
     /// can retry safely.
@@ -362,6 +375,67 @@ public sealed class TransferStorageCapacity : ITransferStorageCapacity
         }
     }
 
+    public async Task EnsureMaterializedAtLeastAsync(
+        Guid reservationId,
+        long targetBytes,
+        CancellationToken ct)
+    {
+        if (reservationId == Guid.Empty)
+        {
+            throw new ArgumentException("A reservation identifier is required.", nameof(reservationId));
+        }
+
+        if (targetBytes < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(targetBytes),
+                targetBytes,
+                "A materialized target cannot be negative.");
+        }
+
+        var now = ClockUtcNow();
+        var affected = await _db.MigrationStorageReservations
+            .Where(r => r.Id == reservationId
+                && r.ReleasedAtUtc == null
+                && (r.ClaimedJobId != null || r.ExpiresAtUtc > now)
+                && r.MaterializedBytes < (r.ReservedBytes < targetBytes ? r.ReservedBytes : targetBytes))
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(
+                        r => r.MaterializedBytes,
+                        r => r.ReservedBytes < targetBytes ? r.ReservedBytes : targetBytes)
+                    .SetProperty(r => r.Version, r => r.Version + 1),
+                ct);
+
+        if (affected == 1)
+        {
+            return;
+        }
+
+        var state = await ReadReservationStateAsync(reservationId, ct);
+        if (state is null)
+        {
+            throw new TransferReservationException(TransferReservationConflictKind.NotFound, reservationId);
+        }
+
+        if (state.ReleasedAtUtc is not null)
+        {
+            throw new TransferReservationException(TransferReservationConflictKind.Released, reservationId);
+        }
+
+        var effectiveTarget = Math.Min(targetBytes, state.ReservedBytes);
+        if (state.MaterializedBytes >= effectiveTarget)
+        {
+            return; // already at (or above) the requested absolute target: idempotent no-op
+        }
+
+        throw new TransferReservationException(
+            state.ClaimedJobId is null && state.ExpiresAtUtc <= now
+                ? TransferReservationConflictKind.Expired
+                : TransferReservationConflictKind.Contended,
+            reservationId);
+    }
+
     public async Task ReleaseAsync(Guid reservationId, CancellationToken ct)
     {
         if (reservationId == Guid.Empty)
@@ -542,7 +616,8 @@ public sealed class TransferStorageCapacity : ITransferStorageCapacity
         await _db.MigrationStorageReservations
             .AsNoTracking()
             .Where(r => r.Id == reservationId)
-            .Select(r => new ReservationState(r.ReleasedAtUtc, r.ClaimedJobId, r.ExpiresAtUtc))
+            .Select(r => new ReservationState(
+                r.ReleasedAtUtc, r.ClaimedJobId, r.ExpiresAtUtc, r.ReservedBytes, r.MaterializedBytes))
             .FirstOrDefaultAsync(ct);
 
     private DateTime ClockUtcNow() => _timeProvider.GetUtcNow().UtcDateTime;
@@ -550,7 +625,9 @@ public sealed class TransferStorageCapacity : ITransferStorageCapacity
     private sealed record ReservationState(
         DateTime? ReleasedAtUtc,
         Guid? ClaimedJobId,
-        DateTime ExpiresAtUtc);
+        DateTime ExpiresAtUtc,
+        long ReservedBytes = 0,
+        long MaterializedBytes = 0);
 }
 
 /// <summary>
