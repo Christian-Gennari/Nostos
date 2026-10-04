@@ -241,6 +241,16 @@ public sealed class MigrationHttpApiTests
         noHash.Status.Should().Be(HttpStatusCode.BadRequest);
         CodeOf(noHash.Body).Should().Be("migration_invalid_request");
 
+        using var invalidHash = new ByteArrayContent([]);
+        invalidHash.Headers.TryAddWithoutValidation("Content-Range", $"bytes 0-0/{file.LongLength}");
+        invalidHash.Headers.TryAddWithoutValidation("X-Nostos-Chunk-SHA256", "not-a-sha256");
+        var badHashHeader = await h.SendAsync(
+            HttpMethod.Put,
+            $"/api/portability/migration/jobs/{jobId}/upload-session/chunks/0",
+            invalidHash);
+        badHashHeader.Status.Should().Be(HttpStatusCode.BadRequest);
+        CodeOf(badHashHeader.Body).Should().Be("migration_invalid_request");
+
         var jobStatus = await h.JobStatusAsync(jobId);
         jobStatus.RootElement.GetProperty("session").GetProperty("receivedChunkCount").GetInt32().Should().Be(0);
         jobStatus.RootElement.GetProperty("progress").GetProperty("bytesProcessed").GetInt64().Should().Be(0);
