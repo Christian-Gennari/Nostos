@@ -259,6 +259,13 @@ public interface IPortableImportStaging : IAsyncDisposable
     /// alone, as required after a process restart. Fails with the typed not-found
     /// outcome when no prepared descriptor has been committed for the staging area.
     /// </summary>
+    /// <remarks>
+    /// Reconstruction verifies the relational payload against <see cref="PreparedPortableImportMetadata.DataSha256"/>
+    /// and verifies every staged media length, but it does not re-hash media
+    /// contents. Activation (#681) MUST re-hash every staged media file against its
+    /// <see cref="PortableArchiveMediaEntry.Sha256"/> before mutating the live
+    /// library.
+    /// </remarks>
     Task<IPreparedPortableImport> RebuildPreparedImportAsync(
         PortableStagingId stagingId,
         CancellationToken cancellationToken = default);
