@@ -21,6 +21,7 @@ using Nostos.Backend.Services.Knowledge;
 using Nostos.Backend.Services.Notes;
 using Nostos.Backend.Services.Notes.Imports;
 using Nostos.Backend.Services.Portability;
+using Nostos.Backend.Services.Portability.Migration;
 using Nostos.Product.BookText;
 using Nostos.Product.Services.Ai;
 
@@ -148,6 +149,7 @@ public static class NostosProductComposition
 
         services.AddScoped<IPortableArchiveService, PortableArchiveService>();
         services.TryAddScoped<IPortableArchiveExporter, DefaultPortableArchiveExporter>();
+        services.AddScoped<IMigrationJobStore, EfMigrationJobStore>();
         services.AddScoped<PortableArchiveReader>();
 
         services.AddScoped<IBookRepository, BookRepository>();
