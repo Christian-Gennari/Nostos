@@ -1,11 +1,13 @@
 using Nostos.Product.BookText;
+using Nostos.Backend.Services;
 
 namespace Nostos.Backend.Workers;
 
 public sealed class BookTextIngestionWorker(
     IServiceScopeFactory scopes,
     BookTextOptions options,
-    ILogger<BookTextIngestionWorker> logger) : BackgroundService
+    ILogger<BookTextIngestionWorker> logger,
+    ILibraryMaintenanceCoordinator? maintenance = null) : BackgroundService
 {
     private static readonly TimeSpan IdleDelay = TimeSpan.FromSeconds(3);
 
@@ -21,6 +23,7 @@ public sealed class BookTextIngestionWorker(
 
         try
         {
+            await using var operation = maintenance is null ? null : await maintenance.EnterOperationAsync(stoppingToken);
             using var initialScope = scopes.CreateScope();
             await initialScope.ServiceProvider
                 .GetRequiredService<BookTextBackfillService>()
@@ -62,6 +65,7 @@ public sealed class BookTextIngestionWorker(
 
     public async Task<bool> ProcessOneAsync(CancellationToken ct = default)
     {
+        await using var operation = maintenance is null ? null : await maintenance.EnterOperationAsync(ct);
         using var scope = scopes.CreateScope();
         var index = scope.ServiceProvider.GetRequiredService<IBookTextIndex>();
         var work = await index.TryClaimNextAsync(
@@ -81,6 +85,7 @@ public sealed class BookTextIngestionWorker(
     /// </summary>
     public async Task<BookTextEmbeddingPassResult> ProcessEmbeddingsAsync(CancellationToken ct = default)
     {
+        await using var operation = maintenance is null ? null : await maintenance.EnterOperationAsync(ct);
         using var scope = scopes.CreateScope();
         var engine = scope.ServiceProvider.GetRequiredService<BookTextEmbeddingEngine>();
         return await engine.ProcessBatchAsync(ct);

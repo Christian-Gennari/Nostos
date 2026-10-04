@@ -28,6 +28,7 @@ using Nostos.Backend.Services.Portability.Transfers;
 using Nostos.Backend.Services.BookText;
 using Nostos.Product.BookText;
 using Nostos.Backend.Workers;
+using Nostos.Backend.Middleware;
 using Nostos.Product.Composition;
 using Nostos.Product.Services.Ai;
 
@@ -229,6 +230,14 @@ builder.Services.AddSingleton<IBookAssetStorage>(
 builder.Services.AddNostosSelfHostedHealthChecks();
 
 builder.Services.AddSingleton<BackupSettingsProvider>();
+builder.Services.AddSingleton(sp => new LibraryMaintenanceMarker(
+    PersistenceRegistration.ResolveDatabasePath(
+        builder.Configuration[PersistenceRegistration.DatabasePathConfigurationKey],
+        builder.Environment.ContentRootPath)));
+builder.Services.AddSingleton(sp => new LibraryMaintenanceCoordinator(
+    builder.Configuration.GetSection(LibraryMaintenanceOptions.SectionName).Get<LibraryMaintenanceOptions>(),
+    marker: sp.GetRequiredService<LibraryMaintenanceMarker>()));
+builder.Services.AddSingleton<ILibraryMaintenanceCoordinator>(sp => sp.GetRequiredService<LibraryMaintenanceCoordinator>());
 builder.Services.AddScoped<IBackupService, BackupService>();
 
 // One instance serves as the job store, the hosted worker that drains it, and
@@ -243,6 +252,10 @@ builder.Services.AddHostedService<LibraryReceiptRetentionWorker>();
 builder.Services.AddHostedService<BookTextIngestionWorker>();
 
 var app = builder.Build();
+
+// A stale maintenance marker is not an orphaned process lease. Cutover journals
+// must be reconciled before this point by Slice 3; unresolved journals fail closed.
+app.Services.GetRequiredService<LibraryMaintenanceCoordinator>().InitializeAfterRecovery();
 
 // --- DATABASE BOOTSTRAP / MIGRATION ---
 // A truly empty SQLite database (brand-new or zero tables) is bootstrapped
@@ -326,31 +339,10 @@ app.UseExceptionHandler(exceptionApp =>
 
 app.UseStatusCodePages();
 
-// --- ROUTE & RESTORE MAINTENANCE GUARD ---
-// Guards both the REST API surface and (when enabled) the MCP route. This
-// middleware is registered before the MCP authentication gate, so
-// maintenance stays authoritative: during a restore, MCP requests receive
-// the existing 503 even with a valid bearer token.
-app.Use(async (context, next) =>
-{
-    var mcpOptions = context.RequestServices.GetRequiredService<McpOptions>();
-    var isApiPath = context.Request.Path.StartsWithSegments("/api");
-    var isMcpPath = mcpOptions.Enabled && mcpOptions.Path.Length > 0 &&
-                    context.Request.Path.StartsWithSegments(mcpOptions.Path);
-    if (isApiPath || isMcpPath)
-    {
-        var settingsProvider = context.RequestServices.GetRequiredService<BackupSettingsProvider>();
-        if (settingsProvider.IsInMaintenanceMode)
-        {
-            context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
-            context.Response.ContentType = "application/json";
-            await context.Response.WriteAsJsonAsync(new { error = "Application is in maintenance mode during restore." });
-            return;
-        }
-    }
-
-    await next(context);
-});
+// Routing exposes the restore control metadata before admission. Library request
+// scopes and complete streaming responses drain through the same gate as workers.
+app.UseRouting();
+app.UseMiddleware<LibraryMaintenanceMiddleware>();
 
 // --- MCP AUTHENTICATION GATE ---
 // Registered after the maintenance guard (so maintenance cannot be bypassed

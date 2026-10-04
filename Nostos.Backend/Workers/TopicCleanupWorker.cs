@@ -1,10 +1,12 @@
 using Nostos.Backend.Data.Interfaces;
+using Nostos.Backend.Services;
 
 namespace Nostos.Backend.Workers;
 
 public class TopicCleanupWorker(
     IServiceScopeFactory scopeFactory,
-    ILogger<TopicCleanupWorker> logger
+    ILogger<TopicCleanupWorker> logger,
+    ILibraryMaintenanceCoordinator? maintenance = null
 ) : BackgroundService
 {
     // Run every 1 hour
@@ -59,6 +61,7 @@ public class TopicCleanupWorker(
     /// </summary>
     private async Task DoWorkAsync(CancellationToken stoppingToken)
     {
+        await using var operation = maintenance is null ? null : await maintenance.EnterOperationAsync(stoppingToken);
         using var scope = scopeFactory.CreateScope();
         var topicRepo = scope.ServiceProvider.GetRequiredService<ITopicRepository>();
 
