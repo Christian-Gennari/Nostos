@@ -1,6 +1,10 @@
 using System.Globalization;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Microsoft.Net.Http.Headers;
+using Nostos.Backend.Data;
+using Nostos.Backend.Data.Models;
 using Nostos.Backend.Services.Portability;
 using Nostos.Backend.Services.Portability.Migration;
 using Nostos.Backend.Services.Portability.Transfers;
@@ -43,10 +47,122 @@ public static class MigrationEndpoints
         group.MapPut("/jobs/{id}/upload-session/chunks/{index}", UploadChunkAsync);
         group.MapPost("/jobs/{id}/upload-session/complete", CompleteUploadAsync);
 
-        // Slice 10 adds GET /jobs/{id}/export-download in this group once the
-        // export artifact writer exists. It is intentionally not mapped here.
+        // Slice 10: the sealed export artifact is served from this group, so it
+        // inherits the migration authorization and rate-limit policies and the
+        // migration error body. HEAD is mapped so clients can inspect the
+        // length/ranges before resuming a download.
+        group.MapMethods("/jobs/{id}/export-download", ["GET", "HEAD"], ExportDownloadAsync);
+
         return routes;
     }
+
+    private static Task<IResult> ExportDownloadAsync(
+        string id,
+        NostosDbContext db,
+        TransferPathResolver paths,
+        TimeProvider clock,
+        CancellationToken ct) => GuardAsync(async () =>
+    {
+        if (!TryParseJobId(id, out var jobId)) return InvalidRequest();
+
+        var job = await db.MigrationJobRecords.AsNoTracking()
+            .Where(j => j.Id == jobId)
+            .Select(j => new { j.Direction, j.State })
+            .SingleOrDefaultAsync(ct);
+        if (job is null || job.Direction != (int)MigrationDirection.Export)
+        {
+            return MigrationHttpErrors.Result(
+                MigrationHttpErrors.NotFound,
+                StatusCodes.Status404NotFound);
+        }
+
+        var artifact = await db.MigrationExportArtifactRecords.AsNoTracking()
+            .SingleOrDefaultAsync(a => a.JobId == jobId, ct);
+        if (artifact is null || artifact.State == (int)MigrationExportArtifactState.Deleted)
+        {
+            return MigrationHttpErrors.Result(
+                MigrationHttpErrors.ExportNotAvailable,
+                StatusCodes.Status404NotFound);
+        }
+
+        var now = clock.GetUtcNow().UtcDateTime;
+        if (artifact.State == (int)MigrationExportArtifactState.Expired
+            || artifact.ExpiresAtUtc <= now)
+        {
+            return MigrationHttpErrors.Result(
+                MigrationHttpErrors.ExportExpired,
+                StatusCodes.Status410Gone);
+        }
+
+        if (artifact.State != (int)MigrationExportArtifactState.Available
+            || job.State != (int)MigrationJobState.Completed)
+        {
+            return MigrationHttpErrors.Result(
+                MigrationHttpErrors.ExportNotAvailable,
+                StatusCodes.Status404NotFound);
+        }
+
+        if (!paths.TryResolveStorageKey(artifact.StorageKey, out var path)
+            || !File.Exists(path)
+            || new FileInfo(path).Length != artifact.SizeBytes)
+        {
+            return MigrationHttpErrors.Result(
+                MigrationHttpErrors.ExportNotAvailable,
+                StatusCodes.Status404NotFound);
+        }
+
+        // Serve from an opened handle: a concurrent sweep that unlinks the file
+        // cannot truncate an in-flight response, and on Windows the shared-read
+        // handle makes the sweep's delete fail retryably instead of racing.
+        FileStream stream;
+        try
+        {
+            stream = new FileStream(
+                path,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read,
+                bufferSize: 64 * 1024,
+                FileOptions.Asynchronous | FileOptions.SequentialScan);
+        }
+        catch (IOException)
+        {
+            return MigrationHttpErrors.Result(
+                MigrationHttpErrors.ExportNotAvailable,
+                StatusCodes.Status404NotFound);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return MigrationHttpErrors.Result(
+                MigrationHttpErrors.ExportNotAvailable,
+                StatusCodes.Status404NotFound);
+        }
+
+        try
+        {
+            paths.VerifyPathWithinRoot(path);
+        }
+        catch
+        {
+            await stream.DisposeAsync();
+            throw;
+        }
+
+        var entityTag = artifact.Sha256 is { Length: 64 } sha256
+            ? new EntityTagHeaderValue($"\"{sha256}\"")
+            : null;
+        var lastModified = artifact.AvailableAtUtc is { } availableAtUtc
+            ? new DateTimeOffset(DateTime.SpecifyKind(availableAtUtc, DateTimeKind.Utc))
+            : (DateTimeOffset?)null;
+
+        return Results.File(
+            stream,
+            artifact.ContentType,
+            fileDownloadName: artifact.FileName,
+            enableRangeProcessing: true,
+            lastModified: lastModified,
+            entityTag: entityTag);
+    });
 
     private static Task<IResult> PreflightAsync(
         HttpRequest http,

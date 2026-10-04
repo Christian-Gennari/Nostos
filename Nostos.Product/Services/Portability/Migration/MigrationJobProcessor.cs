@@ -12,20 +12,13 @@ namespace Nostos.Backend.Services.Portability.Migration;
 /// ExecuteMutationAsync publishes metadata using DB-only work in a short lease-
 /// fenced transaction. A handler must never perform file IO in that callback,
 /// retain callbacks, write a shared artifact before publication, or activate an import.
-/// Slices 9/10 replace the explicit unavailable handler.
+/// ImportPreparationPhaseHandler and ExportArtifactPhaseHandler implement the
+/// real Slice 9/10 phases behind this seam.
 /// </summary>
 internal interface IMigrationPhaseHandler
 {
     bool CanHandle(MigrationDirection direction, MigrationJobState state);
     Task ExecuteAsync(MigrationPhaseContext context, CancellationToken ct);
-}
-
-internal sealed class ArchiveIntegrationNotYetAvailableHandler : IMigrationPhaseHandler
-{
-    public bool CanHandle(MigrationDirection direction, MigrationJobState state) => true;
-    public Task ExecuteAsync(MigrationPhaseContext context, CancellationToken ct) => throw MigrationTransferException.Error(
-        context.Job.Direction == MigrationDirection.Import
-            ? MigrationTransferException.ImportPreparationUnavailable : MigrationTransferException.ExportArtifactUnavailable);
 }
 
 /// <summary>
@@ -48,6 +41,18 @@ internal sealed class MigrationPhaseContext(IServiceScopeFactory scopes, TimePro
         var db = scope.ServiceProvider.GetRequiredService<NostosDbContext>();
         try { await MigrationMutation.LockLeaseAsync(db, Job.Id, Job.LeaseToken!, clock.GetUtcNow().UtcDateTime, linked.Token); }
         catch (MigrationJobStoreException) { running.Cancel(); throw; }
+    }
+
+    // Long archive/file IO must not hold a database lock. The progress adapter
+    // calls this at every engine callback so a maintenance request cancels the
+    // linked token and the in-flight phase yields at its next check without
+    // failing the job; the durable JSON/lease metadata is still published only
+    // through a short fenced mutation afterwards.
+    internal bool RequestYieldToMaintenance()
+    {
+        if (!maintenance.IsMaintenanceRequested) return false;
+        running.Cancel();
+        return true;
     }
 
     // Only attempt-private temporary data belongs here. Lease loss during IO can

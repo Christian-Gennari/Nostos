@@ -745,11 +745,15 @@ public sealed class MigrationHttpApiTests
         CodeOf(export.Body).Should().Be("migration_export_artifact_unavailable");
         (await h.WithDb(db => db.MigrationJobRecords.CountAsync())).Should().Be(0);
 
-        // Once a host wires a handler, both the capability and the write paths
-        // flip, and preflight can reserve again.
+        // Once a host wires a handler, the server-side write paths open
+        // (preflight can reserve and jobs can be created), but the
+        // frontend-facing capability stays dark until the explicit
+        // AdvertiseLibraryMigration switch is flipped: it is decoupled from
+        // phase availability on purpose.
         h.PhasesAvailable = true;
         var nowAvailable = await h.SendAsync(HttpMethod.Get, "/api/runtime/capabilities");
-        nowAvailable.Body.RootElement.GetProperty("supportsLibraryMigration").GetBoolean().Should().BeTrue();
+        nowAvailable.Body.RootElement.GetProperty("supportsLibraryMigration").GetBoolean().Should().BeFalse(
+            "the frontend transport is not merged; the flag is an explicit switch, not phase availability");
         nowAvailable.Body.RootElement.GetProperty("supportsSafeActivation").GetBoolean().Should().BeFalse();
         var reservation = await h.ReserveAsync("unavailable-key");
         var created = await h.CreateJobAsync("Import", "unavailable-key", reservation);

@@ -135,6 +135,14 @@ public sealed class MigrationTransferCleanup(
                         .ExecuteUpdateAsync(set => set.SetProperty(a => a.State, (int)MigrationExportArtifactState.Deleted)
                             .SetProperty(a => a.DeletedAtUtc, Now).SetProperty(a => a.Version, a => a.Version + 1), ct);
             }
+            else
+            {
+                // The published artifact survives; attempt temps and superseded
+                // finals that no row references are garbage. An open download
+                // handle makes deletion fail on Windows and the sweep retries;
+                // on Unix the handle keeps serving the unlinked inode.
+                DeleteUnreferencedExportFiles(jobId, artifact.StorageKey, ct);
+            }
         }
         // Detached names are never reused. Release the job mutex before deleting
         // old data, so retry can prepare a fresh scope concurrently with deletion.
@@ -201,6 +209,38 @@ public sealed class MigrationTransferCleanup(
         if (!Directory.Exists(directory)) return;
         foreach (var file in Directory.EnumerateFiles(directory, ".chunk-*.tmp"))
         { Checkpoint(ct); File.Delete(paths.VerifyPathWithinRoot(file)); }
+    }
+
+    /// <summary>
+    /// Removes generated export files that the available artifact row does not
+    /// reference: attempt temps and superseded finals. The referenced file is
+    /// never touched, and a malformed row key disables pruning rather than
+    /// guessing at paths.
+    /// </summary>
+    private void DeleteUnreferencedExportFiles(Guid jobId, string storageKey, CancellationToken ct)
+    {
+        var directory = paths.VerifyPathWithinRoot(paths.GetExportDirectory(jobId));
+        if (!Directory.Exists(directory))
+        {
+            return;
+        }
+
+        if (!paths.TryResolveStorageKey(storageKey, out var referenced))
+        {
+            return;
+        }
+
+        foreach (var file in Directory.EnumerateFiles(directory))
+        {
+            Checkpoint(ct);
+            var verified = paths.VerifyPathWithinRoot(file);
+            if (string.Equals(verified, referenced, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            File.Delete(verified);
+        }
     }
 
     private string? DetachScope(string directory, CancellationToken ct)

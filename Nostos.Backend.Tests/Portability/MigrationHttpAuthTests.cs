@@ -15,6 +15,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Nostos.Backend.Data;
 using Nostos.Backend.Endpoints;
+using Nostos.Backend.Services.Library;
 using Nostos.Backend.Services.Portability;
 using Nostos.Backend.Services.Portability.Migration;
 using Nostos.Backend.Services.Portability.Transfers;
@@ -50,6 +51,8 @@ public sealed class MigrationHttpAuthTests
             (HttpMethod.Get, $"/api/portability/migration/jobs/{job}/upload-session"),
             (HttpMethod.Put, $"/api/portability/migration/jobs/{job}/upload-session/chunks/0"),
             (HttpMethod.Post, $"/api/portability/migration/jobs/{job}/upload-session/complete"),
+            (HttpMethod.Get, $"/api/portability/migration/jobs/{job}/export-download"),
+            (HttpMethod.Head, $"/api/portability/migration/jobs/{job}/export-download"),
         };
 
         foreach (var (method, path) in routes)
@@ -91,6 +94,14 @@ public sealed class MigrationHttpAuthTests
         using var chunkResponse = await host.Client.SendAsync(chunkRequest);
         chunkResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
         AssertNotFoundShape(await chunkResponse.Content.ReadAsStringAsync());
+
+        using var downloadRequest = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"/api/portability/migration/jobs/{unknown}/export-download");
+        downloadRequest.Headers.Add("X-Test-Authenticated", "1");
+        using var downloadResponse = await host.Client.SendAsync(downloadRequest);
+        downloadResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        AssertNotFoundShape(await downloadResponse.Content.ReadAsStringAsync());
     }
 
     [Fact]
@@ -187,6 +198,7 @@ public sealed class MigrationHttpAuthTests
                 provider => provider.GetRequiredService<SelfHostedMigrationTransferService>());
             builder.Services.AddScoped<IMigrationPreflightService, SelfHostedMigrationPreflightService>();
             builder.Services.AddScoped<SelfHostedMigrationJobService>();
+            builder.Services.AddScoped<ILibraryDestinationRevisionProvider, LibraryStateDestinationRevisionProvider>();
             builder.Services.AddSingleton<IMigrationPhaseAvailability, AlwaysAvailable>();
 
             var app = builder.Build();

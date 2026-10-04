@@ -16,6 +16,16 @@ public static class DeploymentCapabilitiesEndpoints
 {
     public const string Route = "/api/runtime/capabilities";
 
+    /// <summary>
+    /// Single switch for the frontend-facing library-migration capability. It is
+    /// deliberately decoupled from <see cref="IMigrationPhaseAvailability"/>:
+    /// the backend API can create and process jobs while the frontend's real
+    /// transport is still unmerged, and flipping this to <c>true</c> is the one
+    /// change that advertises the feature to the UI. Flip it here when the
+    /// frontend transport ships (orchestrator-owned).
+    /// </summary>
+    public const bool AdvertiseLibraryMigration = false;
+
     public static IEndpointRouteBuilder MapDeploymentCapabilitiesEndpoints(
         this IEndpointRouteBuilder routes)
     {
@@ -41,13 +51,12 @@ public static class DeploymentCapabilitiesEndpoints
             UsageMeteringAvailable: deployment.Capabilities.UsageMeteringAvailable,
             AccountManagementUrl: deployment.Capabilities.AccountManagementUrl,
             FeedbackUrl: deployment.Capabilities.FeedbackUrl,
-            // Library migration is advertised only while this host can actually
-            // finish a job for at least one direction; a missing phase handler
-            // also makes job creation refuse up front. Safe activation (#681)
+            // Library migration is advertised only when the operator/frontend
+            // transport is ready (see AdvertiseLibraryMigration). Phase
+            // availability still gates preflight and job creation server-side;
+            // it is intentionally not what the UI reads. Safe activation (#681)
             // is not available yet on any host.
-            SupportsLibraryMigration: migrationAvailability is not null
-                && (migrationAvailability.IsAvailable(MigrationDirection.Import)
-                    || migrationAvailability.IsAvailable(MigrationDirection.Export)),
+            SupportsLibraryMigration: AdvertiseLibraryMigration,
             SupportsSafeActivation: false);
 }
 

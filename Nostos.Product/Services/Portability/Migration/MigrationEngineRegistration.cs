@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Nostos.Backend.Services.Library;
 
 namespace Nostos.Backend.Services.Portability.Migration;
 
@@ -10,8 +11,9 @@ public static class MigrationEngineRegistration
     {
         services.TryAddSingleton(TimeProvider.System);
         // Job creation refuses directions without a real phase handler. Slices
-        // 9/10 replace this registration together with the unavailable handler.
-        services.TryAddSingleton<IMigrationPhaseAvailability>(MigrationPhaseAvailabilityNone.Instance);
+        // 9/10 register the real handlers and report both directions available.
+        services.TryAddSingleton<IMigrationPhaseAvailability>(MigrationPhaseAvailabilityAll.Instance);
+        services.AddScoped<ILibraryDestinationRevisionProvider, LibraryStateDestinationRevisionProvider>();
         services.AddSingleton<MigrationJobCancellationRegistry>();
         services.AddSingleton<MigrationProcessingSlots>();
         services.AddSingleton<MigrationFileMutex>();
@@ -23,11 +25,12 @@ public static class MigrationEngineRegistration
         services.AddScoped<IMigrationTransferService>(s => s.GetRequiredService<SelfHostedMigrationTransferService>());
         services.AddScoped<ISelfHostedMigrationUploads>(s => s.GetRequiredService<SelfHostedMigrationTransferService>());
         // Slice 8 transport orchestration. Job creation refuses directions whose
-        // phase handler is not wired (Slices 9/10 replace the unavailable handler
-        // and the availability registration together).
+        // phase handler is not wired; Slices 9/10 register the real handlers and
+        // the matching availability below.
         services.AddScoped<IMigrationPreflightService, SelfHostedMigrationPreflightService>();
         services.AddScoped<SelfHostedMigrationJobService>();
-        services.AddScoped<IMigrationPhaseHandler, ArchiveIntegrationNotYetAvailableHandler>();
+        services.AddScoped<IMigrationPhaseHandler, ImportPreparationPhaseHandler>();
+        services.AddScoped<IMigrationPhaseHandler, ExportArtifactPhaseHandler>();
         services.AddScoped<MigrationJobProcessor>();
         services.AddHostedService(s => new MigrationJobWorker(s.GetRequiredService<IServiceScopeFactory>(),
             s.GetRequiredService<TimeProvider>(), s.GetRequiredService<MigrationJobCancellationRegistry>(),
