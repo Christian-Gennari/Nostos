@@ -25,6 +25,27 @@ const EXPIRY_FORMAT = new Intl.DateTimeFormat(undefined, {
   timeStyle: 'short',
 });
 
+/**
+ * A download URL is only safe to assign to an anchor (and auto-click) when it
+ * is the current origin over http(s) or any https URL. The transport owns the
+ * URL, but the automatic path bypasses Angular's sanitizer, so the component
+ * re-checks it (review-730 item 4b).
+ */
+export function isSafeDownloadUrl(url: string | null | undefined): boolean {
+  if (!url) return false;
+  try {
+    const base = typeof globalThis.location !== 'undefined' ? globalThis.location.href : undefined;
+    const parsed = new URL(url, base);
+    if (parsed.protocol === 'https:') return true;
+    if (parsed.protocol !== 'http:') return false;
+    return (
+      typeof globalThis.location !== 'undefined' && parsed.origin === globalThis.location.origin
+    );
+  } catch {
+    return false;
+  }
+}
+
 @Component({
   selector: 'app-library-export-flow',
   standalone: true,
@@ -62,6 +83,9 @@ export class LibraryExportFlowComponent {
     return state ? libraryTransferFailureCopy(state.failure) : null;
   });
 
+  /** True when the ready download URL may be rendered and clicked. */
+  readonly downloadUrlSafe = computed(() => isSafeDownloadUrl(this.ready()?.downloadUrl));
+
   readonly expiryLabel = computed(() => {
     const expiresAt = this.ready()?.expiresAt;
     if (!expiresAt) return null;
@@ -75,7 +99,7 @@ export class LibraryExportFlowComponent {
   constructor() {
     effect(() => {
       const ready = this.ready();
-      if (!ready || !this.autoDownload()) return;
+      if (!ready || !this.autoDownload() || !this.downloadUrlSafe()) return;
       if (this.autoDownloadedJobId === ready.jobId) return;
       this.autoDownloadedJobId = ready.jobId;
       this.attemptNativeDownload(ready.downloadUrl);
@@ -101,10 +125,11 @@ export class LibraryExportFlowComponent {
   /**
    * Clicks a transient native anchor. Never fetches, so the browser owns
    * streaming, ranges and memory; a blocked click leaves the visible link.
+   * Refuses any URL `isSafeDownloadUrl` rejects.
    */
   attemptNativeDownload(url?: string): void {
     const href = url ?? this.ready()?.downloadUrl;
-    if (!href || typeof document === 'undefined') return;
+    if (!href || !isSafeDownloadUrl(href) || typeof document === 'undefined') return;
     const anchor = document.createElement('a');
     anchor.href = href;
     anchor.download = '';

@@ -138,10 +138,11 @@ describe('library-transfer.copy', () => {
       expect(permanent.action).toBe('choose-file');
     });
 
-    it('asks cloud users to sign in instead of implying archive corruption', () => {
+    it('asks cloud users to sign in and keeps the import resumable instead of implying archive corruption', () => {
       const copy = libraryTransferFailureCopy(failure('unexpected_error', { status: 401 }));
       expect(copy.title).toBe('Sign in again');
-      expect(copy.action).toBe('none');
+      expect(copy.action).toBe('sign-in');
+      expect(copy.message).toContain('kept');
       expect(copy.message).not.toContain('corrupt');
     });
 
@@ -174,7 +175,7 @@ describe('library-transfer.copy', () => {
         'request_aborted',
         'unexpected_error',
       ];
-      const actions = new Set(['retry', 'choose-file', 'start-over', 'none']);
+      const actions = new Set(['retry', 'sign-in', 'choose-file', 'start-over', 'none']);
 
       for (const code of codes) {
         const copy = libraryTransferFailureCopy(failure(code, { retryable: true }));

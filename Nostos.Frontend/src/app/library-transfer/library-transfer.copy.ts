@@ -12,7 +12,7 @@
 import type { LibraryTransferFailure } from './models/library-transfer.models';
 
 /** What the flow should offer after a failure. */
-export type TransferFailureAction = 'retry' | 'choose-file' | 'start-over' | 'none';
+export type TransferFailureAction = 'retry' | 'sign-in' | 'choose-file' | 'start-over' | 'none';
 
 export interface TransferFailureCopy {
   title: string;
@@ -221,8 +221,10 @@ export function libraryTransferFailureCopy(failure: LibraryTransferFailure): Tra
       if (failure.status === 401 || failure.status === 403) {
         return {
           title: 'Sign in again',
-          message: 'Your session expired. Sign in again, then retry the import.',
-          action: 'none',
+          message:
+            'Your session expired. Sign in again, then continue; the import is kept and ' +
+            'can resume where it stopped.',
+          action: 'sign-in',
         };
       }
       return {

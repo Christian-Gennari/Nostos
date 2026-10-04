@@ -119,4 +119,47 @@ describe('TransferTabLease', () => {
     const observer = create({ leaseTtlMs: 250 });
     expect(observer.otherTabActive()).toBe(true);
   });
+
+  it('unblocks an already-open observer when a live foreign lease expires, with no storage event', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-04T00:00:00Z'));
+
+    const owner = create({ leaseTtlMs: 1_000 });
+    expect(owner.claim()).toBe(true);
+
+    const observer = create({ leaseTtlMs: 1_000 });
+    observer.refresh();
+    expect(observer.otherTabActive()).toBe(true);
+
+    // The owner crashes: no more heartbeats, no storage event.
+    owner.ngOnDestroy();
+    vi.advanceTimersByTime(1_100);
+
+    expect(observer.otherTabActive()).toBe(false);
+    expect(observer.claim()).toBe(true);
+  });
+
+  it('re-reads the lease on window focus and visibility changes', () => {
+    const observer = create();
+    expect(observer.otherTabActive()).toBe(false);
+
+    writeRecord({ tabId: 'other-tab', updatedAt: Date.now(), fileName: 'elsewhere.nostos' });
+    window.dispatchEvent(new Event('focus'));
+    expect(observer.otherTabActive()).toBe(true);
+
+    localStorage.removeItem(TRANSFER_TAB_LEASE_KEY);
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(observer.otherTabActive()).toBe(false);
+  });
+
+  it('releases its own lease on pagehide and beforeunload but never a foreign one', () => {
+    const owner = create();
+    expect(owner.claim()).toBe(true);
+    window.dispatchEvent(new Event('pagehide'));
+    expect(localStorage.getItem(TRANSFER_TAB_LEASE_KEY)).toBeNull();
+
+    writeRecord({ tabId: 'other-tab', updatedAt: Date.now() });
+    window.dispatchEvent(new Event('beforeunload'));
+    expect(JSON.parse(localStorage.getItem(TRANSFER_TAB_LEASE_KEY)!).tabId).toBe('other-tab');
+  });
 });

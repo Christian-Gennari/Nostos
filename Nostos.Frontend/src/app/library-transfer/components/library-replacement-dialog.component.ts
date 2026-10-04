@@ -13,6 +13,12 @@
  * (review-724 counts item). Safe activation is a host capability: until #681
  * advertises it, the destructive action is disabled and the plan's explanatory
  * copy is shown instead.
+ *
+ * `busy` is the seal: the flow sets it the moment destructive intent is
+ * emitted, and ModalShell's `busy` input makes Escape and backdrop clicks
+ * inert while the host activates (review-730 item 3). A reported activation
+ * failure arrives as `errorMessage`, which unseals the dialog and re-arms the
+ * destructive action as a retry.
  */
 
 import { ChangeDetectionStrategy, Component, computed, effect, input, output } from '@angular/core';
@@ -40,7 +46,12 @@ export class LibraryReplacementDialogComponent {
   /** Raw `MigrationJobStatusResponseDto.preparedImport`; read defensively. */
   readonly preparedImport = input<unknown>(null);
   readonly supportsSafeActivation = input(false);
+  /** Sealed while the host performs the confirmed replacement. */
   readonly busy = input(false);
+  /** Label on the sealed action while `busy`. */
+  readonly busyLabel = input<string>('Finishing…');
+  /** Host-reported activation failure; non-null unseals and shows the error. */
+  readonly errorMessage = input<string | null>(null);
 
   readonly confirmed = output<void>();
   readonly cancelled = output<void>();
@@ -48,10 +59,11 @@ export class LibraryReplacementDialogComponent {
   private confirmedOnce = false;
 
   constructor() {
-    // Reopening the dialog (e.g. after a destination conflict re-review) starts
-    // a fresh confirmation, never a stale "already confirmed" latch.
     effect(() => {
-      if (!this.isOpen()) this.confirmedOnce = false;
+      // Reopening (destination-conflict re-review) and a host-reported failure
+      // both start a fresh destructive decision; only a successful submission
+      // keeps the latch.
+      if (!this.isOpen() || this.errorMessage()) this.confirmedOnce = false;
     });
   }
 
@@ -88,7 +100,7 @@ export class LibraryReplacementDialogComponent {
       : 'Estimated from the archive manifest. Nostos will confirm the final counts before replacing.',
   );
 
-  /** Emits once; the destructive action cannot be re-entered. */
+  /** Emits once per decision; the destructive action cannot be re-entered. */
   confirm(): void {
     if (!this.supportsSafeActivation() || this.busy() || this.confirmedOnce) return;
     this.confirmedOnce = true;

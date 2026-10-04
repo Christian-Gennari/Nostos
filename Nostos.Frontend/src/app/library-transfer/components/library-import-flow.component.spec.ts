@@ -13,6 +13,7 @@ import {
   TransferTabLease,
   TransferTabLeaseRecord,
   TRANSFER_TAB_LEASE_KEY,
+  TRANSFER_TAB_LEASE_TTL_MS,
 } from '../services/transfer-tab-lease.service';
 import {
   LIBRARY_TRANSFER_TRANSPORT,
@@ -140,6 +141,22 @@ async function waitForKind(
 
 function testId(harness: Harness, id: string): HTMLElement | null {
   return harness.fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
+}
+
+/** Advances promise and macrotask work with real timers, rendering after each turn. */
+async function flushReal(harness: Harness, rounds = 40): Promise<void> {
+  for (let index = 0; index < rounds; index += 1) {
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    harness.fixture.detectChanges();
+  }
+}
+
+/** Flushes microtasks and timers under fake timers, rendering after each turn. */
+async function flushFake(harness: Harness, rounds = 10): Promise<void> {
+  for (let index = 0; index < rounds; index += 1) {
+    await vi.advanceTimersByTimeAsync(0);
+    harness.fixture.detectChanges();
+  }
 }
 
 function preflightRequest(archiveBytes: number): MigrationPreflightRequestDto {
@@ -364,6 +381,20 @@ class DeferredPreflightTransport extends DelegatingTransport {
 class FailingCompleteTransport extends DelegatingTransport {
   override completeUpload(): Promise<MigrationSessionStatusDto> {
     return Promise.reject(new MigrationTransportError('network_error', 0, 'connection lost'));
+  }
+}
+
+/** Rejects the first resume with a 401, then behaves normally (re-authenticated). */
+class UnauthorizedOnceTransport extends DelegatingTransport {
+  unauthorized = true;
+
+  override getJob(jobId: string, signal?: AbortSignal): Promise<MigrationJobStatusResponseDto> {
+    if (this.unauthorized) {
+      return Promise.reject(
+        new MigrationTransportError('unexpected_error', 401, 'sign in required'),
+      );
+    }
+    return this.inner.getJob(jobId, signal);
   }
 }
 
@@ -607,8 +638,78 @@ describe('LibraryImportFlowComponent', () => {
         ? (harness.coordinator.state() as { jobId: string }).jobId
         : expect.any(String),
     );
+  });
 
-    (harness.fixture.nativeElement.querySelector('.replacement-cancel') as HTMLButtonElement).click();
+  it('seals the replacement dialog after confirmation: Escape, backdrop, Cancel and repeat confirms are inert', async () => {
+    const harness = setup({ destinationStatus: 'Populated', existingCounts: { books: 1 } });
+    const confirmed = vi.fn();
+    harness.component.replacementConfirmed.subscribe(confirmed);
+    const file = await portableFile();
+
+    selectFile(harness, file);
+    await waitForKind(harness, 'replacement-confirmation');
+    harness.fixture.componentRef.setInput('supportsSafeActivation', true);
+    harness.fixture.detectChanges();
+
+    const confirmButton = () =>
+      harness.fixture.nativeElement.querySelector('.replacement-confirm') as HTMLButtonElement;
+    const cancelButton = () =>
+      harness.fixture.nativeElement.querySelector('.replacement-cancel') as HTMLButtonElement;
+
+    confirmButton().click();
+    harness.fixture.detectChanges();
+
+    expect(confirmed).toHaveBeenCalledTimes(1);
+    expect(testId(harness, 'replacement-sealed')).toBeTruthy();
+    expect(cancelButton().disabled).toBe(true);
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    const backdrop = harness.fixture.nativeElement.querySelector('.modal-backdrop') as HTMLElement;
+    for (const type of ['pointerdown', 'pointerup'] as const) {
+      const event = new Event(type, { bubbles: true }) as PointerEvent;
+      Object.defineProperty(event, 'pointerId', { value: 1 });
+      backdrop.dispatchEvent(event);
+    }
+    cancelButton().click();
+    confirmButton().click();
+    harness.fixture.detectChanges();
+
+    expect(confirmed).toHaveBeenCalledTimes(1);
+    expect(harness.coordinator.state().kind).toBe('replacement-confirmation');
+    expect(testId(harness, 'import-completed')).toBeNull();
+  });
+
+  it('unseals the replacement dialog on a host activation failure and allows retry or cancel', async () => {
+    const harness = setup({ destinationStatus: 'Populated', existingCounts: { books: 1 } });
+    const confirmed = vi.fn();
+    harness.component.replacementConfirmed.subscribe(confirmed);
+    const file = await portableFile();
+
+    selectFile(harness, file);
+    await waitForKind(harness, 'replacement-confirmation');
+    harness.fixture.componentRef.setInput('supportsSafeActivation', true);
+    harness.fixture.detectChanges();
+
+    const confirmButton = () =>
+      harness.fixture.nativeElement.querySelector('.replacement-confirm') as HTMLButtonElement;
+    const cancelButton = () =>
+      harness.fixture.nativeElement.querySelector('.replacement-cancel') as HTMLButtonElement;
+
+    confirmButton().click();
+    harness.fixture.detectChanges();
+
+    harness.fixture.componentRef.setInput('activationState', 'failed');
+    harness.fixture.componentRef.setInput('activationErrorCode', 'portable_import_failed');
+    harness.fixture.detectChanges();
+
+    expect(testId(harness, 'replacement-error')).toBeTruthy();
+    expect(testId(harness, 'replacement-sealed')).toBeNull();
+    expect(cancelButton().disabled).toBe(false);
+
+    confirmButton().click();
+    expect(confirmed).toHaveBeenCalledTimes(2);
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     await waitForKind(harness, 'cancelled');
   });
 
@@ -650,6 +751,85 @@ describe('LibraryImportFlowComponent', () => {
     expect(second.coordinator.state().kind).toBe('idle');
     expect(second.store.load()).toEqual(record);
     expect(harness.mock.calls.createJob).toBe(0);
+  });
+
+  it('claims the lease for auto-resume so a second tab cannot resume the same record', async () => {
+    const harness = setup();
+    const file = await largePortableFile();
+    const total = chunkCount(file.size, CHUNK);
+    const record = await stageResumable(harness, file, total - 1);
+
+    // Tab A mounts with the record and must claim before resuming.
+    const first = reload(harness.mock, harness.mock);
+    await waitForKind(first, 'ready-to-upload');
+    const ownedLease = JSON.parse(localStorage.getItem(TRANSFER_TAB_LEASE_KEY)!);
+    expect(ownedLease.tabId).toBeTruthy();
+    const resumedByFirst = harness.mock.calls.getJob;
+    expect(resumedByFirst).toBeGreaterThan(0);
+
+    // Tab A is torn down host-side while the root-scoped transfer is active:
+    // the lease must survive so the transfer is not silently offered elsewhere.
+    first.fixture.destroy();
+    TestBed.resetTestingModule();
+    expect(localStorage.getItem(TRANSFER_TAB_LEASE_KEY)).not.toBeNull();
+
+    // Tab B mounts: it shows the notice and never resumes.
+    const second = configure(harness.mock, harness.mock);
+    second.fixture.detectChanges();
+    expect(testId(second, 'transfer-other-tab')).toBeTruthy();
+    expect(second.coordinator.state().kind).toBe('idle');
+    expect(harness.mock.calls.getJob).toBe(resumedByFirst);
+    expect(second.store.load()).toEqual(record);
+  });
+
+  it('unblocks and resumes automatically when the owner lease expires, without a storage event', async () => {
+    const harness = setup();
+    const file = await largePortableFile();
+    const total = chunkCount(file.size, CHUNK);
+    await stageResumable(harness, file, total - 1);
+
+    // Freeze the clock only after staging: the digest reads real Blob data.
+    const frozenNow = Date.now();
+    vi.useFakeTimers();
+    vi.setSystemTime(frozenNow);
+
+    // A foreign tab owns a live lease over the same record.
+    localStorage.setItem(
+      TRANSFER_TAB_LEASE_KEY,
+      JSON.stringify({ tabId: 'other-tab', updatedAt: Date.now(), fileName: file.name }),
+    );
+
+    const blocked = reload(harness.mock, harness.mock);
+    blocked.fixture.detectChanges();
+    expect(testId(blocked, 'transfer-other-tab')).toBeTruthy();
+    expect(blocked.coordinator.state().kind).toBe('idle');
+
+    // The owner crashes: no heartbeat, no storage event, only time passes.
+    await vi.advanceTimersByTimeAsync(TRANSFER_TAB_LEASE_TTL_MS + 100);
+    await flushFake(blocked, 20);
+
+    expect(blocked.coordinator.state().kind).toBe('ready-to-upload');
+    expect(testId(blocked, 'transfer-other-tab')).toBeNull();
+    expect(testId(blocked, 'import-resume-file')).toBeTruthy();
+  });
+
+  it('frees a blocked tab as soon as the owner releases the lease', async () => {
+    const harness = setup();
+    const file = await largePortableFile();
+    const total = chunkCount(file.size, CHUNK);
+    await stageResumable(harness, file, total - 1);
+
+    dispatchLease({ tabId: 'other-tab', updatedAt: Date.now(), fileName: file.name });
+    const blocked = reload(harness.mock, harness.mock);
+    blocked.fixture.detectChanges();
+    expect(testId(blocked, 'transfer-other-tab')).toBeTruthy();
+
+    // The owner finishes: the lease is removed and the storage event arrives.
+    dispatchLease(null);
+    await flushReal(blocked);
+
+    expect(testId(blocked, 'transfer-other-tab')).toBeNull();
+    expect(blocked.coordinator.state().kind).toBe('ready-to-upload');
   });
 
   it('renders actionable copy for an unsupported file and offers a different file', async () => {
@@ -720,6 +900,28 @@ describe('LibraryImportFlowComponent', () => {
     expect(retry).toHaveBeenCalledTimes(1);
   });
 
+  it('offers sign-in recovery after a 401, preserves the record and resumes after re-authentication', async () => {
+    const harness = setup();
+    const file = await largePortableFile();
+    const total = chunkCount(file.size, CHUNK);
+    const record = await stageResumable(harness, file, total - 1);
+
+    const transport = new UnauthorizedOnceTransport(harness.mock);
+    const reloaded = reload(harness.mock, transport);
+    await waitForKind(reloaded, 'failed');
+
+    expect(testId(reloaded, 'import-failed')?.textContent).toContain('Sign in again');
+    const action = testId(reloaded, 'import-failure-action') as HTMLButtonElement;
+    expect(action.textContent).toContain('Try again');
+    expect(reloaded.store.load()).toEqual(record);
+
+    transport.unauthorized = false;
+    action.click();
+    await waitForKind(reloaded, 'ready-to-upload');
+
+    expect(testId(reloaded, 'import-resume-file')).toBeTruthy();
+  });
+
   it('shows the checking phase while the server validates, then completes once', async () => {
     const mock = new MockLibraryTransferTransport({ chunkSizeBytes: CHUNK });
     const transport = new GatedStatusTransport(mock);
@@ -729,7 +931,8 @@ describe('LibraryImportFlowComponent', () => {
     const file = await portableFile();
 
     selectFile(harness, file);
-    await waitForKind(harness, 'checking');
+    await flushReal(harness, 80);
+    expect(harness.coordinator.state().kind).toBe('checking');
 
     expect(testId(harness, 'import-checking')).toBeTruthy();
     expect(testId(harness, 'import-checking')?.textContent).toContain(
@@ -743,8 +946,9 @@ describe('LibraryImportFlowComponent', () => {
     const jobId = (harness.coordinator.state() as { jobId: string }).jobId;
     mock.setJobState(jobId, 'Completed');
     await transport.releaseAll();
-    await waitForKind(harness, 'completed');
+    await flushReal(harness, 20);
 
+    expect(harness.coordinator.state().kind).toBe('completed');
     expect(testId(harness, 'import-completed')).toBeTruthy();
     expect(completed).toHaveBeenCalledTimes(1);
 
@@ -794,6 +998,107 @@ describe('LibraryImportFlowComponent', () => {
     (testId(harness, 'import-done') as HTMLButtonElement).click();
     harness.fixture.detectChanges();
     expect(testId(harness, 'import-idle')).toBeTruthy();
+    expect(harness.store.load()).toBeNull();
+  });
+
+  it('hands an empty-destination job to the host exactly once with activationRequested', async () => {
+    const harness = setup();
+    const requested = vi.fn();
+    harness.component.activationRequested.subscribe(requested);
+    const file = await portableFile();
+
+    selectFile(harness, file);
+    await waitForKind(harness, 'ready-empty');
+    harness.fixture.detectChanges();
+    harness.fixture.detectChanges();
+
+    const jobId = (harness.coordinator.state() as { jobId: string }).jobId;
+    expect(requested).toHaveBeenCalledTimes(1);
+    expect(requested).toHaveBeenCalledWith(jobId);
+  });
+
+  it('shows an in-progress waiting state and hides Cancel while the host activates', async () => {
+    const harness = setup();
+    const file = await portableFile();
+
+    selectFile(harness, file);
+    await waitForKind(harness, 'ready-empty');
+    harness.fixture.componentRef.setInput('supportsSafeActivation', true);
+    harness.fixture.componentRef.setInput('activationState', 'in-progress');
+    harness.fixture.detectChanges();
+
+    expect(testId(harness, 'import-ready-empty')?.textContent).toContain(
+      'Import prepared — finishing…',
+    );
+    expect(testId(harness, 'transfer-progress')).toBeTruthy();
+    expect(testId(harness, 'import-cancel')).toBeNull();
+    expect(testId(harness, 'import-dismiss')).toBeNull();
+  });
+
+  it('explains gated activation and Dismiss returns to idle while keeping the record', async () => {
+    const harness = setup();
+    const file = await portableFile();
+
+    selectFile(harness, file);
+    await waitForKind(harness, 'ready-empty');
+    harness.fixture.detectChanges();
+
+    expect(testId(harness, 'import-activation-unavailable')?.textContent).toContain(
+      'can’t finish the import automatically yet',
+    );
+    const record = harness.store.load();
+    expect(record).not.toBeNull();
+
+    (testId(harness, 'import-dismiss') as HTMLButtonElement).click();
+    harness.fixture.detectChanges();
+
+    expect(harness.coordinator.state().kind).toBe('idle');
+    expect(testId(harness, 'import-idle')).toBeTruthy();
+    expect(harness.store.load()).toEqual(record);
+  });
+
+  it('reports a host activation failure with retry and cancel', async () => {
+    const harness = setup();
+    const requested = vi.fn();
+    const file = await portableFile();
+
+    selectFile(harness, file);
+    await waitForKind(harness, 'ready-empty');
+    harness.component.activationRequested.subscribe(requested);
+
+    harness.fixture.componentRef.setInput('supportsSafeActivation', true);
+    harness.fixture.componentRef.setInput('activationState', 'failed');
+    harness.fixture.componentRef.setInput('activationErrorCode', 'migration_storage_exhausted');
+    harness.fixture.detectChanges();
+
+    expect(testId(harness, 'import-activation-failed')?.getAttribute('role')).toBe('alert');
+    expect(testId(harness, 'import-activation-failed')?.textContent).toContain('Not enough storage');
+
+    (testId(harness, 'import-activation-retry') as HTMLButtonElement).click();
+    expect(requested).toHaveBeenCalledTimes(1);
+  });
+
+  it('finishes an empty-destination import when the host reports completion', async () => {
+    const harness = setup();
+    const completed = vi.fn();
+    harness.component.importCompleted.subscribe(completed);
+    const file = await portableFile();
+
+    selectFile(harness, file);
+    await waitForKind(harness, 'ready-empty');
+
+    harness.fixture.componentRef.setInput('supportsSafeActivation', true);
+    harness.fixture.componentRef.setInput('activationState', 'completed');
+    harness.fixture.detectChanges();
+    harness.fixture.detectChanges();
+
+    expect(testId(harness, 'import-completed')).toBeTruthy();
+    expect(completed).toHaveBeenCalledTimes(1);
+
+    (testId(harness, 'import-done') as HTMLButtonElement).click();
+    harness.fixture.detectChanges();
+    expect(testId(harness, 'import-idle')).toBeTruthy();
+    expect(harness.store.load()).toBeNull();
   });
 
   it('renders the transient upload-start state for a ready job that is not reselecting', () => {

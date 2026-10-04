@@ -9,7 +9,7 @@
     data-testid="library-import-file-input"
   />
 
-  @if (otherTabActive() && state().kind === 'idle') {
+  @if (blockedByOtherTab()) {
     <div class="transfer-other-tab" role="status" data-testid="transfer-other-tab">
       <nostos-icon name="warning-circle" [size]="16" />
       <div>
@@ -183,11 +183,100 @@
         </div>
       }
     </div>
-  } @else if (readyEmpty()) {
-    <div class="transfer-state" data-testid="import-ready-empty">
-      <p class="transfer-headline" role="status">Your imported library is checked and ready.</p>
-      <p class="transfer-copy">No replacement is needed for this library.</p>
+  } @else if (completed()) {
+    <div class="transfer-state" data-testid="import-completed">
+      <p class="transfer-headline" role="status">Import complete.</p>
+      <p class="transfer-copy">Your library is ready.</p>
+      <div class="transfer-actions">
+        <button
+          appButton
+          type="button"
+          variant="primary"
+          (click)="done()"
+          data-testid="import-done"
+        >
+          Done
+        </button>
+      </div>
     </div>
+  } @else if (readyEmpty()) {
+    @if (activationFailureCopy(); as copy) {
+      <div
+        class="transfer-state transfer-state--failed"
+        role="alert"
+        data-testid="import-activation-failed"
+      >
+        <p class="transfer-headline">{{ copy.title }}</p>
+        <p class="transfer-copy">{{ copy.message }}</p>
+        <div class="transfer-actions">
+          <button
+            appButton
+            type="button"
+            variant="secondary"
+            (click)="retryActivation()"
+            data-testid="import-activation-retry"
+          >
+            Retry import
+          </button>
+          <button
+            appButton
+            type="button"
+            variant="ghost"
+            (click)="cancel()"
+            data-testid="import-cancel"
+          >
+            Cancel import
+          </button>
+        </div>
+      </div>
+    } @else if (activationGated()) {
+      <div class="transfer-state" data-testid="import-ready-empty">
+        <p class="transfer-headline" role="status">Import prepared.</p>
+        <p class="transfer-copy">The archive is checked and no replacement is needed.</p>
+        <p class="transfer-copy" data-testid="import-activation-unavailable">
+          This host can’t finish the import automatically yet. The server keeps the prepared
+          import, so you can finish it later from this browser.
+        </p>
+        <div class="transfer-actions">
+          <button
+            appButton
+            type="button"
+            variant="primary"
+            (click)="dismissPrepared()"
+            data-testid="import-dismiss"
+          >
+            Dismiss
+          </button>
+          <button
+            appButton
+            type="button"
+            variant="ghost"
+            (click)="cancel()"
+            data-testid="import-cancel"
+          >
+            Cancel import
+          </button>
+        </div>
+      </div>
+    } @else {
+      <div class="transfer-state" data-testid="import-ready-empty">
+        <p class="transfer-headline" role="status">Import prepared — finishing…</p>
+        <app-library-transfer-progress phase="activating" />
+        <div class="transfer-actions">
+          @if (!activationInProgress()) {
+            <button
+              appButton
+              type="button"
+              variant="ghost"
+              (click)="cancel()"
+              data-testid="import-cancel"
+            >
+              Cancel import
+            </button>
+          }
+        </div>
+      </div>
+    }
   } @else if (replacement(); as current) {
     <div class="transfer-state" data-testid="import-replacement">
       <p class="transfer-headline">Replacement confirmation needed</p>
@@ -200,25 +289,12 @@
       [preflight]="current.preflight ?? null"
       [preparedImport]="current.preparedImport ?? null"
       [supportsSafeActivation]="supportsSafeActivation()"
+      [busy]="replacementSealed()"
+      [busyLabel]="replacementBusyLabel()"
+      [errorMessage]="replacementError()"
       (confirmed)="onReplacementConfirmed()"
       (cancelled)="onReplacementCancelled()"
     />
-  } @else if (completed()) {
-    <div class="transfer-state" data-testid="import-completed">
-      <p class="transfer-headline" role="status">Import complete.</p>
-      <p class="transfer-copy">Your library is ready.</p>
-      <div class="transfer-actions">
-        <button
-          appButton
-          type="button"
-          variant="primary"
-          (click)="dismiss()"
-          data-testid="import-done"
-        >
-          Done
-        </button>
-      </div>
-    </div>
   } @else if (failed(); as current) {
     @if (failureCopy(); as copy) {
       <div class="transfer-state transfer-state--failed" role="alert" data-testid="import-failed">
@@ -259,7 +335,7 @@
           appButton
           type="button"
           variant="ghost"
-          (click)="dismiss()"
+          (click)="done()"
           data-testid="import-close"
         >
           Close

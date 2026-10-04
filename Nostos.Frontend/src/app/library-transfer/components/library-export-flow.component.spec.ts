@@ -1,6 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
-import { LibraryExportFlowComponent } from './library-export-flow.component';
+import { LibraryExportFlowComponent, isSafeDownloadUrl } from './library-export-flow.component';
 import {
   DEFAULT_EXPORT_POLL_MS,
   LibraryExportCoordinator,
@@ -17,6 +17,8 @@ class ExportTransport extends DelegatingTransport {
   failCreate = false;
   onCreated: ((jobId: string) => void) | null = null;
   expiresAt: string | null = null;
+  /** Replaces the transport's download URL, for URL-safety tests. */
+  overrideDownloadUrl: string | null = null;
   /** Sets the job to Validating on this getJob call number (createJob counts as 1). */
   setValidatingOnGetJob: number | null = null;
 
@@ -42,6 +44,10 @@ class ExportTransport extends DelegatingTransport {
     }
     const status = await this.inner.getJob(jobId, signal);
     return this.expiresAt ? { ...status, artifactExpiresAtUtc: this.expiresAt } : status;
+  }
+
+  override getExportDownloadUrl(jobId: string): string {
+    return this.overrideDownloadUrl ?? this.inner.getExportDownloadUrl(jobId);
   }
 }
 
@@ -139,6 +145,33 @@ describe('LibraryExportFlowComponent', () => {
     expect(
       harness.fixture.nativeElement.querySelector('[data-testid="library-export-download"]'),
     ).toBeTruthy();
+  });
+
+  it('accepts only same-origin http or https download URLs', () => {
+    expect(isSafeDownloadUrl('/api/portability/migration/jobs/1/export-download')).toBe(true);
+    expect(isSafeDownloadUrl('https://cdn.example.com/archive.nostos')).toBe(true);
+    expect(isSafeDownloadUrl(`${globalThis.location.origin}/download`)).toBe(true);
+    expect(isSafeDownloadUrl('javascript:alert(1)')).toBe(false);
+    expect(isSafeDownloadUrl('ftp://example.com/archive.nostos')).toBe(false);
+    expect(isSafeDownloadUrl('http://evil.example/archive.nostos')).toBe(false);
+    expect(isSafeDownloadUrl(null)).toBe(false);
+  });
+
+  it('refuses an unsafe automatic download URL and shows the fallback error instead of an anchor', async () => {
+    const harness = setup();
+    harness.transport.readyOnCreate = true;
+    harness.transport.overrideDownloadUrl = 'javascript:alert(1)';
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click');
+
+    (testId(harness, 'export-start') as HTMLButtonElement).click();
+    await waitForReady(harness);
+
+    expect(testId(harness, 'export-url-error')?.getAttribute('role')).toBe('alert');
+    expect(
+      harness.fixture.nativeElement.querySelector('[data-testid="library-export-download"]'),
+    ).toBeNull();
+    expect(testId(harness, 'export-restart')).toBeTruthy();
+    expect(click).not.toHaveBeenCalled();
   });
 
   it('shows the preparing phase and cancels the export', async () => {

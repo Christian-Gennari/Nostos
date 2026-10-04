@@ -1,17 +1,24 @@
 /**
  * Cross-tab coordination for the single foreground import (plan §50,
- * review-724 B4 item).
+ * review-724/review-730 B4 item).
  *
  * The resume record is one shared localStorage key, so two tabs can each load
  * it and start an import; the second writer silently overwrites the first
  * tab's record and the first transfer becomes locally undiscoverable. The
  * server remains authoritative, so this is a UX lease, not a correctness
- * boundary: a tab that owns the lease refreshes it on a heartbeat, other tabs
- * see "an import is already in progress" and keep their controls closed, and a
- * crashed tab's lease expires so the flow can be recovered elsewhere.
+ * boundary: a tab that owns the lease refreshes it on a heartbeat while a
+ * transfer is active, other tabs see "an import is already in progress" and
+ * keep their controls closed, and a crashed tab's lease expires so the flow can
+ * be recovered elsewhere.
  *
- * localStorage writes do not fire `storage` in the writing tab, so the owning
- * tab also refreshes its own view after claim/touch/release.
+ * Two details review-730 required:
+ *
+ * - freshness is time-dependent, so an already-open observer schedules a timer
+ *   for the live record's expiry and re-reads when it fires; otherwise the
+ *   cached `otherTabActive` signal could stay true forever after a crash.
+ * - `storage` is not the only way a lease can change; focus and visibility
+ *   changes also re-read, and `pagehide`/`beforeunload` release this tab's own
+ *   lease so a reload never leaves a false owner behind.
  */
 
 import { Injectable, OnDestroy, computed, signal } from '@angular/core';
@@ -40,10 +47,14 @@ export class TransferTabLease implements OnDestroy {
   private readonly tabId = randomTabId();
   private readonly recordSignal = signal<TransferTabLeaseRecord | null>(null);
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private expiryTimer: ReturnType<typeof setTimeout> | null = null;
 
   private readonly onStorage = (event: StorageEvent): void => {
     if (event.key === null || event.key === TRANSFER_TAB_LEASE_KEY) this.refresh();
   };
+
+  private readonly onWindowActivity = (): void => this.refresh();
+  private readonly onPageHide = (): void => this.release();
 
   /** True when a live lease is held by a different tab. */
   readonly otherTabActive = computed(() => {
@@ -60,19 +71,26 @@ export class TransferTabLease implements OnDestroy {
   constructor() {
     if (typeof window !== 'undefined') {
       window.addEventListener('storage', this.onStorage);
-      this.refresh();
+      window.addEventListener('focus', this.onWindowActivity);
+      window.addEventListener('pagehide', this.onPageHide);
+      window.addEventListener('beforeunload', this.onPageHide);
     }
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', this.onWindowActivity);
+    }
+    this.refresh();
   }
 
   /**
    * Claims the lease for this tab. Returns false (and records the other tab's
    * claim) when a live lease is already held elsewhere; the caller must not
-   * start a transfer in that case.
+   * start or continue a transfer in that case.
    */
   claim(fileName?: string): boolean {
     const current = this.read();
     if (current && current.tabId !== this.tabId && this.isFresh(current)) {
       this.recordSignal.set(current);
+      this.scheduleExpiry(current);
       return false;
     }
 
@@ -98,20 +116,54 @@ export class TransferTabLease implements OnDestroy {
     this.refresh();
   }
 
-  /** Re-reads the lease from storage (storage events use this too). */
+  /**
+   * Re-reads the lease from storage. Called by storage events, focus and
+   * visibility changes, and the expiry timer.
+   */
   refresh(): void {
-    this.recordSignal.set(this.read());
+    const record = this.read();
+    this.recordSignal.set(record);
+    this.scheduleExpiry(record);
   }
 
   ngOnDestroy(): void {
     if (typeof window !== 'undefined') {
       window.removeEventListener('storage', this.onStorage);
+      window.removeEventListener('focus', this.onWindowActivity);
+      window.removeEventListener('pagehide', this.onPageHide);
+      window.removeEventListener('beforeunload', this.onPageHide);
+    }
+    if (typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', this.onWindowActivity);
     }
     this.stopHeartbeat();
+    this.clearExpiry();
   }
 
   private isFresh(record: TransferTabLeaseRecord): boolean {
     return this.now() - record.updatedAt <= this.leaseTtlMs;
+  }
+
+  /**
+   * When another tab owns a live lease, wakes up exactly when it goes stale so
+   * an already-open observer unblocks without needing a storage event.
+   */
+  private scheduleExpiry(record: TransferTabLeaseRecord | null): void {
+    this.clearExpiry();
+    if (!record || record.tabId === this.tabId) return;
+
+    const remaining = record.updatedAt + this.leaseTtlMs - this.now();
+    if (remaining <= 0) return;
+
+    this.expiryTimer = setTimeout(() => {
+      this.expiryTimer = null;
+      this.refresh();
+    }, remaining);
+  }
+
+  private clearExpiry(): void {
+    if (this.expiryTimer !== null) clearTimeout(this.expiryTimer);
+    this.expiryTimer = null;
   }
 
   private read(): TransferTabLeaseRecord | null {
@@ -129,6 +181,7 @@ export class TransferTabLease implements OnDestroy {
   private write(record: TransferTabLeaseRecord): void {
     this.storage()?.setItem(TRANSFER_TAB_LEASE_KEY, JSON.stringify(record));
     this.recordSignal.set(record);
+    this.scheduleExpiry(record);
   }
 
   private startHeartbeat(): void {

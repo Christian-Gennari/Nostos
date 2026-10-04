@@ -64,6 +64,16 @@
         </p>
       }
 
+      @if (errorMessage(); as error) {
+        <p class="replacement-error" role="alert" data-testid="replacement-error">{{ error }}</p>
+      }
+
+      @if (busy()) {
+        <p class="replacement-note" role="status" data-testid="replacement-sealed">
+          The replacement is in progress. This dialog stays open until it finishes.
+        </p>
+      }
+
       <app-dialog-actions shellActions variant="inset" [stackOnNarrow]="true">
         <button
           appButton
@@ -85,7 +95,12 @@
           [busy]="busy()"
           (click)="confirm()"
         >
-          Replace library
+          @if (busy()) {
+            <nostos-icon name="circle-notch" [size]="14" class="spin-icon" />
+            <span>{{ busyLabel() }}</span>
+          } @else {
+            Replace library
+          }
         </button>
       </app-dialog-actions>
     </app-modal-shell>

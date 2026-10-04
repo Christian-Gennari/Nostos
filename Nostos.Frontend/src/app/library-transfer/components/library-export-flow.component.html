@@ -42,31 +42,57 @@
   } @else if (ready(); as current) {
     <div class="transfer-state" data-testid="export-ready">
       <p class="transfer-headline" role="status">Your export is ready.</p>
-      <div class="transfer-actions">
-        <a
-          appButton
-          variant="primary"
-          [href]="current.downloadUrl"
-          download
-          data-testid="library-export-download"
-        >
-          Download archive
-        </a>
-        <button
-          appButton
-          type="button"
-          variant="ghost"
-          (click)="dismiss()"
-          data-testid="export-close"
-        >
-          Close
-        </button>
-      </div>
-      <p class="transfer-copy">
-        If your browser did not start the download automatically, use Download archive.
-      </p>
-      @if (expiryLabel(); as expiry) {
-        <p class="transfer-copy" data-testid="export-expiry">{{ expiry }}</p>
+      @if (downloadUrlSafe()) {
+        <div class="transfer-actions">
+          <a
+            appButton
+            variant="primary"
+            [href]="current.downloadUrl"
+            download
+            data-testid="library-export-download"
+          >
+            Download archive
+          </a>
+          <button
+            appButton
+            type="button"
+            variant="ghost"
+            (click)="dismiss()"
+            data-testid="export-close"
+          >
+            Close
+          </button>
+        </div>
+        <p class="transfer-copy">
+          If your browser did not start the download automatically, use Download archive.
+        </p>
+        @if (expiryLabel(); as expiry) {
+          <p class="transfer-copy" data-testid="export-expiry">{{ expiry }}</p>
+        }
+      } @else {
+        <p class="transfer-error" role="alert" data-testid="export-url-error">
+          Nostos returned a download link this browser cannot use safely. Start the export again.
+        </p>
+        <div class="transfer-actions">
+          <button
+            appButton
+            type="button"
+            variant="secondary"
+            (click)="start()"
+            data-testid="export-restart"
+          >
+            Start export again
+          </button>
+          <button
+            appButton
+            type="button"
+            variant="ghost"
+            (click)="dismiss()"
+            data-testid="export-close"
+          >
+            Close
+          </button>
+        </div>
       }
     </div>
   } @else if (failed()) {

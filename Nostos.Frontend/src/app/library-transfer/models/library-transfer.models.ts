@@ -220,8 +220,10 @@ const FLOW_TRANSITIONS: Record<TransferFlowState['kind'], readonly TransferFlowS
   ],
   // A verified job can still be cancelled while it is waiting to activate,
   // and activation (B8) moves it to checking/completed or fails it (plan §32).
-  'ready-empty': ['checking', 'completed', 'cancelled', 'failed'],
-  'replacement-confirmation': ['checking', 'completed', 'cancelled', 'failed'],
+  // Dismissing a verified-but-not-yet-activatable job returns to idle while
+  // keeping its resume record (review-730 item 2).
+  'ready-empty': ['idle', 'checking', 'completed', 'cancelled', 'failed'],
+  'replacement-confirmation': ['idle', 'checking', 'completed', 'cancelled', 'failed'],
   completed: ['idle'],
   failed: ['inspecting', 'uploading', 'checking', 'ready-to-upload'],
   cancelled: ['idle', 'inspecting'],

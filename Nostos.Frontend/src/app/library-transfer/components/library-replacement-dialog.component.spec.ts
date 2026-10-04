@@ -183,6 +183,51 @@ describe('LibraryReplacementDialogComponent', () => {
     expect(confirmed).toHaveBeenCalledTimes(1);
   });
 
+  it('is sealed while busy: confirm and cancel are disabled and Escape emits nothing', async () => {
+    await create({ supportsSafeActivation: true, busy: true });
+    fixture.componentRef.setInput('busyLabel', 'Replacing library…');
+    fixture.detectChanges();
+
+    const confirmed = vi.fn();
+    const cancelled = vi.fn();
+    component.confirmed.subscribe(confirmed);
+    component.cancelled.subscribe(cancelled);
+
+    confirmButton().click();
+    (fixture.nativeElement.querySelector('.replacement-cancel') as HTMLButtonElement).click();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+
+    expect(confirmed).not.toHaveBeenCalled();
+    expect(cancelled).not.toHaveBeenCalled();
+    expect(element('replacement-sealed')).toBeTruthy();
+    expect(confirmButton().textContent).toContain('Replacing library…');
+    expect(confirmButton().disabled).toBe(true);
+  });
+
+  it('shows a host activation error, unseals and re-arms the destructive action as retry', async () => {
+    await create({ supportsSafeActivation: true });
+    const confirmed = vi.fn();
+    component.confirmed.subscribe(confirmed);
+
+    confirmButton().click();
+    expect(confirmed).toHaveBeenCalledTimes(1);
+
+    fixture.componentRef.setInput('busy', true);
+    fixture.detectChanges();
+    expect(element('replacement-sealed')).toBeTruthy();
+
+    fixture.componentRef.setInput('errorMessage', 'Activation failed.');
+    fixture.componentRef.setInput('busy', false);
+    fixture.detectChanges();
+
+    expect(element('replacement-error')?.textContent).toContain('Activation failed.');
+    expect(element('replacement-sealed')).toBeNull();
+    expect(confirmButton().disabled).toBe(false);
+
+    confirmButton().click();
+    expect(confirmed).toHaveBeenCalledTimes(2);
+  });
+
   it('emits cancelled from the Cancel action and from Escape', async () => {
     await create();
     const cancelled = vi.fn();
