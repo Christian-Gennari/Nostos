@@ -93,6 +93,13 @@ internal sealed class BoundedSynchronousCaptureSink : Stream
         _completed = true;
     }
 
+    /// <summary>
+    /// Abandons a failed archive. Later writes fail and <see cref="DisposeAsync"/>
+    /// skips completion, so pending captured bytes are discarded and native ZIP
+    /// finalization cannot publish a central directory for an incomplete export.
+    /// </summary>
+    public void Abort() => IsPoisoned = true;
+
     private async Task DrainAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();

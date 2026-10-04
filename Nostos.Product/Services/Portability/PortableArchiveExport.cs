@@ -24,7 +24,22 @@ public sealed class DefaultPortableArchiveExporter(
         context.Response.Headers.ContentDisposition =
             $"attachment; filename=\"nostos-export-{now:yyyyMMdd-HHmmss}.nostos\"";
 
-        await portability.ExportAsync(context.Response.Body, cancellationToken);
+        try
+        {
+            await portability.ExportAsync(context.Response.Body, cancellationToken);
+        }
+        catch
+        {
+            // The archive is streamed as it is produced. Once bytes have been
+            // sent, a failure or cancellation leaves a truncated body that must
+            // never be mistaken for a complete download: abort the connection
+            // instead of letting the response end cleanly. Failures before the
+            // first byte keep the framework's ordinary error response.
+            if (context.Response.HasStarted)
+                context.Abort();
+            throw;
+        }
+
         return Results.Empty;
     }
 }
