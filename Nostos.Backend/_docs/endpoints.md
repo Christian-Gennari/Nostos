@@ -209,11 +209,11 @@ candidates).
 
 ## Maintenance Mode Middleware
 
-The application includes middleware that intercepts requests to `/api` (and the MCP route, when enabled) when `BackupSettingsProvider.IsInMaintenanceMode` is true.
+`LibraryMaintenanceMiddleware` takes shared operation leases for `/api`, `/opds`, the enabled MCP route, and database readiness. It holds them through complete response streaming and request-scope disposal. New operations are refused while the single coordinator drains or holds exclusive maintenance. GET `/api/backup/progress`, process liveness and static UI remain available without opening the library. The backup restore endpoint delegates admission to `BackupService` for its shared-to-exclusive handoff.
 
 - **Status Code:** 503 Service Unavailable
-- **Response:** `{"error": "Application is in maintenance mode during restore."}`
-- **Purpose:** Prevents concurrent database access and file modifications during sensitive restore operations.
+- **Response:** `{"code": "migration_activation_busy", "error": "The library is in maintenance. Try again later."}`; `Retry-After: 5`.
+- **Purpose:** Drains existing DB/file operations before restore or later migration cutover; new requests cannot straddle the exclusive window.
 
 ## Cycle Detection
 

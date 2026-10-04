@@ -217,11 +217,11 @@ Preflight returns `AllowedReplacementRequired`.
 
 If the user explicitly confirms replacement (`confirmReplacement: true`):
 
-1. The preflight destination revision is verified.
-2. A mandatory recovery snapshot of the existing portable library is created via `IMigrationRecoveryService.CreateRecoverySnapshotAsync`. Client requests cannot bypass recovery copy creation.
-3. The incoming migration is validated and staging prepared via `IMigrationTransferService.PrepareActivationAsync`.
-4. The destination revision is verified again immediately before entering activation.
-5. Activation atomically replaces the destination portable state.
+1. The incoming migration is validated and durable staging prepared via `IMigrationTransferService.PrepareActivationAsync`.
+2. `MigrationActivateRequest` binds explicit confirmation to the job's exact preflight destination revision. A preliminary revision mismatch rejects admission.
+3. The activation worker drains library readers and writers under exclusive maintenance and rechecks that same revision. It never silently updates the job to a newer revision.
+4. A mandatory recovery generation of the existing populated portable library is retained via the recovery subsystem. Client requests cannot bypass recovery creation.
+5. A verified candidate database and media root replace the destination through the durable cutover protocol below. This protocol is planned; the contracts and maintenance barrier are implemented independently of the switch engine.
 
 There is **no implicit merge mode** in the migration contract.
 
@@ -364,6 +364,91 @@ When replacing a populated destination, `IMigrationRecoveryService.CreateRecover
 - **Retention duration:** 7 days (`RecoveryRetentionDays = 7`).
 - **Storage accounting:** Retained recovery snapshots count against host storage accounting until expired and purged via `DeleteExpiredRecoverySnapshotsAsync`.
 - **Operational backups distinction:** Host operational backups are local SQLite/infrastructure dumps. Preflight explicitly rejects operational backups (`RejectedOperationalBackupNotPortable`).
+
+### SelfHosted activation foundation (#681, Slices 1–2)
+
+The provider-neutral activation/recovery DTOs are `MigrationActivateRequest`,
+`MigrationRecoveryRestoreRequest`, and `MigrationRecoveryStatusResponse`. Public
+DTOs expose no local paths or provider/account identifiers. `IMigrationActivationService`
+consumes an owned job already admitted durably to `Activating`; its implementation
+and HTTP activation routes belong to later slices. Recovery continues to use
+`IMigrationRecoveryService` and `MigrationRecoverySnapshot`.
+
+`MigrationActivationAdmission` implements pure confirmation and revision rules.
+An empty destination may activate without confirmation; a populated destination
+requires confirmation. Requested, stored, and current revisions must all match
+ordinally. Recovery restore always requires confirmation bound to the current
+revision. These checks do not replace ownership, staging integrity, capacity, or
+worker lease checks in the later orchestrator.
+
+The existing direction-aware frozen job transition table remains authoritative:
+imports take `ReadyToActivate -> Activating -> Completed`, while exports never
+activate. User cancellation ends at `Activating`. This cancellation boundary is
+distinct from the later durable filesystem commit. The executable journal model
+allows a completed job outcome only with `Committed`; a failed activation outcome
+requires untouched live paths or a completed rollback. A cutover failure must
+restore the original generation before releasing exclusive maintenance.
+
+The filesystem journal and recovery manifest are version 1 documents outside the
+active SQLite database. Their checksum envelope contains `Version`, `PayloadJson`,
+and a lowercase SHA-256 over the exact UTF-8 payload JSON. Unknown payload fields
+round-trip; unsupported versions, unknown phases, missing required journal fields,
+and checksum mismatches fail closed. Checksums detect corruption and do not
+authenticate documents. Journals contain generated job/operation identifiers,
+phase, opaque destination revision, retention intent and timestamp. Recovery
+manifests contain the matching generation IDs, counts, DB/media lengths and hashes,
+status and seven-day expiry. They contain no user content or absolute paths.
+
+| Durable journal phase | Startup decision |
+| --- | --- |
+| `CandidatePrepared`, `ExclusiveEntered`, `DatabaseCheckpointed` | Nothing; original paths untouched |
+| `CutoverPrepared`, `PreviousMediaRetained`, `PreviousDatabaseRetained`, `CandidateMediaActivated`, `CandidateDatabaseActivated`, `PostActivationVerified`, `RollingBack` | Roll back original generation |
+| `Committed` | Roll forward verified candidate; finalize job if necessary |
+| `RolledBack` | Nothing; original generation already restored |
+| Unknown/unsupported/corrupt | Fail closed |
+
+Each phase is durable intent for the next rename, so rollback must also handle a
+rename that finished before the following phase write. File existence validates
+the chosen recovery action; it cannot determine which generation wins. Slice 3
+implements temp-write/flush/rename journal persistence and the actual startup
+reconciler. Slices 1–2 contain the model and pure decisions only.
+
+SelfHosted now uses one singleton `ILibraryMaintenanceCoordinator`. HTTP operations
+take shared leases across their complete response/stream and request-scope
+disposal. REST, OPDS, MCP and database readiness traffic all participate. During
+drain/exclusivity new operations receive HTTP 503, stable code
+`migration_activation_busy`, and `Retry-After: 5`. Process liveness, static UI and
+the GET backup-progress endpoint remain available without opening the library.
+Migration status endpoints currently have no exemption: a later implementation
+must prove they avoid the active DB before adding one.
+
+Background acquisition, reconciliation, topic cleanup, receipt retention,
+book-text extraction/embedding/backfill and scheduled backup operations take
+shared leases before opening their work scopes. They quiesce at operation
+boundaries and resume when admission reopens. New background operations wait
+outside the gate; existing long operations or long-lived streams can make
+activation time out. `LibraryMaintenance:DrainTimeout` defaults to `00:00:30`,
+must be positive and at most ten minutes, and bounds drain acquisition. Timeout
+or cancellation releases admission without granting exclusivity. Contending
+exclusive attempts fail immediately; an acquired exclusive lease stays held
+until its owner disposes it, even if its cancellation token fires.
+
+`BackupSettingsProvider.IsInMaintenanceMode` projects this same coordinator.
+Its compatibility enter/exit methods own one reference-counted coordinator
+lease. Backup creation participates as shared work; local backup restore uses
+the exclusive drain barrier instead of a fixed delay. The restore HTTP endpoint
+delegates admission to the service so it never waits on its own request lease.
+The existing archive restore protocol remains operational backup functionality;
+it is not the migration cutover engine.
+
+The advisory maintenance marker is `.nostos-activation/maintenance.json` beside
+the configured database. Startup clears stale markers before bootstrap/workers
+and never reconstitutes process-local leases. An unresolved actionable or corrupt
+activation journal fails startup closed until Slice 3 reconciles it; this PR does
+not attempt a generation switch or rollback. No schema additions are needed:
+existing job fields hold state, recovery projection, destination revision and
+prepared staging facts. WAL checkpointing and SQLite pool lifecycle belong to
+Slice 5, rather than the maintenance coordinator.
 
 ---
 
