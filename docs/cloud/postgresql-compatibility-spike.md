@@ -16,9 +16,11 @@ disposable PostgreSQL database and checks:
 - transactions, rollback, representative LINQ translation, and restrictive
   collection relationships.
 
-The test asserts generated SQL and runs `EnsureCreatedAsync`. Public CI can start
-an ephemeral PostgreSQL service without production credentials. The ordinary
-SelfHosted suite does not require this database and leaves
+The test asserts generated SQL and creates the schema through the same
+bootstrap path as the product (`DatabaseBootstrapService.EnsureReadyAsync`:
+the model-generated create script plus the migration-history baseline). Public
+CI can start an ephemeral PostgreSQL service without production credentials.
+The ordinary SelfHosted suite does not require this database and leaves
 `NOSTOS_POSTGRES_SPIKE_CONNECTION` unset.
 
 ## Provider ownership
