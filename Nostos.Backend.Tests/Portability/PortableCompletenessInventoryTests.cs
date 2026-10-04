@@ -328,6 +328,26 @@ public sealed class PortableCompletenessInventoryTests
 
             ["LibraryState"] = ExcludedEntity(
                 "Operational local event-store/synchronization state; not portable user library content."),
+
+            ["MigrationJobRecord"] = ExcludedEntity(
+                "Host-local operational migration state: job lifecycle, worker leases, progress, idempotency and failure/expiry bookkeeping. " +
+                "This is local operational control state, not user library content, and must never be serialized into portable archives."),
+
+            ["MigrationSessionRecord"] = ExcludedEntity(
+                "Host-local operational migration transfer state: resumable upload session, relative staging storage reference, and chunk/byte accounting. " +
+                "This is local operational transfer state, not user library content, and must never be serialized into portable archives."),
+
+            ["MigrationChunkReceiptRecord"] = ExcludedEntity(
+                "Host-local operational migration transfer receipts: accepted chunk offsets, lengths and hashes used to resume uploads. " +
+                "These are local operational transfer receipts, not user library content, and must never be serialized into portable archives."),
+
+            ["MigrationExportArtifactRecord"] = ExcludedEntity(
+                "Host-local operational migration storage and retention metadata: generated export archive file references, retention deadlines and deletion timestamps. " +
+                "This is local operational storage/retention state, not user library content, and must never be serialized into portable archives."),
+
+            ["MigrationStorageReservationRecord"] = ExcludedEntity(
+                "Host-local operational migration storage admission/accounting state: preflight reservations of temporary storage bytes with claim/release timestamps. " +
+                "This is local operational capacity-accounting state, not user library content, and must never be serialized into portable archives."),
         };
 
     [Fact]

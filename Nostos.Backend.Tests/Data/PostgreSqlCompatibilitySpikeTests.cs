@@ -2,6 +2,7 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Nostos.Backend.Data;
 using Nostos.Backend.Data.Models;
+using Nostos.Backend.Services.Portability;
 using Xunit;
 
 namespace Nostos.Backend.Tests.Data;
@@ -63,6 +64,21 @@ public sealed class PostgreSqlCompatibilitySpikeTests
             createScript.Should().Contain(
                 "WHERE \"NormalizedAsin\" IS NOT NULL",
                 "the filtered unique identity index must survive provider translation");
+
+            createScript.Should().Contain("CREATE TABLE \"MigrationJobRecords\"");
+            createScript.Should().Contain("CREATE TABLE \"MigrationSessionRecords\"");
+            createScript.Should().Contain("CREATE TABLE \"MigrationChunkReceiptRecords\"");
+            createScript.Should().Contain("CREATE TABLE \"MigrationExportArtifactRecords\"");
+            createScript.Should().Contain("CREATE TABLE \"MigrationStorageReservations\"");
+            createScript.Should().Contain("CK_MigrationJobRecords_IdempotencyKey");
+            createScript.Should().Contain("CK_MigrationSessionRecords_ChunkSize");
+            createScript.Should().Contain("CK_MigrationChunkReceiptRecords_Bounds");
+            createScript.Should().Contain(
+                "PRIMARY KEY (\"SessionId\", \"ChunkIndex\")",
+                "the composite chunk receipt key must survive provider translation");
+            createScript.Should().Contain(
+                "IX_MigrationJobRecords_IdempotencyKey",
+                "the unique job idempotency index must survive provider translation");
 
             var physical = new PhysicalBookModel
             {
@@ -330,6 +346,203 @@ public sealed class PostgreSqlCompatibilitySpikeTests
             (await db.WritingNotes.AnyAsync(wn => wn.WritingId == noteCascadeDoc.Id)).Should().BeFalse(
                 "deleting note cascades to its WritingNotes on PostgreSQL");
             (await db.Writings.AnyAsync(w => w.Id == noteCascadeDoc.Id)).Should().BeTrue();
+        }
+
+        // --- Durable migration transfer records (issue #679) ---
+        // Representative lease/session/receipt/artifact/reservation writes on
+        // the real Npgsql provider, including unique keys, the composite chunk
+        // primary key, and integer-version concurrency.
+        Guid migrationJobId;
+        Guid migrationSessionId;
+        var migrationNow = DateTimeOffset.UtcNow;
+
+        await using (var db = new NostosDbContext(options))
+        {
+            var job = new MigrationJobRecord
+            {
+                Direction = (int)MigrationDirection.Import,
+                State = (int)MigrationJobState.Transferring,
+                RecoveryStatus = (int)MigrationRecoveryStatus.NotRequired,
+                ProgressPhase = (int)MigrationProgressPhase.Transferring,
+                ProgressBytesProcessed = 16L * 1024 * 1024,
+                IdempotencyKey = "pg-spike-job-1",
+                CreationPayloadHash = new string('a', 64),
+                CreatedAtUtc = migrationNow,
+                UpdatedAtUtc = migrationNow,
+                ExpiresAtUtc = migrationNow.AddDays(7),
+                AttemptNumber = 1,
+                ReservedStorageBytes = 64L * 1024 * 1024,
+            };
+            var session = new MigrationSessionRecord
+            {
+                JobId = job.Id,
+                Purpose = (int)MigrationSessionPurpose.Import,
+                State = (int)MigrationSessionState.Receiving,
+                TotalBytes = 32L * 1024 * 1024,
+                ChunkSize = MigrationContractLimits.DefaultChunkBytes,
+                TotalChunks = 2,
+                FileIdentitySizeBytes = 32L * 1024 * 1024,
+                FileIdentitySha256 = new string('b', 64),
+                IdempotencyKey = "pg-spike-session-1",
+                CreationPayloadHash = new string('c', 64),
+                ReceivedBytes = 16L * 1024 * 1024,
+                CreatedAtUtc = migrationNow,
+                UpdatedAtUtc = migrationNow,
+                ExpiresAtUtc = migrationNow.AddHours(24),
+                StorageKey = "uploads/pg-spike/session-1/archive.part",
+            };
+
+            db.MigrationJobRecords.Add(job);
+            db.MigrationSessionRecords.Add(session);
+            db.MigrationChunkReceiptRecords.Add(new MigrationChunkReceiptRecord
+            {
+                SessionId = session.Id,
+                ChunkIndex = 0,
+                OffsetBytes = 0,
+                LengthBytes = 16 * 1024 * 1024,
+                Sha256 = new string('d', 64),
+                ReceivedAtUtc = migrationNow,
+            });
+            db.MigrationExportArtifactRecords.Add(new MigrationExportArtifactRecord
+            {
+                JobId = job.Id,
+                State = (int)MigrationExportArtifactState.Preparing,
+                StorageKey = "exports/pg-spike/library.nostos",
+                FileName = "library.nostos",
+                ContentType = "application/vnd.nostos.portable+zip",
+                SizeBytes = 0,
+                CreatedAtUtc = migrationNow,
+                ExpiresAtUtc = migrationNow.AddDays(7),
+            });
+            db.MigrationStorageReservations.Add(new MigrationStorageReservationRecord
+            {
+                Purpose = (int)MigrationSessionPurpose.Import,
+                ReservedBytes = 64L * 1024 * 1024,
+                MaterializedBytes = 16L * 1024 * 1024,
+                CreatedAtUtc = migrationNow,
+                ExpiresAtUtc = migrationNow.AddMinutes(15),
+                ClaimedJobId = job.Id,
+            });
+
+            await db.SaveChangesAsync();
+
+            migrationJobId = job.Id;
+            migrationSessionId = session.Id;
+
+            var reloadedSession = await db.MigrationSessionRecords
+                .SingleAsync(s => s.Id == migrationSessionId);
+            reloadedSession.StorageKey.Should().Be("uploads/pg-spike/session-1/archive.part");
+            reloadedSession.FileIdentitySha256.Should().Be(new string('b', 64));
+            reloadedSession.ExpiresAtUtc.Should().BeCloseTo(migrationNow.AddHours(24), TimeSpan.FromMilliseconds(1));
+            (await db.MigrationChunkReceiptRecords.CountAsync()).Should().Be(1);
+            (await db.MigrationExportArtifactRecords.CountAsync()).Should().Be(1);
+            (await db.MigrationStorageReservations.CountAsync()).Should().Be(1);
+        }
+
+        await using (var db = new NostosDbContext(options))
+        {
+            db.MigrationJobRecords.Add(new MigrationJobRecord
+            {
+                IdempotencyKey = "pg-spike-job-1",
+                CreationPayloadHash = new string('a', 64),
+                CreatedAtUtc = migrationNow,
+                UpdatedAtUtc = migrationNow,
+                ExpiresAtUtc = migrationNow.AddDays(7),
+                AttemptNumber = 1,
+            });
+
+            Func<Task> saveDuplicateJob = () => db.SaveChangesAsync();
+            await saveDuplicateJob.Should().ThrowAsync<DbUpdateException>(
+                "the unique job idempotency key must be enforced by PostgreSQL");
+        }
+
+        await using (var db = new NostosDbContext(options))
+        {
+            db.MigrationSessionRecords.Add(new MigrationSessionRecord
+            {
+                JobId = migrationJobId,
+                Purpose = (int)MigrationSessionPurpose.Import,
+                State = (int)MigrationSessionState.Created,
+                TotalBytes = 32L * 1024 * 1024,
+                ChunkSize = MigrationContractLimits.DefaultChunkBytes,
+                TotalChunks = 2,
+                FileIdentitySizeBytes = 32L * 1024 * 1024,
+                FileIdentitySha256 = new string('f', 64),
+                IdempotencyKey = "pg-spike-session-1",
+                CreationPayloadHash = new string('c', 64),
+                CreatedAtUtc = migrationNow,
+                UpdatedAtUtc = migrationNow,
+                ExpiresAtUtc = migrationNow.AddHours(24),
+                StorageKey = "uploads/pg-spike/session-2/archive.part",
+            });
+
+            Func<Task> saveDuplicateSession = () => db.SaveChangesAsync();
+            await saveDuplicateSession.Should().ThrowAsync<DbUpdateException>(
+                "the unique (JobId, IdempotencyKey) session key must be enforced by PostgreSQL");
+        }
+
+        await using (var db = new NostosDbContext(options))
+        {
+            db.MigrationChunkReceiptRecords.Add(new MigrationChunkReceiptRecord
+            {
+                SessionId = migrationSessionId,
+                ChunkIndex = 0,
+                OffsetBytes = 0,
+                LengthBytes = 16 * 1024 * 1024,
+                Sha256 = new string('d', 64),
+                ReceivedAtUtc = migrationNow,
+            });
+
+            Func<Task> saveDuplicateChunk = () => db.SaveChangesAsync();
+            await saveDuplicateChunk.Should().ThrowAsync<DbUpdateException>(
+                "the composite chunk receipt primary key must be enforced by PostgreSQL");
+        }
+
+        await using (var db = new NostosDbContext(options))
+        {
+            var leaseToken = "pg-lease-" + Guid.NewGuid().ToString("N");
+            var expectedVersion = await db.MigrationJobRecords
+                .Where(j => j.Id == migrationJobId)
+                .Select(j => j.Version)
+                .SingleAsync();
+
+            var acquired = await db.MigrationJobRecords
+                .Where(j =>
+                    j.Id == migrationJobId &&
+                    j.Version == expectedVersion &&
+                    j.MigrationLeaseToken == null)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(j => j.MigrationLeaseToken, leaseToken)
+                    .SetProperty(j => j.LeaseExpiresAtUtc, migrationNow.AddMinutes(5))
+                    .SetProperty(j => j.Version, expectedVersion + 1));
+            acquired.Should().Be(1, "the first guarded lease acquisition must win");
+
+            var stale = await db.MigrationJobRecords
+                .Where(j =>
+                    j.Id == migrationJobId &&
+                    j.Version == expectedVersion &&
+                    j.MigrationLeaseToken == null)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(j => j.MigrationLeaseToken, leaseToken + "-stale")
+                    .SetProperty(j => j.Version, expectedVersion + 1));
+            stale.Should().Be(0, "a stale guarded lease acquisition must lose on the version predicate");
+        }
+
+        await using (var first = new NostosDbContext(options))
+        await using (var second = new NostosDbContext(options))
+        {
+            var firstJob = await first.MigrationJobRecords.SingleAsync(j => j.Id == migrationJobId);
+            var secondJob = await second.MigrationJobRecords.SingleAsync(j => j.Id == migrationJobId);
+
+            firstJob.ProgressBytesProcessed = 20L * 1024 * 1024;
+            firstJob.Version += 1;
+            await first.SaveChangesAsync();
+
+            secondJob.ProgressBytesProcessed = 30L * 1024 * 1024;
+            secondJob.Version += 1;
+            Func<Task> staleSave = () => second.SaveChangesAsync();
+            await staleSave.Should().ThrowAsync<DbUpdateConcurrencyException>(
+                "the integer Version concurrency token must be enforced by PostgreSQL");
         }
     }
 }
