@@ -91,6 +91,30 @@ public sealed class TransferStorageCapacityTests : IDisposable
     }
 
     [Fact]
+    public async Task Materialized_bytes_can_never_exceed_the_reservation()
+    {
+        var dbOptions = await CreateDatabaseAsync();
+        await using var db = new NostosDbContext(dbOptions);
+        var capacity = CreateCapacity(db);
+
+        var reserved = await capacity.TryReserveAsync(
+            25_000, MigrationSessionPurpose.Import, TimeSpan.FromMinutes(15), default);
+        var reservationId = reserved.ReservationId!.Value;
+
+        var over = () => capacity.AddMaterializedBytesAsync(reservationId, 25_001, default);
+        (await over.Should().ThrowAsync<TransferReservationException>())
+            .Which.Kind.Should().Be(TransferReservationConflictKind.OverMaterialized);
+
+        await capacity.AddMaterializedBytesAsync(reservationId, 25_000, default);
+        (await capacity.GetSnapshotAsync(default)).OutstandingReservedBytes.Should().Be(0);
+
+        var duplicate = () => capacity.AddMaterializedBytesAsync(reservationId, 1, default);
+        (await duplicate.Should().ThrowAsync<TransferReservationException>())
+            .Which.Kind.Should().Be(TransferReservationConflictKind.OverMaterialized,
+                "duplicate accounting must fail closed instead of overstating materialized bytes");
+    }
+
+    [Fact]
     public async Task Concurrent_claims_of_one_reservation_succeed_exactly_once()
     {
         var dbOptions = await CreateDatabaseAsync();
@@ -215,6 +239,40 @@ public sealed class TransferStorageCapacityTests : IDisposable
         var materialize = () => capacity.AddMaterializedBytesAsync(reserved.ReservationId!.Value, 1, default);
         (await materialize.Should().ThrowAsync<TransferReservationException>())
             .Which.Kind.Should().Be(TransferReservationConflictKind.Expired);
+
+        await capacity.ReleaseAsync(reserved.ReservationId!.Value, default);
+        var afterRelease = await capacity.GetSnapshotAsync(default);
+        afterRelease.OutstandingReservedBytes.Should().Be(0);
+        afterRelease.UsableAvailableBytes.Should().Be(100_000);
+    }
+
+    [Fact]
+    public async Task Claimed_reservations_survive_the_preflight_window_and_still_block_admission()
+    {
+        var dbOptions = await CreateDatabaseAsync();
+        await using var db = new NostosDbContext(dbOptions);
+        var capacity = CreateCapacity(db);
+
+        var reserved = await capacity.TryReserveAsync(
+            50_000, MigrationSessionPurpose.Import, TimeSpan.FromMinutes(15), default);
+        await capacity.ClaimAsync(reserved.ReservationId!.Value, Guid.NewGuid(), default);
+
+        _time.Advance(TimeSpan.FromMinutes(16));
+
+        var snapshot = await capacity.GetSnapshotAsync(default);
+        snapshot.OutstandingReservedBytes.Should().Be(
+            50_000,
+            "a claimed reservation is job-owned and must not expire on the preflight clock");
+        snapshot.ActiveReservationCount.Should().Be(1);
+        snapshot.UsableAvailableBytes.Should().Be(50_000);
+
+        var over = await capacity.TryReserveAsync(
+            50_001, MigrationSessionPurpose.Import, TimeSpan.FromMinutes(15), default);
+        over.IsAdmitted.Should().BeFalse(
+            "the claimed reservation still owns the unmaterialized bytes");
+
+        await capacity.AddMaterializedBytesAsync(reserved.ReservationId!.Value, 10_000, default);
+        (await capacity.GetSnapshotAsync(default)).OutstandingReservedBytes.Should().Be(40_000);
 
         await capacity.ReleaseAsync(reserved.ReservationId!.Value, default);
         var afterRelease = await capacity.GetSnapshotAsync(default);
@@ -362,7 +420,7 @@ public sealed class TransferStorageCapacityTests : IDisposable
     }
 
     [Fact]
-    public void Host_peak_reservation_matches_the_plan_formula()
+    public void Host_peak_reservation_includes_chunk_and_per_job_overhead_but_not_the_safety_margin()
     {
         _options.DiskSafetyMarginBytes = 1_000;
         _options.DiskSafetyMarginPercent = 5;
@@ -374,18 +432,46 @@ public sealed class TransferStorageCapacityTests : IDisposable
         var withEffectiveChunk = TransferCapacityMath.CalculateHostPeakReservationBytes(
             contractRequiredBytes: 1_000,
             effectiveChunkBytes: 8 * 1024 * 1024,
-            physicalVolumeBytes: 1_000_000,
             options: _options);
         withEffectiveChunk.Should().Be(
-            1_000 + (8L * 1024 * 1024) + 50_000 + TransferCapacityMath.PerJobOverheadBytes);
+            1_000 + (8L * 1024 * 1024) + TransferCapacityMath.PerJobOverheadBytes);
 
         var withConfiguredChunk = TransferCapacityMath.CalculateHostPeakReservationBytes(
             contractRequiredBytes: 1_000,
             effectiveChunkBytes: 0,
-            physicalVolumeBytes: 1_000_000,
             options: _options);
         withConfiguredChunk.Should().Be(
-            1_000 + _options.ChunkBytes + 50_000 + TransferCapacityMath.PerJobOverheadBytes);
+            1_000 + _options.ChunkBytes + TransferCapacityMath.PerJobOverheadBytes);
+    }
+
+    [Fact]
+    public async Task Host_peak_plus_admission_charges_the_global_margin_exactly_once()
+    {
+        var dbOptions = await CreateDatabaseAsync();
+        await using var db = new NostosDbContext(dbOptions);
+        _options.DiskSafetyMarginBytes = 25_000_000;
+        _options.DiskSafetyMarginPercent = 0;
+        _volume.AvailableFreeSpaceBytes = 200_000_000;
+        _volume.TotalSizeBytes = 200_000_000;
+        var capacity = CreateCapacity(db);
+
+        var snapshot = await capacity.GetSnapshotAsync(default);
+        snapshot.GlobalSafetyMarginBytes.Should().Be(25_000_000);
+        snapshot.UsableAvailableBytes.Should().Be(175_000_000);
+
+        var hostPeak = TransferCapacityMath.CalculateHostPeakReservationBytes(
+            contractRequiredBytes: 140_000_000,
+            effectiveChunkBytes: 0,
+            options: _options);
+        hostPeak.Should().Be(
+            140_000_000 + _options.ChunkBytes + TransferCapacityMath.PerJobOverheadBytes);
+
+        var admitted = await capacity.TryReserveAsync(
+            hostPeak, MigrationSessionPurpose.Import, TimeSpan.FromMinutes(15), default);
+
+        admitted.IsAdmitted.Should().BeTrue(
+            "the helper excludes the global margin, which admission already subtracts once; " +
+            "charging it in both places would reject this request");
     }
 
     private async Task<DbContextOptions<NostosDbContext>> CreateDatabaseAsync()

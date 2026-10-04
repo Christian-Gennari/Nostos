@@ -252,6 +252,70 @@ public sealed class TransferPathResolverTests : IDisposable
             .Which.Code.Should().Be(TransferPathException.ReparsePoint);
     }
 
+    [Fact]
+    public void CreateNewVerifiedFile_creates_the_file_strictly_under_the_root()
+    {
+        var sessionId = Guid.NewGuid();
+        var archivePart = _resolver.GetUploadArchivePartPath(sessionId);
+
+        using (var stream = _resolver.CreateNewVerifiedFile(archivePart))
+        {
+            stream.WriteByte(0x42);
+        }
+
+        File.Exists(archivePart).Should().BeTrue();
+        new FileInfo(archivePart).Length.Should().Be(1);
+        Directory.Exists(_resolver.GetUploadsRoot()).Should().BeTrue();
+    }
+
+    [Fact]
+    public void CreateNewVerifiedFile_refuses_a_directory_swapped_for_a_symlink_before_the_open()
+    {
+        var sessionId = Guid.NewGuid();
+        var sessionDirectory = _resolver.GetUploadSessionDirectory(sessionId);
+        Directory.CreateDirectory(sessionDirectory);
+        var outside = Path.Combine(_tempRoot, "outside-swap");
+        Directory.CreateDirectory(outside);
+
+        // Skip the TOCTOU exercise only when the OS cannot create symlinks.
+        var probe = Path.Combine(_tempRoot, "symlink-probe");
+        try
+        {
+            Directory.CreateSymbolicLink(probe, outside);
+            Directory.Delete(probe);
+        }
+        catch (Exception exception) when (
+            exception is IOException
+            or UnauthorizedAccessException
+            or PlatformNotSupportedException)
+        {
+            return;
+        }
+
+        // The hook runs after the resolver's pre-checks and immediately before
+        // the open: exactly the validation/open race.
+        _resolver.BeforeOpenForTesting = _ =>
+        {
+            Directory.Delete(sessionDirectory);
+            Directory.CreateSymbolicLink(sessionDirectory, outside);
+        };
+
+        var archivePart = _resolver.GetUploadArchivePartPath(sessionId);
+        try
+        {
+            var act = () => _resolver.CreateNewVerifiedFile(archivePart);
+            act.Should().Throw<TransferPathException>()
+                .Which.Code.Should().Be(TransferPathException.ReparsePoint);
+
+            Directory.EnumerateFileSystemEntries(outside).Should().BeEmpty(
+                "the post-open verification must discard the target and remove the file it just created");
+        }
+        finally
+        {
+            _resolver.BeforeOpenForTesting = null;
+        }
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]
