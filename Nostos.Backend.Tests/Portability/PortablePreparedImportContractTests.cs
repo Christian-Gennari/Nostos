@@ -8,6 +8,9 @@ namespace Nostos.Backend.Tests.Portability;
 
 public sealed class PortablePreparedImportContractTests
 {
+    private static readonly DateTime FixedUtc =
+        new(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+
     [Fact]
     public void Staging_identifier_and_reference_property_names_stay_provider_neutral()
     {
@@ -20,18 +23,13 @@ public sealed class PortablePreparedImportContractTests
             .GetProperty(nameof(PortableStagedMediaReference.Value))!
             .PropertyType.Should().Be(typeof(string));
 
-        typeof(PortableStagedPayloadReference).IsValueType.Should().BeTrue();
-        typeof(PortableStagedPayloadReference)
-            .GetProperty(nameof(PortableStagedPayloadReference.Value))!
-            .PropertyType.Should().Be(typeof(string));
-
         var exposedPropertyNames = new[]
             {
                 typeof(IPreparedPortableImport),
                 typeof(PreparedPortableImportMetadata),
                 typeof(PortablePreparedMedia),
                 typeof(PortableStagedMediaReference),
-                typeof(PortableStagedPayloadReference),
+                typeof(PortableStagingPayloadWrite),
             }
             .SelectMany(type => type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
             .Select(property => property.Name)
@@ -90,9 +88,7 @@ public sealed class PortablePreparedImportContractTests
             .GetParameters().Select(parameter => parameter.ParameterType)
             .Should().ContainInOrder(
                 typeof(PortableStagingId),
-                typeof(PortableStagedMediaReference),
-                typeof(long),
-                typeof(string),
+                typeof(PortableStagingWrite),
                 typeof(CancellationToken));
         methods[nameof(IPortableImportStaging.OpenMediaReadAsync)]
             .GetParameters().Select(parameter => parameter.ParameterType)
@@ -106,6 +102,17 @@ public sealed class PortablePreparedImportContractTests
                 typeof(PortableStagingId),
                 typeof(PortableArchivePayload),
                 typeof(CancellationToken));
+        methods[nameof(IPortableImportStaging.CompleteDataAsync)]
+            .GetParameters().Select(parameter => parameter.ParameterType)
+            .Should().ContainInOrder(
+                typeof(PortableStagingId),
+                typeof(PortableStagingPayloadWrite),
+                typeof(CancellationToken));
+        methods[nameof(IPortableImportStaging.OpenDataReadAsync)]
+            .GetParameters().Select(parameter => parameter.ParameterType)
+            .Should().ContainInOrder(
+                typeof(PortableStagingId),
+                typeof(CancellationToken));
         methods[nameof(IPortableImportStaging.OpenManifestWriteAsync)]
             .GetParameters().Select(parameter => parameter.ParameterType)
             .Should().ContainInOrder(
@@ -116,9 +123,12 @@ public sealed class PortablePreparedImportContractTests
             .GetParameters().Select(parameter => parameter.ParameterType)
             .Should().ContainInOrder(
                 typeof(PortableStagingId),
-                typeof(PortableStagedPayloadReference),
-                typeof(long),
-                typeof(string),
+                typeof(PortableStagingPayloadWrite),
+                typeof(CancellationToken));
+        methods[nameof(IPortableImportStaging.OpenManifestReadAsync)]
+            .GetParameters().Select(parameter => parameter.ParameterType)
+            .Should().ContainInOrder(
+                typeof(PortableStagingId),
                 typeof(CancellationToken));
         methods[nameof(IPortableImportStaging.CommitPreparedImportAsync)]
             .GetParameters().Select(parameter => parameter.ParameterType)
@@ -129,6 +139,32 @@ public sealed class PortablePreparedImportContractTests
 
         typeof(IPortableImportStaging).GetInterfaces()
             .Should().Contain(typeof(IAsyncDisposable));
+
+        typeof(PortableStagingPayloadWrite).GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .Select(property => property.Name)
+            .Should().ContainInOrder(nameof(PortableStagingPayloadWrite.Stream));
+    }
+
+    [Fact]
+    public void Staging_exception_exposes_stable_typed_codes()
+    {
+        var codes = new[]
+        {
+            PortableStagingException.NotFoundCode,
+            PortableStagingException.InvalidReferenceCode,
+            PortableStagingException.IntegrityMismatchCode,
+            PortableStagingException.ConflictCode,
+            PortableStagingException.LimitExceededCode,
+            PortableStagingException.AlreadyCommittedCode,
+        };
+
+        codes.Should().OnlyHaveUniqueItems();
+        codes.Should().OnlyContain(code => code.StartsWith("staging_", StringComparison.Ordinal));
+
+        new PortableStagingException(PortableStagingException.NotFoundCode, "x")
+            .IsNotFound.Should().BeTrue();
+        new PortableStagingException(PortableStagingException.ConflictCode, "x")
+            .IsNotFound.Should().BeFalse();
     }
 
     [Fact]
@@ -164,73 +200,60 @@ public sealed class PortablePreparedImportContractTests
     }
 
     [Fact]
-    public void Archive_counts_conversion_covers_every_property_of_both_count_types()
+    public void Counts_function_populates_every_migration_count_property()
     {
-        var archivePropertyNames = typeof(PortableArchiveCounts)
+        var data = FullyPopulatedLibraryData();
+
+        var counts = PortableLibraryCounts.ComputeCounts(data, mediaEntries: 12);
+
+        counts.Works.Should().Be(1);
+        counts.Books.Should().Be(2);
+        counts.Collections.Should().Be(3);
+        counts.CollectionMemberships.Should().Be(4);
+        counts.Notes.Should().Be(5);
+        counts.Topics.Should().Be(6);
+        counts.NoteTopics.Should().Be(7);
+        counts.Writings.Should().Be(8);
+        counts.WritingNotes.Should().Be(9);
+        counts.Acquisitions.Should().Be(10);
+        counts.AssistantSettings.Should().Be(1);
+        counts.NoteImportBookLinks.Should().Be(11);
+        counts.MediaEntries.Should().Be(12);
+        counts.TotalRows.Should().Be(67);
+
+        foreach (var property in typeof(MigrationArchiveCounts)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance))
+        {
+            var value = (long)property.GetValue(counts)!;
+            value.Should().BeGreaterThan(
+                0,
+                $"{property.Name} must be populated from the validated payload or media count");
+        }
+    }
+
+    [Fact]
+    public void Counts_function_counts_every_portable_library_property()
+    {
+        var propertyNames = typeof(PortableLibraryData)
             .GetProperties(BindingFlags.Public | BindingFlags.Instance)
             .Select(property => property.Name)
             .OrderBy(name => name, StringComparer.Ordinal)
             .ToArray();
 
-        archivePropertyNames.Should().Equal(
-            nameof(PortableArchiveCounts.BookAcquisitions),
-            nameof(PortableArchiveCounts.BookCollections),
-            nameof(PortableArchiveCounts.Books),
-            nameof(PortableArchiveCounts.Collections),
-            nameof(PortableArchiveCounts.NoteTopics),
-            nameof(PortableArchiveCounts.Notes),
-            nameof(PortableArchiveCounts.Topics),
-            nameof(PortableArchiveCounts.Works),
-            nameof(PortableArchiveCounts.Writings));
-
-        var migrationPropertyNames = typeof(MigrationArchiveCounts)
-            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
-            .Select(property => property.Name)
-            .OrderBy(name => name, StringComparer.Ordinal)
-            .ToArray();
-
-        migrationPropertyNames.Should().Equal(
-            nameof(MigrationArchiveCounts.Acquisitions),
-            nameof(MigrationArchiveCounts.AssistantSettings),
-            nameof(MigrationArchiveCounts.Books),
-            nameof(MigrationArchiveCounts.CollectionMemberships),
-            nameof(MigrationArchiveCounts.Collections),
-            nameof(MigrationArchiveCounts.MediaEntries),
-            nameof(MigrationArchiveCounts.NoteImportBookLinks),
-            nameof(MigrationArchiveCounts.NoteTopics),
-            nameof(MigrationArchiveCounts.Notes),
-            nameof(MigrationArchiveCounts.Topics),
-            nameof(MigrationArchiveCounts.TotalRows),
-            nameof(MigrationArchiveCounts.Works),
-            nameof(MigrationArchiveCounts.WritingNotes),
-            nameof(MigrationArchiveCounts.Writings));
-
-        var converted = new PortableArchiveCounts(
-            Works: 1,
-            Books: 2,
-            Collections: 3,
-            BookCollections: 4,
-            Notes: 5,
-            Topics: 6,
-            NoteTopics: 7,
-            Writings: 8,
-            BookAcquisitions: 9)
-            .ToMigrationArchiveCounts(mediaEntries: 10);
-
-        converted.Works.Should().Be(1);
-        converted.Books.Should().Be(2);
-        converted.Collections.Should().Be(3);
-        converted.CollectionMemberships.Should().Be(4);
-        converted.Notes.Should().Be(5);
-        converted.Topics.Should().Be(6);
-        converted.NoteTopics.Should().Be(7);
-        converted.Writings.Should().Be(8);
-        converted.Acquisitions.Should().Be(9);
-        converted.MediaEntries.Should().Be(10);
-        converted.WritingNotes.Should().Be(0);
-        converted.AssistantSettings.Should().Be(0);
-        converted.NoteImportBookLinks.Should().Be(0);
-        converted.TotalRows.Should().Be(45);
+        propertyNames.Should().Equal(
+            nameof(PortableLibraryData.AssistantSettings),
+            nameof(PortableLibraryData.BookAcquisitions),
+            nameof(PortableLibraryData.BookCollections),
+            nameof(PortableLibraryData.Books),
+            nameof(PortableLibraryData.Collections),
+            nameof(PortableLibraryData.NoteImportBookLinks),
+            nameof(PortableLibraryData.NoteTopics),
+            nameof(PortableLibraryData.Notes),
+            nameof(PortableLibraryData.Topics),
+            nameof(PortableLibraryData.Version),
+            nameof(PortableLibraryData.Works),
+            nameof(PortableLibraryData.WritingNotes),
+            nameof(PortableLibraryData.Writings));
     }
 
     [Fact]
@@ -284,7 +307,6 @@ public sealed class PortablePreparedImportContractTests
             typeof(PortableStagingPayloadWrite),
             typeof(PortableStagingId),
             typeof(PortableStagedMediaReference),
-            typeof(PortableStagedPayloadReference),
             typeof(IPreparedPortableImport),
             typeof(PreparedPortableImportMetadata),
             typeof(PortablePreparedMedia),
@@ -302,4 +324,88 @@ public sealed class PortablePreparedImportContractTests
         exposedTypes.Should().NotContain(type =>
             type == typeof(ZipArchive) || type.Namespace == typeof(ZipArchive).Namespace);
     }
+
+    private static PortableLibraryData FullyPopulatedLibraryData() =>
+        new(
+            Version: 3,
+            Works: Enumerable.Range(0, 1)
+                .Select(_ => new PortableWork(Guid.NewGuid(), "Work", null, FixedUtc))
+                .ToList(),
+            Books: Enumerable.Range(0, 2).Select(_ => Book()).ToList(),
+            Collections: Enumerable.Range(0, 3)
+                .Select(_ => new PortableCollection(Guid.NewGuid(), "Collection", null))
+                .ToList(),
+            BookCollections: Enumerable.Range(0, 4)
+                .Select(_ => new PortableBookCollection(Guid.NewGuid(), Guid.NewGuid(), FixedUtc))
+                .ToList(),
+            Notes: Enumerable.Range(0, 5).Select(_ => Note()).ToList(),
+            Topics: Enumerable.Range(0, 6)
+                .Select(_ => new PortableTopic(Guid.NewGuid(), "topic"))
+                .ToList(),
+            NoteTopics: Enumerable.Range(0, 7)
+                .Select(_ => new PortableNoteTopic(Guid.NewGuid(), Guid.NewGuid()))
+                .ToList(),
+            Writings: Enumerable.Range(0, 8)
+                .Select(_ => new PortableWriting(
+                    Guid.NewGuid(), "Writing", "essay", null, null, FixedUtc, FixedUtc))
+                .ToList(),
+            BookAcquisitions: Enumerable.Range(0, 10)
+                .Select(_ => new PortableBookAcquisition(
+                    Guid.NewGuid(),
+                    Guid.NewGuid(),
+                    "provider",
+                    "Provider",
+                    "external-id",
+                    "asset-id",
+                    null,
+                    null,
+                    null,
+                    null,
+                    FixedUtc))
+                .ToList(),
+            AssistantSettings: new PortableAssistantSettings("manual", FixedUtc),
+            WritingNotes: Enumerable.Range(0, 9)
+                .Select(_ => new PortableWritingNote(Guid.NewGuid(), Guid.NewGuid(), FixedUtc))
+                .ToList(),
+            NoteImportBookLinks: Enumerable.Range(0, 11)
+                .Select(_ => new PortableNoteImportBookLink(
+                    Guid.NewGuid(), "kobo", "source-key", Guid.NewGuid(), FixedUtc))
+                .ToList());
+
+    private static PortableBook Book() =>
+        new(
+            Id: Guid.NewGuid(),
+            WorkId: Guid.NewGuid(),
+            Type: "ebook",
+            Status: "reading",
+            StatusMessage: null,
+            Title: "Book",
+            Author: null,
+            Metadata: new PortableBookMetadata(
+                null, null, null, null, null, null, null, null, null, null, null, null),
+            Progress: new PortableReadingProgress(null, 0, 0, false, null, null, null),
+            CreatedAt: FixedUtc,
+            Isbn: null,
+            PageCount: null,
+            Asin: null,
+            Duration: null,
+            Narrator: null,
+            ChaptersJson: null,
+            HasBookFile: false,
+            HasCover: false);
+
+    private static PortableNote Note() =>
+        new(
+            Id: Guid.NewGuid(),
+            Content: "note",
+            CfiRange: null,
+            SelectedText: null,
+            CreatedAt: FixedUtc,
+            BookId: Guid.NewGuid(),
+            RawContent: null,
+            CaptureSource: "manual",
+            ProcessingMode: "raw",
+            SourceAnchorKind: "none",
+            SourceAnchorValue: null,
+            AnchorVerified: false);
 }

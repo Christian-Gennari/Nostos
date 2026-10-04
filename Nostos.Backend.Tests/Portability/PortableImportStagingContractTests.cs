@@ -8,7 +8,7 @@ namespace Nostos.Backend.Tests.Portability;
 
 /// <summary>
 /// Provider-independent behavioural contract for <see cref="IPortableImportStaging"/>.
-/// A real staging provider can run the same suite by subclasses that return its
+/// A real staging provider can run the same suite by subclassing and returning its
 /// instances from <see cref="CreateStaging"/>; calling it again must return an
 /// instance over the same durable state so restart behaviour is exercised.
 /// </summary>
@@ -44,7 +44,7 @@ public abstract class PortableImportStagingContractTests
             () => staging.OpenMediaReadAsync(id, write.Reference));
         beforeComplete.Code.Should().Be(PortableStagingException.NotFoundCode);
 
-        await staging.CompleteMediaAsync(id, write.Reference, content.LongLength, Sha256Hex(content));
+        await staging.CompleteMediaAsync(id, write);
         await write.DisposeAsync();
 
         await using var read = await staging.OpenMediaReadAsync(id, write.Reference);
@@ -54,7 +54,7 @@ public abstract class PortableImportStagingContractTests
     }
 
     [Fact]
-    public async Task Abandoned_media_write_is_never_visible()
+    public async Task Abandoned_media_write_is_never_visible_and_may_be_replaced()
     {
         await using var staging = CreateStaging();
         var id = await staging.CreateAsync();
@@ -70,13 +70,13 @@ public abstract class PortableImportStagingContractTests
         var inventory = await staging.ListMediaAsync(id);
         inventory.Should().BeEmpty();
 
+        var completion = await Assert.ThrowsAsync<PortableStagingException>(
+            () => staging.CompleteMediaAsync(id, write));
+        completion.Code.Should().Be(PortableStagingException.NotFoundCode);
+
         var replacement = await staging.OpenMediaWriteAsync(id, descriptor);
         await replacement.Stream.WriteAsync(content);
-        await staging.CompleteMediaAsync(
-            id,
-            replacement.Reference,
-            content.LongLength,
-            Sha256Hex(content));
+        await staging.CompleteMediaAsync(id, replacement);
         await replacement.DisposeAsync();
 
         await using var read = await staging.OpenMediaReadAsync(id, replacement.Reference);
@@ -94,11 +94,81 @@ public abstract class PortableImportStagingContractTests
 
         var write = await staging.OpenMediaWriteAsync(id, descriptor);
 
-        var conflict = await Assert.ThrowsAsync<PortableStagingException>(
+        var whileOpen = await Assert.ThrowsAsync<PortableStagingException>(
             () => staging.OpenMediaWriteAsync(id, descriptor));
-        conflict.Code.Should().Be(PortableStagingException.ConflictCode);
+        whileOpen.Code.Should().Be(PortableStagingException.ConflictCode);
 
+        await write.Stream.WriteAsync(new byte[] { 1, 2, 3 });
+        await staging.CompleteMediaAsync(id, write);
         await write.DisposeAsync();
+
+        var afterComplete = await Assert.ThrowsAsync<PortableStagingException>(
+            () => staging.OpenMediaWriteAsync(id, descriptor));
+        afterComplete.Code.Should().Be(PortableStagingException.ConflictCode);
+    }
+
+    [Fact]
+    public async Task Write_after_payload_completion_is_rejected()
+    {
+        await using var staging = CreateStaging();
+        var id = await staging.CreateAsync();
+
+        var dataBytes = Encoding.UTF8.GetBytes("{\"version\":3}");
+        var dataWrite = await staging.OpenDataWriteAsync(
+            id,
+            new PortableArchivePayload("data/library.json", dataBytes.LongLength, Sha256Hex(dataBytes)));
+        await dataWrite.Stream.WriteAsync(dataBytes);
+        await staging.CompleteDataAsync(id, dataWrite);
+
+        var rejectedData = await Assert.ThrowsAsync<PortableStagingException>(
+            () => dataWrite.Stream.WriteAsync(new byte[] { 0x7D }).AsTask());
+        rejectedData.Code.Should().Be(PortableStagingException.ConflictCode);
+
+        var manifestBytes = Encoding.UTF8.GetBytes("{\"format\":\"nostos-portable\"}");
+        var manifestWrite = await staging.OpenManifestWriteAsync(
+            id,
+            new PortableArchivePayload("manifest.json", manifestBytes.LongLength, Sha256Hex(manifestBytes)));
+        await manifestWrite.Stream.WriteAsync(manifestBytes);
+        await staging.CompleteManifestAsync(id, manifestWrite);
+
+        var rejectedManifest = await Assert.ThrowsAsync<PortableStagingException>(
+            () => manifestWrite.Stream.WriteAsync(new byte[] { 0x7D }).AsTask());
+        rejectedManifest.Code.Should().Be(PortableStagingException.ConflictCode);
+
+        await using var dataRead = await staging.OpenDataReadAsync(id);
+        using var dataCopy = new MemoryStream();
+        await dataRead.CopyToAsync(dataCopy);
+        dataCopy.ToArray().Should().Equal(dataBytes);
+
+        await using var manifestRead = await staging.OpenManifestReadAsync(id);
+        using var manifestCopy = new MemoryStream();
+        await manifestRead.CopyToAsync(manifestCopy);
+        manifestCopy.ToArray().Should().Equal(manifestBytes);
+    }
+
+    [Fact]
+    public async Task Completion_rejects_wrong_payload_hash_and_discards_the_payload()
+    {
+        await using var staging = CreateStaging();
+        var id = await staging.CreateAsync();
+        var dataBytes = Encoding.UTF8.GetBytes("{\"version\":3}");
+        var descriptor = new PortableArchivePayload(
+            "data/library.json",
+            dataBytes.LongLength,
+            new string('0', 64));
+
+        var dataWrite = await staging.OpenDataWriteAsync(id, descriptor);
+        await dataWrite.Stream.WriteAsync(dataBytes);
+
+        var failure = await Assert.ThrowsAsync<PortableStagingException>(
+            () => staging.CompleteDataAsync(id, dataWrite));
+        failure.Code.Should().Be(PortableStagingException.IntegrityMismatchCode);
+
+        await Assert.ThrowsAsync<PortableStagingException>(
+            () => staging.OpenDataReadAsync(id));
+
+        var replacement = await staging.OpenDataWriteAsync(id, descriptor);
+        await replacement.DisposeAsync();
     }
 
     [Fact]
@@ -107,17 +177,16 @@ public abstract class PortableImportStagingContractTests
         await using var staging = CreateStaging();
         var id = await staging.CreateAsync();
         var content = new byte[] { 1, 2, 3 };
-        var descriptor = MediaDescriptor(content);
+        var descriptor = MediaDescriptor(content) with
+        {
+            Length = content.LongLength + 2,
+        };
 
         var write = await staging.OpenMediaWriteAsync(id, descriptor);
         await write.Stream.WriteAsync(content);
 
         var failure = await Assert.ThrowsAsync<PortableStagingException>(
-            () => staging.CompleteMediaAsync(
-                id,
-                write.Reference,
-                content.LongLength + 1,
-                Sha256Hex(content)));
+            () => staging.CompleteMediaAsync(id, write));
         failure.Code.Should().Be(PortableStagingException.IntegrityMismatchCode);
 
         await Assert.ThrowsAsync<PortableStagingException>(
@@ -131,17 +200,16 @@ public abstract class PortableImportStagingContractTests
         await using var staging = CreateStaging();
         var id = await staging.CreateAsync();
         var content = new byte[] { 5, 6, 7 };
-        var descriptor = MediaDescriptor(content);
+        var descriptor = MediaDescriptor(content) with
+        {
+            Sha256 = new string('0', 64),
+        };
 
         var write = await staging.OpenMediaWriteAsync(id, descriptor);
         await write.Stream.WriteAsync(content);
 
         var failure = await Assert.ThrowsAsync<PortableStagingException>(
-            () => staging.CompleteMediaAsync(
-                id,
-                write.Reference,
-                content.LongLength,
-                new string('0', 64)));
+            () => staging.CompleteMediaAsync(id, write));
         failure.Code.Should().Be(PortableStagingException.IntegrityMismatchCode);
 
         await Assert.ThrowsAsync<PortableStagingException>(
@@ -149,7 +217,7 @@ public abstract class PortableImportStagingContractTests
     }
 
     [Fact]
-    public async Task Completion_is_idempotent_for_identical_values_and_conflicts_for_different_values()
+    public async Task Recompleting_a_completed_handle_is_idempotent_and_keeps_bytes()
     {
         await using var staging = CreateStaging();
         var id = await staging.CreateAsync();
@@ -158,17 +226,34 @@ public abstract class PortableImportStagingContractTests
 
         var write = await staging.OpenMediaWriteAsync(id, descriptor);
         await write.Stream.WriteAsync(content);
-        await staging.CompleteMediaAsync(id, write.Reference, content.LongLength, Sha256Hex(content));
+        await staging.CompleteMediaAsync(id, write);
+        await staging.CompleteMediaAsync(id, write);
 
-        await staging.CompleteMediaAsync(id, write.Reference, content.LongLength, Sha256Hex(content));
+        await write.DisposeAsync();
 
-        var conflict = await Assert.ThrowsAsync<PortableStagingException>(
-            () => staging.CompleteMediaAsync(
-                id,
-                write.Reference,
-                content.LongLength + 1,
-                Sha256Hex(content)));
-        conflict.Code.Should().Be(PortableStagingException.ConflictCode);
+        await using var read = await staging.OpenMediaReadAsync(id, write.Reference);
+        using var copy = new MemoryStream();
+        await read.CopyToAsync(copy);
+        copy.ToArray().Should().Equal(content);
+    }
+
+    [Fact]
+    public async Task Write_after_completion_is_rejected_and_bytes_stay_verified()
+    {
+        await using var staging = CreateStaging();
+        var id = await staging.CreateAsync();
+        var content = new byte[] { 2, 2, 2 };
+        var descriptor = MediaDescriptor(content);
+
+        var write = await staging.OpenMediaWriteAsync(id, descriptor);
+        await write.Stream.WriteAsync(content);
+        await staging.CompleteMediaAsync(id, write);
+
+        var sealedWrite = await Assert.ThrowsAsync<PortableStagingException>(
+            () => write.Stream.WriteAsync(new byte[] { 0xFF }).AsTask());
+        sealedWrite.Code.Should().Be(PortableStagingException.ConflictCode);
+
+        await write.DisposeAsync();
 
         await using var read = await staging.OpenMediaReadAsync(id, write.Reference);
         using var copy = new MemoryStream();
@@ -180,38 +265,59 @@ public abstract class PortableImportStagingContractTests
     public async Task Unknown_staging_identifier_yields_the_same_not_found_outcome()
     {
         await using var staging = CreateStaging();
+        var known = await staging.CreateAsync();
         var unknown = new PortableStagingId(Guid.NewGuid());
         var reference = new PortableStagedMediaReference("0123456789abcdef0123456789abcdef");
-        var payloadReference = new PortableStagedPayloadReference("fedcba9876543210fedcba9876543210");
         var descriptor = MediaDescriptor(new byte[] { 1 });
+        var dataDescriptor = new PortableArchivePayload("data/library.json", 1, Sha256Hex(new byte[] { 0x7B }));
 
-        var read = await Assert.ThrowsAsync<PortableStagingException>(
+        var mediaRead = await Assert.ThrowsAsync<PortableStagingException>(
             () => staging.OpenMediaReadAsync(unknown, reference));
-        read.Code.Should().Be(PortableStagingException.NotFoundCode);
+        mediaRead.Code.Should().Be(PortableStagingException.NotFoundCode);
 
-        var write = await Assert.ThrowsAsync<PortableStagingException>(
+        var mediaWrite = await Assert.ThrowsAsync<PortableStagingException>(
             () => staging.OpenMediaWriteAsync(unknown, descriptor));
-        write.Code.Should().Be(PortableStagingException.NotFoundCode);
+        mediaWrite.Code.Should().Be(PortableStagingException.NotFoundCode);
 
-        var complete = await Assert.ThrowsAsync<PortableStagingException>(
-            () => staging.CompleteMediaAsync(unknown, reference, 1, Sha256Hex(new byte[] { 1 })));
-        complete.Code.Should().Be(PortableStagingException.NotFoundCode);
+        var dataRead = await Assert.ThrowsAsync<PortableStagingException>(
+            () => staging.OpenDataReadAsync(unknown));
+        dataRead.Code.Should().Be(PortableStagingException.NotFoundCode);
+
+        var defaultRead = await Assert.ThrowsAsync<PortableStagingException>(
+            () => staging.OpenDataReadAsync(default));
+        defaultRead.Code.Should().Be(PortableStagingException.NotFoundCode);
+
+        var manifestRead = await Assert.ThrowsAsync<PortableStagingException>(
+            () => staging.OpenManifestReadAsync(unknown));
+        manifestRead.Code.Should().Be(PortableStagingException.NotFoundCode);
 
         var inventory = await Assert.ThrowsAsync<PortableStagingException>(
             () => staging.ListMediaAsync(unknown));
         inventory.Code.Should().Be(PortableStagingException.NotFoundCode);
 
-        var dataRead = await Assert.ThrowsAsync<PortableStagingException>(
-            () => staging.OpenDataReadAsync(unknown, payloadReference));
-        dataRead.Code.Should().Be(PortableStagingException.NotFoundCode);
-
-        var manifestRead = await Assert.ThrowsAsync<PortableStagingException>(
-            () => staging.OpenManifestReadAsync(unknown, payloadReference));
-        manifestRead.Code.Should().Be(PortableStagingException.NotFoundCode);
-
         var rebuild = await Assert.ThrowsAsync<PortableStagingException>(
             () => staging.RebuildPreparedImportAsync(unknown));
         rebuild.Code.Should().Be(PortableStagingException.NotFoundCode);
+
+        var commit = await Assert.ThrowsAsync<PortableStagingException>(
+            () => staging.CommitPreparedImportAsync(
+                unknown,
+                MetadataFor(unknown)));
+        commit.Code.Should().Be(PortableStagingException.NotFoundCode);
+
+        var fromKnown = await staging.OpenMediaWriteAsync(known, descriptor);
+        var complete = await Assert.ThrowsAsync<PortableStagingException>(
+            () => staging.CompleteMediaAsync(unknown, fromKnown));
+        complete.Code.Should().Be(PortableStagingException.NotFoundCode);
+
+        var payloadWrite = await staging.OpenDataWriteAsync(known, dataDescriptor);
+        var completeData = await Assert.ThrowsAsync<PortableStagingException>(
+            () => staging.CompleteDataAsync(unknown, payloadWrite));
+
+        completeData.Code.Should().Be(PortableStagingException.NotFoundCode);
+
+        await fromKnown.DisposeAsync();
+        await payloadWrite.DisposeAsync();
     }
 
     [Fact]
@@ -225,24 +331,52 @@ public abstract class PortableImportStagingContractTests
 
         var write = await staging.OpenMediaWriteAsync(owner, descriptor);
         await write.Stream.WriteAsync(content);
-        await staging.CompleteMediaAsync(owner, write.Reference, content.LongLength, Sha256Hex(content));
+        await staging.CompleteMediaAsync(owner, write);
 
         var read = await Assert.ThrowsAsync<PortableStagingException>(
             () => staging.OpenMediaReadAsync(other, write.Reference));
         read.Code.Should().Be(PortableStagingException.NotFoundCode);
 
         var complete = await Assert.ThrowsAsync<PortableStagingException>(
-            () => staging.CompleteMediaAsync(
-                other,
-                write.Reference,
-                content.LongLength,
-                Sha256Hex(content)));
+            () => staging.CompleteMediaAsync(other, write));
         complete.Code.Should().Be(PortableStagingException.NotFoundCode);
 
         await using var ownerRead = await staging.OpenMediaReadAsync(owner, write.Reference);
         using var copy = new MemoryStream();
         await ownerRead.CopyToAsync(copy);
         copy.ToArray().Should().Equal(content);
+    }
+
+    [Fact]
+    public async Task Payload_handles_from_another_staging_area_are_rejected()
+    {
+        await using var staging = CreateStaging();
+        var owner = await staging.CreateAsync();
+        var other = await staging.CreateAsync();
+        var dataBytes = Encoding.UTF8.GetBytes("{\"version\":3}");
+        var descriptor = new PortableArchivePayload(
+            "data/library.json",
+            dataBytes.LongLength,
+            Sha256Hex(dataBytes));
+
+        var dataWrite = await staging.OpenDataWriteAsync(owner, descriptor);
+        await dataWrite.Stream.WriteAsync(dataBytes);
+
+        var wrongOwner = await Assert.ThrowsAsync<PortableStagingException>(
+            () => staging.CompleteDataAsync(other, dataWrite));
+        wrongOwner.Code.Should().Be(PortableStagingException.NotFoundCode);
+
+        var otherRead = await Assert.ThrowsAsync<PortableStagingException>(
+            () => staging.OpenDataReadAsync(other));
+        otherRead.Code.Should().Be(PortableStagingException.NotFoundCode);
+
+        await staging.CompleteDataAsync(owner, dataWrite);
+        await dataWrite.DisposeAsync();
+
+        await using var read = await staging.OpenDataReadAsync(owner);
+        using var copy = new MemoryStream();
+        await read.CopyToAsync(copy);
+        copy.ToArray().Should().Equal(dataBytes);
     }
 
     [Fact]
@@ -255,7 +389,7 @@ public abstract class PortableImportStagingContractTests
 
         var write = await staging.OpenMediaWriteAsync(id, descriptor);
         await write.Stream.WriteAsync(content);
-        await staging.CompleteMediaAsync(id, write.Reference, content.LongLength, Sha256Hex(content));
+        await staging.CompleteMediaAsync(id, write);
 
         foreach (var value in new[] { "", "../escape", "media/book.bin", @"media\book.bin", "..", "a..b/c" })
         {
@@ -283,16 +417,16 @@ public abstract class PortableImportStagingContractTests
 
         var firstWrite = await staging.OpenMediaWriteAsync(id, firstDescriptor);
         await firstWrite.Stream.WriteAsync(firstContent);
-        await staging.CompleteMediaAsync(id, firstWrite.Reference, firstContent.LongLength, Sha256Hex(firstContent));
+        await staging.CompleteMediaAsync(id, firstWrite);
         await firstWrite.DisposeAsync();
 
-        var abandonedWrite = await staging.OpenMediaWriteAsync(id, MediaDescriptor(new byte[] { 9 }, "media/c.bin"));
-        await abandonedWrite.Stream.WriteAsync(new byte[] { 9 });
-        await abandonedWrite.DisposeAsync();
+        var discardedWrite = await staging.OpenMediaWriteAsync(id, MediaDescriptor(new byte[] { 9 }, "media/c.bin"));
+        await discardedWrite.Stream.WriteAsync(new byte[] { 9 });
+        await discardedWrite.DisposeAsync();
 
         var secondWrite = await staging.OpenMediaWriteAsync(id, secondDescriptor);
         await secondWrite.Stream.WriteAsync(secondContent);
-        await staging.CompleteMediaAsync(id, secondWrite.Reference, secondContent.LongLength, Sha256Hex(secondContent));
+        await staging.CompleteMediaAsync(id, secondWrite);
         await secondWrite.DisposeAsync();
 
         var inventory = await staging.ListMediaAsync(id);
@@ -309,8 +443,8 @@ public abstract class PortableImportStagingContractTests
     {
         await using var staging = CreateStaging();
         var id = await staging.CreateAsync();
-        var metadata = await StageCompleteImportAsync(staging, id);
-        await staging.CommitPreparedImportAsync(id, metadata);
+        var staged = await StageCompleteImportAsync(staging, id);
+        await staging.CommitPreparedImportAsync(id, staged.Metadata);
 
         await staging.DeleteAsync(id);
         await staging.DeleteAsync(id);
@@ -318,7 +452,11 @@ public abstract class PortableImportStagingContractTests
         await staging.DeleteAsync(default);
 
         await Assert.ThrowsAsync<PortableStagingException>(
-            () => staging.OpenMediaReadAsync(id, new PortableStagedMediaReference("missing")));
+            () => staging.OpenMediaReadAsync(id, staged.MediaWrite.Reference));
+        await Assert.ThrowsAsync<PortableStagingException>(
+            () => staging.OpenDataReadAsync(id));
+        await Assert.ThrowsAsync<PortableStagingException>(
+            () => staging.OpenManifestReadAsync(id));
         await Assert.ThrowsAsync<PortableStagingException>(
             () => staging.ListMediaAsync(id));
         await Assert.ThrowsAsync<PortableStagingException>(
@@ -339,7 +477,7 @@ public abstract class PortableImportStagingContractTests
         await staging.DeleteAsync(id);
 
         var complete = await Assert.ThrowsAsync<PortableStagingException>(
-            () => staging.CompleteMediaAsync(id, write.Reference, content.LongLength, Sha256Hex(content)));
+            () => staging.CompleteMediaAsync(id, write));
         complete.Code.Should().Be(PortableStagingException.NotFoundCode);
 
         var writeAfterDelete = await Assert.ThrowsAsync<PortableStagingException>(
@@ -363,12 +501,7 @@ public abstract class PortableImportStagingContractTests
         cancelled.Cancel();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
-            () => staging.CompleteMediaAsync(
-                id,
-                write.Reference,
-                content.LongLength,
-                Sha256Hex(content),
-                cancelled.Token));
+            () => staging.CompleteMediaAsync(id, write, cancelled.Token));
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () => staging.OpenDataWriteAsync(
                 id,
@@ -393,10 +526,26 @@ public abstract class PortableImportStagingContractTests
         var failure = await Assert.ThrowsAsync<PortableStagingException>(
             () => staging.OpenMediaWriteAsync(id, descriptor));
         failure.Code.Should().Be(PortableStagingException.LimitExceededCode);
+
+        var oversizedData = new PortableArchivePayload(
+            "data/library.json",
+            PortableArchiveLimits.MaxDataBytes + 1,
+            new string('a', 64));
+        var dataFailure = await Assert.ThrowsAsync<PortableStagingException>(
+            () => staging.OpenDataWriteAsync(id, oversizedData));
+        dataFailure.Code.Should().Be(PortableStagingException.LimitExceededCode);
+
+        var oversizedManifest = new PortableArchivePayload(
+            "manifest.json",
+            PortableArchiveLimits.MaxManifestBytes + 1,
+            new string('a', 64));
+        var manifestFailure = await Assert.ThrowsAsync<PortableStagingException>(
+            () => staging.OpenManifestWriteAsync(id, oversizedManifest));
+        manifestFailure.Code.Should().Be(PortableStagingException.LimitExceededCode);
     }
 
     [Fact]
-    public async Task Writing_past_the_manifest_limit_fails_during_write()
+    public async Task Writing_past_the_manifest_limit_discards_the_item()
     {
         await using var staging = CreateStaging();
         var id = await staging.CreateAsync();
@@ -417,10 +566,50 @@ public abstract class PortableImportStagingContractTests
         var failure = await Assert.ThrowsAsync<PortableStagingException>(
             () => write.Stream.WriteAsync(new byte[] { 0 }).AsTask());
         failure.Code.Should().Be(PortableStagingException.LimitExceededCode);
+
+        await Assert.ThrowsAsync<PortableStagingException>(
+            () => staging.OpenManifestReadAsync(id));
+        var complete = await Assert.ThrowsAsync<PortableStagingException>(
+            () => staging.CompleteManifestAsync(id, write));
+        complete.Code.Should().Be(PortableStagingException.NotFoundCode);
+
+        var deadHandle = await Assert.ThrowsAsync<PortableStagingException>(
+            () => write.Stream.WriteAsync(new byte[] { 0 }).AsTask());
+        deadHandle.Code.Should().Be(PortableStagingException.ConflictCode);
+
+        var replacement = await staging.OpenManifestWriteAsync(id, descriptor);
+        await replacement.DisposeAsync();
     }
 
     [Fact]
-    public async Task Relational_data_and_manifest_are_readable_and_a_committed_import_survives_restart()
+    public async Task Media_write_past_its_declared_length_discards_the_item()
+    {
+        await using var staging = CreateStaging();
+        var id = await staging.CreateAsync();
+        var content = new byte[] { 1, 2, 3, 4 };
+        var descriptor = MediaDescriptor(content);
+
+        var write = await staging.OpenMediaWriteAsync(id, descriptor);
+        await write.Stream.WriteAsync(content);
+
+        var failure = await Assert.ThrowsAsync<PortableStagingException>(
+            () => write.Stream.WriteAsync(new byte[] { 5 }).AsTask());
+        failure.Code.Should().Be(PortableStagingException.LimitExceededCode);
+
+        await Assert.ThrowsAsync<PortableStagingException>(
+            () => staging.OpenMediaReadAsync(id, write.Reference));
+        (await staging.ListMediaAsync(id)).Should().BeEmpty();
+
+        var complete = await Assert.ThrowsAsync<PortableStagingException>(
+            () => staging.CompleteMediaAsync(id, write));
+        complete.Code.Should().Be(PortableStagingException.NotFoundCode);
+
+        var replacement = await staging.OpenMediaWriteAsync(id, descriptor);
+        await replacement.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task Relational_data_and_manifest_survive_restart_and_are_readable_by_staging_id_alone()
     {
         var first = CreateStaging();
         var id = await first.CreateAsync();
@@ -443,28 +632,20 @@ public abstract class PortableImportStagingContractTests
         await dataWrite.Stream.WriteAsync(dataBytes);
 
         var dataBeforeComplete = await Assert.ThrowsAsync<PortableStagingException>(
-            () => first.OpenDataReadAsync(id, dataWrite.Reference));
+            () => first.OpenDataReadAsync(id));
         dataBeforeComplete.Code.Should().Be(PortableStagingException.NotFoundCode);
 
-        await first.CompleteDataAsync(id, dataWrite.Reference, dataBytes.LongLength, Sha256Hex(dataBytes));
+        await first.CompleteDataAsync(id, dataWrite);
         await dataWrite.DisposeAsync();
 
         var manifestWrite = await first.OpenManifestWriteAsync(id, manifestDescriptor);
         await manifestWrite.Stream.WriteAsync(manifestBytes);
-        await first.CompleteManifestAsync(
-            id,
-            manifestWrite.Reference,
-            manifestBytes.LongLength,
-            Sha256Hex(manifestBytes));
+        await first.CompleteManifestAsync(id, manifestWrite);
         await manifestWrite.DisposeAsync();
 
         var mediaWrite = await first.OpenMediaWriteAsync(id, mediaDescriptor);
         await mediaWrite.Stream.WriteAsync(mediaBytes);
-        await first.CompleteMediaAsync(
-            id,
-            mediaWrite.Reference,
-            mediaBytes.LongLength,
-            Sha256Hex(mediaBytes));
+        await first.CompleteMediaAsync(id, mediaWrite);
         await mediaWrite.DisposeAsync();
 
         var metadata = new PreparedPortableImportMetadata(
@@ -489,17 +670,24 @@ public abstract class PortableImportStagingContractTests
         rebuilt.Metadata.Should().Be(metadata);
         rebuilt.Media.Should().ContainSingle();
         rebuilt.Media[0].Descriptor.Should().Be(mediaDescriptor);
-        rebuilt.Media[0].Reference.Should().Be(mediaWrite.Reference);
 
-        await using var rebuiltData = await second.OpenDataReadAsync(id, dataWrite.Reference);
+        await using var rebuiltData = await second.OpenDataReadAsync(id);
         using var dataCopy = new MemoryStream();
         await rebuiltData.CopyToAsync(dataCopy);
         dataCopy.ToArray().Should().Equal(dataBytes);
 
-        await using var rebuiltManifest = await second.OpenManifestReadAsync(id, manifestWrite.Reference);
+        await using var rebuiltManifest = await second.OpenManifestReadAsync(id);
         using var manifestCopy = new MemoryStream();
         await rebuiltManifest.CopyToAsync(manifestCopy);
         manifestCopy.ToArray().Should().Equal(manifestBytes);
+
+        foreach (var item in rebuilt.Media)
+        {
+            await using var mediaRead = await second.OpenMediaReadAsync(id, item.Reference);
+            using var mediaCopy = new MemoryStream();
+            await mediaRead.CopyToAsync(mediaCopy);
+            mediaCopy.ToArray().Should().Equal(mediaBytes);
+        }
 
         await second.DisposeAsync();
     }
@@ -522,19 +710,43 @@ public abstract class PortableImportStagingContractTests
     {
         await using var staging = CreateStaging();
         var id = await staging.CreateAsync();
-        var metadata = await StageCompleteImportAsync(staging, id);
+        var staged = await StageCompleteImportAsync(staging, id);
 
-        var wrongMediaCount = metadata with { MediaFiles = metadata.MediaFiles + 1 };
+        var wrongMediaCount = staged.Metadata with { MediaFiles = staged.Metadata.MediaFiles + 1 };
         var countFailure = await Assert.ThrowsAsync<PortableStagingException>(
             () => staging.CommitPreparedImportAsync(id, wrongMediaCount));
         countFailure.Code.Should().Be(PortableStagingException.IntegrityMismatchCode);
 
-        var wrongDataHash = metadata with { DataSha256 = new string('0', 64) };
+        var wrongDataHash = staged.Metadata with { DataSha256 = new string('0', 64) };
         var dataFailure = await Assert.ThrowsAsync<PortableStagingException>(
             () => staging.CommitPreparedImportAsync(id, wrongDataHash));
         dataFailure.Code.Should().Be(PortableStagingException.IntegrityMismatchCode);
 
-        await staging.CommitPreparedImportAsync(id, metadata);
+        var wrongMediaBytes = staged.Metadata with { MediaBytes = staged.Metadata.MediaBytes + 1 };
+        var mediaBytesFailure = await Assert.ThrowsAsync<PortableStagingException>(
+            () => staging.CommitPreparedImportAsync(id, wrongMediaBytes));
+        mediaBytesFailure.Code.Should().Be(PortableStagingException.IntegrityMismatchCode);
+
+        var wrongCounts = staged.Metadata with
+        {
+            Counts = staged.Metadata.Counts with { MediaEntries = staged.Metadata.MediaFiles + 1 },
+        };
+        var countsFailure = await Assert.ThrowsAsync<PortableStagingException>(
+            () => staging.CommitPreparedImportAsync(id, wrongCounts));
+        countsFailure.Code.Should().Be(PortableStagingException.IntegrityMismatchCode);
+
+        await staging.CommitPreparedImportAsync(id, staged.Metadata);
+    }
+
+    [Fact]
+    public async Task Commit_rejects_without_completed_payloads()
+    {
+        await using var staging = CreateStaging();
+        var id = await staging.CreateAsync();
+
+        var conflict = await Assert.ThrowsAsync<PortableStagingException>(
+            () => staging.CommitPreparedImportAsync(id, MetadataFor(id)));
+        conflict.Code.Should().Be(PortableStagingException.ConflictCode);
     }
 
     [Fact]
@@ -542,7 +754,7 @@ public abstract class PortableImportStagingContractTests
     {
         await using var staging = CreateStaging();
         var id = await staging.CreateAsync();
-        var metadata = await StageCompleteImportAsync(staging, id);
+        var staged = await StageCompleteImportAsync(staging, id);
 
         var extra = await staging.OpenMediaWriteAsync(
             id,
@@ -550,12 +762,12 @@ public abstract class PortableImportStagingContractTests
         await extra.Stream.WriteAsync(new byte[] { 1 });
 
         var conflict = await Assert.ThrowsAsync<PortableStagingException>(
-            () => staging.CommitPreparedImportAsync(id, metadata));
+            () => staging.CommitPreparedImportAsync(id, staged.Metadata));
         conflict.Code.Should().Be(PortableStagingException.ConflictCode);
 
         await extra.DisposeAsync();
 
-        await staging.CommitPreparedImportAsync(id, metadata);
+        await staging.CommitPreparedImportAsync(id, staged.Metadata);
         var rebuilt = await staging.RebuildPreparedImportAsync(id);
         rebuilt.Media.Should().ContainSingle();
     }
@@ -565,21 +777,197 @@ public abstract class PortableImportStagingContractTests
     {
         await using var staging = CreateStaging();
         var id = await staging.CreateAsync();
-        var metadata = await StageCompleteImportAsync(staging, id);
+        var staged = await StageCompleteImportAsync(staging, id);
 
-        await staging.CommitPreparedImportAsync(id, metadata);
-        await staging.CommitPreparedImportAsync(id, metadata);
+        await staging.CommitPreparedImportAsync(id, staged.Metadata);
+        await staging.CommitPreparedImportAsync(id, staged.Metadata);
 
-        var different = metadata with { ArchiveBytes = metadata.ArchiveBytes + 1 };
+        var different = staged.Metadata with { ArchiveBytes = staged.Metadata.ArchiveBytes + 1 };
         var conflict = await Assert.ThrowsAsync<PortableStagingException>(
             () => staging.CommitPreparedImportAsync(id, different));
         conflict.Code.Should().Be(PortableStagingException.ConflictCode);
 
         var rebuilt = await staging.RebuildPreparedImportAsync(id);
-        rebuilt.Metadata.Should().Be(metadata);
+        rebuilt.Metadata.Should().Be(staged.Metadata);
     }
 
-    private static async Task<PreparedPortableImportMetadata> StageCompleteImportAsync(
+    [Fact]
+    public async Task Writes_and_completions_after_commit_fail_with_already_committed()
+    {
+        await using var staging = CreateStaging();
+        var id = await staging.CreateAsync();
+        var staged = await StageCompleteImportAsync(staging, id);
+        await staging.CommitPreparedImportAsync(id, staged.Metadata);
+
+        var mediaWrite = await Assert.ThrowsAsync<PortableStagingException>(
+            () => staging.OpenMediaWriteAsync(id, MediaDescriptor(new byte[] { 1 }, "media/after.bin")));
+        mediaWrite.Code.Should().Be(PortableStagingException.AlreadyCommittedCode);
+
+        var dataWrite = await Assert.ThrowsAsync<PortableStagingException>(
+            () => staging.OpenDataWriteAsync(
+                id,
+                new PortableArchivePayload("data/library.json", 0, new string('a', 64))));
+        dataWrite.Code.Should().Be(PortableStagingException.AlreadyCommittedCode);
+
+        var manifestWrite = await Assert.ThrowsAsync<PortableStagingException>(
+            () => staging.OpenManifestWriteAsync(
+                id,
+                new PortableArchivePayload("manifest.json", 0, new string('a', 64))));
+        manifestWrite.Code.Should().Be(PortableStagingException.AlreadyCommittedCode);
+
+        var mediaComplete = await Assert.ThrowsAsync<PortableStagingException>(
+            () => staging.CompleteMediaAsync(id, staged.MediaWrite));
+        mediaComplete.Code.Should().Be(PortableStagingException.AlreadyCommittedCode);
+
+        var dataComplete = await Assert.ThrowsAsync<PortableStagingException>(
+            () => staging.CompleteDataAsync(id, staged.DataWrite));
+        dataComplete.Code.Should().Be(PortableStagingException.AlreadyCommittedCode);
+
+        var manifestComplete = await Assert.ThrowsAsync<PortableStagingException>(
+            () => staging.CompleteManifestAsync(id, staged.ManifestWrite));
+        manifestComplete.Code.Should().Be(PortableStagingException.AlreadyCommittedCode);
+
+        var rebuilt = await staging.RebuildPreparedImportAsync(id);
+        rebuilt.Metadata.Should().Be(staged.Metadata);
+
+        await using var dataRead = await staging.OpenDataReadAsync(id);
+        using var dataCopy = new MemoryStream();
+        await dataRead.CopyToAsync(dataCopy);
+        dataCopy.ToArray().Should().Equal(staged.DataBytes);
+
+        (await staging.ListMediaAsync(id)).Should().ContainSingle();
+        await using var mediaRead = await staging.OpenMediaReadAsync(id, staged.MediaWrite.Reference);
+        using var mediaCopy = new MemoryStream();
+        await mediaRead.CopyToAsync(mediaCopy);
+        mediaCopy.ToArray().Should().Equal(staged.MediaBytes);
+
+        await staging.DeleteAsync(id);
+        await staging.DeleteAsync(id);
+    }
+
+    [Fact]
+    public async Task Concurrent_delete_and_completion_settle_in_legal_outcomes()
+    {
+        await using var staging = CreateStaging();
+        var id = await staging.CreateAsync();
+        var content = new byte[] { 1, 2, 3 };
+        var write = await staging.OpenMediaWriteAsync(id, MediaDescriptor(content));
+        await write.Stream.WriteAsync(content);
+
+        var start = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var completion = Task.Run(async () =>
+        {
+            await start.Task;
+            try
+            {
+                await staging.CompleteMediaAsync(id, write);
+                return null;
+            }
+            catch (PortableStagingException exception)
+            {
+                return exception;
+            }
+        });
+        var deletion = Task.Run(async () =>
+        {
+            await start.Task;
+            await staging.DeleteAsync(id);
+        });
+
+        start.SetResult();
+        var failure = await completion;
+        await deletion;
+
+        if (failure is not null)
+        {
+            failure.Code.Should().Be(PortableStagingException.NotFoundCode);
+        }
+
+        await Assert.ThrowsAsync<PortableStagingException>(
+            () => staging.OpenMediaReadAsync(id, write.Reference));
+        await Assert.ThrowsAsync<PortableStagingException>(
+            () => staging.RebuildPreparedImportAsync(id));
+        await staging.DeleteAsync(id);
+        await write.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task Concurrent_writes_and_delete_never_publish_partial_items()
+    {
+        await using var staging = CreateStaging();
+        var id = await staging.CreateAsync();
+        var write = await staging.OpenMediaWriteAsync(
+            id,
+            MediaDescriptor(new byte[8]));
+        await write.Stream.WriteAsync(new byte[4]);
+
+        var start = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondWrite = Task.Run(async () =>
+        {
+            await start.Task;
+            try
+            {
+                await write.Stream.WriteAsync(new byte[4]);
+                return null;
+            }
+            catch (PortableStagingException exception)
+            {
+                return exception;
+            }
+        });
+        var deletion = Task.Run(async () =>
+        {
+            await start.Task;
+            await staging.DeleteAsync(id);
+        });
+
+        start.SetResult();
+        var failure = await secondWrite;
+        await deletion;
+
+        if (failure is not null)
+        {
+            failure.Code.Should().Be(PortableStagingException.NotFoundCode);
+        }
+
+        await Assert.ThrowsAsync<PortableStagingException>(
+            () => staging.ListMediaAsync(id));
+        await Assert.ThrowsAsync<PortableStagingException>(
+            () => staging.CompleteMediaAsync(id, write));
+        await write.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task Concurrent_identical_completions_of_the_same_handle_are_idempotent()
+    {
+        await using var staging = CreateStaging();
+        var id = await staging.CreateAsync();
+        var content = new byte[] { 5, 5, 5, 5 };
+        var write = await staging.OpenMediaWriteAsync(id, MediaDescriptor(content));
+        await write.Stream.WriteAsync(content);
+
+        var start = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var first = Task.Run(async () =>
+        {
+            await start.Task;
+            await staging.CompleteMediaAsync(id, write);
+        });
+        var second = Task.Run(async () =>
+        {
+            await start.Task;
+            await staging.CompleteMediaAsync(id, write);
+        });
+
+        start.SetResult();
+        await Task.WhenAll(first, second);
+
+        await using var read = await staging.OpenMediaReadAsync(id, write.Reference);
+        using var copy = new MemoryStream();
+        await read.CopyToAsync(copy);
+        copy.ToArray().Should().Equal(content);
+    }
+
+    private static async Task<StagedImport> StageCompleteImportAsync(
         IPortableImportStaging staging,
         PortableStagingId id)
     {
@@ -593,7 +981,7 @@ public abstract class PortableImportStagingContractTests
             Sha256Hex(dataBytes));
         var dataWrite = await staging.OpenDataWriteAsync(id, dataDescriptor);
         await dataWrite.Stream.WriteAsync(dataBytes);
-        await staging.CompleteDataAsync(id, dataWrite.Reference, dataBytes.LongLength, Sha256Hex(dataBytes));
+        await staging.CompleteDataAsync(id, dataWrite);
         await dataWrite.DisposeAsync();
 
         var manifestDescriptor = new PortableArchivePayload(
@@ -602,24 +990,16 @@ public abstract class PortableImportStagingContractTests
             Sha256Hex(manifestBytes));
         var manifestWrite = await staging.OpenManifestWriteAsync(id, manifestDescriptor);
         await manifestWrite.Stream.WriteAsync(manifestBytes);
-        await staging.CompleteManifestAsync(
-            id,
-            manifestWrite.Reference,
-            manifestBytes.LongLength,
-            Sha256Hex(manifestBytes));
+        await staging.CompleteManifestAsync(id, manifestWrite);
         await manifestWrite.DisposeAsync();
 
         var mediaDescriptor = MediaDescriptor(mediaBytes);
         var mediaWrite = await staging.OpenMediaWriteAsync(id, mediaDescriptor);
         await mediaWrite.Stream.WriteAsync(mediaBytes);
-        await staging.CompleteMediaAsync(
-            id,
-            mediaWrite.Reference,
-            mediaBytes.LongLength,
-            Sha256Hex(mediaBytes));
+        await staging.CompleteMediaAsync(id, mediaWrite);
         await mediaWrite.DisposeAsync();
 
-        return new PreparedPortableImportMetadata(
+        var metadata = new PreparedPortableImportMetadata(
             StagingId: id,
             FormatVersion: 1,
             DataVersion: 3,
@@ -631,7 +1011,30 @@ public abstract class PortableImportStagingContractTests
             ArchiveBytes: 4096,
             PreparedAtUtc: new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
             IntegrityVerified: true);
+
+        return new StagedImport(
+            metadata,
+            dataWrite,
+            manifestWrite,
+            mediaWrite,
+            dataBytes,
+            manifestBytes,
+            mediaBytes);
     }
+
+    private static PreparedPortableImportMetadata MetadataFor(PortableStagingId id) =>
+        new(
+            StagingId: id,
+            FormatVersion: 1,
+            DataVersion: 3,
+            DataBytes: 0,
+            DataSha256: new string('0', 64),
+            Counts: MigrationArchiveCounts.Empty,
+            MediaFiles: 0,
+            MediaBytes: 0,
+            ArchiveBytes: 0,
+            PreparedAtUtc: new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+            IntegrityVerified: false);
 
     private static PortableArchiveMediaEntry MediaDescriptor(
         byte[] content,
@@ -647,6 +1050,15 @@ public abstract class PortableImportStagingContractTests
 
     private static string Sha256Hex(byte[] content) =>
         Convert.ToHexString(SHA256.HashData(content)).ToLowerInvariant();
+
+    private sealed record StagedImport(
+        PreparedPortableImportMetadata Metadata,
+        PortableStagingPayloadWrite DataWrite,
+        PortableStagingPayloadWrite ManifestWrite,
+        PortableStagingWrite MediaWrite,
+        byte[] DataBytes,
+        byte[] ManifestBytes,
+        byte[] MediaBytes);
 }
 
 public sealed class InMemoryPortableImportStagingContractTests : PortableImportStagingContractTests

@@ -16,26 +16,39 @@ internal sealed class InMemoryPortableImportStagingStore
     internal Dictionary<Guid, StagingAreaState> Areas { get; } = new();
 }
 
-internal enum InMemoryItemState
+/// <summary>
+/// Test-only interleaving hooks. They run before the staging area lock is taken, so
+/// a test can deterministically let a competing operation win a race.
+/// </summary>
+internal sealed class InMemoryPortableImportStagingHooks
+{
+    internal Func<Task>? BeforeCompleteAsync { get; set; }
+
+    internal Func<Task>? BeforeDeleteAsync { get; set; }
+
+    internal Action? BeforeStreamWrite { get; set; }
+}
+
+internal enum InMemoryItemStatus
 {
     Writing,
     Completed,
-    Abandoned,
+    Discarded,
 }
 
 internal readonly record struct MediaItemKey(Guid BookId, string Kind, string Path);
 
-internal sealed class StagingAreaState
+internal sealed class InMemoryItemState
 {
-    internal Dictionary<MediaItemKey, InMemoryMediaItem> MediaByIdentity { get; } = new();
+    internal MemoryStream Buffer { get; } = new();
 
-    internal Dictionary<string, InMemoryMediaItem> MediaByReference { get; } = new(StringComparer.Ordinal);
+    internal InMemoryItemStatus Status { get; set; } = InMemoryItemStatus.Writing;
 
-    internal InMemoryPayloadItem? Data { get; set; }
+    internal long EffectiveLimit { get; init; }
 
-    internal InMemoryPayloadItem? Manifest { get; set; }
+    internal long CompletedLength { get; set; }
 
-    internal PreparedPortableImportMetadata? Prepared { get; set; }
+    internal string CompletedSha256 { get; set; } = string.Empty;
 }
 
 internal sealed class InMemoryMediaItem
@@ -44,44 +57,60 @@ internal sealed class InMemoryMediaItem
 
     internal required string Reference { get; init; }
 
-    internal required MemoryStream Buffer { get; init; }
+    internal required InMemoryItemState State { get; init; }
 
-    internal InMemoryItemState State { get; set; } = InMemoryItemState.Writing;
-
-    internal long CompletedLength { get; set; }
-
-    internal string CompletedSha256 { get; set; } = string.Empty;
+    internal PortableStagingWrite? Handle { get; set; }
 }
 
 internal sealed class InMemoryPayloadItem
 {
     internal required PortableArchivePayload Descriptor { get; init; }
 
-    internal required string Reference { get; init; }
+    internal required InMemoryItemState State { get; init; }
 
-    internal required MemoryStream Buffer { get; init; }
+    internal PortableStagingPayloadWrite? Handle { get; set; }
+}
 
-    internal InMemoryItemState State { get; set; } = InMemoryItemState.Writing;
+internal sealed class StagingAreaState
+{
+    internal object Gate { get; } = new();
 
-    internal long CompletedLength { get; set; }
+    internal bool Deleted { get; set; }
 
-    internal string CompletedSha256 { get; set; } = string.Empty;
+    internal Dictionary<MediaItemKey, InMemoryMediaItem> MediaByIdentity { get; } = new();
+
+    internal Dictionary<string, InMemoryMediaItem> MediaByReference { get; } = new(StringComparer.Ordinal);
+
+    internal Dictionary<PortableStagingWrite, InMemoryMediaItem> MediaByHandle { get; } = new();
+
+    internal Dictionary<PortableStagingPayloadWrite, InMemoryPayloadItem> PayloadByHandle { get; } = new();
+
+    internal InMemoryPayloadItem? Data { get; set; }
+
+    internal InMemoryPayloadItem? Manifest { get; set; }
+
+    internal PreparedPortableImportMetadata? Prepared { get; set; }
 }
 
 /// <summary>
 /// Test double that implements <see cref="IPortableImportStaging"/> with an in-memory
-/// store shared between instances. It is not a production provider; it exists to
-/// exercise the contract behaviourally, including restart reconstruction when two
-/// instances share one <see cref="InMemoryPortableImportStagingStore"/>.
+/// store shared between instances. All area state transitions are guarded by one lock
+/// per staging area. It is not a production provider; it exists to exercise the
+/// contract behaviourally, including restart reconstruction when two instances share
+/// one <see cref="InMemoryPortableImportStagingStore"/>.
 /// </summary>
 internal sealed class InMemoryPortableImportStaging : IPortableImportStaging
 {
     private readonly InMemoryPortableImportStagingStore _store;
+    private readonly InMemoryPortableImportStagingHooks? _hooks;
 
-    internal InMemoryPortableImportStaging(InMemoryPortableImportStagingStore store)
+    internal InMemoryPortableImportStaging(
+        InMemoryPortableImportStagingStore store,
+        InMemoryPortableImportStagingHooks? hooks = null)
     {
         ArgumentNullException.ThrowIfNull(store);
         _store = store;
+        _hooks = hooks;
     }
 
     public Task<PortableStagingId> CreateAsync(CancellationToken cancellationToken = default)
@@ -104,9 +133,11 @@ internal sealed class InMemoryPortableImportStaging : IPortableImportStaging
         ArgumentNullException.ThrowIfNull(descriptor);
         cancellationToken.ThrowIfCancellationRequested();
 
-        lock (_store.Gate)
+        var area = ResolveArea(stagingId);
+
+        lock (area.Gate)
         {
-            var area = ResolveArea(stagingId);
+            EnsureAreaAcceptsWrites(area);
 
             if (descriptor.Length < 0)
             {
@@ -115,100 +146,89 @@ internal sealed class InMemoryPortableImportStaging : IPortableImportStaging
                     "The declared media length cannot be negative.");
             }
 
-            EnforceDeclaredLimit(descriptor.Length, PortableArchiveLimits.MaxSingleEntryBytes);
-
-            var key = new MediaItemKey(descriptor.BookId, descriptor.Kind, descriptor.Path);
-            if (area.MediaByIdentity.TryGetValue(key, out var existing))
+            if (descriptor.Length > PortableArchiveLimits.MaxSingleEntryBytes)
             {
-                if (existing.State != InMemoryItemState.Abandoned)
-                {
-                    throw new PortableStagingException(
-                        PortableStagingException.ConflictCode,
-                        "A write for this media item is already open or completed.");
-                }
-
-                area.MediaByReference.Remove(existing.Reference);
-                area.MediaByIdentity.Remove(key);
+                throw new PortableStagingException(
+                    PortableStagingException.LimitExceededCode,
+                    $"The declared media length exceeds the {PortableArchiveLimits.MaxSingleEntryBytes}-byte staging limit.");
             }
 
-            var reference = NewReference(area);
+            var key = new MediaItemKey(descriptor.BookId, descriptor.Kind, descriptor.Path);
+            if (area.MediaByIdentity.ContainsKey(key))
+            {
+                throw new PortableStagingException(
+                    PortableStagingException.ConflictCode,
+                    "A write for this media item is already open or completed.");
+            }
+
+            var state = new InMemoryItemState
+            {
+                EffectiveLimit = Math.Min(descriptor.Length, PortableArchiveLimits.MaxSingleEntryBytes),
+            };
             var item = new InMemoryMediaItem
             {
                 Descriptor = descriptor,
-                Reference = reference,
-                Buffer = new MemoryStream(),
+                Reference = NewReference(area),
+                State = state,
             };
+            var write = new PortableStagingWrite(
+                new PortableStagedMediaReference(item.Reference),
+                new InMemoryWriteStream(area, state, _hooks, () => DiscardMedia(area, item)));
+            item.Handle = write;
 
             area.MediaByIdentity.Add(key, item);
-            area.MediaByReference.Add(reference, item);
+            area.MediaByReference.Add(item.Reference, item);
+            area.MediaByHandle.Add(write, item);
 
-            return Task.FromResult(new PortableStagingWrite(
-                new PortableStagedMediaReference(reference),
-                new InMemoryWriteStream(
-                    item.Buffer,
-                    PortableArchiveLimits.MaxSingleEntryBytes,
-                    () => IsAreaAlive(stagingId),
-                    () =>
-                    {
-                        if (item.State == InMemoryItemState.Writing)
-                        {
-                            item.State = InMemoryItemState.Abandoned;
-                        }
-                    })));
+            return Task.FromResult(write);
         }
     }
 
-    public Task CompleteMediaAsync(
+    public async Task CompleteMediaAsync(
         PortableStagingId stagingId,
-        PortableStagedMediaReference reference,
-        long expectedLength,
-        string expectedSha256,
+        PortableStagingWrite write,
         CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(write);
         cancellationToken.ThrowIfCancellationRequested();
 
-        lock (_store.Gate)
+        var area = ResolveArea(stagingId);
+        await RunHookAsync(_hooks?.BeforeCompleteAsync).ConfigureAwait(false);
+
+        lock (area.Gate)
         {
-            var area = ResolveArea(stagingId);
-            var value = ValidateReference(reference.Value);
-            if (!area.MediaByReference.TryGetValue(value, out var item))
+            EnsureAreaExists(area);
+            EnsureNotCommitted(area);
+
+            if (!area.MediaByHandle.TryGetValue(write, out var item))
             {
-                throw NotFound("No media item matches the reference.");
+                throw NotFound("No media item matches the write handle.");
             }
 
-            if (WasCompletedWithSameValues(item.State, item.CompletedLength, item.CompletedSha256, expectedLength, expectedSha256))
+            if (item.State.Status == InMemoryItemStatus.Completed)
             {
-                return Task.CompletedTask;
+                return;
             }
 
-            if (item.State != InMemoryItemState.Writing)
+            if (item.State.Status != InMemoryItemStatus.Writing)
             {
-                throw NotFound("The media item is not writable.");
+                throw NotFound("The media write is no longer completable.");
             }
 
-            EnsureExpectedMatchesDescriptor(
-                item.Descriptor.Length,
-                item.Descriptor.Sha256,
-                expectedLength,
-                expectedSha256,
-                () => DiscardMedia(area, item));
-
-            var bytes = item.Buffer.ToArray();
-            var actualSha256 = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
-            if (bytes.LongLength != expectedLength
-                || !string.Equals(actualSha256, expectedSha256, StringComparison.OrdinalIgnoreCase))
+            var bytes = item.State.Buffer.ToArray();
+            var actualSha256 = Sha256Hex(bytes);
+            if (bytes.LongLength != item.Descriptor.Length
+                || !string.Equals(actualSha256, item.Descriptor.Sha256, StringComparison.OrdinalIgnoreCase))
             {
                 DiscardMedia(area, item);
                 throw new PortableStagingException(
                     PortableStagingException.IntegrityMismatchCode,
-                    "Staged media bytes do not match the expected length and SHA-256.");
+                    "Staged media bytes do not match the descriptor bound when the write was opened.");
             }
 
-            item.CompletedLength = bytes.LongLength;
-            item.CompletedSha256 = actualSha256;
-            item.State = InMemoryItemState.Completed;
-
-            return Task.CompletedTask;
+            item.State.CompletedLength = bytes.LongLength;
+            item.State.CompletedSha256 = actualSha256;
+            item.State.Status = InMemoryItemStatus.Completed;
         }
     }
 
@@ -219,17 +239,20 @@ internal sealed class InMemoryPortableImportStaging : IPortableImportStaging
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        lock (_store.Gate)
+        var area = ResolveArea(stagingId);
+
+        lock (area.Gate)
         {
-            var area = ResolveArea(stagingId);
+            EnsureAreaExists(area);
+
             var value = ValidateReference(reference.Value);
             if (!area.MediaByReference.TryGetValue(value, out var item)
-                || item.State != InMemoryItemState.Completed)
+                || item.State.Status != InMemoryItemStatus.Completed)
             {
                 throw NotFound("No completed media item matches the reference.");
             }
 
-            return Task.FromResult<Stream>(new MemoryStream(item.Buffer.ToArray(), writable: false));
+            return Task.FromResult<Stream>(new MemoryStream(item.State.Buffer.ToArray(), writable: false));
         }
     }
 
@@ -239,9 +262,11 @@ internal sealed class InMemoryPortableImportStaging : IPortableImportStaging
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        lock (_store.Gate)
+        var area = ResolveArea(stagingId);
+
+        lock (area.Gate)
         {
-            var area = ResolveArea(stagingId);
+            EnsureAreaExists(area);
             IReadOnlyList<PortablePreparedMedia> inventory = DescribeCompletedMedia(area);
             return Task.FromResult(inventory);
         }
@@ -259,33 +284,29 @@ internal sealed class InMemoryPortableImportStaging : IPortableImportStaging
         CancellationToken cancellationToken = default) =>
         OpenPayloadWrite(stagingId, descriptor, manifest: true, cancellationToken);
 
-    public Task CompleteDataAsync(
+    public async Task CompleteDataAsync(
         PortableStagingId stagingId,
-        PortableStagedPayloadReference reference,
-        long expectedLength,
-        string expectedSha256,
+        PortableStagingPayloadWrite write,
         CancellationToken cancellationToken = default) =>
-        CompletePayloadAsync(stagingId, reference, expectedLength, expectedSha256, manifest: false, cancellationToken);
+        await CompletePayloadAsync(stagingId, write, manifest: false, cancellationToken)
+            .ConfigureAwait(false);
 
-    public Task CompleteManifestAsync(
+    public async Task CompleteManifestAsync(
         PortableStagingId stagingId,
-        PortableStagedPayloadReference reference,
-        long expectedLength,
-        string expectedSha256,
+        PortableStagingPayloadWrite write,
         CancellationToken cancellationToken = default) =>
-        CompletePayloadAsync(stagingId, reference, expectedLength, expectedSha256, manifest: true, cancellationToken);
+        await CompletePayloadAsync(stagingId, write, manifest: true, cancellationToken)
+            .ConfigureAwait(false);
 
     public Task<Stream> OpenDataReadAsync(
         PortableStagingId stagingId,
-        PortableStagedPayloadReference reference,
         CancellationToken cancellationToken = default) =>
-        OpenPayloadReadAsync(stagingId, reference, manifest: false, cancellationToken);
+        OpenPayloadReadAsync(stagingId, manifest: false, cancellationToken);
 
     public Task<Stream> OpenManifestReadAsync(
         PortableStagingId stagingId,
-        PortableStagedPayloadReference reference,
         CancellationToken cancellationToken = default) =>
-        OpenPayloadReadAsync(stagingId, reference, manifest: true, cancellationToken);
+        OpenPayloadReadAsync(stagingId, manifest: true, cancellationToken);
 
     public Task CommitPreparedImportAsync(
         PortableStagingId stagingId,
@@ -293,11 +314,14 @@ internal sealed class InMemoryPortableImportStaging : IPortableImportStaging
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(metadata);
+        ArgumentNullException.ThrowIfNull(metadata.Counts);
         cancellationToken.ThrowIfCancellationRequested();
 
-        lock (_store.Gate)
+        var area = ResolveArea(stagingId);
+
+        lock (area.Gate)
         {
-            var area = ResolveArea(stagingId);
+            EnsureAreaExists(area);
 
             if (metadata.StagingId != stagingId)
             {
@@ -318,15 +342,15 @@ internal sealed class InMemoryPortableImportStaging : IPortableImportStaging
                     "A different prepared descriptor is already committed.");
             }
 
-            if (area.Data?.State != InMemoryItemState.Completed
-                || area.Manifest?.State != InMemoryItemState.Completed)
+            if (area.Data?.State.Status != InMemoryItemStatus.Completed
+                || area.Manifest?.State.Status != InMemoryItemStatus.Completed)
             {
                 throw new PortableStagingException(
                     PortableStagingException.ConflictCode,
                     "A prepared import requires a completed relational payload and manifest.");
             }
 
-            if (area.MediaByIdentity.Values.Any(item => item.State == InMemoryItemState.Writing))
+            if (area.MediaByIdentity.Values.Any(item => item.State.Status == InMemoryItemStatus.Writing))
             {
                 throw new PortableStagingException(
                     PortableStagingException.ConflictCode,
@@ -348,8 +372,18 @@ internal sealed class InMemoryPortableImportStaging : IPortableImportStaging
                     "The staged media bytes do not match the prepared descriptor.");
             }
 
-            if (area.Data.CompletedLength != metadata.DataBytes
-                || !string.Equals(area.Data.CompletedSha256, metadata.DataSha256, StringComparison.OrdinalIgnoreCase))
+            if (metadata.Counts.MediaEntries != metadata.MediaFiles)
+            {
+                throw new PortableStagingException(
+                    PortableStagingException.IntegrityMismatchCode,
+                    "The prepared counts media entries do not match the media file count.");
+            }
+
+            if (area.Data.State.CompletedLength != metadata.DataBytes
+                || !string.Equals(
+                    area.Data.State.CompletedSha256,
+                    metadata.DataSha256,
+                    StringComparison.OrdinalIgnoreCase))
             {
                 throw new PortableStagingException(
                     PortableStagingException.IntegrityMismatchCode,
@@ -367,9 +401,12 @@ internal sealed class InMemoryPortableImportStaging : IPortableImportStaging
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        lock (_store.Gate)
+        var area = ResolveArea(stagingId);
+
+        lock (area.Gate)
         {
-            var area = ResolveArea(stagingId);
+            EnsureAreaExists(area);
+
             var prepared = area.Prepared
                 ?? throw NotFound("No prepared descriptor has been committed.");
 
@@ -382,23 +419,56 @@ internal sealed class InMemoryPortableImportStaging : IPortableImportStaging
                     "Staged media no longer matches the committed prepared descriptor.");
             }
 
+            if (area.Data is null
+                || area.Data.State.Status != InMemoryItemStatus.Completed
+                || area.Data.State.CompletedLength != prepared.DataBytes
+                || !string.Equals(
+                    area.Data.State.CompletedSha256,
+                    prepared.DataSha256,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                throw new PortableStagingException(
+                    PortableStagingException.IntegrityMismatchCode,
+                    "The staged relational payload no longer matches the committed prepared descriptor.");
+            }
+
             return Task.FromResult<IPreparedPortableImport>(
                 new PortablePreparedImport(prepared, media));
         }
     }
 
-    public Task DeleteAsync(
+    public async Task DeleteAsync(
         PortableStagingId stagingId,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        await RunHookAsync(_hooks?.BeforeDeleteAsync).ConfigureAwait(false);
+
+        StagingAreaState? area;
+        lock (_store.Gate)
+        {
+            if (!_store.Areas.TryGetValue(stagingId.Value, out area))
+            {
+                return;
+            }
+        }
+
+        lock (area.Gate)
+        {
+            area.Deleted = true;
+            area.MediaByIdentity.Clear();
+            area.MediaByReference.Clear();
+            area.MediaByHandle.Clear();
+            area.PayloadByHandle.Clear();
+            area.Data = null;
+            area.Manifest = null;
+            area.Prepared = null;
+        }
 
         lock (_store.Gate)
         {
             _store.Areas.Remove(stagingId.Value);
         }
-
-        return Task.CompletedTask;
     }
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
@@ -412,9 +482,11 @@ internal sealed class InMemoryPortableImportStaging : IPortableImportStaging
         ArgumentNullException.ThrowIfNull(descriptor);
         cancellationToken.ThrowIfCancellationRequested();
 
-        lock (_store.Gate)
+        var area = ResolveArea(stagingId);
+
+        lock (area.Gate)
         {
-            var area = ResolveArea(stagingId);
+            EnsureAreaAcceptsWrites(area);
 
             if (descriptor.Length < 0)
             {
@@ -423,26 +495,39 @@ internal sealed class InMemoryPortableImportStaging : IPortableImportStaging
                     "The declared payload length cannot be negative.");
             }
 
-            var limit = manifest
+            var hardLimit = manifest
                 ? PortableArchiveLimits.MaxManifestBytes
                 : PortableArchiveLimits.MaxDataBytes;
-            EnforceDeclaredLimit(descriptor.Length, limit);
+            if (descriptor.Length > hardLimit)
+            {
+                throw new PortableStagingException(
+                    PortableStagingException.LimitExceededCode,
+                    $"The declared payload length exceeds the {hardLimit}-byte staging limit.");
+            }
 
-            var existing = manifest ? area.Manifest : area.Data;
-            if (existing is not null && existing.State != InMemoryItemState.Abandoned)
+            if (manifest ? area.Manifest is not null : area.Data is not null)
             {
                 throw new PortableStagingException(
                     PortableStagingException.ConflictCode,
                     "A write for this payload is already open or completed.");
             }
 
-            var reference = NewReference(area);
+            var state = new InMemoryItemState
+            {
+                EffectiveLimit = Math.Min(descriptor.Length, hardLimit),
+            };
             var item = new InMemoryPayloadItem
             {
                 Descriptor = descriptor,
-                Reference = reference,
-                Buffer = new MemoryStream(),
+                State = state,
             };
+            var write = new PortableStagingPayloadWrite(
+                new InMemoryWriteStream(
+                    area,
+                    state,
+                    _hooks,
+                    () => DiscardPayload(area, item, manifest)));
+            item.Handle = write;
 
             if (manifest)
             {
@@ -453,115 +538,131 @@ internal sealed class InMemoryPortableImportStaging : IPortableImportStaging
                 area.Data = item;
             }
 
-            return Task.FromResult(new PortableStagingPayloadWrite(
-                new PortableStagedPayloadReference(reference),
-                new InMemoryWriteStream(
-                    item.Buffer,
-                    limit,
-                    () => IsAreaAlive(stagingId),
-                    () =>
-                    {
-                        if (item.State == InMemoryItemState.Writing)
-                        {
-                            item.State = InMemoryItemState.Abandoned;
-                        }
-                    })));
+            area.PayloadByHandle.Add(write, item);
+            return Task.FromResult(write);
         }
     }
 
-    private Task CompletePayloadAsync(
+    private async Task CompletePayloadAsync(
         PortableStagingId stagingId,
-        PortableStagedPayloadReference reference,
-        long expectedLength,
-        string expectedSha256,
+        PortableStagingPayloadWrite write,
         bool manifest,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(write);
         cancellationToken.ThrowIfCancellationRequested();
 
-        lock (_store.Gate)
+        var area = ResolveArea(stagingId);
+        await RunHookAsync(_hooks?.BeforeCompleteAsync).ConfigureAwait(false);
+
+        lock (area.Gate)
         {
-            var area = ResolveArea(stagingId);
-            var value = ValidateReference(reference.Value);
+            EnsureAreaExists(area);
+            EnsureNotCommitted(area);
+
             var item = manifest ? area.Manifest : area.Data;
-            if (item is null || !string.Equals(item.Reference, value, StringComparison.Ordinal))
+            if (item is null
+                || !area.PayloadByHandle.TryGetValue(write, out var bound)
+                || !ReferenceEquals(bound, item))
             {
-                throw NotFound("No payload matches the reference.");
+                throw NotFound("No payload matches the write handle.");
             }
 
-            if (WasCompletedWithSameValues(item.State, item.CompletedLength, item.CompletedSha256, expectedLength, expectedSha256))
+            if (item.State.Status == InMemoryItemStatus.Completed)
             {
-                return Task.CompletedTask;
+                return;
             }
 
-            if (item.State != InMemoryItemState.Writing)
+            if (item.State.Status != InMemoryItemStatus.Writing)
             {
-                throw NotFound("The payload is not writable.");
+                throw NotFound("The payload write is no longer completable.");
             }
 
-            EnsureExpectedMatchesDescriptor(
-                item.Descriptor.Length,
-                item.Descriptor.Sha256,
-                expectedLength,
-                expectedSha256,
-                () => item.State = InMemoryItemState.Abandoned);
-
-            var bytes = item.Buffer.ToArray();
-            var actualSha256 = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
-            if (bytes.LongLength != expectedLength
-                || !string.Equals(actualSha256, expectedSha256, StringComparison.OrdinalIgnoreCase))
+            var bytes = item.State.Buffer.ToArray();
+            var actualSha256 = Sha256Hex(bytes);
+            if (bytes.LongLength != item.Descriptor.Length
+                || !string.Equals(actualSha256, item.Descriptor.Sha256, StringComparison.OrdinalIgnoreCase))
             {
-                item.State = InMemoryItemState.Abandoned;
+                DiscardPayload(area, item, manifest);
                 throw new PortableStagingException(
                     PortableStagingException.IntegrityMismatchCode,
-                    "Staged payload bytes do not match the expected length and SHA-256.");
+                    "Staged payload bytes do not match the descriptor bound when the write was opened.");
             }
 
-            item.CompletedLength = bytes.LongLength;
-            item.CompletedSha256 = actualSha256;
-            item.State = InMemoryItemState.Completed;
-
-            return Task.CompletedTask;
+            item.State.CompletedLength = bytes.LongLength;
+            item.State.CompletedSha256 = actualSha256;
+            item.State.Status = InMemoryItemStatus.Completed;
         }
     }
 
     private Task<Stream> OpenPayloadReadAsync(
         PortableStagingId stagingId,
-        PortableStagedPayloadReference reference,
         bool manifest,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        lock (_store.Gate)
+        var area = ResolveArea(stagingId);
+
+        lock (area.Gate)
         {
-            var area = ResolveArea(stagingId);
-            var value = ValidateReference(reference.Value);
+            EnsureAreaExists(area);
+
             var item = manifest ? area.Manifest : area.Data;
-            if (item is null
-                || !string.Equals(item.Reference, value, StringComparison.Ordinal)
-                || item.State != InMemoryItemState.Completed)
+            if (item is null || item.State.Status != InMemoryItemStatus.Completed)
             {
-                throw NotFound("No completed payload matches the reference.");
+                throw NotFound("No completed payload is available.");
             }
 
-            return Task.FromResult<Stream>(new MemoryStream(item.Buffer.ToArray(), writable: false));
+            return Task.FromResult<Stream>(new MemoryStream(item.State.Buffer.ToArray(), writable: false));
         }
     }
 
     private StagingAreaState ResolveArea(PortableStagingId stagingId)
     {
-        if (stagingId.Value == Guid.Empty
-            || !_store.Areas.TryGetValue(stagingId.Value, out var area))
+        lock (_store.Gate)
+        {
+            if (stagingId.Value == Guid.Empty
+                || !_store.Areas.TryGetValue(stagingId.Value, out var area))
+            {
+                throw NotFound("Unknown staging area.");
+            }
+
+            return area;
+        }
+    }
+
+    private static void EnsureAreaExists(StagingAreaState area)
+    {
+        if (area.Deleted)
         {
             throw NotFound("Unknown staging area.");
         }
-
-        return area;
     }
 
-    private bool IsAreaAlive(PortableStagingId stagingId) =>
-        _store.Areas.ContainsKey(stagingId.Value);
+    private static void EnsureAreaAcceptsWrites(StagingAreaState area)
+    {
+        EnsureAreaExists(area);
+        EnsureNotCommitted(area);
+    }
+
+    private static void EnsureNotCommitted(StagingAreaState area)
+    {
+        if (area.Prepared is not null)
+        {
+            throw new PortableStagingException(
+                PortableStagingException.AlreadyCommittedCode,
+                "The staging area has already been committed and accepts no further writes.");
+        }
+    }
+
+    private static async Task RunHookAsync(Func<Task>? hook)
+    {
+        if (hook is not null)
+        {
+            await hook().ConfigureAwait(false);
+        }
+    }
 
     private static string NewReference(StagingAreaState area)
     {
@@ -590,69 +691,46 @@ internal sealed class InMemoryPortableImportStaging : IPortableImportStaging
         return value;
     }
 
-    private static void EnforceDeclaredLimit(long declaredLength, long limit)
-    {
-        if (declaredLength > limit)
-        {
-            throw new PortableStagingException(
-                PortableStagingException.LimitExceededCode,
-                $"The declared length exceeds the {limit}-byte staging limit.");
-        }
-    }
-
-    private static void EnsureExpectedMatchesDescriptor(
-        long descriptorLength,
-        string descriptorSha256,
-        long expectedLength,
-        string expectedSha256,
-        Action discard)
-    {
-        if (descriptorLength != expectedLength
-            || !string.Equals(descriptorSha256, expectedSha256, StringComparison.OrdinalIgnoreCase))
-        {
-            discard();
-            throw new PortableStagingException(
-                PortableStagingException.IntegrityMismatchCode,
-                "Completion values do not match the descriptor bound when the write was opened.");
-        }
-    }
-
-    private static bool WasCompletedWithSameValues(
-        InMemoryItemState state,
-        long completedLength,
-        string completedSha256,
-        long expectedLength,
-        string expectedSha256)
-    {
-        if (state != InMemoryItemState.Completed)
-        {
-            return false;
-        }
-
-        if (completedLength == expectedLength
-            && string.Equals(completedSha256, expectedSha256, StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        throw new PortableStagingException(
-            PortableStagingException.ConflictCode,
-            "The item is already completed with different values.");
-    }
-
     private static void DiscardMedia(StagingAreaState area, InMemoryMediaItem item)
     {
-        item.State = InMemoryItemState.Abandoned;
+        item.State.Status = InMemoryItemStatus.Discarded;
         area.MediaByIdentity.Remove(new MediaItemKey(
             item.Descriptor.BookId,
             item.Descriptor.Kind,
             item.Descriptor.Path));
         area.MediaByReference.Remove(item.Reference);
+
+        if (item.Handle is not null)
+        {
+            area.MediaByHandle.Remove(item.Handle);
+        }
+    }
+
+    private static void DiscardPayload(
+        StagingAreaState area,
+        InMemoryPayloadItem item,
+        bool manifest)
+    {
+        item.State.Status = InMemoryItemStatus.Discarded;
+
+        if (manifest)
+        {
+            area.Manifest = null;
+        }
+        else
+        {
+            area.Data = null;
+        }
+
+        if (item.Handle is not null)
+        {
+            area.PayloadByHandle.Remove(item.Handle);
+        }
     }
 
     private static IReadOnlyList<PortablePreparedMedia> DescribeCompletedMedia(StagingAreaState area) =>
         area.MediaByIdentity.Values
-            .Where(item => item.State == InMemoryItemState.Completed)
+            .Where(item => item.State.Status == InMemoryItemStatus.Completed)
             .OrderBy(item => item.Descriptor.BookId)
             .ThenBy(item => item.Descriptor.Kind, StringComparer.Ordinal)
             .ThenBy(item => item.Descriptor.Path, StringComparer.Ordinal)
@@ -663,30 +741,34 @@ internal sealed class InMemoryPortableImportStaging : IPortableImportStaging
 
     private static PortableStagingException NotFound(string message) =>
         new(PortableStagingException.NotFoundCode, message);
+
+    private static string Sha256Hex(byte[] content) =>
+        Convert.ToHexString(SHA256.HashData(content)).ToLowerInvariant();
 }
 
 /// <summary>
-/// Sequential write stream that enforces the staging size limit while bytes are
-/// written and fails once the owning staging area is deleted.
+/// Sequential write stream that enforces the staged item limit while bytes are
+/// written, discards the item on overflow, seals on completion, and fails once the
+/// owning staging area is deleted.
 /// </summary>
 internal sealed class InMemoryWriteStream : Stream
 {
-    private readonly MemoryStream _buffer;
-    private readonly long _limit;
-    private readonly Func<bool> _isAreaAlive;
-    private readonly Action _onAbandoned;
+    private readonly StagingAreaState _area;
+    private readonly InMemoryItemState _item;
+    private readonly InMemoryPortableImportStagingHooks? _hooks;
+    private readonly Action _discard;
     private bool _disposed;
 
     internal InMemoryWriteStream(
-        MemoryStream buffer,
-        long limit,
-        Func<bool> isAreaAlive,
-        Action onAbandoned)
+        StagingAreaState area,
+        InMemoryItemState item,
+        InMemoryPortableImportStagingHooks? hooks,
+        Action discard)
     {
-        _buffer = buffer;
-        _limit = limit;
-        _isAreaAlive = isAreaAlive;
-        _onAbandoned = onAbandoned;
+        _area = area;
+        _item = item;
+        _hooks = hooks;
+        _discard = discard;
     }
 
     public override bool CanRead => false;
@@ -723,16 +805,22 @@ internal sealed class InMemoryWriteStream : Stream
 
     public override void Write(ReadOnlySpan<byte> buffer)
     {
-        EnsureWritable();
+        _hooks?.BeforeStreamWrite?.Invoke();
 
-        if (_buffer.Length + buffer.Length > _limit)
+        lock (_area.Gate)
         {
-            throw new PortableStagingException(
-                PortableStagingException.LimitExceededCode,
-                $"The staged item exceeds the {_limit}-byte staging limit.");
-        }
+            EnsureWritable();
 
-        _buffer.Write(buffer);
+            if (_item.Buffer.Length + buffer.Length > _item.EffectiveLimit)
+            {
+                _discard();
+                throw new PortableStagingException(
+                    PortableStagingException.LimitExceededCode,
+                    $"The staged item exceeds its {_item.EffectiveLimit}-byte limit.");
+            }
+
+            _item.Buffer.Write(buffer);
+        }
     }
 
     public override ValueTask WriteAsync(
@@ -752,7 +840,13 @@ internal sealed class InMemoryWriteStream : Stream
 
             if (disposing)
             {
-                _onAbandoned();
+                lock (_area.Gate)
+                {
+                    if (_item.Status == InMemoryItemStatus.Writing)
+                    {
+                        _discard();
+                    }
+                }
             }
         }
 
@@ -773,11 +867,18 @@ internal sealed class InMemoryWriteStream : Stream
             throw new ObjectDisposedException(nameof(InMemoryWriteStream));
         }
 
-        if (!_isAreaAlive())
+        if (_area.Deleted)
         {
             throw new PortableStagingException(
                 PortableStagingException.NotFoundCode,
                 "The staging area has been deleted.");
+        }
+
+        if (_item.Status != InMemoryItemStatus.Writing)
+        {
+            throw new PortableStagingException(
+                PortableStagingException.ConflictCode,
+                "The write handle has been completed, discarded, or closed.");
         }
     }
 }
