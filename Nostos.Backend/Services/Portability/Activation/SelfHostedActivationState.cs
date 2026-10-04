@@ -56,6 +56,37 @@ public sealed record RecoveryMediaDescriptor(Guid BookId, string Kind, string Ex
 /// Describes a matched previous DB/media generation. A populated replacement's
 /// expiry is exactly the contract retention period. Restore consumes portable state
 /// from this database; it must not resurrect this copy's host operational rows.
+/// <para>
+/// <see cref="Status"/> is <see cref="MigrationRecoveryStatus.Creating"/> while the
+/// retention renames are still being made and <see cref="MigrationRecoveryStatus.Available"/>
+/// once both components are retained and the retention reservation is durable.
+/// <see cref="DatabaseRetained"/>/<see cref="MediaRetained"/> record exactly which
+/// rename has completed, so a process crash is describable; the activation journal
+/// remains the phase authority that decides rollback or roll-forward.
+/// <see cref="RetentionReservationId"/> is the claimed, non-expiring capacity
+/// reservation that is released only after the retained material is deleted; each
+/// replacement retains its own seven-day copy, several can coexist, and each keeps
+/// its own claimed reservation until its own cleanup.
+/// </para>
+/// <para>
+/// Media evidence: every <see cref="RecoveryMediaDescriptor.Sha256"/> describes the
+/// exact bytes present at the final under-maintenance verification immediately
+/// before retention. A file is re-hashed under the exclusive lease when it is new,
+/// its length or full-precision last-write time changed, or its last write falls at
+/// or after the capture start minus the timestamp-granularity safety window (see
+/// <c>SelfHostedMigrationRecoveryService.MediaHashSafetyWindow</c>);
+/// <see cref="MediaRehashedCount"/> reports how many were re-hashed. Only a file
+/// unchanged in path, length and last-write time and last written strictly before
+/// that window keeps its pre-maintenance hash. Deliberate back-dating of timestamps
+/// by a local actor is outside the threat model. Restore must re-hash every
+/// retained file and fail closed on any mismatch.
+/// </para>
+/// <para>
+/// <see cref="TransferTopUpSettled"/>/<see cref="TransferTopUpReservationId"/>/
+/// <see cref="TransferTopUpTargetBytes"/> are the durable absolute target for the
+/// one-time offset of the job's unmaterialized transfer claim, recorded before the
+/// capacity row is mutated so retries and crashes cannot apply it twice.
+/// </para>
 /// </summary>
 public sealed record SelfHostedRecoveryManifest(
     [property: JsonRequired] Guid JobId,
@@ -69,13 +100,25 @@ public sealed record SelfHostedRecoveryManifest(
     [property: JsonRequired] long MediaBytes,
     [property: JsonRequired] string DatabaseSha256,
     [property: JsonRequired] IReadOnlyList<RecoveryMediaDescriptor> Media,
-    [property: JsonRequired] int ManifestVersion = 1)
+    [property: JsonRequired] int ManifestVersion = 1,
+    [property: JsonRequired] string DatabaseSchemaVersion = "",
+    [property: JsonRequired] int DatabaseMigrationCount = 0,
+    [property: JsonRequired] bool DatabaseRetained = false,
+    [property: JsonRequired] bool MediaRetained = false,
+    [property: JsonRequired] Guid? RetentionReservationId = null,
+    [property: JsonRequired] int MediaRehashedCount = 0,
+    [property: JsonRequired] bool TransferTopUpSettled = false,
+    [property: JsonRequired] Guid? TransferTopUpReservationId = null,
+    [property: JsonRequired] long TransferTopUpTargetBytes = 0)
 {
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? Extensions { get; init; }
 
     public static DateTimeOffset Expiry(DateTimeOffset createdAtUtc) =>
         createdAtUtc.AddDays(MigrationContractLimits.RecoveryRetentionDays);
+
+    /// <summary>Physical bytes retained by this snapshot on both volumes.</summary>
+    public long TotalBytes => DatabaseBytes + MediaBytes;
 }
 
 /// <summary>Pure protocol decisions; this class never reads or mutates the live library.</summary>
@@ -201,6 +244,11 @@ public static class SelfHostedActivationDocument
         && manifest.ExpiresAtUtc - manifest.CreatedAtUtc == TimeSpan.FromDays(MigrationContractLimits.RecoveryRetentionDays)
         && manifest.Counts is not null && manifest.DatabaseBytes >= 0 && manifest.MediaBytes >= 0
         && IsDigest(manifest.DatabaseSha256) && manifest.Media is not null
+        && manifest.DatabaseSchemaVersion is not null && manifest.DatabaseMigrationCount >= 0
+        && manifest.RetentionReservationId != Guid.Empty
+        && manifest.MediaRehashedCount >= 0
+        && manifest.TransferTopUpReservationId != Guid.Empty
+        && manifest.TransferTopUpTargetBytes >= 0
         && manifest.Media.All(m => m is not null && m.BookId != Guid.Empty && m.Bytes >= 0
             && IsDigest(m.Sha256));
 
