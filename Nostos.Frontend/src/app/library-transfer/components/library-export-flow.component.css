@@ -1,0 +1,6 @@
+/* Export-flow specifics. Shared transfer-state geometry lives in
+   library-transfer.shared.css. */
+
+:host {
+  display: block;
+}

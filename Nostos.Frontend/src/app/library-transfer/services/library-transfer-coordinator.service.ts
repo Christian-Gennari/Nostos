@@ -506,6 +506,7 @@ export class LibraryTransferCoordinator {
             jobId: status.job.id,
             jobState: status.job.state,
             preflight,
+            preparedImport: status.preparedImport ?? undefined,
           });
         } else {
           this.setState({
@@ -513,6 +514,7 @@ export class LibraryTransferCoordinator {
             jobId: status.job.id,
             jobState: status.job.state,
             preflight,
+            preparedImport: status.preparedImport ?? undefined,
           });
         }
         return;
@@ -662,11 +664,15 @@ export class LibraryTransferCoordinator {
           'This is a SelfHosted backup, not a portable library archive.',
         );
       case 'RejectedInsufficientStorage':
-        return this.failure(
-          'migration_storage_exhausted',
-          `This import needs about ${evaluation.requiredStorageBytes} bytes of available ` +
-            `storage. ${evaluation.availableStorageBytes} bytes are available.`,
-        );
+        return {
+          ...this.failure(
+            'migration_storage_exhausted',
+            `This import needs about ${evaluation.requiredStorageBytes} bytes of available ` +
+              `storage. ${evaluation.availableStorageBytes} bytes are available.`,
+          ),
+          requiredStorageBytes: evaluation.requiredStorageBytes,
+          availableStorageBytes: evaluation.availableStorageBytes,
+        };
       case 'RejectedDestinationConflict':
         return this.failure(
           'migration_destination_conflict',

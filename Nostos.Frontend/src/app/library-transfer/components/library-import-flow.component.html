@@ -1,0 +1,287 @@
+<div class="transfer-flow" data-testid="library-import-flow">
+  <input
+    #fileInput
+    type="file"
+    class="visually-hidden"
+    tabindex="-1"
+    accept=".nostos,application/vnd.nostos.portable+zip"
+    (change)="onFileSelected($event)"
+    data-testid="library-import-file-input"
+  />
+
+  @if (otherTabActive() && state().kind === 'idle') {
+    <div class="transfer-other-tab" role="status" data-testid="transfer-other-tab">
+      <nostos-icon name="warning-circle" [size]="16" />
+      <div>
+        <p class="transfer-other-tab-title">An import is already in progress in another tab.</p>
+        <p class="transfer-other-tab-note">
+          @if (otherTabFileName(); as fileName) {
+            {{ fileName }} is being imported there.
+          }
+          Finish or cancel that import before starting another one here.
+        </p>
+      </div>
+    </div>
+  } @else if (inspecting(); as current) {
+    <div class="transfer-state" data-testid="import-inspecting">
+      <p class="transfer-headline">Preparing import…</p>
+      <p class="transfer-file-name">{{ current.fileName }}</p>
+      <app-library-transfer-progress
+        phase="hashing"
+        [bytesProcessed]="current.bytesRead"
+        [totalBytes]="current.totalBytes"
+      />
+      <div class="transfer-actions">
+        <button
+          appButton
+          type="button"
+          variant="ghost"
+          (click)="cancel()"
+          data-testid="import-cancel"
+        >
+          Cancel import
+        </button>
+      </div>
+    </div>
+  } @else if (preflighting(); as current) {
+    <div class="transfer-state" data-testid="import-preflighting">
+      <p class="transfer-headline">Checking the archive with this host…</p>
+      <app-library-transfer-progress phase="preparing" />
+      <div class="transfer-actions">
+        <button
+          appButton
+          type="button"
+          variant="ghost"
+          (click)="cancel()"
+          data-testid="import-cancel"
+        >
+          Cancel import
+        </button>
+      </div>
+    </div>
+  } @else if (reselect(); as current) {
+    <div class="transfer-state" data-testid="import-reselect">
+      <p class="transfer-headline">Continue your import</p>
+      @if (reselectNotice(); as notice) {
+        <p class="transfer-error" role="alert" data-testid="import-reselect-notice">{{ notice }}</p>
+      }
+      <p class="transfer-copy">
+        Your upload can continue from the chunks already received. Select the same file again to
+        resume.
+      </p>
+      <div class="transfer-actions">
+        <button
+          appButton
+          type="button"
+          variant="primary"
+          (click)="openPicker()"
+          data-testid="import-resume-file"
+        >
+          Select file to resume
+        </button>
+        <button
+          appButton
+          type="button"
+          variant="ghost"
+          (click)="cancel()"
+          data-testid="import-cancel"
+        >
+          Cancel import
+        </button>
+      </div>
+    </div>
+  } @else if (starting()) {
+    <div class="transfer-state" data-testid="import-starting">
+      <p class="transfer-headline">Starting the upload…</p>
+      <app-library-transfer-progress phase="preparing" />
+    </div>
+  } @else if (uploading(); as current) {
+    <div class="transfer-state" data-testid="import-uploading">
+      <p class="transfer-headline">
+        @if (current.paused) {
+          Import paused.
+        } @else {
+          Uploading your library…
+        }
+      </p>
+      <app-library-transfer-progress
+        phase="uploading"
+        [bytesProcessed]="current.progress.uploadedBytes"
+        [totalBytes]="current.progress.totalBytes"
+        [rateBytesPerSecond]="current.progress.rateBytesPerSecond"
+        [etaSeconds]="current.progress.etaSeconds"
+        [completedChunks]="current.progress.completedChunks"
+        [totalChunks]="current.progress.totalChunks"
+        [paused]="current.paused"
+      />
+      <div class="transfer-actions">
+        @if (current.paused) {
+          <button
+            appButton
+            type="button"
+            variant="primary"
+            [disabled]="resuming()"
+            [busy]="resuming()"
+            (click)="resume()"
+            data-testid="import-resume-upload"
+          >
+            Resume upload
+          </button>
+        } @else {
+          <button
+            appButton
+            type="button"
+            variant="secondary"
+            [disabled]="pausing()"
+            [busy]="pausing()"
+            (click)="pause()"
+            data-testid="import-pause"
+          >
+            Pause
+          </button>
+        }
+        <button
+          appButton
+          type="button"
+          variant="ghost"
+          (click)="cancel()"
+          data-testid="import-cancel"
+        >
+          Cancel import
+        </button>
+      </div>
+    </div>
+  } @else if (checking(); as current) {
+    <div class="transfer-state" data-testid="import-checking">
+      <p class="transfer-headline">{{ checkingHeadline() }}</p>
+      <app-library-transfer-progress
+        [phase]="checkingPhase()"
+        [bytesProcessed]="current.progress.uploadedBytes"
+        [totalBytes]="current.progress.totalBytes"
+        [completedChunks]="current.progress.completedChunks"
+        [totalChunks]="current.progress.totalChunks"
+      />
+      <p class="transfer-copy" data-testid="import-server-note">
+        @if (current.jobState === 'Activating') {
+          Nostos is switching your library on the server. This can no longer be cancelled.
+        } @else {
+          The upload is complete and the server is processing the archive. You can close this
+          page; processing continues on the server.
+        }
+      </p>
+      @if (checkingCancellable()) {
+        <div class="transfer-actions">
+          <button
+            appButton
+            type="button"
+            variant="ghost"
+            (click)="cancel()"
+            data-testid="import-cancel"
+          >
+            Cancel import
+          </button>
+        </div>
+      }
+    </div>
+  } @else if (readyEmpty()) {
+    <div class="transfer-state" data-testid="import-ready-empty">
+      <p class="transfer-headline" role="status">Your imported library is checked and ready.</p>
+      <p class="transfer-copy">No replacement is needed for this library.</p>
+    </div>
+  } @else if (replacement(); as current) {
+    <div class="transfer-state" data-testid="import-replacement">
+      <p class="transfer-headline">Replacement confirmation needed</p>
+      <p class="transfer-copy">
+        Your imported library is verified. Confirm whether to replace this library.
+      </p>
+    </div>
+    <app-library-replacement-dialog
+      [isOpen]="true"
+      [preflight]="current.preflight ?? null"
+      [preparedImport]="current.preparedImport ?? null"
+      [supportsSafeActivation]="supportsSafeActivation()"
+      (confirmed)="onReplacementConfirmed()"
+      (cancelled)="onReplacementCancelled()"
+    />
+  } @else if (completed()) {
+    <div class="transfer-state" data-testid="import-completed">
+      <p class="transfer-headline" role="status">Import complete.</p>
+      <p class="transfer-copy">Your library is ready.</p>
+      <div class="transfer-actions">
+        <button
+          appButton
+          type="button"
+          variant="primary"
+          (click)="dismiss()"
+          data-testid="import-done"
+        >
+          Done
+        </button>
+      </div>
+    </div>
+  } @else if (failed(); as current) {
+    @if (failureCopy(); as copy) {
+      <div class="transfer-state transfer-state--failed" role="alert" data-testid="import-failed">
+        <p class="transfer-headline">{{ copy.title }}</p>
+        <p class="transfer-copy">{{ copy.message }}</p>
+        @if (failureActionLabel(); as label) {
+          <div class="transfer-actions">
+            <button
+              appButton
+              type="button"
+              variant="secondary"
+              (click)="runFailureAction()"
+              data-testid="import-failure-action"
+            >
+              {{ label }}
+            </button>
+          </div>
+        }
+      </div>
+    }
+  } @else if (cancelled(); as current) {
+    <div class="transfer-state" data-testid="import-cancelled">
+      <p class="transfer-headline" role="status">Import cancelled.</p>
+      <p class="transfer-copy">Your existing library was not changed.</p>
+      <div class="transfer-actions">
+        @if (current.jobId) {
+          <button
+            appButton
+            type="button"
+            variant="secondary"
+            (click)="retry()"
+            data-testid="import-retry"
+          >
+            Retry import
+          </button>
+        }
+        <button
+          appButton
+          type="button"
+          variant="ghost"
+          (click)="dismiss()"
+          data-testid="import-close"
+        >
+          Close
+        </button>
+      </div>
+    </div>
+  } @else {
+    <div class="transfer-state" data-testid="import-idle">
+      <p class="transfer-copy">
+        Import a portable .nostos archive from another Nostos installation.
+      </p>
+      <div class="transfer-actions">
+        <button
+          appButton
+          type="button"
+          variant="secondary"
+          (click)="openPicker()"
+          data-testid="import-choose-file"
+        >
+          Import library…
+        </button>
+      </div>
+    </div>
+  }
+</div>

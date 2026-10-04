@@ -1,0 +1,78 @@
+.transfer-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.transfer-progress-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.transfer-progress-label {
+  font-size: var(--text-sm);
+  font-weight: var(--fw-medium);
+  color: var(--color-text-main);
+}
+
+.transfer-progress-percent {
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-light);
+}
+
+.transfer-progress-track {
+  position: relative;
+  height: 8px;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: var(--bg-surface-alt);
+  border: 1px solid var(--border-light);
+}
+
+.transfer-progress-fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--color-primary);
+  transition: width var(--motion-base) ease-out;
+}
+
+.transfer-progress-track.is-paused .transfer-progress-fill {
+  background: var(--color-text-faint);
+}
+
+.transfer-progress-track.is-indeterminate .transfer-progress-fill {
+  width: 35%;
+  animation: transfer-progress-indeterminate 1.4s ease-in-out infinite;
+}
+
+@keyframes transfer-progress-indeterminate {
+  0% {
+    transform: translateX(-110%);
+  }
+  100% {
+    transform: translateX(320%);
+  }
+}
+
+.transfer-progress-detail {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--color-text-light);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .transfer-progress-fill {
+    transition: none;
+  }
+
+  .transfer-progress-track.is-indeterminate .transfer-progress-fill {
+    animation: none;
+    transform: none;
+    opacity: 0.55;
+  }
+}
