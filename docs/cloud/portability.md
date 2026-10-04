@@ -26,7 +26,7 @@ POST /api/portability/import
 - `POST /api/portability/import` accepts an archive and returns a structured import result or typed validation error.
 - A non-empty destination returns HTTP 409 (`destination_not_empty`).
 
-Import uses `multipart/form-data` and uploads the portable archive as one HTTP request.
+Import sends the raw `.nostos` archive bytes as the HTTP request body. The frontend sets `Content-Type: application/vnd.nostos.portable+zip`; the endpoint passes `request.Body` directly to `ImportAsync` and does not parse a multipart envelope.
 
 The backend currently configures Kestrel with a 4 GiB maximum request body size in `Nostos.Backend/Program.cs`:
 
@@ -112,6 +112,14 @@ Import validates the archive structure, versions, checksums, sizes, IDs, relatio
 | `MaxCompressionRatio` | 1,000 | Maximum compression ratio protecting against ZIP bombs |
 
 These limits protect archive validation and extraction. They do **not** override the current HTTP request limit (4 GiB Kestrel body limit).
+
+## Archive hardening
+
+Before writing imported library data, the reader rejects malformed manifests, unsupported format or data versions, duplicate or unexpected ZIP entries, unsafe paths, excessive entry counts or sizes, suspicious compression ratios, empty or duplicate IDs, invalid relationships, hierarchy cycles, missing referenced media, and data or media length/SHA-256 mismatches.
+
+## Relationship to local operational backup
+
+SelfHosted local backup remains useful for same-installation recovery because it can snapshot and restore SQLite directly. It is not an interchange format. Use `IPortableArchiveService` to migrate between Nostos installations; do not copy database files, storage paths, or provider backup artifacts as a portable archive.
 
 ## Archive versions
 
@@ -236,6 +244,14 @@ Only one worker may actively process a migration job at a time.
 - **Concurrency control:** All state transitions and progress updates require a `leaseToken` matching the active worker lease. Mismatched or expired tokens fail with concurrency conflict.
 - **Restart recovery:** `IMigrationJobStore.GetJobsNeedingRecoveryAsync(cutoffUtc)` discovers active, non-terminal jobs whose worker leases expired before the cutoff, allowing orphaned jobs to be safely acquired and resumed by another worker.
 
+### Idempotent job and session creation
+
+Job creation and transfer session start require a non-empty idempotency key scoped to the authenticated owner and operation. For session start, the key is scoped to its parent job.
+
+- A retry with the same key and the same payload returns the original job or session through `MigrationIdempotencyResult<T>.Replayed`; it does not create another resource.
+- A retry with the same key and a different payload returns `MigrationIdempotencyResult<T>.Conflicted` with `MigrationIdempotencyConflictKind.KeyReusedWithDifferentPayload`.
+- The job payload is its migration direction. The session payload is its parent job plus purpose, byte size, chunk size/count, and file identity; the idempotency key itself is not part of the payload.
+
 ---
 
 ## Transfer chunking, resumability, and file identity
@@ -255,10 +271,10 @@ To reliably transfer large libraries without giant HTTP requests, the contract e
 Preflight (`MigrationPreflightEvaluator.Evaluate`) evaluates declared archive metadata against destination state.
 
 ### Incoming counts (`MigrationArchiveCounts`)
-Must report: `Works`, `Books`, `Notes`, `Topics`, `Writings`, `WritingNotes`, `Collections`, `CollectionMemberships`, `Acquisitions`, `AssistantSettings`, `NoteImportBookLinks`, `MediaEntries`, and `TotalRows`.
+Must report: `Works`, `Books`, `Notes`, `Topics`, `NoteTopics`, `Writings`, `WritingNotes`, `Collections`, `CollectionMemberships`, `Acquisitions`, `AssistantSettings`, `NoteImportBookLinks`, `MediaEntries`, and `TotalRows`.
 
 ### Destination counts (`MigrationExistingCounts`)
-Derived from the completeness inventory: `Works`, `Books`, `Notes`, `Topics`, `Writings`, `WritingNotes`, `Collections`, `BookCollections`, `Acquisitions`, `NoteImportBookLinks`, `AssistantSettings`, and `TotalRows`.
+Derived from the completeness inventory: `Works`, `Books`, `Notes`, `Topics`, `NoteTopics`, `Writings`, `WritingNotes`, `Collections`, `BookCollections`, `Acquisitions`, `NoteImportBookLinks`, `AssistantSettings`, and `TotalRows`.
 
 ### Staging capacity formula
 

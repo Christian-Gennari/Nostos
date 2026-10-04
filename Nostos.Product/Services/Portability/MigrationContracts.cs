@@ -180,6 +180,7 @@ public sealed record MigrationArchiveCounts(
     long Books = 0,
     long Notes = 0,
     long Topics = 0,
+    long NoteTopics = 0,
     long Writings = 0,
     long WritingNotes = 0,
     long Collections = 0,
@@ -196,6 +197,7 @@ public sealed record MigrationArchiveCounts(
         Books +
         Notes +
         Topics +
+        NoteTopics +
         Writings +
         WritingNotes +
         Collections +
@@ -210,6 +212,7 @@ public sealed record MigrationExistingCounts(
     long Books = 0,
     long Notes = 0,
     long Topics = 0,
+    long NoteTopics = 0,
     long Writings = 0,
     long WritingNotes = 0,
     long Collections = 0,
@@ -223,6 +226,7 @@ public sealed record MigrationExistingCounts(
         Books +
         Notes +
         Topics +
+        NoteTopics +
         Writings +
         WritingNotes +
         Collections +
@@ -513,13 +517,78 @@ public sealed record MigrationFileIdentity(
     string Sha256Checksum,
     string? ClientFingerprint = null);
 
+/// <summary>
+/// Identifies a conflict caused by reusing an idempotency key with a different
+/// creation payload.
+/// </summary>
+public enum MigrationIdempotencyConflictKind
+{
+    KeyReusedWithDifferentPayload = 0,
+}
+
+/// <summary>
+/// Typed conflict returned when an idempotency key is already bound to another
+/// creation payload.
+/// </summary>
+public sealed record MigrationIdempotencyConflict(
+    MigrationIdempotencyConflictKind Kind);
+
+/// <summary>
+/// Result of an idempotent create operation. Successful results carry the
+/// original resource; conflict results carry a typed conflict and no resource.
+/// </summary>
+public sealed record MigrationIdempotencyResult<T> where T : class
+{
+    private MigrationIdempotencyResult(
+        T? resource,
+        bool wasReplay,
+        MigrationIdempotencyConflict? conflict)
+    {
+        Resource = resource;
+        WasReplay = wasReplay;
+        Conflict = conflict;
+    }
+
+    public T? Resource { get; }
+
+    public bool WasReplay { get; }
+
+    public MigrationIdempotencyConflict? Conflict { get; }
+
+    public bool IsConflict => Conflict is not null;
+
+    public static MigrationIdempotencyResult<T> Created(T resource)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+        return new MigrationIdempotencyResult<T>(resource, wasReplay: false, conflict: null);
+    }
+
+    public static MigrationIdempotencyResult<T> Replayed(T resource)
+    {
+        ArgumentNullException.ThrowIfNull(resource);
+        return new MigrationIdempotencyResult<T>(resource, wasReplay: true, conflict: null);
+    }
+
+    public static MigrationIdempotencyResult<T> Conflicted(MigrationIdempotencyConflict conflict)
+    {
+        ArgumentNullException.ThrowIfNull(conflict);
+        return new MigrationIdempotencyResult<T>(resource: null, wasReplay: false, conflict);
+    }
+}
+
+/// <summary>
+/// Required creation payload for a resumable transfer session. The idempotency
+/// key is non-empty and scoped to the authenticated owner and parent job.
+/// Repeating the key with the same remaining fields returns the original session;
+/// reusing it with different fields returns a typed idempotency conflict.
+/// </summary>
 public sealed record MigrationSessionRequest(
     MigrationSessionPurpose Purpose,
     long TotalBytes,
     int ChunkSize,
     int TotalChunks,
     MigrationFileIdentity FileIdentity,
-    string? IdempotencyKey = null);
+    string IdempotencyKey);
 
 public sealed record MigrationSessionStatus(
     Guid SessionId,
@@ -599,8 +668,21 @@ public interface IMigrationJobStore
         DateTimeOffset cutoffUtc,
         CancellationToken ct);
 
-    Task<MigrationJob> CreateAsync(
+    /// <summary>
+    /// Creates a job using a required, non-empty idempotency key scoped to the
+    /// authenticated owner and this operation. A repeated key with the same
+    /// direction returns the original job as a replay result. Reusing that key
+    /// with a different direction returns a typed
+    /// <see cref="MigrationIdempotencyConflictKind.KeyReusedWithDifferentPayload"/>
+    /// conflict result and creates no job.
+    /// </summary>
+    /// <param name="direction">The migration direction included in the creation payload.</param>
+    /// <param name="idempotencyKey">A required, non-empty key for this owner-scoped create operation.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The created or replayed original job, or a typed idempotency conflict result.</returns>
+    Task<MigrationIdempotencyResult<MigrationJob>> CreateAsync(
         MigrationDirection direction,
+        string idempotencyKey,
         CancellationToken ct);
 
     /// <summary>
@@ -690,7 +772,17 @@ public interface IMigrationRecoveryService
 /// </summary>
 public interface IMigrationTransferService
 {
-    Task<MigrationSessionStatus> CreateSessionAsync(
+    /// <summary>
+    /// Starts a transfer session. The required request idempotency key is scoped
+    /// to the authenticated owner and parent job. A repeated key with the same
+    /// session payload returns the original session as a replay result; the same
+    /// key with a different payload returns a typed idempotency conflict result.
+    /// </summary>
+    /// <param name="jobId">The owning migration job.</param>
+    /// <param name="request">Session size, chunking, file identity, purpose, and required idempotency key.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The created or replayed original session, or a typed idempotency conflict result.</returns>
+    Task<MigrationIdempotencyResult<MigrationSessionStatus>> CreateSessionAsync(
         Guid jobId,
         MigrationSessionRequest request,
         CancellationToken ct);

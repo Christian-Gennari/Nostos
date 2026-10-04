@@ -53,7 +53,7 @@ public sealed class PortableMigrationFixtureAndCompatTests
     {
         using var fixture = await CreateFixtureAsync(
             "portable-format1-data2.nostos",
-            CurrentDataVersion);
+            IntermediateDataVersion);
 
         fixture.Name.Should().Be("portable-format1-data2.nostos");
         fixture.Bytes.Should().NotBeEmpty();
@@ -64,11 +64,13 @@ public sealed class PortableMigrationFixtureAndCompatTests
 
         manifest["format"]!.GetValue<string>().Should().Be(PortableFormat);
         manifest["formatVersion"]!.GetValue<int>().Should().Be(SupportedFormatVersion);
-        manifest["dataVersion"]!.GetValue<int>().Should().Be(CurrentDataVersion);
+        manifest["dataVersion"]!.GetValue<int>().Should().Be(IntermediateDataVersion);
 
-        data["version"]!.GetValue<int>().Should().Be(CurrentDataVersion);
+        data["version"]!.GetValue<int>().Should().Be(IntermediateDataVersion);
         data["writingNotes"].Should().BeOfType<JsonArray>();
         data["writingNotes"]!.AsArray().Should().ContainSingle();
+        data.ContainsKey("noteImportBookLinks").Should().BeFalse(
+            "DataVersion 2 predates remembered e-reader book mappings");
 
         AssertFixtureIsRedistributable(fixture.Bytes);
         AssertDataDescriptorMatchesPayload(manifest, data);
@@ -142,7 +144,7 @@ public sealed class PortableMigrationFixtureAndCompatTests
     {
         using var fixture = await CreateFixtureAsync(
             "portable-format1-data2.nostos",
-            CurrentDataVersion);
+            IntermediateDataVersion);
 
         await using var destination = await LocalPortableTestLibrary.CreateAsync();
         using var archive = new MemoryStream(fixture.Bytes, writable: false);
@@ -593,30 +595,82 @@ public sealed class PortableMigrationFixtureAndCompatTests
     }
 
     [Fact]
-    public void Completeness_inventory_covers_all_destination_counts_properties()
+    public void Completeness_inventory_covers_all_preflight_count_properties()
     {
-        var expectedProperties = new[]
-        {
-            nameof(MigrationExistingCounts.Works),
-            nameof(MigrationExistingCounts.Books),
-            nameof(MigrationExistingCounts.Notes),
-            nameof(MigrationExistingCounts.Topics),
-            nameof(MigrationExistingCounts.Writings),
-            nameof(MigrationExistingCounts.WritingNotes),
-            nameof(MigrationExistingCounts.Collections),
-            nameof(MigrationExistingCounts.BookCollections),
-            nameof(MigrationExistingCounts.Acquisitions),
-            nameof(MigrationExistingCounts.NoteImportBookLinks),
-            nameof(MigrationExistingCounts.AssistantSettings),
-            nameof(MigrationExistingCounts.TotalRows),
-        };
-
-        var actualProperties = typeof(MigrationExistingCounts)
+        var actualIncomingCountProperties = typeof(MigrationArchiveCounts)
             .GetProperties(BindingFlags.Public | BindingFlags.Instance)
             .Select(property => property.Name)
             .ToHashSet(StringComparer.Ordinal);
 
-        actualProperties.Should().BeEquivalentTo(expectedProperties);
+        actualIncomingCountProperties.Should().BeEquivalentTo(
+            PortableCompletenessInventoryTests.ExpectedIncomingCountProperties);
+
+        var actualDestinationCountProperties = typeof(MigrationExistingCounts)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .Select(property => property.Name)
+            .ToHashSet(StringComparer.Ordinal);
+
+        actualDestinationCountProperties.Should().BeEquivalentTo(
+            PortableCompletenessInventoryTests.ExpectedDestinationCountProperties);
+
+        new MigrationArchiveCounts(NoteTopics: 1).TotalRows.Should().Be(1);
+        new MigrationExistingCounts(NoteTopics: 1).TotalRows.Should().Be(1);
+    }
+
+    [Fact]
+    public void Migration_idempotency_result_distinguishes_create_replay_and_typed_conflict()
+    {
+        var job = new MigrationJob(
+            Guid.NewGuid(),
+            MigrationDirection.Import,
+            MigrationJobState.Pending,
+            MigrationRecoveryStatus.NotRequired,
+            DateTimeOffset.UtcNow,
+            DateTimeOffset.UtcNow);
+
+        var created = MigrationIdempotencyResult<MigrationJob>.Created(job);
+        created.Resource.Should().BeSameAs(job);
+        created.WasReplay.Should().BeFalse();
+        created.IsConflict.Should().BeFalse();
+        created.Conflict.Should().BeNull();
+
+        var replayed = MigrationIdempotencyResult<MigrationJob>.Replayed(job);
+        replayed.Resource.Should().BeSameAs(job);
+        replayed.WasReplay.Should().BeTrue();
+        replayed.IsConflict.Should().BeFalse();
+
+        var conflicted = MigrationIdempotencyResult<MigrationJob>.Conflicted(
+            new MigrationIdempotencyConflict(
+                MigrationIdempotencyConflictKind.KeyReusedWithDifferentPayload));
+        conflicted.Resource.Should().BeNull();
+        conflicted.WasReplay.Should().BeFalse();
+        conflicted.IsConflict.Should().BeTrue();
+        conflicted.Conflict!.Kind.Should().Be(
+            MigrationIdempotencyConflictKind.KeyReusedWithDifferentPayload);
+
+        var sessionKeyParameter = typeof(MigrationSessionRequest)
+            .GetConstructors()
+            .Single()
+            .GetParameters()
+            .Single(parameter => parameter.Name == "IdempotencyKey");
+        sessionKeyParameter.ParameterType.Should().Be(typeof(string));
+        sessionKeyParameter.HasDefaultValue.Should().BeFalse();
+
+        var jobCreateKeyParameter = typeof(IMigrationJobStore)
+            .GetMethod(nameof(IMigrationJobStore.CreateAsync))!
+            .GetParameters()
+            .Single(parameter => parameter.Name == "idempotencyKey");
+        jobCreateKeyParameter.ParameterType.Should().Be(typeof(string));
+        jobCreateKeyParameter.IsOptional.Should().BeFalse();
+
+        typeof(IMigrationJobStore)
+            .GetMethod(nameof(IMigrationJobStore.CreateAsync))!
+            .ReturnType.Should().Be(typeof(Task<MigrationIdempotencyResult<MigrationJob>>));
+
+        typeof(IMigrationTransferService)
+            .GetMethod(nameof(IMigrationTransferService.CreateSessionAsync))!
+            .ReturnType.Should().Be(
+                typeof(Task<MigrationIdempotencyResult<MigrationSessionStatus>>));
     }
 
     [Fact]
@@ -628,7 +682,7 @@ public sealed class PortableMigrationFixtureAndCompatTests
 
         using var v2 = await CreateFixtureAsync(
             "portable-format1-data2.nostos",
-            CurrentDataVersion);
+            IntermediateDataVersion);
 
         var root = Path.Combine(
             Path.GetTempPath(),
@@ -661,7 +715,7 @@ public sealed class PortableMigrationFixtureAndCompatTests
             await AssertManifestVersionAsync(
                 persistedV2,
                 SupportedFormatVersion,
-                CurrentDataVersion);
+                IntermediateDataVersion);
         }
         finally
         {

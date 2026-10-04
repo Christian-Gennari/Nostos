@@ -378,102 +378,444 @@ public sealed class PortableCompletenessInventoryTests
             string.Join(Environment.NewLine, failures.Select(x => $" - {x}")));
     }
 
-    private static readonly IReadOnlyDictionary<string, Type> PortableArchiveRecordTypes =
-        new Dictionary<string, Type>(StringComparer.Ordinal)
+    private static readonly Type[] PortableArchivePayloadRootTypes =
+    [
+        typeof(PortableLibraryData),
+        typeof(PortableArchiveManifest),
+    ];
+
+    private static readonly IReadOnlyDictionary<Type, ArchiveRecordClassification>
+        PortableArchiveRecordInventory =
+            new Dictionary<Type, ArchiveRecordClassification>
+            {
+                [typeof(PortableLibraryData)] = StructuralRecord(
+                    ("Version", "Archive data compatibility version for the complete payload."),
+                    ("Works", "Top-level archive collection containing PortableWork records."),
+                    ("Books", "Top-level archive collection containing PortableBook records."),
+                    ("Collections", "Top-level archive collection containing PortableCollection records."),
+                    ("BookCollections", "Top-level archive collection containing PortableBookCollection records."),
+                    ("Notes", "Top-level archive collection containing PortableNote records."),
+                    ("Topics", "Top-level archive collection containing PortableTopic records under the legacy concepts key."),
+                    ("NoteTopics", "Top-level archive collection containing PortableNoteTopic records under the legacy noteConcepts key."),
+                    ("Writings", "Top-level archive collection containing PortableWriting records."),
+                    ("BookAcquisitions", "Top-level archive collection containing PortableBookAcquisition records."),
+                    ("AssistantSettings", "Optional top-level singleton containing PortableAssistantSettings."),
+                    ("WritingNotes", "Version 2 optional top-level collection containing PortableWritingNote records."),
+                    ("NoteImportBookLinks", "Version 3 optional top-level collection containing PortableNoteImportBookLink records.")),
+
+                [typeof(PortableArchiveManifest)] = StructuralRecord(
+                    ("Format", "Archive format identifier in the manifest JSON root."),
+                    ("FormatVersion", "Archive structure version in the manifest JSON root."),
+                    ("DataVersion", "Relational payload compatibility version in the manifest JSON root."),
+                    ("ExportedAtUtc", "Export timestamp metadata."),
+                    ("ApplicationVersion", "Exporter product version metadata."),
+                    ("Counts", "Nested manifest summary of relational archive record counts."),
+                    ("Data", "Nested manifest descriptor for the relational JSON payload."),
+                    ("Media", "Nested manifest descriptors for media archive entries.")),
+
+                [typeof(PortableArchiveCounts)] = StructuralRecord(
+                    ("Works", "Count derived from PortableLibraryData.Works."),
+                    ("Books", "Count derived from PortableLibraryData.Books."),
+                    ("Collections", "Count derived from PortableLibraryData.Collections."),
+                    ("BookCollections", "Count derived from PortableLibraryData.BookCollections."),
+                    ("Notes", "Count derived from PortableLibraryData.Notes."),
+                    ("Topics", "Count derived from PortableLibraryData.Topics."),
+                    ("NoteTopics", "Count derived from PortableLibraryData.NoteTopics."),
+                    ("Writings", "Count derived from PortableLibraryData.Writings."),
+                    ("BookAcquisitions", "Count derived from PortableLibraryData.BookAcquisitions.")),
+
+                [typeof(PortableArchivePayload)] = StructuralRecord(
+                    ("Path", "Canonical archive path of the relational JSON payload."),
+                    ("Length", "Declared relational payload length verified during import."),
+                    ("Sha256", "SHA-256 digest verified against the relational payload bytes.")),
+
+                [typeof(PortableArchiveMediaEntry)] = StructuralRecord(
+                    ("BookId", "Stable book ID identifying the owning media asset."),
+                    ("Kind", "Archive media role, either book file or cover."),
+                    ("Path", "Canonical archive path derived from the stable book ID and media kind."),
+                    ("FileName", "Canonical media filename preserving its supported extension, not a host path."),
+                    ("ContentType", "Media content type metadata."),
+                    ("Length", "Declared media length verified during import."),
+                    ("Sha256", "SHA-256 digest verified against the staged media bytes.")),
+
+                [typeof(PortableWork)] = EntityRecord(
+                    ["WorkModel"],
+                    incomingCountKind: "Works",
+                    destinationCountKind: "Works"),
+
+                [typeof(PortableBook)] = EntityRecord(
+                    ["BookModel", "PhysicalBookModel", "EBookModel", "AudioBookModel", "FileInfoDetails"],
+                    incomingCountKind: "Books",
+                    destinationCountKind: "Books",
+                    structuralProperties: StructuralFields(
+                        ("Type", "TPH discriminator serialized as explicit book type string."),
+                        ("Metadata", "Owned entity BookMetadata serialized as a nested PortableBookMetadata record."),
+                        ("Progress", "Owned entity ReadingProgress serialized as a nested PortableReadingProgress record."),
+                        ("HasBookFile", "Derived boolean indicating whether physical/ebook asset exists."),
+                        ("HasCover", "Derived boolean indicating whether book cover asset exists."),
+                        ("Isbn", "TPH subclass physical/ebook ISBN property serialized on the book record."),
+                        ("PageCount", "TPH subclass physical/ebook page count serialized on the book record."),
+                        ("Asin", "TPH subclass audiobook ASIN serialized on the book record."),
+                        ("Duration", "TPH subclass audiobook duration serialized on the book record."),
+                        ("Narrator", "TPH subclass audiobook narrator serialized on the book record.")),
+                    entityPropertyAliases: EntityPropertyAliases(
+                        ("FileInfoDetails", "HasFile", typeof(PortableBook), "HasBookFile",
+                            "Asset-presence flag is serialized as PortableBook.HasBookFile."),
+                        ("FileInfoDetails", "FileName", typeof(PortableArchiveMediaEntry), "FileName",
+                            "Host-local book filename is replaced by the canonical archive media filename."),
+                        ("FileInfoDetails", "CoverFileName", typeof(PortableArchiveMediaEntry), "FileName",
+                            "Host-local cover filename is replaced by the canonical archive media filename."))),
+
+                [typeof(PortableBookMetadata)] = EntityRecord(
+                    ["BookMetadata"],
+                    incomingCountKind: "Books",
+                    destinationCountKind: "Books"),
+
+                [typeof(PortableReadingProgress)] = EntityRecord(
+                    ["ReadingProgress"],
+                    incomingCountKind: "Books",
+                    destinationCountKind: "Books"),
+
+                [typeof(PortableCollection)] = EntityRecord(
+                    ["CollectionModel"],
+                    incomingCountKind: "Collections",
+                    destinationCountKind: "Collections"),
+
+                [typeof(PortableBookCollection)] = EntityRecord(
+                    ["BookCollectionModel"],
+                    incomingCountKind: "CollectionMemberships",
+                    destinationCountKind: "BookCollections"),
+
+                [typeof(PortableNote)] = EntityRecord(
+                    ["NoteModel"],
+                    incomingCountKind: "Notes",
+                    destinationCountKind: "Notes"),
+
+                [typeof(PortableTopic)] = EntityRecord(
+                    ["TopicModel"],
+                    incomingCountKind: "Topics",
+                    destinationCountKind: "Topics"),
+
+                [typeof(PortableNoteTopic)] = EntityRecord(
+                    ["NoteTopicModel"],
+                    incomingCountKind: "NoteTopics",
+                    destinationCountKind: "NoteTopics"),
+
+                [typeof(PortableWriting)] = EntityRecord(
+                    ["WritingModel"],
+                    incomingCountKind: "Writings",
+                    destinationCountKind: "Writings"),
+
+                [typeof(PortableWritingNote)] = EntityRecord(
+                    ["WritingNoteModel"],
+                    incomingCountKind: "WritingNotes",
+                    destinationCountKind: "WritingNotes"),
+
+                [typeof(PortableBookAcquisition)] = EntityRecord(
+                    ["BookAcquisitionModel"],
+                    incomingCountKind: "Acquisitions",
+                    destinationCountKind: "Acquisitions"),
+
+                [typeof(PortableAssistantSettings)] = EntityRecord(
+                    ["AssistantSettingsModel"],
+                    incomingCountKind: "AssistantSettings",
+                    destinationCountKind: "AssistantSettings"),
+
+                [typeof(PortableNoteImportBookLink)] = EntityRecord(
+                    ["NoteImportBookLink"],
+                    incomingCountKind: "NoteImportBookLinks",
+                    destinationCountKind: "NoteImportBookLinks"),
+            };
+
+    private static readonly IReadOnlyDictionary<string, string> AdditionalIncomingCountKinds =
+        new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            ["WorkModel"] = typeof(PortableWork),
-            ["BookModel"] = typeof(PortableBook),
-            ["CollectionModel"] = typeof(PortableCollection),
-            ["BookCollectionModel"] = typeof(PortableBookCollection),
-            ["NoteModel"] = typeof(PortableNote),
-            ["TopicModel"] = typeof(PortableTopic),
-            ["NoteTopicModel"] = typeof(PortableNoteTopic),
-            ["WritingModel"] = typeof(PortableWriting),
-            ["WritingNoteModel"] = typeof(PortableWritingNote),
-            ["BookAcquisitionModel"] = typeof(PortableBookAcquisition),
-            ["AssistantSettingsModel"] = typeof(PortableAssistantSettings),
-            ["NoteImportBookLink"] = typeof(PortableNoteImportBookLink),
+            [nameof(MigrationArchiveCounts.MediaEntries)] =
+                "Count of media entries is derived from the portable media manifest rather than an EF entity kind.",
         };
 
-    private static readonly IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>>
-        AllowedDerivedArchiveRecordFields =
-            new Dictionary<string, IReadOnlyDictionary<string, string>>(StringComparer.Ordinal)
-            {
-                [nameof(PortableBook)] = new Dictionary<string, string>(StringComparer.Ordinal)
-                {
-                    ["Type"] = "TPH discriminator serialized as explicit book type string.",
-                    ["Metadata"] = "Owned entity BookMetadata serialized as nested object.",
-                    ["Progress"] = "Owned entity ReadingProgress serialized as nested object.",
-                    ["HasBookFile"] = "Derived boolean indicating whether physical/ebook asset exists.",
-                    ["HasCover"] = "Derived boolean indicating whether book cover asset exists.",
-                    ["ChaptersJson"] = "Owned entity FileInfoDetails.ChaptersJson serialized on book.",
-                    ["Isbn"] = "TPH subclass physical/ebook ISBN property serialized on book.",
-                    ["PageCount"] = "TPH subclass physical/ebook page count serialized on book.",
-                    ["Asin"] = "TPH subclass audiobook ASIN serialized on book.",
-                    ["Duration"] = "TPH subclass audiobook duration serialized on book.",
-                    ["Narrator"] = "TPH subclass audiobook narrator serialized on book.",
-                },
-            };
+    internal static IReadOnlySet<string> ExpectedIncomingCountProperties =>
+        GetCountProperties(classification => classification.IncomingCountKind)
+            .Concat(AdditionalIncomingCountKinds.Keys)
+            .Append(nameof(MigrationArchiveCounts.TotalRows))
+            .ToHashSet(StringComparer.Ordinal);
+
+    internal static IReadOnlySet<string> ExpectedDestinationCountProperties =>
+        GetCountProperties(classification => classification.DestinationCountKind)
+            .Append(nameof(MigrationExistingCounts.TotalRows))
+            .ToHashSet(StringComparer.Ordinal);
 
     [Fact]
     public void Portable_classification_and_archive_records_have_two_way_property_parity()
     {
-        foreach (var (entityName, archiveRecordType) in PortableArchiveRecordTypes)
+        var discoveredRecordTypes = DiscoverPortableArchiveRecordTypes();
+        var discoveredRecordProperties = discoveredRecordTypes.ToDictionary(
+            recordType => recordType,
+            recordType => recordType
+                .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+                .Where(property => property.GetMethod is not null)
+                .Select(property => property.Name)
+                .ToHashSet(StringComparer.Ordinal));
+        var failures = new List<string>();
+
+        foreach (var unclassifiedRecord in discoveredRecordTypes
+                     .Where(recordType => !PortableArchiveRecordInventory.ContainsKey(recordType))
+                     .OrderBy(recordType => recordType.Name, StringComparer.Ordinal))
         {
-            Inventory.Should().ContainKey(
-                entityName,
-                $"archive record {archiveRecordType.Name} must correspond to a classified entity");
+            failures.Add(
+                $"UNCLASSIFIED ARCHIVE RECORD: {unclassifiedRecord.Name}. " +
+                "Register it as mapped to classified entity properties or explicitly structural with reasons.");
+        }
 
-            var classification = Inventory[entityName];
+        foreach (var staleRecord in PortableArchiveRecordInventory.Keys
+                     .Where(recordType => !discoveredRecordTypes.Contains(recordType))
+                     .OrderBy(recordType => recordType.Name, StringComparer.Ordinal))
+        {
+            failures.Add(
+                $"STALE ARCHIVE RECORD CLASSIFICATION: {staleRecord.Name} is registered but is not reachable " +
+                "from a portable archive payload root.");
+        }
 
-            var classifiedPortableProperties = classification.PortableProperties
-                .ToHashSet(StringComparer.Ordinal);
+        foreach (var archiveRecordType in discoveredRecordTypes
+                     .OrderBy(recordType => recordType.Name, StringComparer.Ordinal))
+        {
+            if (!PortableArchiveRecordInventory.TryGetValue(archiveRecordType, out var recordClassification))
+                continue;
+
+            if (recordClassification.EntityInventoryNames.Count > 0
+                && (string.IsNullOrWhiteSpace(recordClassification.IncomingCountKind)
+                    || string.IsNullOrWhiteSpace(recordClassification.DestinationCountKind)))
+            {
+                failures.Add(
+                    $"MISSING PREFLIGHT COUNT CLASSIFICATION: {archiveRecordType.Name} maps to portable entity " +
+                    "data and must provide incoming and destination count kinds.");
+            }
 
             var archiveProperties = archiveRecordType
                 .GetProperties(
                     BindingFlags.Public |
                     BindingFlags.Instance)
                 .Where(property => property.GetMethod is not null)
-                .Select(property => property.Name)
-                .ToHashSet(StringComparer.Ordinal);
+                .ToArray();
 
-            // Direction 1: Every entity property classified as Portable must be carried by the Portable* record
-            foreach (var portableProperty in classifiedPortableProperties)
+            foreach (var entityName in recordClassification.EntityInventoryNames)
             {
-                archiveProperties.Should().Contain(
-                    portableProperty,
-                    $"{entityName}.{portableProperty} is classified Portable, so {archiveRecordType.Name} must carry it");
+                if (!Inventory.TryGetValue(entityName, out var entityClassification))
+                {
+                    failures.Add(
+                        $"UNCLASSIFIED ARCHIVE ENTITY MAPPING: {archiveRecordType.Name} maps to missing " +
+                        $"inventory entity {entityName}.");
+                    continue;
+                }
+
+                if (entityClassification.IsEntityExcluded)
+                {
+                    failures.Add(
+                        $"INVALID ARCHIVE ENTITY MAPPING: {archiveRecordType.Name} maps to explicitly excluded " +
+                        $"entity {entityName}.");
+                    continue;
+                }
+
+                foreach (var portableProperty in entityClassification.PortableProperties)
+                {
+                    if (!archiveProperties.Any(property => property.Name == portableProperty))
+                    {
+                        if (!recordClassification.EntityPropertyAliases.TryGetValue(
+                                (entityName, portableProperty),
+                                out var alias))
+                        {
+                            failures.Add(
+                                $"MISSING ARCHIVE PROPERTY: {archiveRecordType.Name} does not carry classified " +
+                                $"portable entity property {entityName}.{portableProperty}.");
+                        }
+                        else if (string.IsNullOrWhiteSpace(alias.Reason)
+                                 || !discoveredRecordProperties.TryGetValue(
+                                     alias.ArchiveRecordType,
+                                     out var targetProperties)
+                                 || !targetProperties.Contains(alias.ArchivePropertyName))
+                        {
+                            failures.Add(
+                                $"INVALID ARCHIVE PROPERTY MAPPING: {entityName}.{portableProperty} maps to " +
+                                $"{alias.ArchiveRecordType.Name}.{alias.ArchivePropertyName}, which is missing or has no reason.");
+                        }
+                    }
+                }
             }
 
-            AllowedDerivedArchiveRecordFields.TryGetValue(
-                archiveRecordType.Name,
-                out var allowedDerivedFields);
+            foreach (var (entityProperty, alias) in recordClassification.EntityPropertyAliases)
+            {
+                if (!Inventory.TryGetValue(entityProperty.EntityName, out var aliasedEntity)
+                    || !aliasedEntity.PortableProperties.Contains(entityProperty.PropertyName)
+                    || string.IsNullOrWhiteSpace(alias.Reason)
+                    || !discoveredRecordProperties.TryGetValue(alias.ArchiveRecordType, out var targetProperties)
+                    || !targetProperties.Contains(alias.ArchivePropertyName))
+                {
+                    failures.Add(
+                        $"STALE ARCHIVE PROPERTY MAPPING: {entityProperty.EntityName}.{entityProperty.PropertyName} " +
+                        $"maps to {alias.ArchiveRecordType.Name}.{alias.ArchivePropertyName} but the entity field or target is missing.");
+                }
+            }
 
-            allowedDerivedFields ??= new Dictionary<string, string>(StringComparer.Ordinal);
-
-            // Direction 2: Every property exposed by the archive record must map to Portable entity property or be in AllowedDerivedArchiveRecordFields
             foreach (var archiveProperty in archiveProperties)
             {
-                if (classifiedPortableProperties.Contains(archiveProperty))
-                    continue;
+                if (recordClassification.StructuralProperties.TryGetValue(
+                        archiveProperty.Name,
+                        out var structuralReason))
+                {
+                    if (string.IsNullOrWhiteSpace(structuralReason))
+                    {
+                        failures.Add(
+                            $"MISSING STRUCTURAL ARCHIVE REASON: {archiveRecordType.Name}.{archiveProperty.Name} " +
+                            "must provide an architectural rationale.");
+                    }
 
-                allowedDerivedFields.Should().ContainKey(
-                    archiveProperty,
-                    $"UNACCOUNTED ARCHIVE PROPERTY: {archiveRecordType.Name}.{archiveProperty}. " +
-                    "Every public instance property on a Portable* archive record must either map to an entity property classified Portable or be explicitly listed in AllowedDerivedArchiveRecordFields with an architectural reason.");
+                    continue;
+                }
+
+                var mappedToPortableEntityProperty = recordClassification.EntityInventoryNames
+                    .Where(Inventory.ContainsKey)
+                    .Select(entityName => Inventory[entityName])
+                    .Where(entityClassification => !entityClassification.IsEntityExcluded)
+                    .Any(entityClassification =>
+                        entityClassification.PortableProperties.Contains(archiveProperty.Name));
+
+                if (!mappedToPortableEntityProperty)
+                {
+                    failures.Add(
+                        $"UNACCOUNTED ARCHIVE PROPERTY: {archiveRecordType.Name}.{archiveProperty.Name}. " +
+                        "Map it to a classified portable entity property or register it as derived/structural with a reason.");
+                }
             }
 
-            foreach (var (allowedField, reason) in allowedDerivedFields)
+            foreach (var (structuralField, reason) in recordClassification.StructuralProperties)
             {
                 reason.Should().NotBeNullOrWhiteSpace(
-                    $"{archiveRecordType.Name}.{allowedField} requires a documented reason");
+                    $"{archiveRecordType.Name}.{structuralField} requires a documented reason");
 
-                archiveProperties.Should().Contain(
-                    allowedField,
-                    $"STALE DERIVED ARCHIVE FIELD: {archiveRecordType.Name}.{allowedField} is listed in AllowedDerivedArchiveRecordFields but no such public instance property exists on the archive record.");
+                if (!archiveProperties.Any(property => property.Name == structuralField))
+                {
+                    failures.Add(
+                        $"STALE STRUCTURAL ARCHIVE FIELD: {archiveRecordType.Name}.{structuralField} " +
+                        "is registered but no such public instance property exists.");
+                }
             }
         }
+
+        failures.Should().BeEmpty(
+            "every archive record and property reachable from a payload root must be accounted for by the " +
+            "portable completeness inventory or explicitly classified as derived/structural.{0}{1}",
+            Environment.NewLine,
+            string.Join(Environment.NewLine, failures.Select(failure => $" - {failure}")));
     }
+
+    private static IReadOnlySet<Type> DiscoverPortableArchiveRecordTypes()
+    {
+        var discovered = new HashSet<Type>();
+        var pending = new Queue<Type>(PortableArchivePayloadRootTypes);
+
+        while (pending.TryDequeue(out var candidate))
+        {
+            candidate = Nullable.GetUnderlyingType(candidate) ?? candidate;
+
+            if (candidate == typeof(string))
+                continue;
+
+            if (candidate.IsArray)
+            {
+                pending.Enqueue(candidate.GetElementType()!);
+                continue;
+            }
+
+            var enumerableType = candidate
+                .GetInterfaces()
+                .Append(candidate)
+                .FirstOrDefault(type =>
+                    type.IsGenericType &&
+                    type.GetGenericTypeDefinition() == typeof(IEnumerable<>));
+
+            if (enumerableType is not null)
+            {
+                pending.Enqueue(enumerableType.GetGenericArguments()[0]);
+                continue;
+            }
+
+            if (!IsPortableArchiveRecordType(candidate))
+            {
+                if (candidate.IsGenericType)
+                {
+                    foreach (var genericArgument in candidate.GetGenericArguments())
+                        pending.Enqueue(genericArgument);
+                }
+
+                continue;
+            }
+
+            if (!discovered.Add(candidate))
+                continue;
+
+            foreach (var property in candidate.GetProperties(
+                         BindingFlags.Public |
+                         BindingFlags.Instance))
+            {
+                pending.Enqueue(property.PropertyType);
+            }
+        }
+
+        return discovered;
+    }
+
+    private static bool IsPortableArchiveRecordType(Type candidate) =>
+        candidate.IsClass &&
+        candidate != typeof(string) &&
+        candidate.Assembly == typeof(PortableLibraryData).Assembly &&
+        candidate.Namespace == typeof(PortableLibraryData).Namespace;
+
+    private static IReadOnlySet<string> GetCountProperties(
+        Func<ArchiveRecordClassification, string?> selectCountKind) =>
+        PortableArchiveRecordInventory.Values
+            .Select(selectCountKind)
+            .Where(countKind => !string.IsNullOrWhiteSpace(countKind))
+            .Select(countKind => countKind!)
+            .ToHashSet(StringComparer.Ordinal);
+
+    private static ArchiveRecordClassification EntityRecord(
+        IEnumerable<string> entityInventoryNames,
+        string incomingCountKind,
+        string destinationCountKind,
+        IReadOnlyDictionary<string, string>? structuralProperties = null,
+        IReadOnlyDictionary<(string EntityName, string PropertyName), ArchivePropertyAlias>? entityPropertyAliases = null) =>
+        new(
+            entityInventoryNames.ToArray(),
+            structuralProperties ?? new Dictionary<string, string>(StringComparer.Ordinal),
+            entityPropertyAliases ?? new Dictionary<(string EntityName, string PropertyName), ArchivePropertyAlias>(),
+            incomingCountKind,
+            destinationCountKind);
+
+    private static ArchiveRecordClassification StructuralRecord(
+        params (string Property, string Reason)[] properties) =>
+        new(
+            [],
+            StructuralFields(properties),
+            new Dictionary<(string EntityName, string PropertyName), ArchivePropertyAlias>(),
+            IncomingCountKind: null,
+            DestinationCountKind: null);
+
+    private static IReadOnlyDictionary<string, string> StructuralFields(
+        params (string Property, string Reason)[] properties) =>
+        properties.ToDictionary(
+            property => property.Property,
+            property => property.Reason,
+            StringComparer.Ordinal);
+
+    private static IReadOnlyDictionary<(string EntityName, string PropertyName), ArchivePropertyAlias>
+        EntityPropertyAliases(
+            params (string EntityName, string PropertyName, Type ArchiveRecordType, string ArchivePropertyName, string Reason)[] aliases) =>
+        aliases.ToDictionary(
+            alias => (alias.EntityName, alias.PropertyName),
+            alias => new ArchivePropertyAlias(
+                alias.ArchiveRecordType,
+                alias.ArchivePropertyName,
+                alias.Reason));
 
     private static void ValidateEntity(
         IEntityType entityType,
@@ -625,6 +967,18 @@ public sealed class PortableCompletenessInventoryTests
             PortableProperties: new HashSet<string>(StringComparer.Ordinal),
             ExcludedProperties: new Dictionary<string, string>(StringComparer.Ordinal),
             ExcludedNavigations: new Dictionary<string, string>(StringComparer.Ordinal));
+
+    private sealed record ArchiveRecordClassification(
+        IReadOnlyList<string> EntityInventoryNames,
+        IReadOnlyDictionary<string, string> StructuralProperties,
+        IReadOnlyDictionary<(string EntityName, string PropertyName), ArchivePropertyAlias> EntityPropertyAliases,
+        string? IncomingCountKind,
+        string? DestinationCountKind);
+
+    private sealed record ArchivePropertyAlias(
+        Type ArchiveRecordType,
+        string ArchivePropertyName,
+        string Reason);
 
     private sealed record EntityClassification(
         bool IsEntityExcluded,
