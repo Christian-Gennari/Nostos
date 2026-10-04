@@ -1,6 +1,6 @@
 // Nostos.Product/Services/Portability/MigrationContracts.cs
 
-using System.Collections.ObjectModel;
+using System.Collections.Frozen;
 
 namespace Nostos.Backend.Services.Portability;
 
@@ -15,11 +15,35 @@ public static class MigrationContractLimits
     public const long MaxDataBytes = 64L * 1024L * 1024L;
     public const long MaxManifestBytes = 4L * 1024L * 1024L;
     public const int MaxArchiveEntries = 20_000;
-    public const int DefaultChunkBytes = 8 * 1024 * 1024;
+
+    public const int MinChunkBytes = 4 * 1024 * 1024;
+    public const int DefaultChunkBytes = 16 * 1024 * 1024;
+    public const int MaxChunkBytes = 64 * 1024 * 1024;
 
     public const int WorkerLeaseDurationMinutes = 5;
     public const int SessionExpiryHours = 24;
     public const int RecoveryRetentionDays = 7;
+
+    /// <summary>
+    /// Validates the nominal chunk size declared by a transfer session
+    /// (<see cref="MigrationSessionRequest.ChunkSize"/>). It must be within
+    /// <see cref="MinChunkBytes"/> and <see cref="MaxChunkBytes"/>.
+    /// </summary>
+    public static bool IsValidChunkSize(int chunkSize) =>
+        chunkSize is >= MinChunkBytes and <= MaxChunkBytes;
+
+    /// <summary>
+    /// Validates the actual byte length of one uploaded chunk for a session whose
+    /// nominal chunk size is <paramref name="chunkSize"/>.
+    /// A non-final chunk must have exactly the session chunk size. The final chunk
+    /// must have between 1 and <paramref name="chunkSize"/> bytes, so a short final
+    /// chunk - including a whole file smaller than <see cref="MinChunkBytes"/> - is
+    /// legal. A zero-length chunk is never legal.
+    /// </summary>
+    public static bool IsValidChunkBytes(int chunkBytes, int chunkSize, bool isFinalChunk) =>
+        IsValidChunkSize(chunkSize) &&
+        chunkBytes > 0 &&
+        (isFinalChunk ? chunkBytes <= chunkSize : chunkBytes == chunkSize);
 }
 
 public enum MigrationDirection
@@ -44,13 +68,90 @@ public enum MigrationJobState
 
 public static class MigrationJobTransitions
 {
-    private static readonly IReadOnlySet<MigrationJobState> Empty =
-        new HashSet<MigrationJobState>();
+    private static readonly FrozenSet<MigrationJobState> Empty =
+        FrozenSet<MigrationJobState>.Empty;
 
-    public static IReadOnlyDictionary<MigrationJobState, IReadOnlySet<MigrationJobState>>
-        AllowedTransitions { get; } =
-        new ReadOnlyDictionary<MigrationJobState, IReadOnlySet<MigrationJobState>>(
-            new Dictionary<MigrationJobState, IReadOnlySet<MigrationJobState>>
+    private static readonly FrozenDictionary<MigrationJobState, FrozenSet<MigrationJobState>>
+        ImportTransitions = CreateTransitions(
+            validating: Set(
+                MigrationJobState.ReadyToActivate,
+                MigrationJobState.Cancelled,
+                MigrationJobState.Expired,
+                MigrationJobState.Failed),
+            readyToActivate: Set(
+                MigrationJobState.Activating,
+                MigrationJobState.Cancelled,
+                MigrationJobState.Expired,
+                MigrationJobState.Failed),
+            // Activation is the atomic point-of-no-return boundary.
+            activating: Set(
+                MigrationJobState.Completed,
+                MigrationJobState.Failed));
+
+    private static readonly FrozenDictionary<MigrationJobState, FrozenSet<MigrationJobState>>
+        ExportTransitions = CreateTransitions(
+            validating: Set(
+                MigrationJobState.Completed,
+                MigrationJobState.Cancelled,
+                MigrationJobState.Expired,
+                MigrationJobState.Failed),
+            // Exports have no activation step and never enter the import activation path.
+            readyToActivate: Empty,
+            activating: Empty);
+
+    /// <summary>
+    /// Returns the complete, immutable transition table for the given migration
+    /// direction. Both the dictionary and its value sets are frozen and cannot be
+    /// mutated or down-cast to a mutable collection.
+    /// </summary>
+    public static FrozenDictionary<MigrationJobState, FrozenSet<MigrationJobState>>
+        AllowedTransitions(MigrationDirection direction) =>
+        direction switch
+        {
+            MigrationDirection.Import => ImportTransitions,
+            MigrationDirection.Export => ExportTransitions,
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(direction),
+                direction,
+                "Unknown migration direction."),
+        };
+
+    public static bool CanTransition(
+        MigrationDirection direction,
+        MigrationJobState current,
+        MigrationJobState target) =>
+        AllowedTransitions(direction).TryGetValue(current, out var allowed) &&
+        allowed.Contains(target);
+
+    public static void ValidateTransition(
+        MigrationDirection direction,
+        MigrationJobState current,
+        MigrationJobState target)
+    {
+        if (!CanTransition(direction, current, target))
+        {
+            throw new InvalidOperationException(
+                $"Illegal {direction} migration job transition from {current} to {target}.");
+        }
+    }
+
+    public static bool IsTerminal(MigrationJobState state) =>
+        state is MigrationJobState.Completed
+            or MigrationJobState.Failed
+            or MigrationJobState.Cancelled
+            or MigrationJobState.Expired;
+
+    public static bool IsRetryable(MigrationJobState state) =>
+        state is MigrationJobState.Failed
+            or MigrationJobState.Cancelled
+            or MigrationJobState.Expired;
+
+    private static FrozenDictionary<MigrationJobState, FrozenSet<MigrationJobState>>
+        CreateTransitions(
+            FrozenSet<MigrationJobState> validating,
+            FrozenSet<MigrationJobState> readyToActivate,
+            FrozenSet<MigrationJobState> activating) =>
+        new Dictionary<MigrationJobState, FrozenSet<MigrationJobState>>
             {
                 [MigrationJobState.Pending] = Set(
                     MigrationJobState.Preparing,
@@ -70,55 +171,19 @@ public static class MigrationJobTransitions
                     MigrationJobState.Expired,
                     MigrationJobState.Failed),
 
-                [MigrationJobState.Validating] = Set(
-                    MigrationJobState.ReadyToActivate,
-                    MigrationJobState.Cancelled,
-                    MigrationJobState.Expired,
-                    MigrationJobState.Failed),
-
-                [MigrationJobState.ReadyToActivate] = Set(
-                    MigrationJobState.Activating,
-                    MigrationJobState.Cancelled,
-                    MigrationJobState.Expired,
-                    MigrationJobState.Failed),
-
-                // Activation is the atomic point-of-no-return boundary.
-                [MigrationJobState.Activating] = Set(
-                    MigrationJobState.Completed,
-                    MigrationJobState.Failed),
+                [MigrationJobState.Validating] = validating,
+                [MigrationJobState.ReadyToActivate] = readyToActivate,
+                [MigrationJobState.Activating] = activating,
 
                 [MigrationJobState.Completed] = Empty,
                 [MigrationJobState.Failed] = Empty,
                 [MigrationJobState.Cancelled] = Empty,
                 [MigrationJobState.Expired] = Empty,
-            });
+            }
+            .ToFrozenDictionary();
 
-    public static bool CanTransition(MigrationJobState current, MigrationJobState target) =>
-        AllowedTransitions.TryGetValue(current, out var allowed) &&
-        allowed.Contains(target);
-
-    public static void ValidateTransition(MigrationJobState current, MigrationJobState target)
-    {
-        if (!CanTransition(current, target))
-        {
-            throw new InvalidOperationException(
-                $"Illegal migration job transition from {current} to {target}.");
-        }
-    }
-
-    public static bool IsTerminal(MigrationJobState state) =>
-        state is MigrationJobState.Completed
-            or MigrationJobState.Failed
-            or MigrationJobState.Cancelled
-            or MigrationJobState.Expired;
-
-    public static bool IsRetryable(MigrationJobState state) =>
-        state is MigrationJobState.Failed
-            or MigrationJobState.Cancelled
-            or MigrationJobState.Expired;
-
-    private static IReadOnlySet<MigrationJobState> Set(params MigrationJobState[] states) =>
-        new HashSet<MigrationJobState>(states);
+    private static FrozenSet<MigrationJobState> Set(params MigrationJobState[] states) =>
+        states.ToFrozenSet();
 }
 
 public enum MigrationPreflightDecision
@@ -687,8 +752,10 @@ public interface IMigrationJobStore
 
     /// <summary>
     /// Transitions a job under the caller's active worker lease.
-    /// <paramref name="leaseToken"/> is a concurrency token and MUST match the
-    /// currently active lease or the mutation must fail.
+    /// <paramref name="leaseToken"/> is an opaque concurrency token and MUST match
+    /// the currently active lease, which MUST NOT have expired according to the
+    /// store's authoritative clock. A mismatched or expired lease fails with a
+    /// typed concurrency conflict; a mutation never revives an expired lease.
     /// </summary>
     Task<MigrationJob> TransitionAsync(
         Guid jobId,
@@ -698,8 +765,10 @@ public interface IMigrationJobStore
 
     /// <summary>
     /// Updates progress under the caller's active worker lease.
-    /// <paramref name="leaseToken"/> is a concurrency token and MUST match the
-    /// currently active lease or the mutation must fail.
+    /// <paramref name="leaseToken"/> is an opaque concurrency token and MUST match
+    /// the currently active lease, which MUST NOT have expired according to the
+    /// store's authoritative clock. A mismatched or expired lease fails with a
+    /// typed concurrency conflict; a mutation never revives an expired lease.
     /// </summary>
     Task UpdateProgressAsync(
         Guid jobId,
@@ -707,17 +776,60 @@ public interface IMigrationJobStore
         string leaseToken,
         CancellationToken ct);
 
-    Task<string> AcquireLeaseAsync(
+    /// <summary>
+    /// Attempts to acquire the worker lease for a job. The store obtains its
+    /// authoritative current time itself, atomically with the compare-and-set, and
+    /// sets the lease expiry to that time plus <paramref name="leaseDuration"/>.
+    /// Acquisition succeeds when the job is non-terminal and either no lease exists
+    /// or the current lease already expired. The returned token is an opaque
+    /// concurrency capability required by <see cref="TransitionAsync"/>,
+    /// <see cref="UpdateProgressAsync"/>, <see cref="RenewLeaseAsync"/>, and
+    /// <see cref="ReleaseLeaseAsync"/>.
+    /// </summary>
+    /// <param name="jobId">The job to lease.</param>
+    /// <param name="leaseDuration">
+    /// Requested lease duration, measured from the store's authoritative current
+    /// time. Must be positive; implementations must reject a non-positive duration.
+    /// </param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>
+    /// The opaque lease token on success, or <see langword="null"/> when another
+    /// unexpired lease owns the job. This member is non-throwing for lease contention.
+    /// </returns>
+    Task<string?> TryAcquireLeaseAsync(
         Guid jobId,
-        DateTimeOffset expiresAtUtc,
+        TimeSpan leaseDuration,
         CancellationToken ct);
 
-    Task RenewLeaseAsync(
+    /// <summary>
+    /// Renews the caller's active worker lease. The store obtains its authoritative
+    /// current time itself and sets the new expiry to that time plus
+    /// <paramref name="leaseDuration"/>.
+    /// </summary>
+    /// <param name="jobId">The leased job.</param>
+    /// <param name="leaseToken">The opaque token of the caller's current lease.</param>
+    /// <param name="leaseDuration">
+    /// Requested renewal duration, measured from the store's authoritative current
+    /// time. Must be positive.
+    /// </param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>
+    /// <see langword="true"/> when the lease was renewed; <see langword="false"/>
+    /// when the supplied token is superseded or the lease has already expired
+    /// according to the store's authoritative clock. Renewal never revives an
+    /// expired or superseded lease and is non-throwing for lease contention.
+    /// </returns>
+    Task<bool> RenewLeaseAsync(
         Guid jobId,
         string leaseToken,
-        DateTimeOffset expiresAtUtc,
+        TimeSpan leaseDuration,
         CancellationToken ct);
 
+    /// <summary>
+    /// Releases the caller's worker lease so another worker may acquire it.
+    /// The lease token is opaque. Releasing with a superseded or already-expired
+    /// token is a no-op rather than an error.
+    /// </summary>
     Task ReleaseLeaseAsync(
         Guid jobId,
         string leaseToken,
