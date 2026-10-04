@@ -256,12 +256,12 @@ Export:
 
 ## Worker leases, concurrency, and restart recovery
 
-Only one worker may actively process a migration job at a time.
+Only one worker may actively process a migration job at a time. Lease time authority belongs to the store: callers pass durations, never timestamps, and the store obtains its authoritative current time itself, atomically with the compare-and-set. Lease tokens are opaque capabilities for the active lease and must not be parsed.
 
-- **Lease acquisition:** `IMigrationJobStore.TryAcquireLeaseAsync(jobId, nowUtc, expiresAtUtc, ct)` is non-throwing for contention. It returns the new opaque lease token when the job is non-terminal and either has no lease or its current lease expired at or before `nowUtc`, and returns `null` when another unexpired lease owns the job. A stale lease may be taken over only after expiry.
-- **Lease duration:** 5 minutes (`WorkerLeaseDurationMinutes = 5`).
-- **Heartbeat renewal:** The active worker renews its lease via `RenewLeaseAsync(jobId, leaseToken, expiresAtUtc)`.
-- **Concurrency control:** All state transitions and progress updates require a `leaseToken` matching the active worker lease. Mismatched or expired tokens fail with concurrency conflict.
+- **Lease acquisition:** `IMigrationJobStore.TryAcquireLeaseAsync(jobId, leaseDuration, ct)` is non-throwing for contention. It sets the lease expiry to the store's authoritative current time plus `leaseDuration` and returns the new opaque lease token when the job is non-terminal and either has no lease or its current lease already expired. It returns `null` when another unexpired lease owns the job. A stale lease may be taken over only after expiry.
+- **Lease duration:** 5 minutes (`WorkerLeaseDurationMinutes = 5`), requested as a `TimeSpan`; `leaseDuration` must be positive.
+- **Heartbeat renewal:** `RenewLeaseAsync(jobId, leaseToken, leaseDuration, ct)` returns `true` only when the supplied token is still the current lease token and the lease has not already expired according to the store's authoritative clock; it then extends the expiry to authoritative-now plus `leaseDuration`. It returns `false` for a superseded or already-expired lease and never revives it.
+- **Concurrency control:** All state transitions and progress updates require a `leaseToken` matching the active, unexpired worker lease. Mismatched or expired tokens fail with concurrency conflict; a mutation never revives an expired lease. Releasing with a superseded or expired token is a no-op rather than an error.
 - **Restart recovery:** `IMigrationJobStore.GetJobsNeedingRecoveryAsync(cutoffUtc)` discovers active, non-terminal jobs whose worker leases expired before the cutoff, allowing orphaned jobs to be safely acquired and resumed by another worker.
 
 ### Idempotent job and session creation
@@ -278,8 +278,8 @@ Job creation and transfer session start require a non-empty idempotency key scop
 
 To reliably transfer large libraries without giant HTTP requests, the contract enforces:
 
-- **Fixed-size chunking:** Standard chunk size is 16 MiB (`DefaultChunkBytes = 16 * 1024 * 1024`), bounded by a 4 MiB minimum (`MinChunkBytes = 4 * 1024 * 1024`) and a 64 MiB maximum (`MaxChunkBytes = 64 * 1024 * 1024`). `MigrationContractLimits.IsValidChunkBytes` validates the range.
-- **Required file identity:** `MigrationSessionRequest` requires a non-nullable `MigrationFileIdentity(SizeBytes, Sha256Checksum)`. This prevents an interrupted session from being resumed with a different or modified file. File identity mismatch fails closed.
+- **Fixed-size chunking:** The session's nominal chunk size (`MigrationSessionRequest.ChunkSize`) is 16 MiB by default (`DefaultChunkBytes = 16 * 1024 * 1024`) and must be within a 4 MiB minimum (`MinChunkBytes = 4 * 1024 * 1024`) and a 64 MiB maximum (`MaxChunkBytes = 64 * 1024 * 1024`); `MigrationContractLimits.IsValidChunkSize` validates it. Every non-final chunk payload has exactly the session chunk size. The final chunk has 1..session-chunk-size bytes and may be smaller than `MinChunkBytes`; a whole file smaller than `MinChunkBytes` is transferred as one short final chunk. `MigrationContractLimits.IsValidChunkBytes(bytes, chunkSize, isFinalChunk)` validates actual payload lengths, and a zero-length chunk is never legal.
+- **Required file identity:** `MigrationSessionRequest` requires a non-nullable `MigrationFileIdentity(TotalSizeBytes, Sha256Checksum, ClientFingerprint?)`. This prevents an interrupted session from being resumed with a different or modified file. File identity mismatch fails closed.
 - **Received chunks tracking:** `MigrationSessionStatus` returns `IReadOnlyList<int> ReceivedChunks` and `ReceivedChunkCount`. Clients query the session to resume exactly from missing chunks.
 - **Per-chunk integrity and idempotency:** Each chunk upload includes its `chunkIndex`. Uploading an already accepted chunk with matching bytes is idempotent and returns `AlreadyPresent: true`. Conflicting chunks fail closed.
 - **Session expiry:** Transfer sessions expire after 24 hours (`SessionExpiryHours = 24`).
@@ -340,9 +340,9 @@ The following normative constants are defined in `MigrationContractLimits`:
 | `MaxDataBytes` | 64 MiB | Maximum relational JSON payload size |
 | `MaxManifestBytes` | 4 MiB | Maximum manifest size |
 | `MaxArchiveEntries` | 20,000 | Maximum total entries in ZIP container |
-| `MinChunkBytes` | 4 MiB | Minimum accepted transfer chunk size |
-| `DefaultChunkBytes` | 16 MiB | Standard transfer chunk size |
-| `MaxChunkBytes` | 64 MiB | Maximum accepted transfer chunk size |
-| `WorkerLeaseDurationMinutes` | 5 | Worker heartbeat lease duration |
+| `MinChunkBytes` | 4 MiB | Minimum accepted nominal session chunk size |
+| `DefaultChunkBytes` | 16 MiB | Default nominal session chunk size |
+| `MaxChunkBytes` | 64 MiB | Maximum accepted nominal session chunk size |
+| `WorkerLeaseDurationMinutes` | 5 | Default worker lease duration, requested as a `TimeSpan` |
 | `SessionExpiryHours` | 24 | Transfer session lifetime |
 | `RecoveryRetentionDays` | 7 | Mandatory recovery snapshot retention |
