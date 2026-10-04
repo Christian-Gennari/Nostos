@@ -7,8 +7,9 @@ namespace Nostos.Backend.Services.Portability.Migration;
 /// <summary>
 /// Internal archive-integration seam. A phase must be restart-idempotent from
 /// durable facts, observe CancellationToken, report progress through context,
-/// and execute ALL writes/publication through ExecuteWriteAsync. No handler may
-/// activate an import. Slices 9/10 replace the explicit unavailable handler.
+/// fence filesystem writes through ExecuteWriteAsync and durable metadata
+/// through ExecuteMutationAsync (using its supplied DbContext, never a second
+/// context while the fence holds the row lock). No handler may activate an import. Slices 9/10 replace the explicit unavailable handler.
 /// </summary>
 internal interface IMigrationPhaseHandler
 {
@@ -36,7 +37,13 @@ internal sealed class MigrationPhaseContext(IServiceScopeFactory scopes, TimePro
 {
     internal MigrationJob Job { get; set; } = job;
     internal PortableArchiveBufferBudget BufferBudget { get; } = new(PortableArchiveLimits.MaxExplicitBufferBytes);
-    internal async Task ExecuteWriteAsync(Func<CancellationToken, Task> write, CancellationToken ct)
+    internal Task ExecuteWriteAsync(Func<CancellationToken, Task> write, CancellationToken ct) =>
+        ExecuteMutationAsync((_, token) => write(token), ct);
+
+    // Slices 9/10 persist prepared-import/artifact metadata on the SAME context
+    // holding the fence. Opening a second writer inside the callback would block
+    // on our own row lock. The callback's DB changes commit/roll back with it.
+    internal async Task ExecuteMutationAsync(Func<NostosDbContext, CancellationToken, Task> mutation, CancellationToken ct)
     {
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, running.Token);
         await using var scope = scopes.CreateAsyncScope();
@@ -46,7 +53,7 @@ internal sealed class MigrationPhaseContext(IServiceScopeFactory scopes, TimePro
             await using var transaction = await MigrationMutation.BeginAsync(db, linked.Token);
             await MigrationMutation.LockLeaseAsync(db, Job.Id, Job.LeaseToken!, clock.GetUtcNow().UtcDateTime, linked.Token);
             linked.Token.ThrowIfCancellationRequested();
-            await write(linked.Token);
+            await mutation(db, linked.Token);
             linked.Token.ThrowIfCancellationRequested();
             await MigrationMutation.LockLeaseAsync(db, Job.Id, Job.LeaseToken!, clock.GetUtcNow().UtcDateTime, linked.Token);
             await transaction.CommitAsync(linked.Token);

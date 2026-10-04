@@ -234,6 +234,77 @@ public sealed class MigrationWorkerEngineTests
         laterRequest.IsCancellationRequested.Should().BeFalse();
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Guarded_phase_metadata_uses_the_fenced_context_and_commits_or_rolls_back(bool fail)
+    {
+        var staging = Guid.NewGuid();
+        await using var h = new MigrationEngineHarness();
+        h.Configure = s => s.AddSingleton<IMigrationPhaseHandler>(new Handler(async (context, ct) =>
+        {
+            await context.ExecuteMutationAsync(async (fencedDb, token) =>
+            {
+                await fencedDb.MigrationJobRecords.Where(j => j.Id == context.Job.Id && j.State == (int)context.Job.State
+                    && j.MigrationLeaseToken == context.Job.LeaseToken)
+                    .ExecuteUpdateAsync(set => set.SetProperty(j => j.PreparedStagingId, staging)
+                        .SetProperty(j => j.PreparedImportMetadataJson, "fake-prepared-metadata")
+                        .SetProperty(j => j.Version, j => j.Version + 1), token);
+                if (fail) throw new IOException("Crash before metadata commit");
+            }, ct);
+        }));
+        await h.InitializeAsync(); var id = await Runnable(h, MigrationDirection.Import);
+        await h.Worker.RunCycleAsync(default).WaitAsync(TimeSpan.FromSeconds(10));
+        var record = await h.WithDb(db => db.MigrationJobRecords.SingleAsync(j => j.Id == id));
+        if (fail)
+        {
+            record.State.Should().Be((int)MigrationJobState.Failed); record.PreparedStagingId.Should().BeNull();
+            record.PreparedImportMetadataJson.Should().BeNull(); record.FailureCode.Should().Be(MigrationTransferException.StorageExhausted);
+        }
+        else
+        {
+            record.State.Should().Be((int)MigrationJobState.ReadyToActivate); record.PreparedStagingId.Should().Be(staging);
+            record.PreparedImportMetadataJson.Should().Be("fake-prepared-metadata");
+        }
+        record.MigrationLeaseToken.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Takeover_between_acquisition_and_read_never_borrows_successors_token()
+    {
+        var executions = 0; var probe = new ReplaceAcquiredLeaseProbe();
+        await using var h = new MigrationEngineHarness();
+        h.Configure = s =>
+        {
+            s.AddDbContext<NostosDbContext>(o => o.AddInterceptors(probe));
+            s.AddSingleton<IMigrationPhaseHandler>(new Handler((_, _) => { executions++; return Task.CompletedTask; }));
+        };
+        await h.InitializeAsync(); var id = await h.NewJobAsync(MigrationDirection.Export);
+        await h.Worker.RunCycleAsync(default);
+        probe.Replaced.Should().BeTrue(); executions.Should().Be(0);
+        var job = await h.WithJobs(s => s.GetAsync(id, default)); job!.State.Should().Be(MigrationJobState.Pending);
+        job.LeaseToken.Should().Be("successor");
+    }
+
+    [Fact]
+    public async Task Successor_registration_cancels_old_owner_and_delayed_old_registration_cannot_cancel_successor()
+    {
+        await using var h = new MigrationEngineHarness(); await h.InitializeAsync(); var id = await h.NewJobAsync();
+        var registry = h.Provider.GetRequiredService<MigrationJobCancellationRegistry>();
+        await h.WithJobs(s => s.TryAcquireLeaseAsync(id, MigrationJobWorker.LeaseDuration, default));
+        var oldExpiry = (await h.WithJobs(s => s.GetAsync(id, default)))!.LeaseExpiresAtUtc!.Value;
+        using var oldSource = new CancellationTokenSource(); var oldRegistration = registry.Register(id, oldSource, oldExpiry);
+        h.Clock.Advance(MigrationJobWorker.LeaseDuration + TimeSpan.FromTicks(1));
+        await h.WithJobs(s => s.TryAcquireLeaseAsync(id, MigrationJobWorker.LeaseDuration, default));
+        var newExpiry = (await h.WithJobs(s => s.GetAsync(id, default)))!.LeaseExpiresAtUtc!.Value;
+        using var newSource = new CancellationTokenSource(); using var newRegistration = registry.Register(id, newSource, newExpiry);
+        oldSource.IsCancellationRequested.Should().BeTrue(); newSource.IsCancellationRequested.Should().BeFalse();
+        oldRegistration.Dispose();
+        using var delayedSource = new CancellationTokenSource(); using var delayedRegistration = registry.Register(id, delayedSource, oldExpiry);
+        delayedSource.IsCancellationRequested.Should().BeTrue(); newSource.IsCancellationRequested.Should().BeFalse();
+        registry.Cancel(id); newSource.IsCancellationRequested.Should().BeTrue();
+    }
+
     private static async Task<Guid> Runnable(MigrationEngineHarness h, MigrationDirection direction)
     {
         var id = await h.NewJobAsync(direction);
@@ -252,6 +323,24 @@ public sealed class MigrationWorkerEngineTests
     internal static TaskCompletionSource Signal() => new(TaskCreationOptions.RunContinuationsAsynchronously);
     private sealed class Handler(Func<MigrationPhaseContext, CancellationToken, Task> action) : IMigrationPhaseHandler
     { public bool CanHandle(MigrationDirection direction, MigrationJobState state) => true; public Task ExecuteAsync(MigrationPhaseContext context, CancellationToken ct) => action(context, ct); }
+    private sealed class ReplaceAcquiredLeaseProbe : DbCommandInterceptor
+    {
+        private int _replaced;
+        internal bool Replaced => _replaced != 0;
+        public override async ValueTask<int> NonQueryExecutedAsync(DbCommand command, CommandExecutedEventData eventData, int result, CancellationToken cancellationToken = default)
+        {
+            if (command.CommandText.Contains("\"HeartbeatAtUtc\" =") && Interlocked.Exchange(ref _replaced, 1) == 0)
+            {
+                // A real second connection changes the owner after acquisition
+                // commits, before the worker's GetAsync executes.
+                var options = new DbContextOptionsBuilder<NostosDbContext>().UseSqlite(command.Connection!.ConnectionString).Options;
+                await using var db = new NostosDbContext(options);
+                await db.MigrationJobRecords.ExecuteUpdateAsync(s => s.SetProperty(j => j.MigrationLeaseToken, "successor")
+                    .SetProperty(j => j.Version, j => j.Version + 1), cancellationToken);
+            }
+            return result;
+        }
+    }
     private sealed class RenewalProbe : DbCommandInterceptor
     {
         private int _updates;

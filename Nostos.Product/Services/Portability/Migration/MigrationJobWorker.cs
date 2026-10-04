@@ -89,8 +89,12 @@ public sealed class MigrationJobWorker : BackgroundService
             var store = scope.ServiceProvider.GetRequiredService<IMigrationJobStore>();
             token = await store.TryAcquireLeaseAsync(id, LeaseDuration, stoppingToken);
             if (token is null) return;
-            registration = _cancellations.Register(id, running);
             var job = await store.GetAsync(id, running.Token) ?? throw MigrationJobStoreException.NotFound(id);
+            // Never borrow a successor's token from this post-acquisition read.
+            // The process may have paused long enough for takeover in between.
+            if (job.LeaseToken != token || job.LeaseExpiresAtUtc is null || job.LeaseExpiresAtUtc <= _clock.GetUtcNow()) return;
+            registration = _cancellations.Register(id, running, job.LeaseExpiresAtUtc.Value);
+            running.Token.ThrowIfCancellationRequested();
             heartbeat = HeartbeatAsync(id, token, running);
             await scope.ServiceProvider.GetRequiredService<MigrationJobProcessor>().ProcessAsync(job, running);
         }
