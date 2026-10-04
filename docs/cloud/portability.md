@@ -115,6 +115,45 @@ Import validates the archive structure, versions, checksums, sizes, IDs, relatio
 
 These limits protect archive validation and extraction. They do **not** override the current HTTP request limit (4 GiB Kestrel body limit).
 
+## Measured resource bounds
+
+The export and prepared-import paths were measured on a generated library whose media total exceeds 4 GiB. No large archive is committed to the repository; the media is deterministic patterned data produced on demand by a synthetic `IBookAssetStorage`, and the SHA-256 of each entry is computed while the bytes are generated.
+
+Measured on one machine and one run:
+
+```text
+hardware:  AMD Ryzen 5 4600H, 12 logical cores, 14 GiB RAM, NVMe storage
+OS:        Ubuntu 24.04.4 LTS (X64)
+runtime:   .NET 10.0.12
+library:   97 media entries = 1 x 4,563,402,752-byte entry + 96 x 1 MiB entries
+           (4,664,066,048 media bytes total)
+```
+
+| Metric | Export | Import preparation |
+|---|---:|---:|
+| archive bytes | 4,664,097,715 | 4,664,097,715 |
+| explicit operation buffer high-water | 17,825,792 B (17 MiB) | 17,842,176 B (17 MiB) |
+| buffer cap | 67,108,864 B (64 MiB) | 67,108,864 B (64 MiB) |
+| physical synchronous sink writes | 0 | 0 (all source access is `ReadAtAsync`) |
+| engine scratch | 0 bytes | 0 bytes |
+| managed heap growth | 1,484,328 B | 387,216 B |
+| process working-set growth (sampled) | 52,957,184 B | 72,216,576 B |
+| duration | 10.75 s | 12.26 s |
+| throughput | ~414 MiB/s | ~363 MiB/s |
+
+The measured export budget high-water is the capture sink's 16 MiB synchronous-write buffer plus the 1 MiB copy buffer. A writer-only stress with the same entry inventory through `BoundedSynchronousCaptureSink` recorded a capture pending high-water of 7,750 bytes and a maximum single synchronous framework write of 7,734 bytes — the 16 MiB cap exists for a future runtime change and is not approached by current `System.IO.Compression` finalization. The import source observed 4,551 range reads, a maximum single request of 1,048,576 bytes, and 4,765,916,863 total bytes read (about 1.02x the archive size); the archive is never fetched whole and media is never buffered whole. The archive carried a ZIP64 end-of-central-directory record, and import preparation read it through the ZIP64 tail path.
+
+The table is one representative run of four on the same machine; durations varied between about 11 s and 38 s with machine load, while the recorded high-water, call-count and scratch values were identical on every run.
+
+How it was measured: export streamed to a counting, non-seekable, sync-forbidding sink that hashes and discards every byte. Prepared import ran over `FilePortableArchiveSource` (which reads with `RandomAccess.ReadAsync`) into a test staging provider that verifies each media item's declared length and SHA-256 and discards the bytes. The import measurement served the same archive from one test-owned temporary file (about 4.35 GiB, deleted afterwards); the engine itself wrote no scratch. The opt-in test is `PortableArchiveLargeMeasurementTests.Export_and_prepare_of_greater_than_4gib_archive_keep_bounded_memory_and_zero_scratch`, enabled with `NOSTOS_RUN_LARGE_PORTABILITY_TESTS=1`. A scaled 96 MiB variant runs in ordinary CI continuously.
+
+What this does **not** claim or measure:
+
+- It is not a process RSS ceiling. The 64 MiB contract covers Nostos-owned archive-I/O buffers; the CLR, EF Core and `ZipArchive`/`DeflateStream` runtime buffers are outside it.
+- The legacy `POST /api/portability/import` endpoint is still limited by the 4 GiB Kestrel request-body cap and still stages a full local copy of the archive and its media in scratch. Only the range-backed prepared-import path measured here avoids that copy; large hosted transfers belong to the chunked migration protocol (epic #676).
+- Remote/object-storage `IPortableArchiveSource` implementations, hosted providers, compression-heavy libraries, concurrent archive operations, and the EF object graph at the 20,000-entry limit were not measured.
+- The real-Kestrel regression proves the shipped endpoint streams the archive without synchronous response IO; it does not measure network throughput.
+
 ## Archive hardening
 
 Before writing imported library data, the reader rejects malformed manifests, unsupported format or data versions, duplicate or unexpected ZIP entries, unsafe paths, excessive entry counts or sizes, suspicious compression ratios, empty or duplicate IDs, invalid relationships, hierarchy cycles, missing referenced media, and data or media length/SHA-256 mismatches.
