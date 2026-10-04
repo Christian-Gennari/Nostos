@@ -1,10 +1,34 @@
+import { Component } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { Router, provideRouter } from '@angular/router';
 import { signal } from '@angular/core';
-import { provideRouter } from '@angular/router';
 import { SwUpdate } from '@angular/service-worker';
+import { of } from 'rxjs';
 import { App } from './app.component';
+import { WorkspaceLayout } from './layout/workspace-layout/workspace-layout.component';
 import { AssistantStatusService } from './ui/assistant/assistant-status.service';
 import { CloudEntryService } from './core/services/cloud-entry.service';
+import { DeploymentCapabilitiesService } from './core/services/deployment-capabilities.service';
+import { DeploymentCapabilities } from './core/dtos/deployment-capabilities.dtos';
+import { LibraryPreferencesService } from './core/services/library-preferences.service';
+
+@Component({ standalone: true, template: '' })
+class BlankComponent {}
+
+const cloudCapabilities: DeploymentCapabilities = {
+  deploymentMode: 'Cloud',
+  requiresAuthentication: true,
+  canConfigureAiProvider: false,
+  managedAi: true,
+  managedVoiceTranscription: true,
+  usesCloudStorage: true,
+  supportsLocalBackupConfiguration: false,
+  supportsPrivateNetworkAccess: false,
+  supportsEreaderAccess: true,
+  usageMeteringAvailable: true,
+  accountManagementUrl: 'https://nostos.page/account',
+  feedbackUrl: 'https://nostos.page/feedback?from=settings',
+};
 
 describe('App', () => {
   const productReady = signal(true);
@@ -60,5 +84,75 @@ describe('App', () => {
     expect(compiled.querySelector('router-outlet')).toBeNull();
     expect(compiled.querySelector('app-cloud-entry')).not.toBeNull();
     expect(compiled.querySelector('app-assistant')).toBeNull();
+  });
+});
+
+describe('App shell utility area', () => {
+  const assistantAvailable = signal(false);
+
+  beforeEach(async () => {
+    localStorage.clear();
+    assistantAvailable.set(false);
+
+    await TestBed.configureTestingModule({
+      imports: [App],
+      providers: [
+        provideRouter([
+          {
+            path: '',
+            component: WorkspaceLayout,
+            children: [{ path: 'library', component: BlankComponent }],
+          },
+        ]),
+        {
+          provide: CloudEntryService,
+          useValue: {
+            productReady: signal(true),
+            initialize: () => Promise.resolve(),
+            view: signal({ kind: 'product' }),
+            actionPending: signal(false),
+            actionError: signal(null),
+            checkoutRedirect: signal(null),
+          },
+        },
+        {
+          provide: AssistantStatusService,
+          useValue: { available: assistantAvailable, ensureLoaded: () => {}, refresh: () => {} },
+        },
+        {
+          provide: SwUpdate,
+          useValue: { isEnabled: false, checkForUpdate: () => Promise.resolve(false) },
+        },
+        {
+          provide: DeploymentCapabilitiesService,
+          useValue: { get: () => of(cloudCapabilities) },
+        },
+      ],
+    }).compileComponents();
+  });
+
+  it('keeps Send feedback in the shell with Ask Nostos disabled and enabled', async () => {
+    const fixture = TestBed.createComponent(App);
+    await TestBed.inject(Router).navigateByUrl('/library');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const feedback = fixture.nativeElement.querySelector('[data-testid="dock-feedback"]');
+    expect(feedback).toBeTruthy();
+    expect(feedback.href).toBe('https://nostos.page/feedback?from=library');
+
+    // Disabled: the assistant shell renders nothing, and the utility area has no
+    // slot reserved for it, so there is no gap or placeholder to collapse.
+    expect(fixture.nativeElement.querySelector('[data-testid="assistant-trigger"]')).toBeNull();
+
+    // Enabled and available: the assistant appears as its own floating control,
+    // while Feedback remains the quiet dock sibling of Settings.
+    TestBed.inject(LibraryPreferencesService).assistantEnabled.set(true);
+    assistantAvailable.set(true);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="assistant-trigger"]')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('[data-testid="dock-feedback"]')).toBeTruthy();
   });
 });

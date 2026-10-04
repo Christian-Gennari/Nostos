@@ -418,7 +418,6 @@ describe('SettingsComponent backup-only surface', () => {
     expect(navText).not.toContain('Account');
     expect(fixture.nativeElement.querySelector('[data-testid="cloud-account-settings"]')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="cloud-account-management-link"]')).toBeNull();
-    expect(fixture.nativeElement.querySelector('[data-testid="cloud-feedback-link"]')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="managed-ai-refill-link"]')).toBeNull();
     expect(cloudAuthServiceMock.getSession).not.toHaveBeenCalled();
   });
@@ -448,14 +447,6 @@ describe('SettingsComponent backup-only surface', () => {
     expect(manageAccount.textContent).toContain('Manage account & billing');
     expect(manageAccount.href).toBe('https://nostos.page/account');
     expect(manageAccount.target).toBe('_blank');
-
-    const sendFeedback = card.querySelector(
-      '[data-testid="cloud-feedback-link"]',
-    ) as HTMLAnchorElement;
-    expect(sendFeedback.textContent).toContain('Send feedback');
-    expect(sendFeedback.href).toBe('https://nostos.page/feedback?from=settings');
-    expect(sendFeedback.target).toBe('_blank');
-    expect(sendFeedback.rel).toBe('noopener noreferrer');
 
     const signOut = Array.from(card.querySelectorAll('button')).find((button: any) =>
       (button.textContent ?? '').includes('Sign out'),

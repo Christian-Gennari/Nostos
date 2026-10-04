@@ -644,25 +644,6 @@
                   </div>
                 }
 
-                @if (cloudFeedbackUrl(); as feedbackUrl) {
-                  <div class="setting-row" data-testid="cloud-feedback">
-                    <div class="setting-label">
-                      <span class="label-text">Send feedback</span>
-                      <span class="label-desc">Share a bug, rough edge, or suggestion with the Nostos team.</span>
-                    </div>
-                    <a
-                      appButton
-                      variant="secondary"
-                      [href]="feedbackUrl"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      data-testid="cloud-feedback-link"
-                    >
-                      Send feedback ↗
-                    </a>
-                  </div>
-                }
-
                 <div class="setting-row">
                   <div class="setting-label">
                     <span class="label-text">Session</span>

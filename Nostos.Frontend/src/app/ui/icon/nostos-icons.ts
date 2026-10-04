@@ -61,6 +61,7 @@ import booksLight from '@phosphor-icons/core/light/books-light.svg';
 import brainLight from '@phosphor-icons/core/light/brain-light.svg';
 import checkCircleLight from '@phosphor-icons/core/light/check-circle-light.svg';
 import circleDashedLight from '@phosphor-icons/core/light/circle-dashed-light.svg';
+import dotsThreeLight from '@phosphor-icons/core/light/dots-three-light.svg';
 import fileTextLight from '@phosphor-icons/core/light/file-text-light.svg';
 import folderLight from '@phosphor-icons/core/light/folder-light.svg';
 import folderOpenLight from '@phosphor-icons/core/light/folder-open-light.svg';
@@ -70,6 +71,7 @@ import heartLight from '@phosphor-icons/core/light/heart-light.svg';
 import listBulletsLight from '@phosphor-icons/core/light/list-bullets-light.svg';
 import mapTrifoldLight from '@phosphor-icons/core/light/map-trifold-light.svg';
 import paletteLight from '@phosphor-icons/core/light/palette-light.svg';
+import paperPlaneTiltLight from '@phosphor-icons/core/light/paper-plane-tilt-light.svg';
 import penNibLight from '@phosphor-icons/core/light/pen-nib-light.svg';
 import plusLight from '@phosphor-icons/core/light/plus-light.svg';
 import sparkleLight from '@phosphor-icons/core/light/sparkle-light.svg';
@@ -109,6 +111,7 @@ import copy from '@phosphor-icons/core/regular/copy.svg';
 import cornersIn from '@phosphor-icons/core/regular/corners-in.svg';
 import cornersOut from '@phosphor-icons/core/regular/corners-out.svg';
 import crosshair from '@phosphor-icons/core/regular/crosshair.svg';
+import dotsThree from '@phosphor-icons/core/regular/dots-three.svg';
 import downloadSimple from '@phosphor-icons/core/regular/download-simple.svg';
 import fileText from '@phosphor-icons/core/regular/file-text.svg';
 import folderOpen from '@phosphor-icons/core/regular/folder-open.svg';
@@ -136,6 +139,7 @@ import moon from '@phosphor-icons/core/regular/moon.svg';
 import note from '@phosphor-icons/core/regular/note.svg';
 import notebook from '@phosphor-icons/core/regular/notebook.svg';
 import palette from '@phosphor-icons/core/regular/palette.svg';
+import paperPlaneTilt from '@phosphor-icons/core/regular/paper-plane-tilt.svg';
 import pause from '@phosphor-icons/core/regular/pause.svg';
 import penNib from '@phosphor-icons/core/regular/pen-nib.svg';
 import pencilSimple from '@phosphor-icons/core/regular/pencil-simple.svg';
@@ -222,6 +226,7 @@ export const NOSTOS_ICONS = {
   'corners-in': { regular: cornersIn, thin: cornersInThin, },
   'corners-out': { regular: cornersOut, thin: cornersOutThin, },
   'crosshair': { regular: crosshair, },
+  'dots-three': { regular: dotsThree, light: dotsThreeLight, },
   'download-simple': { regular: downloadSimple, },
   'file-text': { regular: fileText, light: fileTextLight, },
   'folder': { regular: folder, light: folderLight, },
@@ -249,6 +254,7 @@ export const NOSTOS_ICONS = {
   'note': { regular: note, },
   'notebook': { regular: notebook, },
   'palette': { regular: palette, light: paletteLight, },
+  'paper-plane-tilt': { regular: paperPlaneTilt, light: paperPlaneTiltLight, },
   'pause': { regular: pause, fill: pauseFill, },
   'pen-nib': { regular: penNib, light: penNibLight, },
   'pencil-simple': { regular: pencilSimple, },

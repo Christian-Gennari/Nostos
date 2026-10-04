@@ -228,9 +228,6 @@ export class SettingsComponent implements OnInit, OnDestroy {
   readonly cloudAccountManagementUrl = computed(() =>
     this.isCloud() ? (this.deploymentCapabilities()?.accountManagementUrl ?? null) : null,
   );
-  readonly cloudFeedbackUrl = computed(() =>
-    this.isCloud() ? (this.deploymentCapabilities()?.feedbackUrl ?? null) : null,
-  );
   readonly supportsCloudPortableExport = computed(() => this.isCloud());
   readonly cloudSession = signal<CloudSession | null>(null);
   readonly managedEreaderAccess = computed(
