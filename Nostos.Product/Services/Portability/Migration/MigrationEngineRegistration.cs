@@ -19,7 +19,8 @@ public static class MigrationEngineRegistration
         services.AddScoped<SelfHostedMigrationTransferService>();
         services.AddScoped<IMigrationTransferService>(s => s.GetRequiredService<SelfHostedMigrationTransferService>());
         services.AddScoped<ISelfHostedMigrationUploads>(s => s.GetRequiredService<SelfHostedMigrationTransferService>());
-        services.AddScoped<IMigrationPhaseHandler, ArchiveIntegrationNotYetAvailableHandler>();
+        services.AddScoped<IMigrationPhaseHandler, ImportPreparationPhaseHandler>();
+        services.AddScoped<IMigrationPhaseHandler, ExportArtifactPhaseHandler>();
         services.AddScoped<MigrationJobProcessor>();
         services.AddHostedService(s => new MigrationJobWorker(s.GetRequiredService<IServiceScopeFactory>(),
             s.GetRequiredService<TimeProvider>(), s.GetRequiredService<MigrationJobCancellationRegistry>(),

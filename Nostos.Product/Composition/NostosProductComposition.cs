@@ -272,6 +272,7 @@ public static class NostosProductComposition
         routes.MapAssistantSettingsEndpoints();
         routes.MapDeploymentCapabilitiesEndpoints();
         routes.MapPortabilityEndpoints(policies);
+        routes.MapMigrationExportDownloadEndpoints(policies);
         routes.MapOpdsEndpoints(
             opds,
             policies.OpdsAuthorizationPolicy,
