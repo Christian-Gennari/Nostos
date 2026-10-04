@@ -157,6 +157,18 @@ internal static class PortableStagingFilePrimitives
             FileShare.Read,
             StreamBufferBytes,
             FileOptions.Asynchronous | FileOptions.SequentialScan);
+        return await HashStreamAsync(stream, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Hashes an already-opened readable stream with a bounded buffer. Callers that
+    /// open a staged file themselves are responsible for the resolver's post-open
+    /// path verification before hashing.
+    /// </summary>
+    internal static async Task<(long Length, string Sha256)> HashStreamAsync(
+        Stream stream,
+        CancellationToken cancellationToken)
+    {
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         var buffer = new byte[StreamBufferBytes];
         long total = 0;
@@ -173,6 +185,11 @@ internal static class PortableStagingFilePrimitives
 
         return (total, Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant());
     }
+
+    /// <summary>True for a 64-character hexadecimal SHA-256 value.</summary>
+    internal static bool IsSha256Hex(string? value) =>
+        value is { Length: 64 }
+        && value.All(static c => c is >= '0' and <= '9' or >= 'a' and <= 'f' or >= 'A' and <= 'F');
 
     /// <summary>
     /// Validates a staged media reference against the strict opaque-token grammar

@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using FluentAssertions;
 using Nostos.Backend.Services.Portability;
 using Nostos.Backend.Services.Portability.Transfers;
@@ -661,6 +662,251 @@ public sealed class FilePortableImportStagingTests : IDisposable
         Directory.Exists(AreaDirectory(id)).Should().BeFalse();
     }
 
+    [Fact]
+    public async Task Failed_media_inventory_persist_rolls_back_and_retry_commits_cleanly()
+    {
+        var hooks = new FilePortableImportStagingHooks();
+        await using var staging = CreateStaging(NewScope(), hooks);
+        var id = await staging.CreateAsync();
+        var (dataBytes, _) = await StagePayloadsAsync(staging, id);
+
+        var content = new byte[] { 1, 2, 3 };
+        var descriptor = MediaDescriptor(content);
+        var write = await staging.OpenMediaWriteAsync(id, descriptor);
+        await write.Stream.WriteAsync(content);
+
+        hooks.BeforeInventoryReplace = () => throw new IOException("injected inventory replacement failure");
+        var failure = await Assert.ThrowsAsync<IOException>(
+            () => staging.CompleteMediaAsync(id, write));
+        failure.Message.Should().Contain("injected");
+        hooks.BeforeInventoryReplace = null;
+
+        // The failed item is gone from the runtime dictionaries and the durable
+        // inventory was not modified.
+        (await staging.ListMediaAsync(id)).Should().BeEmpty();
+        await Assert.ThrowsAsync<PortableStagingException>(
+            () => staging.OpenMediaReadAsync(id, write.Reference));
+        await write.DisposeAsync();
+
+        // A fresh instance over the same root sees exactly the original state.
+        await using var fresh = CreateStaging(NewScope());
+        await AssertSameVisibleStateAsync(staging, fresh, id);
+        await Assert.ThrowsAsync<PortableStagingException>(
+            () => fresh.RebuildPreparedImportAsync(id));
+
+        // Retrying the same descriptor receives a fresh reference and commits.
+        var retry = await staging.OpenMediaWriteAsync(id, descriptor);
+        await retry.Stream.WriteAsync(content);
+        await staging.CompleteMediaAsync(id, retry);
+        await retry.DisposeAsync();
+        await staging.CommitPreparedImportAsync(id, MetadataFor(id, dataBytes, content));
+
+        await using var rebuiltInstance = CreateStaging(NewScope());
+        var rebuilt = await rebuiltInstance.RebuildPreparedImportAsync(id);
+        rebuilt.Media.Should().ContainSingle();
+        rebuilt.Media[0].Reference.Should().Be(retry.Reference);
+    }
+
+    [Fact]
+    public async Task Failed_data_inventory_persist_rolls_back_and_retry_completes()
+    {
+        var hooks = new FilePortableImportStagingHooks();
+        await using var staging = CreateStaging(NewScope(), hooks);
+        var id = await staging.CreateAsync();
+        await StageManifestAsync(staging, id);
+
+        var dataBytes = Encoding.UTF8.GetBytes("{\"version\":3}");
+        var dataWrite = await staging.OpenDataWriteAsync(
+            id,
+            new PortableArchivePayload("data/library.json", dataBytes.LongLength, Sha256Hex(dataBytes)));
+        await dataWrite.Stream.WriteAsync(dataBytes);
+
+        hooks.BeforeInventoryReplace = () => throw new IOException("injected inventory replacement failure");
+        await Assert.ThrowsAsync<IOException>(() => staging.CompleteDataAsync(id, dataWrite));
+        hooks.BeforeInventoryReplace = null;
+
+        await Assert.ThrowsAsync<PortableStagingException>(() => staging.OpenDataReadAsync(id));
+        await dataWrite.DisposeAsync();
+
+        await using var fresh = CreateStaging(NewScope());
+        await AssertSameVisibleStateAsync(staging, fresh, id);
+
+        await StageDataAsync(staging, id);
+        var mediaBytes = new byte[] { 9, 8, 7, 6 };
+        await StageMediaAsync(staging, id, mediaBytes);
+        await staging.CommitPreparedImportAsync(id, MetadataFor(id, dataBytes, mediaBytes));
+
+        await using var rebuiltInstance = CreateStaging(NewScope());
+        (await rebuiltInstance.RebuildPreparedImportAsync(id)).Media.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task Failed_manifest_inventory_persist_rolls_back_and_retry_completes()
+    {
+        var hooks = new FilePortableImportStagingHooks();
+        await using var staging = CreateStaging(NewScope(), hooks);
+        var id = await staging.CreateAsync();
+        var dataBytes = await StageDataAsync(staging, id);
+
+        var manifestBytes = Encoding.UTF8.GetBytes("{\"format\":\"nostos-portable\"}");
+        var manifestWrite = await staging.OpenManifestWriteAsync(
+            id,
+            new PortableArchivePayload("manifest.json", manifestBytes.LongLength, Sha256Hex(manifestBytes)));
+        await manifestWrite.Stream.WriteAsync(manifestBytes);
+
+        hooks.BeforeInventoryReplace = () => throw new IOException("injected inventory replacement failure");
+        await Assert.ThrowsAsync<IOException>(() => staging.CompleteManifestAsync(id, manifestWrite));
+        hooks.BeforeInventoryReplace = null;
+
+        await Assert.ThrowsAsync<PortableStagingException>(() => staging.OpenManifestReadAsync(id));
+        await manifestWrite.DisposeAsync();
+
+        await using var fresh = CreateStaging(NewScope());
+        await AssertSameVisibleStateAsync(staging, fresh, id);
+
+        await StageManifestAsync(staging, id);
+        var mediaBytes = new byte[] { 4, 4, 4 };
+        await StageMediaAsync(staging, id, mediaBytes);
+        await staging.CommitPreparedImportAsync(id, MetadataFor(id, dataBytes, mediaBytes));
+
+        await using var rebuiltInstance = CreateStaging(NewScope());
+        (await rebuiltInstance.RebuildPreparedImportAsync(id)).Media.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task Failed_commit_inventory_persist_leaves_area_uncommitted_and_retry_succeeds()
+    {
+        var hooks = new FilePortableImportStagingHooks();
+        await using var staging = CreateStaging(NewScope(), hooks);
+        var id = await staging.CreateAsync();
+        var staged = await StageAllWithoutCommitAsync(staging, id);
+
+        hooks.BeforeInventoryReplace = () => throw new IOException("injected inventory replacement failure");
+        await Assert.ThrowsAsync<IOException>(
+            () => staging.CommitPreparedImportAsync(id, staged.Metadata));
+        hooks.BeforeInventoryReplace = null;
+
+        await using var fresh = CreateStaging(NewScope());
+        await AssertSameVisibleStateAsync(staging, fresh, id);
+        (await staging.ListMediaAsync(id)).Should().ContainSingle();
+        await Assert.ThrowsAsync<PortableStagingException>(
+            () => fresh.RebuildPreparedImportAsync(id));
+
+        await staging.CommitPreparedImportAsync(id, staged.Metadata);
+
+        await using var rebuiltInstance = CreateStaging(NewScope());
+        var rebuilt = await rebuiltInstance.RebuildPreparedImportAsync(id);
+        rebuilt.Metadata.Should().Be(staged.Metadata);
+        rebuilt.Media.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task Delete_survives_cleanup_failure_with_a_durable_marker()
+    {
+        var hooks = new FilePortableImportStagingHooks
+        {
+            CleanupTombstone = _ => throw new IOException("injected cleanup failure"),
+        };
+        await using var staging = CreateStaging(NewScope(), hooks);
+        var id = await staging.CreateAsync();
+        await StageAndCommitAsync(staging, id);
+
+        await staging.DeleteAsync(id);
+
+        File.Exists(Path.Combine(AreaDirectory(id), FilePortableImportStaging.DeletedMarkerFileName))
+            .Should().BeTrue("the deletion marker is the durable boundary");
+        Directory.Exists(AreaDirectory(id))
+            .Should().BeTrue("the injected cleanup failure left the tombstoned tree");
+        await Assert.ThrowsAsync<PortableStagingException>(
+            () => staging.RebuildPreparedImportAsync(id));
+
+        await using var fresh = CreateStaging(NewScope());
+        await Assert.ThrowsAsync<PortableStagingException>(() => fresh.ListMediaAsync(id));
+        await Assert.ThrowsAsync<PortableStagingException>(() => fresh.OpenDataReadAsync(id));
+        await Assert.ThrowsAsync<PortableStagingException>(
+            () => fresh.RebuildPreparedImportAsync(id));
+
+        // The second delete retries best-effort cleanup and still succeeds.
+        await fresh.DeleteAsync(id);
+        Directory.Exists(AreaDirectory(id)).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Delete_mark_failure_leaves_the_area_usable()
+    {
+        var hooks = new FilePortableImportStagingHooks
+        {
+            BeforeDeleteMark = () => throw new IOException("injected mark failure"),
+        };
+        await using var staging = CreateStaging(NewScope(), hooks);
+        var id = await staging.CreateAsync();
+        var staged = await StageAndCommitAsync(staging, id);
+
+        var failure = await Assert.ThrowsAsync<IOException>(() => staging.DeleteAsync(id));
+        failure.Message.Should().Contain("injected");
+
+        Directory.Exists(AreaDirectory(id)).Should().BeTrue();
+        File.Exists(Path.Combine(AreaDirectory(id), FilePortableImportStaging.DeletedMarkerFileName)).Should().BeFalse();
+        (await staging.ListMediaAsync(id)).Should().ContainSingle();
+        var rebuilt = await staging.RebuildPreparedImportAsync(id);
+        rebuilt.Metadata.Should().Be(staged.Metadata);
+
+        hooks.BeforeDeleteMark = null;
+        await staging.DeleteAsync(id);
+        Directory.Exists(AreaDirectory(id)).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Malformed_state_file_is_a_typed_integrity_failure()
+    {
+        var variants = new (string Name, Action<JsonObject> Mutate)[]
+        {
+            ("raw garbage", _ => { }),
+            ("unsupported version", json => json["Version"] = 99),
+            ("missing version", json => json.Remove("Version")),
+            ("null media inventory", json => json["Media"] = null),
+            ("duplicate media reference", json =>
+            {
+                var media = json["Media"]!.AsArray();
+                media.Add(media[0]!.DeepClone());
+            }),
+            ("prepared for another staging area", json =>
+                json["Prepared"]!["StagingId"]!["Value"] = Guid.NewGuid().ToString()),
+            ("prepared with malformed data hash", json =>
+                json["Prepared"]!["DataSha256"] = new string('z', 64)),
+            ("malformed data record", json => json["Data"]!["Sha256"] = "not-a-hash"),
+        };
+
+        foreach (var variant in variants)
+        {
+            var staging = CreateStaging(NewScope());
+            var id = await staging.CreateAsync();
+            await StageAndCommitAsync(staging, id);
+            await staging.DisposeAsync();
+
+            var statePath = Path.Combine(AreaDirectory(id), StateFileName);
+            if (variant.Name == "raw garbage")
+            {
+                await File.WriteAllTextAsync(statePath, "this is not json");
+            }
+            else
+            {
+                var json = JsonNode.Parse(await File.ReadAllTextAsync(statePath))!.AsObject();
+                variant.Mutate(json);
+                await File.WriteAllTextAsync(statePath, json.ToJsonString());
+            }
+
+            await using var fresh = CreateStaging(NewScope());
+            var failure = await Assert.ThrowsAsync<PortableStagingException>(
+                () => fresh.ListMediaAsync(id));
+            failure.Code.Should().Be(
+                PortableStagingException.IntegrityMismatchCode,
+                $"variant '{variant.Name}' must fail closed as an integrity failure");
+
+            await fresh.DeleteAsync(id);
+        }
+    }
+
     public void Dispose()
     {
         try
@@ -777,6 +1023,137 @@ public sealed class FilePortableImportStagingTests : IDisposable
             ContentType: "application/octet-stream",
             Length: content.LongLength,
             Sha256: Sha256Hex(content));
+
+    private static async Task<(byte[] DataBytes, byte[] ManifestBytes)> StagePayloadsAsync(
+        FilePortableImportStaging staging,
+        PortableStagingId id)
+    {
+        var dataBytes = await StageDataAsync(staging, id);
+        var manifestBytes = await StageManifestAsync(staging, id);
+        return (dataBytes, manifestBytes);
+    }
+
+    private static async Task<byte[]> StageDataAsync(
+        FilePortableImportStaging staging,
+        PortableStagingId id)
+    {
+        var dataBytes = Encoding.UTF8.GetBytes("{\"version\":3}");
+        var dataWrite = await staging.OpenDataWriteAsync(
+            id,
+            new PortableArchivePayload("data/library.json", dataBytes.LongLength, Sha256Hex(dataBytes)));
+        await dataWrite.Stream.WriteAsync(dataBytes);
+        await staging.CompleteDataAsync(id, dataWrite);
+        await dataWrite.DisposeAsync();
+        return dataBytes;
+    }
+
+    private static async Task<byte[]> StageManifestAsync(
+        FilePortableImportStaging staging,
+        PortableStagingId id)
+    {
+        var manifestBytes = Encoding.UTF8.GetBytes("{\"format\":\"nostos-portable\"}");
+        var manifestWrite = await staging.OpenManifestWriteAsync(
+            id,
+            new PortableArchivePayload("manifest.json", manifestBytes.LongLength, Sha256Hex(manifestBytes)));
+        await manifestWrite.Stream.WriteAsync(manifestBytes);
+        await staging.CompleteManifestAsync(id, manifestWrite);
+        await manifestWrite.DisposeAsync();
+        return manifestBytes;
+    }
+
+    private static async Task<PortableStagedMediaReference> StageMediaAsync(
+        FilePortableImportStaging staging,
+        PortableStagingId id,
+        byte[] mediaBytes)
+    {
+        var mediaWrite = await staging.OpenMediaWriteAsync(id, MediaDescriptor(mediaBytes));
+        await mediaWrite.Stream.WriteAsync(mediaBytes);
+        await staging.CompleteMediaAsync(id, mediaWrite);
+        var reference = mediaWrite.Reference;
+        await mediaWrite.DisposeAsync();
+        return reference;
+    }
+
+    private static PreparedPortableImportMetadata MetadataFor(
+        PortableStagingId id,
+        byte[] dataBytes,
+        byte[] mediaBytes) =>
+        new(
+            StagingId: id,
+            FormatVersion: 1,
+            DataVersion: 3,
+            DataBytes: dataBytes.LongLength,
+            DataSha256: Sha256Hex(dataBytes),
+            Counts: new MigrationArchiveCounts(Books: 1, MediaEntries: 1),
+            MediaFiles: 1,
+            MediaBytes: mediaBytes.LongLength,
+            ArchiveBytes: 4096,
+            PreparedAtUtc: new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+            IntegrityVerified: true);
+
+    private static async Task AssertSameVisibleStateAsync(
+        IPortableImportStaging original,
+        IPortableImportStaging fresh,
+        PortableStagingId id)
+    {
+        var originalState = await DescribeVisibleStateAsync(original, id);
+        var freshState = await DescribeVisibleStateAsync(fresh, id);
+        freshState.Should().Be(
+            originalState,
+            "a fresh instance over the same root must see exactly the original state");
+    }
+
+    private static async Task<string> DescribeVisibleStateAsync(
+        IPortableImportStaging staging,
+        PortableStagingId id)
+    {
+        var parts = new List<string>();
+
+        try
+        {
+            var media = await staging.ListMediaAsync(id);
+            parts.Add("media=" + string.Join(
+                ",",
+                media.Select(item =>
+                    $"{item.Reference.Value}:{item.Descriptor.Path}:{item.Descriptor.Length}")));
+        }
+        catch (PortableStagingException exception)
+        {
+            parts.Add("media=" + exception.Code);
+        }
+
+        try
+        {
+            await using var data = await staging.OpenDataReadAsync(id);
+            parts.Add("data=" + data.Length);
+        }
+        catch (PortableStagingException exception)
+        {
+            parts.Add("data=" + exception.Code);
+        }
+
+        try
+        {
+            await using var manifest = await staging.OpenManifestReadAsync(id);
+            parts.Add("manifest=" + manifest.Length);
+        }
+        catch (PortableStagingException exception)
+        {
+            parts.Add("manifest=" + exception.Code);
+        }
+
+        try
+        {
+            var rebuilt = await staging.RebuildPreparedImportAsync(id);
+            parts.Add($"prepared={rebuilt.Metadata.DataSha256}:{rebuilt.Media.Count}");
+        }
+        catch (PortableStagingException exception)
+        {
+            parts.Add("prepared=" + exception.Code);
+        }
+
+        return string.Join(";", parts);
+    }
 
     private static string Sha256Hex(byte[] content) =>
         Convert.ToHexString(SHA256.HashData(content)).ToLowerInvariant();

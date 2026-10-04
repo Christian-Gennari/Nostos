@@ -361,21 +361,21 @@ internal sealed class InMemoryPortableImportStaging : IPortableImportStaging
             if (completedMedia.Count != metadata.MediaFiles)
             {
                 throw new PortableStagingException(
-                    PortableStagingException.IntegrityMismatchCode,
+                    PortableStagingException.ConflictCode,
                     "The staged media count does not match the prepared descriptor.");
             }
 
             if (completedMedia.Sum(item => item.Descriptor.Length) != metadata.MediaBytes)
             {
                 throw new PortableStagingException(
-                    PortableStagingException.IntegrityMismatchCode,
+                    PortableStagingException.ConflictCode,
                     "The staged media bytes do not match the prepared descriptor.");
             }
 
             if (metadata.Counts.MediaEntries != metadata.MediaFiles)
             {
                 throw new PortableStagingException(
-                    PortableStagingException.IntegrityMismatchCode,
+                    PortableStagingException.ConflictCode,
                     "The prepared counts media entries do not match the media file count.");
             }
 
@@ -386,7 +386,7 @@ internal sealed class InMemoryPortableImportStaging : IPortableImportStaging
                     StringComparison.OrdinalIgnoreCase))
             {
                 throw new PortableStagingException(
-                    PortableStagingException.IntegrityMismatchCode,
+                    PortableStagingException.ConflictCode,
                     "The staged relational payload does not match the prepared descriptor.");
             }
 
