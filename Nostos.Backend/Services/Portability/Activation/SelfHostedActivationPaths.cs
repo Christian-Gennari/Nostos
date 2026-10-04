@@ -39,6 +39,7 @@ internal sealed class SelfHostedActivationPaths
 
     internal string CandidateDatabase(Guid id) => Db($".nostos-activation/{Id(id)}/candidate.db");
     internal string CandidateMedia(Guid id) => Media($".nostos-activation/{Id(id)}/candidate-books");
+    internal string CandidateFinalizationMarker(Guid id) => Db($".nostos-activation/{Id(id)}/candidate.finalized.json");
     internal string PreviousDatabase(Guid id) => Db($".nostos-recovery/{Id(id)}/nostos.db");
     internal string PreviousMedia(Guid id) => Media($".nostos-recovery/{Id(id)}/books");
     internal string RecoveryManifest(Guid id) => Db($".nostos-recovery/{Id(id)}/recovery.json");
@@ -53,7 +54,7 @@ internal sealed class SelfHostedActivationPaths
     {
         _database.VerifyPathWithinRoot(LiveDatabase);
         _media.VerifyPathWithinRoot(LiveMedia);
-        foreach (var path in new[] { CandidateDatabase(id), PreviousDatabase(id), Journal(id), ResolvedJournal(id), RecoveryManifest(id) })
+        foreach (var path in new[] { CandidateDatabase(id), PreviousDatabase(id), Journal(id), ResolvedJournal(id), RecoveryManifest(id), CandidateFinalizationMarker(id) })
             _database.VerifyPathWithinRoot(path);
         foreach (var path in new[] { CandidateMedia(id), PreviousMedia(id) }) _media.VerifyPathWithinRoot(path);
         foreach (var (live, other) in new[] { (LiveDatabase, CandidateDatabase(id)), (LiveDatabase, PreviousDatabase(id)),

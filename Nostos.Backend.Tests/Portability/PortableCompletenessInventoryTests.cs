@@ -350,6 +350,12 @@ public sealed class PortableCompletenessInventoryTests
                 "This is local operational capacity-accounting state, not user library content, and must never be serialized into portable archives."),
         };
 
+    internal static IReadOnlySet<string> ExcludedEntityNames =>
+        Inventory
+            .Where(entry => entry.Value.IsEntityExcluded)
+            .Select(entry => entry.Key)
+            .ToHashSet(StringComparer.Ordinal);
+
     [Fact]
     public void Every_mapped_entity_property_and_navigation_has_a_portability_classification()
     {

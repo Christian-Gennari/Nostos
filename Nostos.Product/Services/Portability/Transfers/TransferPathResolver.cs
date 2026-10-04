@@ -130,6 +130,16 @@ public sealed class TransferPathResolver
         token is { Length: > 0 and <= MaxTokenLength }
         && token.All(static c => c is >= '0' and <= '9' or >= 'a' and <= 'f');
 
+    /// <summary>Persistent mutex files are never unlinked, avoiding split locks on different inodes.</summary>
+    public string GetMigrationLockPath(Guid scopeId) =>
+        Path.Combine(_rootPath, "locks", FormatScopeId(scopeId, nameof(scopeId)) + ".lock");
+
+    public string GetDetachedScopesRoot() => Path.Combine(_rootPath, "detached");
+
+    /// <summary>A generated, detached cleanup scope, never reused by a running job.</summary>
+    public string GetDetachedScopeDirectory(Guid deletionId) =>
+        Path.Combine(GetDetachedScopesRoot(), FormatScopeId(deletionId, nameof(deletionId)));
+
     public string GetUploadsRoot() => Path.Combine(_rootPath, UploadsDirectoryName);
 
     public string GetUploadSessionDirectory(Guid sessionId) =>
@@ -352,7 +362,18 @@ public sealed class TransferPathResolver
     /// discarded, and the just-created file is removed (best effort) before
     /// the typed <see cref="TransferPathException"/> is rethrown.
     /// </summary>
-    public FileStream CreateNewVerifiedFile(string absoluteFilePath)
+    public FileStream CreateNewVerifiedFile(string absoluteFilePath) =>
+        CreateNewVerifiedFile(absoluteFilePath, bufferSize: 4096, options: FileOptions.None);
+
+    /// <summary>
+    /// Opens a brand-new file for write strictly under the root with an explicit
+    /// buffer size and file options, applying the same pre-open component checks and
+    /// post-open verification as <see cref="CreateNewVerifiedFile(string)"/>.
+    /// </summary>
+    internal FileStream CreateNewVerifiedFile(
+        string absoluteFilePath,
+        int bufferSize,
+        FileOptions options)
     {
         var full = EnsureFileIsNotReparsePoint(absoluteFilePath);
         EnsureParentDirectoryExists(full);
@@ -361,7 +382,13 @@ public sealed class TransferPathResolver
         // null, so the open happens immediately after the pre-checks.
         BeforeOpenForTesting?.Invoke(full);
 
-        var stream = new FileStream(full, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+        var stream = new FileStream(
+            full,
+            FileMode.CreateNew,
+            FileAccess.Write,
+            FileShare.None,
+            bufferSize,
+            options);
         try
         {
             EnsureNoReparsePointComponents(full);
