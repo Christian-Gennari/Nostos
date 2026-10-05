@@ -19,6 +19,16 @@ export interface DeploymentCapabilities {
   supportsLibraryMigration?: boolean;
   /** True only once safe replacement/activation (#681) is available. */
   supportsSafeActivation?: boolean;
+  /**
+   * Server-authoritative direct part-upload capability for library migration
+   * (#680 slice B9). When true the host may answer a part-upload request with
+   * a short-lived storage target and the browser sends the archive part
+   * straight there instead of through the application server. The target is
+   * described only by URL, method, required headers and expiry; no storage
+   * provider details cross this boundary. Absent/false keeps the current
+   * application-server chunk path, byte for byte (plan §42, §78).
+   */
+  supportsDirectPartUpload?: boolean;
   accountManagementUrl?: string | null;
   feedbackUrl?: string | null;
 }
