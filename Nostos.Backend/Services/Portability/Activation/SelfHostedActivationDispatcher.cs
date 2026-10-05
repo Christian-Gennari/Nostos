@@ -318,7 +318,6 @@ internal sealed class SelfHostedActivationDispatcher : BackgroundService, IMigra
                     MigrationActivationAdmission.Validate(
                         MigrationDirection.Import,
                         job.State,
-                        record.DestinationRevision ?? string.Empty,
                         request,
                         facts.Status,
                         facts.Revision);
@@ -334,7 +333,9 @@ internal sealed class SelfHostedActivationDispatcher : BackgroundService, IMigra
                         Message: exception.Message,
                         DestinationRevision: facts.Revision,
                         ExistingCounts: facts.Counts,
-                        DestinationStatus: facts.Status);
+                        DestinationStatus: facts.Status,
+                        ChangedSinceImportStarted: !string.Equals(
+                            record.DestinationRevision, facts.Revision, StringComparison.Ordinal));
                 }
             }
 
@@ -621,6 +622,15 @@ internal sealed class SelfHostedActivationDispatcher : BackgroundService, IMigra
                 {
                     var status = await BuildStatusFromJobAsync(
                         scope.ServiceProvider, job, null, CancellationToken.None);
+                    if (code is MigrationActivationErrorCodes.ConfirmationRequired
+                        or MigrationActivationErrorCodes.DestinationConflict)
+                    {
+                        // A background conflict must expose the same fresh facts a
+                        // synchronous 409 would, so the browser can reopen the
+                        // confirmation dialog without guessing.
+                        status = await WithFreshDestinationFactsAsync(scope.ServiceProvider, status);
+                    }
+
                     slot.MarkFinished(
                         status with
                         {
@@ -648,6 +658,31 @@ internal sealed class SelfHostedActivationDispatcher : BackgroundService, IMigra
                 Message: message,
                 CanActivate: true),
             now);
+    }
+
+    private async Task<MigrationActivationStatusResponse> WithFreshDestinationFactsAsync(
+        IServiceProvider services,
+        MigrationActivationStatusResponse status)
+    {
+        try
+        {
+            var facts = await services.GetRequiredService<SelfHostedActivationCoordinator>()
+                .ReadDestinationFactsForAdmissionAsync(CancellationToken.None);
+            return status with
+            {
+                DestinationRevision = facts.Revision,
+                DestinationStatus = facts.Status,
+                ExistingCounts = facts.Counts,
+            };
+        }
+        catch (Exception exception)
+        {
+            // The failure status is still valid without the fresh facts; the
+            // next status read or a repeated POST re-reads them.
+            _logger.LogDebug(exception,
+                "Could not read destination facts for the activation failure status of {JobId}", status.JobId);
+            return status;
+        }
     }
 
     private void RecordRecoveryFailure(SelfHostedActivationRunSlot slot, string code, string message)
@@ -688,6 +723,9 @@ internal sealed class SelfHostedActivationDispatcher : BackgroundService, IMigra
                 ErrorCode = slot.LastStatus.ErrorCode,
                 Message = slot.LastStatus.Message,
                 CanActivate = false,
+                DestinationRevision = slot.LastStatus.DestinationRevision ?? durable.DestinationRevision,
+                DestinationStatus = slot.LastStatus.DestinationStatus,
+                ExistingCounts = slot.LastStatus.ExistingCounts,
             };
         }
 
@@ -702,6 +740,9 @@ internal sealed class SelfHostedActivationDispatcher : BackgroundService, IMigra
                 ErrorCode = slot.LastStatus.ErrorCode,
                 Message = slot.LastStatus.Message,
                 CanActivate = true,
+                DestinationRevision = slot.LastStatus.DestinationRevision ?? durable.DestinationRevision,
+                DestinationStatus = slot.LastStatus.DestinationStatus,
+                ExistingCounts = slot.LastStatus.ExistingCounts,
             };
         }
 

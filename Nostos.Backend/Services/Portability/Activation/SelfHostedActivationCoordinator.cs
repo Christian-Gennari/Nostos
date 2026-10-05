@@ -251,6 +251,14 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
                 "The job does not record a destination revision to confirm.");
         }
 
+        // The revision the user actually reviewed and confirmed travels with
+        // the accepted run. The job-creation baseline is only a fallback for a
+        // request-less resume (state Activating): portable writes between
+        // import start and activation must not permanently bind the job.
+        var confirmedRevision = !string.IsNullOrWhiteSpace(request?.DestinationRevision)
+            ? request!.DestinationRevision
+            : storedRevision;
+
         if (record.PreparedStagingId is not { } stagingValue || stagingValue == Guid.Empty)
         {
             throw new MigrationActivationException(MigrationActivationErrorCodes.Failed,
@@ -278,15 +286,15 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
             {
                 // Without an explicit request an empty destination may proceed;
                 // a populated one fails closed with confirmation_required.
-                var effective = request ?? new MigrationActivateRequest(storedRevision, false);
-                MigrationActivationAdmission.Validate(MigrationDirection.Import, state, storedRevision,
+                var effective = request ?? new MigrationActivateRequest(confirmedRevision, false);
+                MigrationActivationAdmission.Validate(MigrationDirection.Import, state,
                     effective, facts.Status, facts.Revision);
             }
             else
             {
                 // Activating is the durable record that explicit intent was
-                // accepted; only the destination revision is revalidated here.
-                MigrationActivationAdmission.ValidateReplacement(storedRevision, storedRevision,
+                // accepted; the confirmed generation must still be current.
+                MigrationActivationAdmission.ValidateReplacement(confirmedRevision,
                     confirmReplacement: true, facts.Status, facts.Revision);
             }
 
@@ -294,13 +302,13 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
             var operationId = Guid.NewGuid();
             _journals.PrepareForRetry(jobId);
             _journals.Write(new SelfHostedActivationJournal(jobId, operationId,
-                SelfHostedActivationPhase.CandidatePrepared, storedRevision, retain, _clock.GetUtcNow()));
+                SelfHostedActivationPhase.CandidatePrepared, confirmedRevision, retain, _clock.GetUtcNow()));
             Step(SelfHostedActivationSteps.PhaseCandidatePrepared);
 
             SelfHostedRecoveryCapture? capture = null;
             if (retain)
             {
-                capture = await CaptureAsync(jobId, operationId, storedRevision, facts.Counts, ct);
+                capture = await CaptureAsync(jobId, operationId, confirmedRevision, facts.Counts, ct);
                 Step(SelfHostedActivationSteps.AfterCapture);
             }
 
@@ -319,7 +327,7 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
 
             // ---- Phase B: exclusive maintenance, bounded, committed or rolled back. ----
             var recoveryStatus = await RunCutoverAsync(jobId, state, record, prepared, expected,
-                capture, retain, storedRevision, token, ct);
+                capture, retain, confirmedRevision, token, ct);
             return new SelfHostedActivationResult(jobId, SelfHostedActivationOutcome.Completed,
                 MigrationJobState.Completed, recoveryStatus);
         }
@@ -358,7 +366,7 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
         PortablePreparedImportVerification expected,
         SelfHostedRecoveryCapture? capture,
         bool retain,
-        string storedRevision,
+        string confirmedRevision,
         string token,
         CancellationToken ct)
     {
@@ -371,15 +379,25 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
             // Fail closed when the drain cannot complete: nothing has changed.
             exclusive = await _maintenance.EnterExclusiveAsync(LibraryMaintenanceReason.Activation, ct);
 
-            // The authoritative revision recheck only closes the race once
-            // admission is closed and every reader/writer has drained.
+            // The authoritative recheck only closes the race once admission is
+            // closed and every reader/writer has drained. A populated
+            // replacement must still be exactly the generation the user
+            // confirmed; an empty destination must still be empty, because no
+            // confirmation was asked for. Nothing has been mutated yet.
             var facts = await ReadDestinationFactsAsync(CancellationToken.None);
-            MigrationActivationAdmission.ValidateReplacement(storedRevision, storedRevision,
-                confirmReplacement: true, facts.Status, facts.Revision);
-            if ((facts.Status == MigrationDestinationStatus.Populated) != retain)
+            if (retain)
             {
-                throw new MigrationActivationException(MigrationActivationErrorCodes.DestinationConflict,
-                    "The destination changed. Review replacement again.");
+                if (facts.Status != MigrationDestinationStatus.Populated
+                    || !string.Equals(facts.Revision, confirmedRevision, StringComparison.Ordinal))
+                {
+                    throw new MigrationActivationException(MigrationActivationErrorCodes.DestinationConflict,
+                        "The destination changed. Review replacement again.");
+                }
+            }
+            else if (facts.Status == MigrationDestinationStatus.Populated)
+            {
+                throw new MigrationActivationException(MigrationActivationErrorCodes.ConfirmationRequired,
+                    "The destination is no longer empty. Review replacement again.");
             }
 
             if (state == MigrationJobState.ReadyToActivate)

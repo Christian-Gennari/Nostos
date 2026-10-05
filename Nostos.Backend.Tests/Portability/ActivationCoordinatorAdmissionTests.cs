@@ -1,6 +1,8 @@
 using System.Security.Cryptography;
 using System.Text;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
+using Nostos.Backend.Services.Library;
 using Nostos.Backend.Services.Portability;
 using Nostos.Backend.Services.Portability.Activation;
 using Xunit;
@@ -17,12 +19,10 @@ namespace Nostos.Backend.Tests.Portability;
 [Collection(ActivationCoordinatorCollection.Name)]
 public sealed class ActivationCoordinatorAdmissionTests
 {
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task RevisionChangeBetweenPhases_AbortsAsStaleDestination(bool populated)
+    [Fact]
+    public async Task PopulatedRevisionChangeBetweenPhases_AbortsAsStaleDestination()
     {
-        await using var bed = await ActivationCoordinatorTestBed.CreateAsync(populated);
+        await using var bed = await ActivationCoordinatorTestBed.CreateAsync(populated: true);
         var switched = false;
         bed.RevisionOverride = _ => Task.FromResult(switched ? "changed-between-phases" : bed.RevisionToken);
 
@@ -39,6 +39,91 @@ public sealed class ActivationCoordinatorAdmissionTests
 
         bed.AssertOriginalGeneration();
         (await bed.ReadJobAsync()).State.Should().Be((int)MigrationJobState.ReadyToActivate);
+    }
+
+    [Fact]
+    public async Task EmptyDestinationRevisionChangeBetweenPhases_StillActivatesWithNothingToConfirm()
+    {
+        // Issue #681: an empty destination needs no confirmation, so a revision
+        // that moved while it stayed empty is not a conflict; the exclusive
+        // window re-proves emptiness and there is no user content to lose.
+        await using var bed = await ActivationCoordinatorTestBed.CreateAsync(populated: false);
+        var switched = false;
+        bed.RevisionOverride = _ => Task.FromResult(switched ? "changed-between-phases" : bed.RevisionToken);
+
+        var result = await bed.ActivateAsync(confirm: false, observer: step =>
+        {
+            if (string.Equals(step, SelfHostedActivationSteps.AfterVerifyCandidate, StringComparison.Ordinal))
+            {
+                switched = true;
+            }
+        });
+
+        result.Outcome.Should().Be(SelfHostedActivationOutcome.Completed);
+        result.RecoveryStatus.Should().Be(MigrationRecoveryStatus.NotRequired);
+        await bed.AssertImportedGenerationAsync();
+    }
+
+    [Fact]
+    public async Task PopulatedDestination_IsConfirmedAgainstTheCurrentRevision_NotTheJobBaseline()
+    {
+        await using var bed = await ActivationCoordinatorTestBed.CreateAsync(populated: true);
+
+        // A portable write after job creation (here a real saved collection,
+        // the same shape as a reading-progress or note-edit save) advances the
+        // live revision: the stored baseline is now stale.
+        await bed.WritePortableRevisionBumpAsync();
+        var current = await ReadCurrentRevisionAsync(bed);
+        current.Should().NotBe(bed.RevisionToken, "the fixture must prove the baseline moved");
+
+        var afterWrite = DumpAllTablesExceptActivationJob(bed);
+        var stale = await FluentActions
+            .Awaiting(() => ActivateWithRevisionAsync(bed, bed.RevisionToken, confirm: true))
+            .Should().ThrowAsync<MigrationActivationException>();
+        stale.Which.Code.Should().Be(MigrationActivationErrorCodes.DestinationConflict);
+        DumpAllTablesExceptActivationJob(bed).Should().BeEquivalentTo(afterWrite,
+            "a stale confirmation must mutate nothing");
+        (await bed.ReadJobAsync()).State.Should().Be((int)MigrationJobState.ReadyToActivate);
+
+        var result = await ActivateWithRevisionAsync(bed, current, confirm: true);
+        result.Outcome.Should().Be(SelfHostedActivationOutcome.Completed);
+        result.RecoveryStatus.Should().Be(MigrationRecoveryStatus.Available);
+        await bed.AssertImportedGenerationAsync();
+    }
+
+    [Fact]
+    public async Task EmptyDestinationThatBecamePopulatedInsideTheWindow_AbortsWithConfirmationRequiredAndMutatesNothing()
+    {
+        await using var bed = await ActivationCoordinatorTestBed.CreateAsync(populated: false);
+        var revisionAtAdmission = bed.RevisionToken;
+
+        // Admitted as empty (no confirmation asked). A real portable save lands
+        // after admission and before the exclusive recheck.
+        var failure = await FluentActions
+            .Awaiting(() => ActivateWithRevisionAsync(bed, revisionAtAdmission, confirm: false, observer: step =>
+            {
+                if (string.Equals(step, SelfHostedActivationSteps.AfterVerifyCandidate, StringComparison.Ordinal))
+                {
+                    bed.WritePortableRevisionBumpAsync().GetAwaiter().GetResult();
+                }
+            }))
+            .Should().ThrowAsync<MigrationActivationException>();
+        failure.Which.Code.Should().Be(MigrationActivationErrorCodes.ConfirmationRequired);
+
+        // The run must not have replaced content the user never confirmed:
+        // the destination is exactly the state the test's own write committed.
+        var afterWrite = DumpAllTablesExceptActivationJob(bed);
+        var afterFailure = DumpAllTablesExceptActivationJob(bed);
+        afterFailure.Should().BeEquivalentTo(afterWrite);
+        (await bed.ReadJobAsync()).State.Should().Be((int)MigrationJobState.ReadyToActivate);
+
+        // Confirming the now-populated current generation completes and retains it.
+        var current = await ReadCurrentRevisionAsync(bed);
+        current.Should().NotBe(revisionAtAdmission);
+        var result = await ActivateWithRevisionAsync(bed, current, confirm: true);
+        result.Outcome.Should().Be(SelfHostedActivationOutcome.Completed);
+        result.RecoveryStatus.Should().Be(MigrationRecoveryStatus.Available);
+        await bed.AssertImportedGenerationAsync();
     }
 
     [Fact]
@@ -136,5 +221,41 @@ public sealed class ActivationCoordinatorAdmissionTests
         {
             SelfHostedSqliteFile.ConnectionOpeningForTesting = null;
         }
+    }
+
+    private static async Task<string> ReadCurrentRevisionAsync(ActivationCoordinatorTestBed bed)
+    {
+        await using var scope = bed.Host.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<ILibraryDestinationRevisionProvider>()
+            .GetCurrentAsync(default);
+    }
+
+    private static async Task<SelfHostedActivationResult> ActivateWithRevisionAsync(
+        ActivationCoordinatorTestBed bed,
+        string revision,
+        bool confirm,
+        Action<string>? observer = null)
+    {
+        await using var scope = bed.Host.CreateAsyncScope();
+        var coordinator = scope.ServiceProvider.GetRequiredService<SelfHostedActivationCoordinator>();
+        coordinator.StepObserverForTesting = observer;
+        return await coordinator.ActivateAsync(
+            bed.JobId, new MigrationActivateRequest(revision, confirm), default);
+    }
+
+    /// <summary>
+    /// Whole-database dump excluding only the activation job's own row (whose
+    /// lease/state metadata the protocol legitimately changes); every other
+    /// row, in every table, must be identical across the aborted run.
+    /// </summary>
+    private static Dictionary<string, List<string>> DumpAllTablesExceptActivationJob(
+        ActivationCoordinatorTestBed bed)
+    {
+        var all = ActivationBuildFixture.DumpAllTables(bed.Paths.LiveDatabase);
+        all["MigrationJobRecords"] = all["MigrationJobRecords"]
+            .Where(row => !string.Equals(
+                row.Split('|', 2)[0], bed.JobId.ToString(), StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        return all;
     }
 }
