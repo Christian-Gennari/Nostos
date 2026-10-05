@@ -466,6 +466,13 @@ public class TopicRepository : ITopicRepository
 
     public async Task<int> DeleteOrphanedAsync(CancellationToken ct = default)
     {
-        return await _db.Topics.Where(c => !c.NoteTopics.Any()).ExecuteDeleteAsync(ct);
+        // ExecuteDelete bypasses the change tracker. The revision row is
+        // advanced FIRST, before the portable rows, so every portable writer
+        // takes the singleton lock in the same order (issue #679 Slice 11).
+        await using var transaction = await _db.Database.BeginTransactionAsync(ct);
+        await LibraryRevision.AdvanceAndGetAsync(_db, ct);
+        var deleted = await _db.Topics.Where(c => !c.NoteTopics.Any()).ExecuteDeleteAsync(ct);
+        await transaction.CommitAsync(ct);
+        return deleted;
     }
 }

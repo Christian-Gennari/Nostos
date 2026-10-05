@@ -76,7 +76,13 @@ public class NoteRepository : INoteRepository
 
     public async Task DeleteTopicLinksAsync(Guid noteId)
     {
+        // ExecuteDelete bypasses the change tracker. The revision row is
+        // advanced FIRST, before the portable rows, so every portable writer
+        // takes the singleton lock in the same order (issue #679 Slice 11).
+        await using var transaction = await _db.Database.BeginTransactionAsync();
+        await LibraryRevision.AdvanceAndGetAsync(_db);
         await _db.NoteTopics.Where(nc => nc.NoteId == noteId).ExecuteDeleteAsync();
+        await transaction.CommitAsync();
     }
     public async Task<List<NoteModel>> SearchByTextAsync(
         string query,

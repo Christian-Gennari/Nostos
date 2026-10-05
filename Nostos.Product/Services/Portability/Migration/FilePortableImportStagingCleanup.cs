@@ -44,7 +44,18 @@ public sealed class FilePortableImportStagingCleanup(
             try
             {
                 paths.VerifyPathWithinRoot(directory);
-                if (Directory.GetLastWriteTimeUtc(directory) > cutoffUtc.UtcDateTime)
+                var tombstoned = File.Exists(
+                    Path.Combine(directory, FilePortableImportStaging.DeletedMarkerFileName));
+
+                // A durably tombstoned area is already logically deleted: its
+                // physical leftovers are sweepable immediately, because the
+                // marker (not the directory) is what hides the staging id and
+                // prevents a new writer from adopting it. Non-tombstoned areas
+                // keep the full TTL grace measured by the newest write anywhere
+                // inside them, so an area still receiving media is never
+                // mistaken for an abandoned one.
+                if (!tombstoned
+                    && TransferPathResolver.NewestWriteTimeUtc(directory) > cutoffUtc.UtcDateTime)
                 {
                     // The full TTL grace has not elapsed for this area.
                     continue;

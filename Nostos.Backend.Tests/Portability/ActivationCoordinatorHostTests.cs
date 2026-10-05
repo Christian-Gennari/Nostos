@@ -46,8 +46,11 @@ public sealed class ActivationCoordinatorHostTests
                 .UseSqlite($"Data Source={databasePath};Pooling=False").Options))
             {
                 var state = await db.LibraryStates.SingleAsync();
-                state.StateVersion = revision;
                 db.Books.Add(new PhysicalBookModel { Title = "LIVE-ONLY-BOOK" });
+                // The book advanced the revision through the save pipeline;
+                // stamp the fixture's revision in its own save.
+                await db.SaveChangesAsync();
+                state.StateVersion = revision;
                 await db.SaveChangesAsync();
             }
 
@@ -202,7 +205,7 @@ public sealed class ActivationCoordinatorHostTests
         }
     }
 
-    [Fact(Skip = "enable when destination revision advances on every portable mutation (#679 slice 11)")]
+    [Fact]
     public async Task RealNoteEditBetweenPhases_AbortsAsStaleDestination()
     {
         var template = ActivationCoordinatorTemplate.For(populated: true);
@@ -230,9 +233,9 @@ public sealed class ActivationCoordinatorHostTests
             {
                 if (string.Equals(step, SelfHostedActivationSteps.AfterVerifyCandidate, StringComparison.Ordinal))
                 {
-                    // A real service-path note edit. NoteService does not advance
-                    // LibraryState yet, so only the revision provider follow-up
-                    // makes this abort; hence the skip above.
+                    // A real service-path note edit. The content-only update
+                    // advances the destination revision through the DbContext
+                    // pipeline (#679 Slice 11), so the Phase-B recheck aborts.
                     scope.ServiceProvider.GetRequiredService<INoteService>()
                         .UpdateAsync(noteId, new UpdateNoteDto("edited between phases"))
                         .GetAwaiter().GetResult();
@@ -327,7 +330,6 @@ public sealed class ActivationCoordinatorHostTests
         await using var db = new NostosDbContext(new DbContextOptionsBuilder<NostosDbContext>()
             .UseSqlite($"Data Source={databasePath};Pooling=False").Options);
         var state = await db.LibraryStates.SingleAsync();
-        state.StateVersion = "77";
         db.Books.Add(new PhysicalBookModel { Title = "LIVE-ONLY-BOOK" });
         Guid? noteId = null;
         if (seedNote)
@@ -362,6 +364,11 @@ public sealed class ActivationCoordinatorHostTests
             noteId = note.Id;
         }
 
+        // The portable rows above advanced the revision through the save
+        // pipeline; stamp the fixture's revision in its own save, which is not a
+        // portable mutation (issue #679 Slice 11).
+        await db.SaveChangesAsync();
+        state.StateVersion = "77";
         await db.SaveChangesAsync();
         return noteId;
     }

@@ -3,12 +3,10 @@ using System.Text.Json;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 using Nostos.Backend.Data.Models;
 using Nostos.Backend.Services;
 using Nostos.Backend.Services.Portability;
 using Nostos.Backend.Services.Portability.Activation;
-using Nostos.Backend.Services.Portability.Migration;
 using Xunit;
 
 namespace Nostos.Backend.Tests.Portability;
@@ -326,12 +324,11 @@ public sealed class MigrationActivationHttpTests
     {
         var harness = new MigrationHttpHarness
         {
+            // Real preparation, not the transport probe: the upload flow must
+            // reach ReadyToActivate through the production handler.
+            UseRealPhaseHandlers = true,
             ConfigureServices = services =>
             {
-                // Real preparation, not the transport probe: the upload flow
-                // must reach ReadyToActivate through the production handler.
-                services.RemoveAll<IMigrationPhaseHandler>();
-                services.AddScoped<IMigrationPhaseHandler, ImportPreparationPhaseHandler>();
                 services.AddHostedService(sp => sp.GetRequiredService<SelfHostedActivationDispatcher>());
                 configure?.Invoke(services);
             },

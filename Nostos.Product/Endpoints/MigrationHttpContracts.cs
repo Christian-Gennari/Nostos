@@ -241,6 +241,7 @@ public static class MigrationHttpErrors
     public const string ExportArtifactUnavailable = "migration_export_artifact_unavailable";
     public const string ExportNotAvailable = "migration_export_not_available";
     public const string ExportExpired = "migration_export_expired";
+    public const string TooManyJobs = "migration_too_many_jobs";
     public const string Unexpected = "unexpected_error";
 
     private static readonly Dictionary<string, string> Messages = new(StringComparer.Ordinal)
@@ -275,6 +276,7 @@ public static class MigrationHttpErrors
         [MigrationActivationErrorCodes.RecoveryFailed] =
             "Activation could not be completed or rolled back in-process. "
             + "The host stays in maintenance until a restart reconciles it.",
+        [TooManyJobs] = "The installation has too many outstanding migration jobs. Finish or cancel one and retry.",
         [Unexpected] = "The migration request failed unexpectedly.",
     };
 
@@ -368,6 +370,9 @@ public static class MigrationHttpErrors
             StatusCodes.Status409Conflict),
         MigrationTransferException.ExportArtifactUnavailable => Result(
             ExportArtifactUnavailable,
+            StatusCodes.Status409Conflict),
+        MigrationTransferException.TooManyJobs => Result(
+            TooManyJobs,
             StatusCodes.Status409Conflict),
         _ => Result(Unexpected, StatusCodes.Status500InternalServerError),
     };
