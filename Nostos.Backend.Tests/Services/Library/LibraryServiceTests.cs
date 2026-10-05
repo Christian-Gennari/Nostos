@@ -2214,6 +2214,49 @@ public sealed class LibraryServiceTests : IClassFixture<SqliteTestFixture>
         }
     }
 
+    [Fact]
+    public async Task Concurrent_duplicate_identifier_creates_advance_the_revision_once()
+    {
+        for (var iteration = 0; iteration < 10; iteration++)
+        {
+            var h = Harness();
+            var before = await CommittedVersionAsync(h);
+            var isbn = ValidIsbn13(iteration);
+            var barrier = new Barrier(2);
+
+            async Task<LibraryCommandResultDto> CreateAsync()
+            {
+                var request = CreateRequest("physical", "Duplicate race", Isbn: isbn);
+                barrier.SignalAndWait();
+                return await WithSqliteRetryAsync(
+                    () => h.Service.CreateOrMatchBookAsync(request, strictConfirmation: false));
+            }
+
+            var results = await Task.WhenAll(Task.Run(CreateAsync), Task.Run(CreateAsync))
+                .WaitAsync(TimeSpan.FromSeconds(60));
+            results.Should().OnlyContain(result => result.StateVersion.Length > 0);
+
+            (await CountBooksAsync(h)).Should().Be(1, $"iteration {iteration}: exactly one create wins");
+            (await CommittedVersionAsync(h)).Should().Be(
+                before + 1,
+                $"iteration {iteration}: one create means exactly one revision advance");
+        }
+    }
+
+    /// <summary>A checksum-valid ISBN-13 with a unique body per sequence.</summary>
+    private static string ValidIsbn13(long sequence)
+    {
+        var body = "978" + (sequence % 1_000_000_000).ToString("D9");
+        var sum = 0;
+        for (var index = 0; index < body.Length; index++)
+        {
+            sum += (body[index] - '0') * (index % 2 == 0 ? 1 : 3);
+        }
+
+        var check = (10 - (sum % 10)) % 10;
+        return body + check;
+    }
+
     private static async Task<long> CommittedVersionAsync(TestHarness h)
     {
         await using var db = await h.Factory.CreateDbContextAsync();

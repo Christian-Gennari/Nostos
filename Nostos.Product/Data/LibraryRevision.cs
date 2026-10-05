@@ -11,18 +11,31 @@ namespace Nostos.Backend.Data;
 /// safely. The save or bulk operation fails closed rather than normalising a
 /// corrupted value silently.
 /// </summary>
-public sealed class LibraryRevisionException(string code, string message)
-    : Exception(message)
+public sealed class LibraryRevisionException : Exception
 {
     public const string InvalidRevisionCode = "library_revision_invalid";
+    public const string SavepointUnsupportedCode = "library_revision_savepoint_unsupported";
 
-    public string Code { get; } = code;
+    public LibraryRevisionException(string code, string message)
+        : base(message) => Code = code;
+
+    public LibraryRevisionException(string code, string message, Exception innerException)
+        : base(message, innerException) => Code = code;
+
+    public string Code { get; }
 
     internal static LibraryRevisionException InvalidValue(string? value) =>
         new(
             InvalidRevisionCode,
             $"The live library revision is missing, empty, or not a non-negative integer " +
             $"(stored value: '{value ?? "<null>"}'). The library cannot be mutated safely.");
+
+    internal static LibraryRevisionException SavepointUnsupported(Exception inner) =>
+        new(
+            SavepointUnsupportedCode,
+            "The active transaction does not support savepoints, so a portable save cannot be " +
+            "made atomic with the revision advance. Commit or roll back the transaction and retry.",
+            inner);
 }
 
 /// <summary>
@@ -43,9 +56,20 @@ public sealed class LibraryRevisionException(string code, string message)
 /// single atomic SQL statement, executed inside the caller's transaction
 /// <em>before</em> the portable rows are touched, so concurrent portable
 /// writers serialize on the singleton row in one lock order and always observe
-/// a strictly larger value. The helper is idempotent per transaction: at most
-/// one advance per transaction, however many portable rows or saves it
-/// contains.</para>
+/// a strictly larger value. The helper is idempotent once per context-owned
+/// transaction: at most one advance per transaction, however many portable
+/// rows or saves it contains.</para>
+///
+/// <para><b>Savepoint atomicity.</b> Inside an ambient transaction the save
+/// pipeline wraps the advance and the portable DML in one savepoint created
+/// before the advance. If the save fails, both are rolled back to that
+/// savepoint and the cached advance is cleared, so a later successful save in
+/// the same transaction advances again and a no-change command can never
+/// commit an advance for rolled-back work. A provider without savepoint
+/// support fails closed with <c>library_revision_savepoint_unsupported</c>;
+/// SQLite and PostgreSQL both support savepoints. The idempotence marker is
+/// context-local, so two contexts enlisted in one shared underlying
+/// transaction each advance once.</para>
 ///
 /// <para><b>Missing row.</b> A database created without the bootstrap seed gets
 /// the row inserted at <c>"0"</c> and the same advance applies, so the first
@@ -198,7 +222,7 @@ public static class LibraryRevision
 
         var next = await ReadVersionAsync(db, ct).ConfigureAwait(false);
         EnsureValid(next);
-        SyncTrackedState(db, next!, now);
+        ProtectTrackedState(db);
         db.MarkLibraryRevisionAdvanced(db.Database.CurrentTransaction, next!);
         return next!;
     }
@@ -221,7 +245,7 @@ public static class LibraryRevision
 
         var next = ReadVersion(db);
         EnsureValid(next);
-        SyncTrackedState(db, next!, now);
+        ProtectTrackedState(db);
         db.MarkLibraryRevisionAdvanced(db.Database.CurrentTransaction, next!);
         return next!;
     }
@@ -299,16 +323,17 @@ public static class LibraryRevision
     }
 
     /// <summary>
-    /// Keeps any tracked <see cref="LibraryState"/> entry consistent with the
-    /// authoritative database value and prevents EF from writing a stale value
-    /// during the same save.
+    /// Neutralises any tracked <see cref="LibraryState"/> entry so EF cannot
+    /// write a stale in-memory value during the same save. The entity's object
+    /// is deliberately not mutated: the atomic SQL write is authoritative, and
+    /// a caller that needs the new value must use
+    /// <see cref="AdvanceAndGetAsync"/>. Leaving the object untouched also
+    /// keeps no-change/failure paths reporting the committed value.
     /// </summary>
-    private static void SyncTrackedState(NostosDbContext db, string value, DateTime now)
+    private static void ProtectTrackedState(NostosDbContext db)
     {
         foreach (var entry in db.ChangeTracker.Entries<LibraryState>())
         {
-            entry.Entity.StateVersion = value;
-            entry.Entity.UpdatedAt = now;
             entry.State = EntityState.Unchanged;
         }
     }

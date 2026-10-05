@@ -1241,6 +1241,145 @@ public sealed class PostgreSqlCompatibilitySpikeTests
         }
     }
 
+    /// <summary>
+    /// Ambient-transaction savepoint atomicity on PostgreSQL: a portable save
+    /// that fails on a unique violation and is caught by the caller must not
+    /// leave the revision advance behind when the outer transaction commits,
+    /// and a later successful portable save in the same transaction must
+    /// advance exactly once.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "PostgresSpike")]
+    public async Task Failed_portable_save_inside_an_ambient_transaction_does_not_commit_an_advance_on_postgresql()
+    {
+        var connectionString = Environment.GetEnvironmentVariable(ConnectionStringEnvironmentVariable);
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            return;
+        }
+
+        var schema = "nostos_revision_savepoint_" + Guid.NewGuid().ToString("N");
+        var connectionBuilder = new NpgsqlConnectionStringBuilder(connectionString)
+        {
+            SearchPath = schema,
+        };
+        var options = new DbContextOptionsBuilder<NostosDbContext>()
+            .UseNpgsql(connectionBuilder.ConnectionString)
+            .Options;
+
+        try
+        {
+            await using (var setup = new NostosDbContext(options))
+            {
+                await setup.Database.ExecuteSqlRawAsync($"CREATE SCHEMA \"{schema}\"");
+                await setup.Database.ExecuteSqlRawAsync(setup.Database.GenerateCreateScript());
+            }
+
+            await using (var seed = new NostosDbContext(options))
+            {
+                seed.LibraryStates.Add(new LibraryState { StateVersion = "0" });
+                await seed.SaveChangesAsync();
+            }
+
+            await using (var seed = new NostosDbContext(options))
+            {
+                seed.Books.Add(new PhysicalBookModel
+                {
+                    Id = Guid.NewGuid(),
+                    Title = "Seed",
+                    NormalizedIsbn = "9780000000100",
+                });
+                await seed.SaveChangesAsync();
+            }
+
+            string before;
+            await using (var read = new NostosDbContext(options))
+            {
+                before = await read.LibraryStates.AsNoTracking()
+                    .Select(s => s.StateVersion)
+                    .SingleAsync();
+            }
+
+            // Failed save + caught + outer commit: no advance may survive.
+            await using (var db = new NostosDbContext(options))
+            {
+                await using var transaction = await db.Database.BeginTransactionAsync();
+                db.Books.Add(new PhysicalBookModel
+                {
+                    Id = Guid.NewGuid(),
+                    Title = "Duplicate",
+                    NormalizedIsbn = "9780000000100",
+                });
+                var act = async () => await db.SaveChangesAsync();
+                await act.Should().ThrowAsync<DbUpdateException>();
+                db.ChangeTracker.Clear();
+
+                db.LibraryCommandReceipts.Add(new LibraryCommandReceipt
+                {
+                    ClientId = "postgres-spike",
+                    IdempotencyKey = "pg-failed-save",
+                    CommandKind = "noop",
+                    ResponseJson = "{}",
+                });
+                await db.SaveChangesAsync();
+                await transaction.CommitAsync();
+            }
+
+            await using (var read = new NostosDbContext(options))
+            {
+                (await read.LibraryStates.AsNoTracking().Select(s => s.StateVersion).SingleAsync())
+                    .Should().Be(before, "the failed save's advance must roll back with its savepoint");
+            }
+
+            // Failed save followed by a successful portable save in the same
+            // transaction: exactly one advance.
+            await using (var db = new NostosDbContext(options))
+            {
+                await using var transaction = await db.Database.BeginTransactionAsync();
+                db.Books.Add(new PhysicalBookModel
+                {
+                    Id = Guid.NewGuid(),
+                    Title = "Duplicate again",
+                    NormalizedIsbn = "9780000000100",
+                });
+                var act = async () => await db.SaveChangesAsync();
+                await act.Should().ThrowAsync<DbUpdateException>();
+                db.ChangeTracker.Clear();
+
+                db.Works.Add(new WorkModel
+                {
+                    Id = Guid.NewGuid(),
+                    Title = "After",
+                    NormalizedTitle = "AFTER",
+                    NormalizedAuthor = string.Empty,
+                });
+                await db.SaveChangesAsync();
+                await transaction.CommitAsync();
+            }
+
+            await using (var read = new NostosDbContext(options))
+            {
+                (await read.LibraryStates.AsNoTracking().Select(s => s.StateVersion).SingleAsync())
+                    .Should().Be((long.Parse(before) + 1).ToString(),
+                        "the later successful save must obtain a fresh advance");
+            }
+        }
+        finally
+        {
+            try
+            {
+                await using var cleanup = new NostosDbContext(options);
+                await cleanup.Database.ExecuteSqlRawAsync(
+                    $"DROP SCHEMA IF EXISTS \"{schema}\" CASCADE");
+            }
+            catch (Exception)
+            {
+                // Best-effort cleanup of the disposable schema; the CI
+                // PostgreSQL container is discarded with the job.
+            }
+        }
+    }
+
     private static async Task<long> ScalarCountAsync(NostosDbContext db, string sql)
     {
         var connection = db.Database.GetDbConnection();

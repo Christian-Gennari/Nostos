@@ -195,15 +195,29 @@ committed create, update, or delete of portable user-owned state advances it
 with one atomic SQL increment in the same transaction as the mutation —
 including content-only edits, owned-value edits, bulk `ExecuteUpdate`/
 `ExecuteDelete` paths, and commands whose caller needs the new value (the
-helper returns it; callers never compute it). Host-only operational writes
-(jobs, sessions, chunk receipts, backups, host provider settings, migration
-records) never advance it. A missing singleton row is created at `"0"` before
-the first advance, and a corrupted (empty, non-numeric, negative, or maxed-out)
-revision fails the mutation closed with `library_revision_invalid` rather than
-being normalised. Every portable writer takes the revision row before its
-portable rows, so concurrent writers serialize deterministically. Activation
-compares the stored revision with the current one and refuses to replace a
-library that changed after the import was prepared.
+helper returns it; callers never compute it). Inside an ambient transaction the
+advance and the portable save share one savepoint, so a failed save rolls the
+advance back with its own rows and a later successful save in the same
+transaction advances again; a provider without savepoint support fails closed.
+Host-only operational writes (jobs, sessions, chunk receipts, backups, host
+provider settings, migration records) never advance it. A missing singleton row
+is created at `"0"` before the first advance, and a corrupted (empty,
+non-numeric, negative, or maxed-out) revision fails the mutation closed with
+`library_revision_invalid` rather than being normalised. Every portable writer
+takes the revision row before its portable rows, so concurrent writers
+serialize deterministically. Activation compares the stored revision with the
+current one and refuses to replace a library that changed after the import was
+prepared.
+
+**Legacy import transaction scope.** The compatibility `POST
+/api/portability/import` already ran its relational apply, media publication
+and verification inside one serializable transaction before this work (that is
+how a failed import leaves the destination empty). The revision advance joins
+that transaction at the relational save, so during a legacy import into an
+empty library other portable writes for that library wait until the import
+commits — the same window the import already held, with one additional
+singleton row lock on PostgreSQL. Shortening it would require separating media
+publication from the relational commit and is tracked as a follow-up.
 
 
 ## Archive layout

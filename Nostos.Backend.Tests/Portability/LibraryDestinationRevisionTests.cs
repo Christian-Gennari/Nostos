@@ -65,6 +65,38 @@ public sealed class LibraryDestinationRevisionTests : IDisposable
         return long.Parse(raw);
     }
 
+    private long ReadRevision()
+    {
+        using var db = CreateContext();
+        var raw = db.LibraryStates.AsNoTracking()
+            .Where(s => s.Id == LibraryState.WellKnownId)
+            .Select(s => s.StateVersion)
+            .Single();
+        return long.Parse(raw);
+    }
+
+    private async Task SeedConflictingBookAsync(string normalizedIsbn)
+    {
+        await using var db = CreateContext();
+        db.Books.Add(ConflictingBook(normalizedIsbn));
+        await db.SaveChangesAsync();
+    }
+
+    private void SeedConflictingBook(string normalizedIsbn)
+    {
+        using var db = CreateContext();
+        db.Books.Add(ConflictingBook(normalizedIsbn));
+        db.SaveChanges();
+    }
+
+    private static PhysicalBookModel ConflictingBook(string normalizedIsbn) =>
+        new()
+        {
+            Id = Guid.NewGuid(),
+            Title = "Duplicate " + normalizedIsbn,
+            NormalizedIsbn = normalizedIsbn,
+        };
+
     /// <summary>
     /// One row of every portable entity type in one save/transaction advances
     /// the revision exactly once (one bump for the whole graph, not one per row).
@@ -389,6 +421,123 @@ public sealed class LibraryDestinationRevisionTests : IDisposable
         (await ReadRevisionAsync()).Should().Be(before);
         await using var verify = CreateContext();
         (await verify.Works.CountAsync()).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Failed_portable_save_inside_an_ambient_transaction_does_not_commit_an_advance()
+    {
+        await using var db = await CreateInitializedContextAsync();
+        await SeedConflictingBookAsync("9780000000001");
+        var before = await ReadRevisionAsync();
+
+        await using (var transaction = await db.Database.BeginTransactionAsync())
+        {
+            db.Books.Add(ConflictingBook("9780000000001"));
+            var act = async () => await db.SaveChangesAsync();
+            await act.Should().ThrowAsync<DbUpdateException>();
+            db.ChangeTracker.Clear();
+
+            // A host-only receipt save in the same transaction must not advance.
+            db.LibraryCommandReceipts.Add(new LibraryCommandReceipt
+            {
+                ClientId = "client",
+                IdempotencyKey = "failed-save-receipt",
+                CommandKind = "noop",
+                ResponseJson = "{}",
+            });
+            await db.SaveChangesAsync();
+            await transaction.CommitAsync();
+        }
+
+        (await ReadRevisionAsync()).Should().Be(
+            before,
+            "the advance and the failed portable DML share a savepoint and roll back together");
+    }
+
+    [Fact]
+    public async Task Failed_save_then_successful_portable_save_in_the_same_transaction_advances_once()
+    {
+        await using var db = await CreateInitializedContextAsync();
+        await SeedConflictingBookAsync("9780000000002");
+        var before = await ReadRevisionAsync();
+
+        await using (var transaction = await db.Database.BeginTransactionAsync())
+        {
+            db.Books.Add(ConflictingBook("9780000000002"));
+            var act = async () => await db.SaveChangesAsync();
+            await act.Should().ThrowAsync<DbUpdateException>();
+            db.ChangeTracker.Clear();
+
+            db.Works.Add(new WorkModel { Title = "After", NormalizedTitle = "AFTER", NormalizedAuthor = "" });
+            await db.SaveChangesAsync();
+            await transaction.CommitAsync();
+        }
+
+        (await ReadRevisionAsync()).Should().Be(
+            before + 1,
+            "the rolled-back advance is forgotten and the later mutation obtains a fresh one");
+    }
+
+    [Fact]
+    public void Sync_failed_portable_save_inside_an_ambient_transaction_does_not_commit_an_advance()
+    {
+        using var db = CreateContext();
+        db.Database.EnsureCreated();
+        db.LibraryStates.Add(new LibraryState { StateVersion = "0" });
+        db.SaveChanges();
+        db.ChangeTracker.Clear();
+        SeedConflictingBook("9780000000003");
+        var before = ReadRevision();
+
+        using (var transaction = db.Database.BeginTransaction())
+        {
+            db.Books.Add(ConflictingBook("9780000000003"));
+            var act = () => db.SaveChanges();
+            act.Should().Throw<DbUpdateException>();
+            db.ChangeTracker.Clear();
+            transaction.Commit();
+        }
+
+        ReadRevision().Should().Be(before);
+    }
+
+    [Fact]
+    public async Task Executor_style_caught_failed_save_reports_and_commits_the_pre_race_revision()
+    {
+        await using var db = await CreateInitializedContextAsync();
+        await SeedConflictingBookAsync("9780000000004");
+        var state = await db.LibraryStates.SingleAsync();
+        var before = state.StateVersion;
+
+        await using (var transaction = await db.Database.BeginTransactionAsync())
+        {
+            db.Books.Add(ConflictingBook("9780000000004"));
+            try
+            {
+                await db.SaveChangesAsync();
+                throw new Xunit.Sdk.XunitException("the duplicate identifier save should have failed");
+            }
+            catch (DbUpdateException)
+            {
+                // Mirrors UpdateBookCoreAsync's identifier-race handling.
+                db.ChangeTracker.Clear();
+            }
+
+            db.LibraryCommandReceipts.Add(new LibraryCommandReceipt
+            {
+                ClientId = "client",
+                IdempotencyKey = "executor-style-receipt",
+                CommandKind = "UpdateBook",
+                ResponseJson = "{}",
+            });
+            await db.SaveChangesAsync();
+            await transaction.CommitAsync();
+        }
+
+        (await ReadRevisionAsync()).Should().Be(long.Parse(before));
+        state.StateVersion.Should().Be(
+            before,
+            "the tracked state object is not mutated to a speculative value that was rolled back");
     }
 
     [Fact]

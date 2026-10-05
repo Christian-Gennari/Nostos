@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using Nostos.Backend.Data;
 using Nostos.Backend.Data.Models;
 using Nostos.Backend.Services;
 using Nostos.Backend.Services.Portability;
@@ -1169,6 +1170,95 @@ public sealed class PortableArchiveServiceTests
             var imported = await import.WaitAsync(TimeSpan.FromSeconds(60));
             imported.IntegrityVerified.Should().BeTrue();
             Directory.Exists(directory).Should().BeFalse("the import removes its own scratch on completion");
+        }
+        finally
+        {
+            try
+            {
+                if (Directory.Exists(scratchRoot))
+                    Directory.Delete(scratchRoot, recursive: true);
+            }
+            catch
+            {
+                // Test cleanup only.
+            }
+        }
+    }
+
+    /// <summary>
+    /// Pins the legacy import's transaction scope: the serializable transaction
+    /// already spans relational apply, media publication and verification (as
+    /// on main), and the revision advance joins it, so a concurrent portable
+    /// writer waits for the import to commit. The test releases the gated media
+    /// write and proves both commits land, each with one advance.
+    /// </summary>
+    [Fact]
+    public async Task Import_transaction_blocks_a_concurrent_portable_write_until_it_commits()
+    {
+        var scratchRoot = Path.Combine(
+            Path.GetTempPath(),
+            $"nostos-s11-lock-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(scratchRoot);
+
+        try
+        {
+            using var archive = await ExportFixtureAsync();
+            await using var destination = await LocalPortableTestLibrary.CreateAsync();
+            var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var inner = destination.Storage;
+            var storage = new InterceptingStorage(
+                inner,
+                onBookFile: async (bookId, content, fileName, ct) =>
+                {
+                    entered.TrySetResult();
+                    await release.Task.WaitAsync(ct);
+                    return await inner.SaveBookFileAsync(bookId, content, fileName, ct);
+                });
+            var service = new PortableArchiveService(
+                destination.Db,
+                storage,
+                NullLogger<PortableArchiveService>.Instance)
+            {
+                ScratchRoot = scratchRoot,
+            };
+
+            var import = service.ImportAsync(archive);
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+            var options = new DbContextOptionsBuilder<NostosDbContext>()
+                .UseSqlite($"Data Source={Path.Combine(destination.Root, "nostos.db")}")
+                .Options;
+            var writerStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var concurrent = Task.Run(async () =>
+            {
+                writerStarted.TrySetResult();
+                await using var db = new NostosDbContext(options);
+                db.Works.Add(new WorkModel
+                {
+                    Id = Guid.NewGuid(),
+                    Title = "Concurrent writer",
+                    NormalizedTitle = "CONCURRENT WRITER",
+                    NormalizedAuthor = string.Empty,
+                });
+                await db.SaveChangesAsync();
+            });
+
+            await writerStarted.Task;
+            await Task.Delay(500);
+            concurrent.IsCompleted.Should().BeFalse(
+                "the legacy import's serializable transaction holds the portable writer lock until it commits");
+
+            release.TrySetResult();
+            var imported = await import.WaitAsync(TimeSpan.FromSeconds(60));
+            imported.IntegrityVerified.Should().BeTrue();
+            await concurrent.WaitAsync(TimeSpan.FromSeconds(30));
+
+            await using var verify = new NostosDbContext(options);
+            var revision = long.Parse(await verify.LibraryStates.AsNoTracking()
+                .Select(s => s.StateVersion)
+                .SingleAsync());
+            revision.Should().Be(2, "the import and the concurrent write each advanced the revision exactly once");
         }
         finally
         {
