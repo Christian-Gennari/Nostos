@@ -1,9 +1,10 @@
 # SelfHosted activation journal and startup recovery
 
-Issue #681 Slice 3 supplies filesystem paths, durable journals and startup
-repair. It does not yet activate imports. Candidate construction, SQLite
-checkpoint/pool management, authoritative verification, recovery retention and
-job finalization are supplied by Slices 4–7.
+This document describes the complete issue #681 SelfHosted activation
+protocol: the user-facing import/replace and restore flows, the maintenance
+states an operator will see, the durable journal and startup reconciler, the
+seven-day recovery copy, scheduled cleanup, and the real-host failure drills
+that back the crash-safety claims.
 
 All paths derive from `Persistence:DatabasePath`, `Storage:BooksRoot` and
 server-generated nonempty job GUIDs formatted as 32 lowercase hexadecimal
@@ -18,7 +19,7 @@ characters. The configured SQLite filename is respected; it need not be
 | Candidate media | `<media-parent>/.nostos-activation/<job-id>/candidate-books` |
 | Previous DB | `<db-parent>/.nostos-recovery/<job-id>/nostos.db` |
 | Previous media | `<media-parent>/.nostos-recovery/<job-id>/books` |
-| Recovery manifest (future Slice 6) | `<db-parent>/.nostos-recovery/<job-id>/recovery.json` |
+| Recovery manifest | `<db-parent>/.nostos-recovery/<job-id>/recovery.json` |
 | Active journal | `<db-parent>/.nostos-activation/<job-id>/activation.json` |
 | Resolved journal | same directory, `activation.resolved.json` |
 | Journal write temporary | same directory, `activation.<write-id>.tmp` |
@@ -190,6 +191,122 @@ can never roll back or fail the already committed activation. Thumbnails are
 not rebuilt here: `FileStorageService` regenerates missing cover thumbnails
 lazily.
 
+## For library owners: importing, replacing and restoring
+
+Nostos never changes the live library while an import is uploaded or validated.
+The prepared import is materialized and verified in a candidate area beside the
+live database and media. The live paths stay untouched until replacement is
+explicitly activated.
+
+**Empty library.** Replacing an empty library needs no destructive
+confirmation. The cutover uses the same candidate-and-journal engine, so a
+crash at any boundary still returns the empty original or completes the
+verified import; no seven-day recovery copy is retained.
+
+**Populated library.** Replacement requires an explicit confirmation bound to
+the exact library revision shown in the review screen. Any portable change
+after that review (a note edit, reading progress, a metadata save, a collection
+change) advances the revision, and activation refuses with
+`migration_destination_conflict` or `migration_replacement_confirmation_required`
+instead of overwriting the change. The library is never merged.
+
+**During the switch.** The final switch runs in a short exclusive maintenance
+window. Ordinary library requests answer `503` with the migration error body
+(`migration_activation_busy`) while it runs; health and the migration status
+routes stay available. Requests already accepted before the window are drained
+before any live path is renamed, and a write that lands after the confirmed
+revision is refused rather than silently discarded.
+
+**The recovery copy.** A populated replacement retains the previous library —
+database and media as one matched pair — for exactly seven days, so the
+replacement can be undone. This is activation rollback material, not a backup
+and not a portable archive; the recovery routes never expose filesystem paths.
+
+**Restore previous library.** The recovery routes offer a retained copy and a
+confirmed restore. Restoring replaces the current portable library with the
+retained one, while preserving current host operational state (job history,
+backup records, settings, credentials). The restore itself is crash-safe and
+reversible: the library it replaces is retained as a new seven-day copy, and
+the restored source copy is marked `Restored` so it cannot be restored twice.
+An expired copy answers `410 migration_recovery_expired`; an expired source is
+removed by the scheduled cleanup once no journal references it.
+
+**What changes and what survives.** Only portable library content is replaced:
+works, books and their metadata and reading state, notes, topics, writings,
+collections and memberships, acquisitions, note-import links and the portable
+assistant preference. Host operational state survives both activation and
+restore. Derived caches (book-text chunks, search rows, EPUB locations,
+thumbnails) are rebuilt after a committed switch; a rebuild failure never turns
+a committed switch into a failed import.
+
+## Operators: maintenance states, HTTP answers and failed switches
+
+A SelfHosted host has four observable states around a switch:
+
+1. **Normal.** Admission is open; ordinary library requests are served.
+2. **Candidate work.** A prepared import is being rebuilt and verified, and the
+   candidate database/media are being built. This runs outside maintenance; the
+   live library stays available and unchanged. Only the migration routes and
+   library traffic exist as usual.
+3. **Exclusive maintenance.** The cutover window: admission is closed and all
+   existing readers/writers have drained (bounded by
+   `LibraryMaintenanceOptions:DrainTimeout`, default 30 seconds). Library
+   routes answer `503 migration_activation_busy`; health, migration job and
+   recovery status routes remain answerable from memory. If the drain cannot
+   complete, activation fails **before** any rename with
+   `migration_activation_busy` (`503`, `Retry-After: 5`).
+4. **Fail closed.** The cutover could not be completed *or* rolled back
+   in-process. The durable advisory marker
+   (`<db-parent>/.nostos-activation/maintenance.json`) keeps admission closed
+   until a restart reconciles the journal; the activation status reports
+   `migration_activation_recovery_failed` and `maintenanceRequired: true`.
+
+| Route | Normal | Exclusive window | Fail closed |
+| --- | --- | --- | --- |
+| `GET /health/live`, `GET /health/ready` | 200 | 200 | 200 |
+| `GET /api/portability/migration/jobs/{id}/activation` | 200 | 200 from the in-memory run snapshot | 200 with `RecoveryFailed` |
+| `POST /api/portability/migration/jobs/{id}/activate` | 202, or 409 conflict codes, or 507 storage | 202 replay / 503 busy | 409 recovery failed |
+| `GET /api/portability/migration/recovery`, `/recovery/{id}` | 200; 404 unknown; 422 corrupt | 200 | 200 |
+| `POST /api/portability/migration/recovery/{id}/restore` | 202; 409 conflict; 410 expired; 422 corrupt | 503 busy | 409 recovery failed |
+| Ordinary library routes | 200 | `503 migration_activation_busy` | `503 migration_activation_busy` |
+
+Activation failures before the durable `Committed` marker roll the previous
+generation back in-process and report `409 migration_activation_failed`; the
+job stays retryable. Failures after `Committed` keep the imported generation
+and complete the job on the next restart or activation call.
+
+## Disk space and capacity
+
+The switch needs room for the candidate and the retained previous generation at
+the same time:
+
+- candidate database: the live database plus the imported relational payload;
+- candidate media: the imported primary media;
+- retained recovery database: the current live database size;
+- retained recovery media: the current live media size.
+
+Activation integrates with the transfer reservation and the configured safety
+margin (`Storage:DiskSafetyMarginBytes`, default 1 GiB, and
+`Storage:DiskSafetyMarginPercent`, default 5%). Admission fails before any live
+rename with `migration_storage_exhausted` (`507`) when the required headroom is
+not available. When the database and books root are on different volumes, each
+component is checked against its own volume; no code assumes `/tmp`, the
+transfer root, the database volume and the books volume share a filesystem.
+
+## Backups, portable archives and recovery copies
+
+These are three different things and are not interchangeable:
+
+- **Operational backup** (`BackupService`): a full-installation artifact used to
+  restore an installation; restoring one can also roll back host operational
+  state.
+- **Portable archive** (`.nostos`): provider-neutral library content meant to
+  move a library between installations; it never carries host operational
+  state.
+- **Recovery copy**: activation rollback material kept for seven days so a
+  just-replaced library can be restored; it is managed by the activation
+  lifecycle and expires automatically.
+
 ## Manual recovery when startup refuses
 
 The fail-closed mode is refusal to start the host, as in the merged Slices 1–2.
@@ -217,6 +334,32 @@ There is no partially available API or background worker. The typed error is
    out of the active `.nostos-activation` tree. Clear the advisory marker while
    the host is stopped, then restart and check readiness and the library.
 
+### Exact fail-closed procedure
+
+1. **Restart the host once.** Startup always runs the journal reconciler before
+   database bootstrap, workers and ordinary traffic. A pre-commit journal rolls
+   back to the previous generation and a `Committed` journal rolls the imported
+   generation forward; the host then leaves maintenance and serves normally.
+2. **If the restart still refuses**, the reconciler could not validate or
+   execute the layout (for example a missing or conflicting component, an
+   unreadable journal, a held read-only directory, or mixed SQLite sidecars).
+   The host refuses to start and prints `migration_recovery_corrupt` or
+   `migration_activation_recovery_failed`; nothing is served. Follow the
+   step-by-step preservation and selection procedure above. Do not delete the
+   journal to force startup, and never combine a database from one generation
+   with media from another.
+3. **If the procedure is unresolvable from the local evidence**, restore a
+   complete generation from an independent operational backup, keep the
+   forensic copies, and report the case with the exact journal phase — the
+   reconciler's refusal is deliberate.
+
+Nothing under `.nostos-activation` or `.nostos-recovery` is safe to delete by
+hand while activation or recovery work may be present. The orphan sweep removes
+only provably unreferenced leftovers after the safety age; resolved
+(`activation.resolved.json`) outcomes are historical evidence and are retained.
+A recovery copy that reaches its seven-day expiry is removed by the scheduled
+cleanup together with its reservation.
+
 ## Design differences from the plan
 
 The merged state model is authoritative: the first three phases recover with
@@ -238,3 +381,51 @@ terminal envelopes are an additional lifecycle rule to prevent historical replay
 Legacy backup restore still hardcodes `<ContentRoot>/nostos.db` and does not
 explicitly manage `-wal`/`-shm` siblings. Activation path resolution never copies
 that limitation; its host tests deliberately separate DB/media from content root.
+
+## Real-host failure drills (issue #681, Slice 11)
+
+The in-process crash matrix asserts every durable journal boundary and every
+rename against real SQLite and media with fast, deterministic seams. The
+real-host drills additionally start, SIGKILL and restart actual
+`Nostos.Backend` processes on a disposable data root, with real Kestrel over
+HTTP, so process death, connection pools, file handles and startup ordering are
+exercised end to end. Convergence is asserted by content — portable table dumps
+and media SHA-256 — plus the HTTP job/recovery status, not by status alone.
+
+| Drill | Boundary / fault | Converged state |
+| --- | --- | --- |
+| Populated kill at `CutoverPrepared` | before any live rename | original; retry completes the import |
+| Populated kill at `CandidateDatabaseActivated` | after both uncommitted renames | original; retry completes the import |
+| Populated kill at `Committed` | after the durable commit, before finalization | verified import; the resumed call finalizes the job and retains the recovery copy |
+| Empty kill at `PreviousDatabaseRetained` | pre-commit empty cutover | empty original; retry completes the import, no recovery copy retained |
+| Restore kill at `CandidateDatabaseActivated` | uncommitted restore | imported library stays; the resumed `Restoring` claim completes the restore |
+| Restore kill at `Committed` | committed restore | restored previous library; the replaced library is retained as a new available copy |
+| Read-only database root during the swap | rollback cannot rename in-process | fail closed (`migration_activation_recovery_failed`), nothing served; restart after the operator fixes the root reconciles to the original and the retry succeeds |
+| Corrupt journal at startup | unreadable durable phase | startup refuses; the database and media are byte-for-byte unchanged; removing the unusable journal starts normally |
+| Corrupt recovery manifest | unreadable retained copy | host runs; the library is served; recovery status/restore answer `422 migration_recovery_corrupt`; the manifest is preserved |
+| Second host during the window | two processes on one data root | the second host reconciles the shared pre-commit journal to the original generation; the first is stopped; exactly one complete generation remains |
+| Clock jump across recovery expiry | expired copy + startup cleanup | the expired copy and its reservation are removed; the imported library is untouched |
+
+How to run (local or release verification only; the suite spawns real processes
+and is deliberately not part of the default fast backend run):
+
+```bash
+NOSTOS_RUN_ACTIVATION_DRILLS=1 dotnet test Nostos.Backend.Tests/Nostos.Backend.Tests.csproj \
+  --filter "FullyQualifiedName~ActivationRealHostDrillTests"
+```
+
+The eleven drills run in roughly four minutes on a developer machine; three
+consecutive verification runs took 4m18s, 4m16s and 4m17s. The in-process
+regression suite remains the fast default; the drills are the release evidence
+that the same guarantees hold across real process death.
+
+Capacity exhaustion is simulated through the storage capacity seam in the
+in-process suite, where the exact byte requirement and the refusal point can be
+asserted: `InsufficientRecoveryCapacity_FailsBeforeCutover_AndMutatesNothing`
+drives the real activation coordinator with a nearly full volume and proves the
+typed `migration_storage_exhausted` refusal, the untouched generation and a
+retryable job, and `RecoveryCapacityTests` covers the per-volume boundaries and
+the retention-claim accounting. The refusal always happens before the exclusive
+window; the swap itself performs renames and allocates no new bytes. The
+real-host build is not forced onto a full filesystem because filling the shared
+machine volume is unsafe.

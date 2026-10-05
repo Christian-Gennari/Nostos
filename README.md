@@ -325,6 +325,7 @@ Read the [Design Manifesto](docs/design-manifesto.md) for the product's visual a
 - **[Public/private boundary ADR](docs/adr/cloud-public-private-boundary.md):** Ownership boundary between the public product and official hosted composition.
 - **[Deployment Capabilities](docs/cloud/deployment-modes.md):** SelfHosted and Cloud capability contract.
 - **[Portable Archives](docs/cloud/portability.md):** Provider-neutral `.nostos` export and import contract.
+- **[SelfHosted Activation & Recovery](docs/selfhosted-activation-recovery.md):** Replacing a library after import, the seven-day recovery copy, restore, maintenance states and operator recovery.
 - **[PostgreSQL Compatibility](docs/cloud/postgresql-compatibility-spike.md):** Evidence for the shared relational product model.
 
 Current development work is tracked in [GitHub Issues](https://github.com/Christian-Gennari/Nostos/issues).
