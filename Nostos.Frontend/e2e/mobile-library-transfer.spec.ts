@@ -58,8 +58,25 @@ test('mobile main path: export, then import into an empty instance', async ({ pa
     );
     expect(overflow).toBeLessThanOrEqual(1);
 
+    // A little per-chunk latency keeps the uploading state observable on a
+    // fast localhost link; the upload is still the real chunked transport.
+    await page.route(
+      '**/api/portability/migration/jobs/*/upload-session/chunks/*',
+      async (route) => {
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        await route.continue();
+      },
+    );
     await page.getByTestId('library-import-file-input').setInputFiles(archive);
-    await expect(page.getByTestId('import-uploading')).toBeVisible({ timeout: 180_000 });
+    await expect(page.getByTestId('import-inspecting')).toBeVisible({ timeout: 60_000 });
+    await expect
+      .poll(
+        async () =>
+          (await page.getByTestId('import-uploading').isVisible()) ||
+          (await page.getByTestId('import-checking').isVisible()),
+        { timeout: 180_000, message: 'the upload started or went straight to checking' },
+      )
+      .toBe(true);
 
     const beforeReload = await page.evaluate(() => performance.timeOrigin);
     await expect(page.getByTestId('library-activation-overlay')).toBeVisible({

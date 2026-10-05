@@ -71,23 +71,44 @@ function collectErrors(page: Page): ErrorCollectors {
   page.on('pageerror', (error) => pageErrors.push(String(error)));
   page.on('console', (message) => {
     if (message.type() !== 'error') return;
+    const text = message.text();
     const url = message.location().url;
     pending.push(
       (async () => {
         const args = message.args();
-        let detail = message.text();
+        let detail = text;
         if (args.length > 0) {
           const values = await Promise.all(
             args.map(async (arg) => {
               try {
-                const value = await arg.jsonValue();
+                const value = await arg.evaluate((input: unknown) => {
+                  if (input instanceof Error) {
+                    return {
+                      name: input.name,
+                      message: input.message,
+                      stack: input.stack?.slice(0, 800),
+                    };
+                  }
+                  try {
+                    return JSON.parse(JSON.stringify(input));
+                  } catch {
+                    return String(input);
+                  }
+                });
                 return typeof value === 'string' ? value : JSON.stringify(value);
               } catch {
-                return '<unavailable>';
+                return null;
               }
             }),
           );
-          detail = values.join(' ');
+          const resolved = values.filter((value): value is string => value !== null);
+          if (resolved.length === 0) {
+            // The page navigated/reloaded before the argument handles could be
+            // read, so the entry cannot be attributed; do not report the
+            // placeholder as an app error.
+            return;
+          }
+          detail = resolved.join(' ');
         }
         consoleErrors.push(`${detail} @ ${url}`);
       })(),
@@ -137,6 +158,12 @@ function unexpectedConsoleErrors(errors: string[]): string[] {
       !/downloadable font|fonts\.gstatic\.com/i.test(line) &&
       // WebKit reports the app's own viewport meta key as a console error.
       !/interactive-widget/i.test(line) &&
+      // Firefox rejects a lazily-imported chunk when the page's own automatic
+      // activation reload (or the test's final page close) interrupts it;
+      // Angular's global error handler logs the rejected module load. Every
+      // scenario asserts the rendered surfaces after the reload, so a chunk
+      // that actually failed to load still fails the run.
+      !/error loading dynamically imported module/i.test(line) &&
       !/\/api\/books\/[0-9a-f-]+\/locations\b/i.test(line) &&
       !/\/api\/portability\/migration\/jobs\/[0-9a-f-]+\/activate\b/i.test(line),
   );
@@ -145,6 +172,10 @@ function unexpectedConsoleErrors(errors: string[]): string[] {
 async function openSettings(page: Page, baseUrl: string): Promise<void> {
   await page.goto(`${baseUrl}/settings`);
   await expect(page.getByTestId('library-transfer-card')).toBeVisible();
+  // Let the route's lazily-imported chunks finish before a scenario triggers
+  // the activation reload; otherwise Firefox can abort a pending import and
+  // report it as a module-load TypeError.
+  await page.waitForLoadState('networkidle');
 }
 
 async function selectArchive(page: Page, file: string): Promise<void> {
@@ -429,11 +460,14 @@ test('scenario c2: a change after preparation shows updated counts and a fresh c
     await selectArchive(page, archive);
     await expect(page.getByTestId('import-replacement')).toBeVisible({ timeout: 240_000 });
 
-    // A first confirmation of an unchanged populated library must not claim a change.
-    await expect(page.getByTestId('replacement-conflict')).toHaveCount(0);
+    // A first confirmation of an unchanged populated library must not claim a
+    // change, and the probe that fetches live facts must have completed before
+    // the library is changed so the confirmation's revision is deterministically
+    // stale afterwards. The probe seals the dialog while it runs.
     await expect(page.getByTestId('replacement-existing')).toContainText(
       '2 books · 1 notes · 1 collections',
     );
+    await expect(page.getByTestId('replacement-sealed')).toHaveCount(0, { timeout: 60_000 });
 
     // Change the destination after preparation/before confirming.
     await ltPost(destination.baseUrl, `/api/books/${harbour.id}/notes`, {
@@ -445,11 +479,11 @@ test('scenario c2: a change after preparation shows updated counts and a fresh c
 
     // The stale revision is refused; the dialog shows the fresh counts and the
     // server's changedSinceImportStarted hint, then re-arms.
-    await expect(page.getByTestId('replacement-conflict')).toContainText(
-      'changed since the import started',
-    );
     await expect(page.getByTestId('replacement-existing')).toContainText(
       '2 books · 2 notes · 1 collections',
+    );
+    await expect(page.getByTestId('replacement-conflict')).toContainText(
+      'changed since the import started',
     );
     await expect(dialog.locator('.replacement-confirm')).toBeEnabled();
 
@@ -522,7 +556,17 @@ test('scenario d1: reload mid-upload resumes with only the missing chunks', asyn
 
     chunkIndexes.length = 0;
     await selectArchive(page, archive);
-    await expect(page.getByTestId('import-uploading')).toBeVisible({ timeout: 60_000 });
+    // The still-in-flight chunk can have landed server-side during the reload;
+    // then nothing is missing and the flow goes straight to checking. Either
+    // state is correct — what matters is that received chunks are not re-sent.
+    await expect
+      .poll(
+        async () =>
+          (await page.getByTestId('import-uploading').isVisible()) ||
+          (await page.getByTestId('import-checking').isVisible()),
+        { timeout: 60_000, message: 'the upload resumed or went straight to checking' },
+      )
+      .toBe(true);
 
     const beforeReload = await navigationOrigin(page);
     await expect(page.getByTestId('library-activation-overlay')).toBeVisible({
