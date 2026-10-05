@@ -723,23 +723,66 @@ describe('typographyCss', () => {
   it('keeps the publisher typeface on Publisher but applies spacing', () => {
     const css = typographyCss({ fontFamily: 'publisher', lineHeight: 1.6, margin: 'normal' });
     expect(css).not.toContain('font-family');
-    expect(css).toContain('line-height:1.6 !important');
-    // Margins are NOT a stylesheet rule either: they are padding on our own
-    // viewer (see marginInsetPercent), because epub.js writes its own
-    // inline-important body padding that no stylesheet rule can beat.
+    expect(css).toContain(
+      'body,body p,body blockquote,body li,body dt,body dd,body figcaption,body caption,body td,body th{line-height:1.6 !important;}',
+    );
+    // Text size stays owned by epub.js, and margins stay on our own viewer
+    // (see marginInsetPercent). typographyCss must not fight either control.
+    expect(css).not.toContain('font-size');
     expect(css).not.toContain('padding');
   });
 
-  it('overrides the typeface per choice', () => {
+  it('overrides explicit publisher fonts on normal reading text and headings', () => {
     const css = typographyCss({ fontFamily: 'sans', lineHeight: 2.0, margin: 'wide' });
     expect(css).toContain(
-      'font-family:system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important',
+      'body,body p,body blockquote,body li,body dt,body dd,body figcaption,body caption,body td,body th,body h1,body h2,body h3,body h4,body h5,body h6{font-family:system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;}',
     );
     expect(css).toContain('line-height:2 !important');
+    expect(css).not.toContain('font-size');
     expect(css).not.toContain('padding');
     expect(typographyCss({ fontFamily: 'mono', lineHeight: 1.6, margin: 'normal' })).toContain(
       'font-family:ui-monospace, SFMono-Regular, monospace !important',
     );
+  });
+
+  it('does not flatten directly styled code, preformatted text or icon glyph fonts', () => {
+    const publisher = document.createElement('style');
+    publisher.textContent =
+      'p,h2{font-family:"PublisherSerif";line-height:1.2}' +
+      'pre,code{font-family:"PublisherCode"}' +
+      '.book-icon{font-family:"PublisherIcons"}';
+
+    const nostos = document.createElement('style');
+    nostos.textContent = typographyCss({ fontFamily: 'sans', lineHeight: 1.8, margin: 'normal' });
+
+    const host = document.createElement('div');
+    host.innerHTML =
+      '<p data-testid="prose">Text <code data-testid="code">x</code>' +
+      '<span class="book-icon" data-testid="icon">\ue000</span></p>' +
+      '<h2 data-testid="heading">Heading</h2>' +
+      '<pre data-testid="pre">const x = 1;</pre>';
+
+    document.head.append(publisher, nostos);
+    document.body.appendChild(host);
+
+    try {
+      const prose = host.querySelector<HTMLElement>('[data-testid="prose"]')!;
+      const heading = host.querySelector<HTMLElement>('[data-testid="heading"]')!;
+      const code = host.querySelector<HTMLElement>('[data-testid="code"]')!;
+      const pre = host.querySelector<HTMLElement>('[data-testid="pre"]')!;
+      const icon = host.querySelector<HTMLElement>('[data-testid="icon"]')!;
+
+      expect(getComputedStyle(prose).fontFamily).toContain('system-ui');
+      expect(getComputedStyle(heading).fontFamily).toContain('system-ui');
+      expect(getComputedStyle(prose).lineHeight).toBe('1.8');
+      expect(getComputedStyle(code).fontFamily).toContain('PublisherCode');
+      expect(getComputedStyle(pre).fontFamily).toContain('PublisherCode');
+      expect(getComputedStyle(icon).fontFamily).toContain('PublisherIcons');
+    } finally {
+      host.remove();
+      nostos.remove();
+      publisher.remove();
+    }
   });
 
   it('sets Libron with a conventional serif fallback', () => {
