@@ -106,4 +106,50 @@ public sealed class ActivationCoordinatorConcurrencyTests
         (await first).Outcome.Should().Be(SelfHostedActivationOutcome.Completed);
         await bed.AssertImportedGenerationAsync();
     }
+
+    /// <summary>
+    /// A run whose lease expired must not delete the candidate generation a
+    /// successor has already rebuilt. The predecessor's failure path re-checks
+    /// ownership inside a fenced transaction before any deletion; without the
+    /// unexpired lease it removes nothing and the successor completes.
+    /// </summary>
+    [Fact]
+    public async Task RunThatLostItsLease_CannotDeleteTheSuccessorsCandidateGeneration()
+    {
+        await using var bed = await ActivationCoordinatorTestBed.CreateAsync(populated: true);
+
+        var failure = await FluentActions
+            .Awaiting(() => bed.ActivateAsync(confirm: true, observer: step =>
+            {
+                if (!string.Equals(step, SelfHostedActivationSteps.AfterBuildMedia, StringComparison.Ordinal))
+                {
+                    return;
+                }
+
+                // The run's lease expires, so a successor may acquire the job;
+                // here it has already rebuilt its own candidate generation into
+                // the shared job-scoped candidate paths.
+                bed.Clock.Advance(
+                    SelfHostedActivationCoordinator.ActivationLeaseDuration + TimeSpan.FromMinutes(1));
+                File.WriteAllText(bed.Paths.CandidateDatabase(bed.JobId), "SUCCESSOR-CANDIDATE");
+                var media = bed.Paths.CandidateMedia(bed.JobId);
+                Directory.CreateDirectory(media);
+                File.WriteAllText(Path.Combine(media, "book.epub"), "SUCCESSOR-MEDIA");
+
+                throw new InvalidOperationException("injected failure after lease loss");
+            }))
+            .Should().ThrowAsync<MigrationActivationException>();
+        failure.Which.Code.Should().Be(MigrationActivationErrorCodes.Failed);
+
+        File.ReadAllText(bed.Paths.CandidateDatabase(bed.JobId)).Should().Be("SUCCESSOR-CANDIDATE",
+            "a run that lost its lease must not delete the successor's candidate database");
+        File.ReadAllText(Path.Combine(bed.Paths.CandidateMedia(bed.JobId), "book.epub"))
+            .Should().Be("SUCCESSOR-MEDIA",
+                "a run that lost its lease must not delete the successor's candidate media");
+
+        // The successor acquires the expired lease and completes the activation.
+        var successor = await bed.ActivateAsync(confirm: true);
+        successor.Outcome.Should().Be(SelfHostedActivationOutcome.Completed);
+        await bed.AssertImportedGenerationAsync();
+    }
 }

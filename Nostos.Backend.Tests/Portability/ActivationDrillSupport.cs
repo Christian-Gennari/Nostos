@@ -238,6 +238,12 @@ internal sealed class ActivationDrillFixture : IAsyncDisposable
         File.WriteAllText(Path.Combine(directory, "activation.json"), "{torn");
     }
 
+    /// <summary>
+    /// Synthetic drill action only: after the test has proven the refused
+    /// startup left the library unchanged, it deletes the unusable journal tree
+    /// to show a clean startup is possible. This is never operator guidance —
+    /// deleting a journal to force startup is forbidden.
+    /// </summary>
     internal void RemoveJournalTree(Guid jobId)
     {
         var directory = Path.Combine(DatabaseRoot, ".nostos-activation", jobId.ToString("N"));

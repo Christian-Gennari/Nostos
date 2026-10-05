@@ -212,8 +212,10 @@ instead of overwriting the change. The library is never merged.
 
 **During the switch.** The final switch runs in a short exclusive maintenance
 window. Ordinary library requests answer `503` with the migration error body
-(`migration_activation_busy`) while it runs; health and the migration status
-routes stay available. Requests already accepted before the window are drained
+(`migration_activation_busy`) while it runs; process liveness, the migration
+status routes and the recovery status routes stay available, while readiness
+(`/health/ready`) reports `503` because the library is not serving. Requests
+already accepted before the window are drained
 before any live path is renamed, and a write that lands after the confirmed
 revision is refused rather than silently discarded.
 
@@ -251,10 +253,10 @@ A SelfHosted host has four observable states around a switch:
 3. **Exclusive maintenance.** The cutover window: admission is closed and all
    existing readers/writers have drained (bounded by
    `LibraryMaintenanceOptions:DrainTimeout`, default 30 seconds). Library
-   routes answer `503 migration_activation_busy`; health, migration job and
-   recovery status routes remain answerable from memory. If the drain cannot
-   complete, activation fails **before** any rename with
-   `migration_activation_busy` (`503`, `Retry-After: 5`).
+   routes — including `/health/ready` — answer `503 migration_activation_busy`;
+   `/health/live`, the migration job routes and the recovery status routes
+   remain answerable. If the drain cannot complete, activation fails **before**
+   any rename with `migration_activation_busy` (`503`, `Retry-After: 5`).
 4. **Fail closed.** The cutover could not be completed *or* rolled back
    in-process. The durable advisory marker
    (`<db-parent>/.nostos-activation/maintenance.json`) keeps admission closed
@@ -263,7 +265,8 @@ A SelfHosted host has four observable states around a switch:
 
 | Route | Normal | Exclusive window | Fail closed |
 | --- | --- | --- | --- |
-| `GET /health/live`, `GET /health/ready` | 200 | 200 | 200 |
+| `GET /health/live` | 200 | 200 | 200 |
+| `GET /health/ready` | 200 | `503 migration_activation_busy` | `503 migration_activation_busy` |
 | `GET /api/portability/migration/jobs/{id}/activation` | 200 | 200 from the in-memory run snapshot | 200 with `RecoveryFailed` |
 | `POST /api/portability/migration/jobs/{id}/activate` | 202, or 409 conflict codes, or 507 storage | 202 replay / 503 busy | 409 recovery failed |
 | `GET /api/portability/migration/recovery`, `/recovery/{id}` | 200; 404 unknown; 422 corrupt | 200 | 200 |
@@ -401,7 +404,7 @@ and media SHA-256 — plus the HTTP job/recovery status, not by status alone.
 | Restore kill at `CandidateDatabaseActivated` | uncommitted restore | imported library stays; the resumed `Restoring` claim completes the restore |
 | Restore kill at `Committed` | committed restore | restored previous library; the replaced library is retained as a new available copy |
 | Read-only database root during the swap | rollback cannot rename in-process | fail closed (`migration_activation_recovery_failed`), nothing served; restart after the operator fixes the root reconciles to the original and the retry succeeds |
-| Corrupt journal at startup | unreadable durable phase | startup refuses; the database and media are byte-for-byte unchanged; removing the unusable journal starts normally |
+| Corrupt journal at startup | unreadable durable phase | startup refuses; the database and media are byte-for-byte unchanged. The drill then deletes the journal tree to prove a clean startup is possible; that removal is a synthetic drill action, **not** an operator procedure — never delete a journal to force startup |
 | Corrupt recovery manifest | unreadable retained copy | host runs; the library is served; recovery status/restore answer `422 migration_recovery_corrupt`; the manifest is preserved |
 | Second host during the window | two processes on one data root | the second host reconciles the shared pre-commit journal to the original generation; the first is stopped; exactly one complete generation remains |
 | Clock jump across recovery expiry | expired copy + startup cleanup | the expired copy and its reservation are removed; the imported library is untouched |
@@ -415,7 +418,7 @@ NOSTOS_RUN_ACTIVATION_DRILLS=1 dotnet test Nostos.Backend.Tests/Nostos.Backend.T
 ```
 
 The eleven drills run in roughly four minutes on a developer machine; three
-consecutive verification runs took 4m18s, 4m16s and 4m17s. The in-process
+consecutive verification runs took 3m37s, 3m36s and 3m35s. The in-process
 regression suite remains the fast default; the drills are the release evidence
 that the same guarantees hold across real process death.
 

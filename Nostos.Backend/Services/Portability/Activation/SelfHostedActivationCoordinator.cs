@@ -277,10 +277,8 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
                 catch (Exception exception) when (exception is SqliteException or IOException)
                 {
                     // Another owner is between the retention rename and the
-                    // candidate swap; the live path is deliberately absent. A
-                    // read that raced the vacancy may have created an empty
-                    // database there; remove it before returning.
-                    SelfHostedActivationComponentStep.RemoveEmptyDatabaseArtifact(_paths.LiveDatabase);
+                    // candidate swap; the live path is deliberately absent and
+                    // the read-only open created nothing.
                     return new SelfHostedActivationResult(jobId, SelfHostedActivationOutcome.InProgress,
                         MigrationJobState.Activating, MigrationRecoveryStatus.Pending);
                 }
@@ -387,12 +385,12 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
         {
             // Recovery-required failures must leave quarantined material in
             // place for the startup reconciler; only ordinary failures clean
-            // the discardable candidate artifacts. A run that never acquired
-            // the job lease lost to another owner and must not delete the
-            // owner's candidate generation.
+            // the discardable candidate artifacts. The cleanup is fenced on
+            // current lease ownership, so a run that lost its lease to a
+            // successor deletes nothing.
             if (!IsRecoveryRequired(exception) && token is not null)
             {
-                TryCleanCandidateArtifacts(jobId);
+                await TryCleanCandidateArtifactsIfOwnedAsync(jobId, token);
             }
 
             throw WrapActivationFailure(exception);
@@ -479,8 +477,8 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
     {
         try
         {
-            await using var scope = _scopes.CreateAsyncScope();
-            await scope.ServiceProvider.GetRequiredService<EfMigrationJobStore>()
+            await using var db = OpenLiveWritable();
+            await new EfMigrationJobStore(db, _clock)
                 .TryResetActivationForReconfirmationAsync(jobId, token, ct);
         }
         catch (MigrationJobStoreException exception)
@@ -600,8 +598,7 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
             _journals.Advance(jobId, SelfHostedActivationPhase.CandidateMediaActivated, exclusive);
             Step(SelfHostedActivationSteps.PhaseCandidateMediaActivated);
 
-            SelfHostedActivationComponentStep.RenameDatabase(
-                _paths.CandidateDatabase(jobId), _paths.LiveDatabase);
+            ActivationFileSystem.Rename(_paths.CandidateDatabase(jobId), _paths.LiveDatabase);
             Step(SelfHostedActivationSteps.AfterActivateDatabase);
             _journals.Advance(jobId, SelfHostedActivationPhase.CandidateDatabaseActivated, exclusive);
             Step(SelfHostedActivationSteps.PhaseCandidateDatabaseActivated);
@@ -1020,36 +1017,27 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
     private async Task<string?> AcquireLeaseAsync(Guid jobId, CancellationToken ct)
     {
         // The live database can be deliberately absent while its owner is
-        // between the retention rename and the candidate swap. Opening SQLite
-        // here (or in LoadJobAsync below) would create an empty database at the
-        // live path and make the owner's rename fail. A missing live database
-        // therefore means "another owner is mid-swap": observe, never open.
-        if (!File.Exists(_paths.LiveDatabase))
-        {
-            return null;
-        }
-
-        await using var scope = _scopes.CreateAsyncScope();
+        // between the retention rename and the candidate swap. This open is
+        // Mode=ReadWrite without Create, so a missing (or mid-rename) path
+        // fails instead of materializing an empty database there: no caller
+        // can ever create a file at the live path during the swap window.
         try
         {
-            return await scope.ServiceProvider.GetRequiredService<IMigrationJobStore>()
+            await using var db = OpenLiveWritable();
+            return await new EfMigrationJobStore(db, _clock)
                 .TryAcquireLeaseAsync(jobId, ActivationLeaseDuration, ct);
         }
         catch (Exception exception) when (exception is SqliteException or IOException)
         {
-            // The live file vanished between the existence check and SQLite's
-            // open, which may have created an empty database at the vacated
-            // path. It carries no data; remove it so the owner's rename cannot
-            // find an occupied destination. Report the in-progress state.
-            SelfHostedActivationComponentStep.RemoveEmptyDatabaseArtifact(_paths.LiveDatabase);
+            // Another owner is mid-swap; report the in-progress state.
             return null;
         }
     }
 
     private async Task RenewLeaseOnceAsync(Guid jobId, string token)
     {
-        await using var scope = _scopes.CreateAsyncScope();
-        var renewed = await scope.ServiceProvider.GetRequiredService<IMigrationJobStore>()
+        await using var db = OpenLiveWritable();
+        var renewed = await new EfMigrationJobStore(db, _clock)
             .RenewLeaseAsync(jobId, token, ActivationLeaseDuration, CancellationToken.None);
         if (!renewed) throw MigrationJobStoreException.LeaseConflict(jobId);
     }
@@ -1061,13 +1049,10 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
             // In the sticky recovery-required state the live library may be
             // partially restored; never touch it. The lease expires on its own.
             if (_maintenance.IsRecoveryRequired) return;
-            // Between retaining the previous database and moving the candidate
-            // into place the live path does not exist. Opening it would create an
-            // empty SQLite file and corrupt the recorded layout, so the lease is
-            // left to expire in exactly that window.
-            if (!File.Exists(_paths.LiveDatabase)) return;
-            await using var scope = _scopes.CreateAsyncScope();
-            await scope.ServiceProvider.GetRequiredService<IMigrationJobStore>()
+            // The no-create open fails rather than materializing the live path
+            // when a swap has vacated it; the lease then expires on its own.
+            await using var db = OpenLiveWritable();
+            await new EfMigrationJobStore(db, _clock)
                 .ReleaseLeaseAsync(jobId, token, CancellationToken.None);
         }
         catch
@@ -1080,9 +1065,8 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
     {
         try
         {
-            if (!File.Exists(_paths.LiveDatabase)) return;
-            await using var scope = _scopes.CreateAsyncScope();
-            var store = scope.ServiceProvider.GetRequiredService<IMigrationJobStore>();
+            await using var db = OpenLiveWritable();
+            var store = new EfMigrationJobStore(db, _clock);
             var job = await store.GetAsync(jobId, CancellationToken.None);
             if (job is null || job.State != MigrationJobState.Activating || job.LeaseToken != token)
             {
@@ -1187,6 +1171,51 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
         return Directory.EnumerateFiles(root, "*", options).Any();
     }
 
+    /// <summary>
+    /// Deletes this run's discardable candidate artifacts only while it still
+    /// holds the unexpired job lease. The ownership check is a guarded write to
+    /// the job row inside one database transaction, so no successor can acquire
+    /// the job and start its own candidate generation between the check and the
+    /// deletion; on a lost lease nothing is deleted.
+    /// </summary>
+    private async Task TryCleanCandidateArtifactsIfOwnedAsync(Guid jobId, string token)
+    {
+        try
+        {
+            await using var db = OpenLiveWritable();
+            await using var transaction = await db.Database.BeginTransactionAsync(CancellationToken.None);
+            var now = _clock.GetUtcNow().UtcDateTime;
+            var held = await db.MigrationJobRecords
+                .Where(j => j.Id == jobId
+                    && j.MigrationLeaseToken == token
+                    && j.LeaseExpiresAtUtc != null
+                    && j.LeaseExpiresAtUtc > now
+                    && j.State != (int)MigrationJobState.Completed
+                    && j.State != (int)MigrationJobState.Failed
+                    && j.State != (int)MigrationJobState.Cancelled
+                    && j.State != (int)MigrationJobState.Expired)
+                .ExecuteUpdateAsync(
+                    setters => setters.SetProperty(j => j.Version, j => j.Version + 1),
+                    CancellationToken.None);
+            if (held != 1)
+            {
+                await transaction.RollbackAsync(CancellationToken.None);
+                return;
+            }
+
+            // Still the unexpired owner inside a write transaction: a successor
+            // cannot acquire the job or build candidates until it commits.
+            TryCleanCandidateArtifacts(jobId);
+            await transaction.CommitAsync(CancellationToken.None);
+        }
+        catch (Exception exception) when (exception is SqliteException or IOException
+            or UnauthorizedAccessException)
+        {
+            // The live database is being swapped, or the row could not be
+            // locked: without proven current ownership, delete nothing.
+        }
+    }
+
     private void TryCleanCandidateArtifacts(Guid jobId)
     {
         try
@@ -1240,8 +1269,8 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
 
                 try
                 {
-                    await using var scope = _scopes.CreateAsyncScope();
-                    var renewed = await scope.ServiceProvider.GetRequiredService<IMigrationJobStore>()
+                    await using var db = OpenLiveWritable();
+                    var renewed = await new EfMigrationJobStore(db, _clock)
                         .RenewLeaseAsync(jobId, token, ActivationLeaseDuration, stopped.Token);
                     if (!renewed) return;
                 }
@@ -1262,6 +1291,19 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
     private NostosDbContext OpenLiveReadOnly() =>
         new(new DbContextOptionsBuilder<NostosDbContext>()
             .UseSqlite(SelfHostedSqliteFile.ConnectionString(_paths.LiveDatabase, readOnly: true, pooling: false))
+            .Options);
+
+    /// <summary>
+    /// A read/write live connection without Create: a missing or mid-rename
+    /// live path fails the open instead of materializing an empty database
+    /// there. Every activation-side write that can run outside the exclusive
+    /// owner (lease acquisition, renewal, release, failure marking,
+    /// re-confirmation reset and the fenced cleanup check) uses this.
+    /// </summary>
+    private NostosDbContext OpenLiveWritable() =>
+        new(new DbContextOptionsBuilder<NostosDbContext>()
+            .UseSqlite(SelfHostedSqliteFile.ConnectionString(
+                _paths.LiveDatabase, readOnly: false, pooling: false, create: false))
             .Options);
 
     private void Step(string name)
