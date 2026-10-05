@@ -1,3 +1,4 @@
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -191,7 +192,20 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
             throw new ArgumentException("A migration job identifier is required.", nameof(jobId));
         }
 
-        var record = await LoadJobAsync(jobId, ct);
+        MigrationJobRecord record;
+        try
+        {
+            record = await LoadJobAsync(jobId, ct);
+        }
+        catch (Exception exception) when (exception is SqliteException or IOException)
+        {
+            // A concurrent activation is moving the live database file between
+            // the retention rename and the candidate swap. Report the current
+            // in-progress status instead of a spurious activation failure.
+            return new SelfHostedActivationResult(jobId, SelfHostedActivationOutcome.InProgress,
+                MigrationJobState.Activating, MigrationRecoveryStatus.Pending);
+        }
+
         var state = (MigrationJobState)record.State;
         if (state == MigrationJobState.Completed)
         {
