@@ -28,6 +28,14 @@ export interface ReaderSourceTarget {
   excerpt?: string | null;
 }
 
+export type ReaderSearchStatus = 'idle' | 'searching' | 'ready' | 'not-found';
+
+export interface ReaderSearchState {
+  status: ReaderSearchStatus;
+  current: number;
+  total: number;
+}
+
 export interface IReader {
   // Navigation
   next(): void;
@@ -42,13 +50,12 @@ export interface IReader {
   zoomIn(): void;
   zoomOut(): void;
 
-  /**
-   * Open the reader's own search UI, when the format has one. Optional because
-   * EPUB and audio do not implement it yet; the shell only offers the control
-   * for formats that do, so the reader is never handed a button that does
-   * nothing. (PDF: the viewer's find bar — @see PdfReader.openSearch.)
-   */
-  openSearch?(): void;
+  // Search. The shell owns the UI; each text reader owns its format mechanics.
+  searchState?: Signal<ReaderSearchState>;
+  search?(query: string): void | Promise<void>;
+  nextSearchResult?(): void | Promise<void>;
+  previousSearchResult?(): void | Promise<void>;
+  clearSearch?(): void;
 
   // Highlight Management
   removeHighlight(identifier: string): void;
