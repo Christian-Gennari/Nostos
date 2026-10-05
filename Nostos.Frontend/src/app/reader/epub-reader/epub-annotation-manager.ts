@@ -100,8 +100,8 @@ export class EpubAnnotationManager {
   /** The book's chosen pen (issue #208), used for every highlight drawn here. */
   private highlightColour: HighlightColour = DEFAULT_HIGHLIGHT_COLOUR;
   private pendingHighlight: PendingEpubHighlight | null = null;
-  /** Ephemeral search mark; never enters the persisted highlight list. */
-  private searchAnnotation: PendingHighlightAnnotation | null = null;
+  /** Ephemeral search underline; a distinct epub.js annotation type cannot collide with saved highlights. */
+  private searchCfiRange: string | null = null;
   private lastCapturedKey: string | null = null;
   private readonly documentCleanups = new Map<Document, () => void>();
   /**
@@ -310,28 +310,32 @@ export class EpubAnnotationManager {
   }
 
   /**
-   * Paint the active in-book search hit without touching saved highlight state.
-   * Object-identity removal is intentional: removing by CFI could also remove a
-   * reader highlight that happens to cover the same passage.
+   * Paint the active search hit as an underline rather than an epub.js
+   * "highlight". epub.js keys annotations by CFI + type, so using a second
+   * highlight at the exact CFI of a saved Nostos highlight could overwrite the
+   * stored annotation object. A search-only underline is visually distinct and
+   * has its own key.
    */
   public showSearchHighlight(cfiRange: string): void {
     this.clearSearchHighlight();
-    this.searchAnnotation = this.rendition.annotations.highlight(
+    this.searchCfiRange = cfiRange;
+    (this.rendition.annotations as any).underline(
       cfiRange,
       { nostosSearch: true },
       undefined,
       'epubjs-search-current',
       {
-        fill: 'var(--color-accent)',
-        'fill-opacity': '0.28',
-        'mix-blend-mode': 'normal',
+        stroke: 'var(--color-accent)',
+        'stroke-opacity': '0.9',
+        'stroke-width': '2',
       },
-    ) as unknown as PendingHighlightAnnotation;
+    );
   }
 
   public clearSearchHighlight(): void {
-    this.removeAnnotation(this.searchAnnotation ?? undefined);
-    this.searchAnnotation = null;
+    if (!this.searchCfiRange) return;
+    this.rendition.annotations.remove(this.searchCfiRange, 'underline');
+    this.searchCfiRange = null;
   }
 
   /**
