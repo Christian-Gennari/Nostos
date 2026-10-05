@@ -19,12 +19,14 @@ public static class DeploymentCapabilitiesEndpoints
     /// <summary>
     /// Single switch for the frontend-facing library-migration capability. It is
     /// deliberately decoupled from <see cref="IMigrationPhaseAvailability"/>:
-    /// the backend API can create and process jobs while the frontend's real
-    /// transport is still unmerged, and flipping this to <c>true</c> is the one
-    /// change that advertises the feature to the UI. Flip it here when the
-    /// frontend transport ships (orchestrator-owned).
+    /// the advertisement is an explicit product decision, not inference from the
+    /// currently wired phase handlers, and flipping this to <c>true</c> is the
+    /// one change that advertises the feature to the UI. The SelfHosted frontend
+    /// transport and activation (#680, #681) passed their real-browser
+    /// acceptance gate, so the switch is on for this host; a hosted (Cloud) host
+    /// flips it when its private adapter ships (orchestrator-owned).
     /// </summary>
-    public const bool AdvertiseLibraryMigration = false;
+    public const bool AdvertiseLibraryMigration = true;
 
     public static IEndpointRouteBuilder MapDeploymentCapabilitiesEndpoints(
         this IEndpointRouteBuilder routes)

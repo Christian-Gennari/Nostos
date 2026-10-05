@@ -772,7 +772,8 @@ public sealed class MigrationHttpApiTests
 
         var capabilities = await h.SendAsync(HttpMethod.Get, "/api/runtime/capabilities");
         capabilities.Status.Should().Be(HttpStatusCode.OK);
-        capabilities.Body.RootElement.GetProperty("supportsLibraryMigration").GetBoolean().Should().BeFalse();
+        capabilities.Body.RootElement.GetProperty("supportsLibraryMigration").GetBoolean().Should().BeTrue(
+            "the frontend transport is merged, so the explicit advertisement switch is on");
         capabilities.Body.RootElement.GetProperty("supportsSafeActivation").GetBoolean().Should().BeTrue(
             "the SelfHosted host implements safe activation (#681 Slice 8)");
 
@@ -793,14 +794,14 @@ public sealed class MigrationHttpApiTests
         (await h.WithDb(db => db.MigrationJobRecords.CountAsync())).Should().Be(0);
 
         // Once a host wires a handler, the server-side write paths open
-        // (preflight can reserve and jobs can be created), but the
-        // frontend-facing capability stays dark until the explicit
-        // AdvertiseLibraryMigration switch is flipped: it is decoupled from
-        // phase availability on purpose.
+        // (preflight can reserve and jobs can be created), and the
+        // frontend-facing capability remains advertised: the
+        // AdvertiseLibraryMigration switch is decoupled from phase
+        // availability on purpose.
         h.PhasesAvailable = true;
         var nowAvailable = await h.SendAsync(HttpMethod.Get, "/api/runtime/capabilities");
-        nowAvailable.Body.RootElement.GetProperty("supportsLibraryMigration").GetBoolean().Should().BeFalse(
-            "the frontend transport is not merged; the flag is an explicit switch, not phase availability");
+        nowAvailable.Body.RootElement.GetProperty("supportsLibraryMigration").GetBoolean().Should().BeTrue(
+            "the advertisement switch is explicit and independent of phase availability");
         nowAvailable.Body.RootElement.GetProperty("supportsSafeActivation").GetBoolean().Should().BeTrue(
             "safe activation is a SelfHosted host capability independent of the frontend switch");
         var reservation = await h.ReserveAsync("unavailable-key");
