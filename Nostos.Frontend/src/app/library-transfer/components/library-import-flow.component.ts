@@ -284,12 +284,18 @@ export class LibraryImportFlowComponent implements OnInit, OnDestroy {
     return libraryTransferFailureCopy(this.activationFailure());
   });
 
-  /** The replacement dialog is sealed from the moment destructive intent is emitted. */
+  /**
+   * The replacement dialog is sealed from the moment destructive intent is
+   * emitted, and stays sealed whenever the server owns the cutover — including
+   * a probe/activation the user has not confirmed (review-748: activation is a
+   * global interaction boundary and must not be dismissible).
+   */
   readonly replacementSealed = computed(
     () =>
-      this.replacementSubmittedJobId() !== null &&
-      this.activationState() !== 'failed' &&
-      this.activationState() !== 'completed',
+      this.activationState() === 'in-progress' ||
+      (this.replacementSubmittedJobId() !== null &&
+        this.activationState() !== 'failed' &&
+        this.activationState() !== 'completed'),
   );
 
   readonly replacementBusyLabel = computed(() =>

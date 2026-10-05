@@ -285,6 +285,11 @@ export class MockLibraryTransferTransport implements LibraryTransferTransport {
     this.options.destinationRevision = revision;
   }
 
+  /** Changes the destination emptiness between phases, as a live write would. */
+  setDestinationStatus(status: MigrationDestinationStatus): void {
+    this.options.destinationStatus = status;
+  }
+
   queueFailure(failure: MockTransportFailure): void {
     this.failures.push({ times: 1, ...failure });
   }
@@ -764,11 +769,10 @@ export class MockLibraryTransferTransport implements LibraryTransferTransport {
       throw this.typedError('migration_invalid_request', 400);
     }
 
-    // The server requires stored == requested == current.
-    if (
-      request.destinationRevision !== job.destinationRevision ||
-      job.destinationRevision !== this.destinationRevision
-    ) {
+    // Corrected server admission (review-748): the revision the user
+    // confirmed against the CURRENT library is what binds; the immutable
+    // job-creation baseline is not compared here.
+    if (request.destinationRevision !== this.destinationRevision) {
       throw this.activationConflict('migration_destination_conflict');
     }
     if (this.destinationStatusSnapshot() === 'Populated' && !request.confirmReplacement) {

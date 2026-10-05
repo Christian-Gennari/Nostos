@@ -39,6 +39,17 @@ export class CloudEntryComponent {
       this.activation.reattach();
     });
 
+    // Before the user confirms, fetch the server's current destination facts
+    // so the dialog shows the live counts (review-748: after a reload the
+    // confirmation must never be replayed against a stale preflight view).
+    effect(() => {
+      if (!this.entry.supportsSafeActivation()) return;
+      const state = this.coordinator.state();
+      if (state.kind !== 'replacement-confirmation') return;
+      if (this.activation.state() !== 'idle' || this.activation.conflict() !== null) return;
+      void this.activation.reviewReplacement(state.jobId);
+    });
+
     // A new import must not inherit activation state from a previous job.
     effect(() => {
       if (this.coordinator.state().kind === 'inspecting') this.activation.reset();

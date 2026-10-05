@@ -55,7 +55,11 @@
         </p>
       }
 
-      @if (supportsSafeActivation()) {
+      @if (supportsSafeActivation() && conflict()?.destinationStatus === 'Empty') {
+        <p class="replacement-note" data-testid="replacement-empty">
+          This library is empty, so there is nothing to replace.
+        </p>
+      } @else if (supportsSafeActivation()) {
         <p class="replacement-recovery" data-testid="replacement-recovery">
           Your current library will be kept as a recovery copy for 7 days before it expires.
         </p>
@@ -72,8 +76,9 @@
 
       @if (retryBlocked()) {
         <p class="replacement-blocked" role="alert" data-testid="replacement-retry-blocked">
-          Activation cannot be retried from here. Your original library is unchanged; restart
-          Nostos, or ask the host operator to reconcile it before trying again.
+          Activation cannot be retried from here. The server stays in maintenance until it is
+          restarted; it will finish or undo the change itself, and the outcome is reported after
+          the restart. Restart Nostos, or ask the host operator to reconcile it.
         </p>
       }
 

@@ -1171,6 +1171,29 @@ describe('LibraryImportFlowComponent', () => {
     await waitForKind(harness, 'ready-empty');
   });
 
+  it('seals the replacement dialog while activation is in progress before submission', async () => {
+    const harness = setup({ destinationStatus: 'Populated', existingCounts: { books: 1 } });
+    const file = await portableFile();
+
+    harness.fixture.componentRef.setInput('supportsSafeActivation', true);
+    selectFile(harness, file);
+    await waitForKind(harness, 'replacement-confirmation');
+    harness.fixture.componentRef.setInput('activationState', 'in-progress');
+    harness.fixture.detectChanges();
+
+    expect(testId(harness, 'replacement-sealed')).toBeTruthy();
+    const cancel = harness.fixture.nativeElement.querySelector(
+      '.replacement-cancel',
+    ) as HTMLButtonElement;
+    expect(cancel.disabled).toBe(true);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    cancel.click();
+    harness.fixture.detectChanges();
+
+    expect(harness.coordinator.state().kind).toBe('replacement-confirmation');
+    expect(testId(harness, 'import-cancelled')).toBeNull();
+  });
+
   it('shows the server phase text while the host activates', async () => {
     const harness = setup();
     const file = await portableFile();

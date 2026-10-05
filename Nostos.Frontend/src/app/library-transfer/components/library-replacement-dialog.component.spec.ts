@@ -291,12 +291,30 @@ describe('LibraryReplacementDialogComponent', () => {
   it('blocks a retry after a fail-closed activation and explains the operator path', async () => {
     await create({ supportsSafeActivation: true, retryBlocked: true });
 
-    expect(element('replacement-retry-blocked')?.textContent).toContain('restart');
+    const blocked = element('replacement-retry-blocked')?.textContent ?? '';
+    expect(blocked).toContain('restart');
+    // RecoveryFailed can follow a committed cutover: the copy must never
+    // promise the original library is unchanged (review-748).
+    expect(blocked).not.toContain('unchanged');
     expect(confirmButton().disabled).toBe(true);
 
     const confirmed = vi.fn();
     component.confirmed.subscribe(confirmed);
     confirmButton().click();
     expect(confirmed).not.toHaveBeenCalled();
+  });
+
+  it('explains an empty current library when a conflict reports it', async () => {
+    await create({
+      supportsSafeActivation: true,
+      conflict: {
+        destinationRevision: 'rev-9',
+        destinationStatus: 'Empty',
+        existingCounts: existingCounts({ books: 0, notes: 0, collections: 0 }),
+      },
+    });
+
+    expect(element('replacement-empty')?.textContent).toContain('nothing to replace');
+    expect(element('replacement-recovery')).toBeNull();
   });
 });

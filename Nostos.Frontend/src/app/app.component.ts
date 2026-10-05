@@ -15,6 +15,8 @@ import { SwUpdateService } from './core/services/sw-update.service';
 import { ThemeService } from './core/services/theme.service';
 import { CloudEntryService } from './core/services/cloud-entry.service';
 import { CloudEntryComponent } from './cloud-entry/cloud-entry.component';
+import { LibraryActivationOverlayComponent } from './library-transfer/components/library-activation-overlay.component';
+import { LibraryActivationController } from './library-transfer/services/library-activation-controller.service';
 
 @Component({
   selector: 'app-root',
@@ -25,6 +27,7 @@ import { CloudEntryComponent } from './cloud-entry/cloud-entry.component';
     HighlightImportModal,
     AssistantComponent,
     CloudEntryComponent,
+    LibraryActivationOverlayComponent,
   ],
   templateUrl: './app.component.html',
   styleUrl: './app.component.css',
@@ -33,6 +36,8 @@ export class App {
   private readonly router = inject(Router);
   readonly navigationPending = signal(false);
   readonly cloudEntry = inject(CloudEntryService);
+  /** Root-scoped cutover state; the overlay blocks the app while it runs. */
+  readonly activation = inject(LibraryActivationController);
 
   constructor() {
     // Applies the persisted theme immediately. `index.html` already set the

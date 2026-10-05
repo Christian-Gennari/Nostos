@@ -6,7 +6,6 @@
  */
 
 import type {
-  MigrationActivateRequestDto,
   MigrationDestinationStatus,
   MigrationErrorCode,
   MigrationExistingCountsDto,
@@ -169,20 +168,20 @@ export interface PersistedTransferResumeState {
    */
   destinationRevision?: string;
   /**
-   * Activation handoff (slice B8). Written before the first activation POST so
-   * a reload can replay an undelivered request, and promoted to `accepted`
-   * once a 202 has been observed so a reload re-attaches to status polling
-   * instead of losing the outcome.
+   * Activation handoff (slice B8). Written only once the server answered 202,
+   * so a reload re-attaches to status polling instead of losing the outcome.
+   * A request whose 202 was never observed is deliberately not persisted: a
+   * destructive confirmation must never be replayed after a reload without
+   * the user seeing the current library again (review-748).
    */
   activation?: PersistedActivationResumeState;
   createdAt: string;
 }
 
-/** Persisted activation intent for the resume record. */
+/** Persisted activation handoff for the resume record. */
 export interface PersistedActivationResumeState {
-  request: MigrationActivateRequestDto;
-  /** True once the server answered 202 to `request`. */
-  accepted: boolean;
+  /** True once the server answered 202 to the activation request. */
+  accepted: true;
 }
 
 /** Import flow states (§8), extended with the engine-level pause flag and notices. */

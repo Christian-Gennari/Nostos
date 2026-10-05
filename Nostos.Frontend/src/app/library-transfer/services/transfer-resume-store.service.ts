@@ -87,18 +87,13 @@ function isResumeState(value: unknown): value is PersistedTransferResumeState {
   );
 }
 
-/** A malformed activation handoff must not make the controller re-attach blind. */
+/**
+ * A malformed activation handoff must not make the controller re-attach
+ * blind. Only an observed 202 is persisted; a request whose delivery is
+ * ambiguous is never replayed from storage (review-748).
+ */
 function isActivationState(value: unknown): boolean {
   if (value === undefined) return true;
   if (typeof value !== 'object' || value === null) return false;
-  const activation = value as Record<string, unknown>;
-  const request = activation['request'];
-  if (typeof request !== 'object' || request === null) return false;
-  const requestRecord = request as Record<string, unknown>;
-  return (
-    typeof activation['accepted'] === 'boolean' &&
-    typeof requestRecord['destinationRevision'] === 'string' &&
-    requestRecord['destinationRevision'].length > 0 &&
-    typeof requestRecord['confirmReplacement'] === 'boolean'
-  );
+  return (value as Record<string, unknown>)['accepted'] === true;
 }
