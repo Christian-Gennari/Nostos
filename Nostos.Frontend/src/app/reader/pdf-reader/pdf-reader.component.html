@@ -14,34 +14,6 @@
   </div>
   }
   <div id="pdf-viewer-wrapper">
-    <!-- Search: the library's own find bar, opened by Ctrl/Cmd+F from the reader,
-         or by the header's Search control. Before this, Ctrl+F did nothing at all
-         and there was no other search path anywhere in the PDF reader (issue
-         #226 §2). The bar is the library's own component; the styles below pull it
-         into the house tokens.
-
-         DISMISSAL IS THE HEADER TOGGLE, OR Escape. A close control used to live
-         inside the bar and is gone: the header control is already a toggle
-         (`aria-expanded`), so a second exit was one control too many — and it
-         could not be styled. pdf.js ships
-         `ngx-extended-pdf-viewer button:focus { outline: none; border: 1px solid
-         blue }`, specificity (0,1,1), which BEATS global `.icon-btn { all: unset }`
-         at (0,1,0): focusing our control painted a literal blue border on it.
-         Measured: of 535 focusables in the reader it was the only one that
-         inherited it, because every other control is either not inside the
-         viewer or pins its own border.
-
-         The input area is NOT re-declared any more. `customFindbarInputArea`
-         existed only to append that close control; the library's default template
-         renders `<div id="findbarInputContainer">` with exactly
-         `pdf-search-input-field`, `pdf-find-previous`, `pdf-find-next` — byte
-         identical to what was re-declared here — so the shim was pure surface and
-         the id-based rules below still match.
-
-         Three pdf.js options stay hidden on purpose — "Match Diacritics", "Whole
-         words" and "Multiple words" are engine jargon in a reading interface;
-         highlight-all and match-case stay. -->
-
     <ngx-extended-pdf-viewer
       [src]="pdfSrc()"
       [height]="'100%'"
@@ -61,6 +33,8 @@
       (textLayerRendered)="onTextLayerRendered($event)"
       (textSelection)="onTextSelection()"
       (pdfLoaded)="onPdfLoaded($event)"
+      (updateFindMatchesCount)="onFindMatchesCount($event)"
+      (updateFindState)="onFindState($event)"
       [showToolbar]="false"
       [textLayer]="true"
       [handTool]="false"
@@ -68,15 +42,6 @@
       [showHandToolButton]="false"
       [showSidebarButton]="false"
       [showFindButton]="false"
-      [findbarVisible]="findBarVisible()"
-      (findbarVisibleChange)="findBarVisible.set($event)"
-      [showFindHighlightAll]="true"
-      [showFindMatchCase]="true"
-      [showFindResultsCount]="true"
-      [showFindMessages]="true"
-      [showFindMatchDiacritics]="false"
-      [showFindEntireWord]="false"
-      [showFindMultiple]="false"
       [showPagingButtons]="false"
       [showZoomButtons]="false"
       [showPresentationModeButton]="false"
