@@ -111,7 +111,13 @@ public sealed class ActivationCoordinatorFailureTests
                 }
             }))
             .Should().ThrowAsync<MigrationActivationException>();
-        failure.Which.Code.Should().Be(MigrationActivationErrorCodes.DestinationConflict);
+        // A populated destination was confirmed against the old revision, so the
+        // write invalidates the confirmation (#681). An empty destination needed
+        // no confirmation, but the write made it populated inside the window:
+        // that is the empty-destination abort, which asks for a fresh review.
+        failure.Which.Code.Should().Be(populated
+            ? MigrationActivationErrorCodes.DestinationConflict
+            : MigrationActivationErrorCodes.ConfirmationRequired);
 
         (await bed.CurrentRevisionAsync()).Should().Be(42, "the intervening write is never silently discarded");
         await using (var db = bed.OpenDatabase())

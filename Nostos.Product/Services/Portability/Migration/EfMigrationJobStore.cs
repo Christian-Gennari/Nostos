@@ -456,6 +456,62 @@ public sealed class EfMigrationJobStore : IMigrationJobStore
         throw MigrationJobStoreException.LeaseConflict(jobId);
     }
 
+    /// <summary>
+    /// Recovery-only reset of a durably <c>Activating</c> import back to
+    /// <c>ReadyToActivate</c>. The frozen transition table deliberately has no
+    /// <c>Activating -&gt; ReadyToActivate</c> edge because ordinary job code
+    /// must never walk an admitted activation backwards. The activation
+    /// coordinator calls this only after the durable activation journal proves
+    /// no live rename occurred, so the pre-activation library and the prepared
+    /// import are still exactly what the user reviewed and a new explicit
+    /// confirmation is required. Lease- and version-guarded like every other
+    /// store mutation; returns <see langword="false"/> when the job is no
+    /// longer <c>Activating</c> because another owner already resolved it.
+    /// </summary>
+    public async Task<bool> TryResetActivationForReconfirmationAsync(
+        Guid jobId,
+        string leaseToken,
+        CancellationToken ct)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(leaseToken);
+
+        var snapshot = await FindAsync(jobId, ct)
+            ?? throw MigrationJobStoreException.NotFound(jobId);
+        if ((MigrationJobState)snapshot.State != MigrationJobState.Activating)
+        {
+            return false;
+        }
+
+        var now = UtcNow();
+        var updated = await _db.MigrationJobRecords
+            .Where(j =>
+                j.Id == jobId
+                && j.State == (int)MigrationJobState.Activating
+                && j.Version == snapshot.Version
+                && j.MigrationLeaseToken == leaseToken
+                && j.LeaseExpiresAtUtc != null
+                && j.LeaseExpiresAtUtc > now)
+            .ExecuteUpdateAsync(
+                s => s
+                    .SetProperty(j => j.State, (int)MigrationJobState.ReadyToActivate)
+                    .SetProperty(j => j.UpdatedAtUtc, now)
+                    .SetProperty(j => j.Version, j => j.Version + 1),
+                ct);
+
+        if (updated == 1)
+        {
+            return true;
+        }
+
+        var current = await FindAsync(jobId, ct);
+        if (current is not null && (MigrationJobState)current.State != MigrationJobState.Activating)
+        {
+            return false;
+        }
+
+        throw MigrationJobStoreException.LeaseConflict(jobId);
+    }
+
     public async Task ReleaseLeaseAsync(Guid jobId, string leaseToken, CancellationToken ct)
     {
         ArgumentException.ThrowIfNullOrEmpty(leaseToken);

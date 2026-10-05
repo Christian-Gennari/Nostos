@@ -40,8 +40,12 @@ internal sealed class SelfHostedActivationRunSlot(Guid jobId) : SelfHostedLibrar
 
     internal MigrationDestinationStatus? DestinationStatus { get; set; }
 
-    /// <summary>Claims the job for a new run unless one is already accepted/running.</summary>
-    internal bool TryAdmit(MigrationActivateRequest request)
+    /// <summary>
+    /// Claims the job for a new run unless one is already accepted/running.
+    /// <paramref name="request"/> is <see langword="null"/> for a resume of a
+    /// durably admitted run, whose binding comes from the activation journal.
+    /// </summary>
+    internal bool TryAdmit(MigrationActivateRequest? request)
     {
         if (!TryAdmitCore()) return false;
         Request = request;
@@ -274,6 +278,12 @@ internal sealed partial class SelfHostedActivationDispatcher : BackgroundService
             var coordinator = scope.ServiceProvider.GetRequiredService<SelfHostedActivationCoordinator>();
             var facts = await coordinator.ReadDestinationFactsForAdmissionAsync(ct);
 
+            // Only a new admission binds the request. A durably Activating run
+            // was already admitted with its confirmation recorded in the
+            // activation journal, so any later request for the same job is
+            // status-only: it can never supply or change the confirmed revision
+            // or its flag, and the run resumes strictly from that record.
+            MigrationActivateRequest? admittedRequest = null;
             if (job.State == MigrationJobState.ReadyToActivate)
             {
                 try
@@ -281,7 +291,6 @@ internal sealed partial class SelfHostedActivationDispatcher : BackgroundService
                     MigrationActivationAdmission.Validate(
                         MigrationDirection.Import,
                         job.State,
-                        record.DestinationRevision ?? string.Empty,
                         request,
                         facts.Status,
                         facts.Revision);
@@ -297,11 +306,15 @@ internal sealed partial class SelfHostedActivationDispatcher : BackgroundService
                         Message: exception.Message,
                         DestinationRevision: facts.Revision,
                         ExistingCounts: facts.Counts,
-                        DestinationStatus: facts.Status);
+                        DestinationStatus: facts.Status,
+                        ChangedSinceImportStarted: !string.Equals(
+                            record.DestinationRevision, facts.Revision, StringComparison.Ordinal));
                 }
+
+                admittedRequest = request;
             }
 
-            if (!slot.TryAdmit(request))
+            if (!slot.TryAdmit(admittedRequest))
             {
                 return new MigrationActivationRequestResult(
                     MigrationActivationRequestOutcome.Replayed,
@@ -490,7 +503,7 @@ internal sealed partial class SelfHostedActivationDispatcher : BackgroundService
             var coordinator = scope.ServiceProvider.GetRequiredService<SelfHostedActivationCoordinator>();
             CoordinatorCreatedForTesting?.Invoke(coordinator);
             coordinator.CutoverStepObserver = step => slot.SetPhase(PhaseForStep(step));
-            var result = await coordinator.ActivateAsync(slot.JobId, slot.Request!, CancellationToken.None);
+            var result = await coordinator.ActivateAsync(slot.JobId, slot.Request, CancellationToken.None);
             await RecordResultAsync(slot, result);
         }
         catch (SelfHostedActivationAbandonedException)
@@ -611,6 +624,15 @@ internal sealed partial class SelfHostedActivationDispatcher : BackgroundService
                 {
                     var status = await BuildStatusFromJobAsync(
                         scope.ServiceProvider, job, null, CancellationToken.None);
+                    if (code is MigrationActivationErrorCodes.ConfirmationRequired
+                        or MigrationActivationErrorCodes.DestinationConflict)
+                    {
+                        // A background conflict must expose the same fresh facts a
+                        // synchronous 409 would, so the browser can reopen the
+                        // confirmation dialog without guessing.
+                        status = await WithFreshDestinationFactsAsync(scope.ServiceProvider, status);
+                    }
+
                     slot.MarkFinished(
                         status with
                         {
@@ -638,6 +660,31 @@ internal sealed partial class SelfHostedActivationDispatcher : BackgroundService
                 Message: message,
                 CanActivate: true),
             now);
+    }
+
+    private async Task<MigrationActivationStatusResponse> WithFreshDestinationFactsAsync(
+        IServiceProvider services,
+        MigrationActivationStatusResponse status)
+    {
+        try
+        {
+            var facts = await services.GetRequiredService<SelfHostedActivationCoordinator>()
+                .ReadDestinationFactsForAdmissionAsync(CancellationToken.None);
+            return status with
+            {
+                DestinationRevision = facts.Revision,
+                DestinationStatus = facts.Status,
+                ExistingCounts = facts.Counts,
+            };
+        }
+        catch (Exception exception)
+        {
+            // The failure status is still valid without the fresh facts; the
+            // next status read or a repeated POST re-reads them.
+            _logger.LogDebug(exception,
+                "Could not read destination facts for the activation failure status of {JobId}", status.JobId);
+            return status;
+        }
     }
 
     private void RecordRecoveryFailure(SelfHostedActivationRunSlot slot, string code, string message)
@@ -678,6 +725,9 @@ internal sealed partial class SelfHostedActivationDispatcher : BackgroundService
                 ErrorCode = slot.LastStatus.ErrorCode,
                 Message = slot.LastStatus.Message,
                 CanActivate = false,
+                DestinationRevision = slot.LastStatus.DestinationRevision ?? durable.DestinationRevision,
+                DestinationStatus = slot.LastStatus.DestinationStatus,
+                ExistingCounts = slot.LastStatus.ExistingCounts,
             };
         }
 
@@ -692,6 +742,9 @@ internal sealed partial class SelfHostedActivationDispatcher : BackgroundService
                 ErrorCode = slot.LastStatus.ErrorCode,
                 Message = slot.LastStatus.Message,
                 CanActivate = true,
+                DestinationRevision = slot.LastStatus.DestinationRevision ?? durable.DestinationRevision,
+                DestinationStatus = slot.LastStatus.DestinationStatus,
+                ExistingCounts = slot.LastStatus.ExistingCounts,
             };
         }
 

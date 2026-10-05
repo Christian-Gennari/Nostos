@@ -99,7 +99,9 @@ public sealed class MigrationArchiveJobEngineTests
         await h.WithDb(db => db.MigrationJobRecords.Where(j => j.Id == jobId)
             .ExecuteUpdateAsync(s => s.SetProperty(j => j.PreparedStagingId, orphanId.Value)));
 
-        await h.Worker.RunCycleAsync(default);
+        // A single cycle can yield at a load checkpoint; drive to the end
+        // state under a bounded count instead of assuming one call suffices.
+        await RunToStateAsync(h, jobId, MigrationJobState.ReadyToActivate);
 
         var job = await h.WithJobs(s => s.GetAsync(jobId, default));
         job!.State.Should().Be(MigrationJobState.ReadyToActivate);
@@ -481,7 +483,9 @@ public sealed class MigrationArchiveJobEngineTests
         await h.InitializeAsync();
         var archive = await MigrationArchiveJobTestSupport.ExportRepresentativeAsync();
         var jobId = await UploadCompleteImportAsync(h, archive);
-        await h.Worker.RunCycleAsync(default);
+        // A single cycle can yield at a load checkpoint; drive to the end
+        // state under a bounded count instead of assuming one call suffices.
+        await RunToStateAsync(h, jobId, MigrationJobState.ReadyToActivate);
 
         var session = await h.WithDb(db => db.MigrationSessionRecords.SingleAsync(s => s.JobId == jobId));
         var record = await h.WithDb(db => db.MigrationJobRecords.SingleAsync(j => j.Id == jobId));
@@ -1074,6 +1078,34 @@ public sealed class MigrationArchiveJobEngineTests
                 hooks,
                 coordinatorScope: string.Empty));
         };
+    }
+
+    /// <summary>
+    /// Drives worker cycles until the job reaches <paramref name="expected"/>.
+    /// One <c>RunCycleAsync</c> can yield at a load checkpoint (the worker's
+    /// admission gate or lease can bounce under CI load), so tests must not
+    /// assume a single call is enough. Every end-state assertion still runs;
+    /// only the number of cycles needed is made load-independent.
+    /// </summary>
+    private static async Task RunToStateAsync(
+        MigrationEngineHarness h,
+        Guid jobId,
+        MigrationJobState expected)
+    {
+        const int maxCycles = 20;
+        for (var cycle = 0; cycle < maxCycles; cycle++)
+        {
+            await h.Worker.RunCycleAsync(default);
+            var job = await h.WithJobs(s => s.GetAsync(jobId, default));
+            if (job!.State == expected)
+            {
+                return;
+            }
+        }
+
+        var last = await h.WithJobs(s => s.GetAsync(jobId, default));
+        last!.State.Should().Be(expected,
+            $"the worker must reach {expected} within {maxCycles} bounded cycles");
     }
 
     private static MigrationJobWorker NewWorker(MigrationEngineHarness h) =>
