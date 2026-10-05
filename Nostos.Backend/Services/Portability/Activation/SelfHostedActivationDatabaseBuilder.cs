@@ -111,8 +111,52 @@ internal sealed class SelfHostedActivationDatabaseBuilder : ISelfHostedActivatio
             await CopyVerifiedDataAsync(prepared, dataPath, cancellationToken);
             AfterBuildStepForTesting?.Invoke("data");
 
-            await ApplyPortableAsync(candidate, dataPath, prepared, cancellationToken);
+            await ApplyPortableAsync(candidate, dataPath, prepared.Media, cancellationToken);
             File.Delete(dataPath); // the verified payload is now materialized; keep the candidate area clean
+            AfterBuildStepForTesting?.Invoke("portable");
+        }
+        catch
+        {
+            TryRemoveCandidateArtifacts(jobId, candidate, dataPath);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Builds the same fresh current-schema candidate database from a relational
+    /// payload file the caller already verified (recovery restore extracts the
+    /// previous library's portable state and binds its SHA-256). The candidate
+    /// is deliberately not cutover-ready: <see cref="FinalizeCandidateAsync"/>
+    /// still imports the current host operational state under the exclusive
+    /// lease. This overload is the only recovery-restore-specific entry point;
+    /// activation behaviour is unchanged.
+    /// </summary>
+    internal async Task BuildPortableCandidateFromVerifiedPayloadAsync(
+        Guid jobId,
+        string verifiedPayloadPath,
+        IReadOnlyList<PortableArchiveMediaEntry> media,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(verifiedPayloadPath);
+        ArgumentNullException.ThrowIfNull(media);
+        var candidate = _paths.CandidateDatabase(jobId);
+        var dataPath = Path.Combine(Path.GetDirectoryName(candidate)!, PortableDataFileName);
+        _paths.Prepare(jobId);
+        RemoveCandidateArtifacts(jobId, candidate, dataPath);
+        try
+        {
+            File.Copy(verifiedPayloadPath, dataPath, overwrite: false);
+            AfterBuildStepForTesting?.Invoke("data");
+
+            // The relational restore only reads each descriptor's identity and
+            // file name; the opaque staging reference is unused on this path.
+            var preparedMedia = media
+                .Select(descriptor => new PortablePreparedMedia(
+                    descriptor,
+                    new PortableStagedMediaReference($"recovery/{descriptor.BookId:N}/{descriptor.Kind}")))
+                .ToArray();
+            await ApplyPortableAsync(candidate, dataPath, preparedMedia, cancellationToken);
+            File.Delete(dataPath);
             AfterBuildStepForTesting?.Invoke("portable");
         }
         catch
@@ -242,7 +286,7 @@ internal sealed class SelfHostedActivationDatabaseBuilder : ISelfHostedActivatio
     private static async Task ApplyPortableAsync(
         string candidate,
         string dataPath,
-        IPreparedPortableImport prepared,
+        IReadOnlyList<PortablePreparedMedia> media,
         CancellationToken cancellationToken)
     {
         await using (var db = CreateContext(candidate, readOnly: false, pooling: true))
@@ -265,7 +309,7 @@ internal sealed class SelfHostedActivationDatabaseBuilder : ISelfHostedActivatio
             await PortableLibraryRelationalRestore.ApplyVerifiedPayloadAsync(
                 db,
                 verified,
-                prepared.Media,
+                media,
                 cancellationToken);
             await db.SaveChangesAsync(cancellationToken);
         }

@@ -14,7 +14,8 @@ public sealed record MigrationRecoveryStatusResponse(
     DateTimeOffset CreatedAtUtc,
     DateTimeOffset ExpiresAtUtc,
     long SizeBytes,
-    MigrationExistingCounts Counts);
+    MigrationExistingCounts Counts,
+    string? RestoreError = null);
 
 /// <summary>
 /// Processes an owned import already durably admitted to Activating. The caller's

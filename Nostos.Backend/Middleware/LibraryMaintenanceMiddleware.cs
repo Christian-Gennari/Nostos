@@ -5,9 +5,6 @@ using Nostos.Backend.Services.Portability;
 
 namespace Nostos.Backend.Middleware;
 
-/// <summary>Endpoint owns its admission leases, allowing shared-to-exclusive handoff.</summary>
-public sealed class LibraryMaintenanceControl;
-
 /// <summary>
 /// Covers REST, OPDS, MCP, DB readiness, and their complete response/stream lifetimes.
 /// Its inner request scope disposes DbContexts before releasing the shared lease.
@@ -35,10 +32,11 @@ public sealed class LibraryMaintenanceMiddleware(RequestDelegate next)
         var memorySafe = endpoint?.Metadata.GetMetadata<LibraryMaintenanceMemorySafe>() is not null;
         if (memorySafe)
         {
-            // The endpoint owns its admission leases and serves from in-memory
-            // state while exclusive maintenance has the live database closed.
-            // It must never open the live database in that window and takes its
-            // own short shared leases for every other read.
+            // The endpoint owns its admission leases and must never open the
+            // live database while exclusive maintenance is closed: it serves
+            // from memory (activation snapshot) or durable files (recovery
+            // manifests), and takes its own short shared leases for every other
+            // read.
             await next(context);
             return;
         }

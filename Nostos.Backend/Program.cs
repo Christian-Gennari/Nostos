@@ -291,6 +291,18 @@ builder.Services.AddScoped<ISelfHostedRecoveryCleanup>(sp => sp.GetRequiredServi
 builder.Services.AddScoped<SelfHostedActivationCoordinator>();
 builder.Services.AddScoped<IMigrationActivationService>(sp => sp.GetRequiredService<SelfHostedActivationCoordinator>());
 
+// --- #681 SLICE 9: RECOVERY RESTORE ("RESTORE PREVIOUS LIBRARY") ---
+// Restore execution shares the Slice 8 library-switch dispatcher, so an
+// activation and a restore can never run concurrently; the processor scans once
+// at startup (after the activation reconciler and database bootstrap) and
+// periodically thereafter, enqueueing durably claimed restores.
+builder.Services.AddSingleton<ISelfHostedRecoverySchemaMigrator, SelfHostedRecoverySchemaMigrator>();
+builder.Services.AddScoped<SelfHostedRecoveryRestoreCoordinator>();
+builder.Services.AddScoped<SelfHostedRecoveryRestoreHostService>();
+builder.Services.AddScoped<ISelfHostedRecoveryRestore>(sp =>
+    sp.GetRequiredService<SelfHostedRecoveryRestoreHostService>());
+builder.Services.AddHostedService<SelfHostedRecoveryRestoreProcessor>();
+
 // #681 SLICE 8: HTTP activation driver. The singleton admits one background
 // run per job and keeps the in-memory status snapshot that stays answerable
 // while exclusive maintenance has the live database closed.

@@ -246,6 +246,7 @@ public static class MigrationHttpErrors
     public const string ExportNotAvailable = "migration_export_not_available";
     public const string ExportExpired = "migration_export_expired";
     public const string TooManyJobs = "migration_too_many_jobs";
+    public const string RecoveryNotFound = MigrationActivationErrorCodes.RecoveryNotFound;
     public const string Unexpected = "unexpected_error";
 
     private static readonly Dictionary<string, string> Messages = new(StringComparer.Ordinal)
@@ -270,17 +271,21 @@ public static class MigrationHttpErrors
         [ExportNotAvailable] = "This export job has no downloadable artifact.",
         [ExportExpired] = "The export artifact has expired.",
         [MigrationActivationErrorCodes.ConfirmationRequired] =
-            "Replacing an existing library requires explicit confirmation.",
+            "Replacing the current library requires explicit confirmation.",
         [MigrationActivationErrorCodes.DestinationConflict] =
-            "The destination changed. Review replacement again.",
+            "The library changed. Review the operation again.",
         [MigrationActivationErrorCodes.Busy] =
-            "The library is in maintenance. Try again later.",
+            "The library is busy or in maintenance. Try again later.",
         [MigrationActivationErrorCodes.Failed] =
-            "The activation failed before the library switch; the original library is unchanged.",
+            "The library operation failed; the current library is unchanged.",
         [MigrationActivationErrorCodes.RecoveryFailed] =
-            "Activation could not be completed or rolled back in-process. "
+            "The operation could not be completed or rolled back in-process. "
             + "The host stays in maintenance until a restart reconciles it.",
         [TooManyJobs] = "The installation has too many outstanding migration jobs. Finish or cancel one and retry.",
+        [MigrationActivationErrorCodes.RecoveryNotFound] = "The retained recovery copy was not found.",
+        [MigrationActivationErrorCodes.RecoveryExpired] = "The retained recovery copy has expired.",
+        [MigrationActivationErrorCodes.RecoveryCorrupt] = "The retained recovery copy failed verification.",
+        [MigrationActivationErrorCodes.RecoveryRestoreConflict] = "A restore of this recovery copy cannot start right now.",
         [Unexpected] = "The migration request failed unexpectedly.",
     };
 
@@ -301,6 +306,18 @@ public static class MigrationHttpErrors
     /// </summary>
     public static IResult FromActivation(MigrationActivationException exception) => exception.Code switch
     {
+        MigrationActivationErrorCodes.RecoveryNotFound => Result(
+            MigrationActivationErrorCodes.RecoveryNotFound,
+            StatusCodes.Status404NotFound),
+        MigrationActivationErrorCodes.RecoveryExpired => Result(
+            MigrationActivationErrorCodes.RecoveryExpired,
+            StatusCodes.Status410Gone),
+        MigrationActivationErrorCodes.RecoveryCorrupt => Result(
+            MigrationActivationErrorCodes.RecoveryCorrupt,
+            StatusCodes.Status422UnprocessableEntity),
+        MigrationActivationErrorCodes.RecoveryRestoreConflict => Result(
+            MigrationActivationErrorCodes.RecoveryRestoreConflict,
+            StatusCodes.Status409Conflict),
         MigrationActivationErrorCodes.ConfirmationRequired => Result(
             MigrationActivationErrorCodes.ConfirmationRequired,
             StatusCodes.Status409Conflict),
@@ -315,7 +332,7 @@ public static class MigrationHttpErrors
             MigrationActivationErrorCodes.RecoveryFailed,
             StatusCodes.Status409Conflict),
         MigrationActivationErrorCodes.StorageExhausted => Result(
-            StorageExhausted,
+            MigrationActivationErrorCodes.StorageExhausted,
             StatusCodes.Status507InsufficientStorage),
         _ => Result(Unexpected, StatusCodes.Status500InternalServerError),
     };

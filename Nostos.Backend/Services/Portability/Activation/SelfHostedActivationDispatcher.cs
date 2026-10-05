@@ -19,28 +19,20 @@ internal enum SelfHostedActivationRunState
 }
 
 /// <summary>
-/// One job's dispatcher state. Every lifecycle transition is a compare-and-swap
-/// so concurrent admission and worker completion can never both claim the job:
-/// exactly one accepted run exists, its terminal outcome is retained for a
-/// bounded time, and a new POST is only admitted after re-validating the
+/// One activation job's dispatcher state on the shared library-switch run
+/// lifecycle. Exactly one accepted run exists, its terminal outcome is retained
+/// for a bounded time, and a new POST is only admitted after re-validating the
 /// durable job state.
 /// </summary>
-internal sealed class SelfHostedActivationRunSlot(Guid jobId)
+internal sealed class SelfHostedActivationRunSlot(Guid jobId) : SelfHostedLibrarySwitchRunSlot(jobId)
 {
-    private int _state;
-
-    internal Guid JobId { get; } = jobId;
+    internal Guid JobId => Key;
 
     internal MigrationActivateRequest? Request { get; private set; }
-
-    internal SelfHostedActivationRunState State =>
-        (SelfHostedActivationRunState)Volatile.Read(ref _state);
 
     internal MigrationActivationPhase Phase { get; private set; } = MigrationActivationPhase.Queued;
 
     internal MigrationActivationStatusResponse? LastStatus { get; private set; }
-
-    internal DateTimeOffset FinishedAtUtc { get; private set; }
 
     internal string? DestinationRevision { get; set; }
 
@@ -55,37 +47,16 @@ internal sealed class SelfHostedActivationRunSlot(Guid jobId)
     /// </summary>
     internal bool TryAdmit(MigrationActivateRequest? request)
     {
-        while (true)
-        {
-            var current = State;
-            if (current is SelfHostedActivationRunState.Accepted or SelfHostedActivationRunState.Running)
-            {
-                return false;
-            }
-
-            if (Interlocked.CompareExchange(
-                    ref _state,
-                    (int)SelfHostedActivationRunState.Accepted,
-                    (int)current) == (int)current)
-            {
-                Request = request;
-                Phase = MigrationActivationPhase.Queued;
-                LastStatus = null;
-                return true;
-            }
-        }
+        if (!TryAdmitCore()) return false;
+        Request = request;
+        Phase = MigrationActivationPhase.Queued;
+        LastStatus = null;
+        return true;
     }
 
     internal bool TryMarkRunning()
     {
-        if (Interlocked.CompareExchange(
-                ref _state,
-                (int)SelfHostedActivationRunState.Running,
-                (int)SelfHostedActivationRunState.Accepted) != (int)SelfHostedActivationRunState.Accepted)
-        {
-            return false;
-        }
-
+        if (!TryMarkRunningCore()) return false;
         SetPhase(MigrationActivationPhase.Preparing);
         return true;
     }
@@ -99,79 +70,56 @@ internal sealed class SelfHostedActivationRunSlot(Guid jobId)
     internal void MarkFinished(MigrationActivationStatusResponse status, DateTimeOffset now)
     {
         LastStatus = status;
-        FinishedAtUtc = now;
-        Volatile.Write(ref _state, (int)SelfHostedActivationRunState.Finished);
+        MarkFinishedCore(now);
     }
 
     /// <summary>A queued run dropped at shutdown: no run remains and the durable job still decides.</summary>
     internal void MarkDropped(DateTimeOffset now)
     {
         LastStatus = null;
-        FinishedAtUtc = now;
-        Volatile.Write(ref _state, (int)SelfHostedActivationRunState.Finished);
+        MarkDroppedCore(now);
     }
 }
 
-/// <summary>
-/// Bounded per-job run registry. Finished slots are retained for a TTL so a
-/// late duplicate POST can replay the outcome instead of starting a second run;
-/// they are pruned afterwards, at which point the durable job row is the only
-/// truth.
-/// </summary>
-internal sealed class SelfHostedActivationRunRegistry
-{
-    private readonly ConcurrentDictionary<Guid, SelfHostedActivationRunSlot> _slots = new();
-
-    internal SelfHostedActivationRunSlot GetOrAdd(Guid jobId) =>
-        _slots.GetOrAdd(jobId, id => new SelfHostedActivationRunSlot(id));
-
-    internal SelfHostedActivationRunSlot? Find(Guid jobId) =>
-        _slots.TryGetValue(jobId, out var slot) ? slot : null;
-
-    internal void Prune(DateTimeOffset now, TimeSpan ttl)
-    {
-        foreach (var pair in _slots)
-        {
-            if (pair.Value.State == SelfHostedActivationRunState.Finished
-                && pair.Value.FinishedAtUtc < now - ttl)
-            {
-                _slots.TryRemove(pair.Key, out _);
-            }
-        }
-    }
-}
+/// <summary>Activation's view of the shared bounded run registry.</summary>
+internal sealed class SelfHostedActivationRunRegistry()
+    : SelfHostedLibrarySwitchRunRegistry<SelfHostedActivationRunSlot>(
+        jobId => new SelfHostedActivationRunSlot(jobId));
 
 /// <summary>
-/// SelfHosted activation driver behind the HTTP API (#681, Slice 8).
+/// SelfHosted library-switch driver behind the HTTP API (#681, Slices 8-9):
+/// activation and recovery restore both run through this one hosted dispatcher,
+/// so a library switch of either kind never runs concurrently with the other.
 ///
-/// <para><b>Exactly one run per job.</b> Admission takes a short shared
-/// maintenance lease and a per-job admission stripe, so the activating worker
-/// can never wait for a lease this route still holds and two stale concurrent
-/// requests cannot both create a run. The per-job slot lifecycle is a
+/// <para><b>Exactly one run per key.</b> Admission takes a short shared
+/// maintenance lease and a per-key admission stripe, so the background worker
+/// can never wait for a lease the route still holds and two stale concurrent
+/// requests cannot both create a run. The per-key slot lifecycle is the shared
 /// compare-and-swap state machine (None → Accepted → Running → Finished); a
-/// finished slot is retained for a bounded TTL, and a new POST is admitted
-/// only after re-validating the durable job state (completed replays without a
-/// run, a rolled-back job allows a retry, fail-closed is refused). Across hosts
-/// the coordinator's durable job lease still guarantees one cutover.</para>
+/// finished slot is retained for a bounded TTL, and a new request is admitted
+/// only after re-validating durable state. Activation re-validates the durable
+/// job row; restore re-validates the durable recovery manifest (its conditional
+/// <c>Available → Restoring</c> claim is the durable admission).</para>
 ///
-/// <para><b>Status while the live database is closed.</b> The run registry is
-/// consulted before the durable row, so the endpoint never reports Idle while
-/// a run exists — including during the long pre-maintenance Phase A. When
-/// exclusive maintenance closes admission the status reader serves only the
-/// in-memory slot: the live database, its WAL and its connection pools are
-/// never opened inside the swap window. After a committed-but-unfinalized
-/// failure the slot reports <c>migration_activation_recovery_failed</c> with
-/// the operator-facing fail-closed message.</para>
+/// <para><b>Status while the live database is closed.</b> Each run registry is
+/// consulted before durable state, so an endpoint never reports idle while a
+/// run exists — including during the long pre-maintenance Phase A. When
+/// exclusive maintenance closes admission the status readers serve only the
+/// in-memory slot (activation) or the durable recovery manifest (restore): the
+/// live database, its WAL and its connection pools are never opened inside the
+/// swap window. After a committed-but-unfinalized failure the slot reports
+/// <c>migration_activation_recovery_failed</c> with the operator-facing
+/// fail-closed message.</para>
 ///
 /// <para><b>Lost acceptance.</b> Acceptance is in-memory by design. A host
-/// restart before the durable <c>Activating</c> transition drops the run and
-/// leaves the job <c>ReadyToActivate</c>; the status then reports
-/// <c>Idle</c> + <c>canActivate</c> so the browser repeats the POST. On
-/// graceful shutdown the dispatcher stops accepting (503 busy), drops queued
-/// runs, and lets an in-flight coordinator run finish or fail as the
-/// coordinator's own crash safety dictates.</para>
+/// restart before a durable transition drops the run; activation leaves the job
+/// <c>ReadyToActivate</c> for the browser to repeat, while recovery restore
+/// keeps its durable <c>Restoring</c> claim and the startup scan re-enqueues
+/// it. On graceful shutdown the dispatcher stops accepting (503 busy), drops
+/// queued runs, and lets an in-flight run finish or fail as the coordinator's
+/// own crash safety dictates.</para>
 /// </summary>
-internal sealed class SelfHostedActivationDispatcher : BackgroundService, IMigrationActivationDispatcher
+internal sealed partial class SelfHostedActivationDispatcher : BackgroundService, IMigrationActivationDispatcher
 {
     internal static readonly TimeSpan FinishedSlotTtl = TimeSpan.FromMinutes(15);
 
@@ -179,34 +127,49 @@ internal sealed class SelfHostedActivationDispatcher : BackgroundService, IMigra
 
     private readonly IServiceScopeFactory _scopes;
     private readonly LibraryMaintenanceCoordinator _maintenance;
+    private readonly SelfHostedRecoveryManifestStore _manifests;
     private readonly TimeProvider _clock;
     private readonly ILogger<SelfHostedActivationDispatcher> _logger;
     private readonly SelfHostedActivationRunRegistry _registry = new();
+    private readonly SelfHostedLibrarySwitchRunRegistry<SelfHostedRecoveryRestoreRunSlot> _restoreRegistry =
+        new(recoveryId => new SelfHostedRecoveryRestoreRunSlot(recoveryId));
     private readonly SemaphoreSlim[] _admissionStripes =
         Enumerable.Range(0, AdmissionStripes).Select(_ => new SemaphoreSlim(1, 1)).ToArray();
-    private readonly Channel<Guid> _queue = Channel.CreateUnbounded<Guid>(
-        new UnboundedChannelOptions { SingleReader = true });
+    private readonly Channel<SelfHostedLibrarySwitchWorkItem> _queue =
+        Channel.CreateUnbounded<SelfHostedLibrarySwitchWorkItem>(
+            new UnboundedChannelOptions { SingleReader = true });
     private volatile bool _stopping;
     private int _started;
+    private int _restoreStarted;
 
     public SelfHostedActivationDispatcher(
         IServiceScopeFactory scopes,
         LibraryMaintenanceCoordinator maintenance,
+        SelfHostedRecoveryManifestStore manifests,
         TimeProvider clock,
         ILogger<SelfHostedActivationDispatcher> logger)
     {
         ArgumentNullException.ThrowIfNull(scopes);
         ArgumentNullException.ThrowIfNull(maintenance);
+        ArgumentNullException.ThrowIfNull(manifests);
         ArgumentNullException.ThrowIfNull(clock);
         ArgumentNullException.ThrowIfNull(logger);
         _scopes = scopes;
         _maintenance = maintenance;
+        _manifests = manifests;
         _clock = clock;
         _logger = logger;
     }
 
     /// <summary>Test seam: how many runs actually reached the coordinator.</summary>
     internal int StartedRunCount => Volatile.Read(ref _started);
+
+    /// <summary>Awaits the current activation run for a job, if one exists (test seam).</summary>
+    internal Task AwaitActivationFinishedAsync(Guid jobId, CancellationToken ct)
+    {
+        var slot = _registry.Find(jobId);
+        return slot is null ? Task.CompletedTask : slot.Finished.WaitAsync(ct);
+    }
 
     /// <summary>Test seam: observes the coordinator instance before a run starts.</summary>
     internal Action<SelfHostedActivationCoordinator>? CoordinatorCreatedForTesting { get; set; }
@@ -361,7 +324,7 @@ internal sealed class SelfHostedActivationDispatcher : BackgroundService, IMigra
             slot.DestinationRevision = record.DestinationRevision;
             slot.ExistingCounts = facts.Counts;
             slot.DestinationStatus = facts.Status;
-            if (!_queue.Writer.TryWrite(jobId))
+            if (!_queue.Writer.TryWrite(SelfHostedLibrarySwitchWorkItem.ForActivation(jobId)))
             {
                 slot.MarkDropped(_clock.GetUtcNow());
                 return new MigrationActivationRequestResult(MigrationActivationRequestOutcome.Busy);
@@ -449,32 +412,35 @@ internal sealed class SelfHostedActivationDispatcher : BackgroundService, IMigra
         {
             while (await _queue.Reader.WaitToReadAsync(stoppingToken))
             {
-                while (_queue.Reader.TryRead(out var jobId))
+                while (_queue.Reader.TryRead(out var item))
                 {
                     if (stoppingToken.IsCancellationRequested)
                     {
-                        DropQueued(jobId);
-                        continue;
-                    }
-
-                    var slot = _registry.Find(jobId);
-                    if (slot is null || slot.State != SelfHostedActivationRunState.Accepted)
-                    {
+                        DropQueued(item);
                         continue;
                     }
 
                     try
                     {
-                        await RunActivationAsync(slot, stoppingToken);
+                        switch (item.Kind)
+                        {
+                            case SelfHostedLibrarySwitchRunKind.Activation:
+                                await RunActivationItemAsync(item.Key, stoppingToken);
+                                break;
+                            case SelfHostedLibrarySwitchRunKind.RecoveryRestore:
+                                await RunRestoreItemAsync(item.Key, stoppingToken);
+                                break;
+                        }
                     }
                     catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                     {
-                        slot.MarkDropped(_clock.GetUtcNow());
+                        DropQueued(item);
                     }
                     catch (Exception exception)
                     {
-                        _logger.LogError(exception, "Activation run for migration job {JobId} crashed", jobId);
-                        slot.MarkDropped(_clock.GetUtcNow());
+                        _logger.LogError(exception,
+                            "A {Kind} run for {Key} crashed", item.Kind, item.Key);
+                        DropQueued(item);
                     }
                 }
             }
@@ -485,7 +451,31 @@ internal sealed class SelfHostedActivationDispatcher : BackgroundService, IMigra
         }
     }
 
-    private void DropQueued(Guid jobId)
+    private async Task RunActivationItemAsync(Guid jobId, CancellationToken stoppingToken)
+    {
+        var slot = _registry.Find(jobId);
+        if (slot is null || slot.State != SelfHostedActivationRunState.Accepted)
+        {
+            return;
+        }
+
+        await RunActivationAsync(slot, stoppingToken);
+    }
+
+    private void DropQueued(SelfHostedLibrarySwitchWorkItem item)
+    {
+        switch (item.Kind)
+        {
+            case SelfHostedLibrarySwitchRunKind.Activation:
+                DropQueuedActivation(item.Key);
+                break;
+            case SelfHostedLibrarySwitchRunKind.RecoveryRestore:
+                DropQueuedRestore(item.Key);
+                break;
+        }
+    }
+
+    private void DropQueuedActivation(Guid jobId)
     {
         if (_registry.Find(jobId) is { State: SelfHostedActivationRunState.Accepted } slot)
         {
