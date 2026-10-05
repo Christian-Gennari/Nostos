@@ -319,7 +319,7 @@ export class EpubAnnotationManager {
   public showSearchHighlight(cfiRange: string): void {
     this.clearSearchHighlight();
     this.searchCfiRange = cfiRange;
-    (this.rendition.annotations as any).underline(
+    this.rendition.annotations.underline(
       cfiRange,
       { nostosSearch: true },
       undefined,
