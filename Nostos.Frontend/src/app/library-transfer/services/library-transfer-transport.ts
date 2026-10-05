@@ -2,18 +2,18 @@
  * Provider-neutral transport seam for library migration (plan §3, §42).
  *
  * Components and the coordinator only ever talk to this interface. The
- * SelfHosted HTTP adapter (#680 slice B7) and the private Cloud adapter
- * implement the same contract. Tests provide the in-memory mock under
- * `testing/`; no production module imports it.
+ * SelfHosted HTTP adapter (`HttpLibraryTransferTransport`, slice B7) and the
+ * private Cloud adapter implement the same contract. Tests provide the
+ * in-memory mock under `testing/`; no production module imports it.
  */
 
-import { InjectionToken } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { InjectionToken, inject } from '@angular/core';
 
 import {
   BrowserMigrationChunk,
   MigrationCreateJobRequestDto,
   MigrationChunkUploadResultDto,
-  MigrationErrorCode,
   MigrationJobStatusResponseDto,
   MigrationPreflightRequestDto,
   MigrationPreflightResponseDto,
@@ -21,63 +21,14 @@ import {
   MigrationSessionStatusDto,
   MigrationUploadSessionResponseDto,
 } from '../models/migration-http.dtos';
-import { LibraryTransferFailure, TransferCancelledError } from '../models/library-transfer.models';
+import { HttpLibraryTransferTransport } from './http-library-transfer-transport';
 
-/** Transport-level error carrying the stable #679 error code. */
-export class MigrationTransportError extends Error {
-  constructor(
-    readonly code: MigrationErrorCode,
-    readonly status: number,
-    message: string,
-    options?: { retryAfterMs?: number; cause?: unknown },
-  ) {
-    super(message, options?.cause === undefined ? undefined : { cause: options.cause });
-    this.name = 'MigrationTransportError';
-    this.retryAfterMs = options?.retryAfterMs;
-  }
-
-  readonly retryAfterMs?: number;
-
-  /** True only for the transient statuses the plan allows to be retried (plan §22). */
-  get retryable(): boolean {
-    return isTransientStatus(this.status);
-  }
-}
-
-/** Network failure (no HTTP status) or the retryable statuses from plan §22. */
-export function isTransientStatus(status: number): boolean {
-  return (
-    status === 0 || // connection reset / network failure
-    status === 408 ||
-    status === 429 ||
-    status === 502 ||
-    status === 503 ||
-    status === 504
-  );
-}
-
-/** Normalises any thrown value into the UI-facing failure model. */
-export function toTransferFailure(error: unknown): LibraryTransferFailure {
-  if (error instanceof MigrationTransportError) {
-    return {
-      code: error.code,
-      message: error.message,
-      retryable: error.retryable,
-      status: error.status,
-      retryAfterMs: error.retryAfterMs,
-    };
-  }
-
-  if (error instanceof TransferCancelledError) {
-    return { code: 'request_aborted', message: error.message, retryable: false, status: 0 };
-  }
-
-  return {
-    code: 'unexpected_error',
-    message: error instanceof Error ? error.message : 'The transfer failed unexpectedly.',
-    retryable: false,
-  };
-}
+export {
+  MigrationTransportError,
+  isMaintenanceBusy,
+  isTransientStatus,
+  toTransferFailure,
+} from './migration-transport-error';
 
 export interface LibraryTransferTransport {
   preflight(
@@ -136,20 +87,17 @@ export interface LibraryTransferTransport {
 export type PortableTransferClient = LibraryTransferTransport;
 
 /**
- * Production DI default until slice B7 wires the real #679 adapter. It fails
- * closed instead of falling back to an in-memory mock, so a deployment that
- * advertises `supportsLibraryMigration` before B7 lands reports a clear
- * configuration error rather than a fake transfer UI. Tests provide their own
- * transport through `LIBRARY_TRANSFER_TRANSPORT`.
+ * Production DI default: the real SelfHosted #679 HTTP adapter. Tests override
+ * `LIBRARY_TRANSFER_TRANSPORT` with an in-memory transport; there is no
+ * production branch that can construct the mock.
  */
 export function createLibraryTransferTransport(): LibraryTransferTransport {
-  throw new Error('library transfer transport is not configured');
+  return new HttpLibraryTransferTransport(inject(HttpClient));
 }
 
 /**
- * DI seam. The real SelfHosted adapter arrives in slice B7 and the private
- * Cloud adapter in B9; until then the production provider above throws and
- * tests inject a fake.
+ * DI seam. The real SelfHosted adapter is the default; the private Cloud
+ * adapter (slice B9) and tests replace it through this token.
  */
 export const LIBRARY_TRANSFER_TRANSPORT = new InjectionToken<LibraryTransferTransport>(
   'NOSTOS_LIBRARY_TRANSFER_TRANSPORT',

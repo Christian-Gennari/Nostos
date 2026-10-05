@@ -50,6 +50,21 @@ export function calculateRequiredStorageBytes(
   return request.declaredArchiveBytes + request.declaredMediaBytes + recovery;
 }
 
+/** Fixed metadata/temp allowance per active job (`TransferCapacityMath.PerJobOverheadBytes`). */
+export const PER_JOB_OVERHEAD_BYTES = 8 * 1024 * 1024;
+
+/**
+ * Mirrors `TransferCapacityMath.CalculateHostPeakReservationBytes`: contract
+ * bytes plus one effective chunk plus the per-job overhead. The global safety
+ * margin is applied once by admission and is deliberately not part of this sum.
+ */
+export function calculateHostPeakReservationBytes(
+  contractRequiredBytes: number,
+  effectiveChunkBytes: number,
+): number {
+  return contractRequiredBytes + effectiveChunkBytes + PER_JOB_OVERHEAD_BYTES;
+}
+
 export function evaluatePreflight(
   request: MigrationPreflightRequestDto,
   input: PreflightEvaluationInput,

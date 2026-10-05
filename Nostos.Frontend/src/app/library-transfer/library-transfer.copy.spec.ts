@@ -9,7 +9,11 @@ import {
   transferProgressValueText,
 } from './library-transfer.copy';
 import type { LibraryTransferFailure } from './models/library-transfer.models';
-import type { MigrationErrorCode } from './models/migration-http.dtos';
+import {
+  CLIENT_MIGRATION_ERROR_CODES,
+  SERVER_MIGRATION_ERROR_CODES,
+  type MigrationErrorCode,
+} from './models/migration-http.dtos';
 
 function failure(
   code: MigrationErrorCode,
@@ -115,10 +119,40 @@ describe('library-transfer.copy', () => {
       expect(copy.message).toContain('did not replace it');
     });
 
-    it('maps export source failures to a restart', () => {
-      expect(libraryTransferFailureCopy(failure('source_media_missing')).action).toBe('start-over');
-      expect(libraryTransferFailureCopy(failure('source_media_changed')).action).toBe('start-over');
+    it('maps a failed export job to a restart', () => {
       expect(libraryTransferFailureCopy(failure('portable_export_failed')).action).toBe('start-over');
+    });
+
+    it('maps the newly surfaced host states to sensible recoveries', () => {
+      expect(libraryTransferFailureCopy(failure('migration_storage_contended')).action).toBe('retry');
+      expect(libraryTransferFailureCopy(failure('migration_activation_busy')).action).toBe('retry');
+      expect(libraryTransferFailureCopy(failure('migration_lease_conflict')).action).toBe('retry');
+      expect(
+        libraryTransferFailureCopy(failure('migration_import_preparation_unavailable')).action,
+      ).toBe('none');
+      expect(
+        libraryTransferFailureCopy(failure('migration_export_artifact_unavailable')).action,
+      ).toBe('none');
+      expect(libraryTransferFailureCopy(failure('migration_not_supported')).action).toBe('none');
+      expect(libraryTransferFailureCopy(failure('migration_not_supported')).message).toContain(
+        'does not support library migration',
+      );
+      expect(libraryTransferFailureCopy(failure('migration_maintenance_timeout')).action).toBe(
+        'retry',
+      );
+      expect(libraryTransferFailureCopy(failure('migration_export_not_available')).action).toBe(
+        'start-over',
+      );
+      expect(libraryTransferFailureCopy(failure('migration_export_expired')).action).toBe(
+        'start-over',
+      );
+    });
+
+    it('does not promise automatic retry where the user must act', () => {
+      for (const code of ['migration_storage_contended', 'migration_lease_conflict'] as const) {
+        const copy = libraryTransferFailureCopy(failure(code));
+        expect(copy.message, code).not.toMatch(/will retry|will keep checking/i);
+      }
     });
 
     it('maps a stale job to a new import', () => {
@@ -148,32 +182,8 @@ describe('library-transfer.copy', () => {
 
     it('produces product copy and a valid recovery for every stable error code', () => {
       const codes: MigrationErrorCode[] = [
-        'migration_not_found',
-        'migration_idempotency_conflict',
-        'migration_invalid_state',
-        'migration_lease_conflict',
-        'migration_reservation_required',
-        'migration_file_identity_mismatch',
-        'migration_chunk_conflict',
-        'migration_chunk_hash_mismatch',
-        'migration_chunk_range_invalid',
-        'migration_session_expired',
-        'migration_storage_exhausted',
-        'migration_cannot_cancel',
-        'migration_not_retryable',
-        'migration_export_not_available',
-        'migration_invalid_request',
-        'migration_destination_conflict',
-        'archive_not_portable',
-        'archive_operational_backup',
-        'archive_unsupported_version',
-        'portable_import_failed',
-        'portable_export_failed',
-        'source_media_missing',
-        'source_media_changed',
-        'network_error',
-        'request_aborted',
-        'unexpected_error',
+        ...SERVER_MIGRATION_ERROR_CODES,
+        ...CLIENT_MIGRATION_ERROR_CODES,
       ];
       const actions = new Set(['retry', 'sign-in', 'choose-file', 'start-over', 'none']);
 

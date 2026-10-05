@@ -19,7 +19,7 @@ import {
   MigrationUploadSessionResponseDto,
 } from '../models/migration-http.dtos';
 import { LibraryTransferTransport } from '../services/library-transfer-transport';
-import { MockLibraryTransferTransport } from '../services/mock-library-transfer-transport.service';
+import { MockLibraryTransferTransport } from './mock-library-transfer-transport';
 
 export class DelegatingTransport implements LibraryTransferTransport {
   constructor(readonly inner: MockLibraryTransferTransport) {}

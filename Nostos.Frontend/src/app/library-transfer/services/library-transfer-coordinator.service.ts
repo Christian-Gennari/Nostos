@@ -40,6 +40,7 @@ import {
   LIBRARY_TRANSFER_TRANSPORT,
   LibraryTransferTransport,
   MigrationTransportError,
+  isMaintenanceBusy,
   toTransferFailure,
 } from './library-transfer-transport';
 import { ChunkUploadEngine, ChunkUploadRun } from './chunk-upload-engine.service';
@@ -51,6 +52,34 @@ import { TransferResumeStore } from './transfer-resume-store.service';
 import { TransferTabLease } from './transfer-tab-lease.service';
 
 export const DEFAULT_STATUS_POLL_MS = 1_500;
+
+/**
+ * Total time the coordinator waits out exclusive server maintenance
+ * (`migration_activation_busy` / `migration_storage_contended`) before it
+ * surfaces a retryable failure. The wait never loses work: every operation is
+ * re-attempted with the idempotency keys persisted before its first send.
+ */
+export const MAINTENANCE_MAX_WAIT_MS = 5 * 60_000;
+
+/** The fallback delay between maintenance re-attempts without `Retry-After`. */
+export const MAINTENANCE_FALLBACK_BASE_MS = 500;
+
+/** Operations that can be interrupted by exclusive server maintenance. */
+export type TransferBusyOperation =
+  | 'preflight'
+  | 'createJob'
+  | 'getJob'
+  | 'cancelJob'
+  | 'retryJob'
+  | 'createUploadSession'
+  | 'getUploadSession'
+  | 'uploadChunk'
+  | 'completeUpload';
+
+export interface TransferMaintenanceWait {
+  operation: TransferBusyOperation;
+  retryAfterMs: number | null;
+}
 
 const IDLE_PROGRESS: TransferProgress = {
   uploadedBytes: 0,
@@ -99,6 +128,16 @@ export class LibraryTransferCoordinator {
       : this.fallbackProgress();
   });
 
+  /** Set while the coordinator waits out server maintenance and re-attempts. */
+  readonly maintenanceWaiting = signal<TransferMaintenanceWait | null>(null);
+
+  /**
+   * True when a maintenance timeout left an interrupted operation that
+   * `retry()` can continue (the Retry action must repeat that operation, never
+   * call the job-level `/retry` endpoint on an active job).
+   */
+  readonly hasInterruptedOperation = computed(() => this.interruptedSignal() !== null);
+
   /** Injectable for fake-timer tests; the coordinator owns the scheduling. */
   pollIntervalMs = DEFAULT_STATUS_POLL_MS;
 
@@ -106,6 +145,7 @@ export class LibraryTransferCoordinator {
   private operationAbort: AbortController | null = null;
   private run: ChunkUploadRun | null = null;
   private pollTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly interruptedSignal = signal<(() => Promise<void>) | null>(null);
 
   private jobId: string | null = null;
   private preflight: MigrationPreflightResponseDto | null = null;
@@ -117,6 +157,7 @@ export class LibraryTransferCoordinator {
   /** Full fresh import: inspect, hash, preflight, create, session, upload, poll. */
   async startImport(file: File): Promise<void> {
     const { token, signal } = this.beginOperation();
+    this.interruptedSignal.set(null);
     this.file = file;
     this.jobId = null;
     this.preflight = null;
@@ -160,7 +201,12 @@ export class LibraryTransferCoordinator {
 
       this.setState({ kind: 'preflighting', summary });
       const request = preflightRequestFromSummary(file, summary);
-      const preflight = await this.transport.preflight(request, signal);
+      const preflight = await this.withBusyRetry(
+        'preflight',
+        token,
+        () => this.transport.preflight(request, signal),
+        () => this.startImport(file),
+      );
       if (!this.isCurrent(token)) return;
       this.preflight = preflight;
       if (!preflight.evaluation.isAllowed) {
@@ -193,22 +239,29 @@ export class LibraryTransferCoordinator {
         ),
       );
 
-      const created = await this.transport.createJob(
-        {
-          direction: 'Import',
-          idempotencyKey: jobCreationIdempotencyKey,
-          reservationId: preflight.reservationId,
-        },
-        signal,
+      const created = await this.withBusyRetry(
+        'createJob',
+        token,
+        () =>
+          this.transport.createJob(
+            {
+              direction: 'Import',
+              idempotencyKey: jobCreationIdempotencyKey,
+              reservationId: preflight.reservationId,
+            },
+            signal,
+          ),
+        () => this.resume(),
       );
       if (!this.isCurrent(token)) return;
       this.jobId = created.job.id;
       this.resumeStore.update({ jobId: created.job.id });
 
-      const sessionResponse = await this.transport.createUploadSession(
-        created.job.id,
-        sessionRequest,
-        signal,
+      const sessionResponse = await this.withBusyRetry(
+        'createUploadSession',
+        token,
+        () => this.transport.createUploadSession(created.job.id, sessionRequest, signal),
+        () => this.resume(),
       );
       if (!this.isCurrent(token)) return;
       this.resumeStore.update({ sessionId: sessionResponse.session.sessionId });
@@ -244,25 +297,51 @@ export class LibraryTransferCoordinator {
     }
 
     const { token, signal } = this.beginOperation();
+    this.interruptedSignal.set(null);
     this.jobId = record.jobId ?? null;
     this.preflightDecision = record.preflightDecision ?? null;
 
     try {
       if (!this.jobId) {
-        const recovered = await this.replayJobCreation(record, signal);
+        const recovered = await this.replayJobCreation(record, signal, token);
         if (!this.isCurrent(token)) return;
         if (!recovered) return;
       }
 
       const jobId = this.jobId;
       if (!jobId) return;
-      const status = await this.transport.getJob(jobId, signal);
+      let status = await this.withBusyRetry(
+        'getJob',
+        token,
+        () => this.transport.getJob(jobId, signal),
+        () => this.resume(),
+      );
       if (!this.isCurrent(token)) return;
 
       if (!status.session && isPreActivationJobState(status.job.state)) {
-        const sessionResponse = await this.ensureUploadSession(record, signal);
+        const sessionResponse = await this.ensureUploadSession(record, signal, token);
         if (!this.isCurrent(token)) return;
-        status.session = sessionResponse.session;
+        status = { ...status, session: sessionResponse.session };
+      }
+
+      // A session holding every receipt but a job still short of validation
+      // means the completion call was interrupted (maintenance or a lost
+      // response). Replaying it is idempotent on the server.
+      if (needsCompletionReplay(status)) {
+        await this.withBusyRetry(
+          'completeUpload',
+          token,
+          () => this.transport.completeUpload(jobId, signal),
+          () => this.continueCompletion(),
+        );
+        if (!this.isCurrent(token)) return;
+        status = await this.withBusyRetry(
+          'getJob',
+          token,
+          () => this.transport.getJob(jobId, signal),
+          () => this.resume(),
+        );
+        if (!this.isCurrent(token)) return;
       }
 
       this.applyJobStatus(status);
@@ -300,7 +379,7 @@ export class LibraryTransferCoordinator {
         return;
       }
 
-      const sessionResponse = await this.ensureUploadSession(record, signal);
+      const sessionResponse = await this.ensureUploadSession(record, signal, token);
       if (!this.isCurrent(token)) return;
       await this.uploadSession(token, signal, sessionResponse.session);
     } catch (error) {
@@ -326,6 +405,13 @@ export class LibraryTransferCoordinator {
   }
 
   async resumeUpload(): Promise<void> {
+    // The run may not exist yet (the coordinator is still re-reading the
+    // authoritative session). Clearing the paused intent here makes the engine
+    // start unpaused instead of stalling behind a pause nobody can resume.
+    const state = this.stateSignal();
+    if (state.kind === 'uploading' && state.paused) {
+      this.setState({ ...state, paused: false, progress: { ...state.progress, paused: false } });
+    }
     if (this.run) await this.run.resume();
   }
 
@@ -334,6 +420,10 @@ export class LibraryTransferCoordinator {
     const jobId = this.jobId;
     this.operationToken += 1;
     this.operationAbort?.abort();
+    this.operationAbort = new AbortController();
+    const token = this.operationToken;
+    const signal = this.operationAbort.signal;
+    this.interruptedSignal.set(null);
     this.stopPolling();
     this.cancelRun();
 
@@ -344,10 +434,19 @@ export class LibraryTransferCoordinator {
     }
 
     try {
-      await this.transport.cancelJob(jobId);
+      // The cancellation itself waits out maintenance: cancelling is exactly
+      // what the user asked for, so it is always re-attempted.
+      await this.withBusyRetry(
+        'cancelJob',
+        token,
+        () => this.transport.cancelJob(jobId, undefined, signal),
+        () => this.cancel(),
+      );
       this.resumeStore.clear();
       this.setState({ kind: 'cancelled', jobId });
     } catch (error) {
+      if (!this.isCurrent(token)) return;
+      if (error instanceof TransferCancelledError) return;
       const failure = toTransferFailure(error);
       if (failure.code === 'migration_cannot_cancel') {
         // Activation is the point of no return; server processing continues.
@@ -358,18 +457,37 @@ export class LibraryTransferCoordinator {
     }
   }
 
-  /** Server-side retry for a Failed/Cancelled/Expired job, then reattach. */
+  /**
+   * Server-side retry for a Failed/Cancelled/Expired job, then reattach. When a
+   * maintenance timeout interrupted an operation, this instead repeats that
+   * operation: `/jobs/{id}/retry` is only ever called for a job that is
+   * actually in a retryable terminal state.
+   */
   async retry(): Promise<void> {
+    const interrupted = this.interruptedSignal();
+    if (interrupted) {
+      this.interruptedSignal.set(null);
+      await interrupted();
+      return;
+    }
+
     const jobId = this.jobId ?? this.resumeStore.load()?.jobId;
     if (!jobId) return;
 
     const { token, signal } = this.beginOperation();
+    const retryKey = newIdempotencyKey();
     try {
-      const status = await this.transport.retryJob(jobId, newIdempotencyKey(), signal);
+      const status = await this.withBusyRetry(
+        'retryJob',
+        token,
+        () => this.transport.retryJob(jobId, retryKey, signal),
+        () => this.retry(),
+      );
       if (!this.isCurrent(token)) return;
       this.applyJobStatus(status);
     } catch (error) {
       if (!this.isCurrent(token)) return;
+      if (error instanceof TransferCancelledError) return;
       this.failWith(this.failureFromError(error), jobId);
     }
   }
@@ -381,6 +499,7 @@ export class LibraryTransferCoordinator {
    * server job (review-730 item 2); cancel clears it instead.
    */
   dismiss(): void {
+    this.interruptedSignal.set(null);
     const state = this.stateSignal();
     if (state.kind === 'completed' || state.kind === 'cancelled') {
       this.resumeStore.clear();
@@ -399,11 +518,17 @@ export class LibraryTransferCoordinator {
     const jobId = this.jobId ?? this.resumeStore.load()?.jobId;
     if (!jobId) return;
     try {
-      const status = await this.transport.getJob(jobId);
+      const status = await this.withBusyRetry(
+        'getJob',
+        token,
+        () => this.transport.getJob(jobId),
+        () => this.resume(),
+      );
       if (token !== this.operationToken) return;
       this.applyJobStatus(status);
     } catch (error) {
       if (token !== this.operationToken) return;
+      if (error instanceof TransferCancelledError) return;
       const failure = this.failureFromError(error);
       if (failure.code === 'migration_not_found') this.resumeStore.clear();
       this.failWith(failure, jobId);
@@ -426,7 +551,134 @@ export class LibraryTransferCoordinator {
       return;
     }
 
-    const initial: TransferProgress = {
+    const initial = this.progressFromSession(session);
+    this.fallbackProgress.set(initial);
+    this.setState({ kind: 'uploading', jobId, progress: initial, paused: false });
+
+    const uploadOutcome = await this.withBusyRetry(
+      'uploadChunk',
+      token,
+      () => this.uploadMissingChunks(token, signal),
+      () => this.resume(),
+    );
+    if (!this.isCurrent(token)) return;
+    if (uploadOutcome.kind === 'cancelled') {
+      this.setState({ kind: 'cancelled', jobId });
+      return;
+    }
+
+    this.setState({
+      kind: 'checking',
+      jobId,
+      jobState: 'Validating',
+      progress: uploadOutcome.progress,
+      preflight: this.preflight ?? undefined,
+    });
+
+    await this.withBusyRetry(
+      'completeUpload',
+      token,
+      () => this.completeUploadAndRefresh(token, signal, jobId),
+      () => this.continueCompletion(),
+    );
+  }
+
+  /**
+   * Continuation for a completion interrupted by maintenance: re-sends the
+   * idempotent completion for the same durable job and then refreshes status.
+   * No `/retry` and no file reselection are needed.
+   */
+  private async continueCompletion(): Promise<void> {
+    const jobId = this.jobId ?? this.resumeStore.load()?.jobId;
+    if (!jobId) {
+      await this.resume();
+      return;
+    }
+    const { token, signal } = this.beginOperation();
+    this.interruptedSignal.set(null);
+    try {
+      await this.completeUploadAndRefresh(token, signal, jobId);
+    } catch (error) {
+      if (!this.isCurrent(token)) return;
+      if (error instanceof TransferCancelledError) return;
+      this.failWith(this.failureFromError(error), jobId);
+    }
+  }
+
+  /**
+   * Uploads the chunks the server has not acknowledged. The authoritative
+   * session is re-read on every attempt, so a maintenance retry never
+   * re-uploads bytes the server already holds.
+   */
+  private async uploadMissingChunks(
+    token: number,
+    signal: AbortSignal,
+  ): Promise<{ kind: 'completed'; progress: TransferProgress } | { kind: 'cancelled' }> {
+    const jobId = this.jobId;
+    const file = this.file;
+    if (!jobId || !file) throw new TransferCancelledError('The import was cancelled.');
+
+    const latest = await this.withBusyRetry(
+      'getUploadSession',
+      token,
+      () => this.transport.getUploadSession(jobId, signal),
+      () => this.resume(),
+    );
+    if (!this.isCurrent(token)) throw new TransferCancelledError('The import was cancelled.');
+
+    const session = latest.session;
+    const progress = this.progressFromSession(session);
+    this.fallbackProgress.set(progress);
+    const current = this.stateSignal();
+    if (current.kind === 'uploading') this.setState({ ...current, progress });
+
+    if (session.receivedChunkCount >= session.totalChunks) {
+      return { kind: 'completed', progress };
+    }
+
+    const engine = new ChunkUploadEngine(this.transport, this.digest);
+    const run = engine.start({
+      jobId,
+      session,
+      file,
+      signal,
+      onProgress: (update) => {
+        if (!this.isCurrent(token)) return;
+        const state = this.stateSignal();
+        if (state.kind !== 'uploading') return;
+        this.fallbackProgress.set(update);
+        this.setState({ ...state, progress: update, paused: state.paused });
+      },
+    });
+    this.run = run;
+    if (current.kind === 'uploading' && current.paused) await run.pause();
+
+    const outcome = await run.done;
+    this.run = null;
+    if (outcome.kind === 'cancelled') return { kind: 'cancelled' };
+    return { kind: 'completed', progress: run.progress };
+  }
+
+  /** Idempotent completion, then the durable status that follows it. */
+  private async completeUploadAndRefresh(
+    token: number,
+    signal: AbortSignal,
+    jobId: string,
+  ): Promise<void> {
+    const completed = await this.transport.completeUpload(jobId, signal);
+    if (!this.isCurrent(token)) return;
+    if (!isUploadComplete(completed)) {
+      this.failWith(
+        this.failure('migration_invalid_state', 'The server did not accept the completed upload.'),
+        jobId,
+      );
+      return;
+    }
+    await this.refreshStatus();
+  }
+
+  private progressFromSession(session: MigrationSessionStatusDto): TransferProgress {
+    return {
       uploadedBytes: session.receivedChunks.reduce(
         (total, index) => total + chunkLength(index, session.totalBytes, session.chunkSize),
         0,
@@ -439,52 +691,6 @@ export class LibraryTransferCoordinator {
       etaSeconds: null,
       paused: false,
     };
-    this.fallbackProgress.set(initial);
-    this.setState({ kind: 'uploading', jobId, progress: initial, paused: false });
-
-    const engine = new ChunkUploadEngine(this.transport, this.digest);
-    const run = engine.start({
-      jobId,
-      session,
-      file: this.file,
-      signal,
-      onProgress: (progress) => {
-        if (!this.isCurrent(token)) return;
-        const state = this.stateSignal();
-        if (state.kind !== 'uploading') return;
-        this.fallbackProgress.set(progress);
-        this.setState({ ...state, progress, paused: state.paused });
-      },
-    });
-    this.run = run;
-
-    const outcome = await run.done;
-    this.run = null;
-    if (!this.isCurrent(token)) return;
-    if (outcome.kind === 'cancelled') {
-      this.setState({ kind: 'cancelled', jobId });
-      return;
-    }
-
-    this.setState({
-      kind: 'checking',
-      jobId,
-      jobState: 'Validating',
-      progress: run.progress,
-      preflight: this.preflight ?? undefined,
-    });
-
-    const completed = await this.transport.completeUpload(jobId, signal);
-    if (!this.isCurrent(token)) return;
-    if (!isUploadComplete(completed)) {
-      this.failWith(
-        this.failure('migration_invalid_state', 'The server did not accept the completed upload.'),
-        jobId,
-      );
-      return;
-    }
-
-    await this.refreshStatus();
   }
 
   private async verifyReselectedFile(
@@ -609,14 +815,16 @@ export class LibraryTransferCoordinator {
     return kind === 'checking' || kind === 'ready-to-upload';
   }
 
-  private schedulePoll(): void {
+  private schedulePoll(delayMs?: number): void {
     this.stopPolling();
     this.pollTimer = setTimeout(() => {
       this.pollTimer = null;
       void this.refreshStatus().then(() => {
-        if (this.isPollingState()) this.schedulePoll();
+        // A busy-status retry may have scheduled the next poll with the
+        // server's Retry-After; never overwrite that delay.
+        if (this.isPollingState() && this.pollTimer === null) this.schedulePoll();
       });
-    }, this.pollIntervalMs);
+    }, delayMs ?? this.pollIntervalMs);
   }
 
   private stopPolling(): void {
@@ -649,6 +857,75 @@ export class LibraryTransferCoordinator {
   private failWith(failure: LibraryTransferFailure, jobId: string | undefined): void {
     this.stopPolling();
     this.setState({ kind: 'failed', jobId, failure });
+  }
+
+  /**
+   * Re-attempts one migration operation while the server answers with a
+   * retryable maintenance outcome (`migration_activation_busy` /
+   * `migration_storage_contended`). Each operation owns its idempotency keys,
+   * so every re-attempt replays safely. Waiting is capped: past the cap the
+   * flow fails non-destructively with `migration_maintenance_timeout`, and
+   * `retry()` repeats `continuation` instead of the job-level `/retry`.
+   */
+  private async withBusyRetry<T>(
+    operation: TransferBusyOperation,
+    token: number,
+    call: () => Promise<T>,
+    continuation: () => Promise<void>,
+  ): Promise<T> {
+    const startedAt = Date.now();
+    let attempt = 0;
+    for (;;) {
+      try {
+        const result = await call();
+        this.maintenanceWaiting.set(null);
+        return result;
+      } catch (error) {
+        this.maintenanceWaiting.set(null);
+        if (!this.isCurrent(token)) {
+          throw new TransferCancelledError('The operation was cancelled.');
+        }
+        const failure = toTransferFailure(error);
+        if (!isMaintenanceBusy(failure.code)) throw error;
+
+        const delay =
+          failure.retryAfterMs ?? Math.min(MAINTENANCE_FALLBACK_BASE_MS * 2 ** attempt, 8_000);
+        attempt += 1;
+        if (Date.now() - startedAt + delay > MAINTENANCE_MAX_WAIT_MS) {
+          this.interruptedSignal.set(continuation);
+          throw new MigrationTransportError(
+            'migration_maintenance_timeout',
+            0,
+            'The host stayed busy finishing another library operation.',
+          );
+        }
+
+        this.maintenanceWaiting.set({ operation, retryAfterMs: failure.retryAfterMs ?? delay });
+        await this.maintenanceSleep(delay);
+      }
+    }
+  }
+
+  /** Abortable wait: cancelling the operation interrupts the maintenance hold. */
+  private maintenanceSleep(ms: number): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      const signal = this.operationAbort?.signal;
+      if (signal?.aborted) {
+        reject(new TransferCancelledError('The operation was cancelled.'));
+        return;
+      }
+      const timer = setTimeout(() => {
+        cleanup();
+        resolve();
+      }, ms);
+      const onAbort = () => {
+        clearTimeout(timer);
+        cleanup();
+        reject(new TransferCancelledError('The operation was cancelled.'));
+      };
+      const cleanup = () => signal?.removeEventListener('abort', onAbort);
+      signal?.addEventListener('abort', onAbort, { once: true });
+    });
   }
 
   private cancelRun(): void {
@@ -774,15 +1051,22 @@ export class LibraryTransferCoordinator {
   private async replayJobCreation(
     record: PersistedTransferResumeState,
     signal: AbortSignal,
+    token: number,
   ): Promise<boolean> {
     try {
-      const created = await this.transport.createJob(
-        {
-          direction: 'Import',
-          idempotencyKey: record.jobCreationIdempotencyKey,
-          reservationId: record.reservationId ?? null,
-        },
-        signal,
+      const created = await this.withBusyRetry(
+        'createJob',
+        token,
+        () =>
+          this.transport.createJob(
+            {
+              direction: 'Import',
+              idempotencyKey: record.jobCreationIdempotencyKey,
+              reservationId: record.reservationId ?? null,
+            },
+            signal,
+          ),
+        () => this.resume(),
       );
       this.jobId = created.job.id;
       this.resumeStore.update({ jobId: created.job.id });
@@ -802,14 +1086,19 @@ export class LibraryTransferCoordinator {
   private async ensureUploadSession(
     record: PersistedTransferResumeState,
     signal: AbortSignal,
+    token: number,
   ): Promise<MigrationUploadSessionResponseDto> {
     const jobId = this.jobId ?? record.jobId;
     if (!jobId) throw new Error('No migration job to attach an upload session to.');
 
     if (record.sessionId) {
       try {
-        const existing = await this.transport.getUploadSession(jobId, signal);
-        return existing;
+        return await this.withBusyRetry(
+          'getUploadSession',
+          token,
+          () => this.transport.getUploadSession(jobId, signal),
+          () => this.resume(),
+        );
       } catch (error) {
         const failure = toTransferFailure(error);
         if (failure.code !== 'migration_invalid_state') throw error;
@@ -826,7 +1115,12 @@ export class LibraryTransferCoordinator {
       );
     }
 
-    const response = await this.transport.createUploadSession(jobId, sessionRequest, signal);
+    const response = await this.withBusyRetry(
+      'createUploadSession',
+      token,
+      () => this.transport.createUploadSession(jobId, sessionRequest, signal),
+      () => this.resume(),
+    );
     this.jobId = jobId;
     this.resumeStore.update({
       jobId,
@@ -837,18 +1131,25 @@ export class LibraryTransferCoordinator {
     return response;
   }
 
+  /**
+   * Rebuilds the session request from a legacy/partial record. Fails closed
+   * when the persisted creation key is gone: manufacturing a new key against a
+   * server session that already exists would be an idempotency conflict, so
+   * the only safe recovery is starting the import again.
+   */
   private sessionRequestFromRecord(
     record: PersistedTransferResumeState,
   ): MigrationSessionRequestDto | null {
     const chunkSize = record.chunkSizeBytes;
-    if (!chunkSize) return null;
+    const idempotencyKey = record.sessionCreationIdempotencyKey;
+    if (!chunkSize || !idempotencyKey) return null;
     return {
       purpose: 'Import',
       totalBytes: record.fileIdentity.totalSizeBytes,
       chunkSize,
       totalChunks: chunkCount(record.fileIdentity.totalSizeBytes, chunkSize),
       fileIdentity: record.fileIdentity,
-      idempotencyKey: record.sessionCreationIdempotencyKey ?? newIdempotencyKey(),
+      idempotencyKey,
     };
   }
 }
@@ -859,6 +1160,20 @@ function isPreActivationJobState(state: MigrationJobState): boolean {
     state === 'Preparing' ||
     state === 'Transferring' ||
     state === 'Validating'
+  );
+}
+
+/**
+ * A session holding every receipt while the durable job has not reached
+ * validation means the completion call was interrupted (maintenance or a lost
+ * response); replaying the idempotent completion is the safe recovery.
+ */
+function needsCompletionReplay(status: MigrationJobStatusResponseDto): boolean {
+  return (
+    status.session?.state === 'Complete' &&
+    (status.job.state === 'Pending' ||
+      status.job.state === 'Preparing' ||
+      status.job.state === 'Transferring')
   );
 }
 
