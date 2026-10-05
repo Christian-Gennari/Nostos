@@ -170,6 +170,15 @@ public sealed class PortableHostedAdapterSeamTests
             new StringContent("{}", Encoding.UTF8, "application/json"));
         preflight.StatusCode.Should().Be(HttpStatusCode.NotFound);
 
+        // #681 Slice 8 routes are part of the same opted-out transfer group.
+        using var activate = await client.PostAsync(
+            $"/api/portability/migration/jobs/{Guid.NewGuid()}/activate",
+            new StringContent("{}", Encoding.UTF8, "application/json"));
+        activate.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        using var activation = await client.GetAsync(
+            $"/api/portability/migration/jobs/{Guid.NewGuid()}/activation");
+        activation.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
         app.Services.GetService<SelfHostedMigrationJobService>().Should().BeNull();
         app.Services.GetServices<IHostedService>().Select(service => service.GetType())
             .Should().NotContain(new[]

@@ -36,6 +36,16 @@ internal sealed record SelfHostedActivationResult(
 /// </summary>
 internal sealed class SelfHostedActivationAbandonedException : Exception;
 
+/// <summary>
+/// Destination facts read through the coordinator's own admission reader: the
+/// opaque revision token, whether the destination is conservatively populated
+/// (rows or files) and the row counts.
+/// </summary>
+internal sealed record SelfHostedActivationDestinationFacts(
+    string Revision,
+    MigrationDestinationStatus Status,
+    MigrationExistingCounts Counts);
+
 /// <summary>Names of the durable phase writes and rename boundaries tests crash at.</summary>
 internal static class SelfHostedActivationSteps
 {
@@ -781,7 +791,15 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
             ?? throw MigrationJobStoreException.NotFound(jobId);
     }
 
-    private async Task<DestinationFacts> ReadDestinationFactsAsync(CancellationToken ct)
+    /// <summary>
+    /// The exact destination facts activation admits against. The HTTP
+    /// dispatcher uses the same reader so a synchronous 409 can never disagree
+    /// with the coordinator's later authoritative check.
+    /// </summary>
+    internal Task<SelfHostedActivationDestinationFacts> ReadDestinationFactsForAdmissionAsync(
+        CancellationToken ct) => ReadDestinationFactsAsync(ct);
+
+    private async Task<SelfHostedActivationDestinationFacts> ReadDestinationFactsAsync(CancellationToken ct)
     {
         await using var scope = _scopes.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<NostosDbContext>();
@@ -814,7 +832,7 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
         var status = counts.TotalRows > 0 || LiveMediaContainsFiles()
             ? MigrationDestinationStatus.Populated
             : MigrationDestinationStatus.Empty;
-        return new DestinationFacts(revision, status, counts);
+        return new SelfHostedActivationDestinationFacts(revision, status, counts);
     }
 
     private bool LiveMediaContainsFiles()
@@ -1081,11 +1099,6 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
         _ => new MigrationActivationException(MigrationActivationErrorCodes.Failed,
             "The activation failed before the library switch; the original library is unchanged."),
     };
-
-    private sealed record DestinationFacts(
-        string Revision,
-        MigrationDestinationStatus Status,
-        MigrationExistingCounts Counts);
 
     private sealed class LeaseHeartbeat(CancellationTokenSource stopped, Task task) : IAsyncDisposable
     {

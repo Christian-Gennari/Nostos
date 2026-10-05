@@ -53,6 +53,8 @@ public sealed class MigrationHttpAuthTests
             (HttpMethod.Post, $"/api/portability/migration/jobs/{job}/upload-session/complete"),
             (HttpMethod.Get, $"/api/portability/migration/jobs/{job}/export-download"),
             (HttpMethod.Head, $"/api/portability/migration/jobs/{job}/export-download"),
+            (HttpMethod.Post, $"/api/portability/migration/jobs/{job}/activate"),
+            (HttpMethod.Get, $"/api/portability/migration/jobs/{job}/activation"),
         };
 
         foreach (var (method, path) in routes)
@@ -102,6 +104,29 @@ public sealed class MigrationHttpAuthTests
         using var downloadResponse = await host.Client.SendAsync(downloadRequest);
         downloadResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
         AssertNotFoundShape(await downloadResponse.Content.ReadAsStringAsync());
+
+        var activationBody = new StringContent(
+            """{"destinationRevision":"1","confirmReplacement":true}""",
+            System.Text.Encoding.UTF8,
+            "application/json");
+        using var activateRequest = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"/api/portability/migration/jobs/{unknown}/activate")
+        {
+            Content = activationBody,
+        };
+        activateRequest.Headers.Add("X-Test-Authenticated", "1");
+        using var activateResponse = await host.Client.SendAsync(activateRequest);
+        activateResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        AssertNotFoundShape(await activateResponse.Content.ReadAsStringAsync());
+
+        using var activationRequest = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"/api/portability/migration/jobs/{unknown}/activation");
+        activationRequest.Headers.Add("X-Test-Authenticated", "1");
+        using var activationResponse = await host.Client.SendAsync(activationRequest);
+        activationResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        AssertNotFoundShape(await activationResponse.Content.ReadAsStringAsync());
     }
 
     [Fact]
@@ -200,6 +225,10 @@ public sealed class MigrationHttpAuthTests
             builder.Services.AddScoped<SelfHostedMigrationJobService>();
             builder.Services.AddScoped<ILibraryDestinationRevisionProvider, LibraryStateDestinationRevisionProvider>();
             builder.Services.AddSingleton<IMigrationPhaseAvailability, AlwaysAvailable>();
+            // This host only proves the transport policy; the activation driver
+            // itself belongs to the SelfHosted engine and is exercised by
+            // MigrationActivationHttpTests.
+            builder.Services.AddSingleton<IMigrationActivationDispatcher, NotFoundActivationDispatcher>();
 
             var app = builder.Build();
             app.UseRouting();
@@ -231,6 +260,21 @@ public sealed class MigrationHttpAuthTests
     private sealed class AlwaysAvailable : IMigrationPhaseAvailability
     {
         public bool IsAvailable(MigrationDirection direction) => true;
+    }
+
+    private sealed class NotFoundActivationDispatcher : IMigrationActivationDispatcher
+    {
+        public Task<MigrationActivationRequestResult> RequestAsync(
+            Guid jobId,
+            MigrationActivateRequest request,
+            CancellationToken ct) =>
+            Task.FromResult(new MigrationActivationRequestResult(
+                MigrationActivationRequestOutcome.NotFound));
+
+        public Task<MigrationActivationStatusResponse> GetStatusAsync(
+            Guid jobId,
+            CancellationToken ct) =>
+            throw MigrationJobStoreException.NotFound(jobId);
     }
 
     private sealed class NoopMaintenanceGate : IMigrationMaintenanceGate

@@ -727,7 +727,8 @@ public sealed class MigrationHttpApiTests
         var capabilities = await h.SendAsync(HttpMethod.Get, "/api/runtime/capabilities");
         capabilities.Status.Should().Be(HttpStatusCode.OK);
         capabilities.Body.RootElement.GetProperty("supportsLibraryMigration").GetBoolean().Should().BeFalse();
-        capabilities.Body.RootElement.GetProperty("supportsSafeActivation").GetBoolean().Should().BeFalse();
+        capabilities.Body.RootElement.GetProperty("supportsSafeActivation").GetBoolean().Should().BeTrue(
+            "the SelfHosted host implements safe activation (#681 Slice 8)");
 
         // Preflight refuses and creates no durable reservation while the import
         // phase handler is unavailable.
@@ -754,7 +755,8 @@ public sealed class MigrationHttpApiTests
         var nowAvailable = await h.SendAsync(HttpMethod.Get, "/api/runtime/capabilities");
         nowAvailable.Body.RootElement.GetProperty("supportsLibraryMigration").GetBoolean().Should().BeFalse(
             "the frontend transport is not merged; the flag is an explicit switch, not phase availability");
-        nowAvailable.Body.RootElement.GetProperty("supportsSafeActivation").GetBoolean().Should().BeFalse();
+        nowAvailable.Body.RootElement.GetProperty("supportsSafeActivation").GetBoolean().Should().BeTrue(
+            "safe activation is a SelfHosted host capability independent of the frontend switch");
         var reservation = await h.ReserveAsync("unavailable-key");
         var created = await h.CreateJobAsync("Import", "unavailable-key", reservation);
         created.Status.Should().Be(HttpStatusCode.Created);

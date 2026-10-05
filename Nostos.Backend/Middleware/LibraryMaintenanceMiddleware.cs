@@ -30,7 +30,19 @@ public sealed class LibraryMaintenanceMiddleware(RequestDelegate next)
         }
 
         var migrationPath = path.StartsWithSegments(MigrationBasePath);
-        var control = context.GetEndpoint()?.Metadata.GetMetadata<LibraryMaintenanceControl>() is not null;
+        var endpoint = context.GetEndpoint();
+        var control = endpoint?.Metadata.GetMetadata<LibraryMaintenanceControl>() is not null;
+        var memorySafe = endpoint?.Metadata.GetMetadata<LibraryMaintenanceMemorySafe>() is not null;
+        if (memorySafe)
+        {
+            // The endpoint owns its admission leases and serves from in-memory
+            // state while exclusive maintenance has the live database closed.
+            // It must never open the live database in that window and takes its
+            // own short shared leases for every other read.
+            await next(context);
+            return;
+        }
+
         await using var lease = control ? null : maintenance.TryEnterOperation();
         if ((control && maintenance.IsMaintenanceActive) || (!control && lease is null))
         {
