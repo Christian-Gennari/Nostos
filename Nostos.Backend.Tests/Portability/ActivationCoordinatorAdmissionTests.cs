@@ -98,13 +98,17 @@ public sealed class ActivationCoordinatorAdmissionTests
         var revisionAtAdmission = bed.RevisionToken;
 
         // Admitted as empty (no confirmation asked). A real portable save lands
-        // after admission and before the exclusive recheck.
+        // after admission and before the exclusive recheck; snapshot the exact
+        // post-write state there so the comparison below proves the aborted
+        // activation added nothing of its own.
+        Dictionary<string, List<string>>? afterWrite = null;
         var failure = await FluentActions
             .Awaiting(() => ActivateWithRevisionAsync(bed, revisionAtAdmission, confirm: false, observer: step =>
             {
                 if (string.Equals(step, SelfHostedActivationSteps.AfterVerifyCandidate, StringComparison.Ordinal))
                 {
                     bed.WritePortableRevisionBumpAsync().GetAwaiter().GetResult();
+                    afterWrite = DumpAllTablesExceptActivationJob(bed);
                 }
             }))
             .Should().ThrowAsync<MigrationActivationException>();
@@ -112,9 +116,8 @@ public sealed class ActivationCoordinatorAdmissionTests
 
         // The run must not have replaced content the user never confirmed:
         // the destination is exactly the state the test's own write committed.
-        var afterWrite = DumpAllTablesExceptActivationJob(bed);
-        var afterFailure = DumpAllTablesExceptActivationJob(bed);
-        afterFailure.Should().BeEquivalentTo(afterWrite);
+        afterWrite.Should().NotBeNull("the intervening write must have been observed");
+        DumpAllTablesExceptActivationJob(bed).Should().BeEquivalentTo(afterWrite);
         (await bed.ReadJobAsync()).State.Should().Be((int)MigrationJobState.ReadyToActivate);
 
         // Confirming the now-populated current generation completes and retains it.

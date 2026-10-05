@@ -187,17 +187,18 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
         ActivateCoreAsync(jobId, request: null, ct);
 
     /// <summary>
-    /// Full admission entry point: carries the exact confirmation the user
-    /// reviewed before the job enters <c>Activating</c>.
+    /// Admission entry point. For a <c>ReadyToActivate</c> job
+    /// <paramref name="request"/> carries the exact confirmation the user
+    /// reviewed. For a durably <c>Activating</c> job it is status-only and may
+    /// be <see langword="null"/>: the run resumes exclusively from the
+    /// activation journal written when the run was admitted, so a later
+    /// request can never substitute the confirmed revision or its flag.
     /// </summary>
     internal async Task<SelfHostedActivationResult> ActivateAsync(
         Guid jobId,
-        MigrationActivateRequest request,
-        CancellationToken ct)
-    {
-        ArgumentNullException.ThrowIfNull(request);
-        return await ActivateCoreAsync(jobId, request, ct);
-    }
+        MigrationActivateRequest? request,
+        CancellationToken ct) =>
+        await ActivateCoreAsync(jobId, request, ct);
 
     private async Task<SelfHostedActivationResult> ActivateCoreAsync(
         Guid jobId,
@@ -244,25 +245,21 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
             return await ResumeCommittedAsync(jobId, record, committed, ct);
         }
 
-        var storedRevision = record.DestinationRevision;
-        if (string.IsNullOrWhiteSpace(storedRevision))
-        {
-            throw new MigrationActivationException(MigrationActivationErrorCodes.Failed,
-                "The job does not record a destination revision to confirm.");
-        }
-
-        // The revision the user actually reviewed and confirmed travels with
-        // the accepted run. The job-creation baseline is only a fallback for a
-        // request-less resume (state Activating): portable writes between
-        // import start and activation must not permanently bind the job.
-        var confirmedRevision = !string.IsNullOrWhiteSpace(request?.DestinationRevision)
-            ? request!.DestinationRevision
-            : storedRevision;
-
         if (record.PreparedStagingId is not { } stagingValue || stagingValue == Guid.Empty)
         {
             throw new MigrationActivationException(MigrationActivationErrorCodes.Failed,
                 "The job has no prepared import staging area.");
+        }
+
+        // Only a new admission reads the job-creation baseline, and only to
+        // check the job is well-formed: the baseline never binds a request and
+        // is never a confirmation. A durably Activating job resumes from the
+        // activation journal instead.
+        if (state == MigrationJobState.ReadyToActivate
+            && string.IsNullOrWhiteSpace(record.DestinationRevision))
+        {
+            throw new MigrationActivationException(MigrationActivationErrorCodes.Failed,
+                "The job does not record a destination revision to confirm.");
         }
 
         string? token = null;
@@ -279,26 +276,58 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
 
             heartbeat = StartHeartbeat(jobId, token);
 
+            // A durably admitted run resumes ONLY from the activation journal
+            // written before the job entered Activating (including a resolved
+            // rollback, which proves the original generation is live). The
+            // request, if any, is status-only there: it can never substitute
+            // the confirmed revision or supply the confirmation flag. An
+            // absent record means no mutation may run and the job returns to
+            // re-confirmation.
+            string confirmedRevision;
+            bool retain;
+            if (state == MigrationJobState.Activating)
+            {
+                var journal = _journals.Read(jobId) ?? _journals.ReadResolved(jobId);
+                if (journal is null)
+                {
+                    await ResetForReconfirmationAsync(jobId, token, ct);
+                    throw new MigrationActivationException(MigrationActivationErrorCodes.ConfirmationRequired,
+                        "The activation confirmation record was lost; the replacement must be confirmed again.");
+                }
+
+                EnsureNoRenameInFlight(journal);
+                confirmedRevision = journal.DestinationRevision;
+                retain = journal.RetainPreviousLibrary;
+            }
+            else
+            {
+                confirmedRevision = string.Empty;
+                retain = false;
+            }
+
             // ---- Phase A: long, outside maintenance, no live mutation. ----
             var (prepared, expected) = await RebuildAndVerifyPreparedAsync(stagingValue, ct);
             var facts = await ReadDestinationFactsAsync(ct);
             if (state == MigrationJobState.ReadyToActivate)
             {
                 // Without an explicit request an empty destination may proceed;
-                // a populated one fails closed with confirmation_required.
-                var effective = request ?? new MigrationActivateRequest(confirmedRevision, false);
+                // a populated one fails closed with confirmation_required. The
+                // effective revision is the current one: the job-creation
+                // baseline never binds and is never synthesised as a
+                // confirmation.
+                var effective = request ?? new MigrationActivateRequest(facts.Revision, false);
                 MigrationActivationAdmission.Validate(MigrationDirection.Import, state,
                     effective, facts.Status, facts.Revision);
+                confirmedRevision = effective.DestinationRevision;
+                retain = facts.Status == MigrationDestinationStatus.Populated;
             }
             else
             {
-                // Activating is the durable record that explicit intent was
-                // accepted; the confirmed generation must still be current.
-                MigrationActivationAdmission.ValidateReplacement(confirmedRevision,
-                    confirmReplacement: true, facts.Status, facts.Revision);
+                // The journal's confirmed generation must still be exactly
+                // current, or the job returns to re-confirmation untouched.
+                await EnsureDurableAdmissionAsync(jobId, retain, confirmedRevision, facts, token, ct);
             }
 
-            var retain = facts.Status == MigrationDestinationStatus.Populated;
             var operationId = Guid.NewGuid();
             _journals.PrepareForRetry(jobId);
             _journals.Write(new SelfHostedActivationJournal(jobId, operationId,
@@ -358,6 +387,92 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
         }
     }
 
+    /// <summary>
+    /// A durable journal beyond the pre-rename phases means a cutover may have
+    /// moved live components; only the startup reconciler may decide the
+    /// generation. Never resume or reset over it.
+    /// </summary>
+    private static void EnsureNoRenameInFlight(SelfHostedActivationJournal journal)
+    {
+        if (SelfHostedActivationState.RecoveryAction(journal) != SelfHostedRecoveryAction.Nothing)
+        {
+            throw new MigrationActivationException(MigrationActivationErrorCodes.RecoveryFailed,
+                "An unreconciled activation journal requires restart reconciliation before activation can resume.");
+        }
+    }
+
+    /// <summary>
+    /// The authoritative destination check for a durably admitted run: a
+    /// populated replacement must still be exactly the generation the user
+    /// confirmed, and an empty destination must still be empty because no
+    /// confirmation was asked for. On refusal the job is returned to
+    /// re-confirmation and the conflict surfaces to the caller; nothing has
+    /// been renamed at either call site.
+    /// </summary>
+    private async Task EnsureDurableAdmissionAsync(
+        Guid jobId,
+        bool retain,
+        string confirmedRevision,
+        SelfHostedActivationDestinationFacts facts,
+        string token,
+        CancellationToken ct)
+    {
+        try
+        {
+            ValidateDurableAdmission(retain, confirmedRevision, facts);
+        }
+        catch (MigrationActivationException exception)
+            when (exception.Code is MigrationActivationErrorCodes.ConfirmationRequired
+                or MigrationActivationErrorCodes.DestinationConflict)
+        {
+            await ResetForReconfirmationAsync(jobId, token, ct);
+            throw;
+        }
+    }
+
+    private static void ValidateDurableAdmission(
+        bool retain,
+        string confirmedRevision,
+        SelfHostedActivationDestinationFacts facts)
+    {
+        if (retain)
+        {
+            if (facts.Status != MigrationDestinationStatus.Populated
+                || !string.Equals(facts.Revision, confirmedRevision, StringComparison.Ordinal))
+            {
+                throw new MigrationActivationException(MigrationActivationErrorCodes.DestinationConflict,
+                    "The destination changed. Review replacement again.");
+            }
+        }
+        else if (facts.Status == MigrationDestinationStatus.Populated)
+        {
+            throw new MigrationActivationException(MigrationActivationErrorCodes.ConfirmationRequired,
+                "The destination is no longer empty. Review replacement again.");
+        }
+    }
+
+    /// <summary>
+    /// Returns a durably Activating job to re-confirmation. Valid only when the
+    /// caller has proven no live rename occurred, so the pre-activation library
+    /// is exactly what the user will review again. Best effort: if the guarded
+    /// reset loses the lease, the conflict still surfaces and the durable owner
+    /// decides.
+    /// </summary>
+    private async Task ResetForReconfirmationAsync(Guid jobId, string token, CancellationToken ct)
+    {
+        try
+        {
+            await using var scope = _scopes.CreateAsyncScope();
+            await scope.ServiceProvider.GetRequiredService<EfMigrationJobStore>()
+                .TryResetActivationForReconfirmationAsync(jobId, token, ct);
+        }
+        catch (MigrationJobStoreException exception)
+        {
+            _logger.LogWarning(exception,
+                "Could not return activation job {JobId} to re-confirmation", jobId);
+        }
+    }
+
     private async Task<MigrationRecoveryStatus> RunCutoverAsync(
         Guid jobId,
         MigrationJobState state,
@@ -380,25 +495,13 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
             exclusive = await _maintenance.EnterExclusiveAsync(LibraryMaintenanceReason.Activation, ct);
 
             // The authoritative recheck only closes the race once admission is
-            // closed and every reader/writer has drained. A populated
-            // replacement must still be exactly the generation the user
-            // confirmed; an empty destination must still be empty, because no
-            // confirmation was asked for. Nothing has been mutated yet.
+            // closed and every reader/writer has drained. Nothing has been
+            // renamed yet; a refusal returns a durably Activating job to
+            // re-confirmation and leaves a new ReadyToActivate admission
+            // retryable as before.
             var facts = await ReadDestinationFactsAsync(CancellationToken.None);
-            if (retain)
-            {
-                if (facts.Status != MigrationDestinationStatus.Populated
-                    || !string.Equals(facts.Revision, confirmedRevision, StringComparison.Ordinal))
-                {
-                    throw new MigrationActivationException(MigrationActivationErrorCodes.DestinationConflict,
-                        "The destination changed. Review replacement again.");
-                }
-            }
-            else if (facts.Status == MigrationDestinationStatus.Populated)
-            {
-                throw new MigrationActivationException(MigrationActivationErrorCodes.ConfirmationRequired,
-                    "The destination is no longer empty. Review replacement again.");
-            }
+            await EnsureDurableAdmissionAsync(jobId, retain, confirmedRevision, facts, token,
+                CancellationToken.None);
 
             if (state == MigrationJobState.ReadyToActivate)
             {

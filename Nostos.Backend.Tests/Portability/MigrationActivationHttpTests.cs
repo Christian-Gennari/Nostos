@@ -270,6 +270,59 @@ public sealed class MigrationActivationHttpTests
     }
 
     [Fact]
+    public async Task RestartAfterDurableAdmission_ResumesFromTheJournalAndIgnoresAnUnconfirmedRequest()
+    {
+        var template = ActivationCoordinatorTemplate.For(populated: true);
+        await using var h = StartHost();
+        await SeedPopulatedAsync(h, template);
+        var jobId = await UploadImportAsync(h, template);
+        var revision = (await GetActivationAsync(h, jobId)).Body.RootElement
+            .GetProperty("destinationRevision").GetString();
+        revision.Should().NotBeNullOrEmpty();
+
+        // Crash after the run durably entered Activating; the original request
+        // and its confirmation are lost with the process.
+        var dispatcher = h.GetService<SelfHostedActivationDispatcher>();
+        dispatcher.CoordinatorCreatedForTesting = coordinator =>
+            coordinator.StepObserverForTesting = step =>
+            {
+                if (string.Equals(step, SelfHostedActivationSteps.PhaseExclusiveEntered, StringComparison.Ordinal))
+                {
+                    throw new SelfHostedActivationAbandonedException();
+                }
+            };
+
+        var accepted = await ActivateAsync(h, jobId, revision!, confirm: true);
+        accepted.Status.Should().Be(HttpStatusCode.Accepted);
+        accepted.Body.Dispose();
+        using (var crashed = await WaitForOutcomeAsync(h, jobId, "RecoveryFailed"))
+        {
+            crashed.RootElement.GetProperty("maintenanceRequired").GetBoolean().Should().BeTrue();
+        }
+
+        await h.RestartAsync();
+        h.Clock.Advance(SelfHostedActivationCoordinator.ActivationLeaseDuration + TimeSpan.FromMinutes(1));
+
+        var durable = await GetActivationAsync(h, jobId);
+        durable.Body.RootElement.GetProperty("state").GetString().Should().Be("Activating");
+        durable.Body.RootElement.GetProperty("outcome").GetString().Should().Be("Running");
+        durable.Body.Dispose();
+
+        // The POST is status-only. Its confirmReplacement=false must not be
+        // mistaken for the lost confirmation; the journal owns the binding.
+        var resumed = await ActivateAsync(h, jobId, revision!, confirm: false);
+        resumed.Status.Should().Be(HttpStatusCode.Accepted);
+        resumed.Body.Dispose();
+
+        using var completed = await WaitForOutcomeAsync(h, jobId, "Completed");
+        var catalogue = await h.Client.GetStringAsync("/api/books");
+        catalogue.Should().Contain("Portable EPUB");
+        catalogue.Should().NotContain("LIVE-ONLY-BOOK");
+        h.GetService<SelfHostedActivationDispatcher>().StartedRunCount.Should().Be(1,
+            "exactly the resume run executed in the restarted host");
+    }
+
+    [Fact]
     public async Task Empty_destination_that_became_populated_before_activation_requires_confirmation()
     {
         var template = ActivationCoordinatorTemplate.For(populated: false);

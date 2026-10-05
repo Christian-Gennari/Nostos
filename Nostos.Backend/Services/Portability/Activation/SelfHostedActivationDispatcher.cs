@@ -48,8 +48,12 @@ internal sealed class SelfHostedActivationRunSlot(Guid jobId)
 
     internal MigrationDestinationStatus? DestinationStatus { get; set; }
 
-    /// <summary>Claims the job for a new run unless one is already accepted/running.</summary>
-    internal bool TryAdmit(MigrationActivateRequest request)
+    /// <summary>
+    /// Claims the job for a new run unless one is already accepted/running.
+    /// <paramref name="request"/> is <see langword="null"/> for a resume of a
+    /// durably admitted run, whose binding comes from the activation journal.
+    /// </summary>
+    internal bool TryAdmit(MigrationActivateRequest? request)
     {
         while (true)
         {
@@ -311,6 +315,12 @@ internal sealed class SelfHostedActivationDispatcher : BackgroundService, IMigra
             var coordinator = scope.ServiceProvider.GetRequiredService<SelfHostedActivationCoordinator>();
             var facts = await coordinator.ReadDestinationFactsForAdmissionAsync(ct);
 
+            // Only a new admission binds the request. A durably Activating run
+            // was already admitted with its confirmation recorded in the
+            // activation journal, so any later request for the same job is
+            // status-only: it can never supply or change the confirmed revision
+            // or its flag, and the run resumes strictly from that record.
+            MigrationActivateRequest? admittedRequest = null;
             if (job.State == MigrationJobState.ReadyToActivate)
             {
                 try
@@ -337,9 +347,11 @@ internal sealed class SelfHostedActivationDispatcher : BackgroundService, IMigra
                         ChangedSinceImportStarted: !string.Equals(
                             record.DestinationRevision, facts.Revision, StringComparison.Ordinal));
                 }
+
+                admittedRequest = request;
             }
 
-            if (!slot.TryAdmit(request))
+            if (!slot.TryAdmit(admittedRequest))
             {
                 return new MigrationActivationRequestResult(
                     MigrationActivationRequestOutcome.Replayed,
@@ -501,7 +513,7 @@ internal sealed class SelfHostedActivationDispatcher : BackgroundService, IMigra
             var coordinator = scope.ServiceProvider.GetRequiredService<SelfHostedActivationCoordinator>();
             CoordinatorCreatedForTesting?.Invoke(coordinator);
             coordinator.CutoverStepObserver = step => slot.SetPhase(PhaseForStep(step));
-            var result = await coordinator.ActivateAsync(slot.JobId, slot.Request!, CancellationToken.None);
+            var result = await coordinator.ActivateAsync(slot.JobId, slot.Request, CancellationToken.None);
             await RecordResultAsync(slot, result);
         }
         catch (SelfHostedActivationAbandonedException)
