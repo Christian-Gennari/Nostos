@@ -1,6 +1,9 @@
+using System.Text;
+using System.Text.RegularExpressions;
 using FluentAssertions;
 using Nostos.Backend.Services.Portability;
 using Nostos.Backend.Services.Portability.Activation;
+using Nostos.Backend.Services.Portability.Migration;
 using Xunit;
 
 namespace Nostos.Backend.Tests.Portability;
@@ -120,5 +123,140 @@ public sealed class ActivationOrphanSweepTests
             "the guarded cleanup owns a durable deletion marker");
         Directory.Exists(bed.Paths.PreviousMedia(valid.JobId)).Should().BeTrue(
             "the guarded cleanup owns a valid manifest");
+    }
+
+    [Fact]
+    public async Task RetriedJobBetweenCheckAndDelete_CandidateIsKept()
+    {
+        using var bed = new ActivationMaintenanceTestBed();
+        var old = bed.Clock.UtcNow.UtcDateTime.AddHours(-48);
+        var jobId = Guid.NewGuid();
+        await bed.SeedJobAsync(jobId, MigrationJobState.Failed);
+        bed.SeedCandidateDatabase(jobId, old);
+        bed.SeedCandidateMedia(jobId, old);
+
+        var sweep = bed.CreateSweep();
+        MigrationJobStoreException? retryResult = null;
+        sweep.BeforeJobClaimForTesting = id =>
+        {
+            if (id == jobId)
+            {
+                // The user retries the old failed job after the pass started;
+                // the sweep's fresh per-job read must observe it as active.
+                retryResult = bed.TryRetryAsync(id).GetAwaiter().GetResult();
+            }
+        };
+
+        var result = await sweep.SweepAsync(default);
+
+        retryResult.Should().BeNull("the retry wins the race before the sweep claims the job");
+        (await bed.ReadJobAsync(jobId)).State.Should().Be((int)MigrationJobState.Pending);
+        File.Exists(bed.Paths.CandidateDatabase(jobId)).Should().BeTrue(
+            "an active job must never lose its candidate to the sweep");
+        Directory.Exists(bed.Paths.CandidateMedia(jobId)).Should().BeTrue();
+        result.RemovedEntries.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task SweepClaimWins_RetryLosesAndChangesNothing()
+    {
+        using var bed = new ActivationMaintenanceTestBed();
+        var old = bed.Clock.UtcNow.UtcDateTime.AddHours(-48);
+        var jobId = Guid.NewGuid();
+        await bed.SeedJobAsync(jobId, MigrationJobState.Failed);
+        bed.SeedCandidateDatabase(jobId, old);
+        bed.SeedCandidateMedia(jobId, old);
+
+        var sweep = bed.CreateSweep();
+        MigrationJobStoreException? retryResult = null;
+        sweep.AfterJobClaimForTesting = id =>
+        {
+            if (id != jobId)
+            {
+                return;
+            }
+
+            var before = bed.ReadJobAsync(id).GetAwaiter().GetResult();
+            retryResult = bed.TryRetryAsync(id).GetAwaiter().GetResult();
+            var after = bed.ReadJobAsync(id).GetAwaiter().GetResult();
+            after.Version.Should().Be(before.Version, "the losing retry must change nothing");
+            after.State.Should().Be(before.State);
+        };
+
+        var result = await sweep.SweepAsync(default);
+
+        retryResult.Should().NotBeNull("the sweep holds the fenced cleanup claim");
+        retryResult!.Code.Should().Be(MigrationJobStoreErrorCodes.LeaseConflict);
+        File.Exists(bed.Paths.CandidateDatabase(jobId)).Should().BeFalse("the sweep wins and removes the orphan");
+        Directory.Exists(bed.Paths.CandidateMedia(jobId)).Should().BeFalse();
+        (await bed.ReadJobAsync(jobId)).State.Should().Be((int)MigrationJobState.Failed);
+        result.RemovedEntries.Should().BeGreaterThanOrEqualTo(2);
+
+        // The claim is released when the job's deletion completes, so a later
+        // retry proceeds normally.
+        (await bed.TryRetryAsync(jobId)).Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("truncated")]
+    [InlineData("invalid-utf8")]
+    [InlineData("checksum")]
+    [InlineData("wrong-job")]
+    [InlineData("bad-validation")]
+    [InlineData("directory")]
+    public async Task CorruptManifest_IsLeftByteForByte(string kind)
+    {
+        using var bed = new ActivationMaintenanceTestBed();
+        var jobId = Guid.NewGuid();
+        bed.Paths.PrepareRecovery(jobId);
+        var path = bed.Paths.RecoveryManifest(jobId);
+        byte[]? before = null;
+        switch (kind)
+        {
+            case "truncated":
+                before = Encoding.UTF8.GetBytes("{\"Version\":1,\"PayloadJson\":\"x\"");
+                File.WriteAllBytes(path, before);
+                break;
+            case "invalid-utf8":
+                before = [0xFF, 0xFE, 0x80, 0x00];
+                File.WriteAllBytes(path, before);
+                break;
+            case "checksum":
+                before = Encoding.UTF8.GetBytes(Regex.Replace(
+                    SelfHostedActivationDocument.Encode(bed.BuildManifest(jobId, bed.Clock.UtcNow)),
+                    "\"Sha256\":\"[0-9a-fA-F]{64}\"",
+                    "\"Sha256\":\"" + new string('0', 64) + "\""));
+                File.WriteAllBytes(path, before);
+                break;
+            case "wrong-job":
+                before = Encoding.UTF8.GetBytes(
+                    SelfHostedActivationDocument.Encode(bed.BuildManifest(Guid.NewGuid(), bed.Clock.UtcNow)));
+                File.WriteAllBytes(path, before);
+                break;
+            case "bad-validation":
+                before = Encoding.UTF8.GetBytes(SelfHostedActivationDocument.Encode(
+                    bed.BuildManifest(jobId, bed.Clock.UtcNow) with { ExpiresAtUtc = bed.Clock.UtcNow.AddDays(1) }));
+                File.WriteAllBytes(path, before);
+                break;
+            case "directory":
+                Directory.CreateDirectory(path);
+                break;
+        }
+
+        ActivationMaintenanceTestBed.SetTreeWriteTimeUtc(
+            Path.GetDirectoryName(path)!, bed.Clock.UtcNow.UtcDateTime.AddHours(-48));
+
+        var result = await bed.CreateSweep().SweepAsync(default);
+
+        result.LeftAmbiguous.Should().BeGreaterThanOrEqualTo(1);
+        if (kind == "directory")
+        {
+            Directory.Exists(path).Should().BeTrue("a corrupt manifest is never erased");
+        }
+        else
+        {
+            File.Exists(path).Should().BeTrue("a corrupt manifest is never erased");
+            File.ReadAllBytes(path).Should().Equal(before!);
+        }
     }
 }

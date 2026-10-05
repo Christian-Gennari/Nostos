@@ -2,7 +2,6 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using Nostos.Backend.Data;
 using Nostos.Backend.Services.BookText;
 using Nostos.Product.BookText;
@@ -17,17 +16,35 @@ internal sealed record SelfHostedDerivedRebuildMarker(
     int MarkerVersion = 1);
 
 /// <summary>
+/// Durable record that the one-time derived wipe for a committed cutover has
+/// already happened. It is written after the wipe and before any scheduling, so
+/// a crash in between repeats only the harmless wipe, while a crash after it
+/// never wipes again and can never destroy ingestion progress made since.
+/// </summary>
+internal sealed record SelfHostedDerivedResetRecord(
+    Guid JobId,
+    Guid OperationId,
+    DateTimeOffset ResetAtUtc,
+    int MarkerVersion = 1);
+
+/// <summary>Observable outcome of one derived rebuild pass.</summary>
+internal sealed record SelfHostedDerivedRebuildPassResult(int Completed, int Failed);
+
+/// <summary>
 /// Post-activation derived rebuild (issue #681, Slice 10). A committed cutover
-/// leaves a resolved <c>Committed</c> activation journal; the new active
-/// database deliberately carries no derived caches, and any row that could have
-/// survived is wiped before every file-backed book is scheduled through the same
-/// ingestion scheduler the legacy import path uses. The rebuild runs under a
-/// shared operation lease, so it never overlaps the exclusive maintenance
-/// window; it writes a durable marker only after the whole pass succeeds, so a
-/// restart before that point runs it again. A failure is logged and retried by
-/// the next pass and can never roll back or fail the already committed
+/// leaves a resolved <c>Committed</c> activation journal. The rebuild ensures
+/// the book-text schema exists, wipes every derived row exactly once (recorded
+/// durably), and then reschedules every file-backed book that is not already
+/// durably queued through a strict scheduler that reports failures.
+///
+/// <para><b>Success contract.</b> The <c>derived.rebuilt.json</c> marker is
+/// written only when every file-backed book was either durably scheduled or
+/// intentionally unsupported. A book whose scheduling throws leaves the marker
+/// absent; the next pass skips the wipe (reset record), skips books whose state
+/// already carries the current extractor version, and retries only the rest.
+/// A failure is logged and can never roll back or fail the committed
 /// activation. Missing thumbnails are reconstructible lazily by
-/// <c>FileStorageService</c> and are not rebuilt here.
+/// <c>FileStorageService</c> and are not rebuilt here.</para>
 /// </summary>
 internal sealed class SelfHostedDerivedRebuildService(
     SelfHostedActivationPaths paths,
@@ -37,45 +54,76 @@ internal sealed class SelfHostedDerivedRebuildService(
     TimeProvider clock,
     ILogger<SelfHostedDerivedRebuildService> logger)
 {
-    /// <summary>Test seam: throwing here models a process crash after the reset, before the marker.</summary>
+    /// <summary>Test seam: throwing here models a crash after the wipe and before scheduling.</summary>
     internal Action? AfterResetForTesting { get; set; }
 
-    internal async Task<int> RunPendingAsync(CancellationToken ct)
+    internal async Task<int> RunPendingAsync(CancellationToken ct) =>
+        (await RunPendingCoreAsync(ct)).Completed;
+
+    internal async Task<SelfHostedDerivedRebuildPassResult> RunPendingCoreAsync(CancellationToken ct)
     {
         var pending = ReadPending();
         if (pending.Count == 0 || maintenance.IsRecoveryRequired)
         {
-            return 0;
+            return new SelfHostedDerivedRebuildPassResult(0, 0);
         }
 
         await using var operation = await maintenance.EnterOperationAsync(ct);
 
         // A concurrent pass may have completed between the scan and the lease.
-        pending = pending.Where(journal => !HasMarker(journal.JobId, journal.OperationId)).ToArray();
+        pending = pending.Where(journal => !HasRecord<SelfHostedDerivedRebuildMarker>(
+            MarkerPath(journal.JobId), journal.JobId, journal.OperationId)).ToArray();
         if (pending.Count == 0)
         {
-            return 0;
+            return new SelfHostedDerivedRebuildPassResult(0, 0);
         }
 
         await using var scope = scopes.CreateAsyncScope();
         var index = scope.ServiceProvider.GetRequiredService<IBookTextIndex>();
         await index.EnsureSchemaAsync(ct);
-        await scope.ServiceProvider.GetRequiredService<IBookTextDerivedReset>().ResetAllAsync(ct);
+
+        var needsReset = pending.Any(journal => !HasRecord<SelfHostedDerivedResetRecord>(
+            ResetPath(journal.JobId), journal.JobId, journal.OperationId));
+        if (needsReset)
+        {
+            await scope.ServiceProvider.GetRequiredService<IBookTextDerivedReset>().ResetAllAsync(ct);
+            foreach (var journal in pending)
+            {
+                WriteRecord(ResetPath(journal.JobId),
+                    new SelfHostedDerivedResetRecord(journal.JobId, journal.OperationId, clock.GetUtcNow()));
+            }
+        }
+
         AfterResetForTesting?.Invoke();
-        await ScheduleAllBooksAsync(scope, ct);
+
+        var failed = await ScheduleMissingBooksAsync(scope, index, ct);
+        if (failed > 0)
+        {
+            logger.LogWarning(
+                "Derived rebuild left its success marker absent: {Failed} book(s) were not durably scheduled; the next pass retries them.",
+                failed);
+            return new SelfHostedDerivedRebuildPassResult(0, failed);
+        }
 
         foreach (var journal in pending)
         {
-            WriteMarker(journal.JobId, journal.OperationId);
+            WriteRecord(MarkerPath(journal.JobId),
+                new SelfHostedDerivedRebuildMarker(journal.JobId, journal.OperationId, clock.GetUtcNow()));
         }
 
         logger.LogInformation(
             "Derived rebuild completed for {Count} committed cutover(s); book-text indexing was rescheduled.",
             pending.Count);
-        return pending.Count;
+        return new SelfHostedDerivedRebuildPassResult(pending.Count, 0);
     }
 
-    private async Task ScheduleAllBooksAsync(IServiceScope scope, CancellationToken ct)
+    /// <summary>
+    /// Schedules every file-backed book that is not already durably queued.
+    /// A book whose state already carries the current extractor version was
+    /// scheduled or ingested since the wipe and is never reset again. Returns
+    /// the number of books that could not be scheduled.
+    /// </summary>
+    private async Task<int> ScheduleMissingBooksAsync(IServiceScope scope, IBookTextIndex index, CancellationToken ct)
     {
         var db = scope.ServiceProvider.GetRequiredService<NostosDbContext>();
         var books = await db.Books.AsNoTracking()
@@ -85,12 +133,37 @@ internal sealed class SelfHostedDerivedRebuildService(
             .OrderBy(book => book.Id)
             .Select(book => new { book.Id, book.FileDetails.FileName })
             .ToListAsync(ct);
-        var scheduler = scope.ServiceProvider.GetRequiredService<IBookTextIngestionScheduler>();
+        var scheduler = scope.ServiceProvider.GetRequiredService<IBookTextDerivedScheduler>();
+        var failed = 0;
         foreach (var book in books)
         {
             ct.ThrowIfCancellationRequested();
-            await scheduler.ScheduleAsync(book.Id, book.FileName!, ct);
+            var state = await index.GetStateAsync(book.Id, ct);
+            if (state is not null
+                && string.Equals(state.ExtractorVersion, BookTextArtifactSchema.CurrentExtractorVersion, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            try
+            {
+                await scheduler.ScheduleAsync(book.Id, book.FileName!, ct);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                failed++;
+                logger.LogWarning(
+                    "Derived rebuild could not schedule book {BookId}; exception type {ExceptionType}. The marker stays absent and the next pass retries.",
+                    book.Id,
+                    exception.GetType().Name);
+            }
         }
+
+        return failed;
     }
 
     /// <summary>
@@ -125,7 +198,7 @@ internal sealed class SelfHostedDerivedRebuildService(
             {
                 var journal = journals.ReadResolved(jobId);
                 if (journal is { Phase: SelfHostedActivationPhase.Committed }
-                    && !HasMarker(journal.JobId, journal.OperationId))
+                    && !HasRecord<SelfHostedDerivedRebuildMarker>(MarkerPath(journal.JobId), journal.JobId, journal.OperationId))
                 {
                     pending.Add(journal);
                 }
@@ -142,9 +215,11 @@ internal sealed class SelfHostedDerivedRebuildService(
     private string MarkerPath(Guid jobId) =>
         Path.Combine(Path.GetDirectoryName(paths.Journal(jobId))!, "derived.rebuilt.json");
 
-    private bool HasMarker(Guid jobId, Guid operationId)
+    private string ResetPath(Guid jobId) =>
+        Path.Combine(Path.GetDirectoryName(paths.Journal(jobId))!, "derived.reset.json");
+
+    private bool HasRecord<T>(string path, Guid jobId, Guid operationId)
     {
-        var path = MarkerPath(jobId);
         paths.VerifyDatabasePath(path);
         if (!File.Exists(path))
         {
@@ -153,28 +228,31 @@ internal sealed class SelfHostedDerivedRebuildService(
 
         try
         {
-            var marker = JsonSerializer.Deserialize<SelfHostedDerivedRebuildMarker>(File.ReadAllBytes(path));
-            return marker is { MarkerVersion: 1 }
-                && marker.JobId == jobId
-                && marker.OperationId == operationId;
+            var record = JsonSerializer.Deserialize<T>(File.ReadAllBytes(path));
+            return record switch
+            {
+                SelfHostedDerivedRebuildMarker marker =>
+                    marker.MarkerVersion == 1 && marker.JobId == jobId && marker.OperationId == operationId,
+                SelfHostedDerivedResetRecord reset =>
+                    reset.MarkerVersion == 1 && reset.JobId == jobId && reset.OperationId == operationId,
+                _ => false,
+            };
         }
         catch (JsonException)
         {
-            // A torn or foreign marker means the rebuild is simply repeated.
+            // A torn or foreign record means the step is simply repeated.
             return false;
         }
     }
 
-    private void WriteMarker(Guid jobId, Guid operationId)
+    private void WriteRecord<T>(string path, T record)
     {
-        var path = MarkerPath(jobId);
         paths.VerifyDatabasePath(path);
         var temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
         using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
         {
             paths.VerifyDatabasePath(temporary);
-            stream.Write(JsonSerializer.SerializeToUtf8Bytes(
-                new SelfHostedDerivedRebuildMarker(jobId, operationId, clock.GetUtcNow())));
+            stream.Write(JsonSerializer.SerializeToUtf8Bytes(record));
             stream.Flush(flushToDisk: true);
         }
 

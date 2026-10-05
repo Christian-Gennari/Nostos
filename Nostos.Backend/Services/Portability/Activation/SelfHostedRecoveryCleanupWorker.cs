@@ -12,7 +12,8 @@ internal sealed record SelfHostedMaintenancePassResult(
     bool Ran,
     int RemovedRecoveryCopies,
     int RemovedOrphanEntries,
-    int LeftAmbiguousOrphans);
+    int LeftAmbiguousOrphans,
+    int ReconciledRecoveryStatuses);
 
 /// <summary>
 /// Scheduled recovery expiry cleanup and activation orphan sweep (issue #681,
@@ -39,7 +40,7 @@ internal sealed class SelfHostedRecoveryCleanupWorker(
     {
         if (maintenance.IsRecoveryRequired)
         {
-            return new SelfHostedMaintenancePassResult(false, 0, 0, 0);
+            return new SelfHostedMaintenancePassResult(false, 0, 0, 0, 0);
         }
 
         using var operation = maintenance.TryEnterOperation();
@@ -47,7 +48,7 @@ internal sealed class SelfHostedRecoveryCleanupWorker(
         {
             // Exclusive maintenance owns the library: never touch a copy that a
             // cutover or restore may be retaining, and never race a rename.
-            return new SelfHostedMaintenancePassResult(false, 0, 0, 0);
+            return new SelfHostedMaintenancePassResult(false, 0, 0, 0, 0);
         }
 
         await using var scope = scopes.CreateAsyncScope();
@@ -57,7 +58,7 @@ internal sealed class SelfHostedRecoveryCleanupWorker(
         var sweepResult = await sweep.SweepAsync(ct);
         var reconciled = await ReconcileExpiredRecoveryStatusAsync(scope, ct);
         return new SelfHostedMaintenancePassResult(true, removedCopies, sweepResult.RemovedEntries,
-            sweepResult.LeftAmbiguous + reconciled);
+            sweepResult.LeftAmbiguous, reconciled);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)

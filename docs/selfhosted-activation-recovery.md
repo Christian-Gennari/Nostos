@@ -139,36 +139,55 @@ has finished and after `ActivationMaintenance:StartupDelaySeconds`.
 | `OrphanSafetyAgeHours` | 24 | Minimum age before an unreferenced leftover may be removed. |
 
 **Recovery expiry cleanup.** The worker calls the existing guarded cleanup
-(`ISelfHostedRecoveryCleanup.DeleteExpiredAsync`). A copy is deleted only when
-its seven-day expiry has passed, it is not `Restoring`, and no activation or
-restore journal references it. Removal is one logical operation with a durable
-deletion marker, so a crash mid-delete is resumed on the next pass; the copy's
-claimed recovery reservation is released only after the retained material is
-physically gone. After physical removal the pass updates the job's durable
-`RecoveryStatus` to `Expired`, so an activation status cannot keep reporting an
-available copy that no longer exists. A corrupt manifest is never interpreted
-as a deleted copy.
+(`ISelfHostedRecoveryCleanup.DeleteExpiredAsync`). Expiry eligibility is an
+explicit decision per status: `Available` copies expire after their seven-day
+retention, and a `Restored` source copy (left as provenance by a successful
+restore) becomes eligible on the same expiry; `Expired` resumes an interrupted
+terminal deletion. `Restoring`, pending, failed and not-required copies are
+kept, and an unrecognized status is kept and logged, so a future status can
+never be swept silently. No activation or restore journal may reference the
+copy. Removal is one logical operation with a durable deletion marker, so a
+crash mid-delete is resumed on the next pass; the copy's claimed recovery
+reservation is released only after the retained material is physically gone.
+After physical removal the pass updates the job's durable `RecoveryStatus` to
+`Expired`, so an activation status cannot keep reporting an available copy that
+no longer exists.
 
 **Activation orphan sweep.** Only leftovers that are provably unreferenced are
 removed: a candidate database/media area whose job is terminal or absent and
 whose directory has no unresolved journal, a recovery plan directory with
 neither a manifest nor material and no journal, and interrupted `.tmp` files -
-each older than the safety age. Active jobs (non-terminal or lease-holding),
-unresolved journals, valid manifests, deletion markers, retained material
-without a manifest and unrecognized entries are left in place and logged. Every
-path is re-verified under the configured activation/recovery roots; symlinked
-or reparse-point components are never followed, and a tree containing one is
-left for an operator.
+each older than the safety age. The sweep never decides ownership from a
+pass-wide job snapshot: immediately before deleting one job's leftovers it
+re-reads that job and, for a terminal job, publishes a fenced cleanup claim in
+the existing lease fields with a row-version CAS. `RetryAsync` refuses to
+reactivate a job while an unexpired cleanup claim is held, so a concurrent
+retry either wins before the claim (and the sweep skips the job) or loses
+against it (and changes nothing). Active jobs, unresolved journals, valid
+manifests, deletion markers, retained material without a manifest and
+unrecognized entries are left in place and logged. A recovery manifest is
+absent only when the file does not exist; a directory at the manifest path, an
+unreadable file, truncated or invalid JSON, a checksum or validation failure,
+or a job-id mismatch is corrupt and is left byte-for-byte for an operator.
+Every path is re-verified under the configured activation/recovery roots;
+symlinked or reparse-point components are never followed, and a tree containing
+one is left for an operator.
 
 **Derived rebuild after activation.** A committed cutover leaves a resolved
 `Committed` activation journal. The rebuild ensures the book-text schema
-exists, wipes every derived row (chunks, FTS rows, vectors and ingestion
-state), and reschedules every file-backed book through the same ingestion
-scheduler the legacy import path uses. A durable `derived.rebuilt.json` marker
-in the journal directory is written only after the whole pass succeeds, so a
-restart before that point runs the rebuild again. Failure is logged and retried
-and can never roll back or fail the already committed activation. Thumbnails
-are not rebuilt here: `FileStorageService` regenerates missing cover thumbnails
+exists, then wipes every derived row (chunks, FTS rows, vectors and ingestion
+state) exactly once per committed operation and records that wipe durably in
+`derived.reset.json`. It then reschedules every file-backed book through a
+strict scheduler that reports failures instead of swallowing them; a book whose
+artifacts or ingestion state cannot be written leaves the success marker
+absent, and the next pass skips the wipe (reset record) and skips books already
+carrying the current extractor version, retrying only what is still missing. A
+durable `derived.rebuilt.json` marker in the journal directory is written only
+after every book was durably scheduled or intentionally unsupported, so a
+restart before that point runs the rebuild again without destroying ingestion
+progress. Failure is logged, retried with a bounded exponential backoff, and
+can never roll back or fail the already committed activation. Thumbnails are
+not rebuilt here: `FileStorageService` regenerates missing cover thumbnails
 lazily.
 
 ## Manual recovery when startup refuses

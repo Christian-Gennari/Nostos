@@ -303,6 +303,7 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<SelfHostedActivati
 // the restart-safe post-activation derived rebuild. All passes take the shared
 // operation lease, so none can run inside or race an exclusive cutover window.
 builder.Services.AddScoped<IBookTextDerivedReset, SqliteBookTextDerivedReset>();
+builder.Services.AddScoped<IBookTextDerivedScheduler, StrictBookTextDerivedScheduler>();
 builder.Services.AddScoped<SelfHostedActivationOrphanSweep>();
 builder.Services.AddSingleton<SelfHostedDerivedRebuildService>();
 builder.Services.AddHostedService<SelfHostedDerivedRebuildWorker>();

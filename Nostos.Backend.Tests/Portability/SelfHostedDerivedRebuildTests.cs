@@ -46,6 +46,74 @@ public sealed class SelfHostedDerivedRebuildTests
     }
 
     [Fact]
+    public async Task SchedulingFailure_LeavesMarkerAbsent_AndNextPassRetriesOnlyTheFailedBook()
+    {
+        using var bed = new ActivationMaintenanceTestBed();
+        var jobId = Guid.NewGuid();
+        var scheduled = Guid.NewGuid();
+        var failing = Guid.NewGuid();
+        await bed.SeedBookAsync(scheduled, "book.epub");
+        await bed.SeedBookAsync(failing, "book.epub");
+        await bed.EnsureBookTextSchemaAsync();
+        await SeedStaleDerivedStateAsync(bed, scheduled);
+        await bed.SeedJobAsync(jobId, MigrationJobState.Completed, MigrationRecoveryStatus.Available);
+        bed.SeedCommittedResolvedJournal(jobId);
+        bed.ArtifactStorage.FailFor.Add(failing);
+
+        var first = await bed.CreateRebuildService().RunPendingAsync(default);
+
+        first.Should().Be(0, "a scheduling failure must prevent the success marker");
+        File.Exists(bed.DerivedRebuildMarkerPath(jobId)).Should().BeFalse();
+        File.Exists(bed.DerivedResetRecordPath(jobId)).Should().BeTrue("the one-time wipe is durably recorded");
+        (await bed.ReadJobAsync(jobId)).State.Should().Be((int)MigrationJobState.Completed,
+            "a derived rebuild failure never moves a committed activation");
+        bed.SchedulerProbe.Calls.Should().Contain(scheduled).And.Contain(failing);
+        (await bed.ReadDerivedStateStatusAsync(scheduled)).Should().Be("Pending");
+        (await bed.ReadDerivedStateStatusAsync(failing)).Should().BeNull(
+            "the failed book was never durably scheduled");
+
+        // Ingestion progress made after the partial pass must survive the retry.
+        await bed.MarkDerivedStateReadyAsync(scheduled);
+        bed.SchedulerProbe.Calls.Clear();
+        bed.ArtifactStorage.FailFor.Clear();
+
+        var second = await bed.CreateRebuildService().RunPendingAsync(default);
+
+        second.Should().Be(1);
+        File.Exists(bed.DerivedRebuildMarkerPath(jobId)).Should().BeTrue();
+        bed.SchedulerProbe.Calls.Should().Equal([failing], "an already-scheduled book is never touched again");
+        (await bed.CountChunksForBookAsync(scheduled)).Should().Be(1, "the wipe must not repeat on a retry");
+        (await bed.ReadDerivedStateStatusAsync(failing)).Should().Be("Pending");
+    }
+
+    [Fact]
+    public async Task CrashBetweenResetAndScheduling_ConvergesWithoutRepeatingTheWipe()
+    {
+        using var bed = new ActivationMaintenanceTestBed();
+        var jobId = Guid.NewGuid();
+        var book = Guid.NewGuid();
+        await bed.SeedBookAsync(book, "book.epub");
+        await bed.EnsureBookTextSchemaAsync();
+        await SeedStaleDerivedStateAsync(bed, book);
+        bed.SeedCommittedResolvedJournal(jobId);
+
+        var crashing = bed.CreateRebuildService();
+        crashing.AfterResetForTesting = () => throw new InvalidOperationException("simulated crash after the wipe");
+        Func<Task> act = () => crashing.RunPendingAsync(default);
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        File.Exists(bed.DerivedRebuildMarkerPath(jobId)).Should().BeFalse();
+        File.Exists(bed.DerivedResetRecordPath(jobId)).Should().BeTrue();
+
+        // Progress made after the crash is preserved: the reset record means the
+        // next pass schedules only books that are still missing.
+        await bed.MarkDerivedStateReadyAsync(book);
+        var restarted = bed.CreateRebuildService();
+        (await restarted.RunPendingAsync(default)).Should().Be(1);
+        File.Exists(bed.DerivedRebuildMarkerPath(jobId)).Should().BeTrue();
+        (await bed.CountChunksForBookAsync(book)).Should().Be(1, "the reset record prevents a second wipe");
+    }
+
+    [Fact]
     public async Task Rebuild_RerunsAfterRestartWhenInterrupted_AndFailureLeavesActivationCompleted()
     {
         using var bed = new ActivationMaintenanceTestBed();
@@ -68,7 +136,7 @@ public sealed class SelfHostedDerivedRebuildTests
         // A fresh host generation over the same files (simulated restart) runs
         // the rebuild again because the completion marker was never written.
         var restarted = bed.CreateRebuildWorker(bed.CreateRebuildService());
-        (await restarted.RunBatchAsync(default)).Should().Be(1);
+        (await restarted.RunBatchAsync(default)).Completed.Should().Be(1);
         File.Exists(bed.DerivedRebuildMarkerPath(jobId)).Should().BeTrue();
         (await bed.ReadJobAsync(jobId)).State.Should().Be((int)MigrationJobState.Completed);
     }

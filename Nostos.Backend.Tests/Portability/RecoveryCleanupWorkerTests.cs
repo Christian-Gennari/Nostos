@@ -124,4 +124,47 @@ public sealed class RecoveryCleanupWorkerTests
         (await bed.ReadJobAsync(retainedJob)).RecoveryStatus.Should().Be(
             (int)MigrationRecoveryStatus.Available, "an unexpired copy keeps its status");
     }
+
+    [Fact]
+    public async Task RestoredSourceCopy_ExpiresAndReleasesItsReservation_WhileReplacementAvailableRemains()
+    {
+        using var bed = new ActivationMaintenanceTestBed();
+        var source = bed.SeedExpiredCopy(
+            bed.Clock.UtcNow.AddDays(-MigrationContractLimits.RecoveryRetentionDays - 1),
+            MigrationRecoveryStatus.Restored);
+        var replacement = bed.SeedExpiredCopy(bed.Clock.UtcNow, MigrationRecoveryStatus.Available);
+
+        var result = await bed.CreateCleanupWorker().RunBatchAsync(default);
+
+        result.RemovedRecoveryCopies.Should().Be(1, "an expired Restored provenance copy is cleanup-eligible");
+        Directory.Exists(bed.Paths.PreviousMedia(source.JobId)).Should().BeFalse();
+        File.Exists(bed.Paths.PreviousDatabase(source.JobId)).Should().BeFalse();
+        bed.Manifests.Read(source.JobId).Should().BeNull();
+        await using (var db = bed.OpenDatabase())
+        {
+            var rows = await db.MigrationStorageReservations.AsNoTracking()
+                .Where(row => row.Id == source.ReservationId || row.Id == replacement.ReservationId)
+                .ToArrayAsync();
+            rows.Single(row => row.Id == source.ReservationId).ReleasedAtUtc.Should().NotBeNull(
+                "the consumed source reservation is released after physical removal");
+            rows.Single(row => row.Id == replacement.ReservationId).ReleasedAtUtc.Should().BeNull();
+        }
+
+        Directory.Exists(bed.Paths.PreviousMedia(replacement.JobId)).Should().BeTrue(
+            "the replacement recovery copy remains available");
+        bed.Manifests.Read(replacement.JobId)!.Status.Should().Be(MigrationRecoveryStatus.Available);
+    }
+
+    [Fact]
+    public async Task RestoredSourceCopy_IsKeptBeforeItsRetentionExpires()
+    {
+        using var bed = new ActivationMaintenanceTestBed();
+        var source = bed.SeedExpiredCopy(bed.Clock.UtcNow, MigrationRecoveryStatus.Restored);
+
+        var result = await bed.CreateCleanupWorker().RunBatchAsync(default);
+
+        result.RemovedRecoveryCopies.Should().Be(0);
+        Directory.Exists(bed.Paths.PreviousMedia(source.JobId)).Should().BeTrue();
+        File.Exists(bed.Paths.PreviousDatabase(source.JobId)).Should().BeTrue();
+    }
 }
