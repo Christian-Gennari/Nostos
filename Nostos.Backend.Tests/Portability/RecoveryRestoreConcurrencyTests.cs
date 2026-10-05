@@ -71,4 +71,76 @@ public sealed class RecoveryRestoreConcurrencyTests
         (await bed.RestoreAsync()).Outcome.Should().Be(SelfHostedRecoveryRestoreOutcome.Restored);
         await bed.AssertRestoredPortableGenerationAsync();
     }
+
+    [Fact]
+    public async Task ACorruptManifest_DoesNotBlockTheResumeScanForOtherCopies()
+    {
+        await using var bed = await ActivationCoordinatorTestBed.CreateAsync(populated: true);
+        (await bed.ActivateAsync(confirm: true)).Outcome.Should().Be(SelfHostedActivationOutcome.Completed);
+        await bed.WritePortableRevisionBumpAsync();
+        bed.CreateCorruptRecoveryCopy();
+        await bed.RequestRestoreOnlyAsync();
+
+        var runner = bed.Host.GetRequiredService<SelfHostedRecoveryRestoreRunner>();
+        await runner.RunPendingAsync(default);
+
+        if (runner.RunningTask(bed.RecoveryId) is { } running) await running;
+        await bed.AssertRestoredPortableGenerationAsync();
+        bed.ReadRecoveryManifest()!.Status.Should().Be(MigrationRecoveryStatus.Restored);
+    }
+
+    [Fact]
+    public async Task CleanupDecision_AfterAClaim_CannotMarkTheCopy()
+    {
+        await using var bed = await ActivationCoordinatorTestBed.CreateAsync(populated: true);
+        (await bed.ActivateAsync(confirm: true)).Outcome.Should().Be(SelfHostedActivationOutcome.Completed);
+        await bed.WritePortableRevisionBumpAsync();
+        var available = bed.ReadRecoveryManifest()!;
+
+        await bed.RequestRestoreOnlyAsync();
+
+        bed.Manifests.TryCreateDeletionMarker(bed.RecoveryId, available).Should().BeFalse(
+            "a claimed copy can no longer be marked for deletion");
+        bed.Manifests.HasDeletionMarker(bed.RecoveryId).Should().BeFalse();
+        bed.ReadRecoveryManifest()!.Status.Should().Be(MigrationRecoveryStatus.Restoring);
+
+        (await bed.ResumeRestoreAsync()).Outcome.Should().Be(SelfHostedRecoveryRestoreOutcome.Restored);
+        await bed.AssertRestoredPortableGenerationAsync();
+    }
+
+    [Fact]
+    public async Task Claim_AfterACleanupDecision_IsRefused()
+    {
+        await using var bed = await ActivationCoordinatorTestBed.CreateAsync(populated: true);
+        (await bed.ActivateAsync(confirm: true)).Outcome.Should().Be(SelfHostedActivationOutcome.Completed);
+        var before = bed.SnapshotLiveGeneration();
+        bed.Manifests.CreateDeletionMarker(bed.RecoveryId);
+
+        var failure = await FluentActions
+            .Awaiting(() => bed.RequestRestoreOnlyAsync())
+            .Should().ThrowAsync<MigrationActivationException>();
+        failure.Which.Code.Should().Be(MigrationActivationErrorCodes.RecoveryNotFound);
+
+        bed.AssertGenerationEquals(before, "a pruned copy must never be claimed");
+        File.Exists(bed.Paths.PreviousDatabase(bed.RecoveryId)).Should().BeTrue(
+            "the cleanup decision alone must not touch the copy");
+        Directory.Exists(bed.Paths.PreviousMedia(bed.RecoveryId)).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ConditionalClaimWrite_LosesWhenTheManifestChanged()
+    {
+        await using var bed = await ActivationCoordinatorTestBed.CreateAsync(populated: true);
+        (await bed.ActivateAsync(confirm: true)).Outcome.Should().Be(SelfHostedActivationOutcome.Completed);
+        var available = bed.ReadRecoveryManifest()!;
+        await bed.RequestRestoreOnlyAsync();
+        var claiming = bed.ReadRecoveryManifest()!;
+
+        bed.Manifests.TryWriteIfUnchanged(
+                bed.RecoveryId, available, available with { RestoreError = "stale" })
+            .Should().BeNull("the old Available manifest is no longer the current one");
+        bed.Manifests.TryWriteIfUnchanged(
+                bed.RecoveryId, claiming, claiming with { RestoreError = "current" })
+            .Should().NotBeNull();
+    }
 }

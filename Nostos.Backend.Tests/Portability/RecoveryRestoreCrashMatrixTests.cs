@@ -44,6 +44,8 @@ public sealed class RecoveryRestoreCrashMatrixTests
         SelfHostedRecoveryRestoreSteps.AfterPostVerify,
         SelfHostedRecoveryRestoreSteps.PhasePostActivationVerified,
         SelfHostedRecoveryRestoreSteps.PhaseCommitted,
+        SelfHostedRecoveryRestoreSteps.AfterFinalizeReplacedRetention,
+        SelfHostedRecoveryRestoreSteps.AfterMarkSourceRestored,
         SelfHostedRecoveryRestoreSteps.AfterFinalizeRestore,
     ];
 
@@ -80,6 +82,8 @@ public sealed class RecoveryRestoreCrashMatrixTests
         await bed.RecoverHostAsync();
 
         var durablyCommitted = boundary is SelfHostedRecoveryRestoreSteps.PhaseCommitted
+            or SelfHostedRecoveryRestoreSteps.AfterFinalizeReplacedRetention
+            or SelfHostedRecoveryRestoreSteps.AfterMarkSourceRestored
             or SelfHostedRecoveryRestoreSteps.AfterFinalizeRestore;
         if (durablyCommitted)
         {

@@ -94,6 +94,7 @@ public sealed class RecoveryRestoreIntegrityTests
         await using var bed = await ActivatedBedAsync();
         var beforeRevision = await bed.CurrentRevisionAsync();
         await bed.DowngradeRecoveryDatabaseOneMigrationAsync();
+        var sourceSha = bed.SourceRecoveryDatabaseSha256();
 
         // The retained original is upgraded only on a working copy; the restore
         // itself materializes the current schema plus current host state.
@@ -102,6 +103,8 @@ public sealed class RecoveryRestoreIntegrityTests
         result.Outcome.Should().Be(SelfHostedRecoveryRestoreOutcome.Restored,
             $"older-schema restore must migrate forward; error {result.ErrorCode}");
         await bed.AssertRestoredPortableGenerationAsync();
+        bed.SourceRecoveryDatabaseSha256().Should().Be(
+            sourceSha, "the retained original must never be modified by the upgrade");
 
         // The restored database carries the current schema and current host
         // state, never the downgraded retained schema.
@@ -113,6 +116,128 @@ public sealed class RecoveryRestoreIntegrityTests
         }
 
         (await bed.CurrentRevisionAsync()).Should().Be(beforeRevision + 1);
+    }
+
+    [Theory]
+    [InlineData("DELETE FROM Collections WHERE rowid = (SELECT MIN(rowid) FROM Collections);")]
+    [InlineData("UPDATE Collections SET Name = Name || 'X' WHERE rowid = (SELECT MIN(rowid) FROM Collections);")]
+    [InlineData("INSERT INTO Collections (Id, Name, ParentId) VALUES ('AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE', 'MIGRATION-GHOST', NULL);")]
+    public async Task ALossyForwardMigration_IsRefusedBeforeAnyLiveMutation(string lossySql)
+    {
+        await using var bed = await ActivatedBedAsync();
+        var before = bed.SnapshotLiveGeneration();
+        await bed.DowngradeRecoveryDatabaseOneMigrationAsync();
+        var sourceSha = bed.SourceRecoveryDatabaseSha256();
+        bed.RecoveryMigrationOverride = async db => await db.Database.ExecuteSqlRawAsync(lossySql);
+
+        var result = await bed.RestoreAsync();
+
+        result.Outcome.Should().Be(SelfHostedRecoveryRestoreOutcome.Interrupted);
+        result.ErrorCode.Should().Be(MigrationActivationErrorCodes.RecoveryCorrupt);
+        bed.AssertGenerationEquals(before, "a lossy migration must not replace the live library");
+        bed.SourceRecoveryDatabaseSha256().Should().Be(
+            sourceSha, "the retained original must survive a refused upgrade byte-for-byte");
+        var manifest = bed.ReadRecoveryManifest()!;
+        manifest.Status.Should().Be(MigrationRecoveryStatus.Failed);
+        manifest.RestoreError.Should().Be(MigrationActivationErrorCodes.RecoveryCorrupt);
+        Directory.EnumerateFiles(bed.Paths.JournalRoot, "recovery-source.db*", SearchOption.AllDirectories)
+            .Should().BeEmpty("the refused attempt cleans its working files");
+        Directory.EnumerateFiles(bed.Paths.JournalRoot, "recovery-payload.json", SearchOption.AllDirectories)
+            .Should().BeEmpty("the refused attempt cleans its payload file");
+    }
+
+    [Fact]
+    public async Task ALossyMigrationThatDropsAMembership_IsRefusedBeforeAnyLiveMutation()
+    {
+        await using var bed = await ActivatedBedAsync();
+        await bed.SeedRecoveryMembershipAsync();
+        var before = bed.SnapshotLiveGeneration();
+        await bed.DowngradeRecoveryDatabaseOneMigrationAsync();
+        var sourceSha = bed.SourceRecoveryDatabaseSha256();
+        bed.RecoveryMigrationOverride = async db => await db.Database.ExecuteSqlRawAsync(
+            "DELETE FROM BookCollections WHERE rowid = (SELECT MIN(rowid) FROM BookCollections);");
+
+        var result = await bed.RestoreAsync();
+
+        result.Outcome.Should().Be(SelfHostedRecoveryRestoreOutcome.Interrupted);
+        result.ErrorCode.Should().Be(MigrationActivationErrorCodes.RecoveryCorrupt);
+        bed.AssertGenerationEquals(before, "a dropped membership must not replace the live library");
+        bed.SourceRecoveryDatabaseSha256().Should().Be(sourceSha);
+        bed.ReadRecoveryManifest()!.Status.Should().Be(MigrationRecoveryStatus.Failed);
+    }
+
+    [Fact]
+    public async Task DeclaredTableAndColumnRenames_AreHandledByTheBaseline()
+    {
+        await using var bed = await ActivatedBedAsync();
+        // Before the Concepts -> Topics table/column rename.
+        await bed.DowngradeRecoveryDatabaseToAsync("20261003075922_AddEmbeddingProviderSettings");
+        var sourceSha = bed.SourceRecoveryDatabaseSha256();
+
+        var result = await bed.RestoreAsync();
+
+        result.Outcome.Should().Be(SelfHostedRecoveryRestoreOutcome.Restored,
+            $"a declared rename in range must be translated, not rejected; error {result.ErrorCode}");
+        await bed.AssertRestoredPortableGenerationAsync();
+        bed.SourceRecoveryDatabaseSha256().Should().Be(sourceSha);
+    }
+
+    [Fact]
+    public async Task CurrentSchemaCopy_TakesTheFastPath_AndRestores()
+    {
+        await using var bed = await ActivatedBedAsync();
+        var sourceSha = bed.SourceRecoveryDatabaseSha256();
+
+        var result = await bed.RestoreAsync();
+
+        result.Outcome.Should().Be(SelfHostedRecoveryRestoreOutcome.Restored);
+        await bed.AssertRestoredPortableGenerationAsync();
+        bed.SourceRecoveryDatabaseSha256().Should().Be(sourceSha);
+    }
+
+    [Fact]
+    public void ManifestCountsMustMatchTheExtractedPayload()
+    {
+        var expected = new MigrationExistingCounts(
+            Works: 1,
+            Books: 1,
+            Notes: 2,
+            Topics: 1,
+            NoteTopics: 1,
+            Writings: 1,
+            WritingNotes: 1,
+            Collections: 1,
+            BookCollections: 1,
+            Acquisitions: 1,
+            NoteImportBookLinks: 1,
+            AssistantSettings: 1);
+        var matching = new MigrationArchiveCounts(
+            Works: 1,
+            Books: 1,
+            Notes: 2,
+            Topics: 1,
+            NoteTopics: 1,
+            Writings: 1,
+            WritingNotes: 1,
+            Collections: 1,
+            CollectionMemberships: 1,
+            Acquisitions: 1,
+            AssistantSettings: 1,
+            NoteImportBookLinks: 1,
+            MediaEntries: 0);
+
+        PortableLibraryRecoveryBaseline.RequireCountsPreserved(expected, matching);
+
+        FluentActions
+            .Invoking(() => PortableLibraryRecoveryBaseline.RequireCountsPreserved(
+                expected, matching with { Notes = 1 }))
+            .Should().Throw<PortableRecoveryBaselineException>(
+                "a migration that loses a portable row must be detected independently of digests");
+
+        // The assistant singleton row may exist without a portable value.
+        PortableLibraryRecoveryBaseline.RequireCountsPreserved(
+            expected with { AssistantSettings = 0 },
+            matching with { AssistantSettings = 1 });
     }
 
     [Fact]

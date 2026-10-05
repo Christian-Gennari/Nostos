@@ -21,6 +21,7 @@ internal sealed class SelfHostedRecoveryRestoreRunner(
 {
     private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _gates = new();
     private readonly ConcurrentDictionary<Guid, Task> _running = new();
+    private readonly object _startSync = new();
 
     /// <summary>Test seam: passed to the scoped coordinator for crash-matrix runs.</summary>
     internal Action<string>? StepObserverForTesting { get; set; }
@@ -58,22 +59,26 @@ internal sealed class SelfHostedRecoveryRestoreRunner(
     /// <summary>Starts a claimed restore detached from the caller's request.</summary>
     internal void Start(Guid recoveryId)
     {
-        if (_running.ContainsKey(recoveryId)) return;
-        var task = Task.Run(() => RunAsync(recoveryId, CancellationToken.None));
-        if (!_running.TryAdd(recoveryId, task)) return;
-        _ = task.ContinueWith(
-            completed =>
-            {
-                _running.TryRemove(recoveryId, out _);
-                if (completed.IsFaulted)
+        // Check-and-add is atomic so two callers can never both spawn a task.
+        lock (_startSync)
+        {
+            if (_running.ContainsKey(recoveryId)) return;
+            var task = Task.Run(() => RunAsync(recoveryId, CancellationToken.None));
+            _running[recoveryId] = task;
+            _ = task.ContinueWith(
+                completed =>
                 {
-                    logger.LogError(completed.Exception,
-                        "A detached recovery restore failed; its durable state describes the outcome.");
-                }
-            },
-            CancellationToken.None,
-            TaskContinuationOptions.ExecuteSynchronously,
-            TaskScheduler.Default);
+                    _running.TryRemove(recoveryId, out _);
+                    if (completed.IsFaulted)
+                    {
+                        logger.LogError(completed.Exception,
+                            "A detached recovery restore failed; its durable state describes the outcome.");
+                    }
+                },
+                CancellationToken.None,
+                TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default);
+        }
     }
 
     /// <summary>The tracked detached task for a copy, if any (test seam).</summary>
@@ -83,24 +88,38 @@ internal sealed class SelfHostedRecoveryRestoreRunner(
     /// <summary>Starts every durably claimed <c>Restoring</c> copy on this host.</summary>
     internal Task RunPendingAsync(CancellationToken ct)
     {
-        IReadOnlyList<SelfHostedRecoveryManifest> copies;
+        IReadOnlyList<Guid> copies;
         try
         {
-            copies = manifests.ReadAll();
+            copies = manifests.ListJobDirectories();
         }
         catch (MigrationActivationException exception)
         {
             logger.LogError(exception,
-                "Recovery copies could not be scanned; a corrupt manifest must be inspected by an operator.");
+                "Recovery copies could not be enumerated; a malformed recovery directory must be inspected.");
             return Task.CompletedTask;
         }
 
-        foreach (var manifest in copies)
+        foreach (var recoveryId in copies)
         {
             ct.ThrowIfCancellationRequested();
-            if (manifest.Status == MigrationRecoveryStatus.Restoring)
+            SelfHostedRecoveryManifest? manifest;
+            try
             {
-                Start(manifest.JobId);
+                manifest = manifests.Read(recoveryId);
+            }
+            catch (MigrationActivationException exception)
+            {
+                // One unusable manifest must not block the resume scan for the
+                // other copies; it is skipped and reported.
+                logger.LogError(exception,
+                    "A recovery copy is unusable and was skipped by the restore resume scan.");
+                continue;
+            }
+
+            if (manifest?.Status == MigrationRecoveryStatus.Restoring)
+            {
+                Start(recoveryId);
             }
         }
 

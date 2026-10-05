@@ -430,6 +430,12 @@ internal sealed class ActivationCoordinatorTestBed : IAsyncDisposable
     /// <summary>Test seam: throws during the database component's rollback rename.</summary>
     internal Action? DatabaseRecoveryRenameFailure { get; set; }
 
+    /// <summary>
+    /// Test seam: runs after the real working-copy migration. Used to model a
+    /// migration that succeeds but loses or alters portable state.
+    /// </summary>
+    internal Func<NostosDbContext, Task>? RecoveryMigrationOverride { get; set; }
+
     private IPreparedPortableImport? _prepared;
     private PortablePreparedImportVerification? _expected;
     private LocalPortableImportStaging? _ownStaging;
@@ -609,6 +615,7 @@ internal sealed class ActivationCoordinatorTestBed : IAsyncDisposable
         services.AddScoped<ISelfHostedRecoveryCatalog>(sp =>
             sp.GetRequiredService<SelfHostedMigrationRecoveryService>());
         services.AddSingleton<SelfHostedRecoveryRestoreRunner>();
+        services.AddSingleton<ISelfHostedRecoverySchemaMigrator>(new SwitchableRecoveryMigrator(this));
         services.AddScoped<SelfHostedRecoveryRestoreCoordinator>();
         services.AddScoped<SelfHostedRecoveryRestoreHostService>();
         services.AddScoped<ISelfHostedRecoveryRestore>(sp =>
@@ -974,19 +981,88 @@ internal sealed class ActivationCoordinatorTestBed : IAsyncDisposable
     internal async Task DowngradeRecoveryDatabaseOneMigrationAsync()
     {
         var path = Paths.PreviousDatabase(RecoveryId);
-        var options = new DbContextOptionsBuilder<NostosDbContext>()
-            .UseSqlite($"Data Source={path};Pooling=False", sqlite =>
-                sqlite.MigrationsAssembly(typeof(Program).Assembly.FullName))
-            .Options;
-        await using (var db = new NostosDbContext(options))
+        string target;
+        await using (var db = OpenRecoveryDatabase(path))
         {
             var applied = (await db.Database.GetAppliedMigrationsAsync()).ToArray();
             applied.Length.Should().BeGreaterThan(1);
-            await db.GetService<IMigrator>().MigrateAsync(applied[^2]);
+            target = applied[^2];
+        }
+
+        await DowngradeRecoveryDatabaseToAsync(target);
+    }
+
+    /// <summary>Rolls the retained database back to an exact migration level.</summary>
+    internal async Task DowngradeRecoveryDatabaseToAsync(string migrationId)
+    {
+        var path = Paths.PreviousDatabase(RecoveryId);
+        await using (var db = OpenRecoveryDatabase(path))
+        {
+            (await db.Database.GetAppliedMigrationsAsync()).Should().Contain(migrationId);
+            await db.GetService<IMigrator>().MigrateAsync(migrationId);
         }
 
         RefreshRecoveryManifestFacts(path);
     }
+
+    internal string SourceRecoveryDatabaseSha256()
+    {
+        var path = Paths.PreviousDatabase(RecoveryId);
+        return Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))).ToLowerInvariant();
+    }
+
+    /// <summary>Creates a second recovery directory whose manifest is unreadable.</summary>
+    internal Guid CreateCorruptRecoveryCopy()
+    {
+        var id = Guid.NewGuid();
+        Paths.PrepareRecovery(id);
+        File.WriteAllText(Paths.RecoveryManifest(id), "{not-json");
+        return id;
+    }
+
+    /// <summary>
+    /// Seeds one work/book/membership into the retained recovery copy (the
+    /// template's live library only has a collection) and refreshes the
+    /// manifest, so a lossy migration can drop a real relationship row.
+    /// </summary>
+    internal async Task SeedRecoveryMembershipAsync()
+    {
+        var path = Paths.PreviousDatabase(RecoveryId);
+        await using (var db = OpenRecoveryDatabase(path))
+        {
+            var collection = await db.Collections.FirstAsync();
+            var work = new WorkModel
+            {
+                Id = Guid.NewGuid(),
+                Title = "RECOVERY-WORK",
+                NormalizedTitle = "RECOVERY-WORK",
+                NormalizedAuthor = string.Empty,
+            };
+            var book = new PhysicalBookModel
+            {
+                Id = Guid.NewGuid(),
+                Work = work,
+                Title = "RECOVERY-BOOK",
+            };
+            db.Works.Add(work);
+            db.Books.Add(book);
+            db.BookCollections.Add(new BookCollectionModel
+            {
+                BookId = book.Id,
+                CollectionId = collection.Id,
+                AddedAt = DateTime.UtcNow,
+            });
+            await db.SaveChangesAsync();
+        }
+
+        RefreshRecoveryManifestFacts(path);
+    }
+
+    private static NostosDbContext OpenRecoveryDatabase(string path) =>
+        new(new DbContextOptionsBuilder<NostosDbContext>()
+            .UseSqlite($"Data Source={path};Pooling=False", sqlite =>
+                sqlite.MigrationsAssembly(typeof(Program).Assembly.FullName))
+            .Options);
 
     internal void AddUnknownMigrationToRecovery()
     {
@@ -1018,7 +1094,44 @@ internal sealed class ActivationCoordinatorTestBed : IAsyncDisposable
         {
             DatabaseBytes = info.Length,
             DatabaseSha256 = sha,
+            Counts = ReadRecoveryCounts(databasePath),
         });
+    }
+
+    /// <summary>Counts the retained copy's portable rows exactly as the activation capture did.</summary>
+    private static MigrationExistingCounts ReadRecoveryCounts(string databasePath)
+    {
+        using var connection = new SqliteConnection($"Data Source={databasePath};Pooling=False");
+        connection.Open();
+        var tables = new HashSet<string>(StringComparer.Ordinal);
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "SELECT name FROM sqlite_master WHERE type = 'table';";
+            using var reader = command.ExecuteReader();
+            while (reader.Read()) tables.Add(reader.GetString(0));
+        }
+
+        long Count(string table, string? where = null)
+        {
+            if (!tables.Contains(table)) return 0;
+            using var command = connection.CreateCommand();
+            command.CommandText = $"SELECT COUNT(*) FROM \"{table}\"" + (where is null ? ";" : $" WHERE {where};");
+            return Convert.ToInt64(command.ExecuteScalar());
+        }
+
+        return new MigrationExistingCounts(
+            Works: Count("Works"),
+            Books: Count("Books"),
+            Notes: Count("Notes"),
+            Topics: Count("Topics"),
+            NoteTopics: Count("NoteTopics"),
+            Writings: Count("Writings"),
+            WritingNotes: Count("WritingNotes"),
+            Collections: Count("Collections"),
+            BookCollections: Count("BookCollections"),
+            Acquisitions: Count("BookAcquisitions"),
+            NoteImportBookLinks: Count("NoteImportBookLinks"),
+            AssistantSettings: Count("AssistantSettings", "\"CaptureProcessingMode\" IS NOT NULL"));
     }
 
     public async ValueTask DisposeAsync()
@@ -1056,5 +1169,22 @@ internal sealed class ActivationCoordinatorTestBed : IAsyncDisposable
             bed.RevisionOverride is { } overridden
                 ? overridden(ct)
                 : inner.GetCurrentAsync(ct);
+    }
+
+    /// <summary>
+    /// Runs the real working-copy migration and then an optional test hook that
+    /// models a successful but lossy migration.
+    /// </summary>
+    private sealed class SwitchableRecoveryMigrator(ActivationCoordinatorTestBed bed)
+        : ISelfHostedRecoverySchemaMigrator
+    {
+        public async Task MigrateAsync(NostosDbContext database, CancellationToken ct)
+        {
+            await new DatabaseBootstrapService(database).EnsureReadyAsync(ct);
+            if (bed.RecoveryMigrationOverride is { } overridden)
+            {
+                await overridden(database);
+            }
+        }
     }
 }

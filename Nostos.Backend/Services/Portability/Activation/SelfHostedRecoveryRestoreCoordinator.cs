@@ -69,6 +69,8 @@ internal static class SelfHostedRecoveryRestoreSteps
     public const string AfterPostVerify = "restore:after:post-verify";
     public const string PhasePostActivationVerified = "restore:phase:PostActivationVerified";
     public const string PhaseCommitted = "restore:phase:Committed";
+    public const string AfterFinalizeReplacedRetention = "restore:after:finalize-replaced-retention";
+    public const string AfterMarkSourceRestored = "restore:after:mark-source-restored";
     public const string AfterFinalizeRestore = "restore:after:finalize-restore";
 }
 
@@ -102,6 +104,7 @@ internal sealed class SelfHostedRecoveryRestoreCoordinator
     private readonly IServiceScopeFactory _scopes;
     private readonly ISelfHostedSqliteLifecycle _sqlite;
     private readonly IPortableLibraryVerifier _verifier;
+    private readonly ISelfHostedRecoverySchemaMigrator _migrator;
     private readonly IReadOnlyList<ISelfHostedActivationRecoveryStep> _recoverySteps;
     private readonly TransferPathResolver _transferPaths;
     private readonly ILibraryDestinationRevisionProvider _revisionProvider;
@@ -119,6 +122,7 @@ internal sealed class SelfHostedRecoveryRestoreCoordinator
         IServiceScopeFactory scopes,
         ISelfHostedSqliteLifecycle sqlite,
         IPortableLibraryVerifier verifier,
+        ISelfHostedRecoverySchemaMigrator migrator,
         IEnumerable<ISelfHostedActivationRecoveryStep> recoverySteps,
         TransferPathResolver transferPaths,
         ILibraryDestinationRevisionProvider revisionProvider,
@@ -132,6 +136,7 @@ internal sealed class SelfHostedRecoveryRestoreCoordinator
         ArgumentNullException.ThrowIfNull(scopes);
         ArgumentNullException.ThrowIfNull(sqlite);
         ArgumentNullException.ThrowIfNull(verifier);
+        ArgumentNullException.ThrowIfNull(migrator);
         ArgumentNullException.ThrowIfNull(recoverySteps);
         ArgumentNullException.ThrowIfNull(transferPaths);
         ArgumentNullException.ThrowIfNull(revisionProvider);
@@ -144,6 +149,7 @@ internal sealed class SelfHostedRecoveryRestoreCoordinator
         _scopes = scopes;
         _sqlite = sqlite;
         _verifier = verifier;
+        _migrator = migrator;
         _recoverySteps = recoverySteps.OrderBy(step => step.Order).ToArray();
         _transferPaths = transferPaths;
         _revisionProvider = revisionProvider;
@@ -185,7 +191,15 @@ internal sealed class SelfHostedRecoveryRestoreCoordinator
             RestoreError = null,
             RestoredAtUtc = null,
         };
-        _manifests.Write(claimed);
+        // Conditional on the exact manifest just validated: if the cleanup
+        // sweep decided to prune this expired copy in between, or any other
+        // writer changed it, the claim loses and the copy is not touched.
+        if (_manifests.TryWriteIfUnchanged(recoveryId, manifest, claimed) is null)
+        {
+            throw new MigrationActivationException(MigrationActivationErrorCodes.RecoveryRestoreConflict,
+                "This recovery copy is no longer available for restore.");
+        }
+
         return ToResponse(claimed);
     }
 
@@ -456,6 +470,7 @@ internal sealed class SelfHostedRecoveryRestoreCoordinator
 
                 await TryAbandonRetentionPlanAsync(restoreId, exclusive);
                 TryClearRestoreJournal(restoreId);
+                CleanupWorkingFiles(_paths.RestoreSourceDatabase(restoreId), _paths.RestorePayload(restoreId));
                 await TryMarkRetryableAsync(recoveryId, ErrorCode(exception));
             }
             else if (exception is MigrationActivationException { Code: MigrationActivationErrorCodes.Busy })
@@ -474,6 +489,7 @@ internal sealed class SelfHostedRecoveryRestoreCoordinator
                 // No live path could have changed yet: reset the copy for a
                 // later attempt (or mark tamper/corruption terminal).
                 TryClearRestoreJournal(restoreId);
+                CleanupWorkingFiles(_paths.RestoreSourceDatabase(restoreId), _paths.RestorePayload(restoreId));
                 await TryMarkFailedOrRetryableAsync(recoveryId, exception);
             }
 
@@ -504,7 +520,7 @@ internal sealed class SelfHostedRecoveryRestoreCoordinator
         var media = await BuildCandidateMediaAsync(recoveryId, restoreId, manifest, ct);
         Step(SelfHostedRecoveryRestoreSteps.AfterBuildMedia);
 
-        var payload = await ExtractPayloadAsync(recoveryId, restoreId, media.PrimaryMedia, ct);
+        var payload = await ExtractPayloadAsync(recoveryId, restoreId, media.PrimaryMedia, manifest.Counts, ct);
         Step(SelfHostedRecoveryRestoreSteps.AfterExtractPayload);
 
         await BuildCandidateDatabaseAsync(restoreId, payload, ct);
@@ -648,10 +664,21 @@ internal sealed class SelfHostedRecoveryRestoreCoordinator
         }
     }
 
+    /// <summary>
+    /// Extracts the previous portable payload from a migrated working copy.
+    /// A forward migration may not redefine what "the retained library" is:
+    /// when migrations are pending, the working copy's portable baseline is
+    /// captured first and must be provably preserved afterwards (row counts,
+    /// column presence, order-independent row digests, declared renames only),
+    /// and the extracted payload's counts must match the retention manifest.
+    /// Any mismatch is corruption and aborts before any live mutation. A copy
+    /// already at the current schema skips the baseline scan entirely.
+    /// </summary>
     private async Task<PortableRecoveryPayload> ExtractPayloadAsync(
         Guid recoveryId,
         Guid restoreId,
         IReadOnlyList<PortableRecoveryMedia> primaryMedia,
+        MigrationExistingCounts manifestCounts,
         CancellationToken ct)
     {
         var retained = _paths.PreviousDatabase(recoveryId);
@@ -663,6 +690,7 @@ internal sealed class SelfHostedRecoveryRestoreCoordinator
 
         try
         {
+            PortableRecoveryBaseline? baseline = null;
             await using (var db = CreateDatabaseContext(working))
             {
                 var known = db.Database.GetMigrations().ToHashSet(StringComparer.Ordinal);
@@ -674,8 +702,18 @@ internal sealed class SelfHostedRecoveryRestoreCoordinator
                     throw Corrupt("The retained library uses a schema this version cannot upgrade.");
                 }
 
+                if (known.Any(id => !applied.Contains(id)))
+                {
+                    baseline = await PortableLibraryRecoveryBaseline.CaptureAsync(working, ct);
+                }
+
                 ct.ThrowIfCancellationRequested();
-                await new DatabaseBootstrapService(db).EnsureReadyAsync(ct);
+                await _migrator.MigrateAsync(db, ct);
+            }
+
+            if (baseline is not null)
+            {
+                await PortableLibraryRecoveryBaseline.RequirePreservedAsync(working, baseline, ct);
             }
 
             PortableRecoveryPayload payload;
@@ -692,14 +730,27 @@ internal sealed class SelfHostedRecoveryRestoreCoordinator
                     .WriteRelationalPayloadAsync(db, output, primaryMedia, ct);
             }
 
+            PortableLibraryRecoveryBaseline.RequireCountsPreserved(manifestCounts, payload.Counts);
             return payload;
         }
         catch (MigrationActivationException)
         {
+            CleanupWorkingFiles(working, payloadPath);
             throw;
         }
-        catch (Exception exception) when (exception is not OperationCanceledException)
+        catch (OperationCanceledException)
         {
+            CleanupWorkingFiles(working, payloadPath);
+            throw;
+        }
+        catch (Exception exception)
+        {
+            CleanupWorkingFiles(working, payloadPath);
+            if (exception is PortableRecoveryBaselineException)
+            {
+                throw Corrupt(exception.Message);
+            }
+
             // Storage and permission failures are retryable; a payload that
             // cannot be interpreted is corruption and must fail closed.
             if (exception is IOException or UnauthorizedAccessException)
@@ -709,6 +760,17 @@ internal sealed class SelfHostedRecoveryRestoreCoordinator
 
             throw Corrupt("The retained library could not be read for restore.");
         }
+    }
+
+    private static void CleanupWorkingFiles(string working, string payloadPath)
+    {
+        TryDelete(working);
+        foreach (var suffix in new[] { "-wal", "-shm" })
+        {
+            TryDelete(working + suffix);
+        }
+
+        TryDelete(payloadPath);
     }
 
     private async Task BuildCandidateDatabaseAsync(
@@ -804,12 +866,16 @@ internal sealed class SelfHostedRecoveryRestoreCoordinator
                     exclusive, CancellationToken.None);
             }
 
+            Step(SelfHostedRecoveryRestoreSteps.AfterFinalizeReplacedRetention);
+
             _manifests.Write(manifest with
             {
                 Status = MigrationRecoveryStatus.Restored,
                 RestoreError = null,
                 RestoredAtUtc = _clock.GetUtcNow(),
             });
+            Step(SelfHostedRecoveryRestoreSteps.AfterMarkSourceRestored);
+
             _journals.MarkResolved(restoreId, exclusive);
             Step(SelfHostedRecoveryRestoreSteps.AfterFinalizeRestore);
         }
@@ -975,6 +1041,14 @@ internal sealed class SelfHostedRecoveryRestoreCoordinator
 
     private SelfHostedRecoveryManifest RequireAvailable(Guid recoveryId)
     {
+        if (_manifests.HasDeletionMarker(recoveryId))
+        {
+            // Cleanup already decided to prune this copy; it is not listed and
+            // must never be claimed.
+            throw new MigrationActivationException(MigrationActivationErrorCodes.RecoveryNotFound,
+                "The retained recovery copy was not found.");
+        }
+
         var manifest = ReadManifest(recoveryId);
         if (manifest.Status == MigrationRecoveryStatus.Restoring)
         {

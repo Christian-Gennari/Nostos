@@ -289,6 +289,7 @@ builder.Services.AddScoped<IMigrationActivationService>(sp => sp.GetRequiredServ
 // claimed restores after a restart; the processor scans once at startup (after
 // the activation reconciler and database bootstrap) and periodically thereafter.
 builder.Services.AddSingleton<SelfHostedRecoveryRestoreRunner>();
+builder.Services.AddSingleton<ISelfHostedRecoverySchemaMigrator, SelfHostedRecoverySchemaMigrator>();
 builder.Services.AddScoped<SelfHostedRecoveryRestoreCoordinator>();
 builder.Services.AddScoped<SelfHostedRecoveryRestoreHostService>();
 builder.Services.AddScoped<ISelfHostedRecoveryRestore>(sp =>
