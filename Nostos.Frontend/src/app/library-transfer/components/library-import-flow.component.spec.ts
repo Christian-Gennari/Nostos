@@ -1007,14 +1007,28 @@ describe('LibraryImportFlowComponent', () => {
     harness.component.activationRequested.subscribe(requested);
     const file = await portableFile();
 
+    harness.fixture.componentRef.setInput('supportsSafeActivation', true);
     selectFile(harness, file);
     await waitForKind(harness, 'ready-empty');
-    harness.fixture.detectChanges();
     harness.fixture.detectChanges();
 
     const jobId = (harness.coordinator.state() as { jobId: string }).jobId;
     expect(requested).toHaveBeenCalledTimes(1);
     expect(requested).toHaveBeenCalledWith(jobId);
+  });
+
+  it('never asks the host to activate when the capability is off', async () => {
+    const harness = setup();
+    const requested = vi.fn();
+    harness.component.activationRequested.subscribe(requested);
+    const file = await portableFile();
+
+    selectFile(harness, file);
+    await waitForKind(harness, 'ready-empty');
+    harness.fixture.detectChanges();
+
+    expect(requested).not.toHaveBeenCalled();
+    expect(testId(harness, 'import-activation-unavailable')).toBeTruthy();
   });
 
   it('shows an in-progress waiting state and hides Cancel while the host activates', async () => {
@@ -1155,5 +1169,121 @@ describe('LibraryImportFlowComponent', () => {
 
     await transport.releaseAll();
     await waitForKind(harness, 'ready-empty');
+  });
+
+  it('seals the replacement dialog while activation is in progress before submission', async () => {
+    const harness = setup({ destinationStatus: 'Populated', existingCounts: { books: 1 } });
+    const file = await portableFile();
+
+    harness.fixture.componentRef.setInput('supportsSafeActivation', true);
+    selectFile(harness, file);
+    await waitForKind(harness, 'replacement-confirmation');
+    harness.fixture.componentRef.setInput('activationState', 'in-progress');
+    harness.fixture.detectChanges();
+
+    expect(testId(harness, 'replacement-sealed')).toBeTruthy();
+    const cancel = harness.fixture.nativeElement.querySelector(
+      '.replacement-cancel',
+    ) as HTMLButtonElement;
+    expect(cancel.disabled).toBe(true);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    cancel.click();
+    harness.fixture.detectChanges();
+
+    expect(harness.coordinator.state().kind).toBe('replacement-confirmation');
+    expect(testId(harness, 'import-cancelled')).toBeNull();
+  });
+
+  it('shows the server phase text while the host activates', async () => {
+    const harness = setup();
+    const file = await portableFile();
+
+    harness.fixture.componentRef.setInput('supportsSafeActivation', true);
+    selectFile(harness, file);
+    await waitForKind(harness, 'ready-empty');
+    harness.fixture.componentRef.setInput('activationState', 'in-progress');
+    harness.fixture.componentRef.setInput('activationPhase', 'Activating');
+    harness.fixture.detectChanges();
+
+    expect(testId(harness, 'import-activation-phase')?.textContent).toContain(
+      'Switching libraries…',
+    );
+  });
+
+  it('shows the server counts and re-arms confirmation after a destination conflict', async () => {
+    const harness = setup({ destinationStatus: 'Populated', existingCounts: { books: 1 } });
+    const confirmed = vi.fn();
+    harness.component.replacementConfirmed.subscribe(confirmed);
+    const file = await portableFile();
+
+    harness.fixture.componentRef.setInput('supportsSafeActivation', true);
+    selectFile(harness, file);
+    await waitForKind(harness, 'replacement-confirmation');
+    harness.fixture.detectChanges();
+
+    (harness.fixture.nativeElement.querySelector(
+      '.replacement-confirm',
+    ) as HTMLButtonElement).click();
+    expect(confirmed).toHaveBeenCalledTimes(1);
+
+    harness.fixture.componentRef.setInput('activationState', 'failed');
+    harness.fixture.componentRef.setInput(
+      'activationErrorCode',
+      'migration_destination_conflict',
+    );
+    harness.fixture.componentRef.setInput('activationCanRetry', true);
+    harness.fixture.componentRef.setInput('activationConflict', {
+      destinationRevision: 'rev-9',
+      destinationStatus: 'Populated',
+      existingCounts: {
+        works: 1,
+        books: 9,
+        notes: 12,
+        topics: 0,
+        noteTopics: 0,
+        writings: 0,
+        writingNotes: 0,
+        collections: 2,
+        bookCollections: 3,
+        acquisitions: 0,
+        noteImportBookLinks: 0,
+        assistantSettings: 0,
+        totalRows: 27,
+      },
+    });
+    harness.fixture.detectChanges();
+
+    expect(testId(harness, 'replacement-conflict')).toBeTruthy();
+    expect(testId(harness, 'replacement-existing')?.textContent).toContain('9 books');
+    expect(testId(harness, 'replacement-error')).toBeNull();
+
+    (harness.fixture.nativeElement.querySelector(
+      '.replacement-confirm',
+    ) as HTMLButtonElement).click();
+    expect(confirmed).toHaveBeenCalledTimes(2);
+  });
+
+  it('renders the fail-closed recovery failure without a retry action', async () => {
+    const harness = setup();
+    const requested = vi.fn();
+    harness.component.activationRequested.subscribe(requested);
+    const file = await portableFile();
+
+    harness.fixture.componentRef.setInput('supportsSafeActivation', true);
+    selectFile(harness, file);
+    await waitForKind(harness, 'ready-empty');
+    expect(requested).toHaveBeenCalledTimes(1);
+
+    harness.fixture.componentRef.setInput('activationState', 'failed');
+    harness.fixture.componentRef.setInput(
+      'activationErrorCode',
+      'migration_activation_recovery_failed',
+    );
+    harness.fixture.componentRef.setInput('activationCanRetry', false);
+    harness.fixture.detectChanges();
+
+    expect(testId(harness, 'import-activation-failed')?.textContent).toContain('Restart');
+    expect(testId(harness, 'import-activation-retry')).toBeNull();
+    expect(requested).toHaveBeenCalledTimes(1);
   });
 });

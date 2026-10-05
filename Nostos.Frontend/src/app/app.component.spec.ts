@@ -1,4 +1,5 @@
 import { Component } from '@angular/core';
+import { provideHttpClient } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
 import { signal } from '@angular/core';
@@ -11,6 +12,9 @@ import { CloudEntryService } from './core/services/cloud-entry.service';
 import { DeploymentCapabilitiesService } from './core/services/deployment-capabilities.service';
 import { DeploymentCapabilities } from './core/dtos/deployment-capabilities.dtos';
 import { LibraryPreferencesService } from './core/services/library-preferences.service';
+import { LibraryActivationController } from './library-transfer/services/library-activation-controller.service';
+import { HostActivationState } from './library-transfer/models/library-transfer.models';
+import { MigrationActivationPhase } from './library-transfer/models/migration-http.dtos';
 
 @Component({ standalone: true, template: '' })
 class BlankComponent {}
@@ -41,6 +45,7 @@ describe('App', () => {
       imports: [App],
       providers: [
         provideRouter([]),
+        provideHttpClient(),
         {
           provide: CloudEntryService,
           useValue: {
@@ -50,6 +55,7 @@ describe('App', () => {
             actionPending: signal(false),
             actionError: signal(null),
             checkoutRedirect: signal(null),
+            supportsSafeActivation: signal(false),
           },
         },
         {
@@ -84,6 +90,74 @@ describe('App', () => {
     expect(compiled.querySelector('router-outlet')).toBeNull();
     expect(compiled.querySelector('app-cloud-entry')).not.toBeNull();
     expect(compiled.querySelector('app-assistant')).toBeNull();
+  });
+});
+
+describe('App activation boundary', () => {
+  const activationState = signal<HostActivationState>('idle');
+  const activationPhase = signal<MigrationActivationPhase | null>(null);
+
+  beforeEach(async () => {
+    localStorage.clear();
+    activationState.set('idle');
+    activationPhase.set(null);
+
+    await TestBed.configureTestingModule({
+      imports: [App],
+      providers: [
+        provideRouter([]),
+        provideHttpClient(),
+        {
+          provide: CloudEntryService,
+          useValue: {
+            productReady: signal(true),
+            initialize: () => Promise.resolve(),
+            view: signal({ kind: 'product' }),
+            actionPending: signal(false),
+            actionError: signal(null),
+            checkoutRedirect: signal(null),
+            supportsSafeActivation: signal(false),
+          },
+        },
+        {
+          provide: AssistantStatusService,
+          useValue: { available: signal(true), ensureLoaded: () => {}, refresh: () => {} },
+        },
+        {
+          provide: SwUpdate,
+          useValue: { isEnabled: false, checkForUpdate: () => Promise.resolve(false) },
+        },
+        { provide: DeploymentCapabilitiesService, useValue: { get: () => of(cloudCapabilities) } },
+        {
+          provide: LibraryActivationController,
+          useValue: { state: activationState, phase: activationPhase },
+        },
+      ],
+    }).compileComponents();
+  });
+
+  it('covers the whole app while the server replaces the library', () => {
+    activationState.set('in-progress');
+    activationPhase.set('Activating');
+
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+
+    const overlay = fixture.nativeElement.querySelector(
+      '[data-testid="library-activation-overlay"]',
+    ) as HTMLElement;
+    expect(overlay).toBeTruthy();
+    expect(overlay.textContent).toContain('Switching libraries…');
+    expect(overlay.querySelectorAll('button')).toHaveLength(0);
+  });
+
+  it('leaves the app interactive when no activation is running', () => {
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+
+    expect(
+      fixture.nativeElement.querySelector('[data-testid="library-activation-overlay"]'),
+    ).toBeNull();
   });
 });
 
@@ -126,6 +200,7 @@ describe('App shell utility area', () => {
             actionPending: signal(false),
             actionError: signal(null),
             checkoutRedirect: signal(null),
+            supportsSafeActivation: signal(false),
           },
         },
         {

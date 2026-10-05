@@ -61,6 +61,14 @@ export class CloudEntryService {
     () => this.deploymentCapabilities()?.supportsLibraryMigration === true,
   );
 
+  /**
+   * Server-authoritative safe activation (#681). The shared import flow only
+   * starts activation when this is true; false keeps the gated explanation.
+   */
+  readonly supportsSafeActivation = computed(
+    () => this.deploymentCapabilities()?.supportsSafeActivation === true,
+  );
+
   constructor(
     private readonly capabilities: DeploymentCapabilitiesService,
     private readonly auth: CloudAuthService,

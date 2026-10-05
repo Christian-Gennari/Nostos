@@ -3,6 +3,8 @@ import { ButtonComponent } from '../ui/button/button.component';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
 import { CloudEntryService } from '../core/services/cloud-entry.service';
 import { LibraryImportFlowComponent } from '../library-transfer/components/library-import-flow.component';
+import { LibraryActivationController } from '../library-transfer/services/library-activation-controller.service';
+import { LibraryTransferCoordinator } from '../library-transfer/services/library-transfer-coordinator.service';
 
 @Component({
   selector: 'app-cloud-entry',
@@ -13,6 +15,8 @@ import { LibraryImportFlowComponent } from '../library-transfer/components/libra
 })
 export class CloudEntryComponent {
   readonly entry = inject(CloudEntryService);
+  readonly activation = inject(LibraryActivationController);
+  private readonly coordinator = inject(LibraryTransferCoordinator);
 
   /** True once the user picked "Import an existing Nostos library". */
   readonly sharedImportOpen = signal(false);
@@ -27,6 +31,39 @@ export class CloudEntryComponent {
         this.navigateTo(redirectUrl);
       }
     });
+
+    // Re-attach a persisted activation after a reload; the effect retries once
+    // the cross-tab lease frees.
+    effect(() => {
+      if (!this.entry.supportsSafeActivation()) return;
+      this.activation.reattach();
+    });
+
+    // Before the user confirms, fetch the server's current destination facts
+    // so the dialog shows the live counts (review-748: after a reload the
+    // confirmation must never be replayed against a stale preflight view).
+    effect(() => {
+      if (!this.entry.supportsSafeActivation()) return;
+      const state = this.coordinator.state();
+      if (state.kind !== 'replacement-confirmation') return;
+      if (this.activation.state() !== 'idle' || this.activation.conflict() !== null) return;
+      void this.activation.reviewReplacement(state.jobId);
+    });
+
+    // A new import must not inherit activation state from a previous job.
+    effect(() => {
+      if (this.coordinator.state().kind === 'inspecting') this.activation.reset();
+    });
+  }
+
+  onActivationRequested(jobId: string): void {
+    if (!this.entry.supportsSafeActivation()) return;
+    void this.activation.requestActivation(jobId);
+  }
+
+  onReplacementConfirmed(jobId: string): void {
+    if (!this.entry.supportsSafeActivation()) return;
+    void this.activation.confirmReplacement(jobId);
   }
 
   navigateTo(url: string): void {

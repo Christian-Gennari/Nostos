@@ -75,6 +75,9 @@ function isResumeState(value: unknown): value is PersistedTransferResumeState {
     record['direction'] === 'import' &&
     typeof record['fileName'] === 'string' &&
     typeof record['createdAt'] === 'string' &&
+    (record['destinationRevision'] === undefined ||
+      typeof record['destinationRevision'] === 'string') &&
+    isActivationState(record['activation']) &&
     typeof identity === 'object' &&
     identity !== null &&
     typeof (identity as Record<string, unknown>)['totalSizeBytes'] === 'number' &&
@@ -82,4 +85,15 @@ function isResumeState(value: unknown): value is PersistedTransferResumeState {
     typeof preflight === 'object' &&
     preflight !== null
   );
+}
+
+/**
+ * A malformed activation handoff must not make the controller re-attach
+ * blind. Only an observed 202 is persisted; a request whose delivery is
+ * ambiguous is never replayed from storage (review-748).
+ */
+function isActivationState(value: unknown): boolean {
+  if (value === undefined) return true;
+  if (typeof value !== 'object' || value === null) return false;
+  return (value as Record<string, unknown>)['accepted'] === true;
 }
