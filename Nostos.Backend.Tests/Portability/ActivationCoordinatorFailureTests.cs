@@ -1,4 +1,6 @@
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
+using Nostos.Backend.Services;
 using Nostos.Backend.Services.Portability;
 using Nostos.Backend.Services.Portability.Activation;
 using Xunit;
@@ -185,39 +187,187 @@ public sealed class ActivationCoordinatorFailureTests
     }
 
     [Fact]
-    public async Task PostCommitJobCompletionFailure_KeepsTheActivationCommitted_AndResumes()
+    public async Task PostCommitRollForwardFailure_KeepsAdmissionClosed_UntilRestartReconciles()
     {
         await using var bed = await ActivationCoordinatorTestBed.CreateAsync(populated: true);
 
-        var result = await bed.ActivateAsync(confirm: true, observer: reached =>
-        {
-            if (string.Equals(reached, SelfHostedActivationSteps.AfterReopen, StringComparison.Ordinal))
+        var failure = await FluentActions
+            .Awaiting(() => bed.ActivateAsync(confirm: true, observer: reached =>
             {
-                // Strip the worker lease from the newly activated database: the
-                // post-commit projection then cannot run until a resumed call
-                // acquires a fresh lease.
-                using var connection = new Microsoft.Data.Sqlite.SqliteConnection(
-                    $"Data Source={bed.Paths.LiveDatabase};Pooling=False");
-                connection.Open();
-                using var command = connection.CreateCommand();
-                command.CommandText =
-                    "UPDATE \"MigrationJobRecords\" SET \"MigrationLeaseToken\" = NULL, \"LeaseExpiresAtUtc\" = NULL;";
-                command.ExecuteNonQuery();
-            }
-        });
+                if (string.Equals(reached, SelfHostedActivationSteps.AfterReopen, StringComparison.Ordinal))
+                {
+                    // Strip the worker lease from the newly activated database: the
+                    // post-commit projection then cannot complete in-process.
+                    using var connection = new Microsoft.Data.Sqlite.SqliteConnection(
+                        $"Data Source={bed.Paths.LiveDatabase};Pooling=False");
+                    connection.Open();
+                    using var command = connection.CreateCommand();
+                    command.CommandText =
+                        "UPDATE \"MigrationJobRecords\" SET \"MigrationLeaseToken\" = NULL, \"LeaseExpiresAtUtc\" = NULL;";
+                    command.ExecuteNonQuery();
+                }
+            }))
+            .Should().ThrowAsync<MigrationActivationException>();
+        failure.Which.Code.Should().Be(MigrationActivationErrorCodes.RecoveryFailed);
 
-        result.Outcome.Should().Be(SelfHostedActivationOutcome.Completed,
-            "the durable commit already happened; post-commit work must not turn it into a failure");
+        // The committed generation is intact, but admission stays closed and the
+        // journal stays unresolved until a restart reconciles it.
         await bed.AssertImportedGenerationAsync();
-        (await bed.ReadJobAsync()).State.Should().Be((int)MigrationJobState.Activating,
-            "job completion is retryable after the committed switch");
+        bed.Maintenance.IsRecoveryRequired.Should().BeTrue();
+        bed.Maintenance.IsMaintenanceActive.Should().BeTrue();
+        bed.Maintenance.TryEnterOperation().Should().BeNull();
+        bed.Journals.Read(bed.JobId)!.Phase.Should().Be(SelfHostedActivationPhase.Committed);
+        File.Exists(new LibraryMaintenanceMarker(bed.Paths.LiveDatabase).MarkerPath).Should().BeTrue();
+        (await bed.ReadJobAsync()).State.Should().Be((int)MigrationJobState.Activating);
 
-        // Resume: a later activation call completes the committed activation.
+        // A fresh host reconciles the committed journal and reopens admission.
+        await bed.RecoverHostAsync();
+        await bed.AssertImportedGenerationAsync();
+        bed.Maintenance.IsMaintenanceActive.Should().BeFalse();
+        var probe = bed.Maintenance.TryEnterOperation();
+        probe.Should().NotBeNull();
+        probe!.Dispose();
+
+        // Resume completes only the post-commit work; the revision never moves twice.
         var resumed = await bed.ActivateAsync(confirm: true);
         resumed.Outcome.Should().Be(SelfHostedActivationOutcome.Completed);
-        resumed.State.Should().Be(MigrationJobState.Completed);
         (await bed.ReadJobAsync()).State.Should().Be((int)MigrationJobState.Completed);
-        (await bed.CurrentRevisionAsync()).Should().Be(ActivationCoordinatorTemplate.AdvancedRevision,
-            "the resumed post-commit path never runs a second cutover");
+        (await bed.CurrentRevisionAsync()).Should().Be(ActivationCoordinatorTemplate.AdvancedRevision);
+    }
+
+    [Fact]
+    public async Task RollbackFailureInMediaStep_KeepsAdmissionClosed_UntilRestartReconciles()
+    {
+        await using var bed = await ActivationCoordinatorTestBed.CreateAsync(populated: true);
+        bed.MediaRecoveryRenameFailure = () =>
+            throw new InvalidOperationException("injected media rollback failure");
+
+        var failure = await FluentActions
+            .Awaiting(() => bed.ActivateAsync(confirm: true, observer: reached =>
+            {
+                if (string.Equals(reached, SelfHostedActivationSteps.AfterReopen, StringComparison.Ordinal))
+                {
+                    ActivationCoordinatorTestBed.CorruptFirstFile(bed.Paths.LiveMedia);
+                }
+            }))
+            .Should().ThrowAsync<MigrationActivationException>();
+        failure.Which.Code.Should().Be(MigrationActivationErrorCodes.RecoveryFailed);
+
+        AssertStickyRecoveryState(bed, SelfHostedActivationPhase.RollingBack);
+        var frozen = bed.SnapshotActivationTree();
+        await Task.Yield();
+        await Task.Yield();
+        bed.SnapshotActivationTree().Should().BeEquivalentTo(frozen, "no further file mutation may occur while closed");
+
+        bed.MediaRecoveryRenameFailure = null;
+        await bed.RecoverHostAsync();
+        bed.AssertOriginalGeneration();
+        bed.Maintenance.IsMaintenanceActive.Should().BeFalse();
+        var probe = bed.Maintenance.TryEnterOperation();
+        probe.Should().NotBeNull();
+        probe!.Dispose();
+
+        bed.Clock.Advance(SelfHostedActivationCoordinator.ActivationLeaseDuration + TimeSpan.FromMinutes(1));
+        (await bed.ActivateAsync(confirm: true)).Outcome.Should().Be(SelfHostedActivationOutcome.Completed);
+        await bed.AssertImportedGenerationAsync();
+    }
+
+    [Fact]
+    public async Task RollbackFailureInDatabaseStep_KeepsAdmissionClosed_UntilRestartReconciles()
+    {
+        await using var bed = await ActivationCoordinatorTestBed.CreateAsync(populated: true);
+        bed.DatabaseRecoveryRenameFailure = () =>
+            throw new InvalidOperationException("injected database rollback failure");
+
+        var failure = await FluentActions
+            .Awaiting(() => bed.ActivateAsync(confirm: true, observer: reached =>
+            {
+                if (string.Equals(reached, SelfHostedActivationSteps.AfterReopen, StringComparison.Ordinal))
+                {
+                    ActivationCoordinatorTestBed.CorruptFirstFile(bed.Paths.LiveMedia);
+                }
+            }))
+            .Should().ThrowAsync<MigrationActivationException>();
+        failure.Which.Code.Should().Be(MigrationActivationErrorCodes.RecoveryFailed);
+
+        AssertStickyRecoveryState(bed, SelfHostedActivationPhase.RollingBack);
+        var frozen = bed.SnapshotActivationTree();
+        await Task.Yield();
+        bed.SnapshotActivationTree().Should().BeEquivalentTo(frozen, "no further file mutation may occur while closed");
+
+        bed.DatabaseRecoveryRenameFailure = null;
+        await bed.RecoverHostAsync();
+        bed.AssertOriginalGeneration();
+        bed.Maintenance.IsMaintenanceActive.Should().BeFalse();
+        var probe = bed.Maintenance.TryEnterOperation();
+        probe.Should().NotBeNull();
+        probe!.Dispose();
+
+        bed.Clock.Advance(SelfHostedActivationCoordinator.ActivationLeaseDuration + TimeSpan.FromMinutes(1));
+        (await bed.ActivateAsync(confirm: true)).Outcome.Should().Be(SelfHostedActivationOutcome.Completed);
+        await bed.AssertImportedGenerationAsync();
+    }
+
+    [Fact]
+    public async Task PostActivationVerificationFailure_RollsBackInProcess_AndTheJobIsRetryable()
+    {
+        await using var bed = await ActivationCoordinatorTestBed.CreateAsync(populated: true);
+
+        var failure = await FluentActions
+            .Awaiting(() => bed.ActivateAsync(confirm: true, observer: reached =>
+            {
+                if (string.Equals(reached, SelfHostedActivationSteps.AfterReopen, StringComparison.Ordinal))
+                {
+                    ActivationCoordinatorTestBed.CorruptFirstFile(bed.Paths.LiveMedia);
+                }
+            }))
+            .Should().ThrowAsync<MigrationActivationException>();
+        failure.Which.Code.Should().Be(MigrationActivationErrorCodes.Failed);
+
+        bed.AssertOriginalGeneration();
+        bed.Maintenance.IsMaintenanceActive.Should().BeFalse("a completed rollback reopens admission");
+        var probe = bed.Maintenance.TryEnterOperation();
+        probe.Should().NotBeNull();
+        probe!.Dispose();
+        (await bed.ReadJobAsync()).State.Should().Be((int)MigrationJobState.Failed);
+
+        await using var scope = bed.Host.CreateAsyncScope();
+        var retried = await scope.ServiceProvider.GetRequiredService<IMigrationJobStore>()
+            .RetryAsync(bed.JobId, new MigrationRetryRequest(), default);
+        retried.State.Should().Be(MigrationJobState.Pending, "a rolled-back activation failure is retryable");
+    }
+
+    [Fact]
+    public async Task ReopenIntegrityFailure_RollsBackInProcess_AndKeepsTheOriginal()
+    {
+        await using var bed = await ActivationCoordinatorTestBed.CreateAsync(populated: true);
+
+        var failure = await FluentActions
+            .Awaiting(() => bed.ActivateAsync(confirm: true, observer: reached =>
+            {
+                if (string.Equals(reached, SelfHostedActivationSteps.AfterActivateDatabase, StringComparison.Ordinal))
+                {
+                    ActivationCoordinatorTestBed.CorruptDatabaseByte(bed.Paths.LiveDatabase);
+                }
+            }))
+            .Should().ThrowAsync<MigrationActivationException>();
+        failure.Which.Code.Should().Be(MigrationActivationErrorCodes.Failed);
+
+        bed.AssertOriginalGeneration();
+        bed.Maintenance.IsMaintenanceActive.Should().BeFalse();
+        (await bed.ReadJobAsync()).State.Should().Be((int)MigrationJobState.Failed);
+    }
+
+    private static void AssertStickyRecoveryState(
+        ActivationCoordinatorTestBed bed,
+        SelfHostedActivationPhase expectedPhase)
+    {
+        bed.Maintenance.IsRecoveryRequired.Should().BeTrue();
+        bed.Maintenance.IsMaintenanceActive.Should().BeTrue();
+        bed.Maintenance.TryEnterOperation().Should().BeNull(
+            "admission must stay closed until startup reconciliation succeeds");
+        bed.Journals.Read(bed.JobId)!.Phase.Should().Be(expectedPhase, "the journal must stay unresolved");
+        File.Exists(new LibraryMaintenanceMarker(bed.Paths.LiveDatabase).MarkerPath).Should().BeTrue(
+            "the durable maintenance marker must survive for the restart");
     }
 }

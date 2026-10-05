@@ -1,7 +1,9 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Nostos.Backend.Data;
 using Nostos.Backend.Data.Models;
+using Nostos.Backend.Services.Library;
 using Nostos.Backend.Services.Portability.Migration;
 using Nostos.Backend.Services.Portability.Transfers;
 
@@ -101,6 +103,8 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
     private readonly IReadOnlyList<ISelfHostedActivationRecoveryStep> _recoverySteps;
     private readonly IServiceScopeFactory _scopes;
     private readonly TransferPathResolver _transferPaths;
+    private readonly ILibraryDestinationRevisionProvider _revisionProvider;
+    private readonly ILogger<SelfHostedActivationCoordinator> _logger;
     private readonly TimeProvider _clock;
 
     /// <summary>Test seam: invoked after each named boundary; throwing models a crash.</summary>
@@ -119,6 +123,8 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
         IEnumerable<ISelfHostedActivationRecoveryStep> recoverySteps,
         IServiceScopeFactory scopes,
         TransferPathResolver transferPaths,
+        ILibraryDestinationRevisionProvider revisionProvider,
+        ILogger<SelfHostedActivationCoordinator> logger,
         TimeProvider? clock = null)
     {
         ArgumentNullException.ThrowIfNull(paths);
@@ -133,6 +139,8 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
         ArgumentNullException.ThrowIfNull(recoverySteps);
         ArgumentNullException.ThrowIfNull(scopes);
         ArgumentNullException.ThrowIfNull(transferPaths);
+        ArgumentNullException.ThrowIfNull(revisionProvider);
+        ArgumentNullException.ThrowIfNull(logger);
 
         _paths = paths;
         _maintenance = maintenance;
@@ -146,6 +154,8 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
         _recoverySteps = recoverySteps.OrderBy(step => step.Order).ToArray();
         _scopes = scopes;
         _transferPaths = transferPaths;
+        _revisionProvider = revisionProvider;
+        _logger = logger;
         _clock = clock ?? TimeProvider.System;
     }
 
@@ -285,12 +295,21 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
         catch (SelfHostedActivationAbandonedException)
         {
             // A crash leaves every artifact exactly as the boundary produced it;
-            // the fresh host's reconciler decides the generation.
+            // the fresh host's reconciler decides the generation, and admission
+            // stays closed until that reconciliation succeeds.
+            _maintenance.FailClosedForRecovery();
             throw;
         }
         catch (Exception exception)
         {
-            TryCleanCandidateArtifacts(jobId);
+            // Recovery-required failures must leave quarantined material in
+            // place for the startup reconciler; only ordinary failures clean
+            // the discardable candidate artifacts.
+            if (!IsRecoveryRequired(exception))
+            {
+                TryCleanCandidateArtifacts(jobId);
+            }
+
             throw WrapActivationFailure(exception);
         }
         finally
@@ -438,6 +457,10 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
         }
         catch (SelfHostedActivationAbandonedException)
         {
+            // A process crash never runs a finally: admission must stay closed
+            // until a restart's reconciler decides the generation. Tests throw
+            // this sentinel at a boundary and then rebuild the host.
+            _maintenance.FailClosedForRecovery();
             throw;
         }
         catch (Exception exception) when (!committed)
@@ -448,10 +471,18 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
                 {
                     await RollBackAsync(jobId, exclusive);
                 }
-                catch (Exception)
+                catch (Exception rollbackFailure)
                 {
+                    // Admission must not reopen onto a partially restored
+                    // generation. Keep the journal unresolved, keep the durable
+                    // maintenance marker, and let a restart's reconciler finish.
+                    _maintenance.FailClosedForRecovery();
+                    _logger.LogCritical(rollbackFailure,
+                        "Activation rollback could not complete; the library stays in maintenance until startup "
+                        + "reconciliation. Follow the activation recovery guide.");
                     throw new MigrationActivationException(MigrationActivationErrorCodes.RecoveryFailed,
-                        "Activation failed and the original library could not be restored. Stop the host and follow the activation recovery guide.");
+                        "Activation failed and the original library could not be restored in-process. "
+                        + "The host stays in maintenance; restart to reconcile, following the activation recovery guide.");
                 }
 
                 await TryMarkFailedAsync(jobId, token);
@@ -496,6 +527,12 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
         {
             throw SelfHostedActivationPaths.Failure("Activation rollback did not restore the live library.");
         }
+
+        // The restored original has a new file identity at the live pathname:
+        // pooled connections may still reference the quarantined candidate
+        // inode, so clear every pool and verify the restored database before
+        // admission can reopen.
+        _sqlite.ReopenActivated(exclusive);
 
         _journals.Advance(jobId, SelfHostedActivationPhase.RolledBack, exclusive);
         _journals.MarkResolved(jobId, exclusive);
@@ -544,10 +581,12 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
     }
 
     /// <summary>
-    /// Post-commit completion against the newly activated database. The durable
-    /// commit already stands, so any failure here is retryable by invoking
-    /// activation again and must never turn a successful activation into a
-    /// failure.
+    /// Post-commit completion against the newly activated database. A failure
+    /// here cannot be repaired in-process: the durable journal stays
+    /// <c>Committed</c> and unresolved, admission stays closed until a restart's
+    /// reconciler rolls the committed generation forward, and the caller gets a
+    /// typed fatal error. A repeated activation call after reconciliation
+    /// resumes only this completion work.
     /// </summary>
     private async Task<MigrationRecoveryStatus> FinalizePostCommitAsync(
         Guid jobId,
@@ -585,11 +624,21 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
         }
         catch (SelfHostedActivationAbandonedException)
         {
+            // The process died after the durable commit; keep admission closed
+            // until a restart's reconciler rolls the committed generation
+            // forward and resolves the journal.
+            _maintenance.FailClosedForRecovery();
             throw;
         }
-        catch
+        catch (Exception exception)
         {
-            // Non-essential to the authoritative activation truth.
+            _maintenance.FailClosedForRecovery();
+            _logger.LogCritical(exception,
+                "The activation is committed but post-commit finalization could not complete; the library stays "
+                + "in maintenance until startup reconciliation. Follow the activation recovery guide.");
+            throw new MigrationActivationException(MigrationActivationErrorCodes.RecoveryFailed,
+                "The activation is committed but finalization could not complete in-process. "
+                + "The host stays in maintenance; restart to reconcile, following the activation recovery guide.");
         }
 
         return status;
@@ -722,9 +771,9 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
     {
         await using var scope = _scopes.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<NostosDbContext>();
-        var revision = await db.LibraryStates.AsNoTracking()
-            .Select(state => state.StateVersion)
-            .SingleOrDefaultAsync(ct);
+        // The opaque revision is read ONLY through the provider seam so
+        // activation and preflight can never disagree about the token.
+        var revision = await _revisionProvider.GetCurrentAsync(ct);
         if (string.IsNullOrWhiteSpace(revision))
         {
             throw new MigrationActivationException(MigrationActivationErrorCodes.Failed,
@@ -745,10 +794,33 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
             NoteImportBookLinks: await db.NoteImportBookLinks.CountAsync(ct),
             AssistantSettings: await db.AssistantSettings
                 .CountAsync(settings => settings.CaptureProcessingMode != null, ct));
-        var status = counts.TotalRows > 0
+        // An empty destination is proven on disk too: any file in the live media
+        // root is conservatively user-owned data, so it must be replaced through
+        // the confirmation + retained-recovery path, never discarded as empty.
+        var status = counts.TotalRows > 0 || LiveMediaContainsFiles()
             ? MigrationDestinationStatus.Populated
             : MigrationDestinationStatus.Empty;
         return new DestinationFacts(revision, status, counts);
+    }
+
+    private bool LiveMediaContainsFiles()
+    {
+        var root = _paths.LiveMedia;
+        if (!Directory.Exists(root)) return false;
+        _paths.VerifyMediaPath(root);
+        var options = new EnumerationOptions
+        {
+            RecurseSubdirectories = true,
+            AttributesToSkip = FileAttributes.ReparsePoint,
+            IgnoreInaccessible = false,
+        };
+        foreach (var file in Directory.EnumerateFiles(root, "*", options))
+        {
+            _paths.VerifyMediaPath(file);
+            return true;
+        }
+
+        return false;
     }
 
     private async Task<string?> AcquireLeaseAsync(Guid jobId, CancellationToken ct)
@@ -770,6 +842,9 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
     {
         try
         {
+            // In the sticky recovery-required state the live library may be
+            // partially restored; never touch it. The lease expires on its own.
+            if (_maintenance.IsRecoveryRequired) return;
             // Between retaining the previous database and moving the candidate
             // into place the live path does not exist. Opening it would create an
             // empty SQLite file and corrupt the recorded layout, so the lease is
@@ -822,6 +897,13 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
             throw SelfHostedActivationPaths.Failure("The live media root is not in a retryable state.");
         }
 
+        if (LiveMediaContainsFiles())
+        {
+            // A non-empty root is never discarded as an empty library.
+            throw SelfHostedActivationPaths.Failure(
+                "The destination media root is not empty and must be replaced through retained recovery.");
+        }
+
         ActivationFileSystem.Rename(live, previous);
     }
 
@@ -856,8 +938,17 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
     {
         var media = _paths.PreviousMedia(jobId);
         _paths.VerifyMediaPath(media);
-        if (Directory.Exists(media)) Directory.Delete(media, recursive: true);
-        else if (File.Exists(media)) File.Delete(media);
+        if (Directory.Exists(media))
+        {
+            // Recursive deletion of the rollback scratch is only permitted when
+            // it was just verified to contain no files at all; anything else is
+            // conservatively retained for operator inspection.
+            if (!ContainsAnyFile(media)) Directory.Delete(media, recursive: true);
+        }
+        else if (File.Exists(media))
+        {
+            File.Delete(media);
+        }
 
         var database = _paths.PreviousDatabase(jobId);
         _paths.VerifyDatabasePath(database);
@@ -867,6 +958,17 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
         }
 
         _manifests.DeleteEmptyDirectory(jobId);
+    }
+
+    private static bool ContainsAnyFile(string root)
+    {
+        var options = new EnumerationOptions
+        {
+            RecurseSubdirectories = true,
+            AttributesToSkip = FileAttributes.ReparsePoint,
+            IgnoreInaccessible = false,
+        };
+        return Directory.EnumerateFiles(root, "*", options).Any();
     }
 
     private void TryCleanCandidateArtifacts(Guid jobId)
@@ -953,6 +1055,9 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
 
     private static string FirstFailureCode(IReadOnlyList<PortableLibraryVerificationFailure> failures) =>
         failures.Count == 0 ? "portable_verify_failed" : failures[0].Code;
+
+    private static bool IsRecoveryRequired(Exception exception) =>
+        exception is MigrationActivationException { Code: MigrationActivationErrorCodes.RecoveryFailed };
 
     private static Exception WrapActivationFailure(Exception exception) => exception switch
     {

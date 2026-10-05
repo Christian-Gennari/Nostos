@@ -284,12 +284,13 @@ internal sealed class SelfHostedMigrationRecoveryService :
             throw Flaw("The live database must be checkpointed before recovery retention.");
 
         // Writers are drained: the evidence built here is the final description
-        // of the bytes that the next rename retains.
+        // of the bytes that the next rename retains. The live database is only
+        // read through a plain FileStream: no SQLite connection may be opened
+        // after QuiesceLive (the schema level was captured before maintenance).
         var evidence = await BuildRetainedMediaEvidenceAsync(capture, ct);
         if (!File.Exists(_paths.LiveDatabase)) throw Flaw("The live database is missing.");
         var databaseBytes = new FileInfo(_paths.LiveDatabase).Length;
         var databaseSha256 = await HashStableFileAsync(_paths.LiveDatabase, ct);
-        var schema = ReadSchemaLevel(_paths.LiveDatabase);
         var created = _clock.GetUtcNow();
         var manifest = new SelfHostedRecoveryManifest(
             jobId,
@@ -303,8 +304,8 @@ internal sealed class SelfHostedMigrationRecoveryService :
             evidence.MediaBytes,
             databaseSha256,
             evidence.Media,
-            DatabaseSchemaVersion: schema.Version,
-            DatabaseMigrationCount: schema.Count,
+            DatabaseSchemaVersion: capture.DatabaseSchemaVersion,
+            DatabaseMigrationCount: capture.DatabaseMigrationCount,
             MediaRehashedCount: evidence.RehashedCount);
         _manifests.Write(manifest);
         return manifest;
@@ -854,6 +855,7 @@ internal sealed class SelfHostedMigrationRecoveryService :
     {
         try
         {
+            SelfHostedSqliteFile.ConnectionOpeningForTesting?.Invoke(databasePath);
             using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
             {
                 DataSource = databasePath,

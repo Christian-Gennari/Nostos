@@ -30,8 +30,17 @@ internal sealed class SelfHostedActivationEmptyRetentionStep(
 
         var media = paths.PreviousMedia(journal.JobId);
         paths.VerifyMediaPath(media);
-        if (Directory.Exists(media)) Directory.Delete(media, recursive: true);
-        else if (File.Exists(media)) File.Delete(media);
+        if (Directory.Exists(media))
+        {
+            // Only a directory verified to contain no files may be recursively
+            // deleted. Anything else is retained: an empty-destination cutover
+            // must never destroy user media it was not cleared to remove.
+            if (!ContainsAnyFile(media)) Directory.Delete(media, recursive: true);
+        }
+        else if (File.Exists(media))
+        {
+            File.Delete(media);
+        }
 
         var database = paths.PreviousDatabase(journal.JobId);
         paths.VerifyDatabasePath(database);
@@ -41,5 +50,16 @@ internal sealed class SelfHostedActivationEmptyRetentionStep(
         }
 
         manifests.DeleteEmptyDirectory(journal.JobId);
+    }
+
+    private static bool ContainsAnyFile(string root)
+    {
+        var options = new EnumerationOptions
+        {
+            RecurseSubdirectories = true,
+            AttributesToSkip = FileAttributes.ReparsePoint,
+            IgnoreInaccessible = false,
+        };
+        return Directory.EnumerateFiles(root, "*", options).Any();
     }
 }

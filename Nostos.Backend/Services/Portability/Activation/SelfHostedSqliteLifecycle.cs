@@ -46,6 +46,13 @@ internal static class SelfHostedSqliteFile
 {
     private const int CopyBufferBytes = 128 * 1024;
 
+    /// <summary>
+    /// Test seam: invoked with the database path immediately before a SQLite
+    /// connection is opened. Lets the cutover tests prove no connection is made
+    /// to the live path between quiescence and the swap.
+    /// </summary>
+    internal static Action<string>? ConnectionOpeningForTesting { get; set; }
+
     internal static string ConnectionString(string databasePath, bool readOnly, bool pooling)
     {
         // Same shape as the host persistence registration ("Data Source=<path>").
@@ -95,6 +102,7 @@ internal static class SelfHostedSqliteFile
 
     internal static SqliteConnection Open(string databasePath, bool readOnly)
     {
+        ConnectionOpeningForTesting?.Invoke(databasePath);
         var connection = new SqliteConnection(ConnectionString(databasePath, readOnly, pooling: false));
         connection.Open();
         return connection;

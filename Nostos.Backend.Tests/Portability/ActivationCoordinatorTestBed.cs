@@ -9,6 +9,7 @@ using Nostos.Backend.Configuration;
 using Nostos.Backend.Data;
 using Nostos.Backend.Data.Models;
 using Nostos.Backend.Services;
+using Nostos.Backend.Services.Library;
 using Nostos.Backend.Services.Portability;
 using Nostos.Backend.Services.Portability.Activation;
 using Nostos.Backend.Services.Portability.Migration;
@@ -57,6 +58,9 @@ internal sealed class ActivationCoordinatorTemplate : IDisposable
     internal IPreparedPortableImport Prepared { get; private set; } = null!;
     internal PortablePreparedImportVerification ExpectedHandle { get; private set; } = null!;
     internal PortableFixtureIds SourceIds { get; private set; } = null!;
+    internal string RevisionToken { get; private set; } = string.Empty;
+    internal Dictionary<string, List<string>> OriginalAllTables { get; private set; } = null!;
+    internal string OriginalDatabaseSha256 { get; private set; } = string.Empty;
     internal Dictionary<string, List<string>> OriginalPortable { get; private set; } = null!;
     internal Dictionary<string, string> OriginalMedia { get; private set; } = null!;
     internal Dictionary<string, string> ExpectedImportedMedia { get; private set; } = null!;
@@ -122,6 +126,7 @@ internal sealed class ActivationCoordinatorTemplate : IDisposable
 
         SeedHostState(liveDatabase);
 
+        OriginalAllTables = ActivationBuildFixture.DumpAllTables(liveDatabase);
         OriginalPortable = DumpPortable(liveDatabase);
         OriginalMedia = ActivationBuildFixture.MediaSnapshot(TemplateMedia);
 
@@ -134,6 +139,8 @@ internal sealed class ActivationCoordinatorTemplate : IDisposable
 
         SelfHostedSqliteFile.ClearPools();
         File.Copy(liveDatabase, TemplateDatabase, overwrite: true);
+        OriginalDatabaseSha256 = Convert.ToHexString(
+            SHA256.HashData(File.ReadAllBytes(TemplateDatabase)));
         File.Delete(liveDatabase);
         File.Delete(liveDatabase + "-wal");
         File.Delete(liveDatabase + "-shm");
@@ -179,6 +186,12 @@ internal sealed class ActivationCoordinatorTemplate : IDisposable
 
         db.SaveChanges();
 
+        // The job's stored destination revision is the same opaque provider token
+        // preflight hands to the client; activation reads the current token only
+        // through the provider.
+        RevisionToken = new LibraryStateDestinationRevisionProvider(db)
+            .GetCurrentAsync(default).GetAwaiter().GetResult();
+
         var options = new TransferStorageOptions { DiskSafetyMarginBytes = 0, DiskSafetyMarginPercent = 0 };
         var volume = new FakeTransferVolume
         {
@@ -208,7 +221,7 @@ internal sealed class ActivationCoordinatorTemplate : IDisposable
             CreationPayloadHash = new string('a', 64),
             ExpiresAtUtc = new DateTime(2026, 10, 10, 8, 0, 0, DateTimeKind.Utc),
             AttemptNumber = 1,
-            DestinationRevision = OriginalRevision,
+            DestinationRevision = RevisionToken,
             PreparedStagingId = Prepared.Metadata.StagingId.Value,
             PreparedImportMetadataJson = "{}",
             ReservationId = ReservationId,
@@ -290,11 +303,23 @@ internal sealed class ActivationCoordinatorTestBed : IAsyncDisposable
     internal PortablePreparedImportVerification ExpectedHandle => _expected ?? _template.ExpectedHandle;
     internal PortableFixtureIds SourceIds => _template.SourceIds;
     internal Guid ReservationId => _template.ReservationId;
+    internal string RevisionToken => _template.RevisionToken;
+    internal Dictionary<string, List<string>> OriginalAllTables => _template.OriginalAllTables;
     internal Dictionary<string, List<string>> OriginalPortable => _template.OriginalPortable;
     internal Dictionary<string, string> OriginalMedia => _template.OriginalMedia;
     internal Dictionary<string, string> ExpectedImportedMedia => _template.ExpectedImportedMedia;
+    internal string OriginalDatabaseSha256 => _template.OriginalDatabaseSha256;
     internal string TransferRoot { get; }
     internal string StagingRoot => _ownStagingRoot ?? _template.StagingRoot;
+
+    /// <summary>Test seam: overrides the current destination revision token.</summary>
+    internal Func<CancellationToken, Task<string>>? RevisionOverride { get; set; }
+
+    /// <summary>Test seam: throws during the media component's rollback rename.</summary>
+    internal Action? MediaRecoveryRenameFailure { get; set; }
+
+    /// <summary>Test seam: throws during the database component's rollback rename.</summary>
+    internal Action? DatabaseRecoveryRenameFailure { get; set; }
 
     private IPreparedPortableImport? _prepared;
     private PortablePreparedImportVerification? _expected;
@@ -390,11 +415,20 @@ internal sealed class ActivationCoordinatorTestBed : IAsyncDisposable
             _providers.Remove(Host);
         }
 
+        BuildMaintenance();
+        BuildHost();
+    }
+
+    private void BuildMaintenance()
+    {
+        // Production always constructs the coordinator with the durable marker,
+        // so a sticky fail-closed state can survive a runtime rollback failure.
+        var marker = new LibraryMaintenanceMarker(Paths.LiveDatabase);
         Maintenance = new LibraryMaintenanceCoordinator(
-            new LibraryMaintenanceOptions { DrainTimeout = _drainTimeout }, clock: Clock);
+            new LibraryMaintenanceOptions { DrainTimeout = _drainTimeout }, clock: Clock, marker: marker);
+        Maintenance.InitializeAfterRecovery();
         Journals = new SelfHostedActivationJournalStore(Paths, Maintenance);
         Manifests = new SelfHostedRecoveryManifestStore(Paths);
-        BuildHost();
     }
 
     private void BuildHost()
@@ -419,9 +453,11 @@ internal sealed class ActivationCoordinatorTestBed : IAsyncDisposable
         services.AddSingleton(Journals);
         services.AddSingleton(Manifests);
         services.AddSingleton<ISelfHostedActivationRecoveryStep>(
-            new SelfHostedActivationComponentStep(Paths, database: false));
+            new SelfHostedActivationComponentStep(Paths, database: false,
+                afterRenameForTesting: () => MediaRecoveryRenameFailure?.Invoke()));
         services.AddSingleton<ISelfHostedActivationRecoveryStep>(
-            new SelfHostedActivationComponentStep(Paths, database: true));
+            new SelfHostedActivationComponentStep(Paths, database: true,
+                afterRenameForTesting: () => DatabaseRecoveryRenameFailure?.Invoke()));
         services.AddSingleton<ISelfHostedActivationRecoveryStep>(
             new SelfHostedActivationEmptyRetentionStep(Paths, Manifests));
         services.AddSingleton<SelfHostedActivationRecoveryStartupService>();
@@ -454,6 +490,10 @@ internal sealed class ActivationCoordinatorTestBed : IAsyncDisposable
         services.AddSingleton<MigrationFileMutex>();
         services.AddScoped<EfMigrationJobStore>();
         services.AddScoped<IMigrationJobStore, MigrationEngineJobStore>();
+        services.AddScoped<ILibraryDestinationRevisionProvider>(sp =>
+            new SwitchableRevisionProvider(
+                new LibraryStateDestinationRevisionProvider(sp.GetRequiredService<NostosDbContext>()),
+                this));
         services.AddScoped<SelfHostedActivationCoordinator>();
         services.AddScoped<IMigrationActivationService>(sp =>
             sp.GetRequiredService<SelfHostedActivationCoordinator>());
@@ -476,7 +516,7 @@ internal sealed class ActivationCoordinatorTestBed : IAsyncDisposable
         coordinator.StepObserverForTesting = observer;
         return await coordinator.ActivateAsync(
             JobId,
-            new MigrationActivateRequest(ActivationCoordinatorTemplate.OriginalRevision, confirm),
+            new MigrationActivateRequest(RevisionToken, confirm),
             ct);
     }
 
@@ -521,10 +561,7 @@ internal sealed class ActivationCoordinatorTestBed : IAsyncDisposable
         }
 
         await ReconcileAsync();
-        Maintenance = new LibraryMaintenanceCoordinator(
-            new LibraryMaintenanceOptions { DrainTimeout = _drainTimeout }, clock: Clock);
-        Journals = new SelfHostedActivationJournalStore(Paths, Maintenance);
-        Manifests = new SelfHostedRecoveryManifestStore(Paths);
+        BuildMaintenance();
         BuildHost();
     }
 
@@ -544,12 +581,43 @@ internal sealed class ActivationCoordinatorTestBed : IAsyncDisposable
         return types.Select(type => db.Model.FindEntityType(type)!.GetTableName()!).ToArray();
     }
 
+    /// <summary>
+    /// Full logical comparison of the restored original generation. Every table,
+    /// every row and every column is compared, plus the media SHA-256 set and the
+    /// database file hash. The ONLY rows excluded are the activation job's own
+    /// row in <c>MigrationJobRecords</c>: the protocol legitimately transitions
+    /// it to <c>Activating</c> (and to <c>Failed</c> after a rolled-back
+    /// in-process failure), updating State, lease, UpdatedAt and Version. Tests
+    /// assert that row's expected state explicitly.
+    /// </summary>
     internal void AssertOriginalGeneration()
     {
-        ActivationCoordinatorTemplate.DumpPortable(Paths.LiveDatabase)
-            .Should().BeEquivalentTo(OriginalPortable, "the portable library must be byte-identical to the original");
+        var actual = ActivationBuildFixture.DumpAllTables(Paths.LiveDatabase);
+        var expected = OriginalAllTables;
+        foreach (var table in expected.Keys)
+        {
+            if (string.Equals(table, "MigrationJobRecords", StringComparison.Ordinal))
+            {
+                // Excluded: the activation job's State/lease/timestamps/Version
+                // are the protocol's own live-DB mutations; asserted separately.
+                continue;
+            }
+
+            actual[table].Should().BeEquivalentTo(expected[table],
+                $"table {table} must be logically identical to the original");
+        }
+
+        actual.Keys.Should().BeEquivalentTo(expected.Keys, "no table may appear or disappear");
+
         ActivationBuildFixture.MediaSnapshot(Paths.LiveMedia)
-            .Should().BeEquivalentTo(OriginalMedia, "the media root must be byte-identical to the original");
+            .Should().BeEquivalentTo(OriginalMedia, "the media root must be identical to the original");
+
+        // Whole-file byte identity is deliberately NOT asserted: the activation
+        // job's own row is legitimately written on the live database (lease,
+        // Activating, and after the window the lease release), so the main file
+        // is not untouched. The rename-not-rewrite property of the retained
+        // components is proven by the recovery-step tests, and the logical
+        // comparison above is the authoritative content proof.
     }
 
     internal async Task AssertImportedGenerationAsync()
@@ -615,6 +683,33 @@ internal sealed class ActivationCoordinatorTestBed : IAsyncDisposable
         File.WriteAllBytes(file, bytes);
     }
 
+    /// <summary>Tampering seam: corrupts the SQLite database bytes so integrity checks fail.</summary>
+    internal static void CorruptDatabaseByte(string path)
+    {
+        var bytes = File.ReadAllBytes(path);
+        bytes[0] ^= 0xFF; // the "SQLite format 3" magic: any open or integrity check fails
+        File.WriteAllBytes(path, bytes);
+    }
+
+    /// <summary>SHA-256 of every file under the bed root, for freeze assertions.</summary>
+    internal Dictionary<string, string> SnapshotActivationTree() =>
+        Directory.EnumerateFiles(Root, "*", SearchOption.AllDirectories)
+            .ToDictionary(
+                path => Path.GetRelativePath(Root, path),
+                path => Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))),
+                StringComparer.Ordinal);
+
+    /// <summary>
+    /// Adds structurally valid but database-unindexed media (a GUID folder with a
+    /// book file) to the live root, modelling orphan user files.
+    /// </summary>
+    internal void WriteOrphanMedia()
+    {
+        var folder = Path.Combine(Paths.LiveMedia, Guid.NewGuid().ToString());
+        Directory.CreateDirectory(folder);
+        File.WriteAllText(Path.Combine(folder, "book.epub"), "ORPHAN-USER-MEDIA");
+    }
+
     public async ValueTask DisposeAsync()
     {
         foreach (var provider in _providers.ToArray())
@@ -639,5 +734,16 @@ internal sealed class ActivationCoordinatorTestBed : IAsyncDisposable
         catch (UnauthorizedAccessException)
         {
         }
+    }
+
+    /// <summary>Delegates to the real provider unless a test overrides the token.</summary>
+    private sealed class SwitchableRevisionProvider(
+        ILibraryDestinationRevisionProvider inner,
+        ActivationCoordinatorTestBed bed) : ILibraryDestinationRevisionProvider
+    {
+        public Task<string> GetCurrentAsync(CancellationToken ct) =>
+            bed.RevisionOverride is { } overridden
+                ? overridden(ct)
+                : inner.GetCurrentAsync(ct);
     }
 }
