@@ -9,7 +9,9 @@
 
 import { HttpClient } from '@angular/common/http';
 import { InjectionToken, inject } from '@angular/core';
+import { firstValueFrom } from 'rxjs';
 
+import { DeploymentCapabilitiesService } from '../../core/services/deployment-capabilities.service';
 import {
   BrowserMigrationChunk,
   MigrationActivateRequestDto,
@@ -23,7 +25,12 @@ import {
   MigrationSessionStatusDto,
   MigrationUploadSessionResponseDto,
 } from '../models/migration-http.dtos';
-import { HttpLibraryTransferTransport } from './http-library-transfer-transport';
+import { MIGRATION_BASE_PATH } from './http-library-transfer-transport';
+import {
+  DIRECT_UPLOAD_CLIENT,
+  DirectUploadLibraryTransferTransport,
+} from './direct-upload-library-transfer-transport';
+import type { LibraryTransferMode } from '../models/library-transfer.models';
 
 export {
   MigrationActivationConflictError,
@@ -97,6 +104,17 @@ export interface LibraryTransferTransport {
     signal?: AbortSignal,
   ): Promise<MigrationActivationStatusDto>;
 
+  /**
+   * Optional (slice B9): resolves and pins the part-upload data path for a
+   * session before any part is sent. Adapters with a single path omit it.
+   * A rejection is a transient failure and is retried; it must never be
+   * interpreted as "use the application-server path".
+   */
+  resolveUploadMode?(sessionId: string, signal?: AbortSignal): Promise<LibraryTransferMode>;
+
+  /** Optional (slice B9): pins a mode persisted by an earlier session. */
+  pinUploadMode?(sessionId: string, mode: LibraryTransferMode): void;
+
   /** Native browser download URL; never fetched into Angular memory (plan §39). */
   getExportDownloadUrl(jobId: string): string;
 }
@@ -108,12 +126,29 @@ export interface LibraryTransferTransport {
 export type PortableTransferClient = LibraryTransferTransport;
 
 /**
- * Production DI default: the real SelfHosted #679 HTTP adapter. Tests override
- * `LIBRARY_TRANSFER_TRANSPORT` with an in-memory transport; there is no
- * production branch that can construct the mock.
+ * Production DI default: the real SelfHosted #679 HTTP adapter, extended with
+ * the direct part-upload mode (slice B9). The mode is resolved once per upload
+ * session from the server's `supportsDirectPartUpload` deployment capability
+ * and pinned, so a session never switches paths. A capability read failure is
+ * retried by the transport and never silently becomes "application server".
+ * Tests override `LIBRARY_TRANSFER_TRANSPORT` with an in-memory transport;
+ * there is no production branch that can construct the mock.
  */
 export function createLibraryTransferTransport(): LibraryTransferTransport {
-  return new HttpLibraryTransferTransport(inject(HttpClient));
+  const http = inject(HttpClient);
+  const capabilitiesService = inject(DeploymentCapabilitiesService);
+
+  // Every attempt asks the server again: a failed read must stay retryable
+  // rather than being cached as "direct is off" (review-749 B5).
+  const loadDirectUploadCapability = async (): Promise<boolean> => {
+    const capabilities = await firstValueFrom(capabilitiesService.get(true));
+    return capabilities.supportsDirectPartUpload === true;
+  };
+
+  return new DirectUploadLibraryTransferTransport(http, MIGRATION_BASE_PATH, {
+    loadDirectUploadCapability,
+    uploadClient: inject(DIRECT_UPLOAD_CLIENT),
+  });
 }
 
 /**

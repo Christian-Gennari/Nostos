@@ -177,6 +177,46 @@ export function libraryTransferFailureCopy(failure: LibraryTransferFailure): Tra
           'this feature.',
         action: 'none',
       };
+    case 'migration_transport_mode_unavailable':
+      return {
+        title: 'The host didn’t answer in time',
+        message:
+          'Nostos could not ask this host how to upload the library. Nothing was sent; ' +
+          'try again in a moment.',
+        action: 'retry',
+      };
+    case 'direct_upload_target_invalid':
+      return {
+        title: 'The host returned an unusable upload address',
+        message:
+          'Nostos refused the storage address this host returned because it is not a safe ' +
+          'external HTTPS location. Nothing was uploaded; update or contact the host operator.',
+        action: 'none',
+      };
+    case 'direct_upload_ticket_invalid':
+      return {
+        title: 'The host returned an unusable upload ticket',
+        message:
+          'An upload ticket did not match this archive’s session, so Nostos stopped before ' +
+          'sending the part. Retry the import; if it keeps happening, update the host.',
+        action: 'retry',
+      };
+    case 'direct_upload_rejected':
+      return {
+        title: 'The storage target refused part of the archive',
+        message:
+          'The host’s storage target kept refusing an archive part. Nothing in your library ' +
+          'was changed. Retry the import; if it keeps happening, contact the host operator.',
+        action: 'retry',
+      };
+    case 'direct_upload_receipt_pending':
+      return {
+        title: 'The host didn’t confirm an uploaded part',
+        message:
+          'Nostos uploaded an archive part but the host did not confirm it. Nothing is lost; ' +
+          'Nostos can retry this part from where it stopped.',
+        action: 'retry',
+      };
     case 'migration_lease_conflict':
       return {
         title: 'Another process is working on this import',

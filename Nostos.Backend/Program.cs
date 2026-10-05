@@ -91,6 +91,13 @@ var transferStorageOptions =
     builder.Configuration.GetSection(TransferStorageOptions.SectionName).Get<TransferStorageOptions>()
     ?? new TransferStorageOptions();
 TransferStorageOptions.Validate(transferStorageOptions);
+var activationMaintenanceOptions =
+    builder.Configuration.GetSection(SelfHostedActivationMaintenanceOptions.SectionName)
+        .Get<SelfHostedActivationMaintenanceOptions>()
+    ?? new SelfHostedActivationMaintenanceOptions();
+SelfHostedActivationMaintenanceOptions.Validate(activationMaintenanceOptions);
+builder.Services.Configure<SelfHostedActivationMaintenanceOptions>(
+    builder.Configuration.GetSection(SelfHostedActivationMaintenanceOptions.SectionName));
 var transferRootPath = TransferStorageOptions.ResolveRoot(
     builder.Environment.ContentRootPath,
     FileStorageOptions.ResolveBooksRoot(builder.Environment.ContentRootPath, fileStorageOptions),
@@ -291,6 +298,16 @@ builder.Services.AddSingleton<SelfHostedActivationDispatcher>();
 builder.Services.AddSingleton<IMigrationActivationDispatcher>(
     sp => sp.GetRequiredService<SelfHostedActivationDispatcher>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<SelfHostedActivationDispatcher>());
+
+// #681 SLICE 10: scheduled recovery expiry cleanup, activation orphan sweep and
+// the restart-safe post-activation derived rebuild. All passes take the shared
+// operation lease, so none can run inside or race an exclusive cutover window.
+builder.Services.AddScoped<IBookTextDerivedReset, SqliteBookTextDerivedReset>();
+builder.Services.AddScoped<IBookTextDerivedScheduler, StrictBookTextDerivedScheduler>();
+builder.Services.AddScoped<SelfHostedActivationOrphanSweep>();
+builder.Services.AddSingleton<SelfHostedDerivedRebuildService>();
+builder.Services.AddHostedService<SelfHostedDerivedRebuildWorker>();
+builder.Services.AddHostedService<SelfHostedRecoveryCleanupWorker>();
 
 builder.Services.AddScoped<IBackupService, BackupService>();
 

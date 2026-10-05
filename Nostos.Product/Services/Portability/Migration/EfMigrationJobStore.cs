@@ -604,7 +604,15 @@ public sealed class EfMigrationJobStore : IMigrationJobStore
                     && j.Version == snapshot.Version
                     && (j.State == (int)MigrationJobState.Failed
                         || j.State == (int)MigrationJobState.Cancelled
-                        || j.State == (int)MigrationJobState.Expired))
+                        || j.State == (int)MigrationJobState.Expired)
+                    // A terminal job's activation-area cleanup holds a fenced
+                    // claim in the lease fields; a concurrent retry loses
+                    // against it and is reported as a transient conflict. An
+                    // expired claim (crashed sweep) never blocks a retry.
+                    && !(j.MigrationLeaseToken != null
+                        && EF.Functions.Like(j.MigrationLeaseToken, MigrationJobCleanupClaim.LikePattern)
+                        && j.LeaseExpiresAtUtc != null
+                        && j.LeaseExpiresAtUtc > now))
                 .ExecuteUpdateAsync(
                     s => s
                         .SetProperty(j => j.State, (int)MigrationJobState.Pending)
