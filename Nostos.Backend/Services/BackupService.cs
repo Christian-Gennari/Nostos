@@ -16,7 +16,6 @@ public class BackupService : IBackupService
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IFileStorageService _fileStorage;
-    private readonly IWebHostEnvironment _env;
     private readonly BackupSettingsProvider _settingsProvider;
     private readonly ILogger<BackupService> _logger;
     private readonly string _localBackupDir;
@@ -43,7 +42,6 @@ public class BackupService : IBackupService
     {
         _scopeFactory = scopeFactory;
         _fileStorage = fileStorage;
-        _env = env;
         _settingsProvider = settingsProvider;
         _logger = logger;
 
