@@ -797,9 +797,9 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     if (generation !== this.searchGeneration) return;
 
     try {
+      const rendered = this.renderedContents();
       const contents =
-        this.renderedContents().find((candidate) => this.contentMatchesHref(candidate, match.href)) ??
-        this.renderedContents()[0];
+        rendered.find((candidate) => this.contentMatchesHref(candidate, match.href)) ?? rendered[0];
       if (!contents?.document) return;
 
       const range = rangeForNormalizedResourceSpan(contents.document, match.offset, match.length);
