@@ -149,7 +149,10 @@ describe('LibraryReplacementDialogComponent', () => {
   it('prefers server-derived prepared-import counts over the manifest estimate', async () => {
     await create({
       preparedImport: {
-        incomingCounts: archiveCounts({ books: 200, notes: 999, collections: 30 }),
+        // The host's `PreparedPortableImportMetadata` serialises verified
+        // counts under `counts` (the dialog originally read a key the server
+        // never sent, so this case silently fell back to the estimate).
+        counts: archiveCounts({ books: 200, notes: 999, collections: 30 }),
       },
     });
 
@@ -247,6 +250,25 @@ describe('LibraryReplacementDialogComponent', () => {
     expect(cancelled).toHaveBeenCalledTimes(2);
   });
 
+  it('applies initial focus to the cancel action once the dialog is interactive', async () => {
+    await create({ supportsSafeActivation: true, busy: true });
+    const cancel = fixture.nativeElement.querySelector('.replacement-cancel') as HTMLButtonElement;
+    expect(cancel.disabled).toBe(true);
+    const focus = vi.spyOn(cancel, 'focus');
+
+    // The unconfirmed activation probe seals the dialog briefly; when it
+    // unseals, focus must still enter the modal (the browser QA found CDK's
+    // one-shot autoCapture left focus on the page behind it). jsdom performs no
+    // real focus movement, so the focus call is the assertable contract here;
+    // the real-browser verdict is scenario f in the B10 suite.
+    fixture.componentRef.setInput('busy', false);
+    fixture.detectChanges();
+    TestBed.flushEffects();
+    fixture.detectChanges();
+
+    expect(focus).toHaveBeenCalledTimes(1);
+  });
+
   it('wires CDK focus trapping with initial focus on the non-destructive action', async () => {
     await create();
 
@@ -274,18 +296,54 @@ describe('LibraryReplacementDialogComponent', () => {
         destinationRevision: 'rev-9',
         destinationStatus: 'Populated',
         existingCounts: existingCounts({ books: 9, notes: 12, collections: 2 }),
+        changedSinceImportStarted: true,
       },
     });
 
     expect(element('replacement-existing')?.textContent).toContain(
       '9 books · 12 notes · 2 collections',
     );
-    expect(element('replacement-conflict')?.textContent).toContain('changed');
+    expect(element('replacement-conflict')?.textContent).toContain(
+      'changed since the import started',
+    );
 
     const confirmed = vi.fn();
     component.confirmed.subscribe(confirmed);
     confirmButton().click();
     expect(confirmed).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not claim the library changed on a first populated-destination review', async () => {
+    await create({
+      supportsSafeActivation: true,
+      conflict: {
+        destinationRevision: 'rev-9',
+        destinationStatus: 'Populated',
+        existingCounts: existingCounts({ books: 9, notes: 12, collections: 2 }),
+        changedSinceImportStarted: false,
+      },
+    });
+
+    expect(element('replacement-existing')?.textContent).toContain(
+      '9 books · 12 notes · 2 collections',
+    );
+    expect(element('replacement-conflict')).toBeNull();
+    expect(confirmButton().disabled).toBe(false);
+  });
+
+  it('keeps a neutral re-review sentence when an older host omits the changed flag', async () => {
+    await create({
+      supportsSafeActivation: true,
+      conflict: {
+        destinationRevision: 'rev-9',
+        destinationStatus: 'Populated',
+        existingCounts: existingCounts({ books: 9, notes: 12, collections: 2 }),
+      },
+    });
+
+    const notice = element('replacement-conflict')?.textContent ?? '';
+    expect(notice).toContain('These are the current counts');
+    expect(notice).not.toContain('changed');
   });
 
   it('blocks a retry after a fail-closed activation and explains the operator path', async () => {

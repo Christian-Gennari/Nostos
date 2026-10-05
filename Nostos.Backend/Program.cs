@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 using ModelContextProtocol.Protocol;
 using Nostos.Backend.Data;
 using Nostos.Backend.Data.Interfaces;
@@ -25,6 +27,7 @@ using Nostos.Backend.Services.Library;
 using Nostos.Backend.Services.Notes;
 using Nostos.Backend.Services.Portability;
 using Nostos.Backend.Services.Portability.Activation;
+using Nostos.Backend.Services.Portability.Migration;
 using Nostos.Backend.Services.Portability.Transfers;
 using Nostos.Backend.Services.BookText;
 using Nostos.Product.BookText;
@@ -107,6 +110,17 @@ builder.Services.AddSingleton(new TransferPathResolver(transferRootPath));
 builder.Services.AddSingleton<ITransferVolume>(new DriveInfoTransferVolume(transferRootPath));
 builder.Services.AddScoped<ITransferStorageCapacity, TransferStorageCapacity>();
 Nostos.Backend.Services.Portability.Migration.MigrationEngineRegistration.AddSelfHostedMigrationEngine(builder.Services);
+
+// Operator-facing library-migration advertisement (issue #680 review). The
+// capability derives from the SAME phase availability the migration routes
+// consult, so this host can never offer a feature it cannot execute; the
+// LibraryMigration:Enabled key is the emergency switch (default on).
+builder.Services.AddOptions<LibraryMigrationOptions>()
+    .BindConfiguration(LibraryMigrationOptions.SectionName);
+builder.Services.Replace(ServiceDescriptor.Singleton<IMigrationPhaseAvailability>(sp =>
+    new ConfiguredMigrationPhaseAvailability(
+        MigrationPhaseAvailabilityAll.Instance,
+        sp.GetRequiredService<IOptions<LibraryMigrationOptions>>().Value)));
 
 // Durable prepared-import staging for restart-survivable migration jobs
 // (issue #679, Slice 4). The immediate import endpoint keeps constructing its

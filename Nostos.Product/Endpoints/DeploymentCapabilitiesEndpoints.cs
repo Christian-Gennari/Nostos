@@ -16,16 +16,6 @@ public static class DeploymentCapabilitiesEndpoints
 {
     public const string Route = "/api/runtime/capabilities";
 
-    /// <summary>
-    /// Single switch for the frontend-facing library-migration capability. It is
-    /// deliberately decoupled from <see cref="IMigrationPhaseAvailability"/>:
-    /// the backend API can create and process jobs while the frontend's real
-    /// transport is still unmerged, and flipping this to <c>true</c> is the one
-    /// change that advertises the feature to the UI. Flip it here when the
-    /// frontend transport ships (orchestrator-owned).
-    /// </summary>
-    public const bool AdvertiseLibraryMigration = false;
-
     public static IEndpointRouteBuilder MapDeploymentCapabilitiesEndpoints(
         this IEndpointRouteBuilder routes)
     {
@@ -51,13 +41,17 @@ public static class DeploymentCapabilitiesEndpoints
             UsageMeteringAvailable: deployment.Capabilities.UsageMeteringAvailable,
             AccountManagementUrl: deployment.Capabilities.AccountManagementUrl,
             FeedbackUrl: deployment.Capabilities.FeedbackUrl,
-            // Library migration is advertised only when the operator/frontend
-            // transport is ready (see AdvertiseLibraryMigration). Phase
-            // availability still gates preflight and job creation server-side;
-            // it is intentionally not what the UI reads. Safe activation (#681)
-            // exists only in the SelfHosted host; the destructive confirmation
-            // stays gated by the frontend capability below.
-            SupportsLibraryMigration: AdvertiseLibraryMigration,
+            // Library migration is advertised from the SAME availability the
+            // migration routes consult, so "the UI should offer this feature"
+            // can never be true while the host would refuse to execute it. The
+            // availability already folds in the operator's
+            // LibraryMigration:Enabled switch and the registered phase
+            // handlers; a host that does not map the migration endpoints
+            // registers no availability and stays dark.
+            SupportsLibraryMigration: deployment.Mode == DeploymentMode.SelfHosted
+                && migrationAvailability is not null
+                && migrationAvailability.IsAvailable(MigrationDirection.Import)
+                && migrationAvailability.IsAvailable(MigrationDirection.Export),
             SupportsSafeActivation: deployment.Mode == DeploymentMode.SelfHosted);
 }
 

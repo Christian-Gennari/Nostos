@@ -331,6 +331,10 @@ export class LibraryActivationController implements OnDestroy {
   }
 
   private showConflict(conflict: LibraryActivationConflictFacts): void {
+    // The run is over and the user must review the fresh facts: stop the poll
+    // loop so the still-failed durable status cannot re-trigger the recovery
+    // probe and flicker a stale/no conflict over the dialog.
+    this.stopPolling();
     if (this.userConfirmed) {
       // The user already confirmed: unseal the dialog with the fresh facts and
       // let them confirm the current library again.
@@ -451,6 +455,12 @@ export class LibraryActivationController implements OnDestroy {
           (code === 'migration_destination_conflict' ||
             code === 'migration_replacement_confirmation_required')
         ) {
+          // A conflict already on screen is the user's to act on: never re-probe
+          // over it (an in-flight poll can deliver the failed status again).
+          if (this.viewSignal().conflict !== null) {
+            this.stopPolling();
+            return;
+          }
           await this.recoverBackgroundConflict(code);
           return;
         }

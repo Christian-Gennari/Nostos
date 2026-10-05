@@ -46,6 +46,29 @@ public sealed class SelfHostedDerivedRebuildTests
     }
 
     [Fact]
+    public async Task RolledBackGeneration_IsAlsoWipedAndRescheduled()
+    {
+        using var bed = new ActivationMaintenanceTestBed();
+        var jobId = Guid.NewGuid();
+        var bookId = Guid.NewGuid();
+        await bed.SeedBookAsync(bookId, "book.epub");
+        await bed.EnsureBookTextSchemaAsync();
+        await SeedStaleDerivedStateAsync(bed, bookId);
+        bed.SeedRolledBackResolvedJournal(jobId);
+
+        var rebuilt = await bed.CreateRebuildService().RunPendingAsync(default);
+
+        rebuilt.Should().Be(1, "the cutover cleared the caches of the preserved original generation");
+        (await bed.CountDerivedRowsAsync("BookTextChunks")).Should().Be(0, "no stale chunk may survive");
+        (await bed.CountDerivedRowsAsync("BookTextChunksFts")).Should().Be(0);
+        (await bed.CountDerivedRowsAsync("BookTextChunkEmbeddings")).Should().Be(0);
+        (await ReadStateAsync(bed, bookId)).Should().Be(
+            (BookTextIngestionStatus.Pending, BookTextArtifactSchema.CurrentExtractorVersion),
+            "the preserved generation is rescheduled through the normal ingestion pipeline");
+        File.Exists(bed.DerivedRebuildMarkerPath(jobId)).Should().BeTrue();
+    }
+
+    [Fact]
     public async Task SchedulingFailure_LeavesMarkerAbsent_AndNextPassRetriesOnlyTheFailedBook()
     {
         using var bed = new ActivationMaintenanceTestBed();

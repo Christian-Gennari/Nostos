@@ -14,6 +14,14 @@ public sealed class FileBookTextArtifactStorage(
     IWebHostEnvironment environment,
     IOptions<FileStorageOptions> storageOptions) : IBookDerivedArtifactStorage
 {
+    /// <summary>
+    /// The per-book derived artifact directory name. The exact, case-correct
+    /// name is part of the library-media layout contract: the activation
+    /// recovery boundary treats this directory as regenerable and never retains
+    /// it, while refusing every other unexpected entry.
+    /// </summary>
+    internal const string DerivedDirectoryName = "derived";
+
     private readonly string _root = FileStorageOptions.ResolveBooksRoot(
         environment.ContentRootPath,
         storageOptions.Value);
@@ -26,7 +34,7 @@ public sealed class FileBookTextArtifactStorage(
         var directory = Path.Combine(
             _root,
             revision.BookId.ToString(),
-            "derived",
+            DerivedDirectoryName,
             revision.SourceSha256,
             Safe(revision.ExtractorVersion));
         Directory.CreateDirectory(directory);
@@ -57,7 +65,7 @@ public sealed class FileBookTextArtifactStorage(
     public Task DeleteBookArtifactsAsync(Guid bookId, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
-        var path = Path.Combine(_root, bookId.ToString(), "derived");
+        var path = Path.Combine(_root, bookId.ToString(), DerivedDirectoryName);
         if (Directory.Exists(path)) Directory.Delete(path, recursive: true);
         return Task.CompletedTask;
     }
@@ -68,7 +76,7 @@ public sealed class FileBookTextArtifactStorage(
         CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
-        var derived = Path.Combine(_root, bookId.ToString(), "derived");
+        var derived = Path.Combine(_root, bookId.ToString(), DerivedDirectoryName);
         if (!Directory.Exists(derived))
             return Task.CompletedTask;
 
@@ -185,6 +193,10 @@ public sealed partial class SqliteBookTextIndex(
         BookTextSourceFormat format,
         CancellationToken ct = default)
     {
+        // The derived schema is absent in a freshly activated/restored
+        // generation until a first caller recreates it; scheduling a new
+        // upload must not fail on that gap.
+        await EnsureSchemaAsync(ct);
         await using var db = await contexts.CreateDbContextAsync(ct);
         await db.Database.OpenConnectionAsync(ct);
         try

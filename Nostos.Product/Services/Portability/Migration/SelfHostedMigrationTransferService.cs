@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text.Json;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Nostos.Backend.Data;
@@ -280,6 +281,30 @@ public sealed class SelfHostedMigrationTransferService(
         {
             await FailUploadAsync(jobId, MigrationTransferException.StorageExhausted);
             throw new MigrationTransferException(MigrationTransferException.StorageExhausted, "Upload reservation is unavailable.", ex);
+        }
+        catch (IOException ex) when (requestToken.IsCancellationRequested || uploading.IsCancellationRequested)
+        {
+            // The requester went away (page reload, navigation, network drop:
+            // request token) or the host cancelled this upload server-side
+            // (upload token, e.g. an explicit cancel) while the body was being
+            // read. Either way the chunk stays unreceived and the next resume
+            // re-sends it: this is an interrupted transfer, not a storage
+            // failure. Failing the durable job here surfaced as
+            // migration_storage_exhausted after a mid-upload reload.
+            throw new OperationCanceledException(
+                "The chunk upload was interrupted before the request body completed.",
+                ex,
+                uploading.IsCancellationRequested ? uploading.Token : requestToken);
+        }
+        catch (BadHttpRequestException ex) when (ex.StatusCode == StatusCodes.Status400BadRequest)
+        {
+            // A live client sent a body shorter than the declared Content-Length
+            // (or an otherwise malformed body). Refuse just this request; the
+            // durable job and its receipts stay resumable.
+            throw new MigrationTransferException(
+                MigrationTransferException.InvalidRequest,
+                "The chunk request body ended before the declared length was received.",
+                ex);
         }
         catch (IOException ex)
         {

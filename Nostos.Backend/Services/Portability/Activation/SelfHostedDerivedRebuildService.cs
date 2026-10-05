@@ -167,11 +167,13 @@ internal sealed class SelfHostedDerivedRebuildService(
     }
 
     /// <summary>
-    /// Every resolved <c>Committed</c> journal whose derived rebuild marker is
-    /// missing. Resolved <c>RolledBack</c> journals keep the original
-    /// generation and its derived state, so they are never rebuilt. A corrupt
-    /// resolved journal is skipped: the operator guide owns it, and the derived
-    /// rebuild must not guess.
+    /// Every resolved terminal journal whose derived rebuild marker is missing.
+    /// The cutover clears the live <c>derived/</c> caches before the media root
+    /// is retained, so a committed replacement and a rolled-back (or restored)
+    /// generation both need the wipe-and-reschedule pass: neither may serve or
+    /// keep derived state from the other generation. A corrupt resolved journal
+    /// is skipped: the operator guide owns it, and the derived rebuild must not
+    /// guess.
     /// </summary>
     private IReadOnlyList<SelfHostedActivationJournal> ReadPending()
     {
@@ -197,7 +199,7 @@ internal sealed class SelfHostedDerivedRebuildService(
             try
             {
                 var journal = journals.ReadResolved(jobId);
-                if (journal is { Phase: SelfHostedActivationPhase.Committed }
+                if (journal is { Phase: SelfHostedActivationPhase.Committed or SelfHostedActivationPhase.RolledBack }
                     && !HasRecord<SelfHostedDerivedRebuildMarker>(MarkerPath(journal.JobId), journal.JobId, journal.OperationId))
                 {
                     pending.Add(journal);

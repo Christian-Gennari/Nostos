@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Nostos.Backend.Data;
+using Nostos.Backend.Services.BookText;
 using Nostos.Backend.Services.Portability.Transfers;
 
 namespace Nostos.Backend.Services.Portability.Activation;
@@ -246,6 +247,8 @@ internal sealed class SelfHostedMigrationRecoveryService :
         var captureStartedAtUtc = _clock.GetUtcNow();
         var files = EnumerateLiveMediaFiles();
         var pins = new List<SelfHostedRecoveryMediaPin>(files.Count);
+        // Derived book-text caches are regenerable and are never retained, so
+        // only the manifest media is measured and accounted for.
         long mediaBytes = 0;
         foreach (var file in files)
         {
@@ -338,6 +341,11 @@ internal sealed class SelfHostedMigrationRecoveryService :
         if (source)
         {
             RequireJournalPhase(journal, SelfHostedActivationPhase.CutoverPrepared);
+            // Derived caches are rebuildable and are never part of the retained
+            // recovery copy: clear them before the root is renamed. A crash
+            // here leaves the journal actionable and the original generation
+            // without derived caches, which the derived rebuild reschedules.
+            RemoveDerivedCachesUnderExclusiveLease(live);
             ActivationFileSystem.Rename(live, previous);
         }
         else
@@ -755,8 +763,16 @@ internal sealed class SelfHostedMigrationRecoveryService :
     }
 
     /// <summary>
-    /// Structural enumeration of the live media root. Fails closed on
-    /// unexpected entries so the retained set is exactly describable.
+    /// Structural enumeration of the live media root for the retained set.
+    /// Fails closed on unexpected entries; every path is confined and
+    /// link-refusing through <see cref="SelfHostedActivationPaths.VerifyMediaPath"/>,
+    /// so the retained set is exactly describable and bounded by the library root.
+    /// The book-text artifact store keeps regenerable caches under
+    /// <c>&lt;bookId&gt;/derived/</c> (the exact name from
+    /// <see cref="FileBookTextArtifactStorage.DerivedDirectoryName"/>); that
+    /// directory is skipped without descending into it, and is never retained
+    /// or hashed. Any other directory in a book folder, and any link anywhere
+    /// in the walk, is refused.
     /// </summary>
     private List<LiveMediaFile> EnumerateLiveMediaFiles()
     {
@@ -776,7 +792,16 @@ internal sealed class SelfHostedMigrationRecoveryService :
             foreach (var entry in Directory.EnumerateFileSystemEntries(directory).Order(StringComparer.Ordinal))
             {
                 _paths.VerifyMediaPath(entry);
-                if (Directory.Exists(entry)) throw Flaw("A book folder contains an unexpected directory.");
+                if (Directory.Exists(entry))
+                {
+                    // The app's own regenerable book-text cache: never followed,
+                    // never retained. The name match is exact and case-correct.
+                    if (!string.Equals(Path.GetFileName(entry),
+                            FileBookTextArtifactStorage.DerivedDirectoryName, StringComparison.Ordinal))
+                        throw Flaw("A book folder contains an unexpected directory.");
+                    continue;
+                }
+
                 if (!File.Exists(entry)) throw Flaw("The media root contains an unexpected entry.");
                 var info = new FileInfo(entry);
                 var (kind, extension) = ClassifyMediaFile(Path.GetFileName(entry));
@@ -786,6 +811,58 @@ internal sealed class SelfHostedMigrationRecoveryService :
         }
 
         return files;
+    }
+
+    /// <summary>
+    /// Removes the regenerable <c>&lt;bookId&gt;/derived/</c> directories from
+    /// the live media root under the exclusive lease, before the root is
+    /// retained. A strict walk that refuses links and unknown entries runs the
+    /// deletion, so a cache can never resolve outside the media root. Primary
+    /// media is only ever read here.
+    /// </summary>
+    private void RemoveDerivedCachesUnderExclusiveLease(string root)
+    {
+        _paths.VerifyMediaPath(root);
+        foreach (var directory in Directory.EnumerateFileSystemEntries(root).Order(StringComparer.Ordinal))
+        {
+            _paths.VerifyMediaPath(directory);
+            if (!Directory.Exists(directory))
+                throw Flaw("The media root contains an unexpected entry.");
+            if (!TryReadBookDirectoryName(Path.GetFileName(directory), out _))
+                throw Flaw("The media root contains an unexpected directory.");
+
+            foreach (var entry in Directory.EnumerateFileSystemEntries(directory).Order(StringComparer.Ordinal))
+            {
+                _paths.VerifyMediaPath(entry);
+                if (!Directory.Exists(entry)) continue; // primary media file: leave in place
+                if (!string.Equals(Path.GetFileName(entry),
+                        FileBookTextArtifactStorage.DerivedDirectoryName, StringComparison.Ordinal))
+                    throw Flaw("A book folder contains an unexpected directory.");
+                DeleteDerivedTree(entry);
+            }
+        }
+    }
+
+    private void DeleteDerivedTree(string directory)
+    {
+        foreach (var entry in Directory.EnumerateFileSystemEntries(directory).Order(StringComparer.Ordinal))
+        {
+            _paths.VerifyMediaPath(entry);
+            if (Directory.Exists(entry))
+            {
+                DeleteDerivedTree(entry);
+            }
+            else if (File.Exists(entry))
+            {
+                File.Delete(entry);
+            }
+            else
+            {
+                throw Flaw("A derived cache contains an unexpected entry.");
+            }
+        }
+
+        Directory.Delete(directory);
     }
 
     private void VerifyRetainedMediaMatchesManifest(Guid jobId, SelfHostedRecoveryManifest manifest)

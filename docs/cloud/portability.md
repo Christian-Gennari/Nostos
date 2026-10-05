@@ -38,16 +38,21 @@ Therefore, although the archive service itself has larger validation limits, the
 
 This is one of the primary constraints the durable transfer protocol below removes.
 
-## Durable library transfer jobs (transport shipped, not yet advertised)
+## Durable library transfer jobs (shipped and advertised on SelfHosted)
 
 The SelfHosted reference implementation of the epic #676 transfer protocol is
-implemented in the product and reachable over HTTP. It is **not advertised to
-the frontend**: `DeploymentCapabilitiesEndpoints.AdvertiseLibraryMigration` is
-deliberately `false`, so `GET /api/runtime/capabilities` reports
-`supportsLibraryMigration: false`. The Settings/onboarding transfer UI is
-present in the frontend but stays hidden behind that flag, so no user-facing
-entry point offers migration yet. Direct API clients can use the routes; the
-flag flips only when the remaining activation work ships.
+implemented in the product and reachable over HTTP. It is advertised to the
+frontend from the same `IMigrationPhaseAvailability` the migration routes
+consult: `GET /api/runtime/capabilities` reports
+`supportsLibraryMigration: true` on the SelfHosted host (where the phase
+handlers are registered and `LibraryMigration:Enabled` defaults to true) and
+the Settings/onboarding transfer UI is visible. Operators can withdraw the
+feature at runtime with `LibraryMigration:Enabled=false`; a host whose phase
+handlers are not registered, or that maps product endpoints with
+`MapMigrationTransferEndpoints = false`, reports `false` unconditionally.
+Activation, replacement, restore and the mandatory recovery copy shipped with
+#681 (see the activation sections below). A hosted (Cloud) host stays dark
+until its private transfer adapter ships and registers its own availability.
 
 ### Routes
 
@@ -104,8 +109,8 @@ Not available in the shipped build:
   `ReadyToActivate → Activating → Completed`;
 - the destination library is never mutated by an import job — the prepared
   staging area is the only output;
-- `supportsLibraryMigration` stays `false` until the transport is deliberately
-  advertised;
+- `supportsLibraryMigration` is advertised by the SelfHosted host (the
+  capability remains an explicit host decision, not phase inference);
 - `POST /api/portability/import` remains the only route that mutates a library,
   and it still targets an empty destination only.
 
@@ -358,7 +363,7 @@ Payload and manifest versions must strictly agree (`data_version_mismatch`). A p
 
 Epic #676 defines the one-click migration system between Nostos SelfHosted and Nostos Cloud.
 
-The implementation is split across issues #677–#682. This section defines the target contract. The provider-neutral contract, durable job/session/chunk/artifact/reservation records, the local worker, the SelfHosted transfer HTTP API, import preparation to `ReadyToActivate`, and export artifact generation are implemented (see "Durable library transfer jobs" in Part 1), and the Settings/onboarding transfer UI exists but stays hidden behind the `supportsLibraryMigration` capability flag. Activation/replacement (#681), the capability advertisement, and the private hosted adapter are still planned. Nothing in this section authorizes a destructive replacement of a user's library until #681 ships.
+The implementation is split across issues #677–#682. This section defines the target contract. The provider-neutral contract, durable job/session/chunk/artifact/reservation records, the local worker, the SelfHosted transfer HTTP API, import preparation to `ReadyToActivate`, export artifact generation, activation/replacement with a mandatory recovery copy (#681), and the real-browser acceptance suite (#680 slice B10) are implemented (see "Durable library transfer jobs" in Part 1). The SelfHosted host advertises `supportsLibraryMigration`; the private hosted (Cloud) adapter is still planned. Destructive replacement only runs through the #681 activation contract with an explicit, server-checked confirmation.
 
 ## Goals and authenticated ownership boundary
 

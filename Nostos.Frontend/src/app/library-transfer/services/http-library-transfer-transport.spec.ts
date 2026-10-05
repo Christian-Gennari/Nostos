@@ -569,6 +569,7 @@ describe('HttpLibraryTransferTransport', () => {
         message: 'Replacing an existing library requires explicit confirmation.',
         destinationRevision: 'rev-2',
         destinationStatus: 'Populated',
+        changedSinceImportStarted: true,
         existingCounts: {
           works: 1,
           books: 2,
@@ -594,6 +595,7 @@ describe('HttpLibraryTransferTransport', () => {
     expect(error.code).toBe('migration_replacement_confirmation_required');
     expect(conflict.destinationRevision).toBe('rev-2');
     expect(conflict.destinationStatus).toBe('Populated');
+    expect(conflict.changedSinceImportStarted).toBe(true);
     expect(conflict.existingCounts?.books).toBe(2);
     expect(conflict.existingCounts?.totalRows).toBe(9);
   });
@@ -620,6 +622,9 @@ describe('HttpLibraryTransferTransport', () => {
     expect(error.conflict.destinationRevision).toBe('rev-3');
     expect(error.conflict.destinationStatus).toBe('Empty');
     expect(error.conflict.existingCounts).toBeNull();
+    // The flag is optional on the wire: a host that omits it must not be
+    // mistaken for a confirmed "library changed" notice.
+    expect(error.conflict.changedSinceImportStarted).toBeNull();
   });
 
   it('maps the plain activation failure codes without conflict facts', async () => {

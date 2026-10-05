@@ -35,6 +35,12 @@ internal sealed class MigrationHttpHarness : IAsyncDisposable
     internal MigrationEngineHarness.TestVolume Volume { get; } = new();
     internal MigrationHttpProbe Probe { get; } = new();
     internal bool PhasesAvailable { get; set; } = true;
+
+    /// <summary>
+    /// Overrides <c>LibraryMigration:Enabled</c> for the host. Null keeps the
+    /// production default (enabled).
+    /// </summary>
+    internal bool? LibraryMigrationEnabled { get; set; }
     internal bool UseRealPhaseHandlers { get; set; }
     internal Action<IServiceCollection>? ConfigureServices { get; set; }
 
@@ -384,6 +390,11 @@ internal sealed class MigrationHttpHarness : IAsyncDisposable
             builder.UseSetting("Storage:DiskSafetyMarginBytes", "0");
             builder.UseSetting("Storage:DiskSafetyMarginPercent", "0");
             builder.UseSetting("Mcp:Enabled", "false");
+            if (harness.LibraryMigrationEnabled is { } enabled)
+            {
+                builder.UseSetting(
+                    LibraryMigrationOptions.SectionName + ":Enabled", enabled ? "true" : "false");
+            }
 
             builder.ConfigureServices(services =>
             {
@@ -397,7 +408,8 @@ internal sealed class MigrationHttpHarness : IAsyncDisposable
                 services.RemoveAll<ITransferVolume>();
                 services.AddSingleton<ITransferVolume>(harness.Volume);
                 services.RemoveAll<IMigrationPhaseAvailability>();
-                services.AddSingleton<IMigrationPhaseAvailability>(new ProbePhaseAvailability(harness));
+                services.AddSingleton<IMigrationPhaseAvailability>(sp => new ProbePhaseAvailability(
+                    harness, sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<LibraryMigrationOptions>>().Value));
                 if (!harness.UseRealPhaseHandlers)
                 {
                     services.RemoveAll<IMigrationPhaseHandler>();
@@ -423,9 +435,12 @@ internal sealed class MigrationHttpHarness : IAsyncDisposable
     }
 }
 
-internal sealed class ProbePhaseAvailability(MigrationHttpHarness harness) : IMigrationPhaseAvailability
+internal sealed class ProbePhaseAvailability(
+    MigrationHttpHarness harness,
+    LibraryMigrationOptions options) : IMigrationPhaseAvailability
 {
-    public bool IsAvailable(MigrationDirection direction) => harness.PhasesAvailable;
+    public bool IsAvailable(MigrationDirection direction) =>
+        harness.PhasesAvailable && options.Enabled;
 }
 
 internal sealed class SucceedingPhaseHandler : IMigrationPhaseHandler

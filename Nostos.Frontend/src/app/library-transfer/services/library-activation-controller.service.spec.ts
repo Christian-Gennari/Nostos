@@ -442,6 +442,37 @@ describe('LibraryActivationController', () => {
     });
   });
 
+  it('stops polling once a background conflict opens the review (no flicker loop)', async () => {
+    const harness = configure({
+      destinationStatus: 'Populated',
+      existingCounts: { books: 2 },
+    });
+    harness.controller.pollIntervalMs = 10;
+    const jobId = await stageReadyJob(harness.mock);
+    harness.store.save(resumeRecord(jobId, 'rev-1'));
+
+    await harness.controller.confirmReplacement(jobId);
+    expect(harness.controller.view().state).toBe('in-progress');
+
+    // The background run detects a write after admission and fails with fresh
+    // facts; the client probes for them exactly once.
+    harness.mock.bumpDestinationRevision('rev-2');
+    harness.mock.failActivation(jobId, 'migration_destination_conflict', true);
+    await vi.waitFor(
+      () => expect(harness.controller.view().conflict?.destinationRevision).toBe('rev-2'),
+      { timeout: 2_000 },
+    );
+    expect(harness.controller.view().state).toBe('failed');
+
+    // While the dialog is open, the still-failed durable status must not keep
+    // re-triggering probes (the browser QA saw the counts flicker back to the
+    // stale preflight values).
+    const requests = harness.mock.activationRequests.length;
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    expect(harness.mock.activationRequests.length).toBe(requests);
+    expect(harness.controller.view().conflict?.destinationRevision).toBe('rev-2');
+  });
+
   it('never treats repeated conflicts as terminal: the user can confirm each time', async () => {
     const harness = configure({
       destinationStatus: 'Populated',
