@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using Nostos.Backend.Configuration;
 using Nostos.Backend.Data.Interfaces;
 using Nostos.Backend.Data.Repositories;
@@ -43,13 +44,22 @@ public sealed record NostosProductDescriptor(
 /// whether a host implements that policy with Clerk, ASP.NET rate limiting,
 /// another provider, or no hosted policy at all.
 /// </summary>
+/// <param name="MapMigrationTransferEndpoints">
+/// Whether <see cref="NostosProductComposition.MapNostosProductEndpoints"/>
+/// creates the SelfHosted migration transfer group
+/// (<c>/api/portability/migration</c>). Defaults to <c>true</c>, the SelfHosted
+/// behaviour. A host that does not register the SelfHosted migration services
+/// must set this to <c>false</c>: the group's handlers require them, and
+/// mapping the group without them fails endpoint creation.
+/// </param>
 public sealed record NostosProductEndpointPolicies(
     string? ExpensiveMutationRateLimitPolicy = null,
     string? ProviderFetchRateLimitPolicy = null,
     string? LargeTransferRateLimitPolicy = null,
     string? PortableExportAuthorizationPolicy = null,
     string? OpdsAuthorizationPolicy = null,
-    string? MigrationAuthorizationPolicy = null)
+    string? MigrationAuthorizationPolicy = null,
+    bool MapMigrationTransferEndpoints = true)
 {
     public static NostosProductEndpointPolicies None { get; } = new();
 }
@@ -64,6 +74,35 @@ public static class NostosProductComposition
     /// execution are host responsibilities. Product services consume only the
     /// provider-neutral contracts supplied by their host.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The SelfHosted migration engine is NOT started by this registration: no
+    /// job worker, transfer cleanup worker, transfer storage, file staging or
+    /// phase handler is added here. The SelfHosted executable adds them
+    /// separately through
+    /// <see cref="Nostos.Backend.Services.Portability.Migration.MigrationEngineRegistration.AddSelfHostedMigrationEngine"/>
+    /// and its own transfer/staging registrations. A host that supplies its own
+    /// migration adapter omits those calls.
+    /// </para>
+    /// <para>
+    /// Replaceable seams. The product registers a replaceable
+    /// <see cref="IMigrationJobStore"/> fallback and a replaceable
+    /// <see cref="IPortableImportPreparer"/>, both with <c>TryAdd</c>: a host can
+    /// register its own implementations before this method and they win.
+    /// <see cref="IPortableArchiveSource"/> and
+    /// <see cref="IPortableImportStaging"/> are always host-supplied. The
+    /// prepared-import engine is available to every host as
+    /// <see cref="IPortableImportPreparer"/>, and the verifier as
+    /// <see cref="IPortableLibraryVerifier"/>.
+    /// </para>
+    /// <para>
+    /// When mapping endpoints, a host without the SelfHosted migration services
+    /// passes <see cref="NostosProductEndpointPolicies"/> with
+    /// <see cref="NostosProductEndpointPolicies.MapMigrationTransferEndpoints"/>
+    /// set to <c>false</c>; otherwise the migration transfer group's handlers
+    /// cannot be created.
+    /// </para>
+    /// </remarks>
     public static NostosProductDescriptor AddNostosProduct(
         this IServiceCollection services,
         IConfiguration configuration)
@@ -150,13 +189,19 @@ public static class NostosProductComposition
 
         services.AddScoped<IPortableArchiveService, PortableArchiveService>();
         services.TryAddScoped<IPortableArchiveExporter, DefaultPortableArchiveExporter>();
-        services.AddScoped<IMigrationJobStore, EfMigrationJobStore>();
+        services.TryAddScoped<IMigrationJobStore, EfMigrationJobStore>();
         // Migration job creation is refused until a host wires a real phase
         // handler. The SelfHosted engine registers the real Slices 9/10 handlers
         // and reports both directions available.
         services.TryAddSingleton<IMigrationPhaseAvailability>(MigrationPhaseAvailabilityAll.Instance);
         services.TryAddScoped<ILibraryDestinationRevisionProvider, LibraryStateDestinationRevisionProvider>();
         services.AddScoped<PortableArchiveReader>();
+        // The public prepared-import seam resolves through the reader's optional
+        // dependencies so it works in a host that supplies neither logging nor a
+        // time provider.
+        services.TryAddScoped<IPortableImportPreparer>(sp => new PortableArchiveReader(
+            sp.GetService<ILogger<PortableArchiveReader>>(),
+            sp.GetService<TimeProvider>()));
 
         services.AddScoped<IBookRepository, BookRepository>();
         services.AddScoped<INoteRepository, NoteRepository>();
@@ -257,6 +302,12 @@ public static class NostosProductComposition
     /// Maps the shared Nostos product API. Host-specific routes and access
     /// policies are composed by the executable around this product surface.
     /// </summary>
+    /// <remarks>
+    /// The SelfHosted migration transfer group is mapped by default. A host that
+    /// does not register the SelfHosted migration services sets
+    /// <see cref="NostosProductEndpointPolicies.MapMigrationTransferEndpoints"/>
+    /// to <c>false</c> in <paramref name="policies"/> to omit it.
+    /// </remarks>
     public static IEndpointRouteBuilder MapNostosProductEndpoints(
         this IEndpointRouteBuilder routes,
         OpdsOptions opds,

@@ -25,11 +25,22 @@ public static class MigrationEndpoints
 {
     public const string BasePath = "/api/portability/migration";
 
+    /// <summary>
+    /// Maps the durable migration transfer group unless the supplied policies
+    /// explicitly opt out. A host that does not register the SelfHosted
+    /// migration services sets
+    /// <see cref="NostosProductEndpointPolicies.MapMigrationTransferEndpoints"/>
+    /// to <c>false</c>: no route in this group is created and endpoint mapping
+    /// succeeds without those services.
+    /// </summary>
     public static IEndpointRouteBuilder MapMigrationEndpoints(
         this IEndpointRouteBuilder routes,
         NostosProductEndpointPolicies? policies = null)
     {
         policies ??= NostosProductEndpointPolicies.None;
+
+        if (!policies.MapMigrationTransferEndpoints)
+            return routes;
 
         var group = routes.MapGroup(BasePath);
         if (!string.IsNullOrWhiteSpace(policies.LargeTransferRateLimitPolicy))
