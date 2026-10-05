@@ -174,10 +174,20 @@ Every path is re-verified under the configured activation/recovery roots;
 symlinked or reparse-point components are never followed, and a tree containing
 one is left for an operator.
 
-**Derived rebuild after activation.** A committed cutover leaves a resolved
-`Committed` activation journal. The rebuild ensures the book-text schema
-exists, then wipes every derived row (chunks, FTS rows, vectors and ingestion
-state) exactly once per committed operation and records that wipe durably in
+**Derived caches and the cutover.** Book-text caches under
+`<books-root>/<book-id>/derived/` are regenerable and are **never retained**:
+the cutover deletes those exact directories from the live media root under the
+exclusive lease, immediately before the root is renamed into the recovery area
+(a strict walk that refuses links and unknown entries performs the deletion).
+The retained recovery copy therefore contains exactly the hash-verified
+manifest media, and restoring a copy can never bring back derived state from
+another generation.
+
+**Derived rebuild after activation and restore.** A committed cutover and a
+resolved rollback/restore both leave a resolved terminal activation journal
+(`Committed` or `RolledBack`). The rebuild ensures the book-text schema exists,
+then wipes every derived row (chunks, FTS rows, vectors and ingestion state)
+exactly once per operation and records that wipe durably in
 `derived.reset.json`. It then reschedules every file-backed book through a
 strict scheduler that reports failures instead of swallowing them; a book whose
 artifacts or ingestion state cannot be written leaves the success marker
@@ -187,9 +197,12 @@ durable `derived.rebuilt.json` marker in the journal directory is written only
 after every book was durably scheduled or intentionally unsupported, so a
 restart before that point runs the rebuild again without destroying ingestion
 progress. Failure is logged, retried with a bounded exponential backoff, and
-can never roll back or fail the already committed activation. Thumbnails are
-not rebuilt here: `FileStorageService` regenerates missing cover thumbnails
-lazily.
+can never roll back or fail the already committed activation. The ingestion
+worker and the upload-time scheduler also ensure the derived schema before
+their first query, so a freshly swapped-in generation (whose candidate
+database intentionally carries no derived table) never surfaces a SQLite
+`no such table` failure. Thumbnails are not rebuilt here:
+`FileStorageService` regenerates missing cover thumbnails lazily.
 
 ## For library owners: importing, replacing and restoring
 
@@ -277,6 +290,33 @@ Activation failures before the durable `Committed` marker roll the previous
 generation back in-process and report `409 migration_activation_failed`; the
 job stays retryable. Failures after `Committed` keep the imported generation
 and complete the job on the next restart or activation call.
+
+### Emergency switch: withdrawing library migration
+
+The feature is advertised from the same phase availability the migration routes
+consult, and SelfHosted additionally exposes one operator key:
+
+```text
+LibraryMigration:Enabled = false      # or LibraryMigration__Enabled=false
+```
+
+Default: `true` for SelfHosted. With the key off:
+
+- `GET /api/runtime/capabilities` reports `supportsLibraryMigration: false`, so
+  the Settings/onboarding entry points disappear on the next load;
+- `POST /api/portability/migration/preflight` and
+  `POST /api/portability/migration/jobs` refuse new work with the existing
+  typed codes (`migration_import_preparation_unavailable` /
+  `migration_export_artifact_unavailable`) and create no durable rows;
+- a host whose phase handlers are not registered reports `false` regardless of
+  the key, and a host that maps product endpoints with
+  `MapMigrationTransferEndpoints = false` never advertises the capability;
+- existing in-flight jobs keep their status, cancellation and activation routes
+  and may finish or be cancelled normally.
+
+Restart is not required if the configuration source is reloadable; the
+capability is read per request. This is the recommended first action if a
+destructive replacement ever misbehaves on a host.
 
 ## Disk space and capacity
 

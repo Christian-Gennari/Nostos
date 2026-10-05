@@ -772,8 +772,8 @@ public sealed class MigrationHttpApiTests
 
         var capabilities = await h.SendAsync(HttpMethod.Get, "/api/runtime/capabilities");
         capabilities.Status.Should().Be(HttpStatusCode.OK);
-        capabilities.Body.RootElement.GetProperty("supportsLibraryMigration").GetBoolean().Should().BeTrue(
-            "the frontend transport is merged, so the explicit advertisement switch is on");
+        capabilities.Body.RootElement.GetProperty("supportsLibraryMigration").GetBoolean().Should().BeFalse(
+            "a host whose phase handlers are unavailable never advertises a feature it would refuse to run");
         capabilities.Body.RootElement.GetProperty("supportsSafeActivation").GetBoolean().Should().BeTrue(
             "the SelfHosted host implements safe activation (#681 Slice 8)");
 
@@ -793,20 +793,43 @@ public sealed class MigrationHttpApiTests
         CodeOf(export.Body).Should().Be("migration_export_artifact_unavailable");
         (await h.WithDb(db => db.MigrationJobRecords.CountAsync())).Should().Be(0);
 
-        // Once a host wires a handler, the server-side write paths open
-        // (preflight can reserve and jobs can be created), and the
-        // frontend-facing capability remains advertised: the
-        // AdvertiseLibraryMigration switch is decoupled from phase
-        // availability on purpose.
+        // Once a host wires the handlers, the server-side write paths open
+        // (preflight can reserve and jobs can be created) and the same
+        // availability drives the frontend advertisement.
         h.PhasesAvailable = true;
         var nowAvailable = await h.SendAsync(HttpMethod.Get, "/api/runtime/capabilities");
         nowAvailable.Body.RootElement.GetProperty("supportsLibraryMigration").GetBoolean().Should().BeTrue(
-            "the advertisement switch is explicit and independent of phase availability");
+            "the capability follows the same phase availability the routes consult");
         nowAvailable.Body.RootElement.GetProperty("supportsSafeActivation").GetBoolean().Should().BeTrue(
             "safe activation is a SelfHosted host capability independent of the frontend switch");
         var reservation = await h.ReserveAsync("unavailable-key");
         var created = await h.CreateJobAsync("Import", "unavailable-key", reservation);
         created.Status.Should().Be(HttpStatusCode.Created);
+    }
+
+    [Fact]
+    public async Task Operator_kill_switch_hides_the_capability_and_refuses_new_jobs()
+    {
+        await using var h = new MigrationHttpHarness { LibraryMigrationEnabled = false }.Start();
+
+        var capabilities = await h.SendAsync(HttpMethod.Get, "/api/runtime/capabilities");
+        capabilities.Status.Should().Be(HttpStatusCode.OK);
+        capabilities.Body.RootElement.GetProperty("supportsLibraryMigration").GetBoolean().Should().BeFalse(
+            "the operator turned the feature off");
+
+        var preflight = await h.PreflightAsync(archiveBytes: 8L * 1024 * 1024);
+        preflight.Status.Should().Be(HttpStatusCode.Conflict);
+        CodeOf(preflight.Body).Should().Be("migration_import_preparation_unavailable");
+        (await h.WithDb(db => db.MigrationStorageReservations.CountAsync())).Should().Be(0);
+
+        var import = await h.CreateJobAsync("Import", "switch-off-import", null);
+        import.Status.Should().Be(HttpStatusCode.Conflict);
+        CodeOf(import.Body).Should().Be("migration_import_preparation_unavailable");
+
+        var export = await h.CreateJobAsync("Export", "switch-off-export", null);
+        export.Status.Should().Be(HttpStatusCode.Conflict);
+        CodeOf(export.Body).Should().Be("migration_export_artifact_unavailable");
+        (await h.WithDb(db => db.MigrationJobRecords.CountAsync())).Should().Be(0);
     }
 
     [Fact]

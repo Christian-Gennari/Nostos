@@ -38,7 +38,11 @@ public static class MigrationEngineRegistration
         services.TryAddSingleton(TimeProvider.System);
         // Job creation refuses directions without a real phase handler. Slices
         // 9/10 register the real handlers and report both directions available.
-        services.TryAddSingleton<IMigrationPhaseAvailability>(MigrationPhaseAvailabilityAll.Instance);
+        // Replace (not TryAdd): the product composition registers the
+        // no-handlers default, and the engine is the component that knows the
+        // handlers exist.
+        services.Replace(ServiceDescriptor.Singleton<IMigrationPhaseAvailability>(
+            MigrationPhaseAvailabilityAll.Instance));
         services.AddScoped<ILibraryDestinationRevisionProvider, LibraryStateDestinationRevisionProvider>();
         services.AddSingleton<MigrationJobCancellationRegistry>();
         services.AddSingleton<MigrationProcessingSlots>();

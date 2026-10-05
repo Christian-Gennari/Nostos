@@ -191,9 +191,12 @@ public static class NostosProductComposition
         services.TryAddScoped<IPortableArchiveExporter, DefaultPortableArchiveExporter>();
         services.TryAddScoped<IMigrationJobStore, EfMigrationJobStore>();
         // Migration job creation is refused until a host wires a real phase
-        // handler. The SelfHosted engine registers the real Slices 9/10 handlers
-        // and reports both directions available.
-        services.TryAddSingleton<IMigrationPhaseAvailability>(MigrationPhaseAvailabilityAll.Instance);
+        // handler. A host with no engine (for example one that maps product
+        // endpoints with MapMigrationTransferEndpoints = false) reports no
+        // availability, so the capability endpoint can never advertise a
+        // feature this host cannot execute. The SelfHosted engine replaces
+        // this with its real Slice 9/10 handlers.
+        services.TryAddSingleton<IMigrationPhaseAvailability>(MigrationPhaseAvailabilityNone.Instance);
         services.TryAddScoped<ILibraryDestinationRevisionProvider, LibraryStateDestinationRevisionProvider>();
         services.AddScoped<PortableArchiveReader>();
         // The public prepared-import seam resolves through the reader's optional

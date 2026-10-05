@@ -40,7 +40,8 @@ disposable destination instance and tears it down in `finally`.
   copy of the production Angular build, `backend.log`), one free local port;
 - `Storage__ChunkBytes` pinned to the 4 MiB contract minimum and disk safety
   margins zeroed, so an ~17.5 MiB synthetic archive crosses the 5-chunk
-  requirement;
+  requirement; `ActivationMaintenance` startup/rebuild delays are shortened so
+  the post-cutover derived rebuild is observable inside a scenario;
 - the immutable `source` instance is seeded through the app's real REST APIs
   with four books (generated EPUB, generated PDF, a 17 MiB synthetic audio
   file, and a file-less book), a highlight and two notes, two collections with
@@ -56,14 +57,17 @@ data roots are disposable.
 ## Scenario × browser matrix
 
 `a` export + native download + backend verification · `b` empty destination
-import → auto-activation → reload serves the library · `c1` populated
-replacement with server counts, sealed overlay, one confirmation · `c2` change
-after preparation → updated counts + "changed since the import started" → fresh
-confirmation · `d1` reload mid-upload → same-file reselect resumes missing
-chunks only · `d2` reload during activation → reattach → outcome · `e1`
-non-archive · `e2` corrupted archive · `e3` cancel mid-upload → new import ·
-`e4` backend restart mid-upload · `e5` second-tab lease · `f` dialog focus
-trap/Escape/sealed overlay.
+import → auto-activation → reload serves the library and its NEW-generation
+book-text index reaches Ready · `c1` populated replacement with server counts,
+sealed overlay, one confirmation, and a backend log with no SQLite failure ·
+`c2` change after preparation → updated counts + "changed since the import
+started" → the confirmation submits exactly the displayed revision → fresh
+activation · `d1` reload mid-upload → same-file reselect requests exactly the
+missing chunks · `d2` reload while the server cutover is live → reattach →
+outcome · `e1` non-archive · `e2` corrupted archive · `e3` cancel mid-upload →
+durably cancelled job/session and a new import · `e4` backend restart
+mid-upload → same durable job/session, received chunks not re-requested · `e5`
+second-tab lease · `f` dialog focus trap/Escape/sealed overlay.
 
 | Scenario | Chromium | Firefox | WebKit | Mobile WebKit |
 | --- | --- | --- | --- | --- |
@@ -87,18 +91,20 @@ times (~38–40 s). Full desktop run ≈ 4 minutes per engine.
 
 ### Measured numbers (final runs)
 
-- Archive: 18,355,577–18,355,582 bytes (17.5 MiB), SHA-256 recorded per run in
+- Archive: 18,355,582–18,355,588 bytes (17.5 MiB), SHA-256 recorded per run in
   `e2e/test-results/library-transfer/scenario-a-*.json`; server-verified counts
-  `books=4, notes=3, collections=2, collectionMemberships=2, mediaEntries=3`.
+  `books=4, notes=3, collections=2, collectionMemberships=2, mediaEntries=3`
+  (all asserted, not only recorded).
 - Chunking: 4 MiB chunks, `ceil(17.5 MiB / 4 MiB) = 5` chunks; the suite fails
   if fewer than five chunks are requested.
-- Empty import end to end (file selection → hashing → 5 chunk uploads →
-  preparation → auto-activation → reload): 11.7 s Chromium, 12.6 s Firefox,
-  12.8 s WebKit. The per-scenario JSON artifacts record these.
-- Resume: after a mid-upload reload the server reported 4/5 chunks received
-  (Chromium, Firefox) or 2/5 (WebKit); after reselecting the same file the
-  client re-sent exactly the missing chunks and the test asserts no
-  already-received chunk index appears in the network log again.
+- Empty import end to end, timer started before file selection and stopped
+  after the post-activation reload (file selection → hashing → 5 chunk uploads
+  → preparation → auto-activation → reload): 14.2 s Chromium, 13.8 s Firefox,
+  15.9 s WebKit. The per-scenario JSON artifacts record these.
+- Resume: after a mid-upload reload the server reported 3/5 chunks received
+  (Chromium) or 4/5 (Firefox/WebKit); after reselecting the same file the
+  client requested exactly the complement — every missing index once, no
+  already-received index again — asserted against the network request log.
 
 ## Bugs found by this QA and fixed here
 
@@ -123,23 +129,54 @@ times (~38–40 s). Full desktop run ≈ 4 minutes per engine.
    autoCapture ran while the unconfirmed probe kept the cancel action
    disabled; initial focus now applies after render once the dialog is
    interactive.
+6. **`BookTextIngestionWorker` threw `SqliteException` after every cutover** —
+   a swapped-in candidate database intentionally carries no derived schema,
+   and the worker queried it before the derived rebuild recreated the tables.
+   The worker now ensures the derived schema before its first query (and the
+   scheduler does the same for uploads), so no SQLite exception is logged; the
+   replacement scenarios assert the backend log for that.
+7. **Derived caches are no longer retained at all** — the cutover clears the
+   live `<bookId>/derived/` trees under the exclusive lease before the media
+   root is renamed, so the recovery copy is exactly the hash-verified manifest
+   set, and the derived rebuild wipes and reschedules both committed and
+   rolled-back/restored generations.
 
-## Observations reported, not fixed here
+## Observations reported
 
-- `BookTextIngestionWorker` logs `SqliteException` cycle failures while a
-  cutover is closing the live database (1–2 per activation with books). The
-  worker retries and scenarios still pass, but it is noise that #681 should
-  own.
 - SelfHosted deliberately has **no onboarding gate** (`CloudEntryService`
   returns the product directly), so the "import into an empty instance"
   scenario runs through Settings on a fresh instance. It uses the exact same
   `library-import-flow` component the Cloud onboarding host embeds; that host
   identity is covered by `cloud-entry.component.spec.ts` unit tests.
 
+## Capability and the operator kill switch
+
+`supportsLibraryMigration` is derived from the same
+`IMigrationPhaseAvailability` the migration routes consult, and only for the
+SelfHosted deployment mode. A host whose phase handlers are not registered
+(for example one that maps product endpoints with
+`MapMigrationTransferEndpoints = false`) reports the capability as false and
+refuses new preflights/jobs with the existing
+`migration_import_preparation_unavailable` / `migration_export_artifact_unavailable`
+codes. Operators can withdraw the feature at runtime with the single
+configuration key:
+
+```text
+LibraryMigration:Enabled = false        # environment: LibraryMigration__Enabled=false
+```
+
+Default is `true` for the SelfHosted host. When off, the capability is false
+and new jobs are refused; in-flight jobs may still be polled, cancelled or
+finished. See `docs/selfhosted-activation-recovery.md` for the operations
+view.
+
 ## CI
 
-The suite is **not** wired into CI: three engines plus per-scenario disposable
-backends would add roughly 15 minutes and WebKit system dependencies to every
-push, while `frontend.yml` currently installs Chromium only. Run it locally
-(or from the scheduled audit job) with the commands above; the default
-`npm test`/`npm run e2e` and their runtimes are unchanged.
+The full suite is **not** wired into the per-push CI: three engines plus
+per-scenario disposable backends would add roughly 15 minutes and WebKit
+system dependencies to every push, while `frontend.yml` currently installs
+Chromium only. A scheduled/manual Chromium lane
+(`.github/workflows/library-transfer-browser-qa.yml`, weekly cron plus
+`workflow_dispatch`) runs the whole Chromium desktop suite on the real
+backend. Firefox, WebKit and mobile WebKit remain the local acceptance runs
+above; the default `npm test`/`npm run e2e` and their runtimes are unchanged.

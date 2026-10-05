@@ -42,13 +42,17 @@ This is one of the primary constraints the durable transfer protocol below remov
 
 The SelfHosted reference implementation of the epic #676 transfer protocol is
 implemented in the product and reachable over HTTP. It is advertised to the
-frontend: `DeploymentCapabilitiesEndpoints.AdvertiseLibraryMigration` is
-`true`, so `GET /api/runtime/capabilities` reports
-`supportsLibraryMigration: true` on the SelfHosted host and the
-Settings/onboarding transfer UI is visible. Activation, replacement and the
-mandatory recovery copy shipped with #681 (see the activation sections below).
-A hosted (Cloud) host stays dark until its private transfer adapter ships and
-turns the same switch on for that host.
+frontend from the same `IMigrationPhaseAvailability` the migration routes
+consult: `GET /api/runtime/capabilities` reports
+`supportsLibraryMigration: true` on the SelfHosted host (where the phase
+handlers are registered and `LibraryMigration:Enabled` defaults to true) and
+the Settings/onboarding transfer UI is visible. Operators can withdraw the
+feature at runtime with `LibraryMigration:Enabled=false`; a host whose phase
+handlers are not registered, or that maps product endpoints with
+`MapMigrationTransferEndpoints = false`, reports `false` unconditionally.
+Activation, replacement, restore and the mandatory recovery copy shipped with
+#681 (see the activation sections below). A hosted (Cloud) host stays dark
+until its private transfer adapter ships and registers its own availability.
 
 ### Routes
 
