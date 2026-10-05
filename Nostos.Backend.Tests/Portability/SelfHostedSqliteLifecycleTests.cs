@@ -47,6 +47,22 @@ public sealed class SelfHostedSqliteLifecycleTests
     }
 
     [Fact]
+    public void ReadOnlyAndReadWriteWithoutCreate_FailOnAMissingDatabase_AndNeverMaterializeIt()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"nostos-no-create-{Guid.NewGuid():N}.db");
+        var readOnly = SelfHostedSqliteFile.ConnectionString(path, readOnly: true, pooling: false);
+        var readWrite = SelfHostedSqliteFile.ConnectionString(
+            path, readOnly: false, pooling: false, create: false);
+
+        Action openReadOnly = () => { using var connection = new SqliteConnection(readOnly); connection.Open(); };
+        Action openReadWrite = () => { using var connection = new SqliteConnection(readWrite); connection.Open(); };
+        openReadOnly.Should().Throw<SqliteException>();
+        openReadWrite.Should().Throw<SqliteException>();
+        File.Exists(path).Should().BeFalse(
+            "no activation-side opener may create a database the cutover has vacated");
+    }
+
+    [Fact]
     public async Task QuiesceLive_OnADeleteJournalDatabase_IsANoOpThatSucceedsAndRepeats()
     {
         using var env = new LifecycleEnvironment();

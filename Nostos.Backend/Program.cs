@@ -525,6 +525,51 @@ app.MapFallback(serveClientRoute)
     .WithMetadata(new HttpMethodMetadata(new[] { "GET", "HEAD" }))
     .AllowAnonymous();
 
+// --- ACTIVATION FAILURE DRILL GATE (issue #681, Slice 11) ---
+// Off unless an operator running the real-host drill suite sets
+// NOSTOS_ACTIVATION_DRILL_STOP_AT to an activation/restore boundary name. The
+// named boundary publishes a marker file and parks the run until the release
+// file appears, so the harness can terminate this process at an exact boundary.
+// Never set in production; without the environment variable the seams stay null
+// and behavior is unchanged.
+var drillStopAt = Environment.GetEnvironmentVariable("NOSTOS_ACTIVATION_DRILL_STOP_AT");
+if (!string.IsNullOrWhiteSpace(drillStopAt))
+{
+    var drillMarkerPath = Environment.GetEnvironmentVariable("NOSTOS_ACTIVATION_DRILL_MARKER_FILE");
+    if (string.IsNullOrWhiteSpace(drillMarkerPath))
+    {
+        throw new InvalidOperationException(
+            "NOSTOS_ACTIVATION_DRILL_STOP_AT requires NOSTOS_ACTIVATION_DRILL_MARKER_FILE.");
+    }
+
+    var drillReleasePath = Environment.GetEnvironmentVariable("NOSTOS_ACTIVATION_DRILL_RELEASE_FILE");
+    void DrillGate(string step)
+    {
+        if (!string.Equals(step, drillStopAt, StringComparison.Ordinal)) return;
+        File.WriteAllText(drillMarkerPath, step);
+        if (string.IsNullOrWhiteSpace(drillReleasePath))
+        {
+            Thread.Sleep(Timeout.Infinite);
+            return;
+        }
+
+        var deadline = DateTime.UtcNow.AddMinutes(10);
+        while (!File.Exists(drillReleasePath))
+        {
+            if (DateTime.UtcNow > deadline)
+            {
+                throw new TimeoutException("The activation drill gate was not released.");
+            }
+
+            Thread.Sleep(20);
+        }
+    }
+
+    var drillDispatcher = app.Services.GetRequiredService<SelfHostedActivationDispatcher>();
+    drillDispatcher.CoordinatorCreatedForTesting = coordinator => coordinator.StepObserverForTesting = DrillGate;
+    drillDispatcher.RestoreStepObserverForTesting = DrillGate;
+}
+
 app.Run();
 return 0;
 

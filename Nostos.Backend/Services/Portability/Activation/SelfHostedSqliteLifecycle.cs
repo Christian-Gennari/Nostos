@@ -53,14 +53,22 @@ internal static class SelfHostedSqliteFile
     /// </summary>
     internal static Action<string>? ConnectionOpeningForTesting { get; set; }
 
-    internal static string ConnectionString(string databasePath, bool readOnly, bool pooling)
+    internal static string ConnectionString(
+        string databasePath, bool readOnly, bool pooling, bool create = true)
     {
         // Same shape as the host persistence registration ("Data Source=<path>").
         // Pool release uses the global primitive, not exact-string lookup.
+        // Mode=ReadOnly and Mode=ReadWrite both refuse to materialize a missing
+        // file, which keeps a reader from creating an empty database at a path
+        // an in-flight cutover has deliberately vacated.
         var connectionString = $"Data Source={databasePath}";
         if (readOnly)
         {
             connectionString += ";Mode=ReadOnly";
+        }
+        else if (!create)
+        {
+            connectionString += ";Mode=ReadWrite";
         }
 
         if (!pooling)

@@ -165,6 +165,32 @@ public sealed class ActivationReconciliationTests
     }
 
     [Fact]
+    public async Task ZeroLengthLiveDatabase_IsNeverClassifiedAsAbsentOrDeleted()
+    {
+        foreach (var withCompanion in new[] { false, true })
+        {
+            using var files = new ActivationFiles();
+            // This phase expects the live database to be absent (it was retained
+            // as the previous generation); a zero-length file at the live path
+            // is an unexpected layout, never "no database".
+            files.Layout(SelfHostedActivationPhase.PreviousDatabaseRetained, false);
+            File.WriteAllBytes(files.Paths.LiveDatabase, []);
+            if (withCompanion)
+            {
+                File.WriteAllText(files.Paths.LiveDatabase + "-wal", "not-a-wal");
+            }
+
+            var before = files.Snapshot();
+            Func<Task> reconcile = () => files.Reconcile();
+            await reconcile.Should().ThrowAsync<MigrationActivationException>();
+            File.Exists(files.Paths.LiveDatabase).Should().BeTrue(
+                "a zero-length file is never deleted and never treated as an absent generation");
+            files.Snapshot().Should().BeEquivalentTo(before,
+                "a refused reconciliation must not touch any file");
+        }
+    }
+
+    [Fact]
     public async Task AllRegisteredStepsValidateBeforeAnyExecution_AndLaterStepsParticipateUnderClosedGate()
     {
         using var files = new ActivationFiles(); files.Layout(SelfHostedActivationPhase.CandidateDatabaseActivated, false);

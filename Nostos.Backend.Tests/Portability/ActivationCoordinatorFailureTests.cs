@@ -56,6 +56,34 @@ public sealed class ActivationCoordinatorFailureTests
     }
 
     [Fact]
+    public async Task InsufficientRecoveryCapacity_FailsBeforeCutover_AndMutatesNothing()
+    {
+        await using var bed = await ActivationCoordinatorTestBed.CreateAsync(populated: true);
+        var before = bed.SnapshotLiveGeneration();
+
+        // Disk-full simulation through the volume-space seam: the candidate plus
+        // the retained previous generation no longer fit either volume. The
+        // refusal happens during Phase A admission, before the exclusive window
+        // and before any live rename.
+        bed.Probe.Set(bed.Paths.LiveDatabase, 1, 1_000_000_000, "db");
+        bed.Probe.Set(bed.Paths.LiveMedia, 1, 1_000_000_000, "media");
+
+        var failure = await FluentActions
+            .Awaiting(() => bed.ActivateAsync(confirm: true))
+            .Should().ThrowAsync<MigrationActivationException>();
+        failure.Which.Code.Should().Be(MigrationActivationErrorCodes.StorageExhausted);
+
+        // The activation lease legitimately touches the job row; the library
+        // generation itself must be byte-identical.
+        bed.AssertPortableEquals(before.Tables,
+            "a capacity refusal must leave the portable library untouched");
+        ActivationBuildFixture.MediaSnapshot(bed.Paths.LiveMedia).Should().BeEquivalentTo(before.Media,
+            "a capacity refusal must leave every media byte untouched");
+        (await bed.ReadJobAsync()).State.Should().Be((int)MigrationJobState.ReadyToActivate);
+        bed.Maintenance.IsMaintenanceActive.Should().BeFalse("no maintenance window may have been entered");
+    }
+
+    [Fact]
     public async Task CorruptStagedMedia_FailsPreparedVerification_WithoutChangingTheLibrary()
     {
         await using var bed = await ActivationCoordinatorTestBed.CreateAsync(populated: true, freshStaging: true);
