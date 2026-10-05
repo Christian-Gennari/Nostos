@@ -9,7 +9,10 @@
 
 import { HttpClient } from '@angular/common/http';
 import { InjectionToken, inject } from '@angular/core';
+import { catchError, firstValueFrom, of } from 'rxjs';
 
+import type { DeploymentCapabilities } from '../../core/dtos/deployment-capabilities.dtos';
+import { DeploymentCapabilitiesService } from '../../core/services/deployment-capabilities.service';
 import {
   BrowserMigrationChunk,
   MigrationCreateJobRequestDto,
@@ -21,7 +24,11 @@ import {
   MigrationSessionStatusDto,
   MigrationUploadSessionResponseDto,
 } from '../models/migration-http.dtos';
-import { HttpLibraryTransferTransport } from './http-library-transfer-transport';
+import { MIGRATION_BASE_PATH } from './http-library-transfer-transport';
+import {
+  DIRECT_UPLOAD_CLIENT,
+  DirectUploadLibraryTransferTransport,
+} from './direct-upload-library-transfer-transport';
 
 export {
   MigrationTransportError,
@@ -87,12 +94,32 @@ export interface LibraryTransferTransport {
 export type PortableTransferClient = LibraryTransferTransport;
 
 /**
- * Production DI default: the real SelfHosted #679 HTTP adapter. Tests override
- * `LIBRARY_TRANSFER_TRANSPORT` with an in-memory transport; there is no
- * production branch that can construct the mock.
+ * Production DI default: the real SelfHosted #679 HTTP adapter, extended with
+ * the direct part-upload mode (slice B9). Whether the direct mode is used is
+ * decided per upload from the server's `supportsDirectPartUpload` deployment
+ * capability; absent/unreadable keeps the application-server chunk path
+ * exactly as before. Tests override `LIBRARY_TRANSFER_TRANSPORT` with an
+ * in-memory transport; there is no production branch that can construct the
+ * mock.
  */
 export function createLibraryTransferTransport(): LibraryTransferTransport {
-  return new HttpLibraryTransferTransport(inject(HttpClient));
+  const http = inject(HttpClient);
+  const capabilitiesService = inject(DeploymentCapabilitiesService);
+
+  // The capability is read lazily on the first part upload and cached for the
+  // transport's lifetime; a failed read defaults to off (application server).
+  let capabilities: Promise<DeploymentCapabilities | null> | null = null;
+  const directPartUpload = async (): Promise<boolean> => {
+    capabilities ??= firstValueFrom(
+      capabilitiesService.get().pipe(catchError(() => of(null))),
+    );
+    return (await capabilities)?.supportsDirectPartUpload === true;
+  };
+
+  return new DirectUploadLibraryTransferTransport(http, MIGRATION_BASE_PATH, {
+    directPartUpload,
+    uploadClient: inject(DIRECT_UPLOAD_CLIENT),
+  });
 }
 
 /**
