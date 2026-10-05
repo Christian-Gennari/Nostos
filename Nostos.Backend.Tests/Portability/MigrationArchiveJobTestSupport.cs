@@ -2,9 +2,11 @@ using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Nodes;
+using FluentAssertions;
 using Nostos.Backend.Data.Models;
 using Nostos.Backend.Services;
 using Nostos.Backend.Services.Portability;
+using Nostos.Backend.Services.Portability.Migration;
 
 namespace Nostos.Backend.Tests.Portability;
 
@@ -96,6 +98,37 @@ internal static class MigrationArchiveJobTestSupport
     {
         var directory = harness.Paths.GetExportDirectory(jobId);
         return Directory.Exists(directory) ? Directory.EnumerateFiles(directory).Count() : 0;
+    }
+
+    /// <summary>
+    /// Drives worker cycles until the job reaches <paramref name="expected"/>.
+    /// One <c>RunCycleAsync</c> can yield at a load checkpoint (the worker's
+    /// admission gate, lease or a database busy timeout can bounce under CI
+    /// load), so tests must not assume a single call is enough. Every end-state
+    /// assertion still runs; only the number of cycles needed is made
+    /// load-independent.
+    /// </summary>
+    internal static async Task RunToStateAsync(
+        MigrationEngineHarness harness,
+        Guid jobId,
+        MigrationJobState expected,
+        MigrationJobWorker? worker = null)
+    {
+        const int maxCycles = 20;
+        worker ??= harness.Worker;
+        for (var cycle = 0; cycle < maxCycles; cycle++)
+        {
+            await worker.RunCycleAsync(default);
+            var job = await harness.WithJobs(s => s.GetAsync(jobId, default));
+            if (job!.State == expected)
+            {
+                return;
+            }
+        }
+
+        var last = await harness.WithJobs(s => s.GetAsync(jobId, default));
+        last!.State.Should().Be(expected,
+            $"the worker must reach {expected} within {maxCycles} bounded cycles");
     }
 
     internal static FileStorageService CreateFileStorage(string root) =>

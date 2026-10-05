@@ -429,7 +429,8 @@ public sealed class MigrationUploadEngineTests
     {
         await using var h = new MigrationEngineHarness(); h.Configure = s => s.AddSingleton<IMigrationPhaseHandler, SuccessfulPreparation>(); await h.InitializeAsync();
         var bytes = MigrationEngineHarness.Bytes(); var job = await h.NewJobAsync(); var session = await h.StartAsync(job, bytes); await h.Upload(job, session, bytes); await h.Complete(job, session);
-        await h.Worker.RunCycleAsync(default); (await h.WithJobs(s => s.GetAsync(job, default)))!.State.Should().Be(MigrationJobState.ReadyToActivate);
+        await MigrationArchiveJobTestSupport.RunToStateAsync(h, job, MigrationJobState.ReadyToActivate);
+        (await h.WithJobs(s => s.GetAsync(job, default)))!.State.Should().Be(MigrationJobState.ReadyToActivate);
         (await h.Complete(job, session)).State.Should().Be(MigrationSessionState.Complete);
     }
     private sealed class SuccessfulPreparation : IMigrationPhaseHandler

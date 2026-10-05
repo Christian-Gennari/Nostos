@@ -37,7 +37,7 @@ public sealed class MigrationArchiveJobEngineTests
         var archive = await MigrationArchiveJobTestSupport.ExportRepresentativeAsync();
         var jobId = await UploadCompleteImportAsync(h, archive);
 
-        (await h.Worker.RunCycleAsync(default)).Should().BeGreaterThan(0);
+        await MigrationArchiveJobTestSupport.RunToStateAsync(h, jobId, MigrationJobState.ReadyToActivate);
 
         var job = await h.WithJobs(s => s.GetAsync(jobId, default));
         job!.State.Should().Be(MigrationJobState.ReadyToActivate);
@@ -74,7 +74,7 @@ public sealed class MigrationArchiveJobEngineTests
             1);
         var jobId = await UploadCompleteImportAsync(h, archive);
 
-        await h.Worker.RunCycleAsync(default);
+        await MigrationArchiveJobTestSupport.RunToStateAsync(h, jobId, MigrationJobState.ReadyToActivate);
 
         var job = await h.WithJobs(s => s.GetAsync(jobId, default));
         job!.State.Should().Be(MigrationJobState.ReadyToActivate);
@@ -101,7 +101,7 @@ public sealed class MigrationArchiveJobEngineTests
 
         // A single cycle can yield at a load checkpoint; drive to the end
         // state under a bounded count instead of assuming one call suffices.
-        await RunToStateAsync(h, jobId, MigrationJobState.ReadyToActivate);
+        await MigrationArchiveJobTestSupport.RunToStateAsync(h, jobId, MigrationJobState.ReadyToActivate);
 
         var job = await h.WithJobs(s => s.GetAsync(jobId, default));
         job!.State.Should().Be(MigrationJobState.ReadyToActivate);
@@ -134,7 +134,7 @@ public sealed class MigrationArchiveJobEngineTests
         await h.WithDb(db => db.MigrationJobRecords.Where(j => j.Id == jobId)
             .ExecuteUpdateAsync(s => s.SetProperty(j => j.PreparedStagingId, prepared.Metadata.StagingId.Value)));
 
-        await h.Worker.RunCycleAsync(default);
+        await MigrationArchiveJobTestSupport.RunToStateAsync(h, jobId, MigrationJobState.ReadyToActivate);
 
         var job = await h.WithJobs(s => s.GetAsync(jobId, default));
         job!.State.Should().Be(MigrationJobState.ReadyToActivate);
@@ -152,7 +152,7 @@ public sealed class MigrationArchiveJobEngineTests
         await h.InitializeAsync();
         var archive = await MigrationArchiveJobTestSupport.ExportRepresentativeAsync();
         var jobId = await UploadCompleteImportAsync(h, archive);
-        await h.Worker.RunCycleAsync(default);
+        await MigrationArchiveJobTestSupport.RunToStateAsync(h, jobId, MigrationJobState.ReadyToActivate);
 
         var committed = await h.WithDb(db => db.MigrationJobRecords.SingleAsync(j => j.Id == jobId));
         var stagingDirectory = h.Paths.GetStagingDirectory(committed.PreparedStagingId!.Value);
@@ -163,7 +163,7 @@ public sealed class MigrationArchiveJobEngineTests
         await h.WithDb(db => db.MigrationJobRecords.Where(j => j.Id == jobId)
             .ExecuteUpdateAsync(s => s.SetProperty(j => j.State, (int)MigrationJobState.Validating)
                 .SetProperty(j => j.Version, j => j.Version + 1)));
-        await h.Worker.RunCycleAsync(default);
+        await MigrationArchiveJobTestSupport.RunToStateAsync(h, jobId, MigrationJobState.ReadyToActivate);
 
         var job = await h.WithJobs(s => s.GetAsync(jobId, default));
         job!.State.Should().Be(MigrationJobState.ReadyToActivate);
@@ -193,7 +193,7 @@ public sealed class MigrationArchiveJobEngineTests
         var archive = await MigrationArchiveJobTestSupport.ExportRepresentativeAsync();
         var jobId = await UploadCompleteImportAsync(h, archive);
 
-        await h.Worker.RunCycleAsync(default);
+        await MigrationArchiveJobTestSupport.RunToStateAsync(h, jobId, MigrationJobState.Failed);
 
         var job = await h.WithJobs(s => s.GetAsync(jobId, default));
         job!.State.Should().Be(MigrationJobState.Failed);
@@ -217,7 +217,7 @@ public sealed class MigrationArchiveJobEngineTests
             await MigrationArchiveJobTestSupport.ExportRepresentativeAsync());
         var jobId = await UploadCompleteImportAsync(h, archive);
 
-        await h.Worker.RunCycleAsync(default);
+        await MigrationArchiveJobTestSupport.RunToStateAsync(h, jobId, MigrationJobState.Failed);
 
         var job = await h.WithJobs(s => s.GetAsync(jobId, default));
         job!.State.Should().Be(MigrationJobState.Failed);
@@ -237,7 +237,7 @@ public sealed class MigrationArchiveJobEngineTests
         await h.WithDb(db => db.MigrationStorageReservations.Where(r => r.ClaimedJobId == jobId)
             .ExecuteUpdateAsync(s => s.SetProperty(r => r.ReservedBytes, 1L)));
 
-        await h.Worker.RunCycleAsync(default);
+        await MigrationArchiveJobTestSupport.RunToStateAsync(h, jobId, MigrationJobState.Failed);
 
         var job = await h.WithJobs(s => s.GetAsync(jobId, default));
         job!.State.Should().Be(MigrationJobState.Failed);
@@ -293,7 +293,7 @@ public sealed class MigrationArchiveJobEngineTests
         h.Maintenance.IsMaintenanceActive.Should().BeTrue();
         await maintenance.DisposeAsync();
 
-        (await h.Worker.RunCycleAsync(default)).Should().BeGreaterThan(0);
+        await MigrationArchiveJobTestSupport.RunToStateAsync(h, jobId, MigrationJobState.ReadyToActivate);
         (await h.WithJobs(s => s.GetAsync(jobId, default)))!.State.Should().Be(MigrationJobState.ReadyToActivate);
         MigrationArchiveJobTestSupport.CountStagingAreas(h).Should().Be(1);
     }
@@ -322,7 +322,7 @@ public sealed class MigrationArchiveJobEngineTests
         stale.State.Should().Be((int)MigrationJobState.Validating);
 
         h.Clock.Advance(MigrationJobWorker.LeaseDuration + TimeSpan.FromTicks(1));
-        await h.Worker.RunCycleAsync(default);
+        await MigrationArchiveJobTestSupport.RunToStateAsync(h, jobId, MigrationJobState.ReadyToActivate);
         (await h.WithJobs(s => s.GetAsync(jobId, default)))!.State.Should().Be(MigrationJobState.ReadyToActivate);
         MigrationArchiveJobTestSupport.CountStagingAreas(h).Should().Be(1);
     }
@@ -347,8 +347,15 @@ public sealed class MigrationArchiveJobEngineTests
         // it does not cancel the stale owner in-process.
         h.Clock.Advance(MigrationJobWorker.LeaseDuration + TimeSpan.FromTicks(1));
         var successor = NewWorker(h);
-        await successor.RunCycleAsync(default);
-        successor.Dispose();
+        try
+        {
+            await MigrationArchiveJobTestSupport.RunToStateAsync(
+                h, jobId, MigrationJobState.ReadyToActivate, successor);
+        }
+        finally
+        {
+            successor.Dispose();
+        }
 
         var committed = await h.WithDb(db => db.MigrationJobRecords.SingleAsync(j => j.Id == jobId));
         committed.State.Should().Be((int)MigrationJobState.ReadyToActivate);
@@ -454,7 +461,7 @@ public sealed class MigrationArchiveJobEngineTests
         var session = await h.StartAsync(jobId, archive);
         await h.Upload(jobId, session, archive);
         await h.Complete(jobId, session);
-        await h.Worker.RunCycleAsync(default);
+        await MigrationArchiveJobTestSupport.RunToStateAsync(h, jobId, MigrationJobState.ReadyToActivate);
 
         var record = await h.WithDb(db => db.MigrationJobRecords.SingleAsync(j => j.Id == jobId));
         record.State.Should().Be((int)MigrationJobState.ReadyToActivate);
@@ -483,9 +490,7 @@ public sealed class MigrationArchiveJobEngineTests
         await h.InitializeAsync();
         var archive = await MigrationArchiveJobTestSupport.ExportRepresentativeAsync();
         var jobId = await UploadCompleteImportAsync(h, archive);
-        // A single cycle can yield at a load checkpoint; drive to the end
-        // state under a bounded count instead of assuming one call suffices.
-        await RunToStateAsync(h, jobId, MigrationJobState.ReadyToActivate);
+        await MigrationArchiveJobTestSupport.RunToStateAsync(h, jobId, MigrationJobState.ReadyToActivate);
 
         var session = await h.WithDb(db => db.MigrationSessionRecords.SingleAsync(s => s.JobId == jobId));
         var record = await h.WithDb(db => db.MigrationJobRecords.SingleAsync(j => j.Id == jobId));
@@ -518,7 +523,7 @@ public sealed class MigrationArchiveJobEngineTests
         await h.InitializeAsync();
         var archive = await MigrationArchiveJobTestSupport.ExportRepresentativeAsync();
         var jobId = await UploadCompleteImportAsync(h, archive);
-        await h.Worker.RunCycleAsync(default);
+        await MigrationArchiveJobTestSupport.RunToStateAsync(h, jobId, MigrationJobState.ReadyToActivate);
 
         await h.WithUploads(s => s.CancelAsync(jobId, new(), default));
 
@@ -535,7 +540,7 @@ public sealed class MigrationArchiveJobEngineTests
         await h.InitializeAsync();
         var archive = await MigrationArchiveJobTestSupport.ExportRepresentativeAsync();
         var jobId = await UploadCompleteImportAsync(h, archive);
-        await h.Worker.RunCycleAsync(default);
+        await MigrationArchiveJobTestSupport.RunToStateAsync(h, jobId, MigrationJobState.ReadyToActivate);
 
         h.Clock.Advance(TimeSpan.FromDays(1) + TimeSpan.FromTicks(1));
         await h.Sweep();
@@ -558,7 +563,7 @@ public sealed class MigrationArchiveJobEngineTests
         await MigrationArchiveJobTestSupport.SeedRepresentativeAsync(h, storage);
         var jobId = await RunnableExportAsync(h);
 
-        (await h.Worker.RunCycleAsync(default)).Should().BeGreaterThan(0);
+        await MigrationArchiveJobTestSupport.RunToStateAsync(h, jobId, MigrationJobState.Completed);
 
         var job = await h.WithJobs(s => s.GetAsync(jobId, default));
         job!.State.Should().Be(MigrationJobState.Completed);
@@ -620,7 +625,7 @@ public sealed class MigrationArchiveJobEngineTests
         });
         await h.WithJobs(s => s.ReleaseLeaseAsync(jobId, token!, default));
 
-        await h.Worker.RunCycleAsync(default);
+        await MigrationArchiveJobTestSupport.RunToStateAsync(h, jobId, MigrationJobState.Completed);
 
         var job = await h.WithJobs(s => s.GetAsync(jobId, default));
         job!.State.Should().Be(MigrationJobState.Completed);
@@ -641,7 +646,7 @@ public sealed class MigrationArchiveJobEngineTests
         await h.InitializeAsync();
         await MigrationArchiveJobTestSupport.SeedRepresentativeAsync(h, storage);
         var jobId = await RunnableExportAsync(h);
-        await h.Worker.RunCycleAsync(default);
+        await MigrationArchiveJobTestSupport.RunToStateAsync(h, jobId, MigrationJobState.Completed);
 
         var artifact = await h.WithDb(db => db.MigrationExportArtifactRecords.SingleAsync(a => a.JobId == jobId));
         var artifactPath = h.Paths.ResolveStorageKey(artifact.StorageKey);
@@ -650,7 +655,7 @@ public sealed class MigrationArchiveJobEngineTests
             .ExecuteUpdateAsync(s => s.SetProperty(j => j.State, (int)MigrationJobState.Validating)
                 .SetProperty(j => j.Version, j => j.Version + 1)));
 
-        await h.Worker.RunCycleAsync(default);
+        await MigrationArchiveJobTestSupport.RunToStateAsync(h, jobId, MigrationJobState.Completed);
 
         (await h.WithJobs(s => s.GetAsync(jobId, default)))!.State.Should().Be(MigrationJobState.Completed);
         File.GetLastWriteTimeUtc(artifactPath).Should().Be(stamp);
@@ -666,7 +671,7 @@ public sealed class MigrationArchiveJobEngineTests
         await h.InitializeAsync();
         await MigrationArchiveJobTestSupport.SeedRepresentativeAsync(h, storage);
         var jobId = await RunnableExportAsync(h);
-        await h.Worker.RunCycleAsync(default);
+        await MigrationArchiveJobTestSupport.RunToStateAsync(h, jobId, MigrationJobState.Completed);
 
         var before = await h.WithDb(db => db.MigrationExportArtifactRecords.SingleAsync(a => a.JobId == jobId));
         File.Delete(h.Paths.ResolveStorageKey(before.StorageKey));
@@ -674,7 +679,7 @@ public sealed class MigrationArchiveJobEngineTests
             .ExecuteUpdateAsync(s => s.SetProperty(j => j.State, (int)MigrationJobState.Validating)
                 .SetProperty(j => j.Version, j => j.Version + 1)));
 
-        await h.Worker.RunCycleAsync(default);
+        await MigrationArchiveJobTestSupport.RunToStateAsync(h, jobId, MigrationJobState.Completed);
 
         (await h.WithJobs(s => s.GetAsync(jobId, default)))!.State.Should().Be(MigrationJobState.Completed);
         var after = await h.WithDb(db => db.MigrationExportArtifactRecords.SingleAsync(a => a.JobId == jobId));
@@ -693,7 +698,7 @@ public sealed class MigrationArchiveJobEngineTests
         await h.InitializeAsync();
         await MigrationArchiveJobTestSupport.SeedRepresentativeAsync(h, storage);
         var jobId = await RunnableExportAsync(h);
-        await h.Worker.RunCycleAsync(default);
+        await MigrationArchiveJobTestSupport.RunToStateAsync(h, jobId, MigrationJobState.Completed);
 
         var artifact = await h.WithDb(db => db.MigrationExportArtifactRecords.SingleAsync(a => a.JobId == jobId));
         var artifactPath = h.Paths.ResolveStorageKey(artifact.StorageKey);
@@ -738,7 +743,7 @@ public sealed class MigrationArchiveJobEngineTests
                 "the stale owner must not publish an artifact row");
 
         h.Clock.Advance(MigrationJobWorker.LeaseDuration + TimeSpan.FromTicks(1));
-        await h.Worker.RunCycleAsync(default);
+        await MigrationArchiveJobTestSupport.RunToStateAsync(h, jobId, MigrationJobState.Completed);
         (await h.WithJobs(s => s.GetAsync(jobId, default)))!.State.Should().Be(MigrationJobState.Completed);
         (await h.WithDb(db => db.MigrationExportArtifactRecords.SingleAsync(a => a.JobId == jobId)))
             .State.Should().Be((int)MigrationExportArtifactState.Available);
@@ -780,8 +785,15 @@ public sealed class MigrationArchiveJobEngineTests
 
         h.Clock.Advance(MigrationJobWorker.LeaseDuration + TimeSpan.FromTicks(1));
         var successor = NewWorker(h);
-        await successor.RunCycleAsync(default);
-        successor.Dispose();
+        try
+        {
+            await MigrationArchiveJobTestSupport.RunToStateAsync(
+                h, jobId, MigrationJobState.Completed, successor);
+        }
+        finally
+        {
+            successor.Dispose();
+        }
 
         var published = await h.WithDb(db => db.MigrationExportArtifactRecords.SingleAsync(a => a.JobId == jobId));
         published.State.Should().Be((int)MigrationExportArtifactState.Available);
@@ -834,16 +846,20 @@ public sealed class MigrationArchiveJobEngineTests
                 .GetAwaiter().GetResult();
         };
 
-        await h.Worker.RunCycleAsync(default);
+        for (var cycle = 0; cycle < 20 && renamedPath is null; cycle++)
+        {
+            await h.Worker.RunCycleAsync(default);
+        }
 
-        renamedPath.Should().NotBeNull();
+        renamedPath.Should().NotBeNull(
+            "the export must reach the post-rename fence within bounded cycles");
         File.Exists(renamedPath!).Should().BeFalse("the worker deletes its own unpublished file");
         (await h.WithDb(db => db.MigrationExportArtifactRecords.SingleAsync(a => a.JobId == jobId)))
             .State.Should().Be((int)MigrationExportArtifactState.Preparing);
         (await h.WithJobs(s => s.GetAsync(jobId, default)))!.State.Should().Be(MigrationJobState.Validating);
 
         h.Clock.Advance(MigrationJobWorker.LeaseDuration + TimeSpan.FromTicks(1));
-        await h.Worker.RunCycleAsync(default);
+        await MigrationArchiveJobTestSupport.RunToStateAsync(h, jobId, MigrationJobState.Completed);
         (await h.WithJobs(s => s.GetAsync(jobId, default)))!.State.Should().Be(MigrationJobState.Completed);
         MigrationArchiveJobTestSupport.CountExportFiles(h, jobId).Should().Be(1);
     }
@@ -882,7 +898,7 @@ public sealed class MigrationArchiveJobEngineTests
         await h.InitializeAsync();
         await MigrationArchiveJobTestSupport.SeedRepresentativeAsync(h, storage);
         var jobId = await RunnableExportAsync(h);
-        await h.Worker.RunCycleAsync(default);
+        await MigrationArchiveJobTestSupport.RunToStateAsync(h, jobId, MigrationJobState.Completed);
         var artifactPath = h.Paths.ResolveStorageKey(
             (await h.WithDb(db => db.MigrationExportArtifactRecords.SingleAsync(a => a.JobId == jobId))).StorageKey);
         File.Exists(artifactPath).Should().BeTrue();
@@ -1078,34 +1094,6 @@ public sealed class MigrationArchiveJobEngineTests
                 hooks,
                 coordinatorScope: string.Empty));
         };
-    }
-
-    /// <summary>
-    /// Drives worker cycles until the job reaches <paramref name="expected"/>.
-    /// One <c>RunCycleAsync</c> can yield at a load checkpoint (the worker's
-    /// admission gate or lease can bounce under CI load), so tests must not
-    /// assume a single call is enough. Every end-state assertion still runs;
-    /// only the number of cycles needed is made load-independent.
-    /// </summary>
-    private static async Task RunToStateAsync(
-        MigrationEngineHarness h,
-        Guid jobId,
-        MigrationJobState expected)
-    {
-        const int maxCycles = 20;
-        for (var cycle = 0; cycle < maxCycles; cycle++)
-        {
-            await h.Worker.RunCycleAsync(default);
-            var job = await h.WithJobs(s => s.GetAsync(jobId, default));
-            if (job!.State == expected)
-            {
-                return;
-            }
-        }
-
-        var last = await h.WithJobs(s => s.GetAsync(jobId, default));
-        last!.State.Should().Be(expected,
-            $"the worker must reach {expected} within {maxCycles} bounded cycles");
     }
 
     private static MigrationJobWorker NewWorker(MigrationEngineHarness h) =>
