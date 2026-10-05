@@ -24,15 +24,12 @@ public interface ILibraryDestinationRevisionProvider
 /// client.
 /// </summary>
 /// <remarks>
-/// <b>Known limitation.</b> The underlying <see cref="LibraryState.StateVersion"/>
-/// currently advances only for mutations that travel through
-/// <c>LibraryMutationExecutor</c>; several portable mutation paths (for example
-/// direct note writes) can change portable state without bumping it. The counts
-/// catch row additions/removals but not content-only edits on such paths. A
-/// dedicated follow-up slice must make one monotonic generation advance on every
-/// portable mutation (plan section 9, "Destination revision not authoritative");
-/// until then this provider is the only place that reads the token and activation
-/// must not treat it as a complete portable-state generation.
+/// <see cref="LibraryState.StateVersion"/> is advanced by
+/// <see cref="Data.LibraryRevision"/> for every committed create, update or
+/// delete of portable user-owned state — including content-only edits, owned
+/// values and bulk operations — exactly once per transaction, so this token
+/// changes on every portable mutation. The counts remain part of the token as
+/// a second signal for row additions/removals.
 /// </remarks>
 public sealed class LibraryStateDestinationRevisionProvider(NostosDbContext db)
     : ILibraryDestinationRevisionProvider

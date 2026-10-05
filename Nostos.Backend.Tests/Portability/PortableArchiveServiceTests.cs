@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using Nostos.Backend.Data.Models;
 using Nostos.Backend.Services;
 using Nostos.Backend.Services.Portability;
+using Nostos.Backend.Services.Portability.Migration;
 using Nostos.Product.BookText;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -724,7 +725,8 @@ public sealed class PortableArchiveServiceTests
                 snapshot.Where(path =>
                         !path.EndsWith(".bin", StringComparison.Ordinal)
                         && !path.EndsWith(".json", StringComparison.Ordinal)
-                        && !path.EndsWith("archive.nostos", StringComparison.Ordinal))
+                        && !path.EndsWith("archive.nostos", StringComparison.Ordinal)
+                        && !path.EndsWith(LegacyPortabilityScratchLease.LockFileName, StringComparison.Ordinal))
                     .Should().BeEmpty("no additional whole-media extraction copy may exist");
             }
 
@@ -1112,6 +1114,165 @@ public sealed class PortableArchiveServiceTests
                 // Test cleanup only.
             }
         }
+    }
+
+    /// <summary>
+    /// A legacy import may legally run longer than the scratch TTL (the endpoint
+    /// accepts up to 4 GiB at Kestrel's minimum data rate). The lease, not the
+    /// directory timestamp, is the ownership signal: even with every timestamp
+    /// in the tree older than the cutoff, a live import survives a sweep and
+    /// completes.
+    /// </summary>
+    [Fact]
+    public async Task Import_in_progress_survives_a_scratch_sweep_and_completes()
+    {
+        var scratchRoot = Path.Combine(
+            Path.GetTempPath(),
+            $"nostos-s11-scratch-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(scratchRoot);
+
+        try
+        {
+            using var archive = await ExportFixtureAsync();
+            await using var destination = await LocalPortableTestLibrary.CreateAsync();
+            var importer = new PortableArchiveService(
+                destination.Db,
+                destination.Storage,
+                NullLogger<PortableArchiveService>.Instance)
+            {
+                ScratchRoot = scratchRoot,
+            };
+
+            var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            await using var pausing = new PausingReadStream(
+                archive.ToArray(),
+                pauseAfter: 0,
+                entered,
+                release);
+
+            var import = importer.ImportAsync(pausing);
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+            var directory = Directory.EnumerateDirectories(scratchRoot).Single();
+            var stale = DateTime.UtcNow.AddHours(-25);
+            AgeTreeUtc(directory, stale);
+
+            var cleanup = new LegacyPortabilityScratchCleanup(
+                NullLogger<LegacyPortabilityScratchCleanup>.Instance);
+            cleanup.Sweep(scratchRoot, DateTimeOffset.UtcNow, CancellationToken.None);
+
+            Directory.Exists(directory).Should().BeTrue(
+                "a live import's lease protects its scratch tree regardless of timestamps");
+
+            release.TrySetResult();
+            var imported = await import.WaitAsync(TimeSpan.FromSeconds(60));
+            imported.IntegrityVerified.Should().BeTrue();
+            Directory.Exists(directory).Should().BeFalse("the import removes its own scratch on completion");
+        }
+        finally
+        {
+            try
+            {
+                if (Directory.Exists(scratchRoot))
+                    Directory.Delete(scratchRoot, recursive: true);
+            }
+            catch
+            {
+                // Test cleanup only.
+            }
+        }
+    }
+
+    /// <summary>Read-only source that pauses once after a byte budget, then resumes.</summary>
+    private sealed class PausingReadStream : Stream
+    {
+        private readonly byte[] _bytes;
+        private readonly int _pauseAfter;
+        private readonly TaskCompletionSource _entered;
+        private readonly TaskCompletionSource _release;
+        private int _position;
+        private bool _paused;
+
+        public PausingReadStream(
+            byte[] bytes,
+            int pauseAfter,
+            TaskCompletionSource entered,
+            TaskCompletionSource release)
+        {
+            _bytes = bytes;
+            _pauseAfter = pauseAfter;
+            _entered = entered;
+            _release = release;
+        }
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => _bytes.Length;
+        public override long Position
+        {
+            get => _position;
+            set => throw new NotSupportedException();
+        }
+
+        public override async ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default)
+        {
+            if (!_paused && _position >= _pauseAfter)
+            {
+                _paused = true;
+                _entered.TrySetResult();
+                await _release.Task.WaitAsync(cancellationToken);
+            }
+
+            var count = Math.Min(buffer.Length, _bytes.Length - _position);
+            if (count == 0)
+            {
+                return 0;
+            }
+
+            _bytes.AsMemory(_position, count).CopyTo(buffer);
+            _position += count;
+            return count;
+        }
+
+        public override Task<int> ReadAsync(
+            byte[] buffer,
+            int offset,
+            int count,
+            CancellationToken cancellationToken) =>
+            ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+
+        public override int Read(byte[] buffer, int offset, int count) =>
+            throw new NotSupportedException("The legacy import spool must read asynchronously.");
+
+        public override void Flush()
+        {
+        }
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
+
+    /// <summary>Sets the write time of a directory and every descendant to <paramref name="utc"/>.</summary>
+    private static void AgeTreeUtc(string directory, DateTime utc)
+    {
+        foreach (var entry in Directory.EnumerateFileSystemEntries(directory, "*", SearchOption.AllDirectories))
+        {
+            if (Directory.Exists(entry))
+            {
+                Directory.SetLastWriteTimeUtc(entry, utc);
+            }
+            else
+            {
+                File.SetLastWriteTimeUtc(entry, utc);
+            }
+        }
+
+        Directory.SetLastWriteTimeUtc(directory, utc);
     }
 
     private static long RequiredStagedBytes(MemoryStream archive)

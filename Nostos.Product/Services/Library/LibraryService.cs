@@ -121,11 +121,8 @@ public sealed class LibraryService : ILibraryService
         else if (book.Progress.FinishedAt is not null)
             book.Progress.FinishedAt = null;
 
-        var version = NextVersion(state.StateVersion);
-        state.StateVersion = version;
-        state.UpdatedAt = Now;
-
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        var version = await LibraryRevision.AdvanceAndGetAsync(db, ct);
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
 
@@ -157,11 +154,8 @@ public sealed class LibraryService : ILibraryService
         progress.FinishedAt = null;
         progress.LastReadAt = null;
 
-        var version = NextVersion(state.StateVersion);
-        state.StateVersion = version;
-        state.UpdatedAt = Now;
-
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        var version = await LibraryRevision.AdvanceAndGetAsync(db, ct);
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
 
@@ -177,11 +171,8 @@ public sealed class LibraryService : ILibraryService
         if (book is null)
             return Failure("book_not_found", LibraryReplyFormatter.BookNotFound, state.StateVersion);
 
-        var version = NextVersion(state.StateVersion);
-        state.StateVersion = version;
-        state.UpdatedAt = Now;
-
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        var version = await LibraryRevision.AdvanceAndGetAsync(db, ct);
         db.Books.Remove(book);
         try
         {
@@ -227,11 +218,8 @@ public sealed class LibraryService : ILibraryService
         book.Status = status;
         book.StatusMessage = NullIfEmpty(statusMessage);
 
-        var version = NextVersion(state.StateVersion);
-        state.StateVersion = version;
-        state.UpdatedAt = Now;
-
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        var version = await LibraryRevision.AdvanceAndGetAsync(db, ct);
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
 
@@ -1244,15 +1232,14 @@ public sealed class LibraryService : ILibraryService
 
         // Membership rows go first: their collection FK is RESTRICT, so leaving
         // them would block the delete. Books themselves survive untouched.
+        // The revision row is advanced FIRST, before the portable rows, so every
+        // portable writer takes the singleton lock in the same order. The
+        // CollectionModel delete below would also advance it, and the
+        // per-transaction marker keeps that to exactly one advance.
+        await LibraryRevision.AdvanceAndGetAsync(db, ct);
         await db.BookCollections
             .Where(bc => bc.CollectionId == collection.Id)
             .ExecuteDeleteAsync(ct);
-
-        // The bulk delete bypasses the change tracker; advance the portable
-        // revision in this same executor transaction (issue #679 Slice 11).
-        // The CollectionModel delete below would also advance it, and the
-        // per-transaction marker keeps that to exactly one advance.
-        await LibraryRevision.AdvanceAsync(db, ct);
 
         db.Collections.Remove(collection);
         await db.SaveChangesAsync(ct);
@@ -1331,9 +1318,6 @@ public sealed class LibraryService : ILibraryService
 
     private static string? NullIfEmpty(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value;
-
-    private static string NextVersion(string version) =>
-        (long.TryParse(version, out var parsed) ? parsed + 1 : 1).ToString();
 
     private static LibraryCommandResultDto Result(string reply, object? data, string version) =>
         new(reply, data, version);

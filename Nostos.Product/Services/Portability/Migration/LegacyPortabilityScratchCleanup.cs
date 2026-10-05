@@ -24,8 +24,11 @@ namespace Nostos.Backend.Services.Portability.Migration;
 ///
 /// <para>Every candidate is a directory whose name exactly matches the fixed
 /// prefix plus a non-empty GUID; unknown operator siblings, the root itself,
-/// and linked components are never touched. Deletion verifies every entry
-/// individually through the resolver's descendant rules. The sweep is
+/// and linked components are never touched. A live import holds an exclusive
+/// <c>import.lock</c> and is registered in-process, and the sweep skips any
+/// directory with a live owner. Only unowned trees older than the cutoff — by
+/// the newest timestamp of any file inside them, not the directory's own — are
+/// deleted. Deletion verifies every entry individually. The sweep is
 /// idempotent: a missing directory is success, and a failed delete is retried
 /// on the next sweep.</para>
 /// </summary>
@@ -68,7 +71,20 @@ public sealed class LegacyPortabilityScratchCleanup(
 
             try
             {
-                if (Directory.GetLastWriteTimeUtc(directory) > cutoffUtc.UtcDateTime)
+                // Ownership first: a directory with a live import (registered
+                // in this process, or holding the exclusive lock from any .NET
+                // process) is never a candidate, whatever its timestamps say.
+                if (LegacyPortabilityScratchRegistry.IsActive(directory)
+                    || LegacyPortabilityScratchLease.IsHeld(directory))
+                {
+                    continue;
+                }
+
+                // A previous process left no live owner. Require BOTH age
+                // beyond the cutoff measured by the newest timestamp anywhere
+                // inside the tree (writing a file does not update its parent
+                // directory) AND the absence of a held lock.
+                if (TransferPathResolver.NewestWriteTimeUtc(directory) > cutoffUtc.UtcDateTime)
                 {
                     continue;
                 }

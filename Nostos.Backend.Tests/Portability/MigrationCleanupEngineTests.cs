@@ -194,11 +194,30 @@ public sealed class MigrationCleanupEngineTests
         await h.InitializeAsync();
         var scratchRoot = h.Provider.GetRequiredService<MigrationLegacyScratchSweep>().ScratchRoot;
         Directory.CreateDirectory(scratchRoot);
+        var stale = h.Clock.GetUtcNow().AddHours(-25).UtcDateTime;
 
+        // A dead tree from a previous process, including a leftover unheld lock
+        // file: no live owner, all timestamps stale -> removed.
         var expired = Path.Combine(scratchRoot, "nostos-portable-import-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(Path.Combine(expired, "staging"));
         await File.WriteAllTextAsync(Path.Combine(expired, "archive.nostos"), "old");
-        Directory.SetLastWriteTimeUtc(expired, h.Clock.GetUtcNow().AddHours(-25).UtcDateTime);
+        await File.WriteAllTextAsync(Path.Combine(expired, "import.lock"), string.Empty);
+        AgeTreeUtc(expired, stale);
+
+        // An old directory whose file was written recently (writing a file does
+        // not update its parent) is still active work -> kept.
+        var recentWrite = Path.Combine(scratchRoot, "nostos-portable-import-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(recentWrite);
+        var recentFile = Path.Combine(recentWrite, "archive.part");
+        await File.WriteAllTextAsync(recentFile, "still streaming");
+        Directory.SetLastWriteTimeUtc(recentWrite, stale);
+
+        // A tree whose lease is held is never a target, however old it looks.
+        var leased = Path.Combine(scratchRoot, "nostos-portable-import-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(leased);
+        await File.WriteAllTextAsync(Path.Combine(leased, "archive.part"), "held");
+        using var lease = LegacyPortabilityScratchLease.Acquire(leased);
+        AgeTreeUtc(leased, stale);
 
         var fresh = Path.Combine(scratchRoot, "nostos-portable-import-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(fresh);
@@ -219,13 +238,23 @@ public sealed class MigrationCleanupEngineTests
 
         await h.Sweep();
 
-        Directory.Exists(expired).Should().BeFalse("a generated scratch tree past the TTL is garbage");
+        Directory.Exists(expired).Should().BeFalse("a generated scratch tree with no live owner past the TTL is garbage");
+        Directory.Exists(recentWrite).Should().BeTrue(
+            "the newest write anywhere inside the tree is the age signal, not the directory timestamp");
+        Directory.Exists(leased).Should().BeTrue("a held lease protects a scratch tree regardless of timestamps");
         Directory.Exists(fresh).Should().BeTrue("the full TTL grace protects a fresh scratch tree");
         Directory.Exists(unknown).Should().BeTrue("an unknown operator sibling is never a sweep target");
         File.Exists(unknownFile).Should().BeTrue();
         Directory.Exists(malformed).Should().BeTrue("a malformed generated name is not a sweep target");
         File.Exists(rootSentinel).Should().BeTrue("the scratch root itself is never a target");
+
+        // Once the recent write ages out and the lease is released, the trees
+        // become sweepable.
+        File.SetLastWriteTimeUtc(recentFile, stale);
+        lease.Dispose();
         await h.Sweep();
+        Directory.Exists(recentWrite).Should().BeFalse();
+        Directory.Exists(leased).Should().BeFalse();
     }
 
     [Fact]
@@ -260,11 +289,23 @@ public sealed class MigrationCleanupEngineTests
         await using var h = new MigrationEngineHarness();
         await h.InitializeAsync();
 
-        // A generated export directory whose job row does not exist.
+        // A generated export directory whose job row does not exist, and whose
+        // newest write is stale -> removed.
         var orphanJobId = Guid.NewGuid();
         var orphanDirectory = h.Paths.EnsureDirectoryExists(h.Paths.GetExportDirectory(orphanJobId));
-        await File.WriteAllTextAsync(Path.Combine(orphanDirectory, "library.nostos.tmp"), "partial");
-        Directory.SetLastWriteTimeUtc(orphanDirectory, h.Clock.GetUtcNow().AddHours(-100).UtcDateTime);
+        var orphanTemp = Path.Combine(orphanDirectory, "library.nostos.tmp");
+        await File.WriteAllTextAsync(orphanTemp, "partial");
+        var stale = h.Clock.GetUtcNow().AddHours(-100).UtcDateTime;
+        Directory.SetLastWriteTimeUtc(orphanDirectory, stale);
+        File.SetLastWriteTimeUtc(orphanTemp, stale);
+
+        // A directory with an old timestamp but a recent write is still being
+        // populated -> kept.
+        var recentJobId = Guid.NewGuid();
+        var recentDirectory = h.Paths.EnsureDirectoryExists(h.Paths.GetExportDirectory(recentJobId));
+        var recentFile = Path.Combine(recentDirectory, "library.nostos.tmp");
+        await File.WriteAllTextAsync(recentFile, "in-progress");
+        Directory.SetLastWriteTimeUtc(recentDirectory, stale);
 
         // A known job's export directory must survive, even with a temp file.
         var knownJob = await h.NewJobAsync(MigrationDirection.Export);
@@ -281,11 +322,16 @@ public sealed class MigrationCleanupEngineTests
         await h.Sweep();
 
         Directory.Exists(orphanDirectory).Should().BeFalse("no job row owns the generated export directory");
+        Directory.Exists(recentDirectory).Should().BeTrue(
+            "the newest write inside the directory is the age signal");
         Directory.Exists(knownDirectory).Should().BeTrue("a known job owns its export directory");
         File.Exists(knownTemp).Should().BeTrue();
         Directory.Exists(unknown).Should().BeTrue("unknown siblings are never enumerated as targets");
         File.Exists(unknownFile).Should().BeTrue();
+
+        File.SetLastWriteTimeUtc(recentFile, stale);
         await h.Sweep();
+        Directory.Exists(recentDirectory).Should().BeFalse("once its newest write ages out it is garbage");
     }
 
     [Fact]
@@ -308,6 +354,50 @@ public sealed class MigrationCleanupEngineTests
         Directory.Exists(directory).Should().BeFalse(
             "a durable deletion tombstone is already logically deleted and sweepable immediately");
         await h.Sweep();
+    }
+
+    [Fact]
+    public async Task Abandoned_staging_with_a_recent_file_write_is_kept_until_the_newest_write_ages_out()
+    {
+        await using var h = new MigrationEngineHarness();
+        h.Configure = services =>
+            services.AddScoped<IMigrationStagingCleanup, FilePortableImportStagingCleanup>();
+        await h.InitializeAsync();
+
+        var provider = new FilePortableImportStaging(h.Paths);
+        var id = await provider.CreateAsync();
+        var directory = h.Paths.GetStagingDirectory(id.Value);
+        var mediaFile = Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories).First();
+        var stale = h.Clock.GetUtcNow().AddHours(-100).UtcDateTime;
+        AgeTreeUtc(directory, stale);
+
+        // The directory looks old, but a file inside was written recently: the
+        // area is still receiving bytes and must not be swept.
+        File.SetLastWriteTimeUtc(mediaFile, h.Clock.GetUtcNow().UtcDateTime);
+        await h.Sweep();
+        Directory.Exists(directory).Should().BeTrue("a recent write inside the area keeps it alive");
+
+        File.SetLastWriteTimeUtc(mediaFile, stale);
+        await h.Sweep();
+        Directory.Exists(directory).Should().BeFalse("once the newest write ages out the area is abandoned");
+    }
+
+    /// <summary>Sets the write time of a directory and every descendant to <paramref name="utc"/>.</summary>
+    private static void AgeTreeUtc(string directory, DateTime utc)
+    {
+        foreach (var entry in Directory.EnumerateFileSystemEntries(directory, "*", SearchOption.AllDirectories))
+        {
+            if (Directory.Exists(entry))
+            {
+                Directory.SetLastWriteTimeUtc(entry, utc);
+            }
+            else
+            {
+                File.SetLastWriteTimeUtc(entry, utc);
+            }
+        }
+
+        Directory.SetLastWriteTimeUtc(directory, utc);
     }
 
     private sealed class StagingHook : IMigrationStagingCleanup

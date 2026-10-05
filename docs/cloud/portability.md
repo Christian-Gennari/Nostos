@@ -118,7 +118,7 @@ Server defaults (`Storage` configuration section, `TransferStorageOptions`):
 | `TransferPath` | `transfers` beside the resolved books root | Transfer root; absolute or relative to the content root. With the default books root this is `<content-root>/Storage/transfers`. |
 | `ChunkBytes` / `MinChunkBytes` / `MaxChunkBytes` | 16 / 4 / 64 MiB | Accepted nominal chunk size and bounds. |
 | `MaxConcurrentJobs` | 1 | Worker processing concurrency. |
-| `MaxOutstandingJobs` | 10 | Ceiling on non-terminal jobs (and therefore sessions) per installation; further creates return `409 migration_too_many_jobs`. |
+| `MaxOutstandingJobs` | 10 | Hard ceiling on non-terminal jobs (and therefore sessions) per installation, enforced under the library admission lock inside the creation transaction; further creates return `409 migration_too_many_jobs`. |
 | `DiskSafetyMarginBytes` / `DiskSafetyMarginPercent` | 1 GiB / 5% | Effective margin is the larger of the byte floor and the percentage of the volume. |
 | `PreflightReservationMinutes` | 15 | Lifetime of an unclaimed preflight hold; claiming a reservation stops the clock. |
 | `ExportRetentionHours` | 24 | Download retention after an artifact becomes available. |
@@ -163,9 +163,11 @@ untouched and survive the preflight window.
   expired unclaimed reservations, removes abandoned upload scopes, committed
   staging for terminal jobs, unreferenced export files, durably tombstoned
   staging areas, and generated legacy `nostos-portable-import-*` scratch
-  directories older than the session TTL. Unknown operator siblings and linked
-  components are never touched; every delete is idempotent and retried on the
-  next sweep.
+  directories. Age gates use the newest write anywhere inside a tree, and a
+  live legacy import holds an exclusive `import.lock` for its lifetime, so a
+  long upload is never mistaken for abandoned scratch. Unknown operator
+  siblings and linked components are never touched; every delete is idempotent
+  and retried on the next sweep.
 
 - **Inspecting and cancelling a job.** Poll `GET
   /api/portability/migration/jobs/{id}` for state, progress, session
@@ -188,13 +190,20 @@ untouched and survive the preflight window.
 
 The opaque destination revision bound into preflight and persisted on the job
 is composed from the singleton `LibraryState.StateVersion` plus the portable row
-counts. Since the Slice 11 hardening, **every** committed create, update, or
-delete of portable user-owned state advances `StateVersion` atomically in the
-same transaction as the mutation, including content-only edits, owned-value
-edits, and bulk `ExecuteUpdate`/`ExecuteDelete` paths. Host-only operational
-writes (jobs, sessions, receipts, backups, settings, migration records) never
-advance it. Activation compares the stored revision with the current one and
-refuses to replace a library that changed after the import was prepared.
+counts. `LibraryRevision` is the **only** writer of `StateVersion`: every
+committed create, update, or delete of portable user-owned state advances it
+with one atomic SQL increment in the same transaction as the mutation —
+including content-only edits, owned-value edits, bulk `ExecuteUpdate`/
+`ExecuteDelete` paths, and commands whose caller needs the new value (the
+helper returns it; callers never compute it). Host-only operational writes
+(jobs, sessions, chunk receipts, backups, host provider settings, migration
+records) never advance it. A missing singleton row is created at `"0"` before
+the first advance, and a corrupted (empty, non-numeric, negative, or maxed-out)
+revision fails the mutation closed with `library_revision_invalid` rather than
+being normalised. Every portable writer takes the revision row before its
+portable rows, so concurrent writers serialize deterministically. Activation
+compares the stored revision with the current one and refuses to replace a
+library that changed after the import was prepared.
 
 
 ## Archive layout
@@ -335,7 +344,7 @@ Payload and manifest versions must strictly agree (`data_version_mismatch`). A p
 
 Epic #676 defines the one-click migration system between Nostos SelfHosted and Nostos Cloud.
 
-The implementation is split across issues #677–#682. This section defines the target contract. The provider-neutral contract, durable job/session/chunk/artifact/reservation records, the local worker, the SelfHosted transfer HTTP API, import preparation to `ReadyToActivate`, and export artifact generation are implemented (see "Durable library transfer jobs" in Part 1). Activation/replacement (#681), the Settings/onboarding UI (#680), the private hosted adapter, and the `supportsLibraryMigration` capability advertisement are still planned. Nothing in this section authorizes a destructive replacement of a user's library until #681 ships.
+The implementation is split across issues #677–#682. This section defines the target contract. The provider-neutral contract, durable job/session/chunk/artifact/reservation records, the local worker, the SelfHosted transfer HTTP API, import preparation to `ReadyToActivate`, and export artifact generation are implemented (see "Durable library transfer jobs" in Part 1), and the Settings/onboarding transfer UI exists but stays hidden behind the `supportsLibraryMigration` capability flag. Activation/replacement (#681), the capability advertisement, and the private hosted adapter are still planned. Nothing in this section authorizes a destructive replacement of a user's library until #681 ships.
 
 ## Goals and authenticated ownership boundary
 

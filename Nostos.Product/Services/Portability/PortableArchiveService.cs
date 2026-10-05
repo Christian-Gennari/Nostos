@@ -355,10 +355,15 @@ public sealed class PortableArchiveService(
         // compressed archive to one bounded local scratch file. That spool is the
         // only whole-archive local copy: every media entry then streams from the
         // archive into local staging and, one item at a time, into asset storage.
+        //
+        // The lease is the ownership signal cleanup uses: an import may legally
+        // run longer than the scratch TTL, and its directory timestamp alone
+        // cannot prove it is dead.
         var tempRoot = Path.Combine(
             ScratchRoot,
             $"nostos-portable-import-{Guid.NewGuid():N}");
         Directory.CreateDirectory(tempRoot);
+        var scratchLease = LegacyPortabilityScratchLease.Acquire(tempRoot);
 
         try
         {
@@ -508,6 +513,9 @@ public sealed class PortableArchiveService(
         }
         finally
         {
+            // Release ownership before deleting: on Windows the held lock file
+            // would otherwise block the recursive delete.
+            scratchLease.Dispose();
             TryDeleteDirectory(tempRoot);
         }
     }

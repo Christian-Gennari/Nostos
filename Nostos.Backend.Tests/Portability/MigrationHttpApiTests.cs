@@ -490,6 +490,27 @@ public sealed class MigrationHttpApiTests
     }
 
     [Fact]
+    public async Task Outstanding_job_ceiling_is_a_hard_bound_under_concurrent_creators()
+    {
+        await using var h = new MigrationHttpHarness
+        {
+            ConfigureServices = services => services.Configure<TransferStorageOptions>(
+                options => options.MaxOutstandingJobs = 1),
+        }.Start();
+
+        var results = await Task.WhenAll(Enumerable.Range(0, 6).Select(index =>
+            h.CreateJobAsync("Export", $"hard-ceiling-{index}", null)));
+
+        results.Count(result => result.Status == HttpStatusCode.Created).Should().Be(
+            1,
+            "the ceiling is enforced inside the creation transaction, not by a check-then-insert");
+        results.Count(result => result.Status == HttpStatusCode.Conflict
+            && CodeOf(result.Body) == "migration_too_many_jobs").Should().Be(5);
+
+        (await h.WithDb(db => db.MigrationJobRecords.CountAsync())).Should().Be(1);
+    }
+
+    [Fact]
     public async Task Second_concurrent_job_is_accepted_and_queued()
     {
         await using var h = new MigrationHttpHarness().Start();

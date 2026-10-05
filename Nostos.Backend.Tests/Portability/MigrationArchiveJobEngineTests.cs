@@ -417,7 +417,18 @@ public sealed class MigrationArchiveJobEngineTests
         await SeedLiveWorkAsync(h);
         await h.WithDb(async db =>
         {
-            db.LibraryStates.Add(new LibraryState { StateVersion = "1" });
+            // The portable seed above already created the revision row through
+            // the save pipeline; stamp the intended value in place.
+            var state = await db.LibraryStates.SingleOrDefaultAsync();
+            if (state is null)
+            {
+                db.LibraryStates.Add(new LibraryState { StateVersion = "1" });
+            }
+            else
+            {
+                state.StateVersion = "1";
+            }
+
             await db.SaveChangesAsync();
         });
         var archive = await MigrationArchiveJobTestSupport.ExportRepresentativeAsync();
@@ -925,8 +936,8 @@ public sealed class MigrationArchiveJobEngineTests
                 .SetProperty(j => j.ExpiresAtUtc, h.Clock.GetUtcNow().AddDays(2).UtcDateTime)));
 
         var stale = h.Clock.GetUtcNow().AddHours(-25).UtcDateTime;
-        Directory.SetLastWriteTimeUtc(h.Paths.GetStagingDirectory(abandoned.Value), stale);
-        Directory.SetLastWriteTimeUtc(h.Paths.GetStagingDirectory(protectedId.Value), stale);
+        AgeTreeUtc(h.Paths.GetStagingDirectory(abandoned.Value), stale);
+        AgeTreeUtc(h.Paths.GetStagingDirectory(protectedId.Value), stale);
         Directory.SetLastWriteTimeUtc(
             h.Paths.GetStagingDirectory(fresh.Value),
             h.Clock.GetUtcNow().UtcDateTime);
@@ -937,6 +948,24 @@ public sealed class MigrationArchiveJobEngineTests
         Directory.Exists(h.Paths.GetStagingDirectory(fresh.Value)).Should().BeTrue();
         Directory.Exists(h.Paths.GetStagingDirectory(protectedId.Value)).Should().BeTrue();
         await h.Sweep();
+    }
+
+    /// <summary>Sets the write time of a directory and every descendant to <paramref name="utc"/>.</summary>
+    private static void AgeTreeUtc(string directory, DateTime utc)
+    {
+        foreach (var entry in Directory.EnumerateFileSystemEntries(directory, "*", SearchOption.AllDirectories))
+        {
+            if (Directory.Exists(entry))
+            {
+                Directory.SetLastWriteTimeUtc(entry, utc);
+            }
+            else
+            {
+                File.SetLastWriteTimeUtc(entry, utc);
+            }
+        }
+
+        Directory.SetLastWriteTimeUtc(directory, utc);
     }
 
     // ---------------------------------------------------------------- helpers

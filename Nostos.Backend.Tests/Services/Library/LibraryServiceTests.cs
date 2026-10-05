@@ -2096,6 +2096,151 @@ public sealed class LibraryServiceTests : IClassFixture<SqliteTestFixture>
     }
 
     // ------------------------------------------------------------------
+    // Destination revision characterization (issue #679 Slice 11)
+    // ------------------------------------------------------------------
+
+    [Fact]
+    public async Task Legacy_commands_return_the_committed_revision_and_never_decrease()
+    {
+        var h = Harness();
+        var created = await h.Service.CreateOrMatchBookAsync(
+            CreateRequest("physical", "Revision Book"), strictConfirmation: false);
+        var bookId = ((LibraryCreateOrMatchResultDto)created.Data!).BookId!.Value;
+
+        var previous = await CommittedVersionAsync(h);
+
+        var progress = await h.Service.UpdateProgressAsync(bookId, "cfi(/6/4)", 40);
+        var afterProgress = await CommittedVersionAsync(h);
+        long.Parse(progress.StateVersion).Should().Be(afterProgress).And.BeGreaterThan(previous);
+        previous = afterProgress;
+
+        var reset = await h.Service.ResetProgressAsync(bookId);
+        var afterReset = await CommittedVersionAsync(h);
+        long.Parse(reset.StateVersion).Should().Be(afterReset).And.BeGreaterThan(previous);
+        previous = afterReset;
+
+        var status = await h.Service.SetBookStatusAsync(bookId, BookStatus.Failed, "testing");
+        var afterStatus = await CommittedVersionAsync(h);
+        long.Parse(status.StateVersion).Should().Be(afterStatus).And.BeGreaterThan(previous);
+        previous = afterStatus;
+
+        var deleted = await h.Service.DeleteBookAsync(bookId);
+        var afterDelete = await CommittedVersionAsync(h);
+        long.Parse(deleted.StateVersion).Should().Be(afterDelete).And.BeGreaterThan(previous);
+    }
+
+    [Fact]
+    public async Task Executor_command_returns_and_stores_the_committed_revision()
+    {
+        var h = Harness();
+        var key = Key();
+        var request = CreateRequest("physical", "Executor Revision", Key: key);
+
+        var created = await h.Service.CreateOrMatchBookAsync(request, strictConfirmation: false);
+        var committed = await CommittedVersionAsync(h);
+        long.Parse(created.StateVersion).Should().Be(committed);
+
+        // The stored receipt carries the same authoritative value: a replay
+        // returns it without executing again or advancing the revision.
+        var replay = await h.Service.CreateOrMatchBookAsync(request, strictConfirmation: false);
+        replay.Duplicate.Should().BeTrue();
+        replay.StateVersion.Should().Be(created.StateVersion);
+        (await CommittedVersionAsync(h)).Should().Be(committed);
+    }
+
+    [Fact]
+    public async Task Direct_save_racing_a_legacy_command_never_loses_an_increment()
+    {
+        for (var iteration = 0; iteration < 10; iteration++)
+        {
+            var h = Harness();
+            var created = await h.Service.CreateOrMatchBookAsync(
+                CreateRequest("physical", "Race Legacy"), strictConfirmation: false);
+            var bookId = ((LibraryCreateOrMatchResultDto)created.Data!).BookId!.Value;
+            var before = await CommittedVersionAsync(h);
+
+            var command = Task.Run(() => WithSqliteRetryAsync(
+                async () => await h.Service.UpdateProgressAsync(bookId, "cfi", 10 + iteration)));
+            var direct = Task.Run(() => WithSqliteRetryAsync(async () =>
+            {
+                await using var db = await h.Factory.CreateDbContextAsync();
+                db.Works.Add(new WorkModel
+                {
+                    Title = $"race-{iteration}-{Guid.NewGuid():N}",
+                    NormalizedTitle = $"RACE-{iteration}-{Guid.NewGuid():N}",
+                    NormalizedAuthor = "",
+                });
+                await db.SaveChangesAsync();
+                return 0;
+            }));
+
+            await Task.WhenAll(command, direct).WaitAsync(TimeSpan.FromSeconds(60));
+
+            (await CommittedVersionAsync(h)).Should().Be(
+                before + 2,
+                $"iteration {iteration}: both portable commits must advance the revision");
+        }
+    }
+
+    [Fact]
+    public async Task Direct_save_racing_an_executor_command_never_loses_an_increment()
+    {
+        for (var iteration = 0; iteration < 10; iteration++)
+        {
+            var h = Harness();
+            var before = await CommittedVersionAsync(h);
+
+            var command = Task.Run(() => WithSqliteRetryAsync(() => h.Service.CreateOrMatchBookAsync(
+                CreateRequest("physical", $"Exec Race {iteration}-{Guid.NewGuid():N}"),
+                strictConfirmation: false)));
+            var direct = Task.Run(() => WithSqliteRetryAsync(async () =>
+            {
+                await using var db = await h.Factory.CreateDbContextAsync();
+                db.Works.Add(new WorkModel
+                {
+                    Title = $"exec-race-{iteration}-{Guid.NewGuid():N}",
+                    NormalizedTitle = $"EXEC-RACE-{iteration}-{Guid.NewGuid():N}",
+                    NormalizedAuthor = "",
+                });
+                await db.SaveChangesAsync();
+                return 0;
+            }));
+
+            await Task.WhenAll(command, direct).WaitAsync(TimeSpan.FromSeconds(60));
+
+            (await CommittedVersionAsync(h)).Should().Be(
+                before + 2,
+                $"iteration {iteration}: both portable commits must advance the revision");
+        }
+    }
+
+    private static async Task<long> CommittedVersionAsync(TestHarness h)
+    {
+        await using var db = await h.Factory.CreateDbContextAsync();
+        var raw = await db.LibraryStates.AsNoTracking()
+            .Where(s => s.Id == LibraryState.WellKnownId)
+            .Select(s => s.StateVersion)
+            .SingleOrDefaultAsync();
+        return long.TryParse(raw, out var parsed) ? parsed : 0;
+    }
+
+    private static async Task<T> WithSqliteRetryAsync<T>(Func<Task<T>> action)
+    {
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                return await action();
+            }
+            catch (Exception exception) when (
+                (exception is SqliteException or DbUpdateException) && attempt < 100)
+            {
+                await Task.Delay(Math.Min(10 * (attempt + 1), 250));
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------
     // Helpers
     // ------------------------------------------------------------------
 

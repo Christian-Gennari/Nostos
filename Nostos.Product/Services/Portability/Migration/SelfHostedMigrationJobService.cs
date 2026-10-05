@@ -48,8 +48,26 @@ public sealed class SelfHostedMigrationJobService(
 
         EnsureDirectionAvailable(request.Direction);
 
+        if (request.Direction == MigrationDirection.Import && request.ReservationId is null)
+            throw MigrationTransferException.Error(MigrationTransferException.ReservationRequired);
+
+        var id = Guid.NewGuid();
+        var now = Now;
+        var reservedBytes = 0L;
+
+        // Admission is serialized on the same per-library singleton row every
+        // portable writer uses: replay lookup, outstanding count and insert run
+        // inside one transaction holding that lock, so concurrent creators with
+        // different keys cannot both pass the ceiling.
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        await LibraryRevision.LockSingletonAsync(db, ct);
+
         var existing = await FindByIdempotencyKeyAsync(key, ct);
-        if (existing is not null) return await ReplayAsync(existing, request, ct);
+        if (existing is not null)
+        {
+            await transaction.CommitAsync(ct);
+            return await ReplayAsync(existing, request, ct);
+        }
 
         // Per-installation ceiling on outstanding durable work: a bounded
         // number of non-terminal jobs (and therefore sessions) keeps a client
@@ -65,17 +83,10 @@ public sealed class SelfHostedMigrationJobService(
             throw MigrationTransferException.Error(MigrationTransferException.TooManyJobs);
         }
 
-        if (request.Direction == MigrationDirection.Import && request.ReservationId is null)
-            throw MigrationTransferException.Error(MigrationTransferException.ReservationRequired);
-
-        var id = Guid.NewGuid();
-        var now = Now;
-        var reservedBytes = 0L;
         // The revision is the destination at the moment the job is accepted,
         // before any upload or preparation work. Preparation must never
         // substitute a later value; activation compares this baseline.
         var destinationRevision = await revisionProvider.GetCurrentAsync(ct);
-        await using var transaction = await db.Database.BeginTransactionAsync(ct);
         if (request.ReservationId is { } reservationId)
         {
             try

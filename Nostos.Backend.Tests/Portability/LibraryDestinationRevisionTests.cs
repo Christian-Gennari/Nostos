@@ -1,4 +1,6 @@
+using System.Text.RegularExpressions;
 using FluentAssertions;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Nostos.Backend.Data;
 using Nostos.Backend.Data.Models;
@@ -7,13 +9,12 @@ using Xunit;
 namespace Nostos.Backend.Tests.Portability;
 
 /// <summary>
-/// Slice 11 destination-revision completion: every portable create/update/delete
-/// advances the singleton <see cref="LibraryState.StateVersion"/> exactly once
-/// per transaction, and host-only operational writes never do.
-///
-/// <para>The portable entity set is the product's shared
-/// <see cref="PortableEntitySet"/>; the completeness inventory test asserts its
-/// parity with the archive inventory.</para>
+/// Slice 11 destination-revision completion: <see cref="LibraryRevision"/> is
+/// the only writer of <see cref="LibraryState.StateVersion"/>. Every portable
+/// create/update/delete advances it exactly once per transaction, host-only
+/// operational writes never do, invalid state fails closed, and concurrent
+/// writers (including a tracked save racing a bulk delete) never lose or
+/// reorder an increment.
 /// </summary>
 public sealed class LibraryDestinationRevisionTests : IDisposable
 {
@@ -44,6 +45,13 @@ public sealed class LibraryDestinationRevisionTests : IDisposable
         }
 
         db.ChangeTracker.Clear();
+        return db;
+    }
+
+    private async Task<NostosDbContext> CreateRawContextAsync()
+    {
+        var db = CreateContext();
+        await db.Database.EnsureCreatedAsync();
         return db;
     }
 
@@ -285,38 +293,197 @@ public sealed class LibraryDestinationRevisionTests : IDisposable
         (await ReadRevisionAsync()).Should().Be(before);
     }
 
+    /// <summary>
+    /// LibraryRevision is the only writer: no product or host source file may
+    /// assign the revision in application memory (the manual NextVersion
+    /// writers are gone). Migrations, the model declaration and the activation
+    /// candidate builder's array-slot write are not property assignments.
+    /// </summary>
     [Fact]
-    public async Task Explicit_library_state_bump_still_advances_exactly_once_per_save()
+    public void No_product_code_assigns_StateVersion_outside_the_revision_helper()
     {
-        await using var db = await CreateInitializedContextAsync();
-        var before = await ReadRevisionAsync();
+        var repoRoot = FindRepoRoot();
+        var offenders = new List<string>();
+        foreach (var project in new[] { "Nostos.Product", "Nostos.Backend" })
+        {
+            var projectRoot = Path.Combine(repoRoot, project);
+            foreach (var file in Directory.EnumerateFiles(projectRoot, "*.cs", SearchOption.AllDirectories))
+            {
+                if (file.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
+                    || file.Contains($"{Path.DirectorySeparatorChar}Migrations{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
+                    || Path.GetFileName(file) == "LibraryRevision.cs")
+                {
+                    // LibraryRevision.cs is the one allowed writer.
+                    continue;
+                }
 
-        var state = await db.LibraryStates.SingleAsync();
-        state.StateVersion = (before + 1).ToString();
-        db.Works.Add(new WorkModel { Title = "W", NormalizedTitle = "W", NormalizedAuthor = "" });
-        await db.SaveChangesAsync();
+                var lines = File.ReadAllLines(file);
+                for (var index = 0; index < lines.Length; index++)
+                {
+                    if (Regex.IsMatch(lines[index], @"\.StateVersion\s*=(?!=)"))
+                    {
+                        offenders.Add(
+                            $"{Path.GetRelativePath(repoRoot, file)}:{index + 1}: {lines[index].Trim()}");
+                    }
+                }
+            }
+        }
 
-        (await ReadRevisionAsync()).Should().Be(before + 1);
+        offenders.Should().BeEmpty(
+            "LibraryRevision is the only writer of LibraryState.StateVersion; callers must use " +
+            "LibraryRevision.AdvanceAndGetAsync and return/store its value" +
+            Environment.NewLine + string.Join(Environment.NewLine, offenders));
     }
 
     [Fact]
-    public async Task Bulk_helper_advances_at_most_once_per_transaction()
+    public async Task Missing_library_state_row_is_created_and_the_first_advance_is_one()
+    {
+        await using var db = await CreateRawContextAsync();
+        (await db.LibraryStates.CountAsync()).Should().Be(0);
+
+        db.Works.Add(new WorkModel { Title = "W", NormalizedTitle = "W", NormalizedAuthor = "" });
+        await db.SaveChangesAsync();
+
+        await using var verify = CreateContext();
+        var state = await verify.LibraryStates.AsNoTracking().SingleAsync();
+        state.StateVersion.Should().Be("1", "a missing row starts at 0 and the mutation advances it");
+        state.SingletonSlot.Should().Be(LibraryState.SingletonSentinel);
+    }
+
+    [Theory]
+    [InlineData("garbage")]
+    [InlineData("")]
+    [InlineData("-1")]
+    public async Task Invalid_revision_fails_closed_and_does_not_commit_the_portable_write(string corrupted)
+    {
+        await using var db = await CreateInitializedContextAsync();
+        await db.Database.ExecuteSqlRawAsync(
+            $"UPDATE \"LibraryStates\" SET \"StateVersion\" = '{corrupted}'");
+
+        db.Works.Add(new WorkModel { Title = "W", NormalizedTitle = "W", NormalizedAuthor = "" });
+
+        var act = async () => await db.SaveChangesAsync();
+        var exception = await act.Should().ThrowAsync<LibraryRevisionException>();
+        exception.Which.Code.Should().Be(LibraryRevisionException.InvalidRevisionCode);
+
+        await using var verify = CreateContext();
+        (await verify.Works.CountAsync()).Should().Be(0, "the portable write must roll back with the failed advance");
+        (await verify.LibraryStates.AsNoTracking().SingleAsync()).StateVersion.Should().Be(
+            corrupted,
+            "a corrupted revision is never silently normalised");
+    }
+
+    [Fact]
+    public async Task Ambient_transaction_rollback_rolls_back_the_revision_advance()
     {
         await using var db = await CreateInitializedContextAsync();
         var before = await ReadRevisionAsync();
 
-        await LibraryRevision.AdvanceAsync(db);
-        (await ReadRevisionAsync()).Should().Be(before + 1);
-
-        // Idempotent within one transaction; a new transaction advances again.
         await using (var transaction = await db.Database.BeginTransactionAsync())
         {
-            await LibraryRevision.AdvanceAsync(db);
-            await LibraryRevision.AdvanceAsync(db);
+            db.Works.Add(new WorkModel { Title = "W", NormalizedTitle = "W", NormalizedAuthor = "" });
+            await db.SaveChangesAsync();
+            await transaction.RollbackAsync();
+        }
+
+        (await ReadRevisionAsync()).Should().Be(before);
+        await using var verify = CreateContext();
+        (await verify.Works.CountAsync()).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Multiple_portable_saves_in_one_transaction_advance_once()
+    {
+        await using var db = await CreateInitializedContextAsync();
+        var before = await ReadRevisionAsync();
+
+        await using (var transaction = await db.Database.BeginTransactionAsync())
+        {
+            db.Works.Add(new WorkModel { Title = "W1", NormalizedTitle = "W1", NormalizedAuthor = "" });
+            await db.SaveChangesAsync();
+            db.Works.Add(new WorkModel { Title = "W2", NormalizedTitle = "W2", NormalizedAuthor = "" });
+            await db.SaveChangesAsync();
             await transaction.CommitAsync();
         }
 
+        (await ReadRevisionAsync()).Should().Be(
+            before + 1,
+            "one increment per transaction, however many portable saves it contains");
+    }
+
+    [Fact]
+    public async Task Separate_saves_in_one_context_advance_once_each()
+    {
+        await using var db = await CreateInitializedContextAsync();
+        var before = await ReadRevisionAsync();
+
+        db.Works.Add(new WorkModel { Title = "W1", NormalizedTitle = "W1", NormalizedAuthor = "" });
+        await db.SaveChangesAsync();
+        db.Works.Add(new WorkModel { Title = "W2", NormalizedTitle = "W2", NormalizedAuthor = "" });
+        await db.SaveChangesAsync();
+
+        (await ReadRevisionAsync()).Should().Be(before + 2, "a reused context bumps once per portable save");
+    }
+
+    [Fact]
+    public async Task Sync_save_with_accept_all_changes_false_still_advances_each_portable_save()
+    {
+        await using var db = await CreateInitializedContextAsync();
+        var work = new WorkModel { Title = "Before", NormalizedTitle = "BEFORE", NormalizedAuthor = "" };
+        db.Works.Add(work);
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+        var before = await ReadRevisionAsync();
+
+        var tracked = await db.Works.SingleAsync(w => w.Id == work.Id);
+        tracked.Title = "First";
+        db.SaveChanges(acceptAllChangesOnSuccess: false);
+        (await ReadRevisionAsync()).Should().Be(before + 1);
+        db.ChangeTracker.Entries<WorkModel>().Single().State.Should().Be(
+            EntityState.Modified,
+            "acceptAllChangesOnSuccess:false leaves the entry staged");
+
+        tracked.Title = "Second";
+        db.SaveChanges(acceptAllChangesOnSuccess: false);
+        (await ReadRevisionAsync()).Should().Be(
+            before + 2,
+            "a still-staged portable entry must not suppress the next advance");
+    }
+
+    [Fact]
+    public async Task Async_save_with_accept_all_changes_false_still_advances_each_portable_save()
+    {
+        await using var db = await CreateInitializedContextAsync();
+        var work = new WorkModel { Title = "Before", NormalizedTitle = "BEFORE", NormalizedAuthor = "" };
+        db.Works.Add(work);
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+        var before = await ReadRevisionAsync();
+
+        var tracked = await db.Works.SingleAsync(w => w.Id == work.Id);
+        tracked.Title = "First";
+        await db.SaveChangesAsync(acceptAllChangesOnSuccess: false);
+        (await ReadRevisionAsync()).Should().Be(before + 1);
+
+        tracked.Title = "Second";
+        await db.SaveChangesAsync(acceptAllChangesOnSuccess: false);
         (await ReadRevisionAsync()).Should().Be(before + 2);
+    }
+
+    [Fact]
+    public async Task Explicit_helper_call_then_portable_save_advances_once_per_transaction()
+    {
+        await using var db = await CreateInitializedContextAsync();
+        var before = await ReadRevisionAsync();
+
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        var version = await LibraryRevision.AdvanceAndGetAsync(db);
+        version.Should().Be((before + 1).ToString());
+        db.Works.Add(new WorkModel { Title = "W", NormalizedTitle = "W", NormalizedAuthor = "" });
+        await db.SaveChangesAsync();
+        await transaction.CommitAsync();
+
+        (await ReadRevisionAsync()).Should().Be(before + 1, "the save must not advance a second time");
     }
 
     [Fact]
@@ -345,7 +512,7 @@ public sealed class LibraryDestinationRevisionTests : IDisposable
                     await db.SaveChangesAsync();
                     return;
                 }
-                catch (DbUpdateException)
+                catch (Exception exception) when (exception is DbUpdateException or SqliteException)
                 {
                     await Task.Delay(10 * (attempt + 1));
                 }
@@ -359,6 +526,70 @@ public sealed class LibraryDestinationRevisionTests : IDisposable
         (await ReadRevisionAsync()).Should().Be(
             before + writers,
             "every committed portable save must contribute exactly one distinct revision step");
+    }
+
+    /// <summary>
+    /// The standardized lock order: a tracked save and a bulk delete run
+    /// repeatedly; both must commit and the revision must increase by exactly
+    /// two per iteration. On PostgreSQL the inverse order deadlocks when the
+    /// two target the same row; this is the SQLite counterpart of the PG-lane
+    /// test.
+    /// </summary>
+    [Fact]
+    public async Task Tracked_save_racing_a_bulk_delete_commits_both_increments_repeatedly()
+    {
+        await using (var init = await CreateInitializedContextAsync())
+        {
+            _ = init;
+        }
+
+        for (var iteration = 0; iteration < 10; iteration++)
+        {
+            Guid trackedId;
+            Guid deletedId;
+            await using (var setup = CreateContext())
+            {
+                var tracked = new TopicModel { Topic = $"race-tracked-{iteration}" };
+                var deleted = new TopicModel { Topic = $"race-deleted-{iteration}" };
+                setup.Topics.AddRange(tracked, deleted);
+                await setup.SaveChangesAsync();
+                trackedId = tracked.Id;
+                deletedId = deleted.Id;
+            }
+
+            var before = await ReadRevisionAsync();
+            var barrier = new Barrier(2);
+
+            async Task TrackedSaveAsync()
+            {
+                await using var db = CreateContext();
+                barrier.SignalAndWait();
+                await using var transaction = await db.Database.BeginTransactionAsync();
+                await LibraryRevision.AdvanceAndGetAsync(db);
+                var tracked = await db.Topics.SingleAsync(t => t.Id == trackedId);
+                tracked.Topic = $"changed-{iteration}";
+                await db.SaveChangesAsync();
+                await transaction.CommitAsync();
+            }
+
+            async Task BulkDeleteAsync()
+            {
+                await using var db = CreateContext();
+                barrier.SignalAndWait();
+                await using var transaction = await db.Database.BeginTransactionAsync();
+                await LibraryRevision.AdvanceAndGetAsync(db);
+                await db.Topics.Where(t => t.Id == deletedId).ExecuteDeleteAsync();
+                await transaction.CommitAsync();
+            }
+
+            await Task.WhenAll(
+                Task.Run(TrackedSaveAsync),
+                Task.Run(BulkDeleteAsync)).WaitAsync(TimeSpan.FromSeconds(30));
+
+            (await ReadRevisionAsync()).Should().Be(
+                before + 2,
+                $"iteration {iteration}: both portable transactions committed one advance each");
+        }
     }
 
     public enum PortableMutation
@@ -479,6 +710,23 @@ public sealed class LibraryDestinationRevisionTests : IDisposable
                 default: throw new InvalidOperationException($"No mutation for {entity.GetType().Name}");
             }
         }
+    }
+
+    private static string FindRepoRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null)
+        {
+            var candidate = Path.Combine(directory.FullName, "Nostos.Product");
+            if (Directory.Exists(candidate))
+            {
+                return directory.FullName;
+            }
+
+            directory = directory.Parent;
+        }
+
+        throw new InvalidOperationException("Could not locate the repository root.");
     }
 
     public void Dispose()

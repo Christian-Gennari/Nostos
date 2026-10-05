@@ -53,13 +53,12 @@ internal sealed class LibraryMutationExecutor(IDbContextFactory<NostosDbContext>
                 db.ChangeTracker.Clear();
             var state = db.ChangeTracker.Entries<LibraryState>().Select(x => x.Entity).SingleOrDefault()
                 ?? await db.LibraryStates.AsNoTracking().SingleOrDefaultAsync(ct);
-            var version = state?.StateVersion ?? outcome.Result.StateVersion;
-            if (outcome.DidChange && state is not null)
-            {
-                version = NextVersion(state.StateVersion);
-                state.StateVersion = version;
-                state.UpdatedAt = Now;
-            }
+            // LibraryRevision is the only writer of the revision: the command's
+            // own save (or this call, when the command changed state without a
+            // portable save) has already advanced it inside this transaction.
+            var version = outcome.DidChange
+                ? await LibraryRevision.AdvanceAndGetAsync(db, ct)
+                : state?.StateVersion ?? outcome.Result.StateVersion;
 
             var result = outcome.Result with { StateVersion = version, Duplicate = false };
             db.LibraryCommandReceipts.Add(new LibraryCommandReceipt
@@ -94,9 +93,6 @@ internal sealed class LibraryMutationExecutor(IDbContextFactory<NostosDbContext>
         }
     }
 
-
-    private static string NextVersion(string version) =>
-        (long.TryParse(version, out var parsed) ? parsed + 1 : 1).ToString();
 
     private static LibraryCommandResultDto Failure(
         string code,

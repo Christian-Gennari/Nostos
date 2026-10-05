@@ -51,9 +51,11 @@ public sealed class FilePortableImportStagingCleanup(
                 // physical leftovers are sweepable immediately, because the
                 // marker (not the directory) is what hides the staging id and
                 // prevents a new writer from adopting it. Non-tombstoned areas
-                // keep the full TTL grace.
+                // keep the full TTL grace measured by the newest write anywhere
+                // inside them, so an area still receiving media is never
+                // mistaken for an abandoned one.
                 if (!tombstoned
-                    && Directory.GetLastWriteTimeUtc(directory) > cutoffUtc.UtcDateTime)
+                    && TransferPathResolver.NewestWriteTimeUtc(directory) > cutoffUtc.UtcDateTime)
                 {
                     // The full TTL grace has not elapsed for this area.
                     continue;

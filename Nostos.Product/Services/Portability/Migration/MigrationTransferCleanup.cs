@@ -130,7 +130,7 @@ public sealed class MigrationTransferCleanup(
             try
             {
                 paths.VerifyPathWithinRoot(directory);
-                if (Directory.GetLastWriteTimeUtc(directory)
+                if (TransferPathResolver.NewestWriteTimeUtc(directory)
                     > Now.AddHours(-MigrationContractLimits.SessionExpiryHours))
                 {
                     continue;

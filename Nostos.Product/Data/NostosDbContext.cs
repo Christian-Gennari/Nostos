@@ -76,32 +76,38 @@ public class NostosDbContext : DbContext
     //
     // The same pipeline is the destination-revision guard (issue #679 Slice 11):
     // a save containing any portable change advances the singleton
-    // LibraryState.StateVersion atomically in the same transaction, exactly
-    // once per transaction. Paths that already modify LibraryState explicitly
-    // (the legacy command services) keep owning their own bump.
+    // LibraryState.StateVersion atomically, before the portable rows are
+    // touched, in the same transaction. LibraryRevision is the only writer of
+    // StateVersion; callers that need the new value get it from the helper.
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
         AssignMissingWorks();
-        if (!RequiresLibraryRevisionAdvance())
+        if (!HasPortableChanges())
             return base.SaveChanges(acceptAllChangesOnSuccess);
 
-        var owned = Database.CurrentTransaction is null ? Database.BeginTransaction() : null;
-        try
+        if (Database.CurrentTransaction is not null)
         {
-            LibraryRevision.Advance(this);
-            var result = base.SaveChanges(acceptAllChangesOnSuccess);
-            owned?.Commit();
-            return result;
+            LibraryRevision.AdvanceAndGet(this);
+            return base.SaveChanges(acceptAllChangesOnSuccess);
         }
-        catch
+
+        var strategy = Database.CreateExecutionStrategy();
+        return strategy.Execute(() =>
         {
-            owned?.Rollback();
-            throw;
-        }
-        finally
-        {
-            owned?.Dispose();
-        }
+            using var owned = Database.BeginTransaction();
+            try
+            {
+                LibraryRevision.AdvanceAndGet(this);
+                var result = base.SaveChanges(acceptAllChangesOnSuccess);
+                owned.Commit();
+                return result;
+            }
+            catch
+            {
+                owned.Rollback();
+                throw;
+            }
+        });
     }
 
     public override int SaveChanges() => SaveChanges(acceptAllChangesOnSuccess: true);
@@ -121,65 +127,75 @@ public class NostosDbContext : DbContext
         CancellationToken cancellationToken)
     {
         await AssignMissingWorksAsync(cancellationToken);
-        if (!RequiresLibraryRevisionAdvance())
+        if (!HasPortableChanges())
             return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
 
-        var owned = Database.CurrentTransaction is null
-            ? await Database.BeginTransactionAsync(cancellationToken)
-            : null;
-        try
+        if (Database.CurrentTransaction is not null)
         {
-            await LibraryRevision.AdvanceAsync(this, cancellationToken);
-            var result = await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
-            if (owned is not null)
+            await LibraryRevision.AdvanceAndGetAsync(this, cancellationToken);
+            return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+        }
+
+        var strategy = Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
+        {
+            await using var owned = await Database.BeginTransactionAsync(cancellationToken);
+            try
+            {
+                await LibraryRevision.AdvanceAndGetAsync(this, cancellationToken);
+                var result = await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
                 await owned.CommitAsync(cancellationToken);
-            return result;
-        }
-        catch
-        {
-            if (owned is not null)
+                return result;
+            }
+            catch
+            {
                 await owned.RollbackAsync(CancellationToken.None);
-            throw;
-        }
-        finally
-        {
-            if (owned is not null)
-                await owned.DisposeAsync();
-        }
+                throw;
+            }
+        });
     }
 
     /// <summary>
-    /// True when this save mutates portable user-owned state and no caller has
-    /// already staged an explicit LibraryState version change. The portable set
+    /// True when this save mutates portable user-owned state. The portable set
     /// comes from <see cref="PortableEntitySet"/>, the same source the
-    /// completeness inventory asserts parity with.
+    /// completeness inventory asserts parity with. The decision never depends
+    /// on <see cref="LibraryState"/>'s tracked state.
     /// </summary>
-    private bool RequiresLibraryRevisionAdvance()
-    {
-        var portable = ChangeTracker.Entries().Any(entry =>
+    private bool HasPortableChanges() =>
+        ChangeTracker.Entries().Any(entry =>
             entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted
             && PortableEntitySet.IsPortableType(entry.Metadata.ClrType));
-        if (!portable)
-            return false;
-
-        return !ChangeTracker.Entries<LibraryState>().Any(entry =>
-            entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted);
-    }
 
     /// <summary>The transaction that already advanced the revision, if any.</summary>
     private IDbContextTransaction? _libraryRevisionTransaction;
+
+    /// <summary>The authoritative revision advanced in the current transaction.</summary>
+    private string? _libraryRevisionValue;
 
     /// <summary>
     /// True when the current transaction already contains one revision advance,
     /// so the next portable save in it must not advance again.
     /// </summary>
-    internal bool IsLibraryRevisionAdvancedInCurrentTransaction =>
-        Database.CurrentTransaction is { } current
-        && ReferenceEquals(_libraryRevisionTransaction, current);
+    internal bool TryGetCachedLibraryRevision(out string value)
+    {
+        if (_libraryRevisionValue is not null
+            && Database.CurrentTransaction is { } current
+            && ReferenceEquals(_libraryRevisionTransaction, current))
+        {
+            value = _libraryRevisionValue;
+            return true;
+        }
+
+        value = string.Empty;
+        return false;
+    }
 
     /// <summary>Records that the revision was advanced in <paramref name="transaction"/>.</summary>
-    internal void MarkLibraryRevisionAdvanced(IDbContextTransaction? transaction) =>
+    internal void MarkLibraryRevisionAdvanced(IDbContextTransaction? transaction, string value)
+    {
         _libraryRevisionTransaction = transaction;
+        _libraryRevisionValue = value;
+    }
 
     private void AssignMissingWorks()
     {

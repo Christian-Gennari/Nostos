@@ -589,6 +589,10 @@ public sealed class SelfHostedActivationDatabaseBuilderTests
         {
             await using (var live = fixture.OpenLive())
             {
+                // Keep every committing connection from auto-checkpointing the
+                // WAL: only the builder must be able to touch the main file.
+                live.Database.OpenConnection();
+                live.Database.ExecuteSqlRaw("PRAGMA wal_autocheckpoint=0;");
                 _ = await live.BackupRecords.CountAsync();
                 live.BackupRecords.Add(new BackupRecord
                 {
@@ -806,8 +810,6 @@ internal sealed class ActivationBuildFixture : IAsyncDisposable
         await using var live = Open(Paths.LiveDatabase);
 
         var state = await live.LibraryStates.SingleAsync();
-        state.StateVersion = "7";
-        state.UpdatedAt = new DateTime(2026, 9, 30, 8, 0, 0, DateTimeKind.Utc);
 
         live.BackupRecords.Add(new BackupRecord
         {
@@ -1040,6 +1042,14 @@ internal sealed class ActivationBuildFixture : IAsyncDisposable
                 IdempotencyKey = "dropped-link",
             });
 
+        // Seed the live host state first, then stamp the authoritative revision
+        // in its own save: a save that only changes LibraryState is not a
+        // portable mutation, so the revision writer leaves the stamped value
+        // alone (issue #679 Slice 11).
+        await live.SaveChangesAsync();
+
+        state.StateVersion = "7";
+        state.UpdatedAt = new DateTime(2026, 9, 30, 8, 0, 0, DateTimeKind.Utc);
         await live.SaveChangesAsync();
     }
 

@@ -1027,6 +1027,220 @@ public sealed class PostgreSqlCompatibilitySpikeTests
         }
     }
 
+    /// <summary>
+    /// The standardized lock order: every portable transaction advances the
+    /// singleton revision row before touching portable rows. A tracked save and
+    /// a bulk delete racing on the SAME portable row therefore serialize on the
+    /// revision row; the inverse order deadlocks on PostgreSQL. The tracked save
+    /// may legitimately lose to the delete (zero rows updated), which EF reports
+    /// as a concurrency exception, not a deadlock.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "PostgresSpike")]
+    public async Task Concurrent_tracked_save_and_bulk_delete_do_not_deadlock_on_postgresql()
+    {
+        var connectionString = Environment.GetEnvironmentVariable(ConnectionStringEnvironmentVariable);
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            return;
+        }
+
+        var schema = "nostos_revision_" + Guid.NewGuid().ToString("N");
+        var connectionBuilder = new NpgsqlConnectionStringBuilder(connectionString)
+        {
+            SearchPath = schema,
+        };
+        var options = new DbContextOptionsBuilder<NostosDbContext>()
+            .UseNpgsql(connectionBuilder.ConnectionString)
+            .Options;
+
+        try
+        {
+            await using (var setup = new NostosDbContext(options))
+            {
+                await setup.Database.ExecuteSqlRawAsync($"CREATE SCHEMA \"{schema}\"");
+                await setup.Database.ExecuteSqlRawAsync(setup.Database.GenerateCreateScript());
+            }
+
+            await using (var seed = new NostosDbContext(options))
+            {
+                seed.LibraryStates.Add(new LibraryState { StateVersion = "0" });
+                await seed.SaveChangesAsync();
+            }
+
+            for (var iteration = 0; iteration < 25; iteration++)
+            {
+                Guid topicId;
+                await using (var setup = new NostosDbContext(options))
+                {
+                    var topic = new TopicModel { Topic = $"race-{iteration}" };
+                    setup.Topics.Add(topic);
+                    await setup.SaveChangesAsync();
+                    topicId = topic.Id;
+                }
+
+                var barrier = new Barrier(2);
+
+                async Task TrackedSaveAsync()
+                {
+                    await using var db = new NostosDbContext(options);
+                    barrier.SignalAndWait();
+                    await using var transaction = await db.Database.BeginTransactionAsync();
+                    await LibraryRevision.AdvanceAndGetAsync(db);
+                    var tracked = await db.Topics.SingleOrDefaultAsync(t => t.Id == topicId);
+                    if (tracked is null)
+                    {
+                        // The bulk delete won the row; zero rows updated is not
+                        // a deadlock.
+                        await transaction.RollbackAsync();
+                        return;
+                    }
+
+                    tracked.Topic = $"changed-{iteration}";
+                    try
+                    {
+                        await db.SaveChangesAsync();
+                        await transaction.CommitAsync();
+                    }
+                    catch (DbUpdateConcurrencyException)
+                    {
+                        // The bulk delete won the row; zero rows updated is not
+                        // a deadlock.
+                        await transaction.RollbackAsync();
+                    }
+                }
+
+                async Task BulkDeleteAsync()
+                {
+                    await using var db = new NostosDbContext(options);
+                    barrier.SignalAndWait();
+                    await using var transaction = await db.Database.BeginTransactionAsync();
+                    await LibraryRevision.AdvanceAndGetAsync(db);
+                    await db.Topics.Where(t => t.Id == topicId).ExecuteDeleteAsync();
+                    await transaction.CommitAsync();
+                }
+
+                await Task.WhenAll(
+                    Task.Run(TrackedSaveAsync),
+                    Task.Run(BulkDeleteAsync)).WaitAsync(TimeSpan.FromSeconds(60));
+            }
+
+            await using var verify = new NostosDbContext(options);
+            (await ScalarCountAsync(
+                verify,
+                "SELECT COUNT(*) FROM \"LibraryStates\" WHERE \"SingletonSlot\" = 1;")).Should().Be(1);
+        }
+        finally
+        {
+            try
+            {
+                await using var cleanup = new NostosDbContext(options);
+                await cleanup.Database.ExecuteSqlRawAsync(
+                    $"DROP SCHEMA IF EXISTS \"{schema}\" CASCADE");
+            }
+            catch (Exception)
+            {
+                // Best-effort cleanup of the disposable schema; the CI
+                // PostgreSQL container is discarded with the job.
+            }
+        }
+    }
+
+    /// <summary>
+    /// The job-admission ceiling runs inside the same singleton lock every
+    /// portable writer uses: parallel creators with distinct keys must not
+    /// exceed the configured bound.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "PostgresSpike")]
+    public async Task Concurrent_job_admission_with_a_ceiling_never_exceeds_it_on_postgresql()
+    {
+        var connectionString = Environment.GetEnvironmentVariable(ConnectionStringEnvironmentVariable);
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            return;
+        }
+
+        var schema = "nostos_ceiling_" + Guid.NewGuid().ToString("N");
+        var connectionBuilder = new NpgsqlConnectionStringBuilder(connectionString)
+        {
+            SearchPath = schema,
+        };
+        var options = new DbContextOptionsBuilder<NostosDbContext>()
+            .UseNpgsql(connectionBuilder.ConnectionString)
+            .Options;
+
+        try
+        {
+            await using (var setup = new NostosDbContext(options))
+            {
+                await setup.Database.ExecuteSqlRawAsync($"CREATE SCHEMA \"{schema}\"");
+                await setup.Database.ExecuteSqlRawAsync(setup.Database.GenerateCreateScript());
+            }
+
+            await using (var seed = new NostosDbContext(options))
+            {
+                seed.LibraryStates.Add(new LibraryState { StateVersion = "0" });
+                await seed.SaveChangesAsync();
+            }
+
+            const int ceiling = 2;
+            var admitted = 0;
+            await Task.WhenAll(Enumerable.Range(0, 8).Select(index => Task.Run(async () =>
+            {
+                await using var db = new NostosDbContext(options);
+                await using var transaction = await db.Database.BeginTransactionAsync();
+                await LibraryRevision.LockSingletonAsync(db);
+                var outstanding = await db.MigrationJobRecords.CountAsync(j =>
+                    j.State != (int)MigrationJobState.Completed
+                    && j.State != (int)MigrationJobState.Failed
+                    && j.State != (int)MigrationJobState.Cancelled
+                    && j.State != (int)MigrationJobState.Expired);
+                if (outstanding >= ceiling)
+                {
+                    await transaction.RollbackAsync();
+                    return;
+                }
+
+                db.MigrationJobRecords.Add(new MigrationJobRecord
+                {
+                    Id = Guid.NewGuid(),
+                    Direction = (int)MigrationDirection.Export,
+                    State = (int)MigrationJobState.Pending,
+                    RecoveryStatus = (int)MigrationRecoveryStatus.NotRequired,
+                    ProgressPhase = (int)MigrationProgressPhase.Pending,
+                    CreatedAtUtc = DateTime.UtcNow,
+                    UpdatedAtUtc = DateTime.UtcNow,
+                    IdempotencyKey = $"ceiling-{index}",
+                    CreationPayloadHash = new string('c', 64),
+                    ExpiresAtUtc = DateTime.UtcNow.AddHours(24),
+                    AttemptNumber = 1,
+                });
+                await db.SaveChangesAsync();
+                await transaction.CommitAsync();
+                Interlocked.Increment(ref admitted);
+            })));
+
+            admitted.Should().Be(ceiling, "the singleton lock makes the ceiling a hard bound");
+            await using var verify = new NostosDbContext(options);
+            (await verify.MigrationJobRecords.CountAsync()).Should().Be(ceiling);
+        }
+        finally
+        {
+            try
+            {
+                await using var cleanup = new NostosDbContext(options);
+                await cleanup.Database.ExecuteSqlRawAsync(
+                    $"DROP SCHEMA IF EXISTS \"{schema}\" CASCADE");
+            }
+            catch (Exception)
+            {
+                // Best-effort cleanup of the disposable schema; the CI
+                // PostgreSQL container is discarded with the job.
+            }
+        }
+    }
+
     private static async Task<long> ScalarCountAsync(NostosDbContext db, string sql)
     {
         var connection = db.Database.GetDbConnection();
