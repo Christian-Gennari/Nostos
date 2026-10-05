@@ -253,11 +253,17 @@
         <h1>How would you like to begin?</h1>
 
         @if (sharedImportOpen()) {
-          <!-- Slice B8 owns activation: hard-code false until the activation
-               calls are wired, so the flow always shows its gated explanation. -->
           <app-library-import-flow
-            [supportsSafeActivation]="false"
+            [supportsSafeActivation]="entry.supportsSafeActivation()"
+            [activationState]="activation.state()"
+            [activationErrorCode]="activation.errorCode()"
+            [activationPhase]="activation.phase()"
+            [activationCanRetry]="activation.canRetry()"
+            [activationConflict]="activation.conflict()"
+            [activationRecoveryExpiresAtUtc]="activation.recovery()?.expiresAtUtc ?? null"
             (importCompleted)="entry.finishFirstRunAfterImport()"
+            (activationRequested)="onActivationRequested($event)"
+            (replacementConfirmed)="onReplacementConfirmed($event)"
           />
           <div class="cloud-entry__actions">
             <button

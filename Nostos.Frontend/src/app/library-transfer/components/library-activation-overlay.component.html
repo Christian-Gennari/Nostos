@@ -1,0 +1,25 @@
+@if (visible()) {
+  <div
+    [cdkTrapFocus]="true"
+    [cdkTrapFocusAutoCapture]="true"
+    class="activation-boundary"
+    data-testid="library-activation-overlay"
+    role="alert"
+    aria-busy="true"
+    aria-live="assertive"
+  >
+    <div class="activation-boundary__card">
+      <span class="activation-boundary__mark" aria-hidden="true">
+        <nostos-icon name="circle-notch" [size]="20" class="spin-icon" />
+      </span>
+      <p class="activation-boundary__title">Switching libraries…</p>
+      <p class="activation-boundary__phase" data-testid="library-activation-overlay-phase">
+        {{ phaseMessage() }}
+      </p>
+      <p class="activation-boundary__note">
+        Keep this page open. Nostos is replacing the whole library on the server, so editing is
+        paused until it finishes.
+      </p>
+    </div>
+  </div>
+}

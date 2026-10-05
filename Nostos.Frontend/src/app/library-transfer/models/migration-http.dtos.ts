@@ -60,10 +60,23 @@ export type MigrationRecoveryStatus =
   | 'Failed'
   | 'Expired';
 
+/** Browser-facing activation outcome (mirrors `MigrationActivationOutcome`). */
+export type MigrationActivationOutcome =
+  | 'Idle'
+  | 'Accepted'
+  | 'Running'
+  | 'Completed'
+  | 'Failed'
+  | 'RecoveryFailed';
+
+/** Coarse phase of an accepted activation run (mirrors `MigrationActivationPhase`). */
+export type MigrationActivationPhase = 'Queued' | 'Preparing' | 'Activating' | 'Finalizing';
+
 /**
  * Stable machine-readable error codes the server can emit, mirrored from
  * `MigrationHttpErrors` in
- * `Nostos.Product/Endpoints/MigrationHttpContracts.cs` plus the
+ * `Nostos.Product/Endpoints/MigrationHttpContracts.cs`, the activation codes in
+ * `MigrationActivationErrorCodes` the activation routes map, plus the
  * `migration_activation_busy` code the maintenance middleware writes for
  * migration routes. `unexpected_error` is the server's fail-closed 500 code.
  */
@@ -88,6 +101,10 @@ export const SERVER_MIGRATION_ERROR_CODES = [
   'migration_export_not_available',
   'migration_export_expired',
   'migration_too_many_jobs',
+  'migration_replacement_confirmation_required',
+  'migration_destination_conflict',
+  'migration_activation_failed',
+  'migration_activation_recovery_failed',
   'migration_activation_busy',
   'unexpected_error',
 ] as const;
@@ -103,7 +120,6 @@ export const CLIENT_MIGRATION_ERROR_CODES = [
   'archive_not_portable',
   'archive_operational_backup',
   'archive_unsupported_version',
-  'migration_destination_conflict',
   'migration_not_supported',
   'migration_maintenance_timeout',
   'portable_import_failed',
@@ -286,6 +302,55 @@ export interface MigrationJobStatusResponseDto {
 export interface MigrationErrorResponseDto {
   error: MigrationErrorCode | string;
   message: string;
+}
+
+/**
+ * Replacement-activation request body (#681 slice 8). The destination
+ * revision is the opaque revision the user reviewed; it is always a value the
+ * server returned (preflight, activation status or a 409 conflict body).
+ */
+export interface MigrationActivateRequestDto {
+  destinationRevision: string;
+  confirmReplacement: boolean;
+}
+
+/**
+ * Activation status returned by both activation routes (POST 202 and GET
+ * 200). Mirrors `MigrationActivationStatusResponse`; the same shape stays
+ * answerable while exclusive maintenance has the live database closed.
+ */
+export interface MigrationActivationStatusDto {
+  jobId: string;
+  state: MigrationJobState;
+  outcome: MigrationActivationOutcome;
+  errorCode?: string | null;
+  message?: string | null;
+  maintenanceRequired: boolean;
+  destinationRevision?: string | null;
+  existingCounts?: MigrationExistingCountsDto | null;
+  destinationStatus?: MigrationDestinationStatus | null;
+  recoveryAvailable: boolean;
+  recoveryExpiresAtUtc?: string | null;
+  recoverySizeBytes?: number | null;
+  phase?: MigrationActivationPhase | null;
+  accepted: boolean;
+  canActivate: boolean;
+}
+
+/**
+ * Conflict body the activation route returns for
+ * `migration_replacement_confirmation_required` and
+ * `migration_destination_conflict`: the stable error members followed by the
+ * fresh destination facts the browser must show before asking again.
+ */
+export interface MigrationActivationConflictDto {
+  error:
+    | 'migration_replacement_confirmation_required'
+    | 'migration_destination_conflict';
+  message: string;
+  destinationRevision?: string | null;
+  destinationStatus?: MigrationDestinationStatus | null;
+  existingCounts?: MigrationExistingCountsDto | null;
 }
 
 export interface BrowserMigrationChunk {

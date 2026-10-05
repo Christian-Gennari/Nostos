@@ -8,3 +8,6 @@
 } @else {
   <app-cloud-entry />
 }
+<!-- Root-level interaction boundary: activation can continue after leaving
+     Settings, so the cutover must block the whole app, not just one host. -->
+<app-library-activation-overlay [state]="activation.state()" [phase]="activation.phase()" />
