@@ -1167,6 +1167,8 @@ describe('ReaderShell toolbar contract', () => {
     booksGetSpy.mockReturnValue(of(pdfBook));
     fixture = await configureReaderShell();
     render();
+    fixture.componentInstance.ready.set(true);
+    render();
 
     const ctrl = new KeyboardEvent('keydown', {
       key: 'f',
