@@ -72,6 +72,10 @@ internal sealed class SelfHostedActivationComponentStep(SelfHostedActivationPath
     public void Execute(SelfHostedActivationJournal journal, SelfHostedRecoveryAction action)
     {
         var (live, candidate, previous) = Locations(journal.JobId);
+        // A concurrent status read that raced a vacant live path can leave a
+        // zero-length SQLite artifact. It is not a generation; it must never
+        // occupy the rename destination or be mistaken for a live database.
+        if (database) RemoveEmptyDatabaseArtifact(live);
         if (action == SelfHostedRecoveryAction.RollBackOriginal && Exists(previous))
         {
             // Quarantine SQLite sidecars before restoring the original DB, even
@@ -93,7 +97,14 @@ internal sealed class SelfHostedActivationComponentStep(SelfHostedActivationPath
     private (string, string, string) Locations(Guid id) => database
         ? (paths.LiveDatabase, paths.CandidateDatabase(id), paths.PreviousDatabase(id))
         : (paths.LiveMedia, paths.CandidateMedia(id), paths.PreviousMedia(id));
-    private bool Exists(string path) => database ? File.Exists(path) : Directory.Exists(path);
+    /// <summary>
+    /// A database exists only when its file carries bytes: SQLite materializes
+    /// a zero-length file when a reader opens a missing path, and that artifact
+    /// is never a library generation.
+    /// </summary>
+    private bool Exists(string path) => database
+        ? File.Exists(path) && new FileInfo(path).Length > 0
+        : Directory.Exists(path);
     private int State(string live, string candidate, string previous)
     {
         // Reject a file where a directory belongs, and vice versa.
@@ -112,9 +123,70 @@ internal sealed class SelfHostedActivationComponentStep(SelfHostedActivationPath
     private void Move(string source, string target)
     {
         Verify(source); Verify(target);
-        ActivationFileSystem.Rename(source, target);
+        if (database) RenameDatabase(source, target);
+        else ActivationFileSystem.Rename(source, target);
         afterRenameForTesting?.Invoke();
     }
+
+    /// <summary>
+    /// Renames a database file, retrying when the destination is only a
+    /// zero-length SQLite artifact left by a concurrent reader that raced a
+    /// vacated live path. A non-empty destination is never overwritten and
+    /// propagates the ordinary layout error.
+    /// </summary>
+    internal static void RenameDatabase(string source, string target)
+    {
+        for (var attempt = 1; attempt <= 5; attempt++)
+        {
+            try
+            {
+                ActivationFileSystem.Rename(source, target);
+                return;
+            }
+            catch (IOException) when (RemoveEmptyDatabaseArtifact(target))
+            {
+            }
+        }
+
+        throw SelfHostedActivationPaths.Failure(
+            "A database rename could not be completed because the destination stayed occupied.");
+    }
+    /// <summary>
+    /// Removes a zero-length database artifact (and its empty sidecars) at a
+    /// vacated live path. Returns true when something was removed.
+    /// </summary>
+    internal static bool RemoveEmptyDatabaseArtifact(string databasePath)
+    {
+        var removed = false;
+        try
+        {
+            if (File.Exists(databasePath) && new FileInfo(databasePath).Length == 0)
+            {
+                File.Delete(databasePath);
+                removed = true;
+            }
+
+            foreach (var suffix in new[] { "-wal", "-shm" })
+            {
+                var sidecar = databasePath + suffix;
+                if (File.Exists(sidecar) && new FileInfo(sidecar).Length == 0)
+                {
+                    File.Delete(sidecar);
+                }
+            }
+        }
+        catch (IOException)
+        {
+            // The owner's rename or another reader may hold it; the caller
+            // fails closed through the ordinary layout error.
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
+
+        return removed;
+    }
+
     private static MigrationActivationException InvalidLayout() => SelfHostedActivationPaths.Failure(
         "The activation component layout is inconsistent. Stop the host and follow the activation recovery guide.");
 }

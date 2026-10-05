@@ -65,4 +65,45 @@ public sealed class ActivationCoordinatorConcurrencyTests
             .Should().Be(SelfHostedActivationOutcome.AlreadyCompleted);
         (await bed.CurrentRevisionAsync()).Should().Be(ActivationCoordinatorTemplate.AdvancedRevision);
     }
+
+    /// <summary>
+    /// The swap window deliberately has no database at the live path. A second
+    /// activation request reaching the coordinator inside that window must not
+    /// open SQLite there: doing so materializes an empty database, the owner's
+    /// candidate rename then finds the destination occupied, and a load-timed
+    /// parallel request turns a successful cutover into a generic failure.
+    /// This is the deterministic reproduction of the CI flake.
+    /// </summary>
+    [Fact]
+    public async Task SecondRequestInsideTheSwapWindow_DoesNotCreateAnEmptyLiveDatabase()
+    {
+        await using var bed = await ActivationCoordinatorTestBed.CreateAsync(populated: true);
+        var atRetainedDatabase = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        // The observer blocks a pool thread at the boundary, so run the first
+        // activation away from the test's synchronization context.
+        var first = Task.Run(() => bed.ActivateAsync(confirm: true, observer: step =>
+        {
+            if (string.Equals(step, SelfHostedActivationSteps.PhasePreviousDatabaseRetained, StringComparison.Ordinal))
+            {
+                atRetainedDatabase.TrySetResult();
+                release.Task.GetAwaiter().GetResult();
+            }
+        }));
+
+        await atRetainedDatabase.Task.WaitAsync(TimeSpan.FromSeconds(30));
+        File.Exists(bed.Paths.LiveDatabase).Should().BeFalse(
+            "the swap window deliberately vacates the live database path");
+
+        var second = await bed.ActivateAsync(confirm: true);
+        second.Outcome.Should().Be(SelfHostedActivationOutcome.InProgress,
+            "the durable lease belongs to the in-flight cutover");
+        File.Exists(bed.Paths.LiveDatabase).Should().BeFalse(
+            "a concurrent request must not materialize an empty database at the vacated live path");
+
+        release.TrySetResult();
+        (await first).Outcome.Should().Be(SelfHostedActivationOutcome.Completed);
+        await bed.AssertImportedGenerationAsync();
+    }
 }

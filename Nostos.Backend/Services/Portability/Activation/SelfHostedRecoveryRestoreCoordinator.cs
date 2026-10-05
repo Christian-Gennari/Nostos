@@ -420,7 +420,8 @@ internal sealed class SelfHostedRecoveryRestoreCoordinator
             _journals.Advance(restoreId, SelfHostedActivationPhase.CandidateMediaActivated, exclusive);
             Step(SelfHostedRecoveryRestoreSteps.PhaseCandidateMediaActivated);
 
-            ActivationFileSystem.Rename(_paths.CandidateDatabase(restoreId), _paths.LiveDatabase);
+            SelfHostedActivationComponentStep.RenameDatabase(
+                _paths.CandidateDatabase(restoreId), _paths.LiveDatabase);
             Step(SelfHostedRecoveryRestoreSteps.AfterActivateDatabase);
             _journals.Advance(restoreId, SelfHostedActivationPhase.CandidateDatabaseActivated, exclusive);
             Step(SelfHostedRecoveryRestoreSteps.PhaseCandidateDatabaseActivated);

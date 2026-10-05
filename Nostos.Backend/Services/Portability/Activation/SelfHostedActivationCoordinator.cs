@@ -269,7 +269,22 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
             token = await AcquireLeaseAsync(jobId, ct);
             if (token is null)
             {
-                var current = await LoadJobAsync(jobId, CancellationToken.None);
+                MigrationJobRecord current;
+                try
+                {
+                    current = await LoadJobAsync(jobId, CancellationToken.None);
+                }
+                catch (Exception exception) when (exception is SqliteException or IOException)
+                {
+                    // Another owner is between the retention rename and the
+                    // candidate swap; the live path is deliberately absent. A
+                    // read that raced the vacancy may have created an empty
+                    // database there; remove it before returning.
+                    SelfHostedActivationComponentStep.RemoveEmptyDatabaseArtifact(_paths.LiveDatabase);
+                    return new SelfHostedActivationResult(jobId, SelfHostedActivationOutcome.InProgress,
+                        MigrationJobState.Activating, MigrationRecoveryStatus.Pending);
+                }
+
                 return new SelfHostedActivationResult(jobId, SelfHostedActivationOutcome.InProgress,
                     (MigrationJobState)current.State, (MigrationRecoveryStatus)current.RecoveryStatus);
             }
@@ -372,8 +387,10 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
         {
             // Recovery-required failures must leave quarantined material in
             // place for the startup reconciler; only ordinary failures clean
-            // the discardable candidate artifacts.
-            if (!IsRecoveryRequired(exception))
+            // the discardable candidate artifacts. A run that never acquired
+            // the job lease lost to another owner and must not delete the
+            // owner's candidate generation.
+            if (!IsRecoveryRequired(exception) && token is not null)
             {
                 TryCleanCandidateArtifacts(jobId);
             }
@@ -583,7 +600,8 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
             _journals.Advance(jobId, SelfHostedActivationPhase.CandidateMediaActivated, exclusive);
             Step(SelfHostedActivationSteps.PhaseCandidateMediaActivated);
 
-            ActivationFileSystem.Rename(_paths.CandidateDatabase(jobId), _paths.LiveDatabase);
+            SelfHostedActivationComponentStep.RenameDatabase(
+                _paths.CandidateDatabase(jobId), _paths.LiveDatabase);
             Step(SelfHostedActivationSteps.AfterActivateDatabase);
             _journals.Advance(jobId, SelfHostedActivationPhase.CandidateDatabaseActivated, exclusive);
             Step(SelfHostedActivationSteps.PhaseCandidateDatabaseActivated);
@@ -912,8 +930,17 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
 
     private async Task<MigrationJobRecord> LoadJobAsync(Guid jobId, CancellationToken ct)
     {
-        await using var scope = _scopes.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<NostosDbContext>();
+        // Never let a status read materialize an empty SQLite database at a
+        // live path that an in-flight cutover intentionally vacated. The check
+        // alone cannot close the race (the file can vanish between the check
+        // and SQLite's open), so this read uses a strict read-only connection
+        // that can never create the database it is missing.
+        if (!File.Exists(_paths.LiveDatabase))
+        {
+            throw new IOException("The live database is not at its configured path.");
+        }
+
+        await using var db = OpenLiveReadOnly();
         return await db.MigrationJobRecords.AsNoTracking()
             .SingleOrDefaultAsync(job => job.Id == jobId, ct)
             ?? throw MigrationJobStoreException.NotFound(jobId);
@@ -929,8 +956,15 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
 
     private async Task<SelfHostedActivationDestinationFacts> ReadDestinationFactsAsync(CancellationToken ct)
     {
-        await using var scope = _scopes.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<NostosDbContext>();
+        // Same rule as lease acquisition: an absent live database is another
+        // owner's swap window, not an empty database to create and read.
+        if (!File.Exists(_paths.LiveDatabase))
+        {
+            throw new MigrationActivationException(MigrationActivationErrorCodes.Busy,
+                "The live library is being switched by another owner; retry shortly.");
+        }
+
+        await using var db = OpenLiveReadOnly();
         // The opaque revision is read ONLY through the provider seam so
         // activation and preflight can never disagree about the token.
         var revision = await _revisionProvider.GetCurrentAsync(ct);
@@ -985,9 +1019,31 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
 
     private async Task<string?> AcquireLeaseAsync(Guid jobId, CancellationToken ct)
     {
+        // The live database can be deliberately absent while its owner is
+        // between the retention rename and the candidate swap. Opening SQLite
+        // here (or in LoadJobAsync below) would create an empty database at the
+        // live path and make the owner's rename fail. A missing live database
+        // therefore means "another owner is mid-swap": observe, never open.
+        if (!File.Exists(_paths.LiveDatabase))
+        {
+            return null;
+        }
+
         await using var scope = _scopes.CreateAsyncScope();
-        return await scope.ServiceProvider.GetRequiredService<IMigrationJobStore>()
-            .TryAcquireLeaseAsync(jobId, ActivationLeaseDuration, ct);
+        try
+        {
+            return await scope.ServiceProvider.GetRequiredService<IMigrationJobStore>()
+                .TryAcquireLeaseAsync(jobId, ActivationLeaseDuration, ct);
+        }
+        catch (Exception exception) when (exception is SqliteException or IOException)
+        {
+            // The live file vanished between the existence check and SQLite's
+            // open, which may have created an empty database at the vacated
+            // path. It carries no data; remove it so the owner's rename cannot
+            // find an occupied destination. Report the in-progress state.
+            SelfHostedActivationComponentStep.RemoveEmptyDatabaseArtifact(_paths.LiveDatabase);
+            return null;
+        }
     }
 
     private async Task RenewLeaseOnceAsync(Guid jobId, string token)
@@ -1198,6 +1254,15 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
         }, CancellationToken.None);
         return new LeaseHeartbeat(stopped, task);
     }
+
+    /// <summary>
+    /// A strict read-only live connection for status-style reads. It can never
+    /// create a database at a path another owner is renaming.
+    /// </summary>
+    private NostosDbContext OpenLiveReadOnly() =>
+        new(new DbContextOptionsBuilder<NostosDbContext>()
+            .UseSqlite(SelfHostedSqliteFile.ConnectionString(_paths.LiveDatabase, readOnly: true, pooling: false))
+            .Options);
 
     private void Step(string name)
     {
