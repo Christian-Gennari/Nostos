@@ -100,6 +100,8 @@ export class EpubAnnotationManager {
   /** The book's chosen pen (issue #208), used for every highlight drawn here. */
   private highlightColour: HighlightColour = DEFAULT_HIGHLIGHT_COLOUR;
   private pendingHighlight: PendingEpubHighlight | null = null;
+  /** Ephemeral search mark; never enters the persisted highlight list. */
+  private searchAnnotation: PendingHighlightAnnotation | null = null;
   private lastCapturedKey: string | null = null;
   private readonly documentCleanups = new Map<Document, () => void>();
   /**
@@ -308,6 +310,31 @@ export class EpubAnnotationManager {
   }
 
   /**
+   * Paint the active in-book search hit without touching saved highlight state.
+   * Object-identity removal is intentional: removing by CFI could also remove a
+   * reader highlight that happens to cover the same passage.
+   */
+  public showSearchHighlight(cfiRange: string): void {
+    this.clearSearchHighlight();
+    this.searchAnnotation = this.rendition.annotations.highlight(
+      cfiRange,
+      { nostosSearch: true },
+      undefined,
+      'epubjs-search-current',
+      {
+        fill: 'var(--color-accent)',
+        'fill-opacity': '0.28',
+        'mix-blend-mode': 'normal',
+      },
+    ) as unknown as PendingHighlightAnnotation;
+  }
+
+  public clearSearchHighlight(): void {
+    this.removeAnnotation(this.searchAnnotation ?? undefined);
+    this.searchAnnotation = null;
+  }
+
+  /**
    * Standard epub.js path: `rendition.on('selected')`. Routes into the same
    * capture/deduplication pipeline as the iframe-level fallback.
    */
@@ -507,6 +534,7 @@ export class EpubAnnotationManager {
    */
   public destroy(): void {
     this.discardHighlight();
+    this.clearSearchHighlight();
 
     if (this.selectedHandler) {
       this.rendition.off('selected', this.selectedHandler);
