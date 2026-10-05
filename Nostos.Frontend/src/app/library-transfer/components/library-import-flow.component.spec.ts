@@ -1263,6 +1263,46 @@ describe('LibraryImportFlowComponent', () => {
     expect(confirmed).toHaveBeenCalledTimes(2);
   });
 
+  it('shows both count sides when an empty destination reports populated after preflight', async () => {
+    const harness = setup();
+    const file = await portableFile();
+
+    harness.fixture.componentRef.setInput('supportsSafeActivation', true);
+    selectFile(harness, file);
+    await waitForKind(harness, 'ready-empty');
+    harness.fixture.detectChanges();
+
+    harness.fixture.componentRef.setInput('activationConflict', {
+      destinationRevision: 'rev-9',
+      destinationStatus: 'Populated',
+      existingCounts: {
+        works: 1,
+        books: 9,
+        notes: 12,
+        topics: 0,
+        noteTopics: 0,
+        writings: 0,
+        writingNotes: 0,
+        collections: 2,
+        bookCollections: 3,
+        acquisitions: 0,
+        noteImportBookLinks: 0,
+        assistantSettings: 0,
+        totalRows: 27,
+      },
+      changedSinceImportStarted: true,
+    });
+    harness.fixture.detectChanges();
+
+    expect(testId(harness, 'replacement-existing')?.textContent).toContain('9 books');
+    // The dialog must reuse the flow's own archive facts instead of blanking
+    // the incoming side (the coordinator state still holds them).
+    expect(testId(harness, 'replacement-incoming')?.textContent).toContain('3 books');
+    expect(testId(harness, 'replacement-conflict')?.textContent).toContain(
+      'changed since the import started',
+    );
+  });
+
   it('renders the fail-closed recovery failure without a retry action', async () => {
     const harness = setup();
     const requested = vi.fn();

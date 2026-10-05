@@ -465,6 +465,7 @@ export class HttpLibraryTransferTransport implements LibraryTransferTransport {
             destinationRevision: body.destinationRevision,
             destinationStatus: body.destinationStatus,
             existingCounts: body.existingCounts,
+            changedSinceImportStarted: body.changedSinceImportStarted,
           },
           { retryAfterMs: parseRetryAfterMs(error.headers?.get('Retry-After')), cause: error },
         );
@@ -583,6 +584,7 @@ interface ActivationErrorBody extends TransportErrorBody {
   destinationRevision: string | null;
   destinationStatus: MigrationDestinationStatus | null;
   existingCounts: MigrationExistingCountsDto | null;
+  changedSinceImportStarted: boolean | null;
 }
 
 /** Conflict body parser that keeps the fresh destination facts. */
@@ -598,8 +600,18 @@ function readActivationErrorBody(value: unknown): ActivationErrorBody | null {
       ? record['destinationStatus']
       : null;
   const existingCounts = readExistingCounts(record['existingCounts']);
+  const changedSinceImportStarted =
+    typeof record['changedSinceImportStarted'] === 'boolean'
+      ? record['changedSinceImportStarted']
+      : null;
 
-  return { ...base, destinationRevision, destinationStatus, existingCounts };
+  return {
+    ...base,
+    destinationRevision,
+    destinationStatus,
+    existingCounts,
+    changedSinceImportStarted,
+  };
 }
 
 function readExistingCounts(value: unknown): MigrationExistingCountsDto | null {

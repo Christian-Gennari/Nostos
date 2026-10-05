@@ -21,7 +21,17 @@
  * destructive action as a retry.
  */
 
-import { ChangeDetectionStrategy, Component, computed, effect, input, output } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  afterRenderEffect,
+  computed,
+  effect,
+  inject,
+  input,
+  output,
+} from '@angular/core';
 import { A11yModule } from '@angular/cdk/a11y';
 
 import { MigrationPreflightResponseDto } from '../models/migration-http.dtos';
@@ -65,6 +75,8 @@ export class LibraryReplacementDialogComponent {
   readonly cancelled = output<void>();
 
   private confirmedOnce = false;
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private initialFocusApplied = false;
 
   constructor() {
     effect(() => {
@@ -72,6 +84,23 @@ export class LibraryReplacementDialogComponent {
       // both start a fresh destructive decision; only a successful submission
       // keeps the latch.
       if (!this.isOpen() || this.errorMessage() || this.conflict()) this.confirmedOnce = false;
+    });
+
+    // CDK's autoCapture runs once, and when the dialog first renders the cancel
+    // action can still be disabled while the unconfirmed activation probe is in
+    // flight: the trap finds no focusable initial element and focus stays on
+    // the page behind the modal. Apply the documented initial focus after the
+    // dialog actually renders, as soon as it is interactive, once per opening.
+    afterRenderEffect(() => {
+      if (!this.isOpen()) {
+        this.initialFocusApplied = false;
+        return;
+      }
+      if (this.busy() || this.initialFocusApplied) return;
+      const cancel = this.host.nativeElement.querySelector<HTMLElement>('.replacement-cancel');
+      if (!cancel) return;
+      cancel.focus();
+      this.initialFocusApplied = true;
     });
   }
 
@@ -94,13 +123,25 @@ export class LibraryReplacementDialogComponent {
     });
   });
 
-  /** Explanation shown when the server re-checked the library after a 409. */
-  readonly conflictNotice = computed(() =>
-    this.conflict()
-      ? 'This library changed since the import was verified. These are the current counts; ' +
+  /**
+   * Explanation shown when the server re-checked the library after a 409.
+   * Only a server-confirmed change since the import started uses the
+   * "changed" wording; a first confirmation of a populated destination is
+   * not a change, and an older host that cannot report the flag keeps a
+   * neutral re-review sentence.
+   */
+  readonly conflictNotice = computed(() => {
+    const conflict = this.conflict();
+    if (!conflict) return null;
+    if (conflict.changedSinceImportStarted === true) {
+      return (
+        'This library changed since the import started. These are the current counts; ' +
         'confirm again to replace it.'
-      : null,
-  );
+      );
+    }
+    if (conflict.changedSinceImportStarted === false) return null;
+    return 'These are the current counts from this library; confirm again to replace it.';
+  });
 
   readonly incomingSummary = computed(() => {
     const verified = this.preparedFacts()?.incomingCounts;

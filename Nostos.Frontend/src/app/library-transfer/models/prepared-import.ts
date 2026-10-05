@@ -28,7 +28,10 @@ export function readPreparedImportFacts(value: unknown): PreparedImportFacts | n
   const record = value as Record<string, unknown>;
   const facts: PreparedImportFacts = {};
 
-  const counts = record['incomingCounts'];
+  // The host serialises `PreparedPortableImportMetadata`, whose verified
+  // counts live under `counts`; a different key silently fell back to the
+  // manifest estimate and mislabelled the dialog.
+  const counts = record['counts'];
   if (isArchiveCounts(counts)) facts.incomingCounts = counts;
 
   const recoveryBytes = record['recoveryBytes'];

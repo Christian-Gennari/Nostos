@@ -25,6 +25,12 @@ export interface LibraryActivationConflictFacts {
   destinationRevision: string | null;
   destinationStatus: MigrationDestinationStatus | null;
   existingCounts: MigrationExistingCountsDto | null;
+  /**
+   * Server hint distinguishing a re-review because the library genuinely
+   * changed during the import (#753) from a first confirmation of a populated
+   * destination. `null`/absent when an older host does not report it.
+   */
+  changedSinceImportStarted?: boolean | null;
 }
 
 /** Read block for whole-file hashing: bounded regardless of archive size (plan §11.3). */

@@ -212,8 +212,8 @@
     @if (activationConflictReplacement(); as conflict) {
       <app-library-replacement-dialog
         [isOpen]="true"
-        [preflight]="null"
-        [preparedImport]="null"
+        [preflight]="readyEmpty()?.preflight ?? null"
+        [preparedImport]="readyEmpty()?.preparedImport ?? null"
         [conflict]="conflict"
         [supportsSafeActivation]="supportsSafeActivation()"
         [busy]="replacementSealed()"
