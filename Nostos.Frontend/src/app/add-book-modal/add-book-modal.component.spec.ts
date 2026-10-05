@@ -190,6 +190,77 @@ describe('AddBookModal', () => {
     expect(component.form.title).toBe('ulysses');
   });
 
+  it('keeps a provider-first manual draft intact when a cover is selected', () => {
+    const books = TestBed.inject(BooksService);
+    const createSpy = vi.spyOn(books, 'create');
+    const closeSpy = vi.fn();
+    component.closeModal.subscribe(closeSpy);
+
+    component.providerList.set([
+      {
+        id: 'gutenberg',
+        displayName: 'Project Gutenberg',
+        capabilities: ['search', 'ebookAcquisition'],
+      } as any,
+    ]);
+    fixture.componentRef.setInput('sourceFirst', true);
+    fixture.detectChanges();
+
+    component.showManualMode();
+    component.form.title = 'Unsaved draft';
+    const cover = new File(['cover'], 'cover.jpg', { type: 'image/jpeg' });
+    const objectUrlSpy = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:cover');
+
+    component.onCoverSelected({
+      target: { files: [cover] },
+    } as unknown as Event);
+    fixture.detectChanges();
+
+    expect(component.sourceMode()).toBe(false);
+    expect(component.flowIntent()).toBe('manual');
+    expect(component.form.title).toBe('Unsaved draft');
+    expect(component.selectedCover()).toBe(cover);
+    expect(component.coverPreview()).toBe('blob:cover');
+    expect(createSpy).not.toHaveBeenCalled();
+    expect(closeSpy).not.toHaveBeenCalled();
+
+    objectUrlSpy.mockRestore();
+  });
+
+  it('does not reinitialize a manual draft when provider state changes', () => {
+    component.providerList.set([
+      {
+        id: 'gutenberg',
+        displayName: 'Project Gutenberg',
+        capabilities: ['search', 'ebookAcquisition'],
+      } as any,
+    ]);
+    fixture.componentRef.setInput('sourceFirst', true);
+    fixture.detectChanges();
+
+    component.showManualMode();
+    component.form.title = 'Keep this draft';
+
+    component.providersLoading.set(true);
+    component.providerList.set([
+      {
+        id: 'gutenberg',
+        displayName: 'Project Gutenberg',
+        capabilities: ['search', 'ebookAcquisition'],
+      } as any,
+      {
+        id: 'librivox',
+        displayName: 'LibriVox',
+        capabilities: ['search', 'audiobookAcquisition'],
+      } as any,
+    ]);
+    fixture.detectChanges();
+
+    expect(component.sourceMode()).toBe(false);
+    expect(component.flowIntent()).toBe('manual');
+    expect(component.form.title).toBe('Keep this draft');
+  });
+
   it('keeps optional metadata behind one shallow More details disclosure', () => {
     fixture.detectChanges();
 
