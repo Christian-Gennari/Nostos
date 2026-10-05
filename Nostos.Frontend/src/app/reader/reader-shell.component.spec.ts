@@ -1099,42 +1099,34 @@ describe('ReaderShell toolbar contract', () => {
     }
   });
 
-  it('offers the shared Search control for EPUB and PDF, but not audio', async () => {
+  it('offers the shared Search control for PDF', async () => {
     const pdfBook = { ...audiobook, id: 'book-pdf', fileName: 'being-and-time.pdf' } as Book;
     booksGetSpy.mockReturnValue(of(pdfBook));
     fixture = await configureReaderShell();
     render();
 
-    let searchBtn = fixture.debugElement
+    const searchBtn = fixture.debugElement
       .queryAll(By.css('.reader-header button.icon-btn'))
       .map((b) => b.nativeElement as HTMLButtonElement)
       .find((b) => b.getAttribute('title') === 'Search');
+
     expect(searchBtn).toBeTruthy();
     expect(searchBtn!.getAttribute('aria-label')).toBe('Search in book');
+  });
 
-    fixture.destroy();
-
+  it('offers the same Search control for EPUB', async () => {
     const epubBook = { ...audiobook, id: 'book-epub', fileName: 'dracula.epub' } as Book;
     booksGetSpy.mockReturnValue(of(epubBook));
     fixture = await configureReaderShell();
     render();
 
-    searchBtn = fixture.debugElement
+    const searchBtn = fixture.debugElement
       .queryAll(By.css('.reader-header button.icon-btn'))
       .map((b) => b.nativeElement as HTMLButtonElement)
       .find((b) => b.getAttribute('title') === 'Search');
+
     expect(searchBtn).toBeTruthy();
-
-    fixture.destroy();
-
-    booksGetSpy.mockReturnValue(of(audiobook));
-    fixture = await configureReaderShell();
-    render();
-    searchBtn = fixture.debugElement
-      .queryAll(By.css('.reader-header button.icon-btn'))
-      .map((b) => b.nativeElement as HTMLButtonElement)
-      .find((b) => b.getAttribute('title') === 'Search');
-    expect(searchBtn).toBeUndefined();
+    expect(searchBtn!.getAttribute('aria-label')).toBe('Search in book');
   });
 
   it('opens a Nostos-owned search panel and clears format search when closed', async () => {
@@ -1277,10 +1269,8 @@ describe('ReaderShell toolbar contract', () => {
   });
 
   it('offers no search control to a format that has no search', async () => {
-    // The capability is optional on IReader; an EPUB implements no search, so the
-    // shell must not hand it a control that would do nothing.
-    const epubBook = { ...audiobook, id: 'book-epub', fileName: 'iliad.epub' } as Book;
-    booksGetSpy.mockReturnValue(of(epubBook));
+    // Audio remains outside the text-search capability.
+    booksGetSpy.mockReturnValue(of(audiobook));
     fixture = await configureReaderShell();
     render();
 
