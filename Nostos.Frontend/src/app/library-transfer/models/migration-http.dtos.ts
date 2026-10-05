@@ -87,6 +87,7 @@ export const SERVER_MIGRATION_ERROR_CODES = [
   'migration_export_artifact_unavailable',
   'migration_export_not_available',
   'migration_export_expired',
+  'migration_too_many_jobs',
   'migration_activation_busy',
   'unexpected_error',
 ] as const;

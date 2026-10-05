@@ -167,6 +167,7 @@ const SERVER_CODE_STATUS: ReadonlyArray<readonly [MigrationErrorCode, number]> =
   ['migration_export_artifact_unavailable', 409],
   ['migration_export_not_available', 404],
   ['migration_export_expired', 410],
+  ['migration_too_many_jobs', 409],
   ['migration_activation_busy', 503],
   ['unexpected_error', 500],
 ];
