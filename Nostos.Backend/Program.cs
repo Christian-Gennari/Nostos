@@ -284,6 +284,14 @@ builder.Services.AddScoped<ISelfHostedRecoveryCleanup>(sp => sp.GetRequiredServi
 builder.Services.AddScoped<SelfHostedActivationCoordinator>();
 builder.Services.AddScoped<IMigrationActivationService>(sp => sp.GetRequiredService<SelfHostedActivationCoordinator>());
 
+// #681 SLICE 8: HTTP activation driver. The singleton admits one background
+// run per job and keeps the in-memory status snapshot that stays answerable
+// while exclusive maintenance has the live database closed.
+builder.Services.AddSingleton<SelfHostedActivationDispatcher>();
+builder.Services.AddSingleton<IMigrationActivationDispatcher>(
+    sp => sp.GetRequiredService<SelfHostedActivationDispatcher>());
+builder.Services.AddHostedService(sp => sp.GetRequiredService<SelfHostedActivationDispatcher>());
+
 builder.Services.AddScoped<IBackupService, BackupService>();
 
 // One instance serves as the job store, the hosted worker that drains it, and

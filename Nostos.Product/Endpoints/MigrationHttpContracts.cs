@@ -81,6 +81,26 @@ public sealed record MigrationCancelBody(string? Reason = null);
 public sealed record MigrationRetryBody(string? IdempotencyKey = null);
 
 /// <summary>
+/// Explicit replacement-activation body (#681, Slice 8). The destination
+/// revision is the opaque token the user reviewed at preflight; replacement
+/// confirmation is required only when the destination is populated.
+/// </summary>
+public sealed record MigrationActivateBody(
+    string? DestinationRevision = null,
+    bool ConfirmReplacement = false);
+
+/// <summary>
+/// Replacement-conflict body: the stable migration error members followed by
+/// the destination facts the browser must show before asking again.
+/// </summary>
+public sealed record MigrationActivationConflictBody(
+    string Error,
+    string Message,
+    string? DestinationRevision = null,
+    MigrationDestinationStatus? DestinationStatus = null,
+    MigrationExistingCounts? ExistingCounts = null);
+
+/// <summary>
 /// Explicit, uniform JSON parsing for the migration routes. Model binding
 /// failures (malformed JSON, wrong value type, invalid enum string, numeric
 /// overflow, missing body) never escape as generic Problem Details; callers
@@ -245,6 +265,17 @@ public static class MigrationHttpErrors
         [ExportArtifactUnavailable] = "Export preparation is not available on this deployment yet.",
         [ExportNotAvailable] = "This export job has no downloadable artifact.",
         [ExportExpired] = "The export artifact has expired.",
+        [MigrationActivationErrorCodes.ConfirmationRequired] =
+            "Replacing an existing library requires explicit confirmation.",
+        [MigrationActivationErrorCodes.DestinationConflict] =
+            "The destination changed. Review replacement again.",
+        [MigrationActivationErrorCodes.Busy] =
+            "The library is in maintenance. Try again later.",
+        [MigrationActivationErrorCodes.Failed] =
+            "The activation failed before the library switch; the original library is unchanged.",
+        [MigrationActivationErrorCodes.RecoveryFailed] =
+            "Activation could not be completed or rolled back in-process. "
+            + "The host stays in maintenance until a restart reconciles it.",
         [TooManyJobs] = "The installation has too many outstanding migration jobs. Finish or cancel one and retry.",
         [Unexpected] = "The migration request failed unexpectedly.",
     };
@@ -253,7 +284,35 @@ public static class MigrationHttpErrors
     {
         MigrationJobStoreException store => FromStore(store),
         MigrationTransferException transfer => FromTransfer(transfer),
+        MigrationActivationException activation => FromActivation(activation),
         TransferReservationException reservation => FromReservation(reservation),
+        _ => Result(Unexpected, StatusCodes.Status500InternalServerError),
+    };
+
+    /// <summary>
+    /// Typed activation failures. Busy is transient (503 + Retry-After, the
+    /// frontend coordinator's documented wait-and-repeat path); every other
+    /// admission failure is the documented conflict shape. Recovery-failed is a
+    /// 409 so the client can report the fail-closed host rather than retrying.
+    /// </summary>
+    public static IResult FromActivation(MigrationActivationException exception) => exception.Code switch
+    {
+        MigrationActivationErrorCodes.ConfirmationRequired => Result(
+            MigrationActivationErrorCodes.ConfirmationRequired,
+            StatusCodes.Status409Conflict),
+        MigrationActivationErrorCodes.DestinationConflict => Result(
+            MigrationActivationErrorCodes.DestinationConflict,
+            StatusCodes.Status409Conflict),
+        MigrationActivationErrorCodes.Busy => Retryable(MigrationActivationErrorCodes.Busy, retryAfterSeconds: 5),
+        MigrationActivationErrorCodes.Failed => Result(
+            MigrationActivationErrorCodes.Failed,
+            StatusCodes.Status409Conflict),
+        MigrationActivationErrorCodes.RecoveryFailed => Result(
+            MigrationActivationErrorCodes.RecoveryFailed,
+            StatusCodes.Status409Conflict),
+        MigrationActivationErrorCodes.StorageExhausted => Result(
+            StorageExhausted,
+            StatusCodes.Status507InsufficientStorage),
         _ => Result(Unexpected, StatusCodes.Status500InternalServerError),
     };
 
@@ -318,8 +377,11 @@ public static class MigrationHttpErrors
         _ => Result(Unexpected, StatusCodes.Status500InternalServerError),
     };
 
+    /// <summary>The fixed safe message for a stable migration code, or the code itself.</summary>
+    public static string MessageFor(string code) => Messages.GetValueOrDefault(code, code);
+
     public static IResult Result(string code, int statusCode) =>
-        Results.Json(new MigrationErrorResponse(code, Messages.GetValueOrDefault(code, code)), statusCode: statusCode);
+        Results.Json(new MigrationErrorResponse(code, MessageFor(code)), statusCode: statusCode);
 
     /// <summary>Transient outcome with Retry-After, still using the migration error body.</summary>
     public static IResult Retryable(string code, int retryAfterSeconds = 1) =>

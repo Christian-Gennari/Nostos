@@ -205,7 +205,7 @@ public sealed class ActivationCoordinatorHostTests
         }
     }
 
-    [Fact(Skip = "enable when destination revision advances on every portable mutation (#679 slice 11)")]
+    [Fact]
     public async Task RealNoteEditBetweenPhases_AbortsAsStaleDestination()
     {
         var template = ActivationCoordinatorTemplate.For(populated: true);
@@ -233,9 +233,9 @@ public sealed class ActivationCoordinatorHostTests
             {
                 if (string.Equals(step, SelfHostedActivationSteps.AfterVerifyCandidate, StringComparison.Ordinal))
                 {
-                    // A real service-path note edit. NoteService does not advance
-                    // LibraryState yet, so only the revision provider follow-up
-                    // makes this abort; hence the skip above.
+                    // A real service-path note edit. The content-only update
+                    // advances the destination revision through the DbContext
+                    // pipeline (#679 Slice 11), so the Phase-B recheck aborts.
                     scope.ServiceProvider.GetRequiredService<INoteService>()
                         .UpdateAsync(noteId, new UpdateNoteDto("edited between phases"))
                         .GetAwaiter().GetResult();
