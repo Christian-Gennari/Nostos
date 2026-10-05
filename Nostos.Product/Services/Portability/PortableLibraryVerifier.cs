@@ -321,22 +321,88 @@ public sealed class PortableLibraryVerifier : IPortableLibraryVerifier
 
         var failures = new FailureList();
         var data = expected.Data;
-        var mediaByKey = expected.Descriptors
+        var comparison = await CompareDatabaseAsync(
+            candidateDatabase,
+            data,
+            expected.Descriptors,
+            failures,
+            ct).ConfigureAwait(false);
+
+        var (mediaFiles, mediaBytes) = await VerifyCandidateMediaRootAsync(
+            candidateMediaRoot,
+            expected.Descriptors,
+            failures,
+            ct).ConfigureAwait(false);
+
+        CompareCandidateCounts(expected.Metadata.Counts, comparison, mediaFiles, failures);
+
+        return new PortableLibraryVerificationReport(
+            failures.TotalCount == 0,
+            failures,
+            CandidateVerifiedKinds,
+            comparison.RowsVerified,
+            mediaFiles,
+            mediaBytes,
+            failures.TotalCount);
+    }
+
+    /// <summary>
+    /// Verifies only the relational portable state of a database against an
+    /// extracted recovery payload. Recovery restore uses this after the swap:
+    /// the previous library's media is verified separately against the retained
+    /// recovery manifest, which describes every retained file (including
+    /// derived thumbnails the portable media inventory never carries).
+    /// </summary>
+    public async Task<PortableLibraryVerificationReport> VerifyDatabaseAgainstExpectedAsync(
+        NostosDbContext database,
+        PortableRecoveryPayload expected,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(database);
+        ArgumentNullException.ThrowIfNull(expected);
+
+        var failures = new FailureList();
+        var comparison = await CompareDatabaseAsync(
+            database,
+            expected.Data,
+            expected.PrimaryMedia,
+            failures,
+            ct).ConfigureAwait(false);
+        CompareDatabaseCounts(expected, comparison, failures);
+
+        return new PortableLibraryVerificationReport(
+            failures.TotalCount == 0,
+            failures,
+            CandidateVerifiedKinds,
+            comparison.RowsVerified,
+            MediaFilesVerified: 0,
+            MediaBytesVerified: 0,
+            failures.TotalCount);
+    }
+
+    private static async Task<DatabaseComparison> CompareDatabaseAsync(
+        NostosDbContext database,
+        PortableLibraryData data,
+        IReadOnlyList<PortableArchiveMediaEntry> descriptors,
+        FailureList failures,
+        CancellationToken ct)
+    {
+        var mediaByKey = descriptors
             .GroupBy(descriptor => (descriptor.BookId, descriptor.Kind))
             .ToDictionary(group => group.Key, group => group.First());
 
-        var works = await candidateDatabase.Works.AsNoTracking().ToListAsync(ct).ConfigureAwait(false);
-        var books = await candidateDatabase.Books.AsNoTracking().ToListAsync(ct).ConfigureAwait(false);
-        var collections = await candidateDatabase.Collections.AsNoTracking().ToListAsync(ct).ConfigureAwait(false);
-        var memberships = await candidateDatabase.BookCollections.AsNoTracking().ToListAsync(ct).ConfigureAwait(false);
-        var notes = await candidateDatabase.Notes.AsNoTracking().ToListAsync(ct).ConfigureAwait(false);
-        var topics = await candidateDatabase.Topics.AsNoTracking().ToListAsync(ct).ConfigureAwait(false);
-        var noteTopics = await candidateDatabase.NoteTopics.AsNoTracking().ToListAsync(ct).ConfigureAwait(false);
-        var writings = await candidateDatabase.Writings.AsNoTracking().ToListAsync(ct).ConfigureAwait(false);
-        var writingNotes = await candidateDatabase.WritingNotes.AsNoTracking().ToListAsync(ct).ConfigureAwait(false);
-        var acquisitions = await candidateDatabase.BookAcquisitions.AsNoTracking().ToListAsync(ct).ConfigureAwait(false);
-        var importLinks = await candidateDatabase.NoteImportBookLinks.AsNoTracking().ToListAsync(ct).ConfigureAwait(false);
-        var assistantSettings = await candidateDatabase.AssistantSettings.AsNoTracking().ToListAsync(ct).ConfigureAwait(false);
+        var works = await database.Works.AsNoTracking().ToListAsync(ct).ConfigureAwait(false);
+        var books = await database.Books.AsNoTracking().ToListAsync(ct).ConfigureAwait(false);
+        var collections = await database.Collections.AsNoTracking().ToListAsync(ct).ConfigureAwait(false);
+        var memberships = await database.BookCollections.AsNoTracking().ToListAsync(ct).ConfigureAwait(false);
+        var notes = await database.Notes.AsNoTracking().ToListAsync(ct).ConfigureAwait(false);
+        var topics = await database.Topics.AsNoTracking().ToListAsync(ct).ConfigureAwait(false);
+        var noteTopics = await database.NoteTopics.AsNoTracking().ToListAsync(ct).ConfigureAwait(false);
+        var writings = await database.Writings.AsNoTracking().ToListAsync(ct).ConfigureAwait(false);
+        var writingNotes = await database.WritingNotes.AsNoTracking().ToListAsync(ct).ConfigureAwait(false);
+        var acquisitions = await database.BookAcquisitions.AsNoTracking().ToListAsync(ct).ConfigureAwait(false);
+        var importLinks = await database.NoteImportBookLinks.AsNoTracking().ToListAsync(ct).ConfigureAwait(false);
+        var assistantSettings = await database.AssistantSettings.AsNoTracking().ToListAsync(ct).ConfigureAwait(false);
 
         CompareWorks(data, works, failures);
         CompareBooks(data, books, mediaByKey, failures);
@@ -351,42 +417,19 @@ public sealed class PortableLibraryVerifier : IPortableLibraryVerifier
         CompareNoteImportBookLinks(data, importLinks, failures);
         CompareAssistantSettings(data, assistantSettings, failures);
 
-        var (mediaFiles, mediaBytes) = await VerifyCandidateMediaRootAsync(
-            candidateMediaRoot,
-            expected.Descriptors,
-            failures,
-            ct).ConfigureAwait(false);
-
-        CompareCandidateCounts(
-            expected.Metadata.Counts,
-            works.Count,
-            books.Count,
-            collections.Count,
-            memberships.Count,
-            notes.Count,
-            topics.Count,
-            noteTopics.Count,
-            writings.Count,
-            writingNotes.Count,
-            acquisitions.Count,
-            importLinks.Count,
-            assistantSettings.Count,
-            mediaFiles,
-            failures);
-
-        var rowsVerified =
-            works.Count + books.Count + collections.Count + memberships.Count + notes.Count + topics.Count
-            + noteTopics.Count + writings.Count + writingNotes.Count + acquisitions.Count + importLinks.Count
-            + assistantSettings.Count;
-
-        return new PortableLibraryVerificationReport(
-            failures.TotalCount == 0,
-            failures,
-            CandidateVerifiedKinds,
-            rowsVerified,
-            mediaFiles,
-            mediaBytes,
-            failures.TotalCount);
+        return new DatabaseComparison(
+            Works: works.Count,
+            Books: books.Count,
+            Collections: collections.Count,
+            Memberships: memberships.Count,
+            Notes: notes.Count,
+            Topics: topics.Count,
+            NoteTopics: noteTopics.Count,
+            Writings: writings.Count,
+            WritingNotes: writingNotes.Count,
+            Acquisitions: acquisitions.Count,
+            ImportLinks: importLinks.Count,
+            AssistantSettings: assistantSettings.Count);
     }
 
     public async Task<PortableLibraryVerificationReport> VerifyMediaAsync(
@@ -1291,6 +1334,54 @@ public sealed class PortableLibraryVerifier : IPortableLibraryVerifier
 
     private static void CompareCandidateCounts(
         MigrationArchiveCounts expectedCounts,
+        DatabaseComparison comparison,
+        long mediaFiles,
+        FailureList failures) =>
+        CompareCounts(
+            expectedCounts,
+            comparison.Works,
+            comparison.Books,
+            comparison.Collections,
+            comparison.Memberships,
+            comparison.Notes,
+            comparison.Topics,
+            comparison.NoteTopics,
+            comparison.Writings,
+            comparison.WritingNotes,
+            comparison.Acquisitions,
+            comparison.ImportLinks,
+            comparison.AssistantSettings,
+            mediaFiles,
+            failures);
+
+    /// <summary>
+    /// Counts for a recovery database: the expected counts are recomputed from
+    /// the extracted payload and its primary media, and every other dimension
+    /// must match the materialized database.
+    /// </summary>
+    private static void CompareDatabaseCounts(
+        PortableRecoveryPayload expected,
+        DatabaseComparison comparison,
+        FailureList failures) =>
+        CompareCounts(
+            expected.Counts,
+            comparison.Works,
+            comparison.Books,
+            comparison.Collections,
+            comparison.Memberships,
+            comparison.Notes,
+            comparison.Topics,
+            comparison.NoteTopics,
+            comparison.Writings,
+            comparison.WritingNotes,
+            comparison.Acquisitions,
+            comparison.ImportLinks,
+            comparison.AssistantSettings,
+            mediaFiles: expected.PrimaryMedia.Count,
+            failures);
+
+    private static void CompareCounts(
+        MigrationArchiveCounts expectedCounts,
         long works,
         long books,
         long collections,
@@ -1582,6 +1673,26 @@ public sealed class PortableLibraryVerifier : IPortableLibraryVerifier
         string ArchiveProperty,
         IReadOnlyList<EntityField> CandidateFields,
         Action<TContext, FailureList> Compare);
+
+    /// <summary>Row counts observed by one relational comparison pass.</summary>
+    private sealed record DatabaseComparison(
+        int Works,
+        int Books,
+        int Collections,
+        int Memberships,
+        int Notes,
+        int Topics,
+        int NoteTopics,
+        int Writings,
+        int WritingNotes,
+        int Acquisitions,
+        int ImportLinks,
+        int AssistantSettings)
+    {
+        internal int RowsVerified =>
+            Works + Books + Collections + Memberships + Notes + Topics + NoteTopics + Writings
+            + WritingNotes + Acquisitions + ImportLinks + AssistantSettings;
+    }
 
     /// <summary>
     /// Retains a bounded number of specific mismatch details while counting every

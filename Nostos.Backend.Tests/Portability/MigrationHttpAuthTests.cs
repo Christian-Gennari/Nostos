@@ -53,6 +53,9 @@ public sealed class MigrationHttpAuthTests
             (HttpMethod.Post, $"/api/portability/migration/jobs/{job}/upload-session/complete"),
             (HttpMethod.Get, $"/api/portability/migration/jobs/{job}/export-download"),
             (HttpMethod.Head, $"/api/portability/migration/jobs/{job}/export-download"),
+            (HttpMethod.Get, "/api/portability/migration/recovery"),
+            (HttpMethod.Get, $"/api/portability/migration/recovery/{job}"),
+            (HttpMethod.Post, $"/api/portability/migration/recovery/{job}/restore"),
         };
 
         foreach (var (method, path) in routes)
@@ -200,6 +203,9 @@ public sealed class MigrationHttpAuthTests
             builder.Services.AddScoped<SelfHostedMigrationJobService>();
             builder.Services.AddScoped<ILibraryDestinationRevisionProvider, LibraryStateDestinationRevisionProvider>();
             builder.Services.AddSingleton<IMigrationPhaseAvailability, AlwaysAvailable>();
+            // The recovery routes are mapped by the migration group; this host
+            // only exercises authorization, so a non-invoked stub is enough.
+            builder.Services.AddScoped<ISelfHostedRecoveryRestore, StubRecoveryRestore>();
 
             var app = builder.Build();
             app.UseRouting();
@@ -231,6 +237,20 @@ public sealed class MigrationHttpAuthTests
     private sealed class AlwaysAvailable : IMigrationPhaseAvailability
     {
         public bool IsAvailable(MigrationDirection direction) => true;
+    }
+
+    private sealed class StubRecoveryRestore : ISelfHostedRecoveryRestore
+    {
+        public Task<IReadOnlyList<MigrationRecoveryStatusResponse>> ListAsync(CancellationToken ct) =>
+            Task.FromResult<IReadOnlyList<MigrationRecoveryStatusResponse>>([]);
+
+        public Task<MigrationRecoveryStatusResponse?> GetAsync(Guid recoveryId, CancellationToken ct) =>
+            Task.FromResult<MigrationRecoveryStatusResponse?>(null);
+
+        public Task<MigrationRecoveryStatusResponse> RequestRestoreAsync(
+            Guid recoveryId,
+            MigrationRecoveryRestoreRequest request,
+            CancellationToken ct) => throw new NotSupportedException();
     }
 
     private sealed class NoopMaintenanceGate : IMigrationMaintenanceGate

@@ -974,7 +974,7 @@ internal sealed class SelfHostedMigrationRecoveryService :
 
     private static MigrationRecoveryStatusResponse ToResponse(SelfHostedRecoveryManifest manifest) =>
         new(manifest.JobId, manifest.Status, manifest.CreatedAtUtc, manifest.ExpiresAtUtc,
-            manifest.TotalBytes, manifest.Counts);
+            manifest.TotalBytes, manifest.Counts, manifest.RestoreError);
 
     private static MigrationActivationException Flaw(string message) =>
         SelfHostedActivationPaths.Failure(message);

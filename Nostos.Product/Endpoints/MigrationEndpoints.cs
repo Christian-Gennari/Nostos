@@ -64,6 +64,9 @@ public static class MigrationEndpoints
         // length/ranges before resuming a download.
         group.MapMethods("/jobs/{id}/export-download", ["GET", "HEAD"], ExportDownloadAsync);
 
+        // Slice 9: recovery-copy routes carry the same group policies.
+        routes.MapMigrationRecoveryEndpoints(policies);
+
         return routes;
     }
 

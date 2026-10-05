@@ -40,6 +40,8 @@ internal sealed class SelfHostedActivationPaths
     internal string CandidateDatabase(Guid id) => Db($".nostos-activation/{Id(id)}/candidate.db");
     internal string CandidateMedia(Guid id) => Media($".nostos-activation/{Id(id)}/candidate-books");
     internal string CandidateFinalizationMarker(Guid id) => Db($".nostos-activation/{Id(id)}/candidate.finalized.json");
+    internal string RestoreSourceDatabase(Guid id) => Db($".nostos-activation/{Id(id)}/recovery-source.db");
+    internal string RestorePayload(Guid id) => Db($".nostos-activation/{Id(id)}/recovery-payload.json");
     internal string PreviousDatabase(Guid id) => Db($".nostos-recovery/{Id(id)}/nostos.db");
     internal string PreviousMedia(Guid id) => Media($".nostos-recovery/{Id(id)}/books");
     internal string RecoveryManifest(Guid id) => Db($".nostos-recovery/{Id(id)}/recovery.json");

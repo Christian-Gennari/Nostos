@@ -5,9 +5,6 @@ using Nostos.Backend.Services.Portability;
 
 namespace Nostos.Backend.Middleware;
 
-/// <summary>Endpoint owns its admission leases, allowing shared-to-exclusive handoff.</summary>
-public sealed class LibraryMaintenanceControl;
-
 /// <summary>
 /// Covers REST, OPDS, MCP, DB readiness, and their complete response/stream lifetimes.
 /// Its inner request scope disposes DbContexts before releasing the shared lease.
@@ -19,6 +16,15 @@ public sealed class LibraryMaintenanceMiddleware(RequestDelegate next)
 
     public async Task InvokeAsync(HttpContext context, ILibraryMaintenanceCoordinator maintenance, McpOptions mcp)
     {
+        // Durable-state-only routes (for example a recovery-restore status
+        // poll) never participate in the library gate and must answer while an
+        // exclusive window is open.
+        if (context.GetEndpoint()?.Metadata.GetMetadata<LibraryMaintenanceSafe>() is not null)
+        {
+            await next(context);
+            return;
+        }
+
         var path = context.Request.Path;
         var libraryPath = path.StartsWithSegments("/api") || path.StartsWithSegments("/opds")
             || path.StartsWithSegments("/health/ready")

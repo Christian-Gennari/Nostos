@@ -146,6 +146,18 @@ public interface IPortableLibraryVerifier
         PortablePreparedImportVerification expected,
         CancellationToken ct = default);
 
+    /// <summary>
+    /// Compares only the relational portable state of a database against a
+    /// payload extracted from a retained recovery copy. The recovery restore
+    /// verifies every retained media file separately against the recovery
+    /// manifest, which also describes derived files the portable inventory does
+    /// not carry.
+    /// </summary>
+    Task<PortableLibraryVerificationReport> VerifyDatabaseAgainstExpectedAsync(
+        NostosDbContext database,
+        PortableRecoveryPayload expected,
+        CancellationToken ct = default);
+
     Task<PortableLibraryVerificationReport> VerifyMediaAsync(
         IBookAssetStorage assets,
         IReadOnlyList<PortableArchiveMediaEntry> expected,

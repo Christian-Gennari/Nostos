@@ -284,6 +284,17 @@ builder.Services.AddScoped<ISelfHostedRecoveryCleanup>(sp => sp.GetRequiredServi
 builder.Services.AddScoped<SelfHostedActivationCoordinator>();
 builder.Services.AddScoped<IMigrationActivationService>(sp => sp.GetRequiredService<SelfHostedActivationCoordinator>());
 
+// --- #681 SLICE 9: RECOVERY RESTORE ("RESTORE PREVIOUS LIBRARY") ---
+// The runner serializes claim/execution per recovery copy and resumes durably
+// claimed restores after a restart; the processor scans once at startup (after
+// the activation reconciler and database bootstrap) and periodically thereafter.
+builder.Services.AddSingleton<SelfHostedRecoveryRestoreRunner>();
+builder.Services.AddScoped<SelfHostedRecoveryRestoreCoordinator>();
+builder.Services.AddScoped<SelfHostedRecoveryRestoreHostService>();
+builder.Services.AddScoped<ISelfHostedRecoveryRestore>(sp =>
+    sp.GetRequiredService<SelfHostedRecoveryRestoreHostService>());
+builder.Services.AddHostedService<SelfHostedRecoveryRestoreProcessor>();
+
 builder.Services.AddScoped<IBackupService, BackupService>();
 
 // One instance serves as the job store, the hosted worker that drains it, and

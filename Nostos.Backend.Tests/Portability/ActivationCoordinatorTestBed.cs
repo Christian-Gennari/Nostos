@@ -2,6 +2,8 @@ using System.Security.Cryptography;
 using FluentAssertions;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -604,6 +606,13 @@ internal sealed class ActivationCoordinatorTestBed : IAsyncDisposable
         services.AddScoped<SelfHostedActivationCoordinator>();
         services.AddScoped<IMigrationActivationService>(sp =>
             sp.GetRequiredService<SelfHostedActivationCoordinator>());
+        services.AddScoped<ISelfHostedRecoveryCatalog>(sp =>
+            sp.GetRequiredService<SelfHostedMigrationRecoveryService>());
+        services.AddSingleton<SelfHostedRecoveryRestoreRunner>();
+        services.AddScoped<SelfHostedRecoveryRestoreCoordinator>();
+        services.AddScoped<SelfHostedRecoveryRestoreHostService>();
+        services.AddScoped<ISelfHostedRecoveryRestore>(sp =>
+            sp.GetRequiredService<SelfHostedRecoveryRestoreHostService>());
 
         Host = services.BuildServiceProvider(new ServiceProviderOptions
         {
@@ -820,6 +829,196 @@ internal sealed class ActivationCoordinatorTestBed : IAsyncDisposable
         var folder = Path.Combine(Paths.LiveMedia, Guid.NewGuid().ToString());
         Directory.CreateDirectory(folder);
         File.WriteAllText(Path.Combine(folder, "book.epub"), "ORPHAN-USER-MEDIA");
+    }
+
+    // ---- Slice 9: recovery restore ("restore previous library") ----
+
+    /// <summary>The recovery copy retained by the activation under test.</summary>
+    internal Guid RecoveryId => JobId;
+
+    internal async Task<string> CurrentRevisionTokenAsync()
+    {
+        await using var scope = Host.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<ILibraryDestinationRevisionProvider>()
+            .GetCurrentAsync(default);
+    }
+
+    /// <summary>Claims and runs a restore with a deterministic, awaited run.</summary>
+    internal async Task<SelfHostedRecoveryRestoreResult> RestoreAsync(
+        bool confirm = true,
+        Action<string>? observer = null,
+        string? revision = null,
+        Guid? recoveryId = null)
+    {
+        var id = recoveryId ?? RecoveryId;
+        var runner = Host.GetRequiredService<SelfHostedRecoveryRestoreRunner>();
+        runner.StepObserverForTesting = observer;
+        var token = revision ?? await CurrentRevisionTokenAsync();
+        await using (var scope = Host.CreateAsyncScope())
+        {
+            var coordinator = scope.ServiceProvider.GetRequiredService<SelfHostedRecoveryRestoreCoordinator>();
+            await coordinator.RequestRestoreAsync(
+                id, new MigrationRecoveryRestoreRequest(token, confirm), default);
+        }
+
+        return await runner.RunAsync(id, default);
+    }
+
+    /// <summary>Resumes a durably claimed restore on the current host generation.</summary>
+    internal async Task<SelfHostedRecoveryRestoreResult> ResumeRestoreAsync(
+        Action<string>? observer = null,
+        Guid? recoveryId = null)
+    {
+        var id = recoveryId ?? RecoveryId;
+        var runner = Host.GetRequiredService<SelfHostedRecoveryRestoreRunner>();
+        runner.StepObserverForTesting = observer;
+        return await runner.RunAsync(id, default);
+    }
+
+    /// <summary>Claims only (no run), for concurrency and status tests.</summary>
+    internal async Task<MigrationRecoveryStatusResponse> RequestRestoreOnlyAsync(
+        bool confirm = true,
+        string? revision = null,
+        Guid? recoveryId = null)
+    {
+        var id = recoveryId ?? RecoveryId;
+        var token = revision ?? await CurrentRevisionTokenAsync();
+        await using var scope = Host.CreateAsyncScope();
+        var coordinator = scope.ServiceProvider.GetRequiredService<SelfHostedRecoveryRestoreCoordinator>();
+        return await coordinator.RequestRestoreAsync(
+            id, new MigrationRecoveryRestoreRequest(token, confirm), default);
+    }
+
+    internal SelfHostedRecoveryManifest? ReadRecoveryManifest(Guid? recoveryId = null) =>
+        Manifests.Read(recoveryId ?? RecoveryId);
+
+    internal (Dictionary<string, List<string>> Tables, Dictionary<string, string> Media)
+        SnapshotLiveGeneration() =>
+        (ActivationBuildFixture.DumpAllTables(Paths.LiveDatabase),
+            ActivationBuildFixture.MediaSnapshot(Paths.LiveMedia));
+
+    /// <summary>Every table, every row and every media byte must be identical.</summary>
+    internal void AssertGenerationEquals(
+        (Dictionary<string, List<string>> Tables, Dictionary<string, string> Media) expected,
+        string because)
+    {
+        var actual = SnapshotLiveGeneration();
+        actual.Tables.Keys.Should().BeEquivalentTo(expected.Tables.Keys, because);
+        foreach (var table in expected.Tables.Keys)
+        {
+            actual.Tables[table].Should().BeEquivalentTo(
+                expected.Tables[table], $"{because} (table {table})");
+        }
+
+        actual.Media.Should().BeEquivalentTo(expected.Media, because);
+    }
+
+    /// <summary>Portable tables of the live database must equal a captured generation.</summary>
+    internal void AssertPortableEquals(Dictionary<string, List<string>> allTables, string because)
+    {
+        var actual = ActivationCoordinatorTemplate.DumpPortable(Paths.LiveDatabase);
+        foreach (var table in PortableTableNames)
+        {
+            actual[table].Should().BeEquivalentTo(allTables[table], $"{because} (table {table})");
+        }
+    }
+
+    /// <summary>The restored portable state and media must be the retained original library.</summary>
+    internal Task AssertRestoredPortableGenerationAsync()
+    {
+        ActivationCoordinatorTemplate.DumpPortable(Paths.LiveDatabase)
+            .Should().BeEquivalentTo(OriginalPortable,
+                "the restored portable state must be the retained previous library");
+        ActivationBuildFixture.MediaSnapshot(Paths.LiveMedia)
+            .Should().BeEquivalentTo(OriginalMedia,
+                "the restored media must be the retained previous generation");
+        return Task.CompletedTask;
+    }
+
+    internal void TamperRecoveryMediaByte()
+    {
+        var root = Paths.PreviousMedia(RecoveryId);
+        var file = Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories).First();
+        var bytes = File.ReadAllBytes(file);
+        bytes[0] ^= 0xFF;
+        File.WriteAllBytes(file, bytes);
+    }
+
+    internal void TamperRecoveryDatabaseByte()
+    {
+        var path = Paths.PreviousDatabase(RecoveryId);
+        var bytes = File.ReadAllBytes(path);
+        bytes[0] ^= 0xFF;
+        File.WriteAllBytes(path, bytes);
+    }
+
+    internal void CorruptRecoveryManifest() =>
+        File.WriteAllText(Paths.RecoveryManifest(RecoveryId), "{not-json");
+
+    internal void ExpireRecoveryCopy()
+    {
+        var manifest = Manifests.Read(RecoveryId)!;
+        var delta = TimeSpan.FromDays(MigrationContractLimits.RecoveryRetentionDays + 1);
+        Manifests.Write(manifest with
+        {
+            CreatedAtUtc = manifest.CreatedAtUtc - delta,
+            ExpiresAtUtc = manifest.ExpiresAtUtc - delta,
+        });
+    }
+
+    /// <summary>
+    /// Rolls the retained database back exactly one migration (a real older
+    /// schema and history) and refreshes the manifest facts, modelling a copy
+    /// retained by an earlier release.
+    /// </summary>
+    internal async Task DowngradeRecoveryDatabaseOneMigrationAsync()
+    {
+        var path = Paths.PreviousDatabase(RecoveryId);
+        var options = new DbContextOptionsBuilder<NostosDbContext>()
+            .UseSqlite($"Data Source={path};Pooling=False", sqlite =>
+                sqlite.MigrationsAssembly(typeof(Program).Assembly.FullName))
+            .Options;
+        await using (var db = new NostosDbContext(options))
+        {
+            var applied = (await db.Database.GetAppliedMigrationsAsync()).ToArray();
+            applied.Length.Should().BeGreaterThan(1);
+            await db.GetService<IMigrator>().MigrateAsync(applied[^2]);
+        }
+
+        RefreshRecoveryManifestFacts(path);
+    }
+
+    internal void AddUnknownMigrationToRecovery()
+    {
+        var path = Paths.PreviousDatabase(RecoveryId);
+        using (var connection = new SqliteConnection($"Data Source={path};Pooling=False"))
+        {
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText =
+                "INSERT INTO __EFMigrationsHistory (\"MigrationId\", \"ProductVersion\") "
+                + "VALUES ('99999999999999_FutureMigration', '99.0.0');";
+            command.ExecuteNonQuery();
+        }
+
+        RefreshRecoveryManifestFacts(path);
+    }
+
+    private void RefreshRecoveryManifestFacts(string databasePath)
+    {
+        foreach (var suffix in new[] { "-wal", "-shm" })
+        {
+            if (File.Exists(databasePath + suffix)) File.Delete(databasePath + suffix);
+        }
+
+        var manifest = Manifests.Read(RecoveryId)!;
+        var info = new FileInfo(databasePath);
+        var sha = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(databasePath))).ToLowerInvariant();
+        Manifests.Write(manifest with
+        {
+            DatabaseBytes = info.Length,
+            DatabaseSha256 = sha,
+        });
     }
 
     public async ValueTask DisposeAsync()

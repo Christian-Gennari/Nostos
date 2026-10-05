@@ -222,6 +222,7 @@ public static class MigrationHttpErrors
     public const string ExportNotAvailable = "migration_export_not_available";
     public const string ExportExpired = "migration_export_expired";
     public const string TooManyJobs = "migration_too_many_jobs";
+    public const string RecoveryNotFound = MigrationActivationErrorCodes.RecoveryNotFound;
     public const string Unexpected = "unexpected_error";
 
     private static readonly Dictionary<string, string> Messages = new(StringComparer.Ordinal)
@@ -246,6 +247,15 @@ public static class MigrationHttpErrors
         [ExportNotAvailable] = "This export job has no downloadable artifact.",
         [ExportExpired] = "The export artifact has expired.",
         [TooManyJobs] = "The installation has too many outstanding migration jobs. Finish or cancel one and retry.",
+        [MigrationActivationErrorCodes.RecoveryNotFound] = "The retained recovery copy was not found.",
+        [MigrationActivationErrorCodes.RecoveryExpired] = "The retained recovery copy has expired.",
+        [MigrationActivationErrorCodes.RecoveryCorrupt] = "The retained recovery copy failed verification.",
+        [MigrationActivationErrorCodes.RecoveryRestoreConflict] = "A restore of this recovery copy cannot start right now.",
+        [MigrationActivationErrorCodes.ConfirmationRequired] = "Restoring the previous library requires explicit confirmation.",
+        [MigrationActivationErrorCodes.DestinationConflict] = "The library changed. Review the restore again.",
+        [MigrationActivationErrorCodes.Busy] = "The library is busy or in maintenance. Try again later.",
+        [MigrationActivationErrorCodes.Failed] = "The library restore failed; the current library is unchanged.",
+        [MigrationActivationErrorCodes.RecoveryFailed] = "The library needs a restart to reconcile the failed restore.",
         [Unexpected] = "The migration request failed unexpectedly.",
     };
 
@@ -315,6 +325,35 @@ public static class MigrationHttpErrors
         MigrationTransferException.TooManyJobs => Result(
             TooManyJobs,
             StatusCodes.Status409Conflict),
+        _ => Result(Unexpected, StatusCodes.Status500InternalServerError),
+    };
+
+    /// <summary>
+    /// Maps the stable activation/recovery error vocabulary. Busy answers 503
+    /// with Retry-After, matching the maintenance middleware's migration-shaped
+    /// response; storage exhaustion answers 507, matching the transfer mapper.
+    /// </summary>
+    public static IResult FromActivation(MigrationActivationException exception) => exception.Code switch
+    {
+        MigrationActivationErrorCodes.RecoveryNotFound =>
+            Result(MigrationActivationErrorCodes.RecoveryNotFound, StatusCodes.Status404NotFound),
+        MigrationActivationErrorCodes.RecoveryExpired =>
+            Result(MigrationActivationErrorCodes.RecoveryExpired, StatusCodes.Status410Gone),
+        MigrationActivationErrorCodes.RecoveryCorrupt =>
+            Result(MigrationActivationErrorCodes.RecoveryCorrupt, StatusCodes.Status422UnprocessableEntity),
+        MigrationActivationErrorCodes.RecoveryRestoreConflict =>
+            Result(MigrationActivationErrorCodes.RecoveryRestoreConflict, StatusCodes.Status409Conflict),
+        MigrationActivationErrorCodes.ConfirmationRequired =>
+            Result(MigrationActivationErrorCodes.ConfirmationRequired, StatusCodes.Status409Conflict),
+        MigrationActivationErrorCodes.DestinationConflict =>
+            Result(MigrationActivationErrorCodes.DestinationConflict, StatusCodes.Status409Conflict),
+        MigrationActivationErrorCodes.Busy => Retryable(MigrationActivationErrorCodes.Busy),
+        MigrationActivationErrorCodes.StorageExhausted =>
+            Result(MigrationActivationErrorCodes.StorageExhausted, StatusCodes.Status507InsufficientStorage),
+        MigrationActivationErrorCodes.Failed =>
+            Result(MigrationActivationErrorCodes.Failed, StatusCodes.Status409Conflict),
+        MigrationActivationErrorCodes.RecoveryFailed =>
+            Result(MigrationActivationErrorCodes.RecoveryFailed, StatusCodes.Status409Conflict),
         _ => Result(Unexpected, StatusCodes.Status500InternalServerError),
     };
 
