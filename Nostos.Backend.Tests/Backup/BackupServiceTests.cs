@@ -105,6 +105,65 @@ public sealed class BackupServiceTests
     }
 
     [Fact]
+    public async Task RestoreBackup_WithConfiguredDatabasePath_ReplacesThatDatabaseAndLeavesContentRootDecoyUntouched()
+    {
+        var volume = Path.Combine(
+            Path.GetTempPath(),
+            $"nostos-backup-configured-db-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(volume);
+        var configuredDbPath = Path.Combine(volume, "library.db");
+
+        try
+        {
+            using var h = BackupHarness.Create(databasePath: configuredDbPath);
+            await SeedBooksAndNotesScenarioAsync(h);
+
+            var created = await h.Service.CreateBackupAsync();
+            created.Status.Should().Be(BackupStatus.Completed);
+
+            // Change the real configured database after the backup so a
+            // successful restore has an observable database-level effect.
+            await using (var db = h.NewDbContext())
+            {
+                db.Notes.RemoveRange(db.Notes);
+                db.Books.RemoveRange(db.Books);
+                await db.SaveChangesAsync();
+
+                (await db.Notes.CountAsync()).Should().Be(0);
+                (await db.Books.CountAsync()).Should().Be(0);
+            }
+
+            // The historical default path is deliberately a valid decoy file.
+            // The pre-fix implementation overwrote this file, reported success,
+            // and left the configured database untouched.
+            var decoyPath = Path.Combine(h.ContentRoot, "nostos.db");
+            var decoyBytes = "CONTENT-ROOT-DECOY-755"u8.ToArray();
+            await File.WriteAllBytesAsync(decoyPath, decoyBytes);
+
+            var restored = await h.Service.RestoreBackupAsync(created.Id);
+            restored.Success.Should().BeTrue(restored.Message);
+
+            await using (var after = h.NewDbContext())
+            {
+                (await after.Books.CountAsync()).Should().Be(2);
+                (await after.Notes.CountAsync()).Should().Be(1);
+            }
+
+            (await File.ReadAllBytesAsync(decoyPath)).Should().Equal(decoyBytes);
+
+            Directory.GetFiles(volume, "library.db.pre-restore-*")
+                .Should().ContainSingle(
+                    "the safety copy must be created beside the configured live database");
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            if (Directory.Exists(volume))
+                Directory.Delete(volume, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task Restore_RefusesArchiveWithChecksumMismatch_LeavingLiveDatabaseUntouched()
     {
         using var h = BackupHarness.Create();
@@ -717,14 +776,20 @@ public sealed class BackupServiceTests
         public static BackupHarness Create(
             bool includeBookFiles = false,
             FileStorageOptions? fileStorage = null,
-            int maxBackups = 10)
+            int maxBackups = 10,
+            string? databasePath = null)
         {
             var contentRoot = Path.Combine(Path.GetTempPath(), $"nostos-backup-test-{Guid.NewGuid():N}");
             Directory.CreateDirectory(contentRoot);
-            var databasePath = Path.Combine(contentRoot, "nostos.db");
+
+            var resolvedDatabasePath = Path.GetFullPath(
+                databasePath ?? Path.Combine(contentRoot, "nostos.db"));
+            var databaseDirectory = Path.GetDirectoryName(resolvedDatabasePath);
+            if (!string.IsNullOrWhiteSpace(databaseDirectory))
+                Directory.CreateDirectory(databaseDirectory);
 
             var options = new DbContextOptionsBuilder<NostosDbContext>()
-                .UseSqlite($"Data Source={databasePath}")
+                .UseSqlite($"Data Source={resolvedDatabasePath}")
                 .Options;
 
             var env = new TestWebHostEnvironment
@@ -770,7 +835,7 @@ public sealed class BackupServiceTests
             using (var db = provider.GetRequiredService<IDbContextFactory<NostosDbContext>>().CreateDbContext())
                 db.Database.EnsureCreated();
 
-            return new BackupHarness(contentRoot, databasePath, options, provider);
+            return new BackupHarness(contentRoot, resolvedDatabasePath, options, provider);
         }
 
         public void Dispose()
