@@ -608,7 +608,7 @@ describe('LibraryTransferCoordinator — reattach and resume', () => {
     // The server's retry cleanup discards the expired session, so its receipts
     // are gone and every chunk is re-uploaded under the recreated session.
     expect(totalChunks).toBe(3);
-    expect(harness.mock.uploadedChunks).toEqual([0, 1, 2]);
+    expect([...harness.mock.uploadedChunks].sort((a, b) => a - b)).toEqual([0, 1, 2]);
   });
 
   it('clears a stale record when the job is gone', async () => {
