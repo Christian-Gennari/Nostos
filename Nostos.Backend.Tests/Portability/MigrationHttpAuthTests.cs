@@ -54,6 +54,9 @@ public sealed class MigrationHttpAuthTests
             (HttpMethod.Post, $"/api/portability/migration/jobs/{job}/upload-session/complete"),
             (HttpMethod.Get, $"/api/portability/migration/jobs/{job}/export-download"),
             (HttpMethod.Head, $"/api/portability/migration/jobs/{job}/export-download"),
+            (HttpMethod.Get, "/api/portability/migration/recovery"),
+            (HttpMethod.Get, $"/api/portability/migration/recovery/{job}"),
+            (HttpMethod.Post, $"/api/portability/migration/recovery/{job}/restore"),
             (HttpMethod.Post, $"/api/portability/migration/jobs/{job}/activate"),
             (HttpMethod.Get, $"/api/portability/migration/jobs/{job}/activation"),
         };
@@ -258,6 +261,9 @@ public sealed class MigrationHttpAuthTests
             builder.Services.AddScoped<SelfHostedMigrationJobService>();
             builder.Services.AddScoped<ILibraryDestinationRevisionProvider, LibraryStateDestinationRevisionProvider>();
             builder.Services.AddSingleton<IMigrationPhaseAvailability, AlwaysAvailable>();
+            // The recovery routes are mapped by the migration group; this host
+            // only exercises authorization, so a non-invoked stub is enough.
+            builder.Services.AddScoped<ISelfHostedRecoveryRestore, StubRecoveryRestore>();
             // This host only proves the transport policy; the activation driver
             // itself belongs to the SelfHosted engine and is exercised by
             // MigrationActivationHttpTests.
@@ -293,6 +299,21 @@ public sealed class MigrationHttpAuthTests
     private sealed class AlwaysAvailable : IMigrationPhaseAvailability
     {
         public bool IsAvailable(MigrationDirection direction) => true;
+    }
+
+    private sealed class StubRecoveryRestore : ISelfHostedRecoveryRestore
+    {
+        public Task<IReadOnlyList<MigrationRecoveryStatusResponse>> ListAsync(CancellationToken ct) =>
+            Task.FromResult<IReadOnlyList<MigrationRecoveryStatusResponse>>([]);
+
+        public Task<MigrationRecoveryRestoreStatusResponse> GetStatusAsync(
+            Guid recoveryId,
+            CancellationToken ct) => throw new NotSupportedException();
+
+        public Task<MigrationRecoveryRestoreStatusResponse> RequestRestoreAsync(
+            Guid recoveryId,
+            MigrationRecoveryRestoreRequest request,
+            CancellationToken ct) => throw new NotSupportedException();
     }
 
     private sealed class NotFoundActivationDispatcher : IMigrationActivationDispatcher

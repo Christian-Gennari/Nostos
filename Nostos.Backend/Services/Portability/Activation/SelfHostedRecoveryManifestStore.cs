@@ -35,6 +35,34 @@ internal sealed class SelfHostedRecoveryManifestStore(SelfHostedActivationPaths 
     /// </summary>
     internal void CreateDeletionMarker(Guid id)
     {
+        lock (_writer)
+        {
+            CreateDeletionMarkerCore(id);
+        }
+    }
+
+    /// <summary>
+    /// Conditional "deleting" mark: succeeds only while the manifest is still
+    /// exactly the one the cleanup decision was based on. Serialized against
+    /// the restore claim's conditional write, so an <c>Available -&gt;
+    /// Restoring</c> claim and an <c>Available -&gt; Deleting</c> decision can
+    /// never both win.
+    /// </summary>
+    internal bool TryCreateDeletionMarker(Guid id, SelfHostedRecoveryManifest expected)
+    {
+        ArgumentNullException.ThrowIfNull(expected);
+        lock (_writer)
+        {
+            if (HasDeletionMarker(id)) return false;
+            var current = Read(id);
+            if (current is null || !Unchanged(current, expected)) return false;
+            CreateDeletionMarkerCore(id);
+            return true;
+        }
+    }
+
+    private void CreateDeletionMarkerCore(Guid id)
+    {
         var marker = paths.RecoveryDeletionMarker(id);
         if (File.Exists(marker)) return;
         paths.PrepareRecovery(id);
@@ -45,8 +73,37 @@ internal sealed class SelfHostedRecoveryManifestStore(SelfHostedActivationPaths 
             stream.Write([1]);
             stream.Flush(flushToDisk: true);
         }
+
         ActivationFileSystem.FlushDirectory(directory);
     }
+
+    /// <summary>
+    /// Publishes <paramref name="next"/> only when the manifest is still
+    /// exactly <paramref name="expected"/> and no deletion marker exists.
+    /// Returns the published manifest, or null when the caller lost the race.
+    /// </summary>
+    internal SelfHostedRecoveryManifest? TryWriteIfUnchanged(
+        Guid id,
+        SelfHostedRecoveryManifest expected,
+        SelfHostedRecoveryManifest next)
+    {
+        ArgumentNullException.ThrowIfNull(expected);
+        ArgumentNullException.ThrowIfNull(next);
+        lock (_writer)
+        {
+            if (HasDeletionMarker(id)) return null;
+            var current = Read(id);
+            if (current is null || !Unchanged(current, expected)) return null;
+            Write(next);
+            return next;
+        }
+    }
+
+    private static bool Unchanged(SelfHostedRecoveryManifest current, SelfHostedRecoveryManifest expected) =>
+        string.Equals(
+            SelfHostedActivationDocument.Encode(current),
+            SelfHostedActivationDocument.Encode(expected),
+            StringComparison.Ordinal);
 
     internal SelfHostedRecoveryManifest? Read(Guid id)
     {

@@ -2,6 +2,8 @@ using System.Security.Cryptography;
 using FluentAssertions;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -428,6 +430,12 @@ internal sealed class ActivationCoordinatorTestBed : IAsyncDisposable
     /// <summary>Test seam: throws during the database component's rollback rename.</summary>
     internal Action? DatabaseRecoveryRenameFailure { get; set; }
 
+    /// <summary>
+    /// Test seam: runs after the real working-copy migration. Used to model a
+    /// migration that succeeds but loses or alters portable state.
+    /// </summary>
+    internal Func<NostosDbContext, Task>? RecoveryMigrationOverride { get; set; }
+
     private IPreparedPortableImport? _prepared;
     private PortablePreparedImportVerification? _expected;
     private LocalPortableImportStaging? _ownStaging;
@@ -518,12 +526,31 @@ internal sealed class ActivationCoordinatorTestBed : IAsyncDisposable
     {
         if (Host is not null)
         {
+            await StopDispatcherAsync(Host);
             await Host.DisposeAsync();
             _providers.Remove(Host);
         }
 
         BuildMaintenance();
         BuildHost();
+        await StartDispatcherAsync(Host);
+    }
+
+    private static async Task StartDispatcherAsync(ServiceProvider provider)
+    {
+        await provider.GetRequiredService<SelfHostedActivationDispatcher>().StartAsync(default);
+    }
+
+    private static async Task StopDispatcherAsync(ServiceProvider provider)
+    {
+        try
+        {
+            await provider.GetRequiredService<SelfHostedActivationDispatcher>().StopAsync(default);
+        }
+        catch (Exception)
+        {
+            // Test cleanup only.
+        }
     }
 
     private void BuildMaintenance()
@@ -604,6 +631,16 @@ internal sealed class ActivationCoordinatorTestBed : IAsyncDisposable
         services.AddScoped<SelfHostedActivationCoordinator>();
         services.AddScoped<IMigrationActivationService>(sp =>
             sp.GetRequiredService<SelfHostedActivationCoordinator>());
+        services.AddScoped<ISelfHostedRecoveryCatalog>(sp =>
+            sp.GetRequiredService<SelfHostedMigrationRecoveryService>());
+        services.AddSingleton<SelfHostedActivationDispatcher>();
+        services.AddSingleton<IMigrationActivationDispatcher>(sp =>
+            sp.GetRequiredService<SelfHostedActivationDispatcher>());
+        services.AddSingleton<ISelfHostedRecoverySchemaMigrator>(new SwitchableRecoveryMigrator(this));
+        services.AddScoped<SelfHostedRecoveryRestoreCoordinator>();
+        services.AddScoped<SelfHostedRecoveryRestoreHostService>();
+        services.AddScoped<ISelfHostedRecoveryRestore>(sp =>
+            sp.GetRequiredService<SelfHostedRecoveryRestoreHostService>());
 
         Host = services.BuildServiceProvider(new ServiceProviderOptions
         {
@@ -663,6 +700,7 @@ internal sealed class ActivationCoordinatorTestBed : IAsyncDisposable
     {
         if (Host is not null)
         {
+            await StopDispatcherAsync(Host);
             await Host.DisposeAsync();
             _providers.Remove(Host);
         }
@@ -670,6 +708,7 @@ internal sealed class ActivationCoordinatorTestBed : IAsyncDisposable
         await ReconcileAsync();
         BuildMaintenance();
         BuildHost();
+        await StartDispatcherAsync(Host);
     }
 
     internal static IReadOnlyList<string> PortableTableNames { get; } = BuildPortableTableNames();
@@ -822,12 +861,371 @@ internal sealed class ActivationCoordinatorTestBed : IAsyncDisposable
         File.WriteAllText(Path.Combine(folder, "book.epub"), "ORPHAN-USER-MEDIA");
     }
 
+    // ---- Slice 9: recovery restore ("restore previous library") ----
+
+    /// <summary>The recovery copy retained by the activation under test.</summary>
+    internal Guid RecoveryId => JobId;
+
+    internal async Task<string> CurrentRevisionTokenAsync()
+    {
+        await using var scope = Host.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<ILibraryDestinationRevisionProvider>()
+            .GetCurrentAsync(default);
+    }
+
+    /// <summary>Claims and runs a restore through the shared library-switch dispatcher.</summary>
+    internal async Task<SelfHostedRecoveryRestoreResult> RestoreAsync(
+        bool confirm = true,
+        Action<string>? observer = null,
+        string? revision = null,
+        Guid? recoveryId = null)
+    {
+        var id = recoveryId ?? RecoveryId;
+        var dispatcher = Host.GetRequiredService<SelfHostedActivationDispatcher>();
+        dispatcher.RestoreStepObserverForTesting = observer;
+        var token = revision ?? await CurrentRevisionTokenAsync();
+        await dispatcher.RequestRestoreAsync(
+            id, new MigrationRecoveryRestoreRequest(token, confirm), default);
+        await dispatcher.AwaitRestoreFinishedAsync(id, default);
+        return MapRestoreResult(await dispatcher.GetRestoreStatusAsync(id, default));
+    }
+
+    /// <summary>
+    /// Runs the restore coordinator directly with a crash-matrix observer. The
+    /// sentinel propagates exactly like process death; production dispatch runs
+    /// through <see cref="SelfHostedActivationDispatcher"/>.
+    /// </summary>
+    internal async Task<SelfHostedRecoveryRestoreResult> CrashRestoreAsync(
+        Action<string> observer,
+        string? revision = null,
+        Guid? recoveryId = null)
+    {
+        var id = recoveryId ?? RecoveryId;
+        var token = revision ?? await CurrentRevisionTokenAsync();
+        await using var scope = Host.CreateAsyncScope();
+        var coordinator = scope.ServiceProvider.GetRequiredService<SelfHostedRecoveryRestoreCoordinator>();
+        coordinator.StepObserverForTesting = observer;
+        await coordinator.RequestRestoreAsync(
+            id, new MigrationRecoveryRestoreRequest(token, true), default);
+        return await coordinator.RestorePreviousLibraryAsync(id, default);
+    }
+
+    /// <summary>Resumes a durably claimed restore on the current host generation.</summary>
+    internal async Task<SelfHostedRecoveryRestoreResult> ResumeRestoreAsync(
+        Action<string>? observer = null,
+        Guid? recoveryId = null)
+    {
+        var id = recoveryId ?? RecoveryId;
+        var dispatcher = Host.GetRequiredService<SelfHostedActivationDispatcher>();
+        dispatcher.RestoreStepObserverForTesting = observer;
+        await dispatcher.ScanPendingRestoresAsync(default);
+        await dispatcher.AwaitRestoreFinishedAsync(id, default);
+        return MapRestoreResult(await dispatcher.GetRestoreStatusAsync(id, default));
+    }
+
+    private static SelfHostedRecoveryRestoreResult MapRestoreResult(
+        MigrationRecoveryRestoreStatusResponse status) =>
+        new(
+            status.RecoveryId,
+            status.Outcome switch
+            {
+                MigrationActivationOutcome.Completed => SelfHostedRecoveryRestoreOutcome.Restored,
+                MigrationActivationOutcome.Running or MigrationActivationOutcome.Accepted =>
+                    SelfHostedRecoveryRestoreOutcome.Busy,
+                _ => SelfHostedRecoveryRestoreOutcome.Interrupted,
+            },
+            status.Status,
+            status.ErrorCode);
+
+    /// <summary>Claims only (no run), for concurrency and status tests.</summary>
+    internal async Task<MigrationRecoveryStatusResponse> RequestRestoreOnlyAsync(
+        bool confirm = true,
+        string? revision = null,
+        Guid? recoveryId = null)
+    {
+        var id = recoveryId ?? RecoveryId;
+        var token = revision ?? await CurrentRevisionTokenAsync();
+        await using var scope = Host.CreateAsyncScope();
+        var coordinator = scope.ServiceProvider.GetRequiredService<SelfHostedRecoveryRestoreCoordinator>();
+        return await coordinator.RequestRestoreAsync(
+            id, new MigrationRecoveryRestoreRequest(token, confirm), default);
+    }
+
+    internal SelfHostedRecoveryManifest? ReadRecoveryManifest(Guid? recoveryId = null) =>
+        Manifests.Read(recoveryId ?? RecoveryId);
+
+    /// <summary>
+    /// Seeds a second ReadyToActivate import job over the same prepared staging,
+    /// for dispatcher mutual-exclusion tests (activation versus restore).
+    /// </summary>
+    internal async Task<Guid> SeedReadyToActivateJobAsync(string destinationRevision)
+    {
+        var id = Guid.NewGuid();
+        await using var db = OpenDatabase();
+        db.MigrationJobRecords.Add(new MigrationJobRecord
+        {
+            Id = id,
+            Direction = (int)MigrationDirection.Import,
+            State = (int)MigrationJobState.ReadyToActivate,
+            RecoveryStatus = (int)MigrationRecoveryStatus.Pending,
+            ProgressPhase = (int)MigrationProgressPhase.PreparingActivation,
+            CreatedAtUtc = DateTime.UtcNow.AddMinutes(-10),
+            UpdatedAtUtc = DateTime.UtcNow.AddMinutes(-5),
+            IdempotencyKey = $"queued-activation-{id:N}",
+            CreationPayloadHash = new string('a', 64),
+            ExpiresAtUtc = DateTime.UtcNow.AddDays(1),
+            AttemptNumber = 1,
+            DestinationRevision = destinationRevision,
+            PreparedStagingId = Prepared.Metadata.StagingId.Value,
+            PreparedImportMetadataJson = "{}",
+            Version = 1,
+        });
+        await db.SaveChangesAsync();
+        return id;
+    }
+
+    internal (Dictionary<string, List<string>> Tables, Dictionary<string, string> Media)
+        SnapshotLiveGeneration() =>
+        (ActivationBuildFixture.DumpAllTables(Paths.LiveDatabase),
+            ActivationBuildFixture.MediaSnapshot(Paths.LiveMedia));
+
+    /// <summary>Every table, every row and every media byte must be identical.</summary>
+    internal void AssertGenerationEquals(
+        (Dictionary<string, List<string>> Tables, Dictionary<string, string> Media) expected,
+        string because)
+    {
+        var actual = SnapshotLiveGeneration();
+        actual.Tables.Keys.Should().BeEquivalentTo(expected.Tables.Keys, because);
+        foreach (var table in expected.Tables.Keys)
+        {
+            actual.Tables[table].Should().BeEquivalentTo(
+                expected.Tables[table], $"{because} (table {table})");
+        }
+
+        actual.Media.Should().BeEquivalentTo(expected.Media, because);
+    }
+
+    /// <summary>Portable tables of the live database must equal a captured generation.</summary>
+    internal void AssertPortableEquals(Dictionary<string, List<string>> allTables, string because)
+    {
+        var actual = ActivationCoordinatorTemplate.DumpPortable(Paths.LiveDatabase);
+        foreach (var table in PortableTableNames)
+        {
+            actual[table].Should().BeEquivalentTo(allTables[table], $"{because} (table {table})");
+        }
+    }
+
+    /// <summary>The restored portable state and media must be the retained original library.</summary>
+    internal Task AssertRestoredPortableGenerationAsync()
+    {
+        ActivationCoordinatorTemplate.DumpPortable(Paths.LiveDatabase)
+            .Should().BeEquivalentTo(OriginalPortable,
+                "the restored portable state must be the retained previous library");
+        ActivationBuildFixture.MediaSnapshot(Paths.LiveMedia)
+            .Should().BeEquivalentTo(OriginalMedia,
+                "the restored media must be the retained previous generation");
+        return Task.CompletedTask;
+    }
+
+    internal void TamperRecoveryMediaByte()
+    {
+        var root = Paths.PreviousMedia(RecoveryId);
+        var file = Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories).First();
+        var bytes = File.ReadAllBytes(file);
+        bytes[0] ^= 0xFF;
+        File.WriteAllBytes(file, bytes);
+    }
+
+    internal void TamperRecoveryDatabaseByte()
+    {
+        var path = Paths.PreviousDatabase(RecoveryId);
+        var bytes = File.ReadAllBytes(path);
+        bytes[0] ^= 0xFF;
+        File.WriteAllBytes(path, bytes);
+    }
+
+    internal void CorruptRecoveryManifest() =>
+        File.WriteAllText(Paths.RecoveryManifest(RecoveryId), "{not-json");
+
+    internal void ExpireRecoveryCopy()
+    {
+        var manifest = Manifests.Read(RecoveryId)!;
+        var delta = TimeSpan.FromDays(MigrationContractLimits.RecoveryRetentionDays + 1);
+        Manifests.Write(manifest with
+        {
+            CreatedAtUtc = manifest.CreatedAtUtc - delta,
+            ExpiresAtUtc = manifest.ExpiresAtUtc - delta,
+        });
+    }
+
+    /// <summary>
+    /// Rolls the retained database back exactly one migration (a real older
+    /// schema and history) and refreshes the manifest facts, modelling a copy
+    /// retained by an earlier release.
+    /// </summary>
+    internal async Task DowngradeRecoveryDatabaseOneMigrationAsync()
+    {
+        var path = Paths.PreviousDatabase(RecoveryId);
+        string target;
+        await using (var db = OpenRecoveryDatabase(path))
+        {
+            var applied = (await db.Database.GetAppliedMigrationsAsync()).ToArray();
+            applied.Length.Should().BeGreaterThan(1);
+            target = applied[^2];
+        }
+
+        await DowngradeRecoveryDatabaseToAsync(target);
+    }
+
+    /// <summary>Rolls the retained database back to an exact migration level.</summary>
+    internal async Task DowngradeRecoveryDatabaseToAsync(string migrationId)
+    {
+        var path = Paths.PreviousDatabase(RecoveryId);
+        await using (var db = OpenRecoveryDatabase(path))
+        {
+            (await db.Database.GetAppliedMigrationsAsync()).Should().Contain(migrationId);
+            await db.GetService<IMigrator>().MigrateAsync(migrationId);
+        }
+
+        RefreshRecoveryManifestFacts(path);
+    }
+
+    internal string SourceRecoveryDatabaseSha256()
+    {
+        var path = Paths.PreviousDatabase(RecoveryId);
+        return Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))).ToLowerInvariant();
+    }
+
+    /// <summary>Creates a second recovery directory whose manifest is unreadable.</summary>
+    internal Guid CreateCorruptRecoveryCopy()
+    {
+        var id = Guid.NewGuid();
+        Paths.PrepareRecovery(id);
+        File.WriteAllText(Paths.RecoveryManifest(id), "{not-json");
+        return id;
+    }
+
+    /// <summary>
+    /// Seeds one work/book/membership into the retained recovery copy (the
+    /// template's live library only has a collection) and refreshes the
+    /// manifest, so a lossy migration can drop a real relationship row.
+    /// </summary>
+    internal async Task SeedRecoveryMembershipAsync()
+    {
+        var path = Paths.PreviousDatabase(RecoveryId);
+        await using (var db = OpenRecoveryDatabase(path))
+        {
+            var collection = await db.Collections.FirstAsync();
+            var work = new WorkModel
+            {
+                Id = Guid.NewGuid(),
+                Title = "RECOVERY-WORK",
+                NormalizedTitle = "RECOVERY-WORK",
+                NormalizedAuthor = string.Empty,
+            };
+            var book = new PhysicalBookModel
+            {
+                Id = Guid.NewGuid(),
+                Work = work,
+                Title = "RECOVERY-BOOK",
+            };
+            db.Works.Add(work);
+            db.Books.Add(book);
+            db.BookCollections.Add(new BookCollectionModel
+            {
+                BookId = book.Id,
+                CollectionId = collection.Id,
+                AddedAt = DateTime.UtcNow,
+            });
+            await db.SaveChangesAsync();
+        }
+
+        RefreshRecoveryManifestFacts(path);
+    }
+
+    private static NostosDbContext OpenRecoveryDatabase(string path) =>
+        new(new DbContextOptionsBuilder<NostosDbContext>()
+            .UseSqlite($"Data Source={path};Pooling=False", sqlite =>
+                sqlite.MigrationsAssembly(typeof(Program).Assembly.FullName))
+            .Options);
+
+    internal void AddUnknownMigrationToRecovery()
+    {
+        var path = Paths.PreviousDatabase(RecoveryId);
+        using (var connection = new SqliteConnection($"Data Source={path};Pooling=False"))
+        {
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText =
+                "INSERT INTO __EFMigrationsHistory (\"MigrationId\", \"ProductVersion\") "
+                + "VALUES ('99999999999999_FutureMigration', '99.0.0');";
+            command.ExecuteNonQuery();
+        }
+
+        RefreshRecoveryManifestFacts(path);
+    }
+
+    private void RefreshRecoveryManifestFacts(string databasePath)
+    {
+        foreach (var suffix in new[] { "-wal", "-shm" })
+        {
+            if (File.Exists(databasePath + suffix)) File.Delete(databasePath + suffix);
+        }
+
+        var manifest = Manifests.Read(RecoveryId)!;
+        var info = new FileInfo(databasePath);
+        var sha = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(databasePath))).ToLowerInvariant();
+        Manifests.Write(manifest with
+        {
+            DatabaseBytes = info.Length,
+            DatabaseSha256 = sha,
+            Counts = ReadRecoveryCounts(databasePath),
+        });
+    }
+
+    /// <summary>Counts the retained copy's portable rows exactly as the activation capture did.</summary>
+    private static MigrationExistingCounts ReadRecoveryCounts(string databasePath)
+    {
+        using var connection = new SqliteConnection($"Data Source={databasePath};Pooling=False");
+        connection.Open();
+        var tables = new HashSet<string>(StringComparer.Ordinal);
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "SELECT name FROM sqlite_master WHERE type = 'table';";
+            using var reader = command.ExecuteReader();
+            while (reader.Read()) tables.Add(reader.GetString(0));
+        }
+
+        long Count(string table, string? where = null)
+        {
+            if (!tables.Contains(table)) return 0;
+            using var command = connection.CreateCommand();
+            command.CommandText = $"SELECT COUNT(*) FROM \"{table}\"" + (where is null ? ";" : $" WHERE {where};");
+            return Convert.ToInt64(command.ExecuteScalar());
+        }
+
+        return new MigrationExistingCounts(
+            Works: Count("Works"),
+            Books: Count("Books"),
+            Notes: Count("Notes"),
+            Topics: Count("Topics"),
+            NoteTopics: Count("NoteTopics"),
+            Writings: Count("Writings"),
+            WritingNotes: Count("WritingNotes"),
+            Collections: Count("Collections"),
+            BookCollections: Count("BookCollections"),
+            Acquisitions: Count("BookAcquisitions"),
+            NoteImportBookLinks: Count("NoteImportBookLinks"),
+            AssistantSettings: Count("AssistantSettings", "\"CaptureProcessingMode\" IS NOT NULL"));
+    }
+
     public async ValueTask DisposeAsync()
     {
         foreach (var provider in _providers.ToArray())
         {
             try
             {
+                await StopDispatcherAsync(provider);
                 await provider.DisposeAsync();
             }
             catch
@@ -857,5 +1255,22 @@ internal sealed class ActivationCoordinatorTestBed : IAsyncDisposable
             bed.RevisionOverride is { } overridden
                 ? overridden(ct)
                 : inner.GetCurrentAsync(ct);
+    }
+
+    /// <summary>
+    /// Runs the real working-copy migration and then an optional test hook that
+    /// models a successful but lossy migration.
+    /// </summary>
+    private sealed class SwitchableRecoveryMigrator(ActivationCoordinatorTestBed bed)
+        : ISelfHostedRecoverySchemaMigrator
+    {
+        public async Task MigrateAsync(NostosDbContext database, CancellationToken ct)
+        {
+            await new DatabaseBootstrapService(database).EnsureReadyAsync(ct);
+            if (bed.RecoveryMigrationOverride is { } overridden)
+            {
+                await overridden(database);
+            }
+        }
     }
 }

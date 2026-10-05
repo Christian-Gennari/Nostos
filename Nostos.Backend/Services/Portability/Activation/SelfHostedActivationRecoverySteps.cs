@@ -115,6 +115,7 @@ internal sealed class SelfHostedActivationComponentStep(SelfHostedActivationPath
         ActivationFileSystem.Rename(source, target);
         afterRenameForTesting?.Invoke();
     }
+
     private static MigrationActivationException InvalidLayout() => SelfHostedActivationPaths.Failure(
         "The activation component layout is inconsistent. Stop the host and follow the activation recovery guide.");
 }

@@ -474,6 +474,42 @@ public sealed class PortableLibraryVerifier : IPortableLibraryVerifier
             rowsVerified);
     }
 
+    /// <summary>
+    /// Verifies only the relational portable state of a database against an
+    /// extracted recovery payload. Recovery restore uses this after the swap:
+    /// the previous library's media is verified separately against the retained
+    /// recovery manifest, which describes every retained file (including
+    /// derived thumbnails the portable media inventory never carries).
+    /// </summary>
+    public async Task<PortableLibraryVerificationReport> VerifyDatabaseAgainstExpectedAsync(
+        NostosDbContext database,
+        PortableRecoveryPayload expected,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(database);
+        ArgumentNullException.ThrowIfNull(expected);
+
+        var comparison = await CompareCandidateDatabaseAsync(
+            database,
+            expected.Data,
+            expected.PrimaryMedia,
+            ct).ConfigureAwait(false);
+        CompareCandidateCounts(
+            expected.Counts,
+            comparison.Counts,
+            expected.PrimaryMedia.Count,
+            comparison.Failures);
+
+        return new PortableLibraryVerificationReport(
+            comparison.Failures.TotalCount == 0,
+            comparison.Failures,
+            CandidateDatabaseVerifiedKinds,
+            comparison.RowsVerified,
+            MediaFilesVerified: 0,
+            MediaBytesVerified: 0,
+            comparison.Failures.TotalCount);
+    }
+
     public async Task<PortableLibraryVerificationReport> VerifyMediaAsync(
         IBookAssetStorage assets,
         IReadOnlyList<PortableArchiveMediaEntry> expected,

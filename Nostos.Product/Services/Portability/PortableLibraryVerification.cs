@@ -147,6 +147,18 @@ public interface IPortableLibraryVerifier
         CancellationToken ct = default);
 
     /// <summary>
+    /// Compares only the relational portable state of a database against a
+    /// payload extracted from a retained recovery copy. The recovery restore
+    /// verifies every retained media file separately against the recovery
+    /// manifest, which also describes derived files the portable inventory does
+    /// not carry.
+    /// </summary>
+    Task<PortableLibraryVerificationReport> VerifyDatabaseAgainstExpectedAsync(
+        NostosDbContext database,
+        PortableRecoveryPayload expected,
+        CancellationToken ct = default);
+
+    /// <summary>
     /// Compares a materialized candidate database against the verified prepared
     /// import using exactly the relational comparison of
     /// <see cref="VerifyCandidateAsync"/> (same tables, same row-key rules, same

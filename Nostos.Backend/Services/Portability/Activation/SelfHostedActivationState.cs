@@ -87,6 +87,17 @@ public sealed record RecoveryMediaDescriptor(Guid BookId, string Kind, string Ex
 /// one-time offset of the job's unmaterialized transfer claim, recorded before the
 /// capacity row is mutated so retries and crashes cannot apply it twice.
 /// </para>
+/// <para>
+/// <see cref="RestoreOperationId"/>/<see cref="RestoreError"/> describe a
+/// "restore previous library" operation consuming this copy. The id is the
+/// restore cutover journal identity (never this copy's own id, whose recovery
+/// directory holds the replaced library); it is durably recorded before the
+/// <c>Available</c> -&gt; <c>Restoring</c> transition, so a crash is discovered
+/// and resumed on startup. <see cref="RestoreError"/> carries the stable error
+/// code of the last failed attempt; a retryable failure returns the status to
+/// <c>Available</c> so the user may confirm again, and a tamper or newer-schema
+/// refusal is terminal (<c>Failed</c>) until an operator inspects the copy.
+/// </para>
 /// </summary>
 public sealed record SelfHostedRecoveryManifest(
     [property: JsonRequired] Guid JobId,
@@ -109,7 +120,13 @@ public sealed record SelfHostedRecoveryManifest(
     [property: JsonRequired] int MediaRehashedCount = 0,
     [property: JsonRequired] bool TransferTopUpSettled = false,
     [property: JsonRequired] Guid? TransferTopUpReservationId = null,
-    [property: JsonRequired] long TransferTopUpTargetBytes = 0)
+    [property: JsonRequired] long TransferTopUpTargetBytes = 0,
+    // Appended after version 1 was published: absent on manifests written by
+    // earlier builds and therefore deliberately not JsonRequired.
+    Guid? RestoreOperationId = null,
+    string? RestoreDestinationRevision = null,
+    string? RestoreError = null,
+    DateTimeOffset? RestoredAtUtc = null)
 {
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? Extensions { get; init; }
@@ -249,6 +266,9 @@ public static class SelfHostedActivationDocument
         && manifest.MediaRehashedCount >= 0
         && manifest.TransferTopUpReservationId != Guid.Empty
         && manifest.TransferTopUpTargetBytes >= 0
+        && manifest.RestoreOperationId != Guid.Empty
+        && manifest.RestoreDestinationRevision is null or { Length: <= 256 }
+        && manifest.RestoreError is null or { Length: <= 64 }
         && manifest.Media.All(m => m is not null && m.BookId != Guid.Empty && m.Bytes >= 0
             && IsDigest(m.Sha256));
 

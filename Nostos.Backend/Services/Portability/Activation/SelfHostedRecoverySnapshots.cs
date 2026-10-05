@@ -523,6 +523,16 @@ internal sealed class SelfHostedMigrationRecoveryService :
                 continue;
             }
 
+            // A conditional mark: if a restore claimed this copy between the
+            // decision above and this write, the cleanup loses and the copy is
+            // left alone.
+            if (!deleting
+                && manifest is not null
+                && !_manifests.TryCreateDeletionMarker(jobId, manifest))
+            {
+                continue;
+            }
+
             _manifests.CreateDeletionMarker(jobId);
             DeleteMaterial(jobId);
             if (manifest?.RetentionReservationId is { } reservationId && reservationId != Guid.Empty)
@@ -1043,7 +1053,7 @@ internal sealed class SelfHostedMigrationRecoveryService :
 
     private static MigrationRecoveryStatusResponse ToResponse(SelfHostedRecoveryManifest manifest) =>
         new(manifest.JobId, manifest.Status, manifest.CreatedAtUtc, manifest.ExpiresAtUtc,
-            manifest.TotalBytes, manifest.Counts);
+            manifest.TotalBytes, manifest.Counts, manifest.RestoreError);
 
     private static MigrationActivationException Flaw(string message) =>
         SelfHostedActivationPaths.Failure(message);
