@@ -62,23 +62,9 @@ class PdfViewerStub {
   showTextEditor = input<boolean>(true);
   showDrawEditor = input<boolean>(true);
   showStampEditor = input<boolean>(true);
-  // Search (issue #226 §2): the find bar and the options the reader trims.
-  findbarVisible = input<boolean>(false);
-  showFindHighlightAll = input<boolean>(true);
-  showFindMatchCase = input<boolean>(false);
-  showFindResultsCount = input<boolean>(true);
-  showFindMessages = input<boolean>(true);
-  showFindMatchDiacritics = input<boolean>(false);
-  showFindEntireWord = input<boolean>(false);
-  showFindMultiple = input<boolean>(false);
-  // The find bar's input area is re-declared by the reader (a #226 follow-up); the
-  // stub must accept the binding or the template fails to compile.
-  customFindbarInputArea = input<unknown>();
-
   pageChange = output<number>();
   sidebarVisibleChange = output<boolean>();
   scrollModeChange = output<number>();
-  findbarVisibleChange = output<boolean>();
   pagesLoaded = output<any>();
   pageRender = output<any>();
   pageRendered = output<any>();
@@ -89,29 +75,8 @@ class PdfViewerStub {
   updateFindState = output<any>();
 }
 
-/**
- * The find bar's own pieces are declared INSIDE `NgxExtendedPdfViewerModule` and
- * are not standalone, so a standalone component cannot list them in `imports`.
- * The specs below remove that module to keep the suite light, so the three
- * selectors our template re-declares (a #226 follow-up) need stand-ins: the stub viewer
- * never instantiates that ng-template, but Angular still compiles its content.
- */
-@Component({ selector: 'pdf-search-input-field', standalone: true, template: '' })
-class PdfSearchInputFieldStub {}
-
-@Component({ selector: 'pdf-find-previous', standalone: true, template: '' })
-class PdfFindPreviousStub {}
-
-@Component({ selector: 'pdf-find-next', standalone: true, template: '' })
-class PdfFindNextStub {}
-
 /** Everything the overridden PdfReader needs to compile in these specs. */
-const PDF_READER_TEST_IMPORTS = [
-  PdfViewerStub,
-  PdfSearchInputFieldStub,
-  PdfFindPreviousStub,
-  PdfFindNextStub,
-];
+const PDF_READER_TEST_IMPORTS = [PdfViewerStub];
 
 const readSource = (file: string) =>
   readFileSync(new URL(file, import.meta.url), 'utf-8');
@@ -469,10 +434,8 @@ describe('PdfReader contents rail from the embedded outline', () => {
 });
 
 /**
- * Search was unreachable: the library's find bar was bound to nothing and no
- * other search path existed, so Ctrl+F did nothing at all in a PDF (issue #226
- * §2). These pin the shortcut that opens it, and the Escape that closes it
- * before the shell can treat it as "close a rail".
+ * Search chrome is owned by ReaderShell; PdfReader only adapts the public
+ * ngx/PDF.js find API and publishes portable match state.
  */
 describe('PdfReader shared search adapter (#761)', () => {
   let fixture: ComponentFixture<PdfReader>;
