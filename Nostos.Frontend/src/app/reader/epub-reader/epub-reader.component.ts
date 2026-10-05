@@ -803,7 +803,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
       if (!contents?.document) return;
 
       const range = rangeForNormalizedResourceSpan(contents.document, match.offset, match.length);
-      const cfi = range ? (contents as any).cfiFromRange?.(range) : null;
+      const cfi = range ? contents.cfiFromRange(range) : null;
       if (typeof cfi === 'string' && cfi.length > 0) {
         this.annotationManager?.showSearchHighlight(cfi);
       }
