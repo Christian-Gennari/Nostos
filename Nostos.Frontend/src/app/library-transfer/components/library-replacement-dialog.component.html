@@ -49,6 +49,12 @@
         </div>
       </div>
 
+      @if (conflictNotice(); as notice) {
+        <p class="replacement-note" role="status" data-testid="replacement-conflict">
+          {{ notice }}
+        </p>
+      }
+
       @if (supportsSafeActivation()) {
         <p class="replacement-recovery" data-testid="replacement-recovery">
           Your current library will be kept as a recovery copy for 7 days before it expires.
@@ -61,6 +67,13 @@
         <p class="replacement-blocked" role="alert" data-testid="replacement-blocked">
           This library already contains data. Replacement is not available on this Nostos host
           yet, so nothing has been changed.
+        </p>
+      }
+
+      @if (retryBlocked()) {
+        <p class="replacement-blocked" role="alert" data-testid="replacement-retry-blocked">
+          Activation cannot be retried from here. Your original library is unchanged; restart
+          Nostos, or ask the host operator to reconcile it before trying again.
         </p>
       }
 
@@ -91,7 +104,7 @@
           type="button"
           variant="danger"
           class="replacement-confirm"
-          [disabled]="!supportsSafeActivation() || busy()"
+          [disabled]="!supportsSafeActivation() || busy() || retryBlocked()"
           [busy]="busy()"
           (click)="confirm()"
         >

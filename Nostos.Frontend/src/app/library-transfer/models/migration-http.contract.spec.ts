@@ -31,6 +31,8 @@ const backendSources = import.meta.glob(
     '../../../../../Nostos.Product/Endpoints/MigrationHttpContracts.cs',
     '../../../../../Nostos.Product/Endpoints/MigrationEndpoints.cs',
     '../../../../../Nostos.Product/Services/Portability/MigrationContracts.cs',
+    '../../../../../Nostos.Product/Services/Portability/Activation/MigrationActivationContracts.cs',
+    '../../../../../Nostos.Product/Services/Portability/Activation/MigrationActivationHttpContracts.cs',
     '../../../../../Nostos.Backend/Middleware/LibraryMaintenanceMiddleware.cs',
   ],
   { query: '?raw', import: 'default', eager: true },
@@ -45,6 +47,8 @@ function backendSource(fileName: string): string {
 const HTTP_CONTRACTS = backendSource('MigrationHttpContracts.cs');
 const ENDPOINTS = backendSource('MigrationEndpoints.cs');
 const CONTRACT_MODELS = backendSource('MigrationContracts.cs');
+const ACTIVATION_CONTRACTS = backendSource('MigrationActivationContracts.cs');
+const ACTIVATION_HTTP = backendSource('MigrationActivationHttpContracts.cs');
 const MIDDLEWARE = backendSource('LibraryMaintenanceMiddleware.cs');
 
 const TS_SOURCE = appSources['./migration-http.dtos.ts'];
@@ -126,31 +130,47 @@ describe('migration HTTP contract parity with the backend source', () => {
       ...body!.matchAll(/public const string \w+ = "([a-z_]+)";/g),
     ].map((match) => match[1]);
 
+    // The activation codes are declared in `MigrationActivationErrorCodes` and
+    // referenced by the migration error mapper (its message table), so every
+    // referenced name is part of the emitted set.
+    const activationNames = [
+      ...new Set(
+        [...HTTP_CONTRACTS.matchAll(/MigrationActivationErrorCodes\.(\w+)/g)].map(
+          (match) => match[1],
+        ),
+      ),
+    ];
+    const activationCodes = activationNames.map((name) =>
+      extractCsharpStringConstant(ACTIVATION_CONTRACTS, name),
+    );
+
     // The maintenance middleware answers migration routes with the migration
     // error shape, so its code belongs to the same closed set.
     expect(MIDDLEWARE).toContain('"migration_activation_busy"');
 
     expect([...SERVER_MIGRATION_ERROR_CODES].sort()).toEqual(
-      [...serverCodes, 'migration_activation_busy'].sort(),
+      [...new Set([...serverCodes, ...activationCodes, 'migration_activation_busy'])].sort(),
     );
     expect(new Set(SERVER_MIGRATION_ERROR_CODES).size).toBe(SERVER_MIGRATION_ERROR_CODES.length);
   });
 
   it('mirrors every string enum member exactly', () => {
-    const pairs: Array<[string, string]> = [
-      ['MigrationDirection', 'MigrationDirection'],
-      ['MigrationJobState', 'MigrationJobState'],
-      ['MigrationPreflightDecision', 'MigrationPreflightDecision'],
-      ['MigrationDestinationStatus', 'MigrationDestinationStatus'],
-      ['MigrationSessionPurpose', 'MigrationSessionPurpose'],
-      ['MigrationSessionState', 'MigrationSessionState'],
-      ['MigrationProgressPhase', 'MigrationProgressPhase'],
-      ['MigrationRecoveryStatus', 'MigrationRecoveryStatus'],
+    const pairs: Array<[string, string, string]> = [
+      ['MigrationDirection', 'MigrationDirection', CONTRACT_MODELS],
+      ['MigrationJobState', 'MigrationJobState', CONTRACT_MODELS],
+      ['MigrationPreflightDecision', 'MigrationPreflightDecision', CONTRACT_MODELS],
+      ['MigrationDestinationStatus', 'MigrationDestinationStatus', CONTRACT_MODELS],
+      ['MigrationSessionPurpose', 'MigrationSessionPurpose', CONTRACT_MODELS],
+      ['MigrationSessionState', 'MigrationSessionState', CONTRACT_MODELS],
+      ['MigrationProgressPhase', 'MigrationProgressPhase', CONTRACT_MODELS],
+      ['MigrationRecoveryStatus', 'MigrationRecoveryStatus', CONTRACT_MODELS],
+      ['MigrationActivationOutcome', 'MigrationActivationOutcome', ACTIVATION_HTTP],
+      ['MigrationActivationPhase', 'MigrationActivationPhase', ACTIVATION_HTTP],
     ];
 
-    for (const [csharp, ts] of pairs) {
+    for (const [csharp, ts, source] of pairs) {
       expect(extractTsUnionMembers(ts).sort(), ts).toEqual(
-        extractEnumMembers(CONTRACT_MODELS, csharp).sort(),
+        extractEnumMembers(source, csharp).sort(),
       );
     }
   });
@@ -194,6 +214,17 @@ describe('migration HTTP contract parity with the backend source', () => {
       { source: HTTP_CONTRACTS, record: 'MigrationCreateJobBody', ts: 'MigrationCreateJobRequestDto' },
       { source: HTTP_CONTRACTS, record: 'MigrationFileIdentityBody', ts: 'MigrationFileIdentityDto' },
       { source: HTTP_CONTRACTS, record: 'MigrationSessionBody', ts: 'MigrationSessionRequestDto' },
+      { source: HTTP_CONTRACTS, record: 'MigrationActivateBody', ts: 'MigrationActivateRequestDto' },
+      {
+        source: HTTP_CONTRACTS,
+        record: 'MigrationActivationConflictBody',
+        ts: 'MigrationActivationConflictDto',
+      },
+      {
+        source: ACTIVATION_HTTP,
+        record: 'MigrationActivationStatusResponse',
+        ts: 'MigrationActivationStatusDto',
+      },
     ];
 
     for (const { source, record, ts, computed = [] } of pairs) {
@@ -236,6 +267,8 @@ describe('migration HTTP contract parity with the backend source', () => {
     expect(ENDPOINTS).toContain('"/jobs/{id}/upload-session/chunks/{index}"');
     expect(ENDPOINTS).toContain('/jobs/{id}/upload-session/complete');
     expect(ENDPOINTS).toContain('"/jobs/{id}/export-download"');
+    expect(ENDPOINTS).toContain('"/jobs/{id}/activate"');
+    expect(ENDPOINTS).toContain('"/jobs/{id}/activation"');
   });
 
   it('keeps the maintenance 503 migration-shaped with Retry-After', () => {

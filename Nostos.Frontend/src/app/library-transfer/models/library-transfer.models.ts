@@ -6,7 +6,10 @@
  */
 
 import type {
+  MigrationActivateRequestDto,
+  MigrationDestinationStatus,
   MigrationErrorCode,
+  MigrationExistingCountsDto,
   MigrationFileIdentityDto,
   MigrationJobState,
   MigrationPreflightDecision,
@@ -14,6 +17,16 @@ import type {
   MigrationPreflightResponseDto,
   MigrationSessionRequestDto,
 } from './migration-http.dtos';
+
+/** Host-reported activation state rendered by the import flow (slice B8). */
+export type HostActivationState = 'idle' | 'in-progress' | 'completed' | 'failed';
+
+/** Destination facts the activation route reports for a re-review (409 body). */
+export interface LibraryActivationConflictFacts {
+  destinationRevision: string | null;
+  destinationStatus: MigrationDestinationStatus | null;
+  existingCounts: MigrationExistingCountsDto | null;
+}
 
 /** Read block for whole-file hashing: bounded regardless of archive size (plan §11.3). */
 export const HASH_READ_BLOCK_BYTES = 4 * 1024 * 1024;
@@ -149,7 +162,27 @@ export interface PersistedTransferResumeState {
   fileName: string;
   preflightRequest: MigrationPreflightRequestDto;
   preflightDecision?: MigrationPreflightDecision;
+  /**
+   * Destination revision the server returned at preflight, i.e. the revision
+   * the user reviewed. Activation uses it (never a client-invented value) and
+   * re-confirms with the server's fresh revision when it conflicts.
+   */
+  destinationRevision?: string;
+  /**
+   * Activation handoff (slice B8). Written before the first activation POST so
+   * a reload can replay an undelivered request, and promoted to `accepted`
+   * once a 202 has been observed so a reload re-attaches to status polling
+   * instead of losing the outcome.
+   */
+  activation?: PersistedActivationResumeState;
   createdAt: string;
+}
+
+/** Persisted activation intent for the resume record. */
+export interface PersistedActivationResumeState {
+  request: MigrationActivateRequestDto;
+  /** True once the server answered 202 to `request`. */
+  accepted: boolean;
 }
 
 /** Import flow states (§8), extended with the engine-level pause flag and notices. */

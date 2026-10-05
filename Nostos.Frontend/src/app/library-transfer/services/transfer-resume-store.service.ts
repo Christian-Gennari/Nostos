@@ -75,11 +75,30 @@ function isResumeState(value: unknown): value is PersistedTransferResumeState {
     record['direction'] === 'import' &&
     typeof record['fileName'] === 'string' &&
     typeof record['createdAt'] === 'string' &&
+    (record['destinationRevision'] === undefined ||
+      typeof record['destinationRevision'] === 'string') &&
+    isActivationState(record['activation']) &&
     typeof identity === 'object' &&
     identity !== null &&
     typeof (identity as Record<string, unknown>)['totalSizeBytes'] === 'number' &&
     typeof (identity as Record<string, unknown>)['sha256Checksum'] === 'string' &&
     typeof preflight === 'object' &&
     preflight !== null
+  );
+}
+
+/** A malformed activation handoff must not make the controller re-attach blind. */
+function isActivationState(value: unknown): boolean {
+  if (value === undefined) return true;
+  if (typeof value !== 'object' || value === null) return false;
+  const activation = value as Record<string, unknown>;
+  const request = activation['request'];
+  if (typeof request !== 'object' || request === null) return false;
+  const requestRecord = request as Record<string, unknown>;
+  return (
+    typeof activation['accepted'] === 'boolean' &&
+    typeof requestRecord['destinationRevision'] === 'string' &&
+    requestRecord['destinationRevision'].length > 0 &&
+    typeof requestRecord['confirmReplacement'] === 'boolean'
   );
 }

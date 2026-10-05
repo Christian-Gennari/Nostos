@@ -6,6 +6,7 @@ import {
   MigrationExistingCountsDto,
   MigrationPreflightResponseDto,
 } from '../models/migration-http.dtos';
+import { LibraryActivationConflictFacts } from '../models/library-transfer.models';
 
 function archiveCounts(overrides: Partial<MigrationArchiveCountsDto> = {}): MigrationArchiveCountsDto {
   return {
@@ -83,6 +84,8 @@ describe('LibraryReplacementDialogComponent', () => {
     preparedImport?: unknown;
     supportsSafeActivation?: boolean;
     busy?: boolean;
+    retryBlocked?: boolean;
+    conflict?: LibraryActivationConflictFacts | null;
   } = {}): Promise<void> {
     await TestBed.configureTestingModule({
       imports: [LibraryReplacementDialogComponent],
@@ -96,6 +99,10 @@ describe('LibraryReplacementDialogComponent', () => {
     }
     fixture.componentRef.setInput('supportsSafeActivation', options.supportsSafeActivation ?? false);
     fixture.componentRef.setInput('busy', options.busy ?? false);
+    fixture.componentRef.setInput('retryBlocked', options.retryBlocked ?? false);
+    if (options.conflict !== undefined) {
+      fixture.componentRef.setInput('conflict', options.conflict);
+    }
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
@@ -258,5 +265,38 @@ describe('LibraryReplacementDialogComponent', () => {
     expect(
       (fixture.nativeElement.querySelector('.replacement-cancel') as HTMLButtonElement).disabled,
     ).toBe(true);
+  });
+
+  it('shows the server 409 counts when the library changed and asks again', async () => {
+    await create({
+      supportsSafeActivation: true,
+      conflict: {
+        destinationRevision: 'rev-9',
+        destinationStatus: 'Populated',
+        existingCounts: existingCounts({ books: 9, notes: 12, collections: 2 }),
+      },
+    });
+
+    expect(element('replacement-existing')?.textContent).toContain(
+      '9 books · 12 notes · 2 collections',
+    );
+    expect(element('replacement-conflict')?.textContent).toContain('changed');
+
+    const confirmed = vi.fn();
+    component.confirmed.subscribe(confirmed);
+    confirmButton().click();
+    expect(confirmed).toHaveBeenCalledTimes(1);
+  });
+
+  it('blocks a retry after a fail-closed activation and explains the operator path', async () => {
+    await create({ supportsSafeActivation: true, retryBlocked: true });
+
+    expect(element('replacement-retry-blocked')?.textContent).toContain('restart');
+    expect(confirmButton().disabled).toBe(true);
+
+    const confirmed = vi.fn();
+    component.confirmed.subscribe(confirmed);
+    confirmButton().click();
+    expect(confirmed).not.toHaveBeenCalled();
   });
 });

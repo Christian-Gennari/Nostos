@@ -17,6 +17,10 @@
 
 import {
   BrowserMigrationChunk,
+  MigrationActivateRequestDto,
+  MigrationActivationOutcome,
+  MigrationActivationPhase,
+  MigrationActivationStatusDto,
   MigrationChunkUploadResultDto,
   MigrationCreateJobRequestDto,
   MigrationDestinationStatus,
@@ -44,6 +48,7 @@ import {
 import { calculateHostPeakReservationBytes, evaluatePreflight } from '../services/migration-preflight';
 import {
   LibraryTransferTransport,
+  MigrationActivationConflictError,
   MigrationTransportError,
 } from '../services/library-transfer-transport';
 import { sha256ChunkHex } from '../services/hash/chunk-digest';
@@ -60,6 +65,8 @@ export type MockTransportOperation =
   | 'getUploadSession'
   | 'uploadChunk'
   | 'completeUpload'
+  | 'activateJob'
+  | 'getActivationStatus'
   | 'getExportDownloadUrl';
 
 export interface MockTransportFailure {
@@ -89,6 +96,12 @@ export interface MockLibraryTransferTransportOptions {
   progressSteps?: number;
   /** getJob calls served as Validating before the job reaches ReadyToActivate. */
   validationPolls?: number;
+  /** Accepted activation result: `running` (default) or immediately `completed`. */
+  activationBehavior?: 'running' | 'completed';
+  /** Completed activation recovery facts, as the server reports them. */
+  recoveryAvailable?: boolean;
+  recoveryExpiresAtUtc?: string;
+  recoverySizeBytes?: number;
   createId?: () => string;
   now?: () => number;
 }
@@ -127,6 +140,20 @@ interface MockJob {
   validationPollsRemaining: number;
   /** Mirrors the server's attempt counter used by the session-reactivation rule. */
   attempt: number;
+  /** Destination baseline captured when the job was accepted (server rule). */
+  destinationRevision: string;
+  /** In-memory activation run; absent when none is accepted/running. */
+  activation?: MockActivationRun;
+}
+
+interface MockActivationRun {
+  request: MigrationActivateRequestDto;
+  outcome: MigrationActivationOutcome;
+  phase: MigrationActivationPhase | null;
+  errorCode?: string | null;
+  message?: string | null;
+  maintenanceRequired: boolean;
+  canActivate: boolean;
 }
 
 interface MockReservation {
@@ -166,6 +193,14 @@ const ERROR_MESSAGES: Partial<Record<MigrationErrorCode, string>> = {
   migration_not_retryable: 'Only failed, cancelled or expired jobs can be retried.',
   migration_storage_contended: 'Transfer capacity is busy. Retry shortly.',
   migration_activation_busy: 'The library is in maintenance. Try again later.',
+  migration_replacement_confirmation_required:
+    'Replacing an existing library requires explicit confirmation.',
+  migration_destination_conflict: 'The destination changed. Review replacement again.',
+  migration_activation_failed:
+    'The activation failed before the library switch; the original library is unchanged.',
+  migration_activation_recovery_failed:
+    'Activation could not be completed or rolled back in-process. '
+    + 'The host stays in maintenance until a restart reconciles it.',
   migration_import_preparation_unavailable:
     'Import preparation is not available on this deployment yet.',
   migration_export_artifact_unavailable:
@@ -207,12 +242,16 @@ export class MockLibraryTransferTransport implements LibraryTransferTransport {
     getUploadSession: 0,
     uploadChunk: 0,
     completeUpload: 0,
+    activateJob: 0,
+    getActivationStatus: 0,
     getExportDownloadUrl: 0,
   };
 
   readonly uploadedChunks: number[] = [];
   readonly attemptedChunks: number[] = [];
   readonly abortedRequests: MockTransportOperation[] = [];
+  /** Every activation request the server admitted/refused, in order. */
+  readonly activationRequests: MigrationActivateRequestDto[] = [];
   activeUploads = 0;
   maxConcurrentUploads = 0;
   jobCreationCount = 0;
@@ -405,6 +444,9 @@ export class MockLibraryTransferTransport implements LibraryTransferTransport {
       validationPollsRemaining: this.options.validationPolls ?? 0,
       reservationId: request.reservationId ?? undefined,
       attempt: 1,
+      // The server captures the destination baseline when the job is accepted;
+      // preparation and activation compare against this value.
+      destinationRevision: this.destinationRevision,
     };
     if (request.reservationId) {
       const reservation = this.reservations.get(request.reservationId);
@@ -692,6 +734,231 @@ export class MockLibraryTransferTransport implements LibraryTransferTransport {
     job.updatedAt = this.now();
 
     return this.sessionDto(session);
+  }
+
+  /**
+   * Strict activation admission, mirroring the #681 server rules: the job must
+   * be a prepared import, the revision must match the job's baseline, a
+   * populated destination requires confirmation, and the conflict bodies carry
+   * the fresh destination facts.
+   */
+  async activateJob(
+    jobId: string,
+    request: MigrationActivateRequestDto,
+    signal?: AbortSignal,
+  ): Promise<MigrationActivationStatusDto> {
+    this.calls.activateJob += 1;
+    await this.before('activateJob', signal);
+    this.activationRequests.push({ ...request });
+
+    const job = this.requireJob(jobId);
+    if (job.direction !== 'Import') throw this.typedError('migration_invalid_state', 409);
+    if (job.state === 'Completed') return this.activationStatus(job);
+    if (isTerminalJobState(job.state)) {
+      throw this.typedError('migration_invalid_state', 409);
+    }
+    if (job.state !== 'ReadyToActivate' && job.state !== 'Activating') {
+      throw this.typedError('migration_invalid_state', 409);
+    }
+    if (!request.destinationRevision.trim()) {
+      throw this.typedError('migration_invalid_request', 400);
+    }
+
+    // The server requires stored == requested == current.
+    if (
+      request.destinationRevision !== job.destinationRevision ||
+      job.destinationRevision !== this.destinationRevision
+    ) {
+      throw this.activationConflict('migration_destination_conflict');
+    }
+    if (this.destinationStatusSnapshot() === 'Populated' && !request.confirmReplacement) {
+      throw this.activationConflict('migration_replacement_confirmation_required');
+    }
+
+    if (job.activation && job.activation.outcome !== 'Failed') {
+      return this.activationStatus(job);
+    }
+
+    const completed = this.options.activationBehavior === 'completed';
+    job.activation = {
+      request: { ...request },
+      outcome: completed ? 'Completed' : 'Running',
+      phase: completed ? null : 'Preparing',
+      maintenanceRequired: false,
+      canActivate: false,
+    };
+    job.state = completed ? 'Completed' : 'Activating';
+    job.updatedAt = this.now();
+    return this.activationStatus(job);
+  }
+
+  async getActivationStatus(
+    jobId: string,
+    signal?: AbortSignal,
+  ): Promise<MigrationActivationStatusDto> {
+    this.calls.getActivationStatus += 1;
+    await this.before('getActivationStatus', signal);
+    return this.activationStatus(this.requireJob(jobId));
+  }
+
+  /** Drives an accepted run to Completed, as the background worker would. */
+  completeActivation(jobId: string): void {
+    const job = this.requireJob(jobId);
+    job.activation = {
+      request: job.activation?.request ?? { destinationRevision: job.destinationRevision, confirmReplacement: true },
+      outcome: 'Completed',
+      phase: null,
+      maintenanceRequired: false,
+      canActivate: false,
+    };
+    job.state = 'Completed';
+    job.updatedAt = this.now();
+  }
+
+  /** Fails an accepted run; `canActivate` mirrors the server's retry rule. */
+  failActivation(
+    jobId: string,
+    errorCode = 'migration_activation_failed',
+    canActivate = true,
+  ): void {
+    const job = this.requireJob(jobId);
+    job.activation = {
+      request: job.activation?.request ?? { destinationRevision: job.destinationRevision, confirmReplacement: true },
+      outcome: 'Failed',
+      phase: null,
+      errorCode,
+      message: ERROR_MESSAGES.migration_activation_failed,
+      maintenanceRequired: false,
+      canActivate,
+    };
+    job.state = 'ReadyToActivate';
+    job.updatedAt = this.now();
+  }
+
+  /** Fail-closed recovery failure: no retry, host stays in maintenance. */
+  failActivationRecovery(jobId: string): void {
+    const job = this.requireJob(jobId);
+    job.activation = {
+      request: job.activation?.request ?? { destinationRevision: job.destinationRevision, confirmReplacement: true },
+      outcome: 'RecoveryFailed',
+      phase: 'Finalizing',
+      errorCode: 'migration_activation_recovery_failed',
+      message: ERROR_MESSAGES.migration_activation_recovery_failed,
+      maintenanceRequired: true,
+      canActivate: false,
+    };
+    job.state = 'Activating';
+    job.updatedAt = this.now();
+  }
+
+  /**
+   * Simulates the host restarting after a 202 but before the durable
+   * `Activating` transition: the accepted run is gone and the durable job is
+   * still ReadyToActivate, so the status reports Idle + canActivate.
+   */
+  loseActivation(jobId: string): void {
+    const job = this.requireJob(jobId);
+    job.activation = undefined;
+    job.state = 'ReadyToActivate';
+    job.updatedAt = this.now();
+  }
+
+  /** Test seam for the coarse in-memory phase. */
+  setActivationPhase(jobId: string, phase: MigrationActivationPhase): void {
+    const job = this.requireJob(jobId);
+    if (!job.activation) return;
+    job.activation.phase = phase;
+    job.activation.outcome = phase === 'Queued' ? 'Accepted' : 'Running';
+  }
+
+  private activationConflict(
+    code: 'migration_replacement_confirmation_required' | 'migration_destination_conflict',
+  ): MigrationActivationConflictError {
+    return new MigrationActivationConflictError(
+      code,
+      409,
+      ERROR_MESSAGES[code] ?? code,
+      {
+        destinationRevision: this.destinationRevision,
+        destinationStatus: this.destinationStatusSnapshot(),
+        existingCounts: this.existingCountsSnapshot(),
+      },
+    );
+  }
+
+  private activationStatus(job: MockJob): MigrationActivationStatusDto {
+    const run = job.activation;
+    if (run && run.outcome !== 'Failed') {
+      return {
+        jobId: job.id,
+        state: job.state,
+        outcome: run.outcome,
+        errorCode: run.errorCode ?? null,
+        message: run.message ?? null,
+        maintenanceRequired: run.maintenanceRequired,
+        destinationRevision: job.destinationRevision,
+        existingCounts: null,
+        destinationStatus: this.destinationStatusSnapshot(),
+        recoveryAvailable:
+          run.outcome === 'Completed' ? (this.options.recoveryAvailable ?? false) : false,
+        recoveryExpiresAtUtc:
+          run.outcome === 'Completed' ? (this.options.recoveryExpiresAtUtc ?? null) : null,
+        recoverySizeBytes:
+          run.outcome === 'Completed' ? (this.options.recoverySizeBytes ?? null) : null,
+        phase: run.phase,
+        accepted: run.outcome === 'Accepted' || run.outcome === 'Running',
+        canActivate: run.canActivate,
+      };
+    }
+
+    if (run && run.outcome === 'Failed') {
+      return {
+        jobId: job.id,
+        state: job.state,
+        outcome: 'Failed',
+        errorCode: run.errorCode ?? 'migration_activation_failed',
+        message: run.message ?? null,
+        maintenanceRequired: false,
+        destinationRevision: job.destinationRevision,
+        existingCounts: null,
+        destinationStatus: this.destinationStatusSnapshot(),
+        recoveryAvailable: false,
+        recoveryExpiresAtUtc: null,
+        recoverySizeBytes: null,
+        phase: null,
+        accepted: false,
+        canActivate: run.canActivate,
+      };
+    }
+
+    const completed = job.state === 'Completed';
+    return {
+      jobId: job.id,
+      state: job.state,
+      outcome: completed ? 'Completed' : 'Idle',
+      errorCode: job.failureCode ?? null,
+      message: job.failureMessage ?? null,
+      maintenanceRequired: false,
+      destinationRevision: job.destinationRevision,
+      existingCounts: null,
+      destinationStatus: this.destinationStatusSnapshot(),
+      recoveryAvailable: completed ? (this.options.recoveryAvailable ?? false) : false,
+      recoveryExpiresAtUtc: completed ? (this.options.recoveryExpiresAtUtc ?? null) : null,
+      recoverySizeBytes: completed ? (this.options.recoverySizeBytes ?? null) : null,
+      phase: null,
+      accepted: false,
+      canActivate: job.state === 'ReadyToActivate',
+    };
+  }
+
+  private destinationStatusSnapshot(): MigrationDestinationStatus {
+    return this.options.destinationStatus === 'Populated' ? 'Populated' : 'Empty';
+  }
+
+  private existingCountsSnapshot(): MigrationExistingCountsDto {
+    const counts = { ...DEFAULT_EXISTING_COUNTS, ...this.options.existingCounts };
+    counts.totalRows = existingCountsTotal(counts);
+    return counts;
   }
 
   getExportDownloadUrl(jobId: string): string {

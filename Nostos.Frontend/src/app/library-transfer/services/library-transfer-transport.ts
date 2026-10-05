@@ -12,6 +12,8 @@ import { InjectionToken, inject } from '@angular/core';
 
 import {
   BrowserMigrationChunk,
+  MigrationActivateRequestDto,
+  MigrationActivationStatusDto,
   MigrationCreateJobRequestDto,
   MigrationChunkUploadResultDto,
   MigrationJobStatusResponseDto,
@@ -24,6 +26,7 @@ import {
 import { HttpLibraryTransferTransport } from './http-library-transfer-transport';
 
 export {
+  MigrationActivationConflictError,
   MigrationTransportError,
   isMaintenanceBusy,
   isTransientStatus,
@@ -75,6 +78,24 @@ export interface LibraryTransferTransport {
   ): Promise<MigrationChunkUploadResultDto>;
 
   completeUpload(jobId: string, signal?: AbortSignal): Promise<MigrationSessionStatusDto>;
+
+  /**
+   * Starts (or observes) activation for a prepared import. Resolves with the
+   * current status envelope on 202; rejects with
+   * `MigrationActivationConflictError` for the two 409 admission conflicts
+   * that carry fresh destination facts.
+   */
+  activateJob(
+    jobId: string,
+    request: MigrationActivateRequestDto,
+    signal?: AbortSignal,
+  ): Promise<MigrationActivationStatusDto>;
+
+  /** Activation status that stays answerable during exclusive maintenance. */
+  getActivationStatus(
+    jobId: string,
+    signal?: AbortSignal,
+  ): Promise<MigrationActivationStatusDto>;
 
   /** Native browser download URL; never fetched into Angular memory (plan §39). */
   getExportDownloadUrl(jobId: string): string;

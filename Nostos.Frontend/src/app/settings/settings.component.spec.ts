@@ -1894,9 +1894,9 @@ describe('SettingsComponent shared library transfer host', () => {
     );
     expect(groups).toEqual(['Export library', 'Import library']);
 
-    // Slice B8 owns activation: the host hard-codes false even though the
-    // capabilities object advertises supportsSafeActivation.
-    expect(importFlow().supportsSafeActivation()).toBe(false);
+    // Slice B8: the host forwards the server capability instead of hard-coding
+    // false (the old gated assertion is intentionally replaced).
+    expect(importFlow().supportsSafeActivation()).toBe(true);
 
     await configure({ ...cloudCapabilities, supportsLibraryMigration: true });
     expect(testId('library-transfer-host')).toBeTruthy();
@@ -1942,21 +1942,20 @@ describe('SettingsComponent shared library transfer host', () => {
     selectFile(file);
     await waitForKind('ready-empty');
 
-    expect(testId('import-ready-empty')).toBeTruthy();
-    expect(testId('import-activation-unavailable')?.textContent).toContain(
-      'can’t finish the import automatically yet',
-    );
+    // Slice B8: with safe activation advertised the empty path hands off to
+    // the real controller instead of showing the gated explanation.
+    expect(testId('import-activation-unavailable')).toBeNull();
     expect(mock.calls.createJob).toBe(1);
     expect(mock.uploadedChunks.length).toBeGreaterThan(0);
 
+    await vi.waitFor(() => expect(mock.calls.activateJob).toBe(1), { timeout: 5_000 });
     const state = coordinator().state();
     const jobId = state.kind === 'ready-empty' ? state.jobId : '';
-    mock.setJobState(jobId, 'Completed');
-    await coordinator().refreshStatus();
-    await vi.waitFor(() => expect(completed).toHaveBeenCalledTimes(1));
-    fixture.detectChanges();
+    mock.completeActivation(jobId);
 
-    expect(testId('import-completed')).toBeTruthy();
+    await vi.waitFor(() => expect(testId('import-completed')).toBeTruthy(), { timeout: 5_000 });
+    expect(completed).toHaveBeenCalledTimes(1);
+    fixture.detectChanges();
   });
 
   it('gates replacement confirmation when safe activation is unavailable', async () => {
@@ -1964,7 +1963,7 @@ describe('SettingsComponent shared library transfer host', () => {
       {
         ...selfHostedCapabilities,
         supportsLibraryMigration: true,
-        supportsSafeActivation: true,
+        supportsSafeActivation: false,
       },
       { destinationStatus: 'Populated', existingCounts: { books: 1 } },
     );
@@ -1983,6 +1982,7 @@ describe('SettingsComponent shared library transfer host', () => {
 
     expect(coordinator().state().kind).toBe('replacement-confirmation');
     expect(mock.calls.cancelJob).toBe(0);
+    expect(mock.calls.activateJob).toBe(0);
   });
 
   it('adopts the tab lease after leaving and re-entering Settings and releases it on completion', async () => {

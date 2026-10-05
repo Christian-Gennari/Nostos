@@ -1,4 +1,5 @@
 import { Component } from '@angular/core';
+import { provideHttpClient } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
 import { signal } from '@angular/core';
@@ -41,6 +42,7 @@ describe('App', () => {
       imports: [App],
       providers: [
         provideRouter([]),
+        provideHttpClient(),
         {
           provide: CloudEntryService,
           useValue: {
@@ -50,6 +52,7 @@ describe('App', () => {
             actionPending: signal(false),
             actionError: signal(null),
             checkoutRedirect: signal(null),
+            supportsSafeActivation: signal(false),
           },
         },
         {
@@ -126,6 +129,7 @@ describe('App shell utility area', () => {
             actionPending: signal(false),
             actionError: signal(null),
             checkoutRedirect: signal(null),
+            supportsSafeActivation: signal(false),
           },
         },
         {

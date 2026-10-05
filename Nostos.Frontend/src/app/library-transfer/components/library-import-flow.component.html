@@ -193,6 +193,9 @@
     <div class="transfer-state" data-testid="import-completed">
       <p class="transfer-headline" role="status">Import complete.</p>
       <p class="transfer-copy">Your library is ready.</p>
+      @if (activationRecoveryNote(); as recoveryNote) {
+        <p class="transfer-copy" data-testid="import-recovery-note">{{ recoveryNote }}</p>
+      }
       <div class="transfer-actions">
         <button
           appButton
@@ -206,7 +209,21 @@
       </div>
     </div>
   } @else if (readyEmpty()) {
-    @if (activationFailureCopy(); as copy) {
+    @if (activationConflictReplacement(); as conflict) {
+      <app-library-replacement-dialog
+        [isOpen]="true"
+        [preflight]="null"
+        [preparedImport]="null"
+        [conflict]="conflict"
+        [supportsSafeActivation]="supportsSafeActivation()"
+        [busy]="replacementSealed()"
+        [busyLabel]="replacementBusyLabel()"
+        [retryBlocked]="activationRetryBlocked()"
+        [errorMessage]="null"
+        (confirmed)="onReplacementConfirmed()"
+        (cancelled)="onReplacementCancelled()"
+      />
+    } @else if (activationFailureCopy(); as copy) {
       <div
         class="transfer-state transfer-state--failed"
         role="alert"
@@ -215,15 +232,17 @@
         <p class="transfer-headline">{{ copy.title }}</p>
         <p class="transfer-copy">{{ copy.message }}</p>
         <div class="transfer-actions">
-          <button
-            appButton
-            type="button"
-            variant="secondary"
-            (click)="retryActivation()"
-            data-testid="import-activation-retry"
-          >
-            Retry import
-          </button>
+          @if (activationRetryOffered()) {
+            <button
+              appButton
+              type="button"
+              variant="secondary"
+              (click)="retryActivation()"
+              data-testid="import-activation-retry"
+            >
+              Retry import
+            </button>
+          }
           <button
             appButton
             type="button"
@@ -268,6 +287,9 @@
       <div class="transfer-state" data-testid="import-ready-empty">
         <p class="transfer-headline" role="status">Import prepared — finishing…</p>
         <app-library-transfer-progress phase="activating" />
+        <p class="transfer-copy" role="status" data-testid="import-activation-phase">
+          {{ activationPhaseMessage() }}
+        </p>
         <div class="transfer-actions">
           @if (!activationInProgress()) {
             <button
@@ -294,9 +316,11 @@
       [isOpen]="true"
       [preflight]="current.preflight ?? null"
       [preparedImport]="current.preparedImport ?? null"
+      [conflict]="activationConflict()"
       [supportsSafeActivation]="supportsSafeActivation()"
       [busy]="replacementSealed()"
       [busyLabel]="replacementBusyLabel()"
+      [retryBlocked]="activationRetryBlocked()"
       [errorMessage]="replacementError()"
       (confirmed)="onReplacementConfirmed()"
       (cancelled)="onReplacementCancelled()"
