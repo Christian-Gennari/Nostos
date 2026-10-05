@@ -16,7 +16,6 @@ public class BackupService : IBackupService
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IFileStorageService _fileStorage;
-    private readonly IWebHostEnvironment _env;
     private readonly BackupSettingsProvider _settingsProvider;
     private readonly ILogger<BackupService> _logger;
     private readonly string _localBackupDir;
@@ -43,7 +42,6 @@ public class BackupService : IBackupService
     {
         _scopeFactory = scopeFactory;
         _fileStorage = fileStorage;
-        _env = env;
         _settingsProvider = settingsProvider;
         _logger = logger;
 
@@ -629,11 +627,8 @@ public class BackupService : IBackupService
             var dbPath = Path.Combine(tempDir, "database", "nostos.db");
             if (File.Exists(dbPath))
             {
-                var activeDbPath = Path.Combine(_env.ContentRootPath, "nostos.db");
-                var preRestoreBackup = Path.Combine(
-                    _env.ContentRootPath,
-                    $"nostos.db.pre-restore-{DateTime.UtcNow:yyyyMMddHHmmss}"
-                );
+                var activeDbPath = ResolveActiveDatabasePath();
+                var preRestoreBackup = $"{activeDbPath}.pre-restore-{DateTime.UtcNow:yyyyMMddHHmmss}";
 
                 if (File.Exists(activeDbPath))
                     File.Copy(activeDbPath, preRestoreBackup, true);
@@ -669,6 +664,22 @@ public class BackupService : IBackupService
         {
             try { Directory.Delete(tempDir, true); } catch { /* cleanup */ }
         }
+    }
+
+    private string ResolveActiveDatabasePath()
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<NostosDbContext>();
+        var dataSource = db.Database.GetDbConnection().DataSource;
+
+        if (string.IsNullOrWhiteSpace(dataSource) ||
+            string.Equals(dataSource, ":memory:", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                "Backup restore requires a file-backed SQLite database.");
+        }
+
+        return Path.GetFullPath(dataSource);
     }
 
     private async Task EnforceMaxBackupsAsync(CancellationToken ct)
