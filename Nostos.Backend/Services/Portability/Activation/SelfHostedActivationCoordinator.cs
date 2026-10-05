@@ -121,6 +121,13 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
     /// <summary>Test seam: invoked after each named boundary; throwing models a crash.</summary>
     internal Action<string>? StepObserverForTesting { get; set; }
 
+    /// <summary>
+    /// Production observer invoked after each named boundary. The HTTP
+    /// dispatcher uses it to keep the in-memory activation phase truthful
+    /// while the live database is closed. It must never throw or block.
+    /// </summary>
+    internal Action<string>? CutoverStepObserver { get; set; }
+
     public SelfHostedActivationCoordinator(
         SelfHostedActivationPaths paths,
         LibraryMaintenanceCoordinator maintenance,
@@ -1071,7 +1078,11 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
         return new LeaseHeartbeat(stopped, task);
     }
 
-    private void Step(string name) => StepObserverForTesting?.Invoke(name);
+    private void Step(string name)
+    {
+        StepObserverForTesting?.Invoke(name);
+        CutoverStepObserver?.Invoke(name);
+    }
 
     private static long AddChecked(long left, long right)
     {

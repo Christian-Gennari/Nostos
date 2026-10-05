@@ -27,6 +27,26 @@ public enum MigrationActivationOutcome
 
     /// <summary>Fail-closed: the host stays in maintenance until a restart reconciles.</summary>
     RecoveryFailed = 4,
+
+    /// <summary>Accepted and queued behind the host's activation worker, not started yet.</summary>
+    Accepted = 5,
+}
+
+/// <summary>Coarse in-memory phase of an accepted activation run.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum MigrationActivationPhase
+{
+    /// <summary>Accepted, waiting for the host's activation worker.</summary>
+    Queued = 0,
+
+    /// <summary>Candidate rebuild/verification before the exclusive window.</summary>
+    Preparing = 1,
+
+    /// <summary>Inside the exclusive cutover window.</summary>
+    Activating = 2,
+
+    /// <summary>The cutover committed; post-commit finalization is running.</summary>
+    Finalizing = 3,
 }
 
 /// <summary>
@@ -35,6 +55,20 @@ public enum MigrationActivationOutcome
 /// <c>POST /jobs/{id}/activate</c> (202) and
 /// <c>GET /jobs/{id}/activation</c> so the browser decodes one body.
 /// Never carries filesystem paths, storage keys or provider exceptions.
+///
+/// <para><b>Client contract.</b> After a 202, poll this endpoint until the
+/// outcome is terminal. <see cref="Accepted"/> and <see cref="MigrationActivationOutcome.Running"/>
+/// mean the server owns the cutover; keep polling. <see cref="MigrationActivationOutcome.Completed"/>
+/// is final. <see cref="MigrationActivationOutcome.Failed"/> means the original
+/// library is still active and <see cref="CanActivate"/> tells the browser
+/// whether repeating the POST is allowed. <see cref="MigrationActivationOutcome.Idle"/>
+/// with <see cref="CanActivate"/> = true after an earlier 202 means the accepted
+/// run was lost (for example a host restart before the durable
+/// <c>Activating</c> transition): no activation is in progress and the browser
+/// must POST the activation again with the same confirmation rules.
+/// <see cref="MigrationActivationOutcome.RecoveryFailed"/> is fail-closed:
+/// <see cref="MaintenanceRequired"/> is true and only a restart can reconcile,
+/// so the browser must not offer a retry.</para>
 /// </summary>
 public sealed record MigrationActivationStatusResponse(
     Guid JobId,
@@ -48,7 +82,10 @@ public sealed record MigrationActivationStatusResponse(
     MigrationDestinationStatus? DestinationStatus = null,
     bool RecoveryAvailable = false,
     DateTimeOffset? RecoveryExpiresAtUtc = null,
-    long? RecoverySizeBytes = null);
+    long? RecoverySizeBytes = null,
+    MigrationActivationPhase? Phase = null,
+    bool Accepted = false,
+    bool CanActivate = false);
 
 /// <summary>Expected transport outcomes of an activation request.</summary>
 public enum MigrationActivationRequestOutcome

@@ -33,6 +33,7 @@ namespace Nostos.Backend.Tests.Portability;
 public sealed class MigrationHttpAuthTests
 {
     private const string PolicyName = "migration-owner";
+    private const string DenyPolicyName = "migration-deny-all";
 
     [Fact]
     public async Task Every_migration_route_challenges_unauthenticated_requests()
@@ -155,6 +156,33 @@ public sealed class MigrationHttpAuthTests
             .Should().Be("AllowedEmpty");
     }
 
+    [Fact]
+    public async Task Deny_all_activation_policy_refuses_both_routes()
+    {
+        await using var host = await AuthHost.StartAsync(DenyPolicyName);
+        var job = Guid.NewGuid();
+
+        var routes = new (HttpMethod Method, string Path, HttpContent? Content)[]
+        {
+            (HttpMethod.Post, $"/api/portability/migration/jobs/{job}/activate",
+                new StringContent(
+                    """{"destinationRevision":"1","confirmReplacement":true}""",
+                    System.Text.Encoding.UTF8,
+                    "application/json")),
+            (HttpMethod.Get, $"/api/portability/migration/jobs/{job}/activation", null),
+        };
+
+        foreach (var (method, path, content) in routes)
+        {
+            using var request = new HttpRequestMessage(method, path) { Content = content };
+            request.Headers.Add("X-Test-Authenticated", "1");
+            using var response = await host.Client.SendAsync(request);
+            response.StatusCode.Should().Be(
+                HttpStatusCode.Forbidden,
+                $"{method} {path} must inherit the configured deny-all policy");
+        }
+    }
+
     private static void AssertNotFoundShape(string payload)
     {
         using var document = JsonDocument.Parse(payload);
@@ -178,7 +206,7 @@ public sealed class MigrationHttpAuthTests
 
         public HttpClient Client { get; }
 
-        public static async Task<AuthHost> StartAsync()
+        public static async Task<AuthHost> StartAsync(string policyName = PolicyName)
         {
             var root = Path.Combine(Path.GetTempPath(), "nostos-migration-auth-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(root);
@@ -197,7 +225,12 @@ public sealed class MigrationHttpAuthTests
                 .AddAuthentication("Test")
                 .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>("Test", null);
             builder.Services.AddAuthorization(options =>
-                options.AddPolicy(PolicyName, policy => policy.RequireAuthenticatedUser()));
+            {
+                options.AddPolicy(PolicyName, policy => policy.RequireAuthenticatedUser());
+                options.AddPolicy(
+                    DenyPolicyName,
+                    policy => policy.RequireClaim("nostos-activation", "never-granted"));
+            });
             builder.Services.AddDbContext<NostosDbContext>(options => options.UseSqlite(
                 $"Data Source={databasePath};Pooling=False"));
             builder.Services.AddSingleton<TimeProvider>(TimeProvider.System);
@@ -235,7 +268,7 @@ public sealed class MigrationHttpAuthTests
             app.UseAuthentication();
             app.UseAuthorization();
             app.MapMigrationEndpoints(new NostosProductEndpointPolicies(
-                MigrationAuthorizationPolicy: PolicyName));
+                MigrationAuthorizationPolicy: policyName));
             await app.StartAsync();
             return new AuthHost(app, root);
         }

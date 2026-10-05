@@ -14,9 +14,9 @@ namespace Nostos.Backend.Tests.Portability;
 /// <summary>
 /// #681 Slice 8 over a real in-process SelfHosted host: real Kestrel, real
 /// SQLite, real media files and the real activation coordinator behind the HTTP
-/// routes. Every test starts activation through the API; the coordinator is
-/// gated only through its existing step observer so the exclusive window can be
-/// held open deterministically.
+/// routes. Every test starts activation through the API; the coordinator and
+/// dispatcher are gated only through their existing test seams so the pre-
+/// maintenance and exclusive windows can be held open deterministically.
 /// </summary>
 [Collection(ActivationCoordinatorCollection.Name)]
 public sealed class MigrationActivationHttpTests
@@ -35,18 +35,23 @@ public sealed class MigrationActivationHttpTests
         before.Status.Should().Be(HttpStatusCode.OK);
         before.Body.RootElement.GetProperty("state").GetString().Should().Be("ReadyToActivate");
         before.Body.RootElement.GetProperty("outcome").GetString().Should().Be("Idle");
-        before.Body.RootElement.GetProperty("destinationStatus").ValueKind.Should().Be(JsonValueKind.Null);
+        before.Body.RootElement.GetProperty("accepted").GetBoolean().Should().BeFalse();
+        before.Body.RootElement.GetProperty("canActivate").GetBoolean().Should().BeTrue();
         var revision = before.Body.RootElement.GetProperty("destinationRevision").GetString();
         revision.Should().NotBeNullOrEmpty("the browser confirms against the stored revision");
         before.Body.Dispose();
 
         var accepted = await ActivateAsync(h, jobId, revision!, confirm: false);
         accepted.Status.Should().Be(HttpStatusCode.Accepted);
-        accepted.Body.RootElement.GetProperty("outcome").GetString().Should().Be("Running");
+        accepted.Body.RootElement.GetProperty("outcome").GetString().Should().BeOneOf("Accepted", "Running");
+        accepted.Body.RootElement.GetProperty("accepted").GetBoolean().Should().BeTrue();
+        accepted.Body.RootElement.GetProperty("canActivate").GetBoolean().Should().BeFalse();
         accepted.Body.Dispose();
 
         using var completed = await WaitForOutcomeAsync(h, jobId, "Completed");
         completed.RootElement.GetProperty("state").GetString().Should().Be("Completed");
+        completed.RootElement.GetProperty("accepted").GetBoolean().Should().BeFalse();
+        completed.RootElement.GetProperty("canActivate").GetBoolean().Should().BeFalse();
         completed.RootElement.GetProperty("recoveryAvailable").GetBoolean().Should().BeFalse(
             "an empty destination has no retained recovery copy");
 
@@ -106,6 +111,38 @@ public sealed class MigrationActivationHttpTests
     }
 
     [Fact]
+    public async Task Blind_confirmation_without_the_server_revision_cannot_activate()
+    {
+        var template = ActivationCoordinatorTemplate.For(populated: true);
+        await using var h = StartHost();
+        await SeedPopulatedAsync(h, template);
+        var jobId = await UploadImportAsync(h, template);
+
+        // A single destructive POST without the server-returned revision is the
+        // migration 400, not an activation.
+        var blind = await h.PostJsonAsync(
+            string.Format(ActivatePath, jobId),
+            new { confirmReplacement = true });
+        blind.Status.Should().Be(HttpStatusCode.BadRequest);
+        blind.Body.RootElement.GetProperty("error").GetString().Should().Be("migration_invalid_request");
+        blind.Body.Dispose();
+
+        // A confirmation bound to any other revision is the documented conflict.
+        var wrong = await ActivateAsync(h, jobId, "not-the-server-revision", confirm: true);
+        wrong.Status.Should().Be(HttpStatusCode.Conflict);
+        wrong.Body.RootElement.GetProperty("error").GetString().Should().Be("migration_destination_conflict");
+        wrong.Body.Dispose();
+
+        h.GetService<SelfHostedActivationDispatcher>().StartedRunCount.Should().Be(0);
+        (await h.Client.GetStringAsync("/api/books")).Should().Contain("LIVE-ONLY-BOOK");
+
+        var status = await GetActivationAsync(h, jobId);
+        status.Body.RootElement.GetProperty("state").GetString().Should().Be("ReadyToActivate");
+        status.Body.RootElement.GetProperty("canActivate").GetBoolean().Should().BeTrue();
+        status.Body.Dispose();
+    }
+
+    [Fact]
     public async Task Stale_revision_is_rejected_and_nothing_changes()
     {
         var template = ActivationCoordinatorTemplate.For(populated: true);
@@ -129,35 +166,377 @@ public sealed class MigrationActivationHttpTests
     }
 
     [Fact]
-    public async Task Duplicate_activation_calls_start_exactly_one_run()
+    public async Task Status_reports_accepted_then_preparing_while_phase_a_runs()
     {
         var template = ActivationCoordinatorTemplate.For(populated: false);
         await using var h = StartHost();
         var jobId = await UploadImportAsync(h, template);
-        var revision = (await GetActivationAsync(h, jobId)).Body.RootElement.GetProperty("destinationRevision").GetString();
+        var revision = (await GetActivationAsync(h, jobId)).Body.RootElement
+            .GetProperty("destinationRevision").GetString();
         revision.Should().NotBeNullOrEmpty();
 
-        var first = ActivateAsync(h, jobId, revision!, confirm: false);
-        var second = ActivateAsync(h, jobId, revision!, confirm: false);
-        var results = await Task.WhenAll(first, second);
+        var dispatcher = h.GetService<SelfHostedActivationDispatcher>();
+        var beforeRun = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var phaseAEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releasePhaseA = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        dispatcher.BeforeRunForTesting = (_, ct) => beforeRun.Task.WaitAsync(ct);
+        dispatcher.CoordinatorCreatedForTesting = coordinator =>
+            coordinator.StepObserverForTesting = step =>
+            {
+                if (string.Equals(step, SelfHostedActivationSteps.AfterAdmission, StringComparison.Ordinal))
+                {
+                    phaseAEntered.TrySetResult();
+                    releasePhaseA.Task.GetAwaiter().GetResult();
+                }
+            };
+
         try
         {
-            results.Should().Contain(result => result.Status == HttpStatusCode.Accepted,
-                "at least one call is accepted while the other observes or waits out the run");
-            results.Should().OnlyContain(result =>
-                result.Status == HttpStatusCode.Accepted
-                || result.Status == HttpStatusCode.Conflict
-                || result.Status == HttpStatusCode.ServiceUnavailable);
+            var accepted = await ActivateAsync(h, jobId, revision!, confirm: false);
+            accepted.Status.Should().Be(HttpStatusCode.Accepted);
+            accepted.Body.Dispose();
+
+            // Accepted but not started: a distinct queued outcome, not Idle.
+            var queued = await GetActivationAsync(h, jobId);
+            queued.Status.Should().Be(HttpStatusCode.OK);
+            queued.Body.RootElement.GetProperty("outcome").GetString().Should().Be("Accepted");
+            queued.Body.RootElement.GetProperty("phase").GetString().Should().Be("Queued");
+            queued.Body.RootElement.GetProperty("accepted").GetBoolean().Should().BeTrue();
+            queued.Body.Dispose();
+
+            beforeRun.SetResult();
+            (await Task.Run(() => phaseAEntered.Task.Wait(TimeSpan.FromSeconds(60))))
+                .Should().BeTrue("the run must reach its pre-maintenance phase");
+
+            // The durable row is still ReadyToActivate; the registry keeps the
+            // status truthful anyway.
+            var durableState = await h.WithDb(db => db.MigrationJobRecords.AsNoTracking()
+                .Where(row => row.Id == jobId).Select(row => row.State).SingleAsync());
+            durableState.Should().Be((int)MigrationJobState.ReadyToActivate);
+
+            var running = await GetActivationAsync(h, jobId);
+            running.Status.Should().Be(HttpStatusCode.OK);
+            running.Body.RootElement.GetProperty("outcome").GetString().Should().Be("Running");
+            running.Body.RootElement.GetProperty("phase").GetString().Should().Be("Preparing");
+            running.Body.RootElement.GetProperty("accepted").GetBoolean().Should().BeTrue();
+            running.Body.RootElement.GetProperty("canActivate").GetBoolean().Should().BeFalse();
+            running.Body.Dispose();
+
+            releasePhaseA.SetResult();
+            using var completed = await WaitForOutcomeAsync(h, jobId, "Completed");
+            completed.RootElement.GetProperty("state").GetString().Should().Be("Completed");
         }
         finally
         {
-            foreach (var result in results) result.Body.Dispose();
+            releasePhaseA.TrySetResult();
+            dispatcher.BeforeRunForTesting = null;
+            dispatcher.CoordinatorCreatedForTesting = null;
         }
+    }
+
+    [Fact]
+    public async Task Concurrent_activation_calls_start_exactly_one_run()
+    {
+        var template = ActivationCoordinatorTemplate.For(populated: false);
+        await using var h = StartHost();
+        var jobId = await UploadImportAsync(h, template);
+        var revision = (await GetActivationAsync(h, jobId)).Body.RootElement
+            .GetProperty("destinationRevision").GetString();
+        revision.Should().NotBeNullOrEmpty();
+
+        var dispatcher = h.GetService<SelfHostedActivationDispatcher>();
+        var phaseAEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releasePhaseA = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        dispatcher.CoordinatorCreatedForTesting = coordinator =>
+            coordinator.StepObserverForTesting = step =>
+            {
+                if (string.Equals(step, SelfHostedActivationSteps.AfterAdmission, StringComparison.Ordinal))
+                {
+                    phaseAEntered.TrySetResult();
+                    releasePhaseA.Task.GetAwaiter().GetResult();
+                }
+            };
+
+        try
+        {
+            var calls = Enumerable.Range(0, 4)
+                .Select(_ => ActivateAsync(h, jobId, revision!, confirm: false))
+                .ToArray();
+            var results = await Task.WhenAll(calls);
+            try
+            {
+                results.Should().OnlyContain(result => result.Status == HttpStatusCode.Accepted);
+                results.Should().Contain(result =>
+                    result.Body.RootElement.GetProperty("outcome").GetString() == "Accepted");
+            }
+            finally
+            {
+                foreach (var result in results) result.Body.Dispose();
+            }
+
+            (await Task.Run(() => phaseAEntered.Task.Wait(TimeSpan.FromSeconds(60))))
+                .Should().BeTrue("the single admitted run must reach Phase A");
+            dispatcher.StartedRunCount.Should().Be(1);
+
+            releasePhaseA.SetResult();
+            using var completed = await WaitForOutcomeAsync(h, jobId, "Completed");
+            completed.RootElement.GetProperty("state").GetString().Should().Be("Completed");
+            dispatcher.StartedRunCount.Should().Be(1);
+            (await h.Client.GetStringAsync("/api/books")).Should().Contain("Portable EPUB");
+        }
+        finally
+        {
+            releasePhaseA.TrySetResult();
+            dispatcher.CoordinatorCreatedForTesting = null;
+        }
+    }
+
+    [Fact]
+    public async Task Run_registry_admits_exactly_one_of_many_concurrent_requests_200_times()
+    {
+        var request = new MigrationActivateRequest("revision", ConfirmReplacement: true);
+        for (var iteration = 0; iteration < 200; iteration++)
+        {
+            var slot = new SelfHostedActivationRunSlot(Guid.NewGuid());
+            var admissions = 0;
+            var workers = Enumerable.Range(0, 8).Select(_ => Task.Run(() =>
+            {
+                if (slot.TryAdmit(request)) Interlocked.Increment(ref admissions);
+            })).ToArray();
+            await Task.WhenAll(workers);
+            admissions.Should().Be(1, $"iteration {iteration} must admit exactly one run");
+            slot.State.Should().Be(SelfHostedActivationRunState.Accepted);
+        }
+    }
+
+    [Fact]
+    public async Task Post_after_a_rolled_back_run_is_allowed_and_succeeds()
+    {
+        var template = ActivationCoordinatorTemplate.For(populated: false);
+        await using var h = StartHost();
+        var jobId = await UploadImportAsync(h, template);
+        var revision = (await GetActivationAsync(h, jobId)).Body.RootElement
+            .GetProperty("destinationRevision").GetString();
+        revision.Should().NotBeNullOrEmpty();
+
+        var dispatcher = h.GetService<SelfHostedActivationDispatcher>();
+        var throwOnce = 1;
+        dispatcher.CoordinatorCreatedForTesting = coordinator =>
+            coordinator.StepObserverForTesting = step =>
+            {
+                if (string.Equals(step, SelfHostedActivationSteps.PhaseCandidatePrepared, StringComparison.Ordinal)
+                    && Interlocked.Exchange(ref throwOnce, 0) == 1)
+                {
+                    throw new InvalidOperationException("synthetic pre-maintenance failure");
+                }
+            };
+
+        try
+        {
+            var first = await ActivateAsync(h, jobId, revision!, confirm: false);
+            first.Status.Should().Be(HttpStatusCode.Accepted);
+            first.Body.Dispose();
+
+            using var failed = await WaitForOutcomeAsync(h, jobId, "Failed");
+            failed.RootElement.GetProperty("state").GetString().Should().Be("ReadyToActivate");
+            failed.RootElement.GetProperty("accepted").GetBoolean().Should().BeFalse();
+            failed.RootElement.GetProperty("canActivate").GetBoolean().Should().BeTrue(
+                "a run that failed before the durable transition leaves the job activatable");
+            failed.RootElement.GetProperty("errorCode").GetString().Should().Be("migration_activation_failed");
+            dispatcher.StartedRunCount.Should().Be(1);
+
+            var second = await ActivateAsync(h, jobId, revision!, confirm: false);
+            second.Status.Should().Be(HttpStatusCode.Accepted);
+            second.Body.Dispose();
+
+            using var completed = await WaitForOutcomeAsync(h, jobId, "Completed");
+            completed.RootElement.GetProperty("state").GetString().Should().Be("Completed");
+            dispatcher.StartedRunCount.Should().Be(2);
+        }
+        finally
+        {
+            dispatcher.CoordinatorCreatedForTesting = null;
+        }
+    }
+
+    [Fact]
+    public async Task Status_answers_during_the_exclusive_window_without_opening_the_live_database()
+    {
+        var template = ActivationCoordinatorTemplate.For(populated: true);
+        await using var h = StartHost();
+        await SeedPopulatedAsync(h, template);
+        var jobId = await UploadImportAsync(h, template);
+        var otherJobId = await UploadImportAsync(h, template);
+        var revision = (await GetActivationAsync(h, jobId)).Body.RootElement
+            .GetProperty("destinationRevision").GetString();
+        revision.Should().NotBeNullOrEmpty();
+
+        var dispatcher = h.GetService<SelfHostedActivationDispatcher>();
+        using var entered = new SemaphoreSlim(0);
+        using var release = new SemaphoreSlim(0);
+        dispatcher.CoordinatorCreatedForTesting = coordinator =>
+            coordinator.StepObserverForTesting = step =>
+            {
+                if (string.Equals(step, SelfHostedActivationSteps.AfterQuiesce, StringComparison.Ordinal))
+                {
+                    entered.Release();
+                    release.Wait(TimeSpan.FromSeconds(60));
+                }
+            };
+
+        var livePath = Path.GetFullPath(h.DatabasePath);
+        var opened = new List<string>();
+        try
+        {
+            var accepted = await ActivateAsync(h, jobId, revision!, confirm: true);
+            accepted.Status.Should().Be(HttpStatusCode.Accepted);
+            accepted.Body.Dispose();
+
+            (await Task.Run(() => entered.Wait(TimeSpan.FromSeconds(60))))
+                .Should().BeTrue("activation must reach the exclusive window");
+
+            File.Exists(livePath + "-shm").Should().BeFalse("the window starts quiesced");
+            File.Exists(livePath + "-wal").Should().BeFalse();
+
+            // Arm the seam only now: the coordinator's own quiesce/reopen
+            // opens are legitimate and happen outside the status request.
+            SelfHostedSqliteFile.ConnectionOpeningForTesting = path =>
+            {
+                lock (opened) opened.Add(Path.GetFullPath(path));
+            };
+
+            var during = await GetActivationAsync(h, jobId);
+            during.Status.Should().Be(HttpStatusCode.OK);
+            during.Body.RootElement.GetProperty("state").GetString().Should().Be("Activating");
+            during.Body.RootElement.GetProperty("outcome").GetString().Should().Be("Running");
+            during.Body.RootElement.GetProperty("phase").GetString().Should().Be("Activating");
+            during.Body.RootElement.GetProperty("accepted").GetBoolean().Should().BeTrue();
+            during.Body.Dispose();
+
+            // A duplicate POST for the running job replays from memory; another
+            // prepared job gets the documented busy answer. Neither may open the
+            // live database.
+            var duplicate = await ActivateAsync(h, jobId, revision!, confirm: true);
+            duplicate.Status.Should().Be(HttpStatusCode.Accepted);
+            duplicate.Body.RootElement.GetProperty("outcome").GetString().Should().Be("Running");
+            duplicate.Body.Dispose();
+
+            var other = await ActivateAsync(h, otherJobId, revision!, confirm: true);
+            other.Status.Should().Be(HttpStatusCode.ServiceUnavailable);
+            other.Body.RootElement.GetProperty("error").GetString().Should().Be("migration_activation_busy");
+            other.Body.Dispose();
+
+            lock (opened) opened.Should().NotContain(livePath);
+            File.Exists(livePath + "-shm").Should().BeFalse(
+                "the status endpoint must not open the live database inside the window");
+            File.Exists(livePath + "-wal").Should().BeFalse();
+            dispatcher.StartedRunCount.Should().Be(1);
+
+            var books = await h.SendAsync(HttpMethod.Get, "/api/books");
+            books.Status.Should().Be(HttpStatusCode.ServiceUnavailable);
+            books.Body.RootElement.GetProperty("code").GetString().Should().Be("migration_activation_busy");
+            books.Body.Dispose();
+
+            release.Release();
+            using var completed = await WaitForOutcomeAsync(h, jobId, "Completed");
+            completed.RootElement.GetProperty("state").GetString().Should().Be("Completed");
+        }
+        finally
+        {
+            release.Release();
+            SelfHostedSqliteFile.ConnectionOpeningForTesting = null;
+            dispatcher.CoordinatorCreatedForTesting = null;
+        }
+    }
+
+    [Fact]
+    public async Task Restart_after_accepted_202_reports_idle_can_activate_and_repost_completes()
+    {
+        var template = ActivationCoordinatorTemplate.For(populated: false);
+        await using var h = StartHost();
+        var jobId = await UploadImportAsync(h, template);
+        var revision = (await GetActivationAsync(h, jobId)).Body.RootElement
+            .GetProperty("destinationRevision").GetString();
+        revision.Should().NotBeNullOrEmpty();
+
+        // Hold the accepted run before it starts; a host restart then drops it
+        // exactly like a process crash before the durable transition.
+        var dispatcher = h.GetService<SelfHostedActivationDispatcher>();
+        dispatcher.BeforeRunForTesting = (_, ct) => Task.Delay(Timeout.InfiniteTimeSpan, ct);
+
+        var accepted = await ActivateAsync(h, jobId, revision!, confirm: false);
+        accepted.Status.Should().Be(HttpStatusCode.Accepted);
+        accepted.Body.Dispose();
+
+        await h.RestartAsync();
+
+        // The lost 202 contract: the job is untouched, no run exists, and the
+        // client is told to repeat the POST.
+        var afterRestart = await GetActivationAsync(h, jobId);
+        afterRestart.Status.Should().Be(HttpStatusCode.OK);
+        afterRestart.Body.RootElement.GetProperty("state").GetString().Should().Be("ReadyToActivate");
+        afterRestart.Body.RootElement.GetProperty("outcome").GetString().Should().Be("Idle");
+        afterRestart.Body.RootElement.GetProperty("accepted").GetBoolean().Should().BeFalse();
+        afterRestart.Body.RootElement.GetProperty("canActivate").GetBoolean().Should().BeTrue();
+        afterRestart.Body.Dispose();
+
+        var restarted = h.GetService<SelfHostedActivationDispatcher>();
+        restarted.StartedRunCount.Should().Be(0);
+
+        var repost = await ActivateAsync(h, jobId, revision!, confirm: false);
+        repost.Status.Should().Be(HttpStatusCode.Accepted);
+        repost.Body.Dispose();
 
         using var completed = await WaitForOutcomeAsync(h, jobId, "Completed");
         completed.RootElement.GetProperty("state").GetString().Should().Be("Completed");
-        h.GetService<SelfHostedActivationDispatcher>().StartedRunCount.Should().Be(1);
+        restarted.StartedRunCount.Should().Be(1);
         (await h.Client.GetStringAsync("/api/books")).Should().Contain("Portable EPUB");
+    }
+
+    [Fact]
+    public async Task Fail_closed_recovery_state_is_reported_with_the_operator_message()
+    {
+        var template = ActivationCoordinatorTemplate.For(populated: true);
+        await using var h = StartHost();
+        await SeedPopulatedAsync(h, template);
+        var jobId = await UploadImportAsync(h, template);
+        var revision = (await GetActivationAsync(h, jobId)).Body.RootElement
+            .GetProperty("destinationRevision").GetString();
+        revision.Should().NotBeNullOrEmpty();
+
+        var dispatcher = h.GetService<SelfHostedActivationDispatcher>();
+        dispatcher.CoordinatorCreatedForTesting = coordinator =>
+            coordinator.StepObserverForTesting = step =>
+            {
+                if (string.Equals(step, SelfHostedActivationSteps.AfterReopen, StringComparison.Ordinal))
+                {
+                    StripJobLease(h.DatabasePath);
+                }
+            };
+
+        try
+        {
+            var accepted = await ActivateAsync(h, jobId, revision!, confirm: true);
+            accepted.Status.Should().Be(HttpStatusCode.Accepted);
+            accepted.Body.Dispose();
+
+            using var failed = await WaitForOutcomeAsync(h, jobId, "RecoveryFailed");
+            failed.RootElement.GetProperty("maintenanceRequired").GetBoolean().Should().BeTrue();
+            failed.RootElement.GetProperty("accepted").GetBoolean().Should().BeFalse();
+            failed.RootElement.GetProperty("canActivate").GetBoolean().Should().BeFalse();
+            failed.RootElement.GetProperty("errorCode").GetString()
+                .Should().Be("migration_activation_recovery_failed");
+            failed.RootElement.GetProperty("message").GetString().Should().Contain("maintenance");
+
+            var other = await h.SendAsync(HttpMethod.Get, "/api/books");
+            other.Status.Should().Be(HttpStatusCode.ServiceUnavailable);
+            other.Body.RootElement.GetProperty("code").GetString().Should().Be("migration_activation_busy");
+            other.Body.Dispose();
+        }
+        finally
+        {
+            dispatcher.CoordinatorCreatedForTesting = null;
+        }
     }
 
     [Fact]
@@ -203,121 +582,6 @@ public sealed class MigrationActivationHttpTests
         pending.Status.Should().Be(HttpStatusCode.Conflict);
         pending.Body.RootElement.GetProperty("error").GetString().Should().Be("migration_invalid_state");
         pending.Body.Dispose();
-    }
-
-    [Fact]
-    public async Task Status_answers_during_the_exclusive_window_without_opening_the_live_database()
-    {
-        var template = ActivationCoordinatorTemplate.For(populated: true);
-        await using var h = StartHost();
-        await SeedPopulatedAsync(h, template);
-        var jobId = await UploadImportAsync(h, template);
-        var revision = (await GetActivationAsync(h, jobId)).Body.RootElement.GetProperty("destinationRevision").GetString();
-        revision.Should().NotBeNullOrEmpty();
-
-        var dispatcher = h.GetService<SelfHostedActivationDispatcher>();
-        using var entered = new SemaphoreSlim(0);
-        using var release = new SemaphoreSlim(0);
-        dispatcher.CoordinatorCreatedForTesting = coordinator =>
-            coordinator.StepObserverForTesting = step =>
-            {
-                if (string.Equals(step, SelfHostedActivationSteps.AfterQuiesce, StringComparison.Ordinal))
-                {
-                    entered.Release();
-                    release.Wait(TimeSpan.FromSeconds(60));
-                }
-            };
-
-        var livePath = Path.GetFullPath(h.DatabasePath);
-        var opened = new List<string>();
-        try
-        {
-            var accepted = await ActivateAsync(h, jobId, revision!, confirm: true);
-            accepted.Status.Should().Be(HttpStatusCode.Accepted);
-            accepted.Body.Dispose();
-
-            (await Task.Run(() => entered.Wait(TimeSpan.FromSeconds(60))))
-                .Should().BeTrue("activation must reach the exclusive window");
-
-            File.Exists(livePath + "-shm").Should().BeFalse("the window starts quiesced");
-            File.Exists(livePath + "-wal").Should().BeFalse();
-
-            // Arm the seam only now: the coordinator's own quiesce/reopen
-            // opens are legitimate and happen outside the status request.
-            SelfHostedSqliteFile.ConnectionOpeningForTesting = path =>
-            {
-                lock (opened) opened.Add(Path.GetFullPath(path));
-            };
-
-            var during = await GetActivationAsync(h, jobId);
-            during.Status.Should().Be(HttpStatusCode.OK);
-            during.Body.RootElement.GetProperty("state").GetString().Should().Be("Activating");
-            during.Body.RootElement.GetProperty("outcome").GetString().Should().Be("Running");
-            during.Body.Dispose();
-
-            lock (opened) opened.Should().NotContain(livePath);
-            File.Exists(livePath + "-shm").Should().BeFalse(
-                "the status endpoint must not open the live database inside the window");
-            File.Exists(livePath + "-wal").Should().BeFalse();
-
-            var other = await h.SendAsync(HttpMethod.Get, "/api/books");
-            other.Status.Should().Be(HttpStatusCode.ServiceUnavailable);
-            other.Body.RootElement.GetProperty("code").GetString().Should().Be("migration_activation_busy");
-            other.Body.Dispose();
-
-            release.Release();
-            using var completed = await WaitForOutcomeAsync(h, jobId, "Completed");
-            completed.RootElement.GetProperty("state").GetString().Should().Be("Completed");
-        }
-        finally
-        {
-            release.Release();
-            SelfHostedSqliteFile.ConnectionOpeningForTesting = null;
-            dispatcher.CoordinatorCreatedForTesting = null;
-        }
-    }
-
-    [Fact]
-    public async Task Fail_closed_recovery_state_is_reported_with_the_operator_message()
-    {
-        var template = ActivationCoordinatorTemplate.For(populated: true);
-        await using var h = StartHost();
-        await SeedPopulatedAsync(h, template);
-        var jobId = await UploadImportAsync(h, template);
-        var revision = (await GetActivationAsync(h, jobId)).Body.RootElement.GetProperty("destinationRevision").GetString();
-        revision.Should().NotBeNullOrEmpty();
-
-        var dispatcher = h.GetService<SelfHostedActivationDispatcher>();
-        dispatcher.CoordinatorCreatedForTesting = coordinator =>
-            coordinator.StepObserverForTesting = step =>
-            {
-                if (string.Equals(step, SelfHostedActivationSteps.AfterReopen, StringComparison.Ordinal))
-                {
-                    StripJobLease(h.DatabasePath);
-                }
-            };
-
-        try
-        {
-            var accepted = await ActivateAsync(h, jobId, revision!, confirm: true);
-            accepted.Status.Should().Be(HttpStatusCode.Accepted);
-            accepted.Body.Dispose();
-
-            using var failed = await WaitForOutcomeAsync(h, jobId, "RecoveryFailed");
-            failed.RootElement.GetProperty("maintenanceRequired").GetBoolean().Should().BeTrue();
-            failed.RootElement.GetProperty("errorCode").GetString()
-                .Should().Be("migration_activation_recovery_failed");
-            failed.RootElement.GetProperty("message").GetString().Should().Contain("maintenance");
-
-            var other = await h.SendAsync(HttpMethod.Get, "/api/books");
-            other.Status.Should().Be(HttpStatusCode.ServiceUnavailable);
-            other.Body.RootElement.GetProperty("code").GetString().Should().Be("migration_activation_busy");
-            other.Body.Dispose();
-        }
-        finally
-        {
-            dispatcher.CoordinatorCreatedForTesting = null;
-        }
     }
 
     private static MigrationHttpHarness StartHost(Action<IServiceCollection>? configure = null)
