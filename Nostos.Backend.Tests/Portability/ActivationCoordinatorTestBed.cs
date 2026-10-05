@@ -229,6 +229,107 @@ internal sealed class ActivationCoordinatorTemplate : IDisposable
             Version = 3,
         });
         db.SaveChanges();
+
+        SeedUnrelatedOperationalRows(db);
+        db.SaveChanges();
+    }
+
+    /// <summary>
+    /// Seeds unrelated migration jobs with their own session, chunk receipt,
+    /// artifact and reservation rows. The restored-original comparison must
+    /// keep every one of these byte-identical, so the row-scoped exclusion for
+    /// the activating job is genuinely proven.
+    /// </summary>
+    private static void SeedUnrelatedOperationalRows(NostosDbContext db)
+    {
+        var pendingExport = new MigrationJobRecord
+        {
+            Id = Guid.NewGuid(),
+            Direction = (int)MigrationDirection.Export,
+            State = (int)MigrationJobState.Pending,
+            RecoveryStatus = (int)MigrationRecoveryStatus.NotRequired,
+            CreatedAtUtc = new DateTime(2026, 10, 2, 9, 0, 0, DateTimeKind.Utc),
+            UpdatedAtUtc = new DateTime(2026, 10, 2, 9, 30, 0, DateTimeKind.Utc),
+            IdempotencyKey = "unrelated-pending-export",
+            CreationPayloadHash = new string('b', 64),
+            ExpiresAtUtc = new DateTime(2026, 10, 12, 9, 0, 0, DateTimeKind.Utc),
+            AttemptNumber = 1,
+            Version = 2,
+        };
+        var completedExport = new MigrationJobRecord
+        {
+            Id = Guid.NewGuid(),
+            Direction = (int)MigrationDirection.Export,
+            State = (int)MigrationJobState.Completed,
+            RecoveryStatus = (int)MigrationRecoveryStatus.NotRequired,
+            CreatedAtUtc = new DateTime(2026, 10, 1, 7, 0, 0, DateTimeKind.Utc),
+            UpdatedAtUtc = new DateTime(2026, 10, 1, 7, 45, 0, DateTimeKind.Utc),
+            CompletedAtUtc = new DateTime(2026, 10, 1, 7, 45, 0, DateTimeKind.Utc),
+            IdempotencyKey = "unrelated-completed-export",
+            CreationPayloadHash = new string('c', 64),
+            ExpiresAtUtc = new DateTime(2026, 10, 11, 7, 0, 0, DateTimeKind.Utc),
+            AttemptNumber = 1,
+            Version = 5,
+        };
+        db.MigrationJobRecords.AddRange(pendingExport, completedExport);
+
+        var session = new MigrationSessionRecord
+        {
+            Id = Guid.NewGuid(),
+            JobId = pendingExport.Id,
+            Purpose = (int)MigrationSessionPurpose.Export,
+            State = (int)MigrationSessionState.Complete,
+            TotalBytes = 2048,
+            ChunkSize = MigrationContractLimits.DefaultChunkBytes,
+            TotalChunks = 1,
+            FileIdentitySizeBytes = 2048,
+            FileIdentitySha256 = new string('d', 64),
+            ClientFingerprint = "unrelated-client",
+            IdempotencyKey = "unrelated-session",
+            CreationPayloadHash = new string('e', 64),
+            ReceivedBytes = 2048,
+            CreatedAtUtc = new DateTime(2026, 10, 2, 9, 1, 0, DateTimeKind.Utc),
+            UpdatedAtUtc = new DateTime(2026, 10, 2, 9, 2, 0, DateTimeKind.Utc),
+            ExpiresAtUtc = new DateTime(2026, 10, 12, 9, 0, 0, DateTimeKind.Utc),
+            CompletedAtUtc = new DateTime(2026, 10, 2, 9, 2, 0, DateTimeKind.Utc),
+            StorageKey = "migration/sessions/unrelated-session",
+            Version = 1,
+        };
+        db.MigrationSessionRecords.Add(session);
+        db.MigrationChunkReceiptRecords.Add(new MigrationChunkReceiptRecord
+        {
+            SessionId = session.Id,
+            ChunkIndex = 0,
+            OffsetBytes = 0,
+            LengthBytes = 2048,
+            Sha256 = new string('f', 64),
+            ReceivedAtUtc = new DateTime(2026, 10, 2, 9, 2, 0, DateTimeKind.Utc),
+        });
+        db.MigrationStorageReservations.Add(new MigrationStorageReservationRecord
+        {
+            Id = Guid.NewGuid(),
+            Purpose = (int)MigrationSessionPurpose.Export,
+            ReservedBytes = 4096,
+            MaterializedBytes = 2048,
+            CreatedAtUtc = new DateTime(2026, 10, 2, 9, 0, 30, DateTimeKind.Utc),
+            ExpiresAtUtc = new DateTime(2026, 10, 12, 9, 0, 0, DateTimeKind.Utc),
+            ClaimedJobId = pendingExport.Id,
+            Version = 1,
+        });
+        db.MigrationExportArtifactRecords.Add(new MigrationExportArtifactRecord
+        {
+            JobId = completedExport.Id,
+            State = (int)MigrationExportArtifactState.Available,
+            StorageKey = "migration/exports/unrelated.nostos",
+            FileName = "unrelated.nostos",
+            ContentType = "application/zip",
+            SizeBytes = 8192,
+            Sha256 = new string('1', 64),
+            CreatedAtUtc = new DateTime(2026, 10, 1, 7, 1, 0, DateTimeKind.Utc),
+            AvailableAtUtc = new DateTime(2026, 10, 1, 7, 2, 0, DateTimeKind.Utc),
+            ExpiresAtUtc = new DateTime(2026, 10, 8, 7, 0, 0, DateTimeKind.Utc),
+            Version = 1,
+        });
     }
 
     private async Task<Dictionary<string, string>> ReadStagedMediaSnapshotAsync()
@@ -582,43 +683,48 @@ internal sealed class ActivationCoordinatorTestBed : IAsyncDisposable
     }
 
     /// <summary>
-    /// Full logical comparison of the restored original generation. Every table,
-    /// every row and every column is compared, plus the media SHA-256 set and the
-    /// database file hash. The ONLY rows excluded are the activation job's own
-    /// row in <c>MigrationJobRecords</c>: the protocol legitimately transitions
-    /// it to <c>Activating</c> (and to <c>Failed</c> after a rolled-back
-    /// in-process failure), updating State, lease, UpdatedAt and Version. Tests
-    /// assert that row's expected state explicitly.
+    /// Compares the restored original generation with the pre-activation logical
+    /// dump: every table, every row and every column, plus the media SHA-256 and
+    /// path set. Exactly ONE row is excluded by key: the tested activation job's
+    /// own <c>MigrationJobRecords</c> row, whose State/lease/UpdatedAt/Version
+    /// the protocol legitimately changes (callers assert its expected state
+    /// explicitly). Every other row must be identical, including the unrelated
+    /// migration jobs, sessions, chunk receipts, artifacts and reservations the
+    /// fixture seeds. There is no whole-table exclusion. No SQLite-file hash is
+    /// asserted: the job's own lease/state writes mean the main database file is
+    /// not untouched.
     /// </summary>
     internal void AssertOriginalGeneration()
     {
         var actual = ActivationBuildFixture.DumpAllTables(Paths.LiveDatabase);
         var expected = OriginalAllTables;
+        actual.Keys.Should().BeEquivalentTo(expected.Keys, "no table may appear or disappear");
+
+        var expectedJobs = expected["MigrationJobRecords"];
+        var actualJobs = actual["MigrationJobRecords"];
+        expectedJobs.Count(IsActivationJobRow).Should().Be(1, "the fixture seeds exactly one activation job");
+        actualJobs.Count(IsActivationJobRow).Should().Be(1, "the activation job row must still exist");
+        (expectedJobs.Count - 1).Should().BeGreaterThan(
+            0, "the fixture must seed at least one unrelated migration job for the row-scoped exclusion to be meaningful");
+
         foreach (var table in expected.Keys)
         {
-            if (string.Equals(table, "MigrationJobRecords", StringComparison.Ordinal))
-            {
-                // Excluded: the activation job's State/lease/timestamps/Version
-                // are the protocol's own live-DB mutations; asserted separately.
-                continue;
-            }
-
-            actual[table].Should().BeEquivalentTo(expected[table],
-                $"table {table} must be logically identical to the original");
+            var expectedRows = table == "MigrationJobRecords"
+                ? expectedJobs.Where(row => !IsActivationJobRow(row)).ToList()
+                : expected[table];
+            var actualRows = table == "MigrationJobRecords"
+                ? actualJobs.Where(row => !IsActivationJobRow(row)).ToList()
+                : actual[table];
+            actualRows.Should().BeEquivalentTo(expectedRows,
+                $"table {table} must be logically identical to the original except the activation job's own row");
         }
-
-        actual.Keys.Should().BeEquivalentTo(expected.Keys, "no table may appear or disappear");
 
         ActivationBuildFixture.MediaSnapshot(Paths.LiveMedia)
             .Should().BeEquivalentTo(OriginalMedia, "the media root must be identical to the original");
-
-        // Whole-file byte identity is deliberately NOT asserted: the activation
-        // job's own row is legitimately written on the live database (lease,
-        // Activating, and after the window the lease release), so the main file
-        // is not untouched. The rename-not-rewrite property of the retained
-        // components is proven by the recovery-step tests, and the logical
-        // comparison above is the authoritative content proof.
     }
+
+    private bool IsActivationJobRow(string row) =>
+        string.Equals(row.Split('|', 2)[0], JobId.ToString(), StringComparison.OrdinalIgnoreCase);
 
     internal async Task AssertImportedGenerationAsync()
     {

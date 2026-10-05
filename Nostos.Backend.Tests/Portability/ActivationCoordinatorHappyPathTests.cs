@@ -47,7 +47,12 @@ public sealed class ActivationCoordinatorHappyPathTests
             var db = scope.ServiceProvider.GetRequiredService<Nostos.Backend.Data.NostosDbContext>();
             (await db.BackupRecords.CountAsync()).Should().Be(1, "local backup history is host state");
             (await db.MigrationStorageReservations.CountAsync()).Should().BeGreaterThanOrEqualTo(1);
-            (await db.MigrationJobRecords.CountAsync()).Should().Be(1);
+
+            var jobs = await db.MigrationJobRecords.AsNoTracking().ToArrayAsync();
+            jobs.Should().HaveCount(3, "all migration jobs, including unrelated ones, are carried host state");
+            jobs.Single(job => job.Id == bed.JobId).State.Should().Be((int)MigrationJobState.Completed);
+            jobs.Count(job => job.Direction == (int)MigrationDirection.Export)
+                .Should().Be(2, "unrelated export jobs survive activation unchanged");
         }
 
         // The real storage service reads the imported bytes through the real layout.
