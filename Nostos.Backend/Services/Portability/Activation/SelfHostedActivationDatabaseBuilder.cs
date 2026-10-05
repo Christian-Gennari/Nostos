@@ -78,7 +78,7 @@ internal sealed class SelfHostedActivationDatabaseBuilder : ISelfHostedActivatio
     private readonly LibraryMaintenanceCoordinator _maintenance;
     private readonly TimeProvider _clock;
 
-    internal SelfHostedActivationDatabaseBuilder(
+    public SelfHostedActivationDatabaseBuilder(
         SelfHostedActivationPaths paths,
         IPortableImportStaging staging,
         LibraryMaintenanceCoordinator maintenance,

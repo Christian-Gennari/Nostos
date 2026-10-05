@@ -402,6 +402,60 @@ public sealed class EfMigrationJobStore : IMigrationJobStore
         return false;
     }
 
+    /// <summary>
+    /// Sets the job's recovery projection under the caller's active worker lease
+    /// and row version, using the store-owned clock exactly like every other
+    /// guarded mutation. Fast-follow for activation: the recovery status is
+    /// written against the newly activated database before the job is completed.
+    /// </summary>
+    public async Task UpdateRecoveryStatusAsync(
+        Guid jobId,
+        MigrationRecoveryStatus recoveryStatus,
+        string leaseToken,
+        CancellationToken ct)
+    {
+        if (!Enum.IsDefined(recoveryStatus))
+        {
+            throw new ArgumentOutOfRangeException(nameof(recoveryStatus), recoveryStatus, "Unknown recovery status.");
+        }
+
+        ArgumentException.ThrowIfNullOrEmpty(leaseToken);
+
+        for (var attempt = 1; attempt <= MaxGuardedMutationAttempts; attempt++)
+        {
+            var snapshot = await FindAsync(jobId, ct)
+                ?? throw MigrationJobStoreException.NotFound(jobId);
+
+            var now = UtcNow();
+            var updated = await _db.MigrationJobRecords
+                .Where(j =>
+                    j.Id == jobId
+                    && j.Version == snapshot.Version
+                    && j.MigrationLeaseToken == leaseToken
+                    && j.LeaseExpiresAtUtc != null
+                    && j.LeaseExpiresAtUtc > now
+                    && j.State != (int)MigrationJobState.Completed
+                    && j.State != (int)MigrationJobState.Failed
+                    && j.State != (int)MigrationJobState.Cancelled
+                    && j.State != (int)MigrationJobState.Expired)
+                .ExecuteUpdateAsync(
+                    s => s
+                        .SetProperty(j => j.RecoveryStatus, (int)recoveryStatus)
+                        .SetProperty(j => j.UpdatedAtUtc, now)
+                        .SetProperty(j => j.Version, j => j.Version + 1),
+                    ct);
+
+            if (updated == 1)
+            {
+                return;
+            }
+
+            await EnsureRetryStillValidAsync(jobId, snapshot, leaseToken, now, ct);
+        }
+
+        throw MigrationJobStoreException.LeaseConflict(jobId);
+    }
+
     public async Task ReleaseLeaseAsync(Guid jobId, string leaseToken, CancellationToken ct)
     {
         ArgumentException.ThrowIfNullOrEmpty(leaseToken);

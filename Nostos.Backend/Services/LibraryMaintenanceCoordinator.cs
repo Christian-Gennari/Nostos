@@ -41,6 +41,7 @@ public sealed class LibraryMaintenanceCoordinator : ILibraryMaintenanceCoordinat
     private int _operations;
     private bool _closed;
     private bool _startupPending;
+    private bool _recoveryRequired;
     private ExclusiveLease? _exclusive;
     private TaskCompletionSource _changed = NewSignal();
     private TaskCompletionSource _drained = NewSignal();
@@ -57,6 +58,15 @@ public sealed class LibraryMaintenanceCoordinator : ILibraryMaintenanceCoordinat
     }
 
     public bool IsMaintenanceActive { get { lock (_sync) return _closed; } }
+
+    /// <summary>
+    /// True after a runtime cutover could not be repaired in-process. Admission
+    /// stays closed and the durable marker stays on disk until a process restart
+    /// runs the startup reconciler; only that successful reconciliation opens
+    /// admission again. Used by the activation coordinator when a rollback or
+    /// roll-forward cannot be completed.
+    /// </summary>
+    public bool IsRecoveryRequired { get { lock (_sync) return _recoveryRequired; } }
 
     /// <summary>
     /// Called before DB bootstrap and hosted workers. With an unresolved cutover
@@ -145,6 +155,33 @@ public sealed class LibraryMaintenanceCoordinator : ILibraryMaintenanceCoordinat
         }
     }
 
+    /// <summary>
+    /// Makes the closed admission sticky: a cutover that could not be repaired
+    /// in-process must never reopen the host onto a partially restored
+    /// generation. The durable maintenance marker is kept (best effort) and a
+    /// later exclusive-lease disposal cannot reopen admission; only a process
+    /// restart followed by successful startup reconciliation may do that.
+    /// </summary>
+    internal void FailClosedForRecovery()
+    {
+        lock (_sync)
+        {
+            _recoveryRequired = true;
+            _closed = true;
+            try
+            {
+                _marker?.Write(LibraryMaintenanceReason.Activation);
+            }
+            catch (IOException)
+            {
+                // The in-memory gate still keeps admission closed.
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
+        }
+    }
+
     internal IAsyncDisposable EnterStartupRecovery()
     {
         lock (_sync)
@@ -161,6 +198,7 @@ public sealed class LibraryMaintenanceCoordinator : ILibraryMaintenanceCoordinat
         {
             if (!_startupPending || _exclusive is not null)
                 throw new InvalidOperationException("Startup recovery has not released its lease.");
+            _recoveryRequired = false;
             _marker!.Clear();
             _startupPending = false;
             OpenAdmission();
@@ -182,6 +220,9 @@ public sealed class LibraryMaintenanceCoordinator : ILibraryMaintenanceCoordinat
             if (lease is not null && !ReferenceEquals(_exclusive, lease)) return;
             _exclusive = null;
             if (_startupPending) return; // a failed startup must remain closed
+            // A cutover that could not be repaired keeps the host closed until a
+            // restart reconciles it; the durable marker stays for that startup.
+            if (_recoveryRequired) return;
             try { _marker?.Clear(); }
             finally { OpenAdmission(); }
         }
