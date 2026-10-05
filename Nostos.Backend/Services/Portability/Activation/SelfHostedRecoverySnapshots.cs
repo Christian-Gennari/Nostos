@@ -193,7 +193,7 @@ internal sealed class SelfHostedMigrationRecoveryService :
     /// <summary>Test seam: throws at named finalization steps to simulate a crash.</summary>
     internal Action<SelfHostedRecoveryFinalizeStep>? FinalizeStepForTesting { get; set; }
 
-    internal SelfHostedMigrationRecoveryService(
+    public SelfHostedMigrationRecoveryService(
         SelfHostedActivationPaths paths,
         SelfHostedRecoveryManifestStore manifests,
         SelfHostedActivationJournalStore journals,
@@ -284,12 +284,13 @@ internal sealed class SelfHostedMigrationRecoveryService :
             throw Flaw("The live database must be checkpointed before recovery retention.");
 
         // Writers are drained: the evidence built here is the final description
-        // of the bytes that the next rename retains.
+        // of the bytes that the next rename retains. The live database is only
+        // read through a plain FileStream: no SQLite connection may be opened
+        // after QuiesceLive (the schema level was captured before maintenance).
         var evidence = await BuildRetainedMediaEvidenceAsync(capture, ct);
         if (!File.Exists(_paths.LiveDatabase)) throw Flaw("The live database is missing.");
         var databaseBytes = new FileInfo(_paths.LiveDatabase).Length;
         var databaseSha256 = await HashStableFileAsync(_paths.LiveDatabase, ct);
-        var schema = ReadSchemaLevel(_paths.LiveDatabase);
         var created = _clock.GetUtcNow();
         var manifest = new SelfHostedRecoveryManifest(
             jobId,
@@ -303,8 +304,8 @@ internal sealed class SelfHostedMigrationRecoveryService :
             evidence.MediaBytes,
             databaseSha256,
             evidence.Media,
-            DatabaseSchemaVersion: schema.Version,
-            DatabaseMigrationCount: schema.Count,
+            DatabaseSchemaVersion: capture.DatabaseSchemaVersion,
+            DatabaseMigrationCount: capture.DatabaseMigrationCount,
             MediaRehashedCount: evidence.RehashedCount);
         _manifests.Write(manifest);
         return manifest;
@@ -724,7 +725,7 @@ internal sealed class SelfHostedMigrationRecoveryService :
             if (File.Exists(directory)) throw Flaw("The media root contains an unexpected file.");
             if (!Directory.Exists(directory)) throw Flaw("The media root contains an unexpected entry.");
             var name = Path.GetFileName(directory);
-            if (!Guid.TryParseExact(name, "N", out var bookId) || bookId == Guid.Empty || name != bookId.ToString("N"))
+            if (!TryReadBookDirectoryName(name, out var bookId))
                 throw Flaw("The media root contains an unexpected directory.");
 
             foreach (var entry in Directory.EnumerateFileSystemEntries(directory).Order(StringComparer.Ordinal))
@@ -752,7 +753,7 @@ internal sealed class SelfHostedMigrationRecoveryService :
             _paths.VerifyMediaPath(directory);
             if (!Directory.Exists(directory)) continue;
             var name = Path.GetFileName(directory);
-            if (!Guid.TryParseExact(name, "N", out var bookId)) continue;
+            if (!TryReadBookDirectoryName(name, out var bookId)) continue;
             foreach (var entry in Directory.EnumerateFileSystemEntries(directory).Order(StringComparer.Ordinal))
             {
                 _paths.VerifyMediaPath(entry);
@@ -819,6 +820,26 @@ internal sealed class SelfHostedMigrationRecoveryService :
         return Convert.ToHexString(digest).ToLowerInvariant();
     }
 
+    /// <summary>
+    /// A media directory whose name is one canonical rendering of a nonempty
+    /// book identifier. The live <c>FileStorageService</c> layout and the
+    /// activation candidate builder both use the default "D" rendering, so the
+    /// recovery retention pass must accept exactly that form; the compact "N"
+    /// form stays accepted because the protocol fixtures and any pre-existing
+    /// control trees use it. Any other spelling fails closed.
+    /// </summary>
+    private static bool TryReadBookDirectoryName(string name, out Guid bookId)
+    {
+        bookId = Guid.Empty;
+        if (!Guid.TryParse(name, out var parsed) || parsed == Guid.Empty)
+            return false;
+        if (!string.Equals(name, parsed.ToString("D"), StringComparison.Ordinal)
+            && !string.Equals(name, parsed.ToString("N"), StringComparison.Ordinal))
+            return false;
+        bookId = parsed;
+        return true;
+    }
+
     private static (string Kind, string Extension) ClassifyMediaFile(string fileName)
     {
         var extension = Path.GetExtension(fileName).ToLowerInvariant();
@@ -834,6 +855,7 @@ internal sealed class SelfHostedMigrationRecoveryService :
     {
         try
         {
+            SelfHostedSqliteFile.ConnectionOpeningForTesting?.Invoke(databasePath);
             using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
             {
                 DataSource = databasePath,

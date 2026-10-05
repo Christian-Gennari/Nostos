@@ -259,6 +259,31 @@ builder.Services.AddSingleton<ISelfHostedActivationRecoveryStep>(sp =>
 builder.Services.AddSingleton<ISelfHostedActivationRecoveryStep>(sp =>
     new SelfHostedActivationComponentStep(sp.GetRequiredService<SelfHostedActivationPaths>(), database: true));
 builder.Services.AddSingleton<SelfHostedActivationRecoveryStartupService>();
+
+// --- #681 SLICE 7: END-TO-END ACTIVATION COORDINATOR ---
+// The coordinator joins the job admission, candidate builders, recovery
+// retention and the journaled cutover. It is scoped because it resolves the
+// scoped recovery/job services from fresh scopes at the activation boundary;
+// post-commit work resolves new scopes so it executes against the newly
+// activated database, never a pre-switch connection identity.
+builder.Services.AddSingleton<SelfHostedRecoveryManifestStore>();
+builder.Services.AddSingleton<ISelfHostedActivationRecoveryStep>(sp =>
+    new SelfHostedActivationEmptyRetentionStep(
+        sp.GetRequiredService<SelfHostedActivationPaths>(),
+        sp.GetRequiredService<SelfHostedRecoveryManifestStore>()));
+builder.Services.AddSingleton<ISelfHostedVolumeSpaceProbe, VolumeSpaceProbe>();
+builder.Services.AddScoped<SelfHostedActivationCapacity>();
+builder.Services.AddScoped<ISelfHostedActivationCandidateMediaBuilder, SelfHostedActivationCandidateMediaBuilder>();
+builder.Services.AddScoped<ISelfHostedActivationDatabaseBuilder, SelfHostedActivationDatabaseBuilder>();
+builder.Services.AddSingleton<ISelfHostedSqliteLifecycle, SelfHostedSqliteLifecycle>();
+builder.Services.AddSingleton<IPortableLibraryVerifier, PortableLibraryVerifier>();
+builder.Services.AddScoped<SelfHostedMigrationRecoveryService>();
+builder.Services.AddScoped<ISelfHostedRecoverySnapshots>(sp => sp.GetRequiredService<SelfHostedMigrationRecoveryService>());
+builder.Services.AddScoped<ISelfHostedRecoveryCatalog>(sp => sp.GetRequiredService<SelfHostedMigrationRecoveryService>());
+builder.Services.AddScoped<ISelfHostedRecoveryCleanup>(sp => sp.GetRequiredService<SelfHostedMigrationRecoveryService>());
+builder.Services.AddScoped<SelfHostedActivationCoordinator>();
+builder.Services.AddScoped<IMigrationActivationService>(sp => sp.GetRequiredService<SelfHostedActivationCoordinator>());
+
 builder.Services.AddScoped<IBackupService, BackupService>();
 
 // One instance serves as the job store, the hosted worker that drains it, and
