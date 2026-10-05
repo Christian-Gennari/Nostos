@@ -972,6 +972,7 @@ export class PdfReader implements OnInit, OnDestroy, IReader {
   }
 
   ngOnDestroy() {
+    this.clearSearch();
     this.unregisterAssistantContext?.();
     this.unregisterAssistantContext = null;
     this.progressUpdater$.complete();
