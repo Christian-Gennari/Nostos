@@ -5,58 +5,53 @@
  * A host may answer the per-chunk `uploadChunk` operation with a two-step
  * direct flow instead of accepting the bytes itself:
  *
- * 1. the browser asks the application server for a short-lived upload ticket
- *    for one archive part (`POST .../upload-session/parts/{index}/ticket`);
- * 2. the browser sends the `Blob` slice straight to the ticket target with
- *    exactly the ticket's headers and no application credentials;
- * 3. the browser reports the target's completion token (the response header
- *    named `DIRECT_UPLOAD_COMPLETION_HEADER`) back to the application server
- *    (`POST .../upload-session/parts/{index}/complete`).
+ * 1. the browser asks the application server for a bounded window of
+ *    short-lived storage targets for 1-based part numbers
+ *    (`POST .../upload-session/part-tickets`);
+ * 2. the browser PUTs each part slice straight to its target with no
+ *    application credentials and no custom headers;
+ * 3. the browser reports the finished parts to the application server
+ *    (`POST .../upload-session/reconcile`), whose session response is the
+ *    authority on which parts are received. The server verifies the bytes
+ *    itself; the browser never asserts a provider receipt token.
  *
- * Nothing storage-provider-specific crosses this boundary: the ticket is only
- * a URL, method, required headers and expiry. The application server remains
- * the receipt authority; the target is never asked to authenticate the user.
+ * Nothing storage-provider-specific crosses this boundary: a ticket is only a
+ * part number, its session-derived range and a URL. The application server
+ * remains the receipt authority and the finalizer.
  */
 
-/** Response header the upload target must expose for a completed part. */
-export const DIRECT_UPLOAD_COMPLETION_HEADER = 'ETag';
-
-/**
- * Body of the part-ticket request. The part index is carried in the request
- * path; the server derives the exact byte range from the session contract.
- */
-export interface MigrationPartTicketRequestDto {
+/** One browser-reported finished part: number, exact bytes and SHA-256. */
+export interface MigrationPartClaimDto {
+  partNumber: number;
+  sha256: string;
   lengthBytes: number;
-  sha256: string;
 }
 
-/** Short-lived authorization to send one part to a storage target. */
+/** Batch request for a bounded window of 1-based part numbers. */
+export interface MigrationPartTicketRequestDto {
+  sessionId: string;
+  partNumbers: number[];
+}
+
+/** One signed storage target for an exact part and byte range. */
 export interface MigrationPartTicketDto {
-  /** Absolute or relative target URL. */
-  url: string;
-  /** HTTP method the target expects; object-storage presigned parts use PUT. */
-  method: string;
-  /**
-   * The complete set of headers the target expects. The browser sends exactly
-   * these and adds no application credential (cookie, bearer token) of its own.
-   */
-  requiredHeaders: Readonly<Record<string, string>>;
-  /** ISO-8601 UTC instant after which the ticket must not be used. */
+  partNumber: number;
+  chunkIndex: number;
+  offsetBytes: number;
+  lengthBytes: number;
+  uploadUrl: string;
+}
+
+/** The bounded part-target window the browser sends parts to. */
+export interface MigrationPartTicketBatchDto {
+  sessionId: string;
+  jobId: string;
   expiresAtUtc: string;
+  tickets: MigrationPartTicketDto[];
 }
 
-/**
- * Body that reports a target-accepted part to the application server. The
- * target's completion token is provider evidence, not authorization.
- */
-export interface MigrationPartCompletionRequestDto {
-  etag: string;
-  sha256: string;
-  byteLength: number;
-}
-
-/** True when the ticket is already past its expiry at `nowMs`. */
-export function isPartTicketExpired(ticket: MigrationPartTicketDto, nowMs: number): boolean {
-  const expires = Date.parse(ticket.expiresAtUtc);
-  return Number.isFinite(expires) && expires <= nowMs;
+/** Reconcile request: the finished parts the server should verify. */
+export interface MigrationPartReconcileRequestDto {
+  sessionId: string;
+  parts: MigrationPartClaimDto[];
 }

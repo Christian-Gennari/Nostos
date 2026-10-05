@@ -77,6 +77,9 @@ function isResumeState(value: unknown): value is PersistedTransferResumeState {
     typeof record['createdAt'] === 'string' &&
     (record['destinationRevision'] === undefined ||
       typeof record['destinationRevision'] === 'string') &&
+    (record['transportMode'] === undefined ||
+      record['transportMode'] === 'direct' ||
+      record['transportMode'] === 'application-server') &&
     isActivationState(record['activation']) &&
     typeof identity === 'object' &&
     identity !== null &&

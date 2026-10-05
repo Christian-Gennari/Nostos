@@ -1,170 +1,150 @@
 import {
   DirectUploadAbortedError,
   DirectUploadNetworkError,
-  XhrDirectUploadClient,
+  FetchDirectUploadClient,
+  UnsafeUploadTargetError,
+  isLoopbackHost,
+  validateDirectUploadTarget,
 } from './direct-upload-client';
 
-/**
- * Minimal XMLHttpRequest surface for asserting the exact wire request the bare
- * storage primitive issues. The production class is the only place in the app
- * that opens a request outside Angular's HttpClient, so these assertions are
- * the proof that no interceptor/credential can ever reach a presigned target.
- */
-class FakeXhr {
-  method = '';
-  url = '';
-  async = false;
-  withCredentials = true;
-  requestHeaders: Record<string, string> = {};
-  body: Document | XMLHttpRequestBodyInit | null = null;
-  status = 200;
-  statusText = 'OK';
-  responseHeaders = '';
-  aborted = false;
-  upload: { onprogress: ((event: ProgressEvent) => void) | null } | null = { onprogress: null };
-  onload: (() => void) | null = null;
-  onerror: (() => void) | null = null;
-  ontimeout: (() => void) | null = null;
-
-  open(method: string, url: string, async = false): void {
-    this.method = method;
-    this.url = url;
-    this.async = async;
-  }
-
-  setRequestHeader(name: string, value: string): void {
-    this.requestHeaders[name] = value;
-  }
-
-  getAllResponseHeaders(): string {
-    return this.responseHeaders;
-  }
-
-  send(body?: Document | XMLHttpRequestBodyInit | null): void {
-    this.body = body ?? null;
-  }
-
-  abort(): void {
-    this.aborted = true;
-  }
-}
-
-function clientFor(fake: FakeXhr): XhrDirectUploadClient {
-  return new XhrDirectUploadClient(() => fake as unknown as XMLHttpRequest);
-}
-
-describe('XhrDirectUploadClient', () => {
-  it('sends exactly the ticket headers with credentials disabled and no app auth', async () => {
-    const fake = new FakeXhr();
-    fake.status = 200;
-    fake.statusText = 'OK';
-    fake.responseHeaders = 'ETag: "abc"\r\nx-storage-request-id: req-1\r\n';
-    const client = clientFor(fake);
+describe('FetchDirectUploadClient', () => {
+  it('PUTs with the exact credential-free init and no headers of any kind', async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 200, statusText: 'OK' }));
+    const client = new FetchDirectUploadClient(fetchMock as unknown as typeof fetch);
     const blob = new Blob(['part-bytes']);
-
-    const promise = client.upload({
-      url: 'https://storage.example/part/0?sig=xyz',
-      method: 'PUT',
-      headers: { 'x-storage-signature': 'sig', 'Content-Type': 'application/octet-stream' },
-      body: blob,
-      signal: new AbortController().signal,
-    });
-
-    expect(fake.method).toBe('PUT');
-    expect(fake.url).toBe('https://storage.example/part/0?sig=xyz');
-    expect(fake.withCredentials).toBe(false);
-    expect(fake.requestHeaders).toEqual({
-      'x-storage-signature': 'sig',
-      'Content-Type': 'application/octet-stream',
-    });
-    expect(fake.requestHeaders['Authorization']).toBeUndefined();
-    expect(fake.requestHeaders['Cookie']).toBeUndefined();
-    expect(fake.body).toBe(blob);
-
-    fake.onload?.();
-    await expect(promise).resolves.toEqual({
-      status: 200,
-      statusText: 'OK',
-      headers: { ETag: '"abc"', 'x-storage-request-id': 'req-1' },
-    });
-  });
-
-  it('forwards upload progress with a total even when the event is not computable', async () => {
-    const fake = new FakeXhr();
-    const client = clientFor(fake);
-    const blob = new Blob([new Uint8Array(32)]);
-    const progress: Array<[number, number]> = [];
-
-    const promise = client.upload({
-      url: 'https://storage.example/part/0',
-      method: 'PUT',
-      headers: {},
-      body: blob,
-      signal: new AbortController().signal,
-      onProgress: (loaded, total) => progress.push([loaded, total]),
-    });
-
-    fake.upload?.onprogress?.({ loaded: 16, total: 0, lengthComputable: false } as ProgressEvent);
-    fake.upload?.onprogress?.({ loaded: 32, total: 32, lengthComputable: true } as ProgressEvent);
-    fake.onload?.();
-    await promise;
-
-    expect(progress).toEqual([
-      [16, 32],
-      [32, 32],
-    ]);
-  });
-
-  it('aborts the XHR and rejects when the signal aborts mid-flight', async () => {
-    const fake = new FakeXhr();
-    const client = clientFor(fake);
     const controller = new AbortController();
 
-    const promise = client.upload({
-      url: 'https://storage.example/part/0',
-      method: 'PUT',
-      headers: {},
-      body: new Blob(['x']),
+    const response = await client.upload({
+      url: 'https://storage.example/part?sig=xyz',
+      body: blob,
       signal: controller.signal,
     });
-    controller.abort();
 
-    await expect(promise).rejects.toBeInstanceOf(DirectUploadAbortedError);
-    expect(fake.aborted).toBe(true);
+    expect(response).toEqual({ status: 200, statusText: 'OK' });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('https://storage.example/part?sig=xyz');
+    expect(init).toEqual({
+      method: 'PUT',
+      body: blob,
+      credentials: 'omit',
+      redirect: 'error',
+      referrerPolicy: 'no-referrer',
+      mode: 'cors',
+      signal: controller.signal,
+    });
+    expect('headers' in init).toBe(false);
   });
 
-  it('rejects an aborted signal before opening a request', async () => {
-    const fake = new FakeXhr();
-    const client = clientFor(fake);
-    const controller = new AbortController();
-    controller.abort();
+  it('returns non-2xx statuses to the transport instead of throwing', async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 403, statusText: 'Forbidden' }));
+    const client = new FetchDirectUploadClient(fetchMock as unknown as typeof fetch);
 
     await expect(
       client.upload({
-        url: 'https://storage.example/part/0',
-        method: 'PUT',
-        headers: {},
+        url: 'https://storage.example/part',
+        body: new Blob(['x']),
+        signal: new AbortController().signal,
+      }),
+    ).resolves.toEqual({ status: 403, statusText: 'Forbidden' });
+  });
+
+  it('maps an aborted signal to DirectUploadAbortedError', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const fetchMock = vi.fn(async () => {
+      throw new DOMException('The operation was aborted.', 'AbortError');
+    });
+    const client = new FetchDirectUploadClient(fetchMock as unknown as typeof fetch);
+
+    await expect(
+      client.upload({
+        url: 'https://storage.example/part',
         body: new Blob(['x']),
         signal: controller.signal,
       }),
     ).rejects.toBeInstanceOf(DirectUploadAbortedError);
-    expect(fake.url).toBe('');
-    expect(fake.aborted).toBe(false);
   });
 
-  it('rejects a target that cannot be reached', async () => {
-    const fake = new FakeXhr();
-    const client = clientFor(fake);
-
-    const promise = client.upload({
-      url: 'https://storage.example/part/0',
-      method: 'PUT',
-      headers: {},
-      body: new Blob(['x']),
-      signal: new AbortController().signal,
+  it('refuses to replay the body to a redirect: init says redirect=error and the rejection surfaces', async () => {
+    // Browsers reject a `redirect: 'error'` response with a TypeError instead
+    // of following it; the target never receives the archive part twice.
+    const fetchMock = vi.fn(async () => {
+      throw new TypeError('Failed to fetch');
     });
-    fake.onerror?.();
+    const client = new FetchDirectUploadClient(fetchMock as unknown as typeof fetch);
+    const blob = new Blob(['part-bytes']);
 
-    await expect(promise).rejects.toBeInstanceOf(DirectUploadNetworkError);
+    await expect(
+      client.upload({
+        url: 'https://storage.example/part',
+        body: blob,
+        signal: new AbortController().signal,
+      }),
+    ).rejects.toBeInstanceOf(DirectUploadNetworkError);
+
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(init.redirect).toBe('error');
+    expect(init.credentials).toBe('omit');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('maps an unreachable target to DirectUploadNetworkError', async () => {
+    const fetchMock = vi.fn(async () => {
+      throw new TypeError('Failed to fetch');
+    });
+    const client = new FetchDirectUploadClient(fetchMock as unknown as typeof fetch);
+
+    await expect(
+      client.upload({
+        url: 'https://storage.example/part',
+        body: new Blob(['x']),
+        signal: new AbortController().signal,
+      }),
+    ).rejects.toBeInstanceOf(DirectUploadNetworkError);
+  });
+});
+
+describe('validateDirectUploadTarget', () => {
+  const appOrigin = 'https://app.nostos.example';
+
+  it('accepts an absolute HTTPS target on another origin', () => {
+    const url = validateDirectUploadTarget('https://uploads.example/part?sig=1', appOrigin);
+    expect(url.origin).toBe('https://uploads.example');
+  });
+
+  it('accepts plain HTTP only for loopback hosts', () => {
+    expect(validateDirectUploadTarget('http://localhost:9000/part', appOrigin).origin).toBe(
+      'http://localhost:9000',
+    );
+    expect(validateDirectUploadTarget('http://127.0.0.1:9000/part', appOrigin).origin).toBe(
+      'http://127.0.0.1:9000',
+    );
+    expect(isLoopbackHost('localhost')).toBe(true);
+    expect(isLoopbackHost('storage.example')).toBe(false);
+  });
+
+  it('refuses plain HTTP on a public host', () => {
+    expect(() => validateDirectUploadTarget('http://storage.example/part', appOrigin)).toThrow(
+      UnsafeUploadTargetError,
+    );
+  });
+
+  it('refuses a target on the application origin', () => {
+    expect(() => validateDirectUploadTarget(`${appOrigin}/upload`, appOrigin)).toThrow(
+      UnsafeUploadTargetError,
+    );
+  });
+
+  it('refuses relative, non-HTTP and non-URL targets', () => {
+    for (const target of [
+      '/upload/part',
+      'part',
+      'javascript:alert(1)',
+      'data:text/plain,abc',
+      'file:///tmp/part',
+    ]) {
+      expect(() => validateDirectUploadTarget(target, appOrigin)).toThrow(UnsafeUploadTargetError);
+    }
   });
 });
