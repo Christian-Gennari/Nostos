@@ -76,7 +76,13 @@ public class NoteRepository : INoteRepository
 
     public async Task DeleteTopicLinksAsync(Guid noteId)
     {
+        // ExecuteDelete bypasses the change tracker, so the portable-state
+        // revision must be advanced explicitly in the same transaction
+        // (issue #679 Slice 11).
+        await using var transaction = await _db.Database.BeginTransactionAsync();
         await _db.NoteTopics.Where(nc => nc.NoteId == noteId).ExecuteDeleteAsync();
+        await LibraryRevision.AdvanceAsync(_db);
+        await transaction.CommitAsync();
     }
     public async Task<List<NoteModel>> SearchByTextAsync(
         string query,

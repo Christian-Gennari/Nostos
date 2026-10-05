@@ -187,6 +187,129 @@ public sealed class MigrationCleanupEngineTests
         await h.Sweep(); hook.DeleteSuccesses.Should().Be(1);
     }
 
+    [Fact]
+    public async Task Legacy_import_scratch_sweep_removes_only_expired_generated_trees()
+    {
+        await using var h = new MigrationEngineHarness();
+        await h.InitializeAsync();
+        var scratchRoot = h.Provider.GetRequiredService<MigrationLegacyScratchSweep>().ScratchRoot;
+        Directory.CreateDirectory(scratchRoot);
+
+        var expired = Path.Combine(scratchRoot, "nostos-portable-import-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(expired, "staging"));
+        await File.WriteAllTextAsync(Path.Combine(expired, "archive.nostos"), "old");
+        Directory.SetLastWriteTimeUtc(expired, h.Clock.GetUtcNow().AddHours(-25).UtcDateTime);
+
+        var fresh = Path.Combine(scratchRoot, "nostos-portable-import-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(fresh);
+        Directory.SetLastWriteTimeUtc(fresh, h.Clock.GetUtcNow().UtcDateTime);
+
+        var unknown = Path.Combine(scratchRoot, "operator-data");
+        Directory.CreateDirectory(unknown);
+        var unknownFile = Path.Combine(unknown, "keep");
+        await File.WriteAllTextAsync(unknownFile, "keep");
+        Directory.SetLastWriteTimeUtc(unknown, h.Clock.GetUtcNow().AddHours(-100).UtcDateTime);
+
+        var malformed = Path.Combine(scratchRoot, "nostos-portable-import-not-a-guid");
+        Directory.CreateDirectory(malformed);
+        Directory.SetLastWriteTimeUtc(malformed, h.Clock.GetUtcNow().AddHours(-100).UtcDateTime);
+
+        var rootSentinel = Path.Combine(scratchRoot, "keep.txt");
+        await File.WriteAllTextAsync(rootSentinel, "keep");
+
+        await h.Sweep();
+
+        Directory.Exists(expired).Should().BeFalse("a generated scratch tree past the TTL is garbage");
+        Directory.Exists(fresh).Should().BeTrue("the full TTL grace protects a fresh scratch tree");
+        Directory.Exists(unknown).Should().BeTrue("an unknown operator sibling is never a sweep target");
+        File.Exists(unknownFile).Should().BeTrue();
+        Directory.Exists(malformed).Should().BeTrue("a malformed generated name is not a sweep target");
+        File.Exists(rootSentinel).Should().BeTrue("the scratch root itself is never a target");
+        await h.Sweep();
+    }
+
+    [Fact]
+    public async Task Legacy_import_scratch_sweep_never_follows_a_linked_descendant()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        await using var h = new MigrationEngineHarness();
+        await h.InitializeAsync();
+        var scratchRoot = h.Provider.GetRequiredService<MigrationLegacyScratchSweep>().ScratchRoot;
+        Directory.CreateDirectory(scratchRoot);
+
+        var outside = Path.Combine(h.DirectoryPath, "outside");
+        Directory.CreateDirectory(outside);
+        var sentinel = Path.Combine(outside, "sentinel");
+        await File.WriteAllTextAsync(sentinel, "safe");
+
+        var generated = Path.Combine(scratchRoot, "nostos-portable-import-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(generated);
+        Directory.CreateSymbolicLink(Path.Combine(generated, "link"), outside);
+        Directory.SetLastWriteTimeUtc(generated, h.Clock.GetUtcNow().AddHours(-25).UtcDateTime);
+
+        await h.Sweep();
+
+        File.Exists(sentinel).Should().BeTrue("a linked descendant must never be traversed");
+        (await File.ReadAllTextAsync(sentinel)).Should().Be("safe");
+        Directory.Delete(generated, recursive: true);
+    }
+
+    [Fact]
+    public async Task Unreferenced_export_directory_without_a_job_row_is_removed_but_known_jobs_are_kept()
+    {
+        await using var h = new MigrationEngineHarness();
+        await h.InitializeAsync();
+
+        // A generated export directory whose job row does not exist.
+        var orphanJobId = Guid.NewGuid();
+        var orphanDirectory = h.Paths.EnsureDirectoryExists(h.Paths.GetExportDirectory(orphanJobId));
+        await File.WriteAllTextAsync(Path.Combine(orphanDirectory, "library.nostos.tmp"), "partial");
+        Directory.SetLastWriteTimeUtc(orphanDirectory, h.Clock.GetUtcNow().AddHours(-100).UtcDateTime);
+
+        // A known job's export directory must survive, even with a temp file.
+        var knownJob = await h.NewJobAsync(MigrationDirection.Export);
+        var knownDirectory = h.Paths.EnsureDirectoryExists(h.Paths.GetExportDirectory(knownJob));
+        var knownTemp = Path.Combine(knownDirectory, "library.nostos.tmp");
+        await File.WriteAllTextAsync(knownTemp, "in-progress");
+
+        // An unknown sibling is untouched.
+        var unknown = Path.Combine(h.Paths.GetExportsRoot(), "operator-data");
+        Directory.CreateDirectory(unknown);
+        var unknownFile = Path.Combine(unknown, "keep");
+        await File.WriteAllTextAsync(unknownFile, "keep");
+
+        await h.Sweep();
+
+        Directory.Exists(orphanDirectory).Should().BeFalse("no job row owns the generated export directory");
+        Directory.Exists(knownDirectory).Should().BeTrue("a known job owns its export directory");
+        File.Exists(knownTemp).Should().BeTrue();
+        Directory.Exists(unknown).Should().BeTrue("unknown siblings are never enumerated as targets");
+        File.Exists(unknownFile).Should().BeTrue();
+        await h.Sweep();
+    }
+
+    [Fact]
+    public async Task Tombstoned_staging_area_is_swept_without_waiting_for_the_ttl()
+    {
+        await using var h = new MigrationEngineHarness();
+        h.Configure = services =>
+            services.AddScoped<IMigrationStagingCleanup, FilePortableImportStagingCleanup>();
+        await h.InitializeAsync();
+
+        var provider = new FilePortableImportStaging(h.Paths);
+        var id = await provider.CreateAsync();
+        var directory = h.Paths.GetStagingDirectory(id.Value);
+        await File.WriteAllTextAsync(
+            Path.Combine(directory, FilePortableImportStaging.DeletedMarkerFileName), "deleted");
+        Directory.SetLastWriteTimeUtc(directory, h.Clock.GetUtcNow().UtcDateTime);
+
+        await h.Sweep();
+
+        Directory.Exists(directory).Should().BeFalse(
+            "a durable deletion tombstone is already logically deleted and sweepable immediately");
+        await h.Sweep();
+    }
+
     private sealed class StagingHook : IMigrationStagingCleanup
     {
         internal Dictionary<PortableStagingId, DateTimeOffset> Areas { get; } = new();

@@ -48,6 +48,14 @@ public sealed class TransferStorageOptions
     public int MaxConcurrentJobs { get; set; } = 1;
 
     /// <summary>
+    /// Per-installation ceiling on non-terminal migration jobs. A bounded
+    /// number of outstanding jobs keeps a client from parking unbounded
+    /// durable rows and reservations. One session per job is enforced
+    /// structurally, so this also bounds outstanding sessions.
+    /// </summary>
+    public int MaxOutstandingJobs { get; set; } = 10;
+
+    /// <summary>
     /// Global unallocatable safety margin kept free on the transfer volume.
     /// The effective margin is the larger of this byte floor and
     /// <see cref="DiskSafetyMarginPercent"/> of the physical volume.
@@ -119,6 +127,12 @@ public sealed class TransferStorageOptions
         {
             throw new InvalidOperationException(
                 $"'{SectionName}:MaxConcurrentJobs' must be at least 1.");
+        }
+
+        if (options.MaxOutstandingJobs < 1)
+        {
+            throw new InvalidOperationException(
+                $"'{SectionName}:MaxOutstandingJobs' must be at least 1.");
         }
 
         if (options.DiskSafetyMarginBytes < 0)

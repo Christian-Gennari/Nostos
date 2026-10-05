@@ -26,7 +26,8 @@ public interface IMigrationStagingCleanup
 public sealed class MigrationTransferCleanup(
     NostosDbContext db, TransferPathResolver paths, ITransferStorageCapacity capacity,
     IEnumerable<IMigrationStagingCleanup> stagingHooks, ILogger<MigrationTransferCleanup> logger,
-    IMigrationMaintenanceGate maintenance, FileMigrationUploadStore files, TimeProvider? timeProvider = null)
+    IMigrationMaintenanceGate maintenance, FileMigrationUploadStore files, TimeProvider? timeProvider = null,
+    MigrationLegacyScratchSweep? legacyScratchSweep = null)
 {
     private readonly TimeProvider _clock = timeProvider ?? TimeProvider.System;
     private DateTime Now => _clock.GetUtcNow().UtcDateTime;
@@ -92,6 +93,64 @@ public sealed class MigrationTransferCleanup(
         {
             Checkpoint(ct);
             await hook.CleanupAbandonedAsync(_clock.GetUtcNow().AddHours(-MigrationContractLimits.SessionExpiryHours), protectedIds, ct);
+        }
+
+        // Legacy compatibility-import scratch and unreferenced export finals
+        // are host-generated leftovers with no durable owner; the same sweep
+        // batch retires them under the same maintenance admission.
+        legacyScratchSweep?.Sweep(_clock.GetUtcNow(), ct);
+        await SweepUnreferencedExportDirectoriesAsync(ct);
+    }
+
+    /// <summary>
+    /// Removes export directories whose job row no longer exists. The engine's
+    /// per-job cleanup already prunes unreferenced files for a known job; this
+    /// covers the crash window where a job row was deleted (or never committed)
+    /// after its generated export directory existed. Only generated GUID-N
+    /// directories directly under the exports root are candidates, and only
+    /// after the full session TTL, so a directory being populated for a job
+    /// whose row commits moments later is never touched.
+    /// </summary>
+    private async Task SweepUnreferencedExportDirectoriesAsync(CancellationToken ct)
+    {
+        var root = paths.VerifyPathWithinRoot(paths.GetExportsRoot());
+        if (!Directory.Exists(root))
+        {
+            return;
+        }
+
+        foreach (var directory in Directory.EnumerateDirectories(root))
+        {
+            Checkpoint(ct);
+            if (!Guid.TryParseExact(Path.GetFileName(directory), "N", out var jobId) || jobId == Guid.Empty)
+            {
+                continue;
+            }
+
+            try
+            {
+                paths.VerifyPathWithinRoot(directory);
+                if (Directory.GetLastWriteTimeUtc(directory)
+                    > Now.AddHours(-MigrationContractLimits.SessionExpiryHours))
+                {
+                    continue;
+                }
+
+                if (await db.MigrationJobRecords.AsNoTracking().AnyAsync(j => j.Id == jobId, ct))
+                {
+                    continue;
+                }
+
+                var detached = DetachScope(paths.GetExportDirectory(jobId), ct);
+                if (detached is not null)
+                {
+                    await DeleteDetachedAsync(detached, ct);
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or TransferPathException)
+            {
+                logger.LogWarning(ex, "Unreferenced export cleanup will retry {JobId}", jobId);
+            }
         }
     }
 

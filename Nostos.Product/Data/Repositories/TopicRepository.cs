@@ -466,6 +466,13 @@ public class TopicRepository : ITopicRepository
 
     public async Task<int> DeleteOrphanedAsync(CancellationToken ct = default)
     {
-        return await _db.Topics.Where(c => !c.NoteTopics.Any()).ExecuteDeleteAsync(ct);
+        // ExecuteDelete bypasses the change tracker, so the portable-state
+        // revision must be advanced explicitly in the same transaction
+        // (issue #679 Slice 11).
+        await using var transaction = await _db.Database.BeginTransactionAsync(ct);
+        var deleted = await _db.Topics.Where(c => !c.NoteTopics.Any()).ExecuteDeleteAsync(ct);
+        await LibraryRevision.AdvanceAsync(_db, ct);
+        await transaction.CommitAsync(ct);
+        return deleted;
     }
 }

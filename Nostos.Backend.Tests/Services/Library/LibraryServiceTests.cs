@@ -118,6 +118,7 @@ public sealed class LibraryServiceTests : IClassFixture<SqliteTestFixture>
 
         // Seed a second same-title/author edition directly (the service would
         // otherwise match it instead of creating a duplicate).
+        string versionAfterSeed;
         await using (var db = await h.Factory.CreateDbContextAsync())
         {
             db.Books.Add(new PhysicalBookModel
@@ -127,6 +128,11 @@ public sealed class LibraryServiceTests : IClassFixture<SqliteTestFixture>
                 Metadata = { Edition = "Different edition" },
             });
             await db.SaveChangesAsync();
+            // The direct seed is a portable mutation, so it advances the
+            // destination revision; the rejected command must not advance it again.
+            versionAfterSeed = await db.LibraryStates.AsNoTracking()
+                .Select(s => s.StateVersion)
+                .SingleAsync();
         }
 
         var strict = await h.Service.CreateOrMatchBookAsync(
@@ -136,7 +142,7 @@ public sealed class LibraryServiceTests : IClassFixture<SqliteTestFixture>
         var err = (LibraryConfirmationErrorDto)strict.Data!;
         err.Code.Should().Be("confirmation_required");
         err.Candidates.Should().HaveCount(2);
-        strict.StateVersion.Should().Be("1", "no state change from a rejected command");
+        strict.StateVersion.Should().Be(versionAfterSeed, "no state change from a rejected command");
 
         var permissive = await h.Service.CreateOrMatchBookAsync(
             CreateRequest("physical", "Meditations", Author: "Marcus Aurelius"), strictConfirmation: false);

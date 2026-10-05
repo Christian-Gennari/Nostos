@@ -112,6 +112,17 @@ internal sealed class PortableArchiveReader
                 "Portable archive entry data is not a valid ZIP stream.",
                 exception);
         }
+        catch (IOException)
+        {
+            // A filesystem failure while staging (typically ENOSPC) is storage
+            // exhaustion, not archive corruption. Rethrow it raw so the
+            // migration worker maps it to migration_storage_exhausted and the
+            // legacy compatibility endpoint keeps observing the same raw
+            // IOException it always did. Staging is deleted exactly as in the
+            // generic failure path.
+            await DeleteStagingQuietlyAsync(staging, stagingId).ConfigureAwait(false);
+            throw;
+        }
         catch (Exception exception)
         {
             await DeleteStagingQuietlyAsync(staging, stagingId).ConfigureAwait(false);

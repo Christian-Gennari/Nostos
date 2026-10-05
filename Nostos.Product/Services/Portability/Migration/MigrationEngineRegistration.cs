@@ -21,6 +21,8 @@ public static class MigrationEngineRegistration
         services.AddScoped<IMigrationJobStore, MigrationEngineJobStore>();
         services.AddScoped<FileMigrationUploadStore>();
         services.AddScoped<MigrationTransferCleanup>();
+        services.AddSingleton<LegacyPortabilityScratchCleanup>();
+        services.AddSingleton<MigrationLegacyScratchSweep>();
         services.AddScoped<SelfHostedMigrationTransferService>();
         services.AddScoped<IMigrationTransferService>(s => s.GetRequiredService<SelfHostedMigrationTransferService>());
         services.AddScoped<ISelfHostedMigrationUploads>(s => s.GetRequiredService<SelfHostedMigrationTransferService>());

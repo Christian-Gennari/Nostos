@@ -13,11 +13,13 @@ using Nostos.Backend.Data.Models;
 using Nostos.Backend.Middleware;
 using Nostos.Backend.Services;
 using Nostos.Backend.Services.Portability;
+using Nostos.Backend.Tests.Backup;
 using Nostos.Backend.Workers;
 using Xunit;
 
 namespace Nostos.Backend.Tests.Portability;
 
+[Collection(BackupIsolationCollection.Name)]
 public sealed class LibraryMaintenanceHostTests
 {
     [Fact]

@@ -9,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Nostos.Backend.Services;
 using Nostos.Backend.Services.Portability;
 using Nostos.Backend.Services.Portability.Migration;
+using Nostos.Backend.Services.Portability.Transfers;
 using Xunit;
 
 namespace Nostos.Backend.Tests.Portability;
@@ -462,6 +463,30 @@ public sealed class MigrationHttpApiTests
             new { reason = "nope" });
         cancelledActivating.Status.Should().Be(HttpStatusCode.Conflict);
         CodeOf(cancelledActivating.Body).Should().Be("migration_cannot_cancel");
+    }
+
+    [Fact]
+    public async Task Outstanding_job_ceiling_refuses_new_work_until_a_job_is_terminal()
+    {
+        await using var h = new MigrationHttpHarness
+        {
+            ConfigureServices = services => services.Configure<TransferStorageOptions>(
+                options => options.MaxOutstandingJobs = 1),
+        }.Start();
+
+        var first = await h.CreateImportJobAsync("ceiling-first");
+        var second = await h.CreateJobAsync("Import", "ceiling-second", await h.ReserveAsync("ceiling-second"));
+        second.Status.Should().Be(HttpStatusCode.Conflict);
+        CodeOf(second.Body).Should().Be("migration_too_many_jobs");
+
+        // A terminal job no longer counts against the ceiling.
+        var cancel = await h.PostJsonAsync(
+            $"/api/portability/migration/jobs/{first}/cancel",
+            new { reason = "done" });
+        cancel.Status.Should().Be(HttpStatusCode.OK);
+
+        var third = await h.CreateJobAsync("Import", "ceiling-third", await h.ReserveAsync("ceiling-third"));
+        third.Status.Should().Be(HttpStatusCode.Created);
     }
 
     [Fact]

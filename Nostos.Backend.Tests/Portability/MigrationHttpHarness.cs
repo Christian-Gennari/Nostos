@@ -35,6 +35,7 @@ internal sealed class MigrationHttpHarness : IAsyncDisposable
     internal MigrationEngineHarness.TestVolume Volume { get; } = new();
     internal MigrationHttpProbe Probe { get; } = new();
     internal bool PhasesAvailable { get; set; } = true;
+    internal bool UseRealPhaseHandlers { get; set; }
     internal Action<IServiceCollection>? ConfigureServices { get; set; }
 
     private WebApplicationFactory<Program>? _factory;
@@ -397,8 +398,11 @@ internal sealed class MigrationHttpHarness : IAsyncDisposable
                 services.AddSingleton<ITransferVolume>(harness.Volume);
                 services.RemoveAll<IMigrationPhaseAvailability>();
                 services.AddSingleton<IMigrationPhaseAvailability>(new ProbePhaseAvailability(harness));
-                services.RemoveAll<IMigrationPhaseHandler>();
-                services.AddScoped<IMigrationPhaseHandler, SucceedingPhaseHandler>();
+                if (!harness.UseRealPhaseHandlers)
+                {
+                    services.RemoveAll<IMigrationPhaseHandler>();
+                    services.AddScoped<IMigrationPhaseHandler, SucceedingPhaseHandler>();
+                }
                 services.RemoveAll<ISelfHostedMigrationUploads>();
                 services.AddScoped<ISelfHostedMigrationUploads>(sp => new ProbeUploads(
                     sp.GetRequiredService<SelfHostedMigrationTransferService>(),

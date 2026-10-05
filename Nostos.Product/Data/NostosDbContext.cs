@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Nostos.Backend.Data.Models;
 using Nostos.Backend.Services.Library;
 using Nostos.Backend.Services.Portability;
@@ -72,10 +73,35 @@ public class NostosDbContext : DbContext
     // Keep those writes valid now that WorkId is a required foreign key. The
     // library service always assigns the work explicitly; this is only a
     // compatibility guard for rows that arrive with the old default value.
+    //
+    // The same pipeline is the destination-revision guard (issue #679 Slice 11):
+    // a save containing any portable change advances the singleton
+    // LibraryState.StateVersion atomically in the same transaction, exactly
+    // once per transaction. Paths that already modify LibraryState explicitly
+    // (the legacy command services) keep owning their own bump.
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
         AssignMissingWorks();
-        return base.SaveChanges(acceptAllChangesOnSuccess);
+        if (!RequiresLibraryRevisionAdvance())
+            return base.SaveChanges(acceptAllChangesOnSuccess);
+
+        var owned = Database.CurrentTransaction is null ? Database.BeginTransaction() : null;
+        try
+        {
+            LibraryRevision.Advance(this);
+            var result = base.SaveChanges(acceptAllChangesOnSuccess);
+            owned?.Commit();
+            return result;
+        }
+        catch
+        {
+            owned?.Rollback();
+            throw;
+        }
+        finally
+        {
+            owned?.Dispose();
+        }
     }
 
     public override int SaveChanges() => SaveChanges(acceptAllChangesOnSuccess: true);
@@ -95,8 +121,65 @@ public class NostosDbContext : DbContext
         CancellationToken cancellationToken)
     {
         await AssignMissingWorksAsync(cancellationToken);
-        return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+        if (!RequiresLibraryRevisionAdvance())
+            return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+
+        var owned = Database.CurrentTransaction is null
+            ? await Database.BeginTransactionAsync(cancellationToken)
+            : null;
+        try
+        {
+            await LibraryRevision.AdvanceAsync(this, cancellationToken);
+            var result = await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+            if (owned is not null)
+                await owned.CommitAsync(cancellationToken);
+            return result;
+        }
+        catch
+        {
+            if (owned is not null)
+                await owned.RollbackAsync(CancellationToken.None);
+            throw;
+        }
+        finally
+        {
+            if (owned is not null)
+                await owned.DisposeAsync();
+        }
     }
+
+    /// <summary>
+    /// True when this save mutates portable user-owned state and no caller has
+    /// already staged an explicit LibraryState version change. The portable set
+    /// comes from <see cref="PortableEntitySet"/>, the same source the
+    /// completeness inventory asserts parity with.
+    /// </summary>
+    private bool RequiresLibraryRevisionAdvance()
+    {
+        var portable = ChangeTracker.Entries().Any(entry =>
+            entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted
+            && PortableEntitySet.IsPortableType(entry.Metadata.ClrType));
+        if (!portable)
+            return false;
+
+        return !ChangeTracker.Entries<LibraryState>().Any(entry =>
+            entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted);
+    }
+
+    /// <summary>The transaction that already advanced the revision, if any.</summary>
+    private IDbContextTransaction? _libraryRevisionTransaction;
+
+    /// <summary>
+    /// True when the current transaction already contains one revision advance,
+    /// so the next portable save in it must not advance again.
+    /// </summary>
+    internal bool IsLibraryRevisionAdvancedInCurrentTransaction =>
+        Database.CurrentTransaction is { } current
+        && ReferenceEquals(_libraryRevisionTransaction, current);
+
+    /// <summary>Records that the revision was advanced in <paramref name="transaction"/>.</summary>
+    internal void MarkLibraryRevisionAdvanced(IDbContextTransaction? transaction) =>
+        _libraryRevisionTransaction = transaction;
 
     private void AssignMissingWorks()
     {

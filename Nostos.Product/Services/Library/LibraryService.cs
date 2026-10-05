@@ -1248,6 +1248,12 @@ public sealed class LibraryService : ILibraryService
             .Where(bc => bc.CollectionId == collection.Id)
             .ExecuteDeleteAsync(ct);
 
+        // The bulk delete bypasses the change tracker; advance the portable
+        // revision in this same executor transaction (issue #679 Slice 11).
+        // The CollectionModel delete below would also advance it, and the
+        // per-transaction marker keeps that to exactly one advance.
+        await LibraryRevision.AdvanceAsync(db, ct);
+
         db.Collections.Remove(collection);
         await db.SaveChangesAsync(ct);
 

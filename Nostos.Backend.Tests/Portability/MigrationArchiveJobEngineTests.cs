@@ -172,6 +172,41 @@ public sealed class MigrationArchiveJobEngineTests
     }
 
     [Fact]
+    public async Task Disk_full_during_real_preparation_fails_with_storage_code_and_leaves_the_library_untouched()
+    {
+        var hooks = new FilePortableImportStagingHooks
+        {
+            BeforeStreamWrite = () => throw new IOException("Synthetic ENOSPC during staging"),
+        };
+        await using var h = new MigrationEngineHarness();
+        h.Configure = services =>
+        {
+            services.RemoveAll<IPortableImportStaging>();
+            services.AddScoped<IPortableImportStaging>(_ => new FilePortableImportStaging(
+                new TransferPathResolver(Path.Combine(h.DirectoryPath, "transfers")),
+                hooks,
+                coordinatorScope: string.Empty));
+        };
+        await h.InitializeAsync();
+        var archive = await MigrationArchiveJobTestSupport.ExportRepresentativeAsync();
+        var jobId = await UploadCompleteImportAsync(h, archive);
+
+        await h.Worker.RunCycleAsync(default);
+
+        var job = await h.WithJobs(s => s.GetAsync(jobId, default));
+        job!.State.Should().Be(MigrationJobState.Failed);
+        job.FailureCode.Should().Be(
+            MigrationTransferException.StorageExhausted,
+            "a filesystem failure during real staging is storage exhaustion, not archive corruption");
+        MigrationArchiveJobTestSupport.CountStagingAreas(h).Should().Be(0);
+        (await h.WithDb(db => db.Works.CountAsync())).Should().Be(
+            0,
+            "preparation never mutates the active library");
+        (await h.WithDb(db => db.MigrationStorageReservations.SingleAsync(r => r.ClaimedJobId == jobId)))
+            .ReleasedAtUtc.Should().NotBeNull();
+    }
+
+    [Fact]
     public async Task Invalid_archive_fails_typed_and_removes_staging_and_releases_the_reservation()
     {
         await using var h = new MigrationEngineHarness();
