@@ -122,6 +122,55 @@ and media verification, SQLite lifecycle, recovery manifests/capacity, job
 projection and retention/cleanup. Additional recovery steps can register through
 the interface, must validate before mutation, and must remain safe to repeat.
 
+## Scheduled maintenance: expiry cleanup, orphan sweep, derived rebuild
+
+Issue #681 Slice 10 adds three passes that run outside the exclusive
+maintenance window. Each pass takes the shared library operation lease, so a
+cutover can never overlap one; when admission is closed (maintenance active or
+a cutover that could not be repaired in-process), the pass is skipped and
+retried on the next interval. Every worker starts after the startup reconciler
+has finished and after `ActivationMaintenance:StartupDelaySeconds`.
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `StartupDelaySeconds` | 30 | Delay before a worker's first pass. |
+| `SweepIntervalMinutes` | 15 | Interval between recovery cleanup / orphan sweep passes. |
+| `DerivedRebuildIntervalSeconds` | 15 | Interval between derived rebuild passes. |
+| `OrphanSafetyAgeHours` | 24 | Minimum age before an unreferenced leftover may be removed. |
+
+**Recovery expiry cleanup.** The worker calls the existing guarded cleanup
+(`ISelfHostedRecoveryCleanup.DeleteExpiredAsync`). A copy is deleted only when
+its seven-day expiry has passed, it is not `Restoring`, and no activation or
+restore journal references it. Removal is one logical operation with a durable
+deletion marker, so a crash mid-delete is resumed on the next pass; the copy's
+claimed recovery reservation is released only after the retained material is
+physically gone. After physical removal the pass updates the job's durable
+`RecoveryStatus` to `Expired`, so an activation status cannot keep reporting an
+available copy that no longer exists. A corrupt manifest is never interpreted
+as a deleted copy.
+
+**Activation orphan sweep.** Only leftovers that are provably unreferenced are
+removed: a candidate database/media area whose job is terminal or absent and
+whose directory has no unresolved journal, a recovery plan directory with
+neither a manifest nor material and no journal, and interrupted `.tmp` files -
+each older than the safety age. Active jobs (non-terminal or lease-holding),
+unresolved journals, valid manifests, deletion markers, retained material
+without a manifest and unrecognized entries are left in place and logged. Every
+path is re-verified under the configured activation/recovery roots; symlinked
+or reparse-point components are never followed, and a tree containing one is
+left for an operator.
+
+**Derived rebuild after activation.** A committed cutover leaves a resolved
+`Committed` activation journal. The rebuild ensures the book-text schema
+exists, wipes every derived row (chunks, FTS rows, vectors and ingestion
+state), and reschedules every file-backed book through the same ingestion
+scheduler the legacy import path uses. A durable `derived.rebuilt.json` marker
+in the journal directory is written only after the whole pass succeeds, so a
+restart before that point runs the rebuild again. Failure is logged and retried
+and can never roll back or fail the already committed activation. Thumbnails
+are not rebuilt here: `FileStorageService` regenerates missing cover thumbnails
+lazily.
+
 ## Manual recovery when startup refuses
 
 The fail-closed mode is refusal to start the host, as in the merged Slices 1–2.
