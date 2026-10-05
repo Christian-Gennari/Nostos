@@ -193,14 +193,15 @@ export class PdfReader implements OnInit, OnDestroy, IReader {
     }
 
     const normalized = query.trim();
-    const generation = ++this.searchGeneration;
-    this.activeSearchQuery = normalized;
-
     if (!normalized) {
+      // Clear the previous PDF.js find before replacing the tracked query with
+      // an empty string, otherwise clearSearch() cannot know a mark exists.
       this.clearSearch();
       return;
     }
 
+    const generation = ++this.searchGeneration;
+    this.activeSearchQuery = normalized;
     this.searchState.set({ status: 'searching', current: 0, total: 0 });
     const counts = this.pdfSearch.find(normalized, {
       highlightAll: false,
