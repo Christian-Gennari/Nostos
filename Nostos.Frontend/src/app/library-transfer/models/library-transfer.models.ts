@@ -6,7 +6,9 @@
  */
 
 import type {
+  MigrationDestinationStatus,
   MigrationErrorCode,
+  MigrationExistingCountsDto,
   MigrationFileIdentityDto,
   MigrationJobState,
   MigrationPreflightDecision,
@@ -14,6 +16,16 @@ import type {
   MigrationPreflightResponseDto,
   MigrationSessionRequestDto,
 } from './migration-http.dtos';
+
+/** Host-reported activation state rendered by the import flow (slice B8). */
+export type HostActivationState = 'idle' | 'in-progress' | 'completed' | 'failed';
+
+/** Destination facts the activation route reports for a re-review (409 body). */
+export interface LibraryActivationConflictFacts {
+  destinationRevision: string | null;
+  destinationStatus: MigrationDestinationStatus | null;
+  existingCounts: MigrationExistingCountsDto | null;
+}
 
 /** Read block for whole-file hashing: bounded regardless of archive size (plan §11.3). */
 export const HASH_READ_BLOCK_BYTES = 4 * 1024 * 1024;
@@ -149,8 +161,41 @@ export interface PersistedTransferResumeState {
   fileName: string;
   preflightRequest: MigrationPreflightRequestDto;
   preflightDecision?: MigrationPreflightDecision;
+  /**
+   * Destination revision the server returned at preflight, i.e. the revision
+   * the user reviewed. Activation uses it (never a client-invented value) and
+   * re-confirms with the server's fresh revision when it conflicts.
+   */
+  destinationRevision?: string;
+  /**
+   * Activation handoff (slice B8). Written only once the server answered 202,
+   * so a reload re-attaches to status polling instead of losing the outcome.
+   * A request whose 202 was never observed is deliberately not persisted: a
+   * destructive confirmation must never be replayed after a reload without
+   * the user seeing the current library again (review-748).
+   */
+  activation?: PersistedActivationResumeState;
+  /**
+   * Upload data path resolved for this session (slice B9). Pinned before the
+   * first part is sent and persisted so a reload resumes in the same mode.
+   */
+  transportMode?: LibraryTransferMode;
   createdAt: string;
 }
+
+/** Persisted activation handoff for the resume record. */
+export interface PersistedActivationResumeState {
+  /** True once the server answered 202 to the activation request. */
+  accepted: true;
+}
+
+/**
+ * Data path a migration session uses for archive parts (#680 slice B9):
+ * `direct` sends parts to host-signed storage targets, `application-server`
+ * sends them through the Nostos HTTP API. Resolved once per session from the
+ * deployment capability and persisted, so a reload continues on the same path.
+ */
+export type LibraryTransferMode = 'direct' | 'application-server';
 
 /** Import flow states (§8), extended with the engine-level pause flag and notices. */
 export type TransferFlowState =

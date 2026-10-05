@@ -9,6 +9,8 @@
 
 import {
   BrowserMigrationChunk,
+  MigrationActivateRequestDto,
+  MigrationActivationStatusDto,
   MigrationChunkUploadResultDto,
   MigrationCreateJobRequestDto,
   MigrationJobStatusResponseDto,
@@ -85,6 +87,21 @@ export class DelegatingTransport implements LibraryTransferTransport {
 
   completeUpload(jobId: string, signal?: AbortSignal): Promise<MigrationSessionStatusDto> {
     return this.inner.completeUpload(jobId, signal);
+  }
+
+  activateJob(
+    jobId: string,
+    request: MigrationActivateRequestDto,
+    signal?: AbortSignal,
+  ): Promise<MigrationActivationStatusDto> {
+    return this.inner.activateJob(jobId, request, signal);
+  }
+
+  getActivationStatus(
+    jobId: string,
+    signal?: AbortSignal,
+  ): Promise<MigrationActivationStatusDto> {
+    return this.inner.getActivationStatus(jobId, signal);
   }
 
   getExportDownloadUrl(jobId: string): string {

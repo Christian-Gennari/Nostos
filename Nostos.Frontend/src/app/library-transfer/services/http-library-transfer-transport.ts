@@ -41,9 +41,13 @@ import { Observable, Subscription } from 'rxjs';
 
 import {
   BrowserMigrationChunk,
+  MigrationActivateRequestDto,
+  MigrationActivationStatusDto,
   MigrationChunkUploadResultDto,
   MigrationCreateJobRequestDto,
+  MigrationDestinationStatus,
   MigrationErrorCode,
+  MigrationExistingCountsDto,
   MigrationJobStatusResponseDto,
   MigrationPreflightRequestDto,
   MigrationPreflightResponseDto,
@@ -54,7 +58,10 @@ import {
   chunkLength,
   fromChunkRanges,
 } from '../models/migration-http.dtos';
-import { MigrationTransportError } from './migration-transport-error';
+import {
+  MigrationActivationConflictError,
+  MigrationTransportError,
+} from './migration-transport-error';
 import type { LibraryTransferTransport } from './library-transfer-transport';
 
 export const MIGRATION_BASE_PATH = '/api/portability/migration';
@@ -227,6 +234,44 @@ export class HttpLibraryTransferTransport implements LibraryTransferTransport {
     return `${this.jobUrl(jobId)}/export-download`;
   }
 
+  /**
+   * Starts (or observes) background activation. A 202 is the current status
+   * envelope; the server owns the cutover from there. A 409 confirmation or
+   * destination conflict preserves the fresh destination facts.
+   */
+  activateJob(
+    jobId: string,
+    request: MigrationActivateRequestDto,
+    signal?: AbortSignal,
+  ): Promise<MigrationActivationStatusDto> {
+    return this.awaitHttp(
+      this.http.request<MigrationActivationStatusDto>(
+        'POST',
+        `${this.jobUrl(jobId)}/activate`,
+        { body: request },
+      ),
+      signal,
+      (error) => this.toActivationError(error),
+    );
+  }
+
+  /**
+   * Lightweight activation status. It stays answerable while exclusive
+   * maintenance has the live database closed, so the browser keeps polling
+   * through the window instead of losing the outcome.
+   */
+  getActivationStatus(
+    jobId: string,
+    signal?: AbortSignal,
+  ): Promise<MigrationActivationStatusDto> {
+    return this.json<MigrationActivationStatusDto>(
+      'GET',
+      `${this.jobUrl(jobId)}/activation`,
+      undefined,
+      signal,
+    );
+  }
+
   // --------------------------------------------------------------- internals --
 
   private jobUrl(jobId: string): string {
@@ -243,7 +288,11 @@ export class HttpLibraryTransferTransport implements LibraryTransferTransport {
     return this.awaitHttp(this.http.request<T>(method, url, { body: body ?? null }), signal);
   }
 
-  private awaitHttp<T>(observable: Observable<T>, signal?: AbortSignal): Promise<T> {
+  private awaitHttp<T>(
+    observable: Observable<T>,
+    signal?: AbortSignal,
+    mapError: (error: unknown) => Error = (error) => this.toTransportError(error),
+  ): Promise<T> {
     return new Promise<T>((resolve, reject) => {
       if (signal?.aborted) {
         reject(abortedError());
@@ -272,7 +321,7 @@ export class HttpLibraryTransferTransport implements LibraryTransferTransport {
         error: (error: unknown) => {
           if (settled) return;
           finish();
-          reject(this.toTransportError(error));
+          reject(mapError(error));
         },
         complete: () => {
           /* `next` already resolved. */
@@ -371,7 +420,12 @@ export class HttpLibraryTransferTransport implements LibraryTransferTransport {
     return status;
   }
 
-  private async sessionFor(
+  /**
+   * Resolves a session contract for a chunk: cached from the last
+   * create/get/status response, or re-read from the server. Protected so a
+   * subclass with a different data path shares the one authoritative cache.
+   */
+  protected async sessionFor(
     jobId: string,
     sessionId: string,
     signal?: AbortSignal,
@@ -388,6 +442,35 @@ export class HttpLibraryTransferTransport implements LibraryTransferTransport {
       );
     }
     return response.session;
+  }
+
+  /**
+   * Activation-specific error mapping: the two 409 admission conflicts carry
+   * the fresh destination revision, status and counts, which the generic
+   * parser would discard.
+   */
+  private toActivationError(error: unknown): MigrationTransportError {
+    if (error instanceof HttpErrorResponse) {
+      const body = readActivationErrorBody(error.error);
+      if (
+        body &&
+        (body.error === 'migration_replacement_confirmation_required' ||
+          body.error === 'migration_destination_conflict')
+      ) {
+        return new MigrationActivationConflictError(
+          body.error,
+          error.status,
+          body.message,
+          {
+            destinationRevision: body.destinationRevision,
+            destinationStatus: body.destinationStatus,
+            existingCounts: body.existingCounts,
+          },
+          { retryAfterMs: parseRetryAfterMs(error.headers?.get('Retry-After')), cause: error },
+        );
+      }
+    }
+    return this.toTransportError(error);
   }
 
   private toTransportError(error: unknown): MigrationTransportError {
@@ -494,6 +577,36 @@ function readErrorBody(value: unknown): TransportErrorBody | null {
     error: record['error'],
     message: typeof record['message'] === 'string' ? record['message'] : record['error'],
   };
+}
+
+interface ActivationErrorBody extends TransportErrorBody {
+  destinationRevision: string | null;
+  destinationStatus: MigrationDestinationStatus | null;
+  existingCounts: MigrationExistingCountsDto | null;
+}
+
+/** Conflict body parser that keeps the fresh destination facts. */
+function readActivationErrorBody(value: unknown): ActivationErrorBody | null {
+  const base = readErrorBody(value);
+  if (!base) return null;
+  const record = value as Record<string, unknown>;
+
+  const destinationRevision =
+    typeof record['destinationRevision'] === 'string' ? record['destinationRevision'] : null;
+  const destinationStatus =
+    record['destinationStatus'] === 'Empty' || record['destinationStatus'] === 'Populated'
+      ? record['destinationStatus']
+      : null;
+  const existingCounts = readExistingCounts(record['existingCounts']);
+
+  return { ...base, destinationRevision, destinationStatus, existingCounts };
+}
+
+function readExistingCounts(value: unknown): MigrationExistingCountsDto | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const record = value as Record<string, unknown>;
+  if (typeof record['totalRows'] !== 'number') return null;
+  return value as MigrationExistingCountsDto;
 }
 
 /** `Retry-After` is either delay-seconds (the middleware's `5`) or an HTTP date. */

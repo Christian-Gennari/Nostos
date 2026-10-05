@@ -551,6 +551,13 @@ export class LibraryTransferCoordinator {
       return;
     }
 
+    // Freeze the upload data path before any part is sent. A transient
+    // capability failure is retried inside the transport and, if it persists,
+    // surfaces a retryable failure here instead of silently switching to a
+    // path the host may not implement (review-749 B5).
+    await this.pinTransferMode(session.sessionId, token, signal);
+    if (!this.isCurrent(token)) return;
+
     const initial = this.progressFromSession(session);
     this.fallbackProgress.set(initial);
     this.setState({ kind: 'uploading', jobId, progress: initial, paused: false });
@@ -610,6 +617,41 @@ export class LibraryTransferCoordinator {
    * session is re-read on every attempt, so a maintenance retry never
    * re-uploads bytes the server already holds.
    */
+  /**
+   * Resolves the session's upload data path once and persists it, or re-pins
+   * the mode recorded by an earlier session after a reload. Single-path
+   * transports do not implement the optional seam and are left alone.
+   */
+  private async pinTransferMode(
+    sessionId: string,
+    token: number,
+    signal: AbortSignal,
+  ): Promise<void> {
+    const resolve = this.transport.resolveUploadMode;
+    if (typeof resolve !== 'function') return;
+
+    const record = this.resumeStore.load();
+    if (record?.transportMode && record.sessionId === sessionId) {
+      this.transport.pinUploadMode?.(sessionId, record.transportMode);
+      return;
+    }
+
+    try {
+      const mode = await resolve.call(this.transport, sessionId, signal);
+      if (!this.isCurrent(token)) return;
+      this.transport.pinUploadMode?.(sessionId, mode);
+      this.resumeStore.update({ transportMode: mode });
+    } catch (error) {
+      // A retryable failure here interrupted the transfer before any part was
+      // sent; `retry()` must repeat this operation rather than call the
+      // job-level `/retry` endpoint on an active job.
+      if (toTransferFailure(error).retryable) {
+        this.interruptedSignal.set(() => this.resume());
+      }
+      throw error;
+    }
+  }
+
   private async uploadMissingChunks(
     token: number,
     signal: AbortSignal,
@@ -1043,6 +1085,9 @@ export class LibraryTransferCoordinator {
       fileName: file.name,
       preflightRequest,
       preflightDecision: preflight.evaluation.decision,
+      // The revision the user reviewed; activation binds its confirmation to
+      // this server value (never a client-invented one).
+      destinationRevision: preflight.evaluation.destinationRevision,
       createdAt: new Date().toISOString(),
     };
   }

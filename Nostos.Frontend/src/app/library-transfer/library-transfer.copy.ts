@@ -10,6 +10,7 @@
  */
 
 import type { LibraryTransferFailure } from './models/library-transfer.models';
+import type { MigrationActivationPhase } from './models/migration-http.dtos';
 
 /** What the flow should offer after a failure. */
 export type TransferFailureAction = 'retry' | 'sign-in' | 'choose-file' | 'start-over' | 'none';
@@ -176,6 +177,46 @@ export function libraryTransferFailureCopy(failure: LibraryTransferFailure): Tra
           'this feature.',
         action: 'none',
       };
+    case 'migration_transport_mode_unavailable':
+      return {
+        title: 'The host didn’t answer in time',
+        message:
+          'Nostos could not ask this host how to upload the library. Nothing was sent; ' +
+          'try again in a moment.',
+        action: 'retry',
+      };
+    case 'direct_upload_target_invalid':
+      return {
+        title: 'The host returned an unusable upload address',
+        message:
+          'Nostos refused the storage address this host returned because it is not a safe ' +
+          'external HTTPS location. Nothing was uploaded; update or contact the host operator.',
+        action: 'none',
+      };
+    case 'direct_upload_ticket_invalid':
+      return {
+        title: 'The host returned an unusable upload ticket',
+        message:
+          'An upload ticket did not match this archive’s session, so Nostos stopped before ' +
+          'sending the part. Retry the import; if it keeps happening, update the host.',
+        action: 'retry',
+      };
+    case 'direct_upload_rejected':
+      return {
+        title: 'The storage target refused part of the archive',
+        message:
+          'The host’s storage target kept refusing an archive part. Nothing in your library ' +
+          'was changed. Retry the import; if it keeps happening, contact the host operator.',
+        action: 'retry',
+      };
+    case 'direct_upload_receipt_pending':
+      return {
+        title: 'The host didn’t confirm an uploaded part',
+        message:
+          'Nostos uploaded an archive part but the host did not confirm it. Nothing is lost; ' +
+          'Nostos can retry this part from where it stopped.',
+        action: 'retry',
+      };
     case 'migration_lease_conflict':
       return {
         title: 'Another process is working on this import',
@@ -243,6 +284,42 @@ export function libraryTransferFailureCopy(failure: LibraryTransferFailure): Tra
           'This library changed after the import began, so Nostos did not replace it. ' +
           'Choose your archive again to review the current library.',
         action: 'start-over',
+      };
+    case 'migration_replacement_confirmation_required':
+      // The activation dialog owns this refusal (it carries fresh counts and
+      // the revision to confirm); this copy only guards a raw surfacing.
+      return {
+        title: 'Confirm the replacement',
+        message:
+          'This library already contains data, so Nostos did not replace it. Review the ' +
+          'current library and confirm the replacement again.',
+        action: 'none',
+      };
+    case 'migration_activation_failed':
+      return failure.retryable
+        ? {
+            title: 'Couldn’t finish the import',
+            message:
+              'Activation failed before the library switch. Your original library is ' +
+              'unchanged. Retry to continue where the import stopped.',
+            action: 'retry',
+          }
+        : {
+            title: 'The import could not be activated',
+            message:
+              'Activation failed before the library switch and this host cannot retry it ' +
+              'right now. Your original library is unchanged. Restart Nostos, or ask the ' +
+              'host operator to review it before trying again.',
+            action: 'none',
+          };
+    case 'migration_activation_recovery_failed':
+      return {
+        title: 'The library needs host recovery',
+        message:
+          'Activation could not be completed or rolled back in-process. Nostos kept the ' +
+          'host in maintenance to protect your data. Restart the Nostos server, or ask the ' +
+          'host operator to reconcile the library, before importing again.',
+        action: 'none',
       };
     case 'portable_export_failed':
       return {
@@ -328,4 +405,35 @@ export function transferProgressValueText(
  */
 export function maintenanceRetryMessage(): string {
   return 'Nostos is busy finishing another library operation. Retrying automatically…';
+}
+
+/**
+ * Truthful status line for the server's activation phase (plan §30). The
+ * browser never invents progress: `null` means the run was accepted but the
+ * server has not reported a phase yet.
+ */
+export function activationPhaseMessage(phase: MigrationActivationPhase | null): string {
+  switch (phase) {
+    case 'Queued':
+      return 'Waiting for the host to start the switch…';
+    case 'Preparing':
+      return 'Preparing your imported library…';
+    case 'Activating':
+      return 'Switching libraries…';
+    case 'Finalizing':
+      return 'Finishing the library switch…';
+    default:
+      return 'The host accepted the switch and is starting…';
+  }
+}
+
+/** Completion note for the retained previous library, using the server's expiry. */
+export function activationRecoveryNote(expiresAtUtc: string | null | undefined): string | null {
+  if (!expiresAtUtc) return null;
+  const expires = Date.parse(expiresAtUtc);
+  if (Number.isNaN(expires)) return null;
+  return (
+    'Your previous library was kept as a recovery copy until ' +
+    `${new Date(expires).toLocaleString()}.`
+  );
 }
