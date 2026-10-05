@@ -55,9 +55,10 @@ public static class DeploymentCapabilitiesEndpoints
             // transport is ready (see AdvertiseLibraryMigration). Phase
             // availability still gates preflight and job creation server-side;
             // it is intentionally not what the UI reads. Safe activation (#681)
-            // is not available yet on any host.
+            // exists only in the SelfHosted host; the destructive confirmation
+            // stays gated by the frontend capability below.
             SupportsLibraryMigration: AdvertiseLibraryMigration,
-            SupportsSafeActivation: false);
+            SupportsSafeActivation: deployment.Mode == DeploymentMode.SelfHosted);
 }
 
 public sealed record DeploymentCapabilitiesResponse(

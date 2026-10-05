@@ -33,6 +33,7 @@ namespace Nostos.Backend.Tests.Portability;
 public sealed class MigrationHttpAuthTests
 {
     private const string PolicyName = "migration-owner";
+    private const string DenyPolicyName = "migration-deny-all";
 
     [Fact]
     public async Task Every_migration_route_challenges_unauthenticated_requests()
@@ -56,6 +57,8 @@ public sealed class MigrationHttpAuthTests
             (HttpMethod.Get, "/api/portability/migration/recovery"),
             (HttpMethod.Get, $"/api/portability/migration/recovery/{job}"),
             (HttpMethod.Post, $"/api/portability/migration/recovery/{job}/restore"),
+            (HttpMethod.Post, $"/api/portability/migration/jobs/{job}/activate"),
+            (HttpMethod.Get, $"/api/portability/migration/jobs/{job}/activation"),
         };
 
         foreach (var (method, path) in routes)
@@ -105,6 +108,29 @@ public sealed class MigrationHttpAuthTests
         using var downloadResponse = await host.Client.SendAsync(downloadRequest);
         downloadResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
         AssertNotFoundShape(await downloadResponse.Content.ReadAsStringAsync());
+
+        var activationBody = new StringContent(
+            """{"destinationRevision":"1","confirmReplacement":true}""",
+            System.Text.Encoding.UTF8,
+            "application/json");
+        using var activateRequest = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"/api/portability/migration/jobs/{unknown}/activate")
+        {
+            Content = activationBody,
+        };
+        activateRequest.Headers.Add("X-Test-Authenticated", "1");
+        using var activateResponse = await host.Client.SendAsync(activateRequest);
+        activateResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        AssertNotFoundShape(await activateResponse.Content.ReadAsStringAsync());
+
+        using var activationRequest = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"/api/portability/migration/jobs/{unknown}/activation");
+        activationRequest.Headers.Add("X-Test-Authenticated", "1");
+        using var activationResponse = await host.Client.SendAsync(activationRequest);
+        activationResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        AssertNotFoundShape(await activationResponse.Content.ReadAsStringAsync());
     }
 
     [Fact]
@@ -133,6 +159,33 @@ public sealed class MigrationHttpAuthTests
             .Should().Be("AllowedEmpty");
     }
 
+    [Fact]
+    public async Task Deny_all_activation_policy_refuses_both_routes()
+    {
+        await using var host = await AuthHost.StartAsync(DenyPolicyName);
+        var job = Guid.NewGuid();
+
+        var routes = new (HttpMethod Method, string Path, HttpContent? Content)[]
+        {
+            (HttpMethod.Post, $"/api/portability/migration/jobs/{job}/activate",
+                new StringContent(
+                    """{"destinationRevision":"1","confirmReplacement":true}""",
+                    System.Text.Encoding.UTF8,
+                    "application/json")),
+            (HttpMethod.Get, $"/api/portability/migration/jobs/{job}/activation", null),
+        };
+
+        foreach (var (method, path, content) in routes)
+        {
+            using var request = new HttpRequestMessage(method, path) { Content = content };
+            request.Headers.Add("X-Test-Authenticated", "1");
+            using var response = await host.Client.SendAsync(request);
+            response.StatusCode.Should().Be(
+                HttpStatusCode.Forbidden,
+                $"{method} {path} must inherit the configured deny-all policy");
+        }
+    }
+
     private static void AssertNotFoundShape(string payload)
     {
         using var document = JsonDocument.Parse(payload);
@@ -156,7 +209,7 @@ public sealed class MigrationHttpAuthTests
 
         public HttpClient Client { get; }
 
-        public static async Task<AuthHost> StartAsync()
+        public static async Task<AuthHost> StartAsync(string policyName = PolicyName)
         {
             var root = Path.Combine(Path.GetTempPath(), "nostos-migration-auth-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(root);
@@ -175,7 +228,12 @@ public sealed class MigrationHttpAuthTests
                 .AddAuthentication("Test")
                 .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>("Test", null);
             builder.Services.AddAuthorization(options =>
-                options.AddPolicy(PolicyName, policy => policy.RequireAuthenticatedUser()));
+            {
+                options.AddPolicy(PolicyName, policy => policy.RequireAuthenticatedUser());
+                options.AddPolicy(
+                    DenyPolicyName,
+                    policy => policy.RequireClaim("nostos-activation", "never-granted"));
+            });
             builder.Services.AddDbContext<NostosDbContext>(options => options.UseSqlite(
                 $"Data Source={databasePath};Pooling=False"));
             builder.Services.AddSingleton<TimeProvider>(TimeProvider.System);
@@ -206,13 +264,17 @@ public sealed class MigrationHttpAuthTests
             // The recovery routes are mapped by the migration group; this host
             // only exercises authorization, so a non-invoked stub is enough.
             builder.Services.AddScoped<ISelfHostedRecoveryRestore, StubRecoveryRestore>();
+            // This host only proves the transport policy; the activation driver
+            // itself belongs to the SelfHosted engine and is exercised by
+            // MigrationActivationHttpTests.
+            builder.Services.AddSingleton<IMigrationActivationDispatcher, NotFoundActivationDispatcher>();
 
             var app = builder.Build();
             app.UseRouting();
             app.UseAuthentication();
             app.UseAuthorization();
             app.MapMigrationEndpoints(new NostosProductEndpointPolicies(
-                MigrationAuthorizationPolicy: PolicyName));
+                MigrationAuthorizationPolicy: policyName));
             await app.StartAsync();
             return new AuthHost(app, root);
         }
@@ -251,6 +313,21 @@ public sealed class MigrationHttpAuthTests
             Guid recoveryId,
             MigrationRecoveryRestoreRequest request,
             CancellationToken ct) => throw new NotSupportedException();
+    }
+
+    private sealed class NotFoundActivationDispatcher : IMigrationActivationDispatcher
+    {
+        public Task<MigrationActivationRequestResult> RequestAsync(
+            Guid jobId,
+            MigrationActivateRequest request,
+            CancellationToken ct) =>
+            Task.FromResult(new MigrationActivationRequestResult(
+                MigrationActivationRequestOutcome.NotFound));
+
+        public Task<MigrationActivationStatusResponse> GetStatusAsync(
+            Guid jobId,
+            CancellationToken ct) =>
+            throw MigrationJobStoreException.NotFound(jobId);
     }
 
     private sealed class NoopMaintenanceGate : IMigrationMaintenanceGate

@@ -5,6 +5,7 @@ using Microsoft.Extensions.Options;
 using Microsoft.Net.Http.Headers;
 using Nostos.Backend.Data;
 using Nostos.Backend.Data.Models;
+using Nostos.Backend.Middleware;
 using Nostos.Backend.Services.Portability;
 using Nostos.Backend.Services.Portability.Migration;
 using Nostos.Backend.Services.Portability.Transfers;
@@ -53,6 +54,16 @@ public static class MigrationEndpoints
         group.MapGet("/jobs/{id}", GetJobAsync);
         group.MapPost("/jobs/{id}/cancel", CancelAsync);
         group.MapPost("/jobs/{id}/retry", RetryAsync);
+
+        // #681, Slice 8. Both routes own their admission leases and remain
+        // answerable during exclusive activation maintenance from the
+        // dispatcher's in-memory run snapshot, so the browser can observe a
+        // replacement start (202) and reach its outcome without the live
+        // database being open.
+        group.MapPost("/jobs/{id}/activate", ActivateAsync)
+            .WithMetadata(new LibraryMaintenanceMemorySafe());
+        group.MapGet("/jobs/{id}/activation", GetActivationAsync)
+            .WithMetadata(new LibraryMaintenanceMemorySafe());
         group.MapPost("/jobs/{id}/upload-session", CreateUploadSessionAsync);
         group.MapGet("/jobs/{id}/upload-session", GetUploadSessionAsync);
         group.MapPut("/jobs/{id}/upload-session/chunks/{index}", UploadChunkAsync);
@@ -277,6 +288,78 @@ public static class MigrationEndpoints
             ct));
     });
 
+    /// <summary>
+    /// Starts (or observes) background activation. The route returns as soon as
+    /// the durable job is admitted to a host-owned run; it never waits for the
+    /// cutover and never holds the shared lease while the run requests the
+    /// exclusive one.
+    /// </summary>
+    private static Task<IResult> ActivateAsync(
+        string id,
+        HttpRequest http,
+        IMigrationActivationDispatcher dispatcher,
+        CancellationToken ct) => GuardAsync(async () =>
+    {
+        if (!TryParseJobId(id, out var jobId)) return InvalidRequest();
+        var (ok, body) = await MigrationHttpBodies.TryReadAsync<MigrationActivateBody>(http, ct);
+        if (!ok || body is null || string.IsNullOrWhiteSpace(body.DestinationRevision))
+        {
+            return InvalidRequest();
+        }
+
+        var result = await dispatcher.RequestAsync(
+            jobId,
+            new MigrationActivateRequest(body.DestinationRevision, body.ConfirmReplacement),
+            ct);
+        return MapActivation(result);
+    });
+
+    /// <summary>
+    /// Lightweight activation status for the browser: the durable job state
+    /// when admission is open, or the in-memory run snapshot while exclusive
+    /// maintenance has the live database closed.
+    /// </summary>
+    private static Task<IResult> GetActivationAsync(
+        string id,
+        IMigrationActivationDispatcher dispatcher,
+        CancellationToken ct) => GuardAsync(async () =>
+    {
+        if (!TryParseJobId(id, out var jobId)) return InvalidRequest();
+        return Results.Ok(await dispatcher.GetStatusAsync(jobId, ct));
+    });
+
+    private static IResult MapActivation(MigrationActivationRequestResult result) => result.Outcome switch
+    {
+        MigrationActivationRequestOutcome.Accepted or MigrationActivationRequestOutcome.Replayed =>
+            Results.Json(result.Status, statusCode: StatusCodes.Status202Accepted),
+        MigrationActivationRequestOutcome.Busy =>
+            MigrationHttpErrors.Retryable(MigrationActivationErrorCodes.Busy, retryAfterSeconds: 5),
+        MigrationActivationRequestOutcome.NotFound =>
+            MigrationHttpErrors.Result(MigrationHttpErrors.NotFound, StatusCodes.Status404NotFound),
+        MigrationActivationRequestOutcome.InvalidState =>
+            MigrationHttpErrors.Result(MigrationJobStoreErrorCodes.InvalidState, StatusCodes.Status409Conflict),
+        MigrationActivationRequestOutcome.Failed =>
+            MigrationHttpErrors.Result(MigrationActivationErrorCodes.Failed, StatusCodes.Status409Conflict),
+        MigrationActivationRequestOutcome.ConfirmationRequired => MigrationActivationConflict(
+            MigrationActivationErrorCodes.ConfirmationRequired, result),
+        MigrationActivationRequestOutcome.DestinationConflict => MigrationActivationConflict(
+            MigrationActivationErrorCodes.DestinationConflict, result),
+        _ => MigrationHttpErrors.Result(MigrationHttpErrors.Unexpected,
+            StatusCodes.Status500InternalServerError),
+    };
+
+    private static IResult MigrationActivationConflict(
+        string code,
+        MigrationActivationRequestResult result) =>
+        Results.Json(
+            new MigrationActivationConflictBody(
+                code,
+                result.Message ?? MigrationHttpErrors.MessageFor(code),
+                result.DestinationRevision,
+                result.DestinationStatus,
+                result.ExistingCounts),
+            statusCode: StatusCodes.Status409Conflict);
+
     private static Task<IResult> CreateUploadSessionAsync(
         string id,
         HttpRequest http,
@@ -425,6 +508,10 @@ public static class MigrationEndpoints
         catch (MigrationTransferException exception)
         {
             return MigrationHttpErrors.FromTransfer(exception);
+        }
+        catch (MigrationActivationException exception)
+        {
+            return MigrationHttpErrors.FromActivation(exception);
         }
         catch (TransferReservationException exception)
         {
