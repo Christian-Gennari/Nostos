@@ -286,7 +286,8 @@ public sealed class MigrationEngineReviewTests
             checkpoint.TrySetResult(); await run.WaitAsync(TimeSpan.FromSeconds(10));
             if (entering.IsCompletedSuccessfully) await (await entering).DisposeAsync();
         }
-        await h.Worker.RunCycleAsync(default); executions.Should().Be(2);
+        await MigrationArchiveJobTestSupport.RunToStateAsync(h, id, MigrationJobState.Completed);
+        executions.Should().Be(2);
         (await h.WithJobs(s => s.GetAsync(id, default)))!.State.Should().Be(MigrationJobState.Completed);
     }
 

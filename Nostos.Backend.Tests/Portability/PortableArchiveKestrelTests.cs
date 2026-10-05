@@ -160,6 +160,14 @@ public sealed class PortableArchiveKestrelTests
             probe.TargetBookId = bookId;
             probe.MutatedContent = (byte[])media.Clone();
             probe.MutatedContent[0] ^= 0xFF;
+
+            // A background opener (for example book-text ingestion) can read
+            // the file before the export starts. The failure seam must still
+            // force the copy pass to observe a revision different from the one
+            // the pin pass hashed, so provoke that ordering deterministically
+            // instead of relying on the export being the first opener.
+            await using var backgroundRead = await storage.OpenBookFileAsync(bookId);
+            backgroundRead.Should().NotBeNull();
         }
 
         using var client = host.CreateClient();
@@ -178,7 +186,12 @@ public sealed class PortableArchiveKestrelTests
             }
 
             // The server aborts mid-body; a clean completion would be the bug.
-            _ = await response.Content.ReadAsByteArrayAsync();
+            // Wait on the connection outcome itself with a bound rather than
+            // sampling the response once: the read surfaces the abort as an
+            // exception, and a server that never aborts fails the bound instead
+            // of hanging the suite.
+            _ = await response.Content.ReadAsByteArrayAsync()
+                .WaitAsync(TimeSpan.FromSeconds(30));
         }
         catch (Exception exception) when (
             exception is HttpRequestException
@@ -208,10 +221,11 @@ public sealed class PortableArchiveKestrelTests
     }
 
     /// <summary>
-    /// Delegates every storage call to the real local store except that the
-    /// second book-file open for the target (the export copy pass) serves
-    /// different bytes of the same length. The pin pass still hashes the
-    /// original bytes, so the copy-pass comparison fails with
+    /// Delegates every storage call to the real local store except that opens of
+    /// the target book file after the first serve content distinct from every
+    /// other open, same length, so the pin pass and the copy pass can never
+    /// agree no matter how many other openers interleave. The pin pass still
+    /// hashes whatever it reads and the copy-pass comparison fails with
     /// <c>source_media_changed</c> after archive output has begun.
     /// </summary>
     private sealed class CopyPassMutationStorage : IBookAssetStorage
@@ -250,15 +264,23 @@ public sealed class PortableArchiveKestrelTests
         {
             if (bookId == TargetBookId && range is null)
             {
-                _targetOpenCount++;
-                if (_targetOpenCount >= 2 && MutatedContent is not null)
+                var open = Interlocked.Increment(ref _targetOpenCount);
+                if (open > 1 && MutatedContent is not null)
                 {
                     var info = await Inner!.GetBookFileInfoAsync(bookId, ct);
                     if (info is not null)
                     {
+                        // Every open after the first serves bytes no other open
+                        // served. A background worker (for example book-text
+                        // ingestion) may open the file before or between the
+                        // export's pin and copy passes; the copy pass must still
+                        // see a revision different from the one the pin pass
+                        // hashed.
+                        var content = (byte[])MutatedContent.Clone();
+                        content[(open - 1) % content.Length] ^= 0xFF;
                         return new StoredAssetRead(
                             info,
-                            new MemoryStream(MutatedContent, writable: false));
+                            new MemoryStream(content, writable: false));
                     }
                 }
             }
