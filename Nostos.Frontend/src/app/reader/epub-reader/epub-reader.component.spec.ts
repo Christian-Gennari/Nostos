@@ -731,6 +731,25 @@ describe('EpubReader theme-following normalization', () => {
    * Issue #225 §1.5. The contents document is an iframe: a key pressed while
    * reading never reaches the shell's document listener.
    */
+  it('forwards Ctrl/Cmd+F pressed inside the EPUB iframe to the shell', async () => {
+    await setupComponent();
+
+    const contents = makeContents();
+    contentHooks.forEach((hook) => hook(contents));
+    const emit = vi.spyOn(fixture.componentInstance.searchRequested, 'emit');
+
+    const ctrl = new KeyboardEvent('keydown', {
+      key: 'f',
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    contents.document.dispatchEvent(ctrl);
+
+    expect(ctrl.defaultPrevented).toBe(true);
+    expect(emit).toHaveBeenCalledTimes(1);
+  });
+
   it('turns pages from keys pressed inside the contents document', async () => {
     await setupComponent();
 
