@@ -1,4 +1,4 @@
-import { Component, DestroyRef, ElementRef, inject, input, output, signal, computed, effect, viewChild } from '@angular/core';
+import { Component, DestroyRef, ElementRef, inject, input, output, signal, computed, effect, untracked, viewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpEventType } from '@angular/common/http';
@@ -183,25 +183,32 @@ export class AddBookModal {
     inject(DestroyRef).onDestroy(() => this.cancelSourceRequests());
 
     effect(() => {
-      if (!this.isOpen()) {
-        this.cancelSourceRequests();
-        return;
-      }
-
+      // Only external modal inputs are allowed to reinitialize the draft.
+      // Helpers below read internal signals (cover preview, provider state, etc.),
+      // so keep their work outside this effect's dependency tracking.
+      const isOpen = this.isOpen();
       const currentBook = this.book();
-      if (currentBook) {
-        this.fillForm(currentBook);
-        this.flowIntent.set('manual');
-        this.sourceMode.set(false);
-        setTimeout(() => this.titleInput()?.nativeElement?.focus(), 0);
-        return;
-      }
+      const sourceFirst = this.sourceFirst();
+      const initialIntent = this.initialIntent();
 
-      this.resetForm();
-      const intent: AddBookIntentKind = this.sourceFirst()
-        ? 'source'
-        : (this.initialIntent() ?? 'manual');
-      this.startIntent(intent);
+      untracked(() => {
+        if (!isOpen) {
+          this.cancelSourceRequests();
+          return;
+        }
+
+        if (currentBook) {
+          this.fillForm(currentBook);
+          this.flowIntent.set('manual');
+          this.sourceMode.set(false);
+          setTimeout(() => this.titleInput()?.nativeElement?.focus(), 0);
+          return;
+        }
+
+        this.resetForm();
+        const intent: AddBookIntentKind = sourceFirst ? 'source' : (initialIntent ?? 'manual');
+        this.startIntent(intent);
+      });
     });
   }
 
