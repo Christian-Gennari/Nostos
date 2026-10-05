@@ -5,8 +5,34 @@ using Nostos.Backend.Services.Library;
 namespace Nostos.Backend.Services.Portability.Migration;
 
 /// <summary>SelfHosted-only upload/worker composition; no hosted adapter or HTTP endpoints.</summary>
+/// <remarks>
+/// <para>
+/// This registration is separable from the provider-neutral product composition:
+/// a host that supplies its own migration adapter simply does not call
+/// <see cref="AddSelfHostedMigrationEngine"/> and registers its own
+/// <see cref="IMigrationJobStore"/>, <see cref="IPortableImportStaging"/> and
+/// transfer services instead. The SelfHosted executable calls it after
+/// <see cref="Nostos.Product.Composition.NostosProductComposition.AddNostosProduct"/>
+/// so its engine store and phase handlers win over the product defaults.
+/// </para>
+/// <para>
+/// Registering the engine also requires the host's transfer storage and staging
+/// registrations (transfer path resolver, import staging, staging cleanup and
+/// the migration maintenance gate); the engine consumes them but does not
+/// create them.
+/// </para>
+/// </remarks>
 public static class MigrationEngineRegistration
 {
+    /// <summary>
+    /// Registers the SelfHosted migration engine: the durable job store, the
+    /// upload/transfer services, the real import/export phase handlers, the job
+    /// worker and the transfer cleanup worker.
+    /// </summary>
+    /// <remarks>
+    /// Do not call this from a host that supplies its own migration adapter; see
+    /// the class remarks for the separable composition.
+    /// </remarks>
     public static IServiceCollection AddSelfHostedMigrationEngine(this IServiceCollection services)
     {
         services.TryAddSingleton(TimeProvider.System);

@@ -19,7 +19,7 @@ namespace Nostos.Backend.Services.Portability;
 /// observes no synchronous reads and only bounded ranges. On any failure or cancellation
 /// the staging area is deleted before the typed error is rethrown.
 /// </remarks>
-internal sealed class PortableArchiveReader
+internal sealed class PortableArchiveReader : IPortableImportPreparer
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -49,6 +49,14 @@ internal sealed class PortableArchiveReader
             progress,
             cancellationToken,
             resourceBudget: null);
+
+    async Task<IPreparedPortableImport> IPortableImportPreparer.PrepareImportAsync(
+        IPortableArchiveSource source,
+        IPortableImportStaging staging,
+        IProgress<PortableArchiveProgress>? progress,
+        CancellationToken cancellationToken) =>
+        await PrepareImportAsync(source, staging, progress, cancellationToken)
+            .ConfigureAwait(false);
 
     /// <summary>
     /// Test seam: an explicit buffer budget lets a test observe the high-water mark of
