@@ -62,7 +62,7 @@ describe('EpubReader highlight-mode lifecycle (issue #16)', () => {
       hooks: { content: { register: vi.fn(() => log.push('content-hook')) } },
       on: vi.fn(),
       off: vi.fn(),
-      annotations: { highlight: vi.fn(), add: vi.fn(), remove: vi.fn() },
+      annotations: { highlight: vi.fn(), underline: vi.fn(), add: vi.fn(), remove: vi.fn() },
       getContents: vi.fn(() => [renderedContents]),
       views: vi.fn(() => []),
       getRange: vi.fn(),
