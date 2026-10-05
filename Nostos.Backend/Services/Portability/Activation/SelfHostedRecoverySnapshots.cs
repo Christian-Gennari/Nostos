@@ -169,6 +169,12 @@ internal sealed class SelfHostedMigrationRecoveryService :
     private const int CopyBufferSize = 81920;
 
     /// <summary>
+    /// Book-folder child directory owned by <c>FileBookTextArtifactStorage</c>.
+    /// Derived text caches are regenerable and are not primary retained media.
+    /// </summary>
+    private const string DerivedArtifactsDirectoryName = "derived";
+
+    /// <summary>
     /// Conservative timestamp-granularity window: a file last written at or
     /// after <c>captureStart - this window</c> is re-hashed under the exclusive
     /// lease. Two seconds covers the coarsest common granularity (FAT/exFAT
@@ -244,9 +250,13 @@ internal sealed class SelfHostedMigrationRecoveryService :
 
         if (!File.Exists(_paths.LiveDatabase)) throw Flaw("The live database is missing.");
         var captureStartedAtUtc = _clock.GetUtcNow();
-        var files = EnumerateLiveMediaFiles();
+        var enumeration = EnumerateLiveMediaFiles();
+        var files = enumeration.Files;
         var pins = new List<SelfHostedRecoveryMediaPin>(files.Count);
-        long mediaBytes = 0;
+        // Derived book-text caches ride along with the media-root rename but are
+        // deliberately not manifest entries; their bytes still count toward the
+        // retained copy's measured size.
+        long mediaBytes = enumeration.IgnoredDerivedBytes;
         foreach (var file in files)
         {
             ct.ThrowIfCancellationRequested();
@@ -716,10 +726,11 @@ internal sealed class SelfHostedMigrationRecoveryService :
     {
         var pinned = capture.Media.ToDictionary(pin => pin.RelativePath, StringComparer.Ordinal);
         var threshold = capture.CaptureStartedAtUtc - MediaHashSafetyWindow;
-        var files = EnumerateLiveMediaFiles();
+        var enumeration = EnumerateLiveMediaFiles();
+        var files = enumeration.Files;
         var descriptors = new List<RecoveryMediaDescriptor>(files.Count);
         var rehashed = 0;
-        long mediaBytes = 0;
+        long mediaBytes = enumeration.IgnoredDerivedBytes;
         foreach (var file in files)
         {
             ct.ThrowIfCancellationRequested();
@@ -747,13 +758,19 @@ internal sealed class SelfHostedMigrationRecoveryService :
     /// <summary>
     /// Structural enumeration of the live media root. Fails closed on
     /// unexpected entries so the retained set is exactly describable.
+    /// The book-text artifact store keeps regenerable caches under
+    /// <c>&lt;bookId&gt;/derived/</c> (see <c>FileBookTextArtifactStorage</c>);
+    /// that directory is expected and rides along with the media-root rename,
+    /// but only primary media becomes manifest entries. Any other directory in
+    /// a book folder is still refused and unknown top-level entries still fail.
     /// </summary>
-    private List<LiveMediaFile> EnumerateLiveMediaFiles()
+    private LiveMediaEnumeration EnumerateLiveMediaFiles()
     {
         var root = _paths.LiveMedia;
         if (!Directory.Exists(root)) throw Flaw("The live media root is missing.");
         _paths.VerifyMediaPath(root);
         var files = new List<LiveMediaFile>();
+        long ignoredDerivedBytes = 0;
         foreach (var directory in Directory.EnumerateFileSystemEntries(root).Order(StringComparer.Ordinal))
         {
             _paths.VerifyMediaPath(directory);
@@ -766,7 +783,14 @@ internal sealed class SelfHostedMigrationRecoveryService :
             foreach (var entry in Directory.EnumerateFileSystemEntries(directory).Order(StringComparer.Ordinal))
             {
                 _paths.VerifyMediaPath(entry);
-                if (Directory.Exists(entry)) throw Flaw("A book folder contains an unexpected directory.");
+                if (Directory.Exists(entry))
+                {
+                    if (!string.Equals(Path.GetFileName(entry), DerivedArtifactsDirectoryName, StringComparison.Ordinal))
+                        throw Flaw("A book folder contains an unexpected directory.");
+                    ignoredDerivedBytes = AddChecked(ignoredDerivedBytes, DirectoryBytes(entry));
+                    continue;
+                }
+
                 if (!File.Exists(entry)) throw Flaw("The media root contains an unexpected entry.");
                 var info = new FileInfo(entry);
                 var (kind, extension) = ClassifyMediaFile(Path.GetFileName(entry));
@@ -775,7 +799,17 @@ internal sealed class SelfHostedMigrationRecoveryService :
             }
         }
 
-        return files;
+        return new LiveMediaEnumeration(files, ignoredDerivedBytes);
+    }
+
+    private static long DirectoryBytes(string directory)
+    {
+        long total = 0;
+        foreach (var file in Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories))
+        {
+            total = AddChecked(total, new FileInfo(file).Length);
+        }
+        return total;
     }
 
     private void VerifyRetainedMediaMatchesManifest(Guid jobId, SelfHostedRecoveryManifest manifest)
@@ -1025,4 +1059,12 @@ internal sealed class SelfHostedMigrationRecoveryService :
         string Extension,
         long Bytes,
         DateTime LastWriteUtc);
+
+    /// <summary>
+    /// Primary files plus the measured bytes of the derived caches that are
+    /// skipped as manifest entries but physically retained by the rename.
+    /// </summary>
+    private sealed record LiveMediaEnumeration(
+        List<LiveMediaFile> Files,
+        long IgnoredDerivedBytes);
 }

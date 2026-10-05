@@ -105,6 +105,61 @@ public sealed class RecoveryMediaEvidenceTests
     }
 
     [Fact]
+    public async Task Derived_book_text_directories_are_retained_but_stay_out_of_the_manifest()
+    {
+        using var bed = new RecoveryTestBed();
+        await bed.SeedLiveLibraryAsync();
+
+        // The book-text artifact store keeps regenerable caches under
+        // <bookId>/derived/<source-sha>/<extractor-version>/.
+        var derived = Path.Combine(bed.Paths.LiveMedia, FirstBook.ToString("N"), "derived",
+            new string('a', 64), "extractor-v1");
+        Directory.CreateDirectory(derived);
+        await File.WriteAllTextAsync(Path.Combine(derived, "chunks.json.gz"), "derived-cache");
+        var derivedBytes = new FileInfo(Path.Combine(derived, "chunks.json.gz")).Length;
+
+        var service = bed.CreateService();
+        var capture = await service.CaptureAsync(bed.JobId, bed.OperationId, bed.Revision, new(Books: 2), default);
+
+        capture.Media.Should().HaveCount(5, "derived caches are not primary media pins");
+        capture.Media.Should().NotContain(pin => pin.RelativePath.Contains("/derived/"));
+        capture.MediaBytes.Should().Be(capture.Media.Sum(pin => pin.Bytes) + derivedBytes,
+            "the retained copy's measured size still includes the derived bytes");
+
+        var lease = await bed.Gate.EnterExclusiveAsync(LibraryMaintenanceReason.Activation);
+        var journal = await bed.AdvanceJournalAsync(bed.SeedJournal(),
+            SelfHostedActivationPhase.DatabaseCheckpointed, lease);
+        var manifest = await service.PrepareRetentionAsync(bed.JobId, capture, lease, default);
+
+        manifest.Media.Should().HaveCount(5);
+        manifest.MediaBytes.Should().Be(capture.MediaBytes);
+
+        journal = await bed.AdvanceJournalAsync(journal, SelfHostedActivationPhase.CutoverPrepared, lease);
+        manifest = await service.RetainMediaAsync(bed.JobId, lease, default);
+
+        manifest.MediaRetained.Should().BeTrue();
+        File.Exists(Path.Combine(bed.Paths.PreviousMedia(bed.JobId), FirstBook.ToString("N"), "derived",
+            new string('a', 64), "extractor-v1", "chunks.json.gz")).Should().BeTrue(
+            "the derived cache rides along with the media-root rename");
+        await lease.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task Unknown_directories_in_a_book_folder_still_fail_closed()
+    {
+        using var bed = new RecoveryTestBed();
+        await bed.SeedLiveLibraryAsync();
+        Directory.CreateDirectory(Path.Combine(bed.Paths.LiveMedia, FirstBook.ToString("N"), "mystery"));
+        var service = bed.CreateService();
+
+        Func<Task> capture = () =>
+            service.CaptureAsync(bed.JobId, bed.OperationId, bed.Revision, new(Books: 2), default);
+        await capture.Should().ThrowAsync<MigrationActivationException>()
+            .Where(exception => exception.Code == MigrationActivationErrorCodes.RecoveryFailed)
+            .WithMessage("*unexpected directory*");
+    }
+
+    [Fact]
     public async Task Unchanged_files_older_than_the_window_keep_their_capture_hash_and_are_not_rehashed()
     {
         using var bed = new RecoveryTestBed();
