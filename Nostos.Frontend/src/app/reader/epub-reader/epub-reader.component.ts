@@ -660,9 +660,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
       const corpus = await this.ensureSearchCorpus();
       if (generation !== this.searchGeneration) return;
 
-      const escaped = normalizedQuery.replace(/[.*+?^$\{\}()|[\]\\]/g, '\\  // --- IReader Methods ---
-
-  next() {');
+      const escaped = normalizedQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const matcher = new RegExp(escaped, 'giu');
       const matches: Array<{ href: string; index: number; offset: number; length: number }> = [];
 
