@@ -85,7 +85,7 @@ public sealed class RecoveryRestoreFailureTests
         await using (await bed.Maintenance.EnterExclusiveAsync(LibraryMaintenanceReason.Activation))
         {
             var busy = await bed.ResumeRestoreAsync();
-            busy.Outcome.Should().Be(SelfHostedRecoveryRestoreOutcome.Interrupted);
+            busy.Outcome.Should().Be(SelfHostedRecoveryRestoreOutcome.Busy);
             busy.ErrorCode.Should().Be(MigrationActivationErrorCodes.Busy);
         }
 

@@ -64,7 +64,7 @@ public sealed class RecoveryRestoreCrashMatrixTests
         var crashed = false;
         try
         {
-            await bed.RestoreAsync(observer: step =>
+            await bed.CrashRestoreAsync(step =>
             {
                 if (string.Equals(step, boundary, StringComparison.Ordinal))
                 {
@@ -171,7 +171,7 @@ public sealed class RecoveryRestoreCrashMatrixTests
         var crashed = false;
         try
         {
-            await bed.RestoreAsync(observer: step =>
+            await bed.CrashRestoreAsync(step =>
             {
                 if (string.Equals(step, boundary, StringComparison.Ordinal))
                 {

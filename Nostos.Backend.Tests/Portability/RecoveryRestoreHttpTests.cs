@@ -39,6 +39,11 @@ public sealed class RecoveryRestoreHttpTests
             HttpMethod.Get, $"{BasePath}/{harness.Bed.RecoveryId}");
         statusStatus.Should().Be(HttpStatusCode.OK);
         status.RootElement.GetProperty("status").GetString().Should().Be("Available");
+        status.RootElement.GetProperty("outcome").GetString().Should().Be("Idle");
+        status.RootElement.GetProperty("accepted").GetBoolean().Should().BeFalse();
+        status.RootElement.GetProperty("canRestore").GetBoolean().Should().BeTrue();
+        status.RootElement.GetProperty("maintenanceRequired").GetBoolean().Should().BeFalse();
+        status.RootElement.GetProperty("counts").ValueKind.Should().Be(System.Text.Json.JsonValueKind.Object);
 
         var (missingStatus, missing) = await harness.SendAsync(
             HttpMethod.Get, $"{BasePath}/{Guid.NewGuid()}");
@@ -89,6 +94,9 @@ public sealed class RecoveryRestoreHttpTests
             new { destinationRevision = token, confirmReplacement = true });
         accepted.Should().Be(HttpStatusCode.Accepted);
         acceptedBody.RootElement.GetProperty("status").GetString().Should().Be("Restoring");
+        acceptedBody.RootElement.GetProperty("outcome").GetString().Should().Be("Accepted");
+        acceptedBody.RootElement.GetProperty("accepted").GetBoolean().Should().BeTrue();
+        acceptedBody.RootElement.GetProperty("canRestore").GetBoolean().Should().BeFalse();
 
         await harness.AwaitRestoreAsync(harness.Bed.RecoveryId);
 
@@ -96,17 +104,22 @@ public sealed class RecoveryRestoreHttpTests
             HttpMethod.Get, $"{BasePath}/{harness.Bed.RecoveryId}");
         statusCode.Should().Be(HttpStatusCode.OK);
         status.RootElement.GetProperty("status").GetString().Should().Be("Restored");
-        status.RootElement.GetProperty("restoreError").ValueKind.Should().Be(System.Text.Json.JsonValueKind.Null);
+        status.RootElement.GetProperty("outcome").GetString().Should().Be("Completed");
+        status.RootElement.GetProperty("accepted").GetBoolean().Should().BeFalse();
+        status.RootElement.GetProperty("canRestore").GetBoolean().Should().BeFalse();
+        status.RootElement.GetProperty("errorCode").ValueKind.Should().Be(System.Text.Json.JsonValueKind.Null);
 
         await harness.Bed.AssertRestoredPortableGenerationAsync();
 
-        // The completed copy is no longer available for a second restore.
+        // A repeated request replays the completed outcome; it never starts a
+        // second run.
         var (againStatus, againBody) = await harness.PostJsonAsync(
             $"{BasePath}/{harness.Bed.RecoveryId}/restore",
             new { destinationRevision = token, confirmReplacement = true });
-        againStatus.Should().Be(HttpStatusCode.Conflict);
-        againBody.RootElement.GetProperty("error").GetString()
-            .Should().Be(MigrationActivationErrorCodes.RecoveryRestoreConflict);
+        againStatus.Should().Be(HttpStatusCode.Accepted);
+        againBody.RootElement.GetProperty("outcome").GetString().Should().Be("Completed");
+        harness.GetService<SelfHostedActivationDispatcher>().StartedRestoreRunCount
+            .Should().Be(1, "a duplicate request never starts a second restore");
     }
 
     [Fact]
@@ -117,17 +130,62 @@ public sealed class RecoveryRestoreHttpTests
 
         await using (await maintenance.EnterExclusiveAsync(LibraryMaintenanceReason.RecoveryRestore))
         {
-            var (statusCode, status) = await harness.SendAsync(
-                HttpMethod.Get, $"{BasePath}/{harness.Bed.RecoveryId}");
-            statusCode.Should().Be(HttpStatusCode.OK,
-                "status reads only durable manifests and must answer during maintenance");
-            status.RootElement.GetProperty("status").GetString().Should().Be("Available");
+            var opened = new List<string>();
+            SelfHostedSqliteFile.ConnectionOpeningForTesting = opened.Add;
+            try
+            {
+                var (listCode, list) = await harness.SendAsync(HttpMethod.Get, BasePath);
+                listCode.Should().Be(HttpStatusCode.OK,
+                    "list reads only durable manifests and must answer during maintenance");
+                list.RootElement.GetArrayLength().Should().Be(1);
+
+                var (statusCode, status) = await harness.SendAsync(
+                    HttpMethod.Get, $"{BasePath}/{harness.Bed.RecoveryId}");
+                statusCode.Should().Be(HttpStatusCode.OK,
+                    "status reads only durable manifests and must answer during maintenance");
+                status.RootElement.GetProperty("status").GetString().Should().Be("Available");
+                status.RootElement.GetProperty("outcome").GetString().Should().Be("Idle");
+                status.RootElement.GetProperty("canRestore").GetBoolean().Should().BeTrue();
+            }
+            finally
+            {
+                SelfHostedSqliteFile.ConnectionOpeningForTesting = null;
+            }
+
+            opened.Should().BeEmpty(
+                "recovery list/status must never open SQLite, especially not inside the exclusive window");
 
             var (busyStatus, busy) = await harness.SendAsync(HttpMethod.Get, "/api/books");
             busyStatus.Should().Be(HttpStatusCode.ServiceUnavailable);
             busy.RootElement.GetProperty("code").GetString()
                 .Should().Be(MigrationActivationErrorCodes.Busy);
         }
+    }
+
+    [Fact]
+    public void RestoreStatus_SerializesTheAlignedVocabulary()
+    {
+        var status = new MigrationRecoveryRestoreStatusResponse(
+            Guid.Parse("11111111-2222-3333-4444-555555555555"),
+            MigrationRecoveryStatus.Available,
+            MigrationActivationOutcome.Idle,
+            CreatedAtUtc: DateTimeOffset.UnixEpoch,
+            ExpiresAtUtc: DateTimeOffset.UnixEpoch.AddDays(7),
+            SizeBytes: 123,
+            Counts: new MigrationExistingCounts(Works: 1, Books: 2),
+            CanRestore: true);
+
+        var json = System.Text.Json.JsonSerializer.Serialize(status, MigrationHttpHarness.Json);
+        using var document = System.Text.Json.JsonDocument.Parse(json);
+        var root = document.RootElement;
+        root.GetProperty("recoveryId").GetGuid().Should().Be(status.RecoveryId);
+        root.GetProperty("status").GetString().Should().Be("Available");
+        root.GetProperty("outcome").GetString().Should().Be("Idle");
+        root.GetProperty("accepted").GetBoolean().Should().BeFalse();
+        root.GetProperty("canRestore").GetBoolean().Should().BeTrue();
+        root.GetProperty("maintenanceRequired").GetBoolean().Should().BeFalse();
+        root.GetProperty("phase").ValueKind.Should().Be(System.Text.Json.JsonValueKind.Null);
+        root.GetProperty("counts").GetProperty("books").GetInt64().Should().Be(2);
     }
 
     [Fact]

@@ -526,12 +526,31 @@ internal sealed class ActivationCoordinatorTestBed : IAsyncDisposable
     {
         if (Host is not null)
         {
+            await StopDispatcherAsync(Host);
             await Host.DisposeAsync();
             _providers.Remove(Host);
         }
 
         BuildMaintenance();
         BuildHost();
+        await StartDispatcherAsync(Host);
+    }
+
+    private static async Task StartDispatcherAsync(ServiceProvider provider)
+    {
+        await provider.GetRequiredService<SelfHostedActivationDispatcher>().StartAsync(default);
+    }
+
+    private static async Task StopDispatcherAsync(ServiceProvider provider)
+    {
+        try
+        {
+            await provider.GetRequiredService<SelfHostedActivationDispatcher>().StopAsync(default);
+        }
+        catch (Exception)
+        {
+            // Test cleanup only.
+        }
     }
 
     private void BuildMaintenance()
@@ -614,7 +633,9 @@ internal sealed class ActivationCoordinatorTestBed : IAsyncDisposable
             sp.GetRequiredService<SelfHostedActivationCoordinator>());
         services.AddScoped<ISelfHostedRecoveryCatalog>(sp =>
             sp.GetRequiredService<SelfHostedMigrationRecoveryService>());
-        services.AddSingleton<SelfHostedRecoveryRestoreRunner>();
+        services.AddSingleton<SelfHostedActivationDispatcher>();
+        services.AddSingleton<IMigrationActivationDispatcher>(sp =>
+            sp.GetRequiredService<SelfHostedActivationDispatcher>());
         services.AddSingleton<ISelfHostedRecoverySchemaMigrator>(new SwitchableRecoveryMigrator(this));
         services.AddScoped<SelfHostedRecoveryRestoreCoordinator>();
         services.AddScoped<SelfHostedRecoveryRestoreHostService>();
@@ -679,6 +700,7 @@ internal sealed class ActivationCoordinatorTestBed : IAsyncDisposable
     {
         if (Host is not null)
         {
+            await StopDispatcherAsync(Host);
             await Host.DisposeAsync();
             _providers.Remove(Host);
         }
@@ -686,6 +708,7 @@ internal sealed class ActivationCoordinatorTestBed : IAsyncDisposable
         await ReconcileAsync();
         BuildMaintenance();
         BuildHost();
+        await StartDispatcherAsync(Host);
     }
 
     internal static IReadOnlyList<string> PortableTableNames { get; } = BuildPortableTableNames();
@@ -850,7 +873,7 @@ internal sealed class ActivationCoordinatorTestBed : IAsyncDisposable
             .GetCurrentAsync(default);
     }
 
-    /// <summary>Claims and runs a restore with a deterministic, awaited run.</summary>
+    /// <summary>Claims and runs a restore through the shared library-switch dispatcher.</summary>
     internal async Task<SelfHostedRecoveryRestoreResult> RestoreAsync(
         bool confirm = true,
         Action<string>? observer = null,
@@ -858,17 +881,33 @@ internal sealed class ActivationCoordinatorTestBed : IAsyncDisposable
         Guid? recoveryId = null)
     {
         var id = recoveryId ?? RecoveryId;
-        var runner = Host.GetRequiredService<SelfHostedRecoveryRestoreRunner>();
-        runner.StepObserverForTesting = observer;
+        var dispatcher = Host.GetRequiredService<SelfHostedActivationDispatcher>();
+        dispatcher.RestoreStepObserverForTesting = observer;
         var token = revision ?? await CurrentRevisionTokenAsync();
-        await using (var scope = Host.CreateAsyncScope())
-        {
-            var coordinator = scope.ServiceProvider.GetRequiredService<SelfHostedRecoveryRestoreCoordinator>();
-            await coordinator.RequestRestoreAsync(
-                id, new MigrationRecoveryRestoreRequest(token, confirm), default);
-        }
+        await dispatcher.RequestRestoreAsync(
+            id, new MigrationRecoveryRestoreRequest(token, confirm), default);
+        await dispatcher.AwaitRestoreFinishedAsync(id, default);
+        return MapRestoreResult(await dispatcher.GetRestoreStatusAsync(id, default));
+    }
 
-        return await runner.RunAsync(id, default);
+    /// <summary>
+    /// Runs the restore coordinator directly with a crash-matrix observer. The
+    /// sentinel propagates exactly like process death; production dispatch runs
+    /// through <see cref="SelfHostedActivationDispatcher"/>.
+    /// </summary>
+    internal async Task<SelfHostedRecoveryRestoreResult> CrashRestoreAsync(
+        Action<string> observer,
+        string? revision = null,
+        Guid? recoveryId = null)
+    {
+        var id = recoveryId ?? RecoveryId;
+        var token = revision ?? await CurrentRevisionTokenAsync();
+        await using var scope = Host.CreateAsyncScope();
+        var coordinator = scope.ServiceProvider.GetRequiredService<SelfHostedRecoveryRestoreCoordinator>();
+        coordinator.StepObserverForTesting = observer;
+        await coordinator.RequestRestoreAsync(
+            id, new MigrationRecoveryRestoreRequest(token, true), default);
+        return await coordinator.RestorePreviousLibraryAsync(id, default);
     }
 
     /// <summary>Resumes a durably claimed restore on the current host generation.</summary>
@@ -877,10 +916,26 @@ internal sealed class ActivationCoordinatorTestBed : IAsyncDisposable
         Guid? recoveryId = null)
     {
         var id = recoveryId ?? RecoveryId;
-        var runner = Host.GetRequiredService<SelfHostedRecoveryRestoreRunner>();
-        runner.StepObserverForTesting = observer;
-        return await runner.RunAsync(id, default);
+        var dispatcher = Host.GetRequiredService<SelfHostedActivationDispatcher>();
+        dispatcher.RestoreStepObserverForTesting = observer;
+        await dispatcher.ScanPendingRestoresAsync(default);
+        await dispatcher.AwaitRestoreFinishedAsync(id, default);
+        return MapRestoreResult(await dispatcher.GetRestoreStatusAsync(id, default));
     }
+
+    private static SelfHostedRecoveryRestoreResult MapRestoreResult(
+        MigrationRecoveryRestoreStatusResponse status) =>
+        new(
+            status.RecoveryId,
+            status.Outcome switch
+            {
+                MigrationActivationOutcome.Completed => SelfHostedRecoveryRestoreOutcome.Restored,
+                MigrationActivationOutcome.Running or MigrationActivationOutcome.Accepted =>
+                    SelfHostedRecoveryRestoreOutcome.Busy,
+                _ => SelfHostedRecoveryRestoreOutcome.Interrupted,
+            },
+            status.Status,
+            status.ErrorCode);
 
     /// <summary>Claims only (no run), for concurrency and status tests.</summary>
     internal async Task<MigrationRecoveryStatusResponse> RequestRestoreOnlyAsync(
@@ -898,6 +953,36 @@ internal sealed class ActivationCoordinatorTestBed : IAsyncDisposable
 
     internal SelfHostedRecoveryManifest? ReadRecoveryManifest(Guid? recoveryId = null) =>
         Manifests.Read(recoveryId ?? RecoveryId);
+
+    /// <summary>
+    /// Seeds a second ReadyToActivate import job over the same prepared staging,
+    /// for dispatcher mutual-exclusion tests (activation versus restore).
+    /// </summary>
+    internal async Task<Guid> SeedReadyToActivateJobAsync(string destinationRevision)
+    {
+        var id = Guid.NewGuid();
+        await using var db = OpenDatabase();
+        db.MigrationJobRecords.Add(new MigrationJobRecord
+        {
+            Id = id,
+            Direction = (int)MigrationDirection.Import,
+            State = (int)MigrationJobState.ReadyToActivate,
+            RecoveryStatus = (int)MigrationRecoveryStatus.Pending,
+            ProgressPhase = (int)MigrationProgressPhase.PreparingActivation,
+            CreatedAtUtc = DateTime.UtcNow.AddMinutes(-10),
+            UpdatedAtUtc = DateTime.UtcNow.AddMinutes(-5),
+            IdempotencyKey = $"queued-activation-{id:N}",
+            CreationPayloadHash = new string('a', 64),
+            ExpiresAtUtc = DateTime.UtcNow.AddDays(1),
+            AttemptNumber = 1,
+            DestinationRevision = destinationRevision,
+            PreparedStagingId = Prepared.Metadata.StagingId.Value,
+            PreparedImportMetadataJson = "{}",
+            Version = 1,
+        });
+        await db.SaveChangesAsync();
+        return id;
+    }
 
     internal (Dictionary<string, List<string>> Tables, Dictionary<string, string> Media)
         SnapshotLiveGeneration() =>
@@ -1140,6 +1225,7 @@ internal sealed class ActivationCoordinatorTestBed : IAsyncDisposable
         {
             try
             {
+                await StopDispatcherAsync(provider);
                 await provider.DisposeAsync();
             }
             catch

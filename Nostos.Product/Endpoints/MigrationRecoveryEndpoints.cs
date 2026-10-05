@@ -10,9 +10,11 @@ namespace Nostos.Backend.Endpoints;
 /// These routes live in their own group under the migration base path and carry
 /// the same authorization and rate-limit policies as the transfer routes, plus
 /// the migration error body. List and status read only durable manifests (never
-/// the active database), so they are maintenance-safe and stay usable during the
-/// exclusive window; the restore handler takes its own shared operation lease
-/// and answers the migration-shaped 503 while another operation owns the library.
+/// SQLite), so they carry the shared memory-safe marker and stay usable during
+/// the exclusive window; the restore handler owns its own shared lease and
+/// queues the run on the shared library-switch dispatcher, so it carries the
+/// control marker and answers the migration-shaped 503 while another operation
+/// owns the library.
 /// </summary>
 public static class MigrationRecoveryEndpoints
 {
@@ -37,8 +39,8 @@ public static class MigrationRecoveryEndpoints
             group.RequireAuthorization(policies.MigrationAuthorizationPolicy);
         }
 
-        group.MapGet("/recovery", ListAsync).WithMetadata(new LibraryMaintenanceSafe());
-        group.MapGet("/recovery/{id}", GetAsync).WithMetadata(new LibraryMaintenanceSafe());
+        group.MapGet("/recovery", ListAsync).WithMetadata(new LibraryMaintenanceMemorySafe());
+        group.MapGet("/recovery/{id}", GetStatusAsync).WithMetadata(new LibraryMaintenanceMemorySafe());
         group.MapPost("/recovery/{id}/restore", RestoreAsync)
             .WithMetadata(new LibraryMaintenanceControl());
         return routes;
@@ -48,16 +50,13 @@ public static class MigrationRecoveryEndpoints
         ISelfHostedRecoveryRestore restore,
         CancellationToken ct) => GuardAsync(async () => Results.Ok(await restore.ListAsync(ct)));
 
-    private static Task<IResult> GetAsync(
+    private static Task<IResult> GetStatusAsync(
         string id,
         ISelfHostedRecoveryRestore restore,
         CancellationToken ct) => GuardAsync(async () =>
     {
         if (!TryParseId(id, out var recoveryId)) return InvalidRequest();
-        var status = await restore.GetAsync(recoveryId, ct);
-        return status is null
-            ? MigrationHttpErrors.Result(MigrationHttpErrors.RecoveryNotFound, StatusCodes.Status404NotFound)
-            : Results.Ok(status);
+        return Results.Ok(await restore.GetStatusAsync(recoveryId, ct));
     });
 
     private static Task<IResult> RestoreAsync(

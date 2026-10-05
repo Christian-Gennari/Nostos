@@ -285,10 +285,10 @@ builder.Services.AddScoped<SelfHostedActivationCoordinator>();
 builder.Services.AddScoped<IMigrationActivationService>(sp => sp.GetRequiredService<SelfHostedActivationCoordinator>());
 
 // --- #681 SLICE 9: RECOVERY RESTORE ("RESTORE PREVIOUS LIBRARY") ---
-// The runner serializes claim/execution per recovery copy and resumes durably
-// claimed restores after a restart; the processor scans once at startup (after
-// the activation reconciler and database bootstrap) and periodically thereafter.
-builder.Services.AddSingleton<SelfHostedRecoveryRestoreRunner>();
+// Restore execution shares the Slice 8 library-switch dispatcher, so an
+// activation and a restore can never run concurrently; the processor scans once
+// at startup (after the activation reconciler and database bootstrap) and
+// periodically thereafter, enqueueing durably claimed restores.
 builder.Services.AddSingleton<ISelfHostedRecoverySchemaMigrator, SelfHostedRecoverySchemaMigrator>();
 builder.Services.AddScoped<SelfHostedRecoveryRestoreCoordinator>();
 builder.Services.AddScoped<SelfHostedRecoveryRestoreHostService>();

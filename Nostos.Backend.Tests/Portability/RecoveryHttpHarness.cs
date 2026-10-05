@@ -51,8 +51,8 @@ internal sealed class RecoveryHttpHarness : IAsyncDisposable
 
     internal async Task AwaitRestoreAsync(Guid recoveryId)
     {
-        var runner = GetService<SelfHostedRecoveryRestoreRunner>();
-        if (runner.RunningTask(recoveryId) is { } running) await running;
+        var dispatcher = GetService<SelfHostedActivationDispatcher>();
+        await dispatcher.AwaitRestoreFinishedAsync(recoveryId, default);
     }
 
     internal async Task<(HttpStatusCode Status, JsonDocument Body)> SendAsync(

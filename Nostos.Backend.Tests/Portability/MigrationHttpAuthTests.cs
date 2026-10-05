@@ -306,10 +306,11 @@ public sealed class MigrationHttpAuthTests
         public Task<IReadOnlyList<MigrationRecoveryStatusResponse>> ListAsync(CancellationToken ct) =>
             Task.FromResult<IReadOnlyList<MigrationRecoveryStatusResponse>>([]);
 
-        public Task<MigrationRecoveryStatusResponse?> GetAsync(Guid recoveryId, CancellationToken ct) =>
-            Task.FromResult<MigrationRecoveryStatusResponse?>(null);
+        public Task<MigrationRecoveryRestoreStatusResponse> GetStatusAsync(
+            Guid recoveryId,
+            CancellationToken ct) => throw new NotSupportedException();
 
-        public Task<MigrationRecoveryStatusResponse> RequestRestoreAsync(
+        public Task<MigrationRecoveryRestoreStatusResponse> RequestRestoreAsync(
             Guid recoveryId,
             MigrationRecoveryRestoreRequest request,
             CancellationToken ct) => throw new NotSupportedException();

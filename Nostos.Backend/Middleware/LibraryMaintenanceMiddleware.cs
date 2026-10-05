@@ -16,15 +16,6 @@ public sealed class LibraryMaintenanceMiddleware(RequestDelegate next)
 
     public async Task InvokeAsync(HttpContext context, ILibraryMaintenanceCoordinator maintenance, McpOptions mcp)
     {
-        // Durable-state-only routes (for example a recovery-restore status
-        // poll) never participate in the library gate and must answer while an
-        // exclusive window is open.
-        if (context.GetEndpoint()?.Metadata.GetMetadata<LibraryMaintenanceSafe>() is not null)
-        {
-            await next(context);
-            return;
-        }
-
         var path = context.Request.Path;
         var libraryPath = path.StartsWithSegments("/api") || path.StartsWithSegments("/opds")
             || path.StartsWithSegments("/health/ready")
@@ -41,10 +32,11 @@ public sealed class LibraryMaintenanceMiddleware(RequestDelegate next)
         var memorySafe = endpoint?.Metadata.GetMetadata<LibraryMaintenanceMemorySafe>() is not null;
         if (memorySafe)
         {
-            // The endpoint owns its admission leases and serves from in-memory
-            // state while exclusive maintenance has the live database closed.
-            // It must never open the live database in that window and takes its
-            // own short shared leases for every other read.
+            // The endpoint owns its admission leases and must never open the
+            // live database while exclusive maintenance is closed: it serves
+            // from memory (activation snapshot) or durable files (recovery
+            // manifests), and takes its own short shared leases for every other
+            // read.
             await next(context);
             return;
         }

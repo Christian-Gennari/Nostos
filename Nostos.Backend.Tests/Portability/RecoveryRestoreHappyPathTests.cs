@@ -157,9 +157,13 @@ public sealed class RecoveryRestoreHappyPathTests
 
         (await bed.RestoreAsync()).Outcome.Should().Be(SelfHostedRecoveryRestoreOutcome.Restored);
         var after = bed.SnapshotLiveGeneration();
+        var runs = bed.Host.GetRequiredService<SelfHostedActivationDispatcher>().StartedRestoreRunCount;
 
         var again = await bed.ResumeRestoreAsync();
-        again.Outcome.Should().Be(SelfHostedRecoveryRestoreOutcome.AlreadyRestored);
+        again.Outcome.Should().Be(SelfHostedRecoveryRestoreOutcome.Restored,
+            "a repeated request is an idempotent success, not a second run");
+        bed.Host.GetRequiredService<SelfHostedActivationDispatcher>().StartedRestoreRunCount
+            .Should().Be(runs, "a repeated request must not start a second run");
         bed.AssertGenerationEquals(after, "a repeated run must not restore twice");
     }
 

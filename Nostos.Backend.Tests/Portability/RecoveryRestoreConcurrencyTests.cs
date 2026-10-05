@@ -25,26 +25,134 @@ public sealed class RecoveryRestoreConcurrencyTests
         var beforeRevision = await bed.CurrentRevisionAsync();
         var token = await bed.CurrentRevisionTokenAsync();
 
+        var dispatcher = bed.Host.GetRequiredService<SelfHostedActivationDispatcher>();
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        dispatcher.BeforeRestoreRunForTesting = (_, ct) => release.Task.WaitAsync(ct);
+
         await using var scope = bed.Host.CreateAsyncScope();
         var host = scope.ServiceProvider.GetRequiredService<ISelfHostedRecoveryRestore>();
 
         var first = await host.RequestRestoreAsync(
             bed.RecoveryId, new MigrationRecoveryRestoreRequest(token, true), default);
-        first.Status.Should().Be(MigrationRecoveryStatus.Restoring);
+        first.Outcome.Should().Be(MigrationActivationOutcome.Accepted);
+        first.Accepted.Should().BeTrue();
 
-        var failure = await FluentActions
-            .Awaiting(() => host.RequestRestoreAsync(
-                bed.RecoveryId, new MigrationRecoveryRestoreRequest(token, true), default))
-            .Should().ThrowAsync<MigrationActivationException>();
-        failure.Which.Code.Should().Be(MigrationActivationErrorCodes.RecoveryRestoreConflict);
+        // The second request replays the accepted run; it never starts another.
+        var second = await host.RequestRestoreAsync(
+            bed.RecoveryId, new MigrationRecoveryRestoreRequest(token, true), default);
+        second.Outcome.Should().Be(MigrationActivationOutcome.Accepted);
+        second.RecoveryId.Should().Be(bed.RecoveryId);
 
-        var runner = bed.Host.GetRequiredService<SelfHostedRecoveryRestoreRunner>();
-        if (runner.RunningTask(bed.RecoveryId) is { } running) await running;
+        release.SetResult();
+        await dispatcher.AwaitRestoreFinishedAsync(bed.RecoveryId, default);
+        dispatcher.StartedRestoreRunCount.Should().Be(1, "a duplicate request never starts a second run");
 
         (await bed.CurrentRevisionAsync()).Should().Be(
             beforeRevision + 1, "the library revision is advanced exactly once");
         await bed.AssertRestoredPortableGenerationAsync();
         bed.ReadRecoveryManifest()!.Status.Should().Be(MigrationRecoveryStatus.Restored);
+    }
+
+    [Fact]
+    public async Task AGatedActivationQueuesARestore_AndTheStaleRestoreIsRefused()
+    {
+        await using var bed = await ActivationCoordinatorTestBed.CreateAsync(populated: true);
+        (await bed.ActivateAsync(confirm: true)).Outcome.Should().Be(SelfHostedActivationOutcome.Completed);
+        var token = await bed.CurrentRevisionTokenAsync();
+        var job = await bed.SeedReadyToActivateJobAsync(token);
+        var dispatcher = bed.Host.GetRequiredService<SelfHostedActivationDispatcher>();
+
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        dispatcher.BeforeRunForTesting = (_, ct) => gate.Task.WaitAsync(ct);
+
+        try
+        {
+            var activation = await bed.Host.GetRequiredService<IMigrationActivationDispatcher>()
+                .RequestAsync(job, new MigrationActivateRequest(token, true), default);
+            activation.Outcome.Should().Be(MigrationActivationRequestOutcome.Accepted);
+
+            var restore = await bed.Host.GetRequiredService<ISelfHostedRecoveryRestore>()
+                .RequestRestoreAsync(
+                    bed.RecoveryId, new MigrationRecoveryRestoreRequest(token, true), default);
+            restore.Outcome.Should().Be(MigrationActivationOutcome.Accepted);
+            restore.Accepted.Should().BeTrue();
+
+            // One library-switch pump: the restore waits behind the gated
+            // activation instead of running concurrently.
+            dispatcher.StartedRunCount.Should().Be(0);
+            dispatcher.StartedRestoreRunCount.Should().Be(0);
+
+            gate.SetResult();
+            await dispatcher.AwaitActivationFinishedAsync(job, default);
+            await dispatcher.AwaitRestoreFinishedAsync(bed.RecoveryId, default);
+
+            dispatcher.StartedRunCount.Should().Be(1);
+            dispatcher.StartedRestoreRunCount.Should().Be(1);
+
+            // The activation committed first; the restore's confirmation is now
+            // stale, so it refuses to overwrite the new library.
+            (await dispatcher.GetStatusAsync(job, default)).Outcome
+                .Should().Be(MigrationActivationOutcome.Completed);
+            var restoreStatus = await dispatcher.GetRestoreStatusAsync(bed.RecoveryId, default);
+            restoreStatus.Outcome.Should().Be(MigrationActivationOutcome.Failed);
+            restoreStatus.ErrorCode.Should().Be(MigrationActivationErrorCodes.DestinationConflict);
+            restoreStatus.CanRestore.Should().BeTrue();
+            bed.ReadRecoveryManifest()!.Status.Should().Be(MigrationRecoveryStatus.Available);
+            await bed.AssertImportedGenerationAsync();
+        }
+        finally
+        {
+            gate.TrySetResult();
+            dispatcher.BeforeRunForTesting = null;
+        }
+    }
+
+    [Fact]
+    public async Task AGatedRestoreQueuesAnActivation_AndTheStaleActivationIsRefused()
+    {
+        await using var bed = await ActivationCoordinatorTestBed.CreateAsync(populated: true);
+        (await bed.ActivateAsync(confirm: true)).Outcome.Should().Be(SelfHostedActivationOutcome.Completed);
+        var token = await bed.CurrentRevisionTokenAsync();
+        var job = await bed.SeedReadyToActivateJobAsync(token);
+        var dispatcher = bed.Host.GetRequiredService<SelfHostedActivationDispatcher>();
+
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        dispatcher.BeforeRestoreRunForTesting = (_, ct) => gate.Task.WaitAsync(ct);
+
+        try
+        {
+            var restore = await bed.Host.GetRequiredService<ISelfHostedRecoveryRestore>()
+                .RequestRestoreAsync(
+                    bed.RecoveryId, new MigrationRecoveryRestoreRequest(token, true), default);
+            restore.Outcome.Should().Be(MigrationActivationOutcome.Accepted);
+
+            var activation = await bed.Host.GetRequiredService<IMigrationActivationDispatcher>()
+                .RequestAsync(job, new MigrationActivateRequest(token, true), default);
+            activation.Outcome.Should().Be(MigrationActivationRequestOutcome.Accepted);
+
+            dispatcher.StartedRestoreRunCount.Should().Be(0);
+            dispatcher.StartedRunCount.Should().Be(0);
+
+            gate.SetResult();
+            await dispatcher.AwaitRestoreFinishedAsync(bed.RecoveryId, default);
+            await dispatcher.AwaitActivationFinishedAsync(job, default);
+
+            dispatcher.StartedRestoreRunCount.Should().Be(1);
+            dispatcher.StartedRunCount.Should().Be(1);
+
+            // The restore committed first; the activation's stored revision is
+            // stale and the job stays retryable.
+            await bed.AssertRestoredPortableGenerationAsync();
+            var jobStatus = await dispatcher.GetStatusAsync(job, default);
+            jobStatus.Outcome.Should().Be(MigrationActivationOutcome.Failed);
+            jobStatus.CanActivate.Should().BeTrue();
+            jobStatus.ErrorCode.Should().Be(MigrationActivationErrorCodes.DestinationConflict);
+        }
+        finally
+        {
+            gate.TrySetResult();
+            dispatcher.BeforeRestoreRunForTesting = null;
+        }
     }
 
     [Fact]
@@ -81,10 +189,10 @@ public sealed class RecoveryRestoreConcurrencyTests
         bed.CreateCorruptRecoveryCopy();
         await bed.RequestRestoreOnlyAsync();
 
-        var runner = bed.Host.GetRequiredService<SelfHostedRecoveryRestoreRunner>();
-        await runner.RunPendingAsync(default);
+        var dispatcher = bed.Host.GetRequiredService<SelfHostedActivationDispatcher>();
+        await dispatcher.ScanPendingRestoresAsync(default);
+        await dispatcher.AwaitRestoreFinishedAsync(bed.RecoveryId, default);
 
-        if (runner.RunningTask(bed.RecoveryId) is { } running) await running;
         await bed.AssertRestoredPortableGenerationAsync();
         bed.ReadRecoveryManifest()!.Status.Should().Be(MigrationRecoveryStatus.Restored);
     }

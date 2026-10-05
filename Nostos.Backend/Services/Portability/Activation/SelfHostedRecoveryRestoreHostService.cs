@@ -1,29 +1,27 @@
 namespace Nostos.Backend.Services.Portability.Activation;
 
 /// <summary>
-/// Host adapter behind <see cref="ISelfHostedRecoveryRestore"/>: listing/status
-/// come from the filesystem-backed catalog, and a restore request is claimed
-/// exactly once under the runner's per-copy gate before the detached run starts.
+/// Host adapter behind <see cref="ISelfHostedRecoveryRestore"/>: listing comes
+/// from the filesystem-backed catalog, and status/restore requests run through
+/// the same library-switch dispatcher as activation, so a restore can never run
+/// concurrently with an activation and a second request for the same copy never
+/// starts a second run.
 /// </summary>
 internal sealed class SelfHostedRecoveryRestoreHostService(
     ISelfHostedRecoveryCatalog catalog,
-    SelfHostedRecoveryRestoreCoordinator coordinator,
-    SelfHostedRecoveryRestoreRunner runner) : ISelfHostedRecoveryRestore
+    SelfHostedActivationDispatcher dispatcher) : ISelfHostedRecoveryRestore
 {
     public Task<IReadOnlyList<MigrationRecoveryStatusResponse>> ListAsync(CancellationToken ct) =>
         catalog.ListAsync(ct);
 
-    public Task<MigrationRecoveryStatusResponse?> GetAsync(Guid recoveryId, CancellationToken ct) =>
-        catalog.GetAsync(recoveryId, ct);
+    public Task<MigrationRecoveryRestoreStatusResponse> GetStatusAsync(
+        Guid recoveryId,
+        CancellationToken ct) =>
+        dispatcher.GetRestoreStatusAsync(recoveryId, ct);
 
-    public Task<MigrationRecoveryStatusResponse> RequestRestoreAsync(
+    public Task<MigrationRecoveryRestoreStatusResponse> RequestRestoreAsync(
         Guid recoveryId,
         MigrationRecoveryRestoreRequest request,
         CancellationToken ct) =>
-        runner.WithGateAsync(recoveryId, async () =>
-        {
-            var status = await coordinator.RequestRestoreAsync(recoveryId, request, ct);
-            runner.Start(recoveryId);
-            return status;
-        }, ct);
+        dispatcher.RequestRestoreAsync(recoveryId, request, ct);
 }
