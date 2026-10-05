@@ -256,6 +256,9 @@ export class ReaderShell implements OnInit, OnDestroy {
   private searchDebounce: ReturnType<typeof setTimeout> | null = null;
 
   canSearch(): boolean {
+    // The header can render before the child reader has bound. Do not offer a
+    // search field that could accept a query while activeReader() is still null.
+    if (!this.ready()) return false;
     if (this.fileType() === 'epub') return !(this.epubReader?.loading() ?? false);
     if (this.fileType() === 'pdf') return this.pdfReader?.textCapability() !== 'unavailable';
     return false;
