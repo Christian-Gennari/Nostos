@@ -15,6 +15,9 @@ import {
 import {
   NgxExtendedPdfViewerModule,
   NgxExtendedPdfViewerComponent,
+  NgxExtendedPdfViewerService,
+  FindResultMatchesCount,
+  FindState,
   TextLayerRenderedEvent,
   PagesLoadedEvent,
   PdfLoadedEvent,
@@ -32,7 +35,13 @@ import {
 import { NotesService } from '../../core/services/notes.service';
 import { BooksService } from '../../core/services/books.service';
 import { ThemeService } from '../../core/services/theme.service';
-import { IReader, ReaderProgress, ReaderSourceTarget, TocItem } from '../reader.interface';
+import {
+  IReader,
+  ReaderProgress,
+  ReaderSearchState,
+  ReaderSourceTarget,
+  TocItem,
+} from '../reader.interface';
 import { AssistantContextService } from '../../ui/assistant/assistant-context.service';
 
 /**
@@ -79,6 +88,7 @@ export class PdfReader implements OnInit, OnDestroy, IReader {
   private booksService = inject(BooksService);
   private themeService = inject(ThemeService);
   private assistantContext = inject(AssistantContextService);
+  private pdfSearch = inject(NgxExtendedPdfViewerService);
 
   /**
    * Reader signals published to the assistant context registry (issue #261):
@@ -165,87 +175,81 @@ export class PdfReader implements OnInit, OnDestroy, IReader {
   sidebarVisible = input<boolean>(false);
   sidebarVisibleChange = output<boolean>();
 
-  /**
-   * Search bar visibility, opened by Ctrl/Cmd+F from anywhere in the reader.
-   * Before this the bar was never opened and no other search path existed, so
-   * Ctrl+F did nothing at all in a PDF (issue #226 §2).
-   */
-  findBarVisible = signal(false);
+  /** Shared shell search state; PDF.js remains the matching engine. */
+  searchState = signal<ReaderSearchState>({ status: 'idle', current: 0, total: 0 });
+  private searchGeneration = 0;
+  private activeSearchQuery = '';
 
-  /**
-   * Text-dependent PDF tools are unavailable for image-only/scanned documents.
-   * Unknown keeps the reader usable while detection runs or when pdf.js cannot
-   * expose text content; the visual pages are never hidden.
-   */
-  textCapability = signal<'unknown' | 'available' | 'unavailable'>('unknown');
-
-  /**
-   * Open the find bar and put the caret in the field. Called by the shell's
-   * header control, so search is reachable by touch — a keyboard shortcut alone
-   * left it undiscoverable on a phone (issue #226 §2/§9). The Ctrl/Cmd+F handler
-   * calls the same method.
-   */
-  openSearch(): void {
-    if (this.textCapability() === 'unavailable') return;
-    this.findBarVisible.set(true);
-    this.focusFindInput();
-  }
-
-  /**
-   * Close the bar. The library's find bar renders no close control of its own —
-   * its only buttons are prev/next — so dismissal comes from the header's Search
-   * toggle (which is a toggle, `aria-expanded`) and from Escape. A close control
-   * inside the bar was removed: it duplicated the toggle, and pdf.js's
-   * `button:focus { border: 1px solid blue }` painted a blue border on it that no
-   * `.icon-btn` rule could out-specify.
-   */
-  closeSearch(): void {
-    this.findBarVisible.set(false);
-  }
-
-  /**
-   * Toggle, so the header control that OPENED the bar also closes it. Pressing it
-   * again used to be a no-op, which left Escape as the only way out of a bar with
-   * no visible close (a #226 follow-up).
-   */
-  toggleSearch(): void {
-    if (this.findBarVisible()) this.closeSearch();
-    else this.openSearch();
-  }
-
-  /**
-   * Focus the find field. The bar is rendered by the library, so it reaches the
-   * DOM one change-detection pass after `findBarVisible` flips — a single
-   * synchronous query can run before the element exists, so retry briefly
-   * instead of assuming one frame is enough.
-   */
-  private focusFindInput(attempt = 0): void {
-    const input: HTMLInputElement | null = this.host.nativeElement.querySelector('#findInput');
-    if (input) {
-      input.focus();
+  search(query: string): void {
+    if (this.textCapability() === 'unavailable') {
+      this.clearSearch();
       return;
     }
-    if (attempt < 6) setTimeout(() => this.focusFindInput(attempt + 1), 30);
-  }
 
-  /**
-   * Ctrl/Cmd+F opens the library's find bar; Escape closes it first, without
-   * letting the event reach the shell (which would close a rail instead).
-   * The shell's page-key handler ignores modifier chords, so page turns are
-   * unaffected.
-   */
-  @HostListener('document:keydown', ['$event'])
-  onShortcutKeydown(event: KeyboardEvent): void {
-    if (this.findBarVisible() && event.key === 'Escape') {
-      this.findBarVisible.set(false);
-      event.preventDefault();
-      event.stopPropagation();
+    const normalized = query.trim();
+    const generation = ++this.searchGeneration;
+    this.activeSearchQuery = normalized;
+
+    if (!normalized) {
+      this.clearSearch();
       return;
     }
-    if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return;
-    if (event.key.toLowerCase() !== 'f') return;
-    event.preventDefault();
-    this.openSearch();
+
+    this.searchState.set({ status: 'searching', current: 0, total: 0 });
+    const counts = this.pdfSearch.find(normalized, {
+      highlightAll: false,
+      matchCase: false,
+      dontScrollIntoView: false,
+    });
+    if (!counts) return;
+
+    void Promise.all(counts).then((perPage) => {
+      if (generation !== this.searchGeneration || this.activeSearchQuery !== normalized) return;
+      const total = perPage.reduce((sum, count) => sum + count, 0);
+      if (total === 0) {
+        this.searchState.set({ status: 'not-found', current: 0, total: 0 });
+        return;
+      }
+      const current = this.searchState().current || 1;
+      this.searchState.set({ status: 'ready', current: Math.min(current, total), total });
+    });
+  }
+
+  nextSearchResult(): void {
+    if (!this.activeSearchQuery || this.searchState().total === 0) return;
+    this.pdfSearch.findNext();
+  }
+
+  previousSearchResult(): void {
+    if (!this.activeSearchQuery || this.searchState().total === 0) return;
+    this.pdfSearch.findPrevious();
+  }
+
+  clearSearch(): void {
+    this.searchGeneration++;
+    this.activeSearchQuery = '';
+    this.searchState.set({ status: 'idle', current: 0, total: 0 });
+    // An empty query is the public PDF.js path for clearing the active find mark.
+    this.pdfSearch.find('', { highlightAll: false, dontScrollIntoView: true });
+  }
+
+  onFindMatchesCount(result: FindResultMatchesCount): void {
+    if (!this.activeSearchQuery) return;
+    if (result.total <= 0) {
+      this.searchState.set({ status: 'not-found', current: 0, total: 0 });
+      return;
+    }
+    this.searchState.set({ status: 'ready', current: result.current, total: result.total });
+  }
+
+  onFindState(state: FindState): void {
+    if (!this.activeSearchQuery) return;
+    if (state === FindState.PENDING) {
+      const current = this.searchState();
+      this.searchState.set({ ...current, status: 'searching' });
+    } else if (state === FindState.NOT_FOUND) {
+      this.searchState.set({ status: 'not-found', current: 0, total: 0 });
+    }
   }
 
   pdfSrc = computed(() => `/api/books/${this.bookId()}/file`);
@@ -667,7 +671,7 @@ export class PdfReader implements OnInit, OnDestroy, IReader {
 
     if (inspected > 0) {
       this.textCapability.set('unavailable');
-      this.findBarVisible.set(false);
+      this.clearSearch();
       this.clearNativeSelection();
     }
   }
