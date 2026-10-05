@@ -175,6 +175,12 @@ export class PdfReader implements OnInit, OnDestroy, IReader {
   sidebarVisible = input<boolean>(false);
   sidebarVisibleChange = output<boolean>();
 
+  /**
+   * Text-dependent PDF tools are unavailable for image-only/scanned documents.
+   * Unknown keeps the reader usable while bounded capability detection runs.
+   */
+  textCapability = signal<'unknown' | 'available' | 'unavailable'>('unknown');
+
   /** Shared shell search state; PDF.js remains the matching engine. */
   searchState = signal<ReaderSearchState>({ status: 'idle', current: 0, total: 0 });
   private searchGeneration = 0;
