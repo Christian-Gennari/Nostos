@@ -2,6 +2,7 @@ using FluentAssertions;
 using Nostos.Backend.Services;
 using Nostos.Backend.Services.Portability;
 using Nostos.Backend.Services.Portability.Activation;
+using Nostos.Backend.Services.Portability.Transfers;
 using Xunit;
 
 namespace Nostos.Backend.Tests.Portability;
@@ -105,7 +106,7 @@ public sealed class RecoveryMediaEvidenceTests
     }
 
     [Fact]
-    public async Task Derived_book_text_directories_are_retained_but_stay_out_of_the_manifest()
+    public async Task Derived_book_text_directories_are_skipped_and_never_retained()
     {
         using var bed = new RecoveryTestBed();
         await bed.SeedLiveLibraryAsync();
@@ -116,15 +117,14 @@ public sealed class RecoveryMediaEvidenceTests
             new string('a', 64), "extractor-v1");
         Directory.CreateDirectory(derived);
         await File.WriteAllTextAsync(Path.Combine(derived, "chunks.json.gz"), "derived-cache");
-        var derivedBytes = new FileInfo(Path.Combine(derived, "chunks.json.gz")).Length;
 
         var service = bed.CreateService();
         var capture = await service.CaptureAsync(bed.JobId, bed.OperationId, bed.Revision, new(Books: 2), default);
 
         capture.Media.Should().HaveCount(5, "derived caches are not primary media pins");
         capture.Media.Should().NotContain(pin => pin.RelativePath.Contains("/derived/"));
-        capture.MediaBytes.Should().Be(capture.Media.Sum(pin => pin.Bytes) + derivedBytes,
-            "the retained copy's measured size still includes the derived bytes");
+        capture.MediaBytes.Should().Be(capture.Media.Sum(pin => pin.Bytes),
+            "a regenerable cache is not part of the retained copy's measured size");
 
         var lease = await bed.Gate.EnterExclusiveAsync(LibraryMaintenanceReason.Activation);
         var journal = await bed.AdvanceJournalAsync(bed.SeedJournal(),
@@ -138,9 +138,66 @@ public sealed class RecoveryMediaEvidenceTests
         manifest = await service.RetainMediaAsync(bed.JobId, lease, default);
 
         manifest.MediaRetained.Should().BeTrue();
-        File.Exists(Path.Combine(bed.Paths.PreviousMedia(bed.JobId), FirstBook.ToString("N"), "derived",
-            new string('a', 64), "extractor-v1", "chunks.json.gz")).Should().BeTrue(
-            "the derived cache rides along with the media-root rename");
+        Directory.Exists(derived).Should().BeFalse("the live cache is cleared before the media root is renamed");
+        Directory.Exists(Path.Combine(bed.Paths.PreviousMedia(bed.JobId), FirstBook.ToString("N"), "derived"))
+            .Should().BeFalse("the recovery copy never contains regenerable derived caches");
+        await lease.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task A_link_named_derived_is_refused_by_capture_and_by_retention()
+    {
+        using var bed = new RecoveryTestBed();
+        await bed.SeedLiveLibraryAsync();
+        var service = bed.CreateService();
+        var capture = await service.CaptureAsync(bed.JobId, bed.OperationId, bed.Revision, new(Books: 2), default);
+
+        var outside = Path.Combine(bed.Root, "outside-derived");
+        Directory.CreateDirectory(outside);
+        Directory.CreateSymbolicLink(
+            Path.Combine(bed.Paths.LiveMedia, FirstBook.ToString("N"), "derived"), outside);
+
+        Func<Task> captureWithLink = () =>
+            service.CaptureAsync(bed.JobId, bed.OperationId, bed.Revision, new(Books: 2), default);
+        await captureWithLink.Should().ThrowAsync<TransferPathException>()
+            .WithMessage("*symlink*");
+
+        // Even a capture taken before the link appeared can never retain it.
+        var lease = await bed.Gate.EnterExclusiveAsync(LibraryMaintenanceReason.Activation);
+        await bed.AdvanceJournalAsync(bed.SeedJournal(),
+            SelfHostedActivationPhase.DatabaseCheckpointed, lease);
+        Func<Task> prepare = () => service.PrepareRetentionAsync(bed.JobId, capture, lease, default);
+        await prepare.Should().ThrowAsync<TransferPathException>()
+            .WithMessage("*symlink*");
+        Directory.Exists(bed.Paths.LiveMedia).Should().BeTrue("nothing was renamed");
+        await lease.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task A_link_inside_a_derived_cache_is_refused_before_the_rename()
+    {
+        using var bed = new RecoveryTestBed();
+        await bed.SeedLiveLibraryAsync();
+        var derived = Path.Combine(bed.Paths.LiveMedia, FirstBook.ToString("N"), "derived");
+        Directory.CreateDirectory(derived);
+        await File.WriteAllTextAsync(Path.Combine(derived, "real.json"), "cache");
+        var outside = Path.Combine(bed.Root, "outside-file.txt");
+        await File.WriteAllTextAsync(outside, "outside");
+        File.CreateSymbolicLink(Path.Combine(derived, "linked.json"), outside);
+
+        var service = bed.CreateService();
+        var capture = await service.CaptureAsync(bed.JobId, bed.OperationId, bed.Revision, new(Books: 2), default);
+        var lease = await bed.Gate.EnterExclusiveAsync(LibraryMaintenanceReason.Activation);
+        var journal = await bed.AdvanceJournalAsync(bed.SeedJournal(),
+            SelfHostedActivationPhase.DatabaseCheckpointed, lease);
+        await service.PrepareRetentionAsync(bed.JobId, capture, lease, default);
+        journal = await bed.AdvanceJournalAsync(journal, SelfHostedActivationPhase.CutoverPrepared, lease);
+
+        Func<Task> retain = () => service.RetainMediaAsync(bed.JobId, lease, default);
+        await retain.Should().ThrowAsync<TransferPathException>()
+            .WithMessage("*symlink*");
+        File.Exists(outside).Should().BeTrue("a link is never followed");
+        Directory.Exists(bed.Paths.LiveMedia).Should().BeTrue();
         await lease.DisposeAsync();
     }
 

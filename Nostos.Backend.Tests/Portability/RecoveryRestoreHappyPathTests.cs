@@ -22,6 +22,15 @@ public sealed class RecoveryRestoreHappyPathTests
     public async Task PopulatedActivationThenRestore_ReturnsTheOriginalLibrary_KeepsCurrentHostState_AndRetainsTheReplacedLibrary()
     {
         await using var bed = await ActivationCoordinatorTestBed.CreateAsync(populated: true);
+
+        // A regenerable book-text cache of the original generation: the cutover
+        // must clear it, and a restore must never bring it back as trustworthy
+        // derived state.
+        var staleBook = Guid.NewGuid().ToString("N");
+        var staleDerived = Path.Combine(bed.Paths.LiveMedia, staleBook, "derived", "stale");
+        Directory.CreateDirectory(staleDerived);
+        await File.WriteAllTextAsync(Path.Combine(staleDerived, "chunk.json"), "stale");
+
         (await bed.ActivateAsync(confirm: true)).Outcome.Should().Be(SelfHostedActivationOutcome.Completed);
 
         // Distinguish the current generation from the retained one: a portable
@@ -39,6 +48,14 @@ public sealed class RecoveryRestoreHappyPathTests
 
         // The restored portable state and media are the retained original library.
         await bed.AssertRestoredPortableGenerationAsync();
+
+        // No derived cache of the previous generation is readable after the
+        // restore, and the restore's resolved Committed journal is exactly what
+        // the derived rebuild consumes to reschedule the new live generation.
+        Directory.Exists(staleDerived).Should().BeFalse(
+            "the previous generation's derived cache is never restored");
+        Directory.EnumerateDirectories(bed.Paths.LiveMedia, "derived", SearchOption.AllDirectories)
+            .Should().BeEmpty("the restored media root starts without derived caches");
 
         // The portable edit is gone; every host-operational table keeps the
         // CURRENT state except the revision and the replaced library's new
@@ -70,6 +87,10 @@ public sealed class RecoveryRestoreHappyPathTests
         var restored = bed.ReadRecoveryManifest()!;
         restored.Status.Should().Be(MigrationRecoveryStatus.Restored);
         restored.RestoreOperationId.Should().NotBeNull();
+        var restoreJournal = bed.Journals.ReadResolved(restored.RestoreOperationId!.Value);
+        restoreJournal.Should().NotBeNull();
+        restoreJournal!.Phase.Should().Be(SelfHostedActivationPhase.Committed,
+            "the derived rebuild treats the restore as a committed generation change");
         restored.RestoredAtUtc.Should().NotBeNull();
         var replacedId = restored.RestoreOperationId!.Value;
         added[0].Should().ContainEquivalentOf(replacedId.ToString(), "the new claim belongs to the restore operation");

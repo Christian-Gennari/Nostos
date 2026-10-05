@@ -14,7 +14,9 @@ using Nostos.Backend.Middleware;
 using Nostos.Backend.Services;
 using Nostos.Backend.Services.Portability;
 using Nostos.Backend.Tests.Backup;
+using Nostos.Backend.Services.BookText;
 using Nostos.Backend.Workers;
+using Nostos.Product.BookText;
 using Xunit;
 
 namespace Nostos.Backend.Tests.Portability;
@@ -136,6 +138,72 @@ public sealed class LibraryMaintenanceHostTests
     }
 
     [Fact]
+    public async Task BookTextWorker_RecreatesTheDerivedSchema_OfAFreshGeneration_WithoutThrowing()
+    {
+        using var host = new MaintenanceHost();
+        using var client = host.CreateClient();
+
+        // A committed replacement/restore swaps in a candidate database that
+        // intentionally carries no derived book-text schema. The first worker
+        // cycle after the swap must recreate it instead of surfacing
+        // "no such table".
+        using (var scope = host.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<NostosDbContext>();
+            foreach (var table in new[]
+                     {
+                         "BookTextChunksFts", "BookTextChunkEmbeddings", "BookTextChunks",
+                         "BookTextIngestionStates",
+                     })
+            {
+                await db.Database.ExecuteSqlRawAsync($"DROP TABLE IF EXISTS \"{table}\"");
+            }
+        }
+
+        var worker = ActivatorUtilities.CreateInstance<BookTextIngestionWorker>(host.Services);
+        var didWork = await worker.ProcessOneAsync();
+        didWork.Should().BeFalse();
+
+        using (var scope = host.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<NostosDbContext>();
+            var count = await db.Database
+                .SqlQueryRaw<int>("SELECT COUNT(*) AS Value FROM BookTextIngestionStates")
+                .SingleAsync();
+            count.Should().Be(0, "the fresh generation's derived schema exists and is empty");
+        }
+    }
+
+    [Fact]
+    public async Task BookTextWorker_TouchesNoIndexWork_WhileTheExclusiveWindowIsHeld()
+    {
+        using var host = new MaintenanceHost(withIndexProbe: true);
+        using var client = host.CreateClient();
+        host.IndexProbe!.Reset();
+        var worker = ActivatorUtilities.CreateInstance<BookTextIngestionWorker>(host.Services);
+
+        var exclusive = await host.Maintenance.EnterExclusiveAsync(LibraryMaintenanceReason.Activation);
+        var background = worker.ProcessOneAsync();
+        try
+        {
+            background.IsCompleted.Should().BeFalse();
+            await Task.Delay(150);
+            host.IndexProbe.EnsureCalls.Should().Be(0,
+                "the worker waits outside the exclusive window before it touches the index");
+            host.IndexProbe.ClaimCalls.Should().Be(0);
+        }
+        finally
+        {
+            await exclusive.DisposeAsync();
+        }
+
+        (await background.WaitAsync(TimeSpan.FromSeconds(10))).Should().BeFalse();
+        host.IndexProbe.EnsureCalls.Should().BeGreaterThan(0,
+            "the first unit of work after the window ensures the derived schema");
+        host.IndexProbe.ClaimCalls.Should().BeGreaterThan(0);
+    }
+
+    [Fact]
     public async Task BackupRestoreRequest_UsesSingleDrainGate_WithoutWaitingOnItself()
     {
         using var host = new MaintenanceHost();
@@ -190,13 +258,18 @@ public sealed class LibraryMaintenanceHostTests
     {
         private readonly bool _ownsRoot;
         private readonly string _root;
+        private readonly bool _withIndexProbe;
         public HeldRequest Fixture { get; } = new();
+        public BookTextIndexProbe? IndexProbe { get; }
         public LibraryMaintenanceCoordinatorTests.DeadlineClock Clock { get; }
         public ILibraryMaintenanceCoordinator Maintenance => Services.GetRequiredService<ILibraryMaintenanceCoordinator>();
 
-        public MaintenanceHost(LibraryMaintenanceCoordinatorTests.DeadlineClock? clock = null, string? root = null)
+        public MaintenanceHost(LibraryMaintenanceCoordinatorTests.DeadlineClock? clock = null,
+            string? root = null, bool withIndexProbe = false)
         {
             _ownsRoot = root is null;
+            _withIndexProbe = withIndexProbe;
+            IndexProbe = withIndexProbe ? new BookTextIndexProbe() : null;
             _root = root ?? Path.Combine(Path.GetTempPath(), $"nostos-maintenance-host-{Guid.NewGuid():N}");
             Clock = clock ?? new();
             Directory.CreateDirectory(_root);
@@ -240,6 +313,13 @@ public sealed class LibraryMaintenanceHostTests
                 services.AddSingleton(Fixture);
                 services.AddScoped<ScopeWitness>();
                 services.AddSingleton<IStartupFilter, FixtureFilter>();
+                if (_withIndexProbe)
+                {
+                    services.AddSingleton(IndexProbe!);
+                    services.AddScoped<IBookTextIndex>(sp => new ProbeBookTextIndex(
+                        sp.GetRequiredService<SqliteBookTextIndex>(),
+                        sp.GetRequiredService<BookTextIndexProbe>()));
+                }
             });
         }
 
@@ -254,6 +334,58 @@ public sealed class LibraryMaintenanceHostTests
     private sealed class ScopeWitness(HeldRequest request) : IDisposable
     {
         public void Dispose() => request.ScopeDisposed.TrySetResult();
+    }
+
+    /// <summary>Shared call counters for the probe index installed by a probe host.</summary>
+    private sealed class BookTextIndexProbe
+    {
+        private int _ensureCalls;
+        private int _claimCalls;
+        public int EnsureCalls => Volatile.Read(ref _ensureCalls);
+        public int ClaimCalls => Volatile.Read(ref _claimCalls);
+        public void Reset() { Volatile.Write(ref _ensureCalls, 0); Volatile.Write(ref _claimCalls, 0); }
+        public void CountEnsure() => Interlocked.Increment(ref _ensureCalls);
+        public void CountClaim() => Interlocked.Increment(ref _claimCalls);
+    }
+
+    /// <summary>
+    /// Delegates to the real index and counts the gate-sensitive calls, so a
+    /// test can prove the worker never touches the database while the
+    /// exclusive window is held.
+    /// </summary>
+    private sealed class ProbeBookTextIndex(IBookTextIndex inner, BookTextIndexProbe probe) : IBookTextIndex
+    {
+        public Task EnsureSchemaAsync(CancellationToken ct = default)
+        { probe.CountEnsure(); return inner.EnsureSchemaAsync(ct); }
+
+        public Task ScheduleAsync(Guid bookId, string sourceFileName, BookTextSourceFormat format,
+            CancellationToken ct = default) => inner.ScheduleAsync(bookId, sourceFileName, format, ct);
+
+        public Task<BookTextIngestionWork?> TryClaimNextAsync(TimeSpan staleAfter, CancellationToken ct = default)
+        { probe.CountClaim(); return inner.TryClaimNextAsync(staleAfter, ct); }
+
+        public Task<bool> ReplaceReadyAsync(BookTextSourceRevision revision,
+            IReadOnlyList<BookTextIndexedChunk> chunks, long characterCount, int expectedAttempt,
+            CancellationToken ct = default) =>
+            inner.ReplaceReadyAsync(revision, chunks, characterCount, expectedAttempt, ct);
+
+        public Task<bool> MarkFailedAsync(Guid bookId, string errorCode, string errorMessage, bool unsupported,
+            int expectedAttempt, CancellationToken ct = default) =>
+            inner.MarkFailedAsync(bookId, errorCode, errorMessage, unsupported, expectedAttempt, ct);
+
+        public Task DeleteBookAsync(Guid bookId, CancellationToken ct = default) =>
+            inner.DeleteBookAsync(bookId, ct);
+
+        public Task<BookTextIngestionState?> GetStateAsync(Guid bookId, CancellationToken ct = default) =>
+            inner.GetStateAsync(bookId, ct);
+
+        public Task<IReadOnlyList<BookTextSearchHit>> SearchAsync(string query,
+            IReadOnlyList<Guid> bookIds, int maxCandidates, CancellationToken ct = default) =>
+            inner.SearchAsync(query, bookIds, maxCandidates, ct);
+
+        public Task<IReadOnlyList<BookTextIndexedChunk>> GetNeighborsAsync(Guid bookId, string sourceSha256,
+            string extractorVersion, int ordinal, int radius, CancellationToken ct = default) =>
+            inner.GetNeighborsAsync(bookId, sourceSha256, extractorVersion, ordinal, radius, ct);
     }
 
     private sealed class FixtureFilter(HeldRequest fixture) : IStartupFilter

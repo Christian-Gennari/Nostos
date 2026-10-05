@@ -160,12 +160,23 @@ internal sealed class ActivationMaintenanceTestBed : IDisposable
             jobId, operationId ?? Guid.NewGuid(), phase, "revision-1", true, Clock.GetUtcNow()));
     }
 
-    internal void SeedCommittedResolvedJournal(Guid jobId, Guid? operationId = null)
+    internal void SeedCommittedResolvedJournal(Guid jobId, Guid? operationId = null) =>
+        SeedResolvedJournal(jobId, SelfHostedActivationPhase.Committed, operationId);
+
+    /// <summary>
+    /// A resolved rollback journal. The cutover clears the live <c>derived/</c>
+    /// caches before retention, so the preserved original generation needs the
+    /// same wipe-and-reschedule pass a committed one gets.
+    /// </summary>
+    internal void SeedRolledBackResolvedJournal(Guid jobId, Guid? operationId = null) =>
+        SeedResolvedJournal(jobId, SelfHostedActivationPhase.RolledBack, operationId);
+
+    private void SeedResolvedJournal(Guid jobId, SelfHostedActivationPhase phase, Guid? operationId)
     {
         var directory = Path.GetDirectoryName(Paths.ResolvedJournal(jobId))!;
         Directory.CreateDirectory(directory);
         var journal = new SelfHostedActivationJournal(
-            jobId, operationId ?? Guid.NewGuid(), SelfHostedActivationPhase.Committed,
+            jobId, operationId ?? Guid.NewGuid(), phase,
             "revision-1", true, Clock.GetUtcNow());
         File.WriteAllText(Paths.ResolvedJournal(jobId), SelfHostedActivationDocument.Encode(journal));
     }

@@ -284,11 +284,13 @@ public sealed class SelfHostedMigrationTransferService(
         }
         catch (IOException ex) when (requestToken.IsCancellationRequested || uploading.IsCancellationRequested)
         {
-            // The requester went away (page reload, navigation, cancel, network
-            // drop) while its body was being read. That is an interrupted
-            // transfer, not a storage failure: the chunk stays unreceived and
-            // the next resume re-sends it. Failing the durable job here surfaced
-            // as migration_storage_exhausted after a mid-upload reload.
+            // The requester went away (page reload, navigation, network drop:
+            // request token) or the host cancelled this upload server-side
+            // (upload token, e.g. an explicit cancel) while the body was being
+            // read. Either way the chunk stays unreceived and the next resume
+            // re-sends it: this is an interrupted transfer, not a storage
+            // failure. Failing the durable job here surfaced as
+            // migration_storage_exhausted after a mid-upload reload.
             throw new OperationCanceledException(
                 "The chunk upload was interrupted before the request body completed.",
                 ex,

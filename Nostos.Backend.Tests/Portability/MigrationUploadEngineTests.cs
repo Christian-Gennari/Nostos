@@ -243,6 +243,54 @@ public sealed class MigrationUploadEngineTests
     }
 
     [Fact]
+    public async Task Partial_chunk_write_then_client_abort_leaves_no_receipt_and_resumes()
+    {
+        await using var h = new MigrationEngineHarness(); await h.InitializeAsync();
+        // One short whole-file chunk: the first read yields half the body, the
+        // next read models the client disconnect.
+        var bytes = MigrationEngineHarness.Bytes(64);
+        var job = await h.NewJobAsync(); var session = await h.StartAsync(job, bytes);
+        using var aborted = new CancellationTokenSource();
+
+        Func<Task> upload = () => h.WithUploads(s => s.UploadChunkAsync(job, session.SessionId, 0,
+            new MigrationChunkMetadata(0, bytes.Length - 1, bytes.Length, MigrationEngineHarness.Hash(bytes)),
+            new PartiallyReadingDisconnectingStream(bytes, aborted), aborted.Token));
+
+        await upload.Should().ThrowAsync<OperationCanceledException>();
+        (await h.Status(job, session)).ReceivedChunkCount.Should().Be(0, "no partial receipt may commit");
+        (await h.WithDb(db => db.MigrationChunkReceiptRecords.CountAsync())).Should().Be(0);
+        File.Exists(h.Paths.GetUploadChunkTempPath(session.SessionId, 0)).Should().BeFalse(
+            "the partial temporary chunk is deleted");
+        // The part file exists preallocated for the session; the authoritative
+        // proof that no bytes were placed is the zero received count and the
+        // absent receipt asserted above. A resume must re-send the chunk.</
+        (await h.WithJobs(s => s.GetAsync(job, default)))!.State.Should().Be(
+            MigrationJobState.Pending, "an aborted upload is resumable, never a failed job");
+
+        // The same session accepts the full chunk afterwards.
+        (await h.Upload(job, session, bytes)).ChunkIndex.Should().Be(0);
+        (await h.Complete(job, session)).State.Should().Be(MigrationSessionState.Complete);
+    }
+
+    [Fact]
+    public async Task Cancel_mid_upload_marks_terminal_releases_the_reservation_and_refuses_more_chunks()
+    {
+        await using var h = new MigrationEngineHarness(); await h.InitializeAsync();
+        var bytes = MigrationEngineHarness.Bytes(MigrationContractLimits.MinChunkBytes + 64);
+        var job = await h.NewJobAsync(); var session = await h.StartAsync(job, bytes);
+        await h.Upload(job, session, bytes, 0);
+
+        await h.WithUploads(s => s.CancelAsync(job, new(), default));
+
+        (await h.WithJobs(s => s.GetAsync(job, default)))!.State.Should().Be(MigrationJobState.Cancelled);
+        (await h.WithDb(db => db.MigrationSessionRecords.AsNoTracking().SingleAsync())).State.Should()
+            .Be((int)MigrationSessionState.Cancelled);
+        (await h.WithDb(db => db.MigrationStorageReservations.AsNoTracking().SingleAsync())).ReleasedAtUtc
+            .Should().NotBeNull("cancelling releases the host capacity claim immediately");
+        await Expect(h.Upload(job, session, bytes, 1), MigrationTransferException.InvalidState);
+    }
+
+    [Fact]
     public async Task Reservation_exhaustion_creates_no_session_or_file()
     {
         await using var h = new MigrationEngineHarness(); h.Volume.AvailableFreeSpaceBytes = 1; await h.InitializeAsync(); var job = await h.NewJobAsync();
@@ -394,6 +442,44 @@ public sealed class MigrationUploadEngineTests
         public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken ct = default)
         { entered.TrySetResult(); await Task.Delay(Timeout.Infinite, ct); return 0; }
         public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override void Flush() => throw new NotSupportedException(); public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException(); public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
+
+    /// <summary>
+    /// A browser that reloads mid-chunk after part of the body was already
+    /// written: the first read succeeds, then the request token is cancelled
+    /// and the next read fails with an IOException.
+    /// </summary>
+    private sealed class PartiallyReadingDisconnectingStream(byte[] bytes, CancellationTokenSource requestAbort) : Stream
+    {
+        private int _position;
+        public override bool CanRead => true; public override bool CanSeek => false; public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException(); public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken ct = default)
+        {
+            if (_position == 0)
+            {
+                var count = Math.Min(buffer.Length, Math.Max(1, bytes.Length / 2));
+                bytes.AsMemory(0, count).CopyTo(buffer);
+                _position = count;
+                return ValueTask.FromResult(count);
+            }
+            requestAbort.Cancel();
+            throw new IOException("The client disconnected after a partial chunk body.");
+        }
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            if (_position == 0)
+            {
+                var read = Math.Min(count, Math.Max(1, bytes.Length / 2));
+                Array.Copy(bytes, 0, buffer, offset, read);
+                _position = read;
+                return read;
+            }
+            requestAbort.Cancel();
+            throw new IOException("The client disconnected after a partial chunk body.");
+        }
         public override void Flush() => throw new NotSupportedException(); public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
         public override void SetLength(long value) => throw new NotSupportedException(); public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
