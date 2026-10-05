@@ -68,7 +68,12 @@ public enum MigrationActivationPhase
 /// must POST the activation again with the same confirmation rules.
 /// <see cref="MigrationActivationOutcome.RecoveryFailed"/> is fail-closed:
 /// <see cref="MaintenanceRequired"/> is true and only a restart can reconcile,
-/// so the browser must not offer a retry.</para>
+/// so the browser must not offer a retry. A background run that aborts because
+/// the destination changed carries the current <see cref="DestinationRevision"/>,
+/// <see cref="DestinationStatus"/> and <see cref="ExistingCounts"/> here (null
+/// otherwise) so the browser can reopen the replacement review without guessing;
+/// this includes the empty destination that became populated while the run was
+/// being accepted.</para>
 /// </summary>
 public sealed record MigrationActivationStatusResponse(
     Guid JobId,
@@ -117,7 +122,9 @@ public enum MigrationActivationRequestOutcome
 
 /// <summary>
 /// Admission result of <see cref="IMigrationActivationDispatcher.RequestAsync"/>.
-/// Conflicts carry the destination facts the browser must show for a re-review.
+/// Conflicts carry the destination facts the browser must show for a re-review,
+/// plus whether the live library moved since the import job was created, so the
+/// client can explain why a fresh review is needed.
 /// </summary>
 public sealed record MigrationActivationRequestResult(
     MigrationActivationRequestOutcome Outcome,
@@ -125,7 +132,8 @@ public sealed record MigrationActivationRequestResult(
     string? Message = null,
     string? DestinationRevision = null,
     MigrationExistingCounts? ExistingCounts = null,
-    MigrationDestinationStatus? DestinationStatus = null);
+    MigrationDestinationStatus? DestinationStatus = null,
+    bool ChangedSinceImportStarted = false);
 
 /// <summary>
 /// Host seam behind the activation HTTP routes. The SelfHosted host implements

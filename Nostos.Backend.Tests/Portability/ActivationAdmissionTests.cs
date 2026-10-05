@@ -16,21 +16,40 @@ public sealed class ActivationAdmissionTests
     public void ReplacementRequiresConfirmationOnlyWhenPopulated(MigrationDestinationStatus destination, bool confirm, string? error)
     {
         Action validate = () => MigrationActivationAdmission.Validate(MigrationDirection.Import,
-            MigrationJobState.ReadyToActivate, "r1", new("r1", confirm), destination, "r1");
+            MigrationJobState.ReadyToActivate, new("r1", confirm), destination, "r1");
         AssertOutcome(validate, error);
     }
 
     [Theory]
-    [InlineData("r1", "r2", "r1")]
-    [InlineData("r1", "r1", "r2")]
-    [InlineData("r1", "r2", "r2")]
-    [InlineData("r1", "R1", "r1")]
-    [InlineData("", "", "")]
-    public void StaleOrEmptyRevision_AlwaysRefusesEvenWithConfirmation(string stored, string requested, string current)
+    [InlineData("r2", "r1")]
+    [InlineData("r1", "r2")]
+    [InlineData("", "r1")]
+    [InlineData("r1", "R1")]
+    public void RequestRevisionOtherThanCurrentOrBlank_AlwaysRefusesEvenWithConfirmation(string requested, string current)
     {
-        Action validate = () => MigrationActivationAdmission.ValidateReplacement(stored, requested, true,
+        Action validate = () => MigrationActivationAdmission.ValidateReplacement(requested, true,
             MigrationDestinationStatus.Populated, current);
         AssertOutcome(validate, MigrationActivationErrorCodes.DestinationConflict);
+    }
+
+    [Fact]
+    public void CurrentRevisionConfirmation_IsBoundToTheRequestAndNotTheJobBaseline()
+    {
+        // Issue #681: an actively used library advances its revision (reading
+        // progress, note edits, metadata enrichment) between import creation
+        // and activation. Requesting the CURRENT revision the user reviewed
+        // must be admitted even though the job-creation baseline is older; the
+        // old three-way equality made such a job permanently unactivatable.
+        MigrationActivationAdmission.Validate(MigrationDirection.Import,
+            MigrationJobState.ReadyToActivate, new("current-revision", true),
+            MigrationDestinationStatus.Populated, "current-revision");
+
+        // Binding the request to the older baseline (or any non-current value)
+        // stays refused: a stale confirmation must never activate.
+        Action stale = () => MigrationActivationAdmission.Validate(MigrationDirection.Import,
+            MigrationJobState.ReadyToActivate, new("import-start-revision", true),
+            MigrationDestinationStatus.Populated, "current-revision");
+        AssertOutcome(stale, MigrationActivationErrorCodes.DestinationConflict);
     }
 
     [Fact]
@@ -39,14 +58,14 @@ public sealed class ActivationAdmissionTests
         foreach (var direction in Enum.GetValues<MigrationDirection>())
         foreach (var state in Enum.GetValues<MigrationJobState>())
         {
-            Action validate = () => MigrationActivationAdmission.Validate(direction, state, "r1",
+            Action validate = () => MigrationActivationAdmission.Validate(direction, state,
                 new("r1", true), MigrationDestinationStatus.Populated, "r1");
             AssertOutcome(validate, direction == MigrationDirection.Import && state == MigrationJobState.ReadyToActivate
                 ? null : MigrationJobStoreErrorCodes.InvalidState);
         }
         MigrationActivationAdmission.Validate(MigrationDirection.Import, MigrationJobState.ReadyToActivate,
-            "r1", new("r1", true), MigrationDestinationStatus.Populated, "r1");
-        Action recheck = () => MigrationActivationAdmission.ValidateReplacement("r1", "r1", true,
+            new("r1", true), MigrationDestinationStatus.Populated, "r1");
+        Action recheck = () => MigrationActivationAdmission.ValidateReplacement("r1", true,
             MigrationDestinationStatus.Populated, "r2");
         AssertOutcome(recheck, MigrationActivationErrorCodes.DestinationConflict);
     }

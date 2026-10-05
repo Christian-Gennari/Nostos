@@ -5,8 +5,11 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Nostos.Backend.Data.Models;
 using Nostos.Backend.Services;
+using Nostos.Backend.Services.Library;
+using Nostos.Backend.Services.Notes;
 using Nostos.Backend.Services.Portability;
 using Nostos.Backend.Services.Portability.Activation;
+using Nostos.Shared.Dtos;
 using Xunit;
 
 namespace Nostos.Backend.Tests.Portability;
@@ -140,6 +143,216 @@ public sealed class MigrationActivationHttpTests
         status.Body.RootElement.GetProperty("state").GetString().Should().Be("ReadyToActivate");
         status.Body.RootElement.GetProperty("canActivate").GetBoolean().Should().BeTrue();
         status.Body.Dispose();
+    }
+
+    [Fact]
+    public async Task Populated_library_changed_after_job_creation_is_confirmable_with_the_current_revision()
+    {
+        var template = ActivationCoordinatorTemplate.For(populated: true);
+        await using var h = StartHost();
+        await SeedPopulatedAsync(h, template);
+        var noteId = await SeedNoteAsync(h);
+        var bookId = await h.WithDb(db => db.Books.Select(book => book.Id).FirstAsync());
+        var jobId = await UploadImportAsync(h, template);
+
+        var baseline = await GetActivationAsync(h, jobId);
+        baseline.Body.RootElement.GetProperty("destinationRevision").GetString().Should().NotBeNullOrEmpty();
+        baseline.Body.Dispose();
+
+        // Real in-use activity after the prepared import exists: a note edit
+        // and a reading-progress save. Both advance the live revision.
+        var current = await ApplyRealPortableWritesAsync(h, noteId, bookId);
+
+        // The durable job keeps reporting its import-start baseline.
+        var after = await GetActivationAsync(h, jobId);
+        var stored = after.Body.RootElement.GetProperty("destinationRevision").GetString();
+        after.Body.Dispose();
+        stored.Should().NotBeNullOrEmpty();
+        stored.Should().NotBe(current, "the live library moved after the job was created");
+
+        // A request without confirmation learns the CURRENT facts and why.
+        var refused = await ActivateAsync(h, jobId, stored!, confirm: false);
+        refused.Status.Should().Be(HttpStatusCode.Conflict);
+        refused.Body.RootElement.GetProperty("error").GetString()
+            .Should().Be("migration_replacement_confirmation_required");
+        refused.Body.RootElement.GetProperty("destinationRevision").GetString().Should().Be(current);
+        refused.Body.RootElement.GetProperty("destinationStatus").GetString().Should().Be("Populated");
+        refused.Body.RootElement.GetProperty("existingCounts").GetProperty("books").GetInt64()
+            .Should().BeGreaterThan(0);
+        refused.Body.RootElement.GetProperty("changedSinceImportStarted").GetBoolean().Should().BeTrue(
+            "the live revision differs from the import-start baseline");
+        refused.Body.Dispose();
+
+        // Confirming the stale import-start revision is still refused and
+        // reports the revision the user must review instead.
+        var stale = await ActivateAsync(h, jobId, stored!, confirm: true);
+        stale.Status.Should().Be(HttpStatusCode.Conflict);
+        stale.Body.RootElement.GetProperty("error").GetString().Should().Be("migration_destination_conflict");
+        stale.Body.RootElement.GetProperty("destinationRevision").GetString().Should().Be(current);
+        stale.Body.Dispose();
+        h.GetService<SelfHostedActivationDispatcher>().StartedRunCount.Should().Be(0);
+
+        // The revision the user just reviewed activates; the replaced
+        // library is retained as the recovery copy.
+        var accepted = await ActivateAsync(h, jobId, current, confirm: true);
+        accepted.Status.Should().Be(HttpStatusCode.Accepted);
+        accepted.Body.Dispose();
+
+        using var completed = await WaitForOutcomeAsync(h, jobId, "Completed");
+        completed.RootElement.GetProperty("recoveryAvailable").GetBoolean().Should().BeTrue();
+        var catalogue = await h.Client.GetStringAsync("/api/books");
+        catalogue.Should().Contain("Portable EPUB");
+        catalogue.Should().NotContain("LIVE-ONLY-BOOK");
+    }
+
+    [Fact]
+    public async Task Write_after_confirmed_admission_aborts_with_fresh_facts_and_a_new_confirmation_succeeds()
+    {
+        var template = ActivationCoordinatorTemplate.For(populated: true);
+        await using var h = StartHost();
+        await SeedPopulatedAsync(h, template);
+        var noteId = await SeedNoteAsync(h);
+        var bookId = await h.WithDb(db => db.Books.Select(book => book.Id).FirstAsync());
+        var jobId = await UploadImportAsync(h, template);
+        var revision = (await GetActivationAsync(h, jobId)).Body.RootElement
+            .GetProperty("destinationRevision").GetString();
+        revision.Should().NotBeNullOrEmpty();
+
+        var dispatcher = h.GetService<SelfHostedActivationDispatcher>();
+        var admitted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        dispatcher.CoordinatorCreatedForTesting = coordinator =>
+            coordinator.StepObserverForTesting = step =>
+            {
+                if (string.Equals(step, SelfHostedActivationSteps.AfterAdmission, StringComparison.Ordinal))
+                {
+                    admitted.TrySetResult();
+                    release.Task.GetAwaiter().GetResult();
+                }
+            };
+
+        try
+        {
+            var accepted = await ActivateAsync(h, jobId, revision!, confirm: true);
+            accepted.Status.Should().Be(HttpStatusCode.Accepted);
+            accepted.Body.Dispose();
+            (await Task.Run(() => admitted.Task.Wait(TimeSpan.FromSeconds(60))))
+                .Should().BeTrue("the confirmed run must reach its pre-maintenance phase");
+
+            // A real portable write lands after the 202 but before the
+            // exclusive window: the confirmed generation is no longer current.
+            var current = await ApplyRealPortableWritesAsync(h, noteId, bookId);
+            release.SetResult();
+
+            using var failed = await WaitForOutcomeAsync(h, jobId, "Failed");
+            failed.RootElement.GetProperty("errorCode").GetString()
+                .Should().Be("migration_destination_conflict");
+            failed.RootElement.GetProperty("destinationRevision").GetString().Should().Be(current,
+                "the background conflict must carry the same fresh facts a 409 would");
+            failed.RootElement.GetProperty("destinationStatus").GetString().Should().Be("Populated");
+            failed.RootElement.GetProperty("existingCounts").GetProperty("books").GetInt64()
+                .Should().BeGreaterThan(0);
+            failed.RootElement.GetProperty("canActivate").GetBoolean().Should().BeTrue();
+            (await h.Client.GetStringAsync("/api/books")).Should().Contain("LIVE-ONLY-BOOK",
+                "an aborted run must not have replaced the destination");
+
+            var again = await ActivateAsync(h, jobId, current, confirm: true);
+            again.Status.Should().Be(HttpStatusCode.Accepted);
+            again.Body.Dispose();
+            using var completed = await WaitForOutcomeAsync(h, jobId, "Completed");
+            (await h.Client.GetStringAsync("/api/books")).Should().Contain("Portable EPUB");
+        }
+        finally
+        {
+            release.TrySetResult();
+            dispatcher.CoordinatorCreatedForTesting = null;
+        }
+    }
+
+    [Fact]
+    public async Task RestartAfterDurableAdmission_ResumesFromTheJournalAndIgnoresAnUnconfirmedRequest()
+    {
+        var template = ActivationCoordinatorTemplate.For(populated: true);
+        await using var h = StartHost();
+        await SeedPopulatedAsync(h, template);
+        var jobId = await UploadImportAsync(h, template);
+        var revision = (await GetActivationAsync(h, jobId)).Body.RootElement
+            .GetProperty("destinationRevision").GetString();
+        revision.Should().NotBeNullOrEmpty();
+
+        // Crash after the run durably entered Activating; the original request
+        // and its confirmation are lost with the process.
+        var dispatcher = h.GetService<SelfHostedActivationDispatcher>();
+        dispatcher.CoordinatorCreatedForTesting = coordinator =>
+            coordinator.StepObserverForTesting = step =>
+            {
+                if (string.Equals(step, SelfHostedActivationSteps.PhaseExclusiveEntered, StringComparison.Ordinal))
+                {
+                    throw new SelfHostedActivationAbandonedException();
+                }
+            };
+
+        var accepted = await ActivateAsync(h, jobId, revision!, confirm: true);
+        accepted.Status.Should().Be(HttpStatusCode.Accepted);
+        accepted.Body.Dispose();
+        using (var crashed = await WaitForOutcomeAsync(h, jobId, "RecoveryFailed"))
+        {
+            crashed.RootElement.GetProperty("maintenanceRequired").GetBoolean().Should().BeTrue();
+        }
+
+        await h.RestartAsync();
+        h.Clock.Advance(SelfHostedActivationCoordinator.ActivationLeaseDuration + TimeSpan.FromMinutes(1));
+
+        var durable = await GetActivationAsync(h, jobId);
+        durable.Body.RootElement.GetProperty("state").GetString().Should().Be("Activating");
+        durable.Body.RootElement.GetProperty("outcome").GetString().Should().Be("Running");
+        durable.Body.Dispose();
+
+        // The POST is status-only. Its confirmReplacement=false must not be
+        // mistaken for the lost confirmation; the journal owns the binding.
+        var resumed = await ActivateAsync(h, jobId, revision!, confirm: false);
+        resumed.Status.Should().Be(HttpStatusCode.Accepted);
+        resumed.Body.Dispose();
+
+        using var completed = await WaitForOutcomeAsync(h, jobId, "Completed");
+        var catalogue = await h.Client.GetStringAsync("/api/books");
+        catalogue.Should().Contain("Portable EPUB");
+        catalogue.Should().NotContain("LIVE-ONLY-BOOK");
+        h.GetService<SelfHostedActivationDispatcher>().StartedRunCount.Should().Be(1,
+            "exactly the resume run executed in the restarted host");
+    }
+
+    [Fact]
+    public async Task Empty_destination_that_became_populated_before_activation_requires_confirmation()
+    {
+        var template = ActivationCoordinatorTemplate.For(populated: false);
+        await using var h = StartHost();
+        var jobId = await UploadImportAsync(h, template);
+
+        // The destination becomes populated after the empty job was prepared.
+        await SeedPopulatedAsync(h, template);
+        var current = await ReadCurrentRevisionAsync(h);
+
+        // The first POST carries the import-start revision without confirmation.
+        var status = await GetActivationAsync(h, jobId);
+        var stored = status.Body.RootElement.GetProperty("destinationRevision").GetString();
+        status.Body.Dispose();
+        var refused = await ActivateAsync(h, jobId, stored!, confirm: false);
+        refused.Status.Should().Be(HttpStatusCode.Conflict);
+        refused.Body.RootElement.GetProperty("error").GetString()
+            .Should().Be("migration_replacement_confirmation_required");
+        refused.Body.RootElement.GetProperty("destinationRevision").GetString().Should().Be(current);
+        refused.Body.RootElement.GetProperty("destinationStatus").GetString().Should().Be("Populated");
+        refused.Body.RootElement.GetProperty("changedSinceImportStarted").GetBoolean().Should().BeTrue();
+        refused.Body.Dispose();
+
+        var accepted = await ActivateAsync(h, jobId, current, confirm: true);
+        accepted.Status.Should().Be(HttpStatusCode.Accepted);
+        accepted.Body.Dispose();
+        using var completed = await WaitForOutcomeAsync(h, jobId, "Completed");
+        completed.RootElement.GetProperty("recoveryAvailable").GetBoolean().Should().BeTrue(
+            "the now-populated destination is retained");
+        (await h.Client.GetStringAsync("/api/books")).Should().Contain("Portable EPUB");
     }
 
     [Fact]
@@ -648,6 +861,77 @@ public sealed class MigrationActivationHttpTests
         });
 
         CopyDirectory(template.TemplateMedia, Path.Combine(h.Root, "books"));
+    }
+
+    /// <summary>
+    /// Seeds one live note (with its work and book) before the import job is
+    /// created, so the test can make a real note EDIT after the job exists.
+    /// </summary>
+    private static Task<Guid> SeedNoteAsync(MigrationHttpHarness h) =>
+        h.WithDb(async db =>
+        {
+            var work = new WorkModel
+            {
+                Id = Guid.NewGuid(),
+                Title = "Live work",
+                NormalizedTitle = "LIVE WORK",
+                NormalizedAuthor = string.Empty,
+                CreatedAt = DateTime.UtcNow,
+            };
+            var book = new EBookModel
+            {
+                Id = Guid.NewGuid(),
+                WorkId = work.Id,
+                Work = work,
+                Title = "Live book",
+                CreatedAt = DateTime.UtcNow,
+            };
+            var note = new NoteModel
+            {
+                Id = Guid.NewGuid(),
+                BookId = book.Id,
+                Book = book,
+                Content = "original note",
+                CreatedAt = DateTime.UtcNow,
+            };
+            db.Works.Add(work);
+            db.Books.Add(book);
+            db.Notes.Add(note);
+            var state = await db.LibraryStates.SingleAsync();
+            await db.SaveChangesAsync();
+            // Stamp the fixture revision in a non-portable save, matching the
+            // populated seed's deterministic baseline.
+            state.StateVersion = "77";
+            await db.SaveChangesAsync();
+            return note.Id;
+        });
+
+    /// <summary>
+    /// Real service-path portable writes: a note content edit and a reading
+    /// progress save. Both advance the live revision through the pipeline and
+    /// return the current destination revision token after the writes.
+    /// </summary>
+    private static async Task<string> ApplyRealPortableWritesAsync(
+        MigrationHttpHarness h,
+        Guid noteId,
+        Guid bookId)
+    {
+        await using var scope = h.GetService<IServiceScopeFactory>().CreateAsyncScope();
+        var updated = await scope.ServiceProvider.GetRequiredService<INoteService>()
+            .UpdateAsync(noteId, new UpdateNoteDto("edited after the import started"));
+        updated.Success.Should().BeTrue(updated.ErrorMessage);
+        var progress = await scope.ServiceProvider.GetRequiredService<ILibraryService>()
+            .UpdateProgressAsync(bookId, "epubcfi(/6/4!/4/2)", 42);
+        progress.StateVersion.Should().NotBeNullOrEmpty();
+        return await scope.ServiceProvider.GetRequiredService<ILibraryDestinationRevisionProvider>()
+            .GetCurrentAsync(default);
+    }
+
+    private static async Task<string> ReadCurrentRevisionAsync(MigrationHttpHarness h)
+    {
+        await using var scope = h.GetService<IServiceScopeFactory>().CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<ILibraryDestinationRevisionProvider>()
+            .GetCurrentAsync(default);
     }
 
     private static Task<(HttpStatusCode Status, JsonDocument Body)> ActivateAsync(

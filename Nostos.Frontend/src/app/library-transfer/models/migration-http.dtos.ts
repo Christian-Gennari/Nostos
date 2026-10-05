@@ -356,6 +356,12 @@ export interface MigrationActivationConflictDto {
   destinationRevision?: string | null;
   destinationStatus?: MigrationDestinationStatus | null;
   existingCounts?: MigrationExistingCountsDto | null;
+  /**
+   * True when the live revision differs from the import-start baseline: the
+   * library moved while the import was being prepared, so the browser must
+   * review the current facts rather than a cached confirmation (issue #681).
+   */
+  changedSinceImportStarted: boolean;
 }
 
 export interface BrowserMigrationChunk {

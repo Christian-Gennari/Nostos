@@ -92,13 +92,17 @@ public sealed record MigrationActivateBody(
 /// <summary>
 /// Replacement-conflict body: the stable migration error members followed by
 /// the destination facts the browser must show before asking again.
+/// <see cref="ChangedSinceImportStarted"/> is true when the live revision
+/// differs from the job's import-start baseline, so the client can explain why
+/// a fresh review is required (the baseline itself never binds the request).
 /// </summary>
 public sealed record MigrationActivationConflictBody(
     string Error,
     string Message,
     string? DestinationRevision = null,
     MigrationDestinationStatus? DestinationStatus = null,
-    MigrationExistingCounts? ExistingCounts = null);
+    MigrationExistingCounts? ExistingCounts = null,
+    bool ChangedSinceImportStarted = false);
 
 /// <summary>
 /// Explicit, uniform JSON parsing for the migration routes. Model binding

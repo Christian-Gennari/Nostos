@@ -56,13 +56,22 @@ public sealed class MigrationActivationException(string code, string message) : 
 /// Pure admission rules. Run before accepting activation and again under exclusive
 /// maintenance with freshly read destination facts. This does not acquire a lease,
 /// validate staging bytes, or mutate a job; orchestration must do those separately.
+///
+/// <para><b>Revision binding (issue #681).</b> A replacement is bound to the
+/// revision the user actually reviewed, never to the job's import-start
+/// <c>DestinationRevision</c>. The library revision advances on every portable
+/// save (reading progress, note edits, metadata enrichment), so requiring the
+/// stored baseline to still be current would make any in-use library
+/// permanently unactivatable. Admission requires the request revision to equal
+/// the current revision; the caller carries that confirmed revision into the
+/// exclusive window for the authoritative recheck. A populated destination
+/// additionally requires explicit confirmation; an empty one does not.</para>
 /// </summary>
 public static class MigrationActivationAdmission
 {
     public static void Validate(
         MigrationDirection direction,
         MigrationJobState state,
-        string storedRevision,
         MigrationActivateRequest request,
         MigrationDestinationStatus destination,
         string currentRevision)
@@ -71,24 +80,23 @@ public static class MigrationActivationAdmission
             throw new MigrationActivationException(MigrationJobStoreErrorCodes.InvalidState,
                 "Only a prepared import can be admitted to activation.");
 
-        ValidateReplacement(storedRevision, request.DestinationRevision, request.ConfirmReplacement,
+        ValidateReplacement(request.DestinationRevision, request.ConfirmReplacement,
             destination, currentRevision);
     }
 
-    /// <summary>Also used for the authoritative revision check after admission and drain.</summary>
+    /// <summary>
+    /// Admission and the authoritative post-drain recheck. The job-creation
+    /// baseline takes no part in this decision: the request revision must equal
+    /// the current revision, and a populated destination must be confirmed.
+    /// A populated destination without confirmation is refused first so the
+    /// client learns the current facts before it confirms them.
+    /// </summary>
     public static void ValidateReplacement(
-        string storedRevision,
         string requestedRevision,
         bool confirmReplacement,
         MigrationDestinationStatus destination,
         string currentRevision)
     {
-        if (string.IsNullOrWhiteSpace(storedRevision)
-            || !string.Equals(storedRevision, requestedRevision, StringComparison.Ordinal)
-            || !string.Equals(storedRevision, currentRevision, StringComparison.Ordinal))
-            throw new MigrationActivationException(MigrationActivationErrorCodes.DestinationConflict,
-                "The destination changed. Review replacement again.");
-
         if (destination is not (MigrationDestinationStatus.Empty or MigrationDestinationStatus.Populated))
             throw new MigrationActivationException(MigrationJobStoreErrorCodes.InvalidState,
                 "The destination status is unknown.");
@@ -96,6 +104,11 @@ public static class MigrationActivationAdmission
         if (destination == MigrationDestinationStatus.Populated && !confirmReplacement)
             throw new MigrationActivationException(MigrationActivationErrorCodes.ConfirmationRequired,
                 "Replacing an existing library requires explicit confirmation.");
+
+        if (string.IsNullOrWhiteSpace(requestedRevision)
+            || !string.Equals(requestedRevision, currentRevision, StringComparison.Ordinal))
+            throw new MigrationActivationException(MigrationActivationErrorCodes.DestinationConflict,
+                "The destination changed. Review replacement again.");
     }
 
     public static void ValidateRecoveryRestore(
@@ -103,7 +116,7 @@ public static class MigrationActivationAdmission
         string currentRevision)
     {
         // A recovery restore always requires confirmation, including an empty current library.
-        ValidateReplacement(currentRevision, request.DestinationRevision, request.ConfirmReplacement,
+        ValidateReplacement(request.DestinationRevision, request.ConfirmReplacement,
             MigrationDestinationStatus.Populated, currentRevision);
     }
 }

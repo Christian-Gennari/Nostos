@@ -354,7 +354,8 @@ public static class MigrationEndpoints
                 result.Message ?? MigrationHttpErrors.MessageFor(code),
                 result.DestinationRevision,
                 result.DestinationStatus,
-                result.ExistingCounts),
+                result.ExistingCounts,
+                result.ChangedSinceImportStarted),
             statusCode: StatusCodes.Status409Conflict);
 
     private static Task<IResult> CreateUploadSessionAsync(
