@@ -25,6 +25,7 @@ import { ChangeDetectionStrategy, Component, computed, effect, input, output } f
 import { A11yModule } from '@angular/cdk/a11y';
 
 import { MigrationPreflightResponseDto } from '../models/migration-http.dtos';
+import { LibraryActivationConflictFacts } from '../models/library-transfer.models';
 import { readPreparedImportFacts } from '../models/prepared-import';
 import { formatLibraryCounts } from '../library-transfer.copy';
 import { ModalShell } from '../../ui/modal-shell/modal-shell.component';
@@ -45,6 +46,11 @@ export class LibraryReplacementDialogComponent {
   readonly preflight = input<MigrationPreflightResponseDto | null>(null);
   /** Raw `MigrationJobStatusResponseDto.preparedImport`; read defensively. */
   readonly preparedImport = input<unknown>(null);
+  /**
+   * Fresh destination facts from the activation 409. When present the dialog
+   * shows the server's counts and explains that the library changed.
+   */
+  readonly conflict = input<LibraryActivationConflictFacts | null>(null);
   readonly supportsSafeActivation = input(false);
   /** Sealed while the host performs the confirmed replacement. */
   readonly busy = input(false);
@@ -52,6 +58,8 @@ export class LibraryReplacementDialogComponent {
   readonly busyLabel = input<string>('Finishing…');
   /** Host-reported activation failure; non-null unseals and shows the error. */
   readonly errorMessage = input<string | null>(null);
+  /** True when the failed activation must not be retried (fail-closed). */
+  readonly retryBlocked = input(false);
 
   readonly confirmed = output<void>();
   readonly cancelled = output<void>();
@@ -63,7 +71,7 @@ export class LibraryReplacementDialogComponent {
       // Reopening (destination-conflict re-review) and a host-reported failure
       // both start a fresh destructive decision; only a successful submission
       // keeps the latch.
-      if (!this.isOpen() || this.errorMessage()) this.confirmedOnce = false;
+      if (!this.isOpen() || this.errorMessage() || this.conflict()) this.confirmedOnce = false;
     });
   }
 
@@ -72,8 +80,12 @@ export class LibraryReplacementDialogComponent {
   /** True when the incoming counts came from the server's prepared import. */
   readonly incomingCountsVerified = computed(() => this.preparedFacts()?.incomingCounts !== undefined);
 
+  /**
+   * Current-library counts. The server's fresh 409 counts win over the
+   * preflight estimate whenever the activation route re-checked the library.
+   */
   readonly existingSummary = computed(() => {
-    const counts = this.preflight()?.evaluation.existingCounts;
+    const counts = this.conflict()?.existingCounts ?? this.preflight()?.evaluation.existingCounts;
     if (!counts) return '';
     return formatLibraryCounts({
       books: counts.books,
@@ -81,6 +93,14 @@ export class LibraryReplacementDialogComponent {
       collections: counts.collections,
     });
   });
+
+  /** Explanation shown when the server re-checked the library after a 409. */
+  readonly conflictNotice = computed(() =>
+    this.conflict()
+      ? 'This library changed since the import was verified. These are the current counts; ' +
+        'confirm again to replace it.'
+      : null,
+  );
 
   readonly incomingSummary = computed(() => {
     const verified = this.preparedFacts()?.incomingCounts;
@@ -102,7 +122,14 @@ export class LibraryReplacementDialogComponent {
 
   /** Emits once per decision; the destructive action cannot be re-entered. */
   confirm(): void {
-    if (!this.supportsSafeActivation() || this.busy() || this.confirmedOnce) return;
+    if (
+      !this.supportsSafeActivation() ||
+      this.busy() ||
+      this.retryBlocked() ||
+      this.confirmedOnce
+    ) {
+      return;
+    }
     this.confirmedOnce = true;
     this.confirmed.emit();
   }

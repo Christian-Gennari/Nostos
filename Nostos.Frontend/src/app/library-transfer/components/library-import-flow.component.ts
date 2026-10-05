@@ -29,14 +29,22 @@ import {
   signal,
 } from '@angular/core';
 
-import { MigrationErrorCode, MigrationJobState } from '../models/migration-http.dtos';
 import {
+  MigrationActivationPhase,
+  MigrationErrorCode,
+  MigrationJobState,
+} from '../models/migration-http.dtos';
+import {
+  HostActivationState,
+  LibraryActivationConflictFacts,
   LibraryTransferFailure,
   TransferFlowState,
 } from '../models/library-transfer.models';
 import {
   TransferFailureCopy,
   TransferProgressPhase,
+  activationPhaseMessage,
+  activationRecoveryNote,
   libraryTransferFailureCopy,
   maintenanceRetryMessage,
 } from '../library-transfer.copy';
@@ -48,8 +56,7 @@ import { LibraryReplacementDialogComponent } from './library-replacement-dialog.
 import { ButtonComponent } from '../../ui/button/button.component';
 import { NostosIconComponent } from '../../ui/icon/nostos-icon.component';
 
-/** Host-reported outcome of the activation it owns (slice B8). */
-export type HostActivationState = 'idle' | 'in-progress' | 'completed' | 'failed';
+export type { HostActivationState } from '../models/library-transfer.models';
 
 @Component({
   selector: 'app-library-import-flow',
@@ -76,6 +83,24 @@ export class LibraryImportFlowComponent implements OnInit, OnDestroy {
 
   /** Stable failure code when `activationState` is `failed`; null is generic. */
   readonly activationErrorCode = input<MigrationErrorCode | null>(null);
+
+  /** Server-reported coarse phase while the host activates (slice B8). */
+  readonly activationPhase = input<MigrationActivationPhase | null>(null);
+
+  /**
+   * True only when the server said the failed activation may be repeated
+   * (`canActivate`). `RecoveryFailed` never retries.
+   */
+  readonly activationCanRetry = input(false);
+
+  /**
+   * Fresh destination facts from the server's 409; the replacement dialog
+   * shows these counts and the confirmation binds to the server revision.
+   */
+  readonly activationConflict = input<LibraryActivationConflictFacts | null>(null);
+
+  /** Server-reported recovery-copy expiry after a completed replacement. */
+  readonly activationRecoveryExpiresAtUtc = input<string | null>(null);
 
   /** Emitted once when the durable job or the host reports completion. */
   readonly importCompleted = output<void>();
@@ -150,6 +175,42 @@ export class LibraryImportFlowComponent implements OnInit, OnDestroy {
     return prepared ? { jobId: prepared.jobId } : null;
   });
 
+  /** Truthful phase sentence for the server-owned activation. */
+  readonly activationPhaseMessage = computed(() => activationPhaseMessage(this.activationPhase()));
+
+  /** Server-reported recovery-copy note after completion; null when unknown. */
+  readonly activationRecoveryNote = computed(() =>
+    activationRecoveryNote(this.activationRecoveryExpiresAtUtc()),
+  );
+
+  /**
+   * A populated destination the server reported through a 409 while the flow
+   * was on the empty path: the dialog appears with the server's own counts.
+   */
+  readonly activationConflictReplacement = computed<LibraryActivationConflictFacts | null>(() => {
+    const conflict = this.activationConflict();
+    return conflict && conflict.destinationStatus === 'Populated' ? conflict : null;
+  });
+
+  /**
+   * True when the host failed the activation and the server forbade a retry.
+   * Only the activation codes can be fail-closed: a generic host failure
+   * (`portable_import_failed`, storage exhaustion) stays retryable.
+   */
+  readonly activationRetryBlocked = computed(() => {
+    if (this.activationState() !== 'failed' || this.activationCanRetry()) return false;
+    const code = this.activationErrorCode();
+    return (
+      code === 'migration_activation_recovery_failed' ||
+      code === 'migration_activation_failed'
+    );
+  });
+
+  /** The Retry import action is offered only when the server allows a repeat. */
+  readonly activationRetryOffered = computed(
+    () => this.activationRetryBlocked() === false && this.activationFailureCopy()?.action === 'retry',
+  );
+
   readonly failureCopy = computed<TransferFailureCopy | null>(() => {
     const state = this.failed();
     return state ? libraryTransferFailureCopy(state.failure) : null;
@@ -218,15 +279,23 @@ export class LibraryImportFlowComponent implements OnInit, OnDestroy {
   /** Failure copy for a host-reported activation failure, if any. */
   readonly activationFailureCopy = computed<TransferFailureCopy | null>(() => {
     if (this.activationState() !== 'failed') return null;
+    // A destination conflict is re-reviewed through the dialog, not a panel.
+    if (this.activationConflict()) return null;
     return libraryTransferFailureCopy(this.activationFailure());
   });
 
-  /** The replacement dialog is sealed from the moment destructive intent is emitted. */
+  /**
+   * The replacement dialog is sealed from the moment destructive intent is
+   * emitted, and stays sealed whenever the server owns the cutover — including
+   * a probe/activation the user has not confirmed (review-748: activation is a
+   * global interaction boundary and must not be dismissible).
+   */
   readonly replacementSealed = computed(
     () =>
-      this.replacementSubmittedJobId() !== null &&
-      this.activationState() !== 'failed' &&
-      this.activationState() !== 'completed',
+      this.activationState() === 'in-progress' ||
+      (this.replacementSubmittedJobId() !== null &&
+        this.activationState() !== 'failed' &&
+        this.activationState() !== 'completed'),
   );
 
   readonly replacementBusyLabel = computed(() =>
@@ -237,6 +306,9 @@ export class LibraryImportFlowComponent implements OnInit, OnDestroy {
     if (this.replacementSubmittedJobId() === null || this.activationState() !== 'failed') {
       return null;
     }
+    // A 409 destination conflict carries fresh facts: the dialog shows the
+    // updated counts and asks for a fresh confirmation instead of an error.
+    if (this.activationConflict()) return null;
     return libraryTransferFailureCopy(this.activationFailure()).message;
   });
 
@@ -276,10 +348,12 @@ export class LibraryImportFlowComponent implements OnInit, OnDestroy {
       void this.tryAutoResume();
     });
 
-    // Empty-destination handoff: exactly one request per prepared job.
+    // Empty-destination handoff: exactly one request per prepared job, and
+    // only when the host advertises safe activation (B8 self-review (d)).
     effect(() => {
       const state = this.readyEmpty();
-      if (!state || this.activationState() !== 'idle') return;
+      if (!state || !this.supportsSafeActivation()) return;
+      if (this.activationState() !== 'idle') return;
       if (this.activationRequestedJobId === state.jobId) return;
       this.activationRequestedJobId = state.jobId;
       this.activationRequested.emit(state.jobId);
@@ -458,7 +532,9 @@ export class LibraryImportFlowComponent implements OnInit, OnDestroy {
     return {
       code: this.activationErrorCode() ?? 'portable_import_failed',
       message: '',
-      retryable: true,
+      // Retry copy is allowed only when the server said the failed activation
+      // can be repeated; `RecoveryFailed` copy never offers an action anyway.
+      retryable: this.activationCanRetry(),
     };
   }
 }

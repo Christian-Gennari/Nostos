@@ -1043,6 +1043,9 @@ export class LibraryTransferCoordinator {
       fileName: file.name,
       preflightRequest,
       preflightDecision: preflight.evaluation.decision,
+      // The revision the user reviewed; activation binds its confirmation to
+      // this server value (never a client-invented one).
+      destinationRevision: preflight.evaluation.destinationRevision,
       createdAt: new Date().toISOString(),
     };
   }

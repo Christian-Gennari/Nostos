@@ -240,6 +240,13 @@ export class SettingsComponent implements OnInit, OnDestroy {
   readonly supportsLibraryMigration = computed(
     () => this.deploymentCapabilities()?.supportsLibraryMigration === true,
   );
+  /**
+   * Server-authoritative safe activation (#681). The shared import flow only
+   * starts activation when this is true; false keeps the gated explanation.
+   */
+  readonly supportsSafeActivation = computed(
+    () => this.deploymentCapabilities()?.supportsSafeActivation === true,
+  );
   readonly cloudSession = signal<CloudSession | null>(null);
   readonly managedEreaderAccess = computed(
     () =>

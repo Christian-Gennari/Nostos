@@ -357,7 +357,10 @@
           <p class="label-desc card-purpose" data-testid="library-transfer-purpose">
             Portable library archives are for moving your library between Nostos installations.
           </p>
-          <app-library-transfer-host (importCompleted)="onLibraryTransferCompleted()" />
+          <app-library-transfer-host
+            [supportsSafeActivation]="supportsSafeActivation()"
+            (importCompleted)="onLibraryTransferCompleted()"
+          />
         </div>
       </section>
       } @else if (supportsCloudPortableExport()) {

@@ -5,7 +5,11 @@
  * transport seam that constructs the adapter in its DI factory.
  */
 
-import { LibraryTransferFailure, TransferCancelledError } from '../models/library-transfer.models';
+import {
+  LibraryActivationConflictFacts,
+  LibraryTransferFailure,
+  TransferCancelledError,
+} from '../models/library-transfer.models';
 import type { MigrationErrorCode } from '../models/migration-http.dtos';
 
 /** Transport-level error carrying the stable #679 error code. */
@@ -29,6 +33,24 @@ export class MigrationTransportError extends Error {
     // even though it carries status 0.
     if (this.code === 'request_aborted') return false;
     return isTransientStatus(this.status);
+  }
+}
+
+/**
+ * Activation admission conflict that preserves the destination facts from the
+ * 409 body (`destinationRevision`, `destinationStatus`, `existingCounts`) so
+ * the UI can re-review with the server's values instead of a stale revision.
+ */
+export class MigrationActivationConflictError extends MigrationTransportError {
+  constructor(
+    code: MigrationErrorCode,
+    status: number,
+    message: string,
+    readonly conflict: LibraryActivationConflictFacts,
+    options?: { retryAfterMs?: number; cause?: unknown },
+  ) {
+    super(code, status, message, options);
+    this.name = 'MigrationActivationConflictError';
   }
 }
 
