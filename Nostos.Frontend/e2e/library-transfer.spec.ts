@@ -1,0 +1,839 @@
+/**
+ * Real-backend browser QA for library export/import/activation (#680 slice B10).
+ *
+ * Every scenario runs against the real production Angular build served by a
+ * real SelfHosted Nostos backend with a disposable SQLite root and synthetic
+ * media. Destination instances are launched per test and torn down in
+ * `finally`, so browser projects and repeat runs never share consumed state.
+ *
+ * Scenario map (assignment 2a-f):
+ *   a  export -> native download -> backend verifier
+ *   b  empty destination import -> auto-activation -> reload serves the library
+ *   c1 populated replacement: server counts, one confirmation, sealed overlay
+ *   c2 change after preparation: updated counts + "changed since the import
+ *      started" + fresh confirmation
+ *   d1 reload mid-upload -> reselect same file -> only missing chunks re-sent
+ *   d2 reload during activation -> reattach -> outcome
+ *   e1 non-archive file   e2 corrupted archive   e3 cancel mid-upload
+ *   e4 backend restart mid-upload   e5 second tab lease
+ *   f  replacement dialog focus trap / Escape / sealed overlay
+ */
+import { expect, test, type Page } from '@playwright/test';
+import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+
+import {
+  TRANSFER_ARTIFACTS,
+  bookByTitle,
+  exportArchiveViaApi,
+  killTransferInstance,
+  launchTransferInstance,
+  librarySnapshot,
+  loadTransferFixture,
+  ltPost,
+  snapshotCounts,
+  transferInstance,
+  validateArchiveOnServer,
+  writeTransferArtifact,
+  type LibraryTransferInstance,
+} from './support/library-transfer-harness';
+
+test.describe.configure({ mode: 'serial' });
+
+let source: LibraryTransferInstance;
+let archivePath: string | null = null;
+
+test.beforeAll(() => {
+  source = transferInstance(loadTransferFixture(), 'source');
+});
+
+/** Uses the artifact produced by scenario (a); falls back to the export API. */
+async function ensureArchive(): Promise<string> {
+  if (archivePath) return archivePath;
+  mkdirSync(TRANSFER_ARTIFACTS, { recursive: true });
+  const fallback = path.join(TRANSFER_ARTIFACTS, 'library-fallback.nostos');
+  await exportArchiveViaApi(source.baseUrl, fallback);
+  archivePath = fallback;
+  return fallback;
+}
+
+interface ErrorCollectors {
+  pageErrors: string[];
+  consoleErrors: string[];
+  /** Resolves console argument handles recorded by the listener. */
+  settle: () => Promise<void>;
+}
+
+function collectErrors(page: Page): ErrorCollectors {
+  const pageErrors: string[] = [];
+  const consoleErrors: string[] = [];
+  const pending: Promise<void>[] = [];
+  page.on('pageerror', (error) => pageErrors.push(String(error)));
+  page.on('console', (message) => {
+    if (message.type() !== 'error') return;
+    const url = message.location().url;
+    pending.push(
+      (async () => {
+        const args = message.args();
+        let detail = message.text();
+        if (args.length > 0) {
+          const values = await Promise.all(
+            args.map(async (arg) => {
+              try {
+                const value = await arg.jsonValue();
+                return typeof value === 'string' ? value : JSON.stringify(value);
+              } catch {
+                return '<unavailable>';
+              }
+            }),
+          );
+          detail = values.join(' ');
+        }
+        consoleErrors.push(`${detail} @ ${url}`);
+      })(),
+    );
+  });
+  return {
+    pageErrors,
+    consoleErrors,
+    settle: async () => {
+      await Promise.all(pending);
+    },
+  };
+}
+
+/**
+ * Console errors that are browser/framework noise rather than app failures:
+ * epub.js renders chapters inside sandboxed `about:srcdoc` iframes (the
+ * engine blocks scripts there by design), browsers probe `/favicon.ico`, the
+ * reader's first open of a book legitimately 404s the cached-locations route
+ * before the locations POST repopulates it, and the activation protocol uses
+ * a handled 409 (confirmation required / destination conflict) as its
+ * re-review signal, which the browser logs as a failed fetch.
+ */
+/**
+ * Page errors that are deliberate-navigation noise: WebKit reports an
+ * XMLHttpRequest cancelled by the page's own reload as an access-control
+ * failure. The suite reloads mid-request on purpose (d1/d2/e4/e5), so only
+ * that cancellation shape is ignored; same-origin XHR cannot really fail CORS.
+ */
+function unexpectedPageErrors(errors: string[]): string[] {
+  return errors.filter(
+    (line) =>
+      !(
+        /XMLHttpRequest cannot load .*\/api\//i.test(line) &&
+        /access control checks/i.test(line)
+      ),
+  );
+}
+
+function unexpectedConsoleErrors(errors: string[]): string[] {
+  return errors.filter(
+    (line) =>
+      !/about:srcdoc/.test(line) &&
+      !/favicon/i.test(line) &&
+      // Offline/CI hosts commonly cannot reach Google Fonts; the app falls
+      // back to its bundled stack and the download error is environment noise.
+      !/downloadable font|fonts\.gstatic\.com/i.test(line) &&
+      // WebKit reports the app's own viewport meta key as a console error.
+      !/interactive-widget/i.test(line) &&
+      !/\/api\/books\/[0-9a-f-]+\/locations\b/i.test(line) &&
+      !/\/api\/portability\/migration\/jobs\/[0-9a-f-]+\/activate\b/i.test(line),
+  );
+}
+
+async function openSettings(page: Page, baseUrl: string): Promise<void> {
+  await page.goto(`${baseUrl}/settings`);
+  await expect(page.getByTestId('library-transfer-card')).toBeVisible();
+}
+
+async function selectArchive(page: Page, file: string): Promise<void> {
+  await page.getByTestId('library-import-file-input').setInputFiles(file);
+}
+
+/** Per-chunk request URL indexes observed on the page, in order. */
+function trackChunkIndexes(page: Page): number[] {
+  const indexes: number[] = [];
+  page.on('request', (request) => {
+    const match = /\/upload-session\/chunks\/(\d+)/.exec(request.url());
+    if (match) indexes.push(Number(match[1]));
+  });
+  return indexes;
+}
+
+function trackJobIds(page: Page): string[] {
+  const jobIds: string[] = [];
+  page.on('request', (request) => {
+    const match = /\/migration\/jobs\/([0-9a-fA-F-]{36})\//.exec(request.url());
+    if (match && !jobIds.includes(match[1])) jobIds.push(match[1]);
+  });
+  return jobIds;
+}
+
+async function delayChunks(page: Page, delayMs: number): Promise<void> {
+  await page.route(
+    '**/api/portability/migration/jobs/*/upload-session/chunks/*',
+    async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      await route.continue();
+    },
+  );
+}
+
+/** Resolves even when the reload already happened (timeOrigin comparison). */
+async function navigationOrigin(page: Page): Promise<number> {
+  return page.evaluate(() => performance.timeOrigin);
+}
+
+async function waitForReload(page: Page, previousOrigin: number, timeout = 240_000): Promise<void> {
+  await page.waitForFunction(
+    (origin) => performance.timeOrigin !== origin,
+    previousOrigin,
+    { timeout, polling: 250 },
+  );
+}
+
+async function waitForChunkIndex(indexes: number[], index: number, timeout = 120_000): Promise<void> {
+  await expect
+    .poll(() => indexes.includes(index), { timeout, message: `chunk ${index} was requested` })
+    .toBe(true);
+}
+
+async function assertSourceContent(baseUrl: string): Promise<void> {
+  const snapshot = await librarySnapshot(baseUrl);
+  expect(snapshotCounts(snapshot)).toEqual({
+    books: 4,
+    notes: 3,
+    highlights: 1,
+    collections: 2,
+    collectionMemberships: 2,
+  });
+  expect(snapshot.books.map((book) => book.title).sort()).toEqual(
+    ['Field Notes on Static', 'The Lantern Keepers', 'The Unsorted Almanac', 'Tidewater Sessions'],
+  );
+  const lantern = bookByTitle(snapshot, 'The Lantern Keepers');
+  expect(lantern.collectionIds).toHaveLength(1);
+  expect(lantern.progressPercent).toBe(42);
+  expect(lantern.lastLocation).toBeTruthy();
+  expect(lantern.hasFile).toBe(true);
+  const lanternNotes = snapshot.notesByBook[lantern.id] ?? [];
+  expect(lanternNotes.map((note) => note.content)).toContain('Why the beacon matters.');
+  expect(
+    lanternNotes.some(
+      (note) => note.selectedText?.includes('never goes dark') && note.cfiRange === 'epubcfi(/6/4!/4/2/1:0)',
+    ),
+  ).toBe(true);
+  const field = bookByTitle(snapshot, 'Field Notes on Static');
+  expect(snapshot.notesByBook[field.id]?.map((note) => note.content)).toContain(
+    'Static is the signal.',
+  );
+  const tide = bookByTitle(snapshot, 'Tidewater Sessions');
+  expect(tide.type).toBe('audiobook');
+  expect(tide.hasFile).toBe(true);
+  expect(snapshot.collections.map((collection) => collection.name).sort()).toEqual([
+    'Essays',
+    'Fiction',
+  ]);
+  const writing = snapshot.writings.find((item) => item.name === 'Migration diary');
+  expect(writing?.content).toContain('packed the shelves');
+}
+
+async function withDestination(
+  testInfo: { project: { name: string } },
+  label: string,
+  seed: 'a' | 'b' | 'none',
+  body: (instance: LibraryTransferInstance) => Promise<void>,
+): Promise<void> {
+  const name = `lt-${testInfo.project.name}-${label}`;
+  const instance = launchTransferInstance(name, seed);
+  try {
+    await body(instance);
+  } finally {
+    killTransferInstance(instance.name);
+  }
+}
+
+test('scenario a: export downloads a server-verifiable .nostos archive', async ({ page }, testInfo) => {
+  const errors = collectErrors(page);
+  const idle = await librarySnapshot(source.baseUrl);
+  expect(snapshotCounts(idle)).toEqual({
+    books: 4,
+    notes: 3,
+    highlights: 1,
+    collections: 2,
+    collectionMemberships: 2,
+  });
+
+  await openSettings(page, source.baseUrl);
+  await expect(page.getByTestId('export-idle')).toBeVisible();
+  const downloadPromise = page.waitForEvent('download', { timeout: 180_000 });
+  await page.getByTestId('export-start').click();
+  await expect(page.getByTestId('export-ready')).toBeVisible({ timeout: 180_000 });
+
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/\.nostos$/);
+  mkdirSync(TRANSFER_ARTIFACTS, { recursive: true });
+  archivePath = path.join(TRANSFER_ARTIFACTS, `library-${testInfo.project.name}.nostos`);
+  await download.saveAs(archivePath);
+
+  const bytes = readFileSync(archivePath);
+  expect(bytes.length).toBeGreaterThan(16 * 1024 * 1024);
+  expect(bytes.length).toBeGreaterThan(
+    snapshotCounts(idle).books * 1024,
+  );
+
+  // Native fallback stays visible and points at the export route.
+  const fallback = page.getByTestId('library-export-download');
+  await expect(fallback).toBeVisible();
+  await expect(fallback).toHaveAttribute('href', /\/export-download$/);
+
+  // The backend's own reader/verifier accepts the archive end to end.
+  const validatorName = `lt-validator-${testInfo.project.name}`;
+  const validator = launchTransferInstance(validatorName, 'none');
+  try {
+    const validation = await validateArchiveOnServer(validator.baseUrl, archivePath);
+    expect(validation.chunkCount).toBeGreaterThanOrEqual(5);
+    const counts = validation.preparedImport.counts;
+    expect(counts.books).toBe(4);
+    expect(counts.notes).toBe(3);
+    expect(counts.collections).toBe(2);
+    writeTransferArtifact(`scenario-a-${testInfo.project.name}.json`, {
+      archiveBytes: bytes.length,
+      archiveSha256: validation.sha256,
+      chunkSizeBytes: loadTransferFixture().chunkSizeBytes,
+      chunkCount: validation.chunkCount,
+      serverCounts: counts,
+      suggestedFilename: download.suggestedFilename(),
+    });
+  } finally {
+    killTransferInstance(validatorName);
+  }
+
+  await errors.settle();
+  expect(unexpectedPageErrors(errors.pageErrors)).toEqual([]);
+  expect(unexpectedConsoleErrors(errors.consoleErrors)).toEqual([]);
+});
+
+test('scenario b: empty destination import auto-activates and serves the library', async ({ page }, testInfo) => {
+  const archive = await ensureArchive();
+  const errors = collectErrors(page);
+  await withDestination(testInfo, 'empty', 'none', async (destination) => {
+    const before = snapshotCounts(await librarySnapshot(destination.baseUrl));
+    expect(before.books).toBe(0);
+    expect(before.notes).toBe(0);
+
+    await delayChunks(page, 120);
+    await openSettings(page, destination.baseUrl);
+    const chunkIndexes = trackChunkIndexes(page);
+    await selectArchive(page, archive);
+    await expect(page.getByTestId('import-inspecting')).toBeVisible();
+    await expect(page.getByTestId('import-uploading')).toBeVisible({ timeout: 180_000 });
+    await waitForChunkIndex(chunkIndexes, 4);
+    expect(chunkIndexes.length).toBeGreaterThanOrEqual(5);
+
+    const startedAt = Date.now();
+    const beforeReload = await navigationOrigin(page);
+    await expect(page.getByTestId('library-activation-overlay')).toBeVisible({
+      timeout: 180_000,
+    });
+    await waitForReload(page, beforeReload);
+    const durationMs = Date.now() - startedAt;
+    expect(durationMs).toBeGreaterThan(0);
+
+    await page.goto(`${destination.baseUrl}/library`);
+    await expect(page.getByText('The Lantern Keepers').first()).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText('Tidewater Sessions').first()).toBeVisible();
+    await assertSourceContent(destination.baseUrl);
+
+    // The file-backed EPUB actually opens and renders its text.
+    const snapshot = await librarySnapshot(destination.baseUrl);
+    const lantern = bookByTitle(snapshot, 'The Lantern Keepers');
+    await page.goto(`${destination.baseUrl}/read/${lantern.id}`);
+    const frame = page.frameLocator('#epub-viewer iframe');
+    await expect(frame.locator('p').first()).toContainText('lantern never goes dark', {
+      timeout: 45_000,
+    });
+
+    writeTransferArtifact(`scenario-b-${testInfo.project.name}.json`, {
+      durationMs,
+      chunks: chunkIndexes.length,
+      counts: snapshotCounts(snapshot),
+    });
+  });
+  await errors.settle();
+  expect(unexpectedPageErrors(errors.pageErrors)).toEqual([]);
+  expect(unexpectedConsoleErrors(errors.consoleErrors)).toEqual([]);
+});
+
+test('scenario c1: populated replacement shows server counts, seals the cutover, serves the new library', async ({ page }, testInfo) => {
+  const archive = await ensureArchive();
+  const errors = collectErrors(page);
+  await withDestination(testInfo, 'populated-plain', 'b', async (destination) => {
+    await openSettings(page, destination.baseUrl);
+    await selectArchive(page, archive);
+
+    await expect(page.getByTestId('import-replacement')).toBeVisible({ timeout: 240_000 });
+    const dialog = page.locator('.replacement-dialog-card');
+    await expect(dialog).toBeVisible();
+    await expect(page.getByTestId('replacement-existing')).toContainText(
+      '2 books · 1 notes · 1 collections',
+    );
+    await expect(page.getByTestId('replacement-incoming')).toContainText(
+      '4 books · 3 notes · 2 collections',
+    );
+    await expect(page.getByTestId('replacement-counts-source')).toContainText('Checked by Nostos');
+    await expect(page.getByTestId('replacement-conflict')).toHaveCount(0);
+    await expect(page.getByTestId('replacement-recovery')).toContainText('recovery copy');
+
+    // Keep the cutover observable: delay the activation POST response so the
+    // app-wide overlay and the sealed dialog are assertable.
+    await page.route('**/api/portability/migration/jobs/*/activate', async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 1_500));
+      await route.continue();
+    });
+
+    const beforeReload = await navigationOrigin(page);
+    await dialog.locator('.replacement-confirm').click();
+    await expect(page.getByTestId('library-activation-overlay')).toBeVisible({
+      timeout: 60_000,
+    });
+    const overlay = page.getByTestId('library-activation-overlay');
+    await expect(overlay).toHaveAttribute('role', 'alert');
+    await expect(overlay).toHaveAttribute('aria-busy', 'true');
+    await expect(page.getByTestId('replacement-sealed')).toBeVisible();
+
+    // Sealed: Escape and backdrop cannot dismiss while the server cuts over.
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeVisible();
+    await expect(page.getByTestId('import-cancelled')).toHaveCount(0);
+
+    await waitForReload(page, beforeReload);
+    await page.goto(`${destination.baseUrl}/library`);
+    await expect(page.getByText('The Lantern Keepers').first()).toBeVisible({ timeout: 30_000 });
+    await assertSourceContent(destination.baseUrl);
+  });
+  await errors.settle();
+  expect(unexpectedPageErrors(errors.pageErrors)).toEqual([]);
+  expect(unexpectedConsoleErrors(errors.consoleErrors)).toEqual([]);
+});
+
+test('scenario c2: a change after preparation shows updated counts and a fresh confirmation', async ({ page }, testInfo) => {
+  const archive = await ensureArchive();
+  const errors = collectErrors(page);
+  await withDestination(testInfo, 'populated-changed', 'b', async (destination) => {
+    const before = await librarySnapshot(destination.baseUrl);
+    const harbour = bookByTitle(before, 'Harbour Ledger');
+    expect(snapshotCounts(before).notes).toBe(1);
+
+    await openSettings(page, destination.baseUrl);
+    await selectArchive(page, archive);
+    await expect(page.getByTestId('import-replacement')).toBeVisible({ timeout: 240_000 });
+
+    // A first confirmation of an unchanged populated library must not claim a change.
+    await expect(page.getByTestId('replacement-conflict')).toHaveCount(0);
+    await expect(page.getByTestId('replacement-existing')).toContainText(
+      '2 books · 1 notes · 1 collections',
+    );
+
+    // Change the destination after preparation/before confirming.
+    await ltPost(destination.baseUrl, `/api/books/${harbour.id}/notes`, {
+      content: 'Written after the import started.',
+    });
+
+    const dialog = page.locator('.replacement-dialog-card');
+    await dialog.locator('.replacement-confirm').click();
+
+    // The stale revision is refused; the dialog shows the fresh counts and the
+    // server's changedSinceImportStarted hint, then re-arms.
+    await expect(page.getByTestId('replacement-conflict')).toContainText(
+      'changed since the import started',
+    );
+    await expect(page.getByTestId('replacement-existing')).toContainText(
+      '2 books · 2 notes · 1 collections',
+    );
+    await expect(dialog.locator('.replacement-confirm')).toBeEnabled();
+
+    const beforeReload = await navigationOrigin(page);
+    await dialog.locator('.replacement-confirm').click();
+    await waitForReload(page, beforeReload);
+
+    await page.goto(`${destination.baseUrl}/library`);
+    await expect(page.getByText('The Lantern Keepers').first()).toBeVisible({ timeout: 30_000 });
+    await assertSourceContent(destination.baseUrl);
+    const after = await librarySnapshot(destination.baseUrl);
+    expect(after.notes.some((note) => note.content === 'Written after the import started.')).toBe(
+      false,
+    );
+  });
+  await errors.settle();
+  expect(unexpectedPageErrors(errors.pageErrors)).toEqual([]);
+  expect(unexpectedConsoleErrors(errors.consoleErrors)).toEqual([]);
+});
+
+test('scenario d1: reload mid-upload resumes with only the missing chunks', async ({ page }, testInfo) => {
+  const archive = await ensureArchive();
+  const errors = collectErrors(page);
+  await withDestination(testInfo, 'resume-upload', 'none', async (destination) => {
+    await delayChunks(page, 600);
+    await openSettings(page, destination.baseUrl);
+    const chunkIndexes = trackChunkIndexes(page);
+    const jobIds = trackJobIds(page);
+    await selectArchive(page, archive);
+    await expect(page.getByTestId('import-uploading')).toBeVisible({ timeout: 180_000 });
+    await waitForChunkIndex(chunkIndexes, 3);
+
+    const jobId = jobIds[0];
+    expect(jobId).toBeTruthy();
+
+    // Authoritative receipt state before the reload.
+    const session = await (await fetch(
+      `${destination.baseUrl}/api/portability/migration/jobs/${jobId}/upload-session`,
+    )).json();
+    const received = new Set<number>();
+    for (const range of session.receivedRanges ?? []) {
+      for (let index = range.startIndex; index <= range.endIndex; index += 1) received.add(index);
+    }
+    expect(received.size).toBeGreaterThan(0);
+    expect(received.size).toBeLessThan(session.session.totalChunks);
+
+    await page.reload();
+    const reselect = page.getByTestId('import-reselect');
+    const failed = page.getByTestId('import-failed');
+    await expect
+      .poll(async () => (await reselect.isVisible()) || (await failed.isVisible()), {
+        timeout: 60_000,
+        message: 'the flow resumed to reselection or failed',
+      })
+      .toBe(true);
+    if (await failed.isVisible()) {
+      const status = await (
+        await fetch(`${destination.baseUrl}/api/portability/migration/jobs/${jobId}`)
+      ).json();
+      throw new Error(
+        `Import failed after reload: ${JSON.stringify({
+          state: status.job.state,
+          code: status.job.failureCode,
+          message: status.job.failureMessage,
+          progress: status.progress,
+        })}`,
+      );
+    }
+    await expect(reselect).toContainText('Select the same file again to resume');
+
+    chunkIndexes.length = 0;
+    await selectArchive(page, archive);
+    await expect(page.getByTestId('import-uploading')).toBeVisible({ timeout: 60_000 });
+
+    const beforeReload = await navigationOrigin(page);
+    await expect(page.getByTestId('library-activation-overlay')).toBeVisible({
+      timeout: 240_000,
+    });
+    await waitForReload(page, beforeReload);
+
+    // No already-received chunk was re-sent after reselecting the same file.
+    const resent = chunkIndexes.filter((index) => received.has(index));
+    expect(resent).toEqual([]);
+
+    await page.goto(`${destination.baseUrl}/library`);
+    await assertSourceContent(destination.baseUrl);
+    writeTransferArtifact(`scenario-d1-${testInfo.project.name}.json`, {
+      chunksAlreadyReceived: received.size,
+      chunksResentAfterReload: chunkIndexes.length,
+      totalChunks: session.session.totalChunks,
+    });
+  });
+  await errors.settle();
+  expect(unexpectedPageErrors(errors.pageErrors)).toEqual([]);
+});
+
+test('scenario d2: reload during activation reattaches and reports the outcome', async ({ page }, testInfo) => {
+  const archive = await ensureArchive();
+  const errors = collectErrors(page);
+  await withDestination(testInfo, 'resume-activation', 'none', async (destination) => {
+    // Hold the activation status responses so the cutover is still running
+    // when the page reloads.
+    await page.route(
+      '**/api/portability/migration/jobs/*/activation',
+      async (route) => {
+        await new Promise((resolve) => setTimeout(resolve, 700));
+        await route.continue();
+      },
+    );
+
+    await openSettings(page, destination.baseUrl);
+    await selectArchive(page, archive);
+    await expect(page.getByTestId('library-activation-overlay')).toBeVisible({
+      timeout: 240_000,
+    });
+
+    await page.reload();
+    // The activation's own post-completion reload is still ahead; track it from
+    // the manual reload's document so the wait is not satisfied by the manual
+    // navigation itself.
+    const beforeCompletionReload = await navigationOrigin(page);
+    // The controller reattaches from the persisted activation on reload: the
+    // non-dismissible overlay comes back and the outcome is still reported.
+    await expect(page.getByTestId('library-activation-overlay')).toBeVisible({
+      timeout: 90_000,
+    });
+    await waitForReload(page, beforeCompletionReload);
+
+    await page.goto(`${destination.baseUrl}/library`);
+    await expect(page.getByText('The Lantern Keepers').first()).toBeVisible({ timeout: 30_000 });
+    await assertSourceContent(destination.baseUrl);
+  });
+  await errors.settle();
+  expect(unexpectedPageErrors(errors.pageErrors)).toEqual([]);
+});
+
+test('scenario e1: a non-archive file is rejected without touching the library', async ({ page }, testInfo) => {
+  const errors = collectErrors(page);
+  mkdirSync(TRANSFER_ARTIFACTS, { recursive: true });
+  const notAnArchive = path.join(TRANSFER_ARTIFACTS, `wrong-${testInfo.project.name}.txt`);
+  writeFileSync(notAnArchive, 'This is plainly not a portable Nostos archive.\n');
+
+  const before = snapshotCounts(await librarySnapshot(source.baseUrl));
+  await openSettings(page, source.baseUrl);
+  await selectArchive(page, notAnArchive);
+
+  await expect(page.getByTestId('import-failed')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId('import-failed')).toContainText('Not a portable library archive');
+  await expect(page.getByTestId('import-failed')).toContainText(
+    'This file is not a supported Nostos portable library archive.',
+  );
+  await expect(page.getByTestId('library-activation-overlay')).toHaveCount(0);
+
+  const after = snapshotCounts(await librarySnapshot(source.baseUrl));
+  expect(after).toEqual(before);
+  await errors.settle();
+  expect(unexpectedPageErrors(errors.pageErrors)).toEqual([]);
+  expect(unexpectedConsoleErrors(errors.consoleErrors)).toEqual([]);
+});
+
+test('scenario e2: a corrupted archive is rejected and the existing library stays intact', async ({ page }, testInfo) => {
+  const archive = await ensureArchive();
+  const errors = collectErrors(page);
+  mkdirSync(TRANSFER_ARTIFACTS, { recursive: true });
+  const corrupted = path.join(TRANSFER_ARTIFACTS, `corrupted-${testInfo.project.name}.nostos`);
+  copyFileSync(archive, corrupted);
+  const bytes = readFileSync(corrupted);
+  // Flip a byte inside the media payload: the ZIP structure and manifest stay
+  // readable, so the archive reaches server-side validation and fails there.
+  const position = Math.floor(bytes.length * 0.6);
+  bytes[position] = bytes[position] ^ 0xff;
+  writeFileSync(corrupted, bytes);
+
+  const before = await librarySnapshot(source.baseUrl);
+  await openSettings(page, source.baseUrl);
+  await selectArchive(page, corrupted);
+
+  await expect(page.getByTestId('import-failed')).toBeVisible({ timeout: 240_000 });
+  await expect(page.getByTestId('library-activation-overlay')).toHaveCount(0);
+  const text = await page.getByTestId('import-failed').innerText();
+  expect(text.toLowerCase()).toContain('import');
+
+  const after = await librarySnapshot(source.baseUrl);
+  expect(snapshotCounts(after)).toEqual(snapshotCounts(before));
+  expect(after.books.map((book) => book.id).sort()).toEqual(before.books.map((book) => book.id).sort());
+  await assertSourceContent(source.baseUrl);
+  await errors.settle();
+  expect(unexpectedPageErrors(errors.pageErrors)).toEqual([]);
+});
+
+test('scenario e3: cancel mid-upload cleans up and a new import can start', async ({ page }, testInfo) => {
+  const archive = await ensureArchive();
+  const errors = collectErrors(page);
+  await withDestination(testInfo, 'failure-cancel', 'none', async (destination) => {
+    await delayChunks(page, 500);
+    await openSettings(page, destination.baseUrl);
+    const chunkIndexes = trackChunkIndexes(page);
+    const jobIds = trackJobIds(page);
+    await selectArchive(page, archive);
+    await expect(page.getByTestId('import-uploading')).toBeVisible({ timeout: 180_000 });
+    await waitForChunkIndex(chunkIndexes, 1);
+
+    await page.getByTestId('import-cancel').click();
+    await expect(page.getByTestId('import-cancelled')).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByTestId('import-cancelled')).toContainText(
+      'Your existing library was not changed.',
+    );
+
+    const firstJobId = jobIds[0];
+    expect(firstJobId).toBeTruthy();
+    const status = await (await fetch(
+      `${destination.baseUrl}/api/portability/migration/jobs/${firstJobId}`,
+    )).json();
+    expect(['Cancelled', 'Failed']).toContain(status.job.state);
+
+    // A brand-new import starts from scratch (new durable job).
+    await page.getByTestId('import-close').click();
+    await expect(page.getByTestId('import-idle')).toBeVisible();
+    chunkIndexes.length = 0;
+    await selectArchive(page, archive);
+    await expect(page.getByTestId('import-uploading')).toBeVisible({ timeout: 180_000 });
+    await expect.poll(() => jobIds.length, { timeout: 60_000 }).toBeGreaterThan(1);
+    expect(jobIds[1]).not.toBe(firstJobId);
+
+    await page.getByTestId('import-cancel').click();
+    await expect(page.getByTestId('import-cancelled')).toBeVisible({ timeout: 60_000 });
+  });
+  await errors.settle();
+  expect(unexpectedPageErrors(errors.pageErrors)).toEqual([]);
+});
+
+test('scenario e4: a backend restart mid-upload recovers after it is back', async ({ page }, testInfo) => {
+  const archive = await ensureArchive();
+  const errors = collectErrors(page);
+  await withDestination(testInfo, 'failure-restart', 'none', async (destination) => {
+    await delayChunks(page, 700);
+    await openSettings(page, destination.baseUrl);
+    const chunkIndexes = trackChunkIndexes(page);
+    await selectArchive(page, archive);
+    await expect(page.getByTestId('import-uploading')).toBeVisible({ timeout: 180_000 });
+    await waitForChunkIndex(chunkIndexes, 1);
+
+    // Real crash + restart over the same disposable root.
+    const { restartTransferInstance } = await import('./support/library-transfer-harness');
+    restartTransferInstance(destination.name, true);
+
+    const beforeReload = await navigationOrigin(page);
+    // The client either retries transparently or surfaces a retryable failure;
+    // either way the same page must recover without reselecting from zero.
+    const deadline = Date.now() + 300_000;
+    let recovered = false;
+    while (Date.now() < deadline) {
+      if (await page.getByTestId('library-activation-overlay').isVisible().catch(() => false)) {
+        recovered = true;
+        break;
+      }
+      if (await page.getByTestId('import-reselect').isVisible().catch(() => false)) {
+        await selectArchive(page, archive);
+      } else if (await page.getByTestId('import-failed').isVisible().catch(() => false)) {
+        const action = page.getByTestId('import-failure-action');
+        if (await action.isVisible().catch(() => false)) {
+          await action.click();
+        } else {
+          await selectArchive(page, archive);
+        }
+      }
+      await page.waitForTimeout(1_000);
+    }
+    expect(recovered, 'import reached activation after the backend restart').toBe(true);
+    await waitForReload(page, beforeReload);
+
+    await page.goto(`${destination.baseUrl}/library`);
+    await expect(page.getByText('The Lantern Keepers').first()).toBeVisible({ timeout: 30_000 });
+    await assertSourceContent(destination.baseUrl);
+  });
+  await errors.settle();
+  expect(unexpectedPageErrors(errors.pageErrors)).toEqual([]);
+  // Induced connection failures legitimately log network console errors.
+  expect(
+    unexpectedConsoleErrors(errors.consoleErrors.filter((line) => !isExpectedRestartError(line))),
+  ).toEqual([]);
+});
+
+function isExpectedRestartError(line: string): boolean {
+  return /ERR_CONNECTION|Failed to load resource|NS_ERROR|Load failed|NetworkError|503|Service Unavailable/i.test(
+    line,
+  );
+}
+
+test('scenario e5: a second tab is blocked by the lease with no double upload', async ({
+  page,
+  context,
+}, testInfo) => {
+  const archive = await ensureArchive();
+  const errors = collectErrors(page);
+  await withDestination(testInfo, 'second-tab', 'none', async (destination) => {
+    await delayChunks(page, 600);
+    await openSettings(page, destination.baseUrl);
+    const chunkIndexes = trackChunkIndexes(page);
+    await selectArchive(page, archive);
+    await expect(page.getByTestId('import-uploading')).toBeVisible({ timeout: 180_000 });
+    await waitForChunkIndex(chunkIndexes, 1);
+
+    const second = await context.newPage();
+    const secondErrors = collectErrors(second);
+    const secondChunks: number[] = [];
+    second.on('request', (request) => {
+      const match = /\/upload-session\/chunks\/(\d+)/.exec(request.url());
+      if (match) secondChunks.push(Number(match[1]));
+    });
+    try {
+      await second.goto(`${destination.baseUrl}/settings`);
+      await expect(second.getByTestId('library-transfer-card')).toBeVisible();
+      await expect(second.getByTestId('transfer-other-tab')).toBeVisible({ timeout: 30_000 });
+      await expect(second.getByTestId('transfer-other-tab')).toContainText(
+        'An import is already in progress in another tab.',
+      );
+      await second.waitForTimeout(2_500);
+      expect(secondChunks).toEqual([]);
+      await secondErrors.settle();
+      expect(secondErrors.pageErrors).toEqual([]);
+    } finally {
+      await second.close();
+    }
+
+    // The owning tab still owns the transfer and can cancel it cleanly.
+    await page.getByTestId('import-cancel').click();
+    await expect(page.getByTestId('import-cancelled')).toBeVisible({ timeout: 60_000 });
+  });
+  await errors.settle();
+  expect(unexpectedPageErrors(errors.pageErrors)).toEqual([]);
+});
+
+test('scenario f: replacement dialog traps focus and Escape cancels before activation', async ({ page }, testInfo) => {
+  const archive = await ensureArchive();
+  const errors = collectErrors(page);
+  await withDestination(testInfo, 'a11y-dialog', 'b', async (destination) => {
+    await openSettings(page, destination.baseUrl);
+    await selectArchive(page, archive);
+    await expect(page.getByTestId('import-replacement')).toBeVisible({ timeout: 240_000 });
+
+    const dialog = page.locator('.replacement-dialog-card');
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toHaveAttribute('role', 'alertdialog');
+    await expect(dialog).toHaveAttribute('aria-modal', 'true');
+    await expect(dialog).toHaveAttribute('aria-labelledby', 'replacement-dialog-title');
+    await expect(dialog).toHaveAttribute('aria-describedby', 'replacement-dialog-description');
+
+    // Focus enters the modal and stays trapped through a full Tab cycle.
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() => {
+            const active = document.activeElement as HTMLElement | null;
+            return {
+              inside: active?.closest('[role="alertdialog"]') !== null,
+              tag: active?.tagName ?? null,
+              className: active?.className ?? null,
+            };
+          }),
+        { timeout: 15_000 },
+      )
+      .toMatchObject({ inside: true });
+    for (let press = 0; press < 6; press += 1) {
+      await page.keyboard.press('Tab');
+      const inside = await page.evaluate(
+        () => document.activeElement?.closest('[role="alertdialog"]') !== null,
+      );
+      expect(inside, `focus stayed inside the dialog after Tab ${press + 1}`).toBe(true);
+    }
+
+    // Escape before activation dismisses the decision and cancels the transfer
+    // without mutating the destination.
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('import-cancelled')).toBeVisible({ timeout: 60_000 });
+    await expect(dialog).toHaveCount(0);
+
+    const snapshot = await librarySnapshot(destination.baseUrl);
+    expect(snapshot.books.map((book) => book.title).sort()).toEqual([
+      'Harbour Ledger',
+      'Second Almanac',
+    ]);
+    expect(snapshotCounts(snapshot).notes).toBe(1);
+  });
+  await errors.settle();
+  expect(unexpectedPageErrors(errors.pageErrors)).toEqual([]);
+});

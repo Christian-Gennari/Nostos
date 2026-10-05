@@ -37,7 +37,13 @@ export default defineConfig({
       // Anchored to the file NAME: an unanchored /mobile.*\.spec\.ts/ also
       // matches the checkout path, so a worktree whose directory contains
       // "mobile" makes this project ignore every spec ("No tests found").
-      testIgnore: [/[\\/]mobile[^\\/]*\.spec\.ts$/],
+      // The library-transfer acceptance specs use their own multi-instance
+      // fixture (`playwright.library-transfer.config.ts`); keep the default
+      // smoke suite's runtime and shared fixture unchanged.
+      testIgnore: [
+        /[\\/]mobile[^\\/]*\.spec\.ts$/,
+        /[\\/]library-transfer\.spec\.ts$/,
+      ],
     },
     {
       name: 'mobile-chromium',
@@ -49,6 +55,9 @@ export default defineConfig({
         deviceScaleFactor: 2,
       },
       testMatch: [/[\\/]mobile[^\\/]*\.spec\.ts$/],
+      // The mobile-webkit acceptance spec belongs to the library-transfer
+      // config (own fixture), not to the default single-backend smoke suite.
+      testIgnore: [/[\\/]mobile-library-transfer\.spec\.ts$/],
     },
   ],
 });
