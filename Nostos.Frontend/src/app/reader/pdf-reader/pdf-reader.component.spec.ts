@@ -523,6 +523,17 @@ describe('PdfReader shared search adapter (#761)', () => {
     });
   });
 
+  it('clears the previous PDF.js mark when the user empties the query', () => {
+    fixture.componentInstance.search('Being');
+    fixture.componentInstance.search('   ');
+
+    expect(pdfSearch.find).toHaveBeenLastCalledWith('', {
+      highlightAll: false,
+      dontScrollIntoView: true,
+    });
+    expect(fixture.componentInstance.searchState().status).toBe('idle');
+  });
+
   it('no longer renders or styles the embedded PDF find bar', () => {
     const html = readSource('./pdf-reader.component.html');
     const css = readSource('./pdf-reader.component.css');
