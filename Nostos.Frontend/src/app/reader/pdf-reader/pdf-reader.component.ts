@@ -226,11 +226,15 @@ export class PdfReader implements OnInit, OnDestroy, IReader {
   }
 
   clearSearch(): void {
+    const hadQuery = this.activeSearchQuery.length > 0;
     this.searchGeneration++;
     this.activeSearchQuery = '';
     this.searchState.set({ status: 'idle', current: 0, total: 0 });
-    // An empty query is the public PDF.js path for clearing the active find mark.
-    this.pdfSearch.find('', { highlightAll: false, dontScrollIntoView: true });
+    // Avoid touching the service during early teardown before the viewer has
+    // initialized; when a query did run, an empty query is PDF.js's public clear.
+    if (hadQuery) {
+      this.pdfSearch.find('', { highlightAll: false, dontScrollIntoView: true });
+    }
   }
 
   onFindMatchesCount(result: FindResultMatchesCount): void {
