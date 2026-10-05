@@ -174,6 +174,11 @@ function spawnBackend(instance) {
           Storage__MaxChunkBytes: String(CHUNK_SIZE_BYTES),
           Storage__DiskSafetyMarginBytes: '0',
           Storage__DiskSafetyMarginPercent: '0',
+          // Make the post-activation derived rebuild prompt so the browser
+          // suite can assert the NEW generation is indexed without waiting a
+          // production startup delay.
+          ActivationMaintenance__StartupDelaySeconds: '1',
+          ActivationMaintenance__DerivedRebuildIntervalSeconds: '2',
         },
         stdio: ['ignore', logFd, logFd],
         detached: true,

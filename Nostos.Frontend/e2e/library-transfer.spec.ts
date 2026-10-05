@@ -24,12 +24,14 @@ import path from 'node:path';
 
 import {
   TRANSFER_ARTIFACTS,
+  assertBackendLogClean,
   bookByTitle,
   exportArchiveViaApi,
   killTransferInstance,
   launchTransferInstance,
   librarySnapshot,
   loadTransferFixture,
+  ltGet,
   ltPost,
   snapshotCounts,
   transferInstance,
@@ -165,7 +167,9 @@ function unexpectedConsoleErrors(errors: string[]): string[] {
       // that actually failed to load still fails the run.
       !/error loading dynamically imported module/i.test(line) &&
       !/\/api\/books\/[0-9a-f-]+\/locations\b/i.test(line) &&
-      !/\/api\/portability\/migration\/jobs\/[0-9a-f-]+\/activate\b/i.test(line),
+      // Only the handled 409 re-review is expected; any other activation
+      // failure status stays visible to the suite.
+      !/status of 409 .*\/api\/portability\/migration\/jobs\/[0-9a-f-]+\/activate\b/i.test(line),
   );
 }
 
@@ -328,6 +332,8 @@ test('scenario a: export downloads a server-verifiable .nostos archive', async (
     expect(counts.books).toBe(4);
     expect(counts.notes).toBe(3);
     expect(counts.collections).toBe(2);
+    expect(counts.collectionMemberships).toBe(2);
+    expect(counts.mediaEntries).toBe(3);
     writeTransferArtifact(`scenario-a-${testInfo.project.name}.json`, {
       archiveBytes: bytes.length,
       archiveSha256: validation.sha256,
@@ -356,13 +362,13 @@ test('scenario b: empty destination import auto-activates and serves the library
     await delayChunks(page, 120);
     await openSettings(page, destination.baseUrl);
     const chunkIndexes = trackChunkIndexes(page);
+    const startedAt = Date.now();
     await selectArchive(page, archive);
     await expect(page.getByTestId('import-inspecting')).toBeVisible();
     await expect(page.getByTestId('import-uploading')).toBeVisible({ timeout: 180_000 });
     await waitForChunkIndex(chunkIndexes, 4);
     expect(chunkIndexes.length).toBeGreaterThanOrEqual(5);
 
-    const startedAt = Date.now();
     const beforeReload = await navigationOrigin(page);
     await expect(page.getByTestId('library-activation-overlay')).toBeVisible({
       timeout: 180_000,
@@ -376,9 +382,32 @@ test('scenario b: empty destination import auto-activates and serves the library
     await expect(page.getByText('Tidewater Sessions').first()).toBeVisible();
     await assertSourceContent(destination.baseUrl);
 
-    // The file-backed EPUB actually opens and renders its text.
+    // The derived book-text pipeline of the NEW generation is rebuilt after
+    // the swap: the imported book reaches a Ready index with real chunks.
     const snapshot = await librarySnapshot(destination.baseUrl);
     const lantern = bookByTitle(snapshot, 'The Lantern Keepers');
+    const readTextIndex = async (): Promise<{ status: string; chunks: number }> => {
+      const state = await ltGet<{ status?: string | number; chunkCount?: number }>(
+        destination.baseUrl,
+        `/api/books/${lantern.id}/text-index`,
+      );
+      // The API serialises BookTextIngestionStatus numerically.
+      const names = ['Pending', 'Processing', 'Ready', 'Failed', 'Unsupported'];
+      const status =
+        typeof state.status === 'number'
+          ? (names[state.status] ?? `Unknown(${state.status})`)
+          : (state.status ?? 'unknown');
+      return { status, chunks: state.chunkCount ?? 0 };
+    };
+    await expect
+      .poll(readTextIndex, {
+        timeout: 180_000,
+        message: 'the imported book text is indexed from the new generation',
+      })
+      .toMatchObject({ status: 'Ready' });
+    expect((await readTextIndex()).chunks).toBeGreaterThan(0);
+
+    // The file-backed EPUB actually opens and renders its text.
     await page.goto(`${destination.baseUrl}/read/${lantern.id}`);
     const frame = page.frameLocator('#epub-viewer iframe');
     await expect(frame.locator('p').first()).toContainText('lantern never goes dark', {
@@ -442,6 +471,7 @@ test('scenario c1: populated replacement shows server counts, seals the cutover,
     await page.goto(`${destination.baseUrl}/library`);
     await expect(page.getByText('The Lantern Keepers').first()).toBeVisible({ timeout: 30_000 });
     await assertSourceContent(destination.baseUrl);
+    assertBackendLogClean(destination, [/SqliteException/, /Book-text worker cycle failed/]);
   });
   await errors.settle();
   expect(unexpectedPageErrors(errors.pageErrors)).toEqual([]);
@@ -455,6 +485,27 @@ test('scenario c2: a change after preparation shows updated counts and a fresh c
     const before = await librarySnapshot(destination.baseUrl);
     const harbour = bookByTitle(before, 'Harbour Ledger');
     expect(snapshotCounts(before).notes).toBe(1);
+
+    // Capture the server's fresh revision from each 409 and the exact revision
+    // the next confirmation submits, so the safety coupling is asserted at the
+    // network boundary, not only through the rendered outcome.
+    const conflictRevisions: string[] = [];
+    const activateBodies: Array<{ destinationRevision?: string; confirmReplacement?: boolean }> = [];
+    page.on('response', async (response) => {
+      if (/\/activate$/.test(response.url()) && response.status() === 409) {
+        const body = (await response.json().catch(() => null)) as { destinationRevision?: string } | null;
+        if (body?.destinationRevision) conflictRevisions.push(body.destinationRevision);
+      }
+    });
+    page.on('request', (request) => {
+      if (request.method() === 'POST' && /\/activate$/.test(request.url())) {
+        try {
+          activateBodies.push(request.postDataJSON());
+        } catch {
+          // A body that is not JSON is not an activation request we sent.
+        }
+      }
+    });
 
     await openSettings(page, destination.baseUrl);
     await selectArchive(page, archive);
@@ -486,14 +537,22 @@ test('scenario c2: a change after preparation shows updated counts and a fresh c
       'changed since the import started',
     );
     await expect(dialog.locator('.replacement-confirm')).toBeEnabled();
+    const freshRevision = conflictRevisions.at(-1);
+    expect(freshRevision).toBeTruthy();
 
     const beforeReload = await navigationOrigin(page);
     await dialog.locator('.replacement-confirm').click();
     await waitForReload(page, beforeReload);
 
+    // The confirmation that activated the library submitted exactly the same
+    // revision the dialog displayed.
+    expect(activateBodies.at(-1)?.destinationRevision).toBe(freshRevision);
+    expect(activateBodies.at(-1)?.confirmReplacement).toBe(true);
+
     await page.goto(`${destination.baseUrl}/library`);
     await expect(page.getByText('The Lantern Keepers').first()).toBeVisible({ timeout: 30_000 });
     await assertSourceContent(destination.baseUrl);
+    assertBackendLogClean(destination, [/SqliteException/, /Book-text worker cycle failed/]);
     const after = await librarySnapshot(destination.baseUrl);
     expect(after.notes.some((note) => note.content === 'Written after the import started.')).toBe(
       false,
@@ -519,16 +578,18 @@ test('scenario d1: reload mid-upload resumes with only the missing chunks', asyn
     const jobId = jobIds[0];
     expect(jobId).toBeTruthy();
 
-    // Authoritative receipt state before the reload.
-    const session = await (await fetch(
-      `${destination.baseUrl}/api/portability/migration/jobs/${jobId}/upload-session`,
-    )).json();
-    const received = new Set<number>();
-    for (const range of session.receivedRanges ?? []) {
-      for (let index = range.startIndex; index <= range.endIndex; index += 1) received.add(index);
+    // Some chunks were received before the reload.
+    const preReloadSession = await (
+      await fetch(`${destination.baseUrl}/api/portability/migration/jobs/${jobId}/upload-session`)
+    ).json();
+    const preReloadReceived = new Set<number>();
+    for (const range of preReloadSession.receivedRanges ?? []) {
+      for (let index = range.startIndex; index <= range.endIndex; index += 1) {
+        preReloadReceived.add(index);
+      }
     }
-    expect(received.size).toBeGreaterThan(0);
-    expect(received.size).toBeLessThan(session.session.totalChunks);
+    expect(preReloadReceived.size).toBeGreaterThan(0);
+    expect(preReloadReceived.size).toBeLessThan(preReloadSession.session.totalChunks);
 
     await page.reload();
     const reselect = page.getByTestId('import-reselect');
@@ -554,6 +615,22 @@ test('scenario d1: reload mid-upload resumes with only the missing chunks', asyn
     }
     await expect(reselect).toContainText('Select the same file again to resume');
 
+    // Authoritative post-reload receipt state: no chunk is in flight now, so
+    // the resume must request exactly the complement of these ranges.
+    await page.waitForTimeout(1_000);
+    const session = await (
+      await fetch(`${destination.baseUrl}/api/portability/migration/jobs/${jobId}/upload-session`)
+    ).json();
+    const received = new Set<number>();
+    for (const range of session.receivedRanges ?? []) {
+      for (let index = range.startIndex; index <= range.endIndex; index += 1) received.add(index);
+    }
+    const expectedMissing = Array.from(
+      { length: session.session.totalChunks as number },
+      (_, index) => index,
+    ).filter((index) => !received.has(index));
+    expect(expectedMissing.length).toBeGreaterThan(0);
+
     chunkIndexes.length = 0;
     await selectArchive(page, archive);
     // The still-in-flight chunk can have landed server-side during the reload;
@@ -574,15 +651,16 @@ test('scenario d1: reload mid-upload resumes with only the missing chunks', asyn
     });
     await waitForReload(page, beforeReload);
 
-    // No already-received chunk was re-sent after reselecting the same file.
-    const resent = chunkIndexes.filter((index) => received.has(index));
-    expect(resent).toEqual([]);
+    // After reselecting the same file the client requested exactly the
+    // missing chunks, each once: no received chunk was re-sent and no missing
+    // chunk was skipped.
+    expect([...chunkIndexes].sort((a, b) => a - b)).toEqual(expectedMissing);
 
     await page.goto(`${destination.baseUrl}/library`);
     await assertSourceContent(destination.baseUrl);
     writeTransferArtifact(`scenario-d1-${testInfo.project.name}.json`, {
       chunksAlreadyReceived: received.size,
-      chunksResentAfterReload: chunkIndexes.length,
+      chunkRequestsAfterReload: chunkIndexes.length,
       totalChunks: session.session.totalChunks,
     });
   });
@@ -605,22 +683,53 @@ test('scenario d2: reload during activation reattaches and reports the outcome',
     );
 
     await openSettings(page, destination.baseUrl);
+    const jobIds = trackJobIds(page);
     await selectArchive(page, archive);
     await expect(page.getByTestId('library-activation-overlay')).toBeVisible({
       timeout: 240_000,
     });
+
+    // The claim under test is a reload while the SERVER cutover is live, not
+    // only while the browser shows an outstanding activation.
+    await expect
+      .poll(
+        async () => {
+          const status = await ltGet<{ outcome?: string; state?: string }>(
+            destination.baseUrl,
+            `/api/portability/migration/jobs/${jobIds[0]}/activation`,
+          );
+          return status.outcome === 'Running' || status.outcome === 'Accepted';
+        },
+        { timeout: 60_000, message: 'the server cutover is running before the reload' },
+      )
+      .toBe(true);
 
     await page.reload();
     // The activation's own post-completion reload is still ahead; track it from
     // the manual reload's document so the wait is not satisfied by the manual
     // navigation itself.
     const beforeCompletionReload = await navigationOrigin(page);
-    // The controller reattaches from the persisted activation on reload: the
-    // non-dismissible overlay comes back and the outcome is still reported.
-    await expect(page.getByTestId('library-activation-overlay')).toBeVisible({
-      timeout: 90_000,
-    });
-    await waitForReload(page, beforeCompletionReload);
+    // The controller reattaches from the persisted activation on reload. The
+    // tiny fixture cutover can also finish during the navigation itself; both
+    // paths must report the completed library, and the reattach path must show
+    // the non-dismissible overlay while it polls.
+    const overlay = page.getByTestId('library-activation-overlay');
+    const settled = await Promise.race([
+      overlay
+        .waitFor({ state: 'visible', timeout: 90_000 })
+        .then(() => 'reattached' as const)
+        .catch(() => null),
+      page
+        .getByText('The Lantern Keepers')
+        .first()
+        .waitFor({ state: 'visible', timeout: 90_000 })
+        .then(() => 'completed' as const)
+        .catch(() => null),
+    ]);
+    expect(settled, 'the reload either reattached to the run or observed its completion').not.toBeNull();
+    if (settled === 'reattached') {
+      await waitForReload(page, beforeCompletionReload);
+    }
 
     await page.goto(`${destination.baseUrl}/library`);
     await expect(page.getByText('The Lantern Keepers').first()).toBeVisible({ timeout: 30_000 });
@@ -707,7 +816,10 @@ test('scenario e3: cancel mid-upload cleans up and a new import can start', asyn
     const status = await (await fetch(
       `${destination.baseUrl}/api/portability/migration/jobs/${firstJobId}`,
     )).json();
-    expect(['Cancelled', 'Failed']).toContain(status.job.state);
+    expect(status.job.state).toBe('Cancelled');
+    expect(status.session?.state).toBe('Cancelled');
+    const firstSessionId = status.session?.sessionId;
+    expect(firstSessionId).toBeTruthy();
 
     // A brand-new import starts from scratch (new durable job).
     await page.getByTestId('import-close').click();
@@ -717,6 +829,11 @@ test('scenario e3: cancel mid-upload cleans up and a new import can start', asyn
     await expect(page.getByTestId('import-uploading')).toBeVisible({ timeout: 180_000 });
     await expect.poll(() => jobIds.length, { timeout: 60_000 }).toBeGreaterThan(1);
     expect(jobIds[1]).not.toBe(firstJobId);
+    const second = await (
+      await fetch(`${destination.baseUrl}/api/portability/migration/jobs/${jobIds[1]}`)
+    ).json();
+    expect(second.session?.sessionId).toBeTruthy();
+    expect(second.session?.sessionId).not.toBe(firstSessionId);
 
     await page.getByTestId('import-cancel').click();
     await expect(page.getByTestId('import-cancelled')).toBeVisible({ timeout: 60_000 });
@@ -732,9 +849,37 @@ test('scenario e4: a backend restart mid-upload recovers after it is back', asyn
     await delayChunks(page, 700);
     await openSettings(page, destination.baseUrl);
     const chunkIndexes = trackChunkIndexes(page);
+    const jobIds = trackJobIds(page);
     await selectArchive(page, archive);
     await expect(page.getByTestId('import-uploading')).toBeVisible({ timeout: 180_000 });
     await waitForChunkIndex(chunkIndexes, 1);
+
+    const jobId = jobIds[0];
+    expect(jobId).toBeTruthy();
+    await expect
+      .poll(
+        async () => {
+          const state = await (
+            await fetch(
+              `${destination.baseUrl}/api/portability/migration/jobs/${jobId}/upload-session`,
+            )
+          ).json();
+          return (state.session?.receivedChunkCount as number) ?? 0;
+        },
+        { timeout: 60_000, message: 'the server confirmed at least one chunk before the restart' },
+      )
+      .toBeGreaterThan(0);
+    const preRestart = await (
+      await fetch(`${destination.baseUrl}/api/portability/migration/jobs/${jobId}/upload-session`)
+    ).json();
+    const receivedBeforeRestart = new Set<number>();
+    for (const range of preRestart.receivedRanges ?? []) {
+      for (let index = range.startIndex; index <= range.endIndex; index += 1) {
+        receivedBeforeRestart.add(index);
+      }
+    }
+    expect(receivedBeforeRestart.size).toBeGreaterThan(0);
+    const requestsBeforeRestart = chunkIndexes.length;
 
     // Real crash + restart over the same disposable root.
     const { restartTransferInstance } = await import('./support/library-transfer-harness');
@@ -763,6 +908,16 @@ test('scenario e4: a backend restart mid-upload recovers after it is back', asyn
       await page.waitForTimeout(1_000);
     }
     expect(recovered, 'import reached activation after the backend restart').toBe(true);
+
+    // Recovery reused the same durable job and session, and no chunk the
+    // server had already received was requested again.
+    const postRestart = await (
+      await fetch(`${destination.baseUrl}/api/portability/migration/jobs/${jobId}/upload-session`)
+    ).json();
+    expect(postRestart.session.sessionId).toBe(preRestart.session.sessionId);
+    const postRestartRequests = chunkIndexes.slice(requestsBeforeRestart);
+    expect(postRestartRequests.filter((index) => receivedBeforeRestart.has(index))).toEqual([]);
+
     await waitForReload(page, beforeReload);
 
     await page.goto(`${destination.baseUrl}/library`);

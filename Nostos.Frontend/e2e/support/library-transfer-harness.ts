@@ -9,7 +9,7 @@
  */
 import { execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { inflateRawSync } from 'node:zlib';
 import path from 'node:path';
 
@@ -417,6 +417,29 @@ export async function exportArchiveViaApi(
 
 export function sha256File(filePath: string): string {
   return createHash('sha256').update(readFileSync(filePath)).digest('hex');
+}
+
+/**
+ * Fails when the instance's backend log contains any of the forbidden
+ * patterns. Used by the cutover scenarios to prove a normal activation logs no
+ * SQLite failure or book-text worker cycle error.
+ */
+export function assertBackendLogClean(
+  instance: LibraryTransferInstance,
+  patterns: readonly RegExp[],
+): void {
+  const logPath = path.join(instance.tempDir, 'backend.log');
+  if (!existsSync(logPath)) return;
+  const log = readFileSync(logPath, 'utf8');
+  for (const pattern of patterns) {
+    const match = pattern.exec(log);
+    if (match?.index !== undefined) {
+      throw new Error(
+        `Backend log matched ${pattern}: ` +
+          log.slice(Math.max(0, match.index - 200), match.index + 400),
+      );
+    }
+  }
 }
 
 export function writeTransferArtifact(name: string, value: unknown): string {
