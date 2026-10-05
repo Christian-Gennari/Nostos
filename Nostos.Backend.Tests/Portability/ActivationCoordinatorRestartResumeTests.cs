@@ -305,6 +305,7 @@ public sealed class ActivationCoordinatorRestartResumeTests
         var dispatcher = new SelfHostedActivationDispatcher(
             bed.Host.GetRequiredService<IServiceScopeFactory>(),
             bed.Maintenance,
+            bed.Manifests,
             bed.Clock,
             NullLogger<SelfHostedActivationDispatcher>.Instance);
         await dispatcher.StartAsync(default);
