@@ -356,6 +356,35 @@ public sealed class PortableCompletenessInventoryTests
             .Select(entry => entry.Key)
             .ToHashSet(StringComparer.Ordinal);
 
+    /// <summary>
+    /// The shared source of truth for "is this EF entity portable user-owned
+    /// state" is <see cref="PortableEntitySet"/>, consumed by the
+    /// destination-revision SaveChanges guard in product code. This test keeps
+    /// the two definitions in lockstep: the inventory can never classify an
+    /// entity Portable while the revision guard ignores it, and the guard can
+    /// never advance the revision for an entity the inventory excludes.
+    /// </summary>
+    [Fact]
+    public void Portable_entity_set_matches_the_inventory_classification_exactly()
+    {
+        var inventoryPortable = Inventory
+            .Where(entry => !entry.Value.IsEntityExcluded)
+            .Select(entry => entry.Key)
+            .ToHashSet(StringComparer.Ordinal);
+
+        PortableEntitySet.EntityTypeNames.Should().BeEquivalentTo(
+            inventoryPortable,
+            "product code and the portability inventory must share one portable entity set");
+
+        PortableEntitySet.EntityTypes.Should().OnlyHaveUniqueItems();
+        foreach (var type in PortableEntitySet.EntityTypes)
+        {
+            type.Namespace.Should().Be(
+                "Nostos.Backend.Data.Models",
+                "the shared portable set must contain EF model CLR types, not helpers");
+        }
+    }
+
     [Fact]
     public void Every_mapped_entity_property_and_navigation_has_a_portability_classification()
     {

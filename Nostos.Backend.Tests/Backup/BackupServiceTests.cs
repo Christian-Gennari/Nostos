@@ -24,6 +24,7 @@ namespace Nostos.Backend.Tests.Backup;
 // The .nostos archive, vacuumed database and the file-copy restore path
 // are all exercised for real. IncludeBookFiles=false keeps the tests free
 // of book file payloads.
+[Collection(BackupIsolationCollection.Name)]
 public sealed class BackupServiceTests
 {
     private const string DistinctiveCaptureText = "Distinctive secret capture text, unique: quixotic-42";

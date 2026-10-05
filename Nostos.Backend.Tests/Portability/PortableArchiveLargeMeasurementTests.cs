@@ -20,6 +20,12 @@ namespace Nostos.Backend.Tests.Portability;
 /// demand; no large fixture is committed and no archive-sized buffer is
 /// allocated.
 ///
+/// <para>The scaled test snapshots the process-wide temp directory for new
+/// scratch names. Other test collections create and delete
+/// <c>nostos-portable-import-*</c> scratch there concurrently, so this
+/// collection disables parallelization: while it runs, no other collection
+/// runs, and the snapshot can only see this test's own effects.</para>
+///
 /// <para>The opt-in run is:</para>
 /// <code>
 /// NOSTOS_RUN_LARGE_PORTABILITY_TESTS=1 \
@@ -27,6 +33,7 @@ namespace Nostos.Backend.Tests.Portability;
 ///   --filter "FullyQualifiedName~PortableArchiveLargeMeasurementTests"
 /// </code>
 /// </summary>
+[Collection(PortableArchiveLargeMeasurementCollection.Name)]
 public sealed class PortableArchiveLargeMeasurementTests(ITestOutputHelper output)
 {
     private const long FourGiB = 4L * 1024 * 1024 * 1024;
@@ -1480,4 +1487,15 @@ public sealed class PortableArchiveLargeMeasurementTests(ITestOutputHelper outpu
             _stopped.Dispose();
         }
     }
+}
+
+/// <summary>
+/// Disables parallelization for the scratch-snapshot measurement test. xUnit
+/// runs this collection while all other collections are paused, so the shared
+/// process temp directory cannot change under the test's snapshot.
+/// </summary>
+[CollectionDefinition(Name, DisableParallelization = true)]
+public sealed class PortableArchiveLargeMeasurementCollection
+{
+    public const string Name = "PortableArchiveLargeMeasurement";
 }

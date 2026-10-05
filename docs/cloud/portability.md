@@ -4,10 +4,10 @@ Nostos portable archives are the provider-neutral format for moving user-owned l
 
 This document deliberately separates:
 
-1. **Current behaviour (shipped)** — what the existing portability API and `PortableArchiveService` do today.
-2. **Migration contract (planned, epic #676 — not yet implemented)** — the contract for one-click SelfHosted ↔ Cloud migration being developed across issues #677–#682.
+1. **Current behaviour (shipped)** — what the existing portability API, the durable transfer-job API, and `PortableArchiveService` do today.
+2. **Migration contract (epic #676)** — the provider-neutral contract for one-click SelfHosted ↔ Cloud migration being developed across issues #677–#682. Its transport, durable jobs, and archive preparation are implemented (described in Part 1); activation/replacement (#681), the capability advertisement, and the private hosted adapter remain planned.
 
-Do not treat Part 2 as documentation of the currently deployed HTTP API.
+Do not treat Part 2 as documentation of a destructive replacement flow: no shipped route activates a prepared import or replaces a library.
 
 ---
 
@@ -36,7 +36,189 @@ MaxRequestBodySize = 4L * 1024L * 1024L * 1024L;
 
 Therefore, although the archive service itself has larger validation limits, the currently shipped import endpoint **does not support portable archives larger than 4 GiB**. A larger archive cannot reach the import service through the existing single-request HTTP endpoint.
 
-This is one of the primary constraints the planned migration transfer protocol in Part 2 is designed to remove.
+This is one of the primary constraints the durable transfer protocol below removes.
+
+## Durable library transfer jobs (transport shipped, not yet advertised)
+
+The SelfHosted reference implementation of the epic #676 transfer protocol is
+implemented in the product and reachable over HTTP. It is **not advertised to
+the frontend**: `DeploymentCapabilitiesEndpoints.AdvertiseLibraryMigration` is
+deliberately `false`, so `GET /api/runtime/capabilities` reports
+`supportsLibraryMigration: false`. The Settings/onboarding transfer UI is
+present in the frontend but stays hidden behind that flag, so no user-facing
+entry point offers migration yet. Direct API clients can use the routes; the
+flag flips only when the remaining activation work ships.
+
+### Routes
+
+All routes live under `/api/portability/migration` and use the migration error
+body (`{"error":"<stable_code>","message":"…"}`). The legacy routes above are
+untouched.
+
+| Method | Route | Success | Notable failures |
+|---|---|---|---|
+| `POST` | `/preflight` | `200` with `evaluation`, `reservationId`, `reservationExpiresAtUtc`, `chunkSizeBytes` | `409 migration_import_preparation_unavailable` while import is unavailable |
+| `POST` | `/jobs` | `201` created / `200` idempotent replay | `409 migration_idempotency_conflict`, `409 migration_reservation_required`, `409 migration_too_many_jobs` |
+| `GET` | `/jobs/{id}` | `200` status | `404 migration_not_found` |
+| `POST` | `/jobs/{id}/cancel` | `200` | `409 migration_cannot_cancel` |
+| `POST` | `/jobs/{id}/retry` | `200` | `409 migration_not_retryable` |
+| `POST` | `/jobs/{id}/upload-session` | `201` / `200` replay | `409 migration_idempotency_conflict`, `409 migration_file_identity_mismatch` |
+| `GET` | `/jobs/{id}/upload-session` | `200` with `receivedChunks` and compact `receivedRanges` | `410 migration_session_expired` |
+| `PUT` | `/jobs/{id}/upload-session/chunks/{index}` | `200` with `alreadyPresent` | `400 migration_invalid_request`, `409 migration_chunk_conflict`, `410 migration_session_expired`, `416 migration_chunk_range_invalid`, `422 migration_chunk_hash_mismatch`, `507 migration_storage_exhausted`, `413` for an oversize chunk |
+| `POST` | `/jobs/{id}/upload-session/complete` | `200` session status | `409 migration_invalid_state`, `409 migration_file_identity_mismatch` |
+| `GET`/`HEAD` | `/jobs/{id}/export-download` | `200`/`206` range-enabled file | `404 migration_export_not_available`, `410 migration_export_expired` |
+
+Chunk requests carry `Content-Range: bytes <start>-<end>/<total>` and
+`X-Nostos-Chunk-SHA256: <64 hex>`. The body is the raw chunk; there is no
+multipart envelope, no `byte[]` buffering, and the request is streamed straight
+to the engine. The chunk endpoint's own request-body cap is the configured
+maximum chunk size, not the global 4 GiB cap, and it never raises the global
+cap.
+
+### Chunking, resume, and identity
+
+- Default nominal chunk size is 16 MiB; the server accepts sessions between
+  4 MiB and 64 MiB, configurable within those contract bounds.
+- Chunks may arrive in any order. A retransmitted chunk with matching length and
+  SHA-256 is idempotent (`alreadyPresent: true`); different bytes at the same
+  index are a typed conflict and the original receipt and bytes are unchanged.
+- A session binds an exact file identity (size + whole-file SHA-256 + optional
+  client fingerprint). Resuming with a different file is rejected; the client
+  reselects the file and uploads only the missing chunks reported by
+  `GET …/upload-session`.
+- `complete` re-reads every receipt, streams the whole archive once for length
+  and SHA-256, and only then seals `archive.nostos`. A mismatch fails the job
+  and no final archive is published.
+
+### State machine and what is not available yet
+
+Import jobs run `Pending → Preparing → Transferring → Validating →
+ReadyToActivate` and **stop there**. `ReadyToActivate` carries a committed,
+durable prepared descriptor (staging id, data/media hashes, counts) that
+survives a restart. Export jobs run `Pending → Preparing → Transferring →
+Validating → Completed` and publish a sealed artifact.
+
+Not available in the shipped build:
+
+- there are no activation routes and no replacement/cutover flow; #681 owns
+  `ReadyToActivate → Activating → Completed`;
+- the destination library is never mutated by an import job — the prepared
+  staging area is the only output;
+- `supportsLibraryMigration` stays `false` until the transport is deliberately
+  advertised;
+- `POST /api/portability/import` remains the only route that mutates a library,
+  and it still targets an empty destination only.
+
+### Expiry, capacity, and limits
+
+Server defaults (`Storage` configuration section, `TransferStorageOptions`):
+
+| Setting | Default | Meaning |
+|---|---:|---|
+| `TransferPath` | `transfers` beside the resolved books root | Transfer root; absolute or relative to the content root. With the default books root this is `<content-root>/Storage/transfers`. |
+| `ChunkBytes` / `MinChunkBytes` / `MaxChunkBytes` | 16 / 4 / 64 MiB | Accepted nominal chunk size and bounds. |
+| `MaxConcurrentJobs` | 1 | Worker processing concurrency. |
+| `MaxOutstandingJobs` | 10 | Hard ceiling on non-terminal jobs (and therefore sessions) per installation, enforced under the library admission lock inside the creation transaction; further creates return `409 migration_too_many_jobs`. |
+| `DiskSafetyMarginBytes` / `DiskSafetyMarginPercent` | 1 GiB / 5% | Effective margin is the larger of the byte floor and the percentage of the volume. |
+| `PreflightReservationMinutes` | 15 | Lifetime of an unclaimed preflight hold; claiming a reservation stops the clock. |
+| `ExportRetentionHours` | 24 | Download retention after an artifact becomes available. |
+| `PreparedImportRetentionHours` | 24 | Retention of committed prepared-import staging. |
+| `CleanupIntervalMinutes` | 15 | Cleanup worker interval. |
+
+Transfer sessions and jobs expire 24 hours after creation; an explicit retry
+reactivates a failed/cancelled/expired job with a fresh attempt and a new
+window. A repeated preflight atomically supersedes the previous *unclaimed*
+hold, so repeated preflights cannot pile up reservations; claimed holds are
+untouched and survive the preflight window.
+
+### Operator notes
+
+- **Transfer root.** The root is created on startup and validated: it must not
+  be a filesystem root, the application content root, or an ancestor of it.
+  Generated layout:
+
+  ```text
+  Storage/transfers/
+  ├── uploads/<session-guid>/archive.part|archive.nostos
+  ├── staging/<staging-guid>/{state.json,manifest.json,data/,media/}
+  ├── exports/<job-guid>/library.nostos(.tmp)
+  ├── detached/<guid>/
+  └── locks/<guid>.lock
+  ```
+
+  No client-supplied name, header, ZIP path, or media reference is ever used as
+  a filesystem path. Put the transfer root on the same volume as the library
+  and size it for the archive plus one chunk plus the safety margin; capacity
+  admission uses the actual free space of that volume.
+
+- **Capacity.** Preflight reserves the declared archive + media + recovery
+  estimate + one chunk + a fixed per-job overhead, and admission subtracts the
+  global safety margin plus outstanding unmaterialized reservations from the
+  volume's real free space. Already-materialized bytes are not double-counted.
+  ENOSPC after admission still fails truthfully (`507
+  migration_storage_exhausted`) and never leaves a partial receipt or artifact.
+
+- **Cleanup.** The cleanup worker runs immediately at startup and every
+  `CleanupIntervalMinutes`. It expires jobs/sessions/artifacts, releases
+  expired unclaimed reservations, removes abandoned upload scopes, committed
+  staging for terminal jobs, unreferenced export files, durably tombstoned
+  staging areas, and generated legacy `nostos-portable-import-*` scratch
+  directories. Age gates use the newest write anywhere inside a tree, and a
+  live legacy import holds an exclusive `import.lock` for its lifetime, so a
+  long upload is never mistaken for abandoned scratch. Unknown operator
+  siblings and linked components are never touched; every delete is idempotent
+  and retried on the next sweep.
+
+- **Inspecting and cancelling a job.** Poll `GET
+  /api/portability/migration/jobs/{id}` for state, progress, session
+  (including received chunks), download availability, and the prepared-import
+  descriptor. `POST …/cancel` is accepted in every pre-activation state,
+  releases the reservation, and deletes uncommitted staging; verified chunks
+  are retained until the session TTL for a possible retry. `POST …/retry`
+  reactivates a terminal failed/cancelled/expired job and reuses retained
+  verified chunks only when the file identity still matches.
+
+- **Slow transfers.** No custom Kestrel data-rate policy is set for migration
+  routes. Kestrel's defaults apply: a minimum request-body data rate of 240
+  bytes/second with a 5-second grace period (`MinRequestBodyDataRate`), a
+  30-second request-headers timeout, and the global 4 GiB body cap (the chunk
+  route lowers its own cap to `MaxChunkBytes`). Deployments behind a reverse
+  proxy should disable proxy request buffering for this route so a slow client
+  streams directly to the app.
+
+### Destination revision
+
+The opaque destination revision bound into preflight and persisted on the job
+is composed from the singleton `LibraryState.StateVersion` plus the portable row
+counts. `LibraryRevision` is the **only** writer of `StateVersion`: every
+committed create, update, or delete of portable user-owned state advances it
+with one atomic SQL increment in the same transaction as the mutation —
+including content-only edits, owned-value edits, bulk `ExecuteUpdate`/
+`ExecuteDelete` paths, and commands whose caller needs the new value (the
+helper returns it; callers never compute it). Inside an ambient transaction the
+advance and the portable save share one savepoint, so a failed save rolls the
+advance back with its own rows and a later successful save in the same
+transaction advances again; a provider without savepoint support fails closed.
+Host-only operational writes (jobs, sessions, chunk receipts, backups, host
+provider settings, migration records) never advance it. A missing singleton row
+is created at `"0"` before the first advance, and a corrupted (empty,
+non-numeric, negative, or maxed-out) revision fails the mutation closed with
+`library_revision_invalid` rather than being normalised. Every portable writer
+takes the revision row before its portable rows, so concurrent writers
+serialize deterministically. Activation compares the stored revision with the
+current one and refuses to replace a library that changed after the import was
+prepared.
+
+**Legacy import transaction scope.** The compatibility `POST
+/api/portability/import` already ran its relational apply, media publication
+and verification inside one serializable transaction before this work (that is
+how a failed import leaves the destination empty). The revision advance joins
+that transaction at the relational save, so during a legacy import into an
+empty library other portable writes for that library wait until the import
+commits — the same window the import already held, with one additional
+singleton row lock on PostgreSQL. Shortening it would require separating media
+publication from the relational commit and is tracked as a follow-up.
+
 
 ## Archive layout
 
@@ -172,11 +354,11 @@ Payload and manifest versions must strictly agree (`data_version_mismatch`). A p
 
 ---
 
-# Part 2: Migration contract (planned, epic #676 — not yet implemented)
+# Part 2: Migration contract (epic #676 — transport implemented, activation and UI planned)
 
-Epic #676 defines the planned one-click migration system between Nostos SelfHosted and Nostos Cloud.
+Epic #676 defines the one-click migration system between Nostos SelfHosted and Nostos Cloud.
 
-The implementation is split across issues #677–#682. This section defines the target contract. These jobs, transfer sessions, chunk APIs, recovery snapshots, and activation semantics are **not yet the behaviour of the shipped `/api/portability/export` and `/api/portability/import` endpoints**.
+The implementation is split across issues #677–#682. This section defines the target contract. The provider-neutral contract, durable job/session/chunk/artifact/reservation records, the local worker, the SelfHosted transfer HTTP API, import preparation to `ReadyToActivate`, and export artifact generation are implemented (see "Durable library transfer jobs" in Part 1), and the Settings/onboarding transfer UI exists but stays hidden behind the `supportsLibraryMigration` capability flag. Activation/replacement (#681), the capability advertisement, and the private hosted adapter are still planned. Nothing in this section authorizes a destructive replacement of a user's library until #681 ships.
 
 ## Goals and authenticated ownership boundary
 
@@ -235,7 +417,9 @@ The token is implementation-defined and must not expose database internals.
 
 It must change after **any create, update, or delete affecting portable user-owned state**, including modifications to an already-existing row (e.g. editing a book title, modifying reading progress, updating note content, changing topics, changing writing, or editing a note import link).
 
-A migration records the destination revision observed during preflight. That revision is checked again at activation. If the destination changed, activation fails closed with `RejectedDestinationConflict` rather than overwriting intervening user changes. Implementation lands with #679/#681.
+A migration records the destination revision observed during preflight. That revision is checked again at activation. If the destination changed, activation fails closed with `RejectedDestinationConflict` rather than overwriting intervening user changes.
+
+The SelfHosted implementation of this invariant is shipped. `LibraryState.StateVersion` is advanced by the `NostosDbContext.SaveChanges` pipeline (once per transaction, atomically) whenever a save contains an Added/Modified/Deleted entry for any entity in the shared portable entity set, and every portable bulk `ExecuteUpdate`/`ExecuteDelete` call site advances it explicitly in the same transaction. `ILibraryDestinationRevisionProvider` composes the version with the portable row counts, and the activation candidate builder advances the live revision once more when it finalizes a candidate. The portable entity set is asserted in parity with the archive completeness inventory by the test suite, so a new portable entity cannot silently escape the revision.
 
 ---
 

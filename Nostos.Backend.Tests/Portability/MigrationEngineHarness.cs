@@ -31,13 +31,23 @@ internal sealed class MigrationEngineHarness : IAsyncDisposable
     {
         Directory.CreateDirectory(DirectoryPath);
         Provider = BuildProvider();
+        ConfigureHarnessScratchRoot();
         await WithDb(db => db.Database.EnsureCreatedAsync());
     }
     internal async Task RestartAsync()
     {
         await Provider.DisposeAsync();
         Provider = BuildProvider();
+        ConfigureHarnessScratchRoot();
     }
+
+    /// <summary>
+    /// Keeps the legacy scratch sweep inside this harness: it must never touch
+    /// the shared process temp directory used by parallel tests.
+    /// </summary>
+    private void ConfigureHarnessScratchRoot() =>
+        Provider.GetRequiredService<MigrationLegacyScratchSweep>().ScratchRoot =
+            Path.Combine(DirectoryPath, "legacy-scratch");
     private ServiceProvider BuildProvider()
     {
         var services = new ServiceCollection();

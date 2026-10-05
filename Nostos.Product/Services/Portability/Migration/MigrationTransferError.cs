@@ -19,6 +19,7 @@ public sealed class MigrationTransferException(string code, string message, Exce
     public const string MetadataRequired = "migration_chunk_metadata_required";
     public const string ImportPreparationUnavailable = "migration_import_preparation_unavailable";
     public const string ExportArtifactUnavailable = "migration_export_artifact_unavailable";
+    public const string TooManyJobs = "migration_too_many_jobs";
 }
 
 /// <summary>

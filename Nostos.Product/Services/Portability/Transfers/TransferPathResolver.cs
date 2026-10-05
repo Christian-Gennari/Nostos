@@ -448,6 +448,41 @@ public sealed class TransferPathResolver
         }
     }
 
+    /// <summary>
+    /// Newest write time anywhere inside <paramref name="absoluteDirectory"/>:
+    /// the directory itself and every descendant file or directory, recursively.
+    /// Cleanup age gates use this instead of the directory's own timestamp,
+    /// because writing into an existing file does not update its parent
+    /// directory. Linked descendants are refused, so the walk can never leave
+    /// the tree. Callers remain responsible for confining the root.
+    /// </summary>
+    public static DateTime NewestWriteTimeUtc(string absoluteDirectory)
+    {
+        var full = Path.GetFullPath(absoluteDirectory);
+        var newest = Directory.GetLastWriteTimeUtc(full);
+        foreach (var entry in Directory.EnumerateFileSystemEntries(full))
+        {
+            var verified = Path.GetFullPath(entry);
+            if (IsReparsePoint(verified))
+            {
+                throw new TransferPathException(
+                    TransferPathException.ReparsePoint,
+                    $"The path '{Path.GetFileName(verified)}' is a symlink or reparse point; " +
+                    "an age check never follows links.");
+            }
+
+            var stamp = Directory.Exists(verified)
+                ? NewestWriteTimeUtc(verified)
+                : File.GetLastWriteTimeUtc(verified);
+            if (stamp > newest)
+            {
+                newest = stamp;
+            }
+        }
+
+        return newest;
+    }
+
     // Internal only so the TOCTOU test can replace a directory between the
     // pre-check and the open. Never set outside tests; Nostos.Product grants
     // InternalsVisibleTo to the test assembly.

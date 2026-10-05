@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Nostos.Backend.Data;
 using Nostos.Backend.Data.Models;
 using Nostos.Backend.Endpoints;
@@ -24,6 +25,7 @@ public sealed class SelfHostedMigrationJobService(
     MigrationTransferCleanup cleanup,
     IMigrationPhaseAvailability phaseAvailability,
     ILibraryDestinationRevisionProvider revisionProvider,
+    IOptions<TransferStorageOptions> options,
     TimeProvider? timeProvider = null)
 {
     private const int MaxIdempotencyKeyLength = 128;
@@ -46,20 +48,45 @@ public sealed class SelfHostedMigrationJobService(
 
         EnsureDirectionAvailable(request.Direction);
 
-        var existing = await FindByIdempotencyKeyAsync(key, ct);
-        if (existing is not null) return await ReplayAsync(existing, request, ct);
-
         if (request.Direction == MigrationDirection.Import && request.ReservationId is null)
             throw MigrationTransferException.Error(MigrationTransferException.ReservationRequired);
 
         var id = Guid.NewGuid();
         var now = Now;
         var reservedBytes = 0L;
+
+        // Admission is serialized on the same per-library singleton row every
+        // portable writer uses: replay lookup, outstanding count and insert run
+        // inside one transaction holding that lock, so concurrent creators with
+        // different keys cannot both pass the ceiling.
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        await LibraryRevision.LockSingletonAsync(db, ct);
+
+        var existing = await FindByIdempotencyKeyAsync(key, ct);
+        if (existing is not null)
+        {
+            await transaction.CommitAsync(ct);
+            return await ReplayAsync(existing, request, ct);
+        }
+
+        // Per-installation ceiling on outstanding durable work: a bounded
+        // number of non-terminal jobs (and therefore sessions) keeps a client
+        // from parking unbounded rows, reservations and scratch. Terminal jobs
+        // are retention/cleanup's concern, not admission's.
+        var outstanding = await db.MigrationJobRecords.AsNoTracking()
+            .CountAsync(j => j.State != (int)MigrationJobState.Completed
+                && j.State != (int)MigrationJobState.Failed
+                && j.State != (int)MigrationJobState.Cancelled
+                && j.State != (int)MigrationJobState.Expired, ct);
+        if (outstanding >= options.Value.MaxOutstandingJobs)
+        {
+            throw MigrationTransferException.Error(MigrationTransferException.TooManyJobs);
+        }
+
         // The revision is the destination at the moment the job is accepted,
         // before any upload or preparation work. Preparation must never
         // substitute a later value; activation compares this baseline.
         var destinationRevision = await revisionProvider.GetCurrentAsync(ct);
-        await using var transaction = await db.Database.BeginTransactionAsync(ct);
         if (request.ReservationId is { } reservationId)
         {
             try

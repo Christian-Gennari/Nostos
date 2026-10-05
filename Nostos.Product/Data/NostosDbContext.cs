@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Nostos.Backend.Data.Models;
 using Nostos.Backend.Services.Library;
 using Nostos.Backend.Services.Portability;
@@ -72,10 +73,45 @@ public class NostosDbContext : DbContext
     // Keep those writes valid now that WorkId is a required foreign key. The
     // library service always assigns the work explicitly; this is only a
     // compatibility guard for rows that arrive with the old default value.
+    //
+    // The same pipeline is the destination-revision guard (issue #679 Slice 11):
+    // a save containing any portable change advances the singleton
+    // LibraryState.StateVersion atomically, before the portable rows are
+    // touched, in the same transaction. LibraryRevision is the only writer of
+    // StateVersion; callers that need the new value get it from the helper.
+    //
+    // Ambient transactions: the advance and the portable DML share one
+    // savepoint, so a failed save rolls the advance back with its own rows and
+    // the per-transaction "already advanced" marker is cleared. Without an
+    // ambient transaction the owned transaction already covers both.
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
         AssignMissingWorks();
-        return base.SaveChanges(acceptAllChangesOnSuccess);
+        if (!HasPortableChanges())
+            return base.SaveChanges(acceptAllChangesOnSuccess);
+
+        if (Database.CurrentTransaction is not null)
+        {
+            return SavePortableChangesWithSavepoint(acceptAllChangesOnSuccess);
+        }
+
+        var strategy = Database.CreateExecutionStrategy();
+        return strategy.Execute(() =>
+        {
+            using var owned = Database.BeginTransaction();
+            try
+            {
+                LibraryRevision.AdvanceAndGet(this);
+                var result = base.SaveChanges(acceptAllChangesOnSuccess);
+                owned.Commit();
+                return result;
+            }
+            catch
+            {
+                owned.Rollback();
+                throw;
+            }
+        });
     }
 
     public override int SaveChanges() => SaveChanges(acceptAllChangesOnSuccess: true);
@@ -95,7 +131,189 @@ public class NostosDbContext : DbContext
         CancellationToken cancellationToken)
     {
         await AssignMissingWorksAsync(cancellationToken);
-        return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+        if (!HasPortableChanges())
+            return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+
+        if (Database.CurrentTransaction is not null)
+        {
+            return await SavePortableChangesWithSavepointAsync(acceptAllChangesOnSuccess, cancellationToken);
+        }
+
+        var strategy = Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
+        {
+            await using var owned = await Database.BeginTransactionAsync(cancellationToken);
+            try
+            {
+                await LibraryRevision.AdvanceAndGetAsync(this, cancellationToken);
+                var result = await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+                await owned.CommitAsync(cancellationToken);
+                return result;
+            }
+            catch
+            {
+                await owned.RollbackAsync(CancellationToken.None);
+                throw;
+            }
+        });
+    }
+
+    /// <summary>
+    /// Ambient-transaction portable save: the revision advance and EF's
+    /// portable DML run inside one savepoint created before the advance. A
+    /// failure rolls both back to that savepoint and clears the cached
+    /// "advanced" value, so a later successful save in the same transaction
+    /// advances again and no advance can be committed for rolled-back work.
+    /// Providers without savepoint support fail closed.
+    /// </summary>
+    private int SavePortableChangesWithSavepoint(bool acceptAllChangesOnSuccess)
+    {
+        var ambient = Database.CurrentTransaction!;
+        var wasCached = TryGetCachedLibraryRevision(out _);
+        var savepoint = NewRevisionSavepointName();
+        CreateRevisionSavepoint(ambient, savepoint);
+        try
+        {
+            LibraryRevision.AdvanceAndGet(this);
+            var result = base.SaveChanges(acceptAllChangesOnSuccess);
+            ambient.ReleaseSavepoint(savepoint);
+            return result;
+        }
+        catch
+        {
+            RollbackToRevisionSavepoint(ambient, savepoint);
+            if (!wasCached)
+            {
+                ClearLibraryRevisionCache();
+            }
+
+            throw;
+        }
+    }
+
+    private async Task<int> SavePortableChangesWithSavepointAsync(
+        bool acceptAllChangesOnSuccess,
+        CancellationToken cancellationToken)
+    {
+        var ambient = Database.CurrentTransaction!;
+        var wasCached = TryGetCachedLibraryRevision(out _);
+        var savepoint = NewRevisionSavepointName();
+        try
+        {
+            await ambient.CreateSavepointAsync(savepoint, cancellationToken);
+        }
+        catch (Exception exception) when (exception is NotSupportedException or InvalidOperationException)
+        {
+            throw LibraryRevisionException.SavepointUnsupported(exception);
+        }
+
+        try
+        {
+            await LibraryRevision.AdvanceAndGetAsync(this, cancellationToken);
+            var result = await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+            await ambient.ReleaseSavepointAsync(savepoint, cancellationToken);
+            return result;
+        }
+        catch
+        {
+            try
+            {
+                await ambient.RollbackToSavepointAsync(savepoint, CancellationToken.None);
+                await ambient.ReleaseSavepointAsync(savepoint, CancellationToken.None);
+            }
+            catch
+            {
+                // The provider may already have unwound the transaction; the
+                // original failure is what matters.
+            }
+
+            if (!wasCached)
+            {
+                ClearLibraryRevisionCache();
+            }
+
+            throw;
+        }
+    }
+
+    private static string NewRevisionSavepointName() =>
+        "nostos_library_revision_" + Guid.NewGuid().ToString("N");
+
+    private static void CreateRevisionSavepoint(IDbContextTransaction transaction, string savepoint)
+    {
+        try
+        {
+            transaction.CreateSavepoint(savepoint);
+        }
+        catch (Exception exception) when (exception is NotSupportedException or InvalidOperationException)
+        {
+            throw LibraryRevisionException.SavepointUnsupported(exception);
+        }
+    }
+
+    private static void RollbackToRevisionSavepoint(IDbContextTransaction transaction, string savepoint)
+    {
+        try
+        {
+            transaction.RollbackToSavepoint(savepoint);
+            transaction.ReleaseSavepoint(savepoint);
+        }
+        catch
+        {
+            // The provider may already have unwound the transaction; the
+            // original failure is what matters.
+        }
+    }
+
+    /// <summary>
+    /// True when this save mutates portable user-owned state. The portable set
+    /// comes from <see cref="PortableEntitySet"/>, the same source the
+    /// completeness inventory asserts parity with. The decision never depends
+    /// on <see cref="LibraryState"/>'s tracked state.
+    /// </summary>
+    private bool HasPortableChanges() =>
+        ChangeTracker.Entries().Any(entry =>
+            entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted
+            && PortableEntitySet.IsPortableType(entry.Metadata.ClrType));
+
+    /// <summary>The transaction that already advanced the revision, if any.</summary>
+    private IDbContextTransaction? _libraryRevisionTransaction;
+
+    /// <summary>The authoritative revision advanced in the current transaction.</summary>
+    private string? _libraryRevisionValue;
+
+    /// <summary>
+    /// True when the current transaction already contains one revision advance,
+    /// so the next portable save in it must not advance again. The marker is
+    /// context-local and is cleared when a portable save rolls back to its
+    /// savepoint.
+    /// </summary>
+    internal bool TryGetCachedLibraryRevision(out string value)
+    {
+        if (_libraryRevisionValue is not null
+            && Database.CurrentTransaction is { } current
+            && ReferenceEquals(_libraryRevisionTransaction, current))
+        {
+            value = _libraryRevisionValue;
+            return true;
+        }
+
+        value = string.Empty;
+        return false;
+    }
+
+    /// <summary>Records that the revision was advanced in <paramref name="transaction"/>.</summary>
+    internal void MarkLibraryRevisionAdvanced(IDbContextTransaction? transaction, string value)
+    {
+        _libraryRevisionTransaction = transaction;
+        _libraryRevisionValue = value;
+    }
+
+    /// <summary>Forgets a cached advance whose savepoint was rolled back.</summary>
+    internal void ClearLibraryRevisionCache()
+    {
+        _libraryRevisionTransaction = null;
+        _libraryRevisionValue = null;
     }
 
     private void AssignMissingWorks()

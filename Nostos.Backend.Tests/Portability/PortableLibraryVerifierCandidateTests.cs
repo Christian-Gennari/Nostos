@@ -164,7 +164,18 @@ public sealed class PortableLibraryVerifierCandidateTests(CandidateVerificationF
             AttemptNumber = 1,
             ExpiresAtUtc = DateTime.UtcNow.AddDays(1),
         });
-        candidate.Db.LibraryStates.Add(new LibraryState { StateVersion = "42" });
+        // The candidate carries the live revision row (the portable restore is
+        // a portable mutation, so the revision writer seeds one); stamp the
+        // host revision in place instead of inserting a duplicate singleton.
+        var state = await candidate.Db.LibraryStates.SingleOrDefaultAsync();
+        if (state is null)
+        {
+            candidate.Db.LibraryStates.Add(new LibraryState { StateVersion = "42" });
+        }
+        else
+        {
+            state.StateVersion = "42";
+        }
         var linkCount = await candidate.Db.NoteImportBookLinks.CountAsync();
         await candidate.Db.SaveChangesAsync();
         candidate.Db.ChangeTracker.Clear();

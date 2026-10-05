@@ -162,8 +162,6 @@ internal sealed class ActivationCoordinatorTemplate : IDisposable
             .UseSqlite($"Data Source={liveDatabase};Pooling=False")
             .Options);
         var state = db.LibraryStates.Single();
-        state.StateVersion = OriginalRevision;
-        state.UpdatedAt = new DateTime(2026, 9, 30, 8, 0, 0, DateTimeKind.Utc);
         db.BackupRecords.Add(new BackupRecord
         {
             Id = Guid.NewGuid(),
@@ -184,6 +182,14 @@ internal sealed class ActivationCoordinatorTemplate : IDisposable
             });
         }
 
+        db.SaveChanges();
+
+        // The host state above may contain portable rows, so it advanced the
+        // revision through the save pipeline. Stamp the fixture's authoritative
+        // revision in its own save: a save that only changes LibraryState is not
+        // a portable mutation, so the value persists (issue #679 Slice 11).
+        state.StateVersion = OriginalRevision;
+        state.UpdatedAt = new DateTime(2026, 9, 30, 8, 0, 0, DateTimeKind.Utc);
         db.SaveChanges();
 
         // The job's stored destination revision is the same opaque provider token

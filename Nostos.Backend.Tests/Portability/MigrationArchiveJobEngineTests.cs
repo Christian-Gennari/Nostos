@@ -172,6 +172,41 @@ public sealed class MigrationArchiveJobEngineTests
     }
 
     [Fact]
+    public async Task Disk_full_during_real_preparation_fails_with_storage_code_and_leaves_the_library_untouched()
+    {
+        var hooks = new FilePortableImportStagingHooks
+        {
+            BeforeStreamWrite = () => throw new IOException("Synthetic ENOSPC during staging"),
+        };
+        await using var h = new MigrationEngineHarness();
+        h.Configure = services =>
+        {
+            services.RemoveAll<IPortableImportStaging>();
+            services.AddScoped<IPortableImportStaging>(_ => new FilePortableImportStaging(
+                new TransferPathResolver(Path.Combine(h.DirectoryPath, "transfers")),
+                hooks,
+                coordinatorScope: string.Empty));
+        };
+        await h.InitializeAsync();
+        var archive = await MigrationArchiveJobTestSupport.ExportRepresentativeAsync();
+        var jobId = await UploadCompleteImportAsync(h, archive);
+
+        await h.Worker.RunCycleAsync(default);
+
+        var job = await h.WithJobs(s => s.GetAsync(jobId, default));
+        job!.State.Should().Be(MigrationJobState.Failed);
+        job.FailureCode.Should().Be(
+            MigrationTransferException.StorageExhausted,
+            "a filesystem failure during real staging is storage exhaustion, not archive corruption");
+        MigrationArchiveJobTestSupport.CountStagingAreas(h).Should().Be(0);
+        (await h.WithDb(db => db.Works.CountAsync())).Should().Be(
+            0,
+            "preparation never mutates the active library");
+        (await h.WithDb(db => db.MigrationStorageReservations.SingleAsync(r => r.ClaimedJobId == jobId)))
+            .ReleasedAtUtc.Should().NotBeNull();
+    }
+
+    [Fact]
     public async Task Invalid_archive_fails_typed_and_removes_staging_and_releases_the_reservation()
     {
         await using var h = new MigrationEngineHarness();
@@ -382,7 +417,18 @@ public sealed class MigrationArchiveJobEngineTests
         await SeedLiveWorkAsync(h);
         await h.WithDb(async db =>
         {
-            db.LibraryStates.Add(new LibraryState { StateVersion = "1" });
+            // The portable seed above already created the revision row through
+            // the save pipeline; stamp the intended value in place.
+            var state = await db.LibraryStates.SingleOrDefaultAsync();
+            if (state is null)
+            {
+                db.LibraryStates.Add(new LibraryState { StateVersion = "1" });
+            }
+            else
+            {
+                state.StateVersion = "1";
+            }
+
             await db.SaveChangesAsync();
         });
         var archive = await MigrationArchiveJobTestSupport.ExportRepresentativeAsync();
@@ -890,8 +936,8 @@ public sealed class MigrationArchiveJobEngineTests
                 .SetProperty(j => j.ExpiresAtUtc, h.Clock.GetUtcNow().AddDays(2).UtcDateTime)));
 
         var stale = h.Clock.GetUtcNow().AddHours(-25).UtcDateTime;
-        Directory.SetLastWriteTimeUtc(h.Paths.GetStagingDirectory(abandoned.Value), stale);
-        Directory.SetLastWriteTimeUtc(h.Paths.GetStagingDirectory(protectedId.Value), stale);
+        AgeTreeUtc(h.Paths.GetStagingDirectory(abandoned.Value), stale);
+        AgeTreeUtc(h.Paths.GetStagingDirectory(protectedId.Value), stale);
         Directory.SetLastWriteTimeUtc(
             h.Paths.GetStagingDirectory(fresh.Value),
             h.Clock.GetUtcNow().UtcDateTime);
@@ -902,6 +948,24 @@ public sealed class MigrationArchiveJobEngineTests
         Directory.Exists(h.Paths.GetStagingDirectory(fresh.Value)).Should().BeTrue();
         Directory.Exists(h.Paths.GetStagingDirectory(protectedId.Value)).Should().BeTrue();
         await h.Sweep();
+    }
+
+    /// <summary>Sets the write time of a directory and every descendant to <paramref name="utc"/>.</summary>
+    private static void AgeTreeUtc(string directory, DateTime utc)
+    {
+        foreach (var entry in Directory.EnumerateFileSystemEntries(directory, "*", SearchOption.AllDirectories))
+        {
+            if (Directory.Exists(entry))
+            {
+                Directory.SetLastWriteTimeUtc(entry, utc);
+            }
+            else
+            {
+                File.SetLastWriteTimeUtc(entry, utc);
+            }
+        }
+
+        Directory.SetLastWriteTimeUtc(directory, utc);
     }
 
     // ---------------------------------------------------------------- helpers
