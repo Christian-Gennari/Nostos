@@ -219,6 +219,30 @@ public sealed class MigrationUploadEngineTests
     }
 
     [Fact]
+    public async Task Request_abort_during_chunk_body_leaves_the_job_resumable()
+    {
+        await using var h = new MigrationEngineHarness(); await h.InitializeAsync();
+        var bytes = MigrationEngineHarness.Bytes(32);
+        var job = await h.NewJobAsync(); var session = await h.StartAsync(job, bytes);
+        using var aborted = new CancellationTokenSource();
+
+        Func<Task> upload = () => h.WithUploads(s => s.UploadChunkAsync(job, session.SessionId, 0,
+            new MigrationChunkMetadata(0, bytes.Length - 1, bytes.Length, MigrationEngineHarness.Hash(bytes)),
+            new DisconnectingStream(aborted), aborted.Token));
+
+        await upload.Should().ThrowAsync<OperationCanceledException>();
+        var record = (await h.WithJobs(s => s.GetAsync(job, default)))!;
+        record.State.Should().Be(MigrationJobState.Pending,
+            "a client abort is an interrupted transfer, not a storage failure");
+        record.FailureCode.Should().BeNull();
+        (await h.Status(job, session)).ReceivedChunkCount.Should().Be(0);
+
+        // The same session resumes normally: the missing chunk uploads and completes.
+        (await h.Upload(job, session, bytes)).ChunkIndex.Should().Be(0);
+        (await h.Complete(job, session)).State.Should().Be(MigrationSessionState.Complete);
+    }
+
+    [Fact]
     public async Task Reservation_exhaustion_creates_no_session_or_file()
     {
         await using var h = new MigrationEngineHarness(); h.Volume.AvailableFreeSpaceBytes = 1; await h.InitializeAsync(); var job = await h.NewJobAsync();
@@ -370,6 +394,22 @@ public sealed class MigrationUploadEngineTests
         public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken ct = default)
         { entered.TrySetResult(); await Task.Delay(Timeout.Infinite, ct); return 0; }
         public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override void Flush() => throw new NotSupportedException(); public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException(); public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
+
+    /// <summary>
+    /// A browser that reloads mid-upload: the request token is cancelled while
+    /// Kestrel reads the body, and the read fails with an IOException.
+    /// </summary>
+    private sealed class DisconnectingStream(CancellationTokenSource requestAbort) : Stream
+    {
+        public override bool CanRead => true; public override bool CanSeek => false; public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException(); public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken ct = default)
+        { requestAbort.Cancel(); throw new IOException("The client disconnected while sending the request body."); }
+        public override int Read(byte[] buffer, int offset, int count)
+        { requestAbort.Cancel(); throw new IOException("The client disconnected while sending the request body."); }
         public override void Flush() => throw new NotSupportedException(); public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
         public override void SetLength(long value) => throw new NotSupportedException(); public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
