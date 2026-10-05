@@ -78,6 +78,63 @@
   flex-shrink: 0;
 }
 
+/* Shared in-book search (#761). This is a reader-specific composition made from
+   canonical appInput/appIconButton primitives; it overlays the page so opening
+   search never changes EPUB pagination or PDF layout. */
+.reader-search-panel {
+  position: absolute;
+  top: calc(var(--header-height) + 0.5rem);
+  right: 0.75rem;
+  z-index: 60;
+  width: min(24rem, calc(100vw - 1.5rem));
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+}
+
+.reader-search-row,
+.reader-search-status-row,
+.reader-search-nav {
+  display: flex;
+  align-items: center;
+}
+
+.reader-search-row {
+  gap: 0.5rem;
+}
+
+.reader-search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.reader-search-status-row {
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: var(--control-h-md);
+}
+
+.reader-search-status {
+  min-width: 0;
+  color: var(--color-text-light);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.reader-search-nav {
+  gap: 0.25rem;
+  flex-shrink: 0;
+}
+
+.reader-search-panel .icon-btn {
+  border-radius: var(--radius-md);
+}
+
 .reader-body {
   flex: 1;
   position: relative;
@@ -839,6 +896,18 @@
   }
   .reader-header {
     padding-inline-start: max(0.25rem, env(safe-area-inset-left, 0px));
+  }
+  .reader-search-panel {
+    top: var(--header-height);
+    left: 0;
+    right: 0;
+    width: auto;
+    padding: 0.5rem max(0.75rem, env(safe-area-inset-right, 0px))
+      0.5rem max(0.75rem, env(safe-area-inset-left, 0px));
+    border: 0;
+    border-bottom: 1px solid var(--border-color);
+    border-radius: 0;
+    box-shadow: var(--shadow-md);
   }
   .reader-book-title {
     font-size: 1rem;
