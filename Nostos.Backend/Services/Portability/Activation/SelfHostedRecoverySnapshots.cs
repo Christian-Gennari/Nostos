@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Nostos.Backend.Data;
 using Nostos.Backend.Services.Portability.Transfers;
@@ -186,6 +187,7 @@ internal sealed class SelfHostedMigrationRecoveryService :
     private readonly LibraryMaintenanceCoordinator _maintenance;
     private readonly TransferStorageOptions _options;
     private readonly TimeProvider _clock;
+    private readonly ILogger<SelfHostedMigrationRecoveryService>? _logger;
 
     /// <summary>Test seam: counts hashing work so re-hash bounds can be asserted.</summary>
     internal Action<string>? HashingForTesting { get; set; }
@@ -202,7 +204,8 @@ internal sealed class SelfHostedMigrationRecoveryService :
         NostosDbContext db,
         LibraryMaintenanceCoordinator maintenance,
         IOptions<TransferStorageOptions> options,
-        TimeProvider? clock = null)
+        TimeProvider? clock = null,
+        ILogger<SelfHostedMigrationRecoveryService>? logger = null)
     {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(manifests);
@@ -223,6 +226,7 @@ internal sealed class SelfHostedMigrationRecoveryService :
         _maintenance = maintenance;
         _options = options.Value;
         _clock = clock ?? TimeProvider.System;
+        _logger = logger;
     }
 
     public async Task<SelfHostedRecoveryCapture> CaptureAsync(
@@ -499,7 +503,7 @@ internal sealed class SelfHostedMigrationRecoveryService :
                     continue;
                 }
 
-                if (manifest.Status != MigrationRecoveryStatus.Available) continue;
+                if (!IsExpiryEligible(manifest.Status)) continue;
                 if (manifest.ExpiresAtUtc > now) continue;
                 if (_journals.Read(jobId) is not null) continue; // activation or restore still references it
             }
@@ -528,6 +532,37 @@ internal sealed class SelfHostedMigrationRecoveryService :
         }
 
         return cleaned;
+    }
+
+    /// <summary>
+    /// Expiry eligibility is an explicit decision per recovery status so a new
+    /// status can never be silently swept. <c>Available</c> copies expire after
+    /// their retention, and a <c>Restored</c> source copy is provenance that
+    /// becomes eligible on the same expiry; <c>Expired</c> resumes an
+    /// interrupted terminal deletion. In-progress (<c>Restoring</c>), pending,
+    /// failed and not-required copies are kept for an operator. An unknown
+    /// status is kept and logged.
+    /// </summary>
+    private bool IsExpiryEligible(MigrationRecoveryStatus status)
+    {
+        switch (status)
+        {
+            case MigrationRecoveryStatus.Available:
+            case MigrationRecoveryStatus.Restored:
+            case MigrationRecoveryStatus.Expired:
+                return true;
+            case MigrationRecoveryStatus.NotRequired:
+            case MigrationRecoveryStatus.Pending:
+            case MigrationRecoveryStatus.Creating:
+            case MigrationRecoveryStatus.Restoring:
+            case MigrationRecoveryStatus.Failed:
+                return false;
+            default:
+                _logger?.LogWarning(
+                    "Recovery cleanup kept a copy with an unrecognized recovery status {Status}; an operator must inspect it.",
+                    status);
+                return false;
+        }
     }
 
     /// <summary>

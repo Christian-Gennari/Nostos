@@ -29,8 +29,10 @@ import {
 } from '../models/migration-http.dtos';
 import {
   PersistedTransferResumeState,
+  LibraryTransferMode,
   TransferFileIdentity,
 } from '../models/library-transfer.models';
+import { DelegatingTransport } from '../testing/delegating-transport';
 import {
   buildZipArchive,
   createFile,
@@ -755,5 +757,93 @@ describe('LibraryTransferCoordinator — stale status responses', () => {
     await stale;
 
     expect(harness.coordinator.state().kind).toBe('cancelled');
+  });
+});
+
+/**
+ * Transport wrapper that records mode resolution and pinning so the
+ * coordinator's freeze-once-per-session behaviour is observable.
+ */
+class ModeTransport extends DelegatingTransport {
+  readonly resolveCalls: string[] = [];
+  readonly pins: Array<{ sessionId: string; mode: LibraryTransferMode }> = [];
+  resolveResult: LibraryTransferMode = 'direct';
+  resolveError: Error | null = null;
+
+  async resolveUploadMode(sessionId: string): Promise<LibraryTransferMode> {
+    this.resolveCalls.push(sessionId);
+    if (this.resolveError) throw this.resolveError;
+    return this.resolveResult;
+  }
+
+  pinUploadMode(sessionId: string, mode: LibraryTransferMode): void {
+    this.pins.push({ sessionId, mode });
+  }
+}
+
+describe('LibraryTransferCoordinator — upload mode pinning', () => {
+  afterEach(reset);
+
+  it('resolves the upload mode once for the session and persists it', async () => {
+    const mock = new MockLibraryTransferTransport({ chunkSizeBytes: CHUNK });
+    const modes = new ModeTransport(mock);
+    modes.resolveResult = 'application-server';
+    const harness = configure(mock, modes);
+    const file = await portableFile();
+
+    await harness.coordinator.startImport(file);
+
+    expect(modes.resolveCalls).toHaveLength(1);
+    const record = harness.store.load();
+    expect(modes.resolveCalls[0]).toBe(record?.sessionId);
+    expect(record?.transportMode).toBe('application-server');
+    expect(modes.pins).toEqual([
+      { sessionId: record?.sessionId, mode: 'application-server' },
+    ]);
+  });
+
+  it('re-pins the persisted mode after a reload instead of resolving again', async () => {
+    const harness = setup();
+    const file = await largePortableFile();
+    const totalChunks = chunkCount(file.size, CHUNK);
+    const staged = await stageResumableJob(harness, file, totalChunks - 1);
+    harness.store.update({ transportMode: 'direct' });
+
+    const modes = new ModeTransport(harness.mock);
+    modes.resolveError = new Error('must not resolve again after a reload');
+    const reloaded = reload(harness.mock, modes);
+
+    await reloaded.coordinator.resume();
+    await reloaded.coordinator.resumeWithFile(file);
+
+    expect(reloaded.coordinator.state().kind).toBe('ready-empty');
+    expect(modes.resolveCalls).toEqual([]);
+    expect(modes.pins).toEqual([{ sessionId: staged.sessionId, mode: 'direct' }]);
+  });
+
+  it('fails retryably and reattaches instead of calling /retry when the mode stays unavailable', async () => {
+    const mock = new MockLibraryTransferTransport({ chunkSizeBytes: CHUNK });
+    const modes = new ModeTransport(mock);
+    modes.resolveError = new MigrationTransportError(
+      'migration_transport_mode_unavailable',
+      0,
+      'capabilities unavailable',
+    );
+    const harness = configure(mock, modes);
+    const file = await portableFile();
+
+    await harness.coordinator.startImport(file);
+
+    expect(harness.coordinator.state()).toMatchObject({
+      kind: 'failed',
+      failure: { code: 'migration_transport_mode_unavailable', retryable: true },
+    });
+    // Nothing reached the application-server chunk path.
+    expect(mock.uploadedChunks).toEqual([]);
+
+    await harness.coordinator.retry();
+
+    expect(mock.calls.retryJob).toBe(0);
+    expect(harness.coordinator.state()).toMatchObject({ kind: 'ready-to-upload' });
   });
 });

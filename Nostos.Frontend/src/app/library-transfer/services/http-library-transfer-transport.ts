@@ -420,7 +420,12 @@ export class HttpLibraryTransferTransport implements LibraryTransferTransport {
     return status;
   }
 
-  private async sessionFor(
+  /**
+   * Resolves a session contract for a chunk: cached from the last
+   * create/get/status response, or re-read from the server. Protected so a
+   * subclass with a different data path shares the one authoritative cache.
+   */
+  protected async sessionFor(
     jobId: string,
     sessionId: string,
     signal?: AbortSignal,

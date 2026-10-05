@@ -158,6 +158,29 @@ public interface IPortableLibraryVerifier
         PortableRecoveryPayload expected,
         CancellationToken ct = default);
 
+    /// <summary>
+    /// Compares a materialized candidate database against the verified prepared
+    /// import using exactly the relational comparison of
+    /// <see cref="VerifyCandidateAsync"/> (same tables, same row-key rules, same
+    /// exclusions) and no filesystem access. The supplied context may use any EF
+    /// provider, so a host whose candidate library lives in a database without a
+    /// local media directory can verify it. Media objects are verified separately
+    /// with <see cref="VerifyMediaAsync"/> against the host's asset storage, so the
+    /// media entry count dimension is not compared here.
+    /// </summary>
+    Task<PortableLibraryVerificationReport> VerifyCandidateDatabaseAsync(
+        NostosDbContext candidateDatabase,
+        IPreparedPortableImport prepared,
+        PortablePreparedImportVerification expected,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Verifies every expected media entry against the host's asset storage by
+    /// streaming its content and re-hashing it with bounded memory. The storage
+    /// abstraction exposes no inventory enumeration, so detecting objects the
+    /// prepared import does not declare remains the caller's responsibility; this
+    /// method reports only missing, wrong-length and wrong-hash objects.
+    /// </summary>
     Task<PortableLibraryVerificationReport> VerifyMediaAsync(
         IBookAssetStorage assets,
         IReadOnlyList<PortableArchiveMediaEntry> expected,

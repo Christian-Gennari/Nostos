@@ -175,6 +175,11 @@ export interface PersistedTransferResumeState {
    * the user seeing the current library again (review-748).
    */
   activation?: PersistedActivationResumeState;
+  /**
+   * Upload data path resolved for this session (slice B9). Pinned before the
+   * first part is sent and persisted so a reload resumes in the same mode.
+   */
+  transportMode?: LibraryTransferMode;
   createdAt: string;
 }
 
@@ -183,6 +188,14 @@ export interface PersistedActivationResumeState {
   /** True once the server answered 202 to the activation request. */
   accepted: true;
 }
+
+/**
+ * Data path a migration session uses for archive parts (#680 slice B9):
+ * `direct` sends parts to host-signed storage targets, `application-server`
+ * sends them through the Nostos HTTP API. Resolved once per session from the
+ * deployment capability and persisted, so a reload continues on the same path.
+ */
+export type LibraryTransferMode = 'direct' | 'application-server';
 
 /** Import flow states (§8), extended with the engine-level pause flag and notices. */
 export type TransferFlowState =
