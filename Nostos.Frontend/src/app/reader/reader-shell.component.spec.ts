@@ -1162,6 +1162,24 @@ describe('ReaderShell toolbar contract', () => {
     expect(stub.clearSearch).toHaveBeenCalled();
   });
 
+  it('routes Ctrl/Cmd+F to the shared search surface', async () => {
+    const pdfBook = { ...audiobook, id: 'book-pdf-shortcut', fileName: 'being-and-time.pdf' } as Book;
+    booksGetSpy.mockReturnValue(of(pdfBook));
+    fixture = await configureReaderShell();
+    render();
+
+    const ctrl = new KeyboardEvent('keydown', {
+      key: 'f',
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    fixture.componentInstance.onDocumentKeydown(ctrl);
+
+    expect(ctrl.defaultPrevented).toBe(true);
+    expect(fixture.componentInstance.searchPanelOpen()).toBe(true);
+  });
+
   it('composes reader search from canonical Nostos input and icon-button primitives', () => {
     const template = readSource('./reader-shell.component.html');
     const css = readSource('./reader-shell.component.css');
