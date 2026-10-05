@@ -3,10 +3,14 @@
     <app-library-export-flow />
   </section>
   <section class="transfer-host__entry" role="group" aria-label="Import library">
-    <!-- Slice B8 owns activation: hard-code false until the activation calls
-         are wired, so the flow always shows its gated explanation. -->
     <app-library-import-flow
-      [supportsSafeActivation]="false"
+      [supportsSafeActivation]="supportsSafeActivation()"
+      [activationState]="activation.state()"
+      [activationErrorCode]="activation.errorCode()"
+      [activationPhase]="activation.phase()"
+      [activationCanRetry]="activation.canRetry()"
+      [activationConflict]="activation.conflict()"
+      [activationRecoveryExpiresAtUtc]="activation.recovery()?.expiresAtUtc ?? null"
       (importCompleted)="importCompleted.emit()"
       (activationRequested)="onActivationRequested($event)"
       (replacementConfirmed)="onReplacementConfirmed($event)"

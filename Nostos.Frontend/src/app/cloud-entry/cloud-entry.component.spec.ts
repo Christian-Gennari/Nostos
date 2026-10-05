@@ -39,6 +39,7 @@ describe('CloudEntryComponent', () => {
     productReady: ReturnType<typeof signal<boolean>>;
     selectedOffer: ReturnType<typeof signal<any>>;
     supportsLibraryMigration: ReturnType<typeof signal<boolean>>;
+    supportsSafeActivation: ReturnType<typeof signal<boolean>>;
     beginCheckout: ReturnType<typeof vi.fn>;
     checkSubscription: ReturnType<typeof vi.fn>;
     loginUrl: ReturnType<typeof vi.fn>;
@@ -79,6 +80,7 @@ describe('CloudEntryComponent', () => {
         billingCadence: 'Monthly',
       }),
       supportsLibraryMigration: signal(false),
+      supportsSafeActivation: signal(false),
       beginCheckout: vi.fn(),
       checkSubscription: vi.fn(),
       loginUrl: vi.fn().mockReturnValue('/api/auth/login'),
@@ -337,9 +339,11 @@ describe('CloudEntryComponent', () => {
 
     const flow = fixture.debugElement.query(By.directive(LibraryImportFlowComponent))
       .componentInstance as LibraryImportFlowComponent;
-    // Slice B8 owns activation: the host hard-codes safe activation off even
-    // if the server advertises it, so the flow stays in its gated state.
-    expect(flow.supportsSafeActivation()).toBe(false);
+    // Slice B8: the onboarding host forwards the server capability instead of
+    // hard-coding safe activation off.
+    mockEntry.supportsSafeActivation.set(true);
+    fixture.detectChanges();
+    expect(flow.supportsSafeActivation()).toBe(true);
 
     const file = await portableFile();
     flow.onFileSelected({ target: { files: [file], value: 'picked' } } as unknown as Event);
@@ -349,13 +353,16 @@ describe('CloudEntryComponent', () => {
       timeout: 5_000,
     });
     fixture.detectChanges();
-    expect(testId(fixture, 'import-activation-unavailable')).toBeTruthy();
+    expect(testId(fixture, 'import-activation-unavailable')).toBeNull();
 
+    await vi.waitFor(() => expect(mock.calls.activateJob).toBe(1), { timeout: 5_000 });
     const state = coordinator.state();
     const jobId = state.kind === 'ready-empty' ? state.jobId : '';
-    mock.setJobState(jobId, 'Completed');
-    await coordinator.refreshStatus();
-    await vi.waitFor(() => expect(mockEntry.finishFirstRunAfterImport).toHaveBeenCalledTimes(1));
+    mock.completeActivation(jobId);
+
+    await vi.waitFor(() => expect(mockEntry.finishFirstRunAfterImport).toHaveBeenCalledTimes(1), {
+      timeout: 5_000,
+    });
   });
 
   it('keeps the first-run choice when a shared import fails', async () => {

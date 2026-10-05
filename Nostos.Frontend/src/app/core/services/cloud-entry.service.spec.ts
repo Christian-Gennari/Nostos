@@ -392,6 +392,7 @@ describe('CloudEntryService', () => {
 
     await service.initialize();
     expect(service.supportsLibraryMigration()).toBe(false);
+    expect(service.supportsSafeActivation()).toBe(false);
 
     capabilities.get.mockReturnValue(
       of({

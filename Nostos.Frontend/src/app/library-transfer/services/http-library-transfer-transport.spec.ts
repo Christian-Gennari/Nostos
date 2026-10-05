@@ -9,6 +9,8 @@ import { TestBed } from '@angular/core/testing';
 
 import {
   BrowserMigrationChunk,
+  MigrationActivateRequestDto,
+  MigrationActivationStatusDto,
   MigrationCreateJobRequestDto,
   MigrationErrorCode,
   MigrationJobStatusResponseDto,
@@ -24,7 +26,10 @@ import {
   HttpLibraryTransferTransport,
   MIGRATION_BASE_PATH,
 } from './http-library-transfer-transport';
-import { MigrationTransportError } from './migration-transport-error';
+import {
+  MigrationActivationConflictError,
+  MigrationTransportError,
+} from './migration-transport-error';
 
 const JOB_ID = '11111111-1111-4111-8111-111111111111';
 const SESSION_ID = '22222222-2222-4222-8222-222222222222';
@@ -168,6 +173,10 @@ const SERVER_CODE_STATUS: ReadonlyArray<readonly [MigrationErrorCode, number]> =
   ['migration_export_not_available', 404],
   ['migration_export_expired', 410],
   ['migration_too_many_jobs', 409],
+  ['migration_replacement_confirmation_required', 409],
+  ['migration_destination_conflict', 409],
+  ['migration_activation_failed', 409],
+  ['migration_activation_recovery_failed', 409],
   ['migration_activation_busy', 503],
   ['unexpected_error', 500],
 ];
@@ -480,6 +489,152 @@ describe('HttpLibraryTransferTransport', () => {
       expect(error.code, code).toBe(code);
       expect(error.status, code).toBe(status);
       expect(error.message, code).toBe(`message for ${code}`);
+    }
+  });
+
+  it('POSTs activation with the server-bound revision and confirmation', async () => {
+    const request: MigrationActivateRequestDto = {
+      destinationRevision: 'rev-7',
+      confirmReplacement: true,
+    };
+    const status: MigrationActivationStatusDto = {
+      jobId: JOB_ID,
+      state: 'ReadyToActivate',
+      outcome: 'Running',
+      errorCode: null,
+      message: null,
+      maintenanceRequired: false,
+      destinationRevision: 'rev-7',
+      existingCounts: null,
+      destinationStatus: 'Populated',
+      recoveryAvailable: false,
+      recoveryExpiresAtUtc: null,
+      recoverySizeBytes: null,
+      phase: 'Preparing',
+      accepted: true,
+      canActivate: false,
+    };
+
+    const promise = transport.activateJob(JOB_ID, request);
+    const req = http.expectOne(`${JOB_URL}/activate`);
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({
+      destinationRevision: 'rev-7',
+      confirmReplacement: true,
+    });
+    req.flush(status, { status: 202, statusText: 'Accepted' });
+
+    await expect(promise).resolves.toEqual(status);
+  });
+
+  it('GETs the activation status with the full outcome envelope', async () => {
+    const status: MigrationActivationStatusDto = {
+      jobId: JOB_ID,
+      state: 'Completed',
+      outcome: 'Completed',
+      errorCode: null,
+      message: null,
+      maintenanceRequired: false,
+      destinationRevision: 'rev-7',
+      existingCounts: null,
+      destinationStatus: 'Populated',
+      recoveryAvailable: true,
+      recoveryExpiresAtUtc: new Date(86_400_000).toISOString(),
+      recoverySizeBytes: 1234,
+      phase: null,
+      accepted: false,
+      canActivate: false,
+    };
+
+    const promise = transport.getActivationStatus(JOB_ID);
+    const req = http.expectOne(`${JOB_URL}/activation`);
+    expect(req.request.method).toBe('GET');
+    req.flush(status);
+
+    await expect(promise).resolves.toEqual(status);
+  });
+
+  it('keeps the fresh destination facts of a confirmation-required 409', async () => {
+    const promise = transport.activateJob(JOB_ID, {
+      destinationRevision: 'rev-1',
+      confirmReplacement: false,
+    });
+    http.expectOne(`${JOB_URL}/activate`).flush(
+      {
+        error: 'migration_replacement_confirmation_required',
+        message: 'Replacing an existing library requires explicit confirmation.',
+        destinationRevision: 'rev-2',
+        destinationStatus: 'Populated',
+        existingCounts: {
+          works: 1,
+          books: 2,
+          notes: 3,
+          topics: 0,
+          noteTopics: 0,
+          writings: 0,
+          writingNotes: 0,
+          collections: 1,
+          bookCollections: 2,
+          acquisitions: 0,
+          noteImportBookLinks: 0,
+          assistantSettings: 0,
+          totalRows: 9,
+        },
+      },
+      { status: 409, statusText: 'Conflict' },
+    );
+
+    const error = await rejectionOf(promise);
+    expect(error).toBeInstanceOf(MigrationActivationConflictError);
+    const conflict = (error as MigrationActivationConflictError).conflict;
+    expect(error.code).toBe('migration_replacement_confirmation_required');
+    expect(conflict.destinationRevision).toBe('rev-2');
+    expect(conflict.destinationStatus).toBe('Populated');
+    expect(conflict.existingCounts?.books).toBe(2);
+    expect(conflict.existingCounts?.totalRows).toBe(9);
+  });
+
+  it('keeps the fresh destination facts of a destination-conflict 409', async () => {
+    const promise = transport.activateJob(JOB_ID, {
+      destinationRevision: 'stale-rev',
+      confirmReplacement: true,
+    });
+    http.expectOne(`${JOB_URL}/activate`).flush(
+      {
+        error: 'migration_destination_conflict',
+        message: 'The destination changed. Review replacement again.',
+        destinationRevision: 'rev-3',
+        destinationStatus: 'Empty',
+        existingCounts: null,
+      },
+      { status: 409, statusText: 'Conflict' },
+    );
+
+    const error = (await rejectionOf(promise)) as MigrationActivationConflictError;
+    expect(error).toBeInstanceOf(MigrationActivationConflictError);
+    expect(error.code).toBe('migration_destination_conflict');
+    expect(error.conflict.destinationRevision).toBe('rev-3');
+    expect(error.conflict.destinationStatus).toBe('Empty');
+    expect(error.conflict.existingCounts).toBeNull();
+  });
+
+  it('maps the plain activation failure codes without conflict facts', async () => {
+    for (const code of [
+      'migration_activation_failed',
+      'migration_activation_recovery_failed',
+    ] as const) {
+      const promise = transport.activateJob(JOB_ID, {
+        destinationRevision: 'rev-1',
+        confirmReplacement: true,
+      });
+      http.expectOne(`${JOB_URL}/activate`).flush(
+        { error: code, message: `message for ${code}` },
+        { status: 409, statusText: 'Conflict' },
+      );
+
+      const error = await rejectionOf(promise);
+      expect(error.code).toBe(code);
+      expect(error).not.toBeInstanceOf(MigrationActivationConflictError);
     }
   });
 
