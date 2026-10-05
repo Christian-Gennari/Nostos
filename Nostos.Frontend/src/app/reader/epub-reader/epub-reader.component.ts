@@ -274,18 +274,75 @@ const TYPOGRAPHY_STORAGE_KEY = 'nostos.epub-typography';
 const FONT_SIZE_STORAGE_KEY = 'nostos.epub-font-size';
 
 /**
+ * Elements whose own publisher font declarations should yield to an explicit
+ * Nostos typeface choice. This is intentionally a semantic reading-text list,
+ * NOT `body *`: descendants such as `code`, `pre`, icon spans, SVG and
+ * MathML keep their own directly assigned fonts.
+ */
+const READING_FONT_SELECTOR = [
+  'body',
+  'body p',
+  'body blockquote',
+  'body li',
+  'body dt',
+  'body dd',
+  'body figcaption',
+  'body caption',
+  'body td',
+  'body th',
+  'body h1',
+  'body h2',
+  'body h3',
+  'body h4',
+  'body h5',
+  'body h6',
+].join(',');
+
+/**
+ * Prose blocks that should honour the reader's line-height choice even when an
+ * EPUB assigns line-height directly. Headings and preformatted/code elements
+ * are deliberately omitted so their authored vertical rhythm can remain
+ * distinct; they still inherit the body value when the publication does not
+ * specify one.
+ */
+const PROSE_LINE_HEIGHT_SELECTOR = [
+  'body',
+  'body p',
+  'body blockquote',
+  'body li',
+  'body dt',
+  'body dd',
+  'body figcaption',
+  'body caption',
+  'body td',
+  'body th',
+].join(',');
+
+/**
  * The injected typography rules for one contents document. Pure for
  * testability. `publisher` keeps the book's own typeface (no font-family
- * override); line height always applies.
+ * override); the reader's line height applies directly to normal prose so an
+ * authored `p { line-height: ... }` cannot silently defeat the control.
+ *
+ * Typeface and line height intentionally use separate selector sets. A chosen
+ * Nostos face overrides normal reading text and headings, while special
+ * descendants such as code and icon glyphs keep their direct fonts. Text size
+ * is also deliberately absent: epub.js owns that setting through
+ * `rendition.themes.fontSize()`.
  *
  * Margins are deliberately NOT here — see {@link marginInsetPercent}: they are
  * padding on our own viewer, because epub.js's own inline-important body
  * padding cannot be beaten from a stylesheet.
  */
 export function typographyCss(t: EpubTypography): string {
-  const family =
-    t.fontFamily === 'publisher' ? '' : `font-family:${FONT_STACKS[t.fontFamily]} !important;`;
-  return `body{${family}line-height:${t.lineHeight} !important;}`;
+  const lineHeight =
+    `${PROSE_LINE_HEIGHT_SELECTOR}{line-height:${t.lineHeight} !important;}`;
+  if (t.fontFamily === 'publisher') return lineHeight;
+
+  return (
+    `${READING_FONT_SELECTOR}{font-family:${FONT_STACKS[t.fontFamily]} !important;}` +
+    lineHeight
+  );
 }
 /**
  * The TOC entry the displayed section belongs to, or null when the TOC cannot
