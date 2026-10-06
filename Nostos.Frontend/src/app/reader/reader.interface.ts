@@ -51,6 +51,8 @@ export interface IReader {
   zoomOut(): void;
 
   // Search. The shell owns the UI; each text reader owns its format mechanics.
+  /** True only when the mounted reader can accept a search query right now. */
+  searchAvailable?: Signal<boolean>;
   searchState?: Signal<ReaderSearchState>;
   search?(query: string): void | Promise<void>;
   nextSearchResult?(): void | Promise<void>;

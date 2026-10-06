@@ -472,6 +472,33 @@ describe('PdfReader shared search adapter (#761)', () => {
     fixture = TestBed.createComponent(PdfReader);
     fixture.componentRef.setInput('bookId', 'book-1');
     fixture.detectChanges();
+    (fixture.componentInstance as any).pdfSearchReady.set(true);
+  });
+
+  it('does not start a PDF search before the viewer find engine is ready', () => {
+    (fixture.componentInstance as any).pdfSearchReady.set(false);
+
+    fixture.componentInstance.search('Being');
+
+    expect(pdfSearch.find).not.toHaveBeenCalled();
+    expect(fixture.componentInstance.searchState()).toEqual({
+      status: 'idle',
+      current: 0,
+      total: 0,
+    });
+  });
+
+  it('recovers to idle if the viewer reports ready before find() is actually usable', () => {
+    pdfSearch.find.mockReturnValueOnce(undefined as any);
+
+    fixture.componentInstance.search('Being');
+
+    expect(fixture.componentInstance.searchState()).toEqual({
+      status: 'idle',
+      current: 0,
+      total: 0,
+    });
+    expect(fixture.componentInstance.searchAvailable()).toBe(false);
   });
 
   it('delegates literal search to the public PDF viewer service', async () => {

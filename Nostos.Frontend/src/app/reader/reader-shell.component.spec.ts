@@ -73,6 +73,7 @@ class PdfReaderStub {
   selectionCaptured = output<unknown>();
   commitFailed = output<unknown>();
   textCapability = signal<'unknown' | 'available' | 'unavailable'>('available');
+  searchAvailable = signal(true);
   searchState = signal({ status: 'idle' as const, current: 0, total: 0 });
   search = vi.fn();
   nextSearchResult = vi.fn();
@@ -113,6 +114,7 @@ class EpubReaderStub {
   exitRequested = output<void>();
   searchRequested = output<void>();
   loading = signal(false);
+  searchAvailable = signal(true);
   searchState = signal({ status: 'idle' as const, current: 0, total: 0 });
   search = vi.fn();
   nextSearchResult = vi.fn();
@@ -1129,6 +1131,30 @@ describe('ReaderShell toolbar contract', () => {
     expect(searchBtn!.getAttribute('aria-label')).toBe('Search in book');
   });
 
+  it('keeps Search disabled until the mounted reader says its engine is ready', async () => {
+    const pdfBook = { ...audiobook, id: 'book-pdf-ready', fileName: 'being-and-time.pdf' } as Book;
+    booksGetSpy.mockReturnValue(of(pdfBook));
+    fixture = await configureReaderShell();
+    render();
+
+    const stub = fixture.debugElement.query(By.directive(PdfReaderStub))
+      .componentInstance as PdfReaderStub;
+    (fixture.componentInstance as unknown as { pdfReader: PdfReaderStub }).pdfReader = stub;
+    fixture.componentInstance.ready.set(true);
+    stub.searchAvailable.set(false);
+    render();
+
+    const searchBtn = fixture.debugElement
+      .queryAll(By.css('.reader-header button.icon-btn'))
+      .map((b) => b.nativeElement as HTMLButtonElement)
+      .find((b) => b.getAttribute('title') === 'Search')!;
+    expect(searchBtn.disabled).toBe(true);
+
+    stub.searchAvailable.set(true);
+    render();
+    expect(searchBtn.disabled).toBe(false);
+  });
+
   it('opens a Nostos-owned search panel and clears format search when closed', async () => {
     const pdfBook = { ...audiobook, id: 'book-pdf', fileName: 'being-and-time.pdf' } as Book;
     booksGetSpy.mockReturnValue(of(pdfBook));
@@ -1167,6 +1193,9 @@ describe('ReaderShell toolbar contract', () => {
     booksGetSpy.mockReturnValue(of(pdfBook));
     fixture = await configureReaderShell();
     render();
+    const stub = fixture.debugElement.query(By.directive(PdfReaderStub))
+      .componentInstance as PdfReaderStub;
+    (fixture.componentInstance as unknown as { pdfReader: PdfReaderStub }).pdfReader = stub;
     fixture.componentInstance.ready.set(true);
     render();
 

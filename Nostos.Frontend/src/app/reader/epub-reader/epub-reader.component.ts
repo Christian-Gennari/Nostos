@@ -475,6 +475,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
 
   // --- In-book search (#761) ---
   searchState = signal<ReaderSearchState>({ status: 'idle', current: 0, total: 0 });
+  readonly searchAvailable = signal(false);
   private searchCorpus: Array<{ href: string; index: number; text: string }> | null = null;
   private searchCorpusPromise: Promise<Array<{ href: string; index: number; text: string }>> | null = null;
   private searchMatches: Array<{ href: string; index: number; offset: number; length: number }> = [];
@@ -642,6 +643,11 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
   // --- IReader Methods ---
 
   async search(query: string): Promise<void> {
+    if (!this.searchAvailable()) {
+      this.clearSearch();
+      return;
+    }
+
     const normalizedQuery = normalizeEpubSourceText(query);
     const generation = ++this.searchGeneration;
 
@@ -1368,6 +1374,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
 
   loadBook(id: string) {
     this.beginNavigation();
+    this.searchAvailable.set(false);
     this.clearSearch();
     this.searchCorpus = null;
     this.searchCorpusPromise = null;
@@ -1593,6 +1600,11 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     this.progressUnlocked = true;
     const cfi = this.getCurrentLocation() ?? this.currentCfi;
     if (cfi) this.updateProgressState(cfi);
+    // Search navigation reuses goToSource(), which deliberately queues requests
+    // while progress is locked. Do not expose search until the opening display
+    // and saved-position restore are finished, or a query can become a stranded
+    // pending grounded target after the one startup consumption point.
+    this.searchAvailable.set(true);
   }
 
   /** Label of the TOC entry the displayed section belongs to, for the pill. */
@@ -1720,6 +1732,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
   }
 
   private failOpen(): void {
+    this.searchAvailable.set(false);
     this.errorMessage.set('The file may be damaged, unsupported, or temporarily unavailable.');
     this.loading.set(false);
   }
@@ -1898,6 +1911,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
       cleanup();
     }
     this.keyboardDocuments.clear();
+    this.searchAvailable.set(false);
     this.clearSearch();
     this.searchCorpus = null;
     this.searchCorpusPromise = null;

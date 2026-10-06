@@ -212,6 +212,10 @@ describe('EpubReader highlight-mode lifecycle (issue #16)', () => {
 
     await fixture.componentInstance.nextSearchResult();
     expect(fixture.componentInstance.searchState().current).toBe(2);
+    await fixture.componentInstance.nextSearchResult();
+    expect(fixture.componentInstance.searchState().current).toBe(1);
+    await fixture.componentInstance.previousSearchResult();
+    expect(fixture.componentInstance.searchState().current).toBe(2);
 
     fixture.componentInstance.clearSearch();
     expect(fixture.componentInstance.searchState()).toEqual({
@@ -219,6 +223,32 @@ describe('EpubReader highlight-mode lifecycle (issue #16)', () => {
       current: 0,
       total: 0,
     });
+  });
+
+  it('ignores an EPUB search result that finishes after search has been cleared', async () => {
+    await setupComponent();
+    const component = fixture.componentInstance;
+    expect(component.searchAvailable()).toBe(true);
+
+    let resolveCorpus!: (value: Array<{ href: string; index: number; text: string }>) => void;
+    const pendingCorpus = new Promise<Array<{ href: string; index: number; text: string }>>(
+      (resolve) => { resolveCorpus = resolve; },
+    );
+    (component as any).searchCorpus = null;
+    (component as any).searchCorpusPromise = pendingCorpus;
+    const displayCallsBeforeSearch = lastRendition.display.mock.calls.length;
+
+    const pendingSearch = component.search('Transylvania');
+    component.clearSearch();
+    resolveCorpus([{ href: 'chapter-2.xhtml', index: 2, text: 'Transylvania' }]);
+    await pendingSearch;
+
+    expect(component.searchState()).toEqual({
+      status: 'idle',
+      current: 0,
+      total: 0,
+    });
+    expect(lastRendition.display).toHaveBeenCalledTimes(displayCallsBeforeSearch);
   });
 
   it('shows a calm visible state when a grounded EPUB resource cannot be resolved', async () => {

@@ -183,11 +183,15 @@ export class PdfReader implements OnInit, OnDestroy, IReader {
 
   /** Shared shell search state; PDF.js remains the matching engine. */
   searchState = signal<ReaderSearchState>({ status: 'idle', current: 0, total: 0 });
+  private pdfSearchReady = signal(false);
+  readonly searchAvailable = computed(
+    () => this.pdfSearchReady() && this.textCapability() !== 'unavailable',
+  );
   private searchGeneration = 0;
   private activeSearchQuery = '';
 
   search(query: string): void {
-    if (this.textCapability() === 'unavailable') {
+    if (!this.searchAvailable()) {
       this.clearSearch();
       return;
     }
@@ -208,7 +212,17 @@ export class PdfReader implements OnInit, OnDestroy, IReader {
       matchCase: false,
       dontScrollIntoView: false,
     });
-    if (!counts) return;
+    if (!counts) {
+      // ngx-extended-pdf-viewer 25.6.x returns undefined until its find
+      // controller is initialized. Fail back to idle instead of leaving the
+      // shared panel permanently on “Searching book…”.
+      if (generation === this.searchGeneration && this.activeSearchQuery === normalized) {
+        this.pdfSearchReady.set(false);
+        this.activeSearchQuery = '';
+        this.searchState.set({ status: 'idle', current: 0, total: 0 });
+      }
+      return;
+    }
 
     void Promise.all(counts).then((perPage) => {
       if (generation !== this.searchGeneration || this.activeSearchQuery !== normalized) return;
@@ -576,6 +590,10 @@ export class PdfReader implements OnInit, OnDestroy, IReader {
 
   onPagesLoaded(event: PagesLoadedEvent) {
     this.totalPages = event.pagesCount;
+    // At pagesLoaded the viewer application has mounted and its public find
+    // service is expected to be usable. search() still handles a defensive
+    // undefined return if the library reports readiness too early.
+    this.pdfSearchReady.set(true);
     this.loadNotes();
 
     // The outline needs the PDFDocumentProxy, and `pdfLoaded` cannot provide it:
@@ -984,6 +1002,7 @@ export class PdfReader implements OnInit, OnDestroy, IReader {
 
   ngOnDestroy() {
     this.clearSearch();
+    this.pdfSearchReady.set(false);
     this.unregisterAssistantContext?.();
     this.unregisterAssistantContext = null;
     this.progressUpdater$.complete();
