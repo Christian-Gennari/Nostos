@@ -1,7 +1,9 @@
+import { HttpErrorResponse } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import { vi } from 'vitest';
 
+import { BooksService } from './books.service';
 import { CloudAuthService } from './cloud-auth.service';
 import { CloudEntryService } from './cloud-entry.service';
 import { CloudOnboardingService } from './cloud-onboarding.service';
@@ -22,6 +24,18 @@ describe('CloudEntryService', () => {
     reconcileSubscription: ReturnType<typeof vi.fn>;
     createBillingPortal: ReturnType<typeof vi.fn>;
   };
+  let books: { getStatusCounts: ReturnType<typeof vi.fn> };
+
+  const markerKey = 'nostos.cloud.first-run.1e4df713-1a34-4fc7-9a90-c45169256845';
+
+  const statusCounts = (all: number) => ({
+    all,
+    notStarted: all,
+    reading: 0,
+    favorites: 0,
+    finished: 0,
+    unsorted: all,
+  });
 
   const cloudCapabilities = {
     deploymentMode: 'Cloud' as const,
@@ -58,6 +72,7 @@ describe('CloudEntryService', () => {
       reconcileSubscription: vi.fn(),
       createBillingPortal: vi.fn(),
     };
+    books = { getStatusCounts: vi.fn().mockReturnValue(of(statusCounts(0))) };
 
     TestBed.configureTestingModule({
       providers: [
@@ -69,6 +84,7 @@ describe('CloudEntryService', () => {
           provide: PortableLibraryService,
           useValue: { importArchive: vi.fn().mockReturnValue(of({})) },
         },
+        { provide: BooksService, useValue: books },
       ],
     });
 
@@ -87,6 +103,7 @@ describe('CloudEntryService', () => {
     expect(service.productReady()).toBe(true);
     expect(auth.getSession).not.toHaveBeenCalled();
     expect(onboarding.getState).not.toHaveBeenCalled();
+    expect(books.getStatusCounts).not.toHaveBeenCalled();
   });
 
   it('shows the hosted sign-in path for a signed-out Cloud user', async () => {
@@ -305,11 +322,91 @@ describe('CloudEntryService', () => {
     await service.initialize();
 
     expect(onboarding.provision).toHaveBeenCalledTimes(1);
+    expect(books.getStatusCounts).toHaveBeenCalledTimes(1);
     expect(service.view().kind).toBe('first_run');
     expect(service.productReady()).toBe(false);
 
     service.startFresh();
     expect(service.productReady()).toBe(true);
+  });
+
+  it('sends a schema-upgraded populated library straight to the product and clears the marker', async () => {
+    capabilities.get.mockReturnValue(of(cloudCapabilities));
+    auth.getSession.mockReturnValue(of({ ...session, accountState: 'Active' }));
+    onboarding.getState.mockReturnValue(of({
+      state: 'ready_to_provision',
+      subscriptionStatus: 'Active',
+      ready: false,
+      canCheckout: false,
+      canCheckSubscription: false,
+      canManageSubscription: false,
+      canRetry: true,
+    }));
+    onboarding.provision.mockReturnValue(of({
+      state: 'ready',
+      subscriptionStatus: 'Active',
+      ready: true,
+      canCheckout: false,
+      canCheckSubscription: false,
+      canManageSubscription: false,
+      canRetry: false,
+    }));
+    books.getStatusCounts.mockReturnValue(of(statusCounts(7)));
+
+    await service.initialize();
+
+    expect(books.getStatusCounts).toHaveBeenCalledTimes(1);
+    expect(service.view().kind).toBe('product');
+    expect(service.productReady()).toBe(true);
+    expect(localStorage.getItem(markerKey)).toBeNull();
+  });
+
+  it('clears a stale pending marker and enters the product when the library is populated', async () => {
+    localStorage.setItem(markerKey, 'pending');
+
+    capabilities.get.mockReturnValue(of(cloudCapabilities));
+    auth.getSession.mockReturnValue(of({ ...session, accountState: 'Active' }));
+    onboarding.getState.mockReturnValue(of({
+      state: 'ready',
+      subscriptionStatus: 'Active',
+      ready: true,
+      canCheckout: false,
+      canCheckSubscription: false,
+      canManageSubscription: false,
+      canRetry: false,
+    }));
+    books.getStatusCounts.mockReturnValue(of(statusCounts(3)));
+
+    await service.initialize();
+
+    expect(service.view().kind).toBe('product');
+    expect(service.productReady()).toBe(true);
+    expect(localStorage.getItem(markerKey)).toBeNull();
+  });
+
+  it('fails towards the product and keeps the marker when the emptiness check cannot answer', async () => {
+    localStorage.setItem(markerKey, 'pending');
+
+    capabilities.get.mockReturnValue(of(cloudCapabilities));
+    auth.getSession.mockReturnValue(of({ ...session, accountState: 'Active' }));
+    onboarding.getState.mockReturnValue(of({
+      state: 'ready',
+      subscriptionStatus: 'Active',
+      ready: true,
+      canCheckout: false,
+      canCheckSubscription: false,
+      canManageSubscription: false,
+      canRetry: false,
+    }));
+    books.getStatusCounts.mockReturnValue(
+      throwError(() => new HttpErrorResponse({ status: 503, statusText: 'Service Unavailable' })),
+    );
+
+    await service.initialize();
+
+    expect(service.view().kind).toBe('product');
+    expect(service.productReady()).toBe(true);
+    expect(localStorage.getItem(markerKey)).toBe('pending');
   });
 
   it('resumes polling from server state after refresh during provisioning', async () => {
