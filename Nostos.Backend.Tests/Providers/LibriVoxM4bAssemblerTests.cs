@@ -227,6 +227,7 @@ public sealed class LibriVoxM4bAssemblerTests
                 "-map_metadata", "1",
                 "-map_chapters", "1",
                 "-c:a", "aac",
+                "-aac_coder", "fast",
                 "-b:a", "64k",
                 "-ac", "1",
                 "-ar", "44100",
