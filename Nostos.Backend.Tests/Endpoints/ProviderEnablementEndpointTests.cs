@@ -4,8 +4,11 @@ using System.Text.Json;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Nostos.Backend.Data;
+using Nostos.Backend.Data.Models;
 using Nostos.Backend.Endpoints;
 using Nostos.Backend.Providers;
 using Nostos.Backend.Providers.Acquisition;
@@ -127,6 +130,34 @@ public sealed class ProviderEnablementEndpointTests
         cancel.StatusCode.Should().Be(HttpStatusCode.NoContent);
     }
 
+    [Fact]
+    public async Task An_imported_book_stays_readable_with_its_provenance_after_its_source_is_disabled()
+    {
+        var alpha = new EndpointProvider("alpha");
+        using var factory = new LibraryEndpointFactory();
+        var bookId = SeedAcquiredBook(factory.DatabasePath, providerId: "alpha");
+
+        await using var app = factory.WithWebHostBuilder(builder =>
+            builder.ConfigureServices(services => ReplaceProviders(services, [alpha], null, null)));
+        using var client = app.CreateClient();
+
+        var before = await client.GetFromJsonAsync<BookDto>($"/api/books/{bookId}");
+        before!.Source!.ProviderId.Should().Be("alpha");
+
+        var put = await client.PutAsJsonAsync(
+            $"{ProviderSettingsEndpoints.Route}/alpha",
+            new ProviderPreferenceUpdateDto(false));
+        put.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        // Disabling affects future discovery/acquisition only: the book, its
+        // file and its provenance are untouched and the reader can still open it.
+        var after = await client.GetFromJsonAsync<BookDto>($"/api/books/{bookId}");
+        after.Should().NotBeNull();
+        after!.Id.Should().Be(bookId);
+        after.Source!.ProviderId.Should().Be("alpha");
+        after.Source.ProviderDisplayName.Should().Be("Source alpha");
+    }
+
     // ------------------------------------------------------------------
     // Helpers
     // ------------------------------------------------------------------
@@ -153,34 +184,84 @@ public sealed class ProviderEnablementEndpointTests
     {
         var factory = new LibraryEndpointFactory();
         return factory.WithWebHostBuilder(builder =>
-            builder.ConfigureServices(services =>
-            {
-                services.RemoveAll<IContentProvider>();
-                services.RemoveAll<IProviderRegistry>();
-                services.RemoveAll<ProviderDiscoveryService>();
-                services.RemoveAll<IProviderDiscovery>();
+            builder.ConfigureServices(services => ReplaceProviders(services, providers, discovery, jobs)));
+    }
 
-                foreach (var provider in providers)
-                    services.AddSingleton(typeof(IContentProvider), provider);
+    private static void ReplaceProviders(
+        IServiceCollection services,
+        IReadOnlyList<EndpointProvider> providers,
+        SnapshotDiscovery? discovery,
+        StubJobManager? jobs)
+    {
+        services.RemoveAll<IContentProvider>();
+        services.RemoveAll<IProviderRegistry>();
+        services.RemoveAll<ProviderDiscoveryService>();
+        services.RemoveAll<IProviderDiscovery>();
 
-                services.AddSingleton<IProviderRegistry, ProviderRegistry>();
-                if (discovery is not null)
-                {
-                    services.AddSingleton<IProviderDiscovery>(discovery);
-                }
-                else
-                {
-                    services.AddSingleton<ProviderDiscoveryService>();
-                    services.AddSingleton<IProviderDiscovery>(sp =>
-                        sp.GetRequiredService<ProviderDiscoveryService>());
-                }
+        foreach (var provider in providers)
+            services.AddSingleton(typeof(IContentProvider), provider);
 
-                if (jobs is not null)
-                {
-                    services.RemoveAll<IAcquisitionJobManager>();
-                    services.AddSingleton<IAcquisitionJobManager>(jobs);
-                }
-            }));
+        services.AddSingleton<IProviderRegistry, ProviderRegistry>();
+        if (discovery is not null)
+        {
+            services.AddSingleton<IProviderDiscovery>(discovery);
+        }
+        else
+        {
+            services.AddSingleton<ProviderDiscoveryService>();
+            services.AddSingleton<IProviderDiscovery>(sp =>
+                sp.GetRequiredService<ProviderDiscoveryService>());
+        }
+
+        if (jobs is not null)
+        {
+            services.RemoveAll<IAcquisitionJobManager>();
+            services.AddSingleton<IAcquisitionJobManager>(jobs);
+        }
+    }
+
+    private static Guid SeedAcquiredBook(string databasePath, string providerId)
+    {
+        var options = new DbContextOptionsBuilder<NostosDbContext>()
+            .UseSqlite($"Data Source={databasePath}")
+            .Options;
+        using var db = new NostosDbContext(options);
+        var now = new DateTime(2026, 3, 4, 5, 6, 7, DateTimeKind.Utc);
+
+        var work = new WorkModel
+        {
+            Id = Guid.NewGuid(),
+            Title = "Acquired Book",
+            Author = "Acquired Author",
+            NormalizedTitle = "ACQUIRED BOOK",
+            NormalizedAuthor = "ACQUIRED AUTHOR",
+            CreatedAt = now,
+        };
+        var book = new EBookModel
+        {
+            Id = Guid.NewGuid(),
+            WorkId = work.Id,
+            Work = work,
+            Title = "Acquired Book",
+            Author = "Acquired Author",
+            CreatedAt = now,
+        };
+
+        db.Works.Add(work);
+        db.Books.Add(book);
+        db.BookAcquisitions.Add(new BookAcquisitionModel
+        {
+            BookId = book.Id,
+            ProviderId = providerId,
+            ProviderDisplayName = "Source " + providerId,
+            ExternalId = "1",
+            AssetId = "epub",
+            AssetFormat = "epub",
+            ImportedExtension = ".epub",
+            AcquiredAt = now,
+        });
+        db.SaveChanges();
+        return book.Id;
     }
 
     private static ProviderItem Item(string providerId, string externalId, string title) =>
