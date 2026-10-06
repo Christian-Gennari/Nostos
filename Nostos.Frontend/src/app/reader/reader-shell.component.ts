@@ -1166,6 +1166,11 @@ export class ReaderShell implements OnInit, OnDestroy {
     if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
 
     if (event.key === 'Escape') {
+      // Ask Nostos is app-level chrome above the reader. Let its own Escape
+      // handler close first regardless of document-listener registration order;
+      // the next Escape may then dismiss the still-pending reader selection.
+      if (this.assistant.isOpen()) return;
+
       if (this.searchPanelOpen()) {
         this.closeSearch();
         event.preventDefault();
@@ -1207,9 +1212,14 @@ export class ReaderShell implements OnInit, OnDestroy {
       return;
     }
 
-    // Paging belongs to the reading surface. Space in particular must preserve
-    // native activation for buttons, links, toggles, source chips, and controls.
-    if (isTypingTarget(event.target) || isInteractiveTarget(event.target)) return;
+    // Paging belongs to the resting reading surface. A contextual selection is
+    // a higher-priority interaction just like a focused control: page keys must
+    // not move the document underneath a pending mark/note action.
+    if (
+      this.pendingSelectionText() !== null
+      || isTypingTarget(event.target)
+      || isInteractiveTarget(event.target)
+    ) return;
 
     const action = pageActionForKey(event);
     if (!action) return;
