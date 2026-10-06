@@ -2109,6 +2109,21 @@ describe('ReaderShell in-text selection actions (#650, EPUB)', () => {
     expect(el('selection-bar')!.classList.contains('epub-actions')).toBe(false);
   });
 
+  it('Escape dismisses the pending PDF contextual surface without saving', async () => {
+    const component = await openBook('being-and-time.pdf');
+    component.handleSelectionCaptured('A PDF passage');
+    render();
+    const pdf = fixture.debugElement.query(By.directive(PdfReaderStub)).componentInstance as PdfReaderStub;
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    render();
+
+    expect(component.pendingSelectionText()).toBeNull();
+    expect(pdf.discardHighlight).toHaveBeenCalledTimes(1);
+    expect(pdf.commitHighlight).not.toHaveBeenCalled();
+    expect(el('selection-bar')).toBeNull();
+  });
+
   // --- #657: desktop polish -------------------------------------------------
 
   function stubClipboard(writeText: (text: string) => Promise<void>) {
