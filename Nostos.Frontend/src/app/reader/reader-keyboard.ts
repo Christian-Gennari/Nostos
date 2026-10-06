@@ -56,3 +56,57 @@ export function isInteractiveTarget(target: EventTarget | null): boolean {
     'button, a[href], input, textarea, select, [contenteditable="true"], [role="button"], [role="link"], [role="switch"], [role="checkbox"], [role="menuitem"], [tabindex]:not([tabindex="-1"])',
   );
 }
+
+
+/**
+ * Neutral reading-surface actions for the immersive reader (#759).
+ *
+ * The shell is hidden while reading, so the document itself becomes the
+ * control surface. Selection and authored interactive content always win.
+ * Coarse pointers may use the outer edge zones for page turns; fine pointers
+ * simply reveal/hide chrome wherever they click.
+ */
+export type ReaderSurfaceAction = 'previous' | 'toggle-chrome' | 'next';
+
+export function surfaceActionForPoint(input: {
+  target: EventTarget | null;
+  selectedText?: string | null;
+  clientX: number;
+  width: number;
+  coarsePointer: boolean;
+  edgePaging: boolean;
+}): ReaderSurfaceAction | null {
+  if (input.selectedText?.trim() || isInteractiveTarget(input.target)) return null;
+
+  if (input.coarsePointer && input.edgePaging && input.width > 0) {
+    const edge = Math.min(96, input.width * 0.24);
+    if (input.clientX <= edge) return 'previous';
+    if (input.clientX >= input.width - edge) return 'next';
+  }
+
+  return 'toggle-chrome';
+}
+
+/**
+ * A deliberate horizontal swipe may turn a page on paged readers. It never
+ * claims a gesture with an active text selection, interactive origin, long
+ * press, or substantial vertical travel.
+ */
+export function swipePageAction(input: {
+  target: EventTarget | null;
+  selectedText?: string | null;
+  startX: number;
+  startY: number;
+  endX: number;
+  endY: number;
+  durationMs: number;
+}): PageAction | null {
+  if (input.selectedText?.trim() || isInteractiveTarget(input.target)) return null;
+  if (input.durationMs > 800) return null;
+
+  const dx = input.endX - input.startX;
+  const dy = input.endY - input.startY;
+  if (Math.abs(dx) < 56 || Math.abs(dx) <= Math.abs(dy) * 1.2) return null;
+
+  return dx < 0 ? 'next' : 'previous';
+}
