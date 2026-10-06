@@ -37,6 +37,8 @@ import { TopicAutocompleteService } from '../ui/topic-autocomplete-panel/topic-a
 import { Book } from '../core/dtos/book.dtos';
 import { Note } from '../core/dtos/note.dtos';
 import { ThemeService, THEME_STORAGE_KEY } from '../core/services/theme.service';
+import { AssistantService } from '../ui/assistant/assistant.service';
+import { AssistantContextService } from '../ui/assistant/assistant-context.service';
 
 // The AudioReader is kept real so this spec guards the reader page's total
 // GET /api/books/{id} count; Howl is mocked to avoid real media loading.
@@ -288,6 +290,7 @@ async function configureReaderShell(
       },
       { provide: TopicsService, useValue: { list: vi.fn(() => of([])) } },
       { provide: TopicAutocompleteService, useValue: { setTopics: vi.fn() } },
+      { provide: AssistantService, useValue: { open: vi.fn() } },
     ],
   }).compileComponents();
 
@@ -1951,6 +1954,22 @@ describe('ReaderShell in-text selection actions (#650, EPUB)', () => {
     input.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
 
     expect(stub().next).not.toHaveBeenCalled();
+  });
+
+  it('Ask Nostos opens from the selection surface and keeps the passage as explicit context', async () => {
+    const component = await openBook();
+    component.dockedLayout.set(false);
+    await capture(component);
+    const assistant = TestBed.inject(AssistantService);
+    const context = TestBed.inject(AssistantContextService);
+
+    expect(context.context().selectedText).toBe('Sing, goddess, the anger of Achilles');
+    (el('selection-ask-nostos') as HTMLButtonElement).click();
+    render();
+
+    expect(assistant.open).toHaveBeenCalledTimes(1);
+    expect(context.context().selectedText).toBe('Sing, goddess, the anger of Achilles');
+    expect(el('selection-menu')).not.toBeNull();
   });
 
   it('phones keep the docked bar, with Add note, and no scrim over the page', async () => {
