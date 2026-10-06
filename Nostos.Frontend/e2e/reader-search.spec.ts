@@ -136,6 +136,8 @@ test.describe('unified reader search', () => {
     await waitForSearchReady(page);
 
     const toggle = page.getByTestId('reader-search-toggle');
+    await page.locator('.pdf-container').click({ position: { x: 160, y: 160 } });
+    await expect(page.getByTestId('reader-chrome-top')).toBeVisible();
     await toggle.click();
     const panel = page.getByTestId('reader-search-panel');
     const input = panel.locator('.reader-search-input');
@@ -172,6 +174,8 @@ test.describe('unified reader search', () => {
     await page.waitForTimeout(800);
 
     const toggle = page.getByTestId('reader-search-toggle');
+    await page.locator('.pdf-container').click({ position: { x: 160, y: 160 } });
+    await expect(page.getByTestId('reader-chrome-top')).toBeVisible();
     await expect(toggle).toBeDisabled();
     await page.keyboard.press('Control+f');
     await expect(page.getByTestId('reader-search-panel')).toHaveCount(0);
