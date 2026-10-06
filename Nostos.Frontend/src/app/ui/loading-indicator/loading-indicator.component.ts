@@ -32,7 +32,6 @@ export type LoadingIndicatorSize = keyof typeof NOSTOS_ICON_SIZE;
     '[attr.role]': "decorative() ? null : 'status'",
     '[attr.aria-live]': "decorative() ? null : 'polite'",
     '[attr.aria-atomic]': "decorative() ? null : 'true'",
-    '[attr.aria-label]': 'decorative() ? null : label()',
     '[attr.aria-hidden]': "decorative() ? 'true' : null",
   },
   styles: [

@@ -1269,7 +1269,8 @@ describe('SecondBrain', () => {
       'nostos-loading-indicator.index-loading',
     ) as HTMLElement | null;
     expect(indicator).not.toBeNull();
-    expect(indicator?.getAttribute('aria-label')).toBe('Loading topics');
+    expect(indicator?.getAttribute('role')).toBe('status');
+    expect(indicator?.textContent).toContain('Loading topics');
     expect(loadingFixture.nativeElement.querySelector('.wait-field')).toBeNull();
     expect(loadingFixture.nativeElement.querySelector('.index-item')).toBeNull();
 

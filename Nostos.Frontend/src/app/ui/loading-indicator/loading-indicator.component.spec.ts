@@ -33,7 +33,7 @@ describe('LoadingIndicatorComponent', () => {
     expect(indicator.getAttribute('role')).toBe('status');
     expect(indicator.getAttribute('aria-live')).toBe('polite');
     expect(indicator.getAttribute('aria-atomic')).toBe('true');
-    expect(indicator.getAttribute('aria-label')).toBe('Loading notes');
+    expect(indicator.getAttribute('aria-label')).toBeNull();
     expect(indicator.textContent).toContain('Loading notes');
   });
 
@@ -58,6 +58,5 @@ describe('LoadingIndicatorComponent', () => {
     expect(decorative.getAttribute('aria-hidden')).toBe('true');
     expect(decorative.getAttribute('role')).toBeNull();
     expect(decorative.getAttribute('aria-live')).toBeNull();
-    expect(decorative.getAttribute('aria-label')).toBeNull();
   });
 });
