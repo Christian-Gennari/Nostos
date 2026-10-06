@@ -894,6 +894,18 @@
   .toc-panel {
     width: 100%;
   }
+  .notes-header,
+  .panel-header {
+    padding-top: max(0.5rem, env(safe-area-inset-top, 0px));
+    padding-inline-start: max(1.25rem, env(safe-area-inset-left, 0px));
+    padding-inline-end: max(0.5rem, env(safe-area-inset-right, 0px));
+  }
+  .notes-list {
+    padding-bottom: max(1rem, env(safe-area-inset-bottom, 0px));
+  }
+  .toc-list {
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0px));
+  }
   .reader-header {
     padding-inline-start: max(0.25rem, env(safe-area-inset-left, 0px));
   }
