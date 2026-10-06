@@ -14,6 +14,7 @@ import { TopicsService } from '../core/services/topics.service';
 import { TopicAutocompleteService } from '../ui/topic-autocomplete-panel/topic-autocomplete.service';
 import { DeploymentCapabilitiesService } from '../core/services/deployment-capabilities.service';
 import { DeploymentCapabilities } from '../core/dtos/deployment-capabilities.dtos';
+import { AssistantService } from '../ui/assistant/assistant.service';
 
 @Component({ standalone: true, template: '' })
 class BlankComponent {}
@@ -51,6 +52,7 @@ class PdfReaderStub {
   noteCreated = output<void>();
   selectionCaptured = output<unknown>();
   commitFailed = output<unknown>();
+  surfaceInteracted = output<void>();
 }
 
 @Component({ selector: 'app-audio-reader', standalone: true, template: '' })
@@ -172,6 +174,7 @@ describe('ReaderShell feedback entry', () => {
         },
         { provide: TopicsService, useValue: { list: vi.fn(() => of([])) } },
         { provide: TopicAutocompleteService, useValue: { setTopics: vi.fn() } },
+        { provide: AssistantService, useValue: { open: vi.fn() } },
         {
           provide: DeploymentCapabilitiesService,
           useValue: { get: () => of(capabilities) },
