@@ -290,7 +290,7 @@ async function configureReaderShell(
       },
       { provide: TopicsService, useValue: { list: vi.fn(() => of([])) } },
       { provide: TopicAutocompleteService, useValue: { setTopics: vi.fn() } },
-      { provide: AssistantService, useValue: { open: vi.fn() } },
+      { provide: AssistantService, useValue: { requestSurfaceOpen: vi.fn() } },
     ],
   }).compileComponents();
 
@@ -1975,7 +1975,7 @@ describe('ReaderShell in-text selection actions (#650, EPUB)', () => {
     (el('selection-ask-nostos') as HTMLButtonElement).click();
     render();
 
-    expect(assistant.open).toHaveBeenCalledTimes(1);
+    expect(assistant.requestSurfaceOpen).toHaveBeenCalledTimes(1);
     expect(context.context().selectedText).toBe('Sing, goddess, the anger of Achilles');
     expect(el('selection-menu')).not.toBeNull();
   });
@@ -1989,6 +1989,8 @@ describe('ReaderShell in-text selection actions (#650, EPUB)', () => {
     expect(el('selection-scrim')).toBeNull();
     const bar = el('selection-bar')!;
     expect(bar).not.toBeNull();
+    expect(el('selection-copy')).not.toBeNull();
+    expect(el('selection-ask-nostos')).not.toBeNull();
     expect(el('selection-add-note')).not.toBeNull();
     expect(el('selection-highlight')).not.toBeNull();
 
@@ -2031,6 +2033,7 @@ describe('ReaderShell in-text selection actions (#650, EPUB)', () => {
     render();
 
     expect(el('selection-menu')).toBeNull();
+    expect(el('selection-copy')).not.toBeNull();
     expect(el('selection-ask-nostos')).not.toBeNull();
     expect(el('selection-ask-nostos')?.getAttribute('aria-label')).toBe('Ask Nostos about passage');
 
