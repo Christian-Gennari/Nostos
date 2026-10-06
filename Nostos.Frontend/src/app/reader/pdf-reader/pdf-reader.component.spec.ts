@@ -473,6 +473,7 @@ describe('PdfReader shared search adapter (#761)', () => {
     fixture.componentRef.setInput('bookId', 'book-1');
     fixture.detectChanges();
     (fixture.componentInstance as any).pdfSearchReady.set(true);
+    fixture.componentInstance.textCapability.set('available');
   });
 
   it('drops search state and readiness when the component is reused for another PDF', () => {

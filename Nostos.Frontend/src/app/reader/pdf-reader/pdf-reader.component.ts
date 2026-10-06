@@ -187,7 +187,10 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
   searchState = signal<ReaderSearchState>({ status: 'idle', current: 0, total: 0 });
   private pdfSearchReady = signal(false);
   readonly searchAvailable = computed(
-    () => this.pdfSearchReady() && this.textCapability() !== 'unavailable',
+    // A text-capable PDF should earn the search affordance. While capability
+    // detection is still unknown, keep Search disabled rather than briefly
+    // promising it for a scanned/image-only document.
+    () => this.pdfSearchReady() && this.textCapability() === 'available',
   );
   private searchGeneration = 0;
   private activeSearchQuery = '';
