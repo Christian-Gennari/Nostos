@@ -1131,6 +1131,27 @@ describe('ReaderShell toolbar contract', () => {
     expect(searchBtn!.getAttribute('aria-label')).toBe('Search in book');
   });
 
+  it('clears the mounted reader search before a book switch drops activeReader', async () => {
+    const firstBook = { ...audiobook, id: 'book-pdf-first', fileName: 'first.pdf' } as Book;
+    booksGetSpy.mockReturnValue(of(firstBook));
+    fixture = await configureReaderShell();
+    render();
+
+    const stub = fixture.debugElement.query(By.directive(PdfReaderStub))
+      .componentInstance as PdfReaderStub;
+    (fixture.componentInstance as unknown as { pdfReader: PdfReaderStub }).pdfReader = stub;
+    fixture.componentInstance.ready.set(true);
+    render();
+    stub.clearSearch.mockClear();
+
+    const secondBook = { ...firstBook, id: 'book-pdf-second', fileName: 'second.pdf' } as Book;
+    booksGetSpy.mockReturnValue(of(secondBook));
+    (fixture.componentInstance as any).loadBook(secondBook.id);
+
+    expect(stub.clearSearch).toHaveBeenCalledTimes(1);
+    expect(fixture.componentInstance.searchPanelOpen()).toBe(false);
+  });
+
   it('keeps Search disabled until the mounted reader says its engine is ready', async () => {
     const pdfBook = { ...audiobook, id: 'book-pdf-ready', fileName: 'being-and-time.pdf' } as Book;
     booksGetSpy.mockReturnValue(of(pdfBook));

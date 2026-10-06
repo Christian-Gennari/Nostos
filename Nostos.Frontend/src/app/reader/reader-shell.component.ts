@@ -478,6 +478,9 @@ export class ReaderShell implements OnInit, OnDestroy {
   }
 
   private loadBook(id: string): void {
+    // Clear transient format state while the previous mounted reader is still
+    // reachable. Once ready=false, activeReader() deliberately disappears.
+    this.closeSearch(false);
     this.currentRouteBookId = id;
     const generation = ++this.bookLoadGeneration;
 
@@ -492,7 +495,6 @@ export class ReaderShell implements OnInit, OnDestroy {
     this.tocOpen.set(false);
     this.notesOpen.set(false);
     this.typoOpen.set(false);
-    this.closeSearch(false);
 
     // The same locator can be valid for two different books. Reset the source
     // key when the route book changes so a cross-book citation is consumed

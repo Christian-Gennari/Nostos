@@ -6,6 +6,8 @@ import {
   computed,
   inject,
   OnInit,
+  OnChanges,
+  SimpleChanges,
   output,
   ViewChild,
   OnDestroy,
@@ -82,7 +84,7 @@ interface PendingPdfHighlight {
   templateUrl: './pdf-reader.component.html',
   styleUrl: './pdf-reader.component.css',
 })
-export class PdfReader implements OnInit, OnDestroy, IReader {
+export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
   private highlightService = inject(PdfAnnotationManager);
   private notesService = inject(NotesService);
   private booksService = inject(BooksService);
@@ -413,6 +415,19 @@ export class PdfReader implements OnInit, OnDestroy, IReader {
 
   private progressUpdater$ = new Subject<{ location: string; percentage: number }>();
 
+  ngOnChanges(changes: SimpleChanges): void {
+    const bookChange = changes['bookId'];
+    if (!bookChange || bookChange.firstChange) return;
+
+    // Angular can reuse this component for PDF → PDF navigation. Drop the old
+    // document's transient find state immediately; the new viewer becomes
+    // searchable again only after its own pagesLoaded event.
+    this.clearSearch();
+    this.pdfSearchReady.set(false);
+    this.textCapability.set('unknown');
+    this.pdfDocRef = null;
+  }
+
   ngOnInit() {
     this.unregisterAssistantContext = this.assistantContext.register(
       () => ({
@@ -682,6 +697,7 @@ export class PdfReader implements OnInit, OnDestroy, IReader {
       try {
         const page = await pdfDoc.getPage(pageNumber);
         const textContent = await page.getTextContent();
+        if (pdfDoc !== this.pdfDocRef) return;
         inspected += 1;
         const hasText = Array.isArray(textContent?.items)
           && textContent.items.some(
@@ -698,7 +714,7 @@ export class PdfReader implements OnInit, OnDestroy, IReader {
       }
     }
 
-    if (inspected > 0) {
+    if (inspected > 0 && pdfDoc === this.pdfDocRef) {
       this.textCapability.set('unavailable');
       this.clearSearch();
       this.clearNativeSelection();

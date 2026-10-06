@@ -475,6 +475,27 @@ describe('PdfReader shared search adapter (#761)', () => {
     (fixture.componentInstance as any).pdfSearchReady.set(true);
   });
 
+  it('drops search state and readiness when the component is reused for another PDF', () => {
+    fixture.componentInstance.search('Being');
+    expect(fixture.componentInstance.searchAvailable()).toBe(true);
+
+    fixture.componentInstance.ngOnChanges({
+      bookId: { firstChange: false },
+    } as any);
+
+    expect(pdfSearch.find).toHaveBeenLastCalledWith('', {
+      highlightAll: false,
+      dontScrollIntoView: true,
+    });
+    expect(fixture.componentInstance.searchState()).toEqual({
+      status: 'idle',
+      current: 0,
+      total: 0,
+    });
+    expect(fixture.componentInstance.searchAvailable()).toBe(false);
+    expect(fixture.componentInstance.textCapability()).toBe('unknown');
+  });
+
   it('does not start a PDF search before the viewer find engine is ready', () => {
     (fixture.componentInstance as any).pdfSearchReady.set(false);
 
