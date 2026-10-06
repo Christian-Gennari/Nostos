@@ -9,6 +9,7 @@ import { App } from './app.component';
 import { WorkspaceLayout } from './layout/workspace-layout/workspace-layout.component';
 import { AssistantStatusService } from './ui/assistant/assistant-status.service';
 import { CloudEntryService } from './core/services/cloud-entry.service';
+import { HostedBrowserIntegrationService } from './core/services/hosted-browser-integration.service';
 import { DeploymentCapabilitiesService } from './core/services/deployment-capabilities.service';
 import { DeploymentCapabilities } from './core/dtos/deployment-capabilities.dtos';
 import { LibraryPreferencesService } from './core/services/library-preferences.service';
@@ -45,6 +46,7 @@ describe('App', () => {
       imports: [App],
       providers: [
         provideRouter([]),
+        { provide: HostedBrowserIntegrationService, useValue: { start: vi.fn() } },
         provideHttpClient(),
         {
           provide: CloudEntryService,
@@ -73,6 +75,12 @@ describe('App', () => {
   it('should create the app', () => {
     const fixture = TestBed.createComponent(App);
     expect(fixture.componentInstance).toBeTruthy();
+  });
+
+  it('starts optional host integration while the product entitlement gate is closed', () => {
+    productReady.set(false);
+    TestBed.createComponent(App);
+    expect(TestBed.inject(HostedBrowserIntegrationService).start).toHaveBeenCalledTimes(1);
   });
 
   it('renders the normal product shell only after Cloud entry is ready', async () => {

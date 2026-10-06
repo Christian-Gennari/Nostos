@@ -83,6 +83,59 @@ describe('CloudAuthService', () => {
     submit.mockRestore();
   });
 
+  it('publishes only minimum session identity for host lifecycle callbacks', async () => {
+    const changes: unknown[] = [];
+    service.sessionChanges$.subscribe((session) => changes.push(session));
+    const result = firstValueFrom(service.getSession());
+    http.expectOne('/api/auth/session').flush({
+      authenticated: true, accountState: 'Active',
+      account: { id: 'account-a', displayName: 'Reader', email: 'reader@example.test' },
+    });
+    await result;
+    expect(changes).toEqual([{ authenticated: true, accountId: 'account-a' }]);
+  });
+
+  it('invalidates before logout submission and ignores a delayed authenticated response', async () => {
+    const changes: unknown[] = [];
+    service.sessionChanges$.subscribe((session) => changes.push(session));
+    const result = firstValueFrom(service.getSession());
+    const request = http.expectOne('/api/auth/session');
+    const submit = vi.spyOn(HTMLFormElement.prototype, 'submit').mockImplementation(() => {
+      expect(changes).toEqual([{ authenticated: false, accountId: null }]);
+    });
+    service.logout();
+    request.flush({ authenticated: true, account: { id: 'account-a' } });
+    await result;
+    expect(changes).toEqual([{ authenticated: false, accountId: null }]);
+    submit.mockRestore();
+  });
+
+  it('rejects an earlier account response after a newer session read', async () => {
+    const changes: unknown[] = [];
+    service.sessionChanges$.subscribe((session) => changes.push(session));
+    const oldResult = firstValueFrom(service.getSession());
+    const oldRequest = http.expectOne('/api/auth/session');
+    const newResult = firstValueFrom(service.getSession(true));
+    http.expectOne('/api/auth/session').flush({ authenticated: true, account: { id: 'account-b' } });
+    await newResult;
+    oldRequest.flush({ authenticated: true, account: { id: 'account-a' } });
+    await oldResult;
+    expect(changes).toEqual([{ authenticated: true, accountId: 'account-b' }]);
+  });
+
+  it('drops cached identity on expiry and fetches the next session', async () => {
+    const result = firstValueFrom(service.getSession());
+    http.expectOne('/api/auth/session').flush({ authenticated: true, account: { id: 'account-a' } });
+    await result;
+    service.invalidateSession();
+    const changes: unknown[] = [];
+    service.sessionChanges$.subscribe((session) => changes.push(session));
+    expect(changes).toEqual([{ authenticated: false, accountId: null }]);
+    const refresh = firstValueFrom(service.getSession());
+    http.expectOne('/api/auth/session').flush({ authenticated: false, account: null });
+    await refresh;
+  });
+
   it('only creates login URLs with local return targets', () => {
     expect(service.loginUrl('/library')).toBe('/api/auth/login?returnUrl=%2Flibrary');
     expect(service.loginUrl('https://evil.example')).toBe('/api/auth/login?returnUrl=%2F');

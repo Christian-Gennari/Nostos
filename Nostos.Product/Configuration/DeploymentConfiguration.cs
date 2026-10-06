@@ -29,7 +29,8 @@ public sealed record DeploymentCapabilities(
     bool SupportsEreaderAccess,
     bool UsageMeteringAvailable,
     string? AccountManagementUrl,
-    string? FeedbackUrl);
+    string? FeedbackUrl,
+    bool HostedBrowserIntegrationEnabled = false);
 
 /// <summary>
 /// Server-authoritative deployment descriptor resolved once during startup.
@@ -40,6 +41,7 @@ public sealed record DeploymentDescriptor(
 {
     public const string ConfigurationKey = "Nostos:DeploymentMode";
     public const string AccountManagementUrlConfigurationKey = "Nostos:AccountManagementUrl";
+    public const string HostedBrowserIntegrationConfigurationKey = "Nostos:HostedBrowserIntegrationEnabled";
     public const string DefaultCloudAccountManagementUrl = "https://nostos.page/account";
     public const string DefaultCloudFeedbackUrl = "https://nostos.page/feedback?from=settings";
 
@@ -61,6 +63,15 @@ public sealed record DeploymentDescriptor(
         var deployment = For(mode);
         if (mode != DeploymentMode.Cloud)
             return deployment;
+
+        deployment = deployment with
+        {
+            Capabilities = deployment.Capabilities with
+            {
+                HostedBrowserIntegrationEnabled =
+                    configuration.GetValue<bool>(HostedBrowserIntegrationConfigurationKey),
+            },
+        };
 
         var configuredAccountManagementUrl = configuration[AccountManagementUrlConfigurationKey];
         if (string.IsNullOrWhiteSpace(configuredAccountManagementUrl))

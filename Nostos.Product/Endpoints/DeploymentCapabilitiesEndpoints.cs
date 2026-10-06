@@ -52,7 +52,9 @@ public static class DeploymentCapabilitiesEndpoints
                 && migrationAvailability is not null
                 && migrationAvailability.IsAvailable(MigrationDirection.Import)
                 && migrationAvailability.IsAvailable(MigrationDirection.Export),
-            SupportsSafeActivation: deployment.Mode == DeploymentMode.SelfHosted);
+            SupportsSafeActivation: deployment.Mode == DeploymentMode.SelfHosted,
+            HostedBrowserIntegrationEnabled: deployment.Mode == DeploymentMode.Cloud
+                && deployment.Capabilities.HostedBrowserIntegrationEnabled);
 }
 
 public sealed record DeploymentCapabilitiesResponse(
@@ -69,4 +71,5 @@ public sealed record DeploymentCapabilitiesResponse(
     string? AccountManagementUrl,
     string? FeedbackUrl,
     bool SupportsLibraryMigration = false,
-    bool SupportsSafeActivation = false);
+    bool SupportsSafeActivation = false,
+    bool HostedBrowserIntegrationEnabled = false);

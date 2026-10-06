@@ -1,6 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable, shareReplay } from 'rxjs';
+import { Observable, ReplaySubject, shareReplay, tap } from 'rxjs';
+import { HostedBrowserSession } from '../dtos/hosted-browser-integration.dtos';
 
 import { CloudSession } from '../dtos/cloud-auth.dtos';
 
@@ -16,12 +17,25 @@ import { CloudSession } from '../dtos/cloud-auth.dtos';
 export class CloudAuthService {
   private readonly http = inject(HttpClient);
   private session$?: Observable<CloudSession>;
+  private sessionRevision = 0;
+  private readonly sessionChanges = new ReplaySubject<HostedBrowserSession>(1);
+  readonly sessionChanges$ = this.sessionChanges.asObservable();
 
   getSession(refresh = false): Observable<CloudSession> {
     if (refresh || !this.session$) {
+      const revision = ++this.sessionRevision;
       this.session$ = this.http
         .get<CloudSession>('/api/auth/session')
-        .pipe(shareReplay({ bufferSize: 1, refCount: false }));
+        .pipe(
+          tap((session) => {
+            // A slow earlier read must not restore context after logout,
+            // expiry, or a newer account/session read.
+            if (revision !== this.sessionRevision) return;
+            const accountId = session.authenticated ? session.account?.id ?? null : null;
+            this.sessionChanges.next({ authenticated: accountId !== null, accountId });
+          }),
+          shareReplay({ bufferSize: 1, refCount: false }),
+        );
     }
 
     return this.session$;
@@ -44,7 +58,14 @@ export class CloudAuthService {
     return `/api/auth/login?${query.toString()}`;
   }
 
+  invalidateSession(): void {
+    ++this.sessionRevision;
+    this.session$ = undefined;
+    this.sessionChanges.next({ authenticated: false, accountId: null });
+  }
+
   logout(): void {
+    this.invalidateSession();
     const form = document.createElement('form');
     form.method = 'POST';
     form.action = '/api/auth/logout';
