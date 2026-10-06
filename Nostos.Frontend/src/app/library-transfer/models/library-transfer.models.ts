@@ -14,6 +14,7 @@ import type {
   MigrationPreflightDecision,
   MigrationPreflightRequestDto,
   MigrationPreflightResponseDto,
+  MigrationProgressDto,
   MigrationSessionRequestDto,
 } from './migration-http.dtos';
 
@@ -222,6 +223,9 @@ export type TransferFlowState =
       jobId: string;
       jobState: MigrationJobState;
       progress: TransferProgress;
+      /** Processing progress from the host, separate from uploaded bytes. */
+      serverProgress?: MigrationProgressDto;
+      statusCheckedAtUtc?: string;
       preflight?: MigrationPreflightResponseDto;
     }
   | {

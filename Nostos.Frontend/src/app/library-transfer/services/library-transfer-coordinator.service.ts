@@ -344,8 +344,11 @@ export class LibraryTransferCoordinator {
           jobId,
           jobState: status.job.state,
           progress: this.progressFromSession(status.session!),
+          serverProgress: status.progress,
+          statusCheckedAtUtc: new Date().toISOString(),
           preflight: this.preflight ?? undefined,
         });
+        this.schedulePoll();
         await this.withBusyRetry(
           'completeUpload',
           token,
@@ -626,10 +629,11 @@ export class LibraryTransferCoordinator {
     this.setState({
       kind: 'checking',
       jobId,
-      jobState: 'Validating',
+      jobState: 'Transferring',
       progress: uploadOutcome.progress,
       preflight: this.preflight ?? undefined,
     });
+    this.schedulePoll();
 
     await this.withBusyRetry(
       'completeUpload',
@@ -872,6 +876,8 @@ export class LibraryTransferCoordinator {
           jobId: status.job.id,
           jobState: status.job.state,
           progress,
+          serverProgress: status.progress,
+          statusCheckedAtUtc: new Date().toISOString(),
           preflight,
         });
         this.schedulePoll();
@@ -895,6 +901,8 @@ export class LibraryTransferCoordinator {
           jobId: status.job.id,
           jobState: status.job.state,
           progress,
+          serverProgress: status.progress,
+          statusCheckedAtUtc: new Date().toISOString(),
           preflight,
         });
         this.schedulePoll();

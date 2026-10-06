@@ -22,7 +22,7 @@ import {
 } from '../services/library-transfer-transport';
 import { MockLibraryTransferTransport } from '../testing/mock-library-transfer-transport';
 import { FileDigestService } from '../services/file-digest.service';
-import { FileDigest, PersistedTransferResumeState, TransferFileIdentity } from '../models/library-transfer.models';
+import { FileDigest, PersistedTransferResumeState, TransferFileIdentity, TransferFlowState } from '../models/library-transfer.models';
 import { HASH_WORKER_FACTORY } from '../services/hash/hash-worker';
 import { DelegatingTransport } from '../testing/delegating-transport';
 import {
@@ -958,7 +958,7 @@ describe('LibraryImportFlowComponent', () => {
 
     expect(testId(harness, 'import-checking')).toBeTruthy();
     expect(testId(harness, 'import-checking')?.textContent).toContain(
-      'Checking archive, library relationships, and media…',
+      'Checking your uploaded archive…',
     );
     expect(testId(harness, 'import-server-note')?.textContent).toContain(
       'processing continues on the server',
@@ -1135,6 +1135,53 @@ describe('LibraryImportFlowComponent', () => {
     harness.fixture.detectChanges();
     expect(testId(harness, 'import-idle')).toBeTruthy();
     expect(harness.store.load()).toBeNull();
+  });
+
+  it('separates the completed upload from live server processing progress', () => {
+    const state = signal<TransferFlowState>({
+      kind: 'checking', jobId: 'job-processing', jobState: 'Transferring',
+      progress: { uploadedBytes: 100, totalBytes: 100, completedChunks: 4, totalChunks: 4,
+        inFlightBytes: 0, rateBytesPerSecond: null, etaSeconds: null, paused: false },
+      serverProgress: { phase: 'Transferring', bytesProcessed: 100, totalBytes: 100 },
+      statusCheckedAtUtc: '2026-10-06T20:00:00Z',
+    });
+    TestBed.configureTestingModule({ providers: [
+      { provide: LIBRARY_TRANSFER_TRANSPORT, useValue: new MockLibraryTransferTransport() },
+      { provide: LibraryTransferCoordinator, useValue: {
+        state: state.asReadonly(), maintenanceWaiting: signal(null), hasInterruptedOperation: signal(false),
+      } },
+    ] });
+    const fixture = TestBed.createComponent(LibraryImportFlowComponent);
+    fixture.detectChanges();
+    const root: HTMLElement = fixture.nativeElement;
+    const bar = () => root.querySelector('[role="progressbar"]')!;
+    expect(root.textContent).toContain('Upload complete');
+    expect(root.textContent).toContain('4 parts received');
+    expect(root.textContent).toContain('Checking your uploaded archive');
+    expect(root.textContent).toContain('Status checked at');
+    expect(bar().getAttribute('aria-valuenow')).toBeNull();
+    expect(root.querySelector('.transfer-progress-percent')).toBeNull();
+    expect(root.querySelector('.transfer-processing-steps .is-current')?.textContent).toContain('Check uploaded archive');
+
+    state.update(current => current.kind === 'checking' ? { ...current,
+      serverProgress: { phase: 'Validating', bytesProcessed: 25, totalBytes: 100, message: 'Verifying uploaded archive' },
+    } : current);
+    fixture.detectChanges();
+    expect(bar().getAttribute('aria-valuenow')).toBe('25');
+    expect(root.querySelector('[data-testid="transfer-progress-detail"]')?.textContent).toContain('25 B of 100 B');
+
+    state.update(current => current.kind === 'checking' ? { ...current, jobState: 'Validating',
+      serverProgress: { phase: 'Validating', bytesProcessed: 50, totalBytes: 100 },
+    } : current);
+    fixture.detectChanges();
+    expect(bar().getAttribute('aria-valuenow')).toBe('50');
+    expect(root.querySelector('.transfer-processing-steps .is-current')?.textContent).toContain('Prepare library');
+
+    state.update(current => current.kind === 'checking' ? { ...current,
+      serverProgress: { phase: 'Validating', bytesProcessed: 100, totalBytes: 100 },
+    } : current);
+    fixture.detectChanges();
+    expect(bar().getAttribute('aria-valuenow')).toBeNull();
   });
 
   it('renders the transient upload-start state for a ready job that is not reselecting', () => {

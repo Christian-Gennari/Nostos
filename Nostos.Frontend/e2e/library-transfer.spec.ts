@@ -718,8 +718,20 @@ test('scenario d4: reload after all parts resumes completion without selecting t
   const archive = await ensureArchive();
   await withDestination(testInfo, 'resume-completion', 'none', async (destination) => {
     let completionRequests = 0;
+    let reportProcessing = false;
+    let verifiedFraction = 0.25;
     let finish!: () => void;
     const gate = new Promise<void>(resolve => { finish = resolve; });
+    await page.route('**/api/portability/migration/jobs/*', async route => {
+      const response = await route.fetch();
+      const status = await response.json();
+      if (reportProcessing && status.job.state === 'Transferring' && status.session) {
+        status.progress = { phase: 'Validating',
+          bytesProcessed: Math.floor(status.session.totalBytes * verifiedFraction),
+          totalBytes: status.session.totalBytes, message: 'Verifying uploaded archive' };
+      }
+      await route.fulfill({ response, json: status });
+    });
     await page.route('**/api/portability/migration/jobs/*/upload-session/complete', async route => {
       completionRequests += 1;
       if (completionRequests === 1) {
@@ -741,10 +753,16 @@ test('scenario d4: reload after all parts resumes completion without selecting t
       expect(status.session.receivedChunkCount).toBe(status.session.totalChunks);
 
       chunks.length = 0;
+      reportProcessing = true;
       await page.reload();
       await expect(page.getByTestId('import-checking')).toBeVisible({ timeout: 60_000 });
+      await expect(page.getByTestId('import-checking').getByRole('progressbar')).toHaveAttribute('aria-valuenow', '25');
+      await expect(page.getByTestId('import-upload-complete')).toContainText('Upload complete');
+      await expect(page.getByTestId('import-status-checked')).toContainText('Status checked at');
       await page.getByTestId('import-checking').scrollIntoViewIfNeeded();
       await testInfo.attach('processing-after-reload', { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' });
+      verifiedFraction = 0.5;
+      await expect(page.getByTestId('import-checking').getByRole('progressbar')).toHaveAttribute('aria-valuenow', '50');
       const beforeReload = await navigationOrigin(page);
       finish();
       await waitForReload(page, beforeReload);

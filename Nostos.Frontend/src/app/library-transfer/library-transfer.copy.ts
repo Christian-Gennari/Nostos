@@ -376,6 +376,7 @@ export type TransferProgressPhase =
   | 'preparing'
   | 'uploading'
   | 'checking'
+  | 'preparing-library'
   | 'activating';
 
 /** Visible and announced label per progress phase (plan §25, §43). */
@@ -384,6 +385,7 @@ export const TRANSFER_PROGRESS_LABELS: Record<TransferProgressPhase, string> = {
   preparing: 'Preparing import',
   uploading: 'Uploading library',
   checking: 'Checking the archive',
+  'preparing-library': 'Preparing your library',
   activating: 'Importing library',
 };
 

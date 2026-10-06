@@ -4,3 +4,45 @@
 :host {
   display: block;
 }
+
+.transfer-processing-steps {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 16px;
+  display: grid;
+  gap: 8px;
+}
+
+.transfer-processing-steps li {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+  padding: 8px 12px;
+  border-inline-start: 3px solid var(--border-light);
+  color: var(--color-text-light);
+  font-size: var(--text-sm);
+}
+
+.transfer-processing-steps .is-current {
+  border-color: var(--color-primary);
+  background: var(--bg-surface-alt);
+  color: var(--color-text-main);
+  font-weight: var(--fw-medium);
+}
+
+.transfer-processing-steps .is-complete {
+  border-color: var(--color-primary);
+  color: var(--color-text-main);
+}
+
+.transfer-processing-steps li span:last-child,
+.transfer-processing-status {
+  font-size: var(--text-xs);
+  color: var(--color-text-light);
+}
+
+.transfer-processing-status {
+  margin: 8px 0 0;
+  font-variant-numeric: tabular-nums;
+}
