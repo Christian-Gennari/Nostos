@@ -190,6 +190,7 @@ export class ReaderShell implements OnInit, OnDestroy {
   private themeService = inject(ThemeService);
   private toast = inject(ToastService);
   private readonly assistant = inject(AssistantService);
+  readonly askNostosAvailable = this.assistant.surfaceAvailable;
   private readonly assistantContext = inject(AssistantContextService);
   private unregisterSelectionAssistantContext: (() => void) | null = null;
 
