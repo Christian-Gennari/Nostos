@@ -642,6 +642,18 @@ export class AssistantService {
     }
   }
 
+  /**
+   * UI-level request to open the assistant through AssistantComponent's normal
+   * lifecycle. Feature surfaces use this instead of calling open() directly so
+   * availability, focus restoration and mobile visual-viewport tracking remain
+   * owned by the one app-wide assistant shell.
+   */
+  readonly surfaceOpenRequested = new Subject<void>();
+
+  requestSurfaceOpen(): void {
+    this.surfaceOpenRequested.next();
+  }
+
   open(): void {
     this.anchorDismissed.set(false);
     this.lastError.set(null);
