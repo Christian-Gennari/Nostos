@@ -218,6 +218,13 @@ export class ReaderShell implements OnInit, OnDestroy {
   typoOpen = signal(false);
 
   /**
+   * EPUB/PDF chrome is absent while the reader is resting (#759). It is only a
+   * visibility state: controls are absolutely overlaid, so revealing them can
+   * never resize or repaginate the document.
+   */
+  chromeVisible = signal(false);
+
+  /**
    * The app-wide theme, switchable from inside a book (#651). The readers
    * already follow ThemeService, so a switch is colour-only: no reload,
    * reflow or position change.
@@ -395,6 +402,42 @@ export class ReaderShell implements OnInit, OnDestroy {
     return null;
   });
 
+  readonly immersiveReader = computed(
+    () => this.fileType() === 'epub' || this.fileType() === 'pdf',
+  );
+
+  /**
+   * Open panels pin chrome visible even when it was invoked from a keyboard
+   * shortcut while the reader was resting. Audio keeps its established chrome.
+   */
+  readonly chromeShown = computed(
+    () =>
+      !this.immersiveReader()
+      || this.chromeVisible()
+      || this.searchPanelOpen()
+      || this.typoOpen()
+      || this.tocOpen()
+      || this.notesOpen(),
+  );
+
+  handleSurfaceInteraction(): void {
+    if (!this.immersiveReader()) return;
+
+    // Selection UI and open tools own the gesture until they are explicitly
+    // dismissed; a page tap must never make controls disappear under the user.
+    if (
+      this.pendingSelectionText() !== null
+      || this.searchPanelOpen()
+      || this.typoOpen()
+      || this.tocOpen()
+      || this.notesOpen()
+    ) {
+      return;
+    }
+
+    this.chromeVisible.update((visible) => !visible);
+  }
+
   activeReader = computed<IReader | null>(() => {
     if (!this.ready()) return null;
     switch (this.fileType()) {
@@ -495,6 +538,7 @@ export class ReaderShell implements OnInit, OnDestroy {
     this.tocOpen.set(false);
     this.notesOpen.set(false);
     this.typoOpen.set(false);
+    this.chromeVisible.set(false);
 
     // The same locator can be valid for two different books. Reset the source
     // key when the route book changes so a cross-book citation is consumed
@@ -725,6 +769,7 @@ export class ReaderShell implements OnInit, OnDestroy {
     this.toggleHighlightMode();
     if (turningOn) {
       this.notesOpen.set(false);
+      if (this.immersiveReader()) this.chromeVisible.set(false);
       this.restoreOverlayFocus();
     }
   }
@@ -1103,6 +1148,11 @@ export class ReaderShell implements OnInit, OnDestroy {
       if (this.notesOpen()) {
         this.notesOpen.set(false);
         this.restoreOverlayFocus();
+        event.preventDefault();
+        return;
+      }
+      if (this.immersiveReader() && this.chromeVisible()) {
+        this.chromeVisible.set(false);
         event.preventDefault();
         return;
       }
