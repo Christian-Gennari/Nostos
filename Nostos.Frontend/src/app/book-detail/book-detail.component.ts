@@ -51,6 +51,7 @@ import { LibraryPreferencesService } from '../core/services/library-preferences.
 import { BooksService } from '../core/services/books.service';
 import { ToastService } from '../core/services/toast.service';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
+import { LoadingIndicatorComponent } from '../ui/loading-indicator/loading-indicator.component';
 import { ButtonComponent } from '../ui/button/button.component';
 import { IconButtonComponent } from '../ui/icon-button/icon-button.component';
 import { BadgeComponent } from '../ui/badge/badge.component';
@@ -64,6 +65,7 @@ import { DialogActionsComponent } from '../ui/dialog-actions/dialog-actions.comp
     FormsModule,
     RouterLink,
     NostosIconComponent,
+    LoadingIndicatorComponent,
     AddBookModal,
     EditionsModal,
     ConfirmModal,

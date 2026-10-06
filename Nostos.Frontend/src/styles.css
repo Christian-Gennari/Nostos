@@ -128,9 +128,6 @@
   /* Discs that sit ON cover artwork take the cover-disc ink, not the brand ink:
      this is chrome floating over an image, not an action on the page. */
   --action-circle-ink: var(--color-primary);
-  /* The waiting field's breathing highlight. Built by mixing its ground toward
-     white, which is a light-mode assumption — see the dark value. */
-  --wait-glow: color-mix(in srgb, var(--surface-image-ground) 72%, #fff);
   /* The primary action's inverted pill on dark: see the dark block. */
   --cta-surface: var(--primary-fill);
   --cta-ink: var(--on-primary);
@@ -366,12 +363,9 @@
   --ease-spring: cubic-bezier(0.34, 1.35, 0.64, 1);
   --ease-plain: ease;
 
-  /* ── Waiting + arrival ──
-     `--motion-wait` is the waiting field's breath period: slow and shallow
-     enough to read as alive, far too slow to read as a loading bar.
+  /* ── Arrival motion ──
      `--motion-bloom` is how long art takes to resolve out of defocus. */
   --motion-bloom: 420ms;
-  --motion-wait: 2600ms;
 
   /*
      Highlight fills. Theme-INVARIANT on purpose: the reading surface is paper in
@@ -420,75 +414,6 @@
   .sidebar-left,
   .sidebar-right {
     animation: none;
-  }
-}
-
-/* ══ WAITING FIELD — the replacement for every loading placeholder ══════
-   A placeholder guesses at content: rows, bars, thumbnails, at metrics that are
-   never quite the real ones. That mismatch is the jitter. This is the opposite
-   approach — ONE structureless surface with nothing to disagree with the content
-   it covers. It breathes (a whole-surface opacity drift at --motion-wait) and
-   then dissolves out (opacity + blur) as the real content resolves in.
-
-   Rules: never animate layout properties here, and never let it reach the
-   document flow (absolute + inset, so it can never push anything). */
-.wait-field {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  background-color: var(--surface-image-ground);
-  /* EVERY item carries its own duration. `transition: opacity X linear var(--motion-slow), visibility 0s ...` looks like it gives opacity X, but a trailing time applies only to the LAST item — earlier items get 0s and SNAP instead of animating. Verified in the browser: `transition: background-color, border-color linear var(--motion-slow), box-shadow 0.2s ease` computed as `duration: 0s, 0s, 0.2s`. So the timing is repeated per item. */ transition: opacity var(--motion-slow) var(--ease-out), filter var(--motion-slow) var(--ease-out), visibility 0s linear var(--motion-slow);;
-}
-.wait-field::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(
-    120% 85% at 50% 38%,
-    var(--wait-glow) 0%,
-    transparent 72%
-  );
-  animation: wait-breathe var(--motion-wait) ease-in-out infinite;
-}
-@keyframes wait-breathe {
-  0%,
-  100% {
-    opacity: 0.55;
-  }
-  50% {
-    opacity: 0.95;
-  }
-}
-
-/* `.wait-field--breath` was removed: no template or `.ts` inline template ever
-   applied it. The documented intent — a surface that is already empty when
-   waiting begins, so only the breath shows — is worth keeping in mind, but a
-   class nothing uses cannot carry it. */
-
-.wait-field.is-done {
-  opacity: 0;
-  filter: blur(12px);
-  visibility: hidden;
-}
-
-/* Backdrop blur reads as depth on a large display and as cost on a phone. */
-@media (hover: hover) and (pointer: fine) {
-  .wait-field {
-    backdrop-filter: blur(6px);
-    -webkit-backdrop-filter: blur(6px);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .wait-field,
-  .wait-field.is-done {
-    transition-duration: 1ms;
-    filter: none;
-  }
-  .wait-field::before {
-    animation: none;
-    opacity: 0.8;
   }
 }
 
@@ -842,10 +767,6 @@
      the mid green here, which made the middle discs green while the corner discs
      read slate — one card showing two icon colours. */
   --action-circle-ink: var(--cover-disc-ink);
-  /* Mixing the ground toward WHITE is a light-mode assumption: on dark that is
-     ~13x brighter than the page, so the breath showed as a bright blob during
-     every load. Mix toward the theme's text ink instead. */
-  --wait-glow: color-mix(in srgb, var(--surface-image-ground) 82%, var(--color-text-main));
   /* A dark brand fill cannot carry a primary action on a dark ground, and a light
      accent used as a *surface* goes washed out. The silver pill is the one
      inverted surface in the app, so the primary action is also the single
@@ -1244,12 +1165,6 @@
    NOTE: this had to live in the global sheet while it was an override, because
    Angular's emulated encapsulation strips a `:root[...]` ancestor from a component
    rule. As a token it can be read by the component rule like any other value. */
-
-/* The waiting field's breathing glow — token-ised as `--wait-glow`.
-   The glow is built by mixing the ground toward WHITE, which is a light-mode
-   assumption: on dark that is ~13x brighter than the page, so the breath showed
-   as a bright blob during every load. The dark token mixes toward the theme's own
-   text ink instead. */
 
 :root {
   /* ── Font Weights ── */

@@ -160,7 +160,7 @@
       </div>
       <div class="index-list" role="list" aria-label="Saved notes" [attr.aria-busy]="browseLoading()">
         @if (browseLoading() && !browseLoaded()) {
-          <div class="index-wait-field wait-field" role="status" aria-label="Loading notes"></div>
+          <nostos-loading-indicator class="index-loading" label="Loading notes" />
         } @else if (browseError() && !browseLoaded()) {
           <div class="empty-index-state" role="alert"><p>Notes could not be loaded.</p>
             <button appButton variant="secondary" size="sm" type="button" (click)="loadBrowsePage()">Retry</button></div>
@@ -209,7 +209,7 @@
 
       <div class="index-list" role="list" aria-label="Notes with no topic">
         @if (reviewLoading() && reviewQueue().length === 0) {
-        <div class="index-wait-field wait-field" role="status" aria-label="Loading notes"></div>
+        <nostos-loading-indicator class="index-loading" label="Loading notes" />
         } @else if (reviewError() && reviewQueue().length === 0) {
         <div class="empty-index-state" role="alert">
           <p>Notes could not be loaded.</p>
@@ -284,7 +284,7 @@
         aria-label="Topic index"
       >
         @if (loadingTopics()) {
-        <div class="index-wait-field wait-field" role="status" aria-label="Loading topics"></div>
+        <nostos-loading-indicator class="index-loading" label="Loading topics" />
         } @else if (topics().length === 0) {
         <div class="empty-index-state" role="status">
           <div class="empty-eyebrow">The index is quiet</div>

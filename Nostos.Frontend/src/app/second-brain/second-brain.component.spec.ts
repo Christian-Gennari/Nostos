@@ -1261,11 +1261,16 @@ describe('SecondBrain', () => {
     expect(component.noteSearchQuery()).toBe('sisyphus');
   });
 
-  it('uses a structureless wait field while the first list request is pending', () => {
+  it('uses the shared quiet loading indicator while the first list request is pending', () => {
     const loadingFixture = TestBed.createComponent(SecondBrain);
     loadingFixture.detectChanges();
 
-    expect(loadingFixture.nativeElement.querySelector('.wait-field')).toBeTruthy();
+    const indicator = loadingFixture.nativeElement.querySelector(
+      'nostos-loading-indicator.index-loading',
+    ) as HTMLElement | null;
+    expect(indicator).not.toBeNull();
+    expect(indicator?.getAttribute('aria-label')).toBe('Loading topics');
+    expect(loadingFixture.nativeElement.querySelector('.wait-field')).toBeNull();
     expect(loadingFixture.nativeElement.querySelector('.index-item')).toBeNull();
 
     http.expectOne('/api/topics').flush(topics);

@@ -37,6 +37,7 @@ import { LibraryPreferencesService } from '../core/services/library-preferences.
 import { ImportService } from '../core/services/import.service';
 import { ToastService } from '../core/services/toast.service';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
+import { LoadingIndicatorComponent } from '../ui/loading-indicator/loading-indicator.component';
 import { ViewToggleComponent, type ViewToggleOption } from '../ui/view-toggle/view-toggle.component';
 import { NOSTOS_CONCEPTS } from '../ui/icon/nostos-concepts';
 import type { NostosIconName } from '../ui/icon/nostos-icons';
@@ -109,6 +110,7 @@ interface WorkFormatGlyph {
     CommonModule,
     RouterLink,
     NostosIconComponent,
+    LoadingIndicatorComponent,
     ViewToggleComponent,
     AddBookModal,
     ConfirmModal,

@@ -1,6 +1,8 @@
 <main class="layout-wrapper">
-  <div class="layout-content" [class.is-waiting]="store.loading()">
-    <div class="wait-field" [class.is-done]="!store.loading()" aria-hidden="true"></div>
+  <div class="layout-content" [attr.aria-busy]="store.loading()">
+    @if (store.loading()) {
+    <nostos-loading-indicator class="book-detail-loading" label="Loading book" size="xl" />
+    }
 
     @if (store.error()) {
     <div class="container md">

@@ -753,13 +753,15 @@
             >
               <div class="source-results-pane" #sourceResultsPane data-testid="source-results-pane">
                 @if (sourceSearching()) {
-                  <!-- The shared structureless wait field, not a guessed row
-                       structure (motion contract): the pane keeps its reserved
-                       size and the real results replace it in one swap. -->
+                  <!-- The pane keeps its reserved size while one quiet spinner
+                       communicates that the aggregate catalogue search is still
+                       in flight. Results still replace it in one ordered swap. -->
                   <div class="source-loading" role="status" aria-live="polite" data-testid="source-loading">
-                    <div class="wait-field" aria-hidden="true"></div>
                     <div class="source-loading-body">
-                      <p class="source-hint source-loading-label">Searching free catalogues…</p>
+                      <div class="source-loading-heading">
+                        <nostos-loading-indicator size="sm" [decorative]="true" />
+                        <p class="source-hint source-loading-label">Searching free catalogues…</p>
+                      </div>
                       <!-- Which catalogues are being asked (#658), so a slow one
                            reads as an external source answering, not a frozen
                            modal. One aggregate answer still swaps in at once. -->
