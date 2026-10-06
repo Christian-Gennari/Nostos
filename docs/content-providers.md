@@ -255,6 +255,22 @@ that Gutenberg is an ebook source or LibriVox is an audiobook source. Result
 identity is always `ProviderId + ExternalId`; external ids are not globally
 unique.
 
+**Replaceable discovery backend.** `GET /api/providers/search` depends on
+`IProviderDiscovery`, not on a particular search strategy. SelfHosted keeps the
+live fan-out above as its default; a host can register its own implementation
+(for example one shared catalog populated by scheduled syncs) before
+`AddNostosProduct`, and it wins. The HTTP contract is unchanged whichever
+backend answers: results are still `ProviderItem` / `ProviderDiscoveryResult`
+values, and the endpoint drops any row whose provider id is not registered in
+`IProviderRegistry` (and, when the caller supplies a provider set, any provider
+outside it), so provider visibility is enforced at the HTTP boundary rather than
+trusted from the backend.
+
+Discovery results are metadata only and may be stale. Acquisition never treats
+them as authority: when the user adds an item, the provider's planner
+re-resolves it against the live source and verifies the requested asset is still
+offered before any download starts.
+
 
 Imports run as **jobs** because a whole audiobook takes far longer than any
 sensible HTTP request: `POST .../acquire` returns as soon as the job is queued
@@ -407,9 +423,12 @@ an error. A response that is not a feed (an HTML error page, say) surfaces as
 `provider_response_invalid`. An asset the item does not offer surfaces as
 `provider_asset_unavailable`.
 
-**Etiquette.** OPDS feeds are small and cache-friendly; Nostos makes one request
-per search, one per detail, and downloads each asset once. There is no crawl,
-no bulk harvesting and no scheduled polling of the catalogue.
+**Etiquette.** OPDS feeds are small and cache-friendly; the SelfHosted default
+makes one request per search, one per detail, and downloads each asset once.
+That default performs no crawl, no bulk harvesting and no scheduled polling of
+the catalogue. A host that replaces `IProviderDiscovery` with a synchronized
+catalog is responsible for its own source-appropriate sync cadence and
+etiquette (see the discovery-backend note above).
 
 ## Wikisource (built-in provider)
 
