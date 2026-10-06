@@ -20,6 +20,9 @@ import { Injectable, computed, effect, inject, signal } from '@angular/core';
 import { HttpClient, HttpEventType } from '@angular/common/http';
 import { Subject } from 'rxjs';
 
+import { LibraryPreferencesService } from '../../core/services/library-preferences.service';
+import { AssistantStatusService } from './assistant-status.service';
+
 import {
   AssistantAnchor,
   AssistantContext,
@@ -399,6 +402,13 @@ interface PersistedAssistantSession {
 export class AssistantService {
   private readonly contextService = inject(AssistantContextService);
   private readonly http = inject(HttpClient);
+  private readonly preferences = inject(LibraryPreferencesService);
+  private readonly status = inject(AssistantStatusService);
+
+  /** Same availability contract as the app-wide AssistantComponent capsule. */
+  readonly surfaceAvailable = computed(
+    () => this.preferences.assistantEnabled() && this.status.available(),
+  );
 
   /** Stable working-conversation identity. Close/reopen never changes it. */
   readonly conversationId = signal(createId());
@@ -651,6 +661,7 @@ export class AssistantService {
   readonly surfaceOpenRequested = new Subject<void>();
 
   requestSurfaceOpen(): void {
+    if (!this.surfaceAvailable()) return;
     this.surfaceOpenRequested.next();
   }
 
