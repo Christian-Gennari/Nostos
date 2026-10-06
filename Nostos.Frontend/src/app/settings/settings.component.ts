@@ -129,7 +129,6 @@ const AI_PROVIDER_COPY = {
  * place for the same reason as AI_PROVIDER_COPY: one edit changes the wording.
  */
 const BOOK_PROVIDER_COPY = {
-  title: 'Book providers',
   intro:
     'Choose which free book and audiobook sources Nostos searches when you add a book. Sources you turn off stay out of Add Book and cannot be used until you turn them back on.',
   loading: 'Loading book sources…',
@@ -138,8 +137,6 @@ const BOOK_PROVIDER_COPY = {
     'The server did not answer the request for the provider list. Switch away and back to try again.',
   empty: 'No book sources are available on this server.',
   saveFailed: 'Could not save this source. Your previous choice is still in effect.',
-  enabled: 'On',
-  disabled: 'Off',
 } as const;
 
 /** How a section's inline status line is coloured. */
@@ -410,10 +407,12 @@ export class SettingsComponent implements OnInit, OnDestroy {
   setProviderEnabled(provider: ProviderSettingsItem, event: Event): void {
     if (this.providerSavingIds().has(provider.id)) return;
 
-    const previous = this.providerSettings();
+    const previousEnabled = provider.enabled;
     const checked = (event.target as HTMLInputElement).checked;
 
-    this.providerSettings.set(this.withProviderEnabled(previous, provider.id, checked));
+    this.providerSettings.set(
+      this.withProviderEnabled(this.providerSettings(), provider.id, checked),
+    );
     this.setProviderSaving(provider.id, true);
     this.providerSettingsSaveFailed.set(false);
 
@@ -427,7 +426,11 @@ export class SettingsComponent implements OnInit, OnDestroy {
       },
       error: () => {
         this.setProviderSaving(provider.id, false);
-        this.providerSettings.set(previous);
+        // Revert only this row: another provider's concurrent save may have
+        // succeeded since this one started.
+        this.providerSettings.update((list) =>
+          this.withProviderEnabled(list, provider.id, previousEnabled),
+        );
         this.providerSettingsSaveFailed.set(true);
         this.toast.error(BOOK_PROVIDER_COPY.saveFailed);
       },
