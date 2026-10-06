@@ -650,8 +650,8 @@
   resize: vertical;
 }
 
-/* The docked EPUB bar carries three actions. It wraps instead of squeezing the
-   quote to nothing; the PDF bar (two actions) is unchanged. */
+/* Docked selection surfaces wrap instead of squeezing the quote to nothing.
+   EPUB carries note/highlight choices; PDF keeps its smaller save path. */
 .highlight-confirmation.epub-actions .confirmation-content {
   flex-wrap: wrap;
 }
@@ -989,11 +989,16 @@
   .selected-text {
     font-size: 0.8rem;
   }
-  .highlight-confirmation.epub-actions .selected-text {
+  /* Docked selection actions need the same two-row contract for EPUB and PDF
+     now that both surfaces expose Copy + Ask Nostos. The quote gets the first
+     row; actions may wrap rather than shrinking or overflowing a 320–390px
+     viewport. */
+  .highlight-confirmation .selected-text {
     flex: 1 1 100%;
   }
-  .highlight-confirmation.epub-actions .confirmation-actions {
+  .highlight-confirmation .confirmation-actions {
     flex: 1 1 100%;
+    flex-wrap: wrap;
     justify-content: flex-end;
   }
 }
