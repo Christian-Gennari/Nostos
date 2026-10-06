@@ -45,6 +45,7 @@ import {
   TocItem,
 } from '../reader.interface';
 import { AssistantContextService } from '../../ui/assistant/assistant-context.service';
+import { surfaceActionForPoint, swipePageAction } from '../reader-keyboard';
 
 /**
  * Surround colours for the pdf.js viewer canvas, mirroring the Nostos tokens
@@ -173,6 +174,8 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
   highlightColour = input<HighlightColour>(DEFAULT_HIGHLIGHT_COLOUR);
   selectionCaptured = output<string>();
   commitFailed = output<void>();
+  /** Neutral PDF surface click asks the shared shell to reveal or hide chrome. */
+  surfaceInteracted = output<void>();
 
   sidebarVisible = input<boolean>(false);
   sidebarVisibleChange = output<boolean>();
@@ -194,6 +197,11 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
   );
   private searchGeneration = 0;
   private activeSearchQuery = '';
+
+  private surfaceTouchStart:
+    | { x: number; y: number; at: number; target: EventTarget | null }
+    | null = null;
+  private suppressNextSurfaceClick = false;
 
   search(query: string): void {
     if (!this.searchAvailable()) {
@@ -770,6 +778,77 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
   @HostListener('document:selectionchange')
   onNativeSelectionChange(): void {
     this.assistantSelection.set(this.highlightService.captureSelectionText?.() ?? null);
+  }
+
+  onSurfaceClick(event: MouseEvent): void {
+    if (this.suppressNextSurfaceClick) {
+      this.suppressNextSurfaceClick = false;
+      return;
+    }
+
+    const selectedText = this.highlightService.captureSelectionText?.() ?? null;
+    const target = event.currentTarget as HTMLElement | null;
+    const width = target?.clientWidth ?? window.innerWidth;
+    const coarsePointer =
+      typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;
+    const action = surfaceActionForPoint({
+      target: event.target,
+      selectedText,
+      clientX: event.clientX - (target?.getBoundingClientRect().left ?? 0),
+      width,
+      coarsePointer,
+      edgePaging: this.scrollMode() === ScrollModeType.page,
+    });
+
+    if (action === 'next') this.next();
+    else if (action === 'previous') this.previous();
+    else if (action === 'toggle-chrome') this.surfaceInteracted.emit();
+  }
+
+  onSurfaceTouchStart(event: TouchEvent): void {
+    if (event.touches.length !== 1) {
+      this.surfaceTouchStart = null;
+      return;
+    }
+    const touch = event.touches[0];
+    this.surfaceTouchStart = {
+      x: touch.clientX,
+      y: touch.clientY,
+      at: Date.now(),
+      target: event.target,
+    };
+  }
+
+  onSurfaceTouchEnd(event: TouchEvent): void {
+    // Preserve the existing selection/highlight capture path first. If a long
+    // press produced text, the gesture helper below refuses to page.
+    this.onTextSelection();
+
+    const start = this.surfaceTouchStart;
+    this.surfaceTouchStart = null;
+    if (!start || event.changedTouches.length !== 1 || this.scrollMode() !== ScrollModeType.page) {
+      return;
+    }
+
+    const touch = event.changedTouches[0];
+    const action = swipePageAction({
+      target: start.target,
+      selectedText: this.highlightService.captureSelectionText?.() ?? null,
+      startX: start.x,
+      startY: start.y,
+      endX: touch.clientX,
+      endY: touch.clientY,
+      durationMs: Date.now() - start.at,
+    });
+    if (!action) return;
+
+    this.suppressNextSurfaceClick = true;
+    if (action === 'next') this.next();
+    else this.previous();
+  }
+
+  onSurfaceTouchCancel(): void {
+    this.surfaceTouchStart = null;
   }
 
   onTextSelection() {
