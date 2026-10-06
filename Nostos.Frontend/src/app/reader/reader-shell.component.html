@@ -288,60 +288,45 @@
           >
             Cancel
           </button>
-          @if (fileType() === 'epub') {
-            @if (noteDraftOpen()) {
-              <button
-                appButton
-                type="button"
-                variant="primary"
-                class="reader-confirm-action selection-primary"
-                (click)="saveNote()"
-                [disabled]="highlightSaving() || !noteDraft().trim()"
-                [busy]="highlightSaving()"
-                data-testid="selection-save-note"
-              >
-                <nostos-icon name="check" [size]="16"></nostos-icon>
-                {{ highlightSaving() ? 'Saving…' : 'Save note' }}
-              </button>
-            } @else {
-              <button
-                appButton
-                type="button"
-                variant="secondary"
-                class="reader-confirm-action"
-                (click)="openNoteDraft()"
-                [disabled]="highlightSaving()"
-                data-testid="selection-add-note"
-              >
-                <nostos-icon name="note" [size]="16"></nostos-icon>
-                Add note
-              </button>
-              <button
-                appButton
-                type="button"
-                variant="primary"
-                class="reader-confirm-action selection-primary"
-                (click)="commitHighlight()"
-                [disabled]="highlightSaving()"
-                [busy]="highlightSaving()"
-                data-testid="selection-highlight"
-              >
-                <nostos-icon name="highlighter" [size]="16"></nostos-icon>
-                {{ highlightSaving() ? 'Saving…' : 'Highlight' }}
-              </button>
-            }
-          } @else {
+          @if (noteDraftOpen()) {
             <button
               appButton
               type="button"
               variant="primary"
+              class="reader-confirm-action selection-primary"
+              (click)="saveNote()"
+              [disabled]="highlightSaving() || !noteDraft().trim()"
+              [busy]="highlightSaving()"
+              data-testid="selection-save-note"
+            >
+              <nostos-icon name="check" [size]="16"></nostos-icon>
+              {{ highlightSaving() ? 'Saving…' : 'Save note' }}
+            </button>
+          } @else {
+            <button
+              appButton
+              type="button"
+              variant="secondary"
               class="reader-confirm-action"
+              (click)="openNoteDraft()"
+              [disabled]="highlightSaving()"
+              data-testid="selection-add-note"
+            >
+              <nostos-icon name="note" [size]="16"></nostos-icon>
+              Add note
+            </button>
+            <button
+              appButton
+              type="button"
+              variant="primary"
+              class="reader-confirm-action selection-primary"
               (click)="commitHighlight()"
               [disabled]="highlightSaving()"
               [busy]="highlightSaving()"
+              data-testid="selection-highlight"
             >
-              <nostos-icon name="check" [size]="16"></nostos-icon>
-              {{ highlightSaving() ? 'Saving…' : 'Save' }}
+              <nostos-icon name="highlighter" [size]="16"></nostos-icon>
+              {{ highlightSaving() ? 'Saving…' : 'Highlight' }}
             </button>
           }
         </div>
