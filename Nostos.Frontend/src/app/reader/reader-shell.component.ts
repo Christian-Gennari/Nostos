@@ -38,6 +38,8 @@ import { readReaderReturnOrigin } from '../core/navigation/studio-reader-navigat
 import { Theme, ThemeService } from '../core/services/theme.service';
 import { ToastService } from '../core/services/toast.service';
 import { FeedbackLinkService } from '../core/services/feedback-link.service';
+import { AssistantContextService } from '../ui/assistant/assistant-context.service';
+import { AssistantService } from '../ui/assistant/assistant.service';
 
 /** Longest quote a selection surface renders (#657); the full text is still saved. */
 export const SELECTION_PREVIEW_MAX = 320;
@@ -171,8 +173,9 @@ export class ReaderShell implements OnInit, OnDestroy {
   // Template-ref query (not type query): the epub child is stubbed in specs,
   // and a type query would resolve to null against the stub.
   @ViewChild('epubReader') epubReader?: EpubReader;
-  // Concrete type (still a type query, so a spec stub resolves to null as before):
-  // the shell drives the fixed-layout view panel through the reader's own zoom API.
+  // Concrete type query: the shell drives fixed-layout PDF controls through the
+  // real reader instance. Specs that need this delegation attach their stub
+  // explicitly rather than turning every lightweight PDF stub into the full API.
   @ViewChild(PdfReader) pdfReader?: PdfReader;
   @ViewChild(AudioReader) audioReader?: IReader;
 
@@ -187,6 +190,10 @@ export class ReaderShell implements OnInit, OnDestroy {
 
   private themeService = inject(ThemeService);
   private toast = inject(ToastService);
+  private readonly assistant = inject(AssistantService);
+  readonly askNostosAvailable = this.assistant.surfaceAvailable;
+  private readonly assistantContext = inject(AssistantContextService);
+  private unregisterSelectionAssistantContext: (() => void) | null = null;
 
   /**
    * The Cloud feedback destination for the Reader (`?from=reader`), or null on
@@ -216,6 +223,13 @@ export class ReaderShell implements OnInit, OnDestroy {
 
   /** View settings panel (EPUB and PDF) toggled by the Aa control. */
   typoOpen = signal(false);
+
+  /**
+   * EPUB/PDF chrome is absent while the reader is resting (#759). It is only a
+   * visibility state: controls are absolutely overlaid, so revealing them can
+   * never resize or repaginate the document.
+   */
+  chromeVisible = signal(false);
 
   /**
    * The app-wide theme, switchable from inside a book (#651). The readers
@@ -395,6 +409,62 @@ export class ReaderShell implements OnInit, OnDestroy {
     return null;
   });
 
+  readonly immersiveReader = computed(
+    () => this.fileType() === 'epub' || this.fileType() === 'pdf',
+  );
+
+  /**
+   * Open panels pin chrome visible even when it was invoked from a keyboard
+   * shortcut while the reader was resting. Audio keeps its established chrome.
+   */
+  readonly chromeShown = computed(
+    () =>
+      !this.immersiveReader()
+      || this.chromeVisible()
+      || this.searchPanelOpen()
+      || this.typoOpen()
+      || this.tocOpen()
+      || this.notesOpen(),
+  );
+
+  handleSurfaceInteraction(): void {
+    if (!this.immersiveReader()) return;
+
+    // Selection UI and open tools own the gesture until they are explicitly
+    // dismissed; a page tap must never make controls disappear under the user.
+    if (
+      this.pendingSelectionText() !== null
+      || this.searchPanelOpen()
+      || this.typoOpen()
+      || this.tocOpen()
+      || this.notesOpen()
+    ) {
+      return;
+    }
+
+    if (this.chromeVisible()) this.hideImmersiveChrome();
+    else this.chromeVisible.set(true);
+  }
+
+  /**
+   * Remove focus from transient chrome before making it inert. Without this,
+   * Escape or the highlight-mode handoff could strand keyboard focus inside a
+   * hidden button even though the book had returned to its resting state.
+   */
+  private hideImmersiveChrome(): void {
+    const active = this.host.nativeElement.ownerDocument.activeElement as HTMLElement | null;
+    if (
+      active
+      && typeof active.closest === 'function'
+      && active.closest(
+        '.reader-header, .reader-toolbar, .notes-panel, .toc-panel, .typo-panel, .reader-search-panel',
+      )
+    ) {
+      active.blur();
+    }
+    this.chromeVisible.set(false);
+  }
+
   activeReader = computed<IReader | null>(() => {
     if (!this.ready()) return null;
     switch (this.fileType()) {
@@ -441,6 +511,13 @@ export class ReaderShell implements OnInit, OnDestroy {
   // --- INITIALIZATION ---
 
   ngOnInit() {
+    // A captured selection remains explicit assistant context while its
+    // contextual menu is open. This survives focus moving into Ask Nostos,
+    // which otherwise collapses a native PDF selection before the turn is sent.
+    this.unregisterSelectionAssistantContext = this.assistantContext.register(
+      () => ({ selectedText: this.pendingSelectionText() }),
+      { explicit: true },
+    );
     this.loadTopics();
     this.watchBookNavigation();
     this.watchGroundedSourceNavigation();
@@ -454,6 +531,8 @@ export class ReaderShell implements OnInit, OnDestroy {
     this.sourceNavigationGeneration++;
     this.bookLoadGeneration++;
     this.pendingGroundedSourceTarget = null;
+    this.unregisterSelectionAssistantContext?.();
+    this.unregisterSelectionAssistantContext = null;
     if (this.saveFeedbackTimer) clearTimeout(this.saveFeedbackTimer);
     this.dockQuery?.removeEventListener?.('change', this.onDockQueryChange);
     this.veryNarrowQuery?.removeEventListener?.('change', this.onVeryNarrowChange);
@@ -495,6 +574,7 @@ export class ReaderShell implements OnInit, OnDestroy {
     this.tocOpen.set(false);
     this.notesOpen.set(false);
     this.typoOpen.set(false);
+    this.chromeVisible.set(false);
 
     // The same locator can be valid for two different books. Reset the source
     // key when the route book changes so a cross-book citation is consumed
@@ -725,7 +805,14 @@ export class ReaderShell implements OnInit, OnDestroy {
     this.toggleHighlightMode();
     if (turningOn) {
       this.notesOpen.set(false);
-      this.restoreOverlayFocus();
+      if (this.immersiveReader()) {
+        // Reading/highlighting owns focus now; do not restore the Notes trigger
+        // immediately before making that trigger inert.
+        this.overlayReturnFocus = null;
+        this.hideImmersiveChrome();
+      } else {
+        this.restoreOverlayFocus();
+      }
     }
   }
 
@@ -769,6 +856,14 @@ export class ReaderShell implements OnInit, OnDestroy {
    * passage is copied in full, not the clamped preview; the menu then closes
    * without saving, like any other non-saving choice.
    */
+  askNostosAboutSelection(): void {
+    if (!this.pendingSelectionText() || this.highlightSaving()) return;
+    // Keep the pending selection/menu alive behind the assistant: it remains
+    // both visible context and a reversible choice if the reader closes Ask
+    // Nostos and decides to Highlight or Add note instead.
+    this.assistant.requestSurfaceOpen();
+  }
+
   copySelection(): void {
     const text = this.pendingSelectionText();
     if (!text || this.highlightSaving()) return;
@@ -1073,6 +1168,11 @@ export class ReaderShell implements OnInit, OnDestroy {
     if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
 
     if (event.key === 'Escape') {
+      // Ask Nostos is app-level chrome above the reader. Let its own Escape
+      // handler close first regardless of document-listener registration order;
+      // the next Escape may then dismiss the still-pending reader selection.
+      if (this.assistant.isOpen()) return;
+
       if (this.searchPanelOpen()) {
         this.closeSearch();
         event.preventDefault();
@@ -1081,9 +1181,11 @@ export class ReaderShell implements OnInit, OnDestroy {
       // Overlays close in the order they stack: the typography panel rides on
       // top of the drawers, so it goes first. defaultPrevented still lets a
       // focused control claim Escape before the shell sees it.
-      // The EPUB selection menu (#650) is opened by the reader's latest
-      // gesture and sits above everything, so it is dismissed (unsaved) first.
-      if (this.pendingSelectionText() !== null && this.fileType() === 'epub' && !this.highlightSaving()) {
+      // The contextual selection surface is the reader's most recent layer and
+      // sits above ordinary reader chrome, so dismiss the unsaved mark/note
+      // before closing the underlying tools. EPUB may anchor it to the text;
+      // PDF uses the docked form, but the keyboard contract is identical.
+      if (this.pendingSelectionText() !== null && !this.highlightSaving()) {
         this.discardHighlight();
         event.preventDefault();
         return;
@@ -1106,12 +1208,22 @@ export class ReaderShell implements OnInit, OnDestroy {
         event.preventDefault();
         return;
       }
+      if (this.immersiveReader() && this.chromeVisible()) {
+        this.hideImmersiveChrome();
+        event.preventDefault();
+        return;
+      }
       return;
     }
 
-    // Paging belongs to the reading surface. Space in particular must preserve
-    // native activation for buttons, links, toggles, source chips, and controls.
-    if (isTypingTarget(event.target) || isInteractiveTarget(event.target)) return;
+    // Paging belongs to the resting reading surface. A contextual selection is
+    // a higher-priority interaction just like a focused control: page keys must
+    // not move the document underneath a pending mark/note action.
+    if (
+      this.pendingSelectionText() !== null
+      || isTypingTarget(event.target)
+      || isInteractiveTarget(event.target)
+    ) return;
 
     const action = pageActionForKey(event);
     if (!action) return;

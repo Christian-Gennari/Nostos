@@ -4,6 +4,9 @@
    ========================================= */
 
 :host {
+  /* Runtime-overridden by the reader margin preset binding. Declared here so
+     static design checks know the custom property has an intentional owner. */
+  --reader-margin: 0%;
   display: block;
   width: 100%;
   height: 100%;
@@ -28,6 +31,23 @@
 #epub-viewer {
   width: 100%;
   height: 100%;
+  box-sizing: border-box;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  /* The surface itself is full-viewport, but prose should not become a
+     1400px-wide line on a large monitor. Preserve the reader's chosen margin
+     while restoring a quiet maximum page measure without reintroducing a
+     visible inner card/boundary. */
+  padding-left: max(
+    var(--reader-margin, 0%),
+    calc((100% - 64rem) / 2),
+    env(safe-area-inset-left, 0px)
+  );
+  padding-right: max(
+    var(--reader-margin, 0%),
+    calc((100% - 64rem) / 2),
+    env(safe-area-inset-right, 0px)
+  );
   /* Theme the viewer surface with Nostos tokens so no pale gutter surrounds
      the iframe while it loads or in any theme (the iframe document itself is
      themed via the registered epub.js nostos-* themes). */
@@ -93,8 +113,8 @@
 
 @media (min-width: 768px) {
   #epub-viewer {
-    width: 80%;
-    height: 90%;
+    width: 100%;
+    height: 100%;
   }
 }
 

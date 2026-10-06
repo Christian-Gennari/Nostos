@@ -45,6 +45,13 @@ import {
   TocItem,
 } from '../reader.interface';
 import { AssistantContextService } from '../../ui/assistant/assistant-context.service';
+import {
+  shouldSuppressTouchClick,
+  surfaceActionForPoint,
+  swipePageAction,
+  touchClickSuppressionForMovement,
+  type TouchClickSuppression,
+} from '../reader-keyboard';
 
 /**
  * Surround colours for the pdf.js viewer canvas, mirroring the Nostos tokens
@@ -173,6 +180,8 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
   highlightColour = input<HighlightColour>(DEFAULT_HIGHLIGHT_COLOUR);
   selectionCaptured = output<string>();
   commitFailed = output<void>();
+  /** Neutral PDF surface click asks the shared shell to reveal or hide chrome. */
+  surfaceInteracted = output<void>();
 
   sidebarVisible = input<boolean>(false);
   sidebarVisibleChange = output<boolean>();
@@ -194,6 +203,11 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
   );
   private searchGeneration = 0;
   private activeSearchQuery = '';
+
+  private surfaceTouchStart:
+    | { x: number; y: number; at: number; target: EventTarget | null }
+    | null = null;
+  private surfaceClickSuppression: TouchClickSuppression | null = null;
 
   search(query: string): void {
     if (!this.searchAvailable()) {
@@ -772,6 +786,107 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
     this.assistantSelection.set(this.highlightService.captureSelectionText?.() ?? null);
   }
 
+  onSurfaceClick(event: MouseEvent): void {
+    const now = Date.now();
+    if (
+      shouldSuppressTouchClick(
+        this.surfaceClickSuppression,
+        event.clientX,
+        event.clientY,
+        now,
+      )
+    ) {
+      this.surfaceClickSuppression = null;
+      return;
+    }
+    if (this.surfaceClickSuppression && now > this.surfaceClickSuppression.untilMs) {
+      this.surfaceClickSuppression = null;
+    }
+
+    const selectedText =
+      this.highlightService.captureSelectionText?.() ?? this.assistantSelection();
+    const target = event.currentTarget as HTMLElement | null;
+    const width = target?.clientWidth ?? window.innerWidth;
+    const coarsePointer =
+      typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;
+    const action = surfaceActionForPoint({
+      target: event.target,
+      selectedText,
+      clientX: event.clientX - (target?.getBoundingClientRect().left ?? 0),
+      width,
+      coarsePointer,
+      edgePaging: this.scrollMode() === ScrollModeType.page,
+    });
+
+    if (action === 'next') this.next();
+    else if (action === 'previous') this.previous();
+    else if (action === 'toggle-chrome') this.surfaceInteracted.emit();
+  }
+
+  onSurfaceTouchStart(event: TouchEvent): void {
+    if (event.touches.length !== 1) {
+      this.surfaceTouchStart = null;
+      return;
+    }
+    const touch = event.touches[0];
+    this.surfaceTouchStart = {
+      x: touch.clientX,
+      y: touch.clientY,
+      at: Date.now(),
+      target: event.target,
+    };
+  }
+
+  onSurfaceTouchEnd(event: TouchEvent): void {
+    const start = this.surfaceTouchStart;
+    this.surfaceTouchStart = null;
+
+    // Snapshot first: a cross-page/invalid capture may deliberately clear the
+    // browser selection, but that must not turn the same finger movement into a
+    // page gesture afterwards.
+    const selectionBeforeCapture =
+      this.highlightService.captureSelectionText?.() ?? this.assistantSelection();
+    this.onTextSelection();
+
+    if (!start || event.changedTouches.length !== 1) return;
+
+    const touch = event.changedTouches[0];
+    const now = Date.now();
+    this.surfaceClickSuppression = touchClickSuppressionForMovement({
+      startX: start.x,
+      startY: start.y,
+      endX: touch.clientX,
+      endY: touch.clientY,
+      nowMs: now,
+    });
+
+    // Continuous mode stays a native scroll surface. We still suppress a
+    // synthetic click after a real drag so scrolling cannot flash reader chrome.
+    if (this.scrollMode() !== ScrollModeType.page) return;
+
+    const action = swipePageAction({
+      target: start.target,
+      selectedText:
+        this.highlightService.captureSelectionText?.()
+        ?? this.assistantSelection()
+        ?? selectionBeforeCapture,
+      startX: start.x,
+      startY: start.y,
+      endX: touch.clientX,
+      endY: touch.clientY,
+      durationMs: now - start.at,
+    });
+    if (!action) return;
+
+    if (action === 'next') this.next();
+    else this.previous();
+  }
+
+  onSurfaceTouchCancel(): void {
+    this.surfaceTouchStart = null;
+    this.surfaceClickSuppression = null;
+  }
+
   onTextSelection() {
     this.onNativeSelectionChange();
     if (
@@ -852,7 +967,7 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
     }
   }
 
-  commitHighlight() {
+  commitHighlight(content = '') {
     if (!this.pendingHighlight) {
       // Never leave the shell in Saving... if its confirmation and the reader
       // somehow drift out of sync.
@@ -881,7 +996,7 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
 
     this.notesService
       .create(this.bookId(), {
-        content: '',
+        content,
         selectedText: p.selectedText,
         cfiRange: JSON.stringify(cfiPayload),
       })

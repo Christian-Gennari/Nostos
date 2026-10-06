@@ -1,4 +1,12 @@
-import { isInteractiveTarget, isTypingTarget, pageActionForKey } from './reader-keyboard';
+import {
+  isInteractiveTarget,
+  isTypingTarget,
+  pageActionForKey,
+  shouldSuppressTouchClick,
+  surfaceActionForPoint,
+  swipePageAction,
+  touchClickSuppressionForMovement,
+} from './reader-keyboard';
 
 /**
  * The page-key binding is shared by the shell (document-level) and the EPUB
@@ -37,6 +45,14 @@ describe('reader keyboard bindings (issue #225 §1.5)', () => {
     const link = document.createElement('a');
     link.href = '/library';
     expect(isInteractiveTarget(link)).toBe(true);
+
+    for (const tag of ['label', 'summary', 'audio', 'video'] as const) {
+      expect(isInteractiveTarget(document.createElement(tag))).toBe(true);
+    }
+
+    const authored = document.createElement('div');
+    authored.setAttribute('onclick', 'void 0');
+    expect(isInteractiveTarget(authored)).toBe(true);
     expect(isInteractiveTarget(document.createElement('div'))).toBe(false);
   });
 
@@ -52,5 +68,97 @@ describe('reader keyboard bindings (issue #225 §1.5)', () => {
     expect(isTypingTarget(document.createElement('button'))).toBe(false);
     expect(isTypingTarget(document.createElement('div'))).toBe(false);
     expect(isTypingTarget(null)).toBe(false);
+  });
+
+  it('gives selection and authored controls priority over immersive surface taps', () => {
+    const link = document.createElement('a');
+    link.href = '/chapter';
+
+    expect(surfaceActionForPoint({
+      target: document.createElement('p'),
+      selectedText: 'selected words',
+      clientX: 195,
+      width: 390,
+      coarsePointer: true,
+      edgePaging: true,
+    })).toBeNull();
+
+    expect(surfaceActionForPoint({
+      target: link,
+      clientX: 195,
+      width: 390,
+      coarsePointer: true,
+      edgePaging: true,
+    })).toBeNull();
+  });
+
+  it('uses coarse edge taps for paging and the centre for chrome', () => {
+    const p = document.createElement('p');
+    expect(surfaceActionForPoint({
+      target: p,
+      clientX: 20,
+      width: 390,
+      coarsePointer: true,
+      edgePaging: true,
+    })).toBe('previous');
+    expect(surfaceActionForPoint({
+      target: p,
+      clientX: 370,
+      width: 390,
+      coarsePointer: true,
+      edgePaging: true,
+    })).toBe('next');
+    expect(surfaceActionForPoint({
+      target: p,
+      clientX: 195,
+      width: 390,
+      coarsePointer: true,
+      edgePaging: true,
+    })).toBe('toggle-chrome');
+    expect(surfaceActionForPoint({
+      target: p,
+      clientX: 20,
+      width: 390,
+      coarsePointer: false,
+      edgePaging: true,
+    })).toBe('toggle-chrome');
+  });
+
+  it('suppresses only the synthetic click near a moved touch, never a later unrelated tap', () => {
+    const suppression = touchClickSuppressionForMovement({
+      startX: 300,
+      startY: 200,
+      endX: 160,
+      endY: 205,
+      nowMs: 1_000,
+    });
+    expect(suppression).not.toBeNull();
+    expect(shouldSuppressTouchClick(suppression, 162, 207, 1_100)).toBe(true);
+    expect(shouldSuppressTouchClick(suppression, 20, 20, 1_100)).toBe(false);
+    expect(shouldSuppressTouchClick(suppression, 162, 207, 1_800)).toBe(false);
+
+    expect(touchClickSuppressionForMovement({
+      startX: 100,
+      startY: 100,
+      endX: 105,
+      endY: 104,
+      nowMs: 1_000,
+    })).toBeNull();
+  });
+
+  it('accepts only deliberate horizontal swipes as page turns', () => {
+    const p = document.createElement('p');
+    expect(swipePageAction({
+      target: p, startX: 320, startY: 200, endX: 180, endY: 210, durationMs: 260,
+    })).toBe('next');
+    expect(swipePageAction({
+      target: p, startX: 120, startY: 200, endX: 250, endY: 205, durationMs: 300,
+    })).toBe('previous');
+    expect(swipePageAction({
+      target: p, startX: 200, startY: 100, endX: 210, endY: 240, durationMs: 220,
+    })).toBeNull();
+    expect(swipePageAction({
+      target: p, selectedText: 'hold', startX: 320, startY: 200, endX: 180, endY: 210, durationMs: 260,
+    })).toBeNull();
   });
 });

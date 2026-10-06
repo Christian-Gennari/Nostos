@@ -37,6 +37,8 @@ import { TopicAutocompleteService } from '../ui/topic-autocomplete-panel/topic-a
 import { Book } from '../core/dtos/book.dtos';
 import { Note } from '../core/dtos/note.dtos';
 import { ThemeService, THEME_STORAGE_KEY } from '../core/services/theme.service';
+import { AssistantService } from '../ui/assistant/assistant.service';
+import { AssistantContextService } from '../ui/assistant/assistant-context.service';
 
 // The AudioReader is kept real so this spec guards the reader page's total
 // GET /api/books/{id} count; Howl is mocked to avoid real media loading.
@@ -72,6 +74,7 @@ class PdfReaderStub {
   noteCreated = output<void>();
   selectionCaptured = output<unknown>();
   commitFailed = output<unknown>();
+  surfaceInteracted = output<void>();
   textCapability = signal<'unknown' | 'available' | 'unavailable'>('available');
   searchAvailable = signal(true);
   searchState = signal({ status: 'idle' as const, current: 0, total: 0 });
@@ -97,6 +100,8 @@ class PdfReaderStub {
   goToSource = vi.fn(() => Promise.resolve());
   next = vi.fn();
   previous = vi.fn();
+  commitHighlight = vi.fn();
+  discardHighlight = vi.fn();
 }
 
 @Component({ selector: 'app-epub-reader', standalone: true, template: '' })
@@ -113,6 +118,7 @@ class EpubReaderStub {
   commitFailed = output<unknown>();
   exitRequested = output<void>();
   searchRequested = output<void>();
+  surfaceInteracted = output<void>();
   loading = signal(false);
   searchAvailable = signal(true);
   searchState = signal({ status: 'idle' as const, current: 0, total: 0 });
@@ -286,6 +292,14 @@ async function configureReaderShell(
       },
       { provide: TopicsService, useValue: { list: vi.fn(() => of([])) } },
       { provide: TopicAutocompleteService, useValue: { setTopics: vi.fn() } },
+      {
+        provide: AssistantService,
+        useValue: {
+          requestSurfaceOpen: vi.fn(),
+          isOpen: vi.fn(() => false),
+          surfaceAvailable: vi.fn(() => true),
+        },
+      },
     ],
   }).compileComponents();
 
@@ -1588,6 +1602,119 @@ describe('ReaderShell typography panel (EPUB)', () => {
 });
 
 
+describe('ReaderShell immersive chrome (#759)', () => {
+  let fixture: ComponentFixture<ReaderShell>;
+
+  beforeEach(() => {
+    booksGetSpy.mockReset();
+    localStorage.clear();
+    document.documentElement.removeAttribute('data-theme');
+    mockMatchMedia();
+  });
+
+  function render() {
+    fixture.detectChanges();
+    fixture.detectChanges();
+  }
+
+  async function openBook(fileName: string) {
+    booksGetSpy.mockReturnValue(of({ ...audiobook, id: 'book-immersive', fileName } as Book));
+    fixture = await configureReaderShell();
+    render();
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    render();
+    return fixture.componentInstance;
+  }
+
+  it('opens EPUB in a chrome-free immersive resting state', async () => {
+    const component = await openBook('book.epub');
+    expect(component.immersiveReader()).toBe(true);
+    expect(component.chromeVisible()).toBe(false);
+    expect(component.chromeShown()).toBe(false);
+    expect(fixture.nativeElement.querySelector('[data-testid="reader-layout"]').classList)
+      .toContain('immersive');
+    expect(fixture.nativeElement.querySelector('[data-testid="reader-chrome-top"]').hasAttribute('inert'))
+      .toBe(true);
+  });
+
+  it('opens PDF in the same chrome-free immersive resting state', async () => {
+    const component = await openBook('book.pdf');
+    expect(component.immersiveReader()).toBe(true);
+    expect(component.chromeVisible()).toBe(false);
+    expect(component.chromeShown()).toBe(false);
+  });
+
+  it('leaves the audiobook shell permanently available', async () => {
+    const component = await openBook('book.m4b');
+    expect(component.immersiveReader()).toBe(false);
+    expect(component.chromeShown()).toBe(true);
+  });
+
+  it('toggles chrome from the EPUB reading surface and Escape returns to rest', async () => {
+    const component = await openBook('book.epub');
+    const epub = fixture.debugElement.query(By.directive(EpubReaderStub)).componentInstance as EpubReaderStub;
+
+    epub.surfaceInteracted.emit();
+    render();
+    expect(component.chromeVisible()).toBe(true);
+    expect(component.chromeShown()).toBe(true);
+    expect(fixture.nativeElement.querySelector('[data-testid="reader-chrome-top"]').hasAttribute('inert'))
+      .toBe(false);
+
+    const back = fixture.nativeElement.querySelector('.reader-back') as HTMLButtonElement;
+    back.focus();
+    expect(document.activeElement).toBe(back);
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    render();
+    expect(component.chromeVisible()).toBe(false);
+    expect(component.chromeShown()).toBe(false);
+    expect(document.activeElement).not.toBe(back);
+  });
+
+  it('pins chrome while a shared overlay is open and restores the resting state afterwards', async () => {
+    const component = await openBook('book.epub');
+    expect(component.chromeVisible()).toBe(false);
+
+    component.openSearch();
+    render();
+    expect(component.searchPanelOpen()).toBe(true);
+    expect(component.chromeShown()).toBe(true);
+    expect(component.chromeVisible()).toBe(false);
+
+    component.closeSearch();
+    render();
+    expect(component.chromeShown()).toBe(false);
+  });
+
+  it('never lets a neutral surface gesture hide selection actions or an open tool', async () => {
+    const component = await openBook('book.epub');
+    component.pendingSelectionText.set('selected text');
+    component.handleSurfaceInteraction();
+    expect(component.chromeVisible()).toBe(false);
+
+    component.pendingSelectionText.set(null);
+    component.notesOpen.set(true);
+    component.handleSurfaceInteraction();
+    expect(component.notesOpen()).toBe(true);
+    expect(component.chromeVisible()).toBe(false);
+    expect(component.chromeShown()).toBe(true);
+  });
+
+  it('keeps immersive chrome outside document flow and removes the EPUB inset box', () => {
+    const shellCss = readSource('./reader-shell.component.css');
+    expect(shellCss).toContain('.reader-layout.immersive .reader-header');
+    expect(shellCss).toContain('.reader-layout.immersive .reader-toolbar');
+    expect(shellCss).toContain('position: absolute');
+
+    const epubCss = readSource('./epub-reader/epub-reader.component.css');
+    expect(epubCss).not.toContain('width: 80%');
+    expect(epubCss).not.toContain('height: 90%');
+    expect(epubCss).toContain('calc((100% - 64rem) / 2)');
+  });
+});
+
+
 describe('ReaderShell UI kit migration (#362)', () => {
   let fixture: ComponentFixture<ReaderShell>;
 
@@ -1695,6 +1822,18 @@ describe('ReaderShell in-text selection actions (#650, EPUB)', () => {
 
   function stub(): EpubReaderStub {
     return fixture.debugElement.query(By.directive(EpubReaderStub)).componentInstance;
+  }
+
+  function attachPdfStub(component: ReaderShell): PdfReaderStub {
+    const pdf = fixture.debugElement.query(By.directive(PdfReaderStub)).componentInstance as PdfReaderStub;
+    // ReaderShell intentionally queries the real PdfReader type. These focused
+    // integration tests attach the lightweight stand-in explicitly, then toggle
+    // the readiness dependency so activeReader() recomputes against it.
+    component.ready.set(false);
+    component.pdfReader = pdf as unknown as PdfReader;
+    component.ready.set(true);
+    render();
+    return pdf;
   }
 
   function el(testId: string): HTMLElement | null {
@@ -1847,6 +1986,73 @@ describe('ReaderShell in-text selection actions (#650, EPUB)', () => {
     expect(stub().next).not.toHaveBeenCalled();
   });
 
+  it('Ask Nostos opens from the selection surface and keeps the passage as explicit context', async () => {
+    const component = await openBook();
+    component.dockedLayout.set(false);
+    await capture(component);
+    const assistant = TestBed.inject(AssistantService);
+    const context = TestBed.inject(AssistantContextService);
+
+    expect(context.context().selectedText).toBe('Sing, goddess, the anger of Achilles');
+    (el('selection-ask-nostos') as HTMLButtonElement).click();
+    render();
+
+    expect(assistant.requestSurfaceOpen).toHaveBeenCalledTimes(1);
+    expect(context.context().selectedText).toBe('Sing, goddess, the anger of Achilles');
+    expect(el('selection-menu')).not.toBeNull();
+  });
+
+  it('does not advertise Ask Nostos when the assistant is unavailable', async () => {
+    const component = await openBook();
+    const assistant = TestBed.inject(AssistantService);
+    const available = assistant.surfaceAvailable as unknown as {
+      mockReturnValue(value: boolean): void;
+    };
+    available.mockReturnValue(false);
+
+    component.dockedLayout.set(true);
+    await capture(component);
+    render();
+
+    expect(el('selection-copy')).not.toBeNull();
+    expect(el('selection-ask-nostos')).toBeNull();
+    expect(el('selection-highlight')).not.toBeNull();
+  });
+
+  it('keeps a pending selection behind Ask Nostos until a second Escape dismisses it', async () => {
+    const component = await openBook();
+    component.dockedLayout.set(false);
+    await capture(component);
+
+    const assistant = TestBed.inject(AssistantService);
+    const isOpen = assistant.isOpen as unknown as {
+      mockReturnValue(value: boolean): void;
+    };
+    isOpen.mockReturnValue(true);
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    render();
+    expect(component.pendingSelectionText()).toBe('Sing, goddess, the anger of Achilles');
+    expect(el('selection-menu')).not.toBeNull();
+
+    isOpen.mockReturnValue(false);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    render();
+    expect(component.pendingSelectionText()).toBeNull();
+    expect(el('selection-menu')).toBeNull();
+  });
+
+  it('does not turn the page from keyboard input while selection actions are pending', async () => {
+    const component = await openBook();
+    await capture(component);
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    render();
+
+    expect(stub().next).not.toHaveBeenCalled();
+    expect(component.pendingSelectionText()).toBe('Sing, goddess, the anger of Achilles');
+  });
+
   it('phones keep the docked bar, with Add note, and no scrim over the page', async () => {
     const component = await openBook();
     component.dockedLayout.set(true);
@@ -1856,6 +2062,8 @@ describe('ReaderShell in-text selection actions (#650, EPUB)', () => {
     expect(el('selection-scrim')).toBeNull();
     const bar = el('selection-bar')!;
     expect(bar).not.toBeNull();
+    expect(el('selection-copy')).not.toBeNull();
+    expect(el('selection-ask-nostos')).not.toBeNull();
     expect(el('selection-add-note')).not.toBeNull();
     expect(el('selection-highlight')).not.toBeNull();
 
@@ -1891,18 +2099,41 @@ describe('ReaderShell in-text selection actions (#650, EPUB)', () => {
     expect(component.noteDraft()).toBe('Half-written');
   });
 
-  it('PDF keeps its bar exactly: Cancel and Save, no Add note', async () => {
+  it('PDF exposes Copy, Ask Nostos, Highlight and Add note through the same compact surface', async () => {
     const component = await openBook('being-and-time.pdf');
+    const pdf = attachPdfStub(component);
     component.dockedLayout.set(false);
     component.handleSelectionCaptured('A PDF passage');
     render();
 
     expect(el('selection-menu')).toBeNull();
-    const labels = Array.from(
-      (el('selection-bar') as HTMLElement).querySelectorAll('button') as NodeListOf<HTMLButtonElement>,
-    ).map((b) => b.textContent?.replace(/\s+/g, ' ').trim());
-    expect(labels).toEqual(['Cancel', 'Save']);
+    expect(el('selection-copy')).not.toBeNull();
+    expect(el('selection-ask-nostos')).not.toBeNull();
+    expect(el('selection-add-note')).not.toBeNull();
+    expect(el('selection-highlight')).not.toBeNull();
+
+    (el('selection-add-note') as HTMLButtonElement).click();
+    component.noteDraft.set('A note on this PDF passage.');
+    render();
+    (el('selection-save-note') as HTMLButtonElement).click();
+
+    expect(pdf.commitHighlight).toHaveBeenCalledWith('A note on this PDF passage.');
     expect(el('selection-bar')!.classList.contains('epub-actions')).toBe(false);
+  });
+
+  it('Escape dismisses the pending PDF contextual surface without saving', async () => {
+    const component = await openBook('being-and-time.pdf');
+    const pdf = attachPdfStub(component);
+    component.handleSelectionCaptured('A PDF passage');
+    render();
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    render();
+
+    expect(component.pendingSelectionText()).toBeNull();
+    expect(pdf.discardHighlight).toHaveBeenCalledTimes(1);
+    expect(pdf.commitHighlight).not.toHaveBeenCalled();
+    expect(el('selection-bar')).toBeNull();
   });
 
   // --- #657: desktop polish -------------------------------------------------
@@ -1939,12 +2170,13 @@ describe('ReaderShell in-text selection actions (#650, EPUB)', () => {
     expect(css).not.toMatch(/^\.reader-confirm-action \{/m);
   });
 
-  it('phones keep the secondary Cancel and no Copy action in the docked bar', async () => {
+  it('phones keep Copy while retaining the secondary Cancel in the docked bar', async () => {
     const component = await openBook();
     component.dockedLayout.set(true);
     await capture(component);
 
-    expect(el('selection-copy')).toBeNull();
+    expect(el('selection-copy')).not.toBeNull();
+    expect(el('selection-copy')?.getAttribute('aria-label')).toBe('Copy passage');
     expect(el('selection-cancel')!.classList.contains('nostos-button--secondary')).toBe(true);
   });
 

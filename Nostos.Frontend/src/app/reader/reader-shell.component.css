@@ -650,9 +650,10 @@
   resize: vertical;
 }
 
-/* The docked EPUB bar carries three actions. It wraps instead of squeezing the
-   quote to nothing; the PDF bar (two actions) is unchanged. */
-.highlight-confirmation.epub-actions .confirmation-content {
+/* Docked selection surfaces wrap instead of squeezing the quote to nothing.
+   Both text readers expose the same contextual choices; placement still adapts
+   to the available viewport. */
+.highlight-confirmation .confirmation-content {
   flex-wrap: wrap;
 }
 
@@ -894,6 +895,18 @@
   .toc-panel {
     width: 100%;
   }
+  .notes-header,
+  .panel-header {
+    padding-top: max(0.5rem, env(safe-area-inset-top, 0px));
+    padding-inline-start: max(1.25rem, env(safe-area-inset-left, 0px));
+    padding-inline-end: max(0.5rem, env(safe-area-inset-right, 0px));
+  }
+  .notes-list {
+    padding-bottom: max(1rem, env(safe-area-inset-bottom, 0px));
+  }
+  .toc-list {
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0px));
+  }
   .reader-header {
     padding-inline-start: max(0.25rem, env(safe-area-inset-left, 0px));
   }
@@ -989,11 +1002,16 @@
   .selected-text {
     font-size: 0.8rem;
   }
-  .highlight-confirmation.epub-actions .selected-text {
+  /* Docked selection actions need the same two-row contract for EPUB and PDF
+     now that both surfaces expose Copy + Ask Nostos. The quote gets the first
+     row; actions may wrap rather than shrinking or overflowing a 320–390px
+     viewport. */
+  .highlight-confirmation .selected-text {
     flex: 1 1 100%;
   }
-  .highlight-confirmation.epub-actions .confirmation-actions {
+  .highlight-confirmation .confirmation-actions {
     flex: 1 1 100%;
+    flex-wrap: wrap;
     justify-content: flex-end;
   }
 }
@@ -1063,4 +1081,173 @@
 .hl-pen.is-active {
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;
+}
+
+
+/* ============================================================================
+   Immersive EPUB/PDF shell (#759)
+   ----------------------------------------------------------------------------
+   The book owns the viewport. Shared controls remain mounted but leave layout
+   entirely, so revealing them can never resize an EPUB rendition or shift a
+   PDF scrollport. Audio intentionally keeps its established player shell.
+   ========================================================================== */
+
+.reader-layout.immersive .reader-body {
+  height: 100%;
+}
+
+.reader-layout.immersive .reader-header,
+.reader-layout.immersive .reader-toolbar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out),
+    visibility 0s linear var(--motion-fast);
+}
+
+.reader-layout.immersive .reader-header {
+  top: 0;
+  z-index: 45;
+  height: auto;
+  min-height: var(--header-height);
+  padding:
+    max(0.5rem, env(safe-area-inset-top, 0px))
+    max(0.75rem, env(safe-area-inset-right, 0px))
+    0
+    max(0.75rem, env(safe-area-inset-left, 0px));
+  border: 0;
+  background: transparent;
+  transform: translateY(-8px);
+}
+
+.reader-layout.immersive .reader-toolbar {
+  bottom: 0;
+  z-index: 45;
+  min-height: 0;
+  padding:
+    0
+    max(0.5rem, env(safe-area-inset-right, 0px))
+    max(0.5rem, env(safe-area-inset-bottom, 0px))
+    max(0.5rem, env(safe-area-inset-left, 0px));
+  border: 0;
+  background: transparent;
+  transform: translateY(8px);
+}
+
+.reader-layout.immersive.chrome-visible .reader-header,
+.reader-layout.immersive.chrome-visible .reader-toolbar {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+  transition:
+    opacity var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out),
+    visibility 0s;
+}
+
+.reader-layout.immersive .reader-header-title,
+.reader-layout.immersive .reader-header-tools,
+.reader-layout.immersive .toolbar-center {
+  pointer-events: auto;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-md);
+}
+
+.reader-layout.immersive .reader-header-title {
+  flex: 0 1 auto;
+  max-width: min(38rem, calc(100vw - 17rem));
+  min-height: 40px;
+  padding: 0.2rem 0.65rem 0.2rem 0.25rem;
+  border-radius: var(--radius-lg);
+}
+
+.reader-layout.immersive .reader-header-tools {
+  min-height: 40px;
+  padding: 0.2rem;
+  border-radius: var(--radius-lg);
+}
+
+.reader-layout.immersive .toolbar-center {
+  min-height: 40px;
+  padding: 0.2rem;
+  border-radius: var(--radius-lg);
+}
+
+.reader-layout.immersive .progress-display {
+  min-width: 0;
+  border-color: transparent;
+  background: transparent;
+}
+
+.reader-layout.immersive .progress-display.pager {
+  padding-inline: 0;
+}
+
+.reader-layout.immersive .page-navigation {
+  background: transparent;
+}
+
+.reader-layout.immersive .reader-search-panel,
+.reader-layout.immersive .typo-panel {
+  top: calc(var(--header-height) + env(safe-area-inset-top, 0px) + 0.5rem);
+}
+
+@media (max-width: 768px) {
+  .reader-layout.immersive .reader-header {
+    gap: 0.375rem;
+    padding-top: max(0.35rem, env(safe-area-inset-top, 0px));
+    padding-inline-start: max(0.35rem, env(safe-area-inset-left, 0px));
+    padding-inline-end: max(0.35rem, env(safe-area-inset-right, 0px));
+  }
+
+  .reader-layout.immersive .reader-header-title {
+    max-width: calc(100vw - 13.75rem);
+    min-width: 44px;
+    padding-right: 0.4rem;
+  }
+
+  .reader-layout.immersive .reader-header-tools {
+    gap: 0;
+    padding: 0;
+  }
+
+  .reader-layout.immersive .reader-book-author {
+    display: none;
+  }
+
+  .reader-layout.immersive .reader-toolbar {
+    padding: 0 0.35rem max(0.35rem, env(safe-area-inset-bottom, 0px));
+  }
+
+  .reader-layout.immersive .toolbar-center {
+    min-height: var(--control-h-touch);
+    padding: 0;
+  }
+}
+
+@media (max-width: 420px) {
+  .reader-layout.immersive .reader-heading {
+    display: none;
+  }
+
+  .reader-layout.immersive .reader-header-title {
+    flex: 0 0 44px;
+    width: 44px;
+    max-width: 44px;
+    padding: 0;
+    justify-content: center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reader-layout.immersive .reader-header,
+  .reader-layout.immersive .reader-toolbar {
+    transition: none;
+  }
 }

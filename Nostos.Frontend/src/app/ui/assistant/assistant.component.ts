@@ -368,7 +368,28 @@ export class AssistantComponent {
       },
     });
 
+    // Feature surfaces (for example a selected reader passage) request an
+    // assistant open through the service, but the component still owns the UI
+    // lifecycle: availability gating, focus, transcript follow state and the
+    // mobile visual viewport.
+    const surfaceOpenSubscription = this.assistant.surfaceOpenRequested.subscribe(() => {
+      if (this.assistant.isOpen()) {
+        // A reader can select a new passage while compact Ask Nostos is already
+        // open. Keep the existing shell geometry/focus-return owner; just bring
+        // the conversation back to its newest turn and focus the composer on
+        // desktop.
+        this.following.set(true);
+        this.followEnd();
+        if (!this.isPhoneViewport()) {
+          setTimeout(() => this.composer()?.nativeElement.focus(), 0);
+        }
+        return;
+      }
+      this.open();
+    });
+
     this.destroyRef.onDestroy(() => {
+      surfaceOpenSubscription.unsubscribe();
       this.bodyObserver?.disconnect();
       this.stopViewportTracking();
     });

@@ -1,11 +1,22 @@
-<div class="reader-layout" [class.ready]="ready() || !!loadError()">
+<div
+  class="reader-layout"
+  [class.ready]="ready() || !!loadError()"
+  [class.immersive]="immersiveReader()"
+  [class.chrome-visible]="chromeShown()"
+  data-testid="reader-layout"
+>
   <!-- Surface header, in the app's own rhythm (see `.brain-header` in
        second-brain.component.css): title on the left, tools on the right, one
        hairline. Everything that CONFIGURES the reader lives here; the reading
        position lives in the bottom bar, and page turns stay where the thumbs
        are. Back moves here too — a reader is a room you entered, and leaving it
        belongs with the title, not with the pager. -->
-  <header class="reader-header">
+  <header
+    class="reader-header"
+    [attr.aria-hidden]="immersiveReader() && !chromeShown() ? 'true' : null"
+    [attr.inert]="immersiveReader() && !chromeShown() ? '' : null"
+    data-testid="reader-chrome-top"
+  >
     <div class="reader-header-title">
       <button
         appIconButton
@@ -192,9 +203,10 @@
         (noteCreated)="handleNoteCreated()"
         (selectionCaptured)="handleSelectionCaptured($event)"
         (commitFailed)="handleCommitFailed()"
+        (surfaceInteracted)="handleSurfaceInteraction()"
       />
       } @case ('epub') {
-      <app-epub-reader #epubReader [bookId]="book()!.id" [book]="book()" [highlightMode]="highlightMode()" [highlightColour]="highlightColour()" (noteCreated)="handleNoteCreated()" (selectionCaptured)="handleSelectionCaptured($event)" (selectionAnchored)="handleSelectionAnchored($event)" (commitFailed)="handleCommitFailed()" (exitRequested)="goBack()" (searchRequested)="openSearch()" />
+      <app-epub-reader #epubReader [bookId]="book()!.id" [book]="book()" [highlightMode]="highlightMode()" [highlightColour]="highlightColour()" (noteCreated)="handleNoteCreated()" (selectionCaptured)="handleSelectionCaptured($event)" (selectionAnchored)="handleSelectionAnchored($event)" (commitFailed)="handleCommitFailed()" (exitRequested)="goBack()" (searchRequested)="openSearch()" (surfaceInteracted)="handleSurfaceInteraction()" />
       } @case ('audio') {
       <app-audio-reader [bookId]="book()!.id" [book]="book()" />
       } @default {
@@ -241,17 +253,28 @@
           </div>
         }
         <div class="confirmation-actions">
-          @if (anchored) {
+          <button
+            appIconButton
+            icon="copy"
+            type="button"
+            class="selection-copy"
+            (click)="copySelection()"
+            [disabled]="highlightSaving()"
+            aria-label="Copy passage"
+            title="Copy passage"
+            data-testid="selection-copy"
+          ></button>
+          @if (askNostosAvailable()) {
             <button
               appIconButton
-              icon="copy"
+              icon="sparkle"
               type="button"
-              class="selection-copy"
-              (click)="copySelection()"
+              class="selection-ask"
+              (click)="askNostosAboutSelection()"
               [disabled]="highlightSaving()"
-              aria-label="Copy passage"
-              title="Copy passage"
-              data-testid="selection-copy"
+              aria-label="Ask Nostos about passage"
+              title="Ask Nostos about passage"
+              data-testid="selection-ask-nostos"
             ></button>
           }
           <button
@@ -265,60 +288,45 @@
           >
             Cancel
           </button>
-          @if (fileType() === 'epub') {
-            @if (noteDraftOpen()) {
-              <button
-                appButton
-                type="button"
-                variant="primary"
-                class="reader-confirm-action selection-primary"
-                (click)="saveNote()"
-                [disabled]="highlightSaving() || !noteDraft().trim()"
-                [busy]="highlightSaving()"
-                data-testid="selection-save-note"
-              >
-                <nostos-icon name="check" [size]="16"></nostos-icon>
-                {{ highlightSaving() ? 'Saving…' : 'Save note' }}
-              </button>
-            } @else {
-              <button
-                appButton
-                type="button"
-                variant="secondary"
-                class="reader-confirm-action"
-                (click)="openNoteDraft()"
-                [disabled]="highlightSaving()"
-                data-testid="selection-add-note"
-              >
-                <nostos-icon name="note" [size]="16"></nostos-icon>
-                Add note
-              </button>
-              <button
-                appButton
-                type="button"
-                variant="primary"
-                class="reader-confirm-action selection-primary"
-                (click)="commitHighlight()"
-                [disabled]="highlightSaving()"
-                [busy]="highlightSaving()"
-                data-testid="selection-highlight"
-              >
-                <nostos-icon name="highlighter" [size]="16"></nostos-icon>
-                {{ highlightSaving() ? 'Saving…' : 'Highlight' }}
-              </button>
-            }
-          } @else {
+          @if (noteDraftOpen()) {
             <button
               appButton
               type="button"
               variant="primary"
+              class="reader-confirm-action selection-primary"
+              (click)="saveNote()"
+              [disabled]="highlightSaving() || !noteDraft().trim()"
+              [busy]="highlightSaving()"
+              data-testid="selection-save-note"
+            >
+              <nostos-icon name="check" [size]="16"></nostos-icon>
+              {{ highlightSaving() ? 'Saving…' : 'Save note' }}
+            </button>
+          } @else {
+            <button
+              appButton
+              type="button"
+              variant="secondary"
               class="reader-confirm-action"
+              (click)="openNoteDraft()"
+              [disabled]="highlightSaving()"
+              data-testid="selection-add-note"
+            >
+              <nostos-icon name="note" [size]="16"></nostos-icon>
+              Add note
+            </button>
+            <button
+              appButton
+              type="button"
+              variant="primary"
+              class="reader-confirm-action selection-primary"
               (click)="commitHighlight()"
               [disabled]="highlightSaving()"
               [busy]="highlightSaving()"
+              data-testid="selection-highlight"
             >
-              <nostos-icon name="check" [size]="16"></nostos-icon>
-              {{ highlightSaving() ? 'Saving…' : 'Save' }}
+              <nostos-icon name="highlighter" [size]="16"></nostos-icon>
+              {{ highlightSaving() ? 'Saving…' : 'Highlight' }}
             </button>
           }
         </div>
@@ -496,7 +504,12 @@
        purpose: it is what a thumb reaches for while reading, and it is what the
        PDF reader's bottom clearance is measured against. -->
   @if (!loadError() && fileType() && fileType() !== 'audio') {
-  <header class="reader-toolbar">
+  <header
+    class="reader-toolbar"
+    [attr.aria-hidden]="immersiveReader() && !chromeShown() ? 'true' : null"
+    [attr.inert]="immersiveReader() && !chromeShown() ? '' : null"
+    data-testid="reader-chrome-bottom"
+  >
     <div class="toolbar-center">
       <button appIconButton icon="caret-left" [glyphSize]="20" (click)="prevPage()" title="Previous" aria-label="Previous page"></button>
 

@@ -5,8 +5,7 @@
        writes while it lays a section out. -->
   <div
     id="epub-viewer"
-    [style.paddingLeft.%]="marginInset()"
-    [style.paddingRight.%]="marginInset()"
+    [style.--reader-margin]="marginInset() + '%'"
   >
     <div id="epub-page"></div>
   </div>

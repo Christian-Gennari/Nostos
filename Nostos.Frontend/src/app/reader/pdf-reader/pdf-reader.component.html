@@ -2,7 +2,10 @@
   class="pdf-container"
   [class.inverted]="pageInverted()"
   (mouseup)="onTextSelection()"
-  (touchend)="onTextSelection()"
+  (click)="onSurfaceClick($event)"
+  (touchstart)="onSurfaceTouchStart($event)"
+  (touchend)="onSurfaceTouchEnd($event)"
+  (touchcancel)="onSurfaceTouchCancel()"
 >
   @if (highlightWarning()) {
   <div class="pdf-reader-notice" role="status">{{ highlightWarning() }}</div>
