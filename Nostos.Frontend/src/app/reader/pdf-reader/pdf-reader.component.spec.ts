@@ -135,6 +135,49 @@ describe('PdfReader theme-following surround and page inversion (#259)', () => {
     return debugEl!.componentInstance as PdfViewerStub;
   }
 
+  it('keeps a continuous-scroll touch drag native and consumes only its synthetic click', () => {
+    setupComponent();
+    const component = fixture.componentInstance;
+    const next = vi.spyOn(component, 'next');
+    const previous = vi.spyOn(component, 'previous');
+    const surface = vi.fn();
+    component.surfaceInteracted.subscribe(surface);
+
+    const target = document.createElement('div');
+    const container = document.createElement('div');
+    Object.defineProperty(container, 'clientWidth', { configurable: true, value: 390 });
+    container.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, right: 390, bottom: 844, width: 390, height: 844, x: 0, y: 0, toJSON() {} }) as DOMRect;
+
+    component.onSurfaceTouchStart({
+      touches: [{ clientX: 280, clientY: 220 }],
+      target,
+    } as unknown as TouchEvent);
+    component.onSurfaceTouchEnd({
+      changedTouches: [{ clientX: 120, clientY: 230 }],
+    } as unknown as TouchEvent);
+
+    expect(component.scrollMode()).toBe(ScrollModeType.vertical);
+    expect(next).not.toHaveBeenCalled();
+    expect(previous).not.toHaveBeenCalled();
+
+    component.onSurfaceClick({
+      clientX: 120,
+      clientY: 230,
+      target,
+      currentTarget: container,
+    } as unknown as MouseEvent);
+    expect(surface).not.toHaveBeenCalled();
+
+    component.onSurfaceClick({
+      clientX: 300,
+      clientY: 300,
+      target,
+      currentTarget: container,
+    } as unknown as MouseEvent);
+    expect(surface).toHaveBeenCalledTimes(1);
+  });
+
   it('follows the light theme with the established surround and light library theme', () => {
     themeService.setTheme('light');
     setupComponent();
