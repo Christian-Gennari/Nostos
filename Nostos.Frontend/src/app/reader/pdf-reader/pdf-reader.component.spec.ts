@@ -898,6 +898,12 @@ describe('PdfReader highlight trust regressions (#478)', () => {
     const component = fixture.componentInstance;
     component.setScrollMode(ScrollModeType.page);
     selectionText = 'selected passage';
+    captureHighlight.mockReturnValue({
+      status: 'captured',
+      pageNumber: 3,
+      rects: [{ left: 0.1, top: 0.2, width: 0.3, height: 0.04 }],
+      selectedText: 'selected passage',
+    });
     const next = vi.spyOn(component, 'next');
 
     component.onSurfaceTouchStart({
