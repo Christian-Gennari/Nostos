@@ -894,6 +894,24 @@ describe('PdfReader highlight trust regressions (#478)', () => {
     vi.restoreAllMocks();
   });
 
+  it('does not page under a PDF selection even in page-by-page mode', () => {
+    const component = fixture.componentInstance;
+    component.setScrollMode(ScrollModeType.page);
+    selectionText = 'selected passage';
+    const next = vi.spyOn(component, 'next');
+
+    component.onSurfaceTouchStart({
+      touches: [{ clientX: 300, clientY: 200 }],
+      target: document.createElement('div'),
+    } as unknown as TouchEvent);
+    component.onSurfaceTouchEnd({
+      changedTouches: [{ clientX: 140, clientY: 205 }],
+    } as unknown as TouchEvent);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(TestBed.inject(AssistantContextService).context().selectedText).toBe('selected passage');
+  });
+
   it('retries the exact same pending PDF highlight after a transient save failure', () => {
     const component = fixture.componentInstance;
 
