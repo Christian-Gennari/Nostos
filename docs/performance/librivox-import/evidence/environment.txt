@@ -1,0 +1,13 @@
+captured_at_utc=2026-10-06T19:48:08Z
+host=Linux 6.8.0-139-generic x86_64 GNU/Linux
+cpu_model=AMD Ryzen 5 4600H with Radeon Graphics
+cpu_logical=12
+cpu_mhz=1815.009
+mem_total=16091504640
+swap_total=8589930496
+disk_avail_bytes=79671660544
+ffmpeg=ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers
+ffprobe=ffprobe version 6.1.1-3ubuntu5 Copyright (c) 2007-2023 the FFmpeg developers
+dotnet=10.0.112
+python=Python 3.12.3
+commit_at_measurement=36aa6ec014f63fa3e34ab53da17dc6005cc993ba

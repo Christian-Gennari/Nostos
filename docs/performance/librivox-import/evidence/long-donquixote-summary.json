@@ -1,0 +1,738 @@
+{
+  "schema": "nostos-librivox-bench/1",
+  "label": "long-donquixote",
+  "started_at": "2026-10-06T18:50:50.028176+00:00",
+  "run_dir": "/home/dev/.hermes/cache/scratch/librivox-import/long-donquixote-20261006T185050Z",
+  "out_root_guarded": "/home/dev/.hermes/cache/scratch/librivox-import",
+  "download_concurrency": 3,
+  "resources_before": {
+    "at": "2026-10-06T18:50:50.028188+00:00",
+    "cpu_logical": 12,
+    "cpu_freq_mhz": 3000.0,
+    "ram_total_bytes": 16091504640,
+    "disk_total_bytes": 501809635328,
+    "disk_free_bytes": 81177616384,
+    "net_bytes_recv": 1201074122901,
+    "net_bytes_sent": 1375417613103
+  },
+  "recording_id": "11035",
+  "recording_title": "Don Quixote, Vol. 1 (Ormsby Translation)",
+  "feed_totaltime": "18:58:10",
+  "section_count": 54,
+  "download": {
+    "parts": [
+      {
+        "url": "https://www.archive.org/download/donquixotel_1_ormsby_1702_librivox/donquixotevol1ormsby_01_cervantes_64kb.mp3",
+        "bytes": 5199360,
+        "seconds": 16.616087102796882,
+        "attempts": 1
+      },
+      {
+        "url": "https://www.archive.org/download/donquixotel_1_ormsby_1702_librivox/donquixotevol1ormsby_02_cervantes_64kb.mp3",
+        "bytes": 8079872,
+        "seconds": 20.60194126004353,
+        "attempts": 1
+      },
+      {
+        "url": "https://www.archive.org/download/donquixotel_1_ormsby_1702_librivox/donquixotevol1ormsby_03_cervantes_64kb.mp3",
+        "bytes": 5915648,
+        "seconds": 17.56261919112876,
+        "attempts": 1
+      },
+      {
+        "url": "https://www.archive.org/download/donquixotel_1_ormsby_1702_librivox/donquixotevol1ormsby_04_cervantes_64kb.mp3",
+        "bytes": 6702080,
+        "seconds": 22.240790456999093,
+        "attempts": 1
+      },
+      {
+        "url": "https://www.archive.org/download/donquixotel_1_ormsby_1702_librivox/donquixotevol1ormsby_05_cervantes_64kb.mp3",
+        "bytes": 7015936,
+        "seconds": 26.726336190011352,
+        "attempts": 1
+      },
+      {
+        "url": "https://www.archive.org/download/donquixotel_1_ormsby_1702_librivox/donquixotevol1ormsby_06_cervantes_64kb.mp3",
+        "bytes": 7028736,
+        "seconds": 22.95415529375896,
+        "attempts": 1
+      },
+      {
+        "url": "https://www.archive.org/download/donquixotel_1_ormsby_1702_librivox/donquixotevol1ormsby_07_cervantes_64kb.mp3",
+        "bytes": 4633600,
+        "seconds": 14.062932240311056,
+        "attempts": 1
+      },
+      {
+        "url": "https://www.archive.org/download/donquixotel_1_ormsby_1702_librivox/donquixotevol1ormsby_08_cervantes_64kb.mp3",
+        "bytes": 7520256,
+        "seconds": 25.66519292909652,
+        "attempts": 1
+      },
+      {
+        "url": "https://www.archive.org/download/donquixotel_1_ormsby_1702_librivox/donquixotevol1ormsby_09_cervantes_64kb.mp3",
+        "bytes": 5601280,
+        "seconds": 16.54582940787077,
+        "attempts": 1
+      },
+      {
+        "url": "https://www.archive.org/download/donquixotel_1_ormsby_1702_librivox/donquixotevol1ormsby_10_cervantes_64kb.mp3",
+        "bytes": 8530944,
+        "seconds": 12.633242264389992,
+        "attempts": 1
+      },
+      {
+        "url": "https://www.archive.org/download/donquixotel_1_ormsby_1702_librivox/donquixotevol1ormsby_11_cervantes_64kb.mp3",
+        "bytes": 5973504,
+        "seconds": 25.060265929903835,
+        "attempts": 1
+      },
+      {
+        "url": "https://www.archive.org/download/donquixotel_1_ormsby_1702_librivox/donquixotevol1ormsby_12_cervantes_64kb.mp3",
+        "bytes": 5771776,
+        "seconds": 17.505572425201535,
+        "attempts": 1
+      },
+      {
+        "url": "https://www.archive.org/download/donquixotel_1_ormsby_1702_librivox/donquixotevol1ormsby_13_cervantes_64kb.mp3",
+        "bytes": 6514176,
+        "seconds": 8.350114095024765,
+        "attempts": 1
+      },
+      {
+        "url": "https://www.archive.org/download/donquixotel_1_ormsby_1702_librivox/donquixotevol1ormsby_14_cervantes_64kb.mp3",
+        "bytes": 6428160,
+        "seconds": 12.21537767117843,
+        "attempts": 1
+      },
+      {
+        "url": "https://www.archive.org/download/donquixotel_1_ormsby_1702_librivox/donquixotevol1ormsby_15_cervantes_64kb.mp3",
+        "bytes": 10165760,
+        "seconds": 20.035213713999838,
+        "attempts": 1
+      },
+      {
+        "url": "https://www.archive.org/download/donquixotel_1_ormsby_1702_librivox/donquixotevol1ormsby_16_cervantes_64kb.mp3",
+        "bytes": 9063936,
+        "seconds": 23.94913500500843,
+        "attempts": 1
+      },
+      {
+        "url": "https://www.archive.org/download/donquixotel_1_ormsby_1702_librivox/donquixotevol1ormsby_17_cervantes_64kb.mp3",
+        "bytes": 8243712,
+        "seconds": 16.62503666197881,
+        "attempts": 1
+      },
+      {
+        "url": "https://www.archive.org/download/donquixotel_1_ormsby_1702_librivox/donquixotevol1ormsby_18_cervantes_64kb.mp3",
+        "bytes": 8428032,
+        "seconds": 15.378437235020101,
+        "attempts": 1
+      },
+      {
+        "url": "https://www.archive.org/download/donquixotel_1_ormsby_1702_librivox/donquixotevol1ormsby_19_cervantes_64kb.mp3",
+        "bytes": 9304064,
+        "seconds": 16.840787312947214,
+        "attempts": 1
+      },
+      {
+        "url": "https://www.archive.org/download/donquixotel_1_ormsby_1702_librivox/donquixotevol1ormsby_20_cervantes_64kb.mp3",
+        "bytes": 11861504,
+        "seconds": 31.60986679699272,
+        "attempts": 1
+      },
+      {
+        "url": "https://www.archive.org/download/donquixotel_1_ormsby_1702_librivox/donquixotevol1ormsby_21_cervantes_64kb.mp3",
+        "bytes": 8129536,
+        "seconds": 13.274928511120379,
+        "attempts": 1
+      },
+      {
+        "url": "https://www.archive.org/download/donquixotel_1_ormsby_1702_librivox/donquixotevol1ormsby_22_cervantes_64kb.mp3",
+        "bytes": 14670848,
+        "seconds": 20.596407851204276,
+        "attempts": 1
+      },
+      {
+        "url": "https://www.archive.org/download/donquixotel_1_ormsby_1702_librivox/donquixotevol1ormsby_23_cervantes_64kb.mp3",
+        "bytes": 12725760,
+        "seconds": 19.945211816113442,
+        "attempts": 1
+      },
+      {
+        "url": "https://www.archive.org/download/donquixotel_1_ormsby_1702_librivox/donquixotevol1ormsby_24_cervantes_64kb.mp3",
+        "bytes": 11891200,
+        "seconds": 24.345611445140094,
+        "attempts": 1
+      },
+      {
+        "url": "https://www.archive.org/download/donquixotel_1_ormsby_1702_librivox/donquixotevol1ormsby_25_cervantes_64kb.mp3",
+        "bytes": 12878336,
+        "seconds": 27.340375224128366,
+        "attempts": 1
+      },
+      {
+        "url": "https://www.archive.org/download/donquixotel_1_ormsby_1702_librivox/donquixotevol1ormsby_26_cervantes_64kb.mp3",
+        "bytes": 10256896,
+        "seconds": 22.061301251873374,
+        "attempts": 1
+      },
+      {
+        "url": "https://www.archive.org/download/donquixotel_1_ormsby_1702_librivox/donquixotevol1ormsby_27_cervantes_64kb.mp3",
+        "bytes": 17582080,
+        "seconds": 37.069367298390716,
+        "attempts": 1
+      },
+      {
+        "url": "https://www.archive.org/download/donquixotel_1_ormsby_1702_librivox/donquixotevol1ormsby_28_cervantes_64kb.mp3",
+        "bytes": 8234496,
+        "seconds": 13.70823426777497,
+        "attempts": 1
+      },
+      {
+        "url": "https://www.archive.org/download/donquixotel_1_ormsby_1702_librivox/donquixotevol1ormsby_29_cervantes_64kb.mp3",
+        "bytes": 18624000,
+        "seconds": 31.094946986995637,
+        "attempts": 1
+      },
+      {
+        "url": "https://www.archive.org/download/donquixotel_1_ormsby_1702_librivox/donquixotevol1ormsby_30_cervantes_64kb.mp3",
+        "bytes": 16540672,
+        "seconds": 31.837507402990013,
+        "attempts": 1
+      },
+      {
+        "url": "https://www.archive.org/download/donquixotel_1_ormsby_1702_librivox/donquixotevol1ormsby_31_cervantes_64kb.mp3",
+        "bytes": 12959232,
+        "seconds": 36.854118725284934,
+        "attempts": 1
+      },
+      {
+        "url": "https://www.archive.org/download/donquixotel_1_ormsby_1702_librivox/donquixotevol1ormsby_32_cervantes_64kb.mp3",
+        "bytes": 11298304,
+        "seconds": 28.618932377081364,
+        "attempts": 1
+      },
+      {
+        "url": "https://www.archive.org/download/donquixotel_1_ormsby_1702_librivox/donquixotevol1ormsby_33_cervantes_64kb.mp3",
+        "bytes": 10168320,
+        "seconds": 17.397489686962217,
+        "attempts": 1
+      },
+      {
+        "url": "https://www.archive.org/download/donquixotel_1_ormsby_1702_librivox/donquixotevol1ormsby_34_cervantes_64kb.mp3",
+        "bytes": 7421952,
+        "seconds": 23.97004933981225,
+        "attempts": 1
+      },
+      {
+        "url": "https://www.archive.org/download/donquixotel_1_ormsby_1702_librivox/donquixotevol1ormsby_35_cervantes_64kb.mp3",
+        "bytes": 22917632,
+        "seconds": 39.56139536481351,
+        "attempts": 1
+      },
+      {
+        "url": "https://www.archive.org/download/donquixotel_1_ormsby_1702_librivox/donquixotevol1ormsby_36_cervantes_64kb.mp3",
+        "bytes": 22096384,
+        "seconds": 18.507039295043796,
+        "attempts": 1
+      },
+      {
+        "url": "https://www.archive.org/download/donquixotel_1_ormsby_1702_librivox/donquixotevol1ormsby_37_cervantes_64kb.mp3",
+        "bytes": 9929216,
+        "seconds": 27.281498121097684,
+        "attempts": 1
+      },
+      {
+        "url": "https://www.archive.org/download/donquixotel_1_ormsby_1702_librivox/donquixotevol1ormsby_38_cervantes_64kb.mp3",
+        "bytes": 11040768,
+        "seconds": 28.108527939300984,
+        "attempts": 1
+      },
+      {
+        "url": "https://www.archive.org/download/donquixotel_1_ormsby_1702_librivox/donquixotevol1ormsby_39_cervantes_64kb.mp3",
+        "bytes": 11747328,
+        "seconds": 19.186255905777216,
+        "attempts": 1
+      },
+      {
+        "url": "https://www.archive.org/download/donquixotel_1_ormsby_1702_librivox/donquixotevol1ormsby_40_cervantes_64kb.mp3",
+        "bytes": 4934144,
+        "seconds": 12.021731832064688,
+        "attempts": 1
+      },
+      {
+        "url": "https://www.archive.org/download/donquixotel_1_ormsby_1702_librivox/donquixotevol1ormsby_41_cervantes_64kb.mp3",
+        "bytes": 9378304,
+        "seconds": 16.71853348100558,
+        "attempts": 1
+      },
+      {
+        "url": "https://www.archive.org/download/donquixotel_1_ormsby_1702_librivox/donquixotevol1ormsby_42_cervantes_64kb.mp3",
+        "bytes": 13701632,
+        "seconds": 22.66310337698087,
+        "attempts": 1
+      },
+      {
+        "url": "https://www.archive.org/download/donquixotel_1_ormsby_1702_librivox/donquixotevol1ormsby_43_cervantes_64kb.mp3",
+        "bytes": 21721088,
+        "seconds": 54.94640584802255,
+        "attempts": 1
+      },
+      {
+        "url": "https://www.archive.org/download/donquixotel_1_ormsby_1702_librivox/donquixotevol1ormsby_44_cervantes_64kb.mp3",
+        "bytes": 8097280,
+        "seconds": 14.406623252667487,
+        "attempts": 1
+      },
+      {
+        "url": "https://www.archive.org/download/donquixotel_1_ormsby_1702_librivox/donquixotevol1ormsby_45_cervantes_64kb.mp3",
+        "bytes": 10803200,
+        "seconds": 29.857619748916477,
+        "attempts": 1
+      },
+      {
+        "url": "https://www.archive.org/download/donquixotel_1_ormsby_1702_librivox/donquixotevol1ormsby_46_cervantes_64kb.mp3",
+        "bytes": 9232384,
+        "seconds": 26.353421481326222,
+        "attempts": 1
+      },
+      {
+        "url": "https://www.archive.org/download/donquixotel_1_ormsby_1702_librivox/donquixotevol1ormsby_47_cervantes_64kb.mp3",
+        "bytes": 8482304,
+        "seconds": 19.30715954164043,
+        "attempts": 1
+      },
+      {
+        "url": "https://www.archive.org/download/donquixotel_1_ormsby_1702_librivox/donquixotevol1ormsby_48_cervantes_64kb.mp3",
+        "bytes": 9344512,
+        "seconds": 13.32273294776678,
+        "attempts": 1
+      },
+      {
+        "url": "https://www.archive.org/download/donquixotel_1_ormsby_1702_librivox/donquixotevol1ormsby_49_cervantes_64kb.mp3",
+        "bytes": 10718720,
+        "seconds": 17.466806184966117,
+        "attempts": 1
+      },
+      {
+        "url": "https://www.archive.org/download/donquixotel_1_ormsby_1702_librivox/donquixotevol1ormsby_50_cervantes_64kb.mp3",
+        "bytes": 8244224,
+        "seconds": 18.974912086036056,
+        "attempts": 1
+      },
+      {
+        "url": "https://www.archive.org/download/donquixotel_1_ormsby_1702_librivox/donquixotevol1ormsby_51_cervantes_64kb.mp3",
+        "bytes": 7766528,
+        "seconds": 12.930128685198724,
+        "attempts": 1
+      },
+      {
+        "url": "https://www.archive.org/download/donquixotel_1_ormsby_1702_librivox/donquixotevol1ormsby_52_cervantes_64kb.mp3",
+        "bytes": 7087104,
+        "seconds": 22.359135278966278,
+        "attempts": 1
+      },
+      {
+        "url": "https://www.archive.org/download/donquixotel_1_ormsby_1702_librivox/donquixotevol1ormsby_53_cervantes_64kb.mp3",
+        "bytes": 5949440,
+        "seconds": 14.762783748097718,
+        "attempts": 1
+      },
+      {
+        "url": "https://www.archive.org/download/donquixotel_1_ormsby_1702_librivox/donquixotevol1ormsby_54_cervantes_64kb.mp3",
+        "bytes": 11802624,
+        "seconds": 31.36655502906069,
+        "attempts": 1
+      }
+    ],
+    "total_source_bytes": 546358784,
+    "seconds": 409.0686513460241,
+    "aggregate_bytes_per_second": 1335616.3621979542,
+    "network_bytes_delta": 624162787
+  },
+  "probe": {
+    "per_section": [
+      {
+        "file": "part-0000.mp3",
+        "duration_s": 649.769796,
+        "probe_s": 0.06104707298800349
+      },
+      {
+        "file": "part-0001.mp3",
+        "duration_s": 1009.841633,
+        "probe_s": 0.059066154062747955
+      },
+      {
+        "file": "part-0002.mp3",
+        "duration_s": 739.291429,
+        "probe_s": 0.06151410471647978
+      },
+      {
+        "file": "part-0003.mp3",
+        "duration_s": 837.590204,
+        "probe_s": 0.06007885793223977
+      },
+      {
+        "file": "part-0004.mp3",
+        "duration_s": 876.826122,
+        "probe_s": 0.061081993859261274
+      },
+      {
+        "file": "part-0005.mp3",
+        "duration_s": 878.445714,
+        "probe_s": 0.05868837982416153
+      },
+      {
+        "file": "part-0006.mp3",
+        "duration_s": 579.056327,
+        "probe_s": 0.06081708474084735
+      },
+      {
+        "file": "part-0007.mp3",
+        "duration_s": 939.885714,
+        "probe_s": 0.05792256724089384
+      },
+      {
+        "file": "part-0008.mp3",
+        "duration_s": 700.029388,
+        "probe_s": 0.060762678273022175
+      },
+      {
+        "file": "part-0009.mp3",
+        "duration_s": 1066.213878,
+        "probe_s": 0.056986198760569096
+      },
+      {
+        "file": "part-0010.mp3",
+        "duration_s": 746.527347,
+        "probe_s": 0.05934398388490081
+      },
+      {
+        "file": "part-0011.mp3",
+        "duration_s": 721.293061,
+        "probe_s": 0.05808934802189469
+      },
+      {
+        "file": "part-0012.mp3",
+        "duration_s": 814.132245,
+        "probe_s": 0.06068864557892084
+      },
+      {
+        "file": "part-0013.mp3",
+        "duration_s": 803.369796,
+        "probe_s": 0.059440295211970806
+      },
+      {
+        "file": "part-0014.mp3",
+        "duration_s": 1270.569796,
+        "probe_s": 0.059956775046885014
+      },
+      {
+        "file": "part-0015.mp3",
+        "duration_s": 1132.8,
+        "probe_s": 0.06142526585608721
+      },
+      {
+        "file": "part-0016.mp3",
+        "duration_s": 1030.29551,
+        "probe_s": 0.059864724054932594
+      },
+      {
+        "file": "part-0017.mp3",
+        "duration_s": 1053.361633,
+        "probe_s": 0.05876422906294465
+      },
+      {
+        "file": "part-0018.mp3",
+        "duration_s": 1162.866939,
+        "probe_s": 0.05680398177355528
+      },
+      {
+        "file": "part-0019.mp3",
+        "duration_s": 1482.527347,
+        "probe_s": 0.059995956253260374
+      },
+      {
+        "file": "part-0020.mp3",
+        "duration_s": 1016.058776,
+        "probe_s": 0.06149510806426406
+      },
+      {
+        "file": "part-0021.mp3",
+        "duration_s": 1833.717551,
+        "probe_s": 0.059258987195789814
+      },
+      {
+        "file": "part-0022.mp3",
+        "duration_s": 1590.569796,
+        "probe_s": 0.058748653158545494
+      },
+      {
+        "file": "part-0023.mp3",
+        "duration_s": 1486.236735,
+        "probe_s": 0.04959632083773613
+      },
+      {
+        "file": "part-0024.mp3",
+        "duration_s": 1609.613061,
+        "probe_s": 0.05947326123714447
+      },
+      {
+        "file": "part-0025.mp3",
+        "duration_s": 1281.959184,
+        "probe_s": 0.060501819010823965
+      },
+      {
+        "file": "part-0026.mp3",
+        "duration_s": 2197.629388,
+        "probe_s": 0.06118605891242623
+      },
+      {
+        "file": "part-0027.mp3",
+        "duration_s": 1029.146122,
+        "probe_s": 0.056237146724015474
+      },
+      {
+        "file": "part-0028.mp3",
+        "duration_s": 2327.823673,
+        "probe_s": 0.06022329116240144
+      },
+      {
+        "file": "part-0029.mp3",
+        "duration_s": 2067.40898,
+        "probe_s": 0.060665179044008255
+      },
+      {
+        "file": "part-0030.mp3",
+        "duration_s": 1619.748571,
+        "probe_s": 0.0590057410299778
+      },
+      {
+        "file": "part-0031.mp3",
+        "duration_s": 1412.153469,
+        "probe_s": 0.0504157030954957
+      },
+      {
+        "file": "part-0032.mp3",
+        "duration_s": 1270.883265,
+        "probe_s": 0.06067872792482376
+      },
+      {
+        "file": "part-0033.mp3",
+        "duration_s": 927.555918,
+        "probe_s": 0.059310320764780045
+      },
+      {
+        "file": "part-0034.mp3",
+        "duration_s": 2864.561633,
+        "probe_s": 0.0600723628886044
+      },
+      {
+        "file": "part-0035.mp3",
+        "duration_s": 2761.874286,
+        "probe_s": 0.05969794187694788
+      },
+      {
+        "file": "part-0036.mp3",
+        "duration_s": 1240.973061,
+        "probe_s": 0.0598803679458797
+      },
+      {
+        "file": "part-0037.mp3",
+        "duration_s": 1379.918367,
+        "probe_s": 0.05927623761817813
+      },
+      {
+        "file": "part-0038.mp3",
+        "duration_s": 1468.238367,
+        "probe_s": 0.04927442083135247
+      },
+      {
+        "file": "part-0039.mp3",
+        "duration_s": 616.620408,
+        "probe_s": 0.0593733168207109
+      },
+      {
+        "file": "part-0040.mp3",
+        "duration_s": 1172.140408,
+        "probe_s": 0.060683616902679205
+      },
+      {
+        "file": "part-0041.mp3",
+        "duration_s": 1712.53551,
+        "probe_s": 0.060514810029417276
+      },
+      {
+        "file": "part-0042.mp3",
+        "duration_s": 2714.98449,
+        "probe_s": 0.06093392986804247
+      },
+      {
+        "file": "part-0043.mp3",
+        "duration_s": 1012.009796,
+        "probe_s": 0.059800049755722284
+      },
+      {
+        "file": "part-0044.mp3",
+        "duration_s": 1350.243265,
+        "probe_s": 0.059004063718020916
+      },
+      {
+        "file": "part-0045.mp3",
+        "duration_s": 1153.880816,
+        "probe_s": 0.06014178600162268
+      },
+      {
+        "file": "part-0046.mp3",
+        "duration_s": 1060.127347,
+        "probe_s": 0.051104133017361164
+      },
+      {
+        "file": "part-0047.mp3",
+        "duration_s": 1167.908571,
+        "probe_s": 0.050132984295487404
+      },
+      {
+        "file": "part-0048.mp3",
+        "duration_s": 1339.663673,
+        "probe_s": 0.061426034197211266
+      },
+      {
+        "file": "part-0049.mp3",
+        "duration_s": 1030.347755,
+        "probe_s": 0.06032979907467961
+      },
+      {
+        "file": "part-0050.mp3",
+        "duration_s": 970.631837,
+        "probe_s": 0.060816108249127865
+      },
+      {
+        "file": "part-0051.mp3",
+        "duration_s": 885.733878,
+        "probe_s": 0.05902424920350313
+      },
+      {
+        "file": "part-0052.mp3",
+        "duration_s": 743.523265,
+        "probe_s": 0.05937911430373788
+      },
+      {
+        "file": "part-0053.mp3",
+        "duration_s": 1475.186939,
+        "probe_s": 0.06060211220756173
+      }
+    ],
+    "seconds": 3.180799711961299,
+    "sum_section_duration_s": 68286.30204
+  },
+  "encode": {
+    "seconds": 716.6635952489451,
+    "peak_rss_bytes": 267616256,
+    "peak_cpu_percent": 117.4,
+    "ffmpeg_reported_speed": "95.4x",
+    "progress_log": "/home/dev/.hermes/cache/scratch/librivox-import/long-donquixote-20261006T185050Z/staging/ffmpeg-encode-progress.log",
+    "stderr_log": "/home/dev/.hermes/cache/scratch/librivox-import/long-donquixote-20261006T185050Z/staging/ffmpeg-encode-stderr.log",
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-nostdin",
+      "-y",
+      "-progress",
+      "pipe:1",
+      "-nostats",
+      "-f",
+      "concat",
+      "-safe",
+      "0",
+      "-i",
+      "/home/dev/.hermes/cache/scratch/librivox-import/long-donquixote-20261006T185050Z/staging/concat.txt",
+      "-i",
+      "/home/dev/.hermes/cache/scratch/librivox-import/long-donquixote-20261006T185050Z/staging/chapters.txt",
+      "-map",
+      "0:a",
+      "-map_metadata",
+      "1",
+      "-map_chapters",
+      "1",
+      "-c:a",
+      "aac",
+      "-b:a",
+      "64k",
+      "-ac",
+      "1",
+      "-ar",
+      "44100",
+      "-movflags",
+      "+faststart",
+      "-f",
+      "ipod",
+      "/home/dev/.hermes/cache/scratch/librivox-import/long-donquixote-20261006T185050Z/staging/result.m4b"
+    ],
+    "realtime_factor": 95.28362050576827,
+    "samples_csv": "/home/dev/.hermes/cache/scratch/librivox-import/long-donquixote-20261006T185050Z/ffmpeg-samples.csv"
+  },
+  "validation": {
+    "produced_chapters": 54,
+    "expected_chapters": 54,
+    "produced_duration_s": 68286.302,
+    "expected_duration_s": 68286.30204,
+    "tolerance_s": 341.4315102,
+    "ok": true
+  },
+  "output": {
+    "bytes": 568033244,
+    "path": "/home/dev/.hermes/cache/scratch/librivox-import/long-donquixote-20261006T185050Z/books/8f10c0e223eb4d149481535e5a1b54d9/book.m4b",
+    "content_type": "audio/mp4",
+    "extension": ".m4b"
+  },
+  "phases": [
+    {
+      "phase": "catalog_plan",
+      "seconds": 0.0005640401504933834,
+      "detail": "54 sections"
+    },
+    {
+      "phase": "download",
+      "seconds": 409.0686513460241,
+      "detail": "54 parts, 546358784 bytes"
+    },
+    {
+      "phase": "probe_inputs",
+      "seconds": 3.180799711961299,
+      "detail": "54 sections, 68286.3s audio"
+    },
+    {
+      "phase": "write_inputs",
+      "seconds": 0.00045061809942126274,
+      "detail": "concat + chapters"
+    },
+    {
+      "phase": "encode",
+      "seconds": 716.6635952489451,
+      "detail": "speed=95.4x"
+    },
+    {
+      "phase": "validate_output",
+      "seconds": 0.4542018617503345,
+      "detail": "chapters=54 duration=68286.302"
+    },
+    {
+      "phase": "commit_rename",
+      "seconds": 0.0002812594175338745,
+      "detail": "568033244 bytes"
+    }
+  ],
+  "total_wall_seconds": 1129.3685440863483,
+  "resources_after": {
+    "at": "2026-10-06T19:09:39.420434+00:00",
+    "cpu_logical": 12,
+    "cpu_freq_mhz": 3000.0,
+    "ram_total_bytes": 16091504640,
+    "disk_total_bytes": 501809635328,
+    "disk_free_bytes": 79786909696,
+    "net_bytes_recv": 1201716401722,
+    "net_bytes_sent": 1375506912621
+  }
+}
