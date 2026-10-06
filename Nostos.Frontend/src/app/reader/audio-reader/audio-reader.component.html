@@ -15,7 +15,7 @@
            the transport jumped by that row's height. -->
       @if (loading()) {
       <div class="cover-overlay" role="status" data-testid="audio-loading">
-        <nostos-icon name="waveform" [size]="20" class="audio-loading-icon"></nostos-icon>
+        <nostos-loading-indicator size="lg" [decorative]="true" />
         <span>Loading audio…</span>
       </div>
       } @if (loadError()) {

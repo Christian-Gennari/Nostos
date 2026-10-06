@@ -132,12 +132,6 @@
   line-height: 1.3;
 }
 
-/* Same waiting rhythm as the rest of the app. This used to blink at 1.2s between
-   0.4 and 1 — fast and deep enough to read as a flicker rather than a breath. */
-.audio-loading-icon {
-  animation: wait-breathe var(--motion-wait) ease-in-out infinite;
-}
-
 .cover-overlay-error {
   color: var(--color-danger);
 }

@@ -25,7 +25,7 @@ export type LoadingIndicatorSize = keyof typeof NOSTOS_ICON_SIZE;
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <nostos-icon name="circle-notch" [size]="iconSize()" aria-hidden="true"></nostos-icon>
-    <span class="loading-indicator__label">{{ label() }}</span>
+    <span class="visually-hidden">{{ label() }}</span>
   `,
   host: {
     class: 'nostos-loading-indicator',
@@ -47,18 +47,6 @@ export type LoadingIndicatorSize = keyof typeof NOSTOS_ICON_SIZE;
       nostos-icon {
         transform-origin: center;
         animation: nostos-loading-spin 850ms linear infinite;
-      }
-
-      .loading-indicator__label {
-        position: absolute;
-        width: 1px;
-        height: 1px;
-        padding: 0;
-        margin: -1px;
-        overflow: hidden;
-        clip: rect(0, 0, 0, 0);
-        white-space: nowrap;
-        border: 0;
       }
 
       @keyframes nostos-loading-spin {

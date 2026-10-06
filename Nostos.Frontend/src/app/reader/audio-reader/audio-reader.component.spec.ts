@@ -301,7 +301,10 @@ describe('AudioReader single-fetch + restore + loading state (issue #7)', () => 
     const howl = mockPlayer(component);
     expect(howl).toBeDefined();
     expect(component.loading()).toBe(true);
-    expect(fixture.nativeElement.textContent).toContain('Loading audio');
+    const loading = fixture.nativeElement.querySelector('[data-testid="audio-loading"]') as HTMLElement;
+    expect(loading.textContent).toContain('Loading audio');
+    expect(loading.querySelector('nostos-loading-indicator')).not.toBeNull();
+    expect(loading.querySelector('.audio-loading-icon')).toBeNull();
 
     howl.config.onload();
     fixture.detectChanges();
