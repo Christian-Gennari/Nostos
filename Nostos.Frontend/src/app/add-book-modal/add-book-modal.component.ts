@@ -28,6 +28,7 @@ import { ModalShell } from '../ui/modal-shell/modal-shell.component';
 import { DialogActionsComponent } from '../ui/dialog-actions/dialog-actions.component';
 import { ButtonComponent } from '../ui/button/button.component';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
+import { LoadingIndicatorComponent } from '../ui/loading-indicator/loading-indicator.component';
 import { FormFieldComponent } from '../ui/form-field/form-field.component';
 import { InputDirective, TextareaDirective } from '../ui/form-control/form-control.directive';
 import { DropdownComponent, type DropdownOption } from '../ui/dropdown/dropdown.component';
@@ -41,6 +42,7 @@ type AddBookIntentKind = 'upload' | 'source' | 'physical' | 'manual';
     CommonModule,
     FormsModule,
     NostosIconComponent,
+    LoadingIndicatorComponent,
     IconButtonComponent,
     CollectionPickerComponent,
     FormFieldComponent,

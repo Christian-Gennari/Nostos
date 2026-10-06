@@ -17,10 +17,10 @@
   <p class="source-navigation-status" role="status" aria-live="polite">{{ sourceMessage }}</p>
 }
 
-<!-- Held mounted and released by a class rather than an @if: the page is already
-     rendered underneath, so revealing it is a fade + defocus instead of a blink. -->
+<!-- Held mounted so the reader keeps one stable geometry while epub.js opens.
+     Only the small shared indicator fades away; the page surface never changes. -->
 <div class="loading-overlay" [class.is-hidden]="!loading()" [attr.aria-hidden]="!loading()">
-  <span>Opening book...</span>
+  <nostos-loading-indicator label="Opening book" size="xl" />
 </div>
 
 

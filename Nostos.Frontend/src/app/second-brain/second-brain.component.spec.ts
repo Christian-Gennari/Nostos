@@ -424,8 +424,15 @@ describe('SecondBrain', () => {
       fixture.detectChanges();
 
       component.openReview();
+      fixture.detectChanges();
+      const reviewList = fixture.nativeElement.querySelector('[aria-label="Notes with no topic"]') as HTMLElement;
+      expect(reviewList.getAttribute('aria-busy')).toBe('true');
+      expect(reviewList.querySelector('nostos-loading-indicator')?.getAttribute('role')).toBe('status');
       http.expectOne((req) => req.url === '/api/notes/unlinked')
         .flush({ items: [unlinked], totalCount: 1, offset: 0, limit: 25 });
+      fixture.detectChanges();
+      expect(reviewList.getAttribute('aria-busy')).toBe('false');
+      expect(reviewList.querySelector('nostos-loading-indicator')).toBeNull();
       component.closeReview();
       http.expectNone((req) => req.url === '/api/notes');
       fixture.detectChanges();
@@ -1261,11 +1268,17 @@ describe('SecondBrain', () => {
     expect(component.noteSearchQuery()).toBe('sisyphus');
   });
 
-  it('uses a structureless wait field while the first list request is pending', () => {
+  it('uses the shared quiet loading indicator while the first list request is pending', () => {
     const loadingFixture = TestBed.createComponent(SecondBrain);
     loadingFixture.detectChanges();
 
-    expect(loadingFixture.nativeElement.querySelector('.wait-field')).toBeTruthy();
+    const indicator = loadingFixture.nativeElement.querySelector(
+      'nostos-loading-indicator.index-loading',
+    ) as HTMLElement | null;
+    expect(indicator).not.toBeNull();
+    expect(indicator?.getAttribute('role')).toBe('status');
+    expect(indicator?.textContent).toContain('Loading topics');
+    expect(loadingFixture.nativeElement.querySelector('.wait-field')).toBeNull();
     expect(loadingFixture.nativeElement.querySelector('.index-item')).toBeNull();
 
     http.expectOne('/api/topics').flush(topics);

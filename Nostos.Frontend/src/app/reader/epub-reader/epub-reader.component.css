@@ -74,44 +74,28 @@
   overflow: hidden;
 }
 
-/* Waiting state — mounted for the life of the component and released by a class,
-   so the already-rendered page underneath is revealed by a fade + defocus rather
-   than a one-frame blink. The label breathes on the same slow rhythm the rest of
-   the app waits on (see `.wait-field` in styles.css). */
+/* Quiet reader wait: keep the page surface stable and center only the shared
+   loading glyph over the content region. The overlay is transparent, so the
+   transition to the rendered EPUB is only the spinner fading away. */
 .loading-overlay {
   position: absolute;
   inset: 0;
+  z-index: 20;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.5rem;
-  background: var(--bg-surface, #fff);
-  z-index: 20;
-  color: var(--color-text-muted, #888);
-  /* Each item carries its own duration already: `var(--motion-slow)` IS the
-     duration and `var(--ease-out)` the easing, so this shorthand was already
-     correct — a trailing time only binds to the LAST item, and here none is
-     shared. Left as the multi-line form for legibility. */
+  pointer-events: none;
   transition:
-    opacity var(--motion-slow) var(--ease-out),
-    filter var(--motion-slow) var(--ease-out),
-    visibility 0s linear var(--motion-slow);
-}
-.loading-overlay span {
-  animation: wait-breathe var(--motion-wait) ease-in-out infinite;
+    opacity var(--motion-fast) var(--ease-out),
+    visibility 0s linear var(--motion-fast);
 }
 .loading-overlay.is-hidden {
   opacity: 0;
-  filter: blur(10px);
   visibility: hidden;
-  pointer-events: none;
 }
 @media (prefers-reduced-motion: reduce) {
-  .loading-overlay span {
-    animation: none;
-  }
-  .loading-overlay.is-hidden {
-    filter: none;
+  .loading-overlay {
+    transition-duration: 1ms;
   }
 }
 
