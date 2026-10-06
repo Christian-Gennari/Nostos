@@ -651,7 +651,8 @@
 }
 
 /* Docked selection surfaces wrap instead of squeezing the quote to nothing.
-   EPUB carries note/highlight choices; PDF keeps its smaller save path. */
+   Both text readers expose the same contextual choices; placement still adapts
+   to the available viewport. */
 .highlight-confirmation .confirmation-content {
   flex-wrap: wrap;
 }
