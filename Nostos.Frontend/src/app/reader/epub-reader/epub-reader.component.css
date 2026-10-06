@@ -31,6 +31,11 @@
   box-sizing: border-box;
   padding-top: env(safe-area-inset-top, 0px);
   padding-bottom: env(safe-area-inset-bottom, 0px);
+  /* The surface itself is full-viewport, but prose should not become a
+     1400px-wide line on a large monitor. Preserve the reader's chosen margin
+     while restoring a quiet maximum page measure without reintroducing a
+     visible inner card/boundary. */
+  padding-inline: max(var(--reader-margin, 0%), calc((100% - 64rem) / 2));
   /* Theme the viewer surface with Nostos tokens so no pale gutter surrounds
      the iframe while it loads or in any theme (the iframe document itself is
      themed via the registered epub.js nostos-* themes). */
