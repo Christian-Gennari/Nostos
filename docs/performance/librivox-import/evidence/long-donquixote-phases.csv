@@ -1,0 +1,8 @@
+phase,seconds,detail
+catalog_plan,0.0005640401504933834,54 sections
+download,409.0686513460241,"54 parts, 546358784 bytes"
+probe_inputs,3.180799711961299,"54 sections, 68286.3s audio"
+write_inputs,0.00045061809942126274,concat + chapters
+encode,716.6635952489451,speed=95.4x
+validate_output,0.4542018617503345,chapters=54 duration=68286.302
+commit_rename,0.0002812594175338745,568033244 bytes
