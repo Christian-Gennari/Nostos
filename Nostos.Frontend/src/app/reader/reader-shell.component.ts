@@ -859,7 +859,7 @@ export class ReaderShell implements OnInit, OnDestroy {
     // Keep the pending selection/menu alive behind the assistant: it remains
     // both visible context and a reversible choice if the reader closes Ask
     // Nostos and decides to Highlight or Add note instead.
-    this.assistant.open();
+    this.assistant.requestSurfaceOpen();
   }
 
   copySelection(): void {
