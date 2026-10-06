@@ -35,8 +35,11 @@ import {
   isInteractiveTarget,
   isTypingTarget,
   pageActionForKey,
+  shouldSuppressTouchClick,
   surfaceActionForPoint,
   swipePageAction,
+  touchClickSuppressionForMovement,
+  type TouchClickSuppression,
 } from '../reader-keyboard';
 import { AssistantContextService } from '../../ui/assistant/assistant-context.service';
 
@@ -1687,19 +1690,26 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     let touchStart:
       | { x: number; y: number; at: number; target: EventTarget | null }
       | null = null;
-    let suppressNextClick = false;
+    let clickSuppression: TouchClickSuppression | null = null;
 
-    const selectedText = () => doc.getSelection?.()?.toString() ?? '';
+    // Native selection is cleared once Nostos captures a contextual mark. The
+    // reader-owned assistantSelection keeps that pending passage visible to the
+    // gesture arbiter so an edge tap/swipe cannot turn the page underneath the
+    // selection action surface.
+    const selectedText = () =>
+      doc.getSelection?.()?.toString().trim() || this.assistantSelection()?.trim() || '';
     const coarsePointer = () =>
       typeof window !== 'undefined'
       && typeof window.matchMedia === 'function'
       && window.matchMedia('(pointer: coarse)').matches;
 
     const onClick = (event: MouseEvent) => {
-      if (suppressNextClick) {
-        suppressNextClick = false;
+      const now = Date.now();
+      if (shouldSuppressTouchClick(clickSuppression, event.clientX, event.clientY, now)) {
+        clickSuppression = null;
         return;
       }
+      if (clickSuppression && now > clickSuppression.untilMs) clickSuppression = null;
 
       const width = doc.defaultView?.innerWidth ?? doc.documentElement.clientWidth;
       const action = surfaceActionForPoint({
@@ -1736,6 +1746,14 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
       if (!start || event.changedTouches.length !== 1) return;
 
       const touch = event.changedTouches[0];
+      const now = Date.now();
+      clickSuppression = touchClickSuppressionForMovement({
+        startX: start.x,
+        startY: start.y,
+        endX: touch.clientX,
+        endY: touch.clientY,
+        nowMs: now,
+      });
       const action = swipePageAction({
         target: start.target,
         selectedText: selectedText(),
@@ -1743,20 +1761,17 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
         startY: start.y,
         endX: touch.clientX,
         endY: touch.clientY,
-        durationMs: Date.now() - start.at,
+        durationMs: now - start.at,
       });
 
       if (!action) return;
-      // Browsers commonly synthesize a click after touchend. Consume that one
-      // so one swipe cannot both turn a page and toggle the shell.
-      suppressNextClick = true;
       if (action === 'next') this.next();
       else this.previous();
     };
 
     const onTouchCancel = () => {
       touchStart = null;
-      suppressNextClick = false;
+      clickSuppression = null;
     };
 
     doc.addEventListener('click', onClick);
