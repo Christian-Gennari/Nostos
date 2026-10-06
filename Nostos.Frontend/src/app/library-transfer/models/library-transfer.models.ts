@@ -166,7 +166,9 @@ export interface PersistedTransferResumeState {
   direction: 'import';
   fileIdentity: TransferFileIdentity;
   fileName: string;
-  preflightRequest: MigrationPreflightRequestDto;
+  /** Missing only when attaching an existing server job without browser metadata. */
+  preflightRequest?: MigrationPreflightRequestDto;
+  serverDiscovered?: true;
   preflightDecision?: MigrationPreflightDecision;
   /**
    * Destination revision the server returned at preflight, i.e. the revision

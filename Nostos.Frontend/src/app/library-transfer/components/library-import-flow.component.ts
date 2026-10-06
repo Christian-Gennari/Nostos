@@ -517,12 +517,13 @@ export class LibraryImportFlowComponent implements OnInit, OnDestroy {
   private async tryAutoResume(): Promise<void> {
     if (!this.autoResume()) return;
     if (this.state().kind !== 'idle') return;
-    if (!this.resumeStore.load()) return;
+    if (!this.resumeStore.load() && !this.coordinator.supportsActiveImportDiscovery) return;
     if (!this.claimForAction()) {
       this.pendingResume = true;
       return;
     }
     await this.coordinator.resume();
+    if (this.state().kind === 'idle') this.releaseLease();
   }
 
   /** Claims the lease before any action that continues or starts a transfer. */
