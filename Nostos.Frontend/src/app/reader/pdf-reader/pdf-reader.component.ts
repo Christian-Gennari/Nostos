@@ -45,7 +45,13 @@ import {
   TocItem,
 } from '../reader.interface';
 import { AssistantContextService } from '../../ui/assistant/assistant-context.service';
-import { surfaceActionForPoint, swipePageAction } from '../reader-keyboard';
+import {
+  shouldSuppressTouchClick,
+  surfaceActionForPoint,
+  swipePageAction,
+  touchClickSuppressionForMovement,
+  type TouchClickSuppression,
+} from '../reader-keyboard';
 
 /**
  * Surround colours for the pdf.js viewer canvas, mirroring the Nostos tokens
@@ -201,7 +207,7 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
   private surfaceTouchStart:
     | { x: number; y: number; at: number; target: EventTarget | null }
     | null = null;
-  private suppressNextSurfaceClick = false;
+  private surfaceClickSuppression: TouchClickSuppression | null = null;
 
   search(query: string): void {
     if (!this.searchAvailable()) {
@@ -781,12 +787,24 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
   }
 
   onSurfaceClick(event: MouseEvent): void {
-    if (this.suppressNextSurfaceClick) {
-      this.suppressNextSurfaceClick = false;
+    const now = Date.now();
+    if (
+      shouldSuppressTouchClick(
+        this.surfaceClickSuppression,
+        event.clientX,
+        event.clientY,
+        now,
+      )
+    ) {
+      this.surfaceClickSuppression = null;
       return;
     }
+    if (this.surfaceClickSuppression && now > this.surfaceClickSuppression.untilMs) {
+      this.surfaceClickSuppression = null;
+    }
 
-    const selectedText = this.highlightService.captureSelectionText?.() ?? null;
+    const selectedText =
+      this.highlightService.captureSelectionText?.() ?? this.assistantSelection();
     const target = event.currentTarget as HTMLElement | null;
     const width = target?.clientWidth ?? window.innerWidth;
     const coarsePointer =
@@ -820,35 +838,53 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
   }
 
   onSurfaceTouchEnd(event: TouchEvent): void {
-    // Preserve the existing selection/highlight capture path first. If a long
-    // press produced text, the gesture helper below refuses to page.
-    this.onTextSelection();
-
     const start = this.surfaceTouchStart;
     this.surfaceTouchStart = null;
-    if (!start || event.changedTouches.length !== 1 || this.scrollMode() !== ScrollModeType.page) {
-      return;
-    }
+
+    // Snapshot first: a cross-page/invalid capture may deliberately clear the
+    // browser selection, but that must not turn the same finger movement into a
+    // page gesture afterwards.
+    const selectionBeforeCapture =
+      this.highlightService.captureSelectionText?.() ?? this.assistantSelection();
+    this.onTextSelection();
+
+    if (!start || event.changedTouches.length !== 1) return;
 
     const touch = event.changedTouches[0];
-    const action = swipePageAction({
-      target: start.target,
-      selectedText: this.highlightService.captureSelectionText?.() ?? null,
+    const now = Date.now();
+    this.surfaceClickSuppression = touchClickSuppressionForMovement({
       startX: start.x,
       startY: start.y,
       endX: touch.clientX,
       endY: touch.clientY,
-      durationMs: Date.now() - start.at,
+      nowMs: now,
+    });
+
+    // Continuous mode stays a native scroll surface. We still suppress a
+    // synthetic click after a real drag so scrolling cannot flash reader chrome.
+    if (this.scrollMode() !== ScrollModeType.page) return;
+
+    const action = swipePageAction({
+      target: start.target,
+      selectedText:
+        this.highlightService.captureSelectionText?.()
+        ?? this.assistantSelection()
+        ?? selectionBeforeCapture,
+      startX: start.x,
+      startY: start.y,
+      endX: touch.clientX,
+      endY: touch.clientY,
+      durationMs: now - start.at,
     });
     if (!action) return;
 
-    this.suppressNextSurfaceClick = true;
     if (action === 'next') this.next();
     else this.previous();
   }
 
   onSurfaceTouchCancel(): void {
     this.surfaceTouchStart = null;
+    this.surfaceClickSuppression = null;
   }
 
   onTextSelection() {
