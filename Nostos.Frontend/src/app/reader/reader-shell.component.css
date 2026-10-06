@@ -652,7 +652,7 @@
 
 /* Docked selection surfaces wrap instead of squeezing the quote to nothing.
    EPUB carries note/highlight choices; PDF keeps its smaller save path. */
-.highlight-confirmation.epub-actions .confirmation-content {
+.highlight-confirmation .confirmation-content {
   flex-wrap: wrap;
 }
 
@@ -1178,6 +1178,11 @@
 
 .reader-layout.immersive .page-navigation {
   background: transparent;
+}
+
+.reader-layout.immersive .reader-search-panel,
+.reader-layout.immersive .typo-panel {
+  top: calc(var(--header-height) + env(safe-area-inset-top, 0px) + 0.5rem);
 }
 
 @media (max-width: 768px) {
