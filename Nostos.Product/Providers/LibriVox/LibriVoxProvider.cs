@@ -85,6 +85,10 @@ public sealed class LibriVoxProvider : IContentProvider,
 
     public string? RightsNotice => LibriVoxCatalog.RightsStatement;
 
+    public bool EnabledByDefault => true;
+
+    public string? Description => "Public-domain audiobooks read by volunteers.";
+
     // --- IProviderDownloadPolicy ----------------------------------------
     // Suffix-matched, so the dn*.ca.archive.org host that archive.org redirects
     // downloads to is covered by the archive.org entry along with any mirror.

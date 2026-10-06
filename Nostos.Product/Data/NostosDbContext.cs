@@ -59,6 +59,11 @@ public class NostosDbContext : DbContext
     // encrypted keys, so reusing it would make its name a lie.
     public DbSet<AssistantSettingsModel> AssistantSettings => Set<AssistantSettingsModel>();
 
+    // Explicit user choices about which free book sources participate in
+    // discovery and acquisition (issue #774). One row per chosen provider;
+    // absence means "use the provider's declared default".
+    public DbSet<ProviderPreferenceModel> ProviderPreferences => Set<ProviderPreferenceModel>();
+
     // Durable operational transfer records for library migration jobs
     // (issue #679). Host-local state — leases, sessions, chunk receipts,
     // export artifacts and storage reservations — explicitly excluded from
@@ -659,6 +664,20 @@ public class NostosDbContext : DbContext
             e.ToTable(t => t.HasCheckConstraint(
                 "CK_AssistantSettings_SingletonId",
                 $"\"Id\" = {AssistantSettingsModel.SingletonId}"));
+        });
+
+        // --- PROVIDER ENABLEMENT (issue #774) ---
+        // One row per provider the user has explicitly chosen. The id is the
+        // registry id, which is already the durable provenance key; the CHECK
+        // constraint pins the same bounds the registry validates, so a direct
+        // write cannot create a row no provider can ever resolve.
+        modelBuilder.Entity<ProviderPreferenceModel>(e =>
+        {
+            e.HasKey(p => p.ProviderId);
+            e.Property(p => p.ProviderId).HasMaxLength(32);
+            e.ToTable(t => t.HasCheckConstraint(
+                "CK_ProviderPreferences_ProviderId",
+                "length(\"ProviderId\") > 0 AND length(\"ProviderId\") <= 32"));
         });
 
         // --- DURABLE MIGRATION TRANSFER RECORDS (issue #679) ---

@@ -58,6 +58,10 @@ public sealed class WikisourceProvider : IContentProvider,
     // claim.
     public string? RightsNotice => null;
 
+    public bool EnabledByDefault => true;
+
+    public string? Description => "Transcribed public-domain texts in many languages.";
+
     public IReadOnlyList<string> AllowedHosts =>
     [
         "ws-export.wmcloud.org",
