@@ -177,7 +177,7 @@ const FONT_STACKS: Record<Exclude<EpubFontFamily, 'publisher'>, string> = {
 };
 
 /**
- * Margin presets, as a percentage of the reader's own width. These are OUTER
+ * Margin presets, as a percentage of the available spread (capped at 80rem). These are OUTER
  * margins around the epub.js page: `narrow` leaves epub.js's own gutter as the
  * only inset, so it reads as "the book as published".
  *
@@ -555,7 +555,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
 
   /** Reader typography (typeface, line height, margins), persisted reader-wide. */
   readonly typography = signal<EpubTypography>({ ...DEFAULT_TYPOGRAPHY });
-  /** Outer margin for the current preset, as a percentage of the reader width. */
+  /** Outer margin for the current preset, as a percentage of the capped spread. */
   readonly marginInset = computed(() => marginInsetPercent(this.typography().margin));
   /** Text size in percent — surfaced so the shell's typography panel can show the
    *  current step beside the A−/A+ controls (the toolbar used to own them). */

@@ -74,7 +74,8 @@ persistent top/bottom bars, so revealing controls cannot resize an EPUB
 rendition or shift a PDF scrollport. Revealed controls use a seamless edge
 header and pager rather than floating cards; book titles remain visible on
 phones. EPUB uses stable vertical reading insets and a maximum 80rem spread
-measure. PDF reserves first-page clearance for the header. Safe areas are paid
+measure. Narrow/Normal/Wide add 0/4/8% insets inside that capped spread, so
+all three remain distinct on wide monitors. PDF reserves first-page clearance for the header. Safe areas are paid
 by the active bottom surface, including contextual selection actions.
 
 ```

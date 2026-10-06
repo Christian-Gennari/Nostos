@@ -7,6 +7,7 @@
   /* Runtime-overridden by the reader margin preset binding. Declared here so
      static design checks know the custom property has an intentional owner. */
   --reader-margin: 0%;
+  --reader-margin-ratio: 0;
   display: block;
   width: 100%;
   height: 100%;
@@ -36,18 +37,21 @@
      states. The engine paginates once into this box; reveal never reflows it. */
   padding-top: calc(84px + env(safe-area-inset-top, 0px));
   padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
-  /* The surface itself is full-viewport, but prose should not become a
-     1400px-wide line on a large monitor. Preserve the reader's chosen margin
-     while restoring a quiet maximum page measure without reintroducing a
-     visible inner card/boundary. */
+  /* Centre the capped spread, then apply the chosen inset inside it. A max
+     between these values makes every preset identical on wider screens. The
+     inset is 0/4/8% of the available spread, capped at 80rem, not the monitor. */
   padding-left: max(
-    var(--reader-margin, 0%),
-    calc((100% - 80rem) / 2),
+    calc(
+      max(0px, calc((100% - 80rem) / 2)) +
+      min(var(--reader-margin, 0%), calc(80rem * var(--reader-margin-ratio)))
+    ),
     env(safe-area-inset-left, 0px)
   );
   padding-right: max(
-    var(--reader-margin, 0%),
-    calc((100% - 80rem) / 2),
+    calc(
+      max(0px, calc((100% - 80rem) / 2)) +
+      min(var(--reader-margin, 0%), calc(80rem * var(--reader-margin-ratio)))
+    ),
     env(safe-area-inset-right, 0px)
   );
   /* Theme the viewer surface with Nostos tokens so no pale gutter surrounds
