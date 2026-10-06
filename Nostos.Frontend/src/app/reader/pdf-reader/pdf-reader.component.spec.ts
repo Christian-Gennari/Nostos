@@ -916,14 +916,15 @@ describe('PdfReader highlight trust regressions (#478)', () => {
     const component = fixture.componentInstance;
 
     component.onTextSelection();
-    component.commitHighlight();
+    component.commitHighlight('A PDF note');
     expect(createNote).toHaveBeenCalledTimes(1);
 
     const firstDto = createNote.mock.calls[0][1];
-    component.commitHighlight();
+    component.commitHighlight('A PDF note');
 
     expect(createNote).toHaveBeenCalledTimes(2);
     expect(createNote.mock.calls[1][1]).toEqual(firstDto);
+    expect(firstDto.content).toBe('A PDF note');
     expect(firstDto.selectedText).toBe('same difficult selection');
     expect(JSON.parse(firstDto.cfiRange)).toMatchObject({
       pageNumber: 3,
