@@ -38,6 +38,8 @@ import { readReaderReturnOrigin } from '../core/navigation/studio-reader-navigat
 import { Theme, ThemeService } from '../core/services/theme.service';
 import { ToastService } from '../core/services/toast.service';
 import { FeedbackLinkService } from '../core/services/feedback-link.service';
+import { AssistantContextService } from '../ui/assistant/assistant-context.service';
+import { AssistantService } from '../ui/assistant/assistant.service';
 
 /** Longest quote a selection surface renders (#657); the full text is still saved. */
 export const SELECTION_PREVIEW_MAX = 320;
@@ -187,6 +189,9 @@ export class ReaderShell implements OnInit, OnDestroy {
 
   private themeService = inject(ThemeService);
   private toast = inject(ToastService);
+  private readonly assistant = inject(AssistantService);
+  private readonly assistantContext = inject(AssistantContextService);
+  private unregisterSelectionAssistantContext: (() => void) | null = null;
 
   /**
    * The Cloud feedback destination for the Reader (`?from=reader`), or null on
@@ -484,6 +489,13 @@ export class ReaderShell implements OnInit, OnDestroy {
   // --- INITIALIZATION ---
 
   ngOnInit() {
+    // A captured selection remains explicit assistant context while its
+    // contextual menu is open. This survives focus moving into Ask Nostos,
+    // which otherwise collapses a native PDF selection before the turn is sent.
+    this.unregisterSelectionAssistantContext = this.assistantContext.register(
+      () => ({ selectedText: this.pendingSelectionText() }),
+      { explicit: true },
+    );
     this.loadTopics();
     this.watchBookNavigation();
     this.watchGroundedSourceNavigation();
@@ -497,6 +509,8 @@ export class ReaderShell implements OnInit, OnDestroy {
     this.sourceNavigationGeneration++;
     this.bookLoadGeneration++;
     this.pendingGroundedSourceTarget = null;
+    this.unregisterSelectionAssistantContext?.();
+    this.unregisterSelectionAssistantContext = null;
     if (this.saveFeedbackTimer) clearTimeout(this.saveFeedbackTimer);
     this.dockQuery?.removeEventListener?.('change', this.onDockQueryChange);
     this.veryNarrowQuery?.removeEventListener?.('change', this.onVeryNarrowChange);
@@ -814,6 +828,14 @@ export class ReaderShell implements OnInit, OnDestroy {
    * passage is copied in full, not the clamped preview; the menu then closes
    * without saving, like any other non-saving choice.
    */
+  askNostosAboutSelection(): void {
+    if (!this.pendingSelectionText() || this.highlightSaving()) return;
+    // Keep the pending selection/menu alive behind the assistant: it remains
+    // both visible context and a reversible choice if the reader closes Ask
+    // Nostos and decides to Highlight or Add note instead.
+    this.assistant.open();
+  }
+
   copySelection(): void {
     const text = this.pendingSelectionText();
     if (!text || this.highlightSaving()) return;
