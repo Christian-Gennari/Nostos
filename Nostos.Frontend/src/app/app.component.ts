@@ -15,6 +15,7 @@ import { SwUpdateService } from './core/services/sw-update.service';
 import { ThemeService } from './core/services/theme.service';
 import { CloudEntryService } from './core/services/cloud-entry.service';
 import { CloudEntryComponent } from './cloud-entry/cloud-entry.component';
+import { HostedBrowserIntegrationService } from './core/services/hosted-browser-integration.service';
 import { LibraryActivationOverlayComponent } from './library-transfer/components/library-activation-overlay.component';
 import { LibraryActivationController } from './library-transfer/services/library-activation-controller.service';
 
@@ -49,6 +50,9 @@ export class App {
     // changes how URLs are served (the app shell vs. the API) reaches an
     // already-open client without a manual reload.
     inject(SwUpdateService).start();
+    // Host browser integrations also run on entry/recovery screens. They
+    // never participate in product readiness or entitlement decisions.
+    inject(HostedBrowserIntegrationService).start();
     void this.cloudEntry.initialize();
 
     this.router.events.subscribe((event) => {

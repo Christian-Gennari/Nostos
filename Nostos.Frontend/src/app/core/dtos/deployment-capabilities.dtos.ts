@@ -31,4 +31,5 @@ export interface DeploymentCapabilities {
   supportsDirectPartUpload?: boolean;
   accountManagementUrl?: string | null;
   feedbackUrl?: string | null;
+  hostedBrowserIntegrationEnabled?: boolean;
 }

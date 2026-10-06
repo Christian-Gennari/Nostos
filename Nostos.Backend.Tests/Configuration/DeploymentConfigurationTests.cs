@@ -115,6 +115,41 @@ public sealed class DeploymentConfigurationTests
         selfHosted.Capabilities.AccountManagementUrl.Should().BeNull();
     }
 
+    [Theory]
+    [InlineData("Cloud", true, true)]
+    [InlineData("Cloud", false, false)]
+    [InlineData("SelfHosted", true, false)]
+    [InlineData("SelfHosted", false, false)]
+    [InlineData(null, true, false)]
+    public void Hosted_browser_integration_requires_explicit_cloud_opt_in(
+        string? mode, bool enabled, bool expected)
+    {
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(
+            new Dictionary<string, string?>
+            {
+                [DeploymentDescriptor.ConfigurationKey] = mode,
+                [DeploymentDescriptor.HostedBrowserIntegrationConfigurationKey] = enabled.ToString(),
+            }).Build();
+
+        var deployment = DeploymentDescriptor.FromConfiguration(configuration);
+        deployment.Capabilities.HostedBrowserIntegrationEnabled.Should().Be(expected);
+        DeploymentCapabilitiesEndpoints.ToResponse(deployment)
+            .HostedBrowserIntegrationEnabled.Should().Be(expected);
+    }
+
+    [Fact]
+    public void Self_hosted_response_cannot_advertise_host_integration_from_a_custom_descriptor()
+    {
+        var deployment = DeploymentDescriptor.For(DeploymentMode.SelfHosted);
+        deployment = deployment with
+        {
+            Capabilities = deployment.Capabilities with { HostedBrowserIntegrationEnabled = true },
+        };
+
+        DeploymentCapabilitiesEndpoints.ToResponse(deployment)
+            .HostedBrowserIntegrationEnabled.Should().BeFalse();
+    }
+
     private static IConfiguration BuildConfiguration(string mode, string? accountManagementUrl = null)
     {
         var values = new Dictionary<string, string?>
