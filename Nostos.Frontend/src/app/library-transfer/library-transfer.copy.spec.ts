@@ -81,6 +81,22 @@ describe('library-transfer.copy', () => {
   });
 
   describe('libraryTransferFailureCopy', () => {
+    it('explains a provider cap and asks for capacity before retrying', () => {
+      const copy = libraryTransferFailureCopy(failure('portable_import_provider_limit_reached'));
+      expect(copy.title).toContain('download limit');
+      expect(copy.message).toContain('reading your archive');
+      expect(copy.message).toContain('capacity available, then retry');
+      expect(copy.action).toBe('retry');
+    });
+
+    it('explains an invalid-state rejection without claiming the connection dropped', () => {
+      const copy = libraryTransferFailureCopy(failure('migration_invalid_state', { status: 409 }));
+      expect(copy.message).toContain('current state');
+      expect(copy.message).toContain('existing import');
+      expect(copy.action).toBe('retry');
+      expect(copy.message).not.toContain('connection dropped');
+    });
+
     it('maps archive failures to a file-selection recovery', () => {
       expect(libraryTransferFailureCopy(failure('archive_not_portable')).action).toBe('choose-file');
       expect(libraryTransferFailureCopy(failure('archive_operational_backup')).action).toBe(

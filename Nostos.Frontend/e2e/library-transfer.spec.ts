@@ -668,6 +668,119 @@ test('scenario d1: reload mid-upload resumes with only the missing chunks', asyn
   expect(unexpectedPageErrors(errors.pageErrors)).toEqual([]);
 });
 
+test('scenario d3: retry an exhausted part upload without restarting the job', async ({ page }, testInfo) => {
+  const archive = await ensureArchive();
+  await withDestination(testInfo, 'retry-part', 'none', async (destination) => {
+    let rejectPart = true;
+    let retryJobRequests = 0;
+    page.on('request', request => {
+      if (request.method() === 'POST' && /\/jobs\/[^/]+\/retry$/.test(request.url())) {
+        retryJobRequests += 1;
+      }
+    });
+    await page.route('**/api/portability/migration/jobs/*/upload-session/chunks/1', async route => {
+      if (rejectPart) {
+        await route.fulfill({ status: 503, contentType: 'application/json',
+          body: JSON.stringify({ error: 'unexpected_error', message: 'Temporary storage failure' }) });
+      } else {
+        await route.continue();
+      }
+    });
+    await openSettings(page, destination.baseUrl);
+    const chunks = trackChunkIndexes(page);
+    const jobs = trackJobIds(page);
+    await selectArchive(page, archive);
+    await expect(page.getByTestId('import-failed')).toBeVisible({ timeout: 180_000 });
+    const jobId = jobs[0];
+    expect(jobId).toBeTruthy();
+    const status = await (await fetch(`${destination.baseUrl}/api/portability/migration/jobs/${jobId}`)).json();
+    expect(status.job.state).toBe('Transferring');
+    expect(status.session.receivedChunkCount).toBe(status.session.totalChunks - 1);
+    expect(await page.evaluate(() => JSON.parse(localStorage.getItem('nostos.library-transfer.active.v1')!).jobId)).toBe(jobId);
+    await testInfo.attach('part-failure', { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' });
+
+    rejectPart = false;
+    chunks.length = 0;
+    const beforeReload = await navigationOrigin(page);
+    await page.getByTestId('import-failure-action').click();
+    await waitForReload(page, beforeReload);
+
+    expect(chunks).toEqual([1]);
+    expect(retryJobRequests).toBe(0);
+    expect(jobs).toHaveLength(1);
+    await page.goto(`${destination.baseUrl}/library`);
+    await assertSourceContent(destination.baseUrl);
+    await testInfo.attach('library-imported', { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' });
+  });
+});
+
+test('scenario d4: reload after all parts resumes completion without selecting the file', async ({ page }, testInfo) => {
+  const archive = await ensureArchive();
+  await withDestination(testInfo, 'resume-completion', 'none', async (destination) => {
+    let completionRequests = 0;
+    let reportProcessing = false;
+    let verifiedFraction = 0.25;
+    let finish!: () => void;
+    const gate = new Promise<void>(resolve => { finish = resolve; });
+    await page.route('**/api/portability/migration/jobs/*', async route => {
+      const response = await route.fetch();
+      const status = await response.json();
+      if (reportProcessing && status.job.state === 'Transferring' && status.session) {
+        status.progress = { phase: 'Validating',
+          bytesProcessed: Math.floor(status.session.totalBytes * verifiedFraction),
+          totalBytes: status.session.totalBytes, message: 'Verifying uploaded archive' };
+      }
+      await route.fulfill({ response, json: status });
+    });
+    await page.route('**/api/portability/migration/jobs/*/upload-session/complete', async route => {
+      completionRequests += 1;
+      if (completionRequests === 1) {
+        await route.abort('connectionreset');
+      } else {
+        await gate;
+        await route.continue();
+      }
+    });
+    try {
+      await openSettings(page, destination.baseUrl);
+      const chunks = trackChunkIndexes(page);
+      const jobs = trackJobIds(page);
+      await selectArchive(page, archive);
+      await expect(page.getByTestId('import-failed')).toBeVisible({ timeout: 180_000 });
+      const jobId = jobs[0];
+      const status = await (await fetch(`${destination.baseUrl}/api/portability/migration/jobs/${jobId}`)).json();
+      expect(status.session.state).toBe('Receiving');
+      expect(status.session.receivedChunkCount).toBe(status.session.totalChunks);
+
+      chunks.length = 0;
+      await page.reload();
+      await expect(page.getByTestId('import-checking')).toBeVisible({ timeout: 60_000 });
+      await expect(page.getByTestId('import-checking').getByRole('progressbar')).not.toHaveAttribute('aria-valuenow');
+      const fill = page.getByTestId('import-checking').locator('.transfer-progress-fill');
+      expect(await fill.evaluate(element => element.getBoundingClientRect().width)).toBeGreaterThan(0);
+      reportProcessing = true;
+      await expect(page.getByTestId('import-checking').getByRole('progressbar')).toHaveAttribute('aria-valuenow', '25');
+      await expect(page.getByTestId('import-upload-complete')).toContainText('Upload complete');
+      await expect(page.getByTestId('import-status-checked')).toContainText('Status checked at');
+      await page.getByTestId('import-checking').scrollIntoViewIfNeeded();
+      await testInfo.attach('processing-after-reload', { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' });
+      verifiedFraction = 0.5;
+      await expect(page.getByTestId('import-checking').getByRole('progressbar')).toHaveAttribute('aria-valuenow', '50');
+      const beforeReload = await navigationOrigin(page);
+      finish();
+      await waitForReload(page, beforeReload);
+
+      expect(completionRequests).toBe(2);
+      expect(chunks).toEqual([]);
+      expect(jobs).toHaveLength(1);
+      await page.goto(`${destination.baseUrl}/library`);
+      await assertSourceContent(destination.baseUrl);
+    } finally {
+      finish();
+    }
+  });
+});
+
 test('scenario d2: reload during activation reattaches and reports the outcome', async ({ page }, testInfo) => {
   const archive = await ensureArchive();
   const errors = collectErrors(page);

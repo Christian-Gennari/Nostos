@@ -160,19 +160,42 @@
   } @else if (checking(); as current) {
     <div class="transfer-state" data-testid="import-checking">
       <p class="transfer-headline">{{ checkingHeadline() }}</p>
+      <ol class="transfer-processing-steps" aria-label="Import stages">
+        <li class="is-complete"><span>Upload archive</span><span>Complete</span></li>
+        <li [class.is-current]="current.jobState !== 'Validating' && current.jobState !== 'Activating'"
+            [class.is-complete]="current.jobState === 'Validating' || current.jobState === 'Activating'">
+          <span>Check uploaded archive</span>
+          <span>{{ current.jobState === 'Validating' || current.jobState === 'Activating' ? 'Complete' : 'In progress' }}</span>
+        </li>
+        <li [class.is-current]="current.jobState === 'Validating'"
+            [class.is-complete]="current.jobState === 'Activating'">
+          <span>Prepare library</span>
+          <span>{{ current.jobState === 'Activating' ? 'Complete' : current.jobState === 'Validating' ? 'In progress' : 'Waiting' }}</span>
+        </li>
+        <li [class.is-current]="current.jobState === 'Activating'">
+          <span>Import library</span><span>{{ current.jobState === 'Activating' ? 'In progress' : 'Waiting' }}</span>
+        </li>
+      </ol>
+      <p class="transfer-copy" data-testid="import-upload-complete">Upload complete@if (uploadSummary(); as summary) { · {{ summary }}}</p>
       <app-library-transfer-progress
         [phase]="checkingPhase()"
-        [bytesProcessed]="current.progress.uploadedBytes"
-        [totalBytes]="current.progress.totalBytes"
-        [completedChunks]="current.progress.completedChunks"
-        [totalChunks]="current.progress.totalChunks"
+        [bytesProcessed]="processingProgress()?.bytesProcessed ?? null"
+        [totalBytes]="processingProgress()?.totalBytes ?? null"
       />
       <p class="transfer-copy" data-testid="import-server-note">
         @if (current.jobState === 'Activating') {
           Nostos is switching your library on the server. This can no longer be cancelled.
         } @else {
-          The upload is complete and the server is processing the archive. You can close this
-          page; processing continues on the server.
+          Nostos is checking the uploaded data and preparing your library. Large archives take
+          longer because the server reads and checks their contents. You can close this page
+          and return later; processing continues on the server.
+        }
+      </p>
+      <p class="transfer-processing-status" data-testid="import-status-checked">
+        @if (statusCheckedTime(); as checkedAt) {
+          Status checked at {{ checkedAt }} · Updates automatically
+        } @else {
+          Waiting for server status · Updates automatically
         }
       </p>
       @if (checkingCancellable()) {

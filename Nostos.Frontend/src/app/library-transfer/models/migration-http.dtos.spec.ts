@@ -106,7 +106,7 @@ describe('import flow transitions', () => {
       ],
       inspecting: ['preflighting', 'failed', 'cancelled'],
       preflighting: ['ready-to-upload', 'failed', 'cancelled'],
-      'ready-to-upload': ['uploading', 'failed', 'cancelled', 'ready-to-upload'],
+      'ready-to-upload': ['uploading', 'checking', 'failed', 'cancelled', 'ready-to-upload'],
       uploading: ['checking', 'failed', 'cancelled', 'ready-to-upload', 'uploading'],
       checking: [
         'checking',

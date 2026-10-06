@@ -327,6 +327,14 @@ export function libraryTransferFailureCopy(failure: LibraryTransferFailure): Tra
         message: 'Nostos could not prepare the archive. Try the export again.',
         action: 'start-over',
       };
+    case 'portable_import_provider_limit_reached':
+      return {
+        title: 'The host’s download limit was reached',
+        message:
+          'The storage provider blocked the server from reading your archive. ' +
+          'Ask the host to make download capacity available, then retry this import.',
+        action: 'retry',
+      };
     case 'portable_import_failed':
       return {
         title: 'Couldn’t finish the import',
@@ -338,6 +346,14 @@ export function libraryTransferFailureCopy(failure: LibraryTransferFailure): Tra
         title: 'This import is no longer available',
         message: 'Nostos no longer has this import. Start a new import with your archive.',
         action: 'choose-file',
+      };
+    case 'migration_invalid_state':
+      return {
+        title: 'The import is still active or cannot continue',
+        message:
+          'The host rejected this operation because of the import’s current state. ' +
+          'Resume the existing import, or cancel it before starting another.',
+        action: 'retry',
       };
     case 'migration_cannot_cancel':
       return {
@@ -357,7 +373,7 @@ export function libraryTransferFailureCopy(failure: LibraryTransferFailure): Tra
       }
       return {
         title: 'The transfer didn’t finish',
-        message: 'The connection dropped or the host interrupted the transfer. Try again.',
+        message: 'Nostos could not finish this transfer. Try again to continue.',
         action: failure.retryable ? 'retry' : 'choose-file',
       };
   }
@@ -368,6 +384,7 @@ export type TransferProgressPhase =
   | 'preparing'
   | 'uploading'
   | 'checking'
+  | 'preparing-library'
   | 'activating';
 
 /** Visible and announced label per progress phase (plan §25, §43). */
@@ -376,6 +393,7 @@ export const TRANSFER_PROGRESS_LABELS: Record<TransferProgressPhase, string> = {
   preparing: 'Preparing import',
   uploading: 'Uploading library',
   checking: 'Checking the archive',
+  'preparing-library': 'Preparing your library',
   activating: 'Importing library',
 };
 

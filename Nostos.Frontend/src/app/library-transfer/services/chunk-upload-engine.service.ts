@@ -265,7 +265,7 @@ export class ChunkUploadRun {
   }
 
   private backoffMs(attempt: number, retryAfterMs?: number): number {
-    const base = Math.min(500 * 2 ** (attempt - 1), 8_000);
+    const base = Math.min(500 * 2 ** (attempt - 1), 30_000);
     const jitter = 0.8 + 0.4 * this.random();
     return Math.max(Math.round(base * jitter), retryAfterMs ?? 0);
   }

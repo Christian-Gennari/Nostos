@@ -58,6 +58,7 @@ describe('LibraryTransferProgressComponent', () => {
     expect(track().getAttribute('aria-valuenow')).toBeNull();
     expect(track().getAttribute('aria-valuetext')).toBe('Checking the archive…');
     expect(fixture.nativeElement.querySelector('.transfer-progress-percent')).toBeNull();
+    expect(fixture.nativeElement.querySelector('.transfer-progress-fill').style.width).toBe('');
   });
 
   it('announces bucketed progress so XHR events cannot spam the live region', async () => {
