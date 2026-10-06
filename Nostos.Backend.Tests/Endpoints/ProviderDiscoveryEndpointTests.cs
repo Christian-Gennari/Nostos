@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Nostos.Backend.Endpoints;
 using Nostos.Backend.Providers;
 using Nostos.Backend.Providers.Contracts;
 using Nostos.Backend.Providers.Discovery;
@@ -118,6 +119,149 @@ public sealed class ProviderDiscoveryEndpointTests : IClassFixture<LibraryEndpoi
         timedOut.ErrorCode.Should().Be(ProviderDiscoveryErrorCodes.Timeout);
     }
 
+    [Fact]
+    public async Task AggregateSearch_ConsumesHostDiscoveryBackend_WithoutLiveProviderSearches()
+    {
+        var gutenberg = new EndpointProvider(
+            "gutenberg",
+            ProviderCapabilities.EbookAcquisition,
+            new ProviderSearchPage([Item("gutenberg", "live", ProviderMediaKind.Ebook, "Never searched")]));
+        var librivox = new EndpointProvider(
+            "librivox",
+            ProviderCapabilities.AudiobookAcquisition,
+            new ProviderSearchPage([]));
+        var snapshot = new SnapshotDiscovery(new ProviderDiscoveryResult(
+            [Item("gutenberg", "42", ProviderMediaKind.Ebook, "The Republic")],
+            HasMore: true,
+            Sources:
+            [
+                new ProviderDiscoverySourceStatus(
+                    "gutenberg",
+                    "Project Gutenberg",
+                    Succeeded: true,
+                    Notice: "Catalog snapshot; results may lag the source."),
+                new ProviderDiscoverySourceStatus(
+                    "librivox",
+                    "LibriVox",
+                    Succeeded: false,
+                    ErrorCode: ProviderException.Unavailable),
+            ]));
+
+        await using var app = _factory.WithWebHostBuilder(builder =>
+            ReplaceProvidersWithDiscovery(builder, snapshot, gutenberg, librivox));
+        using var client = app.CreateClient();
+
+        var response = await client.GetFromJsonAsync<ProviderDiscoverySearchResultDto>(
+            "/api/providers/search?query=classic&kind=ebook&limit=10");
+
+        response.Should().NotBeNull();
+        response!.Items.Should().ContainSingle();
+        response.Items[0].ProviderId.Should().Be("gutenberg");
+        response.Items[0].ExternalId.Should().Be("42");
+        response.Items[0].MediaKind.Should().Be("ebook");
+        response.Items[0].Title.Should().Be("The Republic");
+        response.Items[0].Assets.Should().BeEmpty();
+        response.HasMore.Should().BeTrue();
+        response.Sources.Should().HaveCount(2);
+        response.Sources.Single(source => source.ProviderId == "gutenberg").Notice
+            .Should().Be("Catalog snapshot; results may lag the source.");
+        var stale = response.Sources.Single(source => source.ProviderId == "librivox");
+        stale.Succeeded.Should().BeFalse();
+        stale.ErrorCode.Should().Be(ProviderException.Unavailable);
+
+        gutenberg.SearchCount.Should().Be(0, "a host discovery backend must not fall back to live provider search");
+        librivox.SearchCount.Should().Be(0);
+        snapshot.CallCount.Should().Be(1);
+        snapshot.LastRequest!.Query.Should().Be("classic");
+        snapshot.LastRequest.Kind.Should().Be(ProviderMediaKind.Ebook);
+        snapshot.LastRequest.Limit.Should().Be(10);
+        snapshot.LastRequest.ProviderIds.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task AggregateSearch_DropsRowsForProvidersThisHostDoesNotRun()
+    {
+        var gutenberg = new EndpointProvider(
+            "gutenberg",
+            ProviderCapabilities.EbookAcquisition,
+            new ProviderSearchPage([]));
+        var snapshot = new SnapshotDiscovery(new ProviderDiscoveryResult(
+            [
+                Item("gutenberg", "42", ProviderMediaKind.Ebook, "The Republic"),
+                Item("cloud-only", "99", ProviderMediaKind.Ebook, "Not registered here"),
+            ],
+            HasMore: false,
+            Sources:
+            [
+                new ProviderDiscoverySourceStatus("gutenberg", "Project Gutenberg", Succeeded: true),
+                new ProviderDiscoverySourceStatus("cloud-only", "Cloud Only", Succeeded: true),
+            ]));
+
+        await using var app = _factory.WithWebHostBuilder(builder =>
+            ReplaceProvidersWithDiscovery(builder, snapshot, gutenberg));
+        using var client = app.CreateClient();
+
+        var response = await client.GetFromJsonAsync<ProviderDiscoverySearchResultDto>(
+            "/api/providers/search?query=classic");
+
+        response.Should().NotBeNull();
+        response!.Items.Should().ContainSingle().Which.ProviderId.Should().Be("gutenberg");
+        response.Sources.Should().ContainSingle().Which.ProviderId.Should().Be("gutenberg");
+    }
+
+    [Fact]
+    public void BoundaryDropsRowsOutsideTheAllowedProviderSet()
+    {
+        var alpha = new EndpointProvider(
+            "alpha",
+            ProviderCapabilities.EbookAcquisition,
+            new ProviderSearchPage([]));
+        var beta = new EndpointProvider(
+            "beta",
+            ProviderCapabilities.EbookAcquisition,
+            new ProviderSearchPage([]));
+        var registry = new ProviderRegistry([alpha, beta]);
+        var result = new ProviderDiscoveryResult(
+            [
+                Item("alpha", "1", ProviderMediaKind.Ebook, "Alpha"),
+                Item("beta", "2", ProviderMediaKind.Ebook, "Beta"),
+            ],
+            HasMore: false,
+            Sources:
+            [
+                new ProviderDiscoverySourceStatus("alpha", "Source alpha", Succeeded: true),
+                new ProviderDiscoverySourceStatus("beta", "Source beta", Succeeded: true),
+            ]);
+
+        var filtered = ProviderDiscoveryBoundary.Apply(
+            result,
+            registry,
+            new HashSet<string> { "alpha" });
+
+        filtered.Items.Should().ContainSingle().Which.ProviderId.Should().Be("alpha");
+        filtered.Sources.Should().ContainSingle().Which.ProviderId.Should().Be("alpha");
+    }
+
+    private static void ReplaceProvidersWithDiscovery(
+        IWebHostBuilder builder,
+        IProviderDiscovery discovery,
+        params IContentProvider[] providers)
+    {
+        builder.ConfigureServices(services =>
+        {
+            services.RemoveAll<IContentProvider>();
+            services.RemoveAll<IProviderRegistry>();
+            services.RemoveAll<ProviderDiscoveryService>();
+            services.RemoveAll<IProviderDiscovery>();
+
+            foreach (var provider in providers)
+                services.AddSingleton(typeof(IContentProvider), provider);
+
+            services.AddSingleton<IProviderRegistry, ProviderRegistry>();
+            services.AddSingleton<IProviderDiscovery>(discovery);
+        });
+    }
+
     private static void ReplaceProviders(
         IWebHostBuilder builder,
         params IContentProvider[] providers) =>
@@ -139,6 +283,7 @@ public sealed class ProviderDiscoveryEndpointTests : IClassFixture<LibraryEndpoi
             services.RemoveAll<IContentProvider>();
             services.RemoveAll<IProviderRegistry>();
             services.RemoveAll<ProviderDiscoveryService>();
+            services.RemoveAll<IProviderDiscovery>();
 
             foreach (var provider in providers)
                 services.AddSingleton(typeof(IContentProvider), provider);
@@ -151,6 +296,8 @@ public sealed class ProviderDiscoveryEndpointTests : IClassFixture<LibraryEndpoi
 
             services.AddSingleton<IProviderRegistry, ProviderRegistry>();
             services.AddSingleton<ProviderDiscoveryService>();
+            services.AddSingleton<IProviderDiscovery>(sp =>
+                sp.GetRequiredService<ProviderDiscoveryService>());
         });
     }
 
@@ -223,5 +370,20 @@ public sealed class ProviderDiscoveryEndpointTests : IClassFixture<LibraryEndpoi
             ProviderAcquisitionRequest request,
             CancellationToken ct) =>
             Task.FromResult<ProviderAcquisitionPlan?>(null);
+    }
+
+    private sealed class SnapshotDiscovery(ProviderDiscoveryResult result) : IProviderDiscovery
+    {
+        public int CallCount { get; private set; }
+        public ProviderDiscoveryRequest? LastRequest { get; private set; }
+
+        public Task<ProviderDiscoveryResult> SearchAsync(
+            ProviderDiscoveryRequest request,
+            CancellationToken ct)
+        {
+            CallCount++;
+            LastRequest = request;
+            return Task.FromResult(result);
+        }
     }
 }

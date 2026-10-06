@@ -20,8 +20,12 @@ public sealed record ProviderDiscoveryResult(
 /// <summary>
 /// Searches provider capabilities rather than provider identities, then combines
 /// each source's own ranked results without inventing a cross-provider score.
+///
+/// This is the SelfHosted default for <see cref="IProviderDiscovery"/>: it fans
+/// a query out live to every eligible provider. A host can replace it through
+/// DI with a catalog-backed implementation.
 /// </summary>
-public sealed class ProviderDiscoveryService
+public sealed class ProviderDiscoveryService : IProviderDiscovery
 {
     private readonly IProviderRegistry _registry;
     private readonly ILogger<ProviderDiscoveryService> _logger;
@@ -38,18 +42,23 @@ public sealed class ProviderDiscoveryService
     }
 
     public async Task<ProviderDiscoveryResult> SearchAsync(
-        string query,
-        ProviderMediaKind? kind,
-        int limit,
+        ProviderDiscoveryRequest request,
         CancellationToken ct)
     {
         var eligible = _registry.All
-            .Where(registration => IsEligible(registration, kind))
+            .Where(registration =>
+                IsEligible(registration, request.Kind)
+                && IsAllowed(registration.Id, request.ProviderIds))
             .OrderBy(registration => registration.Id, StringComparer.Ordinal)
             .ToList();
 
         var tasks = eligible
-            .Select(registration => SearchOneAsync(registration, query, kind, limit, ct))
+            .Select(registration => SearchOneAsync(
+                registration,
+                request.Query,
+                request.Kind,
+                request.Limit,
+                ct))
             .ToArray();
 
         // Each task is bounded by the same deadline and they all start now, so
@@ -64,7 +73,7 @@ public sealed class ProviderDiscoveryService
             .ToList();
 
         var candidateCount = successfulPages.Sum(page => page.Items.Count);
-        var merged = RoundRobin(successfulPages.Select(page => page.Items).ToList(), limit);
+        var merged = RoundRobin(successfulPages.Select(page => page.Items).ToList(), request.Limit);
 
         return new ProviderDiscoveryResult(
             Items: merged,
@@ -197,6 +206,13 @@ public sealed class ProviderDiscoveryService
             TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
             TaskScheduler.Default);
     }
+
+    /// <summary>
+    /// Whether the caller is allowed to see this provider at all. A null set
+    /// means every registered provider, preserving the SelfHosted default.
+    /// </summary>
+    private static bool IsAllowed(string providerId, IReadOnlySet<string>? providerIds) =>
+        providerIds is null || providerIds.Contains(providerId);
 
     private static bool IsEligible(
         ProviderRegistration registration,

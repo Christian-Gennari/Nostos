@@ -42,7 +42,8 @@ public static class ProviderEndpoints
                 string? query,
                 int? limit,
                 string? kind,
-                ProviderDiscoveryService discovery,
+                IProviderDiscovery discovery,
+                IProviderRegistry registry,
                 CancellationToken ct) =>
             {
                 if (string.IsNullOrWhiteSpace(query) || query.Trim().Length < 2)
@@ -65,10 +66,17 @@ public static class ProviderEndpoints
                 }
 
                 var result = await discovery.SearchAsync(
-                    query.Trim(),
-                    mediaKind,
-                    Math.Clamp(limit ?? 20, 1, 50),
+                    new ProviderDiscoveryRequest(
+                        query.Trim(),
+                        mediaKind,
+                        Math.Clamp(limit ?? 20, 1, 50)),
                     ct);
+
+                // The discovery backend may be host-supplied and know more
+                // providers than this process runs (self-hosted providers are
+                // never mirrored to a shared catalog); only registered providers
+                // may cross the wire. #774 passes the enabled set here.
+                result = ProviderDiscoveryBoundary.Apply(result, registry, allowedProviderIds: null);
 
                 return Results.Ok(new ProviderDiscoverySearchResultDto(
                     result.Items.Select(ToItemDto).ToList(),
