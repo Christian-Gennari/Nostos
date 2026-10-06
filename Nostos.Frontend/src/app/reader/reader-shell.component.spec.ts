@@ -100,6 +100,8 @@ class PdfReaderStub {
   goToSource = vi.fn(() => Promise.resolve());
   next = vi.fn();
   previous = vi.fn();
+  commitHighlight = vi.fn();
+  discardHighlight = vi.fn();
 }
 
 @Component({ selector: 'app-epub-reader', standalone: true, template: '' })
@@ -2085,7 +2087,7 @@ describe('ReaderShell in-text selection actions (#650, EPUB)', () => {
     expect(component.noteDraft()).toBe('Half-written');
   });
 
-  it('PDF keeps its compact bar: Ask Nostos, Cancel and Save, but no Add note', async () => {
+  it('PDF exposes Copy, Ask Nostos, Highlight and Add note through the same compact surface', async () => {
     const component = await openBook('being-and-time.pdf');
     component.dockedLayout.set(false);
     component.handleSelectionCaptured('A PDF passage');
@@ -2094,15 +2096,16 @@ describe('ReaderShell in-text selection actions (#650, EPUB)', () => {
     expect(el('selection-menu')).toBeNull();
     expect(el('selection-copy')).not.toBeNull();
     expect(el('selection-ask-nostos')).not.toBeNull();
-    expect(el('selection-ask-nostos')?.getAttribute('aria-label')).toBe('Ask Nostos about passage');
+    expect(el('selection-add-note')).not.toBeNull();
+    expect(el('selection-highlight')).not.toBeNull();
 
-    const labels = Array.from(
-      (el('selection-bar') as HTMLElement).querySelectorAll('button') as NodeListOf<HTMLButtonElement>,
-    )
-      .map((b) => b.textContent?.replace(/\s+/g, ' ').trim())
-      .filter(Boolean);
-    expect(labels).toEqual(['Cancel', 'Save']);
-    expect(el('selection-add-note')).toBeNull();
+    (el('selection-add-note') as HTMLButtonElement).click();
+    component.noteDraft.set('A note on this PDF passage.');
+    render();
+    (el('selection-save-note') as HTMLButtonElement).click();
+
+    const pdf = fixture.debugElement.query(By.directive(PdfReaderStub)).componentInstance as PdfReaderStub;
+    expect(pdf.commitHighlight).toHaveBeenCalledWith('A note on this PDF passage.');
     expect(el('selection-bar')!.classList.contains('epub-actions')).toBe(false);
   });
 
