@@ -48,6 +48,20 @@
             type="button"
             class="settings-nav-item"
             role="tab"
+            [class.is-active]="activeSettingsSection() === 'providers'"
+            [attr.aria-selected]="activeSettingsSection() === 'providers'"
+            aria-controls="providers"
+            (click)="setSettingsSection('providers')"
+          >
+            <span class="settings-nav-icon">
+              <nostos-icon name="books" [size]="17"></nostos-icon>
+            </span>
+            <span class="settings-nav-copy">Book providers</span>
+          </button>
+          <button
+            type="button"
+            class="settings-nav-item"
+            role="tab"
             [class.is-active]="activeSettingsSection() === 'assistant'"
             [attr.aria-selected]="activeSettingsSection() === 'assistant'"
             aria-controls="assistant"
@@ -626,6 +640,89 @@
 
           </section>
           }
+
+          <section
+            class="settings-section"
+            id="providers"
+            role="tabpanel"
+            aria-labelledby="providers-heading"
+            [hidden]="activeSettingsSection() !== 'providers'"
+          >
+            <h2 class="settings-section-title" id="providers-heading">Book providers</h2>
+
+            <section class="settings-card" data-testid="book-providers-card">
+              <div class="card-header">
+                <div class="card-header-copy">
+                  <h2>Sources</h2>
+                </div>
+              </div>
+
+              <div class="card-body">
+                <p class="label-desc card-purpose" data-testid="book-providers-purpose">
+                  {{ copyProviders.intro }}
+                </p>
+
+                @if (providerSettingsLoading()) {
+                  <div class="setting-row" data-testid="book-providers-loading">
+                    <div class="setting-label">
+                      <span class="label-text">{{ copyProviders.loading }}</span>
+                    </div>
+                  </div>
+                } @else if (providerSettingsError()) {
+                  <div class="setting-row" data-testid="book-providers-load-failed">
+                    <div class="setting-label">
+                      <span class="label-text">{{ copyProviders.loadFailed }}</span>
+                      <span class="label-desc">{{ copyProviders.loadFailedHelp }}</span>
+                    </div>
+                  </div>
+                } @else if (providerSettings().length === 0) {
+                  <div class="setting-row" data-testid="book-providers-empty">
+                    <div class="setting-label">
+                      <span class="label-text">{{ copyProviders.empty }}</span>
+                    </div>
+                  </div>
+                } @else {
+                  @for (provider of providerSettings(); track provider.id) {
+                    <div class="setting-row" [attr.data-testid]="'provider-row-' + provider.id">
+                      <div class="setting-label">
+                        <span class="label-text">{{ provider.displayName }}</span>
+                        @if (provider.description) {
+                          <span class="label-desc">{{ provider.description }}</span>
+                        }
+                        <span class="provider-capabilities">
+                          @for (capability of provider.capabilities; track capability) {
+                            <span appBadge>{{ capability }}</span>
+                          }
+                        </span>
+                        @if (provider.rightsNotice) {
+                          <span class="label-desc provider-rights">{{ provider.rightsNotice }}</span>
+                        }
+                      </div>
+
+                      <label appSwitch>
+                        <input
+                          type="checkbox"
+                          [checked]="provider.enabled"
+                          [disabled]="providerSavingIds().has(provider.id)"
+                          (change)="setProviderEnabled(provider, $event)"
+                          [attr.aria-label]="'Enable ' + provider.displayName"
+                          [attr.data-testid]="'provider-toggle-' + provider.id"
+                        >
+                      </label>
+                    </div>
+                  }
+                }
+
+                @if (providerSettingsSaveFailed()) {
+                  <div class="setting-row" data-testid="book-providers-save-failed" role="alert">
+                    <div class="setting-label">
+                      <span class="label-desc">{{ copyProviders.saveFailed }}</span>
+                    </div>
+                  </div>
+                }
+              </div>
+            </section>
+          </section>
 
           @if (isCloud()) {
           <section

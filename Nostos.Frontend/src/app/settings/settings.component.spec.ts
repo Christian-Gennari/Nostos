@@ -23,6 +23,8 @@ import { AssistantStatusService } from '../ui/assistant/assistant-status.service
 import { AssistantSettingsService } from '../ui/assistant/assistant-settings.service';
 import { ProcessingMode } from '../ui/assistant/assistant-settings.service';
 import { AiProviderService } from '../core/services/ai-provider.service';
+import { ProviderSettingsService } from '../core/services/provider-settings.service';
+import { ProviderSettingsItem, ProviderSettingsResponse } from '../core/dtos/provider.dtos';
 import { DeploymentCapabilitiesService } from '../core/services/deployment-capabilities.service';
 import { DeploymentCapabilities } from '../core/dtos/deployment-capabilities.dtos';
 import { CloudAiRefillService } from '../core/services/cloud-ai-refill.service';
@@ -240,6 +242,43 @@ const aiProviderServiceMock = {
   ),
 };
 
+/**
+ * One enabled and one disabled source, as the management view sees them
+ * (issue #774). Fresh objects per call so a test can mutate one without
+ * leaking into the next.
+ */
+function providerSettingsFixture(): ProviderSettingsItem[] {
+  return [
+    {
+      id: 'gutenberg',
+      displayName: 'Project Gutenberg',
+      description: 'Public-domain ebooks in many languages.',
+      capabilities: ['search', 'ebookacquisition'],
+      rightsNotice: 'Public domain in the USA (Project Gutenberg)',
+      enabled: true,
+      enabledByDefault: true,
+    },
+    {
+      id: 'wikisource',
+      displayName: 'Wikisource',
+      description: 'Transcribed public-domain texts in many languages.',
+      capabilities: ['search'],
+      rightsNotice: null,
+      enabled: false,
+      enabledByDefault: true,
+    },
+  ];
+}
+
+const providerSettingsServiceMock = {
+  list: vi.fn((): Observable<ProviderSettingsResponse> =>
+    of({ providers: providerSettingsFixture() })),
+  setEnabled: vi.fn(
+    (providerId: string, enabled: boolean): Observable<ProviderSettingsItem> =>
+      of({ ...providerSettingsFixture().find((p) => p.id === providerId)!, enabled }),
+  ),
+};
+
 const backupServiceMock = {
   getStatus: vi.fn(() =>
     of({
@@ -311,6 +350,7 @@ describe('SettingsComponent backup-only surface', () => {
         { provide: AssistantStatusService, useValue: assistantStatusMock },
         { provide: AssistantSettingsService, useValue: assistantSettingsMock },
         { provide: AiProviderService, useValue: aiProviderServiceMock },
+        { provide: ProviderSettingsService, useValue: providerSettingsServiceMock },
         { provide: DeploymentCapabilitiesService, useValue: capabilitiesServiceMock },
         { provide: CloudAiRefillService, useValue: cloudAiRefillServiceMock },
         { provide: CloudAuthService, useValue: cloudAuthServiceMock },
@@ -390,6 +430,15 @@ describe('SettingsComponent backup-only surface', () => {
     aiProviderServiceMock.test.mockReturnValue(
       of<AiProviderTestResult>({ ok: true, detail: 'Reached the endpoint.' }),
     );
+    providerSettingsServiceMock.list.mockClear();
+    providerSettingsServiceMock.list.mockReturnValue(
+      of<ProviderSettingsResponse>({ providers: providerSettingsFixture() }),
+    );
+    providerSettingsServiceMock.setEnabled.mockClear();
+    providerSettingsServiceMock.setEnabled.mockImplementation(
+      (providerId: string, enabled: boolean) =>
+        of({ ...providerSettingsFixture().find((p) => p.id === providerId)!, enabled }),
+    );
 
     await configure();
   });
@@ -405,14 +454,14 @@ describe('SettingsComponent backup-only surface', () => {
       nav.map((item) =>
         item.query(By.css('.settings-nav-copy')).nativeElement.textContent.trim(),
       ),
-    ).toEqual(['Library & data', 'Assistant', 'Appearance']);
+    ).toEqual(['Library & data', 'Book providers', 'Assistant', 'Appearance']);
     expect(fixture.componentInstance.activeSettingsSection()).toBe('library');
     expect(fixture.nativeElement.querySelector('#library-data').hidden).toBe(false);
     expect(fixture.nativeElement.querySelector('#assistant').hidden).toBe(true);
     expect(fixture.nativeElement.querySelectorAll('.settings-nav a').length).toBe(0);
 
     const hashBefore = window.location.hash;
-    nav[1].nativeElement.click();
+    nav[2].nativeElement.click();
     fixture.detectChanges();
 
     expect(fixture.componentInstance.activeSettingsSection()).toBe('assistant');
@@ -420,6 +469,110 @@ describe('SettingsComponent backup-only surface', () => {
     expect(fixture.nativeElement.querySelector('#assistant').hidden).toBe(false);
     expect(window.location.hash).toBe(hashBefore);
   });
+
+  it('loads book providers when the tab opens and lists enabled and disabled sources', () => {
+    expect(providerSettingsServiceMock.list).not.toHaveBeenCalled();
+
+    const tab = navItem('Book providers');
+    tab.click();
+    fixture.detectChanges();
+
+    expect(providerSettingsServiceMock.list).toHaveBeenCalledTimes(1);
+    expect(fixture.componentInstance.activeSettingsSection()).toBe('providers');
+    expect((fixture.nativeElement.querySelector('#providers') as HTMLElement).hidden).toBe(
+      false,
+    );
+
+    const card = fixture.nativeElement.querySelector(
+      '[data-testid="book-providers-card"]',
+    ) as HTMLElement;
+    expect(card.textContent).toContain('Project Gutenberg');
+    expect(card.textContent).toContain('Wikisource');
+    expect(card.textContent).toContain('Public-domain ebooks in many languages.');
+    expect(providerToggle('gutenberg').checked).toBe(true);
+    expect(providerToggle('wikisource').checked).toBe(false);
+
+    // Reopening a successfully loaded tab does not re-fetch.
+    tab.click();
+    fixture.detectChanges();
+    expect(providerSettingsServiceMock.list).toHaveBeenCalledTimes(1);
+  });
+
+  it('toggling a source calls setEnabled and shows the server answer', () => {
+    openProviders();
+    providerSettingsServiceMock.setEnabled.mockReturnValue(
+      of({ ...providerSettingsFixture()[0], enabled: false }),
+    );
+
+    const toggle = providerToggle('gutenberg');
+    toggle.checked = false;
+    toggle.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+
+    expect(providerSettingsServiceMock.setEnabled).toHaveBeenCalledWith('gutenberg', false);
+    expect(providerToggle('gutenberg').checked).toBe(false);
+  });
+
+  it('reverts the checkbox and toasts when a save fails', () => {
+    openProviders();
+    const result = new Subject<ProviderSettingsItem>();
+    providerSettingsServiceMock.setEnabled.mockReturnValue(result);
+
+    const toggle = providerToggle('gutenberg');
+    expect(toggle.checked).toBe(true);
+
+    toggle.checked = false;
+    toggle.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+    expect(toggle.checked).toBe(false);
+    expect(toggle.disabled).toBe(true);
+
+    result.error(new Error('nope'));
+    fixture.detectChanges();
+
+    expect(toggle.checked).toBe(true);
+    expect(toggle.disabled).toBe(false);
+    expect(toastMock.error).toHaveBeenCalledTimes(1);
+    expect(
+      fixture.nativeElement.querySelector('[data-testid="book-providers-save-failed"]'),
+    ).toBeTruthy();
+  });
+
+  it('renders an in-place error when the provider list fails to load and retries on reopen', () => {
+    providerSettingsServiceMock.list.mockReturnValue(throwError(() => new Error('down')));
+    openProviders();
+
+    expect(
+      fixture.nativeElement.querySelector('[data-testid="book-providers-load-failed"]'),
+    ).toBeTruthy();
+    expect(providerSettingsServiceMock.list).toHaveBeenCalledTimes(1);
+
+    // Leaving and reopening retries rather than leaving the tab stuck.
+    navItem('Library & data').click();
+    fixture.detectChanges();
+    navItem('Book providers').click();
+    fixture.detectChanges();
+
+    expect(providerSettingsServiceMock.list).toHaveBeenCalledTimes(2);
+  });
+
+  function navItem(label: string): HTMLButtonElement {
+    const items = Array.from(
+      fixture.nativeElement.querySelectorAll('.settings-nav-item'),
+    ) as HTMLButtonElement[];
+    return items.find((item) => (item.textContent ?? '').includes(label))!;
+  }
+
+  function providerToggle(id: string): HTMLInputElement {
+    return fixture.nativeElement.querySelector(
+      `[data-testid="provider-toggle-${id}"]`,
+    ) as HTMLInputElement;
+  }
+
+  function openProviders(): void {
+    navItem('Book providers').click();
+    fixture.detectChanges();
+  }
 
   it('keeps Settings as a quiet utility surface without redundant page or section marketing', () => {
     expect(fixture.nativeElement.querySelector('.settings-header')).toBeNull();
@@ -586,7 +739,7 @@ describe('SettingsComponent backup-only surface', () => {
       fixture.debugElement
         .queryAll(By.css('.settings-nav-copy'))
         .map((item) => item.nativeElement.textContent.trim()),
-    ).toEqual(['Library & data', 'Assistant', 'Account', 'Appearance']);
+    ).toEqual(['Library & data', 'Book providers', 'Assistant', 'Account', 'Appearance']);
 
     expect(fixture.nativeElement.querySelector('#library-data')).not.toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="ereader-access-card"]')).toBeTruthy();
@@ -666,7 +819,7 @@ describe('SettingsComponent backup-only surface', () => {
       fixture.debugElement
         .queryAll(By.css('.settings-nav-copy'))
         .map((item) => item.nativeElement.textContent.trim()),
-    ).toEqual(['Library & data', 'Assistant', 'Account', 'Appearance']);
+    ).toEqual(['Library & data', 'Book providers', 'Assistant', 'Account', 'Appearance']);
     expect(fixture.nativeElement.querySelector('#library-data')).not.toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="cloud-portable-export-card"]')).toBeTruthy();
     expect(fixture.nativeElement.querySelector('[data-testid="ereader-access-card"]')).toBeNull();
@@ -1791,6 +1944,7 @@ describe('SettingsComponent shared library transfer host', () => {
         { provide: AssistantStatusService, useValue: assistantStatusMock },
         { provide: AssistantSettingsService, useValue: assistantSettingsMock },
         { provide: AiProviderService, useValue: aiProviderServiceMock },
+        { provide: ProviderSettingsService, useValue: providerSettingsServiceMock },
         { provide: DeploymentCapabilitiesService, useValue: capabilitiesServiceMock },
         { provide: CloudAiRefillService, useValue: cloudAiRefillServiceMock },
         { provide: CloudAuthService, useValue: cloudAuthServiceMock },

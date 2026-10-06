@@ -30,6 +30,8 @@ import {
   ProcessingMode,
 } from '../ui/assistant/assistant-settings.service';
 import { AiProviderService } from '../core/services/ai-provider.service';
+import { ProviderSettingsService } from '../core/services/provider-settings.service';
+import { ProviderSettingsItem } from '../core/dtos/provider.dtos';
 import { DeploymentCapabilitiesService } from '../core/services/deployment-capabilities.service';
 import { DeploymentCapabilities } from '../core/dtos/deployment-capabilities.dtos';
 import { CloudAiRefillService } from '../core/services/cloud-ai-refill.service';
@@ -122,8 +124,26 @@ const AI_PROVIDER_COPY = {
   couldNotSave: (message: string) => `Could not save: ${message}`,
 } as const;
 
+/**
+ * Every user-visible string for the "Book providers" card (issue #774), in one
+ * place for the same reason as AI_PROVIDER_COPY: one edit changes the wording.
+ */
+const BOOK_PROVIDER_COPY = {
+  title: 'Book providers',
+  intro:
+    'Choose which free book and audiobook sources Nostos searches when you add a book. Sources you turn off stay out of Add Book and cannot be used until you turn them back on.',
+  loading: 'Loading book sources…',
+  loadFailed: 'Could not load the book sources.',
+  loadFailedHelp:
+    'The server did not answer the request for the provider list. Switch away and back to try again.',
+  empty: 'No book sources are available on this server.',
+  saveFailed: 'Could not save this source. Your previous choice is still in effect.',
+  enabled: 'On',
+  disabled: 'Off',
+} as const;
+
 /** How a section's inline status line is coloured. */
-type SettingsSection = 'library' | 'account' | 'assistant' | 'appearance';
+type SettingsSection = 'library' | 'account' | 'assistant' | 'appearance' | 'providers';
 
 type AiProviderStatusTone = 'neutral' | 'ok' | 'error';
 
@@ -202,6 +222,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
   private assistantSettings = inject(AssistantSettingsService);
   private preferences = inject(LibraryPreferencesService);
   private aiProvider = inject(AiProviderService);
+  private providerSettingsService = inject(ProviderSettingsService);
   private deploymentCapabilitiesService = inject(DeploymentCapabilitiesService);
   private cloudAiRefills = inject(CloudAiRefillService);
   private portableLibrary = inject(PortableLibraryService);
@@ -274,6 +295,9 @@ export class SettingsComponent implements OnInit, OnDestroy {
   /** The AI provider card's copy, exposed so the template reads one source. */
   readonly copy = AI_PROVIDER_COPY;
 
+  /** The Book providers card's copy, same single-source rule. */
+  readonly copyProviders = BOOK_PROVIDER_COPY;
+
   /** The active theme, exposed for the Appearance card. */
   readonly theme = this.themeService.theme;
 
@@ -330,6 +354,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
 
   setSettingsSection(section: SettingsSection): void {
     this.activeSettingsSection.set(section);
+    if (section === 'providers') this.loadProviderSettings();
   }
 
   setAssistantEnabled(event: Event): void {
@@ -347,6 +372,81 @@ export class SettingsComponent implements OnInit, OnDestroy {
 
   changeCaptureProcessingMode(mode: string): void {
     this.assistantSettings.setCaptureProcessingMode(mode as ProcessingMode);
+  }
+
+  // --- Book providers card (issue #774) --------------------------------
+  // Loaded lazily the first time the tab opens; a failed load retries on the
+  // next open. A toggle is applied optimistically and reverted on failure,
+  // because a native checkbox stays where the click put it unless the bound
+  // value actually changes.
+
+  /** Every registered source with its effective choice, disabled ones included. */
+  readonly providerSettings = signal<ProviderSettingsItem[]>([]);
+  readonly providerSettingsLoading = signal(false);
+  readonly providerSettingsError = signal(false);
+  readonly providerSettingsSaveFailed = signal(false);
+  readonly providerSavingIds = signal<ReadonlySet<string>>(new Set<string>());
+  private providerSettingsLoaded = false;
+
+  loadProviderSettings(): void {
+    if (this.providerSettingsLoading()) return;
+    if (this.providerSettingsLoaded && !this.providerSettingsError()) return;
+
+    this.providerSettingsLoading.set(true);
+    this.providerSettingsError.set(false);
+    this.providerSettingsService.list().subscribe({
+      next: (response) => {
+        this.providerSettings.set(response.providers);
+        this.providerSettingsLoaded = true;
+        this.providerSettingsLoading.set(false);
+      },
+      error: () => {
+        this.providerSettingsError.set(true);
+        this.providerSettingsLoading.set(false);
+      },
+    });
+  }
+
+  setProviderEnabled(provider: ProviderSettingsItem, event: Event): void {
+    if (this.providerSavingIds().has(provider.id)) return;
+
+    const previous = this.providerSettings();
+    const checked = (event.target as HTMLInputElement).checked;
+
+    this.providerSettings.set(this.withProviderEnabled(previous, provider.id, checked));
+    this.setProviderSaving(provider.id, true);
+    this.providerSettingsSaveFailed.set(false);
+
+    this.providerSettingsService.setEnabled(provider.id, checked).subscribe({
+      next: (updated) => {
+        this.setProviderSaving(provider.id, false);
+        // The server's item is the truth; replacing it also undoes any drift.
+        this.providerSettings.update((list) =>
+          list.map((item) => (item.id === updated.id ? updated : item)),
+        );
+      },
+      error: () => {
+        this.setProviderSaving(provider.id, false);
+        this.providerSettings.set(previous);
+        this.providerSettingsSaveFailed.set(true);
+        this.toast.error(BOOK_PROVIDER_COPY.saveFailed);
+      },
+    });
+  }
+
+  private withProviderEnabled(
+    list: readonly ProviderSettingsItem[],
+    providerId: string,
+    enabled: boolean,
+  ): ProviderSettingsItem[] {
+    return list.map((item) => (item.id === providerId ? { ...item, enabled } : item));
+  }
+
+  private setProviderSaving(providerId: string, saving: boolean): void {
+    const next = new Set(this.providerSavingIds());
+    if (saving) next.add(providerId);
+    else next.delete(providerId);
+    this.providerSavingIds.set(next);
   }
 
   setTheme(theme: Theme): void {
