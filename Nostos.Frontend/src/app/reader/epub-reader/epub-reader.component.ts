@@ -2008,11 +2008,15 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
   }
 
   commitHighlight(content = ''): void {
-    this.annotationManager?.commitHighlight(content);
+    const committed = this.annotationManager?.commitHighlight(content);
+    void committed?.then((success) => {
+      if (success) this.assistantSelection.set(null);
+    });
   }
 
   discardHighlight(): void {
     this.annotationManager?.discardHighlight();
+    this.assistantSelection.set(null);
   }
 
   ngOnDestroy(): void {
