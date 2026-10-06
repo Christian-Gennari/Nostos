@@ -68,19 +68,31 @@ interface ReaderProgress {
 
 ### Layout
 
+EPUB and PDF use an immersive shell: the document owns the full viewport and
+shared chrome is overlaid outside document flow. The resting state has no
+persistent top/bottom bars, so revealing controls cannot resize an EPUB
+rendition or shift a PDF scrollport.
+
 ```
 ┌───────────────────────────────────────────────────┐
-│ Top Bar: Back button, Book title, Zoom controls   │
-├───────┬───────────────────────────────┬───────────┤
-│ TOC   │       Reader Canvas           │   Notes   │
-│ panel │ (epub / pdf / audio)          │  sidebar  │
-│       │                               │           │
-├───────┴───────────────────────────────┴───────────┤
-│ Bottom Bar: Prev/Next, Progress bar, Page input   │
+│ ← Title                       TOC Notes Search Aa  │ ← transient overlay
+│                                                   │
+│                  Reader Canvas                    │
+│                    EPUB / PDF                     │
+│                                                   │
+│                ‹   Progress   ›                   │ ← transient overlay
 └───────────────────────────────────────────────────┘
 ```
 
-Both sidebars are collapsible. On mobile, they overlay the reader.
+A neutral surface click/tap reveals or hides the shared controls. On coarse
+pointers EPUB also supports edge-tap and deliberate horizontal-swipe paging;
+PDF only enables those paging gestures in its explicit page-by-page mode, so
+continuous PDF scrolling stays native. Text selection, authored links/controls,
+and the contextual selection actions take priority over reader gestures.
+
+TOC and Notes remain overlay panels (full-width on mobile), and Search/View
+settings remain transient overlays. Audio keeps its established persistent
+player shell rather than adopting EPUB/PDF paging interactions.
 
 ### Quick Note Flow
 
