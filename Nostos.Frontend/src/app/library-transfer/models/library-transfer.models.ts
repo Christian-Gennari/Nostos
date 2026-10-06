@@ -259,7 +259,7 @@ const FLOW_TRANSITIONS: Record<TransferFlowState['kind'], readonly TransferFlowS
   ],
   inspecting: ['preflighting', 'failed', 'cancelled'],
   preflighting: ['ready-to-upload', 'failed', 'cancelled'],
-  'ready-to-upload': ['uploading', 'failed', 'cancelled', 'ready-to-upload'],
+  'ready-to-upload': ['uploading', 'checking', 'failed', 'cancelled', 'ready-to-upload'],
   uploading: ['checking', 'failed', 'cancelled', 'ready-to-upload', 'uploading'],
   checking: [
     'checking',

@@ -339,6 +339,13 @@ export class LibraryTransferCoordinator {
       // means the completion call was interrupted (maintenance or a lost
       // response). Replaying it is idempotent on the server.
       if (needsCompletionReplay(status)) {
+        this.setState({
+          kind: 'checking',
+          jobId,
+          jobState: status.job.state,
+          progress: this.progressFromSession(status.session!),
+          preflight: this.preflight ?? undefined,
+        });
         await this.withBusyRetry(
           'completeUpload',
           token,
@@ -812,7 +819,7 @@ export class LibraryTransferCoordinator {
     const progress =
       state.kind === 'uploading' || state.kind === 'checking'
         ? state.progress
-        : this.fallbackProgress();
+        : status.session ? this.progressFromSession(status.session) : this.fallbackProgress();
 
     switch (status.job.state) {
       case 'ReadyToActivate':
@@ -871,7 +878,8 @@ export class LibraryTransferCoordinator {
         return;
       default: {
         const session = status.session ?? null;
-        if (!session || (session.state !== 'Complete' && session.state !== 'Cancelled')) {
+        const allPartsReceived = session?.state === 'Receiving' && isUploadComplete(session);
+        if (!session || (session.state !== 'Complete' && session.state !== 'Cancelled' && !allPartsReceived)) {
           this.file = null;
           this.setState({
             kind: 'ready-to-upload',
@@ -1256,8 +1264,11 @@ function isPreActivationJobState(state: MigrationJobState): boolean {
  * response); replaying the idempotent completion is the safe recovery.
  */
 function needsCompletionReplay(status: MigrationJobStatusResponseDto): boolean {
+  const session = status.session;
   return (
-    status.session?.state === 'Complete' &&
+    !!session &&
+    (session.state === 'Complete' ||
+      (session.state === 'Receiving' && isUploadComplete(session))) &&
     (status.job.state === 'Pending' ||
       status.job.state === 'Preparing' ||
       status.job.state === 'Transferring')

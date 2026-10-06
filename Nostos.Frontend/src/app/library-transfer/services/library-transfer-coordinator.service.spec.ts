@@ -606,6 +606,55 @@ describe('LibraryTransferCoordinator — reattach and resume', () => {
     expect(harness.store.load()?.sessionId).toBe(sessionId);
   });
 
+  it('continues completion after reload without a file when every part is received', async () => {
+    const harness = setup();
+    const file = await portableFile();
+    const record = await stageResumableJob(harness, file, chunkCount(file.size, CHUNK));
+    const status = await harness.mock.getJob(record.jobId!);
+    vi.spyOn(harness.mock, 'getJob').mockResolvedValueOnce({
+      ...status, session: { ...status.session!, state: 'Receiving' },
+    });
+    const reloaded = reload(harness.mock, harness.mock);
+    const hash = vi.spyOn(reloaded.digest, 'sha256');
+    let finish!: () => void;
+    const gate = new Promise<void>(resolve => { finish = resolve; });
+    const complete = harness.mock.completeUpload.bind(harness.mock);
+    const completion = vi.spyOn(harness.mock, 'completeUpload').mockImplementationOnce(
+      async (jobId, signal) => { await gate; return complete(jobId, signal); },
+    );
+
+    const resumed = reloaded.coordinator.resume();
+    await vi.waitFor(() => expect(completion).toHaveBeenCalledTimes(1));
+    expect(reloaded.coordinator.state()).toMatchObject({
+      kind: 'checking', jobId: record.jobId,
+      progress: { completedChunks: status.session!.totalChunks, uploadedBytes: file.size },
+    });
+    finish();
+    await resumed;
+
+    expect(reloaded.coordinator.state().kind).toBe('ready-empty');
+    expect(hash).not.toHaveBeenCalled();
+    expect(harness.mock.uploadedChunks).toEqual([]);
+    expect(harness.mock.calls.retryJob).toBe(0);
+    expect(harness.mock.calls.preflight).toBe(1);
+    expect(harness.mock.jobCreationCount).toBe(1);
+  });
+
+  it('keeps polling processing when the server has all parts but verification is pending', async () => {
+    const harness = setup();
+    const file = await portableFile();
+    const record = await stageResumableJob(harness, file, chunkCount(file.size, CHUNK));
+    const status = await harness.mock.getJob(record.jobId!);
+    vi.spyOn(harness.mock, 'getJob').mockResolvedValueOnce({
+      ...status, session: { ...status.session!, state: 'Receiving' },
+    });
+
+    await harness.coordinator.refreshStatus();
+
+    expect(harness.coordinator.state()).toMatchObject({ kind: 'checking', jobId: record.jobId });
+    expect(harness.mock.uploadedChunks).toEqual([]);
+  });
+
   it('reattaches after a reload and uploads only missing chunks', async () => {
     const harness = setup();
     const file = await largePortableFile();

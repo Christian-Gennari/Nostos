@@ -714,6 +714,52 @@ test('scenario d3: retry an exhausted part upload without restarting the job', a
   });
 });
 
+test('scenario d4: reload after all parts resumes completion without selecting the file', async ({ page }, testInfo) => {
+  const archive = await ensureArchive();
+  await withDestination(testInfo, 'resume-completion', 'none', async (destination) => {
+    let completionRequests = 0;
+    let finish!: () => void;
+    const gate = new Promise<void>(resolve => { finish = resolve; });
+    await page.route('**/api/portability/migration/jobs/*/upload-session/complete', async route => {
+      completionRequests += 1;
+      if (completionRequests === 1) {
+        await route.abort('connectionreset');
+      } else {
+        await gate;
+        await route.continue();
+      }
+    });
+    try {
+      await openSettings(page, destination.baseUrl);
+      const chunks = trackChunkIndexes(page);
+      const jobs = trackJobIds(page);
+      await selectArchive(page, archive);
+      await expect(page.getByTestId('import-failed')).toBeVisible({ timeout: 180_000 });
+      const jobId = jobs[0];
+      const status = await (await fetch(`${destination.baseUrl}/api/portability/migration/jobs/${jobId}`)).json();
+      expect(status.session.state).toBe('Receiving');
+      expect(status.session.receivedChunkCount).toBe(status.session.totalChunks);
+
+      chunks.length = 0;
+      await page.reload();
+      await expect(page.getByTestId('import-checking')).toBeVisible({ timeout: 60_000 });
+      await page.getByTestId('import-checking').scrollIntoViewIfNeeded();
+      await testInfo.attach('processing-after-reload', { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' });
+      const beforeReload = await navigationOrigin(page);
+      finish();
+      await waitForReload(page, beforeReload);
+
+      expect(completionRequests).toBe(2);
+      expect(chunks).toEqual([]);
+      expect(jobs).toHaveLength(1);
+      await page.goto(`${destination.baseUrl}/library`);
+      await assertSourceContent(destination.baseUrl);
+    } finally {
+      finish();
+    }
+  });
+});
+
 test('scenario d2: reload during activation reattaches and reports the outcome', async ({ page }, testInfo) => {
   const archive = await ensureArchive();
   const errors = collectErrors(page);
