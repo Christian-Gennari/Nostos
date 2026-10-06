@@ -711,7 +711,10 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
           return;
         }
       } catch {
-        // An unreadable sample is not evidence that the PDF has no text.
+        // An unreadable sample is not evidence that the PDF has no text. An
+        // obsolete document must also not overwrite the capability state of a
+        // PDF that replaced it while this async sample was in flight.
+        if (pdfDoc !== this.pdfDocRef) return;
         this.textCapability.set('unknown');
         return;
       }
