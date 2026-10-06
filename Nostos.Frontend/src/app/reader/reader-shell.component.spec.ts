@@ -1617,8 +1617,8 @@ describe('ReaderShell immersive chrome (#759)', () => {
     return fixture.componentInstance;
   }
 
-  it('opens EPUB and PDF in a chrome-free resting state without changing audio', async () => {
-    let component = await openBook('book.epub');
+  it('opens EPUB in a chrome-free immersive resting state', async () => {
+    const component = await openBook('book.epub');
     expect(component.immersiveReader()).toBe(true);
     expect(component.chromeVisible()).toBe(false);
     expect(component.chromeShown()).toBe(false);
@@ -1626,14 +1626,17 @@ describe('ReaderShell immersive chrome (#759)', () => {
       .toContain('immersive');
     expect(fixture.nativeElement.querySelector('[data-testid="reader-chrome-top"]').hasAttribute('inert'))
       .toBe(true);
-    fixture.destroy();
+  });
 
-    component = await openBook('book.pdf');
+  it('opens PDF in the same chrome-free immersive resting state', async () => {
+    const component = await openBook('book.pdf');
     expect(component.immersiveReader()).toBe(true);
+    expect(component.chromeVisible()).toBe(false);
     expect(component.chromeShown()).toBe(false);
-    fixture.destroy();
+  });
 
-    component = await openBook('book.m4b');
+  it('leaves the audiobook shell permanently available', async () => {
+    const component = await openBook('book.m4b');
     expect(component.immersiveReader()).toBe(false);
     expect(component.chromeShown()).toBe(true);
   });
