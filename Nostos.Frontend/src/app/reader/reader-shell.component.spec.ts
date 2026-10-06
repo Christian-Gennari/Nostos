@@ -290,7 +290,10 @@ async function configureReaderShell(
       },
       { provide: TopicsService, useValue: { list: vi.fn(() => of([])) } },
       { provide: TopicAutocompleteService, useValue: { setTopics: vi.fn() } },
-      { provide: AssistantService, useValue: { requestSurfaceOpen: vi.fn() } },
+      {
+        provide: AssistantService,
+        useValue: { requestSurfaceOpen: vi.fn(), isOpen: vi.fn(() => false) },
+      },
     ],
   }).compileComponents();
 
