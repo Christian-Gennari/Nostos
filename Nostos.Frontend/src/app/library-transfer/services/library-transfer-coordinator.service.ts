@@ -854,7 +854,9 @@ export class LibraryTransferCoordinator {
       case 'Failed':
         this.failWith(
           this.failure(
-            'portable_import_failed',
+            status.job.failureCode === 'migration_provider_limit_reached'
+              ? 'portable_import_provider_limit_reached'
+              : 'portable_import_failed',
             status.job.failureMessage ?? 'The import failed on the server.',
           ),
           status.job.id,

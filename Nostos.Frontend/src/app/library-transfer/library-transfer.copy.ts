@@ -327,6 +327,14 @@ export function libraryTransferFailureCopy(failure: LibraryTransferFailure): Tra
         message: 'Nostos could not prepare the archive. Try the export again.',
         action: 'start-over',
       };
+    case 'portable_import_provider_limit_reached':
+      return {
+        title: 'The host’s download limit was reached',
+        message:
+          'The storage provider blocked the server from reading your archive. ' +
+          'Ask the host to make download capacity available, then retry this import.',
+        action: 'retry',
+      };
     case 'portable_import_failed':
       return {
         title: 'Couldn’t finish the import',

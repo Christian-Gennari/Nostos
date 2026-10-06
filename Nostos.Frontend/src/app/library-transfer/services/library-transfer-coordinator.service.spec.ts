@@ -770,6 +770,33 @@ describe('LibraryTransferCoordinator — reattach and resume', () => {
     expect(harness.store.load()).toBeNull();
   });
 
+  it('maps a durable provider-cap failure to actionable copy and keeps the import attached', async () => {
+    const mock = new MockLibraryTransferTransport({ chunkSizeBytes: CHUNK });
+    class CappedTransport extends DelegatingTransport {
+      override async getJob(jobId: string, signal?: AbortSignal): Promise<MigrationJobStatusResponseDto> {
+        const status = await super.getJob(jobId, signal);
+        return { ...status, job: { ...status.job, state: 'Failed',
+          failureCode: 'migration_provider_limit_reached', failureMessage: 'provider limit' } };
+      }
+    }
+    const harness = configure(mock, new CappedTransport(mock));
+    const file = await portableFile();
+    const preflight = await mock.preflight(preflightRequest(file.size));
+    const created = await mock.createJob({ direction: 'Import', idempotencyKey: 'cap-job',
+      reservationId: preflight.reservationId });
+    harness.store.save({ schemaVersion: 1, jobId: created.job.id,
+      jobCreationIdempotencyKey: 'cap-job', direction: 'import',
+      fileIdentity: { totalSizeBytes: file.size, sha256Checksum: 'a'.repeat(64) },
+      fileName: file.name, preflightRequest: preflightRequest(file.size),
+      createdAt: new Date().toISOString() });
+
+    await harness.coordinator.resume();
+
+    expect(harness.coordinator.state()).toMatchObject({ kind: 'failed', jobId: created.job.id,
+      failure: { code: 'portable_import_provider_limit_reached' } });
+    expect(harness.store.load()?.jobId).toBe(created.job.id);
+  });
+
   it('retries a failed job back into the reselection state', async () => {
     const harness = setup();
     const file = await portableFile();

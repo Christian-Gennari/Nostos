@@ -132,6 +132,7 @@ export const CLIENT_MIGRATION_ERROR_CODES = [
   'direct_upload_rejected',
   'direct_upload_receipt_pending',
   'portable_import_failed',
+  'portable_import_provider_limit_reached',
   'portable_export_failed',
   'network_error',
   'request_aborted',
