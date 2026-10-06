@@ -60,6 +60,25 @@ async function seedBook(baseUrl: string, title: string, bytes: Buffer, fileName:
 }
 
 async function openViewSettings(page: Page) {
+  const chrome = page.getByTestId('reader-chrome-top');
+  if ((await chrome.getAttribute('aria-hidden')) === 'true') {
+    if (await page.locator('#epub-viewer iframe').count()) {
+      await page.frameLocator('#epub-viewer iframe').locator('body').evaluate((body) => {
+        body.ownerDocument.getSelection()?.removeAllRanges();
+        const width = body.ownerDocument.defaultView?.innerWidth ?? body.ownerDocument.documentElement.clientWidth;
+        body.dispatchEvent(new MouseEvent('click', {
+          bubbles: true,
+          cancelable: true,
+          clientX: width / 2,
+          clientY: 20,
+        }));
+      });
+    } else {
+      await page.locator('.pdf-container').click({ position: { x: 160, y: 160 } });
+    }
+    await expect(chrome).toBeVisible();
+  }
+
   await page.locator('[data-testid="typo-toggle"]').click();
   await expect(page.locator('[data-testid="reader-appearance"]')).toBeVisible();
 }
