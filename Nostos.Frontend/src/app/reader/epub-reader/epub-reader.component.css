@@ -35,7 +35,16 @@
      1400px-wide line on a large monitor. Preserve the reader's chosen margin
      while restoring a quiet maximum page measure without reintroducing a
      visible inner card/boundary. */
-  padding-inline: max(var(--reader-margin, 0%), calc((100% - 64rem) / 2));
+  padding-left: max(
+    var(--reader-margin, 0%),
+    calc((100% - 64rem) / 2),
+    env(safe-area-inset-left, 0px)
+  );
+  padding-right: max(
+    var(--reader-margin, 0%),
+    calc((100% - 64rem) / 2),
+    env(safe-area-inset-right, 0px)
+  );
   /* Theme the viewer surface with Nostos tokens so no pale gutter surrounds
      the iframe while it loads or in any theme (the iframe document itself is
      themed via the registered epub.js nostos-* themes). */
