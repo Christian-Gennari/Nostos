@@ -440,7 +440,27 @@ export class ReaderShell implements OnInit, OnDestroy {
       return;
     }
 
-    this.chromeVisible.update((visible) => !visible);
+    if (this.chromeVisible()) this.hideImmersiveChrome();
+    else this.chromeVisible.set(true);
+  }
+
+  /**
+   * Remove focus from transient chrome before making it inert. Without this,
+   * Escape or the highlight-mode handoff could strand keyboard focus inside a
+   * hidden button even though the book had returned to its resting state.
+   */
+  private hideImmersiveChrome(): void {
+    const active = this.host.nativeElement.ownerDocument.activeElement as HTMLElement | null;
+    if (
+      active
+      && typeof active.closest === 'function'
+      && active.closest(
+        '.reader-header, .reader-toolbar, .notes-panel, .toc-panel, .typo-panel, .reader-search-panel',
+      )
+    ) {
+      active.blur();
+    }
+    this.chromeVisible.set(false);
   }
 
   activeReader = computed<IReader | null>(() => {
@@ -783,8 +803,14 @@ export class ReaderShell implements OnInit, OnDestroy {
     this.toggleHighlightMode();
     if (turningOn) {
       this.notesOpen.set(false);
-      if (this.immersiveReader()) this.chromeVisible.set(false);
-      this.restoreOverlayFocus();
+      if (this.immersiveReader()) {
+        // Reading/highlighting owns focus now; do not restore the Notes trigger
+        // immediately before making that trigger inert.
+        this.overlayReturnFocus = null;
+        this.hideImmersiveChrome();
+      } else {
+        this.restoreOverlayFocus();
+      }
     }
   }
 
@@ -1174,7 +1200,7 @@ export class ReaderShell implements OnInit, OnDestroy {
         return;
       }
       if (this.immersiveReader() && this.chromeVisible()) {
-        this.chromeVisible.set(false);
+        this.hideImmersiveChrome();
         event.preventDefault();
         return;
       }
