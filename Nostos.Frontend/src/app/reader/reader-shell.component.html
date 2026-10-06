@@ -513,6 +513,10 @@
     <div class="toolbar-center">
       <button appIconButton icon="caret-left" [glyphSize]="20" (click)="prevPage()" title="Previous" aria-label="Previous page"></button>
 
+      <div class="reader-progress-track" aria-hidden="true">
+        <span class="reader-progress-fill" [style.width.%]="progressState()?.percentage ?? 0"></span>
+      </div>
+
       <div
         class="progress-display"
         [class.pager]="!!progressState()?.pageNumber"
@@ -541,7 +545,7 @@
           <span class="total-pages"> / {{ progressState()?.pageCount }}</span>
         </nav>
         } @else {
-        <span>{{ progressLabel() }}</span>
+        <span [title]="progressLabel()">{{ progressLabel() }}</span>
         } @if (progressTooltip()) {
         <div class="info-tooltip">
           <nostos-icon name="info" [size]="14"></nostos-icon>
