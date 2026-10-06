@@ -2024,17 +2024,23 @@ describe('ReaderShell in-text selection actions (#650, EPUB)', () => {
     expect(component.noteDraft()).toBe('Half-written');
   });
 
-  it('PDF keeps its bar exactly: Cancel and Save, no Add note', async () => {
+  it('PDF keeps its compact bar: Ask Nostos, Cancel and Save, but no Add note', async () => {
     const component = await openBook('being-and-time.pdf');
     component.dockedLayout.set(false);
     component.handleSelectionCaptured('A PDF passage');
     render();
 
     expect(el('selection-menu')).toBeNull();
+    expect(el('selection-ask-nostos')).not.toBeNull();
+    expect(el('selection-ask-nostos')?.getAttribute('aria-label')).toBe('Ask Nostos about passage');
+
     const labels = Array.from(
       (el('selection-bar') as HTMLElement).querySelectorAll('button') as NodeListOf<HTMLButtonElement>,
-    ).map((b) => b.textContent?.replace(/\s+/g, ' ').trim());
+    )
+      .map((b) => b.textContent?.replace(/\s+/g, ' ').trim())
+      .filter(Boolean);
     expect(labels).toEqual(['Cancel', 'Save']);
+    expect(el('selection-add-note')).toBeNull();
     expect(el('selection-bar')!.classList.contains('epub-actions')).toBe(false);
   });
 
