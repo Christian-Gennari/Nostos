@@ -339,7 +339,13 @@ export function mobileSelectionSpecs() {
     await expect(page.locator('[data-testid="selection-menu"]')).toHaveCount(0);
     await expect(page.locator('[data-testid="selection-scrim"]')).toHaveCount(0);
     const viewport = page.viewportSize()!;
-    for (const id of ['selection-cancel', 'selection-add-note', 'selection-highlight']) {
+    for (const id of [
+      'selection-copy',
+      'selection-ask-nostos',
+      'selection-cancel',
+      'selection-add-note',
+      'selection-highlight',
+    ]) {
       const b = (await page.locator(`[data-testid="${id}"]`).boundingBox())!;
       expect(b.x).toBeGreaterThanOrEqual(0);
       expect(b.x + b.width, `${id} inside the viewport`).toBeLessThanOrEqual(viewport.width);
