@@ -967,7 +967,7 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
     }
   }
 
-  commitHighlight() {
+  commitHighlight(content = '') {
     if (!this.pendingHighlight) {
       // Never leave the shell in Saving... if its confirmation and the reader
       // somehow drift out of sync.
@@ -996,7 +996,7 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
 
     this.notesService
       .create(this.bookId(), {
-        content: '',
+        content,
         selectedText: p.selectedText,
         cfiRange: JSON.stringify(cfiPayload),
       })
