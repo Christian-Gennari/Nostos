@@ -26,7 +26,8 @@ public sealed class AcquisitionServiceTests
         string? partUrl = "https://example.com/item-123.epub",
         string partExtension = ".epub",
         long partBytes = 1024,
-        string rights = "Public Domain in the USA")
+        string rights = "Public Domain in the USA",
+        string? coverUrl = null)
     {
         return new ProviderAcquisitionPlan(
             ProviderId: providerId,
@@ -48,6 +49,9 @@ public sealed class AcquisitionServiceTests
                 new ProviderDownloadPart(new Uri(partUrl!), partExtension, partBytes)
             },
             Output: new ProviderOutput(".epub", "application/epub+zip", "EPUB"),
+            Cover: coverUrl is null
+                ? null
+                : new ProviderCover(new Uri(coverUrl), "image/jpeg", ".jpg"),
             Source: new ProviderSourceInfo(
                 ItemUrl: $"https://example.com/items/{externalId}",
                 RightsStatement: rights));
@@ -837,21 +841,24 @@ public sealed class AcquisitionServiceTests
         // A non-live discovery backend (for example a Cloud catalog snapshot)
         // listed this item and asset at sync time, including metadata a live
         // search would not carry.
+        var staleCoverUrl = new Uri("https://example.com/stale-cover.jpg");
         var snapshotItem = new ProviderItem(
             ProviderId: "gutenberg",
             ExternalId: "1497",
             MediaKind: ProviderMediaKind.Ebook,
             Metadata: new ProviderMetadata("The Republic"),
             Assets: [new ProviderAsset("epub3", ProviderMediaKind.Ebook, "EPUB3", "epub")],
-            Cover: new ProviderCover(new Uri("https://example.com/stale-cover.jpg"), "image/jpeg", ".jpg"));
+            Cover: new ProviderCover(staleCoverUrl, "image/jpeg", ".jpg"));
 
         var liveUrl = new Uri("https://fake.org/live/1497.epub");
+        var liveCoverUrl = new Uri("https://fake.org/live/1497-cover.jpg");
         var fakeProvider = new FakeContentProvider("gutenberg", "Project Gutenberg");
         fakeProvider.PlanResult = CreateEbookPlan(
             providerId: snapshotItem.ProviderId,
             externalId: snapshotItem.ExternalId,
             assetId: "epub3",
-            partUrl: liveUrl.ToString());
+            partUrl: liveUrl.ToString(),
+            coverUrl: liveCoverUrl.ToString());
 
         var service = h.CreateService(new ProviderRegistry([fakeProvider]));
 
@@ -866,9 +873,11 @@ public sealed class AcquisitionServiceTests
 
         result.Succeeded.Should().BeTrue();
         fakeProvider.PlanCallCount.Should().Be(1, "the live provider plan is the only source of download locations");
-        h.Downloader.RequestedUrls.Should().ContainSingle().Which.Should().Be(liveUrl);
+        h.Downloader.RequestedUrls.Should().BeEquivalentTo(
+            [liveUrl, liveCoverUrl],
+            "every fetched location comes from the live plan");
         h.Downloader.RequestedUrls.Should().NotContain(
-            new Uri("https://example.com/stale-cover.jpg"),
+            staleCoverUrl,
             "discovery metadata is never fetched or trusted as an asset");
     }
 

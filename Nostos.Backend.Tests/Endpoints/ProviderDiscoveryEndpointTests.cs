@@ -175,7 +175,9 @@ public sealed class ProviderDiscoveryEndpointTests : IClassFixture<LibraryEndpoi
         snapshot.LastRequest!.Query.Should().Be("classic");
         snapshot.LastRequest.Kind.Should().Be(ProviderMediaKind.Ebook);
         snapshot.LastRequest.Limit.Should().Be(10);
-        snapshot.LastRequest.ProviderIds.Should().BeNull();
+        snapshot.LastRequest.ProviderIds.Should().BeEquivalentTo(
+            ["gutenberg", "librivox"],
+            "#774 sends the enabled set on every aggregate discovery call");
     }
 
     [Fact]
@@ -240,6 +242,36 @@ public sealed class ProviderDiscoveryEndpointTests : IClassFixture<LibraryEndpoi
 
         filtered.Items.Should().ContainSingle().Which.ProviderId.Should().Be("alpha");
         filtered.Sources.Should().ContainSingle().Which.ProviderId.Should().Be("alpha");
+    }
+
+    [Fact]
+    public void BoundaryDropsRowsWhoseIdOnlyNormalisesToARegisteredOne()
+    {
+        var alpha = new EndpointProvider(
+            "alpha",
+            ProviderCapabilities.EbookAcquisition,
+            new ProviderSearchPage([]));
+        var registry = new ProviderRegistry([alpha]);
+        var result = new ProviderDiscoveryResult(
+            [
+                Item(" alpha ", "1", ProviderMediaKind.Ebook, "Trimmed"),
+            ],
+            HasMore: false,
+            Sources:
+            [
+                new ProviderDiscoverySourceStatus(" alpha ", "Source alpha", Succeeded: true),
+            ]);
+
+        // The registry lookup trims, so a backend could smuggle " alpha " past
+        // a lookup-only check; it is not this process's id and no acquisition
+        // call could resolve it, so the boundary must reject it.
+        var filtered = ProviderDiscoveryBoundary.Apply(
+            result,
+            registry,
+            allowedProviderIds: null);
+
+        filtered.Items.Should().BeEmpty();
+        filtered.Sources.Should().BeEmpty();
     }
 
     private static void ReplaceProvidersWithDiscovery(
@@ -354,6 +386,12 @@ public sealed class ProviderDiscoveryEndpointTests : IClassFixture<LibraryEndpoi
         public string DisplayName => "Source " + Id;
         public ProviderCapabilities Capabilities { get; }
         public string? RightsNotice => null;
+
+        // Replaced test providers ship in the same state the general sources do
+        // (on by default), so #774's enabled-set plumbing does not change the
+        // meaning of these discovery tests.
+        public bool EnabledByDefault => true;
+
         public IReadOnlyList<string> AllowedHosts => ["example.com"];
         public long MaxBytesPerPart => 1;
         public long MaxTotalBytes => 1;

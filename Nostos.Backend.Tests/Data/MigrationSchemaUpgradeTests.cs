@@ -69,7 +69,7 @@ public sealed class MigrationSchemaUpgradeTests : IDisposable
             (await db.Database.GetAppliedMigrationsAsync())
                 .Should().NotContain(currentMigrationId);
             (await db.Database.GetPendingMigrationsAsync())
-                .Should().Equal(currentMigrationId);
+                .Should().StartWith(currentMigrationId, "the durable-transfer migration is the next pending one");
         }
 
         // 2. Populate representative preexisting library/notes/writing/
@@ -90,13 +90,15 @@ public sealed class MigrationSchemaUpgradeTests : IDisposable
                 File.Copy(originalPath + suffix, copyPath + suffix, overwrite: true);
         }
 
-        // 4. On the copy, exactly our migration is pending, then apply it.
+        // 4. On the copy, this migration is the next pending one; apply up to
+        //    it (later migrations, such as #774's AddProviderPreferences, have
+        //    their own upgrade test).
         var copyOptions = FileOptions(copyPath);
         await using (var db = new NostosDbContext(copyOptions))
         {
             (await db.Database.GetPendingMigrationsAsync())
-                .Should().Equal([currentMigrationId], "the new migration is the only pending one");
-            await db.Database.MigrateAsync();
+                .Should().StartWith([currentMigrationId], "the durable-transfer migration is the next pending one");
+            await db.GetService<IMigrator>().MigrateAsync(currentMigrationId);
             (await db.Database.GetAppliedMigrationsAsync())
                 .Should().Contain(currentMigrationId);
         }
