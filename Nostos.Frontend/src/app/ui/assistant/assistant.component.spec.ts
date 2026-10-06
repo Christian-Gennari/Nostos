@@ -688,6 +688,24 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     expect(status.ensureLoaded).toHaveBeenCalled();
   });
 
+  it('routes feature-surface open requests through the same focus lifecycle', () => {
+    const outside = document.createElement('button');
+    document.body.appendChild(outside);
+    outside.focus();
+    expect(document.activeElement).toBe(outside);
+
+    assistant.requestSurfaceOpen();
+    fixture.detectChanges();
+    expect(assistant.isOpen()).toBe(true);
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }));
+    fixture.detectChanges();
+
+    expect(assistant.isOpen()).toBe(false);
+    expect(document.activeElement).toBe(outside);
+    outside.remove();
+  });
+
   it('closes on Escape and restores the previously focused element', () => {
     const outside = document.createElement('button');
     document.body.appendChild(outside);
