@@ -40,7 +40,7 @@ export const HASH_READ_BLOCK_BYTES = 4 * 1024 * 1024;
 export const DEFAULT_UPLOAD_CONCURRENCY = 2;
 
 /** Default total attempts per chunk, including the first (plan §22). */
-export const DEFAULT_CHUNK_MAX_ATTEMPTS = 4;
+export const DEFAULT_CHUNK_MAX_ATTEMPTS = 8;
 
 export class TransferCancelledError extends Error {
   constructor(message = 'The operation was cancelled.') {

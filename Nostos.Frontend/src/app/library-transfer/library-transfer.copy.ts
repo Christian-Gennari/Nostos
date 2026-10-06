@@ -339,6 +339,14 @@ export function libraryTransferFailureCopy(failure: LibraryTransferFailure): Tra
         message: 'Nostos no longer has this import. Start a new import with your archive.',
         action: 'choose-file',
       };
+    case 'migration_invalid_state':
+      return {
+        title: 'The import is still active or cannot continue',
+        message:
+          'The host rejected this operation because of the import’s current state. ' +
+          'Resume the existing import, or cancel it before starting another.',
+        action: 'retry',
+      };
     case 'migration_cannot_cancel':
       return {
         title: 'The import is already finishing',
@@ -357,7 +365,7 @@ export function libraryTransferFailureCopy(failure: LibraryTransferFailure): Tra
       }
       return {
         title: 'The transfer didn’t finish',
-        message: 'The connection dropped or the host interrupted the transfer. Try again.',
+        message: 'Nostos could not finish this transfer. Try again to continue.',
         action: failure.retryable ? 'retry' : 'choose-file',
       };
   }

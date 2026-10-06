@@ -668,6 +668,52 @@ test('scenario d1: reload mid-upload resumes with only the missing chunks', asyn
   expect(unexpectedPageErrors(errors.pageErrors)).toEqual([]);
 });
 
+test('scenario d3: retry an exhausted part upload without restarting the job', async ({ page }, testInfo) => {
+  const archive = await ensureArchive();
+  await withDestination(testInfo, 'retry-part', 'none', async (destination) => {
+    let rejectPart = true;
+    let retryJobRequests = 0;
+    page.on('request', request => {
+      if (request.method() === 'POST' && /\/jobs\/[^/]+\/retry$/.test(request.url())) {
+        retryJobRequests += 1;
+      }
+    });
+    await page.route('**/api/portability/migration/jobs/*/upload-session/chunks/1', async route => {
+      if (rejectPart) {
+        await route.fulfill({ status: 503, contentType: 'application/json',
+          body: JSON.stringify({ error: 'unexpected_error', message: 'Temporary storage failure' }) });
+      } else {
+        await route.continue();
+      }
+    });
+    await openSettings(page, destination.baseUrl);
+    const chunks = trackChunkIndexes(page);
+    const jobs = trackJobIds(page);
+    await selectArchive(page, archive);
+    await expect(page.getByTestId('import-failed')).toBeVisible({ timeout: 180_000 });
+    const jobId = jobs[0];
+    expect(jobId).toBeTruthy();
+    const status = await (await fetch(`${destination.baseUrl}/api/portability/migration/jobs/${jobId}`)).json();
+    expect(status.job.state).toBe('Transferring');
+    expect(status.session.receivedChunkCount).toBe(status.session.totalChunks - 1);
+    expect(await page.evaluate(() => JSON.parse(localStorage.getItem('nostos.library-transfer.active.v1')!).jobId)).toBe(jobId);
+    await testInfo.attach('part-failure', { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' });
+
+    rejectPart = false;
+    chunks.length = 0;
+    const beforeReload = await navigationOrigin(page);
+    await page.getByTestId('import-failure-action').click();
+    await waitForReload(page, beforeReload);
+
+    expect(chunks).toEqual([1]);
+    expect(retryJobRequests).toBe(0);
+    expect(jobs).toHaveLength(1);
+    await page.goto(`${destination.baseUrl}/library`);
+    await assertSourceContent(destination.baseUrl);
+    await testInfo.attach('library-imported', { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' });
+  });
+});
+
 test('scenario d2: reload during activation reattaches and reports the outcome', async ({ page }, testInfo) => {
   const archive = await ensureArchive();
   const errors = collectErrors(page);

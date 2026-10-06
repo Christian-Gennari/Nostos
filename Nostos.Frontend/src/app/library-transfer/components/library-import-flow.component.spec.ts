@@ -900,6 +900,28 @@ describe('LibraryImportFlowComponent', () => {
     expect(retry).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps the original job when choosing a file after an unrecognised host failure', async () => {
+    const harness = setup();
+    const file = await largePortableFile();
+    const total = chunkCount(file.size, CHUNK);
+    const record = await stageResumable(harness, file, total - 1);
+    harness.mock.queueFailure({ operation: 'getJob', code: 'unexpected_error', status: 400 });
+    const preflights = harness.mock.calls.preflight;
+    const reloaded = reload(harness.mock, harness.mock);
+    await waitForKind(reloaded, 'failed');
+    const openPicker = vi.spyOn(reloaded.component, 'openPicker');
+
+    (testId(reloaded, 'import-failure-action') as HTMLButtonElement).click();
+    expect(openPicker).toHaveBeenCalledTimes(1);
+    expect(reloaded.store.load()).toEqual(record);
+    selectFile(reloaded, file);
+    await waitForKind(reloaded, 'ready-empty');
+
+    expect(reloaded.store.load()?.jobId).toBe(record.jobId);
+    expect(reloaded.mock.calls.preflight).toBe(preflights);
+    expect(reloaded.mock.uploadedChunks).toEqual([total - 1]);
+  });
+
   it('offers sign-in recovery after a 401, preserves the record and resumes after re-authentication', async () => {
     const harness = setup();
     const file = await largePortableFile();

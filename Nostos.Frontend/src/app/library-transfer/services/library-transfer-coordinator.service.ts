@@ -156,6 +156,17 @@ export class LibraryTransferCoordinator {
 
   /** Full fresh import: inspect, hash, preflight, create, session, upload, poll. */
   async startImport(file: File): Promise<void> {
+    // File selection must not orphan an existing job. Reattach first, then
+    // verify the selected file against that job's persisted identity.
+    if (this.resumeStore.load()) {
+      await this.resume();
+      const state = this.stateSignal();
+      if (state.kind === 'ready-to-upload' && state.reselectionRequired) {
+        await this.resumeWithFile(file);
+      }
+      return;
+    }
+
     const { token, signal } = this.beginOperation();
     this.interruptedSignal.set(null);
     this.file = file;
@@ -472,11 +483,42 @@ export class LibraryTransferCoordinator {
     }
 
     const jobId = this.jobId ?? this.resumeStore.load()?.jobId;
-    if (!jobId) return;
+    if (!jobId) {
+      await this.resume();
+      return;
+    }
 
     const { token, signal } = this.beginOperation();
     const retryKey = newIdempotencyKey();
     try {
+      const current = await this.withBusyRetry(
+        'getJob',
+        token,
+        () => this.transport.getJob(jobId, signal),
+        () => this.retry(),
+      );
+      if (!this.isCurrent(token)) return;
+
+      // SelfHosted retry synchronously expires an elapsed session before
+      // checking the job state; preserve that recovery while cleanup catches up.
+      const sessionExpired = current.session &&
+        (current.session.state === 'Expired' ||
+          Date.parse(current.session.expiresAtUtc) <= Date.now());
+      if (!['Failed', 'Cancelled', 'Expired'].includes(current.job.state) && !sessionExpired) {
+        // A browser failure leaves the durable job active. Its receipts and
+        // upload session are still usable; the job-level retry would reject it.
+        if (
+          this.file && current.session &&
+          isPreActivationJobState(current.job.state) &&
+          (current.session.state === 'Created' || current.session.state === 'Receiving')
+        ) {
+          await this.uploadSession(token, signal, current.session);
+        } else {
+          await this.resume();
+        }
+        return;
+      }
+
       const status = await this.withBusyRetry(
         'retryJob',
         token,

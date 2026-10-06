@@ -81,6 +81,14 @@ describe('library-transfer.copy', () => {
   });
 
   describe('libraryTransferFailureCopy', () => {
+    it('explains an invalid-state rejection without claiming the connection dropped', () => {
+      const copy = libraryTransferFailureCopy(failure('migration_invalid_state', { status: 409 }));
+      expect(copy.message).toContain('current state');
+      expect(copy.message).toContain('existing import');
+      expect(copy.action).toBe('retry');
+      expect(copy.message).not.toContain('connection dropped');
+    });
+
     it('maps archive failures to a file-selection recovery', () => {
       expect(libraryTransferFailureCopy(failure('archive_not_portable')).action).toBe('choose-file');
       expect(libraryTransferFailureCopy(failure('archive_operational_backup')).action).toBe(

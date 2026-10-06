@@ -392,7 +392,6 @@ export class LibraryImportFlowComponent implements OnInit, OnDestroy {
     if (reselect) {
       void this.coordinator.resumeWithFile(file);
     } else {
-      this.resumeStore.clear();
       void this.coordinator.startImport(file);
     }
   }
@@ -512,7 +511,7 @@ export class LibraryImportFlowComponent implements OnInit, OnDestroy {
 
   private startOver(): void {
     const state = this.state();
-    if (state.kind === 'failed' || state.kind === 'cancelled') {
+    if (state.kind === 'cancelled') {
       this.resumeStore.clear();
     }
     this.openPicker();
