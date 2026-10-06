@@ -5,6 +5,7 @@ import { firstValueFrom } from 'rxjs';
 import { CloudOnboardingSnapshot } from '../dtos/cloud-onboarding.dtos';
 import { CloudSession } from '../dtos/cloud-auth.dtos';
 import { DeploymentCapabilities } from '../dtos/deployment-capabilities.dtos';
+import { BooksService } from './books.service';
 import { CloudAuthService } from './cloud-auth.service';
 import { CloudOnboardingService } from './cloud-onboarding.service';
 import { DeploymentCapabilitiesService } from './deployment-capabilities.service';
@@ -74,6 +75,7 @@ export class CloudEntryService {
     private readonly auth: CloudAuthService,
     private readonly onboarding: CloudOnboardingService,
     private readonly portableLibrary: PortableLibraryService,
+    private readonly books: BooksService,
   ) {}
 
   async initialize(force = false): Promise<void> {
@@ -247,6 +249,32 @@ export class CloudEntryService {
     }
   }
 
+  /**
+   * The first-run welcome/import choice is only for a library that is actually
+   * empty. A schema upgrade of an existing tenant reuses the provisioning path
+   * and leaves the browser marker pending, so a pending marker asks the server
+   * for the library count: populated enters the product and clears the marker.
+   * An unanswerable check (network/5xx/malformed) also enters the product but
+   * leaves the marker, so a later visit can still offer the choice once the
+   * server answers that the library really is empty. Never offer a destructive
+   * choice on a guess.
+   */
+  private async resolveReadyKind(): Promise<'first_run' | 'product'> {
+    if (!this.hasFirstRunPending()) return 'product';
+
+    try {
+      const counts = await firstValueFrom(this.books.getStatusCounts());
+      if (typeof counts?.all !== 'number') return 'product';
+      if (counts.all > 0) {
+        this.clearFirstRunMarker();
+        return 'product';
+      }
+      return 'first_run';
+    } catch {
+      return 'product';
+    }
+  }
+
   private async startProvisioning(): Promise<void> {
     this.clearPoll();
     this.markFirstRunPending();
@@ -268,7 +296,7 @@ export class CloudEntryService {
       case 'ready':
         this.clearPoll();
         this.view.set({
-          kind: this.hasFirstRunPending() ? 'first_run' : 'product',
+          kind: await this.resolveReadyKind(),
           onboarding: snapshot,
         });
         return;
@@ -415,16 +443,19 @@ export class CloudEntryService {
   }
 
   private completeFirstRun(): void {
-    const key = this.markerKey();
-    if (key) {
-      try {
-        localStorage.removeItem(key);
-      } catch {
-        // Optional UX persistence only.
-      }
-    }
-
+    this.clearFirstRunMarker();
     this.actionError.set(null);
     this.view.set({ kind: 'product' });
+  }
+
+  private clearFirstRunMarker(): void {
+    const key = this.markerKey();
+    if (!key) return;
+
+    try {
+      localStorage.removeItem(key);
+    } catch {
+      // Optional UX persistence only.
+    }
   }
 }
