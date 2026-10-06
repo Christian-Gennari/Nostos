@@ -64,7 +64,25 @@ async function snap(page: Page, name: string) {
   await page.screenshot({ path: path.join(EVIDENCE_DIR, `reader-selection-${name}.png`) });
 }
 
+async function revealEpubChrome(page: Page) {
+  const chrome = page.getByTestId('reader-chrome-top');
+  if ((await chrome.getAttribute('aria-hidden')) !== 'true') return;
+
+  await page.frameLocator('#epub-viewer iframe').locator('body').evaluate((body) => {
+    body.ownerDocument.getSelection()?.removeAllRanges();
+    const width = body.ownerDocument.defaultView?.innerWidth ?? body.ownerDocument.documentElement.clientWidth;
+    body.dispatchEvent(new MouseEvent('click', {
+      bubbles: true,
+      cancelable: true,
+      clientX: width / 2,
+      clientY: 20,
+    }));
+  });
+  await expect(chrome).not.toHaveAttribute('aria-hidden', 'true');
+}
+
 async function turnOnHighlightMode(page: Page) {
+  await revealEpubChrome(page);
   await page.getByTitle('Notes & Highlights').click();
   await page.locator('[data-testid="reader-highlight-toggle"]').click();
   await expect(page.locator('.notes-panel.open')).toHaveCount(0);
@@ -112,6 +130,36 @@ export function desktopSelectionSpecs() {
   test.use({ serviceWorkers: 'block' });
   const run = newRunId();
 
+  test('resting EPUB hides chrome; a neutral click reveals it without resizing the book', async ({ page }) => {
+    const { baseUrl } = loadFixture();
+    const bookId = await seedEpub(baseUrl, `Immersive EPUB ${run}`);
+    await openReader(page, baseUrl, bookId);
+
+    const chrome = page.getByTestId('reader-chrome-top');
+    const viewer = page.locator('#epub-viewer');
+    const before = await viewer.boundingBox();
+    expect(before).not.toBeNull();
+    await expect(chrome).toHaveAttribute('aria-hidden', 'true');
+
+    await revealEpubChrome(page);
+    await expect(chrome).toBeVisible();
+    const after = await viewer.boundingBox();
+    expect(after).not.toBeNull();
+    expect(after!.width).toBeCloseTo(before!.width, 1);
+    expect(after!.height).toBeCloseTo(before!.height, 1);
+
+    await page.frameLocator('#epub-viewer iframe').locator('body').evaluate((body) => {
+      const width = body.ownerDocument.defaultView?.innerWidth ?? body.ownerDocument.documentElement.clientWidth;
+      body.dispatchEvent(new MouseEvent('click', {
+        bubbles: true,
+        cancelable: true,
+        clientX: width / 2,
+        clientY: 20,
+      }));
+    });
+    await expect(chrome).toHaveAttribute('aria-hidden', 'true');
+  });
+
   test('right-click a selection → Add note at the text persists a linked note (highlight mode off)', async ({ page }) => {
     const { baseUrl } = loadFixture();
     const bookId = await seedEpub(baseUrl, `Selection A ${run}`);
@@ -145,6 +193,7 @@ export function desktopSelectionSpecs() {
     expect(saved[0].selectedText.trim()).toBe(selected.trim());
     expect(saved[0].cfiRange).toMatch(/^epubcfi\(/);
 
+    await revealEpubChrome(page);
     await page.getByTitle('Notes & Highlights').click();
     await expect(page.locator('.notes-panel.open')).toContainText('Why this opening matters.');
   });
