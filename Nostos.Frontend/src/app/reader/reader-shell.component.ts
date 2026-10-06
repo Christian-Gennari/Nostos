@@ -1180,9 +1180,11 @@ export class ReaderShell implements OnInit, OnDestroy {
       // Overlays close in the order they stack: the typography panel rides on
       // top of the drawers, so it goes first. defaultPrevented still lets a
       // focused control claim Escape before the shell sees it.
-      // The EPUB selection menu (#650) is opened by the reader's latest
-      // gesture and sits above everything, so it is dismissed (unsaved) first.
-      if (this.pendingSelectionText() !== null && this.fileType() === 'epub' && !this.highlightSaving()) {
+      // The contextual selection surface is the reader's most recent layer and
+      // sits above ordinary reader chrome, so dismiss the unsaved mark/note
+      // before closing the underlying tools. EPUB may anchor it to the text;
+      // PDF uses the docked form, but the keyboard contract is identical.
+      if (this.pendingSelectionText() !== null && !this.highlightSaving()) {
         this.discardHighlight();
         event.preventDefault();
         return;
