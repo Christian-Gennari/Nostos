@@ -1708,6 +1708,7 @@ describe('ReaderShell immersive chrome (#759)', () => {
     const epubCss = readSource('./epub-reader/epub-reader.component.css');
     expect(epubCss).not.toContain('width: 80%');
     expect(epubCss).not.toContain('height: 90%');
+    expect(epubCss).toContain('calc((100% - 64rem) / 2)');
   });
 });
 
@@ -2139,12 +2140,13 @@ describe('ReaderShell in-text selection actions (#650, EPUB)', () => {
     expect(css).not.toMatch(/^\.reader-confirm-action \{/m);
   });
 
-  it('phones keep the secondary Cancel and no Copy action in the docked bar', async () => {
+  it('phones keep Copy while retaining the secondary Cancel in the docked bar', async () => {
     const component = await openBook();
     component.dockedLayout.set(true);
     await capture(component);
 
-    expect(el('selection-copy')).toBeNull();
+    expect(el('selection-copy')).not.toBeNull();
+    expect(el('selection-copy')?.getAttribute('aria-label')).toBe('Copy passage');
     expect(el('selection-cancel')!.classList.contains('nostos-button--secondary')).toBe(true);
   });
 
