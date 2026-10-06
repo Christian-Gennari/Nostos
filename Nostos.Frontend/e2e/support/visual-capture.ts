@@ -243,30 +243,46 @@ export async function checkEpubIframeLight(page: Page): Promise<GeometryCheck> {
 }
 
 /**
- * PDF: with the scrollport scrolled to the final page bottom, the scrollport
- * must end above (or flush with) the shell toolbar top — the bottom toolbar
- * must never cover document content.
+ * PDF: the immersive toolbar overlays the scrollport instead of shortening it.
+ * At the final scroll position, reveal that toolbar and verify the LAST PAGE
+ * itself can scroll completely above it. This proves the permanent scroll
+ * padding protects document content without making chrome participate in
+ * layout (#759).
  */
 export async function checkPdfFinalPageClearance(page: Page): Promise<GeometryCheck> {
   const scrollport = page.locator('#viewerContainer');
   await scrollport.waitFor({ timeout: 30_000 });
-  await page.locator('#viewerContainer canvas, #viewerContainer .page').first().waitFor({ timeout: 30_000 });
+  const pages = page.locator('#viewerContainer .page');
+  await pages.first().waitFor({ timeout: 30_000 });
   await scrollport.evaluate((el) => {
     el.scrollTop = el.scrollHeight;
   });
   await page.waitForTimeout(400); // let pdf.js settle after the jump
 
-  const sp = await scrollport.boundingBox();
-  const tb = await page.locator('header.reader-toolbar').boundingBox();
-  if (!sp || !tb) {
-    return failCheck('pdf-scrollport-clearance', 'could not measure scrollport/toolbar geometry', { sp, tb });
+  const chrome = page.getByTestId('reader-chrome-top');
+  if ((await chrome.getAttribute('aria-hidden')) === 'true') {
+    await page.locator('.pdf-container').click({ position: { x: 160, y: 160 } });
+    await page.getByTestId('reader-chrome-bottom').waitFor({ state: 'visible' });
   }
-  const clearance = tb.y - (sp.y + sp.height);
+
+  const lastPage = await pages.last().boundingBox();
+  const tb = await page.locator('header.reader-toolbar').boundingBox();
+  if (!lastPage || !tb) {
+    return failCheck('pdf-page-clearance', 'could not measure final-page/toolbar geometry', {
+      lastPage,
+      tb,
+    });
+  }
+
+  const pageBottom = lastPage.y + lastPage.height;
+  const clearance = tb.y - pageBottom;
   const ok = clearance >= -0.5;
   const msg =
-    `final-page scrollport bottom ${(sp.y + sp.height).toFixed(1)}px vs toolbar top ${tb.y.toFixed(1)}px ` +
+    `final page bottom ${pageBottom.toFixed(1)}px vs overlay toolbar top ${tb.y.toFixed(1)}px ` +
     `-> clearance ${clearance.toFixed(1)}px (${ok ? 'clear' : 'OVERLAPPED'})`;
-  return ok ? passCheck('pdf-scrollport-clearance', msg, { clearance }) : failCheck('pdf-scrollport-clearance', msg, { clearance });
+  return ok
+    ? passCheck('pdf-page-clearance', msg, { clearance })
+    : failCheck('pdf-page-clearance', msg, { clearance });
 }
 
 /**
