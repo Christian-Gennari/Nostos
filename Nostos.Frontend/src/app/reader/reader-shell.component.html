@@ -1,11 +1,22 @@
-<div class="reader-layout" [class.ready]="ready() || !!loadError()">
+<div
+  class="reader-layout"
+  [class.ready]="ready() || !!loadError()"
+  [class.immersive]="immersiveReader()"
+  [class.chrome-visible]="chromeShown()"
+  data-testid="reader-layout"
+>
   <!-- Surface header, in the app's own rhythm (see `.brain-header` in
        second-brain.component.css): title on the left, tools on the right, one
        hairline. Everything that CONFIGURES the reader lives here; the reading
        position lives in the bottom bar, and page turns stay where the thumbs
        are. Back moves here too — a reader is a room you entered, and leaving it
        belongs with the title, not with the pager. -->
-  <header class="reader-header">
+  <header
+    class="reader-header"
+    [attr.aria-hidden]="immersiveReader() && !chromeShown() ? 'true' : null"
+    [attr.inert]="immersiveReader() && !chromeShown() ? '' : null"
+    data-testid="reader-chrome-top"
+  >
     <div class="reader-header-title">
       <button
         appIconButton
@@ -192,9 +203,10 @@
         (noteCreated)="handleNoteCreated()"
         (selectionCaptured)="handleSelectionCaptured($event)"
         (commitFailed)="handleCommitFailed()"
+        (surfaceInteracted)="handleSurfaceInteraction()"
       />
       } @case ('epub') {
-      <app-epub-reader #epubReader [bookId]="book()!.id" [book]="book()" [highlightMode]="highlightMode()" [highlightColour]="highlightColour()" (noteCreated)="handleNoteCreated()" (selectionCaptured)="handleSelectionCaptured($event)" (selectionAnchored)="handleSelectionAnchored($event)" (commitFailed)="handleCommitFailed()" (exitRequested)="goBack()" (searchRequested)="openSearch()" />
+      <app-epub-reader #epubReader [bookId]="book()!.id" [book]="book()" [highlightMode]="highlightMode()" [highlightColour]="highlightColour()" (noteCreated)="handleNoteCreated()" (selectionCaptured)="handleSelectionCaptured($event)" (selectionAnchored)="handleSelectionAnchored($event)" (commitFailed)="handleCommitFailed()" (exitRequested)="goBack()" (searchRequested)="openSearch()" (surfaceInteracted)="handleSurfaceInteraction()" />
       } @case ('audio') {
       <app-audio-reader [bookId]="book()!.id" [book]="book()" />
       } @default {
@@ -496,7 +508,12 @@
        purpose: it is what a thumb reaches for while reading, and it is what the
        PDF reader's bottom clearance is measured against. -->
   @if (!loadError() && fileType() && fileType() !== 'audio') {
-  <header class="reader-toolbar">
+  <header
+    class="reader-toolbar"
+    [attr.aria-hidden]="immersiveReader() && !chromeShown() ? 'true' : null"
+    [attr.inert]="immersiveReader() && !chromeShown() ? '' : null"
+    data-testid="reader-chrome-bottom"
+  >
     <div class="toolbar-center">
       <button appIconButton icon="caret-left" [glyphSize]="20" (click)="prevPage()" title="Previous" aria-label="Previous page"></button>
 
