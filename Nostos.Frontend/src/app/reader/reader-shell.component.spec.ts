@@ -1652,10 +1652,15 @@ describe('ReaderShell immersive chrome (#759)', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="reader-chrome-top"]').hasAttribute('inert'))
       .toBe(false);
 
+    const back = fixture.nativeElement.querySelector('.reader-back') as HTMLButtonElement;
+    back.focus();
+    expect(document.activeElement).toBe(back);
+
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     render();
     expect(component.chromeVisible()).toBe(false);
     expect(component.chromeShown()).toBe(false);
+    expect(document.activeElement).not.toBe(back);
   });
 
   it('pins chrome while a shared overlay is open and restores the resting state afterwards', async () => {
