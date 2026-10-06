@@ -176,7 +176,11 @@ describe('ReaderShell feedback entry', () => {
         { provide: TopicAutocompleteService, useValue: { setTopics: vi.fn() } },
         {
           provide: AssistantService,
-          useValue: { requestSurfaceOpen: vi.fn(), isOpen: vi.fn(() => false) },
+          useValue: {
+            requestSurfaceOpen: vi.fn(),
+            isOpen: vi.fn(() => false),
+            surfaceAvailable: vi.fn(() => true),
+          },
         },
         {
           provide: DeploymentCapabilitiesService,
