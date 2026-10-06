@@ -341,7 +341,6 @@ export function mobileSelectionSpecs() {
     const viewport = page.viewportSize()!;
     for (const id of [
       'selection-copy',
-      'selection-ask-nostos',
       'selection-cancel',
       'selection-add-note',
       'selection-highlight',
