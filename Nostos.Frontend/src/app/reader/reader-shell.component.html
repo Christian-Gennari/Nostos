@@ -264,17 +264,19 @@
             title="Copy passage"
             data-testid="selection-copy"
           ></button>
-          <button
-            appIconButton
-            icon="sparkle"
-            type="button"
-            class="selection-ask"
-            (click)="askNostosAboutSelection()"
-            [disabled]="highlightSaving()"
-            aria-label="Ask Nostos about passage"
-            title="Ask Nostos about passage"
-            data-testid="selection-ask-nostos"
-          ></button>
+          @if (askNostosAvailable()) {
+            <button
+              appIconButton
+              icon="sparkle"
+              type="button"
+              class="selection-ask"
+              (click)="askNostosAboutSelection()"
+              [disabled]="highlightSaving()"
+              aria-label="Ask Nostos about passage"
+              title="Ask Nostos about passage"
+              data-testid="selection-ask-nostos"
+            ></button>
+          }
           <button
             appButton
             type="button"
