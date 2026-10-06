@@ -1824,6 +1824,18 @@ describe('ReaderShell in-text selection actions (#650, EPUB)', () => {
     return fixture.debugElement.query(By.directive(EpubReaderStub)).componentInstance;
   }
 
+  function attachPdfStub(component: ReaderShell): PdfReaderStub {
+    const pdf = fixture.debugElement.query(By.directive(PdfReaderStub)).componentInstance as PdfReaderStub;
+    // ReaderShell intentionally queries the real PdfReader type. These focused
+    // integration tests attach the lightweight stand-in explicitly, then toggle
+    // the readiness dependency so activeReader() recomputes against it.
+    component.ready.set(false);
+    component.pdfReader = pdf as unknown as PdfReader;
+    component.ready.set(true);
+    render();
+    return pdf;
+  }
+
   function el(testId: string): HTMLElement | null {
     return fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
   }
@@ -2089,6 +2101,7 @@ describe('ReaderShell in-text selection actions (#650, EPUB)', () => {
 
   it('PDF exposes Copy, Ask Nostos, Highlight and Add note through the same compact surface', async () => {
     const component = await openBook('being-and-time.pdf');
+    const pdf = attachPdfStub(component);
     component.dockedLayout.set(false);
     component.handleSelectionCaptured('A PDF passage');
     render();
@@ -2104,16 +2117,15 @@ describe('ReaderShell in-text selection actions (#650, EPUB)', () => {
     render();
     (el('selection-save-note') as HTMLButtonElement).click();
 
-    const pdf = fixture.debugElement.query(By.directive(PdfReaderStub)).componentInstance as PdfReaderStub;
     expect(pdf.commitHighlight).toHaveBeenCalledWith('A note on this PDF passage.');
     expect(el('selection-bar')!.classList.contains('epub-actions')).toBe(false);
   });
 
   it('Escape dismisses the pending PDF contextual surface without saving', async () => {
     const component = await openBook('being-and-time.pdf');
+    const pdf = attachPdfStub(component);
     component.handleSelectionCaptured('A PDF passage');
     render();
-    const pdf = fixture.debugElement.query(By.directive(PdfReaderStub)).componentInstance as PdfReaderStub;
 
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     render();
