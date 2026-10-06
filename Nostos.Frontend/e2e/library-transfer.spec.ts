@@ -753,9 +753,12 @@ test('scenario d4: reload after all parts resumes completion without selecting t
       expect(status.session.receivedChunkCount).toBe(status.session.totalChunks);
 
       chunks.length = 0;
-      reportProcessing = true;
       await page.reload();
       await expect(page.getByTestId('import-checking')).toBeVisible({ timeout: 60_000 });
+      await expect(page.getByTestId('import-checking').getByRole('progressbar')).not.toHaveAttribute('aria-valuenow');
+      const fill = page.getByTestId('import-checking').locator('.transfer-progress-fill');
+      expect(await fill.evaluate(element => element.getBoundingClientRect().width)).toBeGreaterThan(0);
+      reportProcessing = true;
       await expect(page.getByTestId('import-checking').getByRole('progressbar')).toHaveAttribute('aria-valuenow', '25');
       await expect(page.getByTestId('import-upload-complete')).toContainText('Upload complete');
       await expect(page.getByTestId('import-status-checked')).toContainText('Status checked at');

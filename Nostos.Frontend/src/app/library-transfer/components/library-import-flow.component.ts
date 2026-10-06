@@ -277,7 +277,7 @@ export class LibraryImportFlowComponent implements OnInit, OnDestroy {
   readonly uploadSummary = computed(() => {
     const progress = this.checking()?.progress;
     if (!progress || progress.totalBytes <= 0) return '';
-    return `${formatBytes(progress.totalBytes)} · ${progress.completedChunks} ${progress.completedChunks === 1 ? 'part' : 'parts'} received`;
+    return formatBytes(progress.totalBytes);
   });
 
   readonly statusCheckedTime = computed(() => {

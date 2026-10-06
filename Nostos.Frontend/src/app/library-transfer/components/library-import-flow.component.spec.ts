@@ -1156,7 +1156,7 @@ describe('LibraryImportFlowComponent', () => {
     const root: HTMLElement = fixture.nativeElement;
     const bar = () => root.querySelector('[role="progressbar"]')!;
     expect(root.textContent).toContain('Upload complete');
-    expect(root.textContent).toContain('4 parts received');
+    expect(root.querySelector('[data-testid="import-upload-complete"]')?.textContent).toContain('100 B');
     expect(root.textContent).toContain('Checking your uploaded archive');
     expect(root.textContent).toContain('Status checked at');
     expect(bar().getAttribute('aria-valuenow')).toBeNull();
