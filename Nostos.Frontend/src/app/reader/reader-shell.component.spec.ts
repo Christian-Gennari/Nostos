@@ -72,6 +72,7 @@ class PdfReaderStub {
   noteCreated = output<void>();
   selectionCaptured = output<unknown>();
   commitFailed = output<unknown>();
+  surfaceInteracted = output<void>();
   textCapability = signal<'unknown' | 'available' | 'unavailable'>('available');
   searchAvailable = signal(true);
   searchState = signal({ status: 'idle' as const, current: 0, total: 0 });
@@ -113,6 +114,7 @@ class EpubReaderStub {
   commitFailed = output<unknown>();
   exitRequested = output<void>();
   searchRequested = output<void>();
+  surfaceInteracted = output<void>();
   loading = signal(false);
   searchAvailable = signal(true);
   searchState = signal({ status: 'idle' as const, current: 0, total: 0 });
@@ -1584,6 +1586,110 @@ describe('ReaderShell typography panel (EPUB)', () => {
     textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
     expect(stub.next).toHaveBeenCalledTimes(2);
     textarea.remove();
+  });
+});
+
+
+describe('ReaderShell immersive chrome (#759)', () => {
+  let fixture: ComponentFixture<ReaderShell>;
+
+  beforeEach(() => {
+    booksGetSpy.mockReset();
+    localStorage.clear();
+    document.documentElement.removeAttribute('data-theme');
+    mockMatchMedia();
+  });
+
+  function render() {
+    fixture.detectChanges();
+    fixture.detectChanges();
+  }
+
+  async function openBook(fileName: string) {
+    booksGetSpy.mockReturnValue(of({ ...audiobook, id: 'book-immersive', fileName } as Book));
+    fixture = await configureReaderShell();
+    render();
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    render();
+    return fixture.componentInstance;
+  }
+
+  it('opens EPUB and PDF in a chrome-free resting state without changing audio', async () => {
+    let component = await openBook('book.epub');
+    expect(component.immersiveReader()).toBe(true);
+    expect(component.chromeVisible()).toBe(false);
+    expect(component.chromeShown()).toBe(false);
+    expect(fixture.nativeElement.querySelector('[data-testid="reader-layout"]').classList)
+      .toContain('immersive');
+    expect(fixture.nativeElement.querySelector('[data-testid="reader-chrome-top"]').hasAttribute('inert'))
+      .toBe(true);
+    fixture.destroy();
+
+    component = await openBook('book.pdf');
+    expect(component.immersiveReader()).toBe(true);
+    expect(component.chromeShown()).toBe(false);
+    fixture.destroy();
+
+    component = await openBook('book.m4b');
+    expect(component.immersiveReader()).toBe(false);
+    expect(component.chromeShown()).toBe(true);
+  });
+
+  it('toggles chrome from the EPUB reading surface and Escape returns to rest', async () => {
+    const component = await openBook('book.epub');
+    const epub = fixture.debugElement.query(By.directive(EpubReaderStub)).componentInstance as EpubReaderStub;
+
+    epub.surfaceInteracted.emit();
+    render();
+    expect(component.chromeVisible()).toBe(true);
+    expect(component.chromeShown()).toBe(true);
+    expect(fixture.nativeElement.querySelector('[data-testid="reader-chrome-top"]').hasAttribute('inert'))
+      .toBe(false);
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    render();
+    expect(component.chromeVisible()).toBe(false);
+    expect(component.chromeShown()).toBe(false);
+  });
+
+  it('pins chrome while a shared overlay is open and restores the resting state afterwards', async () => {
+    const component = await openBook('book.epub');
+    expect(component.chromeVisible()).toBe(false);
+
+    component.openSearch();
+    render();
+    expect(component.searchPanelOpen()).toBe(true);
+    expect(component.chromeShown()).toBe(true);
+    expect(component.chromeVisible()).toBe(false);
+
+    component.closeSearch();
+    render();
+    expect(component.chromeShown()).toBe(false);
+  });
+
+  it('never lets a neutral surface gesture hide selection actions or an open tool', async () => {
+    const component = await openBook('book.epub');
+    component.pendingSelectionText.set('selected text');
+    component.handleSurfaceInteraction();
+    expect(component.chromeVisible()).toBe(false);
+
+    component.pendingSelectionText.set(null);
+    component.notesOpen.set(true);
+    component.handleSurfaceInteraction();
+    expect(component.notesOpen()).toBe(true);
+    expect(component.chromeVisible()).toBe(false);
+    expect(component.chromeShown()).toBe(true);
+  });
+
+  it('keeps immersive chrome outside document flow and removes the EPUB inset box', () => {
+    const shellCss = readSource('./reader-shell.component.css');
+    expect(shellCss).toContain('.reader-layout.immersive .reader-header');
+    expect(shellCss).toContain('.reader-layout.immersive .reader-toolbar');
+    expect(shellCss).toContain('position: absolute');
+
+    const epubCss = readSource('./epub-reader/epub-reader.component.css');
+    expect(epubCss).not.toContain('width: 80%');
+    expect(epubCss).not.toContain('height: 90%');
   });
 });
 
