@@ -1983,6 +1983,40 @@ describe('ReaderShell in-text selection actions (#650, EPUB)', () => {
     expect(el('selection-menu')).not.toBeNull();
   });
 
+  it('keeps a pending selection behind Ask Nostos until a second Escape dismisses it', async () => {
+    const component = await openBook();
+    component.dockedLayout.set(false);
+    await capture(component);
+
+    const assistant = TestBed.inject(AssistantService);
+    const isOpen = assistant.isOpen as unknown as {
+      mockReturnValue(value: boolean): void;
+    };
+    isOpen.mockReturnValue(true);
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    render();
+    expect(component.pendingSelectionText()).toBe('Sing, goddess, the anger of Achilles');
+    expect(el('selection-menu')).not.toBeNull();
+
+    isOpen.mockReturnValue(false);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    render();
+    expect(component.pendingSelectionText()).toBeNull();
+    expect(el('selection-menu')).toBeNull();
+  });
+
+  it('does not turn the page from keyboard input while selection actions are pending', async () => {
+    const component = await openBook();
+    await capture(component);
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    render();
+
+    expect(stub().next).not.toHaveBeenCalled();
+    expect(component.pendingSelectionText()).toBe('Sing, goddess, the anger of Achilles');
+  });
+
   it('phones keep the docked bar, with Add note, and no scrim over the page', async () => {
     const component = await openBook();
     component.dockedLayout.set(true);
