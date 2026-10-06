@@ -1,4 +1,12 @@
-import { isInteractiveTarget, isTypingTarget, pageActionForKey, surfaceActionForPoint, swipePageAction } from './reader-keyboard';
+import {
+  isInteractiveTarget,
+  isTypingTarget,
+  pageActionForKey,
+  shouldSuppressTouchClick,
+  surfaceActionForPoint,
+  swipePageAction,
+  touchClickSuppressionForMovement,
+} from './reader-keyboard';
 
 /**
  * The page-key binding is shared by the shell (document-level) and the EPUB
@@ -37,6 +45,14 @@ describe('reader keyboard bindings (issue #225 §1.5)', () => {
     const link = document.createElement('a');
     link.href = '/library';
     expect(isInteractiveTarget(link)).toBe(true);
+
+    for (const tag of ['label', 'summary', 'audio', 'video'] as const) {
+      expect(isInteractiveTarget(document.createElement(tag))).toBe(true);
+    }
+
+    const authored = document.createElement('div');
+    authored.setAttribute('onclick', 'void 0');
+    expect(isInteractiveTarget(authored)).toBe(true);
     expect(isInteractiveTarget(document.createElement('div'))).toBe(false);
   });
 
@@ -106,6 +122,28 @@ describe('reader keyboard bindings (issue #225 §1.5)', () => {
       coarsePointer: false,
       edgePaging: true,
     })).toBe('toggle-chrome');
+  });
+
+  it('suppresses only the synthetic click near a moved touch, never a later unrelated tap', () => {
+    const suppression = touchClickSuppressionForMovement({
+      startX: 300,
+      startY: 200,
+      endX: 160,
+      endY: 205,
+      nowMs: 1_000,
+    });
+    expect(suppression).not.toBeNull();
+    expect(shouldSuppressTouchClick(suppression, 162, 207, 1_100)).toBe(true);
+    expect(shouldSuppressTouchClick(suppression, 20, 20, 1_100)).toBe(false);
+    expect(shouldSuppressTouchClick(suppression, 162, 207, 1_800)).toBe(false);
+
+    expect(touchClickSuppressionForMovement({
+      startX: 100,
+      startY: 100,
+      endX: 105,
+      endY: 104,
+      nowMs: 1_000,
+    })).toBeNull();
   });
 
   it('accepts only deliberate horizontal swipes as page turns', () => {
