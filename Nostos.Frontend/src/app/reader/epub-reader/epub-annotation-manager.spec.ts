@@ -48,6 +48,7 @@ function createRendition() {
       sectionIndex: 0,
       mark: { element: document.createElement('span') },
     })),
+    underline: vi.fn(),
     add: vi.fn(),
     remove: vi.fn(),
   };
@@ -127,6 +128,26 @@ describe('EpubAnnotationManager mobile highlight mode (issue #16)', () => {
     );
     manager.setOnSelectionCaptured(onSelectionCaptured);
   });
+
+  it('uses a separate underline annotation for ephemeral search marks', () => {
+    manager.showSearchHighlight('epubcfi(/6/4!/4/2:0,/4/2:5)');
+
+    expect(annotations.underline).toHaveBeenCalledWith(
+      'epubcfi(/6/4!/4/2:0,/4/2:5)',
+      { nostosSearch: true },
+      undefined,
+      'epubjs-search-current',
+      expect.objectContaining({ stroke: 'var(--color-accent)' }),
+    );
+    expect(manager.highlights()).toEqual([]);
+
+    manager.clearSearchHighlight();
+    expect(annotations.remove).toHaveBeenCalledWith(
+      'epubcfi(/6/4!/4/2:0,/4/2:5)',
+      'underline',
+    );
+  });
+
 
   afterEach(() => {
     manager.destroy();

@@ -46,22 +46,18 @@
         [attr.aria-expanded]="notesOpen()"
         [class.active]="notesOpen() || highlightMode()"
       ></button>
-      @if (fileType() === 'pdf') {
-      <!-- Search. A phone has no Ctrl+F, so without a visible control search was
-           unreachable by touch (issue #226 §2). It is a TOGGLE (a #226 follow-up): the
-           library's find bar renders no close control of its own, so if this
-           button could only open, the bar could not be dismissed from the UI at
-           all — pressing it again used to do nothing. -->
+      @if (fileType() === 'epub' || fileType() === 'pdf') {
       <button
         appIconButton
         icon="magnifying-glass"
         [glyphSize]="20"
         (click)="toggleSearch()"
         title="Search"
-        aria-label="Search in document"
-        [disabled]="pdfReader?.textCapability() === 'unavailable'"
-        [attr.aria-expanded]="searchOpen()"
-        [class.active]="searchOpen()"
+        aria-label="Search in book"
+        [disabled]="!canSearch()"
+        [attr.aria-expanded]="searchPanelOpen()"
+        [class.active]="searchPanelOpen()"
+        data-testid="reader-search-toggle"
       ></button>
       } @if (fileType() === 'epub' || fileType() === 'pdf') {
       <!-- One view control for both formats: typography for a reflowable EPUB,
@@ -107,6 +103,73 @@
     </div>
   </header>
 
+  @if (searchPanelOpen()) {
+  <section
+    class="reader-search-panel"
+    role="search"
+    aria-label="Search in book"
+    data-testid="reader-search-panel"
+  >
+    <div class="reader-search-row">
+      <input
+        appInput
+        controlSize="compact"
+        class="reader-search-input"
+        type="search"
+        autocomplete="off"
+        spellcheck="false"
+        placeholder="Search this book…"
+        aria-label="Search this book"
+        [value]="searchQuery()"
+        (input)="onSearchInput($event)"
+      />
+      <button
+        appIconButton
+        icon="x"
+        size="md"
+        type="button"
+        (click)="closeSearch()"
+        aria-label="Close search"
+        title="Close search"
+      ></button>
+    </div>
+
+    <div class="reader-search-status-row">
+      <span class="reader-search-status" aria-live="polite">
+        @switch (readerSearchState().status) {
+          @case ('searching') { Searching book… }
+          @case ('not-found') { No matches }
+          @case ('ready') { {{ readerSearchState().current }} of {{ readerSearchState().total }} }
+          @default { Type to search }
+        }
+      </span>
+
+      <div class="reader-search-nav" role="group" aria-label="Search results">
+        <button
+          appIconButton
+          icon="caret-left"
+          size="md"
+          type="button"
+          (click)="previousSearchResult()"
+          [disabled]="readerSearchState().total === 0"
+          aria-label="Previous match"
+          title="Previous match"
+        ></button>
+        <button
+          appIconButton
+          icon="caret-right"
+          size="md"
+          type="button"
+          (click)="nextSearchResult()"
+          [disabled]="readerSearchState().total === 0"
+          aria-label="Next match"
+          title="Next match"
+        ></button>
+      </div>
+    </div>
+  </section>
+  }
+
   <div class="reader-body">
     <main class="reader-content">
       @if (loadError()) {
@@ -131,7 +194,7 @@
         (commitFailed)="handleCommitFailed()"
       />
       } @case ('epub') {
-      <app-epub-reader #epubReader [bookId]="book()!.id" [book]="book()" [highlightMode]="highlightMode()" [highlightColour]="highlightColour()" (noteCreated)="handleNoteCreated()" (selectionCaptured)="handleSelectionCaptured($event)" (selectionAnchored)="handleSelectionAnchored($event)" (commitFailed)="handleCommitFailed()" (exitRequested)="goBack()" />
+      <app-epub-reader #epubReader [bookId]="book()!.id" [book]="book()" [highlightMode]="highlightMode()" [highlightColour]="highlightColour()" (noteCreated)="handleNoteCreated()" (selectionCaptured)="handleSelectionCaptured($event)" (selectionAnchored)="handleSelectionAnchored($event)" (commitFailed)="handleCommitFailed()" (exitRequested)="goBack()" (searchRequested)="openSearch()" />
       } @case ('audio') {
       <app-audio-reader [bookId]="book()!.id" [book]="book()" />
       } @default {

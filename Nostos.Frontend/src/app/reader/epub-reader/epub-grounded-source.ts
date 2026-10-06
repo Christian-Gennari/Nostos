@@ -81,6 +81,27 @@ export function normalizeEpubSourceText(value: string): string {
     .trim();
 }
 
+const EPUB_TEXT_BLOCK_SELECTOR = 'h1,h2,h3,h4,h5,h6,p,li,blockquote,pre,figcaption,dt,dd,aside';
+const EPUB_TEXT_IGNORED_SELECTOR = 'script,style,nav,svg,math';
+
+function epubTextBlocks(document: Document): Element[] {
+  return Array.from(document.body?.querySelectorAll(EPUB_TEXT_BLOCK_SELECTOR) ?? []).filter((element) => {
+    if (element.closest(EPUB_TEXT_IGNORED_SELECTOR)) return false;
+    return !element.parentElement?.closest(EPUB_TEXT_BLOCK_SELECTOR);
+  });
+}
+
+/**
+ * Extract the searchable text of one EPUB resource using exactly the same
+ * block ordering and separators as grounded-source offsets.
+ */
+export function normalizedEpubResourceText(document: Document): string {
+  return epubTextBlocks(document)
+    .map((block) => normalizeEpubSourceText(block.textContent ?? ''))
+    .filter(Boolean)
+    .join('\n');
+}
+
 /**
  * Resolve an offset in one normalized block back to its raw DOM text position.
  */
@@ -139,15 +160,8 @@ export function rangeAtNormalizedResourceOffset(
   document: Document,
   targetOffset: number,
 ): Range | null {
-  const selector = 'h1,h2,h3,h4,h5,h6,p,li,blockquote,pre,figcaption,dt,dd,aside';
-  const ignored = 'script,style,nav,svg,math';
-  const blocks = Array.from(document.body?.querySelectorAll(selector) ?? []).filter((element) => {
-    if (element.closest(ignored)) return false;
-    return !element.parentElement?.closest(selector);
-  });
-
   let resourceOffset = 0;
-  for (const block of blocks) {
+  for (const block of epubTextBlocks(document)) {
     const normalized = normalizeEpubSourceText(block.textContent ?? '');
     if (!normalized) continue;
 
@@ -159,4 +173,35 @@ export function rangeAtNormalizedResourceOffset(
     resourceOffset = end + 1;
   }
   return null;
+}
+
+
+/**
+ * Resolve a normalized resource span to a DOM Range. Search queries are
+ * trimmed, so the final normalized character is non-whitespace; advancing one
+ * raw text position from that character gives the correct exclusive end.
+ */
+export function rangeForNormalizedResourceSpan(
+  document: Document,
+  startOffset: number,
+  length: number,
+): Range | null {
+  if (length <= 0) return null;
+
+  const start = rangeAtNormalizedResourceOffset(document, startOffset);
+  const last = rangeAtNormalizedResourceOffset(document, startOffset + length - 1);
+  if (!start || !last) return null;
+
+  const startNode = start.startContainer;
+  const endNode = last.startContainer;
+  const endOffset = last.startOffset;
+
+  if (endNode.nodeType !== Node.TEXT_NODE) return null;
+  const textLength = endNode.textContent?.length ?? 0;
+  if (endOffset >= textLength) return null;
+
+  const range = document.createRange();
+  range.setStart(startNode, start.startOffset);
+  range.setEnd(endNode, endOffset + 1);
+  return range;
 }

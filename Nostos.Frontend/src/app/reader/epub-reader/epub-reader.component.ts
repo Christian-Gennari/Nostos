@@ -24,13 +24,22 @@ import { NotesService } from '../../core/services/notes.service';
 import { BooksService } from '../../core/services/books.service';
 import { ThemeService, Theme } from '../../core/services/theme.service';
 import { Book as BookDto } from '../../core/dtos/book.dtos';
-import { IReader, ReaderProgress, ReaderSourceTarget, TocItem } from '../reader.interface';
+import {
+  IReader,
+  ReaderProgress,
+  ReaderSearchState,
+  ReaderSourceTarget,
+  TocItem,
+} from '../reader.interface';
 import { isInteractiveTarget, isTypingTarget, pageActionForKey } from '../reader-keyboard';
 import { AssistantContextService } from '../../ui/assistant/assistant-context.service';
 
 import {
   normalizeEpubHrefForComparison,
+  normalizeEpubSourceText,
+  normalizedEpubResourceText,
   rangeAtNormalizedResourceOffset,
+  rangeForNormalizedResourceSpan,
   resolveGroundedEpubResourceHref,
   type EpubSpineSource,
 } from './epub-grounded-source';
@@ -439,6 +448,8 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
   selectionAnchored = output<SelectionAnchor | null>();
   commitFailed = output<void>();
   exitRequested = output<void>();
+  /** Ctrl/Cmd+F pressed inside the epub.js iframe, whose events do not bubble to the shell. */
+  searchRequested = output<void>();
 
   private notesService = inject(NotesService);
   private booksService = inject(BooksService);
@@ -461,6 +472,15 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
   private annotationManager: EpubAnnotationManager | null = null;
   private currentCfi: string | null = null;
   private pendingGroundedSource: ReaderSourceTarget | null = null;
+
+  // --- In-book search (#761) ---
+  searchState = signal<ReaderSearchState>({ status: 'idle', current: 0, total: 0 });
+  readonly searchAvailable = signal(false);
+  private searchCorpus: Array<{ href: string; index: number; text: string }> | null = null;
+  private searchCorpusPromise: Promise<Array<{ href: string; index: number; text: string }>> | null = null;
+  private searchMatches: Array<{ href: string; index: number; offset: number; length: number }> = [];
+  private activeSearchIndex = -1;
+  private searchGeneration = 0;
 
   /**
    * Monotonic navigation generation. Every navigation (grounded apply, user
@@ -621,6 +641,184 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
   }
 
   // --- IReader Methods ---
+
+  async search(query: string): Promise<void> {
+    if (!this.searchAvailable()) {
+      this.clearSearch();
+      return;
+    }
+
+    const normalizedQuery = normalizeEpubSourceText(query);
+    const generation = ++this.searchGeneration;
+
+    this.annotationManager?.clearSearchHighlight();
+    this.searchMatches = [];
+    this.activeSearchIndex = -1;
+
+    if (!normalizedQuery) {
+      this.searchState.set({ status: 'idle', current: 0, total: 0 });
+      return;
+    }
+
+    this.searchState.set({ status: 'searching', current: 0, total: 0 });
+
+    try {
+      const corpus = await this.ensureSearchCorpus();
+      if (generation !== this.searchGeneration) return;
+
+      const escaped = normalizedQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const matcher = new RegExp(escaped, 'giu');
+      const matches: Array<{ href: string; index: number; offset: number; length: number }> = [];
+
+      for (const section of corpus) {
+        matcher.lastIndex = 0;
+        let match: RegExpExecArray | null;
+        while ((match = matcher.exec(section.text)) !== null) {
+          matches.push({
+            href: section.href,
+            index: section.index,
+            offset: match.index,
+            length: match[0].length,
+          });
+          // Literal queries are never empty after normalization, but keep this
+          // guard so a future matcher change cannot spin forever.
+          if (match[0].length === 0) matcher.lastIndex += 1;
+        }
+      }
+
+      if (generation !== this.searchGeneration) return;
+      this.searchMatches = matches;
+
+      if (matches.length === 0) {
+        this.searchState.set({ status: 'not-found', current: 0, total: 0 });
+        return;
+      }
+
+      this.activeSearchIndex = 0;
+      this.searchState.set({ status: 'ready', current: 1, total: matches.length });
+      await this.activateSearchResult(generation);
+    } catch (error) {
+      if (generation !== this.searchGeneration) return;
+      console.warn('EPUB search failed:', error);
+      this.searchState.set({ status: 'not-found', current: 0, total: 0 });
+    }
+  }
+
+  async nextSearchResult(): Promise<void> {
+    if (this.searchMatches.length === 0) return;
+    const generation = this.searchGeneration;
+    this.activeSearchIndex = (this.activeSearchIndex + 1) % this.searchMatches.length;
+    this.searchState.set({
+      status: 'ready',
+      current: this.activeSearchIndex + 1,
+      total: this.searchMatches.length,
+    });
+    await this.activateSearchResult(generation);
+  }
+
+  async previousSearchResult(): Promise<void> {
+    if (this.searchMatches.length === 0) return;
+    const generation = this.searchGeneration;
+    this.activeSearchIndex =
+      (this.activeSearchIndex - 1 + this.searchMatches.length) % this.searchMatches.length;
+    this.searchState.set({
+      status: 'ready',
+      current: this.activeSearchIndex + 1,
+      total: this.searchMatches.length,
+    });
+    await this.activateSearchResult(generation);
+  }
+
+  clearSearch(): void {
+    this.searchGeneration++;
+    this.searchMatches = [];
+    this.activeSearchIndex = -1;
+    this.searchState.set({ status: 'idle', current: 0, total: 0 });
+    this.annotationManager?.clearSearchHighlight();
+  }
+
+  private async ensureSearchCorpus(): Promise<Array<{ href: string; index: number; text: string }>> {
+    if (this.searchCorpus) return this.searchCorpus;
+    if (this.searchCorpusPromise) return this.searchCorpusPromise;
+
+    const book = this.epubBook;
+    if (!book) return [];
+
+    const promise = (async () => {
+      await book.ready;
+      if (this.epubBook !== book) return [];
+
+      const spine = book.spine as unknown as {
+        spineItems?: Array<{
+          href?: unknown;
+          index?: unknown;
+          linear?: unknown;
+          load?: (request: (path: string) => Promise<unknown>) => Promise<Element>;
+          unload?: () => void;
+        }>;
+      };
+
+      const corpus: Array<{ href: string; index: number; text: string }> = [];
+      for (const [fallbackIndex, section] of (spine.spineItems ?? []).entries()) {
+        if (section.linear === false || typeof section.load !== 'function') continue;
+
+        const href = typeof section.href === 'string' ? section.href : '';
+        if (!href) continue;
+        const index = typeof section.index === 'number' ? section.index : fallbackIndex;
+
+        try {
+          const contents = await section.load(book.load.bind(book) as (path: string) => Promise<unknown>);
+          if (this.epubBook !== book) return [];
+          const document = contents?.ownerDocument;
+          if (!document) continue;
+          const text = normalizedEpubResourceText(document);
+          if (text) corpus.push({ href, index, text });
+        } finally {
+          section.unload?.();
+        }
+      }
+
+      if (this.epubBook === book) this.searchCorpus = corpus;
+      return corpus;
+    })();
+
+    this.searchCorpusPromise = promise;
+    try {
+      return await promise;
+    } finally {
+      if (this.searchCorpusPromise === promise) this.searchCorpusPromise = null;
+    }
+  }
+
+  private async activateSearchResult(generation: number): Promise<void> {
+    const match = this.searchMatches[this.activeSearchIndex];
+    if (!match || generation !== this.searchGeneration) return;
+
+    await this.goToSource({
+      type: 'epub',
+      epubResourceHref: match.href,
+      epubSpineIndex: match.index,
+      epubTextOffset: match.offset,
+    });
+    if (generation !== this.searchGeneration) return;
+
+    try {
+      const rendered = this.renderedContents();
+      const contents =
+        rendered.find((candidate) => this.contentMatchesHref(candidate, match.href)) ?? rendered[0];
+      if (!contents?.document) return;
+
+      const range = rangeForNormalizedResourceSpan(contents.document, match.offset, match.length);
+      const cfi = range ? contents.cfiFromRange(range) : null;
+      if (typeof cfi === 'string' && cfi.length > 0) {
+        this.annotationManager?.showSearchHighlight(cfi);
+      }
+    } catch (error) {
+      // Navigation is still useful if a malformed publisher DOM prevents the
+      // optional temporary paint.
+      console.warn('Could not paint EPUB search result:', error);
+    }
+  }
 
   next() {
     this.beginNavigation();
@@ -1176,6 +1374,10 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
 
   loadBook(id: string) {
     this.beginNavigation();
+    this.searchAvailable.set(false);
+    this.clearSearch();
+    this.searchCorpus = null;
+    this.searchCorpusPromise = null;
     if (this.epubBook) {
       this.annotationManager?.destroy();
       this.annotationManager = null;
@@ -1398,6 +1600,11 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     this.progressUnlocked = true;
     const cfi = this.getCurrentLocation() ?? this.currentCfi;
     if (cfi) this.updateProgressState(cfi);
+    // Search navigation reuses goToSource(), which deliberately queues requests
+    // while progress is locked. Do not expose search until the opening display
+    // and saved-position restore are finished, or a query can become a stranded
+    // pending grounded target after the one startup consumption point.
+    this.searchAvailable.set(true);
   }
 
   /** Label of the TOC entry the displayed section belongs to, for the pill. */
@@ -1426,6 +1633,18 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     if (this.keyboardDocuments.has(doc)) return;
 
     const onKeydown = (event: KeyboardEvent) => {
+      if (
+        !event.defaultPrevented &&
+        (event.ctrlKey || event.metaKey) &&
+        !event.altKey &&
+        !event.shiftKey &&
+        event.key.toLowerCase() === 'f'
+      ) {
+        event.preventDefault();
+        this.searchRequested.emit();
+        return;
+      }
+
       if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
       if (isTypingTarget(event.target) || isInteractiveTarget(event.target)) return;
 
@@ -1513,6 +1732,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
   }
 
   private failOpen(): void {
+    this.searchAvailable.set(false);
     this.errorMessage.set('The file may be damaged, unsupported, or temporarily unavailable.');
     this.loading.set(false);
   }
@@ -1691,6 +1911,10 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
       cleanup();
     }
     this.keyboardDocuments.clear();
+    this.searchAvailable.set(false);
+    this.clearSearch();
+    this.searchCorpus = null;
+    this.searchCorpusPromise = null;
     this.annotationManager?.destroy();
     this.annotationManager = null;
     if (this.epubBook) {

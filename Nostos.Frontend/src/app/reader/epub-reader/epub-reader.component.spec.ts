@@ -33,6 +33,7 @@ describe('EpubReader highlight-mode lifecycle (issue #16)', () => {
   let log: string[];
   let lastRendition: any;
   let lastEmit: (type: string) => void;
+  let lastSearchSectionUnload: ReturnType<typeof vi.fn>;
 
   const notesService = {
     list: vi.fn(() => of([])),
@@ -46,12 +47,23 @@ describe('EpubReader highlight-mode lifecycle (issue #16)', () => {
   };
 
   const createFakeBook = () => {
+    const searchDocument = document.implementation.createHTMLDocument('Search fixture');
+    searchDocument.body.innerHTML =
+      '<p>Entering Trans<em>ylva</em>nia tonight.</p><p>Transylvania again.</p>';
+    const renderedContents = {
+      document: searchDocument,
+      section: { href: 'chapter-2.xhtml' },
+      cfiFromRange: vi.fn(() => 'epubcfi(/6/4!/4/2:0,/4/2:12)'),
+      window: searchDocument.defaultView,
+    };
+    lastSearchSectionUnload = vi.fn();
+
     const rendition = {
       hooks: { content: { register: vi.fn(() => log.push('content-hook')) } },
       on: vi.fn(),
       off: vi.fn(),
-      annotations: { highlight: vi.fn(), add: vi.fn(), remove: vi.fn() },
-      getContents: vi.fn(() => []),
+      annotations: { highlight: vi.fn(), underline: vi.fn(), add: vi.fn(), remove: vi.fn() },
+      getContents: vi.fn(() => [renderedContents]),
       views: vi.fn(() => []),
       getRange: vi.fn(),
       themes: { register: vi.fn(), select: vi.fn(), fontSize: vi.fn() },
@@ -85,8 +97,17 @@ describe('EpubReader highlight-mode lifecycle (issue #16)', () => {
       },
       navigation: { toc: [] },
       spine: {
-        spineItems: [{ href: 'chapter-2.xhtml', index: 2 }],
+        spineItems: [
+          {
+            href: 'chapter-2.xhtml',
+            index: 2,
+            linear: true,
+            load: vi.fn(() => Promise.resolve(searchDocument.documentElement)),
+            unload: lastSearchSectionUnload,
+          },
+        ],
       },
+      load: vi.fn(() => Promise.resolve(searchDocument.documentElement)),
       destroy: vi.fn(() => log.push('book-destroy')),
     };
     return { book, rendition, emit: book.emit };
@@ -174,6 +195,60 @@ describe('EpubReader highlight-mode lifecycle (issue #16)', () => {
     expect(lastRendition.display).toHaveBeenCalledWith('OEBPS/chapter-2.xhtml');
     expect(lastRendition.display).toHaveBeenCalledWith('chapter-2.xhtml');
     expect(fixture.componentInstance.sourceNavigationMessage()).toBeNull();
+  });
+
+  it('searches the full EPUB spine, including text split by inline markup, and unloads source DOM', async () => {
+    await setupComponent();
+
+    await fixture.componentInstance.search('Transylvania');
+
+    expect(fixture.componentInstance.searchState()).toEqual({
+      status: 'ready',
+      current: 1,
+      total: 2,
+    });
+    expect(lastRendition.display).toHaveBeenCalledWith('chapter-2.xhtml');
+    expect(lastSearchSectionUnload).toHaveBeenCalledTimes(1);
+
+    await fixture.componentInstance.nextSearchResult();
+    expect(fixture.componentInstance.searchState().current).toBe(2);
+    await fixture.componentInstance.nextSearchResult();
+    expect(fixture.componentInstance.searchState().current).toBe(1);
+    await fixture.componentInstance.previousSearchResult();
+    expect(fixture.componentInstance.searchState().current).toBe(2);
+
+    fixture.componentInstance.clearSearch();
+    expect(fixture.componentInstance.searchState()).toEqual({
+      status: 'idle',
+      current: 0,
+      total: 0,
+    });
+  });
+
+  it('ignores an EPUB search result that finishes after search has been cleared', async () => {
+    await setupComponent();
+    const component = fixture.componentInstance;
+    expect(component.searchAvailable()).toBe(true);
+
+    let resolveCorpus!: (value: Array<{ href: string; index: number; text: string }>) => void;
+    const pendingCorpus = new Promise<Array<{ href: string; index: number; text: string }>>(
+      (resolve) => { resolveCorpus = resolve; },
+    );
+    (component as any).searchCorpus = null;
+    (component as any).searchCorpusPromise = pendingCorpus;
+    const displayCallsBeforeSearch = lastRendition.display.mock.calls.length;
+
+    const pendingSearch = component.search('Transylvania');
+    component.clearSearch();
+    resolveCorpus([{ href: 'chapter-2.xhtml', index: 2, text: 'Transylvania' }]);
+    await pendingSearch;
+
+    expect(component.searchState()).toEqual({
+      status: 'idle',
+      current: 0,
+      total: 0,
+    });
+    expect(lastRendition.display).toHaveBeenCalledTimes(displayCallsBeforeSearch);
   });
 
   it('shows a calm visible state when a grounded EPUB resource cannot be resolved', async () => {
@@ -686,6 +761,25 @@ describe('EpubReader theme-following normalization', () => {
    * Issue #225 §1.5. The contents document is an iframe: a key pressed while
    * reading never reaches the shell's document listener.
    */
+  it('forwards Ctrl/Cmd+F pressed inside the EPUB iframe to the shell', async () => {
+    await setupComponent();
+
+    const contents = makeContents();
+    contentHooks.forEach((hook) => hook(contents));
+    const emit = vi.spyOn(fixture.componentInstance.searchRequested, 'emit');
+
+    const ctrl = new KeyboardEvent('keydown', {
+      key: 'f',
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    contents.document.dispatchEvent(ctrl);
+
+    expect(ctrl.defaultPrevented).toBe(true);
+    expect(emit).toHaveBeenCalledTimes(1);
+  });
+
   it('turns pages from keys pressed inside the contents document', async () => {
     await setupComponent();
 

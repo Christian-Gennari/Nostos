@@ -11,7 +11,7 @@ import { TopicAutocompleteService } from '../ui/topic-autocomplete-panel/topic-a
 
 // DTOs & Interfaces
 import { Note, noteNavigationTarget } from '../core/dtos/note.dtos';
-import { IReader, ReaderSourceTarget, TocItem } from './reader.interface';
+import { IReader, ReaderSearchState, ReaderSourceTarget, TocItem } from './reader.interface';
 import { isInteractiveTarget, isTypingTarget, pageActionForKey } from './reader-keyboard';
 import {
   DEFAULT_HIGHLIGHT_COLOUR,
@@ -33,7 +33,7 @@ import { TopicInputComponent } from '../ui/topic-input.component/topic-input.com
 import { NoteCardComponent } from '../ui/note-card.component/note-card.component';
 import { ConfirmModal } from '../ui/confirm-modal/confirm-modal.component';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
-import { TextareaDirective } from '../ui/form-control/form-control.directive';
+import { InputDirective, TextareaDirective } from '../ui/form-control/form-control.directive';
 import { readReaderReturnOrigin } from '../core/navigation/studio-reader-navigation';
 import { Theme, ThemeService } from '../core/services/theme.service';
 import { ToastService } from '../core/services/toast.service';
@@ -72,6 +72,7 @@ export function selectionPreview(text: string | null, max = SELECTION_PREVIEW_MA
     IconButtonComponent,
     ButtonComponent,
     ConfirmModal,
+    InputDirective,
     TextareaDirective,
   ],
   templateUrl: './reader-shell.component.html',
@@ -234,6 +235,7 @@ export class ReaderShell implements OnInit, OnDestroy {
   toggleTypo(): void {
     const opening = !this.typoOpen();
     if (opening) {
+      this.closeSearch(false);
       this.rememberOverlayFocus();
       this.tocOpen.set(false);
       this.notesOpen.set(false);
@@ -245,34 +247,69 @@ export class ReaderShell implements OnInit, OnDestroy {
     this.restoreOverlayFocus();
   }
 
-  /**
-   * Opens the reader's own search UI. Only rendered for formats that have one
-   * (PDF today), and the capability is optional on IReader, so this cannot hand
-   * a reader a control it does not implement. Ctrl/Cmd+F reaches the same place;
-   * this exists so search is reachable by touch at all (issue #226 §2).
-   */
+  // ------------------------------------------------------------------
+  // Shared in-book search (#761)
+  // ------------------------------------------------------------------
+
+  searchPanelOpen = signal(false);
+  searchQuery = signal('');
+  private searchDebounce: ReturnType<typeof setTimeout> | null = null;
+
+  canSearch(): boolean {
+    // Readiness belongs to the mounted format adapter: EPUB must finish its
+    // opening/restore sequence, and PDF must have a live PDF.js find engine.
+    return this.activeReader()?.searchAvailable?.() ?? false;
+  }
+
+  readerSearchState(): ReaderSearchState {
+    return this.activeReader()?.searchState?.() ?? { status: 'idle', current: 0, total: 0 };
+  }
+
   openSearch(): void {
-    this.pdfReader?.openSearch?.();
+    if (!this.canSearch()) return;
+    if (!this.searchPanelOpen()) {
+      this.rememberOverlayFocus();
+      this.tocOpen.set(false);
+      this.notesOpen.set(false);
+      this.typoOpen.set(false);
+      this.searchPanelOpen.set(true);
+    }
+    this.focusOverlay('.reader-search-input');
   }
 
-  /**
-   * Whether the reader's search UI is open, so the header control can show its
-   * state and act as a close (a #226 follow-up). Read as a method rather than a
-   * `computed()`: `pdfReader` is a ViewChild, i.e. a plain field that is set
-   * after the first change-detection pass, so a computed would cache the
-   * pre-view-init value and never update.
-   */
-  searchOpen(): boolean {
-    return this.pdfReader?.findBarVisible?.() ?? false;
-  }
-
-  /**
-   * The header's search control is a toggle: pressing the button that opened the
-   * bar closes it again. Before this it only ever opened, and since the library's
-   * find bar carries no close control of its own there was no visible way out.
-   */
   toggleSearch(): void {
-    this.pdfReader?.toggleSearch?.();
+    if (this.searchPanelOpen()) this.closeSearch();
+    else this.openSearch();
+  }
+
+  closeSearch(restoreFocus = true): void {
+    if (this.searchDebounce) {
+      clearTimeout(this.searchDebounce);
+      this.searchDebounce = null;
+    }
+    const wasOpen = this.searchPanelOpen();
+    this.searchPanelOpen.set(false);
+    this.searchQuery.set('');
+    this.activeReader()?.clearSearch?.();
+    if (restoreFocus && wasOpen) this.restoreOverlayFocus();
+  }
+
+  onSearchInput(event: Event): void {
+    const query = (event.target as HTMLInputElement).value;
+    this.searchQuery.set(query);
+    if (this.searchDebounce) clearTimeout(this.searchDebounce);
+    this.searchDebounce = setTimeout(() => {
+      this.searchDebounce = null;
+      void this.activeReader()?.search?.(query);
+    }, 150);
+  }
+
+  nextSearchResult(): void {
+    void this.activeReader()?.nextSearchResult?.();
+  }
+
+  previousSearchResult(): void {
+    void this.activeReader()?.previousSearchResult?.();
   }
 
   /**
@@ -410,6 +447,8 @@ export class ReaderShell implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    if (this.searchDebounce) clearTimeout(this.searchDebounce);
+    this.activeReader()?.clearSearch?.();
     this.bookNavigationSubscription?.unsubscribe();
     this.sourceNavigationSubscription?.unsubscribe();
     this.sourceNavigationGeneration++;
@@ -439,6 +478,9 @@ export class ReaderShell implements OnInit, OnDestroy {
   }
 
   private loadBook(id: string): void {
+    // Clear transient format state while the previous mounted reader is still
+    // reachable. Once ready=false, activeReader() deliberately disappears.
+    this.closeSearch(false);
     this.currentRouteBookId = id;
     const generation = ++this.bookLoadGeneration;
 
@@ -640,6 +682,7 @@ export class ReaderShell implements OnInit, OnDestroy {
   toggleNotes() {
     const opening = !this.notesOpen();
     if (opening) {
+      this.closeSearch(false);
       this.rememberOverlayFocus();
       this.tocOpen.set(false);
       this.typoOpen.set(false);
@@ -790,6 +833,7 @@ export class ReaderShell implements OnInit, OnDestroy {
       return;
     }
 
+    this.closeSearch(false);
     this.rememberOverlayFocus();
     this.notesOpen.set(false);
     this.typoOpen.set(false);
@@ -1013,9 +1057,27 @@ export class ReaderShell implements OnInit, OnDestroy {
       return;
     }
 
+    if (
+      !event.defaultPrevented &&
+      (event.ctrlKey || event.metaKey) &&
+      !event.altKey &&
+      !event.shiftKey &&
+      event.key.toLowerCase() === 'f' &&
+      this.canSearch()
+    ) {
+      event.preventDefault();
+      this.openSearch();
+      return;
+    }
+
     if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
 
     if (event.key === 'Escape') {
+      if (this.searchPanelOpen()) {
+        this.closeSearch();
+        event.preventDefault();
+        return;
+      }
       // Overlays close in the order they stack: the typography panel rides on
       // top of the drawers, so it goes first. defaultPrevented still lets a
       // focused control claim Escape before the shell sees it.

@@ -100,6 +100,8 @@ export class EpubAnnotationManager {
   /** The book's chosen pen (issue #208), used for every highlight drawn here. */
   private highlightColour: HighlightColour = DEFAULT_HIGHLIGHT_COLOUR;
   private pendingHighlight: PendingEpubHighlight | null = null;
+  /** Ephemeral search underline; a distinct epub.js annotation type cannot collide with saved highlights. */
+  private searchCfiRange: string | null = null;
   private lastCapturedKey: string | null = null;
   private readonly documentCleanups = new Map<Document, () => void>();
   /**
@@ -308,6 +310,35 @@ export class EpubAnnotationManager {
   }
 
   /**
+   * Paint the active search hit as an underline rather than an epub.js
+   * "highlight". epub.js keys annotations by CFI + type, so using a second
+   * highlight at the exact CFI of a saved Nostos highlight could overwrite the
+   * stored annotation object. A search-only underline is visually distinct and
+   * has its own key.
+   */
+  public showSearchHighlight(cfiRange: string): void {
+    this.clearSearchHighlight();
+    this.searchCfiRange = cfiRange;
+    this.rendition.annotations.underline(
+      cfiRange,
+      { nostosSearch: true },
+      undefined,
+      'epubjs-search-current',
+      {
+        stroke: 'var(--color-accent)',
+        'stroke-opacity': '0.9',
+        'stroke-width': '2',
+      },
+    );
+  }
+
+  public clearSearchHighlight(): void {
+    if (!this.searchCfiRange) return;
+    this.rendition.annotations.remove(this.searchCfiRange, 'underline');
+    this.searchCfiRange = null;
+  }
+
+  /**
    * Standard epub.js path: `rendition.on('selected')`. Routes into the same
    * capture/deduplication pipeline as the iframe-level fallback.
    */
@@ -507,6 +538,7 @@ export class EpubAnnotationManager {
    */
   public destroy(): void {
     this.discardHighlight();
+    this.clearSearchHighlight();
 
     if (this.selectedHandler) {
       this.rendition.off('selected', this.selectedHandler);

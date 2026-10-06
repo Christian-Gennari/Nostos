@@ -72,14 +72,13 @@ class PdfReaderStub {
   noteCreated = output<void>();
   selectionCaptured = output<unknown>();
   commitFailed = output<unknown>();
-  /**
-   * Search visibility (a #226 follow-up). The header control reads it to show its state
-   * and to act as a close, because the library's find bar renders no close control
-   * of its own.
-   */
-  findBarVisible = signal(false);
   textCapability = signal<'unknown' | 'available' | 'unavailable'>('available');
-  toggleSearch = () => this.findBarVisible.update((v) => !v);
+  searchAvailable = signal(true);
+  searchState = signal({ status: 'idle' as const, current: 0, total: 0 });
+  search = vi.fn();
+  nextSearchResult = vi.fn();
+  previousSearchResult = vi.fn();
+  clearSearch = vi.fn();
   /**
    * The IReader surface the shell needs to render the pager for a PDF. Without
    * these the shell's `activeReader()?.progress()` path could not be exercised by
@@ -113,6 +112,14 @@ class EpubReaderStub {
   selectionAnchored = output<unknown>();
   commitFailed = output<unknown>();
   exitRequested = output<void>();
+  searchRequested = output<void>();
+  loading = signal(false);
+  searchAvailable = signal(true);
+  searchState = signal({ status: 'idle' as const, current: 0, total: 0 });
+  search = vi.fn();
+  nextSearchResult = vi.fn();
+  previousSearchResult = vi.fn();
+  clearSearch = vi.fn();
   commitHighlight = vi.fn();
   discardHighlight = vi.fn();
   // Typography surface the shell panel binds (mirrors EpubReader).
@@ -1094,10 +1101,7 @@ describe('ReaderShell toolbar contract', () => {
     }
   });
 
-  it('offers a search control for PDF, and only for PDF', async () => {
-    // A phone has no Ctrl+F, so without a visible control search is unreachable
-    // by touch at all (issue #226 §2). Formats that do not implement search must
-    // not be offered the control — the capability is optional on IReader.
+  it('offers the shared Search control for PDF', async () => {
     const pdfBook = { ...audiobook, id: 'book-pdf', fileName: 'being-and-time.pdf' } as Book;
     booksGetSpy.mockReturnValue(of(pdfBook));
     fixture = await configureReaderShell();
@@ -1107,49 +1111,140 @@ describe('ReaderShell toolbar contract', () => {
       .queryAll(By.css('.reader-header button.icon-btn'))
       .map((b) => b.nativeElement as HTMLButtonElement)
       .find((b) => b.getAttribute('title') === 'Search');
-    expect(searchBtn).toBeTruthy();
-    expect(searchBtn!.getAttribute('aria-label')).toBe('Search in document');
 
-    const spy = vi.spyOn(fixture.componentInstance, 'toggleSearch');
-    searchBtn!.click();
-    expect(spy).toHaveBeenCalledTimes(1);
+    expect(searchBtn).toBeTruthy();
+    expect(searchBtn!.getAttribute('aria-label')).toBe('Search in book');
   });
 
-  /**
-   * A #226 follow-up. The library's find bar renders no close control — its only
-   * buttons are prev/next — so the header control has to be the way out as well
-   * as the way in: pressing it again used to do nothing at all.
-   */
-  it('shows the search control’s state and closes the bar when pressed again', async () => {
+  it('offers the same Search control for EPUB', async () => {
+    const epubBook = { ...audiobook, id: 'book-epub', fileName: 'dracula.epub' } as Book;
+    booksGetSpy.mockReturnValue(of(epubBook));
+    fixture = await configureReaderShell();
+    render();
+
+    const searchBtn = fixture.debugElement
+      .queryAll(By.css('.reader-header button.icon-btn'))
+      .map((b) => b.nativeElement as HTMLButtonElement)
+      .find((b) => b.getAttribute('title') === 'Search');
+
+    expect(searchBtn).toBeTruthy();
+    expect(searchBtn!.getAttribute('aria-label')).toBe('Search in book');
+  });
+
+  it('clears the mounted reader search before a book switch drops activeReader', async () => {
+    const firstBook = { ...audiobook, id: 'book-pdf-first', fileName: 'first.pdf' } as Book;
+    booksGetSpy.mockReturnValue(of(firstBook));
+    fixture = await configureReaderShell();
+    render();
+
+    const stub = fixture.debugElement.query(By.directive(PdfReaderStub))
+      .componentInstance as PdfReaderStub;
+    (fixture.componentInstance as unknown as { pdfReader: PdfReaderStub }).pdfReader = stub;
+    fixture.componentInstance.ready.set(true);
+    render();
+    stub.clearSearch.mockClear();
+
+    const secondBook = { ...firstBook, id: 'book-pdf-second', fileName: 'second.pdf' } as Book;
+    booksGetSpy.mockReturnValue(of(secondBook));
+    (fixture.componentInstance as any).loadBook(secondBook.id);
+
+    expect(stub.clearSearch).toHaveBeenCalledTimes(1);
+    expect(fixture.componentInstance.searchPanelOpen()).toBe(false);
+  });
+
+  it('keeps Search disabled until the mounted reader says its engine is ready', async () => {
+    const pdfBook = { ...audiobook, id: 'book-pdf-ready', fileName: 'being-and-time.pdf' } as Book;
+    booksGetSpy.mockReturnValue(of(pdfBook));
+    fixture = await configureReaderShell();
+    render();
+
+    const stub = fixture.debugElement.query(By.directive(PdfReaderStub))
+      .componentInstance as PdfReaderStub;
+    (fixture.componentInstance as unknown as { pdfReader: PdfReaderStub }).pdfReader = stub;
+    fixture.componentInstance.ready.set(true);
+    stub.searchAvailable.set(false);
+    render();
+
+    const searchBtn = fixture.debugElement
+      .queryAll(By.css('.reader-header button.icon-btn'))
+      .map((b) => b.nativeElement as HTMLButtonElement)
+      .find((b) => b.getAttribute('title') === 'Search')!;
+    expect(searchBtn.disabled).toBe(true);
+
+    stub.searchAvailable.set(true);
+    render();
+    expect(searchBtn.disabled).toBe(false);
+  });
+
+  it('opens a Nostos-owned search panel and clears format search when closed', async () => {
     const pdfBook = { ...audiobook, id: 'book-pdf', fileName: 'being-and-time.pdf' } as Book;
     booksGetSpy.mockReturnValue(of(pdfBook));
     fixture = await configureReaderShell();
     render();
 
-    // `@ViewChild(PdfReader)` is a TYPE query, so the stub does not resolve into
-    // it — deliberate, and why these specs stay light. Attach it by hand: the
-    // binding under test is the shell's, and it reads the reader's signal.
     const stub = fixture.debugElement.query(By.directive(PdfReaderStub))
       .componentInstance as PdfReaderStub;
     (fixture.componentInstance as unknown as { pdfReader: PdfReaderStub }).pdfReader = stub;
+    fixture.componentInstance.ready.set(true);
+    render();
+
     const searchBtn = fixture.debugElement
       .queryAll(By.css('.reader-header button.icon-btn'))
       .map((b) => b.nativeElement as HTMLButtonElement)
       .find((b) => b.getAttribute('title') === 'Search')!;
 
     expect(searchBtn.getAttribute('aria-expanded')).toBe('false');
-    expect(searchBtn.classList.contains('active')).toBe(false);
-
     searchBtn.click();
     render();
-    expect(stub.findBarVisible()).toBe(true);
+
     expect(searchBtn.getAttribute('aria-expanded')).toBe('true');
-    expect(searchBtn.classList.contains('active')).toBe(true);
+    expect(fixture.nativeElement.querySelector('[data-testid="reader-search-panel"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('.reader-search-input')).not.toBeNull();
 
     searchBtn.click();
     render();
-    expect(stub.findBarVisible()).toBe(false);
+
     expect(searchBtn.getAttribute('aria-expanded')).toBe('false');
+    expect(fixture.nativeElement.querySelector('[data-testid="reader-search-panel"]')).toBeNull();
+    expect(stub.clearSearch).toHaveBeenCalled();
+  });
+
+  it('routes Ctrl/Cmd+F to the shared search surface', async () => {
+    const pdfBook = { ...audiobook, id: 'book-pdf-shortcut', fileName: 'being-and-time.pdf' } as Book;
+    booksGetSpy.mockReturnValue(of(pdfBook));
+    fixture = await configureReaderShell();
+    render();
+    const stub = fixture.debugElement.query(By.directive(PdfReaderStub))
+      .componentInstance as PdfReaderStub;
+    (fixture.componentInstance as unknown as { pdfReader: PdfReaderStub }).pdfReader = stub;
+    fixture.componentInstance.ready.set(true);
+    render();
+
+    const ctrl = new KeyboardEvent('keydown', {
+      key: 'f',
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    fixture.componentInstance.onDocumentKeydown(ctrl);
+
+    expect(ctrl.defaultPrevented).toBe(true);
+    expect(fixture.componentInstance.searchPanelOpen()).toBe(true);
+  });
+
+  it('composes reader search from canonical Nostos input and icon-button primitives', () => {
+    const template = readSource('./reader-shell.component.html');
+    const css = readSource('./reader-shell.component.css');
+
+    const panel = template.slice(
+      template.indexOf('class="reader-search-panel"'),
+      template.indexOf('<div class="reader-body">'),
+    );
+    expect(panel).toContain('appInput');
+    expect(panel).toContain('appIconButton');
+    expect(panel).toContain('controlSize="compact"');
+    expect(css).toContain('.reader-search-panel');
+    expect(css).toContain('position: absolute');
   });
 
   /**
@@ -1244,10 +1339,8 @@ describe('ReaderShell toolbar contract', () => {
   });
 
   it('offers no search control to a format that has no search', async () => {
-    // The capability is optional on IReader; an EPUB implements no search, so the
-    // shell must not hand it a control that would do nothing.
-    const epubBook = { ...audiobook, id: 'book-epub', fileName: 'iliad.epub' } as Book;
-    booksGetSpy.mockReturnValue(of(epubBook));
+    // Audio remains outside the text-search capability.
+    booksGetSpy.mockReturnValue(of(audiobook));
     fixture = await configureReaderShell();
     render();
 

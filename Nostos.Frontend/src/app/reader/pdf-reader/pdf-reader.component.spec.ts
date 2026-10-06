@@ -8,7 +8,11 @@ import { of, throwError } from 'rxjs';
 import { readFileSync } from 'node:fs';
 
 import { PdfReader } from './pdf-reader.component';
-import { NgxExtendedPdfViewerModule, ScrollModeType } from 'ngx-extended-pdf-viewer';
+import {
+  NgxExtendedPdfViewerModule,
+  NgxExtendedPdfViewerService,
+  ScrollModeType,
+} from 'ngx-extended-pdf-viewer';
 import { PdfAnnotationManager } from './pdf-annotation-manager';
 import { NotesService } from '../../core/services/notes.service';
 import { BooksService } from '../../core/services/books.service';
@@ -58,54 +62,21 @@ class PdfViewerStub {
   showTextEditor = input<boolean>(true);
   showDrawEditor = input<boolean>(true);
   showStampEditor = input<boolean>(true);
-  // Search (issue #226 §2): the find bar and the options the reader trims.
-  findbarVisible = input<boolean>(false);
-  showFindHighlightAll = input<boolean>(true);
-  showFindMatchCase = input<boolean>(false);
-  showFindResultsCount = input<boolean>(true);
-  showFindMessages = input<boolean>(true);
-  showFindMatchDiacritics = input<boolean>(false);
-  showFindEntireWord = input<boolean>(false);
-  showFindMultiple = input<boolean>(false);
-  // The find bar's input area is re-declared by the reader (a #226 follow-up); the
-  // stub must accept the binding or the template fails to compile.
-  customFindbarInputArea = input<unknown>();
-
   pageChange = output<number>();
   sidebarVisibleChange = output<boolean>();
   scrollModeChange = output<number>();
-  findbarVisibleChange = output<boolean>();
   pagesLoaded = output<any>();
   pageRender = output<any>();
   pageRendered = output<any>();
   pdfLoaded = output<any>();
   textLayerRendered = output<any>();
   textSelection = output<any>();
+  updateFindMatchesCount = output<any>();
+  updateFindState = output<any>();
 }
 
-/**
- * The find bar's own pieces are declared INSIDE `NgxExtendedPdfViewerModule` and
- * are not standalone, so a standalone component cannot list them in `imports`.
- * The specs below remove that module to keep the suite light, so the three
- * selectors our template re-declares (a #226 follow-up) need stand-ins: the stub viewer
- * never instantiates that ng-template, but Angular still compiles its content.
- */
-@Component({ selector: 'pdf-search-input-field', standalone: true, template: '' })
-class PdfSearchInputFieldStub {}
-
-@Component({ selector: 'pdf-find-previous', standalone: true, template: '' })
-class PdfFindPreviousStub {}
-
-@Component({ selector: 'pdf-find-next', standalone: true, template: '' })
-class PdfFindNextStub {}
-
 /** Everything the overridden PdfReader needs to compile in these specs. */
-const PDF_READER_TEST_IMPORTS = [
-  PdfViewerStub,
-  PdfSearchInputFieldStub,
-  PdfFindPreviousStub,
-  PdfFindNextStub,
-];
+const PDF_READER_TEST_IMPORTS = [PdfViewerStub];
 
 const readSource = (file: string) =>
   readFileSync(new URL(file, import.meta.url), 'utf-8');
@@ -463,21 +434,29 @@ describe('PdfReader contents rail from the embedded outline', () => {
 });
 
 /**
- * Search was unreachable: the library's find bar was bound to nothing and no
- * other search path existed, so Ctrl+F did nothing at all in a PDF (issue #226
- * §2). These pin the shortcut that opens it, and the Escape that closes it
- * before the shell can treat it as "close a rail".
+ * Search chrome is owned by ReaderShell; PdfReader only adapts the public
+ * ngx/PDF.js find API and publishes portable match state.
  */
-describe('PdfReader search shortcut', () => {
+describe('PdfReader shared search adapter (#761)', () => {
   let fixture: ComponentFixture<PdfReader>;
+  const pdfSearch = {
+    find: vi.fn(() => [Promise.resolve(2), Promise.resolve(1)]),
+    findNext: vi.fn(() => true),
+    findPrevious: vi.fn(() => true),
+  };
 
   beforeEach(async () => {
     localStorage.clear();
+    pdfSearch.find.mockClear();
+    pdfSearch.findNext.mockClear();
+    pdfSearch.findPrevious.mockClear();
+
     await TestBed.configureTestingModule({
       imports: [PdfReader],
       providers: [
         { provide: NotesService, useValue: { list: vi.fn(() => of([])) } },
         { provide: BooksService, useValue: { updateProgress: vi.fn(() => of(null)) } },
+        { provide: NgxExtendedPdfViewerService, useValue: pdfSearch },
         {
           provide: PdfAnnotationManager,
           useValue: { paint: vi.fn(), captureHighlight: vi.fn(), captureNoteLocation: vi.fn(() => null) },
@@ -493,168 +472,124 @@ describe('PdfReader search shortcut', () => {
     fixture = TestBed.createComponent(PdfReader);
     fixture.componentRef.setInput('bookId', 'book-1');
     fixture.detectChanges();
+    (fixture.componentInstance as any).pdfSearchReady.set(true);
+    fixture.componentInstance.textCapability.set('available');
   });
 
-  const key = (init: KeyboardEventInit) =>
-    new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init });
+  it('drops search state and readiness when the component is reused for another PDF', () => {
+    fixture.componentInstance.search('Being');
+    expect(fixture.componentInstance.searchAvailable()).toBe(true);
 
-  it('opens the find bar on Ctrl+F and on Cmd+F, and prevents the browser’s own find', () => {
-    const component = fixture.componentInstance;
+    fixture.componentInstance.ngOnChanges({
+      bookId: { firstChange: false },
+    } as any);
 
-    const ctrl = key({ key: 'f', ctrlKey: true });
-    component.onShortcutKeydown(ctrl);
-    expect(component.findBarVisible()).toBe(true);
-    expect(ctrl.defaultPrevented).toBe(true);
-
-    component.findBarVisible.set(false);
-    const meta = key({ key: 'F', metaKey: true });
-    component.onShortcutKeydown(meta);
-    expect(component.findBarVisible()).toBe(true);
+    expect(pdfSearch.find).toHaveBeenLastCalledWith('', {
+      highlightAll: false,
+      dontScrollIntoView: true,
+    });
+    expect(fixture.componentInstance.searchState()).toEqual({
+      status: 'idle',
+      current: 0,
+      total: 0,
+    });
+    expect(fixture.componentInstance.searchAvailable()).toBe(false);
+    expect(fixture.componentInstance.textCapability()).toBe('unknown');
   });
 
-  it('leaves other modifiers and plain keys alone', () => {
-    const component = fixture.componentInstance;
+  it('does not start a PDF search before the viewer find engine is ready', () => {
+    (fixture.componentInstance as any).pdfSearchReady.set(false);
 
-    // Ctrl+Shift+F is not our shortcut, and neither is Ctrl+A.
-    component.onShortcutKeydown(key({ key: 'f', ctrlKey: true, shiftKey: true }));
-    expect(component.findBarVisible()).toBe(false);
+    fixture.componentInstance.search('Being');
 
-    component.onShortcutKeydown(key({ key: 'a', ctrlKey: true }));
-    expect(component.findBarVisible()).toBe(false);
-
-    // A bare "f" must still reach the page (and the shell's page keys).
-    const plain = key({ key: 'f' });
-    component.onShortcutKeydown(plain);
-    expect(component.findBarVisible()).toBe(false);
-    expect(plain.defaultPrevented).toBe(false);
+    expect(pdfSearch.find).not.toHaveBeenCalled();
+    expect(fixture.componentInstance.searchState()).toEqual({
+      status: 'idle',
+      current: 0,
+      total: 0,
+    });
   });
 
-  it('opens the find bar through openSearch(), the path the header control uses', () => {
-    // The shell's search button calls this method (the interface makes it
-    // optional so a format without search is never handed the control), so a
-    // phone — which has no Ctrl+F — has a way in at all (issue #226 §2).
-    const component = fixture.componentInstance;
-    expect(component.findBarVisible()).toBe(false);
+  it('recovers to idle if the viewer reports ready before find() is actually usable', () => {
+    pdfSearch.find.mockReturnValueOnce(undefined as any);
 
-    component.openSearch();
+    fixture.componentInstance.search('Being');
 
-    expect(component.findBarVisible()).toBe(true);
+    expect(fixture.componentInstance.searchState()).toEqual({
+      status: 'idle',
+      current: 0,
+      total: 0,
+    });
+    expect(fixture.componentInstance.searchAvailable()).toBe(false);
   });
 
-  /**
-   * A #226 follow-up. The library's find bar renders NO close control — read its own
-   * template: its only buttons are prev/next — so a header control that could
-   * only OPEN left Escape as the way out, and Escape is neither discoverable nor
-   * available on a phone.
-   */
-  it('toggles the bar shut again from the header control', () => {
-    const component = fixture.componentInstance;
+  it('delegates literal search to the public PDF viewer service', async () => {
+    fixture.componentInstance.search('Being');
 
-    component.toggleSearch();
-    expect(component.findBarVisible()).toBe(true);
+    expect(pdfSearch.find).toHaveBeenCalledWith('Being', {
+      highlightAll: false,
+      matchCase: false,
+      dontScrollIntoView: false,
+    });
 
-    component.toggleSearch();
-    expect(component.findBarVisible()).toBe(false);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(fixture.componentInstance.searchState()).toEqual({
+      status: 'ready',
+      current: 1,
+      total: 3,
+    });
   });
 
-  it('carries no close control of its own, and does not re-declare the input area', () => {
-    // A close control used to live inside the bar (a #226 follow-up) because the
-    // header control could only OPEN. The header control became a TOGGLE, so the
-    // second exit was redundant — and it could not be styled: pdf.js ships
-    // `ngx-extended-pdf-viewer button:focus { outline: none; border: 1px solid
-    // blue }` at specificity (0,1,1), which out-specifies global
-    // `.icon-btn { all: unset }` at (0,1,0), so focusing it painted a literal
-    // blue border. Dismissal is the header toggle (`aria-expanded`) and Escape,
-    // both pinned by the tests above.
-    //
-    // The re-declared input area went with it: `customFindbarInputArea` existed
-    // only to append that control, and the library's default template renders
-    // `<div id="findbarInputContainer">` with exactly `pdf-search-input-field`,
-    // `pdf-find-previous`, `pdf-find-next` — the same three components in the same
-    // order — so keeping the shim would be surface with no behaviour.
+  it('uses PDF.js match-count events for current/total navigation state', () => {
+    fixture.componentInstance.search('Being');
+    fixture.componentInstance.onFindMatchesCount({ current: 2, total: 5 } as any);
+
+    expect(fixture.componentInstance.searchState()).toEqual({
+      status: 'ready',
+      current: 2,
+      total: 5,
+    });
+
+    fixture.componentInstance.nextSearchResult();
+    fixture.componentInstance.previousSearchResult();
+    expect(pdfSearch.findNext).toHaveBeenCalledTimes(1);
+    expect(pdfSearch.findPrevious).toHaveBeenCalledTimes(1);
+  });
+
+  it('clears PDF.js search and resets the shared state', () => {
+    fixture.componentInstance.search('Being');
+    fixture.componentInstance.clearSearch();
+
+    expect(pdfSearch.find).toHaveBeenLastCalledWith('', {
+      highlightAll: false,
+      dontScrollIntoView: true,
+    });
+    expect(fixture.componentInstance.searchState()).toEqual({
+      status: 'idle',
+      current: 0,
+      total: 0,
+    });
+  });
+
+  it('clears the previous PDF.js mark when the user empties the query', () => {
+    fixture.componentInstance.search('Being');
+    fixture.componentInstance.search('   ');
+
+    expect(pdfSearch.find).toHaveBeenLastCalledWith('', {
+      highlightAll: false,
+      dontScrollIntoView: true,
+    });
+    expect(fixture.componentInstance.searchState().status).toBe('idle');
+  });
+
+  it('no longer renders or styles the embedded PDF find bar', () => {
     const html = readSource('./pdf-reader.component.html');
-    // Comments stripped first: the comment above the find bar names
-    // `customFindbarInputArea` and `findInputArea` on purpose, to record why the
-    // shim went. A guard that cannot tell prose from markup would forbid
-    // explaining the change it pins.
-    const markup = html.replace(/<!--[\s\S]*?-->/g, '');
-
-    expect(markup).not.toContain('customFindbarInputArea');
-    expect(markup).not.toContain('findInputArea');
-    expect(markup).not.toContain('Close search');
-    expect(markup).not.toContain('(click)="closeSearch()"');
-    // The id-based CSS still has a target: it is the DEFAULT template's id.
-    expect(markup).toContain('[findbarVisible]="findBarVisible()"');
-  });
-
-  it('styles the find field by the id it renders, not an attribute it never has', () => {
-    // The field's rule was keyed on `.toolbarField[type='text']`, and the
-    // library's input template declares NO `type` attribute at all — so the
-    // selector matched nothing and the field kept pdf.js's `message-box` stack,
-    // #fff fill, rgba(0,0,0,.4) border and 2px corners while everything around it
-    // wore the house tokens (measured live; this is the "plain HTML" report).
-    // This guard is what stops the attribute creeping back.
-    const css = readSource('./pdf-reader.component.css');
-    // Comments stripped first: the fix's own comment names the broken selector on
-    // purpose, and a guard that cannot tell prose from a rule would forbid
-    // explaining the bug it pins.
-    const rules = css.replace(/\/\*[\s\S]*?\*\//g, '');
-
-    expect(rules).not.toContain("[type='text']");
-    expect(rules).toContain('.findbar #findInput.toolbarField');
-    expect(rules).toContain('.findbar #findInput.toolbarField::placeholder');
-    // Not a hover-only affordance either: hover does not exist on touch.
-    expect(rules).toContain('.findbar #findInput.toolbarField:focus');
-  });
-
-  it('lays the bar out as a card on desktop and a flush strip on a phone', () => {
     const css = readSource('./pdf-reader.component.css');
 
-    // The library writes left/right and a scale transform as INLINE styles from
-    // its own measurements, so a rule without !important loses silently.
-    expect(css).toContain('width: min(24rem, calc(100vw - 1.5rem)) !important');
-    expect(css).toContain('transform: none !important');
-    expect(css).toContain('right: 0.75rem !important');
-    // <=768px is the reader's own breakpoint (the shell uses the same one), and
-    // there the same element becomes the strip under the header.
-    expect(css).toContain('@media (max-width: 768px)');
-    expect(css).toContain('border-bottom: 1px solid var(--border-color)');
-  });
-
-  it('Escape closes the bar without the event reaching the shell', () => {
-    const component = fixture.componentInstance;
-    component.findBarVisible.set(true);
-
-    const esc = key({ key: 'Escape' });
-    component.onShortcutKeydown(esc);
-
-    expect(component.findBarVisible()).toBe(false);
-    expect(esc.defaultPrevented).toBe(true);
-  });
-
-  it('Escape is left to the shell when the bar is not open', () => {
-    const esc = key({ key: 'Escape' });
-    fixture.componentInstance.onShortcutKeydown(esc);
-
-    expect(esc.defaultPrevented).toBe(false);
-  });
-
-  it('drives the viewer’s find bar from that signal, with the jargon options off', () => {
-    const viewer = fixture.debugElement.query(By.directive(PdfViewerStub))
-      .componentInstance as PdfViewerStub;
-    expect(viewer.findbarVisible()).toBe(false);
-
-    fixture.componentInstance.findBarVisible.set(true);
-    fixture.detectChanges();
-    expect(viewer.findbarVisible()).toBe(true);
-
-    // The two options a reader of a book uses stay; the three pdf.js engine
-    // options do not get a row each in a reading interface.
-    expect(viewer.showFindHighlightAll()).toBe(true);
-    expect(viewer.showFindMatchCase()).toBe(true);
-    expect(viewer.showFindMatchDiacritics()).toBe(false);
-    expect(viewer.showFindEntireWord()).toBe(false);
-    expect(viewer.showFindMultiple()).toBe(false);
+    expect(html).not.toContain('findbarVisible');
+    expect(html).toContain('(updateFindMatchesCount)="onFindMatchesCount($event)"');
+    expect(css).not.toContain('.findbar');
   });
 });
 
