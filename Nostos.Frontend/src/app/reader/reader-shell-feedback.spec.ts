@@ -174,7 +174,7 @@ describe('ReaderShell feedback entry', () => {
         },
         { provide: TopicsService, useValue: { list: vi.fn(() => of([])) } },
         { provide: TopicAutocompleteService, useValue: { setTopics: vi.fn() } },
-        { provide: AssistantService, useValue: { open: vi.fn() } },
+        { provide: AssistantService, useValue: { requestSurfaceOpen: vi.fn() } },
         {
           provide: DeploymentCapabilitiesService,
           useValue: { get: () => of(capabilities) },
