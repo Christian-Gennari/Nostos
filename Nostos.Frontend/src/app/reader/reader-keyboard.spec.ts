@@ -1,4 +1,4 @@
-import { isInteractiveTarget, isTypingTarget, pageActionForKey } from './reader-keyboard';
+import { isInteractiveTarget, isTypingTarget, pageActionForKey, surfaceActionForPoint, swipePageAction } from './reader-keyboard';
 
 /**
  * The page-key binding is shared by the shell (document-level) and the EPUB
@@ -52,5 +52,75 @@ describe('reader keyboard bindings (issue #225 §1.5)', () => {
     expect(isTypingTarget(document.createElement('button'))).toBe(false);
     expect(isTypingTarget(document.createElement('div'))).toBe(false);
     expect(isTypingTarget(null)).toBe(false);
+  });
+
+  it('gives selection and authored controls priority over immersive surface taps', () => {
+    const link = document.createElement('a');
+    link.href = '/chapter';
+
+    expect(surfaceActionForPoint({
+      target: document.createElement('p'),
+      selectedText: 'selected words',
+      clientX: 195,
+      width: 390,
+      coarsePointer: true,
+      edgePaging: true,
+    })).toBeNull();
+
+    expect(surfaceActionForPoint({
+      target: link,
+      clientX: 195,
+      width: 390,
+      coarsePointer: true,
+      edgePaging: true,
+    })).toBeNull();
+  });
+
+  it('uses coarse edge taps for paging and the centre for chrome', () => {
+    const p = document.createElement('p');
+    expect(surfaceActionForPoint({
+      target: p,
+      clientX: 20,
+      width: 390,
+      coarsePointer: true,
+      edgePaging: true,
+    })).toBe('previous');
+    expect(surfaceActionForPoint({
+      target: p,
+      clientX: 370,
+      width: 390,
+      coarsePointer: true,
+      edgePaging: true,
+    })).toBe('next');
+    expect(surfaceActionForPoint({
+      target: p,
+      clientX: 195,
+      width: 390,
+      coarsePointer: true,
+      edgePaging: true,
+    })).toBe('toggle-chrome');
+    expect(surfaceActionForPoint({
+      target: p,
+      clientX: 20,
+      width: 390,
+      coarsePointer: false,
+      edgePaging: true,
+    })).toBe('toggle-chrome');
+  });
+
+  it('accepts only deliberate horizontal swipes as page turns', () => {
+    const p = document.createElement('p');
+    expect(swipePageAction({
+      target: p, startX: 320, startY: 200, endX: 180, endY: 210, durationMs: 260,
+    })).toBe('next');
+    expect(swipePageAction({
+      target: p, startX: 120, startY: 200, endX: 250, endY: 205, durationMs: 300,
+    })).toBe('previous');
+    expect(swipePageAction({
+      target: p, startX: 200, startY: 100, endX: 210, endY: 240, durationMs: 220,
+    })).toBeNull();
+    expect(swipePageAction({
+      target: p, selectedText: 'hold', startX: 320, startY: 200, endX: 180, endY: 210, durationMs: 260,
+    })).toBeNull();
   });
 });
