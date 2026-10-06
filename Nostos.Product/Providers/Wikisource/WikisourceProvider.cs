@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Xml;
 using System.Xml.Linq;
 using Nostos.Backend.Providers.Contracts;
@@ -16,7 +17,8 @@ public sealed class WikisourceProvider : IContentProvider,
     IProviderSearch,
     IProviderCatalog,
     IProviderAcquisitionPlanner,
-    IProviderDownloadPolicy
+    IProviderDownloadPolicy,
+    IProviderSnapshotSource
 {
     public const string ProviderIdentifier = "wikisource";
     public const string HttpClientName = "wikisource";
@@ -95,6 +97,73 @@ public sealed class WikisourceProvider : IContentProvider,
     {
         var book = await LoadBookAsync(externalId, ct);
         return book is null ? null : ToProviderItem(book, includeAssets: true);
+    }
+
+    /// <summary>
+    /// Reads the whole Ready-for-export catalogue as one snapshot, honoring the
+    /// caller's conditional validators. WS Export regenerates the feed daily
+    /// and supplies ETag and Last-Modified, so a host can re-check it cheaply;
+    /// a 304 reports <see cref="ProviderSnapshotStatus.NotModified"/> without a
+    /// body. The feed is a single page, so <see cref="ProviderSnapshot.NextCursor"/>
+    /// is always null. The live search cache is deliberately not used here:
+    /// this read must see the source's own validators rather than a cached copy.
+    /// </summary>
+    public async Task<ProviderSnapshot> ReadAsync(ProviderSnapshotRequest request, CancellationToken ct)
+    {
+        try
+        {
+            using var httpRequest = new HttpRequestMessage(HttpMethod.Get, WikisourceCatalog.CatalogPath);
+
+            if (!string.IsNullOrWhiteSpace(request.ETag)
+                && EntityTagHeaderValue.TryParse(request.ETag, out var entityTag))
+            {
+                httpRequest.Headers.IfNoneMatch.Add(entityTag);
+            }
+
+            if (request.IfModifiedSince is { } ifModifiedSince)
+                httpRequest.Headers.IfModifiedSince = ifModifiedSince;
+
+            using var response = await _http.SendAsync(
+                httpRequest,
+                HttpCompletionOption.ResponseHeadersRead,
+                ct);
+
+            if (response.StatusCode == HttpStatusCode.NotModified)
+            {
+                return ProviderSnapshot.NotModified(
+                    etag: request.ETag ?? response.Headers.ETag?.ToString(),
+                    lastModified: request.IfModifiedSince ?? response.Content.Headers.LastModified);
+            }
+
+            if (!response.IsSuccessStatusCode)
+                throw ProviderException.UnavailableFor(Id, "WS Export answered HTTP " + (int)response.StatusCode);
+
+            XDocument document;
+            try
+            {
+                await using var stream = await response.Content.ReadAsStreamAsync(ct);
+                document = await XDocument.LoadAsync(stream, LoadOptions.None, ct);
+            }
+            catch (XmlException ex)
+            {
+                throw ProviderException.InvalidResponse(Id, ex.Message);
+            }
+
+            if (!WikisourceCatalog.IsAtomDocument(document))
+                throw ProviderException.InvalidResponse(Id, "the response was not an Atom feed");
+
+            return new ProviderSnapshot(
+                ProviderSnapshotStatus.Updated,
+                WikisourceCatalog.Parse(document)
+                    .Select(book => ToProviderItem(book))
+                    .ToAsyncEnumerable(),
+                ETag: response.Headers.ETag?.ToString(),
+                LastModified: response.Content.Headers.LastModified);
+        }
+        catch (HttpRequestException ex)
+        {
+            throw ProviderException.UnavailableFor(Id, ex.Message);
+        }
     }
 
     public async Task<ProviderAcquisitionPlan?> PlanAcquisitionAsync(
