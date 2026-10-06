@@ -1987,6 +1987,23 @@ describe('ReaderShell in-text selection actions (#650, EPUB)', () => {
     expect(el('selection-menu')).not.toBeNull();
   });
 
+  it('does not advertise Ask Nostos when the assistant is unavailable', async () => {
+    const component = await openBook();
+    const assistant = TestBed.inject(AssistantService);
+    const available = assistant.surfaceAvailable as unknown as {
+      mockReturnValue(value: boolean): void;
+    };
+    available.mockReturnValue(false);
+
+    component.dockedLayout.set(true);
+    await capture(component);
+    render();
+
+    expect(el('selection-copy')).not.toBeNull();
+    expect(el('selection-ask-nostos')).toBeNull();
+    expect(el('selection-highlight')).not.toBeNull();
+  });
+
   it('keeps a pending selection behind Ask Nostos until a second Escape dismisses it', async () => {
     const component = await openBook();
     component.dockedLayout.set(false);
