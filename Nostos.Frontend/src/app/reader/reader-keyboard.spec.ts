@@ -162,3 +162,43 @@ describe('reader keyboard bindings (issue #225 §1.5)', () => {
     })).toBeNull();
   });
 });
+
+
+describe('PDF.js focusable reading surface', () => {
+  function layer() {
+    const surface = document.createElement('div');
+    surface.className = 'textLayer';
+    surface.tabIndex = 0;
+    const text = document.createElement('span');
+    surface.append(text);
+    return { surface, text };
+  }
+
+  it('allows a neutral tap and paged swipe on the text layer', () => {
+    const { text } = layer();
+    expect(isInteractiveTarget(text)).toBe(true);
+    expect(surfaceActionForPoint({
+      target: text, focusableSurface: '.textLayer', clientX: 195,
+      width: 390, coarsePointer: true, edgePaging: false,
+    })).toBe('toggle-chrome');
+    expect(swipePageAction({
+      target: text, focusableSurface: '.textLayer', startX: 280,
+      startY: 200, endX: 100, endY: 210, durationMs: 200,
+    })).toBe('next');
+  });
+
+  it('preserves selection, links, and nested focusable controls', () => {
+    const { surface, text } = layer();
+    const point = { focusableSurface: '.textLayer', clientX: 195,
+      width: 390, coarsePointer: true, edgePaging: false };
+    expect(surfaceActionForPoint({ ...point, target: text, selectedText: 'a passage' })).toBeNull();
+    const link = document.createElement('a');
+    link.href = 'https://example.com';
+    surface.append(link);
+    expect(surfaceActionForPoint({ ...point, target: link })).toBeNull();
+    const control = document.createElement('div');
+    control.tabIndex = 0;
+    surface.append(control);
+    expect(surfaceActionForPoint({ ...point, target: control })).toBeNull();
+  });
+});

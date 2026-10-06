@@ -126,6 +126,9 @@
 }
 
 ::ng-deep #viewerContainer {
+  /* Stable first-page clearance for the transient shared header. Continuous
+     scrolling remains native; revealing chrome never changes these insets. */
+  padding-top: calc(84px + env(safe-area-inset-top, 0px)) !important;
   scrollbar-width: none !important;
   -ms-overflow-style: none !important;
   /* Bottom scroll padding (toolbar height + safe-area inset) guarantees the
@@ -264,6 +267,10 @@
 
 
 @media (max-width: 768px) {
+  :host ::ng-deep #viewerContainer {
+    padding-top: calc(72px + env(safe-area-inset-top, 0px)) !important;
+  }
+
   .pdf-reader-notice {
     top: 0.5rem;
     width: calc(100% - 1rem);

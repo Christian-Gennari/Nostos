@@ -1676,6 +1676,17 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     this.keyboardDocuments.set(doc, () => doc.removeEventListener('keydown', onKeydown));
   }
 
+  /** The page's quiet outer margins are part of the reading surface too.
+   * Iframe events stay format-owned and do not bubble into this document. */
+  onViewerMarginClick(event: MouseEvent): void {
+    if (event.target !== event.currentTarget || this.loading() || this.errorMessage()) return;
+    const selected = this.renderedContents().some((contents) =>
+      contents.document.getSelection()?.toString().trim(),
+    );
+    if (!selected && !this.assistantSelection()) this.surfaceInteracted.emit();
+  }
+
+
   /**
    * The EPUB iframe is the immersive reader's interaction surface (#759).
    * Selection and authored controls win; on a coarse pointer the outer zones

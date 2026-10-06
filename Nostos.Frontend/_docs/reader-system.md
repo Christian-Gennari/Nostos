@@ -71,7 +71,11 @@ interface ReaderProgress {
 EPUB and PDF use an immersive shell: the document owns the full viewport and
 shared chrome is overlaid outside document flow. The resting state has no
 persistent top/bottom bars, so revealing controls cannot resize an EPUB
-rendition or shift a PDF scrollport.
+rendition or shift a PDF scrollport. Revealed controls use a seamless edge
+header and pager rather than floating cards; book titles remain visible on
+phones. EPUB uses stable vertical reading insets and a maximum 80rem spread
+measure. PDF reserves first-page clearance for the header. Safe areas are paid
+by the active bottom surface, including contextual selection actions.
 
 ```
 ┌───────────────────────────────────────────────────┐
@@ -89,6 +93,10 @@ pointers EPUB also supports edge-tap and deliberate horizontal-swipe paging;
 PDF only enables those paging gestures in its explicit page-by-page mode, so
 continuous PDF scrolling stays native. Text selection, authored links/controls,
 and the contextual selection actions take priority over reader gestures.
+The PDF adapter identifies PDF.js's focusable text layer as a reading surface;
+links and nested focusable controls retain priority. On phones, selection
+utilities and annotation choices use two rows. While a reader selection is
+active, its contextual Ask Nostos action replaces the global floating launcher.
 
 TOC and Notes remain overlay panels (full-width on mobile), and Search/View
 settings remain transient overlays. Audio keeps its established persistent

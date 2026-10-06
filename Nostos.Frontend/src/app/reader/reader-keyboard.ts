@@ -47,14 +47,25 @@ export function isTypingTarget(target: EventTarget | null): boolean {
  * broader than text entry: Space activates buttons/links/toggles natively and
  * must never also turn a page.
  */
-export function isInteractiveTarget(target: EventTarget | null): boolean {
+export function isInteractiveTarget(
+  target: EventTarget | null,
+  focusableSurface?: string,
+): boolean {
   // Avoid `instanceof Element`: EPUB events originate in an iframe realm, so
   // their elements are not instances of the parent window's Element constructor.
   const element = target as Element | null;
   if (!element || typeof element.closest !== 'function') return false;
-  return !!element.closest(
-    'button, a[href], area[href], input, textarea, select, option, label, summary, audio, video, iframe, object, embed, [contenteditable="true"], [draggable="true"], [onclick], [role="button"], [role="link"], [role="switch"], [role="checkbox"], [role="menuitem"], [tabindex]:not([tabindex="-1"])',
-  );
+  if (element.closest(
+    'button, a[href], area[href], input, textarea, select, option, label, summary, audio, video, iframe, object, embed, [contenteditable="true"], [draggable="true"], [onclick], [role="button"], [role="link"], [role="switch"], [role="checkbox"], [role="menuitem"]',
+  )) return true;
+  // PDF.js makes its entire text layer a Tab stop. The adapter can identify
+  // that reading surface; authored controls and nested Tab stops still win.
+  const focusable = element.closest('[tabindex]:not([tabindex="-1"])');
+  if (!focusable) return false;
+  if (focusableSurface && focusable.matches(focusableSurface)) {
+    return isInteractiveTarget(focusable.parentElement, focusableSurface);
+  }
+  return true;
 }
 
 
@@ -70,13 +81,15 @@ export type ReaderSurfaceAction = 'previous' | 'toggle-chrome' | 'next';
 
 export function surfaceActionForPoint(input: {
   target: EventTarget | null;
+  /** Format-owned focusable reading surface, rather than an authored control. */
+  focusableSurface?: string;
   selectedText?: string | null;
   clientX: number;
   width: number;
   coarsePointer: boolean;
   edgePaging: boolean;
 }): ReaderSurfaceAction | null {
-  if (input.selectedText?.trim() || isInteractiveTarget(input.target)) return null;
+  if (input.selectedText?.trim() || isInteractiveTarget(input.target, input.focusableSurface)) return null;
 
   if (input.coarsePointer && input.edgePaging && input.width > 0) {
     const edge = Math.min(96, input.width * 0.24);
@@ -94,6 +107,8 @@ export function surfaceActionForPoint(input: {
  */
 export function swipePageAction(input: {
   target: EventTarget | null;
+  /** Format-owned focusable reading surface, rather than an authored control. */
+  focusableSurface?: string;
   selectedText?: string | null;
   startX: number;
   startY: number;
@@ -101,7 +116,7 @@ export function swipePageAction(input: {
   endY: number;
   durationMs: number;
 }): PageAction | null {
-  if (input.selectedText?.trim() || isInteractiveTarget(input.target)) return null;
+  if (input.selectedText?.trim() || isInteractiveTarget(input.target, input.focusableSurface)) return null;
   if (input.durationMs > 800) return null;
 
   const dx = input.endX - input.startX;

@@ -688,6 +688,18 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     expect(status.ensureLoaded).toHaveBeenCalled();
   });
 
+  it('leaves the reader selection surface as the only contextual assistant entry', () => {
+    fake.set({ surface: 'reader', route: '/read/b1', bookId: 'b1', selectedText: 'A selected passage' });
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-testid="assistant-trigger"]')).toBeNull();
+    assistant.requestSurfaceOpen();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-testid="assistant-panel"]')).toBeTruthy();
+    fake.set({ surface: 'reader', route: '/read/b1', bookId: 'b1', selectedText: null });
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-testid="assistant-trigger"]')).toBeTruthy();
+  });
+
   it('routes feature-surface open requests through the same focus lifecycle', () => {
     const outside = document.createElement('button');
     document.body.appendChild(outside);

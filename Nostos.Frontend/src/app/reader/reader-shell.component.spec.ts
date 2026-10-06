@@ -1710,7 +1710,7 @@ describe('ReaderShell immersive chrome (#759)', () => {
     const epubCss = readSource('./epub-reader/epub-reader.component.css');
     expect(epubCss).not.toContain('width: 80%');
     expect(epubCss).not.toContain('height: 90%');
-    expect(epubCss).toContain('calc((100% - 64rem) / 2)');
+    expect(epubCss).toContain('calc((100% - 80rem) / 2)');
   });
 });
 
