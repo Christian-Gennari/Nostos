@@ -1754,15 +1754,21 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
       else this.previous();
     };
 
+    const onTouchCancel = () => {
+      touchStart = null;
+      suppressNextClick = false;
+    };
+
     doc.addEventListener('click', onClick);
     doc.addEventListener('touchstart', onTouchStart, { passive: true });
     doc.addEventListener('touchend', onTouchEnd, { passive: true });
-    doc.addEventListener('touchcancel', () => { touchStart = null; }, { passive: true });
+    doc.addEventListener('touchcancel', onTouchCancel, { passive: true });
 
     this.interactionDocuments.set(doc, () => {
       doc.removeEventListener('click', onClick);
       doc.removeEventListener('touchstart', onTouchStart);
       doc.removeEventListener('touchend', onTouchEnd);
+      doc.removeEventListener('touchcancel', onTouchCancel);
     });
   }
 
