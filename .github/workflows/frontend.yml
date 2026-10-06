@@ -50,10 +50,14 @@ jobs:
       - name: Launcher lifecycle regression
         run: node e2e/support/launch-regression.mjs
 
-      - name: Capture source Studio smoke
+      - name: Reader search and Capture source browser smoke
         env:
           E2E_SKIP_BUILDS: "1"
-        run: npx playwright test e2e/capture-source-studio-smoke.spec.ts --project=desktop-chromium
+        run: >-
+          npx playwright test
+          e2e/reader-search.spec.ts
+          e2e/capture-source-studio-smoke.spec.ts
+          --project=desktop-chromium
 
       - name: Upload E2E failure artifacts
         if: failure()
