@@ -424,8 +424,15 @@ describe('SecondBrain', () => {
       fixture.detectChanges();
 
       component.openReview();
+      fixture.detectChanges();
+      const reviewList = fixture.nativeElement.querySelector('[aria-label="Notes with no topic"]') as HTMLElement;
+      expect(reviewList.getAttribute('aria-busy')).toBe('true');
+      expect(reviewList.querySelector('nostos-loading-indicator')?.getAttribute('role')).toBe('status');
       http.expectOne((req) => req.url === '/api/notes/unlinked')
         .flush({ items: [unlinked], totalCount: 1, offset: 0, limit: 25 });
+      fixture.detectChanges();
+      expect(reviewList.getAttribute('aria-busy')).toBe('false');
+      expect(reviewList.querySelector('nostos-loading-indicator')).toBeNull();
       component.closeReview();
       http.expectNone((req) => req.url === '/api/notes');
       fixture.detectChanges();

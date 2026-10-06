@@ -207,7 +207,7 @@
         </span>
       </div>
 
-      <div class="index-list" role="list" aria-label="Notes with no topic">
+      <div class="index-list" role="list" aria-label="Notes with no topic" [attr.aria-busy]="reviewLoading()">
         @if (reviewLoading() && reviewQueue().length === 0) {
         <nostos-loading-indicator class="index-loading" label="Loading notes" />
         } @else if (reviewError() && reviewQueue().length === 0) {
