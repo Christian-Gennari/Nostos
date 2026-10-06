@@ -31,7 +31,13 @@ import {
   ReaderSourceTarget,
   TocItem,
 } from '../reader.interface';
-import { isInteractiveTarget, isTypingTarget, pageActionForKey } from '../reader-keyboard';
+import {
+  isInteractiveTarget,
+  isTypingTarget,
+  pageActionForKey,
+  surfaceActionForPoint,
+  swipePageAction,
+} from '../reader-keyboard';
 import { AssistantContextService } from '../../ui/assistant/assistant-context.service';
 
 import {
@@ -450,6 +456,8 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
   exitRequested = output<void>();
   /** Ctrl/Cmd+F pressed inside the epub.js iframe, whose events do not bubble to the shell. */
   searchRequested = output<void>();
+  /** Neutral reading-surface tap/click asks the shared shell to reveal or hide chrome. */
+  surfaceInteracted = output<void>();
 
   private notesService = inject(NotesService);
   private booksService = inject(BooksService);
@@ -511,6 +519,9 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
 
   /** Keydown listeners registered inside each iframe's contents document. */
   private readonly keyboardDocuments = new Map<Document, () => void>();
+
+  /** Tap/swipe listeners registered in each epub.js contents document (#759). */
+  private readonly interactionDocuments = new Map<Document, () => void>();
 
   /**
    * Progress writes stay closed until the saved position has been applied. The
@@ -1379,6 +1390,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     this.searchCorpus = null;
     this.searchCorpusPromise = null;
     if (this.epubBook) {
+      this.clearContentsInteractionListeners();
       this.annotationManager?.destroy();
       this.annotationManager = null;
       this.epubBook.destroy();
@@ -1449,6 +1461,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
       this.injectCustomStyles(contents);
       this.annotationManager?.registerContents(contents);
       this.registerContentsKeyboard(contents);
+      this.registerContentsInteraction(contents);
     });
 
     // Initialize the annotation manager BEFORE the first display so the
@@ -1658,6 +1671,104 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
 
     doc.addEventListener('keydown', onKeydown);
     this.keyboardDocuments.set(doc, () => doc.removeEventListener('keydown', onKeydown));
+  }
+
+  /**
+   * The EPUB iframe is the immersive reader's interaction surface (#759).
+   * Selection and authored controls win; on a coarse pointer the outer zones
+   * turn pages and the centre reveals chrome. A deliberate horizontal swipe
+   * also turns pages. None of these listeners prevent the browser's native
+   * touch/selection behavior.
+   */
+  private registerContentsInteraction(contents: Contents): void {
+    const doc = contents.document;
+    if (this.interactionDocuments.has(doc)) return;
+
+    let touchStart:
+      | { x: number; y: number; at: number; target: EventTarget | null }
+      | null = null;
+    let suppressNextClick = false;
+
+    const selectedText = () => doc.getSelection?.()?.toString() ?? '';
+    const coarsePointer = () =>
+      typeof window !== 'undefined'
+      && typeof window.matchMedia === 'function'
+      && window.matchMedia('(pointer: coarse)').matches;
+
+    const onClick = (event: MouseEvent) => {
+      if (suppressNextClick) {
+        suppressNextClick = false;
+        return;
+      }
+
+      const width = doc.defaultView?.innerWidth ?? doc.documentElement.clientWidth;
+      const action = surfaceActionForPoint({
+        target: event.target,
+        selectedText: selectedText(),
+        clientX: event.clientX,
+        width,
+        coarsePointer: coarsePointer(),
+        edgePaging: true,
+      });
+
+      if (action === 'next') this.next();
+      else if (action === 'previous') this.previous();
+      else if (action === 'toggle-chrome') this.surfaceInteracted.emit();
+    };
+
+    const onTouchStart = (event: TouchEvent) => {
+      if (event.touches.length !== 1) {
+        touchStart = null;
+        return;
+      }
+      const touch = event.touches[0];
+      touchStart = {
+        x: touch.clientX,
+        y: touch.clientY,
+        at: Date.now(),
+        target: event.target,
+      };
+    };
+
+    const onTouchEnd = (event: TouchEvent) => {
+      const start = touchStart;
+      touchStart = null;
+      if (!start || event.changedTouches.length !== 1) return;
+
+      const touch = event.changedTouches[0];
+      const action = swipePageAction({
+        target: start.target,
+        selectedText: selectedText(),
+        startX: start.x,
+        startY: start.y,
+        endX: touch.clientX,
+        endY: touch.clientY,
+        durationMs: Date.now() - start.at,
+      });
+
+      if (!action) return;
+      // Browsers commonly synthesize a click after touchend. Consume that one
+      // so one swipe cannot both turn a page and toggle the shell.
+      suppressNextClick = true;
+      if (action === 'next') this.next();
+      else this.previous();
+    };
+
+    doc.addEventListener('click', onClick);
+    doc.addEventListener('touchstart', onTouchStart, { passive: true });
+    doc.addEventListener('touchend', onTouchEnd, { passive: true });
+    doc.addEventListener('touchcancel', () => { touchStart = null; }, { passive: true });
+
+    this.interactionDocuments.set(doc, () => {
+      doc.removeEventListener('click', onClick);
+      doc.removeEventListener('touchstart', onTouchStart);
+      doc.removeEventListener('touchend', onTouchEnd);
+    });
+  }
+
+  private clearContentsInteractionListeners(): void {
+    for (const cleanup of this.interactionDocuments.values()) cleanup();
+    this.interactionDocuments.clear();
   }
 
   private mapTocItems(items: any[]): TocItem[] {
@@ -1911,6 +2022,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
       cleanup();
     }
     this.keyboardDocuments.clear();
+    this.clearContentsInteractionListeners();
     this.searchAvailable.set(false);
     this.clearSearch();
     this.searchCorpus = null;
