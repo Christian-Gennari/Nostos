@@ -74,6 +74,16 @@ describe('TransferResumeStore', () => {
     expect(store.load()).toEqual(record());
   });
 
+  it('retains a discovered server job without inventing a preflight request', () => {
+    const discovered = record({ serverDiscovered: true, preflightRequest: undefined });
+    store.save(discovered);
+    expect(store.load()).toEqual(discovered);
+    store.save(record({ preflightRequest: undefined }));
+    expect(store.load()).toBeNull();
+    store.save(record({ serverDiscovered: true, preflightRequest: undefined, jobId: undefined }));
+    expect(store.load()).toBeNull();
+  });
+
   it('persists only operational metadata, never file bytes, URLs or credentials', () => {
     store.save(record());
     const raw = localStorage.getItem(TRANSFER_RESUME_STORAGE_KEY)!;

@@ -53,6 +53,9 @@ export interface LibraryTransferTransport {
 
   getJob(jobId: string, signal?: AbortSignal): Promise<MigrationJobStatusResponseDto>;
 
+  /** Optional owner-scoped discovery when this browser has lost its resume record. */
+  getActiveImport?(signal?: AbortSignal): Promise<MigrationJobStatusResponseDto | null>;
+
   cancelJob(
     jobId: string,
     reason?: string,

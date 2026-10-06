@@ -202,6 +202,24 @@ describe('HttpLibraryTransferTransport', () => {
     TestBed.resetTestingModule();
   });
 
+  it('discovers an existing import using a read-only request', async () => {
+    const response = jobStatus({ session: sessionStatus() });
+    const result = transport.getActiveImport();
+    const request = http.expectOne(`${MIGRATION_BASE_PATH}/active-import`);
+    expect(request.request.method).toBe('GET');
+    request.flush(response);
+    expect(await result).toEqual(response);
+  });
+
+  it('keeps idle behavior for no active import and older hosts without discovery', async () => {
+    const empty = transport.getActiveImport();
+    http.expectOne(`${MIGRATION_BASE_PATH}/active-import`).flush(null, { status: 204, statusText: 'No Content' });
+    expect(await empty).toBeNull();
+    const legacy = transport.getActiveImport();
+    http.expectOne(`${MIGRATION_BASE_PATH}/active-import`).flush(null, { status: 404, statusText: 'Not Found' });
+    expect(await legacy).toBeNull();
+  });
+
   it('POSTs preflight with the exact body and maps the response', async () => {
     const request = preflightRequest();
     const response: MigrationPreflightResponseDto = {

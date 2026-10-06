@@ -119,6 +119,7 @@ export class LibraryTransferCoordinator {
 
   /** Current import flow state; the later UI renders this union. */
   readonly state = this.stateSignal.asReadonly();
+  readonly supportsActiveImportDiscovery = typeof this.transport.getActiveImport === 'function';
 
   /** Aggregated transfer progress when the flow is uploading or checking. */
   readonly progress = computed(() => {
@@ -301,18 +302,39 @@ export class LibraryTransferCoordinator {
 
   /** Reattaches to the persisted job after a reload or navigation. */
   async resume(): Promise<void> {
-    const record = this.resumeStore.load();
-    if (!record) {
+    let record = this.resumeStore.load();
+    if (!record && !this.supportsActiveImportDiscovery) {
       this.setState({ kind: 'idle' });
       return;
     }
 
     const { token, signal } = this.beginOperation();
     this.interruptedSignal.set(null);
-    this.jobId = record.jobId ?? null;
-    this.preflightDecision = record.preflightDecision ?? null;
-
     try {
+      if (!record) {
+        const discovered = await this.transport.getActiveImport!(signal);
+        if (!this.isCurrent(token)) return;
+        const session = discovered?.session;
+        if (!discovered || discovered.job.direction !== 'Import' || !session || session.purpose !== 'Import') {
+          this.setState({ kind: 'idle' });
+          return;
+        }
+        record = {
+          schemaVersion: 1, direction: 'import', serverDiscovered: true,
+          jobId: discovered.job.id,
+          jobCreationIdempotencyKey: `reattached-existing-job:${discovered.job.id}`,
+          sessionId: session.sessionId, chunkSizeBytes: session.chunkSize,
+          fileIdentity: session.fileIdentity, fileName: 'Library archive.nostos',
+          createdAt: discovered.job.createdAtUtc,
+          // Losing browser metadata also loses proof of a reviewed destination.
+          // Require fresh confirmation instead of automatically activating.
+          preflightDecision: 'AllowedReplacementRequired',
+        };
+        this.resumeStore.save(record);
+      }
+      this.jobId = record.jobId ?? null;
+      this.preflightDecision = record.preflightDecision ?? null;
+
       if (!this.jobId) {
         const recovered = await this.replayJobCreation(record, signal, token);
         if (!this.isCurrent(token)) return;
@@ -375,7 +397,7 @@ export class LibraryTransferCoordinator {
       }
       const failure = this.failureFromError(error);
       if (failure.code === 'migration_not_found') this.resumeStore.clear();
-      this.failWith(failure, record.jobId);
+      this.failWith(failure, record?.jobId);
     }
   }
 

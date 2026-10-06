@@ -384,6 +384,18 @@ class FailingCompleteTransport extends DelegatingTransport {
   }
 }
 
+class DiscoveredImportTransport extends DelegatingTransport {
+  discoveryCalls = 0;
+  constructor(inner: MockLibraryTransferTransport, public status: MigrationJobStatusResponseDto) {
+    super(inner);
+  }
+  async getActiveImport(): Promise<MigrationJobStatusResponseDto> {
+    this.discoveryCalls++;
+    return this.status;
+  }
+  override async getJob(): Promise<MigrationJobStatusResponseDto> { return this.status; }
+}
+
 /** Rejects the first resume with a 401, then behaves normally (re-authenticated). */
 class UnauthorizedOnceTransport extends DelegatingTransport {
   unauthorized = true;
@@ -438,6 +450,39 @@ describe('LibraryImportFlowComponent', () => {
     localStorage.removeItem(TRANSFER_RESUME_STORAGE_KEY);
     localStorage.removeItem(TRANSFER_TAB_LEASE_KEY);
     vi.useRealTimers();
+  });
+
+  it('discovers processing after browser metadata is lost and requires a fresh final confirmation', async () => {
+    const mock = new MockLibraryTransferTransport({ chunkSizeBytes: CHUNK });
+    const file = await portableFile();
+    const preflight = await mock.preflight(preflightRequest(file.size));
+    const created = await mock.createJob({ direction: 'Import', idempotencyKey: 'discover-job',
+      reservationId: preflight.reservationId });
+    const uploaded = await mock.createUploadSession(created.job.id, {
+      purpose: 'Import', totalBytes: file.size, chunkSize: CHUNK, totalChunks: 1,
+      fileIdentity: { totalSizeBytes: file.size, sha256Checksum: 'a'.repeat(64) },
+      idempotencyKey: 'discover-session',
+    });
+    const transport = new DiscoveredImportTransport(mock, {
+      ...created, job: { ...created.job, state: 'Validating' },
+      session: { ...uploaded.session, state: 'Complete', receivedChunks: [0], receivedChunkCount: 1 },
+      progress: { phase: 'Validating', bytesProcessed: Math.floor(file.size / 2), totalBytes: file.size },
+    });
+    const harness = configure(mock, transport);
+    harness.fixture.componentRef.setInput('supportsSafeActivation', true);
+    await waitForKind(harness, 'checking');
+    expect(testId(harness, 'import-checking')).toBeTruthy();
+    expect(harness.store.load()).toMatchObject({ jobId: created.job.id, serverDiscovered: true,
+      preflightDecision: 'AllowedReplacementRequired' });
+    expect(harness.store.load()?.preflightRequest).toBeUndefined();
+    expect(mock.calls.uploadChunk).toBe(0);
+    expect(mock.jobCreationCount).toBe(1);
+
+    transport.status = { ...transport.status, job: { ...transport.status.job, state: 'ReadyToActivate' } };
+    await harness.coordinator.resume();
+    harness.fixture.detectChanges();
+    expect(harness.coordinator.state().kind).toBe('replacement-confirmation');
+    expect(mock.calls.activateJob).toBe(0);
   });
 
   it('renders a real file input and the import picker while idle', () => {

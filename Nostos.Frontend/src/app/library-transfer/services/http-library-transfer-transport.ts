@@ -129,6 +129,20 @@ export class HttpLibraryTransferTransport implements LibraryTransferTransport {
     ).then((status) => this.rememberStatusSession(status));
   }
 
+  async getActiveImport(signal?: AbortSignal): Promise<MigrationJobStatusResponseDto | null> {
+    try {
+      const status = await this.json<MigrationJobStatusResponseDto | null>(
+        'GET', `${this.basePath}/active-import`, undefined, signal,
+      );
+      return status ? this.rememberStatusSession(status) : null;
+    } catch (error) {
+      // Older hosts do not expose discovery; their existing local resume path
+      // continues to work without turning the idle screen into an error.
+      if (error instanceof MigrationTransportError && error.status === 404) return null;
+      throw error;
+    }
+  }
+
   cancelJob(
     jobId: string,
     reason?: string,

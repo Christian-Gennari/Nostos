@@ -714,7 +714,8 @@ test('scenario d3: retry an exhausted part upload without restarting the job', a
   });
 });
 
-test('scenario d4: reload after all parts resumes completion without selecting the file', async ({ page }, testInfo) => {
+for (const loseBrowserMetadata of [false, true]) {
+test(`scenario d4: reload after all parts resumes completion without selecting the file${loseBrowserMetadata ? ' after losing browser metadata' : ''}`, async ({ page }, testInfo) => {
   const archive = await ensureArchive();
   await withDestination(testInfo, 'resume-completion', 'none', async (destination) => {
     let completionRequests = 0;
@@ -753,6 +754,13 @@ test('scenario d4: reload after all parts resumes completion without selecting t
       expect(status.session.receivedChunkCount).toBe(status.session.totalChunks);
 
       chunks.length = 0;
+      if (loseBrowserMetadata) {
+        await page.route('**/api/portability/migration/active-import', async route => {
+          const response = await route.fetch({ url: `${destination.baseUrl}/api/portability/migration/jobs/${jobId}` });
+          await route.fulfill({ response });
+        });
+        await page.evaluate(() => localStorage.removeItem('nostos.library-transfer.active.v1'));
+      }
       await page.reload();
       await expect(page.getByTestId('import-checking')).toBeVisible({ timeout: 60_000 });
       await expect(page.getByTestId('import-checking').getByRole('progressbar')).not.toHaveAttribute('aria-valuenow');
@@ -768,6 +776,8 @@ test('scenario d4: reload after all parts resumes completion without selecting t
       await expect(page.getByTestId('import-checking').getByRole('progressbar')).toHaveAttribute('aria-valuenow', '50');
       const beforeReload = await navigationOrigin(page);
       finish();
+      // The disposable SelfHosted fixture completes server-side; Cloud
+      // confirmation is covered by the coordinator/component contract.
       await waitForReload(page, beforeReload);
 
       expect(completionRequests).toBe(2);
@@ -780,6 +790,7 @@ test('scenario d4: reload after all parts resumes completion without selecting t
     }
   });
 });
+}
 
 test('scenario d2: reload during activation reattaches and reports the outcome', async ({ page }, testInfo) => {
   const archive = await ensureArchive();
