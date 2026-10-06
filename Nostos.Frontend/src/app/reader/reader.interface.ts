@@ -61,7 +61,7 @@ export interface IReader {
 
   // Highlight Management
   removeHighlight(identifier: string): void;
-  /** Saves the pending mark; `content` is the note text (EPUB "Add note", #650). */
+  /** Saves the pending mark; `content` is optional note text for EPUB/PDF. */
   commitHighlight(content?: string): void;
   discardHighlight(): void;
 
