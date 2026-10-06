@@ -368,7 +368,14 @@ export class AssistantComponent {
       },
     });
 
+    // Feature surfaces (for example a selected reader passage) request an
+    // assistant open through the service, but the component still owns the UI
+    // lifecycle: availability gating, focus, transcript follow state and the
+    // mobile visual viewport.
+    const surfaceOpenSubscription = this.assistant.surfaceOpenRequested.subscribe(() => this.open());
+
     this.destroyRef.onDestroy(() => {
+      surfaceOpenSubscription.unsubscribe();
       this.bodyObserver?.disconnect();
       this.stopViewportTracking();
     });
