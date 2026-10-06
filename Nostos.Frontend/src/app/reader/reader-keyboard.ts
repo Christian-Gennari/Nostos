@@ -53,7 +53,7 @@ export function isInteractiveTarget(target: EventTarget | null): boolean {
   const element = target as Element | null;
   if (!element || typeof element.closest !== 'function') return false;
   return !!element.closest(
-    'button, a[href], input, textarea, select, [contenteditable="true"], [role="button"], [role="link"], [role="switch"], [role="checkbox"], [role="menuitem"], [tabindex]:not([tabindex="-1"])',
+    'button, a[href], area[href], input, textarea, select, option, label, summary, audio, video, iframe, object, embed, [contenteditable="true"], [draggable="true"], [onclick], [role="button"], [role="link"], [role="switch"], [role="checkbox"], [role="menuitem"], [tabindex]:not([tabindex="-1"])',
   );
 }
 
@@ -109,4 +109,48 @@ export function swipePageAction(input: {
   if (Math.abs(dx) < 56 || Math.abs(dx) <= Math.abs(dy) * 1.2) return null;
 
   return dx < 0 ? 'next' : 'previous';
+}
+
+
+/**
+ * Browsers may synthesize a click after touchend, but not consistently after a
+ * drag/swipe. Suppression therefore carries an expiry and the touch-end point
+ * instead of a sticky "ignore the next click" boolean: a later genuine tap in
+ * another place must never disappear just because no synthetic click arrived.
+ */
+export interface TouchClickSuppression {
+  x: number;
+  y: number;
+  untilMs: number;
+}
+
+const TOUCH_MOVE_SUPPRESS_PX = 10;
+const SYNTHETIC_CLICK_RADIUS_PX = 32;
+const SYNTHETIC_CLICK_WINDOW_MS = 700;
+
+export function touchClickSuppressionForMovement(input: {
+  startX: number;
+  startY: number;
+  endX: number;
+  endY: number;
+  nowMs: number;
+}): TouchClickSuppression | null {
+  const dx = input.endX - input.startX;
+  const dy = input.endY - input.startY;
+  if (Math.hypot(dx, dy) < TOUCH_MOVE_SUPPRESS_PX) return null;
+  return {
+    x: input.endX,
+    y: input.endY,
+    untilMs: input.nowMs + SYNTHETIC_CLICK_WINDOW_MS,
+  };
+}
+
+export function shouldSuppressTouchClick(
+  suppression: TouchClickSuppression | null,
+  clickX: number,
+  clickY: number,
+  nowMs: number,
+): boolean {
+  if (!suppression || nowMs > suppression.untilMs) return false;
+  return Math.hypot(clickX - suppression.x, clickY - suppression.y) <= SYNTHETIC_CLICK_RADIUS_PX;
 }
