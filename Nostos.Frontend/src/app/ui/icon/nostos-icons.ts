@@ -156,6 +156,7 @@ import stack from '@phosphor-icons/core/regular/stack.svg';
 import star from '@phosphor-icons/core/regular/star.svg';
 import stop from '@phosphor-icons/core/regular/stop.svg';
 import sun from '@phosphor-icons/core/regular/sun.svg';
+import textAa from '@phosphor-icons/core/regular/text-aa.svg';
 import textT from '@phosphor-icons/core/regular/text-t.svg';
 import trash from '@phosphor-icons/core/regular/trash.svg';
 import tray from '@phosphor-icons/core/regular/tray.svg';
@@ -271,6 +272,7 @@ export const NOSTOS_ICONS = {
   'star': { regular: star, fill: starFill, },
   'stop': { regular: stop, },
   'sun': { regular: sun, },
+  'text-aa': { regular: textAa, },
   'text-t': { regular: textT, },
   'trash': { regular: trash, },
   'tray': { regular: tray, light: trayLight, },

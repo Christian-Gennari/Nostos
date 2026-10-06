@@ -521,10 +521,9 @@
   z-index: 50;
   background: var(--bg-surface);
   border-top: 1px solid var(--border-color);
-  /* This bar sits above the viewport-edge pager. The pager owns the phone's
-     bottom safe area once; paying it again here made every highlight confirmation
-     unnecessarily tall on iPhone-class insets. */
-  padding-bottom: 0;
+  /* The selection surface covers the pager, so it owns the bottom safe area
+     while it is open. Its background must reach behind the home indicator. */
+  padding-bottom: env(safe-area-inset-bottom, 0px);
   box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.1);
 }
 
@@ -770,6 +769,21 @@
   border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-md);
+}
+
+.typo-panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.typo-panel-heading h2 {
+  margin: 0;
+  font-family: 'Newsreader', serif;
+  font-size: 1.125rem;
+  font-weight: var(--fw-medium);
+  color: var(--color-text-main);
 }
 
 .typo-row {
@@ -1254,6 +1268,16 @@
   color: var(--color-text-muted);
 }
 
+.reader-layout.immersive .typo-opts {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+}
+
+.reader-layout.immersive .typo-opt {
+  padding-inline: 0.5rem;
+}
+
 .reader-layout.immersive .typo-opt.active {
   color: var(--color-primary);
   border-color: var(--color-primary);
@@ -1311,6 +1335,40 @@
 
   .reader-layout.immersive .progress-display > span {
     max-width: 100%;
+  }
+
+  /* Utilities above, annotation choices below: five actions stay compact
+     without wrapping the primary action onto a row of its own. */
+  .highlight-confirmation .confirmation-actions {
+    display: grid;
+    grid-template-columns: 44px 44px minmax(0, 1fr) minmax(0, 1fr);
+    gap: 0.5rem;
+  }
+
+  .highlight-confirmation .selection-copy {
+    grid-column: 1;
+    margin-right: 0;
+  }
+
+  .highlight-confirmation .selection-ask {
+    grid-column: 2;
+  }
+
+  .highlight-confirmation .selection-cancel {
+    grid-column: 3 / -1;
+    justify-self: end;
+  }
+
+  .highlight-confirmation .selection-note-action {
+    grid-column: 1 / 3;
+  }
+
+  .highlight-confirmation .selection-primary {
+    grid-column: 3 / -1;
+  }
+
+  .highlight-confirmation.has-note .selection-primary {
+    grid-column: 1 / -1;
   }
 
   .reader-layout.immersive .reader-search-panel,

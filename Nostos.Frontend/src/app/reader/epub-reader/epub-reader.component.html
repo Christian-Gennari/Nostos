@@ -6,6 +6,7 @@
   <div
     id="epub-viewer"
     [style.--reader-margin]="marginInset() + '%'"
+    (click)="onViewerMarginClick($event)"
   >
     <div id="epub-page"></div>
   </div>

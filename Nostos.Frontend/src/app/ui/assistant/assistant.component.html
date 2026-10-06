@@ -579,6 +579,7 @@
 </section>
 }
 
+@if (!readerSelectionActive()) {
 <button
   type="button"
   class="assistant-trigger"
@@ -593,4 +594,5 @@
     <span class="trigger-shortcut" aria-hidden="true">{{ shortcutLabel }}</span>
   </span>
 </button>
+}
 }

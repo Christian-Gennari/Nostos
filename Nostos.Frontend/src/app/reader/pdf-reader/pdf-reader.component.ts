@@ -811,6 +811,7 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
       typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;
     const action = surfaceActionForPoint({
       target: event.target,
+      focusableSurface: '.textLayer',
       selectedText,
       clientX: event.clientX - (target?.getBoundingClientRect().left ?? 0),
       width,
@@ -866,6 +867,7 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
 
     const action = swipePageAction({
       target: start.target,
+      focusableSurface: '.textLayer',
       selectedText:
         this.highlightService.captureSelectionText?.()
         ?? this.assistantSelection()

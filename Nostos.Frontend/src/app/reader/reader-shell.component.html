@@ -78,7 +78,7 @@
            presets it belongs to, and now persists per book. -->
       <button
         appIconButton
-        icon="text-t"
+        icon="text-aa"
         [glyphSize]="20"
         (click)="toggleTypo()"
         title="View settings"
@@ -281,7 +281,7 @@
             appButton
             type="button"
             [variant]="anchored ? 'ghost' : 'secondary'"
-            class="reader-confirm-action"
+            class="reader-confirm-action selection-cancel"
             (click)="discardHighlight()"
             [disabled]="highlightSaving()"
             data-testid="selection-cancel"
@@ -307,7 +307,7 @@
               appButton
               type="button"
               variant="secondary"
-              class="reader-confirm-action"
+              class="reader-confirm-action selection-note-action"
               (click)="openNoteDraft()"
               [disabled]="highlightSaving()"
               data-testid="selection-add-note"
@@ -577,6 +577,10 @@
   @if (typoOpen() && (fileType() === 'epub' || fileType() === 'pdf')) {
   <div class="typo-scrim" (click)="toggleTypo()" aria-hidden="true"></div>
   <div class="typo-panel" data-testid="typo-panel" role="dialog" aria-label="View settings">
+    <div class="typo-panel-heading">
+      <h2>View settings</h2>
+      <button appIconButton icon="x" type="button" (click)="toggleTypo()" aria-label="Close view settings" title="Close view settings"></button>
+    </div>
     <!-- App-wide theme (#651). It drives ThemeService, the one owner of the
          theme, so it is the same setting as Settings → Appearance and both
          readers follow it without reloading. Kept first and identical for EPUB
