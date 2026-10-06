@@ -173,9 +173,10 @@ export class ReaderShell implements OnInit, OnDestroy {
   // Template-ref query (not type query): the epub child is stubbed in specs,
   // and a type query would resolve to null against the stub.
   @ViewChild('epubReader') epubReader?: EpubReader;
-  // Template-ref query mirrors EPUB: the shell only needs the reader contract,
-  // and specs can exercise the same delegation path with a lightweight stub.
-  @ViewChild('pdfReader') pdfReader?: PdfReader;
+  // Concrete type query: the shell drives fixed-layout PDF controls through the
+  // real reader instance. Specs that need this delegation attach their stub
+  // explicitly rather than turning every lightweight PDF stub into the full API.
+  @ViewChild(PdfReader) pdfReader?: PdfReader;
   @ViewChild(AudioReader) audioReader?: IReader;
 
   private host = inject<ElementRef<HTMLElement>>(ElementRef);
