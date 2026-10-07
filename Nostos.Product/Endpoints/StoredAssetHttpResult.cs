@@ -65,7 +65,7 @@ public sealed class StoredAssetHttpResult : IResult
                 http,
                 token => resolvedStorage.ResolveBookFileAsync(bookId, token),
                 (resolved, range, token) =>
-                    resolvedStorage.OpenBookFileAsync(resolved, range, token),
+                    resolvedStorage.OpenBookFileAsync(bookId, resolved, range, token),
                 attachment,
                 enableRanges,
                 cacheControl,

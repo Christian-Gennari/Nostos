@@ -85,6 +85,7 @@ public interface IResolvedBookAssetStorage
         CancellationToken ct = default);
 
     Task<StoredAssetRead?> OpenBookFileAsync(
+        Guid bookId,
         ResolvedStoredAsset resolvedAsset,
         StorageByteRange? range = null,
         CancellationToken ct = default);
