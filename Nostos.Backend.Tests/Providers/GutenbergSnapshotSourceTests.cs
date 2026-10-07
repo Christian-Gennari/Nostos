@@ -170,7 +170,7 @@ public sealed class GutenbergSnapshotSourceTests
         return buffer.ToArray();
     }
 
-    private static byte[] BuildSnapshotArchive(params (string Name, string Content)[] entries)
+    private static byte[] BuildSnapshotTar(params (string Name, string Content)[] entries)
     {
         using var tarBuffer = new MemoryStream();
         using (var tar = new TarWriter(tarBuffer, TarEntryFormat.Pax, leaveOpen: true))
@@ -185,7 +185,41 @@ public sealed class GutenbergSnapshotSourceTests
             }
         }
 
-        return BuildZipArchive(("rdf-files.tar", tarBuffer.ToArray()));
+        return tarBuffer.ToArray();
+    }
+
+    private static byte[] BuildSnapshotArchive(params (string Name, string Content)[] entries) =>
+        BuildZipArchive(("rdf-files.tar", BuildSnapshotTar(entries)));
+
+    /// <summary>
+    /// Cuts the tar inside its end-of-archive zero blocks, so every member is
+    /// complete but the next header read cannot be satisfied.
+    /// </summary>
+    private static byte[] TruncateSnapshotTar(byte[] tar)
+    {
+        var lastDataByte = Array.FindLastIndex(tar, value => value != 0);
+        var contentEnd = (lastDataByte / 512 + 1) * 512;
+        return tar[..(contentEnd + 100)];
+    }
+
+    /// <summary>
+    /// Patches the one deflate entry to compression method 9 (deflate64), which
+    /// <see cref="ZipArchive"/> cannot decode; the zip stays structurally valid,
+    /// so the failure surfaces when the entry is opened.
+    /// </summary>
+    private static byte[] BuildZipWithUnsupportedCompression(params (string Name, byte[] Content)[] entries)
+    {
+        var zip = BuildZipArchive(entries);
+        PatchCompressionMethod(zip, [0x50, 0x4B, 0x03, 0x04], methodOffset: 8, fromEnd: false);
+        PatchCompressionMethod(zip, [0x50, 0x4B, 0x01, 0x02], methodOffset: 10, fromEnd: true);
+        return zip;
+    }
+
+    private static void PatchCompressionMethod(byte[] zip, byte[] signature, int methodOffset, bool fromEnd)
+    {
+        var index = fromEnd ? zip.AsSpan().LastIndexOf(signature) : zip.AsSpan().IndexOf(signature);
+        zip[index + methodOffset] = 9;
+        zip[index + methodOffset + 1] = 0;
     }
 
     private static HttpResponseMessage ArchiveResponse(byte[] archive, DateTimeOffset? lastModified = null)
@@ -305,12 +339,14 @@ public sealed class GutenbergSnapshotSourceTests
         handler.Register(SnapshotPath, request => request.Method == HttpMethod.Head
             ? ArchiveResponse(archive, LastModified)
             : new HttpResponseMessage(HttpStatusCode.BadGateway));
+        var before = TempSnapshotFiles();
 
         var snapshot = await provider.ReadAsync(new ProviderSnapshotRequest(), CancellationToken.None);
 
         var act = () => DrainAsync(snapshot.Items);
         var error = await act.Should().ThrowAsync<ProviderException>();
         error.Which.Code.Should().Be(ProviderException.Unavailable);
+        TempSnapshotFiles().Should().BeEquivalentTo(before);
     }
 
     [Fact]
@@ -321,12 +357,14 @@ public sealed class GutenbergSnapshotSourceTests
         handler.Register(SnapshotPath, request => request.Method == HttpMethod.Head
             ? ArchiveResponse(archive, LastModified)
             : throw new TaskCanceledException("the caller's token is not cancelled"));
+        var before = TempSnapshotFiles();
 
         var snapshot = await provider.ReadAsync(new ProviderSnapshotRequest(), CancellationToken.None);
 
         var act = () => DrainAsync(snapshot.Items);
         var error = await act.Should().ThrowAsync<ProviderException>();
         error.Which.Code.Should().Be(ProviderException.Unavailable);
+        TempSnapshotFiles().Should().BeEquivalentTo(before);
     }
 
     [Fact]
@@ -336,12 +374,59 @@ public sealed class GutenbergSnapshotSourceTests
             ("cache/epub/1342/pg1342.rdf", "<rdf:RDF><pgterms:ebook><dcterms:title>Broken"));
         var (provider, handler) = CreateProvider();
         handler.Register(SnapshotPath, _ => ArchiveResponse(archive, LastModified));
+        var before = TempSnapshotFiles();
 
         var snapshot = await provider.ReadAsync(new ProviderSnapshotRequest(), CancellationToken.None);
 
         var act = () => DrainAsync(snapshot.Items);
         var error = await act.Should().ThrowAsync<ProviderException>();
         error.Which.Code.Should().Be(ProviderException.ResponseInvalid);
+        TempSnapshotFiles().Should().BeEquivalentTo(before);
+    }
+
+    [Fact]
+    public async Task Read_reports_a_tar_truncated_after_a_complete_member_as_invalid_provider_response()
+    {
+        var tar = BuildSnapshotTar(
+            ("cache/epub/1342/pg1342.rdf", PrideRdf),
+            ("cache/epub/11/pg11.rdf", TypelessEbookRdf));
+        var archive = BuildZipArchive(("rdf-files.tar", TruncateSnapshotTar(tar)));
+        var (provider, handler) = CreateProvider();
+        handler.Register(SnapshotPath, _ => ArchiveResponse(archive, LastModified));
+        var before = TempSnapshotFiles();
+
+        var snapshot = await provider.ReadAsync(new ProviderSnapshotRequest(), CancellationToken.None);
+
+        var items = new List<ProviderItem>();
+        var act = async () =>
+        {
+            await foreach (var item in snapshot.Items)
+                items.Add(item);
+        };
+
+        var error = await act.Should().ThrowAsync<ProviderException>();
+        error.Which.Code.Should().Be(ProviderException.ResponseInvalid);
+        items.Select(item => item.ExternalId).Should().Equal(
+            new[] { "1342", "11" },
+            "the complete members are delivered before the truncated tail fails");
+        TempSnapshotFiles().Should().BeEquivalentTo(before);
+    }
+
+    [Fact]
+    public async Task Read_reports_an_undecodable_tar_member_as_invalid_provider_response()
+    {
+        var archive = BuildZipWithUnsupportedCompression(
+            ("rdf-files.tar", BuildSnapshotTar(("cache/epub/1342/pg1342.rdf", PrideRdf))));
+        var (provider, handler) = CreateProvider();
+        handler.Register(SnapshotPath, _ => ArchiveResponse(archive, LastModified));
+        var before = TempSnapshotFiles();
+
+        var snapshot = await provider.ReadAsync(new ProviderSnapshotRequest(), CancellationToken.None);
+
+        var act = () => DrainAsync(snapshot.Items);
+        var error = await act.Should().ThrowAsync<ProviderException>();
+        error.Which.Code.Should().Be(ProviderException.ResponseInvalid);
+        TempSnapshotFiles().Should().BeEquivalentTo(before);
     }
 
     [Fact]
@@ -350,12 +435,14 @@ public sealed class GutenbergSnapshotSourceTests
         var archive = BuildZipArchive(("readme.txt", Encoding.UTF8.GetBytes("not the catalogue")));
         var (provider, handler) = CreateProvider();
         handler.Register(SnapshotPath, _ => ArchiveResponse(archive, LastModified));
+        var before = TempSnapshotFiles();
 
         var snapshot = await provider.ReadAsync(new ProviderSnapshotRequest(), CancellationToken.None);
 
         var act = () => DrainAsync(snapshot.Items);
         var error = await act.Should().ThrowAsync<ProviderException>();
         error.Which.Code.Should().Be(ProviderException.ResponseInvalid);
+        TempSnapshotFiles().Should().BeEquivalentTo(before);
     }
 
     [Fact]
@@ -363,12 +450,14 @@ public sealed class GutenbergSnapshotSourceTests
     {
         var (provider, handler) = CreateProvider();
         handler.Register(SnapshotPath, _ => ArchiveResponse(Encoding.UTF8.GetBytes("this is not a zip")));
+        var before = TempSnapshotFiles();
 
         var snapshot = await provider.ReadAsync(new ProviderSnapshotRequest(), CancellationToken.None);
 
         var act = () => DrainAsync(snapshot.Items);
         var error = await act.Should().ThrowAsync<ProviderException>();
         error.Which.Code.Should().Be(ProviderException.ResponseInvalid);
+        TempSnapshotFiles().Should().BeEquivalentTo(before);
     }
 
     [Fact]
@@ -438,6 +527,25 @@ public sealed class GutenbergSnapshotSourceTests
         snapshot.Status.Should().Be(ProviderSnapshotStatus.Updated);
         handler.RecordedRequests.Should().ContainSingle().Which.Method.Should().Be(HttpMethod.Head);
         TempSnapshotFiles().Should().BeEquivalentTo(before);
+    }
+
+    [Fact]
+    public async Task Snapshot_reads_use_the_dedicated_snapshot_client_not_the_search_client()
+    {
+        var searchHandler = new StubHttpMessageHandler();
+        var snapshotHandler = new StubHttpMessageHandler();
+        snapshotHandler.Register(SnapshotPath, _ => new HttpResponseMessage(HttpStatusCode.NotModified));
+        var factory = new StubHttpClientFactory(searchHandler)
+            .RegisterHandler(GutenbergProvider.SnapshotHttpClientName, snapshotHandler);
+        var provider = new GutenbergProvider(factory, NullLogger<GutenbergProvider>.Instance);
+
+        var snapshot = await provider.ReadAsync(new ProviderSnapshotRequest(), CancellationToken.None);
+
+        snapshot.Status.Should().Be(ProviderSnapshotStatus.NotModified);
+        factory.RequestedClientNames.Should().Contain(GutenbergProvider.SnapshotHttpClientName);
+        snapshotHandler.RecordedRequests.Should().ContainSingle(
+            "the 20 s search client must never carry the bulk read");
+        searchHandler.RecordedRequests.Should().BeEmpty();
     }
 
     [Fact]

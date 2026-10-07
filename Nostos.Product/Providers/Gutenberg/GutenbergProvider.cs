@@ -307,7 +307,7 @@ public sealed partial class GutenbergProvider : IContentProvider,
                 entry.FullName.EndsWith(".tar", StringComparison.OrdinalIgnoreCase))
                 ?? throw ProviderException.InvalidResponse(Id, "the snapshot archive has no tar catalog");
 
-            await using var tarStream = tarEntry.Open();
+            await using var tarStream = OpenSnapshotTar(tarEntry);
             using var tar = new TarReader(tarStream);
 
             while (await ReadSnapshotItemAsync(tar, ct) is { } item)
@@ -368,7 +368,7 @@ public sealed partial class GutenbergProvider : IContentProvider,
             {
                 entry = await tar.GetNextEntryAsync(copyData: false, cancellationToken: ct);
             }
-            catch (InvalidDataException ex)
+            catch (Exception ex) when (IsArchiveFailure(ex))
             {
                 throw ProviderException.InvalidResponse(Id, ex.Message);
             }
@@ -394,6 +394,12 @@ public sealed partial class GutenbergProvider : IContentProvider,
             {
                 throw ProviderException.InvalidResponse(Id, $"snapshot entry '{entry.Name}': {ex.Message}");
             }
+            catch (Exception ex) when (IsArchiveFailure(ex))
+            {
+                // The member's declared length can outrun the bytes that are
+                // actually there; that is a corrupt response, not a host error.
+                throw ProviderException.InvalidResponse(Id, $"snapshot entry '{entry.Name}': {ex.Message}");
+            }
 
             if (book is not null)
                 return ToProviderItem(book, includeAssets: false);
@@ -406,11 +412,33 @@ public sealed partial class GutenbergProvider : IContentProvider,
         {
             return new ZipArchive(stream, ZipArchiveMode.Read);
         }
-        catch (InvalidDataException ex)
+        catch (Exception ex) when (IsArchiveFailure(ex))
         {
             throw ProviderException.InvalidResponse(Id, ex.Message);
         }
     }
+
+    private Stream OpenSnapshotTar(ZipArchiveEntry entry)
+    {
+        try
+        {
+            return entry.Open();
+        }
+        catch (Exception ex) when (IsArchiveFailure(ex))
+        {
+            throw ProviderException.InvalidResponse(Id, ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// A truncated or corrupt archive: <see cref="EndOfStreamException"/> and
+    /// other <see cref="IOException"/>s when the stream ends mid-structure,
+    /// <see cref="InvalidDataException"/> for bad headers and unsupported
+    /// compression. None of these is a host failure, so all of them become
+    /// <c>provider_response_invalid</c>. Cancellation is not an IOException and
+    /// deliberately keeps propagating.
+    /// </summary>
+    private static bool IsArchiveFailure(Exception ex) => ex is IOException or InvalidDataException;
 
     private void TryDeleteSnapshotFile(string path)
     {
