@@ -14,6 +14,8 @@ using Nostos.Backend.Services.Portability.Migration;
 using Nostos.Backend.Services.Portability.Transfers;
 using Nostos.Backend.Tests.Support;
 
+using static Nostos.Backend.Tests.Portability.PortableArchiveTestSupport;
+
 namespace Nostos.Backend.Tests.Portability;
 
 /// <summary>
@@ -32,7 +34,11 @@ internal sealed class MigrationHttpHarness : IAsyncDisposable
     internal string DatabasePath { get; }
     internal string TransferPath { get; }
     internal EngineClock Clock { get; } = new();
-    internal MigrationEngineHarness.TestVolume Volume { get; } = new();
+    internal FakeTransferVolume Volume { get; } = new()
+    {
+        AvailableFreeSpaceBytes = 20L * 1024 * 1024 * 1024,
+        TotalSizeBytes = 20L * 1024 * 1024 * 1024,
+    };
     internal MigrationHttpProbe Probe { get; } = new();
     internal bool PhasesAvailable { get; set; } = true;
 
@@ -224,7 +230,7 @@ internal sealed class MigrationHttpHarness : IAsyncDisposable
             fileIdentity = new
             {
                 totalSizeBytes = file.LongLength,
-                sha256Checksum = identityHash ?? MigrationHttpHarness.Sha256(file),
+                sha256Checksum = identityHash ?? PortableArchiveTestSupport.Sha256Hex(file),
                 clientFingerprint = "test-file",
             },
             idempotencyKey = key,
@@ -269,7 +275,7 @@ internal sealed class MigrationHttpHarness : IAsyncDisposable
         var length = (int)Math.Min(chunkSize, file.LongLength - offset);
         var body = file.AsSpan((int)offset, length).ToArray();
         var sentBytes = mutateBody?.Invoke(body) ?? body;
-        var hash = declaredHash ?? Sha256(sentBytes);
+        var hash = declaredHash ?? Sha256Hex(sentBytes);
         using var content = new ByteArrayContent(sentBytes);
         content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/octet-stream");
         if (contentRange is not null)
@@ -326,20 +332,22 @@ internal sealed class MigrationHttpHarness : IAsyncDisposable
         string expectedState,
         TimeSpan? timeout = null)
     {
-        var deadline = DateTime.UtcNow + (timeout ?? TimeSpan.FromSeconds(15));
-        JsonDocument? last = null;
-        while (DateTime.UtcNow < deadline)
-        {
-            last = await JobStatusAsync(jobId);
-            if (last.RootElement.GetProperty("job").GetProperty("state").GetString() == expectedState)
-                return last;
-            last.Dispose();
-            Clock.Advance(TimeSpan.FromSeconds(1));
-            await Task.Delay(20);
-        }
+        var result = await PortabilityTestPolling.PollUntilAsync(
+            () => JobStatusAsync(jobId),
+            body => body.RootElement.GetProperty("job").GetProperty("state").GetString()
+                == expectedState,
+            body => body.RootElement.GetProperty("job").GetProperty("state").GetString()
+                ?? "<null>",
+            timeout ?? TimeSpan.FromSeconds(15),
+            TimeSpan.FromMilliseconds(20),
+            disposeUnmatched: body => body.Dispose(),
+            afterUnmatchedPoll: () => Clock.Advance(TimeSpan.FromSeconds(1)));
+
+        if (result.Matched)
+            return result.Value!;
 
         throw new Xunit.Sdk.XunitException(
-            $"Job {jobId} did not reach {expectedState}; last state was {last?.RootElement.GetProperty("job").GetProperty("state").GetString()}.");
+            $"Job {jobId} did not reach {expectedState}; last state was {result.LastObservation}.");
     }
 
     internal void Advance(TimeSpan delta) => Clock.Advance(delta);
@@ -347,8 +355,6 @@ internal sealed class MigrationHttpHarness : IAsyncDisposable
     internal static int ChunkCount(long totalBytes, int chunkSize) =>
         checked((int)((totalBytes - 1) / chunkSize + 1));
 
-    internal static string Sha256(byte[] bytes) =>
-        Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(bytes));
 
     internal static byte[] DeterministicBytes(int count, int seed = 7)
     {

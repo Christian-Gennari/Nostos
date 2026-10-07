@@ -248,7 +248,7 @@ public sealed class PortableLibraryVerifierPreparedImportTests
             new PortableArchivePayload(
                 PortableArchiveFormat.DataPath,
                 dataBytes.LongLength,
-                SelfHostedActivationTestSupport.Sha256Hex(dataBytes)));
+                PortableArchiveTestSupport.Sha256Hex(dataBytes)));
         await dataWrite.Stream.WriteAsync(dataBytes);
         await staging.CompleteDataAsync(stagingId, dataWrite);
         await dataWrite.DisposeAsync();
@@ -264,7 +264,7 @@ public sealed class PortableLibraryVerifierPreparedImportTests
             Data = new PortableArchivePayload(
                 PortableArchiveFormat.DataPath,
                 dataBytes.LongLength,
-                SelfHostedActivationTestSupport.Sha256Hex(dataBytes)),
+                PortableArchiveTestSupport.Sha256Hex(dataBytes)),
         };
         var manifestBytes = JsonSerializer.SerializeToUtf8Bytes(manifest, JsonOptions);
         var manifestWrite = await staging.OpenManifestWriteAsync(
@@ -272,7 +272,7 @@ public sealed class PortableLibraryVerifierPreparedImportTests
             new PortableArchivePayload(
                 PortableArchiveFormat.ManifestPath,
                 manifestBytes.LongLength,
-                SelfHostedActivationTestSupport.Sha256Hex(manifestBytes)));
+                PortableArchiveTestSupport.Sha256Hex(manifestBytes)));
         await manifestWrite.Stream.WriteAsync(manifestBytes);
         await staging.CompleteManifestAsync(stagingId, manifestWrite);
         await manifestWrite.DisposeAsync();
@@ -295,7 +295,7 @@ public sealed class PortableLibraryVerifierPreparedImportTests
             prepared.Metadata.FormatVersion,
             data.Version,
             dataBytes.LongLength,
-            SelfHostedActivationTestSupport.Sha256Hex(dataBytes),
+            PortableArchiveTestSupport.Sha256Hex(dataBytes),
             PortableLibraryCounts.ComputeCounts(data, media.Count),
             media.Count,
             media.Sum(item => item.Descriptor.Length),

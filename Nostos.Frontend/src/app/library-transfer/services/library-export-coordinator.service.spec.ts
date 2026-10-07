@@ -1,48 +1,12 @@
 import { TestBed } from '@angular/core/testing';
 
-import { DelegatingTransport } from '../testing/delegating-transport';
-import { LIBRARY_TRANSFER_TRANSPORT, MigrationTransportError } from './library-transfer-transport';
+import { ControlledExportTransport } from '../testing/transfer-transport-doubles';
+import { LIBRARY_TRANSFER_TRANSPORT } from './library-transfer-transport';
 import {
   DEFAULT_EXPORT_POLL_MS,
   LibraryExportCoordinator,
 } from './library-export-coordinator.service';
 import { MockLibraryTransferTransport } from '../testing/mock-library-transfer-transport';
-
-/** Test control surface over the real mock transport. */
-class ControlledExportTransport extends DelegatingTransport {
-  readyOnCreate = false;
-  failCreate = false;
-  onCreated: ((jobId: string) => void) | null = null;
-  artifactExpiresAtUtc: string | null = null;
-  /** Sets the job to Validating on this getJob call number (createJob counts as 1). */
-  setValidatingOnGetJob: number | null = null;
-
-  private getJobCalls = 0;
-
-  override async createJob(
-    request: Parameters<DelegatingTransport['createJob']>[0],
-    signal?: AbortSignal,
-  ) {
-    if (this.failCreate) {
-      throw new MigrationTransportError('network_error', 0, 'connection lost');
-    }
-    const created = await this.inner.createJob(request, signal);
-    this.onCreated?.(created.job.id);
-    if (this.readyOnCreate) this.inner.markExportReady(created.job.id);
-    return this.getJob(created.job.id, signal);
-  }
-
-  override async getJob(jobId: string, signal?: AbortSignal) {
-    this.getJobCalls += 1;
-    if (this.setValidatingOnGetJob === this.getJobCalls) {
-      this.inner.setJobState(jobId, 'Validating');
-    }
-    const status = await this.inner.getJob(jobId, signal);
-    return this.artifactExpiresAtUtc
-      ? { ...status, artifactExpiresAtUtc: this.artifactExpiresAtUtc }
-      : status;
-  }
-}
 
 function setup() {
   const mock = new MockLibraryTransferTransport();
@@ -66,7 +30,7 @@ describe('LibraryExportCoordinator', () => {
   it('creates the export job and reaches ready with the native download URL', async () => {
     const { mock, transport, coordinator } = setup();
     transport.readyOnCreate = true;
-    transport.artifactExpiresAtUtc = '2026-10-05T12:00:00Z';
+    transport.expiresAt = '2026-10-05T12:00:00Z';
 
     await coordinator.startExport();
 

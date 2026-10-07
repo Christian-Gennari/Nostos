@@ -5,55 +5,13 @@ import {
   DEFAULT_EXPORT_POLL_MS,
   LibraryExportCoordinator,
 } from '../services/library-export-coordinator.service';
-import {
-  LIBRARY_TRANSFER_TRANSPORT,
-  MigrationTransportError,
-} from '../services/library-transfer-transport';
+import { LIBRARY_TRANSFER_TRANSPORT } from '../services/library-transfer-transport';
 import { MockLibraryTransferTransport } from '../testing/mock-library-transfer-transport';
-import { DelegatingTransport } from '../testing/delegating-transport';
-
-class ExportTransport extends DelegatingTransport {
-  readyOnCreate = false;
-  failCreate = false;
-  onCreated: ((jobId: string) => void) | null = null;
-  expiresAt: string | null = null;
-  /** Replaces the transport's download URL, for URL-safety tests. */
-  overrideDownloadUrl: string | null = null;
-  /** Sets the job to Validating on this getJob call number (createJob counts as 1). */
-  setValidatingOnGetJob: number | null = null;
-
-  private getJobCalls = 0;
-
-  override async createJob(
-    request: Parameters<DelegatingTransport['createJob']>[0],
-    signal?: AbortSignal,
-  ) {
-    if (this.failCreate) {
-      throw new MigrationTransportError('network_error', 0, 'connection lost');
-    }
-    const created = await this.inner.createJob(request, signal);
-    this.onCreated?.(created.job.id);
-    if (this.readyOnCreate) this.inner.markExportReady(created.job.id);
-    return this.getJob(created.job.id, signal);
-  }
-
-  override async getJob(jobId: string, signal?: AbortSignal) {
-    this.getJobCalls += 1;
-    if (this.setValidatingOnGetJob === this.getJobCalls) {
-      this.inner.setJobState(jobId, 'Validating');
-    }
-    const status = await this.inner.getJob(jobId, signal);
-    return this.expiresAt ? { ...status, artifactExpiresAtUtc: this.expiresAt } : status;
-  }
-
-  override getExportDownloadUrl(jobId: string): string {
-    return this.overrideDownloadUrl ?? this.inner.getExportDownloadUrl(jobId);
-  }
-}
+import { ControlledExportTransport } from '../testing/transfer-transport-doubles';
 
 interface Harness {
   mock: MockLibraryTransferTransport;
-  transport: ExportTransport;
+  transport: ControlledExportTransport;
   coordinator: LibraryExportCoordinator;
   fixture: ComponentFixture<LibraryExportFlowComponent>;
   component: LibraryExportFlowComponent;
@@ -61,7 +19,7 @@ interface Harness {
 
 function setup(): Harness {
   const mock = new MockLibraryTransferTransport();
-  const transport = new ExportTransport(mock);
+  const transport = new ControlledExportTransport(mock);
   TestBed.configureTestingModule({
     providers: [{ provide: LIBRARY_TRANSFER_TRANSPORT, useValue: transport }],
   });
@@ -105,6 +63,20 @@ describe('LibraryExportFlowComponent', () => {
     expect(testId(harness, 'export-start')?.textContent).toContain('Export library');
   });
 
+  it('attempts one native download while keeping the fallback link usable', async () => {
+    const harness = setup();
+    harness.transport.readyOnCreate = true;
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click');
+
+    (testId(harness, 'export-start') as HTMLButtonElement).click();
+    await waitForReady(harness);
+
+    expect(click).toHaveBeenCalled();
+    expect(
+      harness.fixture.nativeElement.querySelector('[data-testid="library-export-download"]'),
+    ).toBeTruthy();
+  });
+
   it('reaches ready with a native download link and never buffers the archive', async () => {
     const harness = setup();
     harness.fixture.componentRef.setInput('autoDownload', false);
@@ -131,20 +103,6 @@ describe('LibraryExportFlowComponent', () => {
     (testId(harness, 'export-close') as HTMLButtonElement).click();
     harness.fixture.detectChanges();
     expect(testId(harness, 'export-idle')).toBeTruthy();
-  });
-
-  it('attempts one native download while keeping the fallback link usable', async () => {
-    const harness = setup();
-    harness.transport.readyOnCreate = true;
-    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click');
-
-    (testId(harness, 'export-start') as HTMLButtonElement).click();
-    await waitForReady(harness);
-
-    expect(click).toHaveBeenCalled();
-    expect(
-      harness.fixture.nativeElement.querySelector('[data-testid="library-export-download"]'),
-    ).toBeTruthy();
   });
 
   it('accepts only same-origin http or https download URLs', () => {

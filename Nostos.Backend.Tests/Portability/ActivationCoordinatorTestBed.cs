@@ -16,7 +16,6 @@ using Nostos.Backend.Services.Portability;
 using Nostos.Backend.Services.Portability.Activation;
 using Nostos.Backend.Services.Portability.Migration;
 using Nostos.Backend.Services.Portability.Transfers;
-
 namespace Nostos.Backend.Tests.Portability;
 
 /// <summary>
@@ -67,7 +66,7 @@ internal sealed class ActivationCoordinatorTemplate : IDisposable
     internal Dictionary<string, string> OriginalMedia { get; private set; } = null!;
     internal Dictionary<string, string> ExpectedImportedMedia { get; private set; } = null!;
     internal DateTimeOffset BaseTime { get; } = new(2026, 10, 4, 12, 0, 0, TimeSpan.Zero);
-    internal RecoveryClock Clock { get; } = new(new DateTimeOffset(2026, 10, 4, 12, 0, 0, TimeSpan.Zero));
+    internal ManualTimeProvider Clock { get; } = new(new DateTimeOffset(2026, 10, 4, 12, 0, 0, TimeSpan.Zero));
 
     private ActivationCoordinatorTemplate(bool populated)
     {
@@ -394,7 +393,7 @@ internal sealed class ActivationCoordinatorTestBed : IAsyncDisposable
     internal Guid JobId => _template.JobId;
     internal bool Populated => _template.Populated;
     internal SelfHostedActivationPaths Paths { get; }
-    internal RecoveryClock Clock { get; }
+    internal ManualTimeProvider Clock { get; }
     internal TransferStorageOptions StorageOptions { get; } = new()
     {
         DiskSafetyMarginBytes = 0,
@@ -450,7 +449,7 @@ internal sealed class ActivationCoordinatorTestBed : IAsyncDisposable
     {
         _template = template;
         _drainTimeout = drainTimeout;
-        Clock = new RecoveryClock(template.BaseTime);
+        Clock = new ManualTimeProvider(template.BaseTime);
         Root = Path.Combine(Path.GetTempPath(), $"nostos-681-activation-{Guid.NewGuid():N}");
         TransferRoot = Path.Combine(Root, "transfer-volume", "transfers");
         Directory.CreateDirectory(Path.Combine(Root, "db-volume"));
@@ -476,7 +475,7 @@ internal sealed class ActivationCoordinatorTestBed : IAsyncDisposable
     private async Task InitializeAsync(bool freshStaging)
     {
         File.Copy(_template.TemplateDatabase, Paths.LiveDatabase, overwrite: true);
-        CopyDirectory(_template.TemplateMedia, Paths.LiveMedia);
+        PortableArchiveTestSupport.CopyDirectory(_template.TemplateMedia, Paths.LiveMedia);
         if (freshStaging)
         {
             // The corruption tests need a staging area they may damage without
@@ -502,18 +501,6 @@ internal sealed class ActivationCoordinatorTestBed : IAsyncDisposable
         Probe.Set(Paths.LiveMedia, 10L * 1024 * 1024 * 1024, 10L * 1024 * 1024 * 1024, "media");
         Probe.Set(TransferRoot, 10L * 1024 * 1024 * 1024, 10L * 1024 * 1024 * 1024, "transfer");
         await RestartHostAsync();
-    }
-
-    private static void CopyDirectory(string source, string target)
-    {
-        Directory.CreateDirectory(target);
-        foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
-        {
-            var relative = Path.GetRelativePath(source, file);
-            var destination = Path.Combine(target, relative);
-            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-            File.Copy(file, destination, overwrite: true);
-        }
     }
 
     internal NostosDbContext OpenDatabase() =>

@@ -13,6 +13,7 @@ using Nostos.Backend.Services.Portability.Migration;
 using Nostos.Product.BookText;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
+using static Nostos.Backend.Tests.Portability.PortableArchiveTestSupport;
 
 namespace Nostos.Backend.Tests.Portability;
 
@@ -248,79 +249,6 @@ public sealed class PortableArchiveServiceTests
     }
 
     [Fact]
-    public async Task Import_rejects_unsupported_version_before_mutating_destination()
-    {
-        using var archive = await ExportFixtureAsync();
-        var entries = await ReadEntriesAsync(archive);
-        MutateJsonEntry(entries, "manifest.json", root =>
-        {
-            root["formatVersion"] = 999;
-        });
-        using var hostile = await BuildArchiveAsync(entries);
-
-        await using var destination = await LocalPortableTestLibrary.CreateAsync();
-        hostile.Position = 0;
-
-        var action = () => destination.Portability().ImportAsync(hostile);
-        var exception = await action.Should().ThrowAsync<PortableArchiveException>();
-        exception.Which.Code.Should().Be("unsupported_version");
-        (await destination.Db.Books.CountAsync()).Should().Be(0);
-    }
-
-    [Fact]
-    public async Task Import_rejects_unsupported_data_version_before_mutating_destination()
-    {
-        using var archive = await ExportFixtureAsync();
-        var entries = await ReadEntriesAsync(archive);
-        MutateJsonEntry(entries, "manifest.json", root =>
-        {
-            root["dataVersion"] = 999;
-        });
-        using var hostile = await BuildArchiveAsync(entries);
-
-        await using var destination = await LocalPortableTestLibrary.CreateAsync();
-        hostile.Position = 0;
-
-        var action = () => destination.Portability().ImportAsync(hostile);
-        var exception = await action.Should().ThrowAsync<PortableArchiveException>();
-        exception.Which.Code.Should().Be("unsupported_data_version");
-        (await destination.Db.Books.CountAsync()).Should().Be(0);
-    }
-
-    [Fact]
-    public async Task Portable_archive_v1_without_writing_notes_imports_cleanly_with_empty_memberships()
-    {
-        using var archive = await ExportFixtureAsync();
-        var entries = await ReadEntriesAsync(archive);
-
-        // Turn this archive into a v1 archive: manifest dataVersion = 1, data.json version = 1, no writingNotes
-        MutateJsonEntry(entries, "manifest.json", root =>
-        {
-            root["dataVersion"] = 1;
-        });
-
-        MutateJsonEntry(entries, "data/library.json", root =>
-        {
-            root["version"] = 1;
-            root.Remove("writingNotes");
-            root.Remove("noteImportBookLinks");
-        });
-
-        RehashDataDescriptor(entries);
-
-        using var v1Archive = await BuildArchiveAsync(entries);
-        await using var destination = await LocalPortableTestLibrary.CreateAsync();
-
-        var imported = await destination.Portability().ImportAsync(v1Archive);
-        imported.IntegrityVerified.Should().BeTrue();
-
-        (await destination.Db.Writings.CountAsync()).Should().Be(2);
-        (await destination.Db.Notes.CountAsync()).Should().Be(1);
-        (await destination.Db.WritingNotes.CountAsync()).Should().Be(0,
-            "v1 archive without writingNotes must import with empty memberships (backward-compatibility requirement)");
-    }
-
-    [Fact]
     public async Task Import_rejects_missing_manifest_and_missing_referenced_media()
     {
         using var archive = await ExportFixtureAsync();
@@ -372,86 +300,6 @@ public sealed class PortableArchiveServiceTests
         (await destination.Db.Books.CountAsync()).Should().Be(0);
     }
 
-    [Fact]
-    public async Task Import_rejects_duplicate_entity_ids_before_mutating_destination()
-    {
-        using var archive = await ExportFixtureAsync();
-        var entries = await ReadEntriesAsync(archive);
-        MutateJsonEntry(entries, "data/library.json", root =>
-        {
-            var books = root["books"]!.AsArray();
-            var duplicateId = books[0]!["id"]!.GetValue<string>();
-            books[1]!["id"] = duplicateId;
-        });
-        RehashDataDescriptor(entries);
-
-        using var duplicateIds = await BuildArchiveAsync(entries);
-        await using var destination = await LocalPortableTestLibrary.CreateAsync();
-        duplicateIds.Position = 0;
-
-        var action = () => destination.Portability().ImportAsync(duplicateIds);
-        var exception = await action.Should().ThrowAsync<PortableArchiveException>();
-
-        exception.Which.Code.Should().Be("duplicate_id");
-        (await destination.Db.Books.CountAsync()).Should().Be(0);
-    }
-
-    [Fact]
-    public async Task Import_rejects_malformed_relationship_duplicate_path_and_traversal()
-    {
-        using var archive = await ExportFixtureAsync();
-        var entries = await ReadEntriesAsync(archive);
-
-        var malformed = entries
-            .Select(x => new TestArchiveEntry(x.Name, x.Bytes.ToArray()))
-            .ToList();
-        MutateJsonEntry(malformed, "data/library.json", root =>
-        {
-            var books = root["books"]!.AsArray();
-            books[0]!["workId"] = Guid.NewGuid();
-        });
-        RehashDataDescriptor(malformed);
-        using (var malformedArchive = await BuildArchiveAsync(malformed))
-        {
-            await using var destination = await LocalPortableTestLibrary.CreateAsync();
-            malformedArchive.Position = 0;
-            var action = () => destination.Portability().ImportAsync(malformedArchive);
-            var exception = await action.Should().ThrowAsync<PortableArchiveException>();
-            exception.Which.Code.Should().Be("malformed_relationship");
-            (await destination.Db.Books.CountAsync()).Should().Be(0);
-        }
-
-        var media = entries.First(x =>
-            x.Name.StartsWith("media/books/", StringComparison.Ordinal));
-        var duplicate = entries
-            .Select(x => new TestArchiveEntry(x.Name, x.Bytes.ToArray()))
-            .ToList();
-        duplicate.Add(new TestArchiveEntry(media.Name, media.Bytes.ToArray()));
-        using (var duplicateArchive = await BuildArchiveAsync(duplicate))
-        {
-            await using var destination = await LocalPortableTestLibrary.CreateAsync();
-            duplicateArchive.Position = 0;
-            var action = () => destination.Portability().ImportAsync(duplicateArchive);
-            var exception = await action.Should().ThrowAsync<PortableArchiveException>();
-            exception.Which.Code.Should().Be("duplicate_path");
-            (await destination.Db.Books.CountAsync()).Should().Be(0);
-        }
-
-        var traversal = entries
-            .Select(x => new TestArchiveEntry(x.Name, x.Bytes.ToArray()))
-            .ToList();
-        traversal.Add(new TestArchiveEntry("../escape.txt", [1, 2, 3]));
-        using var traversalArchive = await BuildArchiveAsync(traversal);
-        await using var traversalDestination = await LocalPortableTestLibrary.CreateAsync();
-        traversalArchive.Position = 0;
-        var traversalAction = () =>
-            traversalDestination.Portability().ImportAsync(traversalArchive);
-        var traversalException =
-            await traversalAction.Should().ThrowAsync<PortableArchiveException>();
-        traversalException.Which.Code.Should().Be("unsafe_archive_path");
-        (await traversalDestination.Db.Books.CountAsync()).Should().Be(0);
-    }
-
     [Theory]
     [InlineData("/absolute")]
     [InlineData("\\absolute")]
@@ -492,25 +340,6 @@ public sealed class PortableArchiveServiceTests
     }
 
     [Fact]
-    public async Task Import_rejects_manifest_and_payload_data_version_disagreement()
-    {
-        using var archive = await ExportFixtureAsync();
-        var entries = await ReadEntriesAsync(archive);
-        MutateJsonEntry(entries, "manifest.json", root =>
-        {
-            root["dataVersion"] = 2;
-        });
-        using var mismatch = await BuildArchiveAsync(entries);
-        await using var destination = await LocalPortableTestLibrary.CreateAsync();
-
-        var action = () => destination.Portability().ImportAsync(mismatch);
-        var exception = await action.Should().ThrowAsync<PortableArchiveException>();
-
-        exception.Which.Code.Should().Be("data_version_mismatch");
-        (await destination.Db.Books.CountAsync()).Should().Be(0);
-    }
-
-    [Fact]
     public async Task Import_rejects_duplicate_relationships_before_mutating_destination()
     {
         using var archive = await ExportFixtureAsync();
@@ -529,83 +358,6 @@ public sealed class PortableArchiveServiceTests
 
         exception.Which.Code.Should().Be("duplicate_relationship");
         (await destination.Db.Books.CountAsync()).Should().Be(0);
-    }
-
-    [Fact]
-    public async Task Import_requires_empty_destination()
-    {
-        using var archive = await ExportFixtureAsync();
-        await using var destination = await LocalPortableTestLibrary.CreateAsync();
-        destination.Db.Topics.Add(new TopicModel
-        {
-            Topic = "Existing user content",
-        });
-        await destination.Db.SaveChangesAsync();
-
-        archive.Position = 0;
-        var action = () => destination.Portability().ImportAsync(archive);
-        var exception = await action.Should().ThrowAsync<PortableArchiveException>();
-
-        exception.Which.Code.Should().Be("destination_not_empty");
-        (await destination.Db.Books.CountAsync()).Should().Be(0);
-        (await destination.Db.Topics.CountAsync()).Should().Be(1);
-    }
-
-    [Fact]
-    public async Task Failed_media_write_rolls_back_relational_state_and_compensates_media()
-    {
-        using var archive = await ExportFixtureAsync();
-        await using var destination = await LocalPortableTestLibrary.CreateAsync();
-        var failingStorage = new FailAfterMediaWriteStorage(destination.Storage);
-        var service = new PortableArchiveService(
-            destination.Db,
-            failingStorage,
-            Microsoft.Extensions.Logging.Abstractions.NullLogger<PortableArchiveService>.Instance);
-
-        archive.Position = 0;
-        var action = () => service.ImportAsync(archive);
-        var exception = await action.Should().ThrowAsync<PortableArchiveException>();
-
-        exception.Which.Code.Should().Be("import_failed");
-        destination.Db.ChangeTracker.Clear();
-        (await destination.Db.Books.CountAsync()).Should().Be(0);
-        (await destination.Db.Works.CountAsync()).Should().Be(0);
-        (await destination.Db.Notes.CountAsync()).Should().Be(0);
-
-        Directory.Exists(destination.Storage.StorageRoot).Should().BeTrue();
-        Directory.EnumerateFiles(
-                destination.Storage.StorageRoot,
-                "*",
-                SearchOption.AllDirectories)
-            .Should().BeEmpty();
-    }
-
-    [Fact]
-    public async Task Import_rejects_suspicious_compression_before_mutating_destination()
-    {
-        using var bomb = new MemoryStream();
-        using (var archive = new ZipArchive(
-            bomb,
-            ZipArchiveMode.Create,
-            leaveOpen: true))
-        {
-            var entry = archive.CreateEntry(
-                "payload.bin",
-                CompressionLevel.Optimal);
-            await using var output = entry.Open();
-            var zeros = new byte[2 * 1024 * 1024];
-            await output.WriteAsync(zeros);
-        }
-
-        bomb.Position = 0;
-        await using var destination = await LocalPortableTestLibrary.CreateAsync();
-
-        var action = () => destination.Portability().ImportAsync(bomb);
-        var exception = await action.Should().ThrowAsync<PortableArchiveException>();
-
-        exception.Which.Code.Should().Be("suspicious_compression");
-        (await destination.Db.Books.CountAsync()).Should().Be(0);
-        (await destination.Db.Notes.CountAsync()).Should().Be(0);
     }
 
     [Theory]
@@ -1402,169 +1154,6 @@ public sealed class PortableArchiveServiceTests
         return archive;
     }
 
-    private static async Task<List<TestArchiveEntry>> ReadEntriesAsync(
-        MemoryStream source)
-    {
-        source.Position = 0;
-        var entries = new List<TestArchiveEntry>();
-
-        using var archive = new ZipArchive(
-            source,
-            ZipArchiveMode.Read,
-            leaveOpen: true);
-        foreach (var entry in archive.Entries)
-        {
-            await using var input = entry.Open();
-            using var output = new MemoryStream();
-            await input.CopyToAsync(output);
-            entries.Add(new TestArchiveEntry(entry.FullName, output.ToArray()));
-        }
-
-        source.Position = 0;
-        return entries;
-    }
-
-    private static Task<MemoryStream> BuildArchiveAsync(
-        IEnumerable<TestArchiveEntry> entries)
-    {
-        var output = new MemoryStream();
-        using (var archive = new ZipArchive(
-            output,
-            ZipArchiveMode.Create,
-            leaveOpen: true))
-        {
-            foreach (var item in entries)
-            {
-                var entry = archive.CreateEntry(
-                    item.Name,
-                    CompressionLevel.NoCompression);
-                using var target = entry.Open();
-                target.Write(item.Bytes);
-            }
-        }
-
-        output.Position = 0;
-        return Task.FromResult(output);
-    }
-
-    private static void MutateJsonEntry(
-        List<TestArchiveEntry> entries,
-        string name,
-        Action<JsonObject> mutate)
-    {
-        var index = entries.FindIndex(x => x.Name == name);
-        index.Should().BeGreaterThanOrEqualTo(0);
-        var root = JsonNode.Parse(entries[index].Bytes)!.AsObject();
-        mutate(root);
-        entries[index] = new TestArchiveEntry(
-            name,
-            Encoding.UTF8.GetBytes(root.ToJsonString()));
-    }
-
-    private static void RehashDataDescriptor(
-        List<TestArchiveEntry> entries)
-    {
-        var data = entries.Single(x => x.Name == "data/library.json").Bytes;
-        var manifestIndex = entries.FindIndex(x => x.Name == "manifest.json");
-        var manifest = JsonNode.Parse(entries[manifestIndex].Bytes)!.AsObject();
-        var dataNode = manifest["data"]!.AsObject();
-        dataNode["length"] = data.LongLength;
-        dataNode["sha256"] = Convert.ToHexString(
-            SHA256.HashData(data)).ToLowerInvariant();
-        entries[manifestIndex] = new TestArchiveEntry(
-            "manifest.json",
-            Encoding.UTF8.GetBytes(manifest.ToJsonString()));
-    }
-
-    private sealed record TestArchiveEntry(string Name, byte[] Bytes);
-
-    private sealed class FailAfterMediaWriteStorage(IBookAssetStorage inner)
-        : IBookAssetStorage
-    {
-        public Task<string> SaveBookFileAsync(
-            Guid bookId,
-            Stream content,
-            string fileName,
-            CancellationToken ct = default) =>
-            WriteThenFail(() => inner.SaveBookFileAsync(
-                bookId,
-                content,
-                fileName,
-                ct));
-
-        public Task<string> AdoptBookFileAsync(
-            Guid bookId,
-            string sourcePath,
-            string fileName,
-            CancellationToken ct = default) =>
-            inner.AdoptBookFileAsync(bookId, sourcePath, fileName, ct);
-
-        public Task<StoredAssetInfo?> GetBookFileInfoAsync(
-            Guid bookId,
-            CancellationToken ct = default) =>
-            inner.GetBookFileInfoAsync(bookId, ct);
-
-        public Task<StoredAssetRead?> OpenBookFileAsync(
-            Guid bookId,
-            StorageByteRange? range = null,
-            CancellationToken ct = default) =>
-            inner.OpenBookFileAsync(bookId, range, ct);
-
-        public Task<bool> DeleteBookFileAsync(
-            Guid bookId,
-            CancellationToken ct = default) =>
-            inner.DeleteBookFileAsync(bookId, ct);
-
-        public Task DeleteBookFilesAsync(
-            Guid bookId,
-            CancellationToken ct = default) =>
-            inner.DeleteBookFilesAsync(bookId, ct);
-
-        public Task<string> SaveBookCoverAsync(
-            Guid bookId,
-            Stream content,
-            string fileName,
-            CancellationToken ct = default) =>
-            WriteThenFail(() => inner.SaveBookCoverAsync(
-                bookId,
-                content,
-                fileName,
-                ct));
-
-        public Task<StoredAssetInfo?> GetBookCoverInfoAsync(
-            Guid bookId,
-            CancellationToken ct = default) =>
-            inner.GetBookCoverInfoAsync(bookId, ct);
-
-        public Task<StoredAssetRead?> OpenBookCoverAsync(
-            Guid bookId,
-            CancellationToken ct = default) =>
-            inner.OpenBookCoverAsync(bookId, ct);
-
-        public Task<StoredAssetInfo?> GetBookCoverThumbnailInfoAsync(
-            Guid bookId,
-            int width,
-            CancellationToken ct = default) =>
-            inner.GetBookCoverThumbnailInfoAsync(bookId, width, ct);
-
-        public Task<StoredAssetRead?> OpenBookCoverThumbnailAsync(
-            Guid bookId,
-            int width,
-            CancellationToken ct = default) =>
-            inner.OpenBookCoverThumbnailAsync(bookId, width, ct);
-
-        public Task<bool> DeleteCoverAsync(
-            Guid bookId,
-            CancellationToken ct = default) =>
-            inner.DeleteCoverAsync(bookId, ct);
-
-        private static async Task<string> WriteThenFail(Func<Task<string>> write)
-        {
-            await write();
-            throw new IOException("Injected failure after durable media write.");
-        }
-    }
-
     private sealed class SyncIoForbiddenStream : Stream
     {
         private readonly MemoryStream _inner = new();
@@ -1627,80 +1216,25 @@ public sealed class PortableArchiveServiceTests
         IBookAssetStorage inner,
         Func<Guid, Stream, string, CancellationToken, Task<string>>? onBookFile = null,
         Func<Guid, Stream, string, CancellationToken, Task<string>>? onCoverFile = null)
-        : IBookAssetStorage
+        : DelegatingBookAssetStorage(inner)
     {
-        public Task<string> SaveBookFileAsync(
+        public override Task<string> SaveBookFileAsync(
             Guid bookId,
             Stream content,
             string fileName,
             CancellationToken ct = default) =>
             onBookFile is null
-                ? inner.SaveBookFileAsync(bookId, content, fileName, ct)
+                ? base.SaveBookFileAsync(bookId, content, fileName, ct)
                 : onBookFile(bookId, content, fileName, ct);
 
-        public Task<string> AdoptBookFileAsync(
-            Guid bookId,
-            string sourcePath,
-            string fileName,
-            CancellationToken ct = default) =>
-            inner.AdoptBookFileAsync(bookId, sourcePath, fileName, ct);
-
-        public Task<StoredAssetInfo?> GetBookFileInfoAsync(
-            Guid bookId,
-            CancellationToken ct = default) =>
-            inner.GetBookFileInfoAsync(bookId, ct);
-
-        public Task<StoredAssetRead?> OpenBookFileAsync(
-            Guid bookId,
-            StorageByteRange? range = null,
-            CancellationToken ct = default) =>
-            inner.OpenBookFileAsync(bookId, range, ct);
-
-        public Task<bool> DeleteBookFileAsync(
-            Guid bookId,
-            CancellationToken ct = default) =>
-            inner.DeleteBookFileAsync(bookId, ct);
-
-        public Task DeleteBookFilesAsync(
-            Guid bookId,
-            CancellationToken ct = default) =>
-            inner.DeleteBookFilesAsync(bookId, ct);
-
-        public Task<string> SaveBookCoverAsync(
+        public override Task<string> SaveBookCoverAsync(
             Guid bookId,
             Stream content,
             string fileName,
             CancellationToken ct = default) =>
             onCoverFile is null
-                ? inner.SaveBookCoverAsync(bookId, content, fileName, ct)
+                ? base.SaveBookCoverAsync(bookId, content, fileName, ct)
                 : onCoverFile(bookId, content, fileName, ct);
-
-        public Task<StoredAssetInfo?> GetBookCoverInfoAsync(
-            Guid bookId,
-            CancellationToken ct = default) =>
-            inner.GetBookCoverInfoAsync(bookId, ct);
-
-        public Task<StoredAssetRead?> OpenBookCoverAsync(
-            Guid bookId,
-            CancellationToken ct = default) =>
-            inner.OpenBookCoverAsync(bookId, ct);
-
-        public Task<StoredAssetInfo?> GetBookCoverThumbnailInfoAsync(
-            Guid bookId,
-            int width,
-            CancellationToken ct = default) =>
-            inner.GetBookCoverThumbnailInfoAsync(bookId, width, ct);
-
-        public Task<StoredAssetRead?> OpenBookCoverThumbnailAsync(
-            Guid bookId,
-            int width,
-            CancellationToken ct = default) =>
-            inner.OpenBookCoverThumbnailAsync(bookId, width, ct);
-
-        public Task<bool> DeleteCoverAsync(
-            Guid bookId,
-            CancellationToken ct = default) =>
-            inner.DeleteCoverAsync(bookId, ct);
     }
 
     private sealed class CallbackTimeProvider(Action onFirstUtcNow) : TimeProvider

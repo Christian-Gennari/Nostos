@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -8,6 +7,8 @@ using Nostos.Backend.Services.Portability;
 using Nostos.Backend.Services.Portability.Activation;
 using Nostos.Backend.Services.Portability.Migration;
 using Xunit;
+
+using static Nostos.Backend.Tests.Portability.PortableArchiveTestSupport;
 
 namespace Nostos.Backend.Tests.Portability;
 
@@ -204,6 +205,4 @@ public sealed class ActivationCoordinatorHappyPathTests
             .ToArray();
     }
 
-    internal static string Sha256Hex(byte[] bytes) =>
-        Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
 }

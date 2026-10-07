@@ -6,10 +6,7 @@ import { CloudEntryComponent } from './cloud-entry.component';
 import { CloudEntryService, CloudEntryView } from '../core/services/cloud-entry.service';
 import { LibraryImportFlowComponent } from '../library-transfer/components/library-import-flow.component';
 import { LibraryTransferCoordinator } from '../library-transfer/services/library-transfer-coordinator.service';
-import {
-  LIBRARY_TRANSFER_TRANSPORT,
-  MigrationTransportError,
-} from '../library-transfer/services/library-transfer-transport';
+import { LIBRARY_TRANSFER_TRANSPORT } from '../library-transfer/services/library-transfer-transport';
 import { MockLibraryTransferTransport } from '../library-transfer/testing/mock-library-transfer-transport';
 import { HASH_WORKER_FACTORY } from '../library-transfer/services/hash/hash-worker';
 import {
@@ -19,11 +16,7 @@ import {
   TRANSFER_TAB_LEASE_KEY,
   TransferTabLease,
 } from '../library-transfer/services/transfer-tab-lease.service';
-import { DelegatingTransport } from '../library-transfer/testing/delegating-transport';
-import {
-  BrowserMigrationChunk,
-  MigrationChunkUploadResultDto,
-} from '../library-transfer/models/migration-http.dtos';
+import { GatedUploadTransport } from '../library-transfer/testing/transfer-transport-doubles';
 import {
   createFile,
   portableArchiveFixture,
@@ -127,58 +120,6 @@ describe('CloudEntryComponent', () => {
     );
     if (!choice) throw new Error('Import choice button not found');
     return choice;
-  }
-
-  interface PendingUpload {
-    jobId: string;
-    sessionId: string;
-    request: BrowserMigrationChunk;
-    onProgress: (loaded: number, total: number) => void;
-    signal: AbortSignal;
-    resolve: (result: MigrationChunkUploadResultDto) => void;
-    reject: (error: unknown) => void;
-  }
-
-  /** Holds upload requests so a transfer can be observed while it is active. */
-  class HeldUploadTransport extends DelegatingTransport {
-    readonly pending: PendingUpload[] = [];
-
-    override uploadChunk(
-      jobId: string,
-      sessionId: string,
-      request: BrowserMigrationChunk,
-      onProgress: (loaded: number, total: number) => void,
-      signal: AbortSignal,
-    ): Promise<MigrationChunkUploadResultDto> {
-      return new Promise<MigrationChunkUploadResultDto>((resolve, reject) => {
-        signal.addEventListener(
-          'abort',
-          () => reject(new MigrationTransportError('request_aborted', 0, 'aborted')),
-          { once: true },
-        );
-        this.pending.push({ jobId, sessionId, request, onProgress, signal, resolve, reject });
-      });
-    }
-
-    async releaseAll(): Promise<void> {
-      const items = this.pending.splice(0);
-      await Promise.all(
-        items.map(async (item) => {
-          try {
-            const result = await this.inner.uploadChunk(
-              item.jobId,
-              item.sessionId,
-              item.request,
-              item.onProgress,
-              item.signal,
-            );
-            item.resolve(result);
-          } catch (error) {
-            item.reject(error);
-          }
-        }),
-      );
-    }
   }
 
   it('renders plan summary and active Continue to checkout button when selectedOffer is present', () => {
@@ -395,7 +336,7 @@ describe('CloudEntryComponent', () => {
 
   it('adopts the tab lease after Back and releases it when the import terminates', async () => {
     mockEntry.supportsLibraryMigration.set(true);
-    const held = new HeldUploadTransport(mock);
+    const held = new GatedUploadTransport(mock);
     TestBed.overrideProvider(LIBRARY_TRANSFER_TRANSPORT, { useValue: held });
     renderFirstRun();
     const fixture = TestBed.createComponent(CloudEntryComponent);

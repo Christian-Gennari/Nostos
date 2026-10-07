@@ -38,12 +38,17 @@ public sealed class RecoveryRestoreHttpTests
         var (statusStatus, status) = await harness.SendAsync(
             HttpMethod.Get, $"{BasePath}/{harness.Bed.RecoveryId}");
         statusStatus.Should().Be(HttpStatusCode.OK);
+        status.RootElement.GetProperty("recoveryId").GetGuid().Should().Be(harness.Bed.RecoveryId);
         status.RootElement.GetProperty("status").GetString().Should().Be("Available");
         status.RootElement.GetProperty("outcome").GetString().Should().Be("Idle");
         status.RootElement.GetProperty("accepted").GetBoolean().Should().BeFalse();
         status.RootElement.GetProperty("canRestore").GetBoolean().Should().BeTrue();
         status.RootElement.GetProperty("maintenanceRequired").GetBoolean().Should().BeFalse();
-        status.RootElement.GetProperty("counts").ValueKind.Should().Be(System.Text.Json.JsonValueKind.Object);
+        status.RootElement.GetProperty("phase").ValueKind.Should().Be(System.Text.Json.JsonValueKind.Null);
+        var counts = status.RootElement.GetProperty("counts");
+        counts.ValueKind.Should().Be(System.Text.Json.JsonValueKind.Object);
+        counts.GetProperty("books").GetInt64()
+            .Should().Be(harness.Bed.ReadRecoveryManifest()!.Counts.Books);
 
         var (missingStatus, missing) = await harness.SendAsync(
             HttpMethod.Get, $"{BasePath}/{Guid.NewGuid()}");
@@ -160,32 +165,6 @@ public sealed class RecoveryRestoreHttpTests
             busy.RootElement.GetProperty("code").GetString()
                 .Should().Be(MigrationActivationErrorCodes.Busy);
         }
-    }
-
-    [Fact]
-    public void RestoreStatus_SerializesTheAlignedVocabulary()
-    {
-        var status = new MigrationRecoveryRestoreStatusResponse(
-            Guid.Parse("11111111-2222-3333-4444-555555555555"),
-            MigrationRecoveryStatus.Available,
-            MigrationActivationOutcome.Idle,
-            CreatedAtUtc: DateTimeOffset.UnixEpoch,
-            ExpiresAtUtc: DateTimeOffset.UnixEpoch.AddDays(7),
-            SizeBytes: 123,
-            Counts: new MigrationExistingCounts(Works: 1, Books: 2),
-            CanRestore: true);
-
-        var json = System.Text.Json.JsonSerializer.Serialize(status, MigrationHttpHarness.Json);
-        using var document = System.Text.Json.JsonDocument.Parse(json);
-        var root = document.RootElement;
-        root.GetProperty("recoveryId").GetGuid().Should().Be(status.RecoveryId);
-        root.GetProperty("status").GetString().Should().Be("Available");
-        root.GetProperty("outcome").GetString().Should().Be("Idle");
-        root.GetProperty("accepted").GetBoolean().Should().BeFalse();
-        root.GetProperty("canRestore").GetBoolean().Should().BeTrue();
-        root.GetProperty("maintenanceRequired").GetBoolean().Should().BeFalse();
-        root.GetProperty("phase").ValueKind.Should().Be(System.Text.Json.JsonValueKind.Null);
-        root.GetProperty("counts").GetProperty("books").GetInt64().Should().Be(2);
     }
 
     [Fact]

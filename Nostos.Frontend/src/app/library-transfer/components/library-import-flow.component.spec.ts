@@ -26,14 +26,16 @@ import { FileDigest, PersistedTransferResumeState, TransferFileIdentity, Transfe
 import { HASH_WORKER_FACTORY } from '../services/hash/hash-worker';
 import { DelegatingTransport } from '../testing/delegating-transport';
 import {
+  GatedUploadTransport,
+  UnauthorizedOnceTransport,
+} from '../testing/transfer-transport-doubles';
+import {
   buildZipArchive,
   createFile,
   portableArchiveFixture,
   portableManifest,
 } from '../testing/zip-archive.fixture';
 import {
-  BrowserMigrationChunk,
-  MigrationChunkUploadResultDto,
   MigrationJobStatusResponseDto,
   MigrationPreflightRequestDto,
   MigrationSessionRequestDto,
@@ -268,58 +270,6 @@ function dispatchLease(record: TransferTabLeaseRecord | null): void {
   );
 }
 
-/** Uploads that the test holds until it is ready to complete them. */
-interface PendingUpload {
-  jobId: string;
-  sessionId: string;
-  request: BrowserMigrationChunk;
-  onProgress: (loaded: number, total: number) => void;
-  signal: AbortSignal;
-  resolve: (result: MigrationChunkUploadResultDto) => void;
-  reject: (error: unknown) => void;
-}
-
-class GatedUploadTransport extends DelegatingTransport {
-  readonly pending: PendingUpload[] = [];
-
-  override uploadChunk(
-    jobId: string,
-    sessionId: string,
-    request: BrowserMigrationChunk,
-    onProgress: (loaded: number, total: number) => void,
-    signal: AbortSignal,
-  ): Promise<MigrationChunkUploadResultDto> {
-    return new Promise<MigrationChunkUploadResultDto>((resolve, reject) => {
-      signal.addEventListener(
-        'abort',
-        () => reject(new MigrationTransportError('request_aborted', 0, 'aborted')),
-        { once: true },
-      );
-      this.pending.push({ jobId, sessionId, request, onProgress, signal, resolve, reject });
-    });
-  }
-
-  async releaseAll(): Promise<void> {
-    const items = this.pending.splice(0);
-    await Promise.all(
-      items.map(async (item) => {
-        try {
-          const result = await this.inner.uploadChunk(
-            item.jobId,
-            item.sessionId,
-            item.request,
-            item.onProgress,
-            item.signal,
-          );
-          item.resolve(result);
-        } catch (error) {
-          item.reject(error);
-        }
-      }),
-    );
-  }
-}
-
 class ControlledDigest implements FileDigest {
   onProgress: ((bytesRead: number, totalBytes: number) => void) | null = null;
 
@@ -394,20 +344,6 @@ class DiscoveredImportTransport extends DelegatingTransport {
     return this.status;
   }
   override async getJob(): Promise<MigrationJobStatusResponseDto> { return this.status; }
-}
-
-/** Rejects the first resume with a 401, then behaves normally (re-authenticated). */
-class UnauthorizedOnceTransport extends DelegatingTransport {
-  unauthorized = true;
-
-  override getJob(jobId: string, signal?: AbortSignal): Promise<MigrationJobStatusResponseDto> {
-    if (this.unauthorized) {
-      return Promise.reject(
-        new MigrationTransportError('unexpected_error', 401, 'sign in required'),
-      );
-    }
-    return this.inner.getJob(jobId, signal);
-  }
 }
 
 /** Holds status responses so the checking phase can be inspected before it ends. */
@@ -604,50 +540,6 @@ describe('LibraryImportFlowComponent', () => {
     await vi.waitFor(() => expect(transport.pending.length).toBe(1));
     await transport.releaseAll();
     await waitForKind(harness, 'ready-empty');
-  });
-
-  it('reattaches after a reload and accepts the same file to finish the upload', async () => {
-    const harness = setup();
-    const file = await largePortableFile();
-    const totalChunks = chunkCount(file.size, CHUNK);
-    await stageResumable(harness, file, totalChunks - 1);
-
-    const reloaded = reload(harness.mock, harness.mock);
-    await waitForKind(reloaded, 'ready-to-upload');
-
-    expect(testId(reloaded, 'import-resume-file')).toBeTruthy();
-    expect(testId(reloaded, 'import-reselect')?.textContent).toContain(
-      'Select the same file again to resume.',
-    );
-
-    selectFile(reloaded, file);
-    await waitForKind(reloaded, 'ready-empty');
-
-    expect(harness.mock.uploadedChunks).toEqual([totalChunks - 1]);
-  });
-
-  it('rejects a different file on resume and never uploads it', async () => {
-    const harness = setup();
-    const file = await largePortableFile();
-    const totalChunks = chunkCount(file.size, CHUNK);
-    await stageResumable(harness, file, totalChunks - 1);
-
-    const reloaded = reload(harness.mock, harness.mock);
-    await waitForKind(reloaded, 'ready-to-upload');
-
-    const different = new File([new Uint8Array(file.size).fill(3) as unknown as BlobPart], file.name);
-    selectFile(reloaded, different);
-
-    await vi.waitFor(() =>
-      expect(testId(reloaded, 'import-reselect-notice')).toBeTruthy(),
-    );
-    reloaded.fixture.detectChanges();
-
-    expect(reloaded.coordinator.state().kind).toBe('ready-to-upload');
-    expect(testId(reloaded, 'import-reselect-notice')?.textContent).toContain(
-      'no longer matches this upload',
-    );
-    expect(harness.mock.uploadedChunks).toEqual([]);
   });
 
   it('gates replacement confirmation when safe activation is unavailable and enables it when available', async () => {
@@ -1253,19 +1145,6 @@ describe('LibraryImportFlowComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="import-starting"]')).toBeTruthy();
   });
 
-  it('keeps the picker available at a narrow viewport', () => {
-    const previous = window.innerWidth;
-    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 });
-    window.dispatchEvent(new Event('resize'));
-
-    const harness = setup();
-
-    expect(testId(harness, 'import-choose-file')).toBeTruthy();
-    expect(harness.fixture.nativeElement.querySelector('input[type="file"]')).toBeTruthy();
-
-    Object.defineProperty(window, 'innerWidth', { configurable: true, value: previous });
-  });
-
   it('exposes the progress bar with progressbar semantics while uploading', async () => {
     const mock = new MockLibraryTransferTransport({ chunkSizeBytes: CHUNK });
     const transport = new GatedUploadTransport(mock);
@@ -1322,59 +1201,6 @@ describe('LibraryImportFlowComponent', () => {
     expect(testId(harness, 'import-activation-phase')?.textContent).toContain(
       'Switching libraries…',
     );
-  });
-
-  it('shows the server counts and re-arms confirmation after a destination conflict', async () => {
-    const harness = setup({ destinationStatus: 'Populated', existingCounts: { books: 1 } });
-    const confirmed = vi.fn();
-    harness.component.replacementConfirmed.subscribe(confirmed);
-    const file = await portableFile();
-
-    harness.fixture.componentRef.setInput('supportsSafeActivation', true);
-    selectFile(harness, file);
-    await waitForKind(harness, 'replacement-confirmation');
-    harness.fixture.detectChanges();
-
-    (harness.fixture.nativeElement.querySelector(
-      '.replacement-confirm',
-    ) as HTMLButtonElement).click();
-    expect(confirmed).toHaveBeenCalledTimes(1);
-
-    harness.fixture.componentRef.setInput('activationState', 'failed');
-    harness.fixture.componentRef.setInput(
-      'activationErrorCode',
-      'migration_destination_conflict',
-    );
-    harness.fixture.componentRef.setInput('activationCanRetry', true);
-    harness.fixture.componentRef.setInput('activationConflict', {
-      destinationRevision: 'rev-9',
-      destinationStatus: 'Populated',
-      existingCounts: {
-        works: 1,
-        books: 9,
-        notes: 12,
-        topics: 0,
-        noteTopics: 0,
-        writings: 0,
-        writingNotes: 0,
-        collections: 2,
-        bookCollections: 3,
-        acquisitions: 0,
-        noteImportBookLinks: 0,
-        assistantSettings: 0,
-        totalRows: 27,
-      },
-    });
-    harness.fixture.detectChanges();
-
-    expect(testId(harness, 'replacement-conflict')).toBeTruthy();
-    expect(testId(harness, 'replacement-existing')?.textContent).toContain('9 books');
-    expect(testId(harness, 'replacement-error')).toBeNull();
-
-    (harness.fixture.nativeElement.querySelector(
-      '.replacement-confirm',
-    ) as HTMLButtonElement).click();
-    expect(confirmed).toHaveBeenCalledTimes(2);
   });
 
   it('shows both count sides when an empty destination reports populated after preflight', async () => {

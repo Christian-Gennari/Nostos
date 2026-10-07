@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using FluentAssertions;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -22,7 +21,7 @@ internal sealed class RecoveryTestBed : IDisposable
     internal Guid JobId { get; } = Guid.NewGuid();
     internal Guid OperationId { get; } = Guid.NewGuid();
     internal string Revision { get; } = "revision-1";
-    internal RecoveryClock Clock { get; } = new(new DateTimeOffset(2026, 10, 4, 12, 0, 0, TimeSpan.Zero));
+    internal ManualTimeProvider Clock { get; } = new(new DateTimeOffset(2026, 10, 4, 12, 0, 0, TimeSpan.Zero));
     internal TransferStorageOptions Options { get; } = new() { DiskSafetyMarginBytes = 0, DiskSafetyMarginPercent = 0 };
     internal FakeTransferVolume TransferVolume { get; } = new()
     {
@@ -219,9 +218,6 @@ internal sealed class RecoveryTestBed : IDisposable
         File.WriteAllText(Path.Combine(path, second.ToString("N"), "book.epub.partial"), $"{generation}-partial-b");
     }
 
-    internal static string Sha256Hex(byte[] bytes) =>
-        Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
-
     public void Dispose()
     {
         try
@@ -236,22 +232,6 @@ internal sealed class RecoveryTestBed : IDisposable
         {
         }
     }
-}
-
-internal sealed class RecoveryClock(DateTimeOffset utcNow) : TimeProvider
-{
-    public DateTimeOffset UtcNow { get; private set; } = utcNow;
-
-    public override DateTimeOffset GetUtcNow() => UtcNow;
-
-    public void Advance(TimeSpan delta) => UtcNow += delta;
-}
-
-internal sealed class FakeTransferVolume : ITransferVolume
-{
-    public long AvailableFreeSpaceBytes { get; set; }
-
-    public long TotalSizeBytes { get; set; }
 }
 
 internal sealed class FakeVolumeSpaceProbe : ISelfHostedVolumeSpaceProbe

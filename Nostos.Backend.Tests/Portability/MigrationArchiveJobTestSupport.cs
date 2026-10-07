@@ -1,5 +1,3 @@
-using System.IO.Compression;
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Nodes;
 using FluentAssertions;
@@ -7,6 +5,7 @@ using Nostos.Backend.Data.Models;
 using Nostos.Backend.Services;
 using Nostos.Backend.Services.Portability;
 using Nostos.Backend.Services.Portability.Migration;
+using static Nostos.Backend.Tests.Portability.PortableArchiveTestSupport;
 
 namespace Nostos.Backend.Tests.Portability;
 
@@ -38,12 +37,12 @@ internal static class MigrationArchiveJobTestSupport
     internal static byte[] ToDataVersion(byte[] archive, int dataVersion)
     {
         var entries = ReadEntries(archive);
-        MutateJson(entries, ManifestPath, root =>
+        MutateJsonEntry(entries, ManifestPath, root =>
         {
             root["formatVersion"] = 1;
             root["dataVersion"] = dataVersion;
         });
-        MutateJson(entries, DataPath, root =>
+        MutateJsonEntry(entries, DataPath, root =>
         {
             root["version"] = dataVersion;
             if (dataVersion <= 2)
@@ -86,12 +85,6 @@ internal static class MigrationArchiveJobTestSupport
             ? Directory.EnumerateDirectories(root)
                 .Single(directory => Guid.TryParseExact(Path.GetFileName(directory), "N", out _))
             : null;
-    }
-
-    internal static string HashFile(string path)
-    {
-        using var stream = File.OpenRead(path);
-        return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
     }
 
     internal static int CountExportFiles(MigrationEngineHarness harness, Guid jobId)
@@ -139,63 +132,6 @@ internal static class MigrationArchiveJobTestSupport
                 BooksRoot = Path.Combine(root, "books"),
             }),
             Microsoft.Extensions.Logging.Abstractions.NullLogger<FileStorageService>.Instance);
-
-    internal static List<TestArchiveEntry> ReadEntries(byte[] archiveBytes)
-    {
-        using var source = new MemoryStream(archiveBytes, writable: false);
-        using var archive = new ZipArchive(source, ZipArchiveMode.Read, leaveOpen: false);
-        var entries = new List<TestArchiveEntry>();
-        foreach (var entry in archive.Entries)
-        {
-            using var input = entry.Open();
-            using var output = new MemoryStream();
-            input.CopyTo(output);
-            entries.Add(new TestArchiveEntry(entry.FullName, output.ToArray()));
-        }
-
-        return entries;
-    }
-
-    internal static byte[] BuildArchive(IEnumerable<TestArchiveEntry> entries)
-    {
-        using var output = new MemoryStream();
-        using (var archive = new ZipArchive(output, ZipArchiveMode.Create, leaveOpen: true))
-        {
-            foreach (var item in entries)
-            {
-                var entry = archive.CreateEntry(item.Name, CompressionLevel.NoCompression);
-                using var target = entry.Open();
-                target.Write(item.Bytes);
-            }
-        }
-
-        return output.ToArray();
-    }
-
-    private static void MutateJson(
-        List<TestArchiveEntry> entries,
-        string name,
-        Action<JsonObject> mutate)
-    {
-        var index = entries.FindIndex(x => string.Equals(x.Name, name, StringComparison.Ordinal));
-        var root = JsonNode.Parse(entries[index].Bytes)?.AsObject()
-            ?? throw new InvalidDataException($"Archive entry '{name}' is not a JSON object.");
-        mutate(root);
-        entries[index] = new TestArchiveEntry(name, Encoding.UTF8.GetBytes(root.ToJsonString()));
-    }
-
-    private static void RehashDataDescriptor(List<TestArchiveEntry> entries)
-    {
-        var data = entries.Single(x => string.Equals(x.Name, DataPath, StringComparison.Ordinal)).Bytes;
-        var manifestIndex = entries.FindIndex(x => string.Equals(x.Name, ManifestPath, StringComparison.Ordinal));
-        var manifest = JsonNode.Parse(entries[manifestIndex].Bytes)!.AsObject();
-        var descriptor = manifest["data"]!.AsObject();
-        descriptor["length"] = data.LongLength;
-        descriptor["sha256"] = Convert.ToHexString(SHA256.HashData(data)).ToLowerInvariant();
-        entries[manifestIndex] = new TestArchiveEntry(ManifestPath, Encoding.UTF8.GetBytes(manifest.ToJsonString()));
-    }
-
-    internal sealed record TestArchiveEntry(string Name, byte[] Bytes);
 
     /// <summary>Representative seeded library used by export tests.</summary>
     internal static Task<PortableFixtureIds> SeedRepresentativeAsync(

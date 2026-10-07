@@ -719,7 +719,7 @@ internal sealed class ActivationBuildFixture : IAsyncDisposable
     }
 
     internal SelfHostedActivationDatabaseBuilder CreateBuilder() =>
-        new(Paths, Staging, Maintenance, new FixedBuildTimeProvider(FixedBuildTime));
+        new(Paths, Staging, Maintenance, new ManualTimeProvider(FixedBuildTime));
 
     internal Task<IAsyncDisposable> EnterExclusiveAsync() =>
         Maintenance.EnterExclusiveAsync(LibraryMaintenanceReason.Activation);
@@ -1163,9 +1163,4 @@ internal sealed class ActivationBuildFixture : IAsyncDisposable
             // Test cleanup only.
         }
     }
-}
-
-internal sealed class FixedBuildTimeProvider(DateTime utcNow) : TimeProvider
-{
-    public override DateTimeOffset GetUtcNow() => new(utcNow, TimeSpan.Zero);
 }

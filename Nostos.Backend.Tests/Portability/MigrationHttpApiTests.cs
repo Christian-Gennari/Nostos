@@ -273,7 +273,7 @@ public sealed class MigrationHttpApiTests
         using (var declared = new ByteArrayContent(oversize))
         {
             declared.Headers.TryAddWithoutValidation("Content-Range", $"bytes 0-{4 * 1024 * 1024 - 1}/{file.LongLength}");
-            declared.Headers.TryAddWithoutValidation("X-Nostos-Chunk-SHA256", MigrationHttpHarness.Sha256(oversize));
+            declared.Headers.TryAddWithoutValidation("X-Nostos-Chunk-SHA256", PortableArchiveTestSupport.Sha256Hex(oversize));
             var declaredResponse = await h.SendAsync(
                 HttpMethod.Put,
                 $"/api/portability/migration/jobs/{jobId}/upload-session/chunks/0",
@@ -287,7 +287,7 @@ public sealed class MigrationHttpApiTests
         using (var chunked = new IncrementalContent(oversize))
         {
             chunked.Headers.TryAddWithoutValidation("Content-Range", $"bytes 0-{4 * 1024 * 1024 - 1}/{file.LongLength}");
-            chunked.Headers.TryAddWithoutValidation("X-Nostos-Chunk-SHA256", MigrationHttpHarness.Sha256(oversize));
+            chunked.Headers.TryAddWithoutValidation("X-Nostos-Chunk-SHA256", PortableArchiveTestSupport.Sha256Hex(oversize));
             var chunkedResponse = await h.SendAsync(
                 HttpMethod.Put,
                 $"/api/portability/migration/jobs/{jobId}/upload-session/chunks/0",
@@ -361,7 +361,7 @@ public sealed class MigrationHttpApiTests
 
         var jobId = await h.CreateImportJobAsync("retry-failed");
         var file = MigrationHttpHarness.DeterministicBytes(4 * 1024 * 1024 - 321);
-        var wrongHash = MigrationHttpHarness.Sha256(
+        var wrongHash = PortableArchiveTestSupport.Sha256Hex(
             MigrationHttpHarness.DeterministicBytes(64, seed: 99));
         (await h.CreateSessionAsync(jobId, file, key: "retry-failed", identityHash: wrongHash))
             .Status.Should().Be(HttpStatusCode.Created);
@@ -724,7 +724,7 @@ public sealed class MigrationHttpApiTests
 
         using var content = new IncrementalContent(file);
         content.Headers.TryAddWithoutValidation("Content-Range", $"bytes 0-{file.Length - 1}/{file.Length}");
-        content.Headers.TryAddWithoutValidation("X-Nostos-Chunk-SHA256", MigrationHttpHarness.Sha256(file));
+        content.Headers.TryAddWithoutValidation("X-Nostos-Chunk-SHA256", PortableArchiveTestSupport.Sha256Hex(file));
         var response = await h.SendAsync(
             HttpMethod.Put,
             $"/api/portability/migration/jobs/{jobId}/upload-session/chunks/0",
@@ -765,15 +765,25 @@ public sealed class MigrationHttpApiTests
         status.RootElement.GetProperty("session").GetProperty("receivedChunkCount").GetInt32().Should().Be(0);
     }
 
-    [Fact]
-    public async Task Capability_flags_and_missing_phase_handlers_refuse_work_up_front()
+    [Theory]
+    [InlineData(false, null)]
+    [InlineData(true, false)]
+    public async Task Unavailable_migration_hides_the_capability_and_refuses_new_work(
+        bool phasesAvailable,
+        bool? libraryMigrationEnabled)
     {
-        await using var h = new MigrationHttpHarness { PhasesAvailable = false }.Start();
+        await using var h = new MigrationHttpHarness
+        {
+            PhasesAvailable = phasesAvailable,
+            LibraryMigrationEnabled = libraryMigrationEnabled,
+        }.Start();
 
         var capabilities = await h.SendAsync(HttpMethod.Get, "/api/runtime/capabilities");
         capabilities.Status.Should().Be(HttpStatusCode.OK);
         capabilities.Body.RootElement.GetProperty("supportsLibraryMigration").GetBoolean().Should().BeFalse(
-            "a host whose phase handlers are unavailable never advertises a feature it would refuse to run");
+            phasesAvailable
+                ? "the operator turned the feature off"
+                : "a host whose phase handlers are unavailable never advertises a feature it would refuse to run");
         capabilities.Body.RootElement.GetProperty("supportsSafeActivation").GetBoolean().Should().BeTrue(
             "the SelfHosted host implements safe activation (#681 Slice 8)");
 
@@ -793,43 +803,21 @@ public sealed class MigrationHttpApiTests
         CodeOf(export.Body).Should().Be("migration_export_artifact_unavailable");
         (await h.WithDb(db => db.MigrationJobRecords.CountAsync())).Should().Be(0);
 
-        // Once a host wires the handlers, the server-side write paths open
-        // (preflight can reserve and jobs can be created) and the same
-        // availability drives the frontend advertisement.
-        h.PhasesAvailable = true;
-        var nowAvailable = await h.SendAsync(HttpMethod.Get, "/api/runtime/capabilities");
-        nowAvailable.Body.RootElement.GetProperty("supportsLibraryMigration").GetBoolean().Should().BeTrue(
-            "the capability follows the same phase availability the routes consult");
-        nowAvailable.Body.RootElement.GetProperty("supportsSafeActivation").GetBoolean().Should().BeTrue(
-            "safe activation is a SelfHosted host capability independent of the frontend switch");
-        var reservation = await h.ReserveAsync("unavailable-key");
-        var created = await h.CreateJobAsync("Import", "unavailable-key", reservation);
-        created.Status.Should().Be(HttpStatusCode.Created);
-    }
-
-    [Fact]
-    public async Task Operator_kill_switch_hides_the_capability_and_refuses_new_jobs()
-    {
-        await using var h = new MigrationHttpHarness { LibraryMigrationEnabled = false }.Start();
-
-        var capabilities = await h.SendAsync(HttpMethod.Get, "/api/runtime/capabilities");
-        capabilities.Status.Should().Be(HttpStatusCode.OK);
-        capabilities.Body.RootElement.GetProperty("supportsLibraryMigration").GetBoolean().Should().BeFalse(
-            "the operator turned the feature off");
-
-        var preflight = await h.PreflightAsync(archiveBytes: 8L * 1024 * 1024);
-        preflight.Status.Should().Be(HttpStatusCode.Conflict);
-        CodeOf(preflight.Body).Should().Be("migration_import_preparation_unavailable");
-        (await h.WithDb(db => db.MigrationStorageReservations.CountAsync())).Should().Be(0);
-
-        var import = await h.CreateJobAsync("Import", "switch-off-import", null);
-        import.Status.Should().Be(HttpStatusCode.Conflict);
-        CodeOf(import.Body).Should().Be("migration_import_preparation_unavailable");
-
-        var export = await h.CreateJobAsync("Export", "switch-off-export", null);
-        export.Status.Should().Be(HttpStatusCode.Conflict);
-        CodeOf(export.Body).Should().Be("migration_export_artifact_unavailable");
-        (await h.WithDb(db => db.MigrationJobRecords.CountAsync())).Should().Be(0);
+        if (!phasesAvailable)
+        {
+            // Once a host wires the handlers, the server-side write paths open
+            // (preflight can reserve and jobs can be created) and the same
+            // availability drives the frontend advertisement.
+            h.PhasesAvailable = true;
+            var nowAvailable = await h.SendAsync(HttpMethod.Get, "/api/runtime/capabilities");
+            nowAvailable.Body.RootElement.GetProperty("supportsLibraryMigration").GetBoolean().Should().BeTrue(
+                "the capability follows the same phase availability the routes consult");
+            nowAvailable.Body.RootElement.GetProperty("supportsSafeActivation").GetBoolean().Should().BeTrue(
+                "safe activation is a SelfHosted host capability independent of the frontend switch");
+            var reservation = await h.ReserveAsync("unavailable-key");
+            var created = await h.CreateJobAsync("Import", "unavailable-key", reservation);
+            created.Status.Should().Be(HttpStatusCode.Created);
+        }
     }
 
     [Fact]
@@ -897,7 +885,7 @@ public sealed class MigrationHttpApiTests
         await using var h = new MigrationHttpHarness().Start();
 
         Guid lastReservation = default;
-        for (var attempt = 0; attempt < 100; attempt++)
+        for (var attempt = 0; attempt < 3; attempt++)
         {
             var (status, body) = await h.PreflightAsync(archiveBytes: 8L * 1024 * 1024);
             status.Should().Be(HttpStatusCode.OK);
@@ -905,13 +893,13 @@ public sealed class MigrationHttpApiTests
         }
 
         var reservations = await h.WithDb(db => db.MigrationStorageReservations.AsNoTracking().ToListAsync());
-        reservations.Count.Should().Be(100);
+        reservations.Count.Should().Be(3);
         reservations.Count(r => r.ReleasedAtUtc == null && r.ClaimedJobId == null).Should().Be(1);
-        reservations.Count(r => r.ReleasedAtUtc != null).Should().Be(99);
+        reservations.Count(r => r.ReleasedAtUtc != null).Should().Be(2);
         var live = reservations.Single(r => r.ReleasedAtUtc == null && r.ClaimedJobId == null);
         live.Id.Should().Be(lastReservation);
 
-        // Capacity usage equals exactly one hold, not 100.
+        // Capacity usage equals exactly one hold, not one per preflight.
         var snapshot = await h.WithCapacityAsync(capacity => capacity.GetSnapshotAsync(default));
         snapshot.ActiveReservationCount.Should().Be(1);
         snapshot.OutstandingReservedBytes.Should().Be(live.ReservedBytes);

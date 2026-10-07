@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Nostos.Backend.Data;
 using Nostos.Backend.Data.Models;
+using Nostos.Backend.Tests.Portability;
 using Nostos.Backend.Services.Portability;
 using Nostos.Backend.Services.Portability.Migration;
 using Nostos.Backend.Services.Portability.Transfers;
@@ -930,15 +931,6 @@ public sealed class PostgreSqlCompatibilitySpikeTests
         }
     }
 
-    private sealed class ManualTimeProvider(DateTimeOffset utcNow) : TimeProvider
-    {
-        private DateTimeOffset _utcNow = utcNow;
-
-        public override DateTimeOffset GetUtcNow() => _utcNow;
-
-        public void Advance(TimeSpan delta) => _utcNow = _utcNow.Add(delta);
-    }
-
     // Slice 3 review fix 2: PostgreSQL serializable isolation prevents the
     // over-reservation by aborting one admission with SQLSTATE 40001. The
     // capacity service must retry that abort and surface a normal rejection,
@@ -974,7 +966,11 @@ public sealed class PostgreSqlCompatibilitySpikeTests
                 await setup.Database.ExecuteSqlRawAsync(setup.Database.GenerateCreateScript());
             }
 
-            var volume = new FixedTransferVolume(freeBytes: 100_000_000);
+            var volume = new FakeTransferVolume
+            {
+                AvailableFreeSpaceBytes = 100_000_000,
+                TotalSizeBytes = 100_000_000,
+            };
             var storageOptions = new TransferStorageOptions
             {
                 DiskSafetyMarginBytes = 0,
@@ -1390,12 +1386,5 @@ public sealed class PostgreSqlCompatibilitySpikeTests
         command.CommandText = sql;
         var value = await command.ExecuteScalarAsync();
         return Convert.ToInt64(value);
-    }
-
-    private sealed class FixedTransferVolume(long freeBytes) : ITransferVolume
-    {
-        public long AvailableFreeSpaceBytes => freeBytes;
-
-        public long TotalSizeBytes => freeBytes;
     }
 }

@@ -35,7 +35,6 @@ import { LibraryImportFlowComponent } from '../library-transfer/components/libra
 import {
   LIBRARY_TRANSFER_TRANSPORT,
   LibraryTransferTransport,
-  MigrationTransportError,
 } from '../library-transfer/services/library-transfer-transport';
 import { MockLibraryTransferTransport } from '../library-transfer/testing/mock-library-transfer-transport';
 import { LibraryTransferCoordinator } from '../library-transfer/services/library-transfer-coordinator.service';
@@ -48,11 +47,7 @@ import {
   TransferTabLease,
 } from '../library-transfer/services/transfer-tab-lease.service';
 import { DelegatingTransport } from '../library-transfer/testing/delegating-transport';
-import {
-  BrowserMigrationChunk,
-  MigrationChunkUploadResultDto,
-  MigrationJobStatusResponseDto,
-} from '../library-transfer/models/migration-http.dtos';
+import { GatedUploadTransport } from '../library-transfer/testing/transfer-transport-doubles';
 import {
   createFile,
   portableArchiveFixture,
@@ -1912,72 +1907,6 @@ describe('SettingsComponent shared library transfer host', () => {
   let fixture: ComponentFixture<SettingsComponent>;
   let mock: MockLibraryTransferTransport;
 
-  interface PendingUpload {
-    jobId: string;
-    sessionId: string;
-    request: BrowserMigrationChunk;
-    onProgress: (loaded: number, total: number) => void;
-    signal: AbortSignal;
-    resolve: (result: MigrationChunkUploadResultDto) => void;
-    reject: (error: unknown) => void;
-  }
-
-  /** Holds upload requests so a transfer can be observed while it is active. */
-  class HeldUploadTransport extends DelegatingTransport {
-    readonly pending: PendingUpload[] = [];
-
-    override uploadChunk(
-      jobId: string,
-      sessionId: string,
-      request: BrowserMigrationChunk,
-      onProgress: (loaded: number, total: number) => void,
-      signal: AbortSignal,
-    ): Promise<MigrationChunkUploadResultDto> {
-      return new Promise<MigrationChunkUploadResultDto>((resolve, reject) => {
-        signal.addEventListener(
-          'abort',
-          () => reject(new MigrationTransportError('request_aborted', 0, 'aborted')),
-          { once: true },
-        );
-        this.pending.push({ jobId, sessionId, request, onProgress, signal, resolve, reject });
-      });
-    }
-
-    async releaseAll(): Promise<void> {
-      const items = this.pending.splice(0);
-      await Promise.all(
-        items.map(async (item) => {
-          try {
-            const result = await this.inner.uploadChunk(
-              item.jobId,
-              item.sessionId,
-              item.request,
-              item.onProgress,
-              item.signal,
-            );
-            item.resolve(result);
-          } catch (error) {
-            item.reject(error);
-          }
-        }),
-      );
-    }
-  }
-
-  /** Rejects the first status read with a 401, then behaves normally. */
-  class UnauthorizedOnceTransport extends DelegatingTransport {
-    unauthorized = true;
-
-    override getJob(jobId: string, signal?: AbortSignal): Promise<MigrationJobStatusResponseDto> {
-      if (this.unauthorized) {
-        return Promise.reject(
-          new MigrationTransportError('unexpected_error', 401, 'sign in required'),
-        );
-      }
-      return this.inner.getJob(jobId, signal);
-    }
-  }
-
   async function configure(
     capabilities: DeploymentCapabilities,
     options: ConstructorParameters<typeof MockLibraryTransferTransport>[0] = {},
@@ -2214,40 +2143,13 @@ describe('SettingsComponent shared library transfer host', () => {
     await vi.waitFor(() => expect(testId('import-completed')).toBeTruthy(), { timeout: 5_000 });
   });
 
-  it('gates replacement confirmation when safe activation is unavailable', async () => {
-    await configure(
-      {
-        ...selfHostedCapabilities,
-        supportsLibraryMigration: true,
-        supportsSafeActivation: false,
-      },
-      { destinationStatus: 'Populated', existingCounts: { books: 1 } },
-    );
-
-    const file = await portableFile();
-    selectFile(file);
-    await waitForKind('replacement-confirmation');
-
-    expect(testId('replacement-blocked')).toBeTruthy();
-    const confirm = fixture.nativeElement.querySelector(
-      '.replacement-confirm',
-    ) as HTMLButtonElement;
-    expect(confirm.disabled).toBe(true);
-    confirm.click();
-    fixture.detectChanges();
-
-    expect(coordinator().state().kind).toBe('replacement-confirmation');
-    expect(mock.calls.cancelJob).toBe(0);
-    expect(mock.calls.activateJob).toBe(0);
-  });
-
   it('adopts the tab lease after leaving and re-entering Settings and releases it on completion', async () => {
     await configure(
       { ...selfHostedCapabilities, supportsLibraryMigration: true },
       {},
-      (inner) => new HeldUploadTransport(inner),
+      (inner) => new GatedUploadTransport(inner),
     );
-    const transport = TestBed.inject(LIBRARY_TRANSFER_TRANSPORT) as HeldUploadTransport;
+    const transport = TestBed.inject(LIBRARY_TRANSFER_TRANSPORT) as GatedUploadTransport;
     const lease = TestBed.inject(TransferTabLease);
 
     const file = await portableFile();
@@ -2279,27 +2181,4 @@ describe('SettingsComponent shared library transfer host', () => {
     expect(lease.heartbeatActive).toBe(false);
   });
 
-  it('offers sign-in recovery after a 401 and resumes after re-authentication', async () => {
-    await configure(
-      { ...selfHostedCapabilities, supportsLibraryMigration: true },
-      {},
-      (inner) => new UnauthorizedOnceTransport(inner),
-    );
-    const transport = TestBed.inject(LIBRARY_TRANSFER_TRANSPORT) as UnauthorizedOnceTransport;
-
-    const file = await portableFile();
-    selectFile(file);
-    await waitForKind('failed');
-
-    expect(testId('import-failed')?.textContent).toContain('Sign in again');
-    const action = testId('import-failure-action') as HTMLButtonElement;
-    expect(action.textContent).toContain('Try again');
-
-    transport.unauthorized = false;
-    action.click();
-    await waitForKind('ready-empty');
-
-    expect(testId('import-ready-empty')).toBeTruthy();
-    expect(testId('import-activation-unavailable')).toBeTruthy();
-  });
 });

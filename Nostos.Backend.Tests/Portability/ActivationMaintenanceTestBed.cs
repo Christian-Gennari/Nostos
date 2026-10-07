@@ -26,7 +26,7 @@ internal sealed class ActivationMaintenanceTestBed : IDisposable
     private static readonly Guid FirstBook = Guid.Parse("11111111-1111-1111-1111-111111111111");
 
     internal string Root { get; } = Path.Combine(Path.GetTempPath(), $"nostos-681-maintenance-{Guid.NewGuid():N}");
-    internal RecoveryClock Clock { get; } = new(new DateTimeOffset(2026, 10, 4, 12, 0, 0, TimeSpan.Zero));
+    internal ManualTimeProvider Clock { get; } = new(new DateTimeOffset(2026, 10, 4, 12, 0, 0, TimeSpan.Zero));
     internal SelfHostedActivationPaths Paths { get; }
     internal LibraryMaintenanceCoordinator Gate { get; } =
         new(new LibraryMaintenanceOptions { DrainTimeout = TimeSpan.FromSeconds(5) });

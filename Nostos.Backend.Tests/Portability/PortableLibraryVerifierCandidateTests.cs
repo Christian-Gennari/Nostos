@@ -769,7 +769,7 @@ public sealed class PortableLibraryVerifierCandidateTests(CandidateVerificationF
             {
                 var payload = await SelfHostedActivationTestSupport.ReadAllAsync(opened.Content);
                 payload.LongLength.Should().Be(descriptor.Length);
-                SelfHostedActivationTestSupport.Sha256Hex(payload).Should().Be(descriptor.Sha256);
+                PortableArchiveTestSupport.Sha256Hex(payload).Should().Be(descriptor.Sha256);
             }
         }
 

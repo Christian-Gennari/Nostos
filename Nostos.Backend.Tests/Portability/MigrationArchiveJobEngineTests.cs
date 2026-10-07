@@ -395,7 +395,7 @@ public sealed class MigrationArchiveJobEngineTests
             "book.epub",
             "application/epub+zip",
             bytes.Length,
-            MigrationEngineHarness.Hash(bytes));
+            PortableArchiveTestSupport.Sha256Hex(bytes));
         var write = await provider.OpenMediaWriteAsync(stagingId, descriptor);
 
         await provider.DeleteAsync(stagingId);
@@ -576,7 +576,7 @@ public sealed class MigrationArchiveJobEngineTests
         var artifactPath = h.Paths.ResolveStorageKey(artifact.StorageKey);
         File.Exists(artifactPath).Should().BeTrue();
         new FileInfo(artifactPath).Length.Should().Be(artifact.SizeBytes);
-        MigrationArchiveJobTestSupport.HashFile(artifactPath).Should().Be(artifact.Sha256);
+        PortableArchiveTestSupport.Sha256HexFile(artifactPath).Should().Be(artifact.Sha256);
         MigrationArchiveJobTestSupport.CountExportFiles(h, jobId).Should().Be(1);
 
         await using (var stream = File.OpenRead(artifactPath))
@@ -685,7 +685,7 @@ public sealed class MigrationArchiveJobEngineTests
         var after = await h.WithDb(db => db.MigrationExportArtifactRecords.SingleAsync(a => a.JobId == jobId));
         after.State.Should().Be((int)MigrationExportArtifactState.Available);
         after.StorageKey.Should().NotBe(before.StorageKey);
-        MigrationArchiveJobTestSupport.HashFile(h.Paths.ResolveStorageKey(after.StorageKey))
+        PortableArchiveTestSupport.Sha256HexFile(h.Paths.ResolveStorageKey(after.StorageKey))
             .Should().Be(after.Sha256);
     }
 
@@ -798,14 +798,14 @@ public sealed class MigrationArchiveJobEngineTests
         var published = await h.WithDb(db => db.MigrationExportArtifactRecords.SingleAsync(a => a.JobId == jobId));
         published.State.Should().Be((int)MigrationExportArtifactState.Available);
         var publishedPath = h.Paths.ResolveStorageKey(published.StorageKey);
-        var publishedHash = MigrationArchiveJobTestSupport.HashFile(publishedPath);
+        var publishedHash = PortableArchiveTestSupport.Sha256HexFile(publishedPath);
 
         release.TrySetResult();
         await staleRun.WaitAsync(TimeSpan.FromSeconds(20));
 
         // The stale owner never renamed: the successor's artifact is untouched.
         File.Exists(publishedPath).Should().BeTrue();
-        MigrationArchiveJobTestSupport.HashFile(publishedPath).Should().Be(publishedHash);
+        PortableArchiveTestSupport.Sha256HexFile(publishedPath).Should().Be(publishedHash);
         (await h.WithDb(db => db.MigrationExportArtifactRecords.SingleAsync(a => a.JobId == jobId)))
             .StorageKey.Should().Be(published.StorageKey);
         (await h.WithJobs(s => s.GetAsync(jobId, default)))!.State.Should().Be(MigrationJobState.Completed);

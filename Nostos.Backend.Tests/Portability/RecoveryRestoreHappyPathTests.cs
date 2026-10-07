@@ -104,7 +104,7 @@ public sealed class RecoveryRestoreHappyPathTests
 
         var replacedDatabase = bed.Paths.PreviousDatabase(replacedId);
         new FileInfo(replacedDatabase).Length.Should().Be(replaced.DatabaseBytes);
-        RecoveryRestoreHappyPathTests.Sha256Hex(File.ReadAllBytes(replacedDatabase))
+        PortableArchiveTestSupport.Sha256Hex(File.ReadAllBytes(replacedDatabase))
             .Should().Be(replaced.DatabaseSha256);
         ActivationBuildFixture.MediaSnapshot(bed.Paths.PreviousMedia(replacedId))
             .Should().BeEquivalentTo(bed.ExpectedImportedMedia,
@@ -225,7 +225,4 @@ public sealed class RecoveryRestoreHappyPathTests
             .Should().BeEquivalentTo(bed.OriginalMedia,
                 "the just-replaced original library is retained byte-for-byte");
     }
-
-    internal static string Sha256Hex(byte[] bytes) =>
-        Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)).ToLowerInvariant();
 }

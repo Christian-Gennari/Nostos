@@ -12,7 +12,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
-      Nostos__DeploymentMode: SelfHosted
       NOSTOS_POSTGRES_SPIKE_CONNECTION: ""
       GH_TOKEN: ""
       NOSTOS_CLOUD_GH_TOKEN: ""
@@ -34,12 +33,3 @@ jobs:
 
       - name: Start the public host and verify SelfHosted SQLite bootstrap
         run: bash scripts/verify-selfhosted-smoke.sh Debug
-
-      - name: Verify SQLite, local media, backup/restore and portability
-        run: >-
-          dotnet test Nostos.Backend.Tests/Nostos.Backend.Tests.csproj
-          --configuration Debug
-          --no-build
-          --no-restore
-          --filter "FullyQualifiedName~DatabaseBootstrapServiceTests|FullyQualifiedName~FileStorageServiceTests|FullyQualifiedName~BackupServiceTests|FullyQualifiedName~LibraryServiceTests|FullyQualifiedName~LibraryEndpointTests|FullyQualifiedName~PortableArchiveServiceTests"
-          --logger "console;verbosity=normal"

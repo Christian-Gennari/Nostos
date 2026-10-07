@@ -324,21 +324,18 @@ public sealed class ActivationCoordinatorRestartResumeTests
         Guid jobId,
         MigrationActivationOutcome outcome)
     {
-        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(60);
-        MigrationActivationStatusResponse? last = null;
-        while (DateTime.UtcNow < deadline)
-        {
-            last = await dispatcher.GetStatusAsync(jobId, default);
-            if (last.Outcome == outcome)
-            {
-                return last;
-            }
+        var result = await PortabilityTestPolling.PollUntilAsync(
+            () => dispatcher.GetStatusAsync(jobId, default),
+            status => status.Outcome == outcome,
+            status => status.Outcome.ToString(),
+            TimeSpan.FromSeconds(60),
+            TimeSpan.FromMilliseconds(25));
 
-            await Task.Delay(25);
-        }
+        if (result.Matched)
+            return result.Value!;
 
         throw new Xunit.Sdk.XunitException(
-            $"Job {jobId} did not reach activation outcome {outcome}; last was {last?.Outcome}.");
+            $"Job {jobId} did not reach activation outcome {outcome}; last was {result.LastObservation}.");
     }
 
     private static Dictionary<string, List<string>> DumpAllTablesExceptActivationJob(

@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -11,6 +10,8 @@ using Nostos.Backend.Services.Portability;
 using Nostos.Backend.Services.Portability.Migration;
 using Nostos.Backend.Services.Portability.Transfers;
 
+using static Nostos.Backend.Tests.Portability.PortableArchiveTestSupport;
+
 namespace Nostos.Backend.Tests.Portability;
 
 internal sealed class MigrationEngineHarness : IAsyncDisposable
@@ -18,7 +19,11 @@ internal sealed class MigrationEngineHarness : IAsyncDisposable
     internal string DirectoryPath { get; } = Path.Combine(Path.GetTempPath(), "nostos-engine-" + Guid.NewGuid().ToString("N"));
     internal EngineClock Clock { get; } = new();
     internal TransferStorageOptions Settings { get; } = new() { DiskSafetyMarginBytes = 0, DiskSafetyMarginPercent = 0 };
-    internal TestVolume Volume { get; } = new();
+    internal FakeTransferVolume Volume { get; } = new()
+    {
+        AvailableFreeSpaceBytes = 20L * 1024 * 1024 * 1024,
+        TotalSizeBytes = 20L * 1024 * 1024 * 1024,
+    };
     internal ServiceProvider Provider { get; private set; } = null!;
     internal TransferPathResolver Paths => Provider.GetRequiredService<TransferPathResolver>();
     internal LibraryMaintenanceCoordinator Maintenance => Provider.GetRequiredService<LibraryMaintenanceCoordinator>();
@@ -93,14 +98,13 @@ internal sealed class MigrationEngineHarness : IAsyncDisposable
         (await WithUploads(s => s.CreateSessionAsync(id, Request(bytes, hash), default))).Resource!;
     internal static MigrationSessionRequest Request(byte[] bytes, string? hash = null) => new(MigrationSessionPurpose.Import,
         bytes.LongLength, MigrationContractLimits.MinChunkBytes, (bytes.Length - 1) / MigrationContractLimits.MinChunkBytes + 1,
-        new(bytes.Length, hash ?? Hash(bytes), "file"), "session-key");
-    internal static string Hash(byte[] bytes) => Convert.ToHexStringLower(SHA256.HashData(bytes));
+        new(bytes.Length, hash ?? Sha256Hex(bytes), "file"), "session-key");
     internal static byte[] Bytes(int count = 31) => Enumerable.Range(0, count).Select(i => (byte)(i * 7)).ToArray();
     internal Task<MigrationChunkUploadResult> Upload(Guid job, MigrationSessionStatus session, byte[] all, int index = 0)
     {
         var start = (long)index * session.ChunkSize;
         var bytes = all.AsSpan((int)start, (int)Math.Min(session.ChunkSize, all.Length - start)).ToArray();
-        return UploadRaw(job, session, index, bytes, new(start, start + bytes.Length - 1, all.Length, Hash(bytes)));
+        return UploadRaw(job, session, index, bytes, new(start, start + bytes.Length - 1, all.Length, Sha256Hex(bytes)));
     }
     internal Task<MigrationChunkUploadResult> UploadRaw(Guid job, MigrationSessionStatus session, int index,
         byte[] body, MigrationChunkMetadata metadata) => WithUploads(async s =>
@@ -114,8 +118,6 @@ internal sealed class MigrationEngineHarness : IAsyncDisposable
     { await using var scope = Provider.CreateAsyncScope(); await action(scope.ServiceProvider.GetRequiredService<MigrationTransferCleanup>()); }
     public async ValueTask DisposeAsync()
     { if (Provider is not null) await Provider.DisposeAsync(); if (Directory.Exists(DirectoryPath)) Directory.Delete(DirectoryPath, true); }
-    internal sealed class TestVolume : ITransferVolume
-    { public long AvailableFreeSpaceBytes { get; set; } = 20L * 1024 * 1024 * 1024; public long TotalSizeBytes => 20L * 1024 * 1024 * 1024; }
 }
 
 // Empty provider-neutral asset storage for engine tests that never read media.

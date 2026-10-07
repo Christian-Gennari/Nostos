@@ -244,7 +244,11 @@ public sealed class MigrationHttpAuthTests
             }));
             builder.Services.AddSingleton(new TransferPathResolver(
                 TransferPathResolver.EnsureRootDirectory(Path.Combine(root, "transfers"))));
-            builder.Services.AddSingleton<ITransferVolume>(new MigrationEngineHarness.TestVolume());
+            builder.Services.AddSingleton<ITransferVolume>(new FakeTransferVolume
+            {
+                AvailableFreeSpaceBytes = 20L * 1024 * 1024 * 1024,
+                TotalSizeBytes = 20L * 1024 * 1024 * 1024,
+            });
             builder.Services.AddScoped<ITransferStorageCapacity, TransferStorageCapacity>();
             builder.Services.AddScoped<IMigrationJobStore, EfMigrationJobStore>();
             builder.Services.AddSingleton<MigrationFileMutex>();
