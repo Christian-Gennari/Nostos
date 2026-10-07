@@ -203,6 +203,20 @@
   color: var(--color-text-light);
 }
 
+/* Book providers (issue #774): the capability capsules sit between the
+   description and the optional rights line inside one setting-label column. */
+.provider-capabilities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.provider-rights {
+  margin-top: 6px;
+  font-style: italic;
+}
+
 /* Compact settings dropdowns should remain controls, not become full-row fields.
    The canonical Dropdown sizes to its content by default; settings caps that
    intrinsic width so long labels still respect the available row width. */

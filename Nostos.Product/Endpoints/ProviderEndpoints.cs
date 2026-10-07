@@ -27,11 +27,14 @@ public static class ProviderEndpoints
         if (!string.IsNullOrWhiteSpace(policies.ProviderFetchRateLimitPolicy))
             group.RequireRateLimiting(policies.ProviderFetchRateLimitPolicy);
 
-        // Sources available to import from.
+        // Sources available to import from. Enabled-only (issue #774): the
+        // management view that includes disabled sources is
+        // /api/settings/providers, so Add Book needs no filtering and no DTO
+        // change.
         group.MapGet(
             "/",
-            (IProviderRegistry registry) =>
-                Results.Ok(registry.All.Select(ToSummaryDto).ToList()));
+            async (IProviderEnablementService enablement, CancellationToken ct) =>
+                Results.Ok((await enablement.GetEnabledAsync(ct)).Select(ToSummaryDto).ToList()));
 
         // Search every source that can both search and acquire the requested
         // kind. Providers remain provenance; capability registration determines
@@ -44,6 +47,7 @@ public static class ProviderEndpoints
                 string? kind,
                 IProviderDiscovery discovery,
                 IProviderRegistry registry,
+                IProviderEnablementService enablement,
                 CancellationToken ct) =>
             {
                 if (string.IsNullOrWhiteSpace(query) || query.Trim().Length < 2)
@@ -65,18 +69,23 @@ public static class ProviderEndpoints
                     }
                 }
 
+                var enabledIds = await enablement.GetEnabledProviderIdsAsync(ct);
+
                 var result = await discovery.SearchAsync(
                     new ProviderDiscoveryRequest(
                         query.Trim(),
                         mediaKind,
-                        Math.Clamp(limit ?? 20, 1, 50)),
+                        Math.Clamp(limit ?? 20, 1, 50),
+                        enabledIds),
                     ct);
 
                 // The discovery backend may be host-supplied and know more
                 // providers than this process runs (self-hosted providers are
                 // never mirrored to a shared catalog); only registered providers
-                // may cross the wire. #774 passes the enabled set here.
-                result = ProviderDiscoveryBoundary.Apply(result, registry, allowedProviderIds: null);
+                // the user has enabled may cross the wire. The enabled set is
+                // passed to the boundary too, so a host backend that ignores
+                // ProviderIds still cannot surface a disabled source.
+                result = ProviderDiscoveryBoundary.Apply(result, registry, allowedProviderIds: enabledIds);
 
                 return Results.Ok(new ProviderDiscoverySearchResultDto(
                     result.Items.Select(ToItemDto).ToList(),
@@ -92,7 +101,8 @@ public static class ProviderEndpoints
             });
 
         // Search one source. A thin result set is not an error: the provider
-        // explains itself in Notice instead.
+        // explains itself in Notice instead. A disabled provider is answered
+        // exactly like an unknown one, so the per-source surface leaks nothing.
         group.MapGet(
             "/{providerId}/search",
             async (
@@ -101,10 +111,10 @@ public static class ProviderEndpoints
                 int? limit,
                 int? offset,
                 ProviderMediaKind? kind,
-                IProviderRegistry registry,
+                IProviderEnablementService enablement,
                 CancellationToken ct) =>
             {
-                var provider = registry.Find(providerId);
+                var provider = await enablement.FindEnabledAsync(providerId, ct);
                 if (provider is null)
                     return UnknownProvider(providerId);
 
@@ -147,10 +157,10 @@ public static class ProviderEndpoints
             async (
                 string providerId,
                 string externalId,
-                IProviderRegistry registry,
+                IProviderEnablementService enablement,
                 CancellationToken ct) =>
             {
-                var provider = registry.Find(providerId);
+                var provider = await enablement.FindEnabledAsync(providerId, ct);
                 if (provider is null)
                     return UnknownProvider(providerId);
 
@@ -181,11 +191,11 @@ public static class ProviderEndpoints
             async (
                 string providerId,
                 string externalId,
-                IProviderRegistry registry,
+                IProviderEnablementService enablement,
                 IProviderContentDownloader downloader,
                 CancellationToken ct) =>
             {
-                var provider = registry.Find(providerId);
+                var provider = await enablement.FindEnabledAsync(providerId, ct);
                 if (provider is null)
                     return UnknownProvider(providerId);
 
@@ -224,13 +234,14 @@ public static class ProviderEndpoints
         // reported through the job status below.
         group.MapPost(
             "/{providerId}/acquire",
-            (
+            async (
                 string providerId,
                 ProviderAcquireRequestDto dto,
-                IProviderRegistry registry,
-                IAcquisitionJobManager jobs) =>
+                IProviderEnablementService enablement,
+                IAcquisitionJobManager jobs,
+                CancellationToken ct) =>
             {
-                var provider = registry.Find(providerId);
+                var provider = await enablement.FindEnabledAsync(providerId, ct);
                 if (provider is null)
                     return UnknownProvider(providerId);
 
@@ -285,7 +296,7 @@ public static class ProviderEndpoints
         return routes;
     }
 
-    private static IResult UnknownProvider(string providerId) =>
+    internal static IResult UnknownProvider(string providerId) =>
         Results.Problem(
             statusCode: StatusCodes.Status404NotFound,
             title: "provider_unknown",
@@ -317,8 +328,10 @@ public static class ProviderEndpoints
     /// <summary>
     /// Capability flags as lower-case strings, so the client can test for what it
     /// needs without a shared enum drifting out of step with the server's.
+    /// Internal so the provider settings surface describes capabilities the
+    /// same way.
     /// </summary>
-    private static IReadOnlyList<string> DescribeCapabilities(ProviderCapabilities capabilities)
+    internal static IReadOnlyList<string> DescribeCapabilities(ProviderCapabilities capabilities)
     {
         var names = new List<string>();
 

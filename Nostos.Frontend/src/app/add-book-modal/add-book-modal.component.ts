@@ -906,7 +906,7 @@ export class AddBookModal {
         next: (list) => {
           this.providerList.set(list);
           if (list.length === 0) {
-            this.providersError.set('No content sources are configured on this server.');
+            this.providersError.set('No book sources are enabled. Turn them on in Settings.');
           }
         },
         error: () => this.providersError.set('Could not load the available sources.'),

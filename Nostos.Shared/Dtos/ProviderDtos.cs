@@ -133,3 +133,30 @@ public sealed record ProviderAcquisitionDto(
     string? Message,
     DateTime CreatedAt,
     DateTime UpdatedAt);
+
+// --- PROVIDER ENABLEMENT (issue #774) ---
+// The Settings surface for choosing which free sources participate. Kept
+// separate from ProviderSummaryDto, which remains the enabled-only Add Book
+// consumer view; this is the management view and deliberately lists disabled
+// sources too.
+
+/// <summary>One source in the Settings "Book providers" list, enabled or not.</summary>
+public sealed record ProviderSettingsItemDto(
+    string Id,
+    string DisplayName,
+    /// <summary>Short coverage copy, or null when the source offers none.</summary>
+    string? Description,
+    IReadOnlyList<string> Capabilities,
+    string? RightsNotice,
+    bool Enabled,
+    /// <summary>The source's own declaration, for wording "off by default".</summary>
+    bool EnabledByDefault);
+
+public sealed record ProviderSettingsResponseDto(IReadOnlyList<ProviderSettingsItemDto> Providers);
+
+/// <summary>
+/// One enable/disable choice. Null (or absent) is a client error and is never
+/// treated as an implicit disable, so an empty body cannot silently turn a
+/// source off.
+/// </summary>
+public sealed record ProviderPreferenceUpdateDto(bool? Enabled = null);

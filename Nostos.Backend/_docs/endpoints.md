@@ -61,8 +61,10 @@ and returns 404 when no metadata is found.
 ### ProviderEndpoints (`/api/providers`)
 
 Read-only browsing of external catalogues, plus acquisition. Providers are
-resolved from the `IProviderRegistry`; the endpoint layer never contacts a source
-directly and performs no library writes of its own (issues #166/#167/#168).
+resolved from the `IProviderRegistry` through `IProviderEnablementService`, so a
+disabled provider is answered exactly like an unknown one; the endpoint layer
+never contacts a source directly and performs no library writes of its own
+(issues #166/#167/#168, enablement in #774).
 
 A client can only ever name **a provider, an item and an asset** — never a URL.
 The provider resolves the actual download locations server-side, which is what
@@ -70,7 +72,7 @@ stops this surface from becoming an arbitrary-URL downloader.
 
 | Method   | Route                            | Description                                                   | Dependencies                    |
 | -------- | -------------------------------- | ------------------------------------------------------------- | ------------------------------- |
-| `GET`    | `/`                              | List registered providers with capabilities and rights notice  | `IProviderRegistry`             |
+| `GET`    | `/`                              | List enabled providers with capabilities and rights notice     | `IProviderEnablementService`    |
 | `GET`    | `/{providerId}/search`           | Search a source (`query`, `limit`, `offset`)                   | `IProviderSearch`               |
 | `GET`    | `/{providerId}/items/{externalId}` | Normalized item detail                                      | `IProviderCatalog`              |
 | `GET`    | `/{providerId}/items/{externalId}/cover` | Proxy a cover image (the browser never contacts the source) | `IProviderCatalog`, `IProviderContentDownloader` |
@@ -84,6 +86,17 @@ Provider failure codes are stable and carried through to the client, e.g.
 `media_tool_missing`, `assembly_failed`, `acquisition_conflict`. A successful
 job that finds the work already present returns the **existing** book id rather
 than creating a duplicate.
+
+### ProviderSettingsEndpoints (`/api/settings/providers`)
+
+The management surface for provider enablement (issue #774). Unlike every other
+provider route, this one lists disabled sources so they can be turned back on.
+`GET /api/providers` and provider-specific operations remain enabled-only.
+
+| Method | Route            | Description                                                                | Dependencies               |
+| ------ | ---------------- | -------------------------------------------------------------------------- | -------------------------- |
+| `GET`  | `/`              | Every registered source with description, capabilities and effective state | `IProviderEnablementService` |
+| `PUT`  | `/{providerId}`  | Store `{ "enabled": bool }`; missing field → 400 `invalid_provider_preference`, unregistered id → 404 `provider_unknown` | `IProviderEnablementService` |
 
 ### NotesEndpoints (`/api`)
 

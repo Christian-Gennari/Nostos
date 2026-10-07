@@ -56,6 +56,10 @@ internal static class SelfHostedHostStateCarryOver
             HostStateCarryOverKind.Carry,
             "Host credentials and provider configuration are deployment-local, contain no foreign key, and must never be imported from a portable archive."),
         new(
+            typeof(ProviderPreferenceModel),
+            HostStateCarryOverKind.Carry,
+            "Provider enablement choices are deployment-local configuration with no foreign key; replacing the library must not reset which free sources the user turned on or off."),
+        new(
             typeof(BackupRecord),
             HostStateCarryOverKind.Carry,
             "Local backup history references deployment-specific archives, has no foreign key, and intentionally may describe older library generations."),

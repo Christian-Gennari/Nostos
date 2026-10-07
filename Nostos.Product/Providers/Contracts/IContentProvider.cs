@@ -42,4 +42,20 @@ public interface IContentProvider
     /// imply it either. Null when the source offers no statement.
     /// </summary>
     string? RightsNotice { get; }
+
+    /// <summary>
+    /// Whether the source participates in discovery and acquisition until the
+    /// user says otherwise (issue #774). Defaults to <see langword="false"/> so
+    /// a later-added provider must deliberately opt in and never silently joins
+    /// an existing install's searches. Only the user's stored preference can
+    /// override this; the shipped general sources declare <see langword="true"/>.
+    /// </summary>
+    bool EnabledByDefault => false;
+
+    /// <summary>
+    /// One line of coverage copy for the Settings "Book providers" list, e.g.
+    /// "Public-domain ebooks in many languages." Null when the source has
+    /// nothing to add; a provider supplies its own wording.
+    /// </summary>
+    string? Description => null;
 }

@@ -12,6 +12,11 @@ namespace Nostos.Backend.Endpoints;
 /// or the caller is not enabled to see. This boundary drops those rows before
 /// they are serialised, so provider visibility is enforced at the HTTP edge
 /// regardless of where the results came from.
+///
+/// A row is visible only for an id that is an exact registered id: the registry
+/// lookup trims whitespace, so an id that merely normalises to a registered one
+/// (" gutenberg ") is not this process's id and must not cross the wire under a
+/// name no acquisition call can resolve.
 /// </summary>
 internal static class ProviderDiscoveryBoundary
 {
@@ -39,6 +44,7 @@ internal static class ProviderDiscoveryBoundary
         string providerId,
         IProviderRegistry registry,
         IReadOnlySet<string>? allowedProviderIds) =>
-        registry.Find(providerId) is not null
+        registry.Find(providerId) is { } registration
+        && registration.Id == providerId
         && (allowedProviderIds is null || allowedProviderIds.Contains(providerId));
 }

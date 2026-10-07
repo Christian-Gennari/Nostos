@@ -64,6 +64,10 @@ public sealed partial class GutenbergProvider : IContentProvider,
     /// </summary>
     public string? RightsNotice => "Public domain in the USA (Project Gutenberg)";
 
+    public bool EnabledByDefault => true;
+
+    public string? Description => "Public-domain ebooks in many languages.";
+
     // --- IProviderDownloadPolicy ----------------------------------------
     // Suffix-matched (see ProviderHostPolicy), so www.gutenberg.org and any
     // mirror on the same domain are covered by one entry. A single ebook is at

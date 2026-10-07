@@ -252,6 +252,9 @@ public static class NostosProductComposition
             configuration.GetSection(ProviderDiscoveryOptions.SectionName));
 
         services.AddSingleton<IProviderRegistry, ProviderRegistry>();
+        // Provider enablement (issue #774): the one place the user's stored
+        // choices are resolved for discovery, acquisition and Settings.
+        services.AddScoped<IProviderEnablementService, ProviderEnablementService>();
         services.AddSingleton<ProviderDiscoveryService>();
         // Replaceable discovery seam: SelfHosted keeps the live provider
         // fan-out as its default, while a host can register its own
@@ -335,6 +338,7 @@ public static class NostosProductComposition
 
         routes.MapBooksEndpoints(policies);
         routes.MapProviderEndpoints(policies);
+        routes.MapProviderSettingsEndpoints();
         routes.MapImportEndpoints();
         routes.MapNotesEndpoints();
         routes.MapNoteProcessingEndpoints();

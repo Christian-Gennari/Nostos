@@ -317,6 +317,9 @@ public sealed class PortableCompletenessInventoryTests
             ["AiProviderSettingsModel"] = ExcludedEntity(
                 "Host credentials, API keys, and host AI-provider configuration must never be transferred as portable library data."),
 
+            ["ProviderPreferenceModel"] = ExcludedEntity(
+                "Local provider enablement choices about which free sources this installation searches; host configuration rather than portable library content."),
+
             ["BackupRecord"] = ExcludedEntity(
                 "Host-local operational backup record containing deployment-specific backup state and local file paths."),
 
