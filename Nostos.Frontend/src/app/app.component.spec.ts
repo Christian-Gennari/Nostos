@@ -255,6 +255,13 @@ describe('App shell utility area', () => {
     return more;
   }
 
+  async function finishUtilitySheetExit(fixture: ComponentFixture<App>): Promise<void> {
+    await fixture.whenStable();
+    fixture.detectChanges();
+    await new Promise((resolve) => setTimeout(resolve, 240));
+    fixture.detectChanges();
+  }
+
   const background = (fixture: ComponentFixture<App>): HTMLElement =>
     fixture.nativeElement.querySelector('.workspace-content');
   const dock = (fixture: ComponentFixture<App>): HTMLElement =>
@@ -303,10 +310,14 @@ describe('App shell utility area', () => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
     fixture.detectChanges();
 
-    expect(fixture.nativeElement.querySelector('[data-testid="utility-sheet"]')).toBeNull();
+    // Accessibility cleanup and focus restoration happen as soon as close starts;
+    // the panel remains mounted only long enough to finish its exit transition.
     expect(background(fixture).hasAttribute('inert')).toBe(false);
     expect(dock(fixture).hasAttribute('inert')).toBe(false);
     expect(document.activeElement).toBe(more);
+
+    await finishUtilitySheetExit(fixture);
+    expect(fixture.nativeElement.querySelector('[data-testid="utility-sheet"]')).toBeNull();
   });
 
   it('lifts the inert shell and restores focus when the scrim closes the sheet', async () => {
@@ -328,9 +339,11 @@ describe('App shell utility area', () => {
     await TestBed.inject(Router).navigateByUrl('/settings');
     fixture.detectChanges();
 
-    expect(fixture.nativeElement.querySelector('[data-testid="utility-sheet"]')).toBeNull();
     expect(background(fixture).hasAttribute('inert')).toBe(false);
     expect(dock(fixture).hasAttribute('inert')).toBe(false);
+
+    await finishUtilitySheetExit(fixture);
+    expect(fixture.nativeElement.querySelector('[data-testid="utility-sheet"]')).toBeNull();
   });
 
   it('leaves Ask Nostos usable after the sheet closes', async () => {
@@ -362,11 +375,13 @@ describe('App shell utility area', () => {
     window.dispatchEvent(new Event('resize'));
     fixture.detectChanges();
 
-    expect(fixture.nativeElement.querySelector('[data-testid="utility-sheet"]')).toBeNull();
-    expect(fixture.nativeElement.querySelector('.utility-sheet-scrim')).toBeNull();
     expect(background(fixture).hasAttribute('inert')).toBe(false);
     expect(dock(fixture).hasAttribute('inert')).toBe(false);
     expect(fixture.nativeElement.querySelector('[data-testid="dock-more"]')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="dock-feedback"]')).toBeTruthy();
+
+    await finishUtilitySheetExit(fixture);
+    expect(fixture.nativeElement.querySelector('[data-testid="utility-sheet"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('.utility-sheet-scrim')).toBeNull();
   });
 });
