@@ -57,12 +57,17 @@ public sealed partial class GutenbergProvider : IContentProvider,
     private readonly HttpClient _http;
     private readonly HttpClient _snapshotHttp;
     private readonly ILogger<GutenbergProvider> _logger;
+    private readonly GutenbergSnapshotLimits _snapshotLimits;
 
-    public GutenbergProvider(IHttpClientFactory httpClientFactory, ILogger<GutenbergProvider> logger)
+    public GutenbergProvider(
+        IHttpClientFactory httpClientFactory,
+        ILogger<GutenbergProvider> logger,
+        GutenbergSnapshotLimits? snapshotLimits = null)
     {
         _http = httpClientFactory.CreateClient(HttpClientName);
         _snapshotHttp = httpClientFactory.CreateClient(SnapshotHttpClientName);
         _logger = logger;
+        _snapshotLimits = snapshotLimits ?? new GutenbergSnapshotLimits();
     }
 
     public string Id => ProviderIdentifier;
@@ -336,6 +341,14 @@ public sealed partial class GutenbergProvider : IContentProvider,
             if (!response.IsSuccessStatusCode)
                 throw ProviderException.UnavailableFor(Id, "the catalogue snapshot answered HTTP " + (int)response.StatusCode);
 
+            var declaredLength = response.Content.Headers.ContentLength;
+            if (declaredLength > _snapshotLimits.MaxSnapshotBytes)
+            {
+                throw ProviderException.InvalidResponse(
+                    Id,
+                    $"the catalogue snapshot declares {declaredLength} bytes, over the {_snapshotLimits.MaxSnapshotBytes} byte limit");
+            }
+
             await using var source = await response.Content.ReadAsStreamAsync(ct);
             await using var destination = new FileStream(
                 path,
@@ -345,7 +358,25 @@ public sealed partial class GutenbergProvider : IContentProvider,
                 64 * 1024,
                 FileOptions.Asynchronous);
 
-            await source.CopyToAsync(destination, ct);
+            var buffer = new byte[64 * 1024];
+            long written = 0;
+            int read;
+
+            while ((read = await source.ReadAsync(buffer, ct)) > 0)
+            {
+                written += read;
+
+                // Checked while streaming, because the declared length above is
+                // the source's claim rather than a fact.
+                if (written > _snapshotLimits.MaxSnapshotBytes)
+                {
+                    throw ProviderException.InvalidResponse(
+                        Id,
+                        $"the catalogue snapshot passed the {_snapshotLimits.MaxSnapshotBytes} byte limit");
+                }
+
+                await destination.WriteAsync(buffer.AsMemory(0, read), ct);
+            }
         }
         catch (HttpRequestException ex)
         {
@@ -387,6 +418,16 @@ public sealed partial class GutenbergProvider : IContentProvider,
 
             if (GutenbergCatalog.SnapshotIdFromEntryName(entry.Name) is not { } id)
                 continue;
+
+            // The tar header declares the member's length; reject an
+            // implausible one before XDocument can materialise it, so a zip
+            // bomb cannot exhaust memory through a single record.
+            if (entry.Length > _snapshotLimits.MaxMemberBytes)
+            {
+                throw ProviderException.InvalidResponse(
+                    Id,
+                    $"snapshot entry '{entry.Name}' is over the {_snapshotLimits.MaxMemberBytes} byte member limit");
+            }
 
             GutenbergBook? book;
             try

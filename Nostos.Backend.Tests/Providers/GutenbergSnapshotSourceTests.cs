@@ -147,11 +147,12 @@ public sealed class GutenbergSnapshotSourceTests
         </rdf:RDF>
         """;
 
-    private static (GutenbergProvider Provider, StubHttpMessageHandler Handler) CreateProvider()
+    private static (GutenbergProvider Provider, StubHttpMessageHandler Handler) CreateProvider(
+        GutenbergSnapshotLimits? limits = null)
     {
         var handler = new StubHttpMessageHandler();
         var factory = new StubHttpClientFactory(handler);
-        return (new GutenbergProvider(factory, NullLogger<GutenbergProvider>.Instance), handler);
+        return (new GutenbergProvider(factory, NullLogger<GutenbergProvider>.Instance, limits), handler);
     }
 
     private static byte[] BuildZipArchive(params (string Name, byte[] Content)[] entries)
@@ -248,6 +249,55 @@ public sealed class GutenbergSnapshotSourceTests
 
     private static string[] TempSnapshotFiles() =>
         Directory.GetFiles(Path.GetTempPath(), TempFilePattern);
+
+    /// <summary>
+    /// A readable, non-seekable stream over fixed bytes, so the response cannot
+    /// declare a length and the reader has to enforce its cap while copying.
+    /// </summary>
+    private sealed class NonSeekableStream(byte[] content) : Stream
+    {
+        private int _position;
+
+        public override bool CanRead => true;
+
+        public override bool CanSeek => false;
+
+        public override bool CanWrite => false;
+
+        public override long Length => content.Length;
+
+        public override long Position
+        {
+            get => _position;
+            set => throw new NotSupportedException();
+        }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            var read = Math.Min(count, content.Length - _position);
+            content.AsSpan(_position, read).CopyTo(buffer.AsSpan(offset));
+            _position += read;
+            return read;
+        }
+
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            var read = Math.Min(buffer.Length, content.Length - _position);
+            content.AsMemory(_position, read).CopyTo(buffer);
+            _position += read;
+            return ValueTask.FromResult(read);
+        }
+
+        public override void Flush()
+        {
+        }
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
 
     [Fact]
     public async Task Read_returns_the_ebook_snapshot_with_card_metadata_cover_and_validators()
@@ -457,6 +507,51 @@ public sealed class GutenbergSnapshotSourceTests
         var act = () => DrainAsync(snapshot.Items);
         var error = await act.Should().ThrowAsync<ProviderException>();
         error.Which.Code.Should().Be(ProviderException.ResponseInvalid);
+        TempSnapshotFiles().Should().BeEquivalentTo(before);
+    }
+
+    [Fact]
+    public async Task Read_rejects_a_download_over_the_archive_limit_as_invalid_provider_response()
+    {
+        var limits = new GutenbergSnapshotLimits { MaxSnapshotBytes = 8 * 1024, MaxMemberBytes = 1024 * 1024 };
+        var (provider, handler) = CreateProvider(limits);
+        var body = new NonSeekableStream(new byte[limits.MaxSnapshotBytes * 16]);
+        handler.Register(SnapshotPath, request => request.Method == HttpMethod.Head
+            ? new HttpResponseMessage(HttpStatusCode.OK)
+            : new HttpResponseMessage(HttpStatusCode.OK) { Content = new StreamContent(body) });
+        var before = TempSnapshotFiles();
+
+        var snapshot = await provider.ReadAsync(new ProviderSnapshotRequest(), CancellationToken.None);
+
+        var act = () => DrainAsync(snapshot.Items);
+        var error = await act.Should().ThrowAsync<ProviderException>();
+        error.Which.Code.Should().Be(ProviderException.ResponseInvalid);
+        error.Which.Message.Should().Contain("byte limit", "the archive cap is what stopped the read");
+        body.Position.Should().BeLessThan(body.Length, "the download must stop at the cap, not the body's end");
+        TempSnapshotFiles().Should().BeEquivalentTo(before);
+    }
+
+    [Fact]
+    public async Task Read_rejects_a_tar_member_over_the_member_limit_as_invalid_provider_response()
+    {
+        var limits = new GutenbergSnapshotLimits { MaxSnapshotBytes = 4 * 1024 * 1024, MaxMemberBytes = 4 * 1024 };
+
+        // Valid RDF, just over the injected cap: without the cap this parses
+        // into an item, so the test only passes because the member is refused.
+        var oversizedRdf = PrideRdf.Replace(
+            "</rdf:RDF>",
+            "<!-- " + new string('x', (int)limits.MaxMemberBytes) + " --></rdf:RDF>");
+        var archive = BuildSnapshotArchive(("cache/epub/1342/pg1342.rdf", oversizedRdf));
+        var (provider, handler) = CreateProvider(limits);
+        handler.Register(SnapshotPath, _ => ArchiveResponse(archive, LastModified));
+        var before = TempSnapshotFiles();
+
+        var snapshot = await provider.ReadAsync(new ProviderSnapshotRequest(), CancellationToken.None);
+
+        var act = () => DrainAsync(snapshot.Items);
+        var error = await act.Should().ThrowAsync<ProviderException>();
+        error.Which.Code.Should().Be(ProviderException.ResponseInvalid);
+        error.Which.Message.Should().Contain("member limit");
         TempSnapshotFiles().Should().BeEquivalentTo(before);
     }
 
