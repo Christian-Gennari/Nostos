@@ -227,10 +227,6 @@ public sealed class LibriVoxProvider : IContentProvider,
                 LibriVoxCatalog.SnapshotPagePath(cursor.Offset, cursor.Since ? cursor.SinceUnixSeconds : null),
                 ct);
         }
-        catch (ProviderException)
-        {
-            throw;
-        }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
             throw ProviderException.UnavailableFor(Id, "the catalogue did not answer within the snapshot timeout");
