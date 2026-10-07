@@ -1105,6 +1105,55 @@
   background: var(--bg-surface);
 }
 
+/* Audio keeps its header in the flex layout so the player never has to reveal
+   it. Its edge-to-edge surface, title and quiet tools use the same language as
+   the transient EPUB/PDF header while remaining permanently available. */
+.reader-layout.audio-immersive {
+  --header-height: 72px;
+  background: var(--bg-surface);
+}
+
+.reader-layout.audio-immersive .reader-header {
+  box-sizing: border-box;
+  height: calc(var(--header-height) + env(safe-area-inset-top, 0px));
+  padding:
+    env(safe-area-inset-top, 0px)
+    max(2rem, env(safe-area-inset-right, 0px))
+    0
+    max(2rem, env(safe-area-inset-left, 0px));
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-surface);
+}
+
+.reader-layout.audio-immersive .reader-header-title {
+  flex: 1 1 auto;
+  gap: 1rem;
+}
+
+.reader-layout.audio-immersive .reader-header-tools {
+  gap: 0.5rem;
+}
+
+.reader-layout.audio-immersive .reader-book-title {
+  font-size: 1.125rem;
+  font-weight: var(--fw-medium);
+}
+
+.reader-layout.audio-immersive .reader-book-author {
+  margin-top: 0.2rem;
+}
+
+.reader-layout.audio-immersive .icon-btn {
+  color: var(--color-text-muted);
+  border-color: transparent;
+}
+
+.reader-layout.audio-immersive .icon-btn.active {
+  color: var(--color-primary);
+  background: var(--bg-hover);
+  border-color: transparent;
+}
+
 .reader-layout.immersive .reader-body {
   height: 100%;
 }
@@ -1287,6 +1336,42 @@
 @media (max-width: 768px) {
   .reader-layout.immersive {
     --header-height: 64px;
+  }
+
+  .reader-layout.audio-immersive {
+    --header-height: 64px;
+  }
+
+  .reader-layout.audio-immersive .reader-header {
+    gap: 0.25rem;
+    padding:
+      env(safe-area-inset-top, 0px)
+      max(0.5rem, env(safe-area-inset-right, 0px))
+      0
+      max(0.5rem, env(safe-area-inset-left, 0px));
+  }
+
+  .reader-layout.audio-immersive .reader-header-title {
+    gap: 0.25rem;
+  }
+
+  .reader-layout.audio-immersive .reader-header-tools {
+    gap: 0;
+  }
+
+  .reader-layout.audio-immersive .reader-book-title {
+    font-size: 0.9375rem;
+  }
+
+  .reader-layout.audio-immersive .reader-book-author {
+    margin-top: 0.125rem;
+    font-size: 0.6875rem;
+  }
+
+  /* The body already starts below the persistent safe-area-aware audio header. */
+  .reader-layout.audio-immersive .notes-header,
+  .reader-layout.audio-immersive .panel-header {
+    padding-top: 0.5rem;
   }
 
   .reader-layout.immersive .reader-header {

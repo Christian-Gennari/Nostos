@@ -75,18 +75,19 @@ rendition or shift a PDF scrollport. Revealed controls use a seamless edge
 header and pager rather than floating cards; book titles remain visible on
 phones. EPUB uses stable vertical reading insets and a maximum 80rem spread
 measure. Narrow/Normal/Wide add 0/4/8% insets inside that capped spread, so
-all three remain distinct on wide monitors. PDF reserves first-page clearance for the header. Safe areas are paid
-by the active bottom surface, including contextual selection actions.
+all three remain distinct on wide monitors. PDF reserves first-page clearance
+for the header. Safe areas are paid by the active header or bottom surface; the
+audio player also pads its body around the device insets.
 
 ```
-┌───────────────────────────────────────────────────┐
-│ ← Title                       TOC Notes Search Aa  │ ← transient overlay
-│                                                   │
-│                  Reader Canvas                    │
-│                    EPUB / PDF                     │
-│                                                   │
-│                ‹   Progress   ›                   │ ← transient overlay
-└───────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────┐
+│ ← Title / Author                    Contents Notes    │ ← shared edge header
+│                                                      │
+│                 EPUB / PDF canvas                    │
+│            or Audio cover and player                 │ ← audio stays visible
+│                                                      │
+│              ‹ quiet progress track ›                │ ← EPUB/PDF only
+└──────────────────────────────────────────────────────┘
 ```
 
 A neutral surface click/tap reveals or hides the shared controls. On coarse
@@ -100,8 +101,12 @@ utilities and annotation choices use two rows. While a reader selection is
 active, its contextual Ask Nostos action replaces the global floating launcher.
 
 TOC and Notes remain overlay panels (full-width on mobile), and Search/View
-settings remain transient overlays. Audio keeps its established persistent
-player shell rather than adopting EPUB/PDF paging interactions.
+settings remain transient overlays. Audio keeps its player and transport visible
+at all times rather than adopting EPUB/PDF paging interactions. Its persistent
+header uses the same seamless edge treatment and safe-area spacing, with the book
+title and author shown once. The cover, scrubber, transport and Playback control
+stay in the reader body; the Playback settings panel overlays that body without
+resizing the player.
 
 ### Quick Note Flow
 
@@ -163,11 +168,13 @@ Non-injectable class, manually instantiated. Manages:
 **File:** `src/app/reader/audio-reader/audio-reader.component.ts`
 
 - Uses `Howler.js` (`Howl` instance) for audio playback
-- Displays chapter list from `Book.chapters` (parsed from M4B metadata by backend)
-- **Play/Pause**, **Skip ±30s**, **Playback speed** (0.5×–3×)
+- Builds chapter navigation from `Book.chapters` when the file has chapter metadata
+- **Play/Pause**, **Skip ±15s**, **Playback speed** (0.5×–3×, with presets and ±0.05× fine steps)
 - TOC shows chapter titles; clicking jumps to `startTime`
+- Playback settings include speed and sleep timers, including stopping at the chapter end
 - Progress bar: current time / total duration
-- **Add timestamp:** Inserts `[mm:ss]` into quick-note textarea
+- Saves playback progress and resumes from the last saved position; updates MediaSession metadata and controls
+- **Add timestamp:** Inserts the current playback time (`m:ss` or `h:mm:ss`) into the quick-note textarea
 
 ## Notes Sidebar
 

@@ -2,6 +2,7 @@
   class="reader-layout"
   [class.ready]="ready() || !!loadError()"
   [class.immersive]="immersiveReader()"
+  [class.audio-immersive]="fileType() === 'audio'"
   [class.chrome-visible]="chromeShown()"
   data-testid="reader-layout"
 >
