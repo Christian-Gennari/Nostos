@@ -498,6 +498,50 @@ describe('LibraryImportFlowComponent', () => {
     expect(mock.calls.createJob).toBe(0);
   });
 
+  it('cancels an in-flight upload and keeps the existing library untouched', async () => {
+    const mock = new MockLibraryTransferTransport({ chunkSizeBytes: CHUNK });
+    const transport = new GatedUploadTransport(mock);
+    const harness = configure(mock, transport);
+    const file = await portableFile();
+
+    selectFile(harness, file);
+    await waitForKind(harness, 'uploading');
+    await vi.waitFor(() => expect(transport.pending.length).toBeGreaterThan(0));
+
+    (testId(harness, 'import-cancel') as HTMLButtonElement).click();
+    await waitForKind(harness, 'cancelled');
+
+    expect(mock.calls.cancelJob).toBe(1);
+    expect(testId(harness, 'import-cancelled')?.textContent).toContain(
+      'Your existing library was not changed.',
+    );
+  });
+
+  it('pauses and resumes a multi-chunk upload from the controls', async () => {
+    const mock = new MockLibraryTransferTransport({ chunkSizeBytes: CHUNK });
+    const transport = new GatedUploadTransport(mock);
+    const harness = configure(mock, transport);
+    const file = await largePortableFile();
+
+    selectFile(harness, file);
+    await waitForKind(harness, 'uploading');
+    await vi.waitFor(() => expect(transport.pending.length).toBe(2));
+
+    const pausing = harness.component.pause();
+    await transport.releaseAll();
+    await pausing;
+    harness.fixture.detectChanges();
+
+    expect(harness.coordinator.state()).toMatchObject({ kind: 'uploading', paused: true });
+    expect(testId(harness, 'import-resume-upload')).toBeTruthy();
+    expect(testId(harness, 'import-uploading')?.textContent).toContain('Import paused.');
+
+    void harness.component.resume();
+    await vi.waitFor(() => expect(transport.pending.length).toBe(1));
+    await transport.releaseAll();
+    await waitForKind(harness, 'ready-empty');
+  });
+
   it('gates replacement confirmation when safe activation is unavailable and enables it when available', async () => {
     const harness = setup({ destinationStatus: 'Populated', existingCounts: { books: 1 } });
     const confirmed = vi.fn();

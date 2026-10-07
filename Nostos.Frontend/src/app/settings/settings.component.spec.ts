@@ -2104,6 +2104,45 @@ describe('SettingsComponent shared library transfer host', () => {
     fixture.detectChanges();
   });
 
+  it('shows the server current counts before a confirmed replacement', async () => {
+    await configure(
+      {
+        ...selfHostedCapabilities,
+        supportsLibraryMigration: true,
+        supportsSafeActivation: true,
+      },
+      { destinationStatus: 'Populated', existingCounts: { books: 11, notes: 4 } },
+    );
+
+    const file = await portableFile();
+    selectFile(file);
+    await waitForKind('replacement-confirmation');
+
+    // The host fetches fresh destination facts before the user confirms, so
+    // the dialog shows the server's counts rather than the preflight estimate.
+    await vi.waitFor(() => expect(testId('replacement-conflict')).toBeTruthy(), {
+      timeout: 5_000,
+    });
+    expect(testId('replacement-existing')?.textContent).toContain('11 books');
+    expect(mock.calls.activateJob).toBe(1);
+    expect(mock.activationRequests[0]).toEqual({
+      destinationRevision: 'rev-1',
+      confirmReplacement: false,
+    });
+
+    (fixture.nativeElement.querySelector('.replacement-confirm') as HTMLButtonElement).click();
+    await vi.waitFor(() => expect(mock.calls.activateJob).toBe(2), { timeout: 5_000 });
+    expect(mock.activationRequests[1]).toEqual({
+      destinationRevision: 'rev-1',
+      confirmReplacement: true,
+    });
+
+    const state = coordinator().state();
+    const jobId = state.kind === 'replacement-confirmation' ? state.jobId : '';
+    mock.completeActivation(jobId);
+    await vi.waitFor(() => expect(testId('import-completed')).toBeTruthy(), { timeout: 5_000 });
+  });
+
   it('adopts the tab lease after leaving and re-entering Settings and releases it on completion', async () => {
     await configure(
       { ...selfHostedCapabilities, supportsLibraryMigration: true },
