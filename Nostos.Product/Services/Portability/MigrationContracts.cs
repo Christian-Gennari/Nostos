@@ -717,13 +717,6 @@ public sealed record MigrationJob(
     string? FailureCode = null,
     string? FailureMessage = null);
 
-public sealed record MigrationRecoverySnapshot(
-    Guid JobId,
-    MigrationRecoveryStatus Status,
-    long SizeBytes,
-    DateTimeOffset CreatedAtUtc,
-    DateTimeOffset ExpiresAtUtc);
-
 public sealed record MigrationActivationPreparation(
     Guid JobId,
     string DestinationRevision,
@@ -868,27 +861,6 @@ public interface IMigrationJobStore
     Task<MigrationJob> RetryAsync(
         Guid jobId,
         MigrationRetryRequest request,
-        CancellationToken ct);
-}
-
-/// <summary>
-/// Creates and restores mandatory recovery material for migration jobs owned by
-/// the authenticated Nostos principal. Implementations MUST resolve the job's
-/// resources from authenticated ownership and MUST NOT accept caller-supplied
-/// account IDs, database names, storage keys, or provider-specific resource IDs.
-/// </summary>
-public interface IMigrationRecoveryService
-{
-    Task<MigrationRecoverySnapshot> CreateRecoverySnapshotAsync(
-        Guid jobId,
-        CancellationToken ct);
-
-    Task RestoreRecoverySnapshotAsync(
-        Guid jobId,
-        CancellationToken ct);
-
-    Task DeleteExpiredRecoverySnapshotsAsync(
-        DateTimeOffset cutoffUtc,
         CancellationToken ct);
 }
 

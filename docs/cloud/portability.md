@@ -5,9 +5,7 @@ Nostos portable archives are the provider-neutral format for moving user-owned l
 This document deliberately separates:
 
 1. **Current behaviour (shipped)** — what the existing portability API, the durable transfer-job API, and `PortableArchiveService` do today.
-2. **Migration contract (epic #676)** — the provider-neutral contract for one-click SelfHosted ↔ Cloud migration being developed across issues #677–#682. Its transport, durable jobs, and archive preparation are implemented (described in Part 1); activation/replacement (#681), the capability advertisement, and the private hosted adapter remain planned.
-
-Do not treat Part 2 as documentation of a destructive replacement flow: no shipped route activates a prepared import or replaces a library.
+2. **Migration contract (epic #676)** — the provider-neutral contract for one-click SelfHosted ↔ Cloud migration, developed across issues #677–#682. Its transport, durable jobs, archive preparation, activation/replacement with the mandatory recovery copy (#681), and the SelfHosted capability advertisement are implemented (described in Part 1); the private hosted (Cloud) adapter is built outside this repository.
 
 ---
 
@@ -72,6 +70,11 @@ untouched.
 | `PUT` | `/jobs/{id}/upload-session/chunks/{index}` | `200` with `alreadyPresent` | `400 migration_invalid_request`, `409 migration_chunk_conflict`, `410 migration_session_expired`, `416 migration_chunk_range_invalid`, `422 migration_chunk_hash_mismatch`, `507 migration_storage_exhausted`, `413` for an oversize chunk |
 | `POST` | `/jobs/{id}/upload-session/complete` | `200` session status | `409 migration_invalid_state`, `409 migration_file_identity_mismatch` |
 | `GET`/`HEAD` | `/jobs/{id}/export-download` | `200`/`206` range-enabled file | `404 migration_export_not_available`, `410 migration_export_expired` |
+| `POST` | `/jobs/{id}/activate` | `202` accepted / replay | `409 migration_replacement_confirmation_required`, `409 migration_destination_conflict`, `409 migration_invalid_state`, `503 migration_activation_busy` |
+| `GET` | `/jobs/{id}/activation` | `200` activation status | `404 migration_not_found` |
+| `GET` | `/recovery` | `200` retained recovery copies | – |
+| `GET` | `/recovery/{id}` | `200` recovery status | `404 migration_recovery_not_found`, `410 migration_recovery_expired`, `422 migration_recovery_corrupt` |
+| `POST` | `/recovery/{id}/restore` | `202` accepted | `409 migration_recovery_restore_conflict`, `409 migration_replacement_confirmation_required`, `503 migration_activation_busy` |
 
 Chunk requests carry `Content-Range: bytes <start>-<end>/<total>` and
 `X-Nostos-Chunk-SHA256: <64 hex>`. The body is the raw chunk; there is no
@@ -95,24 +98,27 @@ cap.
   and SHA-256, and only then seals `archive.nostos`. A mismatch fails the job
   and no final archive is published.
 
-### State machine and what is not available yet
+### State machine
 
 Import jobs run `Pending → Preparing → Transferring → Validating →
-ReadyToActivate` and **stop there**. `ReadyToActivate` carries a committed,
-durable prepared descriptor (staging id, data/media hashes, counts) that
-survives a restart. Export jobs run `Pending → Preparing → Transferring →
-Validating → Completed` and publish a sealed artifact.
+ReadyToActivate` and wait there for an explicit activation request.
+`ReadyToActivate` carries a committed, durable prepared descriptor (staging id,
+data/media hashes, counts) that survives a restart. Export jobs run `Pending →
+Preparing → Transferring → Validating → Completed` and publish a sealed
+artifact.
 
-Not available in the shipped build:
+Activation, replacement and recovery restore shipped with #681:
 
-- there are no activation routes and no replacement/cutover flow; #681 owns
-  `ReadyToActivate → Activating → Completed`;
-- the destination library is never mutated by an import job — the prepared
-  staging area is the only output;
+- `POST …/jobs/{id}/activate` admits an owned job to
+  `ReadyToActivate → Activating → Completed` through the activation contract
+  below; the worker never activates on its own;
+- a populated destination requires explicit confirmation bound to the
+  destination revision and retains a mandatory seven-day recovery copy;
 - `supportsLibraryMigration` is advertised by the SelfHosted host (the
   capability remains an explicit host decision, not phase inference);
-- `POST /api/portability/import` remains the only route that mutates a library,
-  and it still targets an empty destination only.
+- `POST /api/portability/import` is the only route that mutates a library
+  outside the durable migration flow, and it still targets an empty
+  destination only.
 
 ### Expiry, capacity, and limits
 
@@ -359,11 +365,11 @@ Payload and manifest versions must strictly agree (`data_version_mismatch`). A p
 
 ---
 
-# Part 2: Migration contract (epic #676 — transport implemented, activation and UI planned)
+# Part 2: Migration contract (epic #676 — transport, activation and UI implemented)
 
 Epic #676 defines the one-click migration system between Nostos SelfHosted and Nostos Cloud.
 
-The implementation is split across issues #677–#682. This section defines the target contract. The provider-neutral contract, durable job/session/chunk/artifact/reservation records, the local worker, the SelfHosted transfer HTTP API, import preparation to `ReadyToActivate`, export artifact generation, activation/replacement with a mandatory recovery copy (#681), and the real-browser acceptance suite (#680 slice B10) are implemented (see "Durable library transfer jobs" in Part 1). The SelfHosted host advertises `supportsLibraryMigration`; the private hosted (Cloud) adapter is still planned. Destructive replacement only runs through the #681 activation contract with an explicit, server-checked confirmation.
+The implementation is split across issues #677–#682. This section defines the target contract. The provider-neutral contract, durable job/session/chunk/artifact/reservation records, the local worker, the SelfHosted transfer HTTP API, import preparation to `ReadyToActivate`, export artifact generation, activation/replacement with a mandatory recovery copy (#681), and the real-browser acceptance suite (#680 slice B10) are implemented (see "Durable library transfer jobs" in Part 1). The SelfHosted host advertises `supportsLibraryMigration`; the private hosted (Cloud) adapter is built outside this repository. Destructive replacement only runs through the #681 activation contract with an explicit, server-checked confirmation.
 
 ## Goals and authenticated ownership boundary
 
@@ -408,7 +414,7 @@ If the user explicitly confirms replacement (`confirmReplacement: true`):
 2. `MigrationActivateRequest` binds explicit confirmation to the job's exact preflight destination revision. A preliminary revision mismatch rejects admission.
 3. The activation worker drains library readers and writers under exclusive maintenance and rechecks that same revision. It never silently updates the job to a newer revision.
 4. A mandatory recovery generation of the existing populated portable library is retained via the recovery subsystem. Client requests cannot bypass recovery creation.
-5. A verified candidate database and media root replace the destination through the durable cutover protocol below. This protocol is planned; the contracts and maintenance barrier are implemented independently of the switch engine.
+5. A verified candidate database and media root replace the destination through the durable cutover protocol below.
 
 There is **no implicit merge mode** in the migration contract.
 
@@ -428,9 +434,9 @@ The SelfHosted implementation of this invariant is shipped. `LibraryState.StateV
 
 ---
 
-## Planned export snapshot contract (for #678)
+## Export snapshot contract (#678)
 
-For planned issue #678, export consistency guarantees:
+The shipped export path (see Part 1) guarantees:
 
 1. **Relational consistency boundary:** Export reads a single consistent relational snapshot under a read snapshot / transaction. It never mixes rows from different revisions.
 2. **Media change detection and pinning:** Source media files referenced by the relational snapshot are pinned by size, mtime, ETag and SHA-256 during initial indexing, and every pin is re-verified before and after the archive copy. Media absent on a metadata lookup (initial pin or copy start) or unopenable during the initial pin or copy-pass open fails closed with `source_media_missing`. Once an initial pin observation is underway, a media revision mismatch against the pin — content, length or metadata changed after pinning, a disappearance detected by the pin's post-hash metadata check, or a disappearance detected by the post-copy metadata check — fails closed with typed error `source_media_changed`. No inconsistent archive is emitted.
@@ -548,20 +554,23 @@ If `AvailableStorageBytes < RequiredStorageBytes`, preflight returns `RejectedIn
 
 ## Recovery snapshots
 
-When replacing a populated destination, `IMigrationRecoveryService.CreateRecoverySnapshotAsync` creates a recovery copy prior to activation.
+When replacing a populated destination, activation retains a recovery copy of
+the previous generation under `.nostos-recovery/<job-id>/` before the cutover.
+The SelfHosted host exposes the retained copies through `GET …/recovery` and
+`GET …/recovery/{id}`, and restores one through `POST …/recovery/{id}/restore`
+with confirmation bound to the destination revision.
 
 - **Retention duration:** 7 days (`RecoveryRetentionDays = 7`).
-- **Storage accounting:** Retained recovery snapshots count against host storage accounting until expired and purged via `DeleteExpiredRecoverySnapshotsAsync`.
+- **Storage accounting:** Retained recovery snapshots count against host storage accounting until expired and purged by the SelfHosted recovery cleanup worker.
 - **Operational backups distinction:** Host operational backups are local SQLite/infrastructure dumps. Preflight explicitly rejects operational backups (`RejectedOperationalBackupNotPortable`).
 
-### SelfHosted activation foundation (#681, Slices 1–2)
+### SelfHosted activation, cutover and recovery (#681)
 
 The provider-neutral activation/recovery DTOs are `MigrationActivateRequest`,
 `MigrationRecoveryRestoreRequest`, and `MigrationRecoveryStatusResponse`. Public
 DTOs expose no local paths or provider/account identifiers. `IMigrationActivationService`
-consumes an owned job already admitted durably to `Activating`; its implementation
-and HTTP activation routes belong to later slices. Recovery continues to use
-`IMigrationRecoveryService` and `MigrationRecoverySnapshot`.
+consumes an owned job already admitted durably to `Activating`; the SelfHosted
+implementation and HTTP activation routes are shipped.
 
 `MigrationActivationAdmission` implements pure confirmation and revision rules.
 An empty destination may activate without confirmation; a populated destination
@@ -573,7 +582,7 @@ worker lease checks in the later orchestrator.
 The existing direction-aware frozen job transition table remains authoritative:
 imports take `ReadyToActivate -> Activating -> Completed`, while exports never
 activate. User cancellation ends at `Activating`. This cancellation boundary is
-distinct from the later durable filesystem commit. The executable journal model
+distinct from the subsequent durable filesystem commit. The executable journal model
 allows a completed job outcome only with `Committed`; a failed activation outcome
 requires untouched live paths or a completed rollback. A cutover failure must
 restore the original generation before releasing exclusive maintenance.
@@ -598,9 +607,10 @@ status and seven-day expiry. They contain no user content or absolute paths.
 
 Each phase is durable intent for the next rename, so rollback must also handle a
 rename that finished before the following phase write. File existence validates
-the chosen recovery action; it cannot determine which generation wins. Slice 3
-implements temp-write/flush/rename journal persistence and the actual startup
-reconciler. Slices 1–2 contain the model and pure decisions only.
+the chosen recovery action; it cannot determine which generation wins. The
+activation journal store persists each phase with temp-write/flush/rename, and
+the startup service reconciles an interrupted cutover before the host serves
+traffic.
 
 SelfHosted now uses one singleton `ILibraryMaintenanceCoordinator`. HTTP operations
 take shared leases across their complete response/stream and request-scope
@@ -608,8 +618,8 @@ disposal. REST, OPDS, MCP and database readiness traffic all participate. During
 drain/exclusivity new operations receive HTTP 503, stable code
 `migration_activation_busy`, and `Retry-After: 5`. Process liveness, static UI and
 the GET backup-progress endpoint remain available without opening the library.
-Migration status endpoints currently have no exemption: a later implementation
-must prove they avoid the active DB before adding one.
+The activation and recovery read routes are memory-safe and avoid the live
+database; `GET /jobs/{id}` has no exemption.
 
 Background acquisition, reconciliation, topic cleanup, receipt retention,
 book-text extraction/embedding/backfill and scheduled backup operations take
@@ -633,11 +643,11 @@ it is not the migration cutover engine.
 The advisory maintenance marker is `.nostos-activation/maintenance.json` beside
 the configured database. Startup clears stale markers before bootstrap/workers
 and never reconstitutes process-local leases. An unresolved actionable or corrupt
-activation journal fails startup closed until Slice 3 reconciles it; this PR does
-not attempt a generation switch or rollback. No schema additions are needed:
-existing job fields hold state, recovery projection, destination revision and
-prepared staging facts. WAL checkpointing and SQLite pool lifecycle belong to
-Slice 5, rather than the maintenance coordinator.
+activation journal fails startup closed until the startup reconciler resolves it.
+No schema additions are needed: existing job fields hold state, recovery
+projection, destination revision and prepared staging facts. WAL checkpointing
+and SQLite pool lifecycle are handled by the activation database lifecycle rather
+than the maintenance coordinator.
 
 ---
 
