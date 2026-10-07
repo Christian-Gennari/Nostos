@@ -37,8 +37,14 @@ public enum ProviderSnapshotStatus
 /// <param name="Status">Whether this read carries items or is a not-modified response.</param>
 /// <param name="Items">
 /// The provider's items, in source order. The stream is single-use and may be
-/// backed by a live response, so a consumer must enumerate it once, within the
-/// operation, before it is done with the snapshot.
+/// backed by a live response or a temporary download, so a consumer must
+/// enumerate it once, within the operation, before it is done with the
+/// snapshot. Cancelling a long stream is the consumer's job: the token given to
+/// <see cref="IProviderSnapshotSource.ReadAsync"/> governs the request phase
+/// only, so enumerate with <c>Items.WithCancellation(ct)</c>. Implementations
+/// must accept that enumeration token (<c>[EnumeratorCancellation]</c>) and
+/// release any per-read resource, such as a temporary file, when enumeration
+/// ends — including when it is broken early, throws or is cancelled.
 /// </param>
 /// <param name="ETag">Entity tag to persist and send back on the next read, when the source supplies one.</param>
 /// <param name="LastModified">Last-Modified value to persist and send back on the next read, when the source supplies one.</param>
@@ -69,9 +75,14 @@ public sealed record ProviderSnapshot(
 ///
 /// This is deliberately not part of the SelfHosted search path: the live
 /// provider fan-out never calls it and no default configuration schedules it.
-/// A host that uses it owns the cadence and the source etiquette; a source
-/// failure surfaces as <see cref="ProviderException"/> with a stable code so a
-/// sync can record it and back off.
+/// A host that uses it owns the cadence and the source etiquette.
+///
+/// A failure surfaces as <see cref="ProviderException"/> with a stable code so
+/// a sync can record it and back off: an upstream or network failure, including
+/// an upstream timeout the caller did not ask for, as
+/// <see cref="ProviderException.Unavailable"/>; a body that does not parse as
+/// <see cref="ProviderException.ResponseInvalid"/>. The same codes apply while
+/// enumerating <see cref="ProviderSnapshot.Items"/>, not just during the read.
 /// </summary>
 public interface IProviderSnapshotSource
 {

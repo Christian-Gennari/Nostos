@@ -1,4 +1,8 @@
+using System.Formats.Tar;
+using System.IO.Compression;
 using System.Net;
+using System.Net.Http.Headers;
+using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 using System.Xml;
 using System.Xml.Linq;
@@ -14,19 +18,31 @@ namespace Nostos.Backend.Providers.Gutenberg;
 /// nothing in the library, the reader, notes, work grouping or backups knows
 /// this provider exists.
 ///
-/// Uses Gutenberg's machine-readable OPDS/Atom catalogue — the same feeds an
-/// e-reader would use — rather than the human-facing website.
+/// Uses Gutenberg's machine-readable catalogue rather than the human-facing
+/// website: the OPDS/Atom feeds an e-reader would use for live search and
+/// detail, and the daily RDF archive for the bulk snapshot a host maintains its
+/// own synchronized discovery index from.
 /// </summary>
 public sealed partial class GutenbergProvider : IContentProvider,
     IProviderSearch,
     IProviderCatalog,
     IProviderAcquisitionPlanner,
-    IProviderDownloadPolicy
+    IProviderDownloadPolicy,
+    IProviderSnapshotSource
 {
     public const string ProviderIdentifier = "gutenberg";
 
     /// <summary>Named client for the catalogue, so timeouts and headers live in DI.</summary>
     public const string HttpClientName = "gutenberg";
+
+    /// <summary>
+    /// Named client for the daily bulk catalogue, with its own long-lived
+    /// timeout: the 177 MB archive must not be held to the 20 s request budget
+    /// the search client uses.
+    /// </summary>
+    public const string SnapshotHttpClientName = "gutenberg-snapshot";
+
+    private const string SnapshotTempFilePrefix = "nostos-gutenberg-";
 
     /// <summary>
     /// Gutenberg's ebook ids are numeric. Validated before the id is used to
@@ -39,11 +55,13 @@ public sealed partial class GutenbergProvider : IContentProvider,
     private const long MaxEbookBytes = 96L * 1024 * 1024;
 
     private readonly HttpClient _http;
+    private readonly HttpClient _snapshotHttp;
     private readonly ILogger<GutenbergProvider> _logger;
 
     public GutenbergProvider(IHttpClientFactory httpClientFactory, ILogger<GutenbergProvider> logger)
     {
         _http = httpClientFactory.CreateClient(HttpClientName);
+        _snapshotHttp = httpClientFactory.CreateClient(SnapshotHttpClientName);
         _logger = logger;
     }
 
@@ -116,6 +134,58 @@ public sealed partial class GutenbergProvider : IContentProvider,
     {
         var book = await LoadBookAsync(externalId, ct);
         return book is null ? null : ToProviderItem(book, includeAssets: true);
+    }
+
+    // --- IProviderSnapshotSource ------------------------------------------
+
+    /// <summary>
+    /// Reads the whole catalogue from Gutenberg's daily machine-readable
+    /// archive (a zipped tar of one RDF file per ebook). The probe is a HEAD,
+    /// so a host's conditional re-check never transfers the 177 MB body; the
+    /// archive is downloaded and parsed lazily on the first enumeration, and
+    /// its temp file is deleted when enumeration ends, whatever ended it.
+    ///
+    /// The archive changes once a day and carries Last-Modified, so a
+    /// not-modified probe is the normal outcome of the daily re-check. The live
+    /// search cache is deliberately not used: this must see the source's own
+    /// validators and the full catalogue rather than search-shaped pages.
+    /// </summary>
+    public async Task<ProviderSnapshot> ReadAsync(ProviderSnapshotRequest request, CancellationToken ct)
+    {
+        try
+        {
+            using var probe = new HttpRequestMessage(HttpMethod.Head, GutenbergCatalog.SnapshotPath);
+            ApplyValidators(probe, request);
+
+            using var response = await _snapshotHttp.SendAsync(
+                probe,
+                HttpCompletionOption.ResponseHeadersRead,
+                ct);
+
+            if (response.StatusCode == HttpStatusCode.NotModified)
+            {
+                return ProviderSnapshot.NotModified(
+                    etag: request.ETag ?? response.Headers.ETag?.ToString(),
+                    lastModified: request.IfModifiedSince ?? response.Content.Headers.LastModified);
+            }
+
+            if (!response.IsSuccessStatusCode)
+                throw ProviderException.UnavailableFor(Id, "the catalogue snapshot answered HTTP " + (int)response.StatusCode);
+
+            return new ProviderSnapshot(
+                ProviderSnapshotStatus.Updated,
+                ReadSnapshotItemsAsync(),
+                ETag: response.Headers.ETag?.ToString(),
+                LastModified: response.Content.Headers.LastModified);
+        }
+        catch (HttpRequestException ex)
+        {
+            throw ProviderException.UnavailableFor(Id, ex.Message);
+        }
+        catch (OperationCanceledException ex) when (!ct.IsCancellationRequested)
+        {
+            throw ProviderException.UnavailableFor(Id, ex.Message);
+        }
     }
 
     // --- IProviderAcquisitionPlanner -------------------------------------
@@ -209,6 +279,195 @@ public sealed partial class GutenbergProvider : IContentProvider,
             // source problem, never worth passing off as an empty catalogue.
             throw ProviderException.InvalidResponse(Id, ex.Message);
         }
+    }
+
+    /// <summary>
+    /// The snapshot items. Nothing exists until the first enumeration: the
+    /// archive is downloaded on the first <c>MoveNextAsync</c> and the temp file
+    /// is removed in the <c>finally</c>, which runs when the consumer breaks,
+    /// throws or cancels as well as on normal completion.
+    /// </summary>
+    private async IAsyncEnumerable<ProviderItem> ReadSnapshotItemsAsync(
+        [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        var path = Path.Combine(
+            Path.GetTempPath(),
+            SnapshotTempFilePrefix + Guid.NewGuid().ToString("N") + ".zip");
+
+        try
+        {
+            await DownloadSnapshotAsync(path, ct);
+
+            await using var file = new FileStream(
+                path,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read,
+                64 * 1024,
+                FileOptions.Asynchronous | FileOptions.SequentialScan);
+            using var zip = OpenSnapshotArchive(file);
+
+            var tarEntry = zip.Entries.FirstOrDefault(entry =>
+                entry.FullName.EndsWith(".tar", StringComparison.OrdinalIgnoreCase))
+                ?? throw ProviderException.InvalidResponse(Id, "the snapshot archive has no tar catalog");
+
+            await using var tarStream = OpenSnapshotTar(tarEntry);
+            using var tar = new TarReader(tarStream);
+
+            while (await ReadSnapshotItemAsync(tar, ct) is { } item)
+                yield return item;
+        }
+        finally
+        {
+            TryDeleteSnapshotFile(path);
+        }
+    }
+
+    private async Task DownloadSnapshotAsync(string path, CancellationToken ct)
+    {
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, GutenbergCatalog.SnapshotPath);
+            using var response = await _snapshotHttp.SendAsync(
+                request,
+                HttpCompletionOption.ResponseHeadersRead,
+                ct);
+
+            if (!response.IsSuccessStatusCode)
+                throw ProviderException.UnavailableFor(Id, "the catalogue snapshot answered HTTP " + (int)response.StatusCode);
+
+            await using var source = await response.Content.ReadAsStreamAsync(ct);
+            await using var destination = new FileStream(
+                path,
+                FileMode.CreateNew,
+                FileAccess.Write,
+                FileShare.None,
+                64 * 1024,
+                FileOptions.Asynchronous);
+
+            await source.CopyToAsync(destination, ct);
+        }
+        catch (HttpRequestException ex)
+        {
+            throw ProviderException.UnavailableFor(Id, ex.Message);
+        }
+        catch (OperationCanceledException ex) when (!ct.IsCancellationRequested)
+        {
+            throw ProviderException.UnavailableFor(Id, ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// One item per call, skipping anything in the tar that is not an ebook RDF
+    /// file and stopping the enumeration at the end of the archive. Parse
+    /// failures are translated here because an iterator cannot catch and
+    /// <c>yield</c> in the same block.
+    /// </summary>
+    private async Task<ProviderItem?> ReadSnapshotItemAsync(TarReader tar, CancellationToken ct)
+    {
+        while (true)
+        {
+            TarEntry? entry;
+            try
+            {
+                entry = await tar.GetNextEntryAsync(copyData: false, cancellationToken: ct);
+            }
+            catch (Exception ex) when (IsArchiveFailure(ex))
+            {
+                throw ProviderException.InvalidResponse(Id, ex.Message);
+            }
+
+            if (entry is null)
+                return null;
+
+            ct.ThrowIfCancellationRequested();
+
+            if (entry.EntryType != TarEntryType.RegularFile || entry.DataStream is null)
+                continue;
+
+            if (GutenbergCatalog.SnapshotIdFromEntryName(entry.Name) is not { } id)
+                continue;
+
+            GutenbergBook? book;
+            try
+            {
+                var document = await XDocument.LoadAsync(entry.DataStream, LoadOptions.None, ct);
+                book = GutenbergCatalog.ParseSnapshot(id, document);
+            }
+            catch (XmlException ex)
+            {
+                throw ProviderException.InvalidResponse(Id, $"snapshot entry '{entry.Name}': {ex.Message}");
+            }
+            catch (Exception ex) when (IsArchiveFailure(ex))
+            {
+                // The member's declared length can outrun the bytes that are
+                // actually there; that is a corrupt response, not a host error.
+                throw ProviderException.InvalidResponse(Id, $"snapshot entry '{entry.Name}': {ex.Message}");
+            }
+
+            if (book is not null)
+                return ToProviderItem(book, includeAssets: false);
+        }
+    }
+
+    private ZipArchive OpenSnapshotArchive(Stream stream)
+    {
+        try
+        {
+            return new ZipArchive(stream, ZipArchiveMode.Read);
+        }
+        catch (Exception ex) when (IsArchiveFailure(ex))
+        {
+            throw ProviderException.InvalidResponse(Id, ex.Message);
+        }
+    }
+
+    private Stream OpenSnapshotTar(ZipArchiveEntry entry)
+    {
+        try
+        {
+            return entry.Open();
+        }
+        catch (Exception ex) when (IsArchiveFailure(ex))
+        {
+            throw ProviderException.InvalidResponse(Id, ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// A truncated or corrupt archive: <see cref="EndOfStreamException"/> and
+    /// other <see cref="IOException"/>s when the stream ends mid-structure,
+    /// <see cref="InvalidDataException"/> for bad headers and unsupported
+    /// compression. None of these is a host failure, so all of them become
+    /// <c>provider_response_invalid</c>. Cancellation is not an IOException and
+    /// deliberately keeps propagating.
+    /// </summary>
+    private static bool IsArchiveFailure(Exception ex) => ex is IOException or InvalidDataException;
+
+    private void TryDeleteSnapshotFile(string path)
+    {
+        try
+        {
+            File.Delete(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // A leftover 177 MB temp file is worth knowing about; it must not
+            // mask the enumeration result that brought us here.
+            _logger.LogWarning(ex, "Could not delete the Gutenberg snapshot file {Path}.", path);
+        }
+    }
+
+    private static void ApplyValidators(HttpRequestMessage request, ProviderSnapshotRequest snapshot)
+    {
+        if (!string.IsNullOrWhiteSpace(snapshot.ETag)
+            && EntityTagHeaderValue.TryParse(snapshot.ETag, out var entityTag))
+        {
+            request.Headers.IfNoneMatch.Add(entityTag);
+        }
+
+        if (snapshot.IfModifiedSince is { } ifModifiedSince)
+            request.Headers.IfModifiedSince = ifModifiedSince;
     }
 
     private ProviderItem ToProviderItem(GutenbergBook book, bool includeAssets) => new(

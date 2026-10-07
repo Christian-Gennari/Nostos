@@ -276,6 +276,19 @@ public static class NostosProductComposition
             client.DefaultRequestHeaders.UserAgent.ParseAdd(
                 "Nostos/1.0 (+https://github.com/Christian-Gennari/Nostos-Rebirth)");
         });
+        // The daily RDF snapshot is a 177 MB archive, so it gets its own client:
+        // the 20 s search timeout must never apply to a bulk read. The download
+        // is bounded by the caller's token and the connect timeout instead.
+        services.AddHttpClient(GutenbergProvider.SnapshotHttpClientName, client =>
+        {
+            client.BaseAddress = new Uri(GutenbergCatalog.BaseUrl);
+            client.Timeout = Timeout.InfiniteTimeSpan;
+            client.DefaultRequestHeaders.UserAgent.ParseAdd(
+                "Nostos/1.0 (+https://github.com/Christian-Gennari/Nostos-Rebirth)");
+        }).ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+        {
+            ConnectTimeout = TimeSpan.FromSeconds(30),
+        });
         services.AddSingleton<IContentProvider, GutenbergProvider>();
 
         // Standard Ebooks approved Nostos for OPDS access by whitelisting this

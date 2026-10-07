@@ -53,8 +53,18 @@ internal static class GutenbergCatalog
 {
     public const string BaseUrl = "https://www.gutenberg.org";
 
+    /// <summary>
+    /// The daily machine-readable catalogue: a zipped tar of one RDF file per
+    /// ebook, published for bulk loading rather than crawling. 177 MB with a
+    /// Last-Modified header, regenerated once a day.
+    /// </summary>
+    public const string SnapshotPath = "/cache/epub/feeds/rdf-files.tar.zip";
+
     private static readonly XNamespace Atom = "http://www.w3.org/2005/Atom";
     private static readonly XNamespace DcTerms = "http://purl.org/dc/terms/";
+    private static readonly XNamespace Dcam = "http://purl.org/dc/dcam/";
+    private static readonly XNamespace PgTerms = "http://www.gutenberg.org/2009/pgterms/";
+    private static readonly XNamespace Rdf = "http://www.w3.org/1999/02/22-rdf-syntax-ns#";
     private static readonly XNamespace Xhtml = "http://www.w3.org/1999/xhtml";
 
     private const string OpdsAcquisition = "http://opds-spec.org/acquisition";
@@ -177,6 +187,116 @@ internal static class GutenbergCatalog
             Categories: subjects.Count == 0 ? null : string.Join(", ", subjects),
             Rights: rights,
             Assets: assets);
+    }
+
+    /// <summary>
+    /// Extracts Gutenberg's ebook id from a snapshot tar entry name
+    /// ("cache/epub/1342/pg1342.rdf"). Everything else in the archive — index
+    /// files, future layouts — is not a book and is skipped.
+    /// </summary>
+    public static string? SnapshotIdFromEntryName(string? entryName)
+    {
+        if (entryName is null)
+            return null;
+
+        var parts = entryName.Split('/');
+        if (parts.Length != 4 || parts[0] != "cache" || parts[1] != "epub")
+            return null;
+
+        var id = parts[2];
+        if (id.Length is 0 or > 7 || !id.All(char.IsAsciiDigit))
+            return null;
+
+        var file = parts[3];
+        if (file.Length < 7
+            || !file.StartsWith("pg", StringComparison.Ordinal)
+            || !file.EndsWith(".rdf", StringComparison.Ordinal)
+            || !file[2..^4].All(char.IsAsciiDigit))
+        {
+            return null;
+        }
+
+        return id;
+    }
+
+    /// <summary>
+    /// Parses one RDF record from the daily catalogue snapshot into the same
+    /// normalized book the OPDS parser produces, so both feed the same
+    /// <c>ProviderItem</c> mapping and the same deterministic cover URL.
+    ///
+    /// The archive also carries audio, images, datasets and collections; only
+    /// DCMI "Text" records are ebooks. A record that predates
+    /// <c>dcterms:type</c> is admitted only when it actually offers an ebook
+    /// representation, so the fallback cannot turn an audiobook into one.
+    /// </summary>
+    public static GutenbergBook? ParseSnapshot(string id, XDocument rdf)
+    {
+        var ebook = rdf.Root?.Elements(PgTerms + "ebook").FirstOrDefault();
+        if (ebook is null || !IsEbookSnapshot(ebook))
+            return null;
+
+        var title = ebook.Elements(DcTerms + "title")
+            .Select(element => element.Value.Trim())
+            .FirstOrDefault(value => value.Length > 0);
+        if (string.IsNullOrWhiteSpace(title))
+            return null;
+
+        var author = GutenbergAuthorName.NormalizeAll(
+            ebook.Elements(DcTerms + "creator")
+                .SelectMany(creator => creator.Descendants(PgTerms + "name"))
+                .Select(name => name.Value));
+
+        var languages = ebook.Elements(DcTerms + "language")
+            .SelectMany(language => language.Descendants(Rdf + "value"))
+            .Select(value => LanguageName(value.Value))
+            .Where(value => value is not null)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        // The snapshot carries LCSH and LCC classifications side by side; the
+        // OPDS mapping exposes subjects only, so the classification codes are
+        // dropped here too.
+        var subjects = ebook.Elements(DcTerms + "subject")
+            .Where(subject => subject.Descendants(Dcam + "memberOf")
+                .Select(member => (string?)member.Attribute(Rdf + "resource"))
+                .Any(resource => resource?.Contains("LCSH", StringComparison.OrdinalIgnoreCase) == true))
+            .SelectMany(subject => subject.Descendants(Rdf + "value"))
+            .Select(value => value.Value.Trim())
+            .Where(value => value.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var rights = ebook.Elements(DcTerms + "rights")
+            .Select(element => element.Value.Trim())
+            .FirstOrDefault(value => value.Length > 0);
+
+        return new GutenbergBook(
+            Id: id,
+            Title: title,
+            Author: author,
+            Description: null,
+            Language: languages.Count == 0 ? null : string.Join(", ", languages),
+            Categories: subjects.Count == 0 ? null : string.Join(", ", subjects),
+            Rights: rights,
+            Assets: []);
+    }
+
+    private static bool IsEbookSnapshot(XElement ebook)
+    {
+        var type = ebook.Elements(DcTerms + "type")
+            .SelectMany(element => element.Descendants(Rdf + "value"))
+            .Select(value => value.Value.Trim())
+            .FirstOrDefault(value => value.Length > 0);
+
+        if (type is not null)
+            return type.Equals("Text", StringComparison.OrdinalIgnoreCase);
+
+        return ebook.Elements(DcTerms + "hasFormat")
+            .SelectMany(file => file.Descendants(DcTerms + "format").Descendants(Rdf + "value"))
+            .Select(value => value.Value.Trim())
+            .Any(mime => mime.Equals("application/epub+zip", StringComparison.OrdinalIgnoreCase)
+                || mime.Equals("application/pdf", StringComparison.OrdinalIgnoreCase)
+                || mime.StartsWith("text/", StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>

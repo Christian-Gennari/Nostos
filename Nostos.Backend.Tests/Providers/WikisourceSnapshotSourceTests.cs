@@ -167,6 +167,44 @@ public sealed class WikisourceSnapshotSourceTests
     }
 
     [Fact]
+    public async Task Read_reports_a_truncated_feed_as_invalid_provider_response()
+    {
+        var (provider, handler) = CreateProvider();
+        handler.Register(CatalogPath, _ => FeedResponse(
+            "<?xml version=\"1.0\"?><feed xmlns=\"http://www.w3.org/2005/Atom\"><entry><title>Truncated"));
+
+        var act = () => provider.ReadAsync(new ProviderSnapshotRequest(), CancellationToken.None);
+
+        var error = await act.Should().ThrowAsync<ProviderException>();
+        error.Which.Code.Should().Be(ProviderException.ResponseInvalid);
+    }
+
+    [Fact]
+    public async Task Read_reports_a_client_timeout_as_provider_unavailable()
+    {
+        var (provider, handler) = CreateProvider();
+        handler.Register(CatalogPath, _ => throw new TaskCanceledException("the client timeout fired"));
+
+        var act = () => provider.ReadAsync(new ProviderSnapshotRequest(), CancellationToken.None);
+
+        var error = await act.Should().ThrowAsync<ProviderException>();
+        error.Which.Code.Should().Be(ProviderException.Unavailable);
+    }
+
+    [Fact]
+    public async Task Read_lets_the_callers_own_cancellation_propagate()
+    {
+        var (provider, handler) = CreateProvider();
+        handler.Register(CatalogPath, _ => throw new TaskCanceledException("caller cancellation"));
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        var act = () => provider.ReadAsync(new ProviderSnapshotRequest(), cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
     public void Snapshot_source_is_reachable_through_the_provider_registry()
     {
         var (provider, _) = CreateProvider();
