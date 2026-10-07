@@ -1,6 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { signal } from '@angular/core';
+import { ActivatedRoute, Router } from '@angular/router';
 import { Observable, Subject, of, throwError } from 'rxjs';
 import {
   HttpErrorResponse,
@@ -68,6 +69,7 @@ import {
 } from '../core/dtos/ai-provider.dtos';
 
 const toastMock = { error: vi.fn(), success: vi.fn(), info: vi.fn() };
+const routerMock = { navigate: vi.fn() };
 
 const selfHostedCapabilities: DeploymentCapabilities = {
   deploymentMode: 'SelfHosted',
@@ -339,11 +341,14 @@ const assistantSettingsMock = {
 
 describe('SettingsComponent backup-only surface', () => {
   let fixture: ComponentFixture<SettingsComponent>;
+  const routeStub = { snapshot: { data: { manageLibraryPage: false } } };
 
   async function configure(): Promise<void> {
     await TestBed.configureTestingModule({
       imports: [SettingsComponent],
       providers: [
+        { provide: ActivatedRoute, useValue: routeStub },
+        { provide: Router, useValue: routerMock },
         { provide: BackupService, useValue: backupServiceMock },
         { provide: OpdsService, useValue: opdsServiceMock },
         { provide: ToastService, useValue: toastMock },
@@ -362,7 +367,17 @@ describe('SettingsComponent backup-only surface', () => {
     fixture.detectChanges();
   }
 
+  function openManageLibraryPage(): void {
+    const capabilities = fixture.componentInstance.deploymentCapabilities();
+    if (capabilities) capabilitiesServiceMock.get.mockReturnValue(of(capabilities));
+    fixture.destroy();
+    routeStub.snapshot.data.manageLibraryPage = true;
+    fixture = TestBed.createComponent(SettingsComponent);
+    fixture.detectChanges();
+  }
+
   beforeEach(async () => {
+    routeStub.snapshot.data.manageLibraryPage = false;
     localStorage.clear();
     capabilitiesServiceMock.get.mockClear();
     capabilitiesServiceMock.get.mockReturnValue(of(selfHostedCapabilities));
@@ -829,10 +844,14 @@ describe('SettingsComponent backup-only surface', () => {
         .map((item) => item.nativeElement.textContent.trim()),
     ).toEqual(['Library & data', 'Book providers', 'Assistant', 'Account', 'Appearance']);
     expect(fixture.nativeElement.querySelector('#library-data')).not.toBeNull();
-    expect(fixture.nativeElement.querySelector('[data-testid="cloud-portable-export-card"]')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('[data-testid="manage-library-summary-card"]')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('.manage-library-groups')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="ereader-access-card"]')).toBeNull();
     expect(opdsServiceMock.getInfo).not.toHaveBeenCalled();
     expect(opdsServiceMock.getManagedAccess).not.toHaveBeenCalled();
+
+    openManageLibraryPage();
+    expect(fixture.nativeElement.querySelector('[data-testid="cloud-portable-export-card"]')).toBeTruthy();
   });
 
   it('offers one Cloud export action and keeps it out of SelfHosted settings', () => {
@@ -840,6 +859,7 @@ describe('SettingsComponent backup-only surface', () => {
 
     capabilitiesServiceMock.get.mockReturnValueOnce(of(cloudCapabilities));
     render();
+    openManageLibraryPage();
 
     const card = fixture.nativeElement.querySelector(
       '[data-testid="cloud-portable-export-card"]',
@@ -858,6 +878,7 @@ describe('SettingsComponent backup-only surface', () => {
     const pending = new Subject<HttpEvent<Blob>>();
     portableLibraryServiceMock.exportArchive.mockReturnValueOnce(pending.asObservable());
     render();
+    openManageLibraryPage();
 
     const component = fixture.componentInstance;
     const saveSpy = vi
@@ -918,6 +939,7 @@ describe('SettingsComponent backup-only surface', () => {
       throwError(() => new HttpErrorResponse({ status: 500, statusText: 'Server error' })),
     );
     render();
+    openManageLibraryPage();
 
     const action = fixture.nativeElement.querySelector(
       '[data-testid="cloud-portable-export-action"]',
@@ -952,17 +974,43 @@ describe('SettingsComponent backup-only surface', () => {
     expect(aiProviderServiceMock.update).not.toHaveBeenCalled();
   });
 
-  it('renders the Backup and Backup History cards', () => {
+  it('shows one capability-aware Manage library entry in Library & data', () => {
+    const summary = fixture.nativeElement.querySelector(
+      '[data-testid="manage-library-summary-card"]',
+    ) as HTMLElement;
+    expect(summary).toBeTruthy();
+    expect(summary.textContent).toContain('Backups help you recover this SelfHosted installation.');
+    expect(summary.querySelectorAll('button')).toHaveLength(1);
+    expect(summary.querySelector('[data-testid="manage-library-open"]')?.textContent).toContain(
+      'Manage library',
+    );
+    expect(fixture.nativeElement.querySelector('.manage-library-groups')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="ereader-access-card"]')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('[data-testid="highlight-import-card"]')).toBeTruthy();
+  });
+
+  it('opens the dedicated Manage library route from the summary button', () => {
+    routerMock.navigate.mockClear();
+    fixture.nativeElement
+      .querySelector('[data-testid="manage-library-open"]')
+      .click();
+
+    expect(routerMock.navigate).toHaveBeenCalledWith(['/settings/library']);
+  });
+
+  it('renders the existing Backup and Backup History cards on Manage library', () => {
+    openManageLibraryPage();
     const headers = fixture.debugElement
       .queryAll(By.css('.card-header h2'))
       .map((h) => h.nativeElement.textContent.trim());
     expect(headers).toContain('Backup');
     expect(headers).toContain('Backup History');
-    // No empty section/divider where Appearance was: the first card is Backup.
+    // The dedicated page starts with its first capability-gated task group.
     expect(headers[0]).toBe('Backup');
   });
 
   it('exposes the automatic-backup toggle and manual backup action', () => {
+    openManageLibraryPage();
     const toggles = fixture.debugElement.queryAll(By.css('input[type="checkbox"]'));
     // Automatic Backup + Include Book Files + the Reading assistant toggle (W1)
     // + the AI provider card's voice transcription and embeddings toggles.
@@ -981,6 +1029,7 @@ describe('SettingsComponent backup-only surface', () => {
   });
 
   it('asks through ConfirmModal before restoring (no direct restore)', () => {
+    openManageLibraryPage();
     const component = fixture.componentInstance;
     backupServiceMock.restore.mockClear();
 
@@ -997,6 +1046,7 @@ describe('SettingsComponent backup-only surface', () => {
   });
 
   it('cancelling restore performs nothing', () => {
+    openManageLibraryPage();
     const component = fixture.componentInstance;
     backupServiceMock.restore.mockClear();
 
@@ -1007,6 +1057,7 @@ describe('SettingsComponent backup-only surface', () => {
   });
 
   it('asks through ConfirmModal before deleting a backup', () => {
+    openManageLibraryPage();
     const component = fixture.componentInstance;
     backupServiceMock.deleteBackup.mockClear();
 
@@ -1946,6 +1997,10 @@ describe('SettingsComponent shared library transfer host', () => {
     await TestBed.configureTestingModule({
       imports: [SettingsComponent],
       providers: [
+        {
+          provide: ActivatedRoute,
+          useValue: { snapshot: { data: { manageLibraryPage: true } } },
+        },
         { provide: BackupService, useValue: backupServiceMock },
         { provide: OpdsService, useValue: opdsServiceMock },
         { provide: ToastService, useValue: toastMock },

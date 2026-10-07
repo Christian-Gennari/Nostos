@@ -53,8 +53,20 @@ export const routes: Routes = [
       },
       {
         path: 'settings',
-        loadComponent: () =>
-          import('./settings/settings.component').then((m) => m.SettingsComponent),
+        children: [
+          {
+            path: 'library',
+            data: { manageLibraryPage: true },
+            loadComponent: () =>
+              import('./settings/settings.component').then((m) => m.SettingsComponent),
+          },
+          {
+            path: '',
+            pathMatch: 'full',
+            loadComponent: () =>
+              import('./settings/settings.component').then((m) => m.SettingsComponent),
+          },
+        ],
       },
     ],
   },
