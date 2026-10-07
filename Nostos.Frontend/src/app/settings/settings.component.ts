@@ -1,7 +1,20 @@
-import { Component, computed, inject, OnDestroy, OnInit, signal } from '@angular/core';
+import {
+  Component,
+  computed,
+  ElementRef,
+  effect,
+  inject,
+  OnDestroy,
+  OnInit,
+  signal,
+  ViewChild,
+} from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { HttpErrorResponse, HttpEventType, HttpResponse } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
+import { ActivatedRoute, convertToParamMap, Router } from '@angular/router';
+import { of } from 'rxjs';
 
 import { BackupService } from '../core/services/backup.service';
 import { OpdsService } from '../core/services/opds.service';
@@ -30,10 +43,13 @@ import {
   ProcessingMode,
 } from '../ui/assistant/assistant-settings.service';
 import { AiProviderService } from '../core/services/ai-provider.service';
+import { ProviderSettingsService } from '../core/services/provider-settings.service';
+import { ProviderSettingsItem } from '../core/dtos/provider.dtos';
 import { DeploymentCapabilitiesService } from '../core/services/deployment-capabilities.service';
 import { DeploymentCapabilities } from '../core/dtos/deployment-capabilities.dtos';
 import { CloudAiRefillService } from '../core/services/cloud-ai-refill.service';
 import { CloudAuthService } from '../core/services/cloud-auth.service';
+import { CloudEntryService } from '../core/services/cloud-entry.service';
 import { CloudSession } from '../core/dtos/cloud-auth.dtos';
 import { HighlightImportService } from '../core/services/highlight-import.service';
 import { PortableLibraryService } from '../core/services/portable-library.service';
@@ -122,8 +138,23 @@ const AI_PROVIDER_COPY = {
   couldNotSave: (message: string) => `Could not save: ${message}`,
 } as const;
 
+/**
+ * Every user-visible string for the "Book providers" card (issue #774), in one
+ * place for the same reason as AI_PROVIDER_COPY: one edit changes the wording.
+ */
+const BOOK_PROVIDER_COPY = {
+  intro:
+    'Choose which free book and audiobook sources Nostos searches when you add a book. Sources you turn off stay out of Add Book and cannot be used until you turn them back on.',
+  loading: 'Loading book sources…',
+  loadFailed: 'Could not load the book sources.',
+  loadFailedHelp:
+    'The server did not answer the request for the provider list. Switch away and back to try again.',
+  empty: 'No book sources are available on this server.',
+  saveFailed: 'Could not save this source. Your previous choice is still in effect.',
+} as const;
+
 /** How a section's inline status line is coloured. */
-type SettingsSection = 'library' | 'account' | 'assistant' | 'appearance';
+type SettingsSection = 'library' | 'account' | 'assistant' | 'appearance' | 'providers';
 
 type AiProviderStatusTone = 'neutral' | 'ok' | 'error';
 
@@ -194,6 +225,12 @@ const defaultProgress: BackupProgress = {
   styleUrls: ['./settings.component.css'],
 })
 export class SettingsComponent implements OnInit, OnDestroy {
+  private readonly route = inject(ActivatedRoute, { optional: true });
+  private readonly router = inject(Router, { optional: true });
+  private readonly queryParamMap = toSignal(
+    this.route?.queryParamMap ?? of(this.route?.snapshot.queryParamMap ?? convertToParamMap({})),
+    { initialValue: this.route?.snapshot.queryParamMap ?? convertToParamMap({}) },
+  );
   private backupService = inject(BackupService);
   private opdsService = inject(OpdsService);
   private toast = inject(ToastService);
@@ -202,14 +239,40 @@ export class SettingsComponent implements OnInit, OnDestroy {
   private assistantSettings = inject(AssistantSettingsService);
   private preferences = inject(LibraryPreferencesService);
   private aiProvider = inject(AiProviderService);
+  private providerSettingsService = inject(ProviderSettingsService);
   private deploymentCapabilitiesService = inject(DeploymentCapabilitiesService);
   private cloudAiRefills = inject(CloudAiRefillService);
   private portableLibrary = inject(PortableLibraryService);
   private cloudAuth = inject(CloudAuthService);
+  readonly cloudEntry = inject(CloudEntryService);
   private highlightImport = inject(HighlightImportService);
+
+  @ViewChild('firstRunImportInput')
+  private firstRunImportInput?: ElementRef<HTMLInputElement>;
+
+  private readonly firstRunCloudImportElement = signal<ElementRef<HTMLElement> | null>(null);
+
+  @ViewChild('firstRunCloudImport')
+  set firstRunCloudImportSection(section: ElementRef<HTMLElement> | undefined) {
+    this.firstRunCloudImportElement.set(section ?? null);
+  }
 
   /** Which settings surface is visible. This is local UI state, not a route. */
   readonly activeSettingsSection = signal<SettingsSection>('library');
+  /** The dedicated whole-library surface reuses these existing settings cards. */
+  readonly isManageLibraryPage = this.route?.snapshot.data['manageLibraryPage'] === true;
+  readonly isImportSelected = computed(() => this.queryParamMap().get('action') === 'import');
+  readonly isFirstRunImport = computed(() => this.queryParamMap().get('source') === 'first-run');
+
+  constructor() {
+    effect(() => {
+      const section = this.firstRunCloudImportElement();
+      if (!section || !this.isImportSelected() || !this.isFirstRunImport()) return;
+
+      section.nativeElement.scrollIntoView?.({ block: 'center' });
+      section.nativeElement.focus({ preventScroll: true });
+    });
+  }
 
   /** Server-authoritative deployment capabilities. Null means not loaded yet. */
   readonly deploymentCapabilities = signal<DeploymentCapabilities | null>(null);
@@ -231,6 +294,13 @@ export class SettingsComponent implements OnInit, OnDestroy {
     this.isCloud() ? (this.deploymentCapabilities()?.accountManagementUrl ?? null) : null,
   );
   readonly supportsCloudPortableExport = computed(() => this.isCloud());
+  readonly showFirstRunCloudImport = computed(
+    () =>
+      this.isManageLibraryPage &&
+      (this.isFirstRunImport() || this.cloudEntry.firstRunImportPending()) &&
+      this.supportsCloudPortableExport() &&
+      !this.supportsLibraryMigration(),
+  );
   /**
    * Server-authoritative migration capability (#680 plan §4). Only a true
    * value renders the shared "Move your library" card; false or absent keeps
@@ -247,6 +317,31 @@ export class SettingsComponent implements OnInit, OnDestroy {
   readonly supportsSafeActivation = computed(
     () => this.deploymentCapabilities()?.supportsSafeActivation === true,
   );
+  readonly hasManageLibraryActions = computed(
+    () =>
+      this.supportsLocalBackupConfiguration() ||
+      this.supportsLibraryMigration() ||
+      this.supportsCloudPortableExport(),
+  );
+  readonly manageLibrarySummary = computed(() => {
+    const hasBackups = this.supportsLocalBackupConfiguration();
+    const hasMigration = this.supportsLibraryMigration();
+
+    if (hasBackups && hasMigration) {
+      return 'Back up this installation or move your library to another Nostos.';
+    }
+    if (hasBackups) {
+      return 'Backups help you recover this SelfHosted installation.';
+    }
+    if (hasMigration) {
+      return 'Move your library to another Nostos installation.';
+    }
+    if (this.supportsCloudPortableExport()) {
+      return 'Download a portable archive of your Nostos library.';
+    }
+
+    return 'Manage the data for your Nostos library.';
+  });
   readonly cloudSession = signal<CloudSession | null>(null);
   readonly managedEreaderAccess = computed(
     () =>
@@ -271,8 +366,32 @@ export class SettingsComponent implements OnInit, OnDestroy {
   /** Highlight import exists on every deployment, so the section always has content. */
   readonly hasLibrarySettings = computed(() => this.deploymentCapabilities() !== null);
 
+  openManageLibrary(): void {
+    void this.router?.navigate(['/settings/library']);
+  }
+
+  openFirstRunImportPicker(): void {
+    this.firstRunImportInput?.nativeElement.click();
+  }
+
+  async importFirstRunArchive(event: Event): Promise<void> {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    await this.cloudEntry.importPortableArchive(file);
+    input.value = '';
+  }
+
+  returnToLibrarySettings(): void {
+    void this.router?.navigate(['/settings']);
+  }
+
   /** The AI provider card's copy, exposed so the template reads one source. */
   readonly copy = AI_PROVIDER_COPY;
+
+  /** The Book providers card's copy, same single-source rule. */
+  readonly copyProviders = BOOK_PROVIDER_COPY;
 
   /** The active theme, exposed for the Appearance card. */
   readonly theme = this.themeService.theme;
@@ -330,6 +449,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
 
   setSettingsSection(section: SettingsSection): void {
     this.activeSettingsSection.set(section);
+    if (section === 'providers') this.loadProviderSettings();
   }
 
   setAssistantEnabled(event: Event): void {
@@ -347,6 +467,87 @@ export class SettingsComponent implements OnInit, OnDestroy {
 
   changeCaptureProcessingMode(mode: string): void {
     this.assistantSettings.setCaptureProcessingMode(mode as ProcessingMode);
+  }
+
+  // --- Book providers card (issue #774) --------------------------------
+  // Loaded lazily the first time the tab opens; a failed load retries on the
+  // next open. A toggle is applied optimistically and reverted on failure,
+  // because a native checkbox stays where the click put it unless the bound
+  // value actually changes.
+
+  /** Every registered source with its effective choice, disabled ones included. */
+  readonly providerSettings = signal<ProviderSettingsItem[]>([]);
+  readonly providerSettingsLoading = signal(false);
+  readonly providerSettingsError = signal(false);
+  readonly providerSettingsSaveFailed = signal(false);
+  readonly providerSavingIds = signal<ReadonlySet<string>>(new Set<string>());
+  private providerSettingsLoaded = false;
+
+  loadProviderSettings(): void {
+    if (this.providerSettingsLoading()) return;
+    if (this.providerSettingsLoaded && !this.providerSettingsError()) return;
+
+    this.providerSettingsLoading.set(true);
+    this.providerSettingsError.set(false);
+    this.providerSettingsService.list().subscribe({
+      next: (response) => {
+        this.providerSettings.set(response.providers);
+        this.providerSettingsLoaded = true;
+        this.providerSettingsLoading.set(false);
+      },
+      error: () => {
+        this.providerSettingsError.set(true);
+        this.providerSettingsLoading.set(false);
+      },
+    });
+  }
+
+  setProviderEnabled(provider: ProviderSettingsItem, event: Event): void {
+    if (this.providerSavingIds().has(provider.id)) return;
+
+    const previousEnabled = provider.enabled;
+    const checked = (event.target as HTMLInputElement).checked;
+
+    this.providerSettings.set(
+      this.withProviderEnabled(this.providerSettings(), provider.id, checked),
+    );
+    this.setProviderSaving(provider.id, true);
+    this.providerSettingsSaveFailed.set(false);
+
+    this.providerSettingsService.setEnabled(provider.id, checked).subscribe({
+      next: (updated) => {
+        this.setProviderSaving(provider.id, false);
+        // The server's item is the truth; replacing it also undoes any drift.
+        this.providerSettings.update((list) =>
+          list.map((item) => (item.id === updated.id ? updated : item)),
+        );
+      },
+      error: () => {
+        this.setProviderSaving(provider.id, false);
+        // Revert only this row: another provider's concurrent save may have
+        // succeeded since this one started.
+        this.providerSettings.update((list) =>
+          this.withProviderEnabled(list, provider.id, previousEnabled),
+        );
+        this.providerSettingsSaveFailed.set(true);
+        this.toast.error(BOOK_PROVIDER_COPY.saveFailed);
+      },
+    });
+  }
+
+  private withProviderEnabled(
+    list: readonly ProviderSettingsItem[],
+    providerId: string,
+    enabled: boolean,
+  ): ProviderSettingsItem[] {
+    return list.map((item) => (item.id === providerId ? { ...item, enabled } : item));
+  }
+
+  private setProviderSaving(providerId: string, saving: boolean): void {
+    const next = new Set(this.providerSavingIds());
+    if (saving) next.add(providerId);
+    else next.delete(providerId);
+    this.providerSavingIds.set(next);
   }
 
   setTheme(theme: Theme): void {
@@ -1041,7 +1242,10 @@ export class SettingsComponent implements OnInit, OnDestroy {
    * data on screen.
    */
   onLibraryTransferCompleted(): void {
-    this.loadData();
+    if (this.isFirstRunImport() || this.cloudEntry.firstRunImportPending()) {
+      this.cloudEntry.finishFirstRunAfterImport();
+    }
+    if (this.supportsLocalBackupConfiguration()) this.loadData();
   }
 
   loadData(): void {

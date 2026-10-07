@@ -2,7 +2,17 @@
   <section class="transfer-host__entry" role="group" aria-label="Export library">
     <app-library-export-flow />
   </section>
-  <section class="transfer-host__entry" role="group" aria-label="Import library">
+  <section
+    #importEntry
+    class="transfer-host__entry"
+    [class.transfer-host__entry--selected]="focusImport()"
+    id="manage-library-import-entry"
+    data-testid="library-transfer-import-entry"
+    role="group"
+    aria-label="Import library"
+    tabindex="-1"
+    [attr.aria-current]="focusImport() ? 'step' : null"
+  >
     <app-library-import-flow
       [supportsSafeActivation]="supportsSafeActivation()"
       [activationState]="activation.state()"

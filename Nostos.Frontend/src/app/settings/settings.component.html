@@ -1,7 +1,15 @@
     <div class="settings-page">
-      <div class="settings-shell">
+      <div class="settings-shell" [class.settings-shell--manage-library]="isManageLibraryPage">
         @if (capabilitiesLoading()) {
           <main class="settings-content" data-testid="settings-capabilities-loading">
+            @if (isManageLibraryPage) {
+              <header class="manage-library-header">
+                <button appButton type="button" variant="ghost" (click)="returnToLibrarySettings()">
+                  Back to settings
+                </button>
+                <h1 class="settings-section-title">Manage library</h1>
+              </header>
+            }
             <section class="settings-card">
               <div class="card-body">
                 <div class="setting-row">
@@ -15,6 +23,14 @@
           </main>
         } @else if (capabilitiesFailed()) {
           <main class="settings-content" data-testid="settings-capabilities-error">
+            @if (isManageLibraryPage) {
+              <header class="manage-library-header">
+                <button appButton type="button" variant="ghost" (click)="returnToLibrarySettings()">
+                  Back to settings
+                </button>
+                <h1 class="settings-section-title">Manage library</h1>
+              </header>
+            }
             <section class="settings-card">
               <div class="card-body">
                 <div class="setting-row">
@@ -27,6 +43,7 @@
             </section>
           </main>
         } @else {
+        @if (!isManageLibraryPage) {
         <nav class="settings-nav" role="tablist" aria-label="Settings sections">
           @if (hasLibrarySettings()) {
           <button
@@ -44,6 +61,20 @@
             <span class="settings-nav-copy">Library &amp; data</span>
           </button>
           }
+          <button
+            type="button"
+            class="settings-nav-item"
+            role="tab"
+            [class.is-active]="activeSettingsSection() === 'providers'"
+            [attr.aria-selected]="activeSettingsSection() === 'providers'"
+            aria-controls="providers"
+            (click)="setSettingsSection('providers')"
+          >
+            <span class="settings-nav-icon">
+              <nostos-icon name="books" [size]="17"></nostos-icon>
+            </span>
+            <span class="settings-nav-copy">Book providers</span>
+          </button>
           <button
             type="button"
             class="settings-nav-item"
@@ -89,19 +120,74 @@
             <span class="settings-nav-copy">Appearance</span>
           </button>
         </nav>
+        }
 
         <main class="settings-content">
           @if (hasLibrarySettings()) {
           <section
             class="settings-section"
             id="library-data"
-            role="tabpanel"
-            aria-labelledby="library-data-heading"
-            [hidden]="activeSettingsSection() !== 'library'"
+            [attr.role]="isManageLibraryPage ? null : 'tabpanel'"
+            [attr.aria-labelledby]="
+              isManageLibraryPage ? 'manage-library-page-heading' : 'library-data-heading'
+            "
+            [hidden]="!isManageLibraryPage && activeSettingsSection() !== 'library'"
           >
-            <h2 class="settings-section-title" id="library-data-heading">Library &amp; data</h2>
+            @if (isManageLibraryPage) {
+              <header class="manage-library-header" data-testid="manage-library-page">
+                <button
+                  appButton
+                  type="button"
+                  variant="ghost"
+                  class="manage-library-back"
+                  data-testid="manage-library-back"
+                  (click)="returnToLibrarySettings()"
+                >
+                  Back to settings
+                </button>
+                <h1 class="settings-section-title" id="manage-library-page-heading">Manage library</h1>
+                <p class="label-desc">
+                  Move your library or protect this installation with the actions available here.
+                </p>
+              </header>
+            } @else {
+              <h2 class="settings-section-title" id="library-data-heading">Library &amp; data</h2>
+              @if (hasManageLibraryActions()) {
+              <section
+                class="settings-card manage-library-summary"
+                data-testid="manage-library-summary-card"
+              >
+                <div class="card-header">
+                  <div class="card-header-copy">
+                    <h2>Manage library</h2>
+                  </div>
+                  <button
+                    appButton
+                    type="button"
+                    variant="primary"
+                    data-testid="manage-library-open"
+                    (click)="openManageLibrary()"
+                  >
+                    Manage library
+                  </button>
+                </div>
+                <div class="card-body">
+                  <p class="label-desc" data-testid="manage-library-summary">{{ manageLibrarySummary() }}</p>
+                </div>
+              </section>
+              }
+            }
 
+            @if (isManageLibraryPage) {
+            <div class="manage-library-groups">
             @if (supportsLocalBackupConfiguration()) {
+            <section class="manage-library-group" aria-labelledby="manage-library-protect-heading">
+            <h2
+              class="settings-section-title manage-library-group-title"
+              id="manage-library-protect-heading"
+            >
+              Protect this installation
+            </h2>
             <section class="settings-card">
         <div class="card-header">
           <div class="card-header-copy">
@@ -336,9 +422,17 @@
           </div>
         }
       </section>
+            </section>
       }
 
       @if (supportsLibraryMigration()) {
+      <section class="manage-library-group" aria-labelledby="manage-library-move-heading">
+      <h2
+        class="settings-section-title manage-library-group-title"
+        id="manage-library-move-heading"
+      >
+        Move to another Nostos
+      </h2>
       <!-- Portable library transfer is deliberately separate from the local
            operational Backup above: these archives move a library between
            Nostos installations, they do not recover this installation. -->
@@ -359,11 +453,20 @@
           </p>
           <app-library-transfer-host
             [supportsSafeActivation]="supportsSafeActivation()"
+            [focusImport]="isImportSelected()"
             (importCompleted)="onLibraryTransferCompleted()"
           />
         </div>
       </section>
+      </section>
       } @else if (supportsCloudPortableExport()) {
+      <section class="manage-library-group" aria-labelledby="manage-library-export-heading">
+      <h2
+        class="settings-section-title manage-library-group-title"
+        id="manage-library-export-heading"
+      >
+        Move to another Nostos
+      </h2>
       <section class="settings-card" data-testid="cloud-portable-export-card">
         <div class="card-header">
           <div class="card-header-copy">
@@ -372,6 +475,53 @@
         </div>
 
         <div class="card-body">
+          @if (showFirstRunCloudImport()) {
+            <section
+              #firstRunCloudImport
+              class="first-run-cloud-import"
+              [class.is-selected]="isImportSelected()"
+              id="manage-library-import-entry"
+              data-testid="first-run-cloud-import"
+              tabindex="-1"
+              aria-label="Import an existing Nostos library"
+            >
+              <div class="setting-row">
+                <div class="setting-label">
+                  <span class="label-text">Import an existing Nostos library</span>
+                  <span class="label-desc">Choose the portable .nostos archive you want to bring into this new library.</span>
+                  @if (cloudEntry.actionError(); as importError) {
+                    <span class="label-desc portable-export-status is-error" role="alert">{{ importError }}</span>
+                  }
+                </div>
+                <input
+                  #firstRunImportInput
+                  type="file"
+                  accept=".nostos,application/vnd.nostos.portable+zip"
+                  (change)="importFirstRunArchive($event)"
+                  data-testid="first-run-cloud-import-file"
+                  hidden
+                >
+                <button
+                  appButton
+                  variant="secondary"
+                  type="button"
+                  data-testid="first-run-cloud-import-open"
+                  [disabled]="cloudEntry.actionPending()"
+                  [busy]="cloudEntry.actionPending()"
+                  (click)="openFirstRunImportPicker()"
+                >
+                  @if (cloudEntry.actionPending()) {
+                    <nostos-icon name="circle-notch" [size]="16" class="spin"></nostos-icon>
+                    Importing…
+                  } @else {
+                    <nostos-icon name="upload-simple" [size]="16"></nostos-icon>
+                    Choose archive
+                  }
+                </button>
+              </div>
+            </section>
+          }
+
           <div class="setting-row">
             <div class="setting-label">
               <span class="label-text">Your complete Nostos archive</span>
@@ -410,8 +560,12 @@
           </div>
         </div>
       </section>
-      }
+      </section>
+            }
+            </div>
+            }
 
+            @if (!isManageLibraryPage) {
       @if (supportsEreaderAccess()) {
       <!-- E-reader access is one product capability with deployment-specific
            connection models: private-network SelfHosted or managed Cloud credentials. -->
@@ -623,9 +777,93 @@
           </div>
         </div>
       </section>
+            }
 
           </section>
           }
+
+          <section
+            class="settings-section"
+            id="providers"
+            role="tabpanel"
+            aria-labelledby="providers-heading"
+            [hidden]="activeSettingsSection() !== 'providers'"
+          >
+            <h2 class="settings-section-title" id="providers-heading">Book providers</h2>
+
+            <section class="settings-card" data-testid="book-providers-card">
+              <div class="card-header">
+                <div class="card-header-copy">
+                  <h2>Sources</h2>
+                </div>
+              </div>
+
+              <div class="card-body">
+                <p class="label-desc card-purpose" data-testid="book-providers-purpose">
+                  {{ copyProviders.intro }}
+                </p>
+
+                @if (providerSettingsLoading()) {
+                  <div class="setting-row" data-testid="book-providers-loading">
+                    <div class="setting-label">
+                      <span class="label-text">{{ copyProviders.loading }}</span>
+                    </div>
+                  </div>
+                } @else if (providerSettingsError()) {
+                  <div class="setting-row" data-testid="book-providers-load-failed">
+                    <div class="setting-label">
+                      <span class="label-text">{{ copyProviders.loadFailed }}</span>
+                      <span class="label-desc">{{ copyProviders.loadFailedHelp }}</span>
+                    </div>
+                  </div>
+                } @else if (providerSettings().length === 0) {
+                  <div class="setting-row" data-testid="book-providers-empty">
+                    <div class="setting-label">
+                      <span class="label-text">{{ copyProviders.empty }}</span>
+                    </div>
+                  </div>
+                } @else {
+                  @for (provider of providerSettings(); track provider.id) {
+                    <div class="setting-row" [attr.data-testid]="'provider-row-' + provider.id">
+                      <div class="setting-label">
+                        <span class="label-text">{{ provider.displayName }}</span>
+                        @if (provider.description) {
+                          <span class="label-desc">{{ provider.description }}</span>
+                        }
+                        <span class="provider-capabilities">
+                          @for (capability of provider.capabilities; track capability) {
+                            <span appBadge>{{ capability }}</span>
+                          }
+                        </span>
+                        @if (provider.rightsNotice) {
+                          <span class="label-desc provider-rights">{{ provider.rightsNotice }}</span>
+                        }
+                      </div>
+
+                      <label appSwitch>
+                        <input
+                          type="checkbox"
+                          [checked]="provider.enabled"
+                          [disabled]="providerSavingIds().has(provider.id)"
+                          (change)="setProviderEnabled(provider, $event)"
+                          [attr.aria-label]="(provider.enabled ? 'Disable ' : 'Enable ') + provider.displayName"
+                          [attr.data-testid]="'provider-toggle-' + provider.id"
+                        >
+                      </label>
+                    </div>
+                  }
+                }
+
+                @if (providerSettingsSaveFailed()) {
+                  <div class="setting-row" data-testid="book-providers-save-failed" role="alert">
+                    <div class="setting-label">
+                      <span class="label-desc">{{ copyProviders.saveFailed }}</span>
+                    </div>
+                  </div>
+                }
+              </div>
+            </section>
+          </section>
 
           @if (isCloud()) {
           <section

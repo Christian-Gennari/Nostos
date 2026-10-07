@@ -1,7 +1,6 @@
 # Library MCP Contracts (issue #34 — frozen design)
 
 Status: FROZEN 2026-08-12. Changes require reopening the design discussion.
-Authoritative plan: `.hermes/plans/library-mcp-contracts-plan.md` (untracked, worktree-local).
 
 ## 1. Goal and boundaries
 

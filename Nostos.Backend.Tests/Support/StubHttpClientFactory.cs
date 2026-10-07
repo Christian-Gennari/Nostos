@@ -98,8 +98,13 @@ public sealed class StubHttpClientFactory : IHttpClientFactory
 {
     private readonly StubHttpMessageHandler _handler;
     private readonly Uri _baseAddress;
+    private readonly ConcurrentDictionary<string, StubHttpMessageHandler> _handlersByName = new(StringComparer.Ordinal);
+    private readonly ConcurrentBag<string> _requestedClientNames = new();
 
     public StubHttpMessageHandler Handler => _handler;
+
+    /// <summary>Every client name a host asked for, so tests can pin the named-client contract.</summary>
+    public IReadOnlyList<string> RequestedClientNames => _requestedClientNames.ToArray();
 
     public StubHttpClientFactory(StubHttpMessageHandler? handler = null, Uri? baseAddress = null)
     {
@@ -107,9 +112,18 @@ public sealed class StubHttpClientFactory : IHttpClientFactory
         _baseAddress = baseAddress ?? new Uri("https://www.gutenberg.org");
     }
 
+    /// <summary>Routes one named client to its own handler; other names keep the shared one.</summary>
+    public StubHttpClientFactory RegisterHandler(string clientName, StubHttpMessageHandler handler)
+    {
+        _handlersByName[clientName] = handler;
+        return this;
+    }
+
     public HttpClient CreateClient(string name)
     {
-        return new HttpClient(_handler, disposeHandler: false)
+        _requestedClientNames.Add(name);
+        var handler = _handlersByName.TryGetValue(name, out var registered) ? registered : _handler;
+        return new HttpClient(handler, disposeHandler: false)
         {
             BaseAddress = _baseAddress
         };

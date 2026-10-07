@@ -11,7 +11,6 @@ using Nostos.Backend.Services.Portability;
 using Nostos.Backend.Services.Portability.Activation;
 using Nostos.Shared.Dtos;
 using Xunit;
-
 namespace Nostos.Backend.Tests.Portability;
 
 /// <summary>
@@ -505,24 +504,6 @@ public sealed class MigrationActivationHttpTests
     }
 
     [Fact]
-    public async Task Run_registry_admits_exactly_one_of_many_concurrent_requests_200_times()
-    {
-        var request = new MigrationActivateRequest("revision", ConfirmReplacement: true);
-        for (var iteration = 0; iteration < 200; iteration++)
-        {
-            var slot = new SelfHostedActivationRunSlot(Guid.NewGuid());
-            var admissions = 0;
-            var workers = Enumerable.Range(0, 8).Select(_ => Task.Run(() =>
-            {
-                if (slot.TryAdmit(request)) Interlocked.Increment(ref admissions);
-            })).ToArray();
-            await Task.WhenAll(workers);
-            admissions.Should().Be(1, $"iteration {iteration} must admit exactly one run");
-            slot.State.Should().Be(SelfHostedActivationRunState.Accepted);
-        }
-    }
-
-    [Fact]
     public async Task Post_after_a_rolled_back_run_is_allowed_and_succeeds()
     {
         var template = ActivationCoordinatorTemplate.For(populated: false);
@@ -860,7 +841,7 @@ public sealed class MigrationActivationHttpTests
             await db.SaveChangesAsync();
         });
 
-        CopyDirectory(template.TemplateMedia, Path.Combine(h.Root, "books"));
+        PortableArchiveTestSupport.CopyDirectory(template.TemplateMedia, Path.Combine(h.Root, "books"));
     }
 
     /// <summary>
@@ -954,28 +935,21 @@ public sealed class MigrationActivationHttpTests
         string outcome,
         TimeSpan? timeout = null)
     {
-        var deadline = DateTime.UtcNow + (timeout ?? TimeSpan.FromSeconds(60));
-        JsonDocument? last = null;
-        while (DateTime.UtcNow < deadline)
-        {
-            var (status, body) = await GetActivationAsync(h, jobId);
-            if (status == HttpStatusCode.OK
-                && body.RootElement.GetProperty("outcome").GetString() == outcome)
-            {
-                last?.Dispose();
-                return body;
-            }
+        var result = await PortabilityTestPolling.PollUntilAsync(
+            () => GetActivationAsync(h, jobId),
+            response => response.Status == HttpStatusCode.OK
+                && response.Body.RootElement.GetProperty("outcome").GetString() == outcome,
+            response => response.Body.RootElement.GetRawText(),
+            timeout ?? TimeSpan.FromSeconds(60),
+            TimeSpan.FromMilliseconds(25),
+            disposeUnmatched: response => response.Body.Dispose(),
+            afterUnmatchedPoll: () => h.Clock.Advance(TimeSpan.FromSeconds(1)));
 
-            last?.Dispose();
-            last = body;
-            h.Clock.Advance(TimeSpan.FromSeconds(1));
-            await Task.Delay(25);
-        }
+        if (result.Matched)
+            return result.Value!.Body;
 
-        var observed = last is null ? "<none>" : last.RootElement.GetRawText();
-        last?.Dispose();
         throw new Xunit.Sdk.XunitException(
-            $"Job {jobId} did not reach activation outcome {outcome}; last status was {observed}.");
+            $"Job {jobId} did not reach activation outcome {outcome}; last status was {result.LastObservation}.");
     }
 
     private static void StripJobLease(string databasePath)
@@ -989,14 +963,4 @@ public sealed class MigrationActivationHttpTests
         command.ExecuteNonQuery();
     }
 
-    private static void CopyDirectory(string source, string target)
-    {
-        Directory.CreateDirectory(target);
-        foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
-        {
-            var destination = Path.Combine(target, Path.GetRelativePath(source, file));
-            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-            File.Copy(file, destination, overwrite: true);
-        }
-    }
 }

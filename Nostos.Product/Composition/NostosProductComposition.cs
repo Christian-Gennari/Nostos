@@ -96,6 +96,15 @@ public static class NostosProductComposition
     /// <see cref="IPortableLibraryVerifier"/>.
     /// </para>
     /// <para>
+    /// Discovery is a replaceable seam too. The product registers the live
+    /// provider fan-out (<see cref="ProviderDiscoveryService"/>) as the default
+    /// <see cref="IProviderDiscovery"/> with <c>TryAdd</c>, so SelfHosted keeps
+    /// the current live search with no catalog mirror or scheduled polling. A
+    /// host can register a catalog-backed implementation before this method and
+    /// it wins; acquisition always re-resolves a selected item against its live
+    /// provider before downloading.
+    /// </para>
+    /// <para>
     /// When mapping endpoints, a host without the SelfHosted migration services
     /// passes <see cref="NostosProductEndpointPolicies"/> with
     /// <see cref="NostosProductEndpointPolicies.MapMigrationTransferEndpoints"/>
@@ -243,7 +252,16 @@ public static class NostosProductComposition
             configuration.GetSection(ProviderDiscoveryOptions.SectionName));
 
         services.AddSingleton<IProviderRegistry, ProviderRegistry>();
+        // Provider enablement (issue #774): the one place the user's stored
+        // choices are resolved for discovery, acquisition and Settings.
+        services.AddScoped<IProviderEnablementService, ProviderEnablementService>();
         services.AddSingleton<ProviderDiscoveryService>();
+        // Replaceable discovery seam: SelfHosted keeps the live provider
+        // fan-out as its default, while a host can register its own
+        // IProviderDiscovery (for example a catalog-backed implementation)
+        // before this method and it wins.
+        services.TryAddSingleton<IProviderDiscovery>(sp =>
+            sp.GetRequiredService<ProviderDiscoveryService>());
         services.TryAddSingleton<
             IAcquisitionWorkingRootProvider,
             DefaultAcquisitionWorkingRootProvider>();
@@ -257,6 +275,19 @@ public static class NostosProductComposition
             client.Timeout = TimeSpan.FromSeconds(20);
             client.DefaultRequestHeaders.UserAgent.ParseAdd(
                 "Nostos/1.0 (+https://github.com/Christian-Gennari/Nostos-Rebirth)");
+        });
+        // The daily RDF snapshot is a 177 MB archive, so it gets its own client:
+        // the 20 s search timeout must never apply to a bulk read. The download
+        // is bounded by the caller's token and the connect timeout instead.
+        services.AddHttpClient(GutenbergProvider.SnapshotHttpClientName, client =>
+        {
+            client.BaseAddress = new Uri(GutenbergCatalog.BaseUrl);
+            client.Timeout = Timeout.InfiniteTimeSpan;
+            client.DefaultRequestHeaders.UserAgent.ParseAdd(
+                "Nostos/1.0 (+https://github.com/Christian-Gennari/Nostos-Rebirth)");
+        }).ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+        {
+            ConnectTimeout = TimeSpan.FromSeconds(30),
         });
         services.AddSingleton<IContentProvider, GutenbergProvider>();
 
@@ -296,6 +327,16 @@ public static class NostosProductComposition
             client.DefaultRequestHeaders.UserAgent.ParseAdd(
                 "Nostos/1.0 (+https://github.com/Christian-Gennari/Nostos-Rebirth)");
         });
+        // Bulk snapshot reads page through the whole catalogue, so they get
+        // their own client with a longer timeout instead of the discovery
+        // client's 20 s.
+        services.AddHttpClient(LibriVoxProvider.SnapshotHttpClientName, client =>
+        {
+            client.BaseAddress = new Uri(LibriVoxCatalog.BaseUrl);
+            client.Timeout = TimeSpan.FromMinutes(2);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd(
+                "Nostos/1.0 (+https://github.com/Christian-Gennari/Nostos-Rebirth)");
+        });
         services.AddSingleton<IContentProvider, LibriVoxProvider>();
 
         return new NostosProductDescriptor(assistant, speech, opds);
@@ -320,6 +361,7 @@ public static class NostosProductComposition
 
         routes.MapBooksEndpoints(policies);
         routes.MapProviderEndpoints(policies);
+        routes.MapProviderSettingsEndpoints();
         routes.MapImportEndpoints();
         routes.MapNotesEndpoints();
         routes.MapNoteProcessingEndpoints();

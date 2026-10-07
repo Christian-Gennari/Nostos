@@ -28,6 +28,7 @@ import { ModalShell } from '../ui/modal-shell/modal-shell.component';
 import { DialogActionsComponent } from '../ui/dialog-actions/dialog-actions.component';
 import { ButtonComponent } from '../ui/button/button.component';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
+import { LoadingIndicatorComponent } from '../ui/loading-indicator/loading-indicator.component';
 import { FormFieldComponent } from '../ui/form-field/form-field.component';
 import { InputDirective, TextareaDirective } from '../ui/form-control/form-control.directive';
 import { DropdownComponent, type DropdownOption } from '../ui/dropdown/dropdown.component';
@@ -41,6 +42,7 @@ type AddBookIntentKind = 'upload' | 'source' | 'physical' | 'manual';
     CommonModule,
     FormsModule,
     NostosIconComponent,
+    LoadingIndicatorComponent,
     IconButtonComponent,
     CollectionPickerComponent,
     FormFieldComponent,
@@ -904,7 +906,7 @@ export class AddBookModal {
         next: (list) => {
           this.providerList.set(list);
           if (list.length === 0) {
-            this.providersError.set('No content sources are configured on this server.');
+            this.providersError.set('No book sources are enabled. Turn them on in Settings.');
           }
         },
         error: () => this.providersError.set('Could not load the available sources.'),

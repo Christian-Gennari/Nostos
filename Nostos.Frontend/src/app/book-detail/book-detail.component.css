@@ -1,3 +1,12 @@
+.book-detail-loading {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: min(70vh, 720px);
+}
+
+/* The loading indicator keeps the page surface unchanged while the book request
+   is in flight. The content branch still owns its existing arrival fade. */
+
 /* ══ ENTERING A BOOK ═════════════════════════════════════════════════════════
    Arriving at a book fades its content up rather than cutting to it, using the
    same motion the Library uses for its results (`library-content-in`: 300ms on
@@ -1483,14 +1492,9 @@ button.edition-select-card:focus-visible {
   text-align: center;
   color: var(--color-text-muted);
 }
-/* The waiting field is absolutely positioned, so the content column owns both
-   the positioning context and the height reserved while the book is in flight.
-   Nothing fakes the page's structure in the meantime. */
+/* Keep the positioning context for book content and its overlays. */
 .layout-content {
   position: relative;
-}
-.layout-content.is-waiting {
-  min-height: min(70vh, 720px);
 }
 @media (max-width: 900px) {
   /* Mobile keeps the same hero shape but shorter, with reduced blur radii so the

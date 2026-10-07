@@ -119,6 +119,7 @@ export class LibraryTransferCoordinator {
 
   /** Current import flow state; the later UI renders this union. */
   readonly state = this.stateSignal.asReadonly();
+  readonly supportsActiveImportDiscovery = typeof this.transport.getActiveImport === 'function';
 
   /** Aggregated transfer progress when the flow is uploading or checking. */
   readonly progress = computed(() => {
@@ -156,6 +157,17 @@ export class LibraryTransferCoordinator {
 
   /** Full fresh import: inspect, hash, preflight, create, session, upload, poll. */
   async startImport(file: File): Promise<void> {
+    // File selection must not orphan an existing job. Reattach first, then
+    // verify the selected file against that job's persisted identity.
+    if (this.resumeStore.load()) {
+      await this.resume();
+      const state = this.stateSignal();
+      if (state.kind === 'ready-to-upload' && state.reselectionRequired) {
+        await this.resumeWithFile(file);
+      }
+      return;
+    }
+
     const { token, signal } = this.beginOperation();
     this.interruptedSignal.set(null);
     this.file = file;
@@ -290,18 +302,39 @@ export class LibraryTransferCoordinator {
 
   /** Reattaches to the persisted job after a reload or navigation. */
   async resume(): Promise<void> {
-    const record = this.resumeStore.load();
-    if (!record) {
+    let record = this.resumeStore.load();
+    if (!record && !this.supportsActiveImportDiscovery) {
       this.setState({ kind: 'idle' });
       return;
     }
 
     const { token, signal } = this.beginOperation();
     this.interruptedSignal.set(null);
-    this.jobId = record.jobId ?? null;
-    this.preflightDecision = record.preflightDecision ?? null;
-
     try {
+      if (!record) {
+        const discovered = await this.transport.getActiveImport!(signal);
+        if (!this.isCurrent(token)) return;
+        const session = discovered?.session;
+        if (!discovered || discovered.job.direction !== 'Import' || !session || session.purpose !== 'Import') {
+          this.setState({ kind: 'idle' });
+          return;
+        }
+        record = {
+          schemaVersion: 1, direction: 'import', serverDiscovered: true,
+          jobId: discovered.job.id,
+          jobCreationIdempotencyKey: `reattached-existing-job:${discovered.job.id}`,
+          sessionId: session.sessionId, chunkSizeBytes: session.chunkSize,
+          fileIdentity: session.fileIdentity, fileName: 'Library archive.nostos',
+          createdAt: discovered.job.createdAtUtc,
+          // Losing browser metadata also loses proof of a reviewed destination.
+          // Require fresh confirmation instead of automatically activating.
+          preflightDecision: 'AllowedReplacementRequired',
+        };
+        this.resumeStore.save(record);
+      }
+      this.jobId = record.jobId ?? null;
+      this.preflightDecision = record.preflightDecision ?? null;
+
       if (!this.jobId) {
         const recovered = await this.replayJobCreation(record, signal, token);
         if (!this.isCurrent(token)) return;
@@ -328,6 +361,16 @@ export class LibraryTransferCoordinator {
       // means the completion call was interrupted (maintenance or a lost
       // response). Replaying it is idempotent on the server.
       if (needsCompletionReplay(status)) {
+        this.setState({
+          kind: 'checking',
+          jobId,
+          jobState: status.job.state,
+          progress: this.progressFromSession(status.session!),
+          serverProgress: status.progress,
+          statusCheckedAtUtc: new Date().toISOString(),
+          preflight: this.preflight ?? undefined,
+        });
+        this.schedulePoll();
         await this.withBusyRetry(
           'completeUpload',
           token,
@@ -354,7 +397,7 @@ export class LibraryTransferCoordinator {
       }
       const failure = this.failureFromError(error);
       if (failure.code === 'migration_not_found') this.resumeStore.clear();
-      this.failWith(failure, record.jobId);
+      this.failWith(failure, record?.jobId);
     }
   }
 
@@ -472,11 +515,42 @@ export class LibraryTransferCoordinator {
     }
 
     const jobId = this.jobId ?? this.resumeStore.load()?.jobId;
-    if (!jobId) return;
+    if (!jobId) {
+      await this.resume();
+      return;
+    }
 
     const { token, signal } = this.beginOperation();
     const retryKey = newIdempotencyKey();
     try {
+      const current = await this.withBusyRetry(
+        'getJob',
+        token,
+        () => this.transport.getJob(jobId, signal),
+        () => this.retry(),
+      );
+      if (!this.isCurrent(token)) return;
+
+      // SelfHosted retry synchronously expires an elapsed session before
+      // checking the job state; preserve that recovery while cleanup catches up.
+      const sessionExpired = current.session &&
+        (current.session.state === 'Expired' ||
+          Date.parse(current.session.expiresAtUtc) <= Date.now());
+      if (!['Failed', 'Cancelled', 'Expired'].includes(current.job.state) && !sessionExpired) {
+        // A browser failure leaves the durable job active. Its receipts and
+        // upload session are still usable; the job-level retry would reject it.
+        if (
+          this.file && current.session &&
+          isPreActivationJobState(current.job.state) &&
+          (current.session.state === 'Created' || current.session.state === 'Receiving')
+        ) {
+          await this.uploadSession(token, signal, current.session);
+        } else {
+          await this.resume();
+        }
+        return;
+      }
+
       const status = await this.withBusyRetry(
         'retryJob',
         token,
@@ -577,10 +651,11 @@ export class LibraryTransferCoordinator {
     this.setState({
       kind: 'checking',
       jobId,
-      jobState: 'Validating',
+      jobState: 'Transferring',
       progress: uploadOutcome.progress,
       preflight: this.preflight ?? undefined,
     });
+    this.schedulePoll();
 
     await this.withBusyRetry(
       'completeUpload',
@@ -770,7 +845,7 @@ export class LibraryTransferCoordinator {
     const progress =
       state.kind === 'uploading' || state.kind === 'checking'
         ? state.progress
-        : this.fallbackProgress();
+        : status.session ? this.progressFromSession(status.session) : this.fallbackProgress();
 
     switch (status.job.state) {
       case 'ReadyToActivate':
@@ -801,7 +876,9 @@ export class LibraryTransferCoordinator {
       case 'Failed':
         this.failWith(
           this.failure(
-            'portable_import_failed',
+            status.job.failureCode === 'migration_provider_limit_reached'
+              ? 'portable_import_provider_limit_reached'
+              : 'portable_import_failed',
             status.job.failureMessage ?? 'The import failed on the server.',
           ),
           status.job.id,
@@ -823,13 +900,16 @@ export class LibraryTransferCoordinator {
           jobId: status.job.id,
           jobState: status.job.state,
           progress,
+          serverProgress: status.progress,
+          statusCheckedAtUtc: new Date().toISOString(),
           preflight,
         });
         this.schedulePoll();
         return;
       default: {
         const session = status.session ?? null;
-        if (!session || (session.state !== 'Complete' && session.state !== 'Cancelled')) {
+        const allPartsReceived = session?.state === 'Receiving' && isUploadComplete(session);
+        if (!session || (session.state !== 'Complete' && session.state !== 'Cancelled' && !allPartsReceived)) {
           this.file = null;
           this.setState({
             kind: 'ready-to-upload',
@@ -845,6 +925,8 @@ export class LibraryTransferCoordinator {
           jobId: status.job.id,
           jobState: status.job.state,
           progress,
+          serverProgress: status.progress,
+          statusCheckedAtUtc: new Date().toISOString(),
           preflight,
         });
         this.schedulePoll();
@@ -1214,8 +1296,11 @@ function isPreActivationJobState(state: MigrationJobState): boolean {
  * response); replaying the idempotent completion is the safe recovery.
  */
 function needsCompletionReplay(status: MigrationJobStatusResponseDto): boolean {
+  const session = status.session;
   return (
-    status.session?.state === 'Complete' &&
+    !!session &&
+    (session.state === 'Complete' ||
+      (session.state === 'Receiving' && isUploadComplete(session))) &&
     (status.job.state === 'Pending' ||
       status.job.state === 'Preparing' ||
       status.job.state === 'Transferring')

@@ -294,6 +294,14 @@ export class MockLibraryTransferTransport implements LibraryTransferTransport {
     this.failures.push({ times: 1, ...failure });
   }
 
+  clearFailures(operation?: MockTransportOperation): void {
+    for (let index = this.failures.length - 1; index >= 0; index -= 1) {
+      if (operation === undefined || this.failures[index].operation === operation) {
+        this.failures.splice(index, 1);
+      }
+    }
+  }
+
   /**
    * Marks chunks as already received by the server, bypassing upload. When the
    * file is supplied the exact slices are retained so a later `completeUpload`

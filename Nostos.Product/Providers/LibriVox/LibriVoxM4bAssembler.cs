@@ -118,6 +118,9 @@ public sealed class LibriVoxM4bAssembler(
             "-map_metadata", "1",
             "-map_chapters", "1",
             "-c:a", "aac",
+            // The fast coder roughly halved encode time in repeatable LibriVox
+            // comparisons while preserving the chaptered M4B output contract.
+            "-aac_coder", "fast",
             "-b:a", AudioBitrate,
             "-ac", "1",
             "-ar", "44100",

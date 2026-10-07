@@ -65,7 +65,7 @@ public sealed class RecoveryMediaEvidenceTests
 
         var descriptor = Descriptor(manifest, FirstBook, "book");
         descriptor.Sha256.Should().NotBe(oldHash);
-        descriptor.Sha256.Should().Be(RecoveryTestBed.Sha256Hex(await File.ReadAllBytesAsync(path)));
+        descriptor.Sha256.Should().Be(PortableArchiveTestSupport.Sha256Hex(await File.ReadAllBytesAsync(path)));
         manifest.MediaRehashedCount.Should().Be(1);
         hashes.Should().Be(2, "one media re-hash plus the database hash");
         await lease.DisposeAsync();
@@ -99,7 +99,7 @@ public sealed class RecoveryMediaEvidenceTests
         var manifest = await service.PrepareRetentionAsync(bed.JobId, capture, lease, default);
 
         var descriptor = Descriptor(manifest, FirstBook, "book");
-        descriptor.Sha256.Should().Be(RecoveryTestBed.Sha256Hex(await File.ReadAllBytesAsync(path)));
+        descriptor.Sha256.Should().Be(PortableArchiveTestSupport.Sha256Hex(await File.ReadAllBytesAsync(path)));
         manifest.MediaRehashedCount.Should().Be(1);
         hashes.Should().Be(2);
         await lease.DisposeAsync();
@@ -263,7 +263,7 @@ public sealed class RecoveryMediaEvidenceTests
 
         manifest.Media.Should().HaveCount(capture.Media.Count, "one file was removed and one added");
         manifest.Media.Should().NotContain(descriptor => descriptor.Kind == "partial");
-        var addedHash = RecoveryTestBed.Sha256Hex(await File.ReadAllBytesAsync(addedPath));
+        var addedHash = PortableArchiveTestSupport.Sha256Hex(await File.ReadAllBytesAsync(addedPath));
         manifest.Media.Should().Contain(descriptor =>
             descriptor.Extension == ".epub" && descriptor.Sha256 == addedHash);
         var expected = Directory.EnumerateFiles(bed.Paths.LiveMedia, "*", SearchOption.AllDirectories)
@@ -271,7 +271,7 @@ public sealed class RecoveryMediaEvidenceTests
             {
                 BookId = Guid.ParseExact(Path.GetFileName(Path.GetDirectoryName(file))!, "N"),
                 Bytes = new FileInfo(file).Length,
-                Sha256 = RecoveryTestBed.Sha256Hex(File.ReadAllBytes(file)),
+                Sha256 = PortableArchiveTestSupport.Sha256Hex(File.ReadAllBytes(file)),
             })
             .OrderBy(item => item.BookId).ThenBy(item => item.Bytes).ThenBy(item => item.Sha256)
             .ToArray();
@@ -313,7 +313,7 @@ public sealed class RecoveryMediaEvidenceTests
             {
                 BookId = Guid.ParseExact(Path.GetFileName(Path.GetDirectoryName(file))!, "N"),
                 Bytes = new FileInfo(file).Length,
-                Sha256 = RecoveryTestBed.Sha256Hex(File.ReadAllBytes(file)),
+                Sha256 = PortableArchiveTestSupport.Sha256Hex(File.ReadAllBytes(file)),
             })
             .OrderBy(item => item.BookId).ThenBy(item => item.Bytes).ThenBy(item => item.Sha256)
             .ToArray();

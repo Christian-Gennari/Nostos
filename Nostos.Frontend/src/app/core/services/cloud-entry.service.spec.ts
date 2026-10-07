@@ -330,6 +330,36 @@ describe('CloudEntryService', () => {
     expect(service.productReady()).toBe(true);
   });
 
+  it('opens first-run import in Manage library without consuming the first-run marker', async () => {
+    localStorage.setItem(markerKey, 'pending');
+    capabilities.get.mockReturnValue(of({
+      ...cloudCapabilities,
+      supportsLibraryMigration: true,
+    }));
+    auth.getSession.mockReturnValue(of({ ...session, accountState: 'Active' }));
+    onboarding.getState.mockReturnValue(of({
+      state: 'ready',
+      subscriptionStatus: 'Active',
+      ready: true,
+      canCheckout: false,
+      canCheckSubscription: false,
+      canManageSubscription: false,
+      canRetry: false,
+    }));
+    books.getStatusCounts.mockReturnValue(of(statusCounts(0)));
+
+    await service.initialize();
+
+    expect(service.view().kind).toBe('first_run');
+    expect(service.firstRunImportPending()).toBe(true);
+
+    service.openManageLibraryFromFirstRun();
+
+    expect(service.productReady()).toBe(true);
+    expect(service.firstRunImportPending()).toBe(true);
+    expect(localStorage.getItem(markerKey)).toBe('pending');
+  });
+
   it('sends a schema-upgraded populated library straight to the product and clears the marker', async () => {
     capabilities.get.mockReturnValue(of(cloudCapabilities));
     auth.getSession.mockReturnValue(of({ ...session, accountState: 'Active' }));

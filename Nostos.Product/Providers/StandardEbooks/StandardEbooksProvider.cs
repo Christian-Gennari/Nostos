@@ -72,6 +72,10 @@ public sealed class StandardEbooksProvider : IContentProvider,
     /// </summary>
     public string? RightsNotice => "Public domain in the United States.";
 
+    public bool EnabledByDefault => true;
+
+    public string? Description => "Expertly produced public-domain ebooks, mostly English.";
+
     public IReadOnlyList<string> AllowedHosts => ["standardebooks.org"];
 
     public long MaxBytesPerPart => MaxEbookBytes;

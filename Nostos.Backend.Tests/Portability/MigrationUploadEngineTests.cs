@@ -49,10 +49,10 @@ public sealed class MigrationUploadEngineTests
         var bytes = MigrationEngineHarness.Bytes(); var job = await h.NewJobAsync(); var session = await h.StartAsync(job, bytes);
         await h.Upload(job, session, bytes);
         var other = bytes.Select(b => (byte)(b ^ 255)).ToArray();
-        await Expect(h.UploadRaw(job, session, 0, other, new(0, other.Length - 1, other.Length, MigrationEngineHarness.Hash(other))), MigrationTransferException.ChunkConflict);
+        await Expect(h.UploadRaw(job, session, 0, other, new(0, other.Length - 1, other.Length, PortableArchiveTestSupport.Sha256Hex(other))), MigrationTransferException.ChunkConflict);
         await h.Complete(job, session);
         (await File.ReadAllBytesAsync(h.Paths.GetUploadArchivePath(session.SessionId))).Should().Equal(bytes);
-        (await h.WithDb(db => db.MigrationChunkReceiptRecords.SingleAsync())).Sha256.Should().Be(MigrationEngineHarness.Hash(bytes));
+        (await h.WithDb(db => db.MigrationChunkReceiptRecords.SingleAsync())).Sha256.Should().Be(PortableArchiveTestSupport.Sha256Hex(bytes));
     }
 
     [Theory]
@@ -71,7 +71,7 @@ public sealed class MigrationUploadEngineTests
         var bytes = MigrationEngineHarness.Bytes(kind == "short-non-final" ? MigrationContractLimits.MinChunkBytes + 31 : 31);
         var job = await h.NewJobAsync(); var session = await h.StartAsync(job, bytes);
         var body = bytes.Take(31).ToArray();
-        var m = new MigrationChunkMetadata(0, kind == "short-non-final" ? session.ChunkSize - 1 : 30, bytes.Length, MigrationEngineHarness.Hash(body));
+        var m = new MigrationChunkMetadata(0, kind == "short-non-final" ? session.ChunkSize - 1 : 30, bytes.Length, PortableArchiveTestSupport.Sha256Hex(body));
         if (kind == "empty-final") body = Array.Empty<byte>();
         if (kind == "oversize") body = MigrationEngineHarness.Bytes(32);
         if (kind == "hash") m = m with { Sha256 = new string('0', 64) };
@@ -227,7 +227,7 @@ public sealed class MigrationUploadEngineTests
         using var aborted = new CancellationTokenSource();
 
         Func<Task> upload = () => h.WithUploads(s => s.UploadChunkAsync(job, session.SessionId, 0,
-            new MigrationChunkMetadata(0, bytes.Length - 1, bytes.Length, MigrationEngineHarness.Hash(bytes)),
+            new MigrationChunkMetadata(0, bytes.Length - 1, bytes.Length, PortableArchiveTestSupport.Sha256Hex(bytes)),
             new DisconnectingStream(aborted), aborted.Token));
 
         await upload.Should().ThrowAsync<OperationCanceledException>();
@@ -253,7 +253,7 @@ public sealed class MigrationUploadEngineTests
         using var aborted = new CancellationTokenSource();
 
         Func<Task> upload = () => h.WithUploads(s => s.UploadChunkAsync(job, session.SessionId, 0,
-            new MigrationChunkMetadata(0, bytes.Length - 1, bytes.Length, MigrationEngineHarness.Hash(bytes)),
+            new MigrationChunkMetadata(0, bytes.Length - 1, bytes.Length, PortableArchiveTestSupport.Sha256Hex(bytes)),
             new PartiallyReadingDisconnectingStream(bytes, aborted), aborted.Token));
 
         await upload.Should().ThrowAsync<OperationCanceledException>();
@@ -366,12 +366,12 @@ public sealed class MigrationUploadEngineTests
         var accepted = 0; var conflicts = 0;
         await Task.WhenAll(new[] { first, second }.Select(body => Task.Run(async () =>
         {
-            try { await h.UploadRaw(job, session, 0, body, new(0, body.Length - 1, body.Length, MigrationEngineHarness.Hash(body))); Interlocked.Increment(ref accepted); }
+            try { await h.UploadRaw(job, session, 0, body, new(0, body.Length - 1, body.Length, PortableArchiveTestSupport.Sha256Hex(body))); Interlocked.Increment(ref accepted); }
             catch (MigrationTransferException e) { e.Code.Should().Be(MigrationTransferException.ChunkConflict); Interlocked.Increment(ref conflicts); }
         })));
         accepted.Should().Be(1); conflicts.Should().Be(1);
         var receipt = await h.WithDb(db => db.MigrationChunkReceiptRecords.SingleAsync());
-        MigrationEngineHarness.Hash(await File.ReadAllBytesAsync(h.Paths.GetUploadArchivePartPath(session.SessionId))).Should().Be(receipt.Sha256);
+        PortableArchiveTestSupport.Sha256Hex(await File.ReadAllBytesAsync(h.Paths.GetUploadArchivePartPath(session.SessionId))).Should().Be(receipt.Sha256);
         (await h.WithDb(db => db.MigrationStorageReservations.SingleAsync())).MaterializedBytes.Should().Be(first.Length);
     }
 
@@ -415,7 +415,7 @@ public sealed class MigrationUploadEngineTests
         var upload = Task.Run(() => h.WithUploads(async s =>
         {
             await using var stream = new PausedRequest(entered);
-            return await s.UploadChunkAsync(job, session.SessionId, 0, new(0, bytes.Length - 1, bytes.Length, MigrationEngineHarness.Hash(bytes)), stream, default);
+            return await s.UploadChunkAsync(job, session.SessionId, 0, new(0, bytes.Length - 1, bytes.Length, PortableArchiveTestSupport.Sha256Hex(bytes)), stream, default);
         }));
         await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
         await h.WithUploads(s => s.CancelAsync(job, new(), default)).WaitAsync(TimeSpan.FromSeconds(10));

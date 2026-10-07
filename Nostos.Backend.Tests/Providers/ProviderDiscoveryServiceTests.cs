@@ -19,7 +19,9 @@ public sealed class ProviderDiscoveryServiceTests
 
         var service = CreateService(acquireOnly, audio, ebook);
 
-        var result = await service.SearchAsync("classic", kind: null, limit: 20, CancellationToken.None);
+        var result = await service.SearchAsync(
+            new ProviderDiscoveryRequest("classic", null, 20),
+            CancellationToken.None);
 
         ebook.SearchCount.Should().Be(1);
         audio.SearchCount.Should().Be(1);
@@ -35,13 +37,58 @@ public sealed class ProviderDiscoveryServiceTests
         var arbitraryAudio = SearchProvider.Audio("not-librivox", Item("not-librivox", "same", ProviderMediaKind.Audiobook));
         var service = CreateService(arbitraryAudio, arbitraryEbook);
 
-        var ebooks = await service.SearchAsync("x", ProviderMediaKind.Ebook, 20, CancellationToken.None);
-        var audio = await service.SearchAsync("x", ProviderMediaKind.Audiobook, 20, CancellationToken.None);
+        var ebooks = await service.SearchAsync(
+            new ProviderDiscoveryRequest("x", ProviderMediaKind.Ebook, 20),
+            CancellationToken.None);
+        var audio = await service.SearchAsync(
+            new ProviderDiscoveryRequest("x", ProviderMediaKind.Audiobook, 20),
+            CancellationToken.None);
 
         ebooks.Items.Should().ContainSingle().Which.ProviderId.Should().Be("not-gutenberg");
         audio.Items.Should().ContainSingle().Which.ProviderId.Should().Be("not-librivox");
         arbitraryEbook.SeenKinds.Should().Contain(ProviderMediaKind.Ebook);
         arbitraryAudio.SeenKinds.Should().Contain(ProviderMediaKind.Audiobook);
+    }
+
+    [Fact]
+    public async Task ProviderIds_ExcludedProvidersAreNotSearchedAndHaveNoSourceStatus()
+    {
+        var alpha = SearchProvider.Ebook("alpha", Item("alpha", "a1", ProviderMediaKind.Ebook));
+        var beta = SearchProvider.Ebook("beta", Item("beta", "b1", ProviderMediaKind.Ebook));
+        var gamma = SearchProvider.Ebook("gamma", Item("gamma", "g1", ProviderMediaKind.Ebook));
+
+        var result = await CreateService(alpha, beta, gamma).SearchAsync(
+            new ProviderDiscoveryRequest("x", null, 20, new HashSet<string> { "beta" }),
+            CancellationToken.None);
+
+        alpha.SearchCount.Should().Be(0);
+        gamma.SearchCount.Should().Be(0);
+        beta.SearchCount.Should().Be(1);
+        result.Items.Should().ContainSingle().Which.ProviderId.Should().Be("beta");
+        result.Sources.Should().ContainSingle().Which.ProviderId.Should().Be("beta");
+    }
+
+    [Fact]
+    public async Task ProviderIds_UnknownIdsContributeNothing_AndNullMeansEveryProvider()
+    {
+        var alpha = SearchProvider.Ebook("alpha", Item("alpha", "a1", ProviderMediaKind.Ebook));
+        var service = CreateService(alpha);
+
+        var filtered = await service.SearchAsync(
+            new ProviderDiscoveryRequest("x", null, 20, new HashSet<string> { "ghost" }),
+            CancellationToken.None);
+
+        alpha.SearchCount.Should().Be(0);
+        filtered.Items.Should().BeEmpty();
+        filtered.Sources.Should().BeEmpty();
+
+        var all = await service.SearchAsync(
+            new ProviderDiscoveryRequest("x", null, 20),
+            CancellationToken.None);
+
+        alpha.SearchCount.Should().Be(1);
+        all.Items.Should().ContainSingle().Which.ProviderId.Should().Be("alpha");
+        all.Sources.Should().ContainSingle().Which.ProviderId.Should().Be("alpha");
     }
 
     [Fact]
@@ -64,7 +111,9 @@ public sealed class ProviderDiscoveryServiceTests
             throw ProviderException.UnavailableFor("beta", "test outage");
         });
 
-        var pending = CreateService(a, b).SearchAsync("x", null, 20, CancellationToken.None);
+        var pending = CreateService(a, b).SearchAsync(
+            new ProviderDiscoveryRequest("x", null, 20),
+            CancellationToken.None);
 
         await Task.WhenAll(aStarted.Task, bStarted.Task);
         gate.SetResult();
@@ -89,7 +138,7 @@ public sealed class ProviderDiscoveryServiceTests
         var hung = SearchProvider.Ebook("beta", (_, _) => never.Task);
 
         var result = await CreateService(TimeSpan.FromMilliseconds(60), good, hung)
-            .SearchAsync("x", null, 20, CancellationToken.None)
+            .SearchAsync(new ProviderDiscoveryRequest("x", null, 20), CancellationToken.None)
             .WaitAsync(TimeSpan.FromSeconds(2));
 
         result.Items.Should().ContainSingle().Which.ProviderId.Should().Be("alpha");
@@ -112,7 +161,7 @@ public sealed class ProviderDiscoveryServiceTests
                 new CancellationToken(canceled: true)));
 
         var result = await CreateService(TimeSpan.FromSeconds(1), good, locallyCancelled)
-            .SearchAsync("x", null, 20, CancellationToken.None);
+            .SearchAsync(new ProviderDiscoveryRequest("x", null, 20), CancellationToken.None);
 
         result.Items.Should().ContainSingle().Which.ProviderId.Should().Be("alpha");
         result.Sources.Single(source => source.ProviderId == "alpha").Succeeded.Should().BeTrue();
@@ -135,7 +184,7 @@ public sealed class ProviderDiscoveryServiceTests
             (_, _) => throw ProviderException.InvalidResponse("beta", "broken"));
 
         var result = await CreateService(noticed, failed)
-            .SearchAsync("x", null, 20, CancellationToken.None);
+            .SearchAsync(new ProviderDiscoveryRequest("x", null, 20), CancellationToken.None);
 
         result.Sources.Single(source => source.ProviderId == "alpha").Notice.Should().Be("Prefix search only.");
         result.Sources.Single(source => source.ProviderId == "beta").ErrorCode
@@ -151,7 +200,7 @@ public sealed class ProviderDiscoveryServiceTests
                 new InvalidOperationException("do not expose this")));
 
         var result = await CreateService(failed)
-            .SearchAsync("x", null, 20, CancellationToken.None);
+            .SearchAsync(new ProviderDiscoveryRequest("x", null, 20), CancellationToken.None);
 
         var source = result.Sources.Should().ContainSingle().Which;
         source.Succeeded.Should().BeFalse();
@@ -172,9 +221,9 @@ public sealed class ProviderDiscoveryServiceTests
             Item("beta", "b2", ProviderMediaKind.Ebook));
 
         var forward = await CreateService(alpha, beta)
-            .SearchAsync("x", null, 20, CancellationToken.None);
+            .SearchAsync(new ProviderDiscoveryRequest("x", null, 20), CancellationToken.None);
         var reverse = await CreateService(beta, alpha)
-            .SearchAsync("x", null, 20, CancellationToken.None);
+            .SearchAsync(new ProviderDiscoveryRequest("x", null, 20), CancellationToken.None);
 
         var expected = new[] { "alpha:a1", "beta:b1", "alpha:a2", "beta:b2" };
         forward.Items.Select(Key).Should().Equal(expected);
@@ -188,7 +237,7 @@ public sealed class ProviderDiscoveryServiceTests
         var beta = SearchProvider.Ebook("beta", Item("beta", "42", ProviderMediaKind.Ebook));
 
         var result = await CreateService(alpha, beta)
-            .SearchAsync("x", null, 20, CancellationToken.None);
+            .SearchAsync(new ProviderDiscoveryRequest("x", null, 20), CancellationToken.None);
 
         result.Items.Should().HaveCount(2);
         result.Items.Select(Key).Should().Equal("alpha:42", "beta:42");
@@ -202,7 +251,7 @@ public sealed class ProviderDiscoveryServiceTests
             _ => new ProviderSearchPage([Item("alpha", "a1", ProviderMediaKind.Ebook)], HasMore: true));
 
         var reported = await CreateService(providerMore)
-            .SearchAsync("x", null, 20, CancellationToken.None);
+            .SearchAsync(new ProviderDiscoveryRequest("x", null, 20), CancellationToken.None);
         reported.HasMore.Should().BeTrue();
 
         var alpha = SearchProvider.Ebook(
@@ -215,7 +264,7 @@ public sealed class ProviderDiscoveryServiceTests
             Item("beta", "b2", ProviderMediaKind.Ebook));
 
         var truncated = await CreateService(alpha, beta)
-            .SearchAsync("x", null, 2, CancellationToken.None);
+            .SearchAsync(new ProviderDiscoveryRequest("x", null, 2), CancellationToken.None);
 
         truncated.Items.Should().HaveCount(2);
         truncated.HasMore.Should().BeTrue();
@@ -236,7 +285,7 @@ public sealed class ProviderDiscoveryServiceTests
         using var cts = new CancellationTokenSource();
 
         var pending = CreateService(TimeSpan.FromSeconds(5), provider)
-            .SearchAsync("x", null, 20, cts.Token);
+            .SearchAsync(new ProviderDiscoveryRequest("x", null, 20), cts.Token);
         await started.Task.WaitAsync(TimeSpan.FromSeconds(1));
 
         cts.Cancel();
@@ -283,7 +332,8 @@ public sealed class ProviderDiscoveryServiceTests
             hung);
 
         var watch = System.Diagnostics.Stopwatch.StartNew();
-        var result = await service.SearchAsync("x", null, 20, CancellationToken.None)
+        var result = await service.SearchAsync(
+            new ProviderDiscoveryRequest("x", null, 20), CancellationToken.None)
             .WaitAsync(TimeSpan.FromSeconds(3));
         watch.Stop();
 
@@ -305,7 +355,8 @@ public sealed class ProviderDiscoveryServiceTests
             good,
             slow);
 
-        var result = await service.SearchAsync("x", null, 20, CancellationToken.None)
+        var result = await service.SearchAsync(
+            new ProviderDiscoveryRequest("x", null, 20), CancellationToken.None)
             .WaitAsync(TimeSpan.FromSeconds(3));
         var itemsBefore = result.Items.Select(Key).ToList();
 

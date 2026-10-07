@@ -29,12 +29,20 @@ function collectErrors(page: Page): string[] {
   return errors;
 }
 
+async function openManageLibrary(page: Page, baseUrl: string): Promise<void> {
+  await page.goto(`${baseUrl}/settings`);
+  await expect(page.getByTestId('manage-library-open')).toBeVisible();
+  await page.getByTestId('manage-library-open').click();
+  await expect(page).toHaveURL(`${baseUrl}/settings/library`);
+  await expect(page.getByTestId('manage-library-page')).toBeVisible();
+  await expect(page.getByTestId('library-transfer-card')).toBeVisible();
+}
+
 test('mobile main path: export, then import into an empty instance', async ({ page }, testInfo) => {
   const source = transferInstance(loadTransferFixture(), 'source');
   const errors = collectErrors(page);
 
-  await page.goto(`${source.baseUrl}/settings`);
-  await expect(page.getByTestId('library-transfer-card')).toBeVisible();
+  await openManageLibrary(page, source.baseUrl);
   await expect(page.getByTestId('export-start')).toBeVisible();
 
   const downloadPromise = page.waitForEvent('download', { timeout: 180_000 });
@@ -50,8 +58,7 @@ test('mobile main path: export, then import into an empty instance', async ({ pa
   try {
     await expect.poll(async () => (await librarySnapshot(destination.baseUrl)).books.length).toBe(0);
 
-    await page.goto(`${destination.baseUrl}/settings`);
-    await expect(page.getByTestId('library-transfer-card')).toBeVisible();
+    await openManageLibrary(page, destination.baseUrl);
     // No horizontal overflow at 390px and the primary action is reachable.
     const overflow = await page.evaluate(
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,

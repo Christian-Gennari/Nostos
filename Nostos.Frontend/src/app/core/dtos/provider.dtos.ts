@@ -131,3 +131,30 @@ export const ACQUISITION_FINISHED_STATES: ReadonlySet<AcquisitionState> = new Se
   'failed',
   'cancelled',
 ]);
+
+// --- PROVIDER ENABLEMENT (issue #774) ---
+// The Settings management view. Deliberately separate from ProviderSummary:
+// that stays the enabled-only Add Book consumer view, while this one lists
+// disabled sources too so they can be re-enabled.
+
+export interface ProviderSettingsItem {
+  id: string;
+  displayName: string;
+  /** Short coverage copy, or null when the source offers none. */
+  description: string | null;
+  /** Lower-case capability names, e.g. ['search', 'ebookacquisition']. */
+  capabilities: string[];
+  rightsNotice: string | null;
+  enabled: boolean;
+  /** The source's own declaration, so the UI can say "off by default". */
+  enabledByDefault: boolean;
+}
+
+export interface ProviderSettingsResponse {
+  providers: ProviderSettingsItem[];
+}
+
+/** A missing `enabled` would be a client error; always send a real boolean. */
+export interface ProviderPreferenceUpdate {
+  enabled: boolean;
+}

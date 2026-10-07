@@ -496,9 +496,9 @@
   align-self: flex-start;
   margin-bottom: 0.5rem;
 }
-/* Reserved waiting state: the pane holds its size while the shared wait field
-   (styles.css, which already honours reduced motion) breathes behind one
-   line of copy. Nothing structured is drawn in the results' place. */
+/* Reserved waiting state: the pane holds its size while the shared loading
+   indicator sits beside the existing status copy. The pane surface itself never
+   changes colour, so results can arrive without a full-area visual swap. */
 .source-loading {
   position: relative;
   height: 100%;
@@ -512,6 +512,11 @@
   flex-direction: column;
   gap: 8px;
   padding: 0.6rem 0.75rem;
+}
+.source-loading-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 .source-loading-label,
 .source-slow {

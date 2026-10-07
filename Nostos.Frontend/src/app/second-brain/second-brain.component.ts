@@ -33,6 +33,7 @@ import {
 import { TopicMapComponent } from './topic-map/topic-map.component';
 import { TopicInputComponent } from '../ui/topic-input.component/topic-input.component';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
+import { LoadingIndicatorComponent } from '../ui/loading-indicator/loading-indicator.component';
 import { ViewToggleComponent, type ViewToggleOption } from '../ui/view-toggle/view-toggle.component';
 import { ButtonComponent } from '../ui/button/button.component';
 import { BadgeComponent } from '../ui/badge/badge.component';
@@ -79,6 +80,7 @@ import {
     FormsModule,
     RouterLink,
     NostosIconComponent,
+    LoadingIndicatorComponent,
     ViewToggleComponent,
     ButtonComponent,
     BadgeComponent,

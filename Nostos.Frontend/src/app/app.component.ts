@@ -1,4 +1,4 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, effect, inject, signal } from '@angular/core';
 import {
   NavigationCancel,
   NavigationEnd,
@@ -17,6 +17,7 @@ import { CloudEntryService } from './core/services/cloud-entry.service';
 import { CloudEntryComponent } from './cloud-entry/cloud-entry.component';
 import { HostedBrowserIntegrationService } from './core/services/hosted-browser-integration.service';
 import { LibraryActivationOverlayComponent } from './library-transfer/components/library-activation-overlay.component';
+import { LibraryTransferIndicatorComponent } from './library-transfer/components/library-transfer-indicator.component';
 import { LibraryActivationController } from './library-transfer/services/library-activation-controller.service';
 
 @Component({
@@ -29,6 +30,7 @@ import { LibraryActivationController } from './library-transfer/services/library
     AssistantComponent,
     CloudEntryComponent,
     LibraryActivationOverlayComponent,
+    LibraryTransferIndicatorComponent,
   ],
   templateUrl: './app.component.html',
   styleUrl: './app.component.css',
@@ -54,6 +56,11 @@ export class App {
     // never participate in product readiness or entitlement decisions.
     inject(HostedBrowserIntegrationService).start();
     void this.cloudEntry.initialize();
+
+    effect(() => {
+      if (!this.cloudEntry.supportsSafeActivation()) return;
+      this.activation.reattach();
+    });
 
     this.router.events.subscribe((event) => {
       if (event instanceof NavigationStart) this.navigationPending.set(true);

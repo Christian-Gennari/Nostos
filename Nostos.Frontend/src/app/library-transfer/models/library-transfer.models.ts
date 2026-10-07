@@ -14,6 +14,7 @@ import type {
   MigrationPreflightDecision,
   MigrationPreflightRequestDto,
   MigrationPreflightResponseDto,
+  MigrationProgressDto,
   MigrationSessionRequestDto,
 } from './migration-http.dtos';
 
@@ -40,7 +41,7 @@ export const HASH_READ_BLOCK_BYTES = 4 * 1024 * 1024;
 export const DEFAULT_UPLOAD_CONCURRENCY = 2;
 
 /** Default total attempts per chunk, including the first (plan §22). */
-export const DEFAULT_CHUNK_MAX_ATTEMPTS = 4;
+export const DEFAULT_CHUNK_MAX_ATTEMPTS = 8;
 
 export class TransferCancelledError extends Error {
   constructor(message = 'The operation was cancelled.') {
@@ -165,7 +166,9 @@ export interface PersistedTransferResumeState {
   direction: 'import';
   fileIdentity: TransferFileIdentity;
   fileName: string;
-  preflightRequest: MigrationPreflightRequestDto;
+  /** Missing only when attaching an existing server job without browser metadata. */
+  preflightRequest?: MigrationPreflightRequestDto;
+  serverDiscovered?: true;
   preflightDecision?: MigrationPreflightDecision;
   /**
    * Destination revision the server returned at preflight, i.e. the revision
@@ -222,6 +225,9 @@ export type TransferFlowState =
       jobId: string;
       jobState: MigrationJobState;
       progress: TransferProgress;
+      /** Processing progress from the host, separate from uploaded bytes. */
+      serverProgress?: MigrationProgressDto;
+      statusCheckedAtUtc?: string;
       preflight?: MigrationPreflightResponseDto;
     }
   | {
@@ -259,7 +265,7 @@ const FLOW_TRANSITIONS: Record<TransferFlowState['kind'], readonly TransferFlowS
   ],
   inspecting: ['preflighting', 'failed', 'cancelled'],
   preflighting: ['ready-to-upload', 'failed', 'cancelled'],
-  'ready-to-upload': ['uploading', 'failed', 'cancelled', 'ready-to-upload'],
+  'ready-to-upload': ['uploading', 'checking', 'failed', 'cancelled', 'ready-to-upload'],
   uploading: ['checking', 'failed', 'cancelled', 'ready-to-upload', 'uploading'],
   checking: [
     'checking',

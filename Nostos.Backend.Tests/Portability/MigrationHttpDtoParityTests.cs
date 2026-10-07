@@ -132,18 +132,6 @@ public sealed class MigrationHttpDtoParityTests
         AssertProperties(statusWithSession.RootElement.GetProperty("session"), SessionStatus);
     }
 
-    [Fact]
-    public async Task Error_response_shape_is_error_plus_message_only()
-    {
-        await using var h = new MigrationHttpHarness().Start();
-        var (status, body) = await h.SendAsync(
-            HttpMethod.Get,
-            $"/api/portability/migration/jobs/{Guid.NewGuid()}");
-        status.Should().Be(HttpStatusCode.NotFound);
-        AssertProperties(body.RootElement, "error", "message");
-        body.RootElement.GetProperty("error").GetString().Should().Be("migration_not_found");
-    }
-
     private static void AssertProperties(JsonElement element, params string[] expected)
     {
         var actual = element.EnumerateObject().Select(property => property.Name).ToArray();

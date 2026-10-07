@@ -26,7 +26,8 @@ public sealed class AcquisitionServiceTests
         string? partUrl = "https://example.com/item-123.epub",
         string partExtension = ".epub",
         long partBytes = 1024,
-        string rights = "Public Domain in the USA")
+        string rights = "Public Domain in the USA",
+        string? coverUrl = null)
     {
         return new ProviderAcquisitionPlan(
             ProviderId: providerId,
@@ -48,6 +49,9 @@ public sealed class AcquisitionServiceTests
                 new ProviderDownloadPart(new Uri(partUrl!), partExtension, partBytes)
             },
             Output: new ProviderOutput(".epub", "application/epub+zip", "EPUB"),
+            Cover: coverUrl is null
+                ? null
+                : new ProviderCover(new Uri(coverUrl), "image/jpeg", ".jpg"),
             Source: new ProviderSourceInfo(
                 ItemUrl: $"https://example.com/items/{externalId}",
                 RightsStatement: rights));
@@ -827,6 +831,88 @@ public sealed class AcquisitionServiceTests
         recordedStatuses.Should().Contain(BookStatus.Downloading);
         finalBook.Status.Should().Be(BookStatus.Ready);
         finalBook.StatusMessage.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task StaleSnapshotAsset_StillOffered_DownloadsOnlyTheLivePlanUrl()
+    {
+        using var h = AcquisitionHarness.Create();
+
+        // A non-live discovery backend (for example a Cloud catalog snapshot)
+        // listed this item and asset at sync time, including metadata a live
+        // search would not carry.
+        var staleCoverUrl = new Uri("https://example.com/stale-cover.jpg");
+        var snapshotItem = new ProviderItem(
+            ProviderId: "gutenberg",
+            ExternalId: "1497",
+            MediaKind: ProviderMediaKind.Ebook,
+            Metadata: new ProviderMetadata("The Republic"),
+            Assets: [new ProviderAsset("epub3", ProviderMediaKind.Ebook, "EPUB3", "epub")],
+            Cover: new ProviderCover(staleCoverUrl, "image/jpeg", ".jpg"));
+
+        var liveUrl = new Uri("https://fake.org/live/1497.epub");
+        var liveCoverUrl = new Uri("https://fake.org/live/1497-cover.jpg");
+        var fakeProvider = new FakeContentProvider("gutenberg", "Project Gutenberg");
+        fakeProvider.PlanResult = CreateEbookPlan(
+            providerId: snapshotItem.ProviderId,
+            externalId: snapshotItem.ExternalId,
+            assetId: "epub3",
+            partUrl: liveUrl.ToString(),
+            coverUrl: liveCoverUrl.ToString());
+
+        var service = h.CreateService(new ProviderRegistry([fakeProvider]));
+
+        var result = await service.AcquireAsync(
+            new AcquisitionRequest(
+                snapshotItem.ProviderId,
+                snapshotItem.ExternalId,
+                snapshotItem.Assets[0].Id,
+                IncludeCover: true),
+            null,
+            CancellationToken.None);
+
+        result.Succeeded.Should().BeTrue();
+        fakeProvider.PlanCallCount.Should().Be(1, "the live provider plan is the only source of download locations");
+        h.Downloader.RequestedUrls.Should().BeEquivalentTo(
+            [liveUrl, liveCoverUrl],
+            "every fetched location comes from the live plan");
+        h.Downloader.RequestedUrls.Should().NotContain(
+            staleCoverUrl,
+            "discovery metadata is never fetched or trusted as an asset");
+    }
+
+    [Fact]
+    public async Task StaleSnapshotAsset_NoLongerOffered_FailsCleanly_WithoutDownloading()
+    {
+        using var h = AcquisitionHarness.Create();
+
+        var snapshotItem = new ProviderItem(
+            ProviderId: "gutenberg",
+            ExternalId: "1497",
+            MediaKind: ProviderMediaKind.Ebook,
+            Metadata: new ProviderMetadata("The Republic"),
+            Assets: [new ProviderAsset("epub3", ProviderMediaKind.Ebook, "EPUB3", "epub")]);
+
+        var fakeProvider = new FakeContentProvider("gutenberg", "Project Gutenberg");
+        fakeProvider.ExceptionToThrowOnPlan = ProviderException.AssetUnavailableFor(
+            snapshotItem.ProviderId,
+            snapshotItem.ExternalId,
+            snapshotItem.Assets[0].Id);
+
+        var service = h.CreateService(new ProviderRegistry([fakeProvider]));
+
+        var result = await service.AcquireAsync(
+            new AcquisitionRequest(
+                snapshotItem.ProviderId,
+                snapshotItem.ExternalId,
+                snapshotItem.Assets[0].Id),
+            null,
+            CancellationToken.None);
+
+        result.Outcome.Should().Be(AcquisitionOutcome.Failed);
+        result.ErrorCode.Should().Be(ProviderException.AssetUnavailable);
+        fakeProvider.PlanCallCount.Should().Be(1, "the live provider is re-asked even though discovery listed the asset");
+        h.Downloader.DownloadCallCount.Should().Be(0, "a snapshot row is not authority to download");
     }
 
     /// <summary>A provider that can only search: used to prove the acquisition

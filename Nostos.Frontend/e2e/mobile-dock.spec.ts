@@ -32,6 +32,55 @@ async function openLibrary(page: Page): Promise<void> {
   await expect(page.locator('app-app-dock')).toBeVisible();
 }
 
+async function openCloudLibrary(page: Page): Promise<void> {
+  // The shared E2E backend runs SelfHosted. Supply only the Cloud account
+  // boundary needed to reach the real product shell; library requests still
+  // go to the isolated backend and remain read-only in this journey.
+  await page.route('**/api/runtime/capabilities', (route) =>
+    route.fulfill({
+      json: {
+        deploymentMode: 'Cloud',
+        requiresAuthentication: true,
+        canConfigureAiProvider: false,
+        managedAi: true,
+        managedVoiceTranscription: true,
+        usesCloudStorage: true,
+        supportsLocalBackupConfiguration: false,
+        supportsPrivateNetworkAccess: false,
+        supportsEreaderAccess: true,
+        usageMeteringAvailable: true,
+        accountManagementUrl: 'https://nostos.page/account',
+        feedbackUrl: 'https://nostos.page/feedback?from=settings',
+      },
+    }),
+  );
+  await page.route('**/api/auth/session', (route) =>
+    route.fulfill({
+      json: {
+        authenticated: true,
+        accountState: 'Active',
+        account: { id: 'mobile-more-journey', displayName: 'Journey', email: null },
+      },
+    }),
+  );
+  await page.route('**/api/cloud/onboarding**', (route) =>
+    route.fulfill({
+      json: {
+        state: 'ready',
+        subscriptionStatus: 'active',
+        ready: true,
+        canCheckout: false,
+        canCheckSubscription: false,
+        canManageSubscription: true,
+        canRetry: false,
+        selectedOffer: null,
+      },
+    }),
+  );
+
+  await openLibrary(page);
+}
+
 interface Box {
   x: number;
   y: number;
@@ -101,6 +150,70 @@ test('the rail does not create horizontal overflow or illegible labels', async (
     // Below ~11px the labels stop being readable at arm's length.
     expect(size, 'dock label font size').toBeGreaterThanOrEqual(11);
   }
+});
+
+test('Cloud More is compact, anchored to its trigger, and closes accessibly', async ({ page }) => {
+  await openCloudLibrary(page);
+
+  const more = page.getByTestId('dock-more');
+  await expect(more).toHaveAttribute('aria-controls', 'mobile-more-sheet');
+  await more.click();
+
+  const menu = page.getByRole('dialog', { name: 'More' });
+  const feedback = page.getByTestId('utility-sheet-feedback');
+  await expect(menu).toBeVisible();
+  await expect(more).toHaveAttribute('aria-expanded', 'true');
+  await expect(more).toHaveClass(/dock-item-open/);
+  await expect(feedback).toBeFocused();
+  await expect(feedback).toHaveAttribute(
+    'href',
+    'https://nostos.page/feedback?from=library',
+  );
+  await expect(page.getByTestId('utility-sheet-settings')).toBeVisible();
+  const transitionDurations = await menu.evaluate((element) =>
+    getComputedStyle(element)
+      .transitionDuration
+      .split(',')
+      .map((duration) => Number.parseFloat(duration)),
+  );
+  expect(transitionDurations.some((duration) => duration > 0)).toBe(true);
+
+  const panel = (await menu.boundingBox()) as Box;
+  const trigger = (await more.boundingBox()) as Box;
+  expect(panel.width, 'two utilities should use a compact panel').toBeLessThanOrEqual(240);
+  expect(panel.height, 'the panel should fit the two actions closely').toBeLessThanOrEqual(132);
+  expect(
+    Math.abs(panel.x + panel.width - trigger.x - trigger.width),
+    'the panel edge should align with the More trigger',
+  ).toBeLessThanOrEqual(1);
+  expect(panel.y + panel.height, 'the panel should sit just above the dock').toBeLessThan(
+    trigger.y,
+  );
+
+  await page.keyboard.press('Escape');
+  await expect(more).toHaveAttribute('aria-expanded', 'false');
+  await expect(menu).toHaveCount(0);
+  await expect(more).toBeFocused();
+
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await more.click();
+  await expect(menu).toBeVisible();
+  const motion = await menu.evaluate((element) => ({
+    animation: getComputedStyle(element).animationDuration,
+    transition: getComputedStyle(element).transitionDuration,
+  }));
+  expect(motion.animation).toBe('0s');
+  expect(motion.transition).toBe('0s');
+  await page.locator('.utility-sheet-scrim').click({ position: { x: 5, y: 5 } });
+  await expect(menu).toHaveCount(0);
+  await expect(more).toBeFocused();
+
+  await more.click();
+  await expect(menu).toBeVisible();
+  await page.getByTestId('utility-sheet-settings').click();
+  await expect(page).toHaveURL(`${fixture.baseUrl}/settings`);
+  await expect(page.getByRole('tab', { name: 'Library & data' })).toBeVisible();
+  await expect(menu).toHaveCount(0);
 });
 
 /**

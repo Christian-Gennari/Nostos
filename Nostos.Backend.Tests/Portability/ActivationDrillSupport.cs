@@ -12,7 +12,6 @@ using Nostos.Backend.Services.Portability;
 using Nostos.Backend.Services.Portability.Activation;
 using Nostos.Backend.Services.Portability.Migration;
 using Xunit;
-
 namespace Nostos.Backend.Tests.Portability;
 
 /// <summary>
@@ -68,7 +67,8 @@ internal sealed class ActivationDrillFixture : IAsyncDisposable
         var fixture = new ActivationDrillFixture(
             template, populated, root, databaseRoot, booksRoot, transferRoot, backupRoot);
         File.Copy(template.TemplateDatabase, fixture.DatabasePath, overwrite: true);
-        CopyDirectory(template.TemplateMedia, booksRoot);
+        if (Directory.Exists(template.TemplateMedia))
+            PortableArchiveTestSupport.CopyDirectory(template.TemplateMedia, booksRoot);
 
         // The drill creates its own import job through the real routes. Remove
         // the fixture's seeded migration bookkeeping so the live host's hosted
@@ -101,18 +101,6 @@ internal sealed class ActivationDrillFixture : IAsyncDisposable
         var port = ((IPEndPoint)listener.LocalEndpoint).Port;
         listener.Stop();
         return port;
-    }
-
-    internal static void CopyDirectory(string source, string target)
-    {
-        Directory.CreateDirectory(target);
-        if (!Directory.Exists(source)) return;
-        foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
-        {
-            var destination = Path.Combine(target, Path.GetRelativePath(source, file));
-            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-            File.Copy(file, destination, overwrite: true);
-        }
     }
 
     // ---- content assertions ----
@@ -707,7 +695,7 @@ internal sealed class ActivationDrillHost : IAsyncDisposable
             fileIdentity = new
             {
                 totalSizeBytes = bytes.LongLength,
-                sha256Checksum = Sha256(bytes),
+                sha256Checksum = PortableArchiveTestSupport.Sha256Hex(bytes),
                 clientFingerprint = "drill",
             },
             idempotencyKey = "drill-session-" + Guid.NewGuid().ToString("N"),
@@ -730,7 +718,7 @@ internal sealed class ActivationDrillHost : IAsyncDisposable
             using var content = new ByteArrayContent(chunk);
             content.Headers.TryAddWithoutValidation(
                 "Content-Range", $"bytes {offset}-{offset + length - 1}/{bytes.LongLength}");
-            content.Headers.TryAddWithoutValidation("X-Nostos-Chunk-SHA256", Sha256(chunk));
+            content.Headers.TryAddWithoutValidation("X-Nostos-Chunk-SHA256", PortableArchiveTestSupport.Sha256Hex(chunk));
             var upload = await SendAsync(
                 HttpMethod.Put,
                 $"/api/portability/migration/jobs/{jobId}/upload-session/chunks/{index}",
@@ -866,9 +854,6 @@ internal sealed class ActivationDrillHost : IAsyncDisposable
         last?.Dispose();
         throw new TimeoutException($"Job {jobId} did not reach activation outcome {outcome}; last {observed}.\n{Logs}");
     }
-
-    internal static string Sha256(byte[] bytes) =>
-        Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(bytes));
 
     public async ValueTask DisposeAsync()
     {

@@ -1,0 +1,68 @@
+{
+  "books": [
+    {
+      "id": "47",
+      "title": "Count of Monte Cristo",
+      "language": "English",
+      "copyright_year": "1844",
+      "num_sections": "128",
+      "url_librivox": "https://librivox.org/the-count-of-monte-cristo-by-alexandre-dumas/",
+      "totaltime": "49:43:15",
+      "authors": [
+        {
+          "id": "431",
+          "first_name": "Alexandre",
+          "last_name": "Dumas",
+          "dob": "1802",
+          "dod": "1870"
+        }
+      ],
+      "coverart_thumbnail": "https://www.archive.org/download/LibrivoxCdCoverArt12/Count_Monte_Cristo_1110_thumb.jpg",
+      "url_iarchive": "https://www.archive.org/details/count_monte_cristo_0711_librivox",
+      "genres": [
+        {
+          "id": "20",
+          "name": "Literary Fiction"
+        },
+        {
+          "id": "53",
+          "name": "Published 1800 -1900"
+        }
+      ]
+    },
+    {
+      "id": "52",
+      "title": "Letters of Two Brides",
+      "language": "English",
+      "copyright_year": "1902",
+      "num_sections": "57",
+      "url_librivox": "https://librivox.org/letters-of-two-brides-by-honore-de-balzac/",
+      "totaltime": "9:09:20",
+      "authors": [
+        {
+          "id": "86",
+          "first_name": "Honor\u00e9 de",
+          "last_name": "Balzac",
+          "dob": "1799",
+          "dod": "1850"
+        }
+      ],
+      "url_iarchive": "https://www.archive.org/details/letters_brides_0709_librivox",
+      "genres": [
+        {
+          "id": "8",
+          "name": "Epistolary Fiction"
+        }
+      ]
+    },
+    {
+      "id": "53",
+      "title": "Bleak House",
+      "language": "English",
+      "copyright_year": "1853",
+      "num_sections": "67",
+      "url_librivox": "https://librivox.org/bleak-house-by-charles-dickens/",
+      "totaltime": "43:30:19"
+    }
+  ]
+}

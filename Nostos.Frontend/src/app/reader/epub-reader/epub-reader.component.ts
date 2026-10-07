@@ -14,6 +14,7 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ButtonComponent } from '../../ui/button/button.component';
+import { LoadingIndicatorComponent } from '../../ui/loading-indicator/loading-indicator.component';
 import ePub, { Book, Rendition, Contents } from 'epubjs';
 import { Subject, Subscription } from 'rxjs';
 import { debounceTime, distinctUntilChanged, filter } from 'rxjs/operators';
@@ -431,7 +432,7 @@ const GROUNDED_SETTLE_MAX_MS = 2000;
 @Component({
   selector: 'app-epub-reader',
   standalone: true,
-  imports: [CommonModule, ButtonComponent],
+  imports: [CommonModule, ButtonComponent, LoadingIndicatorComponent],
   templateUrl: './epub-reader.component.html',
   styleUrl: './epub-reader.component.css',
 })

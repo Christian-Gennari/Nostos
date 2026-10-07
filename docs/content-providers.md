@@ -194,8 +194,8 @@ archive and the storage service cannot disagree about where the library is.
 
 | Method | Route | Purpose |
 | --- | --- | --- |
-| GET | `/api/providers` | Registered sources and their capabilities. |
-| GET | `/api/providers/search?query=&kind=&limit=` | Unified discovery across every eligible provider. `kind` is optional (`ebook` / `audiobook`). |
+| GET | `/api/providers` | Enabled sources and their capabilities. |
+| GET | `/api/providers/search?query=&kind=&limit=` | Unified discovery across every enabled, eligible provider. `kind` is optional (`ebook` / `audiobook`). |
 | GET | `/api/providers/{providerId}/search?query=&limit=&offset=` | Provider-specific normalized search (kept for compatibility/testing). |
 | GET | `/api/providers/{providerId}/items/{externalId}` | Normalized item detail + assets. |
 | GET | `/api/providers/{providerId}/items/{externalId}/cover` | Proxied cover artwork. |
@@ -255,11 +255,59 @@ that Gutenberg is an ebook source or LibriVox is an audiobook source. Result
 identity is always `ProviderId + ExternalId`; external ids are not globally
 unique.
 
+**Replaceable discovery backend.** `GET /api/providers/search` depends on
+`IProviderDiscovery`, not on a particular search strategy. SelfHosted keeps the
+live fan-out above as its default; a host can register its own implementation
+(for example one shared catalog populated by scheduled syncs) before
+`AddNostosProduct`, and it wins. The HTTP contract is unchanged whichever
+backend answers: results are still `ProviderItem` / `ProviderDiscoveryResult`
+values, and the endpoint drops any row whose provider id is not registered in
+`IProviderRegistry` (and, when the caller supplies a provider set, any provider
+outside it), so provider visibility is enforced at the HTTP boundary rather than
+trusted from the backend.
+
+Discovery results are metadata only and may be stale. Acquisition never treats
+them as authority: when the user adds an item, the provider's planner
+re-resolves it against the live source and verifies the requested asset is still
+offered before any download starts.
+
 
 Imports run as **jobs** because a whole audiobook takes far longer than any
 sensible HTTP request: `POST .../acquire` returns as soon as the job is queued
 and the client polls. Completion is only reported once the final file is stored
 and the library row is attached.
+
+## User enablement (issue #774)
+
+Which free sources participate is the user's choice, stored per provider and
+enforced on the server.
+
+- **Storage.** `ProviderPreferences` has one row per provider the user has
+  explicitly turned on or off. Absence of a row means "use the provider's
+  declaration", never "off". That is what keeps a provider added in a later
+  release from silently joining an existing install's searches, and it is why
+  the table's migration seeds nothing.
+- **Declaration.** `IContentProvider.EnabledByDefault` defaults to `false`, so a
+  new provider must deliberately opt in. The four shipped general sources —
+  Project Gutenberg, Standard Ebooks, Wikisource and LibriVox — declare `true`
+  and are on for a fresh install.
+- **Enforcement.** `IProviderEnablementService` is the only reader of the stored
+  choices. `GET /api/providers` returns enabled sources only; aggregate discovery
+  passes the enabled set as `ProviderDiscoveryRequest.ProviderIds` and drops rows
+  for disabled providers at the HTTP boundary (so a host discovery backend that
+  ignores the set still cannot surface one); and every provider-specific route
+  (`/{providerId}/search`, `/items/...`, `/cover`, `/acquire`) answers the
+  existing `provider_unknown` 404 for a disabled provider — disabled is
+  deliberately indistinguishable from unknown.
+- **Management.** `GET /api/settings/providers` is the one surface that lists
+  disabled providers (so they can be re-enabled); `PUT
+  /api/settings/providers/{providerId}` with `{ "enabled": bool }` stores a
+  choice. A body without `enabled` is a 400 and stores nothing — never an
+  implicit disable.
+- **Scope of a disable.** Only future discovery and acquisition are affected.
+  Jobs already started keep running, stay queryable and cancellable, and nothing
+  deletes books, downloaded files, metadata or provenance. Re-enabling restores
+  access.
 
 ## Security and resource limits
 
@@ -407,9 +455,12 @@ an error. A response that is not a feed (an HTML error page, say) surfaces as
 `provider_response_invalid`. An asset the item does not offer surfaces as
 `provider_asset_unavailable`.
 
-**Etiquette.** OPDS feeds are small and cache-friendly; Nostos makes one request
-per search, one per detail, and downloads each asset once. There is no crawl,
-no bulk harvesting and no scheduled polling of the catalogue.
+**Etiquette.** OPDS feeds are small and cache-friendly; the SelfHosted default
+makes one request per search, one per detail, and downloads each asset once.
+That default performs no crawl, no bulk harvesting and no scheduled polling of
+the catalogue. A host that replaces `IProviderDiscovery` with a synchronized
+catalog is responsible for its own source-appropriate sync cadence and
+etiquette (see the discovery-backend note above).
 
 ## Wikisource (built-in provider)
 

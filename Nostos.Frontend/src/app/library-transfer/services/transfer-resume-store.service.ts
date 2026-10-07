@@ -85,8 +85,9 @@ function isResumeState(value: unknown): value is PersistedTransferResumeState {
     identity !== null &&
     typeof (identity as Record<string, unknown>)['totalSizeBytes'] === 'number' &&
     typeof (identity as Record<string, unknown>)['sha256Checksum'] === 'string' &&
-    typeof preflight === 'object' &&
-    preflight !== null
+    ((typeof preflight === 'object' && preflight !== null) ||
+      (record['serverDiscovered'] === true && typeof jobId === 'string' &&
+        jobId.length > 0 && typeof record['sessionId'] === 'string'))
   );
 }
 

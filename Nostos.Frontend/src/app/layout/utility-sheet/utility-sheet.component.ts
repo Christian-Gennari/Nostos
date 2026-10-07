@@ -1,11 +1,14 @@
+import { DOCUMENT } from '@angular/common';
 import {
   Component,
+  ElementRef,
   HostListener,
   Injector,
   OnDestroy,
   afterNextRender,
   effect,
   inject,
+  signal,
 } from '@angular/core';
 import { NavigationEnd, Router, RouterLink } from '@angular/router';
 import { A11yModule } from '@angular/cdk/a11y';
@@ -17,28 +20,37 @@ import { NostosIconComponent } from '../../ui/icon/nostos-icon.component';
 import { UtilitySheetService } from './utility-sheet.service';
 
 /**
- * The narrow-viewport More sheet: a first-level utility surface that keeps
- * Feedback and Settings one tap below the dock without spending a fifth dock
- * slot or adding another floating control.
+ * The narrow-viewport More surface: a compact first-level utility menu that
+ * keeps Feedback and Settings one tap below the dock without spending a fifth
+ * dock slot or adding another floating control.
  *
  * It deliberately sits on the shell's existing layer ladder — backdrop under
  * drawer, both under the assistant — so an open Ask Nostos surface always keeps
- * the top layer and this sheet can never paint through it.
+ * the top layer and this menu can never paint through it.
  */
 @Component({
   selector: 'app-utility-sheet',
   standalone: true,
   imports: [RouterLink, NostosIconComponent, A11yModule],
   template: `
-    @if (sheet.open()) {
-      <div class="utility-sheet-scrim" (click)="sheet.close()" aria-hidden="true"></div>
+    @if (rendered()) {
+      <div
+        class="utility-sheet-scrim"
+        [class.is-open]="sheet.open()"
+        (click)="sheet.close()"
+        aria-hidden="true"
+      ></div>
       <div
         class="utility-sheet"
+        id="mobile-more-sheet"
+        [class.is-open]="sheet.open()"
+        [style.--utility-sheet-right]="sheetRight() + 'px'"
         role="dialog"
-        aria-modal="true"
+        [attr.aria-modal]="sheet.open() ? 'true' : null"
+        [attr.aria-hidden]="sheet.open() ? null : 'true'"
+        [attr.inert]="sheet.open() ? null : ''"
         aria-label="More"
-        [cdkTrapFocus]="true"
-        [cdkTrapFocusAutoCapture]="true"
+        [cdkTrapFocus]="sheet.open()"
         data-testid="utility-sheet"
       >
         @if (feedbackUrl(); as feedbackHref) {
@@ -84,18 +96,31 @@ import { UtilitySheetService } from './utility-sheet.service';
         inset: 0;
         z-index: var(--layer-backdrop);
         background: var(--modal-scrim);
-        -webkit-backdrop-filter: blur(var(--modal-scrim-blur));
-        backdrop-filter: blur(var(--modal-scrim-blur));
-        animation: utility-sheet-fade var(--motion-fast) ease-out both;
+        opacity: 0;
+        transition: opacity var(--motion-fast) ease-out;
+      }
+
+      .utility-sheet-scrim.is-open {
+        opacity: 0.14;
+      }
+
+      .utility-sheet-scrim:not(.is-open) {
+        pointer-events: none;
       }
 
       .utility-sheet {
+        --utility-sheet-right: 12px;
         position: fixed;
-        right: 10px;
-        bottom: calc(var(--dock-rail-h) + env(safe-area-inset-bottom, 0px) + 10px);
-        left: 10px;
+        right: max(env(safe-area-inset-right, 0px), var(--utility-sheet-right));
+        bottom: calc(var(--dock-rail-h) + env(safe-area-inset-bottom, 0px) + 8px);
         z-index: var(--layer-drawer);
         display: flex;
+        width: min(
+          224px,
+          calc(
+            100vw - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px) - 24px
+          )
+        );
         flex-direction: column;
         gap: 2px;
         box-sizing: border-box;
@@ -104,7 +129,30 @@ import { UtilitySheetService } from './utility-sheet.service';
         border-radius: var(--radius-dock);
         background: var(--dock-surface);
         box-shadow: var(--dock-shadow);
-        animation: utility-sheet-enter var(--motion-base) var(--ease-out) both;
+        opacity: 0;
+        transform: translateY(6px) scale(0.985);
+        transform-origin: bottom right;
+        pointer-events: none;
+        transition:
+          opacity var(--motion-base) var(--ease-out),
+          transform var(--motion-base) var(--ease-out);
+      }
+
+      .utility-sheet.is-open {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+        pointer-events: auto;
+      }
+
+      @starting-style {
+        .utility-sheet-scrim.is-open {
+          opacity: 0;
+        }
+
+        .utility-sheet.is-open {
+          opacity: 0;
+          transform: translateY(8px) scale(0.985);
+        }
       }
 
       .utility-sheet-item {
@@ -140,30 +188,10 @@ import { UtilitySheetService } from './utility-sheet.service';
         color: var(--color-text-muted);
       }
 
-      @keyframes utility-sheet-fade {
-        from {
-          opacity: 0;
-        }
-        to {
-          opacity: 1;
-        }
-      }
-
-      @keyframes utility-sheet-enter {
-        from {
-          opacity: 0;
-          transform: translateY(8px);
-        }
-        to {
-          opacity: 1;
-          transform: translateY(0);
-        }
-      }
-
       @media (prefers-reduced-motion: reduce) {
         .utility-sheet-scrim,
         .utility-sheet {
-          animation: none;
+          transition: none;
         }
 
         .utility-sheet-item {
@@ -176,21 +204,47 @@ import { UtilitySheetService } from './utility-sheet.service';
 export class UtilitySheetComponent implements OnDestroy {
   readonly sheet = inject(UtilitySheetService);
   readonly feedbackUrl = inject(FeedbackLinkService).url;
+  readonly rendered = signal(false);
+  readonly sheetRight = signal(12);
+  private readonly host = inject(ElementRef<HTMLElement>);
+  private readonly document = inject(DOCUMENT);
   private readonly injector = inject(Injector);
+  private returnFocus: HTMLElement | null = null;
+  private exitTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor() {
-    // The focus trap captures the More trigger while the shell is still live.
-    // Only after that capture does the workspace behind the sheet become inert,
-    // so inertness can never take the capture away from CDK (and cannot move
-    // focus to body on browsers that blur an inert subtree).
+    // Keep the panel mounted for its short exit transition, but release focus
+    // and make it inert as soon as the menu closes. Focus is captured manually
+    // on every open because the trap remains mounted briefly during an exit.
     effect(() => {
-      if (!this.sheet.open()) return;
-      afterNextRender(
-        () => {
-          if (this.sheet.open()) this.sheet.backgroundInert.set(true);
-        },
-        { injector: this.injector },
-      );
+      if (this.sheet.open()) {
+        if (this.exitTimer !== undefined) clearTimeout(this.exitTimer);
+        this.exitTimer = undefined;
+        this.returnFocus = this.focusable(this.document.activeElement);
+        this.rendered.set(true);
+
+        afterNextRender(() => {
+          if (!this.sheet.open()) return;
+          this.syncPosition();
+          const firstItem = (this.host.nativeElement as HTMLElement).querySelector(
+            '[cdkFocusInitial], .utility-sheet-item',
+          ) as HTMLElement | null;
+          firstItem?.focus();
+          // The dock stays live until its focus has moved into the menu.
+          this.sheet.backgroundInert.set(true);
+        }, { injector: this.injector });
+        return;
+      }
+
+      if (!this.rendered()) return;
+
+      this.sheet.backgroundInert.set(false);
+      if (this.returnFocus?.isConnected) this.returnFocus.focus();
+      this.returnFocus = null;
+      this.exitTimer = setTimeout(() => {
+        this.rendered.set(false);
+        this.exitTimer = undefined;
+      }, this.motionDuration());
     });
 
     // A history navigation while the sheet is open must not leave a modal
@@ -207,11 +261,43 @@ export class UtilitySheetComponent implements OnDestroy {
     // This component owns the sheet's inert state; if the workspace itself is
     // destroyed (navigating to the Reader), never leave the next shell inert or
     // the sheet half-open.
+    if (this.exitTimer !== undefined) clearTimeout(this.exitTimer);
     this.sheet.close();
+  }
+
+  @HostListener('window:resize')
+  onResize(): void {
+    if (this.sheet.open()) this.syncPosition();
   }
 
   @HostListener('document:keydown.escape')
   onEscape(): void {
     if (this.sheet.open()) this.sheet.close();
+  }
+
+  private syncPosition(): void {
+    const trigger = this.document.querySelector<HTMLElement>('[data-testid="dock-more"]');
+    const viewportWidth = this.document.defaultView?.innerWidth;
+    if (!trigger || !viewportWidth) return;
+
+    this.sheetRight.set(Math.max(0, viewportWidth - trigger.getBoundingClientRect().right));
+  }
+
+  private focusable(element: Element | null): HTMLElement | null {
+    return element && 'focus' in element ? (element as HTMLElement) : null;
+  }
+
+  private motionDuration(): number {
+    if (this.document.defaultView?.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+      return 0;
+    }
+
+    const token = this.document.defaultView
+      ?.getComputedStyle(this.document.documentElement)
+      .getPropertyValue('--motion-base')
+      .trim();
+    const value = Number.parseFloat(token ?? '');
+    if (!Number.isFinite(value)) return 220;
+    return value * (token?.endsWith('ms') ? 1 : 1000);
   }
 }

@@ -1,13 +1,86 @@
 # Portability and migration
 
-Nostos portable archives are the provider-neutral format for moving user-owned library state between installations.
+Nostos portable archives use the provider-neutral `.nostos` format to move library data between installations. This guide describes the customer flow, the public implementation, and the limits of the evidence. A protocol ceiling is not a promise that every host or account can accept an archive that large.
 
-This document deliberately separates:
+The public SelfHosted implementation is in this repository. The Cloud hosting adapter and its account-plan rules live outside it. The hosted alpha advertises library migration, but only one SelfHosted → Cloud import is recorded as completed; the other hosted paths listed below remain unverified.
 
-1. **Current behaviour (shipped)** — what the existing portability API, the durable transfer-job API, and `PortableArchiveService` do today.
-2. **Migration contract (epic #676)** — the provider-neutral contract for one-click SelfHosted ↔ Cloud migration being developed across issues #677–#682. Its transport, durable jobs, and archive preparation are implemented (described in Part 1); activation/replacement (#681), the capability advertisement, and the private hosted adapter remain planned.
+---
 
-Do not treat Part 2 as documentation of a destructive replacement flow: no shipped route activates a prepared import or replaces a library.
+## Customer guide
+
+### Find the controls
+
+On a host that advertises library migration, open **Settings → Library & data → Move your library**. The card contains both export and import.
+
+When the host advertises Cloud portable export but not library migration, the UI shows an export-only card. Use **Settings → Library & data → Data export → Export all my Nostos data**. This is a separate export path; it is not evidence that the migration export flow has been exercised.
+
+### Export a library
+
+1. Open **Settings → Library & data → Move your library**.
+2. Under **Export library**, choose **Export library**.
+3. When the status says **Your export is ready**, choose **Download archive** if the browser did not start the download automatically.
+
+The result is a `.nostos` file. A completed migration export artifact is retained for 24 hours by the public implementation. If the host shows the export-only card instead, the button is **Export all my Nostos data**.
+
+### Import, replace, and activate
+
+1. Open **Settings → Library & data → Move your library**.
+2. Under **Import library**, choose **Import library…** and select the `.nostos` archive.
+3. Wait while the browser hashes and uploads the file and the host prepares and checks it.
+4. If the destination is empty, the UI requests activation automatically after verification. There is no separate **Activate** button. Keep the page open while **Switching libraries…** is shown.
+5. If the destination already has library data, review the current and incoming counts in **Replace this library?**. Choose **Replace library** to confirm and start activation, or **Cancel** to leave the current library in place.
+6. The UI shows the completed state briefly, then reloads the app; no further action is required.
+
+There is no merge mode. A populated destination is retained as a recovery copy for seven days when replacement succeeds. If the destination changed while the import was preparing, the host can require a fresh review instead of replacing that newer state. The shared UI presents the confirmation; revision checks and recovery-copy creation are server-side. These behaviors are implemented in the public SelfHosted host, but hosted behavior beyond the one recorded import has not been verified.
+
+### Restore the previous library
+
+The shared Angular Settings and transfer templates in this repository do not contain a **Restore previous** button or recovery-copy list, so there is no customer click path to give for this operation. The public SelfHosted API does expose recovery list, status, and restore routes; a restore request needs the recovery ID, the current destination revision, and explicit replacement confirmation. It replaces the current portable library with the retained copy. A recovery copy expires after seven days and cannot be restored twice.
+
+These API routes do not establish that Cloud exposes the operation to customers. Restore after activation has not been verified on the hosted alpha. See the [API reference](../api-reference.md) for the SelfHosted routes.
+
+### Browser resume limits
+
+The browser stores job/session identifiers and file identity in origin-local storage; it does not store the archive bytes. While the page stays open, a paused upload can continue with **Resume upload**. After a reload, return to the same Nostos origin with its browser storage intact and, when prompted, select the same archive again. The client checks the file size and whole-file SHA-256, then asks the host which chunks are missing. A different file cannot continue that upload.
+
+The server transfer session expires after 24 hours. The public client and SelfHosted browser suite cover refresh and same-file reselection; recovery after clearing site data or switching browser profiles is not established for every host. Only one import can hold the active-tab lease across tabs for the same browser origin. The shared client also has an optional active-import discovery request, but that route is not mapped by the public SelfHosted migration endpoint group.
+
+### Size limits and account plans
+
+The public migration contract sets these hard ceilings:
+
+| Limit | Contract ceiling |
+|---|---:|
+| Compressed archive | 512 GiB |
+| Aggregate media in the archive | 512 GiB |
+| One archive entry | 16 GiB |
+| Relational data payload | 64 MiB |
+| Manifest | 4 MiB |
+| ZIP entries | 20,000 |
+| Total uncompressed archive data | 1 TiB |
+| Nominal upload chunk | 4–64 MiB; 16 MiB default |
+| Transfer session lifetime | 24 hours |
+
+These are validation and protocol ceilings, not tested practical maximums. A host can reject an archive below them when destination capacity is insufficient; replacing a populated library also reserves space for its recovery copy. The public repository does not define a numeric Cloud plan quota or show how the private Cloud host applies plan limits. Use the host's preflight result for a specific archive; near-plan-limit behavior has not been verified on the hosted alpha.
+
+The older single-request import endpoint is separate from the chunked migration flow and is limited by the SelfHosted Kestrel request-body cap of 4 GiB. Do not use that number as the limit for the migration upload API.
+
+### What an archive contains
+
+A `.nostos` archive contains a manifest with format/version and checksum information, library records, and the primary media files and covers that are stored for those books. Its data includes works and books with metadata and reading progress; collections and memberships; notes, source anchors, topics and note links; Writing Studio documents and folders; writing/note links; remembered e-reader book mappings; acquisition provenance; and the assistant capture-processing preference.
+
+It does not contain local backup history or backup paths, absolute media paths, host/runtime settings, AI provider configuration or credentials, migration jobs or idempotency receipts, or derived caches such as search indexes, EPUB locations, and generated thumbnails. A portable archive is not a same-installation operational backup. The inventory is defined by [PortableArchiveModels](../../Nostos.Product/Services/Portability/PortableArchiveModels.cs) and [PortableArchiveService](../../Nostos.Product/Services/Portability/PortableArchiveService.cs).
+
+The click labels and activation handoff are in [Settings](../../Nostos.Frontend/src/app/settings/settings.component.html), the [transfer host](../../Nostos.Frontend/src/app/library-transfer/components/library-transfer-host.component.html), the [import flow](../../Nostos.Frontend/src/app/library-transfer/components/library-import-flow.component.html), and the [activation controller](../../Nostos.Frontend/src/app/library-transfer/services/library-activation-controller.service.ts). The browser resume record is defined by [TransferResumeStore](../../Nostos.Frontend/src/app/library-transfer/services/transfer-resume-store.service.ts). Numeric ceilings come from [MigrationContractLimits](../../Nostos.Product/Services/Portability/MigrationContracts.cs) and [PortableArchiveLimits](../../Nostos.Product/Services/Portability/PortableArchiveLimits.cs).
+
+### What has and has not been verified
+
+- **Local SelfHosted browser coverage:** the disposable-instance suite in [library-transfer-browser-qa.md](../library-transfer-browser-qa.md) records export/download, empty import with automatic activation, populated replacement, same-file resume after reload, cancellation, and backend restart recovery using generated test libraries. It is not a Cloud production run.
+- **Local large-archive measurement:** this document's existing measurement uses a synthetic archive over 4 GiB and local test storage. It measures archive read/write paths, not a full hosted browser transfer or a Cloud plan limit.
+- **Hosted alpha:** issue [#676](https://github.com/Christian-Gennari/Nostos/issues/676) records the feature as deployed and advertised for early access, but not fully proved. Issue [#682](https://github.com/Christian-Gennari/Nostos/issues/682) records one completed SelfHosted → Cloud import. PR [#790](https://github.com/Christian-Gennari/Nostos/pull/790) records that import and activation completed before a backup-status error toast; PR [#791](https://github.com/Christian-Gennari/Nostos/pull/791) forwards the guard for that unsupported refresh request to public main.
+- **Not verified on the hosted alpha:** restore after activation, any export, Cloud → SelfHosted, full round trips in both directions, the protocol maximum, and near-plan-limit admission. The #682 rescope explicitly leaves the broader proof for later.
+
+The links above identify the code and evidence used for this guide. In particular, the shared UI is not evidence of a completed Cloud export or restore journey.
 
 ---
 
@@ -38,21 +111,18 @@ Therefore, although the archive service itself has larger validation limits, the
 
 This is one of the primary constraints the durable transfer protocol below removes.
 
-## Durable library transfer jobs (shipped and advertised on SelfHosted)
+## Durable library transfer jobs
 
 The SelfHosted reference implementation of the epic #676 transfer protocol is
 implemented in the product and reachable over HTTP. It is advertised to the
 frontend from the same `IMigrationPhaseAvailability` the migration routes
 consult: `GET /api/runtime/capabilities` reports
-`supportsLibraryMigration: true` on the SelfHosted host (where the phase
-handlers are registered and `LibraryMigration:Enabled` defaults to true) and
-the Settings/onboarding transfer UI is visible. Operators can withdraw the
-feature at runtime with `LibraryMigration:Enabled=false`; a host whose phase
-handlers are not registered, or that maps product endpoints with
-`MapMigrationTransferEndpoints = false`, reports `false` unconditionally.
-Activation, replacement, restore and the mandatory recovery copy shipped with
-#681 (see the activation sections below). A hosted (Cloud) host stays dark
-until its private transfer adapter ships and registers its own availability.
+`supportsLibraryMigration: true` when the SelfHosted phase handlers are
+registered and migration is enabled; otherwise Settings hides the flow.
+Activation, replacement, restore, and the mandatory recovery copy shipped with
+#681 are described below. Cloud uses a separate private host adapter; the
+hosted alpha advertises migration, but its plan rules and provider implementation
+are not defined in this repository. See the verification status above.
 
 ### Routes
 
@@ -72,6 +142,11 @@ untouched.
 | `PUT` | `/jobs/{id}/upload-session/chunks/{index}` | `200` with `alreadyPresent` | `400 migration_invalid_request`, `409 migration_chunk_conflict`, `410 migration_session_expired`, `416 migration_chunk_range_invalid`, `422 migration_chunk_hash_mismatch`, `507 migration_storage_exhausted`, `413` for an oversize chunk |
 | `POST` | `/jobs/{id}/upload-session/complete` | `200` session status | `409 migration_invalid_state`, `409 migration_file_identity_mismatch` |
 | `GET`/`HEAD` | `/jobs/{id}/export-download` | `200`/`206` range-enabled file | `404 migration_export_not_available`, `410 migration_export_expired` |
+| `POST` | `/jobs/{id}/activate` | `202` accepted / replay | `409 migration_replacement_confirmation_required`, `409 migration_destination_conflict`, `409 migration_invalid_state`, `503 migration_activation_busy` |
+| `GET` | `/jobs/{id}/activation` | `200` activation status | `404 migration_not_found` |
+| `GET` | `/recovery` | `200` retained recovery copies | – |
+| `GET` | `/recovery/{id}` | `200` recovery status | `404 migration_recovery_not_found`, `410 migration_recovery_expired`, `422 migration_recovery_corrupt` |
+| `POST` | `/recovery/{id}/restore` | `202` accepted | `409 migration_recovery_restore_conflict`, `409 migration_replacement_confirmation_required`, `503 migration_activation_busy` |
 
 Chunk requests carry `Content-Range: bytes <start>-<end>/<total>` and
 `X-Nostos-Chunk-SHA256: <64 hex>`. The body is the raw chunk; there is no
@@ -95,24 +170,27 @@ cap.
   and SHA-256, and only then seals `archive.nostos`. A mismatch fails the job
   and no final archive is published.
 
-### State machine and what is not available yet
+### State machine
 
 Import jobs run `Pending → Preparing → Transferring → Validating →
-ReadyToActivate` and **stop there**. `ReadyToActivate` carries a committed,
-durable prepared descriptor (staging id, data/media hashes, counts) that
-survives a restart. Export jobs run `Pending → Preparing → Transferring →
-Validating → Completed` and publish a sealed artifact.
+ReadyToActivate` and wait there for an explicit activation request.
+`ReadyToActivate` carries a committed, durable prepared descriptor (staging id,
+data/media hashes, counts) that survives a restart. Export jobs run `Pending →
+Preparing → Transferring → Validating → Completed` and publish a sealed
+artifact.
 
-Not available in the shipped build:
+Activation, replacement and recovery restore shipped with #681:
 
-- there are no activation routes and no replacement/cutover flow; #681 owns
-  `ReadyToActivate → Activating → Completed`;
-- the destination library is never mutated by an import job — the prepared
-  staging area is the only output;
+- `POST …/jobs/{id}/activate` admits an owned job to
+  `ReadyToActivate → Activating → Completed` through the activation contract
+  below; the worker never activates on its own;
+- a populated destination requires explicit confirmation bound to the
+  destination revision and retains a mandatory seven-day recovery copy;
 - `supportsLibraryMigration` is advertised by the SelfHosted host (the
   capability remains an explicit host decision, not phase inference);
-- `POST /api/portability/import` remains the only route that mutates a library,
-  and it still targets an empty destination only.
+- `POST /api/portability/import` is the only route that mutates a library
+  outside the durable migration flow, and it still targets an empty
+  destination only.
 
 ### Expiry, capacity, and limits
 
@@ -359,18 +437,18 @@ Payload and manifest versions must strictly agree (`data_version_mismatch`). A p
 
 ---
 
-# Part 2: Migration contract (epic #676 — transport implemented, activation and UI planned)
+# Part 2: Migration contract and implementation status
 
-Epic #676 defines the one-click migration system between Nostos SelfHosted and Nostos Cloud.
+Epic #676 defines the guided library transfer flow between Nostos SelfHosted and Nostos Cloud.
 
-The implementation is split across issues #677–#682. This section defines the target contract. The provider-neutral contract, durable job/session/chunk/artifact/reservation records, the local worker, the SelfHosted transfer HTTP API, import preparation to `ReadyToActivate`, export artifact generation, activation/replacement with a mandatory recovery copy (#681), and the real-browser acceptance suite (#680 slice B10) are implemented (see "Durable library transfer jobs" in Part 1). The SelfHosted host advertises `supportsLibraryMigration`; the private hosted (Cloud) adapter is still planned. Destructive replacement only runs through the #681 activation contract with an explicit, server-checked confirmation.
+The public repository contains the provider-neutral contract, durable job/session/chunk/artifact/reservation records, SelfHosted transfer API, import preparation, export artifact generation, activation, and replacement with a mandatory recovery copy. The local real-browser suite uses disposable SelfHosted instances; it is not hosted Cloud acceptance. The Cloud adapter is maintained outside this repository and the hosted alpha advertises migration. One hosted SelfHosted → Cloud import is recorded as completed; export, restore after activation, and Cloud → SelfHosted remain unverified. See the customer guide above and the Nostos #682 rescope for the evidence boundary. Destructive replacement in the public implementation requires explicit, server-checked confirmation.
 
 ## Goals and authenticated ownership boundary
 
 The migration system must:
 
 - remain strictly provider-neutral;
-- support multi-hundred-gigabyte libraries through resumable chunked transfer;
+- define a resumable chunked transfer protocol with a 512 GiB archive ceiling; that ceiling is not evidence of a tested or plan-supported archive size;
 - survive interruption and worker restarts;
 - make retries safe and idempotent;
 - detect destination changes before destructive activation;
@@ -408,7 +486,7 @@ If the user explicitly confirms replacement (`confirmReplacement: true`):
 2. `MigrationActivateRequest` binds explicit confirmation to the job's exact preflight destination revision. A preliminary revision mismatch rejects admission.
 3. The activation worker drains library readers and writers under exclusive maintenance and rechecks that same revision. It never silently updates the job to a newer revision.
 4. A mandatory recovery generation of the existing populated portable library is retained via the recovery subsystem. Client requests cannot bypass recovery creation.
-5. A verified candidate database and media root replace the destination through the durable cutover protocol below. This protocol is planned; the contracts and maintenance barrier are implemented independently of the switch engine.
+5. A verified candidate database and media root replace the destination through the durable cutover protocol below.
 
 There is **no implicit merge mode** in the migration contract.
 
@@ -428,9 +506,9 @@ The SelfHosted implementation of this invariant is shipped. `LibraryState.StateV
 
 ---
 
-## Planned export snapshot contract (for #678)
+## Export snapshot contract (#678)
 
-For planned issue #678, export consistency guarantees:
+The shipped export path (see Part 1) guarantees:
 
 1. **Relational consistency boundary:** Export reads a single consistent relational snapshot under a read snapshot / transaction. It never mixes rows from different revisions.
 2. **Media change detection and pinning:** Source media files referenced by the relational snapshot are pinned by size, mtime, ETag and SHA-256 during initial indexing, and every pin is re-verified before and after the archive copy. Media absent on a metadata lookup (initial pin or copy start) or unopenable during the initial pin or copy-pass open fails closed with `source_media_missing`. Once an initial pin observation is underway, a media revision mismatch against the pin — content, length or metadata changed after pinning, a disappearance detected by the pin's post-hash metadata check, or a disappearance detected by the post-copy metadata check — fails closed with typed error `source_media_changed`. No inconsistent archive is emitted.
@@ -548,20 +626,23 @@ If `AvailableStorageBytes < RequiredStorageBytes`, preflight returns `RejectedIn
 
 ## Recovery snapshots
 
-When replacing a populated destination, `IMigrationRecoveryService.CreateRecoverySnapshotAsync` creates a recovery copy prior to activation.
+When replacing a populated destination, activation retains a recovery copy of
+the previous generation under `.nostos-recovery/<job-id>/` before the cutover.
+The SelfHosted host exposes the retained copies through `GET …/recovery` and
+`GET …/recovery/{id}`, and restores one through `POST …/recovery/{id}/restore`
+with confirmation bound to the destination revision.
 
 - **Retention duration:** 7 days (`RecoveryRetentionDays = 7`).
-- **Storage accounting:** Retained recovery snapshots count against host storage accounting until expired and purged via `DeleteExpiredRecoverySnapshotsAsync`.
+- **Storage accounting:** Retained recovery snapshots count against host storage accounting until expired and purged by the SelfHosted recovery cleanup worker.
 - **Operational backups distinction:** Host operational backups are local SQLite/infrastructure dumps. Preflight explicitly rejects operational backups (`RejectedOperationalBackupNotPortable`).
 
-### SelfHosted activation foundation (#681, Slices 1–2)
+### SelfHosted activation, cutover and recovery (#681)
 
 The provider-neutral activation/recovery DTOs are `MigrationActivateRequest`,
 `MigrationRecoveryRestoreRequest`, and `MigrationRecoveryStatusResponse`. Public
 DTOs expose no local paths or provider/account identifiers. `IMigrationActivationService`
-consumes an owned job already admitted durably to `Activating`; its implementation
-and HTTP activation routes belong to later slices. Recovery continues to use
-`IMigrationRecoveryService` and `MigrationRecoverySnapshot`.
+consumes an owned job already admitted durably to `Activating`; the SelfHosted
+implementation and HTTP activation routes are shipped.
 
 `MigrationActivationAdmission` implements pure confirmation and revision rules.
 An empty destination may activate without confirmation; a populated destination
@@ -573,7 +654,7 @@ worker lease checks in the later orchestrator.
 The existing direction-aware frozen job transition table remains authoritative:
 imports take `ReadyToActivate -> Activating -> Completed`, while exports never
 activate. User cancellation ends at `Activating`. This cancellation boundary is
-distinct from the later durable filesystem commit. The executable journal model
+distinct from the subsequent durable filesystem commit. The executable journal model
 allows a completed job outcome only with `Committed`; a failed activation outcome
 requires untouched live paths or a completed rollback. A cutover failure must
 restore the original generation before releasing exclusive maintenance.
@@ -598,9 +679,10 @@ status and seven-day expiry. They contain no user content or absolute paths.
 
 Each phase is durable intent for the next rename, so rollback must also handle a
 rename that finished before the following phase write. File existence validates
-the chosen recovery action; it cannot determine which generation wins. Slice 3
-implements temp-write/flush/rename journal persistence and the actual startup
-reconciler. Slices 1–2 contain the model and pure decisions only.
+the chosen recovery action; it cannot determine which generation wins. The
+activation journal store persists each phase with temp-write/flush/rename, and
+the startup service reconciles an interrupted cutover before the host serves
+traffic.
 
 SelfHosted now uses one singleton `ILibraryMaintenanceCoordinator`. HTTP operations
 take shared leases across their complete response/stream and request-scope
@@ -608,8 +690,8 @@ disposal. REST, OPDS, MCP and database readiness traffic all participate. During
 drain/exclusivity new operations receive HTTP 503, stable code
 `migration_activation_busy`, and `Retry-After: 5`. Process liveness, static UI and
 the GET backup-progress endpoint remain available without opening the library.
-Migration status endpoints currently have no exemption: a later implementation
-must prove they avoid the active DB before adding one.
+The activation and recovery read routes are memory-safe and avoid the live
+database; `GET /jobs/{id}` has no exemption.
 
 Background acquisition, reconciliation, topic cleanup, receipt retention,
 book-text extraction/embedding/backfill and scheduled backup operations take
@@ -633,11 +715,11 @@ it is not the migration cutover engine.
 The advisory maintenance marker is `.nostos-activation/maintenance.json` beside
 the configured database. Startup clears stale markers before bootstrap/workers
 and never reconstitutes process-local leases. An unresolved actionable or corrupt
-activation journal fails startup closed until Slice 3 reconciles it; this PR does
-not attempt a generation switch or rollback. No schema additions are needed:
-existing job fields hold state, recovery projection, destination revision and
-prepared staging facts. WAL checkpointing and SQLite pool lifecycle belong to
-Slice 5, rather than the maintenance coordinator.
+activation journal fails startup closed until the startup reconciler resolves it.
+No schema additions are needed: existing job fields hold state, recovery
+projection, destination revision and prepared staging facts. WAL checkpointing
+and SQLite pool lifecycle are handled by the activation database lifecycle rather
+than the maintenance coordinator.
 
 ---
 

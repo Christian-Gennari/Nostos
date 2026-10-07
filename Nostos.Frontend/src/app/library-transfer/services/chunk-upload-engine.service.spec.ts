@@ -312,25 +312,23 @@ describe('ChunkUploadEngine — retries and failures', () => {
     expect(transport.attempts.get(0)).toBe(2);
   });
 
-  it('uses exponential backoff and caps a single wait at eight seconds', async () => {
+  it('keeps the default retry window open for a minute and caps waits at thirty seconds', async () => {
     vi.useFakeTimers();
     const transport = new EngineFakeTransport();
     transport.failures.push({
       chunkIndex: 0,
-      times: 5,
+      times: 7,
       error: new MigrationTransportError('network_error', 502, 'bad gateway'),
     });
-    const run = runFor(transport, 100, { maxAttempts: 7, random: () => 0.5 });
+    const run = runFor(transport, 100, { random: () => 0.5 });
 
-    // Five failures: waits 500 + 1000 + 2000 + 4000 + 8000 (the uncapped
-    // sixth would be 16000, so 8000 proves the cap). 15499ms leaves attempt 6
-    // still waiting.
-    await vi.advanceTimersByTimeAsync(15_499);
-    expect(transport.attempts.get(0)).toBe(5);
+    // Seven failures: 500 + 1000 + 2000 + 4000 + 8000 + 16000 + 30000.
+    await vi.advanceTimersByTimeAsync(61_499);
+    expect(transport.attempts.get(0)).toBe(7);
 
     await vi.advanceTimersByTimeAsync(2);
     await expect(run.done).resolves.toEqual({ kind: 'completed' });
-    expect(transport.attempts.get(0)).toBe(6);
+    expect(transport.attempts.get(0)).toBe(8);
   });
 
   it('fails permanently after exhausting attempts on a transient error', async () => {

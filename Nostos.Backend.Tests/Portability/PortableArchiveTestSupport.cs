@@ -1,3 +1,7 @@
+using System.IO.Compression;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.FileProviders;
@@ -10,6 +14,8 @@ using Nostos.Backend.Services;
 using Nostos.Backend.Services.Portability;
 
 namespace Nostos.Backend.Tests.Portability;
+
+internal sealed record TestArchiveEntry(string Name, byte[] Bytes);
 
 internal sealed record PortableFixtureIds(
     Guid EpubBookId,
@@ -386,6 +392,114 @@ internal static class PortableArchiveTestSupport
         using var output = new MemoryStream();
         await opened.Content.CopyToAsync(output);
         return output.ToArray();
+    }
+
+    internal static string Sha256Hex(byte[] bytes) =>
+        Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+
+    internal static string Sha256HexFile(string path)
+    {
+        using var stream = File.OpenRead(path);
+        return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
+    }
+
+    internal static List<TestArchiveEntry> ReadEntries(byte[] archiveBytes)
+    {
+        using var source = new MemoryStream(archiveBytes, writable: false);
+        using var archive = new ZipArchive(source, ZipArchiveMode.Read, leaveOpen: false);
+        var entries = new List<TestArchiveEntry>();
+        foreach (var entry in archive.Entries)
+        {
+            using var input = entry.Open();
+            using var output = new MemoryStream();
+            input.CopyTo(output);
+            entries.Add(new TestArchiveEntry(entry.FullName, output.ToArray()));
+        }
+
+        return entries;
+    }
+
+    internal static async Task<List<TestArchiveEntry>> ReadEntriesAsync(Stream source)
+    {
+        source.Position = 0;
+        var entries = new List<TestArchiveEntry>();
+        using var archive = new ZipArchive(source, ZipArchiveMode.Read, leaveOpen: true);
+        foreach (var entry in archive.Entries)
+        {
+            await using var input = entry.Open();
+            using var output = new MemoryStream();
+            await input.CopyToAsync(output);
+            entries.Add(new TestArchiveEntry(entry.FullName, output.ToArray()));
+        }
+
+        source.Position = 0;
+        return entries;
+    }
+
+    internal static byte[] BuildArchive(IEnumerable<TestArchiveEntry> entries)
+    {
+        using var output = new MemoryStream();
+        using (var archive = new ZipArchive(output, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            foreach (var item in entries)
+            {
+                var entry = archive.CreateEntry(item.Name, CompressionLevel.NoCompression);
+                using var target = entry.Open();
+                target.Write(item.Bytes);
+            }
+        }
+
+        return output.ToArray();
+    }
+
+    internal static Task<MemoryStream> BuildArchiveAsync(IEnumerable<TestArchiveEntry> entries) =>
+        Task.FromResult(new MemoryStream(BuildArchive(entries)));
+
+    internal static void MutateJsonEntry(
+        List<TestArchiveEntry> entries,
+        string name,
+        Action<JsonObject> mutate)
+    {
+        var index = entries.FindIndex(entry =>
+            string.Equals(entry.Name, name, StringComparison.Ordinal));
+        if (index < 0)
+            throw new InvalidDataException($"Archive entry '{name}' is missing.");
+
+        var root = JsonNode.Parse(entries[index].Bytes)?.AsObject()
+            ?? throw new InvalidDataException($"Archive entry '{name}' is not a JSON object.");
+
+        mutate(root);
+        entries[index] = new TestArchiveEntry(
+            name,
+            Encoding.UTF8.GetBytes(root.ToJsonString()));
+    }
+
+    internal static void RehashDataDescriptor(List<TestArchiveEntry> entries)
+    {
+        var data = entries
+            .Single(entry => string.Equals(
+                entry.Name,
+                PortableArchiveFormat.DataPath,
+                StringComparison.Ordinal))
+            .Bytes;
+
+        MutateJsonEntry(entries, PortableArchiveFormat.ManifestPath, root =>
+        {
+            var descriptor = root["data"]!.AsObject();
+            descriptor["length"] = data.LongLength;
+            descriptor["sha256"] = Sha256Hex(data);
+        });
+    }
+
+    internal static void CopyDirectory(string source, string target)
+    {
+        Directory.CreateDirectory(target);
+        foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
+        {
+            var destination = Path.Combine(target, Path.GetRelativePath(source, file));
+            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+            File.Copy(file, destination, overwrite: true);
+        }
     }
 
     private static async Task SaveAsync(

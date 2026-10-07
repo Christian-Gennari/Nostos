@@ -10,6 +10,7 @@ using Microsoft.EntityFrameworkCore;
 using Nostos.Backend.Data.Models;
 using Nostos.Backend.Services.Portability;
 using Xunit;
+using static Nostos.Backend.Tests.Portability.PortableArchiveTestSupport;
 
 namespace Nostos.Backend.Tests.Portability;
 
@@ -202,7 +203,7 @@ public sealed class PortableMigrationFixtureAndCompatTests
 
         RehashDataDescriptor(entries);
 
-        using var invalidArchive = BuildArchive(entries);
+        using var invalidArchive = new MemoryStream(BuildArchive(entries));
         await using var destination = await LocalPortableTestLibrary.CreateAsync();
 
         var action = () => destination.Portability().ImportAsync(invalidArchive);
@@ -229,7 +230,7 @@ public sealed class PortableMigrationFixtureAndCompatTests
             root["formatVersion"] = SupportedFormatVersion + 1;
         });
 
-        using var invalidArchive = BuildArchive(entries);
+        using var invalidArchive = new MemoryStream(BuildArchive(entries));
         await using var destination = await LocalPortableTestLibrary.CreateAsync();
 
         var action = () => destination.Portability().ImportAsync(invalidArchive);
@@ -266,7 +267,7 @@ public sealed class PortableMigrationFixtureAndCompatTests
             Encoding.UTF8.GetBytes(manifestObj.ToJsonString()));
 
         // Deliberately do not update the manifest data hash.
-        using var corruptArchive = BuildArchive(entries);
+        using var corruptArchive = new MemoryStream(BuildArchive(entries));
         await using var destination = await LocalPortableTestLibrary.CreateAsync();
 
         var action = () => destination.Portability().ImportAsync(corruptArchive);
@@ -657,7 +658,7 @@ public sealed class PortableMigrationFixtureAndCompatTests
         MutateJsonEntry(entries, DataPath, json => json["version"] = LegacyDataVersion);
         RehashDataDescriptor(entries);
 
-        using var corruptArchive = BuildArchive(entries);
+        using var corruptArchive = new MemoryStream(BuildArchive(entries));
         await using var destination = await LocalPortableTestLibrary.CreateAsync();
 
         var act = async () => await destination.Portability().ImportAsync(corruptArchive);
@@ -680,7 +681,7 @@ public sealed class PortableMigrationFixtureAndCompatTests
         MutateJsonEntry(v1Entries, DataPath, json => json["writingNotes"] = new JsonArray());
         RehashDataDescriptor(v1Entries);
 
-        using (var corruptV1 = BuildArchive(v1Entries))
+        using (var corruptV1 = new MemoryStream(BuildArchive(v1Entries)))
         {
             await using var destination = await LocalPortableTestLibrary.CreateAsync();
             var act = async () => await destination.Portability().ImportAsync(corruptV1);
@@ -708,7 +709,7 @@ public sealed class PortableMigrationFixtureAndCompatTests
         });
         RehashDataDescriptor(v2Entries);
 
-        using (var corruptV2 = BuildArchive(v2Entries))
+        using (var corruptV2 = new MemoryStream(BuildArchive(v2Entries)))
         {
             await using var destination = await LocalPortableTestLibrary.CreateAsync();
             var act = async () => await destination.Portability().ImportAsync(corruptV2);
@@ -989,7 +990,7 @@ public sealed class PortableMigrationFixtureAndCompatTests
             RehashDataDescriptor(entries);
         }
 
-        using var rebuilt = BuildArchive(entries);
+        using var rebuilt = new MemoryStream(BuildArchive(entries));
         return new SyntheticFixture(name, rebuilt.ToArray());
     }
 
@@ -1099,107 +1100,6 @@ public sealed class PortableMigrationFixtureAndCompatTests
                 $"Archive entry '{path}' does not contain a JSON object.");
     }
 
-    private static List<TestArchiveEntry> ReadEntries(byte[] archiveBytes)
-    {
-        using var source = new MemoryStream(archiveBytes, writable: false);
-        using var archive = new ZipArchive(
-            source,
-            ZipArchiveMode.Read,
-            leaveOpen: false);
-
-        var entries = new List<TestArchiveEntry>();
-
-        foreach (var entry in archive.Entries)
-        {
-            using var input = entry.Open();
-            using var output = new MemoryStream();
-            input.CopyTo(output);
-
-            entries.Add(new TestArchiveEntry(
-                entry.FullName,
-                output.ToArray()));
-        }
-
-        return entries;
-    }
-
-    private static MemoryStream BuildArchive(
-        IEnumerable<TestArchiveEntry> entries)
-    {
-        var output = new MemoryStream();
-
-        using (var archive = new ZipArchive(
-                   output,
-                   ZipArchiveMode.Create,
-                   leaveOpen: true))
-        {
-            foreach (var item in entries)
-            {
-                var entry = archive.CreateEntry(
-                    item.Name,
-                    CompressionLevel.NoCompression);
-
-                using var target = entry.Open();
-                target.Write(item.Bytes);
-            }
-        }
-
-        output.Position = 0;
-        return output;
-    }
-
-    private static void MutateJsonEntry(
-        List<TestArchiveEntry> entries,
-        string name,
-        Action<JsonObject> mutate)
-    {
-        var index = entries.FindIndex(x =>
-            string.Equals(x.Name, name, StringComparison.Ordinal));
-
-        if (index < 0)
-            throw new InvalidDataException($"Archive entry '{name}' is missing.");
-
-        var root = JsonNode.Parse(entries[index].Bytes)?.AsObject()
-            ?? throw new InvalidDataException(
-                $"Archive entry '{name}' is not a JSON object.");
-
-        mutate(root);
-
-        entries[index] = new TestArchiveEntry(
-            name,
-            Encoding.UTF8.GetBytes(root.ToJsonString()));
-    }
-
-    private static void RehashDataDescriptor(
-        List<TestArchiveEntry> entries)
-    {
-        var data = entries.Single(x =>
-            string.Equals(x.Name, DataPath, StringComparison.Ordinal)).Bytes;
-
-        var manifestIndex = entries.FindIndex(x =>
-            string.Equals(x.Name, ManifestPath, StringComparison.Ordinal));
-
-        if (manifestIndex < 0)
-            throw new InvalidDataException("Portable manifest is missing.");
-
-        var manifest = JsonNode
-            .Parse(entries[manifestIndex].Bytes)!
-            .AsObject();
-
-        var descriptor = manifest["data"]?.AsObject()
-            ?? throw new InvalidDataException(
-                "Portable manifest does not contain a data descriptor.");
-
-        descriptor["length"] = data.LongLength;
-        descriptor["sha256"] = Convert.ToHexString(
-                SHA256.HashData(data))
-            .ToLowerInvariant();
-
-        entries[manifestIndex] = new TestArchiveEntry(
-            ManifestPath,
-            Encoding.UTF8.GetBytes(manifest.ToJsonString()));
-    }
-
     private static void AssertDataDescriptorMatchesPayload(
         JsonObject manifest,
         JsonObject data)
@@ -1239,8 +1139,4 @@ public sealed class PortableMigrationFixtureAndCompatTests
         {
         }
     }
-
-    private sealed record TestArchiveEntry(
-        string Name,
-        byte[] Bytes);
 }

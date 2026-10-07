@@ -12,6 +12,7 @@ import {
   MigrationTransportError,
 } from './library-transfer-transport';
 import { LibraryTransferCoordinator } from './library-transfer-coordinator.service';
+import { ChunkUploadEngine } from './chunk-upload-engine.service';
 import { TransferResumeStore, TRANSFER_RESUME_STORAGE_KEY } from './transfer-resume-store.service';
 import {
   MigrationActivateRequestDto,
@@ -538,6 +539,122 @@ describe('LibraryTransferCoordinator — crash-safe creation', () => {
 describe('LibraryTransferCoordinator — reattach and resume', () => {
   afterEach(reset);
 
+  it('resumes a saved job on file selection without another preflight or job', async () => {
+    const harness = setup();
+    const file = await largePortableFile();
+    const total = chunkCount(file.size, CHUNK);
+    const record = await stageResumableJob(harness, file, total - 1);
+    const preflights = harness.mock.calls.preflight;
+    const jobs = harness.mock.jobCreationCount;
+
+    await harness.coordinator.startImport(file);
+
+    expect(harness.coordinator.state().kind).toBe('ready-empty');
+    expect(harness.store.load()?.jobId).toBe(record.jobId);
+    expect(harness.mock.calls.preflight).toBe(preflights);
+    expect(harness.mock.jobCreationCount).toBe(jobs);
+    expect(harness.mock.uploadedChunks).toEqual([total - 1]);
+  });
+
+  it('retries an exhausted browser upload using the same session and missing part', async () => {
+    const harness = setup();
+    const file = await largePortableFile();
+    const total = chunkCount(file.size, CHUNK);
+    const record = await stageResumableJob(harness, file, total - 1);
+    await harness.coordinator.resume();
+    harness.mock.queueFailure({ operation: 'uploadChunk', chunkIndex: total - 1,
+      code: 'unexpected_error', status: 503 });
+    const start = ChunkUploadEngine.prototype.start;
+    const limited = vi.spyOn(ChunkUploadEngine.prototype, 'start')
+      .mockImplementationOnce(function (this: ChunkUploadEngine, request) {
+        return start.call(this, { ...request, maxAttempts: 1 });
+      });
+    try {
+      await harness.coordinator.resumeWithFile(file);
+      expect(harness.coordinator.state()).toMatchObject({
+        kind: 'failed', failure: { status: 503, retryable: true },
+      });
+      const sessionId = harness.store.load()?.sessionId;
+
+      await harness.coordinator.retry();
+
+      expect(harness.coordinator.state().kind).toBe('ready-empty');
+      expect(harness.mock.calls.retryJob).toBe(0);
+      expect(harness.mock.calls.createUploadSession).toBe(1);
+      expect(harness.store.load()?.jobId).toBe(record.jobId);
+      expect(harness.store.load()?.sessionId).toBe(sessionId);
+      expect(harness.mock.uploadedChunks).toEqual([total - 1]);
+    } finally {
+      limited.mockRestore();
+    }
+  });
+
+  it('replays an interrupted completion instead of retrying an active job', async () => {
+    const harness = setup();
+    const file = await portableFile();
+    harness.mock.queueFailure({ operation: 'completeUpload', code: 'network_error', status: 0 });
+    await harness.coordinator.startImport(file);
+    expect(harness.coordinator.state().kind).toBe('failed');
+    const sessionId = harness.store.load()?.sessionId;
+    const uploaded = [...harness.mock.uploadedChunks];
+
+    await harness.coordinator.retry();
+
+    expect(harness.coordinator.state().kind).toBe('ready-empty');
+    expect(harness.mock.calls.retryJob).toBe(0);
+    expect(harness.mock.uploadedChunks).toEqual(uploaded);
+    expect(harness.store.load()?.sessionId).toBe(sessionId);
+  });
+
+  it('continues completion after reload without a file when every part is received', async () => {
+    const harness = setup();
+    const file = await portableFile();
+    const record = await stageResumableJob(harness, file, chunkCount(file.size, CHUNK));
+    const status = await harness.mock.getJob(record.jobId!);
+    vi.spyOn(harness.mock, 'getJob').mockResolvedValueOnce({
+      ...status, session: { ...status.session!, state: 'Receiving' },
+    });
+    const reloaded = reload(harness.mock, harness.mock);
+    const hash = vi.spyOn(reloaded.digest, 'sha256');
+    let finish!: () => void;
+    const gate = new Promise<void>(resolve => { finish = resolve; });
+    const complete = harness.mock.completeUpload.bind(harness.mock);
+    const completion = vi.spyOn(harness.mock, 'completeUpload').mockImplementationOnce(
+      async (jobId, signal) => { await gate; return complete(jobId, signal); },
+    );
+
+    const resumed = reloaded.coordinator.resume();
+    await vi.waitFor(() => expect(completion).toHaveBeenCalledTimes(1));
+    expect(reloaded.coordinator.state()).toMatchObject({
+      kind: 'checking', jobId: record.jobId,
+      progress: { completedChunks: status.session!.totalChunks, uploadedBytes: file.size },
+    });
+    finish();
+    await resumed;
+
+    expect(reloaded.coordinator.state().kind).toBe('ready-empty');
+    expect(hash).not.toHaveBeenCalled();
+    expect(harness.mock.uploadedChunks).toEqual([]);
+    expect(harness.mock.calls.retryJob).toBe(0);
+    expect(harness.mock.calls.preflight).toBe(1);
+    expect(harness.mock.jobCreationCount).toBe(1);
+  });
+
+  it('keeps polling processing when the server has all parts but verification is pending', async () => {
+    const harness = setup();
+    const file = await portableFile();
+    const record = await stageResumableJob(harness, file, chunkCount(file.size, CHUNK));
+    const status = await harness.mock.getJob(record.jobId!);
+    vi.spyOn(harness.mock, 'getJob').mockResolvedValueOnce({
+      ...status, session: { ...status.session!, state: 'Receiving' },
+    });
+
+    await harness.coordinator.refreshStatus();
+
+    expect(harness.coordinator.state()).toMatchObject({ kind: 'checking', jobId: record.jobId });
+    expect(harness.mock.uploadedChunks).toEqual([]);
+  });
+
   it('reattaches after a reload and uploads only missing chunks', async () => {
     const harness = setup();
     const file = await largePortableFile();
@@ -651,6 +768,33 @@ describe('LibraryTransferCoordinator — reattach and resume', () => {
       failure: { code: 'migration_not_found' },
     });
     expect(harness.store.load()).toBeNull();
+  });
+
+  it('maps a durable provider-cap failure to actionable copy and keeps the import attached', async () => {
+    const mock = new MockLibraryTransferTransport({ chunkSizeBytes: CHUNK });
+    class CappedTransport extends DelegatingTransport {
+      override async getJob(jobId: string, signal?: AbortSignal): Promise<MigrationJobStatusResponseDto> {
+        const status = await super.getJob(jobId, signal);
+        return { ...status, job: { ...status.job, state: 'Failed',
+          failureCode: 'migration_provider_limit_reached', failureMessage: 'provider limit' } };
+      }
+    }
+    const harness = configure(mock, new CappedTransport(mock));
+    const file = await portableFile();
+    const preflight = await mock.preflight(preflightRequest(file.size));
+    const created = await mock.createJob({ direction: 'Import', idempotencyKey: 'cap-job',
+      reservationId: preflight.reservationId });
+    harness.store.save({ schemaVersion: 1, jobId: created.job.id,
+      jobCreationIdempotencyKey: 'cap-job', direction: 'import',
+      fileIdentity: { totalSizeBytes: file.size, sha256Checksum: 'a'.repeat(64) },
+      fileName: file.name, preflightRequest: preflightRequest(file.size),
+      createdAt: new Date().toISOString() });
+
+    await harness.coordinator.resume();
+
+    expect(harness.coordinator.state()).toMatchObject({ kind: 'failed', jobId: created.job.id,
+      failure: { code: 'portable_import_provider_limit_reached' } });
+    expect(harness.store.load()?.jobId).toBe(created.job.id);
   });
 
   it('retries a failed job back into the reselection state', async () => {

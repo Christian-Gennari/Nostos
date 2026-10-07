@@ -47,6 +47,7 @@ import {
   activationRecoveryNote,
   libraryTransferFailureCopy,
   maintenanceRetryMessage,
+  formatBytes,
 } from '../library-transfer.copy';
 import { LibraryTransferCoordinator } from '../services/library-transfer-coordinator.service';
 import { TransferResumeStore } from '../services/transfer-resume-store.service';
@@ -247,19 +248,41 @@ export class LibraryImportFlowComponent implements OnInit, OnDestroy {
     switch (state.jobState) {
       case 'Pending':
       case 'Preparing':
-        return 'Preparing your import…';
       case 'Transferring':
-        return 'Finishing the upload…';
+        return 'Checking your uploaded archive…';
       case 'Activating':
         return 'Importing your library…';
       default:
-        return 'Checking archive, library relationships, and media…';
+        return 'Preparing your library…';
     }
   });
 
   readonly checkingPhase = computed<TransferProgressPhase>(() => {
     const state = this.checking();
     return progressPhaseForJobState(state?.jobState);
+  });
+
+  /** Uploaded bytes never stand in for the server's verification progress. */
+  readonly processingProgress = computed(() => {
+    const state = this.checking();
+    const progress = state?.serverProgress;
+    if (!state || !progress) return null;
+    // Some older hosts reuse the finished upload's 100% as validation progress.
+    // Keep those unannotated completed totals indeterminate until the job advances.
+    if (!progress.message && progress.totalBytes !== null && progress.bytesProcessed >= progress.totalBytes) return null;
+    const expectedPhase = state.jobState === 'Activating' ? 'Activating' : 'Validating';
+    return progress.phase === expectedPhase ? progress : null;
+  });
+
+  readonly uploadSummary = computed(() => {
+    const progress = this.checking()?.progress;
+    if (!progress || progress.totalBytes <= 0) return '';
+    return formatBytes(progress.totalBytes);
+  });
+
+  readonly statusCheckedTime = computed(() => {
+    const value = this.checking()?.statusCheckedAtUtc;
+    return value ? new Date(value).toLocaleTimeString() : null;
   });
 
   /** Cancellation is unavailable once the server has begun activation. */
@@ -392,7 +415,6 @@ export class LibraryImportFlowComponent implements OnInit, OnDestroy {
     if (reselect) {
       void this.coordinator.resumeWithFile(file);
     } else {
-      this.resumeStore.clear();
       void this.coordinator.startImport(file);
     }
   }
@@ -495,12 +517,13 @@ export class LibraryImportFlowComponent implements OnInit, OnDestroy {
   private async tryAutoResume(): Promise<void> {
     if (!this.autoResume()) return;
     if (this.state().kind !== 'idle') return;
-    if (!this.resumeStore.load()) return;
+    if (!this.resumeStore.load() && !this.coordinator.supportsActiveImportDiscovery) return;
     if (!this.claimForAction()) {
       this.pendingResume = true;
       return;
     }
     await this.coordinator.resume();
+    if (this.state().kind === 'idle') this.releaseLease();
   }
 
   /** Claims the lease before any action that continues or starts a transfer. */
@@ -512,7 +535,7 @@ export class LibraryImportFlowComponent implements OnInit, OnDestroy {
 
   private startOver(): void {
     const state = this.state();
-    if (state.kind === 'failed' || state.kind === 'cancelled') {
+    if (state.kind === 'cancelled') {
       this.resumeStore.clear();
     }
     this.openPicker();
@@ -557,11 +580,11 @@ function progressPhaseForJobState(jobState: MigrationJobState | undefined): Tran
     case 'Activating':
       return 'activating';
     case 'Transferring':
-      return 'uploading';
+      return 'checking';
     case 'Validating':
     case 'ReadyToActivate':
-      return 'checking';
+      return 'preparing-library';
     default:
-      return 'preparing';
+      return 'checking';
   }
 }

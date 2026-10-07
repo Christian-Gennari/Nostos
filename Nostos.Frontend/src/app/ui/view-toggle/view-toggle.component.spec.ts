@@ -114,8 +114,6 @@ describe('ViewToggleComponent', () => {
     // the runner here has no stylesheet resolution, so getComputedStyle on a
     // pseudo-element answers nothing. What this asserts is the INPUT the CSS reads
     // (--vt-index, the option ordinal), which is the part that can be wrong in TS.
-    // The rendered transform itself is covered where it is real:
-    //   node scripts/probe-viewtoggle.mjs --out /tmp/after   (computed styles)
     const group = f.nativeElement.querySelector('nostos-view-toggle') as HTMLElement;
     expect(group.style.getPropertyValue('--vt-index')).toBe('1');
 

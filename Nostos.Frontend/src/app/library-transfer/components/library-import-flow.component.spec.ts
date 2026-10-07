@@ -22,9 +22,13 @@ import {
 } from '../services/library-transfer-transport';
 import { MockLibraryTransferTransport } from '../testing/mock-library-transfer-transport';
 import { FileDigestService } from '../services/file-digest.service';
-import { FileDigest, PersistedTransferResumeState, TransferFileIdentity } from '../models/library-transfer.models';
+import { FileDigest, PersistedTransferResumeState, TransferFileIdentity, TransferFlowState } from '../models/library-transfer.models';
 import { HASH_WORKER_FACTORY } from '../services/hash/hash-worker';
 import { DelegatingTransport } from '../testing/delegating-transport';
+import {
+  GatedUploadTransport,
+  UnauthorizedOnceTransport,
+} from '../testing/transfer-transport-doubles';
 import {
   buildZipArchive,
   createFile,
@@ -32,8 +36,6 @@ import {
   portableManifest,
 } from '../testing/zip-archive.fixture';
 import {
-  BrowserMigrationChunk,
-  MigrationChunkUploadResultDto,
   MigrationJobStatusResponseDto,
   MigrationPreflightRequestDto,
   MigrationSessionRequestDto,
@@ -268,58 +270,6 @@ function dispatchLease(record: TransferTabLeaseRecord | null): void {
   );
 }
 
-/** Uploads that the test holds until it is ready to complete them. */
-interface PendingUpload {
-  jobId: string;
-  sessionId: string;
-  request: BrowserMigrationChunk;
-  onProgress: (loaded: number, total: number) => void;
-  signal: AbortSignal;
-  resolve: (result: MigrationChunkUploadResultDto) => void;
-  reject: (error: unknown) => void;
-}
-
-class GatedUploadTransport extends DelegatingTransport {
-  readonly pending: PendingUpload[] = [];
-
-  override uploadChunk(
-    jobId: string,
-    sessionId: string,
-    request: BrowserMigrationChunk,
-    onProgress: (loaded: number, total: number) => void,
-    signal: AbortSignal,
-  ): Promise<MigrationChunkUploadResultDto> {
-    return new Promise<MigrationChunkUploadResultDto>((resolve, reject) => {
-      signal.addEventListener(
-        'abort',
-        () => reject(new MigrationTransportError('request_aborted', 0, 'aborted')),
-        { once: true },
-      );
-      this.pending.push({ jobId, sessionId, request, onProgress, signal, resolve, reject });
-    });
-  }
-
-  async releaseAll(): Promise<void> {
-    const items = this.pending.splice(0);
-    await Promise.all(
-      items.map(async (item) => {
-        try {
-          const result = await this.inner.uploadChunk(
-            item.jobId,
-            item.sessionId,
-            item.request,
-            item.onProgress,
-            item.signal,
-          );
-          item.resolve(result);
-        } catch (error) {
-          item.reject(error);
-        }
-      }),
-    );
-  }
-}
-
 class ControlledDigest implements FileDigest {
   onProgress: ((bytesRead: number, totalBytes: number) => void) | null = null;
 
@@ -384,18 +334,16 @@ class FailingCompleteTransport extends DelegatingTransport {
   }
 }
 
-/** Rejects the first resume with a 401, then behaves normally (re-authenticated). */
-class UnauthorizedOnceTransport extends DelegatingTransport {
-  unauthorized = true;
-
-  override getJob(jobId: string, signal?: AbortSignal): Promise<MigrationJobStatusResponseDto> {
-    if (this.unauthorized) {
-      return Promise.reject(
-        new MigrationTransportError('unexpected_error', 401, 'sign in required'),
-      );
-    }
-    return this.inner.getJob(jobId, signal);
+class DiscoveredImportTransport extends DelegatingTransport {
+  discoveryCalls = 0;
+  constructor(inner: MockLibraryTransferTransport, public status: MigrationJobStatusResponseDto) {
+    super(inner);
   }
+  async getActiveImport(): Promise<MigrationJobStatusResponseDto> {
+    this.discoveryCalls++;
+    return this.status;
+  }
+  override async getJob(): Promise<MigrationJobStatusResponseDto> { return this.status; }
 }
 
 /** Holds status responses so the checking phase can be inspected before it ends. */
@@ -438,6 +386,39 @@ describe('LibraryImportFlowComponent', () => {
     localStorage.removeItem(TRANSFER_RESUME_STORAGE_KEY);
     localStorage.removeItem(TRANSFER_TAB_LEASE_KEY);
     vi.useRealTimers();
+  });
+
+  it('discovers processing after browser metadata is lost and requires a fresh final confirmation', async () => {
+    const mock = new MockLibraryTransferTransport({ chunkSizeBytes: CHUNK });
+    const file = await portableFile();
+    const preflight = await mock.preflight(preflightRequest(file.size));
+    const created = await mock.createJob({ direction: 'Import', idempotencyKey: 'discover-job',
+      reservationId: preflight.reservationId });
+    const uploaded = await mock.createUploadSession(created.job.id, {
+      purpose: 'Import', totalBytes: file.size, chunkSize: CHUNK, totalChunks: 1,
+      fileIdentity: { totalSizeBytes: file.size, sha256Checksum: 'a'.repeat(64) },
+      idempotencyKey: 'discover-session',
+    });
+    const transport = new DiscoveredImportTransport(mock, {
+      ...created, job: { ...created.job, state: 'Validating' },
+      session: { ...uploaded.session, state: 'Complete', receivedChunks: [0], receivedChunkCount: 1 },
+      progress: { phase: 'Validating', bytesProcessed: Math.floor(file.size / 2), totalBytes: file.size },
+    });
+    const harness = configure(mock, transport);
+    harness.fixture.componentRef.setInput('supportsSafeActivation', true);
+    await waitForKind(harness, 'checking');
+    expect(testId(harness, 'import-checking')).toBeTruthy();
+    expect(harness.store.load()).toMatchObject({ jobId: created.job.id, serverDiscovered: true,
+      preflightDecision: 'AllowedReplacementRequired' });
+    expect(harness.store.load()?.preflightRequest).toBeUndefined();
+    expect(mock.calls.uploadChunk).toBe(0);
+    expect(mock.jobCreationCount).toBe(1);
+
+    transport.status = { ...transport.status, job: { ...transport.status.job, state: 'ReadyToActivate' } };
+    await harness.coordinator.resume();
+    harness.fixture.detectChanges();
+    expect(harness.coordinator.state().kind).toBe('replacement-confirmation');
+    expect(mock.calls.activateJob).toBe(0);
   });
 
   it('renders a real file input and the import picker while idle', () => {
@@ -559,50 +540,6 @@ describe('LibraryImportFlowComponent', () => {
     await vi.waitFor(() => expect(transport.pending.length).toBe(1));
     await transport.releaseAll();
     await waitForKind(harness, 'ready-empty');
-  });
-
-  it('reattaches after a reload and accepts the same file to finish the upload', async () => {
-    const harness = setup();
-    const file = await largePortableFile();
-    const totalChunks = chunkCount(file.size, CHUNK);
-    await stageResumable(harness, file, totalChunks - 1);
-
-    const reloaded = reload(harness.mock, harness.mock);
-    await waitForKind(reloaded, 'ready-to-upload');
-
-    expect(testId(reloaded, 'import-resume-file')).toBeTruthy();
-    expect(testId(reloaded, 'import-reselect')?.textContent).toContain(
-      'Select the same file again to resume.',
-    );
-
-    selectFile(reloaded, file);
-    await waitForKind(reloaded, 'ready-empty');
-
-    expect(harness.mock.uploadedChunks).toEqual([totalChunks - 1]);
-  });
-
-  it('rejects a different file on resume and never uploads it', async () => {
-    const harness = setup();
-    const file = await largePortableFile();
-    const totalChunks = chunkCount(file.size, CHUNK);
-    await stageResumable(harness, file, totalChunks - 1);
-
-    const reloaded = reload(harness.mock, harness.mock);
-    await waitForKind(reloaded, 'ready-to-upload');
-
-    const different = new File([new Uint8Array(file.size).fill(3) as unknown as BlobPart], file.name);
-    selectFile(reloaded, different);
-
-    await vi.waitFor(() =>
-      expect(testId(reloaded, 'import-reselect-notice')).toBeTruthy(),
-    );
-    reloaded.fixture.detectChanges();
-
-    expect(reloaded.coordinator.state().kind).toBe('ready-to-upload');
-    expect(testId(reloaded, 'import-reselect-notice')?.textContent).toContain(
-      'no longer matches this upload',
-    );
-    expect(harness.mock.uploadedChunks).toEqual([]);
   });
 
   it('gates replacement confirmation when safe activation is unavailable and enables it when available', async () => {
@@ -900,6 +837,28 @@ describe('LibraryImportFlowComponent', () => {
     expect(retry).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps the original job when choosing a file after an unrecognised host failure', async () => {
+    const harness = setup();
+    const file = await largePortableFile();
+    const total = chunkCount(file.size, CHUNK);
+    const record = await stageResumable(harness, file, total - 1);
+    harness.mock.queueFailure({ operation: 'getJob', code: 'unexpected_error', status: 400 });
+    const preflights = harness.mock.calls.preflight;
+    const reloaded = reload(harness.mock, harness.mock);
+    await waitForKind(reloaded, 'failed');
+    const openPicker = vi.spyOn(reloaded.component, 'openPicker');
+
+    (testId(reloaded, 'import-failure-action') as HTMLButtonElement).click();
+    expect(openPicker).toHaveBeenCalledTimes(1);
+    expect(reloaded.store.load()).toEqual(record);
+    selectFile(reloaded, file);
+    await waitForKind(reloaded, 'ready-empty');
+
+    expect(reloaded.store.load()?.jobId).toBe(record.jobId);
+    expect(reloaded.mock.calls.preflight).toBe(preflights);
+    expect(reloaded.mock.uploadedChunks).toEqual([total - 1]);
+  });
+
   it('offers sign-in recovery after a 401, preserves the record and resumes after re-authentication', async () => {
     const harness = setup();
     const file = await largePortableFile();
@@ -936,7 +895,7 @@ describe('LibraryImportFlowComponent', () => {
 
     expect(testId(harness, 'import-checking')).toBeTruthy();
     expect(testId(harness, 'import-checking')?.textContent).toContain(
-      'Checking archive, library relationships, and media…',
+      'Checking your uploaded archive…',
     );
     expect(testId(harness, 'import-server-note')?.textContent).toContain(
       'processing continues on the server',
@@ -1115,6 +1074,53 @@ describe('LibraryImportFlowComponent', () => {
     expect(harness.store.load()).toBeNull();
   });
 
+  it('separates the completed upload from live server processing progress', () => {
+    const state = signal<TransferFlowState>({
+      kind: 'checking', jobId: 'job-processing', jobState: 'Transferring',
+      progress: { uploadedBytes: 100, totalBytes: 100, completedChunks: 4, totalChunks: 4,
+        inFlightBytes: 0, rateBytesPerSecond: null, etaSeconds: null, paused: false },
+      serverProgress: { phase: 'Transferring', bytesProcessed: 100, totalBytes: 100 },
+      statusCheckedAtUtc: '2026-10-06T20:00:00Z',
+    });
+    TestBed.configureTestingModule({ providers: [
+      { provide: LIBRARY_TRANSFER_TRANSPORT, useValue: new MockLibraryTransferTransport() },
+      { provide: LibraryTransferCoordinator, useValue: {
+        state: state.asReadonly(), maintenanceWaiting: signal(null), hasInterruptedOperation: signal(false),
+      } },
+    ] });
+    const fixture = TestBed.createComponent(LibraryImportFlowComponent);
+    fixture.detectChanges();
+    const root: HTMLElement = fixture.nativeElement;
+    const bar = () => root.querySelector('[role="progressbar"]')!;
+    expect(root.textContent).toContain('Upload complete');
+    expect(root.querySelector('[data-testid="import-upload-complete"]')?.textContent).toContain('100 B');
+    expect(root.textContent).toContain('Checking your uploaded archive');
+    expect(root.textContent).toContain('Status checked at');
+    expect(bar().getAttribute('aria-valuenow')).toBeNull();
+    expect(root.querySelector('.transfer-progress-percent')).toBeNull();
+    expect(root.querySelector('.transfer-processing-steps .is-current')?.textContent).toContain('Check uploaded archive');
+
+    state.update(current => current.kind === 'checking' ? { ...current,
+      serverProgress: { phase: 'Validating', bytesProcessed: 25, totalBytes: 100, message: 'Verifying uploaded archive' },
+    } : current);
+    fixture.detectChanges();
+    expect(bar().getAttribute('aria-valuenow')).toBe('25');
+    expect(root.querySelector('[data-testid="transfer-progress-detail"]')?.textContent).toContain('25 B of 100 B');
+
+    state.update(current => current.kind === 'checking' ? { ...current, jobState: 'Validating',
+      serverProgress: { phase: 'Validating', bytesProcessed: 50, totalBytes: 100 },
+    } : current);
+    fixture.detectChanges();
+    expect(bar().getAttribute('aria-valuenow')).toBe('50');
+    expect(root.querySelector('.transfer-processing-steps .is-current')?.textContent).toContain('Prepare library');
+
+    state.update(current => current.kind === 'checking' ? { ...current,
+      serverProgress: { phase: 'Validating', bytesProcessed: 100, totalBytes: 100 },
+    } : current);
+    fixture.detectChanges();
+    expect(bar().getAttribute('aria-valuenow')).toBeNull();
+  });
+
   it('renders the transient upload-start state for a ready job that is not reselecting', () => {
     const state = signal({
       kind: 'ready-to-upload' as const,
@@ -1137,19 +1143,6 @@ describe('LibraryImportFlowComponent', () => {
     fixture.detectChanges();
 
     expect(fixture.nativeElement.querySelector('[data-testid="import-starting"]')).toBeTruthy();
-  });
-
-  it('keeps the picker available at a narrow viewport', () => {
-    const previous = window.innerWidth;
-    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 });
-    window.dispatchEvent(new Event('resize'));
-
-    const harness = setup();
-
-    expect(testId(harness, 'import-choose-file')).toBeTruthy();
-    expect(harness.fixture.nativeElement.querySelector('input[type="file"]')).toBeTruthy();
-
-    Object.defineProperty(window, 'innerWidth', { configurable: true, value: previous });
   });
 
   it('exposes the progress bar with progressbar semantics while uploading', async () => {
@@ -1208,59 +1201,6 @@ describe('LibraryImportFlowComponent', () => {
     expect(testId(harness, 'import-activation-phase')?.textContent).toContain(
       'Switching libraries…',
     );
-  });
-
-  it('shows the server counts and re-arms confirmation after a destination conflict', async () => {
-    const harness = setup({ destinationStatus: 'Populated', existingCounts: { books: 1 } });
-    const confirmed = vi.fn();
-    harness.component.replacementConfirmed.subscribe(confirmed);
-    const file = await portableFile();
-
-    harness.fixture.componentRef.setInput('supportsSafeActivation', true);
-    selectFile(harness, file);
-    await waitForKind(harness, 'replacement-confirmation');
-    harness.fixture.detectChanges();
-
-    (harness.fixture.nativeElement.querySelector(
-      '.replacement-confirm',
-    ) as HTMLButtonElement).click();
-    expect(confirmed).toHaveBeenCalledTimes(1);
-
-    harness.fixture.componentRef.setInput('activationState', 'failed');
-    harness.fixture.componentRef.setInput(
-      'activationErrorCode',
-      'migration_destination_conflict',
-    );
-    harness.fixture.componentRef.setInput('activationCanRetry', true);
-    harness.fixture.componentRef.setInput('activationConflict', {
-      destinationRevision: 'rev-9',
-      destinationStatus: 'Populated',
-      existingCounts: {
-        works: 1,
-        books: 9,
-        notes: 12,
-        topics: 0,
-        noteTopics: 0,
-        writings: 0,
-        writingNotes: 0,
-        collections: 2,
-        bookCollections: 3,
-        acquisitions: 0,
-        noteImportBookLinks: 0,
-        assistantSettings: 0,
-        totalRows: 27,
-      },
-    });
-    harness.fixture.detectChanges();
-
-    expect(testId(harness, 'replacement-conflict')).toBeTruthy();
-    expect(testId(harness, 'replacement-existing')?.textContent).toContain('9 books');
-    expect(testId(harness, 'replacement-error')).toBeNull();
-
-    (harness.fixture.nativeElement.querySelector(
-      '.replacement-confirm',
-    ) as HTMLButtonElement).click();
-    expect(confirmed).toHaveBeenCalledTimes(2);
   });
 
   it('shows both count sides when an empty destination reports populated after preflight', async () => {

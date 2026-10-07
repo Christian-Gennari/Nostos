@@ -1,0 +1,37 @@
+many-run-3_194202Z observed at 19:47:46
+132
+647441357 bytes
+--- many-run-3.log ---
+[bench] output root: /home/dev/.hermes/cache/scratch/librivox-import/many-mobydick-20261006T194202Z
+Traceback (most recent call last):
+  File "/home/dev/coding/projects/nostos-rebirth-librivox-performance/docs/performance/librivox-import/scripts/bench_librivox_import.py", line 941, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/home/dev/coding/projects/nostos-rebirth-librivox-performance/docs/performance/librivox-import/scripts/bench_librivox_import.py", line 930, in main
+    return run_benchmark(args)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/home/dev/coding/projects/nostos-rebirth-librivox-performance/docs/performance/librivox-import/scripts/bench_librivox_import.py", line 577, in run_benchmark
+    paths, parts, download_seconds = download_parts(
+                                     ^^^^^^^^^^^^^^^
+  File "/home/dev/coding/projects/nostos-rebirth-librivox-performance/docs/performance/librivox-import/scripts/bench_librivox_import.py", line 277, in download_parts
+    future.result()
+  File "/usr/lib/python3.12/concurrent/futures/_base.py", line 449, in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/concurrent/futures/_base.py", line 401, in __get_result
+    raise self._exception
+  File "/usr/lib/python3.12/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dev/coding/projects/nostos-rebirth-librivox-performance/docs/performance/librivox-import/scripts/bench_librivox_import.py", line 268, in worker
+    record = download_one(sections[index].url, paths[index])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dev/coding/projects/nostos-rebirth-librivox-performance/docs/performance/librivox-import/scripts/bench_librivox_import.py", line 208, in download_one
+    raise RuntimeError(f"download failed after {DOWNLOAD_ATTEMPTS} attempts for {url}: {last_error}")
+RuntimeError: download failed after 3 attempts for https://www.archive.org/download/mobydick2_2511_librivox/mobydickorthewhale_004_melville_64kb.mp3: HTTP Error 500: Internal Server Error
+first_attempt_191154Z parts:
+124
+--- many-run.log traceback tail ---
+  File "/home/dev/coding/projects/nostos-rebirth-librivox-performance/docs/performance/librivox-import/scripts/bench_librivox_import.py", line 208, in download_one
+    raise RuntimeError(f"download failed after {DOWNLOAD_ATTEMPTS} attempts: {last_error}")
+RuntimeError: download failed after 3 attempts: HTTP Error 502: Bad Gateway

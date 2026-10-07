@@ -70,7 +70,7 @@ public sealed class MigrationEngineReviewTests
         var entered = Signal(); var release = Signal();
         await using var body = new GatedStream(bytes, entered, release);
         var upload = h.WithUploads(s => s.UploadChunkAsync(id, session.SessionId, 0,
-            new(0, bytes.Length - 1, bytes.Length, MigrationEngineHarness.Hash(bytes)), body, default));
+            new(0, bytes.Length - 1, bytes.Length, PortableArchiveTestSupport.Sha256Hex(bytes)), body, default));
         try
         {
             await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
@@ -89,7 +89,7 @@ public sealed class MigrationEngineReviewTests
         var entered = Signal(); var release = Signal();
         await using var body = new GatedStream(bytes, entered, release);
         var oldUpload = h.WithUploads(s => s.UploadChunkAsync(id, session.SessionId, 0,
-            new(0, bytes.Length - 1, bytes.Length, MigrationEngineHarness.Hash(bytes)), body, default));
+            new(0, bytes.Length - 1, bytes.Length, PortableArchiveTestSupport.Sha256Hex(bytes)), body, default));
         await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
         // Direct store cancellation simulates a different host: it does not
         // signal this process's upload cancellation registry.
@@ -333,7 +333,7 @@ public sealed class MigrationEngineReviewTests
         {
             witness = context.RequestServices.GetRequiredService<Witness>();
             await context.RequestServices.GetRequiredService<ISelfHostedMigrationUploads>().UploadChunkAsync(id, session.SessionId, 0,
-                new(0, bytes.Length - 1, bytes.Length, MigrationEngineHarness.Hash(bytes)), context.Request.Body, context.RequestAborted);
+                new(0, bytes.Length - 1, bytes.Length, PortableArchiveTestSupport.Sha256Hex(bytes)), context.Request.Body, context.RequestAborted);
         });
         var context = new DefaultHttpContext { RequestServices = h.Provider };
         context.Request.Method = "PUT"; context.Request.Path = $"/api/migration/jobs/{id}/sessions/{session.SessionId}/chunks/0";

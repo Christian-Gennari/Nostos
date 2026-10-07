@@ -57,7 +57,10 @@ describe('App', () => {
             actionPending: signal(false),
             actionError: signal(null),
             checkoutRedirect: signal(null),
+            supportsLibraryMigration: signal(false),
             supportsSafeActivation: signal(false),
+            firstRunImportPending: signal(false),
+            openManageLibraryFromFirstRun: vi.fn(),
           },
         },
         {
@@ -104,11 +107,15 @@ describe('App', () => {
 describe('App activation boundary', () => {
   const activationState = signal<HostActivationState>('idle');
   const activationPhase = signal<MigrationActivationPhase | null>(null);
+  const supportsSafeActivation = signal(false);
+  const reattach = vi.fn();
 
   beforeEach(async () => {
     localStorage.clear();
     activationState.set('idle');
     activationPhase.set(null);
+    supportsSafeActivation.set(false);
+    reattach.mockClear();
 
     await TestBed.configureTestingModule({
       imports: [App],
@@ -124,7 +131,10 @@ describe('App activation boundary', () => {
             actionPending: signal(false),
             actionError: signal(null),
             checkoutRedirect: signal(null),
-            supportsSafeActivation: signal(false),
+            supportsLibraryMigration: signal(false),
+            supportsSafeActivation,
+            firstRunImportPending: signal(false),
+            openManageLibraryFromFirstRun: vi.fn(),
           },
         },
         {
@@ -138,7 +148,7 @@ describe('App activation boundary', () => {
         { provide: DeploymentCapabilitiesService, useValue: { get: () => of(cloudCapabilities) } },
         {
           provide: LibraryActivationController,
-          useValue: { state: activationState, phase: activationPhase },
+          useValue: { state: activationState, phase: activationPhase, reattach },
         },
       ],
     }).compileComponents();
@@ -166,6 +176,19 @@ describe('App activation boundary', () => {
     expect(
       fixture.nativeElement.querySelector('[data-testid="library-activation-overlay"]'),
     ).toBeNull();
+  });
+
+  it('reattaches persisted activation only when the server advertises safe activation', async () => {
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(reattach).not.toHaveBeenCalled();
+
+    supportsSafeActivation.set(true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(reattach).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -208,7 +231,10 @@ describe('App shell utility area', () => {
             actionPending: signal(false),
             actionError: signal(null),
             checkoutRedirect: signal(null),
+            supportsLibraryMigration: signal(false),
             supportsSafeActivation: signal(false),
+            firstRunImportPending: signal(false),
+            openManageLibraryFromFirstRun: vi.fn(),
           },
         },
         {
@@ -253,6 +279,13 @@ describe('App shell utility area', () => {
     await fixture.whenStable();
     fixture.detectChanges();
     return more;
+  }
+
+  async function finishUtilitySheetExit(fixture: ComponentFixture<App>): Promise<void> {
+    await fixture.whenStable();
+    fixture.detectChanges();
+    await new Promise((resolve) => setTimeout(resolve, 240));
+    fixture.detectChanges();
   }
 
   const background = (fixture: ComponentFixture<App>): HTMLElement =>
@@ -303,10 +336,14 @@ describe('App shell utility area', () => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
     fixture.detectChanges();
 
-    expect(fixture.nativeElement.querySelector('[data-testid="utility-sheet"]')).toBeNull();
+    // Accessibility cleanup and focus restoration happen as soon as close starts;
+    // the panel remains mounted only long enough to finish its exit transition.
     expect(background(fixture).hasAttribute('inert')).toBe(false);
     expect(dock(fixture).hasAttribute('inert')).toBe(false);
     expect(document.activeElement).toBe(more);
+
+    await finishUtilitySheetExit(fixture);
+    expect(fixture.nativeElement.querySelector('[data-testid="utility-sheet"]')).toBeNull();
   });
 
   it('lifts the inert shell and restores focus when the scrim closes the sheet', async () => {
@@ -328,9 +365,11 @@ describe('App shell utility area', () => {
     await TestBed.inject(Router).navigateByUrl('/settings');
     fixture.detectChanges();
 
-    expect(fixture.nativeElement.querySelector('[data-testid="utility-sheet"]')).toBeNull();
     expect(background(fixture).hasAttribute('inert')).toBe(false);
     expect(dock(fixture).hasAttribute('inert')).toBe(false);
+
+    await finishUtilitySheetExit(fixture);
+    expect(fixture.nativeElement.querySelector('[data-testid="utility-sheet"]')).toBeNull();
   });
 
   it('leaves Ask Nostos usable after the sheet closes', async () => {
@@ -362,11 +401,13 @@ describe('App shell utility area', () => {
     window.dispatchEvent(new Event('resize'));
     fixture.detectChanges();
 
-    expect(fixture.nativeElement.querySelector('[data-testid="utility-sheet"]')).toBeNull();
-    expect(fixture.nativeElement.querySelector('.utility-sheet-scrim')).toBeNull();
     expect(background(fixture).hasAttribute('inert')).toBe(false);
     expect(dock(fixture).hasAttribute('inert')).toBe(false);
     expect(fixture.nativeElement.querySelector('[data-testid="dock-more"]')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="dock-feedback"]')).toBeTruthy();
+
+    await finishUtilitySheetExit(fixture);
+    expect(fixture.nativeElement.querySelector('[data-testid="utility-sheet"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('.utility-sheet-scrim')).toBeNull();
   });
 });

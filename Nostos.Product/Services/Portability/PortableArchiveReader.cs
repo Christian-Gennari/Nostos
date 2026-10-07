@@ -380,10 +380,10 @@ internal sealed class PortableArchiveReader : IPortableImportPreparer
         long dataBytes,
         long manifestBytes)
     {
-        if (staging is not IPortableStagingCapacityAdmission admission)
+        if (staging is not LocalPortableImportStaging localStaging)
             return;
 
-        admission.EnsureCapacity(checked(
+        localStaging.EnsureCapacity(checked(
             manifest.Media.Sum(item => item.Length) + dataBytes + manifestBytes));
     }
 

@@ -1,0 +1,173 @@
+{
+  "schema": "nostos-librivox-bench/1",
+  "label": "short-1601",
+  "started_at": "2026-10-06T18:47:02.225912+00:00",
+  "run_dir": "/home/dev/.hermes/cache/scratch/librivox-import/short-1601-20261006T184702Z",
+  "out_root_guarded": "/home/dev/.hermes/cache/scratch/librivox-import",
+  "download_concurrency": 3,
+  "resources_before": {
+    "at": "2026-10-06T18:47:02.225921+00:00",
+    "cpu_logical": 12,
+    "cpu_freq_mhz": 3000.0,
+    "ram_total_bytes": 16091504640,
+    "disk_total_bytes": 501809635328,
+    "disk_free_bytes": 81232482304,
+    "net_bytes_recv": 1200902684934,
+    "net_bytes_sent": 1375395755722
+  },
+  "recording_id": "2469",
+  "recording_title": "1601: Conversation, as it was by the Social Fireside, in the Time of the Tudors",
+  "feed_totaltime": "0:19:38",
+  "section_count": 2,
+  "download": {
+    "parts": [
+      {
+        "url": "https://www.archive.org/download/1601_0903_librivox/sixteenoone_0_twain_64kb.mp3",
+        "bytes": 527974,
+        "seconds": 11.69919445598498,
+        "attempts": 1
+      },
+      {
+        "url": "https://www.archive.org/download/1601_0903_librivox/sixteenoone_1_twain_64kb.mp3",
+        "bytes": 8905535,
+        "seconds": 38.01847193995491,
+        "attempts": 1
+      }
+    ],
+    "total_source_bytes": 9433509,
+    "seconds": 38.021770344115794,
+    "aggregate_bytes_per_second": 248108.0947736543,
+    "network_bytes_delta": 13862107
+  },
+  "probe": {
+    "per_section": [
+      {
+        "file": "part-0000.mp3",
+        "duration_s": 65.933061,
+        "probe_s": 0.06305709900334477
+      },
+      {
+        "file": "part-0001.mp3",
+        "duration_s": 1113.129796,
+        "probe_s": 0.058931631967425346
+      }
+    ],
+    "seconds": 0.12199885863810778,
+    "sum_section_duration_s": 1179.062857
+  },
+  "encode": {
+    "seconds": 14.364030514843762,
+    "peak_rss_bytes": 53891072,
+    "peak_cpu_percent": 106.6,
+    "ffmpeg_reported_speed": "82.4x",
+    "progress_log": "/home/dev/.hermes/cache/scratch/librivox-import/short-1601-20261006T184702Z/staging/ffmpeg-encode-progress.log",
+    "stderr_log": "/home/dev/.hermes/cache/scratch/librivox-import/short-1601-20261006T184702Z/staging/ffmpeg-encode-stderr.log",
+    "command": [
+      "ffmpeg",
+      "-hide_banner",
+      "-nostdin",
+      "-y",
+      "-progress",
+      "pipe:1",
+      "-nostats",
+      "-f",
+      "concat",
+      "-safe",
+      "0",
+      "-i",
+      "/home/dev/.hermes/cache/scratch/librivox-import/short-1601-20261006T184702Z/staging/concat.txt",
+      "-i",
+      "/home/dev/.hermes/cache/scratch/librivox-import/short-1601-20261006T184702Z/staging/chapters.txt",
+      "-map",
+      "0:a",
+      "-map_metadata",
+      "1",
+      "-map_chapters",
+      "1",
+      "-c:a",
+      "aac",
+      "-b:a",
+      "64k",
+      "-ac",
+      "1",
+      "-ar",
+      "44100",
+      "-movflags",
+      "+faststart",
+      "-f",
+      "ipod",
+      "/home/dev/.hermes/cache/scratch/librivox-import/short-1601-20261006T184702Z/staging/result.m4b"
+    ],
+    "realtime_factor": 82.08440213083358,
+    "samples_csv": "/home/dev/.hermes/cache/scratch/librivox-import/short-1601-20261006T184702Z/ffmpeg-samples.csv"
+  },
+  "validation": {
+    "produced_chapters": 2,
+    "expected_chapters": 2,
+    "produced_duration_s": 1179.063,
+    "expected_duration_s": 1179.062857,
+    "tolerance_s": 5.8953142849999995,
+    "ok": true
+  },
+  "instrumentation_check": {
+    "exact_encode_seconds": 14.424168910365552,
+    "instrumented_encode_seconds": 14.364030514843762,
+    "exact_decoded_pcm_md5": "MD5=ad7fd488af752aac81ff831c5877da1e",
+    "instrumented_decoded_pcm_md5": "MD5=ad7fd488af752aac81ff831c5877da1e",
+    "identical_decoded_audio": true
+  },
+  "output": {
+    "bytes": 9855820,
+    "path": "/home/dev/.hermes/cache/scratch/librivox-import/short-1601-20261006T184702Z/books/12661b47bea2470ba9791f25682ef55a/book.m4b",
+    "content_type": "audio/mp4",
+    "extension": ".m4b"
+  },
+  "phases": [
+    {
+      "phase": "catalog_plan",
+      "seconds": 0.00022663641721010208,
+      "detail": "2 sections"
+    },
+    {
+      "phase": "download",
+      "seconds": 38.021770344115794,
+      "detail": "2 parts, 9433509 bytes"
+    },
+    {
+      "phase": "probe_inputs",
+      "seconds": 0.12199885863810778,
+      "detail": "2 sections, 1179.1s audio"
+    },
+    {
+      "phase": "write_inputs",
+      "seconds": 0.00043399492278695107,
+      "detail": "concat + chapters"
+    },
+    {
+      "phase": "encode",
+      "seconds": 14.364030514843762,
+      "detail": "speed=82.4x"
+    },
+    {
+      "phase": "validate_output",
+      "seconds": 0.12835633428767323,
+      "detail": "chapters=2 duration=1179.063"
+    },
+    {
+      "phase": "commit_rename",
+      "seconds": 0.0003552841953933239,
+      "detail": "9855820 bytes"
+    }
+  ],
+  "total_wall_seconds": 52.63717196742073,
+  "resources_after": {
+    "at": "2026-10-06T18:48:15.748458+00:00",
+    "cpu_logical": 12,
+    "cpu_freq_mhz": 3000.0,
+    "ram_total_bytes": 16091504640,
+    "disk_total_bytes": 501809635328,
+    "disk_free_bytes": 81203085312,
+    "net_bytes_recv": 1200916676245,
+    "net_bytes_sent": 1375397644703
+  }
+}

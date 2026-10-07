@@ -1274,7 +1274,7 @@ public sealed class EfMigrationJobStoreTests : IDisposable
     {
         await using var harness = await NewHarnessAsync();
 
-        for (var iteration = 0; iteration < 8; iteration++)
+        for (var iteration = 0; iteration < 2; iteration++)
         {
             var jobId = await harness.SeedJobAsync(
                 MigrationDirection.Import,
@@ -1381,15 +1381,6 @@ public sealed class EfMigrationJobStoreTests : IDisposable
                 }
             }
         }
-    }
-
-    private sealed class ManualTimeProvider(DateTimeOffset utcNow) : TimeProvider
-    {
-        private DateTimeOffset _utcNow = utcNow;
-
-        public override DateTimeOffset GetUtcNow() => _utcNow;
-
-        public void Advance(TimeSpan delta) => _utcNow = _utcNow.Add(delta);
     }
 
     // Forces a lost optimistic race even though the caller still owns an

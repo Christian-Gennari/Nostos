@@ -13,7 +13,6 @@
 import type {
   MigrationPartTicketBatchDto,
   MigrationPartTicketDto,
-  MigrationPartTicketRequestDto,
 } from '../models/direct-part-upload.dtos';
 import { chunkLength } from '../models/migration-http.dtos';
 
@@ -23,14 +22,6 @@ export const FIXTURE_SESSION_ID = '22222222-2222-4222-8222-222222222222';
 /** Route segments under `{base}/jobs/{id}/upload-session`. */
 export const PART_TICKETS_SEGMENT = 'part-tickets';
 export const RECONCILE_SEGMENT = 'reconcile';
-
-/** Request body of `POST .../upload-session/part-tickets`. */
-export function partTicketsRequestFixture(
-  sessionId: string,
-  partNumbers: number[],
-): MigrationPartTicketRequestDto {
-  return { sessionId, partNumbers };
-}
 
 /** One signed target for an exact part and byte range. */
 export function partTicketFixture(

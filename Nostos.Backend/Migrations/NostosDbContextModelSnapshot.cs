@@ -880,6 +880,26 @@ namespace Nostos.Backend.Migrations
                     b.ToTable("NoteTopics");
                 });
 
+            modelBuilder.Entity("Nostos.Backend.Data.Models.ProviderPreferenceModel", b =>
+                {
+                    b.Property<string>("ProviderId")
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("ProviderId");
+
+                    b.ToTable("ProviderPreferences", t =>
+                        {
+                            t.HasCheckConstraint("CK_ProviderPreferences_ProviderId", "length(\"ProviderId\") > 0 AND length(\"ProviderId\") <= 32");
+                        });
+                });
+
             modelBuilder.Entity("Nostos.Backend.Data.Models.TopicModel", b =>
                 {
                     b.Property<Guid>("Id")

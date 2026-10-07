@@ -972,7 +972,10 @@ describe('AddBookModal — From a Source', () => {
       await search();
 
       expect(el('source-results-pane')).not.toBeNull();
-      expect(el('source-loading')?.textContent).toContain('Searching free catalogues…');
+      const loading = el('source-loading');
+      expect(loading?.textContent).toContain('Searching free catalogues…');
+      expect(loading?.querySelector('nostos-loading-indicator')).not.toBeNull();
+      expect(loading?.querySelector('.wait-field')).toBeNull();
       expect(titles()).toEqual([]);
 
       pending.next(ok([pride, emma, persuasion]));

@@ -132,7 +132,8 @@ function collectErrors(page: Page): ErrorCollectors {
  * reader's first open of a book legitimately 404s the cached-locations route
  * before the locations POST repopulates it, and the activation protocol uses
  * a handled 409 (confirmation required / destination conflict) as its
- * re-review signal, which the browser logs as a failed fetch.
+ * re-review signal, which the browser logs as a failed fetch. The transfer
+ * host also treats an `active-import` 404 as the normal no-active-import state.
  */
 /**
  * Page errors that are deliberate-navigation noise: WebKit reports an
@@ -167,6 +168,7 @@ function unexpectedConsoleErrors(errors: string[]): string[] {
       // that actually failed to load still fails the run.
       !/error loading dynamically imported module/i.test(line) &&
       !/\/api\/books\/[0-9a-f-]+\/locations\b/i.test(line) &&
+      !/status of 404 .*\/api\/portability\/migration\/active-import\b/i.test(line) &&
       // Only the handled 409 re-review is expected; any other activation
       // failure status stays visible to the suite.
       !/status of 409 .*\/api\/portability\/migration\/jobs\/[0-9a-f-]+\/activate\b/i.test(line),
@@ -175,6 +177,10 @@ function unexpectedConsoleErrors(errors: string[]): string[] {
 
 async function openSettings(page: Page, baseUrl: string): Promise<void> {
   await page.goto(`${baseUrl}/settings`);
+  await expect(page.getByTestId('manage-library-open')).toBeVisible();
+  await page.getByTestId('manage-library-open').click();
+  await expect(page).toHaveURL(`${baseUrl}/settings/library`);
+  await expect(page.getByTestId('manage-library-page')).toBeVisible();
   await expect(page.getByTestId('library-transfer-card')).toBeVisible();
   // Let the route's lazily-imported chunks finish before a scenario triggers
   // the activation reload; otherwise Firefox can abort a pending import and
@@ -668,6 +674,130 @@ test('scenario d1: reload mid-upload resumes with only the missing chunks', asyn
   expect(unexpectedPageErrors(errors.pageErrors)).toEqual([]);
 });
 
+test('scenario d3: retry an exhausted part upload without restarting the job', async ({ page }, testInfo) => {
+  const archive = await ensureArchive();
+  await withDestination(testInfo, 'retry-part', 'none', async (destination) => {
+    let rejectPart = true;
+    let retryJobRequests = 0;
+    page.on('request', request => {
+      if (request.method() === 'POST' && /\/jobs\/[^/]+\/retry$/.test(request.url())) {
+        retryJobRequests += 1;
+      }
+    });
+    await page.route('**/api/portability/migration/jobs/*/upload-session/chunks/1', async route => {
+      if (rejectPart) {
+        await route.fulfill({ status: 503, contentType: 'application/json',
+          body: JSON.stringify({ error: 'unexpected_error', message: 'Temporary storage failure' }) });
+      } else {
+        await route.continue();
+      }
+    });
+    await openSettings(page, destination.baseUrl);
+    const chunks = trackChunkIndexes(page);
+    const jobs = trackJobIds(page);
+    await selectArchive(page, archive);
+    await expect(page.getByTestId('import-failed')).toBeVisible({ timeout: 180_000 });
+    const jobId = jobs[0];
+    expect(jobId).toBeTruthy();
+    const status = await (await fetch(`${destination.baseUrl}/api/portability/migration/jobs/${jobId}`)).json();
+    expect(status.job.state).toBe('Transferring');
+    expect(status.session.receivedChunkCount).toBe(status.session.totalChunks - 1);
+    expect(await page.evaluate(() => JSON.parse(localStorage.getItem('nostos.library-transfer.active.v1')!).jobId)).toBe(jobId);
+    await testInfo.attach('part-failure', { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' });
+
+    rejectPart = false;
+    chunks.length = 0;
+    const beforeReload = await navigationOrigin(page);
+    await page.getByTestId('import-failure-action').click();
+    await waitForReload(page, beforeReload);
+
+    expect(chunks).toEqual([1]);
+    expect(retryJobRequests).toBe(0);
+    expect(jobs).toHaveLength(1);
+    await page.goto(`${destination.baseUrl}/library`);
+    await assertSourceContent(destination.baseUrl);
+    await testInfo.attach('library-imported', { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' });
+  });
+});
+
+for (const loseBrowserMetadata of [false, true]) {
+test(`scenario d4: reload after all parts resumes completion without selecting the file${loseBrowserMetadata ? ' after losing browser metadata' : ''}`, async ({ page }, testInfo) => {
+  const archive = await ensureArchive();
+  await withDestination(testInfo, 'resume-completion', 'none', async (destination) => {
+    let completionRequests = 0;
+    let reportProcessing = false;
+    let verifiedFraction = 0.25;
+    let finish!: () => void;
+    const gate = new Promise<void>(resolve => { finish = resolve; });
+    await page.route('**/api/portability/migration/jobs/*', async route => {
+      const response = await route.fetch();
+      const status = await response.json();
+      if (reportProcessing && status.job.state === 'Transferring' && status.session) {
+        status.progress = { phase: 'Validating',
+          bytesProcessed: Math.floor(status.session.totalBytes * verifiedFraction),
+          totalBytes: status.session.totalBytes, message: 'Verifying uploaded archive' };
+      }
+      await route.fulfill({ response, json: status });
+    });
+    await page.route('**/api/portability/migration/jobs/*/upload-session/complete', async route => {
+      completionRequests += 1;
+      if (completionRequests === 1) {
+        await route.abort('connectionreset');
+      } else {
+        await gate;
+        await route.continue();
+      }
+    });
+    try {
+      await openSettings(page, destination.baseUrl);
+      const chunks = trackChunkIndexes(page);
+      const jobs = trackJobIds(page);
+      await selectArchive(page, archive);
+      await expect(page.getByTestId('import-failed')).toBeVisible({ timeout: 180_000 });
+      const jobId = jobs[0];
+      const status = await (await fetch(`${destination.baseUrl}/api/portability/migration/jobs/${jobId}`)).json();
+      expect(status.session.state).toBe('Receiving');
+      expect(status.session.receivedChunkCount).toBe(status.session.totalChunks);
+
+      chunks.length = 0;
+      if (loseBrowserMetadata) {
+        await page.route('**/api/portability/migration/active-import', async route => {
+          const response = await route.fetch({ url: `${destination.baseUrl}/api/portability/migration/jobs/${jobId}` });
+          await route.fulfill({ response });
+        });
+        await page.evaluate(() => localStorage.removeItem('nostos.library-transfer.active.v1'));
+      }
+      await page.reload();
+      await expect(page.getByTestId('import-checking')).toBeVisible({ timeout: 60_000 });
+      await expect(page.getByTestId('import-checking').getByRole('progressbar')).not.toHaveAttribute('aria-valuenow');
+      const fill = page.getByTestId('import-checking').locator('.transfer-progress-fill');
+      expect(await fill.evaluate(element => element.getBoundingClientRect().width)).toBeGreaterThan(0);
+      reportProcessing = true;
+      await expect(page.getByTestId('import-checking').getByRole('progressbar')).toHaveAttribute('aria-valuenow', '25');
+      await expect(page.getByTestId('import-upload-complete')).toContainText('Upload complete');
+      await expect(page.getByTestId('import-status-checked')).toContainText('Status checked at');
+      await page.getByTestId('import-checking').scrollIntoViewIfNeeded();
+      await testInfo.attach('processing-after-reload', { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' });
+      verifiedFraction = 0.5;
+      await expect(page.getByTestId('import-checking').getByRole('progressbar')).toHaveAttribute('aria-valuenow', '50');
+      const beforeReload = await navigationOrigin(page);
+      finish();
+      // The disposable SelfHosted fixture completes server-side; Cloud
+      // confirmation is covered by the coordinator/component contract.
+      await waitForReload(page, beforeReload);
+
+      expect(completionRequests).toBe(2);
+      expect(chunks).toEqual([]);
+      expect(jobs).toHaveLength(1);
+      await page.goto(`${destination.baseUrl}/library`);
+      await assertSourceContent(destination.baseUrl);
+    } finally {
+      finish();
+    }
+  });
+});
+}
+
 test('scenario d2: reload during activation reattaches and reports the outcome', async ({ page }, testInfo) => {
   const archive = await ensureArchive();
   const errors = collectErrors(page);
@@ -961,6 +1091,10 @@ test('scenario e5: a second tab is blocked by the lease with no double upload', 
     });
     try {
       await second.goto(`${destination.baseUrl}/settings`);
+      await expect(second.getByTestId('manage-library-open')).toBeVisible();
+      await second.getByTestId('manage-library-open').click();
+      await expect(second).toHaveURL(`${destination.baseUrl}/settings/library`);
+      await expect(second.getByTestId('manage-library-page')).toBeVisible();
       await expect(second.getByTestId('library-transfer-card')).toBeVisible();
       await expect(second.getByTestId('transfer-other-tab')).toBeVisible({ timeout: 30_000 });
       await expect(second.getByTestId('transfer-other-tab')).toContainText(
