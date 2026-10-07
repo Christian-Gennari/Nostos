@@ -338,6 +338,76 @@ remains available for direct single-sidecar imports.
 
 ---
 
+## Portable archives and library migration — /api/portability
+
+The customer steps, archive contents, size ceilings, and verification status
+are in [Library portability and migration](cloud/portability.md). Migration
+routes are mapped only by hosts that enable the transfer capability. Their
+authorization and rate limits are host-configured; the Cloud adapter and its
+account-plan rules are outside this public repository.
+
+### Portable archive endpoints
+
+| Method | Route | Behavior |
+| --- | --- | --- |
+| GET | /api/portability/export | Streams a .nostos archive. |
+| POST | /api/portability/import | Reads raw .nostos bytes from the request body and imports only into an empty destination; a populated destination returns 409. |
+
+The single-request import is subject to the SelfHosted Kestrel request-body
+limit of 4 GiB. It is separate from the chunked migration API below.
+
+### Durable migration endpoints
+
+All routes use the /api/portability/migration base path and the migration error
+response with a stable error code and message.
+
+| Method | Route suffix | Purpose and success |
+| --- | --- | --- |
+| POST | /preflight | Check archive compatibility, destination state, and required storage; returns the admission decision and any reservation. |
+| POST | /jobs | Create an Import or Export job; 201 created or 200 idempotent replay. |
+| GET | /jobs/{id} | Read job, progress, and available upload-session status. |
+| POST | /jobs/{id}/cancel | Cancel a cancellable job; 200 on success. |
+| POST | /jobs/{id}/retry | Retry a failed, cancelled, or expired job; 200 on success. |
+| POST | /jobs/{id}/upload-session | Create or replay a transfer session; 201 created or 200 replay. |
+| GET | /jobs/{id}/upload-session | Read session state and received chunk indexes for resumption. |
+| PUT | /jobs/{id}/upload-session/chunks/{index} | Stream one raw chunk; the request includes Content-Range and X-Nostos-Chunk-SHA256. |
+| POST | /jobs/{id}/upload-session/complete | Seal and verify the uploaded archive, then continue server-side preparation. |
+| GET, HEAD | /jobs/{id}/export-download | Download a completed export. GET supports byte ranges; the artifact is retained for 24 hours. |
+| POST | /jobs/{id}/activate | Request activation; 202 means accepted for background work, not that the switch has finished. |
+| GET | /jobs/{id}/activation | Read activation outcome while the switch is running or after it finishes. |
+| GET | /recovery | List retained recovery copies. |
+| GET | /recovery/{id} | Read a recovery copy's status and expiry. |
+| POST | /recovery/{id}/restore | Request restoration; requires destination revision and explicit replacement confirmation; 202 means accepted. |
+
+Chunk size is 4–64 MiB (16 MiB default). The uploaded file identity binds the
+exact byte length and whole-file SHA-256. A session expires after 24 hours.
+The browser stores resume metadata, not the file. After a reload, select the
+same file again; while the page remains open, a paused upload can be resumed
+from its current screen. See the portability guide for browser-storage and
+host-specific discovery caveats.
+
+Activation requests include the destination revision returned by the host.
+For a populated destination, set confirmReplacement to true only after
+reviewing the current and incoming counts. An empty destination activates
+automatically in the shared UI. A successful replacement retains the previous
+library for seven days. Restoring a recovery copy also replaces the current
+portable library and requires confirmation bound to the current revision.
+
+The public Angular Settings UI does not expose a recovery list or restore
+button. The recovery endpoints are present in the public SelfHosted
+implementation; their availability and customer UI on Cloud have not been
+verified. The public contract ceiling is not a Cloud plan quota. See
+[MigrationEndpoints](../Nostos.Product/Endpoints/MigrationEndpoints.cs),
+[MigrationRecoveryEndpoints](../Nostos.Product/Endpoints/MigrationRecoveryEndpoints.cs),
+and [MigrationContractLimits](../Nostos.Product/Services/Portability/MigrationContracts.cs)
+for the route map and fixed limits.
+
+The shared browser client also has an optional GET /active-import discovery
+request when it has no local resume record. That route is not registered by
+the public SelfHosted endpoint group above; discovery after local browser data
+is lost therefore depends on the host and is not guaranteed by this API
+reference.
+
 ## Collections — `/api/collections`
 
 Hierarchical folders for organizing books.

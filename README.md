@@ -156,10 +156,22 @@ In the public SelfHosted application, AI provider configuration remains under th
 
 ### Portability, Backup & Integrations
 
-- **Portable archives:** Export and import `.nostos` archives so library data is not trapped in one installation.
+- **Portable library archives:** Export and import `.nostos` files to move library data between Nostos installations. See [Library portability and migration](docs/cloud/portability.md) for the exact steps, contents, limits, recovery behavior, and verification status.
 - **Local backup and restore:** SelfHosted installations include local backup and restore workflows with integrity checks and restore safeguards.
 - **OPDS export:** A configurable OPDS catalogue can expose a self-hosted library to compatible readers on networks you control.
 - **MCP:** An optional bearer-protected Model Context Protocol endpoint lets compatible tools work with Nostos through the documented library contracts.
+
+#### Moving a library
+
+When a host advertises migration, open **Settings → Library & data → Move your library**.
+
+- **Export:** Choose **Export library**, then **Download archive** when it is ready.
+- **Import:** Choose **Import library…** and select the `.nostos` file.
+
+An empty destination activates after verification. A populated destination asks
+you to confirm **Replace library** and keeps a recovery copy for seven days.
+
+One real SelfHosted → Cloud import is recorded for the hosted alpha. Cloud export, restoring a replaced library, and Cloud → SelfHosted import have not been verified there. The shared Settings UI in this repository has no **Restore previous** button; the recovery operation is currently exposed by the SelfHosted API. See the [portability guide](docs/cloud/portability.md) for details.
 
 ---
 
@@ -324,7 +336,7 @@ Read the [Design Manifesto](docs/design-manifesto.md) for the product's visual a
 - **[Backend Endpoints](Nostos.Backend/_docs/endpoints.md):** REST API reference.
 - **[Public/private boundary ADR](docs/adr/cloud-public-private-boundary.md):** Ownership boundary between the public product and official hosted composition.
 - **[Deployment Capabilities](docs/cloud/deployment-modes.md):** SelfHosted and Cloud capability contract.
-- **[Portable Archives](docs/cloud/portability.md):** Provider-neutral `.nostos` export and import contract.
+- **[Library portability and migration](docs/cloud/portability.md):** Customer steps, API behavior, limits, and verification status for `.nostos` archives and library transfer.
 - **[SelfHosted Activation & Recovery](docs/selfhosted-activation-recovery.md):** Replacing a library after import, the seven-day recovery copy, restore, maintenance states and operator recovery.
 - **[PostgreSQL Compatibility](docs/cloud/postgresql-compatibility-spike.md):** Evidence for the shared relational product model.
 
