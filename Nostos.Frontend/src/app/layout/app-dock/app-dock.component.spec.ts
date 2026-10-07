@@ -146,6 +146,8 @@ describe('AppDockComponent', () => {
 
     expect(sheet.open()).toBe(false);
     expect(more.getAttribute('aria-expanded')).toBe('false');
+    expect(more.getAttribute('aria-controls')).toBe('mobile-more-sheet');
+    expect(more.getAttribute('aria-haspopup')).toBe('dialog');
 
     more.click();
     fixture.detectChanges();

@@ -84,6 +84,7 @@ function isNarrowViewport(): boolean {
               [class.dock-item-open]="sheet.open()"
               (click)="sheet.toggle()"
               aria-haspopup="dialog"
+              aria-controls="mobile-more-sheet"
               [attr.aria-expanded]="sheet.open()"
               title="More"
               data-testid="dock-more"

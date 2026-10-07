@@ -74,10 +74,12 @@ describe('UtilitySheetComponent', () => {
     trigger = document.createElement('button');
     trigger.type = 'button';
     trigger.setAttribute('data-testid', 'more-trigger');
+    trigger.setAttribute('aria-controls', 'mobile-more-sheet');
     document.body.appendChild(trigger);
   });
 
   afterEach(() => {
+    sheet?.close();
     trigger.remove();
   });
 
@@ -86,6 +88,13 @@ describe('UtilitySheetComponent', () => {
     sheet.open.set(true);
     fixture.detectChanges();
     await fixture.whenStable();
+    fixture.detectChanges();
+  }
+
+  async function finishClose(): Promise<void> {
+    await fixture.whenStable();
+    fixture.detectChanges();
+    await new Promise((resolve) => setTimeout(resolve, 240));
     fixture.detectChanges();
   }
 
@@ -104,6 +113,30 @@ describe('UtilitySheetComponent', () => {
     sheet.open.set(true);
     fixture.detectChanges();
     expect(query('[data-testid="utility-sheet"]')).toBeTruthy();
+  });
+
+  it('connects the trigger to an accessible dialog and disables it during its exit', async () => {
+    await open();
+
+    const panel = query<HTMLElement>('[data-testid="utility-sheet"]');
+    expect(trigger.getAttribute('aria-controls')).toBe(panel.id);
+    expect(panel.id).toBe('mobile-more-sheet');
+    expect(panel.getAttribute('aria-modal')).toBe('true');
+    expect(panel.hasAttribute('inert')).toBe(false);
+
+    query<HTMLElement>('.utility-sheet-scrim').click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(sheet.open()).toBe(false);
+    expect(panel.getAttribute('aria-hidden')).toBe('true');
+    expect(panel.hasAttribute('aria-modal')).toBe(false);
+    expect(panel.hasAttribute('inert')).toBe(true);
+    expect(document.activeElement).toBe(trigger);
+
+    await finishClose();
+    expect(query('[data-testid="utility-sheet"]')).toBeNull();
   });
 
   it('exposes Feedback with the current origin and canonical external-link behavior', async () => {
@@ -154,47 +187,62 @@ describe('UtilitySheetComponent', () => {
     await open();
     clickWithoutNavigating(query('[data-testid="utility-sheet-feedback"]'));
     fixture.detectChanges();
+    await fixture.whenStable();
 
     expect(sheet.open()).toBe(false);
+    expect(document.activeElement).toBe(trigger);
+
+    await finishClose();
     expect(query('[data-testid="utility-sheet"]')).toBeNull();
     expect(query('.utility-sheet-scrim')).toBeNull();
-    expect(document.activeElement).toBe(trigger);
   });
 
   it('closes the sheet when Settings is chosen and restores the trigger focus', async () => {
     await open();
     clickWithoutNavigating(query('[data-testid="utility-sheet-settings"]'));
     fixture.detectChanges();
+    await fixture.whenStable();
 
     expect(sheet.open()).toBe(false);
     expect(document.activeElement).toBe(trigger);
+    await finishClose();
+    expect(query('[data-testid="utility-sheet"]')).toBeNull();
   });
 
   it('closes on a backdrop tap and restores the trigger focus', async () => {
     await open();
     query<HTMLElement>('.utility-sheet-scrim').click();
     fixture.detectChanges();
+    await fixture.whenStable();
 
     expect(sheet.open()).toBe(false);
     expect(document.activeElement).toBe(trigger);
+    await finishClose();
+    expect(query('[data-testid="utility-sheet"]')).toBeNull();
   });
 
   it('closes on Escape and restores the trigger focus', async () => {
     await open();
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
     fixture.detectChanges();
+    await fixture.whenStable();
 
     expect(sheet.open()).toBe(false);
     expect(document.activeElement).toBe(trigger);
+    await finishClose();
+    expect(query('[data-testid="utility-sheet"]')).toBeNull();
   });
 
   it('closes when the route changes underneath it and restores the trigger focus', async () => {
     await open();
     await TestBed.inject(Router).navigateByUrl('/settings');
     fixture.detectChanges();
+    await fixture.whenStable();
 
     expect(sheet.open()).toBe(false);
     expect(document.activeElement).toBe(trigger);
+    await finishClose();
+    expect(query('[data-testid="utility-sheet"]')).toBeNull();
   });
 
   it('shows only Settings when the deployment has no feedback destination', async () => {
