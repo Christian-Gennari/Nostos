@@ -17,6 +17,10 @@
   align-items: start;
 }
 
+.settings-shell--manage-library {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .settings-nav {
   position: sticky;
   top: 24px;
@@ -120,6 +124,30 @@
   font-weight: var(--fw-semibold);
   line-height: 1.35;
   color: var(--color-text-main);
+}
+
+.manage-library-header {
+  margin-bottom: 26px;
+}
+
+.manage-library-header .settings-section-title {
+  margin-bottom: 6px;
+}
+
+.manage-library-header .label-desc {
+  margin: 0;
+}
+
+.manage-library-back {
+  margin: 0 0 12px;
+}
+
+.manage-library-group {
+  margin-bottom: 32px;
+}
+
+.manage-library-group-title {
+  margin-bottom: 0;
 }
 
 /* --- Settings Card --- */

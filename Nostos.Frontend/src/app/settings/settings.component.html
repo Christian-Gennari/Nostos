@@ -1,7 +1,15 @@
     <div class="settings-page">
-      <div class="settings-shell">
+      <div class="settings-shell" [class.settings-shell--manage-library]="isManageLibraryPage">
         @if (capabilitiesLoading()) {
           <main class="settings-content" data-testid="settings-capabilities-loading">
+            @if (isManageLibraryPage) {
+              <header class="manage-library-header">
+                <button appButton type="button" variant="ghost" (click)="returnToLibrarySettings()">
+                  Back to settings
+                </button>
+                <h1 class="settings-section-title">Manage library</h1>
+              </header>
+            }
             <section class="settings-card">
               <div class="card-body">
                 <div class="setting-row">
@@ -15,6 +23,14 @@
           </main>
         } @else if (capabilitiesFailed()) {
           <main class="settings-content" data-testid="settings-capabilities-error">
+            @if (isManageLibraryPage) {
+              <header class="manage-library-header">
+                <button appButton type="button" variant="ghost" (click)="returnToLibrarySettings()">
+                  Back to settings
+                </button>
+                <h1 class="settings-section-title">Manage library</h1>
+              </header>
+            }
             <section class="settings-card">
               <div class="card-body">
                 <div class="setting-row">
@@ -27,6 +43,7 @@
             </section>
           </main>
         } @else {
+        @if (!isManageLibraryPage) {
         <nav class="settings-nav" role="tablist" aria-label="Settings sections">
           @if (hasLibrarySettings()) {
           <button
@@ -103,19 +120,74 @@
             <span class="settings-nav-copy">Appearance</span>
           </button>
         </nav>
+        }
 
         <main class="settings-content">
           @if (hasLibrarySettings()) {
           <section
             class="settings-section"
             id="library-data"
-            role="tabpanel"
-            aria-labelledby="library-data-heading"
-            [hidden]="activeSettingsSection() !== 'library'"
+            [attr.role]="isManageLibraryPage ? null : 'tabpanel'"
+            [attr.aria-labelledby]="
+              isManageLibraryPage ? 'manage-library-page-heading' : 'library-data-heading'
+            "
+            [hidden]="!isManageLibraryPage && activeSettingsSection() !== 'library'"
           >
-            <h2 class="settings-section-title" id="library-data-heading">Library &amp; data</h2>
+            @if (isManageLibraryPage) {
+              <header class="manage-library-header" data-testid="manage-library-page">
+                <button
+                  appButton
+                  type="button"
+                  variant="ghost"
+                  class="manage-library-back"
+                  data-testid="manage-library-back"
+                  (click)="returnToLibrarySettings()"
+                >
+                  Back to settings
+                </button>
+                <h1 class="settings-section-title" id="manage-library-page-heading">Manage library</h1>
+                <p class="label-desc">
+                  Move your library or protect this installation with the actions available here.
+                </p>
+              </header>
+            } @else {
+              <h2 class="settings-section-title" id="library-data-heading">Library &amp; data</h2>
+              @if (hasManageLibraryActions()) {
+              <section
+                class="settings-card manage-library-summary"
+                data-testid="manage-library-summary-card"
+              >
+                <div class="card-header">
+                  <div class="card-header-copy">
+                    <h2>Manage library</h2>
+                  </div>
+                  <button
+                    appButton
+                    type="button"
+                    variant="primary"
+                    data-testid="manage-library-open"
+                    (click)="openManageLibrary()"
+                  >
+                    Manage library
+                  </button>
+                </div>
+                <div class="card-body">
+                  <p class="label-desc" data-testid="manage-library-summary">{{ manageLibrarySummary() }}</p>
+                </div>
+              </section>
+              }
+            }
 
+            @if (isManageLibraryPage) {
+            <div class="manage-library-groups">
             @if (supportsLocalBackupConfiguration()) {
+            <section class="manage-library-group" aria-labelledby="manage-library-protect-heading">
+            <h2
+              class="settings-section-title manage-library-group-title"
+              id="manage-library-protect-heading"
+            >
+              Protect this installation
+            </h2>
             <section class="settings-card">
         <div class="card-header">
           <div class="card-header-copy">
@@ -350,9 +422,17 @@
           </div>
         }
       </section>
+            </section>
       }
 
       @if (supportsLibraryMigration()) {
+      <section class="manage-library-group" aria-labelledby="manage-library-move-heading">
+      <h2
+        class="settings-section-title manage-library-group-title"
+        id="manage-library-move-heading"
+      >
+        Move to another Nostos
+      </h2>
       <!-- Portable library transfer is deliberately separate from the local
            operational Backup above: these archives move a library between
            Nostos installations, they do not recover this installation. -->
@@ -377,7 +457,15 @@
           />
         </div>
       </section>
+      </section>
       } @else if (supportsCloudPortableExport()) {
+      <section class="manage-library-group" aria-labelledby="manage-library-export-heading">
+      <h2
+        class="settings-section-title manage-library-group-title"
+        id="manage-library-export-heading"
+      >
+        Move to another Nostos
+      </h2>
       <section class="settings-card" data-testid="cloud-portable-export-card">
         <div class="card-header">
           <div class="card-header-copy">
@@ -424,8 +512,12 @@
           </div>
         </div>
       </section>
-      }
+      </section>
+            }
+            </div>
+            }
 
+            @if (!isManageLibraryPage) {
       @if (supportsEreaderAccess()) {
       <!-- E-reader access is one product capability with deployment-specific
            connection models: private-network SelfHosted or managed Cloud credentials. -->
@@ -637,6 +729,7 @@
           </div>
         </div>
       </section>
+            }
 
           </section>
           }

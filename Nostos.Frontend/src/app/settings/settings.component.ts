@@ -2,6 +2,7 @@ import { Component, computed, inject, OnDestroy, OnInit, signal } from '@angular
 import { CommonModule } from '@angular/common';
 import { HttpErrorResponse, HttpEventType, HttpResponse } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
+import { ActivatedRoute, Router } from '@angular/router';
 
 import { BackupService } from '../core/services/backup.service';
 import { OpdsService } from '../core/services/opds.service';
@@ -211,6 +212,8 @@ const defaultProgress: BackupProgress = {
   styleUrls: ['./settings.component.css'],
 })
 export class SettingsComponent implements OnInit, OnDestroy {
+  private readonly route = inject(ActivatedRoute, { optional: true });
+  private readonly router = inject(Router, { optional: true });
   private backupService = inject(BackupService);
   private opdsService = inject(OpdsService);
   private toast = inject(ToastService);
@@ -228,6 +231,8 @@ export class SettingsComponent implements OnInit, OnDestroy {
 
   /** Which settings surface is visible. This is local UI state, not a route. */
   readonly activeSettingsSection = signal<SettingsSection>('library');
+  /** The dedicated whole-library surface reuses these existing settings cards. */
+  readonly isManageLibraryPage = this.route?.snapshot.data['manageLibraryPage'] === true;
 
   /** Server-authoritative deployment capabilities. Null means not loaded yet. */
   readonly deploymentCapabilities = signal<DeploymentCapabilities | null>(null);
@@ -265,6 +270,31 @@ export class SettingsComponent implements OnInit, OnDestroy {
   readonly supportsSafeActivation = computed(
     () => this.deploymentCapabilities()?.supportsSafeActivation === true,
   );
+  readonly hasManageLibraryActions = computed(
+    () =>
+      this.supportsLocalBackupConfiguration() ||
+      this.supportsLibraryMigration() ||
+      this.supportsCloudPortableExport(),
+  );
+  readonly manageLibrarySummary = computed(() => {
+    const hasBackups = this.supportsLocalBackupConfiguration();
+    const hasMigration = this.supportsLibraryMigration();
+
+    if (hasBackups && hasMigration) {
+      return 'Back up this installation or move your library to another Nostos.';
+    }
+    if (hasBackups) {
+      return 'Backups help you recover this SelfHosted installation.';
+    }
+    if (hasMigration) {
+      return 'Move your library to another Nostos installation.';
+    }
+    if (this.supportsCloudPortableExport()) {
+      return 'Download a portable archive of your Nostos library.';
+    }
+
+    return 'Manage the data for your Nostos library.';
+  });
   readonly cloudSession = signal<CloudSession | null>(null);
   readonly managedEreaderAccess = computed(
     () =>
@@ -288,6 +318,14 @@ export class SettingsComponent implements OnInit, OnDestroy {
   );
   /** Highlight import exists on every deployment, so the section always has content. */
   readonly hasLibrarySettings = computed(() => this.deploymentCapabilities() !== null);
+
+  openManageLibrary(): void {
+    void this.router?.navigate(['/settings/library']);
+  }
+
+  returnToLibrarySettings(): void {
+    void this.router?.navigate(['/settings']);
+  }
 
   /** The AI provider card's copy, exposed so the template reads one source. */
   readonly copy = AI_PROVIDER_COPY;

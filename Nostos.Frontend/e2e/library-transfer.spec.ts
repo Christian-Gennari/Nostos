@@ -132,7 +132,8 @@ function collectErrors(page: Page): ErrorCollectors {
  * reader's first open of a book legitimately 404s the cached-locations route
  * before the locations POST repopulates it, and the activation protocol uses
  * a handled 409 (confirmation required / destination conflict) as its
- * re-review signal, which the browser logs as a failed fetch.
+ * re-review signal, which the browser logs as a failed fetch. The transfer
+ * host also treats an `active-import` 404 as the normal no-active-import state.
  */
 /**
  * Page errors that are deliberate-navigation noise: WebKit reports an
@@ -167,6 +168,7 @@ function unexpectedConsoleErrors(errors: string[]): string[] {
       // that actually failed to load still fails the run.
       !/error loading dynamically imported module/i.test(line) &&
       !/\/api\/books\/[0-9a-f-]+\/locations\b/i.test(line) &&
+      !/status of 404 .*\/api\/portability\/migration\/active-import\b/i.test(line) &&
       // Only the handled 409 re-review is expected; any other activation
       // failure status stays visible to the suite.
       !/status of 409 .*\/api\/portability\/migration\/jobs\/[0-9a-f-]+\/activate\b/i.test(line),
@@ -175,6 +177,10 @@ function unexpectedConsoleErrors(errors: string[]): string[] {
 
 async function openSettings(page: Page, baseUrl: string): Promise<void> {
   await page.goto(`${baseUrl}/settings`);
+  await expect(page.getByTestId('manage-library-open')).toBeVisible();
+  await page.getByTestId('manage-library-open').click();
+  await expect(page).toHaveURL(`${baseUrl}/settings/library`);
+  await expect(page.getByTestId('manage-library-page')).toBeVisible();
   await expect(page.getByTestId('library-transfer-card')).toBeVisible();
   // Let the route's lazily-imported chunks finish before a scenario triggers
   // the activation reload; otherwise Firefox can abort a pending import and
@@ -1085,6 +1091,10 @@ test('scenario e5: a second tab is blocked by the lease with no double upload', 
     });
     try {
       await second.goto(`${destination.baseUrl}/settings`);
+      await expect(second.getByTestId('manage-library-open')).toBeVisible();
+      await second.getByTestId('manage-library-open').click();
+      await expect(second).toHaveURL(`${destination.baseUrl}/settings/library`);
+      await expect(second.getByTestId('manage-library-page')).toBeVisible();
       await expect(second.getByTestId('library-transfer-card')).toBeVisible();
       await expect(second.getByTestId('transfer-other-tab')).toBeVisible({ timeout: 30_000 });
       await expect(second.getByTestId('transfer-other-tab')).toContainText(
