@@ -50,6 +50,7 @@ export class CloudEntryService {
   readonly actionPending = signal(false);
   readonly actionError = signal<string | null>(null);
   readonly checkoutRedirect = signal<string | null>(null);
+  readonly firstRunImportPending = signal(false);
   readonly productReady = computed(() => this.view().kind === 'product');
   readonly selectedOffer = computed(() => this.view().onboarding?.selectedOffer ?? null);
 
@@ -83,6 +84,7 @@ export class CloudEntryService {
     this.actionError.set(null);
     this.checkoutRedirect.set(null);
     this.requestedOffer.set(null);
+    this.firstRunImportPending.set(false);
     this.view.set({ kind: 'loading' });
 
     try {
@@ -205,6 +207,15 @@ export class CloudEntryService {
     this.completeFirstRun();
   }
 
+  /** Enters the product shell so first-run import can use Manage library. */
+  openManageLibraryFromFirstRun(): void {
+    const current = this.view();
+    if (current.kind !== 'first_run') return;
+
+    this.actionError.set(null);
+    this.view.set({ kind: 'product', onboarding: current.onboarding });
+  }
+
   /**
    * Completion handoff for the shared import flow: the server job (or the
    * activation slice) reported a finished import, so the first-run marker can
@@ -260,7 +271,9 @@ export class CloudEntryService {
    * choice on a guess.
    */
   private async resolveReadyKind(): Promise<'first_run' | 'product'> {
-    if (!this.hasFirstRunPending()) return 'product';
+    const firstRunPending = this.hasFirstRunPending();
+    this.firstRunImportPending.set(firstRunPending);
+    if (!firstRunPending) return 'product';
 
     try {
       const counts = await firstValueFrom(this.books.getStatusCounts());
@@ -426,6 +439,7 @@ export class CloudEntryService {
 
     try {
       localStorage.setItem(key, 'pending');
+      this.firstRunImportPending.set(true);
     } catch {
       // Optional UX persistence only. Access/provisioning never depends on it.
     }
@@ -449,6 +463,7 @@ export class CloudEntryService {
   }
 
   private clearFirstRunMarker(): void {
+    this.firstRunImportPending.set(false);
     const key = this.markerKey();
     if (!key) return;
 

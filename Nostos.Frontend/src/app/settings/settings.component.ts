@@ -1,8 +1,20 @@
-import { Component, computed, inject, OnDestroy, OnInit, signal } from '@angular/core';
+import {
+  Component,
+  computed,
+  ElementRef,
+  effect,
+  inject,
+  OnDestroy,
+  OnInit,
+  signal,
+  ViewChild,
+} from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { HttpErrorResponse, HttpEventType, HttpResponse } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, convertToParamMap, Router } from '@angular/router';
+import { of } from 'rxjs';
 
 import { BackupService } from '../core/services/backup.service';
 import { OpdsService } from '../core/services/opds.service';
@@ -37,6 +49,7 @@ import { DeploymentCapabilitiesService } from '../core/services/deployment-capab
 import { DeploymentCapabilities } from '../core/dtos/deployment-capabilities.dtos';
 import { CloudAiRefillService } from '../core/services/cloud-ai-refill.service';
 import { CloudAuthService } from '../core/services/cloud-auth.service';
+import { CloudEntryService } from '../core/services/cloud-entry.service';
 import { CloudSession } from '../core/dtos/cloud-auth.dtos';
 import { HighlightImportService } from '../core/services/highlight-import.service';
 import { PortableLibraryService } from '../core/services/portable-library.service';
@@ -214,6 +227,10 @@ const defaultProgress: BackupProgress = {
 export class SettingsComponent implements OnInit, OnDestroy {
   private readonly route = inject(ActivatedRoute, { optional: true });
   private readonly router = inject(Router, { optional: true });
+  private readonly queryParamMap = toSignal(
+    this.route?.queryParamMap ?? of(this.route?.snapshot.queryParamMap ?? convertToParamMap({})),
+    { initialValue: this.route?.snapshot.queryParamMap ?? convertToParamMap({}) },
+  );
   private backupService = inject(BackupService);
   private opdsService = inject(OpdsService);
   private toast = inject(ToastService);
@@ -227,12 +244,35 @@ export class SettingsComponent implements OnInit, OnDestroy {
   private cloudAiRefills = inject(CloudAiRefillService);
   private portableLibrary = inject(PortableLibraryService);
   private cloudAuth = inject(CloudAuthService);
+  readonly cloudEntry = inject(CloudEntryService);
   private highlightImport = inject(HighlightImportService);
+
+  @ViewChild('firstRunImportInput')
+  private firstRunImportInput?: ElementRef<HTMLInputElement>;
+
+  private readonly firstRunCloudImportElement = signal<ElementRef<HTMLElement> | null>(null);
+
+  @ViewChild('firstRunCloudImport')
+  set firstRunCloudImportSection(section: ElementRef<HTMLElement> | undefined) {
+    this.firstRunCloudImportElement.set(section ?? null);
+  }
 
   /** Which settings surface is visible. This is local UI state, not a route. */
   readonly activeSettingsSection = signal<SettingsSection>('library');
   /** The dedicated whole-library surface reuses these existing settings cards. */
   readonly isManageLibraryPage = this.route?.snapshot.data['manageLibraryPage'] === true;
+  readonly isImportSelected = computed(() => this.queryParamMap().get('action') === 'import');
+  readonly isFirstRunImport = computed(() => this.queryParamMap().get('source') === 'first-run');
+
+  constructor() {
+    effect(() => {
+      const section = this.firstRunCloudImportElement();
+      if (!section || !this.isImportSelected() || !this.isFirstRunImport()) return;
+
+      section.nativeElement.scrollIntoView?.({ block: 'center' });
+      section.nativeElement.focus({ preventScroll: true });
+    });
+  }
 
   /** Server-authoritative deployment capabilities. Null means not loaded yet. */
   readonly deploymentCapabilities = signal<DeploymentCapabilities | null>(null);
@@ -254,6 +294,13 @@ export class SettingsComponent implements OnInit, OnDestroy {
     this.isCloud() ? (this.deploymentCapabilities()?.accountManagementUrl ?? null) : null,
   );
   readonly supportsCloudPortableExport = computed(() => this.isCloud());
+  readonly showFirstRunCloudImport = computed(
+    () =>
+      this.isManageLibraryPage &&
+      (this.isFirstRunImport() || this.cloudEntry.firstRunImportPending()) &&
+      this.supportsCloudPortableExport() &&
+      !this.supportsLibraryMigration(),
+  );
   /**
    * Server-authoritative migration capability (#680 plan §4). Only a true
    * value renders the shared "Move your library" card; false or absent keeps
@@ -321,6 +368,19 @@ export class SettingsComponent implements OnInit, OnDestroy {
 
   openManageLibrary(): void {
     void this.router?.navigate(['/settings/library']);
+  }
+
+  openFirstRunImportPicker(): void {
+    this.firstRunImportInput?.nativeElement.click();
+  }
+
+  async importFirstRunArchive(event: Event): Promise<void> {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    await this.cloudEntry.importPortableArchive(file);
+    input.value = '';
   }
 
   returnToLibrarySettings(): void {
@@ -1182,6 +1242,9 @@ export class SettingsComponent implements OnInit, OnDestroy {
    * data on screen.
    */
   onLibraryTransferCompleted(): void {
+    if (this.isFirstRunImport() || this.cloudEntry.firstRunImportPending()) {
+      this.cloudEntry.finishFirstRunAfterImport();
+    }
     if (this.supportsLocalBackupConfiguration()) this.loadData();
   }
 

@@ -8,7 +8,19 @@
  * `supportsSafeActivation` (B8 self-review (d)).
  */
 
-import { ChangeDetectionStrategy, Component, effect, inject, input, output } from '@angular/core';
+import {
+  AfterViewInit,
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  effect,
+  inject,
+  input,
+  OnChanges,
+  output,
+  SimpleChanges,
+  ViewChild,
+} from '@angular/core';
 
 import { LibraryActivationController } from '../services/library-activation-controller.service';
 import { LibraryTransferCoordinator } from '../services/library-transfer-coordinator.service';
@@ -23,12 +35,17 @@ import { LibraryImportFlowComponent } from './library-import-flow.component';
   templateUrl: './library-transfer-host.component.html',
   styleUrls: ['./library-transfer-host.component.css'],
 })
-export class LibraryTransferHostComponent {
+export class LibraryTransferHostComponent implements AfterViewInit, OnChanges {
   /** Forwarded once when the durable job reports completion. */
   readonly importCompleted = output<void>();
 
   /** Host capability; false keeps the flow's gated explanation and no API call. */
   readonly supportsSafeActivation = input(false);
+  /** Selects the import section after a Manage library import navigation. */
+  readonly focusImport = input(false);
+
+  @ViewChild('importEntry')
+  private importEntry?: ElementRef<HTMLElement>;
 
   readonly activation = inject(LibraryActivationController);
   private readonly coordinator = inject(LibraryTransferCoordinator);
@@ -58,6 +75,24 @@ export class LibraryTransferHostComponent {
     effect(() => {
       if (this.coordinator.state().kind === 'inspecting') this.activation.reset();
     });
+  }
+
+  ngAfterViewInit(): void {
+    this.focusSelectedImport();
+  }
+
+  ngOnChanges(changes: SimpleChanges): void {
+    if (changes['focusImport'] && !changes['focusImport'].firstChange) {
+      this.focusSelectedImport();
+    }
+  }
+
+  private focusSelectedImport(): void {
+    if (!this.focusImport()) return;
+
+    const importEntry = this.importEntry?.nativeElement;
+    importEntry?.scrollIntoView?.({ block: 'center' });
+    importEntry?.focus({ preventScroll: true });
   }
 
   onActivationRequested(jobId: string): void {

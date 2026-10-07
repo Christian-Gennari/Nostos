@@ -1,8 +1,8 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { signal } from '@angular/core';
-import { ActivatedRoute, Router } from '@angular/router';
-import { Observable, Subject, of, throwError } from 'rxjs';
+import { ActivatedRoute, convertToParamMap, Router } from '@angular/router';
+import { BehaviorSubject, Observable, Subject, of, throwError } from 'rxjs';
 import {
   HttpErrorResponse,
   HttpEvent,
@@ -31,6 +31,7 @@ import { DeploymentCapabilities } from '../core/dtos/deployment-capabilities.dto
 import { CloudAiRefillService } from '../core/services/cloud-ai-refill.service';
 import { CloudAuthService } from '../core/services/cloud-auth.service';
 import { PortableLibraryService } from '../core/services/portable-library.service';
+import { CloudEntryService } from '../core/services/cloud-entry.service';
 import { LibraryImportFlowComponent } from '../library-transfer/components/library-import-flow.component';
 import {
   LIBRARY_TRANSFER_TRANSPORT,
@@ -136,6 +137,14 @@ const cloudAuthServiceMock = {
     }),
   ),
   logout: vi.fn(),
+};
+
+const cloudEntryServiceMock = {
+  actionPending: signal(false),
+  actionError: signal<string | null>(null),
+  firstRunImportPending: signal(false),
+  importPortableArchive: vi.fn(async () => {}),
+  finishFirstRunAfterImport: vi.fn(),
 };
 
 const cloudAiRefillServiceMock = {
@@ -336,7 +345,17 @@ const assistantSettingsMock = {
 
 describe('SettingsComponent backup-only surface', () => {
   let fixture: ComponentFixture<SettingsComponent>;
-  const routeStub = { snapshot: { data: { manageLibraryPage: false } } };
+  const routeQuery = new Map<string, string>();
+  const routeParamMap = new BehaviorSubject(convertToParamMap({}));
+  const routeStub = {
+    queryParamMap: routeParamMap.asObservable(),
+    snapshot: {
+      data: { manageLibraryPage: false },
+      get queryParamMap() {
+        return routeParamMap.value;
+      },
+    },
+  };
 
   async function configure(): Promise<void> {
     await TestBed.configureTestingModule({
@@ -354,6 +373,7 @@ describe('SettingsComponent backup-only surface', () => {
         { provide: DeploymentCapabilitiesService, useValue: capabilitiesServiceMock },
         { provide: CloudAiRefillService, useValue: cloudAiRefillServiceMock },
         { provide: CloudAuthService, useValue: cloudAuthServiceMock },
+        { provide: CloudEntryService, useValue: cloudEntryServiceMock },
         { provide: PortableLibraryService, useValue: portableLibraryServiceMock },
       ],
     }).compileComponents();
@@ -362,18 +382,35 @@ describe('SettingsComponent backup-only surface', () => {
     fixture.detectChanges();
   }
 
-  function openManageLibraryPage(): void {
+  function openManageLibraryPage(
+    requestedCapabilities?: DeploymentCapabilities,
+    queryParams: Record<string, string> = {},
+  ): void {
     const capabilities = fixture.componentInstance.deploymentCapabilities();
-    if (capabilities) capabilitiesServiceMock.get.mockReturnValue(of(capabilities));
+    if (requestedCapabilities) {
+      capabilitiesServiceMock.get.mockReturnValue(of(requestedCapabilities));
+    } else if (capabilities) {
+      capabilitiesServiceMock.get.mockReturnValue(of(capabilities));
+    }
     fixture.destroy();
     routeStub.snapshot.data.manageLibraryPage = true;
+    routeQuery.clear();
+    for (const [key, value] of Object.entries(queryParams)) routeQuery.set(key, value);
+    routeParamMap.next(convertToParamMap(Object.fromEntries(routeQuery)));
     fixture = TestBed.createComponent(SettingsComponent);
     fixture.detectChanges();
   }
 
   beforeEach(async () => {
     routeStub.snapshot.data.manageLibraryPage = false;
+    routeQuery.clear();
+    routeParamMap.next(convertToParamMap({}));
     localStorage.clear();
+    cloudEntryServiceMock.actionPending.set(false);
+    cloudEntryServiceMock.actionError.set(null);
+    cloudEntryServiceMock.firstRunImportPending.set(false);
+    cloudEntryServiceMock.importPortableArchive.mockClear();
+    cloudEntryServiceMock.finishFirstRunAfterImport.mockClear();
     capabilitiesServiceMock.get.mockClear();
     capabilitiesServiceMock.get.mockReturnValue(of(selfHostedCapabilities));
     portableLibraryServiceMock.exportArchive.mockClear();
@@ -991,6 +1028,46 @@ describe('SettingsComponent backup-only surface', () => {
       .click();
 
     expect(routerMock.navigate).toHaveBeenCalledWith(['/settings/library']);
+  });
+
+  it('shows the legacy Cloud import on the selected first-run Manage library route', async () => {
+    openManageLibraryPage(cloudCapabilities, {
+      action: 'import',
+      source: 'first-run',
+    });
+
+    const importSection = fixture.nativeElement.querySelector(
+      '[data-testid="first-run-cloud-import"]',
+    ) as HTMLElement;
+    expect(importSection).toBeTruthy();
+    expect(importSection).toBe(document.activeElement);
+    expect(importSection.classList.contains('is-selected')).toBe(true);
+    expect(importSection.querySelector('input[type="file"]')?.getAttribute('accept')).toContain(
+      '.nostos',
+    );
+
+    const archive = new File(['archive'], 'library.nostos');
+    await fixture.componentInstance.importFirstRunArchive({
+      target: { files: [archive], value: 'selected' },
+    } as unknown as Event);
+
+    expect(cloudEntryServiceMock.importPortableArchive).toHaveBeenCalledWith(archive);
+  });
+
+  it('focuses a pending first-run import when the route query changes in place', async () => {
+    cloudEntryServiceMock.firstRunImportPending.set(true);
+    openManageLibraryPage(cloudCapabilities);
+
+    const importSection = fixture.nativeElement.querySelector(
+      '[data-testid="first-run-cloud-import"]',
+    ) as HTMLElement;
+    expect(importSection).toBeTruthy();
+    expect(document.activeElement).not.toBe(importSection);
+
+    routeParamMap.next(convertToParamMap({ action: 'import', source: 'first-run' }));
+    fixture.detectChanges();
+
+    await vi.waitFor(() => expect(document.activeElement).toBe(importSection));
   });
 
   it('renders the existing Backup and Backup History cards on Manage library', () => {
@@ -1904,6 +1981,7 @@ describe('SettingsComponent backup-only surface', () => {
 
 describe('SettingsComponent shared library transfer host', () => {
   const CHUNK = 4 * 1024 * 1024;
+  const routeParamMap = new BehaviorSubject(convertToParamMap({}));
   let fixture: ComponentFixture<SettingsComponent>;
   let mock: MockLibraryTransferTransport;
 
@@ -1914,6 +1992,7 @@ describe('SettingsComponent shared library transfer host', () => {
   ): Promise<void> {
     TestBed.resetTestingModule();
     localStorage.clear();
+    routeParamMap.next(convertToParamMap({}));
     capabilitiesServiceMock.get.mockClear();
     capabilitiesServiceMock.get.mockReturnValue(of(capabilities));
     portableLibraryServiceMock.exportArchive.mockClear();
@@ -1928,7 +2007,10 @@ describe('SettingsComponent shared library transfer host', () => {
       providers: [
         {
           provide: ActivatedRoute,
-          useValue: { snapshot: { data: { manageLibraryPage: true } } },
+          useValue: {
+            queryParamMap: routeParamMap.asObservable(),
+            snapshot: { data: { manageLibraryPage: true }, queryParamMap: routeParamMap.value },
+          },
         },
         { provide: BackupService, useValue: backupServiceMock },
         { provide: OpdsService, useValue: opdsServiceMock },
@@ -1940,6 +2022,7 @@ describe('SettingsComponent shared library transfer host', () => {
         { provide: DeploymentCapabilitiesService, useValue: capabilitiesServiceMock },
         { provide: CloudAiRefillService, useValue: cloudAiRefillServiceMock },
         { provide: CloudAuthService, useValue: cloudAuthServiceMock },
+        { provide: CloudEntryService, useValue: cloudEntryServiceMock },
         { provide: PortableLibraryService, useValue: portableLibraryServiceMock },
         { provide: LIBRARY_TRANSFER_TRANSPORT, useValue: transport },
         { provide: HASH_WORKER_FACTORY, useValue: () => null },
@@ -1993,6 +2076,11 @@ describe('SettingsComponent shared library transfer host', () => {
   it('renders the card only when migration is advertised, in both modes', async () => {
     // Capability off (every real deployment today): exactly main's surface.
     await configure(selfHostedCapabilities);
+    const groupTitles = () =>
+      Array.from(fixture.nativeElement.querySelectorAll('.manage-library-group-title')).map(
+        (heading: any) => heading.textContent.trim(),
+      );
+    expect(groupTitles()).toEqual(['Protect this installation']);
     expect(testId('library-transfer-card')).toBeNull();
     expect(testId('library-transfer-host')).toBeNull();
     expect(testId('cloud-portable-export-card')).toBeNull();
@@ -2003,6 +2091,7 @@ describe('SettingsComponent shared library transfer host', () => {
     expect(mock.calls.uploadChunk).toBe(0);
 
     await configure(cloudCapabilities);
+    expect(groupTitles()).toEqual(['Move to another Nostos']);
     expect(testId('library-transfer-card')).toBeNull();
     expect(testId('library-transfer-host')).toBeNull();
     expect(testId('cloud-portable-export-card')).toBeTruthy();
@@ -2014,6 +2103,10 @@ describe('SettingsComponent shared library transfer host', () => {
       supportsLibraryMigration: true,
       supportsSafeActivation: true,
     });
+    expect(groupTitles()).toEqual([
+      'Protect this installation',
+      'Move to another Nostos',
+    ]);
 
     const card = testId('library-transfer-card') as HTMLElement;
     expect(card).toBeTruthy();
@@ -2045,10 +2138,26 @@ describe('SettingsComponent shared library transfer host', () => {
     expect(importFlow().supportsSafeActivation()).toBe(true);
 
     await configure({ ...cloudCapabilities, supportsLibraryMigration: true });
+    expect(groupTitles()).toEqual(['Move to another Nostos']);
     expect(testId('library-transfer-host')).toBeTruthy();
     expect(testId('library-export-flow')).toBeTruthy();
     expect(testId('library-import-flow')).toBeTruthy();
     expect(testId('cloud-portable-export-card')).toBeNull();
+  });
+
+  it('selects the import group when the persistent transfer indicator reopens this page', async () => {
+    await configure({ ...cloudCapabilities, supportsLibraryMigration: true, supportsSafeActivation: true });
+
+    const importEntry = testId('library-transfer-import-entry') as HTMLElement;
+    expect(importEntry.classList.contains('transfer-host__entry--selected')).toBe(false);
+
+    routeParamMap.next(convertToParamMap({ action: 'import' }));
+    fixture.detectChanges();
+
+    await vi.waitFor(() => {
+      expect(importEntry.classList.contains('transfer-host__entry--selected')).toBe(true);
+      expect(document.activeElement).toBe(importEntry);
+    });
   });
 
   it('separates portable library transfer from the local operational Backup when migration is on', async () => {

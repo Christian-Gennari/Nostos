@@ -1,0 +1,48 @@
+:host {
+  position: fixed;
+  inset-block-start: calc(env(safe-area-inset-top, 0px) + 12px);
+  inset-inline-end: 16px;
+  z-index: var(--layer-navigation);
+  pointer-events: none;
+}
+
+.library-transfer-indicator {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100vw - 24px);
+  padding: 8px 10px;
+  border: 1px solid var(--dock-border);
+  border-radius: 999px;
+  background: var(--dock-surface);
+  box-shadow: var(--dock-shadow);
+  color: var(--color-text-main);
+  pointer-events: auto;
+}
+
+.library-transfer-indicator__icon {
+  display: inline-flex;
+  color: var(--color-primary);
+  flex: 0 0 auto;
+}
+
+.library-transfer-indicator__message {
+  overflow: hidden;
+  color: var(--color-text-main);
+  font-size: var(--text-xs);
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 600px) {
+  :host {
+    inset-inline: 12px;
+  }
+
+  .library-transfer-indicator {
+    width: 100%;
+    justify-content: space-between;
+    border-radius: 12px;
+  }
+}

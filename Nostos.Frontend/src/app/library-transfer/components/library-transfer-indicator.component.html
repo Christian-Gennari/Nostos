@@ -1,0 +1,18 @@
+@if (visible()) {
+  <aside class="library-transfer-indicator" role="status" data-testid="library-transfer-indicator">
+    <span class="library-transfer-indicator__icon" aria-hidden="true">
+      <nostos-icon name="arrows-clockwise" [size]="16" />
+    </span>
+    <span class="library-transfer-indicator__message">{{ message() }}</span>
+    <button
+      appButton
+      variant="secondary"
+      size="sm"
+      type="button"
+      data-testid="library-transfer-return"
+      (click)="openManageLibrary()"
+    >
+      Open Manage library
+    </button>
+  </aside>
+}
