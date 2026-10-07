@@ -705,7 +705,7 @@
                           [checked]="provider.enabled"
                           [disabled]="providerSavingIds().has(provider.id)"
                           (change)="setProviderEnabled(provider, $event)"
-                          [attr.aria-label]="'Enable ' + provider.displayName"
+                          [attr.aria-label]="(provider.enabled ? 'Disable ' : 'Enable ') + provider.displayName"
                           [attr.data-testid]="'provider-toggle-' + provider.id"
                         >
                       </label>

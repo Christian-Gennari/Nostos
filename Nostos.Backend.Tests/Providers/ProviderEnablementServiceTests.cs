@@ -1,5 +1,8 @@
+using System.Data.Common;
 using FluentAssertions;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Nostos.Backend.Data;
 using Nostos.Backend.Data.Models;
 using Nostos.Backend.Providers;
@@ -154,6 +157,33 @@ public sealed class ProviderEnablementServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task A_lost_first_time_insert_race_re_reads_and_applies_the_requested_value()
+    {
+        var provider = new StubProvider("known", enabledByDefault: false);
+        var path = _fixture.CreateDatabasePath();
+        using (var db = _fixture.CreateContext(path))
+        {
+            // Schema only. The racing writer commits its row only after the
+            // service has already read "no row" and is about to insert.
+        }
+
+        var interceptor =
+            new ConcurrentInsertInterceptor(path, providerId: "known", concurrentEnabled: true);
+        var service = new ProviderEnablementService(
+            new ProviderRegistry([provider]),
+            new RacingContextFactory(path, interceptor));
+
+        var entry = await service.SetAsync("known", enabled: false);
+
+        interceptor.Fired.Should().BeTrue("the concurrent write must have been staged");
+        entry!.Enabled.Should().BeFalse();
+        using var verify = _fixture.CreateContext(path);
+        var row = await verify.ProviderPreferences.SingleAsync();
+        row.ProviderId.Should().Be("known");
+        row.Enabled.Should().BeFalse("the losing request must re-read and apply its value");
+    }
+
+    [Fact]
     public async Task A_choice_survives_a_new_context_and_a_new_service()
     {
         var path = _fixture.CreateDatabasePath();
@@ -181,6 +211,66 @@ public sealed class ProviderEnablementServiceTests : IDisposable
             new(new DbContextOptionsBuilder<NostosDbContext>()
                 .UseSqlite($"Data Source={path}")
                 .Options);
+    }
+
+    /// <summary>
+    /// Builds contexts normally except for the first one, which carries the
+    /// interceptor that stages the concurrent insert. A retry therefore gets a
+    /// clean context, exactly as it would in production.
+    /// </summary>
+    private sealed class RacingContextFactory(
+        string path,
+        DbCommandInterceptor firstInsertInterceptor) : IDbContextFactory<NostosDbContext>
+    {
+        private int _first = 1;
+
+        public NostosDbContext CreateDbContext()
+        {
+            var builder = new DbContextOptionsBuilder<NostosDbContext>()
+                .UseSqlite($"Data Source={path}");
+            if (Interlocked.Exchange(ref _first, 0) == 1)
+                builder.AddInterceptors(firstInsertInterceptor);
+
+            return new NostosDbContext(builder.Options);
+        }
+    }
+
+    // Simulates the other session winning the first-time write: another
+    // connection commits its own row just before this context's INSERT runs,
+    // so the insert fails the ProviderId primary-key constraint. EF executes
+    // the INSERT through the reader pipeline, hence the reader hook.
+    private sealed class ConcurrentInsertInterceptor(
+        string databasePath,
+        string providerId,
+        bool concurrentEnabled) : DbCommandInterceptor
+    {
+        public bool Fired { get; private set; }
+
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<DbDataReader> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (!Fired && command.CommandText.Contains(
+                    "INSERT INTO \"ProviderPreferences\"",
+                    StringComparison.Ordinal))
+            {
+                Fired = true;
+                using var connection = new SqliteConnection($"Data Source={databasePath}");
+                connection.Open();
+                using var insert = connection.CreateCommand();
+                insert.CommandText =
+                    "INSERT INTO \"ProviderPreferences\" " +
+                    "(\"ProviderId\", \"Enabled\", \"UpdatedAtUtc\") VALUES (@id, @enabled, @now)";
+                insert.Parameters.AddWithValue("@id", providerId);
+                insert.Parameters.AddWithValue("@enabled", concurrentEnabled);
+                insert.Parameters.AddWithValue("@now", DateTime.UtcNow);
+                insert.ExecuteNonQuery();
+            }
+
+            return new ValueTask<InterceptionResult<DbDataReader>>(result);
+        }
     }
 
     private sealed class StubProvider(string id, bool enabledByDefault) : IContentProvider

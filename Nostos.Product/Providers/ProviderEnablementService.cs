@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Nostos.Backend.Data;
 using Nostos.Backend.Data.Models;
+using Nostos.Backend.Services.Portability.Migration;
 
 namespace Nostos.Backend.Providers;
 
@@ -117,24 +118,54 @@ public sealed class ProviderEnablementService(
         if (registration is null)
             return null;
 
-        await using var db = await dbFactory.CreateDbContextAsync(ct);
-        var row = await db.ProviderPreferences
-            .FirstOrDefaultAsync(p => p.ProviderId == registration.Id, ct);
-
-        if (row is null)
-        {
-            row = new ProviderPreferenceModel { ProviderId = registration.Id };
-            db.ProviderPreferences.Add(row);
-        }
-
-        row.Enabled = enabled;
-        row.UpdatedAtUtc = DateTime.UtcNow;
-        await db.SaveChangesAsync(ct);
+        await StoreAsync(registration.Id, enabled, ct);
 
         return new ProviderEnablementEntry(
             registration,
             enabled,
             registration.Provider.EnabledByDefault);
+    }
+
+    /// <summary>
+    /// Upserts the choice. Two concurrent first-time writes both see no row and
+    /// both insert; the ProviderId primary key makes one lose. The loser
+    /// re-reads the winner's committed row on a fresh context and applies the
+    /// requested value, so both callers get an idempotent success rather than a
+    /// unique-constraint 500.
+    /// </summary>
+    private async Task StoreAsync(string providerId, bool enabled, CancellationToken ct)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        var row = await db.ProviderPreferences
+            .FirstOrDefaultAsync(p => p.ProviderId == providerId, ct);
+        var inserted = row is null;
+
+        if (row is null)
+        {
+            row = new ProviderPreferenceModel { ProviderId = providerId };
+            db.ProviderPreferences.Add(row);
+        }
+
+        row.Enabled = enabled;
+        row.UpdatedAtUtc = DateTime.UtcNow;
+
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException exception) when (
+            inserted && EfMigrationJobStore.IsUniqueConstraintViolation(exception))
+        {
+            await using var retry = await dbFactory.CreateDbContextAsync(ct);
+            var existing = await retry.ProviderPreferences
+                .FirstOrDefaultAsync(p => p.ProviderId == providerId, ct);
+            if (existing is null)
+                throw;
+
+            existing.Enabled = enabled;
+            existing.UpdatedAtUtc = DateTime.UtcNow;
+            await retry.SaveChangesAsync(ct);
+        }
     }
 
     private async Task<Dictionary<string, bool>> LoadAsync(CancellationToken ct)
