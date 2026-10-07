@@ -32,9 +32,70 @@ public sealed class StoredAssetHttpResult : IResult
         string? cacheControl,
         CancellationToken ct)
     {
-        var info = await getInfo(ct);
-        if (info is null)
+        return await CreateCoreAsync(
+            http,
+            async token =>
+            {
+                var info = await getInfo(token);
+                return info is null ? null : new InfoOnlyResolution(info);
+            },
+            (_, range, token) => open(range, token),
+            attachment,
+            enableRanges,
+            cacheControl,
+            ct);
+    }
+
+    /// <summary>
+    /// Creates a book-file response through the provider-neutral storage
+    /// contract, using an optional resolved-read capability when available.
+    /// </summary>
+    public static Task<IResult> CreateBookFileAsync(
+        HttpContext http,
+        IBookAssetStorage storage,
+        Guid bookId,
+        bool attachment,
+        bool enableRanges,
+        string? cacheControl,
+        CancellationToken ct)
+    {
+        if (storage is IResolvedBookAssetStorage resolvedStorage)
+        {
+            return CreateCoreAsync(
+                http,
+                token => resolvedStorage.ResolveBookFileAsync(bookId, token),
+                (resolved, range, token) =>
+                    resolvedStorage.OpenBookFileAsync(bookId, resolved, range, token),
+                attachment,
+                enableRanges,
+                cacheControl,
+                ct);
+        }
+
+        return CreateAsync(
+            http,
+            token => storage.GetBookFileInfoAsync(bookId, token),
+            (range, token) => storage.OpenBookFileAsync(bookId, range, token),
+            attachment,
+            enableRanges,
+            cacheControl,
+            ct);
+    }
+
+    private static async Task<IResult> CreateCoreAsync(
+        HttpContext http,
+        Func<CancellationToken, Task<ResolvedStoredAsset?>> resolve,
+        Func<ResolvedStoredAsset, StorageByteRange?, CancellationToken, Task<StoredAssetRead?>> open,
+        bool attachment,
+        bool enableRanges,
+        string? cacheControl,
+        CancellationToken ct)
+    {
+        var resolved = await resolve(ct);
+        if (resolved is null)
             return Results.NotFound();
+
+        var info = resolved.Info;
 
         if (MatchesIfNoneMatch(http, info.EntityTag))
         {
@@ -57,11 +118,14 @@ public sealed class StoredAssetHttpResult : IResult
             range = parsed.Range;
         }
 
-        var read = await open(range, ct);
+        var read = await open(resolved, range, ct);
         return read is null
             ? Results.NotFound()
             : new StoredAssetHttpResult(read, attachment, cacheControl);
     }
+
+    private sealed record InfoOnlyResolution(StoredAssetInfo Info)
+        : ResolvedStoredAsset(Info);
 
     public async Task ExecuteAsync(HttpContext httpContext)
     {

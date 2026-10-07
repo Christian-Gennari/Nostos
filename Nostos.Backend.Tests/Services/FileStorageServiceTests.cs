@@ -136,6 +136,22 @@ public sealed class FileStorageServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ReplacingBookFileChangesEntityTag()
+    {
+        var bookId = Guid.NewGuid();
+
+        await _sut.SaveBookFileAsync(bookId, new MemoryStream([1, 2, 3]), "reader.pdf");
+        var original = await _sut.GetBookFileInfoAsync(bookId);
+
+        await _sut.SaveBookFileAsync(bookId, new MemoryStream([4, 5, 6, 7, 8]), "reader.pdf");
+        var replacement = await _sut.GetBookFileInfoAsync(bookId);
+
+        original.Should().NotBeNull();
+        replacement.Should().NotBeNull();
+        replacement!.EntityTag.Should().NotBe(original!.EntityTag);
+    }
+
+    [Fact]
     public async Task GetBookFileName_ReturnsSavedPath()
     {
         var bookId = Guid.NewGuid();
