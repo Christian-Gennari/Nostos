@@ -67,7 +67,8 @@ internal sealed class ActivationDrillFixture : IAsyncDisposable
         var fixture = new ActivationDrillFixture(
             template, populated, root, databaseRoot, booksRoot, transferRoot, backupRoot);
         File.Copy(template.TemplateDatabase, fixture.DatabasePath, overwrite: true);
-        PortableArchiveTestSupport.CopyDirectory(template.TemplateMedia, booksRoot);
+        if (Directory.Exists(template.TemplateMedia))
+            PortableArchiveTestSupport.CopyDirectory(template.TemplateMedia, booksRoot);
 
         // The drill creates its own import job through the real routes. Remove
         // the fixture's seeded migration bookkeeping so the live host's hosted

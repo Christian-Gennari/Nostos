@@ -493,9 +493,6 @@ internal static class PortableArchiveTestSupport
 
     internal static void CopyDirectory(string source, string target)
     {
-        if (!Directory.Exists(source))
-            return;
-
         Directory.CreateDirectory(target);
         foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
         {
