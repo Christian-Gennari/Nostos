@@ -71,6 +71,32 @@ public interface IBookAssetStorage
         CancellationToken ct = default);
 }
 
+/// <summary>
+/// Optional optimization for providers that need an expensive lookup to find a
+/// book file. HTTP delivery can resolve the file once, then pass that
+/// provider-owned resolution back when opening a range. Providers that do not
+/// implement this capability keep using the original <see cref="IBookAssetStorage"/>
+/// contract.
+/// </summary>
+public interface IResolvedBookAssetStorage
+{
+    Task<ResolvedStoredAsset?> ResolveBookFileAsync(
+        Guid bookId,
+        CancellationToken ct = default);
+
+    Task<StoredAssetRead?> OpenBookFileAsync(
+        ResolvedStoredAsset resolvedAsset,
+        StorageByteRange? range = null,
+        CancellationToken ct = default);
+}
+
+/// <summary>
+/// Opaque provider resolution paired with the metadata required to construct
+/// an HTTP response. Implementations should validate the current tenant before
+/// opening the provider-owned asset.
+/// </summary>
+public abstract record ResolvedStoredAsset(StoredAssetInfo Info);
+
 public sealed record StoredAssetInfo(
     string FileName,
     string ContentType,

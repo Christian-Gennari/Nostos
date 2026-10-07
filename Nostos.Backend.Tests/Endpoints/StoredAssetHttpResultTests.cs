@@ -25,7 +25,7 @@ public sealed class StoredAssetHttpResultTests
                 Open(bytes, range)),
             attachment: false,
             enableRanges: true,
-            cacheControl: null,
+            cacheControl: "private, max-age=300",
             CancellationToken.None);
 
         await result.ExecuteAsync(context);
@@ -33,6 +33,8 @@ public sealed class StoredAssetHttpResultTests
         context.Response.StatusCode.Should().Be(StatusCodes.Status206PartialContent);
         context.Response.Headers.ContentRange.ToString().Should().Be("bytes 2-5/10");
         context.Response.Headers.AcceptRanges.ToString().Should().Be("bytes");
+        context.Response.Headers.ETag.ToString().Should().Be("\"etag-0\"");
+        context.Response.Headers.CacheControl.ToString().Should().Be("private, max-age=300");
         context.Response.ContentLength.Should().Be(4);
         Encoding.ASCII.GetString(((MemoryStream)context.Response.Body).ToArray())
             .Should().Be("2345");
@@ -110,7 +112,7 @@ public sealed class StoredAssetHttpResultTests
             },
             attachment: false,
             enableRanges: false,
-            cacheControl: "public, max-age=60",
+            cacheControl: "private, max-age=300",
             CancellationToken.None);
 
         await result.ExecuteAsync(context);
@@ -118,7 +120,37 @@ public sealed class StoredAssetHttpResultTests
         opened.Should().BeFalse();
         context.Response.StatusCode.Should().Be(StatusCodes.Status304NotModified);
         context.Response.Headers.ETag.ToString().Should().Be("\"etag-1\"");
-        context.Response.Headers.CacheControl.ToString().Should().Be("public, max-age=60");
+        context.Response.Headers.CacheControl.ToString().Should().Be("private, max-age=300");
+    }
+
+    [Fact]
+    public async Task Changed_entity_tag_returns_replacement_bytes_instead_of_304()
+    {
+        var replacement = Encoding.ASCII.GetBytes("replacement bytes");
+        var replacementInfo = Info(replacement.Length) with { EntityTag = "\"etag-new\"" };
+        var context = Context();
+        context.Request.Headers.IfNoneMatch = "\"etag-old\"";
+
+        var result = await StoredAssetHttpResult.CreateAsync(
+            context,
+            _ => Task.FromResult<StoredAssetInfo?>(replacementInfo),
+            (range, _) => Task.FromResult<StoredAssetRead?>(
+                new StoredAssetRead(
+                    replacementInfo,
+                    new MemoryStream(replacement, writable: false),
+                    range)),
+            attachment: false,
+            enableRanges: true,
+            cacheControl: "private, max-age=300",
+            CancellationToken.None);
+
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        context.Response.Headers.ETag.ToString().Should().Be("\"etag-new\"");
+        context.Response.Headers.CacheControl.ToString().Should().Be("private, max-age=300");
+        Encoding.ASCII.GetString(((MemoryStream)context.Response.Body).ToArray())
+            .Should().Be("replacement bytes");
     }
 
     [Fact]

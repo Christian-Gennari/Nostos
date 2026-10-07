@@ -383,13 +383,13 @@ public static class BooksEndpoints
                 HttpContext http,
                 CancellationToken ct
             ) =>
-                await StoredAssetHttpResult.CreateAsync(
+                await StoredAssetHttpResult.CreateBookFileAsync(
                     http,
-                    token => storage.GetBookFileInfoAsync(id, token),
-                    (range, token) => storage.OpenBookFileAsync(id, range, token),
+                    storage,
+                    id,
                     attachment: false,
                     enableRanges: true,
-                    cacheControl: null,
+                    cacheControl: "private, max-age=300",
                     ct)
         );
 
@@ -402,10 +402,10 @@ public static class BooksEndpoints
                 HttpContext http,
                 CancellationToken ct
             ) =>
-                await StoredAssetHttpResult.CreateAsync(
+                await StoredAssetHttpResult.CreateBookFileAsync(
                     http,
-                    token => storage.GetBookFileInfoAsync(id, token),
-                    (range, token) => storage.OpenBookFileAsync(id, range, token),
+                    storage,
+                    id,
                     attachment: true,
                     enableRanges: true,
                     cacheControl: null,
