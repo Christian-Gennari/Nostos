@@ -32,6 +32,29 @@ internal static partial class LibriVoxCatalog
     /// <summary>The JSON feed. <c>extended=1</c> is what includes the <c>sections</c> array.</summary>
     public const string ApiPath = "/api/feed/audiobooks/";
 
+    /// <summary>The API's maximum <c>limit</c>; a bulk snapshot reads this many items per page.</summary>
+    public const int SnapshotPageSize = 500;
+
+    /// <summary>
+    /// The fields a bulk snapshot asks for. <c>extended=1</c> is required to
+    /// make <c>genres</c> selectable at all, but the explicit whitelist keeps
+    /// the heavy <c>sections</c> array (and <c>description</c>) out of the
+    /// response, which is why a snapshot page is far smaller than an
+    /// <c>extended=1</c> default page.
+    /// </summary>
+    private const string SnapshotFields =
+        "id,title,language,num_sections,totaltime,copyright_year,authors,genres,url_librivox,url_iarchive,coverart_thumbnail";
+
+    /// <summary>
+    /// One page of the catalogue, oldest id first, optionally limited to
+    /// recordings catalogued at or after <paramref name="sinceUnixSeconds"/>.
+    /// </summary>
+    public static string SnapshotPagePath(int offset, long? sinceUnixSeconds = null)
+    {
+        var path = $"{ApiPath}?format=json&extended=1&coverart=1&sort_order=asc&limit={SnapshotPageSize}&offset={offset}&fields={SnapshotFields}";
+        return sinceUnixSeconds is { } since ? $"{path}&since={since}" : path;
+    }
+
     public const string CoverHostUrl = "https://archive.org";
 
     /// <summary>
@@ -82,7 +105,8 @@ internal static partial class LibriVoxCatalog
         string? PublishedDate,
         ProviderCover? Cover,
         IReadOnlyList<Section> Sections,
-        string Url);
+        string Url,
+        int? SectionCount);
 
     public static bool IsValidId(string? externalId) =>
         !string.IsNullOrWhiteSpace(externalId) && RecordingId().IsMatch(externalId.Trim());
@@ -115,9 +139,24 @@ internal static partial class LibriVoxCatalog
             Duration: Text(book, "totaltime"),
             Categories: GenreNames(book),
             PublishedDate: Text(book, "copyright_year"),
-            Cover: CoverFor(identifier),
+            Cover: CoverFromCoverArt(book) ?? CoverFor(identifier),
             Sections: sections,
-            Url: ItemUrl(book, id.Trim()));
+            Url: ItemUrl(book, id.Trim()),
+            SectionCount: SectionCount(book));
+    }
+
+    /// <summary>
+    /// The feed's own count of a recording's sections. A bulk snapshot does not
+    /// request the <c>sections</c> array, so this is what keeps the card's part
+    /// count populated; null when the feed omits it, and then the parsed
+    /// sections (when the request included them) remain the fallback.
+    /// </summary>
+    private static int? SectionCount(JsonElement book)
+    {
+        var text = Text(book, "num_sections");
+        return int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) && value > 0
+            ? value
+            : null;
     }
 
     /// <summary>
@@ -133,6 +172,36 @@ internal static partial class LibriVoxCatalog
                 new Uri($"{CoverHostUrl}/services/img/{archiveIdentifier}"),
                 "image/jpeg",
                 ".jpg");
+
+    /// <summary>
+    /// The cover-art URLs the feed adds with <c>coverart=1</c>. The thumbnail
+    /// is preferred (smaller); the full JPEG is the fallback. Only an absolute
+    /// https URL with a known image extension is accepted, because that
+    /// extension becomes the stored content type downstream.
+    /// </summary>
+    public static ProviderCover? CoverFromCoverArt(JsonElement book) =>
+        CoverFromCoverArtUrl(Text(book, "coverart_thumbnail"))
+        ?? CoverFromCoverArtUrl(Text(book, "coverart_jpg"));
+
+    private static ProviderCover? CoverFromCoverArtUrl(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw) ||
+            !Uri.TryCreate(raw.Trim(), UriKind.Absolute, out var uri) ||
+            !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var extension = Path.GetExtension(uri.AbsolutePath).ToLowerInvariant();
+        var contentType = extension switch
+        {
+            ".jpg" or ".jpeg" => "image/jpeg",
+            ".png" => "image/png",
+            _ => null,
+        };
+
+        return contentType is null ? null : new ProviderCover(uri, contentType, extension);
+    }
 
     /// <summary>
     /// The archive.org item behind a recording, taken from its details page and
