@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Text.Json;
 using Nostos.Backend.Providers.Contracts;
@@ -22,12 +23,27 @@ public sealed class LibriVoxProvider : IContentProvider,
     IProviderCatalog,
     IProviderAcquisitionPlanner,
     IProviderDownloadPolicy,
-    IAcquisitionAssembler
+    IAcquisitionAssembler,
+    IProviderSnapshotSource
 {
     public const string ProviderIdentifier = "librivox";
 
     /// <summary>Named client for the catalogue, so timeouts and headers live in DI.</summary>
     public const string HttpClientName = "librivox";
+
+    /// <summary>
+    /// Named client for bulk snapshot reads. Paging the whole catalogue makes
+    /// dozens of sequential requests, so these get a longer timeout than the
+    /// 20 s discovery client rather than being cut off mid-scan.
+    /// </summary>
+    public const string SnapshotHttpClientName = "librivox-snapshot";
+
+    /// <summary>
+    /// The pause between snapshot pages. LibriVox asks clients scanning the
+    /// whole catalogue to be considerate, so continuation pages are delayed;
+    /// the first page of a read is not.
+    /// </summary>
+    public static readonly TimeSpan SnapshotPageDelay = TimeSpan.FromSeconds(1);
 
     /// <summary>
     /// A single LibriVox section is at most a couple of hours of 64 kbps mono
@@ -53,17 +69,22 @@ public sealed class LibriVoxProvider : IContentProvider,
     private const int MaxPageSize = 100;
 
     private readonly HttpClient _http;
+    private readonly HttpClient _snapshotHttp;
     private readonly ILogger<LibriVoxProvider> _logger;
     private readonly LibriVoxM4bAssembler _assembler;
+    private readonly TimeProvider _clock;
 
     public LibriVoxProvider(
         IHttpClientFactory httpClientFactory,
         LibriVoxM4bAssembler assembler,
-        ILogger<LibriVoxProvider> logger)
+        ILogger<LibriVoxProvider> logger,
+        TimeProvider? clock = null)
     {
         _http = httpClientFactory.CreateClient(HttpClientName);
+        _snapshotHttp = httpClientFactory.CreateClient(SnapshotHttpClientName);
         _assembler = assembler;
         _logger = logger;
+        _clock = clock ?? TimeProvider.System;
     }
 
     public string Id => ProviderIdentifier;
@@ -166,6 +187,157 @@ public sealed class LibriVoxProvider : IContentProvider,
         return book is null ? null : ToProviderItem(book, includeAssets: true);
     }
 
+    // --- IProviderSnapshotSource -----------------------------------------
+
+    /// <summary>
+    /// Reads one page of the catalogue, oldest recording first.
+    ///
+    /// A read with no cursor starts a scan: no validators means the whole
+    /// catalogue, while an <see cref="ProviderSnapshotRequest.IfModifiedSince"/>
+    /// watermark means only the additions catalogued since then (LibriVox's own
+    /// <c>since</c> parameter). Every read returns the page's cursor in
+    /// <see cref="ProviderSnapshot.NextCursor"/> until the last page, whose
+    /// cursor is null; a continuation page is delayed by
+    /// <see cref="SnapshotPageDelay"/>, as LibriVox asks bulk clients to be.
+    ///
+    /// <see cref="ProviderSnapshot.LastModified"/> is when the scan started:
+    /// persist it and send it back as
+    /// <see cref="ProviderSnapshotRequest.IfModifiedSince"/> for the next
+    /// incremental read. LibriVox has no ETag, and a since-read with no
+    /// additions is an ordinary <see cref="ProviderSnapshotStatus.Updated"/>
+    /// page with no items. The page is materialized before returning, so the
+    /// caller's token governs all its I/O and no live enumeration outlives the
+    /// call.
+    /// </summary>
+    public async Task<ProviderSnapshot> ReadAsync(ProviderSnapshotRequest request, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+
+        var cursor = request.Cursor is { Length: > 0 } encoded
+            ? SnapshotCursor.Decode(encoded, Id)
+            : SnapshotCursor.Start(_clock.GetUtcNow(), request.IfModifiedSince);
+
+        if (cursor.Offset > 0)
+            await Task.Delay(SnapshotPageDelay, _clock, ct);
+
+        JsonDocument? document;
+        try
+        {
+            document = await LoadJsonAsync(
+                LibriVoxCatalog.SnapshotPagePath(cursor.Offset, cursor.Since ? cursor.SinceUnixSeconds : null),
+                ct);
+        }
+        catch (ProviderException)
+        {
+            throw;
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            throw ProviderException.UnavailableFor(Id, "the catalogue did not answer within the snapshot timeout");
+        }
+        catch (HttpRequestException ex)
+        {
+            throw ProviderException.UnavailableFor(Id, ex.Message);
+        }
+
+        ct.ThrowIfCancellationRequested();
+
+        if (document is null)
+            return Page(cursor, []);
+
+        using (document)
+        {
+            var books = new List<LibriVoxCatalog.Book>();
+            if (document.RootElement.TryGetProperty("books", out var elements) &&
+                elements.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var element in elements.EnumerateArray())
+                {
+                    var book = LibriVoxCatalog.ParseBook(element);
+                    if (book is not null)
+                        books.Add(book);
+                }
+            }
+
+            return Page(cursor, books);
+        }
+    }
+
+    private ProviderSnapshot Page(SnapshotCursor cursor, IReadOnlyList<LibriVoxCatalog.Book> books)
+    {
+        var next = books.Count == LibriVoxCatalog.SnapshotPageSize
+            ? cursor.Next().Encode()
+            : null;
+
+        return new ProviderSnapshot(
+            ProviderSnapshotStatus.Updated,
+            books.Select(book => ToProviderItem(book, includeAssets: false)).ToAsyncEnumerable(),
+            ETag: null,
+            LastModified: cursor.StartedAt,
+            NextCursor: next);
+    }
+
+    /// <summary>
+    /// The opaque checkpoint a snapshot consumer round-trips. It carries the
+    /// scan mode (full or since), the scan's start time (returned as
+    /// <see cref="ProviderSnapshot.LastModified"/>) and the next offset, so a
+    /// resumed scan keeps the same since boundary and watermark.
+    /// </summary>
+    private readonly record struct SnapshotCursor(
+        bool Since,
+        long SinceUnixSeconds,
+        long StartedUnixSeconds,
+        int Offset)
+    {
+        private const string Version = "v1";
+
+        public static SnapshotCursor Start(DateTimeOffset startedAt, DateTimeOffset? sinceAt) => new(
+            Since: sinceAt is not null,
+            // One second of overlap: a repeated upsert is safe, while a missed
+            // recording because of an inclusive/exclusive boundary is not.
+            SinceUnixSeconds: sinceAt is { } watermark ? Math.Max(0, watermark.ToUnixTimeSeconds() - 1) : 0,
+            StartedUnixSeconds: startedAt.ToUnixTimeSeconds(),
+            Offset: 0);
+
+        public DateTimeOffset StartedAt => DateTimeOffset.FromUnixTimeSeconds(StartedUnixSeconds);
+
+        public SnapshotCursor Next() => this with { Offset = Offset + LibriVoxCatalog.SnapshotPageSize };
+
+        public string Encode() => Since
+            ? $"{Version}|s|{SinceUnixSeconds}|{StartedUnixSeconds}|{Offset}"
+            : $"{Version}|f|{StartedUnixSeconds}|{Offset}";
+
+        public static SnapshotCursor Decode(string encoded, string providerId)
+        {
+            var parts = encoded.Split('|');
+            var since = parts.Length == 5 && parts[0] == Version && parts[1] == "s";
+            var full = parts.Length == 4 && parts[0] == Version && parts[1] == "f";
+
+            if (!since && !full)
+                throw InvalidCursor(providerId);
+
+            var index = 2;
+            long sinceUnixSeconds = 0;
+            if (since && !TryParseUnix(parts[index++], out sinceUnixSeconds))
+                throw InvalidCursor(providerId);
+
+            if (!TryParseUnix(parts[index++], out var startedUnixSeconds) ||
+                !int.TryParse(parts[index], NumberStyles.Integer, CultureInfo.InvariantCulture, out var offset) ||
+                offset < 0)
+            {
+                throw InvalidCursor(providerId);
+            }
+
+            return new SnapshotCursor(since, sinceUnixSeconds, startedUnixSeconds, offset);
+        }
+
+        private static bool TryParseUnix(string text, out long value) =>
+            long.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out value) && value >= 0;
+
+        private static ProviderException InvalidCursor(string providerId) =>
+            ProviderException.InvalidResponse(providerId, "the snapshot cursor is not valid");
+    }
+
     // --- IProviderAcquisitionPlanner -------------------------------------
 
     public async Task<ProviderAcquisitionPlan?> PlanAcquisitionAsync(
@@ -258,7 +430,7 @@ public sealed class LibriVoxProvider : IContentProvider,
             ItemUrl: book.Url,
             RightsStatement: LibriVoxCatalog.RightsStatement,
             RightsUrl: LibriVoxCatalog.RightsUrl),
-        PartCount: book.Sections.Count == 0 ? null : book.Sections.Count);
+        PartCount: book.SectionCount ?? (book.Sections.Count == 0 ? null : book.Sections.Count));
 
     private static string NoMatchesNotice(string text) =>
         $"No LibriVox recording matched “{text}”. Its catalogue only matches a title that starts with your text, so try fewer — or exactly the opening — words, or a reader's name.";

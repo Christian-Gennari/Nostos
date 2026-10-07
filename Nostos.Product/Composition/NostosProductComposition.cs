@@ -311,6 +311,16 @@ public static class NostosProductComposition
             client.DefaultRequestHeaders.UserAgent.ParseAdd(
                 "Nostos/1.0 (+https://github.com/Christian-Gennari/Nostos-Rebirth)");
         });
+        // Bulk snapshot reads page through the whole catalogue, so they get
+        // their own client with a longer timeout instead of the discovery
+        // client's 20 s.
+        services.AddHttpClient(LibriVoxProvider.SnapshotHttpClientName, client =>
+        {
+            client.BaseAddress = new Uri(LibriVoxCatalog.BaseUrl);
+            client.Timeout = TimeSpan.FromMinutes(2);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd(
+                "Nostos/1.0 (+https://github.com/Christian-Gennari/Nostos-Rebirth)");
+        });
         services.AddSingleton<IContentProvider, LibriVoxProvider>();
 
         return new NostosProductDescriptor(assistant, speech, opds);
