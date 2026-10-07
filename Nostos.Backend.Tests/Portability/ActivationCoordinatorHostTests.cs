@@ -15,7 +15,6 @@ using Nostos.Backend.Services.Portability.Migration;
 using Nostos.Backend.Services.Portability.Transfers;
 using Nostos.Shared.Dtos;
 using Xunit;
-
 namespace Nostos.Backend.Tests.Portability;
 
 /// <summary>
@@ -37,7 +36,7 @@ public sealed class ActivationCoordinatorHostTests
         var booksRoot = Path.Combine(root, "library");
         Directory.CreateDirectory(Path.GetDirectoryName(databasePath)!);
         Directory.CreateDirectory(booksRoot);
-        CopyDirectory(template.TemplateMedia, booksRoot);
+        PortableArchiveTestSupport.CopyDirectory(template.TemplateMedia, booksRoot);
         await ActivationBuildFixture.BootstrapAsync(databasePath);
 
         try
@@ -150,7 +149,7 @@ public sealed class ActivationCoordinatorHostTests
         var booksRoot = Path.Combine(root, "library");
         Directory.CreateDirectory(Path.GetDirectoryName(databasePath)!);
         Directory.CreateDirectory(booksRoot);
-        CopyDirectory(template.TemplateMedia, booksRoot);
+        PortableArchiveTestSupport.CopyDirectory(template.TemplateMedia, booksRoot);
         await ActivationBuildFixture.BootstrapAsync(databasePath);
 
         try
@@ -214,7 +213,7 @@ public sealed class ActivationCoordinatorHostTests
         var booksRoot = Path.Combine(root, "library");
         Directory.CreateDirectory(Path.GetDirectoryName(databasePath)!);
         Directory.CreateDirectory(booksRoot);
-        CopyDirectory(template.TemplateMedia, booksRoot);
+        PortableArchiveTestSupport.CopyDirectory(template.TemplateMedia, booksRoot);
         await ActivationBuildFixture.BootstrapAsync(databasePath);
 
         try
@@ -263,7 +262,7 @@ public sealed class ActivationCoordinatorHostTests
         var booksRoot = Path.Combine(root, "library");
         Directory.CreateDirectory(Path.GetDirectoryName(databasePath)!);
         Directory.CreateDirectory(booksRoot);
-        CopyDirectory(template.TemplateMedia, booksRoot);
+        PortableArchiveTestSupport.CopyDirectory(template.TemplateMedia, booksRoot);
         await ActivationBuildFixture.BootstrapAsync(databasePath);
 
         try
@@ -448,17 +447,6 @@ public sealed class ActivationCoordinatorHostTests
         }
         catch (UnauthorizedAccessException)
         {
-        }
-    }
-
-    private static void CopyDirectory(string source, string target)
-    {
-        Directory.CreateDirectory(target);
-        foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
-        {
-            var destination = Path.Combine(target, Path.GetRelativePath(source, file));
-            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-            File.Copy(file, destination, overwrite: true);
         }
     }
 

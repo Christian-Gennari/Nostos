@@ -107,7 +107,7 @@ public sealed class PortableArchiveKestrelTests
                 services.RemoveAll<IBookAssetStorage>();
                 services.AddSingleton<IBookAssetStorage>(sp =>
                 {
-                    probe.Inner = sp.GetRequiredService<FileStorageService>();
+                    probe.SetInner(sp.GetRequiredService<FileStorageService>());
                     return probe;
                 });
             });
@@ -228,36 +228,17 @@ public sealed class PortableArchiveKestrelTests
     /// hashes whatever it reads and the copy-pass comparison fails with
     /// <c>source_media_changed</c> after archive output has begun.
     /// </summary>
-    private sealed class CopyPassMutationStorage : IBookAssetStorage
+    private sealed class CopyPassMutationStorage : DelegatingBookAssetStorage
     {
         private int _targetOpenCount;
 
-        public FileStorageService? Inner { get; set; }
+        public void SetInner(FileStorageService inner) => Inner = inner;
 
         public Guid? TargetBookId { get; set; }
 
         public byte[]? MutatedContent { get; set; }
 
-        public Task<string> SaveBookFileAsync(
-            Guid bookId,
-            Stream content,
-            string fileName,
-            CancellationToken ct = default) =>
-            Inner!.SaveBookFileAsync(bookId, content, fileName, ct);
-
-        public Task<string> AdoptBookFileAsync(
-            Guid bookId,
-            string sourcePath,
-            string fileName,
-            CancellationToken ct = default) =>
-            Inner!.AdoptBookFileAsync(bookId, sourcePath, fileName, ct);
-
-        public Task<StoredAssetInfo?> GetBookFileInfoAsync(
-            Guid bookId,
-            CancellationToken ct = default) =>
-            Inner!.GetBookFileInfoAsync(bookId, ct);
-
-        public async Task<StoredAssetRead?> OpenBookFileAsync(
+        public override async Task<StoredAssetRead?> OpenBookFileAsync(
             Guid bookId,
             StorageByteRange? range = null,
             CancellationToken ct = default)
@@ -267,7 +248,7 @@ public sealed class PortableArchiveKestrelTests
                 var open = Interlocked.Increment(ref _targetOpenCount);
                 if (open > 1 && MutatedContent is not null)
                 {
-                    var info = await Inner!.GetBookFileInfoAsync(bookId, ct);
+                    var info = await Inner.GetBookFileInfoAsync(bookId, ct);
                     if (info is not null)
                     {
                         // Every open after the first serves bytes no other open
@@ -285,51 +266,7 @@ public sealed class PortableArchiveKestrelTests
                 }
             }
 
-            return await Inner!.OpenBookFileAsync(bookId, range, ct);
+            return await Inner.OpenBookFileAsync(bookId, range, ct);
         }
-
-        public Task<bool> DeleteBookFileAsync(
-            Guid bookId,
-            CancellationToken ct = default) =>
-            Inner!.DeleteBookFileAsync(bookId, ct);
-
-        public Task DeleteBookFilesAsync(
-            Guid bookId,
-            CancellationToken ct = default) =>
-            Inner!.DeleteBookFilesAsync(bookId, ct);
-
-        public Task<string> SaveBookCoverAsync(
-            Guid bookId,
-            Stream content,
-            string fileName,
-            CancellationToken ct = default) =>
-            Inner!.SaveBookCoverAsync(bookId, content, fileName, ct);
-
-        public Task<StoredAssetInfo?> GetBookCoverInfoAsync(
-            Guid bookId,
-            CancellationToken ct = default) =>
-            Inner!.GetBookCoverInfoAsync(bookId, ct);
-
-        public Task<StoredAssetRead?> OpenBookCoverAsync(
-            Guid bookId,
-            CancellationToken ct = default) =>
-            Inner!.OpenBookCoverAsync(bookId, ct);
-
-        public Task<StoredAssetInfo?> GetBookCoverThumbnailInfoAsync(
-            Guid bookId,
-            int width,
-            CancellationToken ct = default) =>
-            Inner!.GetBookCoverThumbnailInfoAsync(bookId, width, ct);
-
-        public Task<StoredAssetRead?> OpenBookCoverThumbnailAsync(
-            Guid bookId,
-            int width,
-            CancellationToken ct = default) =>
-            Inner!.OpenBookCoverThumbnailAsync(bookId, width, ct);
-
-        public Task<bool> DeleteCoverAsync(
-            Guid bookId,
-            CancellationToken ct = default) =>
-            Inner!.DeleteCoverAsync(bookId, ct);
     }
 }

@@ -400,7 +400,8 @@ public sealed class PortableExportSnapshotTests
     private static string Sha256Hex(byte[] bytes) =>
         Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
 
-    internal sealed class ExportProbeStorage(IBookAssetStorage inner) : IBookAssetStorage
+    internal sealed class ExportProbeStorage(IBookAssetStorage inner)
+        : DelegatingBookAssetStorage(inner)
     {
         private readonly Dictionary<(Guid BookId, string Kind), int> _infoCalls = new();
         private readonly Dictionary<(Guid BookId, string Kind), int> _openCalls = new();
@@ -427,74 +428,26 @@ public sealed class PortableExportSnapshotTests
 
         public List<bool> TransactionOpenDuringOpen { get; } = [];
 
-        public Task<string> SaveBookFileAsync(
-            Guid bookId,
-            Stream content,
-            string fileName,
-            CancellationToken ct = default) =>
-            inner.SaveBookFileAsync(bookId, content, fileName, ct);
-
-        public Task<string> AdoptBookFileAsync(
-            Guid bookId,
-            string sourcePath,
-            string fileName,
-            CancellationToken ct = default) =>
-            inner.AdoptBookFileAsync(bookId, sourcePath, fileName, ct);
-
-        public Task<StoredAssetInfo?> GetBookFileInfoAsync(
+        public override Task<StoredAssetInfo?> GetBookFileInfoAsync(
             Guid bookId,
             CancellationToken ct = default) =>
             NextInfoAsync(bookId, PortableArchiveFormat.BookMediaKind, ct);
 
-        public Task<StoredAssetRead?> OpenBookFileAsync(
+        public override Task<StoredAssetRead?> OpenBookFileAsync(
             Guid bookId,
             StorageByteRange? range = null,
             CancellationToken ct = default) =>
             NextReadAsync(bookId, PortableArchiveFormat.BookMediaKind, ct, range);
 
-        public Task<bool> DeleteBookFileAsync(
-            Guid bookId,
-            CancellationToken ct = default) =>
-            inner.DeleteBookFileAsync(bookId, ct);
-
-        public Task DeleteBookFilesAsync(
-            Guid bookId,
-            CancellationToken ct = default) =>
-            inner.DeleteBookFilesAsync(bookId, ct);
-
-        public Task<string> SaveBookCoverAsync(
-            Guid bookId,
-            Stream content,
-            string fileName,
-            CancellationToken ct = default) =>
-            inner.SaveBookCoverAsync(bookId, content, fileName, ct);
-
-        public Task<StoredAssetInfo?> GetBookCoverInfoAsync(
+        public override Task<StoredAssetInfo?> GetBookCoverInfoAsync(
             Guid bookId,
             CancellationToken ct = default) =>
             NextInfoAsync(bookId, PortableArchiveFormat.CoverMediaKind, ct);
 
-        public Task<StoredAssetRead?> OpenBookCoverAsync(
+        public override Task<StoredAssetRead?> OpenBookCoverAsync(
             Guid bookId,
             CancellationToken ct = default) =>
             NextReadAsync(bookId, PortableArchiveFormat.CoverMediaKind, ct, range: null);
-
-        public Task<StoredAssetInfo?> GetBookCoverThumbnailInfoAsync(
-            Guid bookId,
-            int width,
-            CancellationToken ct = default) =>
-            inner.GetBookCoverThumbnailInfoAsync(bookId, width, ct);
-
-        public Task<StoredAssetRead?> OpenBookCoverThumbnailAsync(
-            Guid bookId,
-            int width,
-            CancellationToken ct = default) =>
-            inner.OpenBookCoverThumbnailAsync(bookId, width, ct);
-
-        public Task<bool> DeleteCoverAsync(
-            Guid bookId,
-            CancellationToken ct = default) =>
-            inner.DeleteCoverAsync(bookId, ct);
 
         private async Task<StoredAssetInfo?> NextInfoAsync(
             Guid bookId,
@@ -502,8 +455,8 @@ public sealed class PortableExportSnapshotTests
             CancellationToken ct)
         {
             var info = kind == PortableArchiveFormat.BookMediaKind
-                ? await inner.GetBookFileInfoAsync(bookId, ct)
-                : await inner.GetBookCoverInfoAsync(bookId, ct);
+                ? await Inner.GetBookFileInfoAsync(bookId, ct)
+                : await Inner.GetBookCoverInfoAsync(bookId, ct);
 
             if (info is null || TargetBookId != bookId || TargetKind != kind)
                 return info;
@@ -563,8 +516,8 @@ public sealed class PortableExportSnapshotTests
             }
 
             return kind == PortableArchiveFormat.BookMediaKind
-                ? await inner.OpenBookFileAsync(bookId, range, ct)
-                : await inner.OpenBookCoverAsync(bookId, ct);
+                ? await Inner.OpenBookFileAsync(bookId, range, ct)
+                : await Inner.OpenBookCoverAsync(bookId, ct);
         }
 
         private async Task<StoredAssetInfo> InfoForContentAsync(
@@ -573,8 +526,8 @@ public sealed class PortableExportSnapshotTests
             CancellationToken ct)
         {
             var info = kind == PortableArchiveFormat.BookMediaKind
-                ? await inner.GetBookFileInfoAsync(bookId, ct)
-                : await inner.GetBookCoverInfoAsync(bookId, ct);
+                ? await Inner.GetBookFileInfoAsync(bookId, ct)
+                : await Inner.GetBookCoverInfoAsync(bookId, ct);
 
             return info
                 ?? throw new InvalidOperationException(
@@ -589,15 +542,6 @@ public sealed class PortableExportSnapshotTests
             counters[key] = next;
             return next;
         }
-    }
-
-    private sealed class ManualTimeProvider(DateTimeOffset utcNow) : TimeProvider
-    {
-        private DateTimeOffset _utcNow = utcNow;
-
-        public override DateTimeOffset GetUtcNow() => _utcNow;
-
-        public void Advance(TimeSpan delta) => _utcNow = _utcNow.Add(delta);
     }
 
     private sealed class TransactionStartClockAdvancer(ManualTimeProvider clock)

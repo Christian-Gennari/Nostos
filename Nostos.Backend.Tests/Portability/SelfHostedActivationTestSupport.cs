@@ -41,9 +41,6 @@ internal static class SelfHostedActivationTestSupport
         }
     }
 
-    internal static string Sha256Hex(byte[] content) =>
-        Convert.ToHexString(SHA256.HashData(content)).ToLowerInvariant();
-
     internal static Dictionary<string, string> SnapshotTree(string root)
     {
         var snapshot = new Dictionary<string, string>(StringComparer.Ordinal);

@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using Nostos.Backend.Services.Portability;
 using Xunit;
 using Xunit.Abstractions;
+using static Nostos.Backend.Tests.Portability.PortableArchiveTestSupport;
 
 namespace Nostos.Backend.Tests.Portability;
 
@@ -223,198 +224,6 @@ public sealed class PortableArchiveReaderTests(ITestOutputHelper output)
     }
 
     [Fact]
-    public async Task Prepare_import_rejects_corrupted_media_bytes_and_deletes_staging()
-    {
-        var bytes = await ExportFixtureAsync();
-        var entries = ReadEntries(bytes);
-        var mediaIndex = entries.FindIndex(entry =>
-            entry.Name.StartsWith("media/books/", StringComparison.Ordinal));
-        var corrupted = GenerateBytes(entries[mediaIndex].Bytes.Length, seed: 99);
-        entries[mediaIndex] = new TestArchiveEntry(entries[mediaIndex].Name, corrupted);
-
-        var outcome = await PrepareRawAsync(BuildArchive(entries));
-
-        await AssertPrepareFailureAsync(outcome, "media_checksum_mismatch");
-    }
-
-    [Theory]
-    [InlineData(1)]
-    [InlineData(-1)]
-    public async Task Prepare_import_rejects_media_length_disagreement_and_deletes_staging(
-        int lengthDelta)
-    {
-        var bytes = await ExportFixtureAsync();
-        var entries = ReadEntries(bytes);
-        var mediaIndex = entries.FindIndex(entry =>
-            entry.Name.StartsWith("media/books/", StringComparison.Ordinal));
-        var mediaPath = entries[mediaIndex].Name;
-
-        MutateMediaDescriptor(
-            entries,
-            mediaPath,
-            descriptor => descriptor["length"] =
-                descriptor["length"]!.GetValue<long>() + lengthDelta);
-
-        var outcome = await PrepareRawAsync(BuildArchive(entries));
-
-        await AssertPrepareFailureAsync(outcome, "media_length_mismatch");
-    }
-
-    [Fact]
-    public async Task Prepare_import_rejects_data_hash_mismatch_and_deletes_staging()
-    {
-        var bytes = await ExportFixtureAsync();
-        var entries = ReadEntries(bytes);
-        MutateJsonEntry(entries, DataPath, root =>
-        {
-            root["works"]!.AsArray()[0]!["title"] = "Tampered after hashing";
-        });
-        var dataBytes = entries.Single(entry => entry.Name == DataPath).Bytes;
-        MutateJsonEntry(entries, ManifestPath, root =>
-        {
-            root["data"]!["length"] = dataBytes.LongLength;
-        });
-
-        var outcome = await PrepareRawAsync(BuildArchive(entries));
-
-        await AssertPrepareFailureAsync(outcome, "data_checksum_mismatch");
-    }
-
-    [Fact]
-    public async Task Prepare_import_prefers_data_length_mismatch_over_hash_mismatch()
-    {
-        var bytes = await ExportFixtureAsync();
-        var entries = ReadEntries(bytes);
-        MutateJsonEntry(entries, DataPath, root =>
-        {
-            root["works"]!.AsArray()[0]!["title"] = "Both length and hash are now wrong";
-        });
-        var dataBytes = entries.Single(entry => entry.Name == DataPath).Bytes;
-        MutateJsonEntry(entries, ManifestPath, root =>
-        {
-            // Declared length is wrong AND the declared hash is stale: length wins.
-            root["data"]!["length"] = dataBytes.LongLength + 1;
-        });
-
-        var outcome = await PrepareRawAsync(BuildArchive(entries));
-
-        await AssertPrepareFailureAsync(outcome, "data_length_mismatch");
-    }
-
-    [Fact]
-    public async Task Prepare_import_rejects_manifest_payload_version_disagreement_and_deletes_staging()
-    {
-        var bytes = await ExportFixtureAsync();
-        var entries = ReadEntries(bytes);
-        MutateJsonEntry(entries, ManifestPath, root =>
-        {
-            root["dataVersion"] = IntermediateDataVersion;
-        });
-
-        var outcome = await PrepareRawAsync(BuildArchive(entries));
-
-        await AssertPrepareFailureAsync(outcome, "data_version_mismatch");
-    }
-
-    [Fact]
-    public async Task Prepare_import_rejects_unsupported_version_and_deletes_staging()
-    {
-        var bytes = await ExportFixtureAsync();
-        var entries = ReadEntries(bytes);
-        MutateJsonEntry(entries, ManifestPath, root =>
-        {
-            root["formatVersion"] = 999;
-        });
-
-        var outcome = await PrepareRawAsync(BuildArchive(entries));
-
-        await AssertPrepareFailureAsync(outcome, "unsupported_version");
-    }
-
-    [Fact]
-    public async Task Prepare_import_rejects_hostile_path_and_deletes_staging()
-    {
-        var bytes = await ExportFixtureAsync();
-        var entries = ReadEntries(bytes);
-        entries.Add(new TestArchiveEntry("../escape.txt", [1, 2, 3]));
-
-        var outcome = await PrepareRawAsync(BuildArchive(entries));
-
-        await AssertPrepareFailureAsync(outcome, "unsafe_archive_path");
-    }
-
-    [Fact]
-    public async Task Prepare_import_rejects_duplicate_entry_and_deletes_staging()
-    {
-        var bytes = await ExportFixtureAsync();
-        var entries = ReadEntries(bytes);
-        var media = entries.First(entry =>
-            entry.Name.StartsWith("media/books/", StringComparison.Ordinal));
-        entries.Add(new TestArchiveEntry(media.Name, media.Bytes.ToArray()));
-
-        var outcome = await PrepareRawAsync(BuildArchive(entries));
-
-        await AssertPrepareFailureAsync(outcome, "duplicate_path");
-    }
-
-    [Fact]
-    public async Task Prepare_import_rejects_entry_over_size_limit_and_deletes_staging()
-    {
-        var bytes = await ExportFixtureAsync();
-        var entries = ReadEntries(bytes);
-        var media = entries.First(entry =>
-            entry.Name.StartsWith("media/books/", StringComparison.Ordinal));
-
-        MutateMediaDescriptor(
-            entries,
-            media.Name,
-            descriptor => descriptor["length"] =
-                PortableArchiveLimits.MaxSingleEntryBytes + 1);
-
-        var outcome = await PrepareRawAsync(BuildArchive(entries));
-
-        await AssertPrepareFailureAsync(outcome, "entry_too_large");
-    }
-
-    [Fact]
-    public async Task Prepare_import_rejects_missing_referenced_media_and_deletes_staging()
-    {
-        var bytes = await ExportFixtureAsync();
-        var entries = ReadEntries(bytes);
-        var media = entries.First(entry =>
-            entry.Name.StartsWith("media/books/", StringComparison.Ordinal));
-
-        var outcome = await PrepareRawAsync(
-            BuildArchive(entries.Where(entry => entry.Name != media.Name)));
-
-        await AssertPrepareFailureAsync(outcome, "missing_referenced_media");
-    }
-
-    [Fact]
-    public async Task Prepare_import_rejects_unexpected_extra_entry_and_deletes_staging()
-    {
-        var bytes = await ExportFixtureAsync();
-        var entries = ReadEntries(bytes);
-        entries.Add(new TestArchiveEntry("extra.bin", [1, 2, 3]));
-
-        var outcome = await PrepareRawAsync(BuildArchive(entries));
-
-        await AssertPrepareFailureAsync(outcome, "unexpected_entry");
-    }
-
-    [Fact]
-    public async Task Prepare_import_rejects_operational_backup_file_that_is_not_a_portable_archive()
-    {
-        var backup = new byte[256];
-        Encoding.ASCII.GetBytes("SQLite format 3\0").CopyTo(backup, 0);
-        new Random(1).NextBytes(backup.AsSpan(16));
-
-        var outcome = await PrepareRawAsync(backup);
-
-        await AssertPrepareFailureAsync(outcome, "invalid_zip");
-    }
-
-    [Fact]
     public async Task Prepare_import_rejects_over_limit_source_before_reading_or_staging()
     {
         var reads = 0;
@@ -429,7 +238,7 @@ public sealed class PortableArchiveReaderTests(ITestOutputHelper output)
         var store = new InMemoryPortableImportStagingStore();
         await using var staging = new RecordingPortableImportStaging(
             new InMemoryPortableImportStaging(store));
-        var reader = new PortableArchiveReader(timeProvider: new FixedTimeProvider(FixedUtc));
+        var reader = new PortableArchiveReader(timeProvider: new ManualTimeProvider(FixedUtc));
 
         var act = async () => await reader.PrepareImportAsync(source, staging);
         var exception = await act.Should().ThrowAsync<PortableArchiveException>();
@@ -460,7 +269,7 @@ public sealed class PortableArchiveReaderTests(ITestOutputHelper output)
         var store = new InMemoryPortableImportStagingStore();
         var inner = new InMemoryPortableImportStaging(store);
         await using var staging = new RecordingPortableImportStaging(inner);
-        var reader = new PortableArchiveReader(timeProvider: new FixedTimeProvider(FixedUtc));
+        var reader = new PortableArchiveReader(timeProvider: new ManualTimeProvider(FixedUtc));
 
         var act = async () => await reader.PrepareImportAsync(source, staging);
         var exception = await act.Should().ThrowAsync<PortableArchiveException>();
@@ -529,8 +338,10 @@ public sealed class PortableArchiveReaderTests(ITestOutputHelper output)
     [InlineData("data_hash_mismatch_and_missing_media", "data_checksum_mismatch")]
     [InlineData("data_checksum_mismatch", "data_checksum_mismatch")]
     [InlineData("data_length_mismatch", "data_length_mismatch")]
+    [InlineData("data_length_mismatch_and_hash_mismatch", "data_length_mismatch")]
     [InlineData("media_checksum_mismatch", "media_checksum_mismatch")]
     [InlineData("media_length_mismatch", "media_length_mismatch")]
+    [InlineData("media_length_mismatch_negative", "media_length_mismatch")]
     [InlineData("entry_too_large", "entry_too_large")]
     [InlineData("malformed_relationship", "malformed_relationship")]
     [InlineData("duplicate_id", "duplicate_id")]
@@ -635,7 +446,7 @@ public sealed class PortableArchiveReaderTests(ITestOutputHelper output)
         var inner = new InMemoryPortableImportStaging(store);
         await using var staging = new RecordingPortableImportStaging(inner);
         var reader = new PortableArchiveReader(
-            timeProvider: new FixedTimeProvider(FixedUtc));
+            timeProvider: new ManualTimeProvider(FixedUtc));
 
         var effectiveBudget = budget ?? new PortableArchiveBufferBudget(
             PortableArchiveLimits.MaxExplicitBufferBytes);
@@ -671,15 +482,24 @@ public sealed class PortableArchiveReaderTests(ITestOutputHelper output)
     {
         await using var destination = await LocalPortableTestLibrary.CreateAsync();
         using var archive = new MemoryStream(bytes, writable: false);
+        string code;
         try
         {
             await destination.Portability().ImportAsync(archive);
-            return "none";
+            code = "none";
         }
         catch (PortableArchiveException exception)
         {
-            return exception.Code;
+            code = exception.Code;
         }
+
+        // Every row is a rejection against a fresh library: the immediate import
+        // must never have mutated the destination (the individual per-code
+        // service tests folded this claim in here).
+        (await destination.Db.Books.CountAsync()).Should().Be(0);
+        (await destination.Db.Works.CountAsync()).Should().Be(0);
+        (await destination.Db.Notes.CountAsync()).Should().Be(0);
+        return code;
     }
 
     private static async Task<byte[]> BuildInvalidArchiveAsync(string scenario)
@@ -784,6 +604,15 @@ public sealed class PortableArchiveReaderTests(ITestOutputHelper output)
                     root => root["data"]!["length"] =
                         entries.Single(entry => entry.Name == DataPath).Bytes.LongLength + 1);
                 break;
+            case "data_length_mismatch_and_hash_mismatch":
+                MutateJsonEntry(entries, DataPath, root =>
+                    root["works"]!.AsArray()[0]!["title"] = "Tampered before the length check");
+                MutateJsonEntry(
+                    entries,
+                    ManifestPath,
+                    root => root["data"]!["length"] =
+                        entries.Single(entry => entry.Name == DataPath).Bytes.LongLength + 1);
+                break;
             case "media_checksum_mismatch":
                 ReplaceEntry(
                     entries,
@@ -796,6 +625,13 @@ public sealed class PortableArchiveReaderTests(ITestOutputHelper output)
                     media.Name,
                     descriptor => descriptor["length"] =
                         descriptor["length"]!.GetValue<long>() + 1);
+                break;
+            case "media_length_mismatch_negative":
+                MutateMediaDescriptor(
+                    entries,
+                    media.Name,
+                    descriptor => descriptor["length"] =
+                        descriptor["length"]!.GetValue<long>() - 1);
                 break;
             case "entry_too_large":
                 MutateMediaDescriptor(
@@ -920,57 +756,6 @@ public sealed class PortableArchiveReaderTests(ITestOutputHelper output)
             return physical.ReadAsync(buffer[..count], ct);
         });
 
-    private static List<TestArchiveEntry> ReadEntries(byte[] archiveBytes)
-    {
-        using var source = new MemoryStream(archiveBytes, writable: false);
-        using var archive = new ZipArchive(source, ZipArchiveMode.Read, leaveOpen: false);
-        var entries = new List<TestArchiveEntry>();
-
-        foreach (var entry in archive.Entries)
-        {
-            using var input = entry.Open();
-            using var output = new MemoryStream();
-            input.CopyTo(output);
-            entries.Add(new TestArchiveEntry(entry.FullName, output.ToArray()));
-        }
-
-        return entries;
-    }
-
-    private static byte[] BuildArchive(IEnumerable<TestArchiveEntry> entries)
-    {
-        using var output = new MemoryStream();
-        using (var archive = new ZipArchive(output, ZipArchiveMode.Create, leaveOpen: true))
-        {
-            foreach (var item in entries)
-            {
-                var entry = archive.CreateEntry(item.Name, CompressionLevel.NoCompression);
-                using var target = entry.Open();
-                target.Write(item.Bytes);
-            }
-        }
-
-        return output.ToArray();
-    }
-
-    private static void MutateJsonEntry(
-        List<TestArchiveEntry> entries,
-        string name,
-        Action<JsonObject> mutate)
-    {
-        var index = entries.FindIndex(entry =>
-            string.Equals(entry.Name, name, StringComparison.Ordinal));
-        if (index < 0)
-            throw new InvalidDataException($"Archive entry '{name}' is missing.");
-
-        var root = JsonNode.Parse(entries[index].Bytes)?.AsObject()
-            ?? throw new InvalidDataException($"Archive entry '{name}' is not a JSON object.");
-        mutate(root);
-        entries[index] = new TestArchiveEntry(
-            name,
-            Encoding.UTF8.GetBytes(root.ToJsonString()));
-    }
-
     private static void MutateMediaDescriptor(
         List<TestArchiveEntry> entries,
         string mediaPath,
@@ -1000,21 +785,6 @@ public sealed class PortableArchiveReaderTests(ITestOutputHelper output)
 
         entries[index] = new TestArchiveEntry(name, bytes);
     }
-
-    private static void RehashDataDescriptor(List<TestArchiveEntry> entries)
-    {
-        var data = entries.Single(entry => entry.Name == DataPath).Bytes;
-        MutateJsonEntry(entries, ManifestPath, root =>
-        {
-            var descriptor = root["data"]!.AsObject();
-            descriptor["length"] = data.LongLength;
-            descriptor["sha256"] = Convert
-                .ToHexString(SHA256.HashData(data))
-                .ToLowerInvariant();
-        });
-    }
-
-    private sealed record TestArchiveEntry(string Name, byte[] Bytes);
 
     private sealed record PrepareOutcome(
         Exception? Error,
@@ -1206,11 +976,6 @@ public sealed class PortableArchiveReaderTests(ITestOutputHelper output)
         }
 
         public ValueTask DisposeAsync() => inner.DisposeAsync();
-    }
-
-    private sealed class FixedTimeProvider(DateTime utcNow) : TimeProvider
-    {
-        public override DateTimeOffset GetUtcNow() => new(utcNow, TimeSpan.Zero);
     }
 
     private sealed class InlineProgress<T>(Action<T> onReport) : IProgress<T>

@@ -507,20 +507,4 @@ public sealed class TransferStorageCapacityTests : IDisposable
             }
         }
     }
-
-    private sealed class FakeTransferVolume : ITransferVolume
-    {
-        public long AvailableFreeSpaceBytes { get; set; }
-
-        public long TotalSizeBytes { get; set; }
-    }
-
-    private sealed class ManualTimeProvider(DateTimeOffset utcNow) : TimeProvider
-    {
-        public DateTimeOffset UtcNow { get; private set; } = utcNow;
-
-        public override DateTimeOffset GetUtcNow() => UtcNow;
-
-        public void Advance(TimeSpan delta) => UtcNow += delta;
-    }
 }

@@ -368,7 +368,7 @@ public sealed class SelfHostedActivationCandidateMediaBuilderTests
                 .Should().ContainSingle().Which;
             var bytes = File.ReadAllBytes(file);
             bytes.LongLength.Should().Be(descriptor.Length);
-            SelfHostedActivationTestSupport.Sha256Hex(bytes).Should().Be(descriptor.Sha256);
+            PortableArchiveTestSupport.Sha256Hex(bytes).Should().Be(descriptor.Sha256);
         }
     }
 

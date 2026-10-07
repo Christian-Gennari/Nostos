@@ -39,7 +39,7 @@ public sealed class RecoveryRetentionTests
         {
             var bytes = File.ReadAllBytes(Path.Combine(bed.Paths.LiveMedia, pin.RelativePath));
             pin.Bytes.Should().Be(bytes.Length);
-            pin.Sha256.Should().Be(RecoveryTestBed.Sha256Hex(bytes));
+            pin.Sha256.Should().Be(PortableArchiveTestSupport.Sha256Hex(bytes));
         }
 
         capture.MediaBytes.Should().Be(capture.Media.Sum(pin => pin.Bytes));
@@ -246,7 +246,7 @@ public sealed class RecoveryRetentionTests
         {
             var retained = bed.Paths.PreviousDatabase(manifest.JobId);
             File.Exists(retained).Should().BeTrue();
-            RecoveryTestBed.Sha256Hex(File.ReadAllBytes(retained)).Should().Be(manifest.DatabaseSha256);
+            PortableArchiveTestSupport.Sha256Hex(File.ReadAllBytes(retained)).Should().Be(manifest.DatabaseSha256);
         }
 
         if (Directory.Exists(bed.Paths.LiveMedia))
@@ -292,7 +292,7 @@ public sealed class RecoveryRetentionTests
                 && descriptor.Kind == kind
                 && descriptor.Extension == extension
                 && descriptor.Bytes == bytes.Length
-                && descriptor.Sha256 == RecoveryTestBed.Sha256Hex(bytes),
+                && descriptor.Sha256 == PortableArchiveTestSupport.Sha256Hex(bytes),
                 $"the manifest must describe '{relative}'");
         }
     }
