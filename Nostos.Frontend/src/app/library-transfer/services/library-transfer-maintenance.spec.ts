@@ -90,7 +90,20 @@ function setup(options: MockLibraryTransferTransportOptions = {}): Harness {
 }
 
 function fileOfSize(size = 1024): File {
-  return new File([new Uint8Array(size) as unknown as BlobPart], 'library.nostos');
+  const bytes = new Uint8Array(size);
+  const file = new File([bytes as unknown as BlobPart], 'library.nostos');
+  const nativeSlice = file.slice.bind(file);
+  file.slice = (start = 0, end = file.size, contentType?: string): Blob => {
+    const blob = nativeSlice(start, end, contentType);
+    const normalizedStart = start < 0 ? Math.max(size + start, 0) : Math.min(start, size);
+    const normalizedEnd = end < 0 ? Math.max(size + end, 0) : Math.min(end, size);
+    const sliceBytes = bytes.slice(normalizedStart, Math.max(normalizedStart, normalizedEnd));
+    Object.defineProperty(blob, 'arrayBuffer', {
+      value: () => Promise.resolve(sliceBytes.buffer),
+    });
+    return blob;
+  };
+  return file;
 }
 
 async function settleUntil(predicate: () => boolean, attempts = 400): Promise<void> {
