@@ -17,3 +17,9 @@
 .transfer-host__entry + .transfer-host__entry {
   border-top: 1px solid var(--border-light);
 }
+
+.transfer-host__entry--selected {
+  border-radius: 6px;
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: 4px;
+}

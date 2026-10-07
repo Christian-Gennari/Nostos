@@ -251,55 +251,21 @@
       @case ('first_run') {
         <p class="cloud-entry__eyebrow">Your library is ready</p>
         <h1>How would you like to begin?</h1>
-
-        @if (sharedImportOpen()) {
-          <app-library-import-flow
-            [supportsSafeActivation]="entry.supportsSafeActivation()"
-            [activationState]="activation.state()"
-            [activationErrorCode]="activation.errorCode()"
-            [activationPhase]="activation.phase()"
-            [activationCanRetry]="activation.canRetry()"
-            [activationConflict]="activation.conflict()"
-            [activationRecoveryExpiresAtUtc]="activation.recovery()?.expiresAtUtc ?? null"
-            (importCompleted)="entry.finishFirstRunAfterImport()"
-            (activationRequested)="onActivationRequested($event)"
-            (replacementConfirmed)="onReplacementConfirmed($event)"
-          />
-          <div class="cloud-entry__actions">
-            <button
-              appButton
-              variant="ghost"
-              type="button"
-              (click)="backToChoices()"
-              data-testid="cloud-entry-import-back"
-            >
-              Back
-            </button>
-          </div>
-        } @else {
-          <p>Start with an empty library, or bring an existing SelfHosted Nostos library with you.</p>
-          <div class="cloud-entry__actions">
-            <button appButton variant="primary" type="button" (click)="entry.startFresh()">
-              Start fresh
-            </button>
-            <button
-              appButton
-              variant="secondary"
-              type="button"
-              [disabled]="entry.actionPending()"
-              (click)="openImport()"
-            >
-              Import an existing Nostos library
-            </button>
-          </div>
-          <input
-            #archiveInput
-            class="cloud-entry__file"
-            type="file"
-            accept=".nostos,application/vnd.nostos.portable+zip"
-            (change)="importSelected($event)"
-          />
-        }
+        <p>Start with an empty library, or bring an existing SelfHosted Nostos library with you.</p>
+        <div class="cloud-entry__actions">
+          <button appButton variant="primary" type="button" (click)="entry.startFresh()">
+            Start fresh
+          </button>
+          <button
+            appButton
+            variant="secondary"
+            type="button"
+            [disabled]="entry.actionPending()"
+            (click)="openImport()"
+          >
+            Import an existing Nostos library
+          </button>
+        </div>
       }
 
       @case ('account_unavailable') {

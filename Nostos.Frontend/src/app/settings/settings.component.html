@@ -453,6 +453,7 @@
           </p>
           <app-library-transfer-host
             [supportsSafeActivation]="supportsSafeActivation()"
+            [focusImport]="isImportSelected()"
             (importCompleted)="onLibraryTransferCompleted()"
           />
         </div>
@@ -474,6 +475,53 @@
         </div>
 
         <div class="card-body">
+          @if (showFirstRunCloudImport()) {
+            <section
+              #firstRunCloudImport
+              class="first-run-cloud-import"
+              [class.is-selected]="isImportSelected()"
+              id="manage-library-import-entry"
+              data-testid="first-run-cloud-import"
+              tabindex="-1"
+              aria-label="Import an existing Nostos library"
+            >
+              <div class="setting-row">
+                <div class="setting-label">
+                  <span class="label-text">Import an existing Nostos library</span>
+                  <span class="label-desc">Choose the portable .nostos archive you want to bring into this new library.</span>
+                  @if (cloudEntry.actionError(); as importError) {
+                    <span class="label-desc portable-export-status is-error" role="alert">{{ importError }}</span>
+                  }
+                </div>
+                <input
+                  #firstRunImportInput
+                  type="file"
+                  accept=".nostos,application/vnd.nostos.portable+zip"
+                  (change)="importFirstRunArchive($event)"
+                  data-testid="first-run-cloud-import-file"
+                  hidden
+                >
+                <button
+                  appButton
+                  variant="secondary"
+                  type="button"
+                  data-testid="first-run-cloud-import-open"
+                  [disabled]="cloudEntry.actionPending()"
+                  [busy]="cloudEntry.actionPending()"
+                  (click)="openFirstRunImportPicker()"
+                >
+                  @if (cloudEntry.actionPending()) {
+                    <nostos-icon name="circle-notch" [size]="16" class="spin"></nostos-icon>
+                    Importing…
+                  } @else {
+                    <nostos-icon name="upload-simple" [size]="16"></nostos-icon>
+                    Choose archive
+                  }
+                </button>
+              </div>
+            </section>
+          }
+
           <div class="setting-row">
             <div class="setting-label">
               <span class="label-text">Your complete Nostos archive</span>

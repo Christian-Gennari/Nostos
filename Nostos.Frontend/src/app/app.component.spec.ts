@@ -57,7 +57,10 @@ describe('App', () => {
             actionPending: signal(false),
             actionError: signal(null),
             checkoutRedirect: signal(null),
+            supportsLibraryMigration: signal(false),
             supportsSafeActivation: signal(false),
+            firstRunImportPending: signal(false),
+            openManageLibraryFromFirstRun: vi.fn(),
           },
         },
         {
@@ -104,11 +107,15 @@ describe('App', () => {
 describe('App activation boundary', () => {
   const activationState = signal<HostActivationState>('idle');
   const activationPhase = signal<MigrationActivationPhase | null>(null);
+  const supportsSafeActivation = signal(false);
+  const reattach = vi.fn();
 
   beforeEach(async () => {
     localStorage.clear();
     activationState.set('idle');
     activationPhase.set(null);
+    supportsSafeActivation.set(false);
+    reattach.mockClear();
 
     await TestBed.configureTestingModule({
       imports: [App],
@@ -124,7 +131,10 @@ describe('App activation boundary', () => {
             actionPending: signal(false),
             actionError: signal(null),
             checkoutRedirect: signal(null),
-            supportsSafeActivation: signal(false),
+            supportsLibraryMigration: signal(false),
+            supportsSafeActivation,
+            firstRunImportPending: signal(false),
+            openManageLibraryFromFirstRun: vi.fn(),
           },
         },
         {
@@ -138,7 +148,7 @@ describe('App activation boundary', () => {
         { provide: DeploymentCapabilitiesService, useValue: { get: () => of(cloudCapabilities) } },
         {
           provide: LibraryActivationController,
-          useValue: { state: activationState, phase: activationPhase },
+          useValue: { state: activationState, phase: activationPhase, reattach },
         },
       ],
     }).compileComponents();
@@ -166,6 +176,19 @@ describe('App activation boundary', () => {
     expect(
       fixture.nativeElement.querySelector('[data-testid="library-activation-overlay"]'),
     ).toBeNull();
+  });
+
+  it('reattaches persisted activation only when the server advertises safe activation', async () => {
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(reattach).not.toHaveBeenCalled();
+
+    supportsSafeActivation.set(true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(reattach).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -208,7 +231,10 @@ describe('App shell utility area', () => {
             actionPending: signal(false),
             actionError: signal(null),
             checkoutRedirect: signal(null),
+            supportsLibraryMigration: signal(false),
             supportsSafeActivation: signal(false),
+            firstRunImportPending: signal(false),
+            openManageLibraryFromFirstRun: vi.fn(),
           },
         },
         {

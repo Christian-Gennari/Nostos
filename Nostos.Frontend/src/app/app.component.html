@@ -8,6 +8,12 @@
 } @else {
   <app-cloud-entry />
 }
+@if (
+  cloudEntry.supportsLibraryMigration() &&
+  (cloudEntry.productReady() || cloudEntry.view().kind === 'first_run')
+) {
+  <app-library-transfer-indicator />
+}
 <!-- Root-level interaction boundary: activation can continue after leaving
      Settings, so the cutover must block the whole app, not just one host. -->
 <app-library-activation-overlay [state]="activation.state()" [phase]="activation.phase()" />

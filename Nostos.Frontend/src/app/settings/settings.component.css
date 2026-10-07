@@ -150,6 +150,12 @@
   margin-bottom: 0;
 }
 
+.first-run-cloud-import.is-selected {
+  border-radius: 6px;
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: 4px;
+}
+
 /* --- Settings Card --- */
 .settings-card {
   margin-bottom: 30px;
