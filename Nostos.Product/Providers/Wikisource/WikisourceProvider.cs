@@ -164,6 +164,13 @@ public sealed class WikisourceProvider : IContentProvider,
         {
             throw ProviderException.UnavailableFor(Id, ex.Message);
         }
+        catch (OperationCanceledException ex) when (!ct.IsCancellationRequested)
+        {
+            // The 20 s client timeout surfaces as an OperationCanceledException
+            // that has nothing to do with the caller's token. A sync that only
+            // knows provider_unavailable would not recognise a raw one.
+            throw ProviderException.UnavailableFor(Id, ex.Message);
+        }
     }
 
     public async Task<ProviderAcquisitionPlan?> PlanAcquisitionAsync(
