@@ -1,11 +1,86 @@
 # Portability and migration
 
-Nostos portable archives are the provider-neutral format for moving user-owned library state between installations.
+Nostos portable archives use the provider-neutral `.nostos` format to move library data between installations. This guide describes the customer flow, the public implementation, and the limits of the evidence. A protocol ceiling is not a promise that every host or account can accept an archive that large.
 
-This document deliberately separates:
+The public SelfHosted implementation is in this repository. The Cloud hosting adapter and its account-plan rules live outside it. The hosted alpha advertises library migration, but only one SelfHosted → Cloud import is recorded as completed; the other hosted paths listed below remain unverified.
 
-1. **Current behaviour (shipped)** — what the existing portability API, the durable transfer-job API, and `PortableArchiveService` do today.
-2. **Migration contract (epic #676)** — the provider-neutral contract for one-click SelfHosted ↔ Cloud migration, developed across issues #677–#682. Its transport, durable jobs, archive preparation, activation/replacement with the mandatory recovery copy (#681), and the SelfHosted capability advertisement are implemented (described in Part 1); the private hosted (Cloud) adapter is built outside this repository.
+---
+
+## Customer guide
+
+### Find the controls
+
+On a host that advertises library migration, open **Settings → Library & data → Move your library**. The card contains both export and import.
+
+When the host advertises Cloud portable export but not library migration, the UI shows an export-only card. Use **Settings → Library & data → Data export → Export all my Nostos data**. This is a separate export path; it is not evidence that the migration export flow has been exercised.
+
+### Export a library
+
+1. Open **Settings → Library & data → Move your library**.
+2. Under **Export library**, choose **Export library**.
+3. When the status says **Your export is ready**, choose **Download archive** if the browser did not start the download automatically.
+
+The result is a `.nostos` file. A completed migration export artifact is retained for 24 hours by the public implementation. If the host shows the export-only card instead, the button is **Export all my Nostos data**.
+
+### Import, replace, and activate
+
+1. Open **Settings → Library & data → Move your library**.
+2. Under **Import library**, choose **Import library…** and select the `.nostos` archive.
+3. Wait while the browser hashes and uploads the file and the host prepares and checks it.
+4. If the destination is empty, the UI requests activation automatically after verification. There is no separate **Activate** button. Keep the page open while **Switching libraries…** is shown.
+5. If the destination already has library data, review the current and incoming counts in **Replace this library?**. Choose **Replace library** to confirm and start activation, or **Cancel** to leave the current library in place.
+6. The UI shows the completed state briefly, then reloads the app; no further action is required.
+
+There is no merge mode. A populated destination is retained as a recovery copy for seven days when replacement succeeds. If the destination changed while the import was preparing, the host can require a fresh review instead of replacing that newer state. The shared UI presents the confirmation; revision checks and recovery-copy creation are server-side. These behaviors are implemented in the public SelfHosted host, but hosted behavior beyond the one recorded import has not been verified.
+
+### Restore the previous library
+
+The shared Angular Settings and transfer templates in this repository do not contain a **Restore previous** button or recovery-copy list, so there is no customer click path to give for this operation. The public SelfHosted API does expose recovery list, status, and restore routes; a restore request needs the recovery ID, the current destination revision, and explicit replacement confirmation. It replaces the current portable library with the retained copy. A recovery copy expires after seven days and cannot be restored twice.
+
+These API routes do not establish that Cloud exposes the operation to customers. Restore after activation has not been verified on the hosted alpha. See the [API reference](../api-reference.md) for the SelfHosted routes.
+
+### Browser resume limits
+
+The browser stores job/session identifiers and file identity in origin-local storage; it does not store the archive bytes. While the page stays open, a paused upload can continue with **Resume upload**. After a reload, return to the same Nostos origin with its browser storage intact and, when prompted, select the same archive again. The client checks the file size and whole-file SHA-256, then asks the host which chunks are missing. A different file cannot continue that upload.
+
+The server transfer session expires after 24 hours. The public client and SelfHosted browser suite cover refresh and same-file reselection; recovery after clearing site data or switching browser profiles is not established for every host. Only one import can hold the active-tab lease across tabs for the same browser origin. The shared client also has an optional active-import discovery request, but that route is not mapped by the public SelfHosted migration endpoint group.
+
+### Size limits and account plans
+
+The public migration contract sets these hard ceilings:
+
+| Limit | Contract ceiling |
+|---|---:|
+| Compressed archive | 512 GiB |
+| Aggregate media in the archive | 512 GiB |
+| One archive entry | 16 GiB |
+| Relational data payload | 64 MiB |
+| Manifest | 4 MiB |
+| ZIP entries | 20,000 |
+| Total uncompressed archive data | 1 TiB |
+| Nominal upload chunk | 4–64 MiB; 16 MiB default |
+| Transfer session lifetime | 24 hours |
+
+These are validation and protocol ceilings, not tested practical maximums. A host can reject an archive below them when destination capacity is insufficient; replacing a populated library also reserves space for its recovery copy. The public repository does not define a numeric Cloud plan quota or show how the private Cloud host applies plan limits. Use the host's preflight result for a specific archive; near-plan-limit behavior has not been verified on the hosted alpha.
+
+The older single-request import endpoint is separate from the chunked migration flow and is limited by the SelfHosted Kestrel request-body cap of 4 GiB. Do not use that number as the limit for the migration upload API.
+
+### What an archive contains
+
+A `.nostos` archive contains a manifest with format/version and checksum information, library records, and the primary media files and covers that are stored for those books. Its data includes works and books with metadata and reading progress; collections and memberships; notes, source anchors, topics and note links; Writing Studio documents and folders; writing/note links; remembered e-reader book mappings; acquisition provenance; and the assistant capture-processing preference.
+
+It does not contain local backup history or backup paths, absolute media paths, host/runtime settings, AI provider configuration or credentials, migration jobs or idempotency receipts, or derived caches such as search indexes, EPUB locations, and generated thumbnails. A portable archive is not a same-installation operational backup. The inventory is defined by [PortableArchiveModels](../../Nostos.Product/Services/Portability/PortableArchiveModels.cs) and [PortableArchiveService](../../Nostos.Product/Services/Portability/PortableArchiveService.cs).
+
+The click labels and activation handoff are in [Settings](../../Nostos.Frontend/src/app/settings/settings.component.html), the [transfer host](../../Nostos.Frontend/src/app/library-transfer/components/library-transfer-host.component.html), the [import flow](../../Nostos.Frontend/src/app/library-transfer/components/library-import-flow.component.html), and the [activation controller](../../Nostos.Frontend/src/app/library-transfer/services/library-activation-controller.service.ts). The browser resume record is defined by [TransferResumeStore](../../Nostos.Frontend/src/app/library-transfer/services/transfer-resume-store.service.ts). Numeric ceilings come from [MigrationContractLimits](../../Nostos.Product/Services/Portability/MigrationContracts.cs) and [PortableArchiveLimits](../../Nostos.Product/Services/Portability/PortableArchiveLimits.cs).
+
+### What has and has not been verified
+
+- **Local SelfHosted browser coverage:** the disposable-instance suite in [library-transfer-browser-qa.md](../library-transfer-browser-qa.md) records export/download, empty import with automatic activation, populated replacement, same-file resume after reload, cancellation, and backend restart recovery using generated test libraries. It is not a Cloud production run.
+- **Local large-archive measurement:** this document's existing measurement uses a synthetic archive over 4 GiB and local test storage. It measures archive read/write paths, not a full hosted browser transfer or a Cloud plan limit.
+- **Hosted alpha:** issue [#676](https://github.com/Christian-Gennari/Nostos/issues/676) records the feature as deployed and advertised for early access, but not fully proved. Issue [#682](https://github.com/Christian-Gennari/Nostos/issues/682) records one completed SelfHosted → Cloud import. PR [#790](https://github.com/Christian-Gennari/Nostos/pull/790) records that import and activation completed before a backup-status error toast; PR [#791](https://github.com/Christian-Gennari/Nostos/pull/791) forwards the guard for that unsupported refresh request to public main.
+- **Not verified on the hosted alpha:** restore after activation, any export, Cloud → SelfHosted, full round trips in both directions, the protocol maximum, and near-plan-limit admission. The #682 rescope explicitly leaves the broader proof for later.
+
+The links above identify the code and evidence used for this guide. In particular, the shared UI is not evidence of a completed Cloud export or restore journey.
 
 ---
 
@@ -36,21 +111,18 @@ Therefore, although the archive service itself has larger validation limits, the
 
 This is one of the primary constraints the durable transfer protocol below removes.
 
-## Durable library transfer jobs (shipped and advertised on SelfHosted)
+## Durable library transfer jobs
 
 The SelfHosted reference implementation of the epic #676 transfer protocol is
 implemented in the product and reachable over HTTP. It is advertised to the
 frontend from the same `IMigrationPhaseAvailability` the migration routes
 consult: `GET /api/runtime/capabilities` reports
-`supportsLibraryMigration: true` on the SelfHosted host (where the phase
-handlers are registered and `LibraryMigration:Enabled` defaults to true) and
-the Settings/onboarding transfer UI is visible. Operators can withdraw the
-feature at runtime with `LibraryMigration:Enabled=false`; a host whose phase
-handlers are not registered, or that maps product endpoints with
-`MapMigrationTransferEndpoints = false`, reports `false` unconditionally.
-Activation, replacement, restore and the mandatory recovery copy shipped with
-#681 (see the activation sections below). A hosted (Cloud) host stays dark
-until its private transfer adapter ships and registers its own availability.
+`supportsLibraryMigration: true` when the SelfHosted phase handlers are
+registered and migration is enabled; otherwise Settings hides the flow.
+Activation, replacement, restore, and the mandatory recovery copy shipped with
+#681 are described below. Cloud uses a separate private host adapter; the
+hosted alpha advertises migration, but its plan rules and provider implementation
+are not defined in this repository. See the verification status above.
 
 ### Routes
 
@@ -365,18 +437,18 @@ Payload and manifest versions must strictly agree (`data_version_mismatch`). A p
 
 ---
 
-# Part 2: Migration contract (epic #676 — transport, activation and UI implemented)
+# Part 2: Migration contract and implementation status
 
-Epic #676 defines the one-click migration system between Nostos SelfHosted and Nostos Cloud.
+Epic #676 defines the guided library transfer flow between Nostos SelfHosted and Nostos Cloud.
 
-The implementation is split across issues #677–#682. This section defines the target contract. The provider-neutral contract, durable job/session/chunk/artifact/reservation records, the local worker, the SelfHosted transfer HTTP API, import preparation to `ReadyToActivate`, export artifact generation, activation/replacement with a mandatory recovery copy (#681), and the real-browser acceptance suite (#680 slice B10) are implemented (see "Durable library transfer jobs" in Part 1). The SelfHosted host advertises `supportsLibraryMigration`; the private hosted (Cloud) adapter is built outside this repository. Destructive replacement only runs through the #681 activation contract with an explicit, server-checked confirmation.
+The public repository contains the provider-neutral contract, durable job/session/chunk/artifact/reservation records, SelfHosted transfer API, import preparation, export artifact generation, activation, and replacement with a mandatory recovery copy. The local real-browser suite uses disposable SelfHosted instances; it is not hosted Cloud acceptance. The Cloud adapter is maintained outside this repository and the hosted alpha advertises migration. One hosted SelfHosted → Cloud import is recorded as completed; export, restore after activation, and Cloud → SelfHosted remain unverified. See the customer guide above and the Nostos #682 rescope for the evidence boundary. Destructive replacement in the public implementation requires explicit, server-checked confirmation.
 
 ## Goals and authenticated ownership boundary
 
 The migration system must:
 
 - remain strictly provider-neutral;
-- support multi-hundred-gigabyte libraries through resumable chunked transfer;
+- define a resumable chunked transfer protocol with a 512 GiB archive ceiling; that ceiling is not evidence of a tested or plan-supported archive size;
 - survive interruption and worker restarts;
 - make retries safe and idempotent;
 - detect destination changes before destructive activation;
