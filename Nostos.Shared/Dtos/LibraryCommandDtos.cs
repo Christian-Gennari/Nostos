@@ -23,9 +23,6 @@ public sealed record LibraryErrorDto(string Code);
 /// </summary>
 public sealed record LibraryConfirmationErrorDto(string Code, IReadOnlyList<LibraryCandidate> Candidates);
 
-// --- BASE REQUEST ---
-public record LibraryCommandRequest(string ClientId, string IdempotencyKey);
-
 // --- BOOK CREATE / MATCH ---
 public sealed record LibraryCreateBookRequest(
     string ClientId,

@@ -22,7 +22,7 @@ namespace Nostos.Backend.Services.Portability;
 /// </para>
 /// </remarks>
 internal sealed class LocalPortableImportStaging
-    : IPortableImportStaging, IPortableStagingCapacityAdmission
+    : IPortableImportStaging
 {
     private const int StreamBufferBytes = 128 * 1024;
 
