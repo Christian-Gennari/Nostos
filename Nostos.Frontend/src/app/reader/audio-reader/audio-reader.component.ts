@@ -24,11 +24,12 @@ import { Book } from '../../core/dtos/book.dtos';
 
 import { BloomArtDirective } from '../../ui/bloom-art/bloom-art.directive';
 import { NostosIconComponent } from '../../ui/icon/nostos-icon.component';
+import { IconButtonComponent } from '../../ui/icon-button/icon-button.component';
 
 @Component({
   selector: 'app-audio-reader',
   standalone: true,
-  imports: [CommonModule, FormsModule, NostosIconComponent, BloomArtDirective],
+  imports: [CommonModule, FormsModule, NostosIconComponent, BloomArtDirective, IconButtonComponent],
   templateUrl: './audio-reader.component.html',
   styleUrl: './audio-reader.component.css',
 })

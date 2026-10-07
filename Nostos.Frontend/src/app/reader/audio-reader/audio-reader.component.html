@@ -1,6 +1,6 @@
 <div class="audio-container">
   <div class="cover-section">
-    <div class="cover-art shadow-lg">
+    <div class="cover-art">
       @if (book()?.coverUrl) {
       <img [src]="book()?.coverUrl" alt="Book Cover" appBloomArt class="cover-img" />
       } @else {
@@ -25,10 +25,6 @@
       }
     </div>
 
-    <div class="track-info">
-      <h2 class="book-title">{{ book()?.title }}</h2>
-      <p class="book-author">{{ book()?.author }}</p>
-    </div>
   </div>
 
   <div class="controls">
@@ -38,6 +34,7 @@
         [min]="0"
         [max]="duration()"
         [value]="currentTime()"
+        [style.--progress]="(duration() > 0 ? currentTime() / duration() * 100 : 0) + '%'"
         (input)="seek($event)"
         class="range-input"
       />
@@ -129,7 +126,20 @@
         </div>
 
         @if (playbackMenuOpen()) {
-          <div class="playback-menu" id="playback-menu" role="dialog" aria-label="Playback settings" data-testid="audio-playback-menu">
+          <div class="playback-menu" id="playback-menu" role="dialog" aria-labelledby="playback-menu-title" data-testid="audio-playback-menu">
+            <div class="playback-menu-header">
+              <h2 id="playback-menu-title">Playback settings</h2>
+              <button
+                appIconButton
+                icon="x"
+                [glyphSize]="18"
+                type="button"
+                (click)="closePlaybackMenu()"
+                aria-label="Close playback settings"
+                title="Close playback settings"
+              ></button>
+            </div>
+
             <div class="playback-section">
               <span class="playback-section-label" id="playback-speed-label">Speed</span>
               <div class="rate-steps" role="group" aria-labelledby="playback-speed-label">

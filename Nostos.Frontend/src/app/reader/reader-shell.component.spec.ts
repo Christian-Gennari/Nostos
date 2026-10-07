@@ -1644,10 +1644,19 @@ describe('ReaderShell immersive chrome (#759)', () => {
     expect(component.chromeShown()).toBe(false);
   });
 
-  it('leaves the audiobook shell permanently available', async () => {
+  it('keeps the audio edge header persistent and shows title and author once', async () => {
     const component = await openBook('book.m4b');
     expect(component.immersiveReader()).toBe(false);
     expect(component.chromeShown()).toBe(true);
+
+    const layout = fixture.nativeElement.querySelector('[data-testid="reader-layout"]');
+    const header = fixture.nativeElement.querySelector('[data-testid="reader-chrome-top"]');
+    expect(layout.classList).toContain('audio-immersive');
+    expect(layout.classList).not.toContain('immersive');
+    expect(header.hasAttribute('inert')).toBe(false);
+    expect(header.hasAttribute('aria-hidden')).toBe(false);
+    expect(fixture.nativeElement.querySelectorAll('.reader-book-title, .book-title')).toHaveLength(1);
+    expect(fixture.nativeElement.querySelectorAll('.reader-book-author, .book-author')).toHaveLength(1);
   });
 
   it('toggles chrome from the EPUB reading surface and Escape returns to rest', async () => {
@@ -1768,13 +1777,23 @@ describe('ReaderShell UI kit migration (#362)', () => {
     expect(template).not.toContain('class="btn btn-secondary"');
 
     // Audio transport, time navigation, speed and sleep controls have a distinct
-    // playback contract and stay product-owned.
+    // playback contract and stay product-owned. The menu close uses the shared
+    // icon-button primitive like the other transient reader panels.
     const audioTemplate = readSource('./audio-reader/audio-reader.component.html');
     expect(audioTemplate).not.toContain('appButton');
-    expect(audioTemplate).not.toContain('appIconButton');
+    const transportStart = audioTemplate.indexOf('<div class="main-controls">');
+    const transportEnd = audioTemplate.indexOf('</div>', transportStart);
+    const transportTemplate = audioTemplate.slice(transportStart, transportEnd);
+    expect(transportTemplate).not.toContain('appIconButton');
     expect(audioTemplate).toContain('class="play-btn"');
     expect(audioTemplate).toContain('class="skip-btn"');
     expect(audioTemplate).toContain('class="playback-pill"');
+    expect(audioTemplate).toMatch(/<button\s+appIconButton[\s\S]*?aria-label="Close playback settings"/);
+
+    // The settings surface floats above the controls so opening it cannot
+    // resize the centered player block.
+    const audioCss = readSource('./audio-reader/audio-reader.component.css');
+    expect(audioCss).toMatch(/\.playback-menu\s*\{[^}]*position:\s*absolute;/s);
   });
 
   it('keeps mobile touch floors on custom Reader controls after the migration', () => {
