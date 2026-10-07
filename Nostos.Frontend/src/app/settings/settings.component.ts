@@ -1144,7 +1144,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
    * data on screen.
    */
   onLibraryTransferCompleted(): void {
-    this.loadData();
+    if (this.supportsLocalBackupConfiguration()) this.loadData();
   }
 
   loadData(): void {
