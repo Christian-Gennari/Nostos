@@ -60,13 +60,17 @@ public sealed class LibriVoxSnapshotSourceTests
             Content = new StringContent(json, Encoding.UTF8, "application/json"),
         };
 
-    private static string FullPageJson(int count) =>
-        JsonSerializer.Serialize(new
-        {
-            books = Enumerable.Range(1, count)
-                .Select(index => new { id = (4000 + index).ToString(), title = $"Snapshot Book {index}" })
-                .ToArray(),
-        });
+    private static string FullPageJson(int count, bool withUnparsableRecord = false)
+    {
+        var books = Enumerable.Range(1, count)
+            .Select(index => (object)new { id = (4000 + index).ToString(), title = $"Snapshot Book {index}" })
+            .ToList();
+
+        if (withUnparsableRecord)
+            books[^1] = new { };
+
+        return JsonSerializer.Serialize(new { books });
+    }
 
     private static async Task<List<ProviderItem>> ReadItemsAsync(IAsyncEnumerable<ProviderItem> items)
     {
@@ -110,17 +114,45 @@ public sealed class LibriVoxSnapshotSourceTests
         }
     }
 
+    /// <summary>
+    /// Hands out a distinct stub per named client, so a test can prove which
+    /// client a read actually used.
+    /// </summary>
+    private sealed class PerClientStubHttpClientFactory : IHttpClientFactory
+    {
+        private readonly Dictionary<string, StubHttpMessageHandler> _handlers = new(StringComparer.Ordinal);
+
+        public StubHttpMessageHandler HandlerFor(string name)
+        {
+            if (!_handlers.TryGetValue(name, out var handler))
+            {
+                handler = new StubHttpMessageHandler();
+                _handlers[name] = handler;
+            }
+
+            return handler;
+        }
+
+        public HttpClient CreateClient(string name) =>
+            new(HandlerFor(name), disposeHandler: false)
+            {
+                BaseAddress = new Uri("https://librivox.org"),
+            };
+    }
+
+    private static LibriVoxProvider CreateProvider(IHttpClientFactory factory, TimeProvider clock) =>
+        new(
+            factory,
+            new LibriVoxM4bAssembler(new StubMediaProcessRunner(), NullLogger<LibriVoxM4bAssembler>.Instance),
+            NullLogger<LibriVoxProvider>.Instance,
+            clock);
+
     private static (LibriVoxProvider Provider, StubHttpMessageHandler Handler, RecordingTimeProvider Clock) CreateProvider()
     {
         var handler = new StubHttpMessageHandler();
         var factory = new StubHttpClientFactory(handler, new Uri("https://librivox.org"));
         var clock = new RecordingTimeProvider(ScanStart);
-        var provider = new LibriVoxProvider(
-            factory,
-            new LibriVoxM4bAssembler(new StubMediaProcessRunner(), NullLogger<LibriVoxM4bAssembler>.Instance),
-            NullLogger<LibriVoxProvider>.Instance,
-            clock);
-        return (provider, handler, clock);
+        return (CreateProvider(factory, clock), handler, clock);
     }
 
     [Fact]
@@ -177,11 +209,57 @@ public sealed class LibriVoxSnapshotSourceTests
     }
 
     [Fact]
+    public async Task Read_uses_the_dedicated_snapshot_client_not_the_discovery_client()
+    {
+        var factory = new PerClientStubHttpClientFactory();
+        var snapshotHandler = factory.HandlerFor(LibriVoxProvider.SnapshotHttpClientName);
+        snapshotHandler.Register(PagePath(0), JsonResponse(LoadFixture("snapshot-page.json")));
+        var provider = CreateProvider(factory, new RecordingTimeProvider(ScanStart));
+
+        var snapshot = await provider.ReadAsync(new ProviderSnapshotRequest(), CancellationToken.None);
+
+        (await ReadItemsAsync(snapshot.Items)).Should().HaveCount(3);
+        snapshotHandler.RecordedRequests.Should().ContainSingle("the page came from the snapshot client");
+        factory.HandlerFor(LibriVoxProvider.HttpClientName).RecordedRequests.Should().BeEmpty(
+            "the 20 s discovery client must not serve bulk snapshot reads");
+    }
+
+    [Fact]
+    public async Task Read_continues_a_full_scan_when_a_full_page_contains_an_unparsable_record()
+    {
+        var (provider, handler, clock) = CreateProvider();
+        handler.Register(PagePath(0), JsonResponse(FullPageJson(500, withUnparsableRecord: true)));
+        handler.Register(PagePath(500), JsonResponse(LoadFixture("snapshot-page.json")));
+
+        var first = await provider.ReadAsync(new ProviderSnapshotRequest(), CancellationToken.None);
+
+        (await ReadItemsAsync(first.Items)).Should().HaveCount(499, "the unparsable record is skipped");
+        first.NextCursor.Should().NotBeNull("the raw page was full, so the scan must continue");
+
+        var second = await provider.ReadAsync(
+            new ProviderSnapshotRequest(Cursor: first.NextCursor),
+            CancellationToken.None);
+
+        (await ReadItemsAsync(second.Items)).Should().HaveCount(3);
+        second.NextCursor.Should().BeNull();
+        clock.Delays.Should().ContainSingle().Which.Should().Be(LibriVoxProvider.SnapshotPageDelay);
+    }
+
+    [Fact]
     public async Task Read_full_scan_pages_with_a_delay_until_the_last_page()
     {
         var (provider, handler, clock) = CreateProvider();
-        handler.Register(PagePath(0), JsonResponse(FullPageJson(500)));
-        handler.Register(PagePath(500), JsonResponse(LoadFixture("snapshot-page.json")));
+        var requested = new List<string>();
+        handler.Register(PagePath(0), request =>
+        {
+            requested.Add(request.RequestUri!.PathAndQuery);
+            return JsonResponse(FullPageJson(500));
+        });
+        handler.Register(PagePath(500), request =>
+        {
+            requested.Add(request.RequestUri!.PathAndQuery);
+            return JsonResponse(LoadFixture("snapshot-page.json"));
+        });
 
         var first = await provider.ReadAsync(new ProviderSnapshotRequest(), CancellationToken.None);
 
@@ -198,7 +276,7 @@ public sealed class LibriVoxSnapshotSourceTests
         second.LastModified.Should().Be(ScanStart, "every page of a scan reports the same watermark");
         clock.Delays.Should().ContainSingle().Which.Should().Be(LibriVoxProvider.SnapshotPageDelay);
 
-        handler.RecordedRequestPaths.Should().BeEquivalentTo(new[] { PagePath(0), PagePath(500) });
+        requested.Should().Equal(new[] { PagePath(0), PagePath(500) }, "page 0 is fetched before its continuation");
     }
 
     [Fact]
@@ -206,8 +284,17 @@ public sealed class LibriVoxSnapshotSourceTests
     {
         var (provider, handler, clock) = CreateProvider();
         var since = Watermark.ToUnixTimeSeconds() - 1;
-        handler.Register(PagePath(0, since), JsonResponse(FullPageJson(500)));
-        handler.Register(PagePath(500, since), JsonResponse(LoadFixture("snapshot-page.json")));
+        var requested = new List<string>();
+        handler.Register(PagePath(0, since), request =>
+        {
+            requested.Add(request.RequestUri!.PathAndQuery);
+            return JsonResponse(FullPageJson(500));
+        });
+        handler.Register(PagePath(500, since), request =>
+        {
+            requested.Add(request.RequestUri!.PathAndQuery);
+            return JsonResponse(LoadFixture("snapshot-page.json"));
+        });
 
         var first = await provider.ReadAsync(
             new ProviderSnapshotRequest(IfModifiedSince: Watermark),
@@ -225,7 +312,7 @@ public sealed class LibriVoxSnapshotSourceTests
         second.NextCursor.Should().BeNull();
         clock.Delays.Should().ContainSingle().Which.Should().Be(LibriVoxProvider.SnapshotPageDelay);
 
-        handler.RecordedRequestPaths.Should().BeEquivalentTo(new[] { PagePath(0, since), PagePath(500, since) });
+        requested.Should().Equal(new[] { PagePath(0, since), PagePath(500, since) }, "the since boundary carries into page 2");
     }
 
     [Fact]
@@ -245,6 +332,44 @@ public sealed class LibriVoxSnapshotSourceTests
         snapshot.LastModified.Should().Be(ScanStart);
         snapshot.NextCursor.Should().BeNull();
         (await ReadItemsAsync(snapshot.Items)).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Read_reports_a_404_on_the_first_page_of_a_full_scan_as_provider_unavailable()
+    {
+        var (provider, handler, _) = CreateProvider();
+        handler.Register(
+            PagePath(0),
+            JsonResponse("{\"error\":\"Audiobooks could not be found\"}", HttpStatusCode.NotFound));
+
+        var act = () => provider.ReadAsync(new ProviderSnapshotRequest(), CancellationToken.None);
+
+        var error = await act.Should().ThrowAsync<ProviderException>();
+        error.Which.Code.Should().Be(ProviderException.Unavailable);
+    }
+
+    [Fact]
+    public async Task Read_ends_a_full_scan_at_a_page_boundary_instead_of_failing_on_the_probe_404()
+    {
+        // The API answers 404 when the offset reaches the end of the catalogue,
+        // so a catalogue whose size is a multiple of the page size always gets
+        // a missing page after its last full page: that is the end of the scan.
+        var (provider, handler, _) = CreateProvider();
+        handler.Register(PagePath(0), JsonResponse(FullPageJson(500)));
+        handler.Register(
+            PagePath(500),
+            JsonResponse("{\"error\":\"Audiobooks could not be found\"}", HttpStatusCode.NotFound));
+
+        var first = await provider.ReadAsync(new ProviderSnapshotRequest(), CancellationToken.None);
+        first.NextCursor.Should().NotBeNull();
+
+        var second = await provider.ReadAsync(
+            new ProviderSnapshotRequest(Cursor: first.NextCursor),
+            CancellationToken.None);
+
+        second.Status.Should().Be(ProviderSnapshotStatus.Updated);
+        second.NextCursor.Should().BeNull();
+        (await ReadItemsAsync(second.Items)).Should().BeEmpty();
     }
 
     [Fact]
@@ -299,12 +424,15 @@ public sealed class LibriVoxSnapshotSourceTests
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
 
-    [Fact]
-    public async Task Read_rejects_a_corrupt_cursor()
+    [Theory]
+    [InlineData("not-a-cursor")]
+    [InlineData("v1|f|1759000000|250")]
+    [InlineData("v1|s|1759000000|1759000000|250")]
+    public async Task Read_rejects_a_corrupt_cursor(string cursor)
     {
         var (provider, _, _) = CreateProvider();
 
-        var act = () => provider.ReadAsync(new ProviderSnapshotRequest(Cursor: "not-a-cursor"), CancellationToken.None);
+        var act = () => provider.ReadAsync(new ProviderSnapshotRequest(Cursor: cursor), CancellationToken.None);
 
         var error = await act.Should().ThrowAsync<ProviderException>();
         error.Which.Code.Should().Be(ProviderException.ResponseInvalid);

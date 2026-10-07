@@ -207,7 +207,9 @@ public sealed class LibriVoxProvider : IContentProvider,
     /// additions is an ordinary <see cref="ProviderSnapshotStatus.Updated"/>
     /// page with no items. The page is materialized before returning, so the
     /// caller's token governs all its I/O and no live enumeration outlives the
-    /// call.
+    /// call, and the read runs on the dedicated
+    /// <see cref="SnapshotHttpClientName"/> client rather than the discovery
+    /// client's 20 s timeout.
     /// </summary>
     public async Task<ProviderSnapshot> ReadAsync(ProviderSnapshotRequest request, CancellationToken ct)
     {
@@ -224,6 +226,7 @@ public sealed class LibriVoxProvider : IContentProvider,
         try
         {
             document = await LoadJsonAsync(
+                _snapshotHttp,
                 LibriVoxCatalog.SnapshotPagePath(cursor.Offset, cursor.Since ? cursor.SinceUnixSeconds : null),
                 ct);
         }
@@ -239,14 +242,28 @@ public sealed class LibriVoxProvider : IContentProvider,
         ct.ThrowIfCancellationRequested();
 
         if (document is null)
-            return Page(cursor, []);
+        {
+            // The API answers 404/410 when a listing query matches nothing.
+            // For a since read that is the ordinary "no additions" answer, and
+            // for a continuation it is how a scan that ended exactly on a page
+            // boundary learns there is no next page. On the first request of a
+            // full scan there is no such benign reading: the listing itself is
+            // missing, and reporting an empty catalogue would let a host
+            // publish an empty generation over a good one.
+            if (!cursor.Since && cursor.Offset == 0)
+                throw ProviderException.UnavailableFor(Id, "the catalogue listing answered 404");
+
+            return Page(cursor, [], 0);
+        }
 
         using (document)
         {
+            var rawCount = 0;
             var books = new List<LibriVoxCatalog.Book>();
             if (document.RootElement.TryGetProperty("books", out var elements) &&
                 elements.ValueKind == JsonValueKind.Array)
             {
+                rawCount = elements.GetArrayLength();
                 foreach (var element in elements.EnumerateArray())
                 {
                     var book = LibriVoxCatalog.ParseBook(element);
@@ -255,13 +272,23 @@ public sealed class LibriVoxProvider : IContentProvider,
                 }
             }
 
-            return Page(cursor, books);
+            if (rawCount > books.Count)
+            {
+                _logger.LogWarning(
+                    "LibriVox snapshot page at offset {Offset} skipped {Skipped} records the feed could not parse",
+                    cursor.Offset,
+                    rawCount - books.Count);
+            }
+
+            return Page(cursor, books, rawCount);
         }
     }
 
-    private ProviderSnapshot Page(SnapshotCursor cursor, IReadOnlyList<LibriVoxCatalog.Book> books)
+    private ProviderSnapshot Page(SnapshotCursor cursor, IReadOnlyList<LibriVoxCatalog.Book> books, int rawCount)
     {
-        var next = books.Count == LibriVoxCatalog.SnapshotPageSize
+        // The raw page size decides whether another page exists: one
+        // unparsable record must not end the scan early.
+        var next = rawCount == LibriVoxCatalog.SnapshotPageSize
             ? cursor.Next().Encode()
             : null;
 
@@ -291,6 +318,9 @@ public sealed class LibriVoxProvider : IContentProvider,
             Since: sinceAt is not null,
             // One second of overlap: a repeated upsert is safe, while a missed
             // recording because of an inclusive/exclusive boundary is not.
+            // The watermark is host-clock derived, so this assumes a clock in
+            // step with LibriVox; the weekly full reconcile is the backstop for
+            // any skew the overlap cannot absorb.
             SinceUnixSeconds: sinceAt is { } watermark ? Math.Max(0, watermark.ToUnixTimeSeconds() - 1) : 0,
             StartedUnixSeconds: startedAt.ToUnixTimeSeconds(),
             Offset: 0);
@@ -319,7 +349,10 @@ public sealed class LibriVoxProvider : IContentProvider,
 
             if (!TryParseUnix(parts[index++], out var startedUnixSeconds) ||
                 !int.TryParse(parts[index], NumberStyles.Integer, CultureInfo.InvariantCulture, out var offset) ||
-                offset < 0)
+                offset < 0 ||
+                // The source only emits whole-page offsets, so anything else
+                // is a corrupted checkpoint rather than a resumable position.
+                offset % LibriVoxCatalog.SnapshotPageSize != 0)
             {
                 throw InvalidCursor(providerId);
             }
@@ -443,7 +476,7 @@ public sealed class LibriVoxProvider : IContentProvider,
         var value = Uri.EscapeDataString($"^{text}");
         var path = $"{LibriVoxCatalog.ApiPath}?{field}={value}&format=json&extended=1&limit={limit}&offset={offset}";
 
-        using var document = await LoadJsonAsync(path, ct);
+        using var document = await LoadJsonAsync(_http, path, ct);
         if (document is null)
             return [];
 
@@ -471,7 +504,7 @@ public sealed class LibriVoxProvider : IContentProvider,
         if (!LibriVoxCatalog.IsValidId(id))
             return null;
 
-        using var document = await LoadJsonAsync($"{LibriVoxCatalog.ApiPath}?id={id}&format=json&extended=1", ct);
+        using var document = await LoadJsonAsync(_http, $"{LibriVoxCatalog.ApiPath}?id={id}&format=json&extended=1", ct);
         if (document is null)
             return null;
 
@@ -484,14 +517,14 @@ public sealed class LibriVoxProvider : IContentProvider,
     }
 
     /// <summary>
-    /// Fetches and parses a feed document. A 404 is the catalogue's way of
-    /// saying "nothing matched" — an ordinary empty result, not a failure. A
-    /// body that is not the expected JSON is a source problem and is reported as
-    /// one, never passed off as an empty catalogue.
+    /// Fetches and parses a feed document with the given client. A 404 is the
+    /// catalogue's way of saying "nothing matched" — an ordinary empty result,
+    /// not a failure. A body that is not the expected JSON is a source problem
+    /// and is reported as one, never passed off as an empty catalogue.
     /// </summary>
-    private async Task<JsonDocument?> LoadJsonAsync(string path, CancellationToken ct)
+    private async Task<JsonDocument?> LoadJsonAsync(HttpClient client, string path, CancellationToken ct)
     {
-        using var response = await _http.GetAsync(path, HttpCompletionOption.ResponseHeadersRead, ct);
+        using var response = await client.GetAsync(path, HttpCompletionOption.ResponseHeadersRead, ct);
 
         if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Gone)
             return null;
