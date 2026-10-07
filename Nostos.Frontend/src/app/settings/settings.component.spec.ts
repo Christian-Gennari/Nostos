@@ -491,6 +491,10 @@ describe('SettingsComponent backup-only surface', () => {
     expect(card.textContent).toContain('Public-domain ebooks in many languages.');
     expect(providerToggle('gutenberg').checked).toBe(true);
     expect(providerToggle('wikisource').checked).toBe(false);
+    expect(providerToggle('gutenberg').getAttribute('aria-label')).toBe(
+      'Disable Project Gutenberg',
+    );
+    expect(providerToggle('wikisource').getAttribute('aria-label')).toBe('Enable Wikisource');
 
     // Reopening a successfully loaded tab does not re-fetch.
     tab.click();
@@ -511,6 +515,9 @@ describe('SettingsComponent backup-only surface', () => {
 
     expect(providerSettingsServiceMock.setEnabled).toHaveBeenCalledWith('gutenberg', false);
     expect(providerToggle('gutenberg').checked).toBe(false);
+    expect(providerToggle('gutenberg').getAttribute('aria-label')).toBe(
+      'Enable Project Gutenberg',
+    );
   });
 
   it('reverts the checkbox and toasts when a save fails', () => {
@@ -532,6 +539,7 @@ describe('SettingsComponent backup-only surface', () => {
 
     expect(toggle.checked).toBe(true);
     expect(toggle.disabled).toBe(false);
+    expect(toggle.getAttribute('aria-label')).toBe('Disable Project Gutenberg');
     expect(toastMock.error).toHaveBeenCalledTimes(1);
     expect(
       fixture.nativeElement.querySelector('[data-testid="book-providers-save-failed"]'),
