@@ -21,7 +21,11 @@ import {
   MockLibraryTransferTransportOptions,
 } from '../testing/mock-library-transfer-transport';
 import { LIBRARY_TRANSFER_TRANSPORT } from './library-transfer-transport';
-import { LibraryTransferCoordinator } from './library-transfer-coordinator.service';
+import {
+  DEFAULT_STATUS_POLL_MS,
+  LibraryTransferCoordinator,
+  MAINTENANCE_MAX_WAIT_MS,
+} from './library-transfer-coordinator.service';
 import { HASH_WORKER_FACTORY } from './hash/hash-worker';
 import { PortableArchiveInspector } from './portable-archive-inspector.service';
 import { TRANSFER_RESUME_STORAGE_KEY } from './transfer-resume-store.service';
@@ -295,7 +299,13 @@ describe('LibraryTransferCoordinator — exclusive server maintenance', () => {
     });
 
     const running = harness.coordinator.startImport(fileOfSize());
-    await advanceUntil(() => isTerminal(harness.coordinator.state().kind));
+    await settleUntil(() => harness.coordinator.maintenanceWaiting()?.operation === 'getJob');
+    expect(harness.transport.calls.getJob).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(2000);
+    await settleUntil(() => harness.transport.calls.getJob >= 2);
+    await vi.advanceTimersByTimeAsync(DEFAULT_STATUS_POLL_MS);
+    await settleUntil(() => isTerminal(harness.coordinator.state().kind));
     await running;
 
     expect(harness.transport.calls.getJob).toBeGreaterThanOrEqual(3);
@@ -336,11 +346,15 @@ describe('LibraryTransferCoordinator — exclusive server maintenance', () => {
         code: 'migration_activation_busy',
         status: 503,
         times: Infinity,
-        retryAfterMs: 5000,
+        retryAfterMs: MAINTENANCE_MAX_WAIT_MS - 50_000,
       });
 
       const running = harness.coordinator.startImport(fileOfSize());
-      await advanceUntil(() => harness.coordinator.state().kind === 'failed', 60_000, 100);
+      await settleUntil(
+        () => harness.coordinator.maintenanceWaiting()?.operation === 'completeUpload',
+      );
+      await vi.advanceTimersByTimeAsync(MAINTENANCE_MAX_WAIT_MS - 50_000);
+      await settleUntil(() => harness.coordinator.state().kind === 'failed');
       await running;
 
       expect(harness.coordinator.state()).toMatchObject({
