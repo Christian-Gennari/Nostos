@@ -53,6 +53,8 @@ import { CloudEntryService } from '../core/services/cloud-entry.service';
 import { CloudSession } from '../core/dtos/cloud-auth.dtos';
 import { HighlightImportService } from '../core/services/highlight-import.service';
 import { PortableLibraryService } from '../core/services/portable-library.service';
+import { ManagedBackupsService } from '../core/services/managed-backups.service';
+import { ManagedBackupListing } from '../core/dtos/managed-backups.dtos';
 import { LibraryTransferHostComponent } from '../library-transfer/components/library-transfer-host.component';
 import { CloudManagedAiUsage } from '../core/dtos/cloud-ai-refill.dtos';
 import {
@@ -243,6 +245,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
   private deploymentCapabilitiesService = inject(DeploymentCapabilitiesService);
   private cloudAiRefills = inject(CloudAiRefillService);
   private portableLibrary = inject(PortableLibraryService);
+  private managedBackupsService = inject(ManagedBackupsService);
   private cloudAuth = inject(CloudAuthService);
   readonly cloudEntry = inject(CloudEntryService);
   private highlightImport = inject(HighlightImportService);
@@ -283,6 +286,12 @@ export class SettingsComponent implements OnInit, OnDestroy {
   readonly supportsLocalBackupConfiguration = computed(
     () => this.deploymentCapabilities()?.supportsLocalBackupConfiguration === true,
   );
+  readonly supportsManagedBackups = computed(
+    () => this.deploymentCapabilities()?.supportsManagedBackups === true,
+  );
+  readonly managedBackups = signal<ManagedBackupListing | null>(null);
+  readonly managedBackupsLoading = signal(false);
+  readonly managedBackupsFailed = signal(false);
   readonly supportsPrivateNetworkAccess = computed(
     () => this.deploymentCapabilities()?.supportsPrivateNetworkAccess === true,
   );
@@ -693,6 +702,9 @@ export class SettingsComponent implements OnInit, OnDestroy {
         // deployment exposes them. This also prevents forbidden controls from
         // flashing while the capability request is in flight.
         if (capabilities.supportsLocalBackupConfiguration) this.loadData();
+        if (this.isManageLibraryPage && capabilities.supportsManagedBackups === true) {
+          this.loadManagedBackups();
+        }
         if (capabilities.supportsEreaderAccess) {
           this.loadOpdsInfo();
           if (capabilities.deploymentMode === 'Cloud') this.loadManagedOpdsAccess();
@@ -713,6 +725,22 @@ export class SettingsComponent implements OnInit, OnDestroy {
       error: () => {
         this.deploymentCapabilities.set(null);
         this.capabilitiesFailed.set(true);
+      },
+    });
+  }
+
+  private loadManagedBackups(): void {
+    this.managedBackupsLoading.set(true);
+    this.managedBackupsService.getBackups().subscribe({
+      next: (listing) => {
+        this.managedBackups.set(listing);
+        this.managedBackupsFailed.set(false);
+        this.managedBackupsLoading.set(false);
+      },
+      error: () => {
+        this.managedBackups.set(null);
+        this.managedBackupsFailed.set(true);
+        this.managedBackupsLoading.set(false);
       },
     });
   }

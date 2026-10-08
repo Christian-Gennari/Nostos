@@ -32,4 +32,6 @@ export interface DeploymentCapabilities {
   accountManagementUrl?: string | null;
   feedbackUrl?: string | null;
   hostedBrowserIntegrationEnabled?: boolean;
+  /** Hosted nightly backup history; absent/false keeps the customer card hidden. */
+  supportsManagedBackups?: boolean;
 }

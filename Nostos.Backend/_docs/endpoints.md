@@ -98,6 +98,17 @@ provider route, this one lists disabled sources so they can be turned back on.
 | `GET`  | `/`              | Every registered source with description, capabilities and effective state | `IProviderEnablementService` |
 | `PUT`  | `/{providerId}`  | Store `{ "enabled": bool }`; missing field → 400 `invalid_provider_preference`, unregistered id → 404 `provider_unknown` | `IProviderEnablementService` |
 
+### ManagedBackupEndpoints (`/api/managed-backups`)
+
+Authenticated, read-only managed-backup history. A host without a provider
+returns `501 Not Implemented`; capable hosts derive tenant scope from the
+authenticated server-side identity. See `docs/managed-backups-contract.md` for
+the response fields and retention semantics.
+
+| Method | Route                  | Description                                                   | Dependencies          |
+| ------ | ---------------------- | ------------------------------------------------------------- | --------------------- |
+| `GET`  | `/api/managed-backups` | List the current customer's completed managed nightly backups | `IManagedBackupCatalog` |
+
 ### NotesEndpoints (`/api`)
 
 | Method   | Route                   | Description                           | Dependencies                                                 |

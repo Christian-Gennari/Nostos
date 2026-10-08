@@ -99,6 +99,29 @@ public sealed class DeploymentConfigurationTests
         response.UsageMeteringAvailable.Should().BeTrue();
         response.AccountManagementUrl.Should().Be(DeploymentDescriptor.DefaultCloudAccountManagementUrl);
         response.FeedbackUrl.Should().Be(DeploymentDescriptor.DefaultCloudFeedbackUrl);
+        response.SupportsManagedBackups.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Managed_backups_require_cloud_host_opt_in_and_cannot_be_advertised_by_selfhosted()
+    {
+        var cloud = DeploymentDescriptor.For(DeploymentMode.Cloud) with
+        {
+            Capabilities = DeploymentDescriptor.For(DeploymentMode.Cloud).Capabilities with
+            {
+                SupportsManagedBackups = true,
+            },
+        };
+        var selfHosted = DeploymentDescriptor.For(DeploymentMode.SelfHosted) with
+        {
+            Capabilities = DeploymentDescriptor.For(DeploymentMode.SelfHosted).Capabilities with
+            {
+                SupportsManagedBackups = true,
+            },
+        };
+
+        DeploymentCapabilitiesEndpoints.ToResponse(cloud).SupportsManagedBackups.Should().BeTrue();
+        DeploymentCapabilitiesEndpoints.ToResponse(selfHosted).SupportsManagedBackups.Should().BeFalse();
     }
 
     [Fact]

@@ -31,6 +31,8 @@ import { DeploymentCapabilities } from '../core/dtos/deployment-capabilities.dto
 import { CloudAiRefillService } from '../core/services/cloud-ai-refill.service';
 import { CloudAuthService } from '../core/services/cloud-auth.service';
 import { PortableLibraryService } from '../core/services/portable-library.service';
+import { ManagedBackupsService } from '../core/services/managed-backups.service';
+import { ManagedBackupListing } from '../core/dtos/managed-backups.dtos';
 import { CloudEntryService } from '../core/services/cloud-entry.service';
 import { LibraryImportFlowComponent } from '../library-transfer/components/library-import-flow.component';
 import {
@@ -75,6 +77,7 @@ const selfHostedCapabilities: DeploymentCapabilities = {
   managedVoiceTranscription: false,
   usesCloudStorage: false,
   supportsLocalBackupConfiguration: true,
+  supportsManagedBackups: false,
   supportsPrivateNetworkAccess: true,
   supportsEreaderAccess: true,
   usageMeteringAvailable: false,
@@ -90,6 +93,7 @@ const cloudCapabilities: DeploymentCapabilities = {
   managedVoiceTranscription: true,
   usesCloudStorage: true,
   supportsLocalBackupConfiguration: false,
+  supportsManagedBackups: false,
   supportsPrivateNetworkAccess: false,
   supportsEreaderAccess: true,
   usageMeteringAvailable: true,
@@ -99,6 +103,23 @@ const cloudCapabilities: DeploymentCapabilities = {
 
 const capabilitiesServiceMock = {
   get: vi.fn((): Observable<DeploymentCapabilities> => of(selfHostedCapabilities)),
+};
+
+const managedBackupListing: ManagedBackupListing = {
+  retentionDays: 14,
+  backups: [
+    {
+      id: 'nightly-backup-1',
+      createdAtUtc: '2026-10-07T00:30:00Z',
+      archiveBytes: 1_024,
+      mediaBytes: 2_048,
+      state: 'completed',
+    },
+  ],
+};
+
+const managedBackupsServiceMock = {
+  getBackups: vi.fn((): Observable<ManagedBackupListing> => of(managedBackupListing)),
 };
 
 const managedAiUsage: CloudManagedAiUsage = {
@@ -375,6 +396,7 @@ describe('SettingsComponent backup-only surface', () => {
         { provide: CloudAuthService, useValue: cloudAuthServiceMock },
         { provide: CloudEntryService, useValue: cloudEntryServiceMock },
         { provide: PortableLibraryService, useValue: portableLibraryServiceMock },
+        { provide: ManagedBackupsService, useValue: managedBackupsServiceMock },
       ],
     }).compileComponents();
 
@@ -413,6 +435,8 @@ describe('SettingsComponent backup-only surface', () => {
     cloudEntryServiceMock.finishFirstRunAfterImport.mockClear();
     capabilitiesServiceMock.get.mockClear();
     capabilitiesServiceMock.get.mockReturnValue(of(selfHostedCapabilities));
+    managedBackupsServiceMock.getBackups.mockClear();
+    managedBackupsServiceMock.getBackups.mockReturnValue(of(managedBackupListing));
     portableLibraryServiceMock.exportArchive.mockClear();
     portableLibraryServiceMock.exportArchive.mockReturnValue(
       of(
@@ -655,6 +679,33 @@ describe('SettingsComponent backup-only surface', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="cloud-account-management-link"]')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="managed-ai-refill-link"]')).toBeNull();
     expect(cloudAuthServiceMock.getSession).not.toHaveBeenCalled();
+  });
+
+  it('keeps SelfHosted local backup settings and never requests managed backups when the capability is off', () => {
+    openManageLibraryPage(selfHostedCapabilities);
+
+    expect(fixture.nativeElement.querySelector('#manage-library-protect-heading')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="managed-backups-card"]')).toBeNull();
+    expect(managedBackupsServiceMock.getBackups).not.toHaveBeenCalled();
+  });
+
+  it('shows a read-only Cloud nightly backup list with the supplied retention window', () => {
+    managedBackupsServiceMock.getBackups.mockReturnValue(of(managedBackupListing));
+    openManageLibraryPage({ ...cloudCapabilities, supportsManagedBackups: true });
+
+    const card = fixture.nativeElement.querySelector(
+      '[data-testid="managed-backups-card"]',
+    ) as HTMLElement;
+    expect(card).not.toBeNull();
+    expect(card.textContent).toContain('Nightly backups');
+    expect(card.textContent).toContain('Oct 7, 2026');
+    expect(card.textContent).toContain('Archive 1.0 KB');
+    expect(card.textContent).toContain('protected media 2.0 KB');
+    expect(card.textContent).toContain('retained for up to 14 days');
+    expect(card.textContent).toContain('Completed');
+    expect(card.querySelectorAll('button')).toHaveLength(0);
+    expect(card.textContent).not.toContain('Restore');
+    expect(managedBackupsServiceMock.getBackups).toHaveBeenCalledTimes(1);
   });
 
   it('shows the authenticated Cloud identity and signs out through the BFF', () => {

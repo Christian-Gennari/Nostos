@@ -30,7 +30,8 @@ public sealed record DeploymentCapabilities(
     bool UsageMeteringAvailable,
     string? AccountManagementUrl,
     string? FeedbackUrl,
-    bool HostedBrowserIntegrationEnabled = false);
+    bool HostedBrowserIntegrationEnabled = false,
+    bool SupportsManagedBackups = false);
 
 /// <summary>
 /// Server-authoritative deployment descriptor resolved once during startup.

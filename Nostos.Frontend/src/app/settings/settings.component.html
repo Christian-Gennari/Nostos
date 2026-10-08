@@ -425,6 +425,67 @@
             </section>
       }
 
+      @if (supportsManagedBackups()) {
+      <section class="manage-library-group" aria-labelledby="managed-backups-heading">
+        <h2
+          class="settings-section-title manage-library-group-title"
+          id="managed-backups-heading"
+        >
+          Backups
+        </h2>
+        <section class="settings-card" data-testid="managed-backups-card">
+          <div class="card-header">
+            <div class="card-header-copy">
+              <h2>Nightly backups</h2>
+            </div>
+            @if (managedBackups(); as listing) {
+              <span appBadge>{{ listing.backups.length }}</span>
+            }
+          </div>
+
+          <div class="card-body">
+            @if (managedBackupsLoading()) {
+              <p class="label-desc" role="status" aria-live="polite" data-testid="managed-backups-loading">
+                Loading backups…
+              </p>
+            } @else if (managedBackupsFailed()) {
+              <p class="label-desc" role="alert" data-testid="managed-backups-error">
+                Backups could not be loaded. Reload Settings to try again.
+              </p>
+            } @else if (managedBackups(); as listing) {
+              <p class="label-desc card-purpose" data-testid="managed-backups-retention">
+                Nightly backups are retained for up to {{ listing.retentionDays }} days. Other recovery
+                mechanisms have separate retention periods.
+              </p>
+
+              @if (listing.backups.length === 0) {
+                <p class="empty-state" data-testid="managed-backups-empty">
+                  No nightly backups are available yet.
+                </p>
+              } @else {
+                <div class="history-list" role="list" aria-label="Nightly managed backups">
+                  @for (backup of listing.backups; track backup.id) {
+                    <div class="history-item" role="listitem" data-testid="managed-backup">
+                      <div class="history-info">
+                        <span class="history-date">{{ backup.createdAtUtc | date:'medium' }}</span>
+                        <span class="history-meta">
+                          Archive {{ formatSize(backup.archiveBytes) }}
+                          &middot; protected media {{ formatSize(backup.mediaBytes) }}
+                        </span>
+                      </div>
+                      <div class="history-actions">
+                        <span appBadge tone="success">{{ backup.state | titlecase }}</span>
+                      </div>
+                    </div>
+                  }
+                </div>
+              }
+            }
+          </div>
+        </section>
+      </section>
+      }
+
       @if (supportsLibraryMigration()) {
       <section class="manage-library-group" aria-labelledby="manage-library-move-heading">
       <h2
