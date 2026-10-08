@@ -1146,6 +1146,14 @@
   }
 }
 
+@media (max-height: 500px) {
+  .sidebar-right,
+  .sidebar-right:not(.open) {
+    width: 100vw !important;
+    max-width: 100vw;
+  }
+}
+
 @media (pointer: coarse) {
   .editor-header .icon-btn,
   .sidebar-header .icon-btn {
@@ -1164,7 +1172,7 @@
 .sidebar-tabs.library-tabs {
   gap: 1.15rem;
   padding: 0;
-  margin: 0.2rem 1.15rem 0.45rem;
+  margin: 0.2rem 0 0.45rem;
   background: transparent;
   border-bottom: 1px solid var(--border-color);
   border-radius: 0;

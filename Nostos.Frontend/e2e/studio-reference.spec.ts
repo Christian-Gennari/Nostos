@@ -269,6 +269,13 @@ test('Reference browsing, inspection, keep, and insertion preserve the writing',
 
   await page.addInitScript(() => localStorage.setItem('nostos.theme', 'light'));
   await openWriting(page);
+  await expect
+    .poll(() =>
+      page
+        .locator('.sidebar-right')
+        .evaluate((element) => Math.round(element.getBoundingClientRect().width)),
+    )
+    .toBe(360);
   const initialWriting = await apiGet<WritingContentDto>(
     baseUrl,
     '/api/writings/' + writingId,
@@ -324,9 +331,16 @@ test('Reference browsing, inspection, keep, and insertion preserve the writing',
   const bookSearch = page.getByRole('textbox', { name: 'Search books' });
   await bookSearch.fill('S2 Reference Book');
   await page.setViewportSize({ width: 820, height: 1180 });
-  await page.locator('.sidebar-right').evaluate((element) => {
-    (element as HTMLElement).style.width = '280px';
-  });
+  await expect(page.locator('.reference-toggle')).toHaveAttribute('aria-expanded', 'false');
+  await page.locator('.reference-toggle').click();
+  await expect(page.locator('.sidebar-right')).toHaveClass(/\bopen\b/);
+  await expect
+    .poll(() =>
+      page
+        .locator('.sidebar-right')
+        .evaluate((element) => Math.round(element.getBoundingClientRect().width)),
+    )
+    .toBe(360);
   await expect(page.locator('.list-item').first()).toBeVisible();
   await expect(page.locator('.header-save-status')).toHaveText('Saved', { timeout: 15_000 });
   await captureAfter(page, 'reference-book-index-tablet-820x1180-light.png');
@@ -339,11 +353,22 @@ test('Reference browsing, inspection, keep, and insertion preserve the writing',
   await page.locator('.list-item').filter({ hasText: mainBookTitle }).click();
   await expect(page.getByRole('button', { name: 'Back to Books' })).toBeVisible();
   await expect(page.locator('.reference-note-list .reference-source-row')).toHaveCount(40);
+  await page.locator('.reference-rail-collapse').click();
+  await expect(page.locator('.reference-toggle')).toHaveAttribute('aria-expanded', 'false');
   await typeAndRemoveProbe(page, 'S2BookNotes');
   await page.setViewportSize({ width: 1024, height: 768 });
+  await expect(page.locator('.reference-toggle')).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.locator('.sidebar-right')).toBeVisible();
   await page.locator('.sidebar-right').evaluate((element) => {
     (element as HTMLElement).style.width = '280px';
   });
+  await expect
+    .poll(() =>
+      page
+        .locator('.sidebar-right')
+        .evaluate((element) => Math.round(element.getBoundingClientRect().width)),
+    )
+    .toBe(280);
   await expect(page.locator('.header-save-status')).toHaveText('Saved', { timeout: 15_000 });
   await captureAfter(page, 'reference-book-notes-narrow-1024x768-light.png');
 
@@ -449,6 +474,9 @@ test('Reference browsing, inspection, keep, and insertion preserve the writing',
   const editorBody = page.frameLocator('.tox-edit-area iframe').locator('body');
   await editorBody.click();
   await page.keyboard.press('Control+End');
+  await page.locator('.files-toggle').click();
+  await expect(page.locator('.files-toggle')).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.locator('.sidebar-left')).toBeHidden();
   await page.getByRole('button', { name: 'Insert quote', exact: true }).click();
   const lastQuote = editorBody.locator('blockquote').last();
   await expect(lastQuote).toContainText(longQuote);
@@ -630,11 +658,16 @@ test('kept-source density and responsive Reference rows hold at 0, 3, 8, and 40'
   const touchPage = await touchContext.newPage();
   await touchPage.addInitScript(() => localStorage.setItem('nostos.theme', 'light'));
   await openWriting(touchPage, { width: 390, height: 844 });
-  const referenceToggle = touchPage.getByRole('button', {
-    name: 'Toggle reference sidebar',
-  });
+  const referenceToggle = touchPage.locator('.reference-toggle');
   await referenceToggle.click();
   await expect(touchPage.locator('.sidebar-right')).toHaveClass(/open/);
+  await expect
+    .poll(() =>
+      touchPage
+        .locator('.sidebar-right')
+        .evaluate((element) => Math.round(element.getBoundingClientRect().width)),
+    )
+    .toBe(390);
   await expect(touchPage.locator('.kept-sources-content .reference-source-row')).toHaveCount(
     40,
   );
@@ -661,13 +694,23 @@ test('kept-source density and responsive Reference rows hold at 0, 3, 8, and 40'
   await touchPage.addInitScript(() => localStorage.setItem('nostos.theme', 'dark'));
   await openWriting(touchPage, { width: 390, height: 844 });
   await expectDarkEditor(touchPage);
-  await touchPage.getByRole('button', { name: 'Toggle reference sidebar' }).click();
+  await touchPage.locator('.reference-toggle').click();
   await touchPage.locator('.kept-sources-content .reference-source-row-main').first().click();
   await expect(touchPage.locator('.inspected-source-card')).toHaveCount(1);
   await captureAfter(touchPage, 'mobile-reference-inspection-mobile-390x844-dark.png');
   await touchContext.close();
 
   await openWriting(page, { width: 844, height: 390 });
+  await expect(page.locator('.reference-toggle')).toHaveAttribute('aria-expanded', 'false');
+  await page.locator('.reference-toggle').click();
+  await expect(page.locator('.sidebar-right')).toHaveClass(/\bopen\b/);
+  await expect
+    .poll(() =>
+      page
+        .locator('.sidebar-right')
+        .evaluate((element) => Math.round(element.getBoundingClientRect().width)),
+    )
+    .toBe(844);
   await expect(page.locator('.kept-sources-content .reference-source-row')).toHaveCount(40);
   await page.locator('.kept-sources-content .reference-source-row-main').first().click();
   await expect(page.locator('.inspected-source-card')).toHaveCount(1);
