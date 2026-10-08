@@ -371,6 +371,7 @@ public sealed partial class GutenbergProvider : IContentProvider,
         Exception? lastFailure = null;
         TimeSpan? retryAfter = null;
         var attemptsMade = 0;
+        var consecutiveNoProgressAttempts = 0;
 
         for (var attempt = 1; attempt <= _snapshotDownloadOptions.MaxAttempts; attempt++)
         {
@@ -432,17 +433,35 @@ public sealed partial class GutenbergProvider : IContentProvider,
             lastFailure = result.Error;
             retryAfter = result.RetryAfter;
 
-            if (attempt >= _snapshotDownloadOptions.MaxAttempts)
-                break;
+            if (result.BytesReceived >= _snapshotDownloadOptions.MinimumProgressBytes)
+                consecutiveNoProgressAttempts = 0;
+            else
+                consecutiveNoProgressAttempts++;
 
+            var bytesSoFar = File.Exists(path) ? new FileInfo(path).Length : 0;
+            var expectedBytes = result.Transfer?.TotalLength ?? probedContentLength;
             var remaining = _snapshotDownloadOptions.MaxDuration - stopwatch.Elapsed;
-            if (remaining <= TimeSpan.Zero)
-                break;
+            var delay = RetryDelay(consecutiveNoProgressAttempts, retryAfter);
+            var canRetry = attempt < _snapshotDownloadOptions.MaxAttempts
+                && consecutiveNoProgressAttempts < _snapshotDownloadOptions.MaxConsecutiveNoProgressAttempts
+                && remaining > TimeSpan.Zero
+                && delay <= remaining;
 
-            var delay = RetryDelay(attempt, retryAfter);
+            _logger.LogInformation(
+                "Gutenberg snapshot download attempt {Attempt}/{MaxAttempts} ended after {BytesAdvanced:N0} new bytes; {BytesSoFar:N0} of {ExpectedBytes} bytes received; {ConsecutiveNoProgressAttempts}/{MaxConsecutiveNoProgressAttempts} consecutive attempts were below {MinimumProgressBytes:N0} bytes. {RetryAction}.",
+                attempt,
+                _snapshotDownloadOptions.MaxAttempts,
+                result.BytesReceived,
+                bytesSoFar,
+                expectedBytes?.ToString("N0") ?? "unknown",
+                consecutiveNoProgressAttempts,
+                _snapshotDownloadOptions.MaxConsecutiveNoProgressAttempts,
+                _snapshotDownloadOptions.MinimumProgressBytes,
+                canRetry ? "Retrying" : "Stopping");
+
             // A Retry-After longer than this transfer's remaining budget cannot
             // be honoured without violating the overall wall-clock bound.
-            if (delay > remaining)
+            if (!canRetry)
                 break;
 
             try
@@ -464,7 +483,9 @@ public sealed partial class GutenbergProvider : IContentProvider,
 
         var reason = deadline.IsCancellationRequested || stopwatch.Elapsed >= _snapshotDownloadOptions.MaxDuration
             ? "the download exceeded its time limit"
-            : $"the download failed after {attemptsMade} attempts";
+            : consecutiveNoProgressAttempts >= _snapshotDownloadOptions.MaxConsecutiveNoProgressAttempts
+                ? $"the download made fewer than {_snapshotDownloadOptions.MinimumProgressBytes} new bytes in {consecutiveNoProgressAttempts} consecutive attempts"
+                : $"the download failed after {attemptsMade} attempts";
         if (lastFailure is not null)
             reason += $": {lastFailure.Message}";
 
@@ -624,6 +645,7 @@ public sealed partial class GutenbergProvider : IContentProvider,
         long? expectedSegmentLength,
         CancellationToken ct)
     {
+        long written = 0;
         try
         {
             await using var source = await response.Content.ReadAsStreamAsync(ct);
@@ -643,11 +665,15 @@ public sealed partial class GutenbergProvider : IContentProvider,
             }
 
             var buffer = new byte[64 * 1024];
-            long written = 0;
-            int read;
+            using var readTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
 
-            while ((read = await source.ReadAsync(buffer, ct)) > 0)
+            while (true)
             {
+                readTimeout.CancelAfter(_snapshotDownloadOptions.ReadTimeout);
+                var read = await source.ReadAsync(buffer.AsMemory(), readTimeout.Token);
+                if (read == 0)
+                    break;
+
                 if (expectedSegmentLength is { } segmentLimit && written + read > segmentLimit)
                 {
                     throw ProviderException.InvalidResponse(Id, "the snapshot response exceeded its declared range length");
@@ -671,7 +697,8 @@ public sealed partial class GutenbergProvider : IContentProvider,
                 return SnapshotDownloadAttempt.Retry(
                     transfer,
                     null,
-                    new EndOfStreamException($"the snapshot response ended after {written} of {declaredSegment} declared bytes"));
+                    new EndOfStreamException($"the snapshot response ended after {written} of {declaredSegment} declared bytes"),
+                    written);
             }
 
             var finalLength = offset + written;
@@ -688,22 +715,27 @@ public sealed partial class GutenbergProvider : IContentProvider,
                 return SnapshotDownloadAttempt.Retry(
                     transfer,
                     null,
-                    new EndOfStreamException($"the snapshot ended at {finalLength} of {totalLength} declared bytes"));
+                    new EndOfStreamException($"the snapshot ended at {finalLength} of {totalLength} declared bytes"),
+                    written);
             }
 
-            return SnapshotDownloadAttempt.Success(transfer);
+            return SnapshotDownloadAttempt.Success(transfer, written);
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
-            return SnapshotDownloadAttempt.Retry(transfer, null, new TimeoutException("the snapshot stream timed out"));
+            return SnapshotDownloadAttempt.Retry(
+                transfer,
+                null,
+                new TimeoutException("the snapshot stream read timed out"),
+                written);
         }
         catch (HttpRequestException ex)
         {
-            return SnapshotDownloadAttempt.Retry(transfer, null, ex);
+            return SnapshotDownloadAttempt.Retry(transfer, null, ex, written);
         }
         catch (IOException ex)
         {
-            return SnapshotDownloadAttempt.Retry(transfer, null, ex);
+            return SnapshotDownloadAttempt.Retry(transfer, null, ex, written);
         }
     }
 
@@ -816,10 +848,10 @@ public sealed partial class GutenbergProvider : IContentProvider,
         return null;
     }
 
-    private TimeSpan RetryDelay(int failedAttempt, TimeSpan? retryAfter)
+    private TimeSpan RetryDelay(int consecutiveFailures, TimeSpan? retryAfter)
     {
         var exponentialMs = _snapshotDownloadOptions.InitialRetryDelay.TotalMilliseconds
-            * Math.Pow(2, Math.Max(0, failedAttempt - 1));
+            * Math.Pow(2, Math.Max(0, consecutiveFailures - 1));
         var cappedMs = Math.Min(exponentialMs, _snapshotDownloadOptions.MaxRetryDelay.TotalMilliseconds);
         var jitter = 1 + ((Random.Shared.NextDouble() * 2 - 1) * _snapshotDownloadOptions.RetryJitterRatio);
         var jitteredMs = Math.Min(
@@ -869,19 +901,21 @@ public sealed partial class GutenbergProvider : IContentProvider,
         bool RestartFromZero,
         SnapshotTransfer? Transfer,
         TimeSpan? RetryAfter,
-        Exception? Error)
+        Exception? Error,
+        long BytesReceived)
     {
-        public static SnapshotDownloadAttempt Success(SnapshotTransfer transfer) =>
-            new(true, false, transfer, null, null);
+        public static SnapshotDownloadAttempt Success(SnapshotTransfer transfer, long bytesReceived) =>
+            new(true, false, transfer, null, null, bytesReceived);
 
         public static SnapshotDownloadAttempt Restart(Exception error) =>
-            new(false, true, null, null, error);
+            new(false, true, null, null, error, 0);
 
         public static SnapshotDownloadAttempt Retry(
             SnapshotTransfer? transfer,
             TimeSpan? retryAfter,
-            Exception error) =>
-            new(false, false, transfer, retryAfter, error);
+            Exception error,
+            long bytesReceived = 0) =>
+            new(false, false, transfer, retryAfter, error, bytesReceived);
     }
 
     /// <summary>
