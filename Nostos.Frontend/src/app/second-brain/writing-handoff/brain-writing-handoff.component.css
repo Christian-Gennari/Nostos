@@ -1,245 +1,337 @@
 :host {
-  position: fixed;
-  inset: 0;
-  z-index: 1200;
+  display: contents;
 }
 
-.handoff-backdrop {
-  width: 100%;
-  height: 100%;
-  display: grid;
-  place-items: center;
-  padding: 1rem;
-  background: color-mix(in srgb, var(--color-text-main) 28%, transparent);
-}
-
-.handoff-dialog {
-  width: min(520px, 100%);
-  max-height: min(720px, calc(100vh - 2rem));
-  overflow: auto;
-  border: 1px solid var(--border-color);
-  border-radius: 14px;
-  background: var(--bg-surface);
-  box-shadow: var(--shadow-sm);
-  padding: 1.25rem;
-  color: var(--color-text-main);
-}
-
-.handoff-head {
+/* ModalShell owns the card and backdrop. Only its body may yield space to the
+   destination list, which is the sole independently scrolling region here. */
+:host ::ng-deep .handoff-dialog .modal-scroll {
   display: flex;
-  align-items: flex-start;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+:host ::ng-deep .modal-card.handoff-dialog.is-sheet .modal-head.is-divided {
+  padding: 0;
+}
+
+.handoff-header {
+  display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  margin-bottom: 1rem;
+  padding: 1.15rem 1.5rem;
 }
 
-.handoff-eyebrow,
-.existing-heading {
+.handoff-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.handoff-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  flex: 0 0 2.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  color: var(--color-text-main);
+  background: var(--bg-surface-alt);
+}
+
+.handoff-heading h2 {
+  margin: 0;
+  color: var(--color-text-main);
+  font-family: 'Newsreader', serif;
+  font-size: 1.35rem;
+  font-weight: 500;
+  line-height: 1.25;
+}
+
+.handoff-close {
+  min-width: 44px;
+  min-height: 44px;
+  flex: 0 0 auto;
+}
+
+.handoff-content {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 1rem;
+  min-height: 0;
+  padding: 1.15rem 1.5rem 1.25rem;
+}
+
+.handoff-description {
+  flex: 0 0 auto;
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
+.handoff-selection {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-height: 0;
+}
+
+.destination-option {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  min-height: 52px;
+  flex: 0 0 auto;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  color: var(--color-text-main);
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.destination-option:hover {
+  background: var(--bg-hover);
+}
+
+.destination-option.selected {
+  border-color: var(--selection-surface);
+  background: var(--selection-surface);
+  color: var(--selection-ink);
+}
+
+.destination-option:focus-within {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.destination-option input[type='radio'] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+}
+
+.destination-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.125rem;
+  height: 1.125rem;
+  flex: 0 0 1.125rem;
+  border: 1px solid var(--color-text-light);
+  border-radius: 50%;
+  color: transparent;
+}
+
+.destination-option.selected .destination-check {
+  border-color: currentColor;
+  color: currentColor;
+}
+
+.destination-copy {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.destination-copy strong {
+  display: block;
+  overflow: hidden;
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.destination-copy small {
+  display: block;
+  margin-top: 0.1rem;
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.destination-option.selected .destination-copy small {
+  color: color-mix(in srgb, var(--selection-ink) 76%, transparent);
+}
+
+.title-field {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 0.35rem;
+  /* Align with the destination label text column under its radio indicator. */
+  margin-inline-start: calc(1px + 0.85rem + 1.125rem + 0.8rem);
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.title-field input,
+.destination-filter {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.existing-destinations {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 0.45rem;
+  min-height: 0;
+  margin-top: 0.3rem;
+}
+
+.existing-destinations h3 {
+  flex: 0 0 auto;
+  margin: 0 0 0.1rem;
   color: var(--color-text-light);
   font-size: 0.68rem;
   font-weight: 600;
   letter-spacing: 0.1em;
+  line-height: 1.4;
   text-transform: uppercase;
 }
 
-.handoff-head h2 {
-  margin: 0.25rem 0 0.35rem;
-  font-family: 'Newsreader', serif;
-  font-size: 1.6rem;
-  font-weight: 600;
-}
-
-.handoff-head p,
-.handoff-status,
-.empty-destinations {
-  margin: 0;
-  color: var(--color-text-muted);
-  font-size: 0.86rem;
-  line-height: 1.5;
-}
-
-.handoff-close {
+.destination-filter {
   flex: 0 0 auto;
 }
 
-.handoff-options {
-  display: flex;
-  flex-direction: column;
-  gap: 0.45rem;
-}
-
-.existing-heading {
-  margin-top: 0.75rem;
-}
-
 .destination-list {
+  --destination-list-scrollbar-width: 0px;
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
-  gap: 0.35rem;
-  max-height: 260px;
-  overflow: auto;
+  gap: 0.4rem;
+  min-height: 0;
+  max-height: clamp(8rem, calc(100dvh - 31rem), 24rem);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0.15rem 0;
+  scrollbar-gutter: stable;
+  margin-inline-end: calc(0px - var(--destination-list-scrollbar-width, 0px));
 }
 
-.handoff-option {
-  width: 100%;
+.destination-list .destination-option {
   min-height: 48px;
-  display: flex;
-  align-items: center;
-  gap: 0.7rem;
-  padding: 0.65rem 0.75rem;
-  border: 1px solid var(--border-color);
-  border-radius: 9px;
-  background: transparent;
-  color: var(--color-text-main);
-  text-align: left;
-  cursor: pointer;
 }
 
-.handoff-option:hover {
-  background: var(--bg-hover);
-}
-
-.handoff-option.selected {
-  border-color: var(--color-primary);
-  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
-}
-
-.option-mark {
-  width: 16px;
-  height: 16px;
-  flex: 0 0 16px;
-  border: 1px solid var(--border-color);
-  border-radius: 50%;
-  background: var(--bg-surface);
-}
-
-.handoff-option.selected .option-mark {
-  border: 5px solid var(--color-primary);
-}
-
-.handoff-option strong {
-  display: block;
-  font-size: 0.9rem;
-  font-weight: 600;
-}
-
-.handoff-option small {
-  display: block;
-  margin-top: 0.1rem;
+.empty-destinations {
+  flex: 0 0 auto;
+  margin: 0.35rem 0 0;
+  padding: 0.8rem 0.9rem;
+  border: 1px dashed var(--border-color);
+  border-radius: var(--radius-lg);
   color: var(--color-text-muted);
-  font-size: 0.76rem;
-  font-weight: 400;
+  font-size: 0.84rem;
+  line-height: 1.5;
 }
 
-.new-writing-title {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  padding: 0.25rem 0 0.45rem 2.25rem;
-  color: var(--color-text-muted);
-  font-size: 0.76rem;
-}
-
-.new-writing-title small {
-  color: var(--color-text-light);
-  font-weight: 400;
-}
-
-.new-writing-title input {
-  min-height: 38px;
-  padding: 0.5rem 0.65rem;
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  background: var(--bg-input);
-  color: var(--color-text-main);
-  font: inherit;
-  font-size: 0.86rem;
+.filter-empty {
+  padding-inline: 0.2rem;
+  border: 0;
 }
 
 .open-after {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
-  gap: 0.55rem;
-  margin-top: 1rem;
+  gap: 0.65rem;
+  min-height: var(--control-h-touch);
   color: var(--color-text-muted);
-  font-size: 0.82rem;
-}
-
-.open-after input {
-  width: 16px;
-  height: 16px;
-}
-
-.handoff-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.55rem;
-  margin-top: 1.2rem;
-}
-
-.handoff-actions button,
-.handoff-error button {
-  min-height: 38px;
-  padding: 0.5rem 0.8rem;
-  border-radius: 8px;
-  font: inherit;
-  font-size: 0.82rem;
-  font-weight: 600;
+  font-size: 0.84rem;
   cursor: pointer;
 }
 
-.handoff-actions .secondary,
-.handoff-error button {
+.open-after input {
+  width: 1.15rem;
+  height: 1.15rem;
+  flex: 0 0 1.15rem;
+  margin: 0;
+  accent-color: var(--selection-surface);
+}
+
+.handoff-loading {
+  display: grid;
+  gap: 0.55rem;
+  padding-block: 0.2rem;
+}
+
+.loading-copy {
+  margin-bottom: 0.2rem;
+  color: var(--color-text-muted);
+  font-size: 0.86rem;
+}
+
+.loading-row {
+  height: 3.15rem;
   border: 1px solid var(--border-color);
-  background: transparent;
-  color: var(--color-text-main);
-}
-
-.handoff-actions .primary {
-  border: 1px solid var(--color-primary);
-  background: var(--color-primary);
-  color: var(--on-primary);
-}
-
-.handoff-actions button:disabled,
-.handoff-close:disabled {
-  opacity: 0.55;
-  cursor: default;
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface-alt);
+  animation: loading-pulse 1.2s ease-in-out infinite alternate;
 }
 
 .handoff-error {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
-  color: var(--color-danger);
-  font-size: 0.84rem;
+  gap: 1rem;
+  min-height: 5rem;
+  padding: 0.8rem 0;
 }
 
-@media (max-width: 520px) {
-  .handoff-backdrop {
-    place-items: end stretch;
-    padding: 0;
+.handoff-error p {
+  margin: 0;
+  color: var(--color-danger);
+  font-size: 0.9rem;
+}
+
+.spin-icon {
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes loading-pulse {
+  to {
+    opacity: 0.52;
+  }
+}
+
+@media (max-width: 768px) {
+  .handoff-header {
+    padding: 0.9rem 1rem;
   }
 
-  .handoff-dialog {
-    width: 100%;
-    max-height: 88vh;
-    border-radius: 14px 14px 0 0;
-    border-left: 0;
-    border-right: 0;
-    border-bottom: 0;
+  .handoff-content {
     padding: 1rem;
   }
 
-  .handoff-actions {
-    position: sticky;
-    bottom: 0;
-    padding-top: 0.75rem;
-    background: var(--bg-surface);
+  .destination-list {
+    max-height: clamp(8rem, calc(100dvh - 31rem), 24rem);
   }
+}
 
-  .handoff-actions button {
-    flex: 1;
+@media (prefers-reduced-motion: reduce) {
+  .destination-option,
+  .loading-row,
+  .spin-icon {
+    animation: none;
+    transition: none;
   }
 }

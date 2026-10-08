@@ -144,24 +144,24 @@ test('captured source survives Brain → Keep with writing → Studio on the rea
       .click();
 
     const picker = page.getByRole('dialog', {
-      name: 'Keep with writing…',
+      name: 'Keep with writing',
       exact: true,
     });
     await expect(picker).toBeVisible();
     await expect(picker).toContainText(
-      'The writing keeps links to the original notes.',
+      'The note stays in Brain; nothing is copied into your text.',
     );
 
-    const existingWriting = picker.getByRole('button', {
+    const existingWriting = picker.getByRole('radio', {
       name: writingTitle,
       exact: true,
     });
     await expect(existingWriting).toBeVisible();
     await existingWriting.click();
 
-    await picker.getByLabel('Open writing after adding').check();
+    await picker.getByLabel('Open writing after keeping').check();
     await picker
-      .getByRole('button', { name: 'Keep sources', exact: true })
+      .getByRole('button', { name: 'Keep with writing', exact: true })
       .click();
 
     await expect(page).toHaveURL(
