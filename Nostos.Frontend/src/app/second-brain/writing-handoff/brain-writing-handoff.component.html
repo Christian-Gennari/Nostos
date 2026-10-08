@@ -1,107 +1,183 @@
-<div class="handoff-backdrop">
-  <section
-    class="handoff-dialog"
-    role="dialog"
-    aria-modal="true"
-    aria-labelledby="brain-writing-handoff-title"
-  >
-    <header class="handoff-head">
-      <div>
-        <div class="handoff-eyebrow">Keep source material</div>
-        <h2 id="brain-writing-handoff-title">Keep with writing…</h2>
-        <p>
-          Choose where to keep {{ sourceCount() }}
-          {{ sourceCount() === 1 ? 'source' : 'sources' }}. The writing keeps links to the
-          original notes.
-        </p>
-      </div>
-      <button
-        appIconButton
-        icon="x"
-        size="xs"
-        [glyphSize]="16"
-        type="button"
-        class="handoff-close"
-        aria-label="Close writing picker"
-        [disabled]="saving()"
-        (click)="cancel()"
-      ></button>
-    </header>
+<app-modal-shell
+  [isOpen]="true"
+  variant="sheet"
+  cardClass="handoff-dialog"
+  [maxWidth]="'600px'"
+  [maxHeight]="'min(760px, calc(100dvh - 2rem))'"
+  [busy]="saving()"
+  ariaLabelledBy="brain-writing-handoff-title"
+  ariaDescribedBy="brain-writing-handoff-description"
+  [style.--modal-head-padding]="'0'"
+  [style.--modal-card-padding]="'0'"
+  [style.--modal-card-padding-narrow]="'0'"
+  (closed)="cancel()"
+>
+  <header class="handoff-header" shellHeader>
+    <div class="handoff-heading">
+      <span class="handoff-mark" aria-hidden="true">
+        <nostos-icon name="bookmark-simple" [size]="20"></nostos-icon>
+      </span>
+      <h2 id="brain-writing-handoff-title" tabindex="-1">Keep with writing</h2>
+    </div>
+    <button
+      #initialFocus
+      appIconButton
+      icon="x"
+      size="xs"
+      [glyphSize]="16"
+      type="button"
+      class="handoff-close"
+      aria-label="Close writing picker"
+      [disabled]="saving()"
+      (click)="cancel()"
+    ></button>
+  </header>
+
+  <div class="handoff-content">
+    <p id="brain-writing-handoff-description" class="handoff-description">
+      {{ sourceCount() === 1 ? 'Keep a reference to this note' : 'Keep references to these notes' }}
+      ({{ sourceCount() }} {{ sourceCount() === 1 ? 'note' : 'notes' }}) with a writing.
+      The note{{ sourceCount() === 1 ? '' : 's' }} stay{{ sourceCount() === 1 ? 's' : '' }} in Brain;
+      nothing is copied into your text.
+    </p>
 
     @if (loadingDestinations()) {
-    <p class="handoff-status" role="status">Loading writings…</p>
+      <div class="handoff-loading" role="status" aria-label="Loading writings">
+        <span class="loading-copy">Loading writings…</span>
+        <span class="loading-row" aria-hidden="true"></span>
+        <span class="loading-row" aria-hidden="true"></span>
+        <span class="loading-row" aria-hidden="true"></span>
+      </div>
     } @else if (destinationError()) {
-    <div class="handoff-error" role="alert">
-      <span>Writings could not be loaded.</span>
-      <button type="button" (click)="loadDestinations()">Try again</button>
-    </div>
-    } @else {
-    <div class="handoff-options" aria-label="Writing destination">
-      <button
-        type="button"
-        class="handoff-option"
-        [class.selected]="newWritingMode()"
-        [attr.aria-pressed]="newWritingMode()"
-        (click)="chooseNew()"
-      >
-        <span class="option-mark" aria-hidden="true"></span>
-        <span>
-          <strong>New writing</strong>
-          <small>Create a normal writing document</small>
-        </span>
-      </button>
-
-      @if (newWritingMode()) {
-      <label class="new-writing-title">
-        <span>Title <small>optional</small></span>
-        <input
-          type="text"
-          autocomplete="off"
-          placeholder="Untitled writing"
-          [value]="newWritingTitle()"
-          (input)="newWritingTitle.set($any($event.target).value)"
-        />
-      </label>
-      }
-
-      <div class="existing-heading">Existing writing</div>
-      @if (documentDestinations().length === 0) {
-      <p class="empty-destinations">No writing documents yet.</p>
-      } @else {
-      <div class="destination-list">
-        @for (writing of documentDestinations(); track writing.id) {
-        <button
-          type="button"
-          class="handoff-option existing"
-          [class.selected]="selectedWritingId() === writing.id"
-          [attr.aria-pressed]="selectedWritingId() === writing.id"
-          (click)="chooseExisting(writing.id)"
-        >
-          <span class="option-mark" aria-hidden="true"></span>
-          <span>
-            <strong>{{ writing.name }}</strong>
-          </span>
+      <div class="handoff-error" role="alert">
+        <p>Writings could not be loaded.</p>
+        <button appButton variant="secondary" type="button" (click)="loadDestinations()">
+          Retry
         </button>
+      </div>
+    } @else {
+      <div class="handoff-selection" role="radiogroup" aria-label="Writing destination">
+        <label
+          class="destination-option new-destination"
+          [class.selected]="newWritingMode()"
+        >
+          <input
+            type="radio"
+            name="writing-destination"
+            value="new"
+            [checked]="newWritingMode()"
+            [disabled]="saving()"
+            (change)="chooseNew()"
+          />
+          <span class="destination-check" aria-hidden="true">
+            <nostos-icon name="check" [size]="15"></nostos-icon>
+          </span>
+          <span class="destination-copy">
+            <strong>New writing</strong>
+            <small>Create a new writing document</small>
+          </span>
+        </label>
+
+        @if (newWritingMode()) {
+          <label class="title-field">
+            <span>Title</span>
+            <input
+              #newWritingTitleInput
+              appInput
+              type="text"
+              required
+              autocomplete="off"
+              placeholder="Name this writing"
+              [value]="newWritingTitle()"
+              [disabled]="saving()"
+              (input)="newWritingTitle.set($any($event.target).value)"
+              (keydown.enter)="confirmFromTitle($event)"
+            />
+          </label>
+        }
+
+        @if (documentDestinations().length === 0) {
+          <p class="empty-destinations">
+            No writing documents yet. Create your first writing to keep this note with it.
+          </p>
+        } @else {
+          <section class="existing-destinations" aria-labelledby="existing-writing-heading">
+            <h3 id="existing-writing-heading">Existing writing</h3>
+            @if (documentDestinations().length > 8) {
+              <input
+                appInput
+                type="search"
+                class="destination-filter"
+                aria-label="Filter existing writings"
+                placeholder="Filter writings…"
+                [value]="destinationFilter()"
+                [disabled]="saving()"
+                (input)="destinationFilter.set($any($event.target).value)"
+              />
+            }
+
+            @if (filteredDestinations().length === 0) {
+              <p class="empty-destinations filter-empty">No writings match that filter.</p>
+            } @else {
+              <div class="destination-list">
+                @for (writing of filteredDestinations(); track writing.id) {
+                  <label
+                    class="destination-option existing-destination"
+                    [class.selected]="selectedWritingId() === writing.id"
+                    [title]="writing.name"
+                  >
+                    <input
+                      type="radio"
+                      name="writing-destination"
+                      [value]="writing.id"
+                      [checked]="selectedWritingId() === writing.id"
+                      [disabled]="saving()"
+                      (change)="chooseExisting(writing.id)"
+                    />
+                    <span class="destination-check" aria-hidden="true">
+                      <nostos-icon name="check" [size]="15"></nostos-icon>
+                    </span>
+                    <span class="destination-copy">
+                      <strong>{{ writing.name }}</strong>
+                    </span>
+                  </label>
+                }
+              </div>
+            }
+          </section>
         }
       </div>
-      }
-    </div>
 
-    <label class="open-after">
-      <input
-        type="checkbox"
-        [checked]="openWritingAfterAdd()"
-        (change)="openWritingAfterAdd.set($any($event.target).checked)"
-      />
-      <span>Open writing after adding</span>
-    </label>
-
-    <footer class="handoff-actions">
-      <button type="button" class="secondary" [disabled]="saving()" (click)="cancel()">Cancel</button>
-      <button type="button" class="primary" [disabled]="!canConfirm()" (click)="confirm()">
-        {{ saving() ? 'Keeping…' : 'Keep sources' }}
-      </button>
-    </footer>
+      <label class="open-after">
+        <input
+          type="checkbox"
+          [checked]="openWritingAfterAdd()"
+          [disabled]="saving()"
+          (change)="openWritingAfterAdd.set($any($event.target).checked)"
+        />
+        <span>Open writing after keeping</span>
+      </label>
     }
-  </section>
-</div>
+  </div>
+
+  <app-dialog-actions shellActions variant="footer" [stackOnNarrow]="true" class="handoff-actions">
+    <button appButton variant="secondary" type="button" [disabled]="saving()" (click)="cancel()">
+      Cancel
+    </button>
+    <button
+      appButton
+      variant="primary"
+      type="button"
+      [busy]="saving()"
+      [disabled]="!canConfirm()"
+      (click)="confirm()"
+    >
+      @if (saving()) {
+        <nostos-icon name="circle-notch" [size]="15" class="spin-icon"></nostos-icon>
+        <span>Keeping…</span>
+      } @else {
+        <span>Keep with writing</span>
+      }
+    </button>
+  </app-dialog-actions>
+</app-modal-shell>

@@ -42,14 +42,17 @@ describe('BrainWritingHandoffComponent', () => {
   let component: BrainWritingHandoffComponent;
   let http: HttpTestingController;
 
-  const create = async (noteIds: string[] = ['note-1']): Promise<void> => {
+  const create = async (
+    noteIds: string[] = ['note-1'],
+    writings: WritingDto[] = [folderWriting, documentWriting]
+  ): Promise<void> => {
     fixture = TestBed.createComponent(BrainWritingHandoffComponent);
     component = fixture.componentInstance;
     fixture.componentRef.setInput('noteIds', noteIds);
     fixture.detectChanges();
     http = TestBed.inject(HttpTestingController);
 
-    http.expectOne('/api/writings').flush([folderWriting, documentWriting]);
+    http.expectOne('/api/writings').flush(writings);
     fixture.detectChanges();
     await fixture.whenStable();
   };
@@ -68,12 +71,16 @@ describe('BrainWritingHandoffComponent', () => {
   it('requires an explicit destination and excludes folders', async () => {
     await create();
 
-    const keep = fixture.nativeElement.querySelector('.handoff-actions .primary') as HTMLButtonElement;
+    const keep = fixture.nativeElement.querySelector('.handoff-actions .nostos-button--primary') as HTMLButtonElement;
     expect(keep.disabled).toBe(true);
 
+    const group = fixture.nativeElement.querySelector('[role="radiogroup"]') as HTMLElement;
+    expect(group.getAttribute('aria-label')).toBe('Writing destination');
+    expect(group.querySelectorAll('input[type="radio"]').length).toBe(2);
+
     const destinations = [
-      ...fixture.nativeElement.querySelectorAll('.handoff-option.existing'),
-    ] as HTMLButtonElement[];
+      ...fixture.nativeElement.querySelectorAll('.existing-destination'),
+    ] as HTMLLabelElement[];
     expect(destinations.map((button) => button.textContent?.trim())).toEqual([
       'Solitude and freedom',
     ]);
@@ -84,28 +91,25 @@ describe('BrainWritingHandoffComponent', () => {
     expect(keep.disabled).toBe(false);
   });
 
-  it.each([
-    ['named', 'Notes toward an essay', 'Notes toward an essay'],
-    ['blank', '   ', 'Untitled writing'],
-  ])('creates a new root Document with a %s title', async (_label, enteredTitle, expectedTitle) => {
+  it('creates a new root Document with the entered title', async () => {
     await create();
     const completed = vi.fn();
     component.completed.subscribe(completed);
 
     component.chooseNew();
-    component.newWritingTitle.set(enteredTitle);
+    component.newWritingTitle.set('Notes toward an essay');
     component.confirm();
 
     const createRequest = http.expectOne('/api/writings');
     expect(createRequest.request.method).toBe('POST');
     expect(createRequest.request.body).toEqual({
-      name: expectedTitle,
+      name: 'Notes toward an essay',
       type: 'Document',
       parentId: null,
     });
     createRequest.flush({
       id: 'writing-new',
-      name: expectedTitle,
+      name: 'Notes toward an essay',
       type: 'Document',
       parentId: null,
       updatedAt: '2026-09-25T06:00:00Z',
@@ -122,6 +126,86 @@ describe('BrainWritingHandoffComponent', () => {
       succeededNoteIds: ['note-1'],
       failedNoteIds: [],
     });
+  });
+
+  it('announces loading and exposes a retryable destination error', async () => {
+    fixture = TestBed.createComponent(BrainWritingHandoffComponent);
+    component = fixture.componentInstance;
+    fixture.componentRef.setInput('noteIds', ['note-1']);
+    fixture.detectChanges();
+    http = TestBed.inject(HttpTestingController);
+
+    expect(fixture.nativeElement.querySelector('[role="status"][aria-label="Loading writings"]')).toBeTruthy();
+    expect(fixture.nativeElement.querySelectorAll('.loading-row').length).toBe(3);
+
+    http.expectOne('/api/writings').error(new ProgressEvent('network-error'));
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[role="alert"]')?.textContent).toContain(
+      'Writings could not be loaded.'
+    );
+
+    (fixture.nativeElement.querySelector('[role="alert"] button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    http.expectOne('/api/writings').flush([documentWriting]);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(fixture.nativeElement.querySelector('[role="alert"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('.existing-destination')).toBeTruthy();
+  });
+
+  it('preselects New writing when no document destinations exist', async () => {
+    await create(['note-1'], [folderWriting]);
+
+    const newDestination = fixture.nativeElement.querySelector(
+      'input[type="radio"][value="new"]'
+    ) as HTMLInputElement;
+    const keep = fixture.nativeElement.querySelector(
+      '.handoff-actions .nostos-button--primary'
+    ) as HTMLButtonElement;
+
+    expect(newDestination.checked).toBe(true);
+    expect(fixture.nativeElement.textContent).toContain('No writing documents yet.');
+    expect(fixture.nativeElement.querySelector('.title-field input[appInput]')).toBeTruthy();
+    expect(keep.disabled).toBe(true);
+  });
+
+  it('requires a non-empty title for a new writing', async () => {
+    await create();
+    component.chooseNew();
+    fixture.detectChanges();
+
+    const keep = fixture.nativeElement.querySelector(
+      '.handoff-actions .nostos-button--primary'
+    ) as HTMLButtonElement;
+    expect(keep.disabled).toBe(true);
+
+    component.newWritingTitle.set('  A working title  ');
+    fixture.detectChanges();
+    expect(keep.disabled).toBe(false);
+  });
+
+  it('shows a client-side filter only when there are more than eight writings', async () => {
+    const writings = Array.from({ length: 9 }, (_, index): WritingDto => ({
+      id: `writing-${index}`,
+      name: `Draft ${index + 1}`,
+      type: 'Document',
+      parentId: null,
+      updatedAt: '2026-09-25T06:00:00Z',
+    }));
+    await create(['note-1'], writings);
+
+    const filter = fixture.nativeElement.querySelector(
+      'input[aria-label="Filter existing writings"]'
+    ) as HTMLInputElement;
+    expect(filter).toBeTruthy();
+    filter.value = 'Draft 9';
+    filter.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+
+    const destinations = fixture.nativeElement.querySelectorAll('.existing-destination');
+    expect(destinations.length).toBe(1);
+    expect(destinations[0].textContent).toContain('Draft 9');
   });
 
   it('deduplicates note IDs and quietly skips sources already kept', async () => {
@@ -146,6 +230,26 @@ describe('BrainWritingHandoffComponent', () => {
       failedNoteIds: [],
     });
     expect(TestBed.inject(ToastService).toasts().at(-1)?.message).toContain('1 already there');
+  });
+
+  it('replaces a prior success toast with duplicate-only feedback on retry', async () => {
+    await create();
+    const toast = TestBed.inject(ToastService);
+    component.chooseExisting(documentWriting.id);
+    component.confirm();
+
+    http.expectOne('/api/writings/writing-1/notes').flush([]);
+    http.expectOne((request) =>
+      request.method === 'POST' && request.url === '/api/writings/writing-1/notes'
+    ).flush(source('note-1'));
+    expect(toast.toasts().some((item) => item.type === 'success')).toBe(true);
+
+    component.confirm();
+    http.expectOne('/api/writings/writing-1/notes').flush([source('note-1')]);
+
+    expect(toast.toasts()).toHaveLength(1);
+    expect(toast.toasts()[0].type).toBe('info');
+    expect(toast.toasts()[0].message).toContain('already kept');
   });
 
   it('composes one idempotent addSource call per missing source', async () => {
@@ -247,9 +351,9 @@ describe('BrainWritingHandoffComponent', () => {
     fixture.detectChanges();
 
     expect(fixture.nativeElement.querySelector('.handoff-dialog')).toBeTruthy();
-    expect(fixture.nativeElement.querySelectorAll('.handoff-option.existing').length).toBe(1);
-    expect(fixture.nativeElement.querySelector('.handoff-actions .primary')).toBeTruthy();
-    expect(fixture.nativeElement.querySelector('.handoff-actions .secondary')).toBeTruthy();
+    expect(fixture.nativeElement.querySelectorAll('.existing-destination').length).toBe(1);
+    expect(fixture.nativeElement.querySelector('.handoff-actions .nostos-button--primary')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('.handoff-actions .nostos-button--secondary')).toBeTruthy();
 
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: previousWidth });
   });
