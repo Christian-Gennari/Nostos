@@ -64,15 +64,22 @@
           [routerLink]="['/library', note.bookId]"
           [queryParams]="{ cfi: note.cfiRange }"
           (click)="$event.stopPropagation()"
-          title="Go to: {{ note.bookTitle }}"
+          [attr.aria-label]="(note.cfiRange ? 'Return to passage in ' : 'Open book: ') + note.bookTitle"
+          [title]="note.cfiRange ? 'Return to passage' : 'Open book'"
         >
           <nostos-icon name="books" [size]="12"></nostos-icon>
-          <span>{{ note.bookTitle }}</span>
+          <span class="source-book-title">{{ note.bookTitle }}</span>
+          <span class="source-nav-label">{{ note.cfiRange ? 'Return to passage' : 'Open book' }}</span>
+          <nostos-icon name="arrow-right" [size]="12"></nostos-icon>
         </a>
         }
       </div>
 
-      @if (showNavigation || showActions) {
+      @if (actionsTemplate) {
+      <div class="note-actions custom-actions">
+        <ng-container *ngTemplateOutlet="actionsTemplate; context: actionsContext"></ng-container>
+      </div>
+      } @else if (showNavigation || showActions) {
       <div class="note-actions">
         @if (showNavigation) {
         <button appIconButton size="xxs" icon="arrow-right" [glyphSize]="14" (click)="onCardClick($event)" title="Jump to location"></button>

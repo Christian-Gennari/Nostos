@@ -253,6 +253,8 @@ export class SecondBrain implements AfterViewChecked {
   reviewError = signal(false);
   /** The note under review, chosen explicitly. `null` focuses the first row. */
   reviewId = signal<string | null>(null);
+  noteMoreOpenKey = signal<string | null>(null);
+  private noteMoreTrigger: HTMLButtonElement | null = null;
   reviewSaving = signal(false);
   reviewEditing = signal(false);
   reviewEditContent = signal('');
@@ -383,6 +385,13 @@ export class SecondBrain implements AfterViewChecked {
     if (!queue.length) return null;
     const id = this.reviewId();
     return (id ? queue.find((row) => row.id === id) : undefined) ?? queue[0];
+  });
+
+  reviewPosition = computed(() => {
+    const note = this.reviewNote();
+    if (!note) return null;
+    const index = this.reviewQueue().findIndex((row) => row.id === note.id);
+    return index < 0 ? null : index + 1;
   });
 
   /**
@@ -1372,6 +1381,75 @@ export class SecondBrain implements AfterViewChecked {
   closeNotePanel(): void {
     if (this.browseHasUnsavedEdit()) return;
     this.panelNote.set(null);
+  }
+
+  noteMoreKey(mode: string, noteId: string): string {
+    return mode + ':' + noteId;
+  }
+
+  toggleNoteMore(key: string, event: MouseEvent): void {
+    if (this.noteMoreOpenKey() === key) {
+      this.noteMoreOpenKey.set(null);
+      this.noteMoreTrigger = null;
+      return;
+    }
+
+    this.noteMoreOpenKey.set(key);
+    this.noteMoreTrigger = event.currentTarget as HTMLButtonElement;
+  }
+
+  handleNoteMoreKeydown(event: KeyboardEvent): void {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      this.closeNoteMore(true);
+      return;
+    }
+
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+
+    const menu = event.currentTarget as HTMLElement;
+    const items = Array.from(menu.querySelectorAll<HTMLButtonElement>('[data-note-more-item]'));
+    if (!items.length) return;
+
+    const index = items.indexOf(document.activeElement as HTMLButtonElement);
+    const direction = event.key === 'ArrowDown' ? 1 : -1;
+    const next = index < 0
+      ? (direction > 0 ? 0 : items.length - 1)
+      : (index + direction + items.length) % items.length;
+    event.preventDefault();
+    items[next].focus();
+  }
+
+  private closeNoteMore(restoreFocus: boolean): void {
+    const trigger = this.noteMoreTrigger;
+    this.noteMoreOpenKey.set(null);
+    this.noteMoreTrigger = null;
+    if (restoreFocus) queueMicrotask(() => trigger?.focus());
+  }
+
+  performNoteMoreAction(
+    action: 'edit' | 'show-book' | 'delete',
+    mode: string,
+    note: NoteSearchHit | Note,
+    card: NoteCardComponent | null,
+    event: MouseEvent
+  ): void {
+    this.closeNoteMore(false);
+
+    if (action === 'edit') {
+      if (mode === 'review') this.startReviewEdit();
+      else if (mode === 'browse') this.startBrowseEdit();
+      else card?.startEdit(event);
+      return;
+    }
+
+    if (action === 'show-book' && mode === 'browse') {
+      this.setBrowseBook(note.bookId, note.bookTitle || 'Unknown source');
+      return;
+    }
+
+    if (action === 'delete' && mode === 'evidence') this.onDeleteNote(note.id);
   }
 
   /**

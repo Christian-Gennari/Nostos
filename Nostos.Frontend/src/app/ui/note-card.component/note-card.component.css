@@ -162,9 +162,31 @@
   text-overflow: ellipsis;
 }
 
+.source-badge .source-nav-label {
+  flex: 0 0 auto;
+  color: inherit;
+  font-weight: var(--fw-medium);
+}
+
+.source-badge:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
 .source-badge:hover {
   background-color: var(--bg-hover);
   color: var(--color-primary);
+}
+
+.note-actions.custom-actions {
+  pointer-events: auto !important;
+  opacity: 1;
+  transform: none;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  box-shadow: none;
 }
 
 .note-actions {
@@ -253,5 +275,11 @@
   .note-actions .icon-btn.delete:hover {
     background-color: transparent;
     color: inherit;
+  }
+}
+
+@media (pointer: coarse) {
+  .source-badge {
+    min-height: 44px;
   }
 }

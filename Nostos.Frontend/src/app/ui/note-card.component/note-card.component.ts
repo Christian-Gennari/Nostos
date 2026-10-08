@@ -1,5 +1,5 @@
 // Nostos.Frontend/src/app/ui/note-card.component/note-card.component.ts
-import { Component, EventEmitter, Input, Output } from '@angular/core';
+import { Component, EventEmitter, Input, Output, TemplateRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
@@ -33,6 +33,8 @@ export class NoteCardComponent {
   @Input() showActions = true;
   @Input() showSource = false;
   @Input() showDate = true;
+  @Input() actionsTemplate: TemplateRef<unknown> | null = null;
+  @Input() actionsContext: Record<string, unknown> = {};
 
   // Updated Output signature to match UpdateNoteDto
   @Output() update = new EventEmitter<{ id: string; content: string; selectedText?: string }>();

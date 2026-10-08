@@ -386,9 +386,8 @@
   width: 100%;
   min-height: 34px;
   margin-bottom: 2px;
-  /* Width of the actions overlay: 3 x 22px buttons + 2 x 2px gaps (70px) + the 6px
-     right inset. */
-  --actions-w: 76px;
+  /* Width reserves a 28px hit area for each desktop action plus the right inset. */
+  --actions-w: 94px;
   /* How far the NAME box stops short of the row's right edge: the 8px row
      padding plus the badge slot (badge min-width 20px). Together with
      --actions-w this locates where the buttons begin *inside the name box*. */
@@ -645,13 +644,13 @@
 
 
 
-/* 22x22 with a 13px glyph — the tree's `.action-mini`, not a 34x32 button. */
+/* Keep the utility glyphs quiet while giving each one a useful hit area. */
 .row-action {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 28px;
+  height: 28px;
   padding: 0;
   border: 0;
   border-radius: 4px;
@@ -695,7 +694,7 @@
 
 /* No hover on touch: a hover-revealed pair is unreachable there, so the selected
    row (and a keyboard-focused one) reveals its actions instead. */
-@media (hover: none) {
+@media (pointer: coarse), (hover: none) {
   .index-row-shell:has(.index-item.active) .row-actions,
   .index-row-shell:focus-within .row-actions {
     opacity: 1;
@@ -914,22 +913,13 @@
 /* Actions are quiet until needed: no border at rest, so the header is type and
    air rather than three competing boxes. The hairline and fill arrive on hover,
    which keeps the destructive action from carrying the same weight as the rest. */
-.topic-actions,
-.review-actions {
+.topic-actions {
   display: flex;
   align-items: center;
   gap: 0.15rem;
   flex-shrink: 0;
   /* Optically align with the title's cap height rather than its box top. */
   margin-top: 1.35rem;
-}
-
-/* Focused-note actions are one quiet row; primary/manual linking carries the
-   hierarchy, while optional assistance and utility actions remain subordinate. */
-.review-actions {
-  margin-top: 0;
-  flex-wrap: wrap;
-  gap: 0.5rem;
 }
 
 .review-pagination {
@@ -1005,9 +995,7 @@
   margin-top: 0;
 }
 
-.note-inspector-inline-actions,
-.note-inspector-primary-actions,
-.note-inspector-utility-actions {
+.note-inspector-inline-actions {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -1022,10 +1010,6 @@
   display: flex;
   flex-direction: column;
   gap: 0.55rem;
-}
-
-.note-inspector-utility-actions {
-  color: var(--color-text-muted);
 }
 
 .note-inspector .brain-source-link {
@@ -1505,6 +1489,13 @@
   background: transparent;
 }
 
+.detail-select-wrap > .detail-tool-label {
+  color: var(--color-text-muted);
+  font-size: 0.68rem;
+  font-weight: var(--fw-medium);
+  letter-spacing: 0.02em;
+}
+
 .detail-select {
   min-width: 0;
   flex: 1 1 auto;
@@ -1653,7 +1644,6 @@
 }
 
 :host ::ng-deep app-note-card .note-actions {
-  pointer-events: none;
   opacity: 0;
   transform: translateY(4px);
   border-radius: var(--radius-md);
@@ -1848,11 +1838,8 @@
   .brain-note-filters { padding-inline: 1rem; }
 
   .brain-note-filter-row .nostos-chip,
-  .review-actions .nostos-button,
   .review-pagination .nostos-button,
   .brain-proposal-actions .nostos-button,
-  .note-inspector-primary-actions .nostos-button,
-  .note-inspector-utility-actions .nostos-button,
   .note-inspector-inline-actions .nostos-button {
     min-height: 44px;
   }
@@ -1923,7 +1910,7 @@
      are an out-of-flow overlay, so they can stay tall while the row stays 44px.
      Widening --actions-w moves the tail, the overlay and the fade edge together. */
   .index-row-shell {
-    --actions-w: 96px;
+    --actions-w: 142px;
   }
 
   .row-actions {
@@ -2290,6 +2277,69 @@
   padding: 0.75rem 1.25rem 0.25rem;
 }
 
+.brain-section-heading,
+.review-section-heading,
+.review-inspector-heading {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.browse-section-header {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.review-section-header {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.review-entry {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.65rem;
+  min-width: 0;
+}
+
+.review-entry p {
+  flex: 1 1 100%;
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.72rem;
+  line-height: 1.35;
+  text-align: right;
+}
+
+.review-position {
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.review-return {
+  margin-top: 0.5rem;
+}
+
+.note-inspector-review .review-return {
+  display: none;
+}
+
+.note-inspector-review .review-return.is-review-deep-link {
+  display: inline-flex;
+}
+
+@media (max-width: 768px) {
+  .note-inspector-review .review-return {
+    display: inline-flex;
+  }
+}
+
 .brain-section-title {
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -2466,25 +2516,11 @@
   color: color-mix(in srgb, var(--selection-ink) 72%, transparent);
 }
 
-/* Shared Button owns chrome, focus and disabled states; Brain owns only rail layout. */
-.rail-foot-action,
+/* Shared Button owns chrome, focus and disabled states; Brain owns rail layout. */
 .review-load-more {
   width: 100%;
   justify-content: flex-start;
-}
-
-.review-load-more { margin-top: 0.5rem; }
-
-/* The rail's foot.
- *
- * One restrained line, in the position the queued notes used to occupy: the way
- * INTO review in the index, and the way OUT of it while reviewing. It is not a
- * badge and carries no count — the whole point of the issue is that unlinked
- * notes do not get to advertise themselves from the default rail. */
-.rail-foot {
-  flex: 0 0 auto;
-  border-top: 1px solid var(--border-color);
-  padding: 0.5rem 0.75rem;
+  margin-top: 0.5rem;
 }
 
 /* The focused note.
@@ -2536,15 +2572,6 @@
     padding-left: 0.65rem;
   }
 
-  /* The reviewed note keeps a phone-sized measure: the pane's own padding comes
-     from `.content-col`'s mobile rules, so only the type scales down. */
-  .review-title {
-    font-size: 1.25rem;
-  }
-
-  .review-body {
-    max-width: none;
-  }
 }
 
 
@@ -2611,17 +2638,68 @@
   accent-color: var(--color-primary);
 }
 
-.brain-note-panel-actions {
+
+.brain-note-provenance {
   display: flex;
-  justify-content: flex-start;
-  margin-top: 1rem;
-  padding-top: 0.9rem;
-  border-top: 1px solid var(--border-color);
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  color: var(--color-text-muted);
+  font-size: 0.76rem;
+}
+
+.brain-note-provenance .brain-source-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--color-brand-accent);
+  font-weight: var(--fw-medium);
+  text-decoration: none;
+}
+
+.brain-note-provenance .brain-source-link:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+}
+
+.brain-note-actions {
+  position: relative;
+}
+
+.brain-note-action-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.brain-note-more-disclosure {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 0.25rem);
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  min-width: 12rem;
+  padding: 0.35rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-md);
+}
+
+.brain-note-more-item.danger {
+  color: var(--color-danger);
 }
 
 @media (max-width: 768px) {
   .detail-tools {
     flex-wrap: wrap;
+  }
+
+  .brain-note-more-disclosure {
+    right: 0;
+    max-width: min(18rem, 100%);
   }
 
   .source-selection-tools {
@@ -2662,5 +2740,27 @@
     flex: 1;
     flex-wrap: nowrap;
     width: auto;
+  }
+}
+
+@media (pointer: coarse) {
+  .brain-note-actions button,
+  .review-entry button,
+  .review-return,
+  .brain-note-provenance .brain-source-link,
+  .source-selection-tools > button,
+  .source-select-control {
+    min-height: 44px;
+  }
+
+  :host ::ng-deep app-note-card .note-actions {
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    transform: none !important;
+  }
+
+  :host ::ng-deep app-note-card .note-actions .icon-btn {
+    min-width: 44px;
+    min-height: 44px;
   }
 }
