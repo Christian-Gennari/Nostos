@@ -12,14 +12,16 @@ namespace Nostos.Backend.Providers.StandardEbooks;
 /// Nostos. There is no shared credential to redistribute, so the same provider
 /// works in SelfHosted and Cloud without committing or exposing a secret.
 /// </summary>
-public sealed class StandardEbooksProvider : IContentProvider,
+public sealed partial class StandardEbooksProvider : IContentProvider,
     IProviderSearch,
     IProviderCatalog,
     IProviderAcquisitionPlanner,
-    IProviderDownloadPolicy
+    IProviderDownloadPolicy,
+    IProviderSnapshotSource
 {
     public const string ProviderIdentifier = "standard-ebooks";
     public const string HttpClientName = "standard-ebooks";
+    public const string SnapshotHttpClientName = "standard-ebooks-snapshot";
 
     /// <summary>
     /// Approved by Standard Ebooks on 2026-09-25. Keep the identity stable unless
@@ -36,12 +38,19 @@ public sealed class StandardEbooksProvider : IContentProvider,
     private const long MaxEbookBytes = 128L * 1024 * 1024;
 
     private readonly HttpClient _http;
+    private readonly HttpClient _snapshotHttp;
+    private readonly ILogger<StandardEbooksProvider> _logger;
+    private readonly TimeProvider _clock;
 
     public StandardEbooksProvider(
         IHttpClientFactory httpClientFactory,
-        ILogger<StandardEbooksProvider> logger)
+        ILogger<StandardEbooksProvider> logger,
+        TimeProvider? clock = null)
     {
         _http = httpClientFactory.CreateClient(HttpClientName);
+        _snapshotHttp = httpClientFactory.CreateClient(SnapshotHttpClientName);
+        _logger = logger;
+        _clock = clock ?? TimeProvider.System;
 
         // The feed is whitelisted by this exact project identity. Set it here,
         // inside the provider boundary, as well as in product composition so a
@@ -52,7 +61,13 @@ public sealed class StandardEbooksProvider : IContentProvider,
         _http.DefaultRequestHeaders.Accept.Clear();
         _http.DefaultRequestHeaders.Accept.ParseAdd(OpdsAccept);
 
-        _ = logger;
+        // Snapshot reads use a dedicated client with a bulk-feed timeout. Set
+        // the exact allowlisted identity here too, so custom/test factories
+        // cannot accidentally make the source request access anonymously.
+        _snapshotHttp.DefaultRequestHeaders.UserAgent.Clear();
+        _snapshotHttp.DefaultRequestHeaders.UserAgent.ParseAdd(ApprovedUserAgent);
+        _snapshotHttp.DefaultRequestHeaders.Accept.Clear();
+        _snapshotHttp.DefaultRequestHeaders.Accept.ParseAdd(OpdsAccept);
     }
 
     public string Id => ProviderIdentifier;
