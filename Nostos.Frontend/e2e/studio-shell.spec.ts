@@ -264,6 +264,25 @@ test('Writing Studio shell stays editor-first across desktop and compact viewpor
       if (viewport.label === 'desktop') expectToolbarGlyphAligned(bothCollapsed);
 
       if (viewport.label === 'desktop') {
+        const keyboardFilesToggle = page.locator('.files-toggle');
+        await keyboardFilesToggle.focus();
+        await page.keyboard.press('Tab');
+        await page.keyboard.press('Shift+Tab');
+        await expect(keyboardFilesToggle).toBeFocused();
+        const keyboardFocusIndicatorVisible = await keyboardFilesToggle.evaluate((element) => {
+          const style = getComputedStyle(element);
+          return (
+            element.matches(':focus-visible') &&
+            ((style.outlineStyle !== 'none' && Number.parseFloat(style.outlineWidth) > 0) ||
+              style.boxShadow !== 'none')
+          );
+        });
+        expect(keyboardFocusIndicatorVisible).toBe(true);
+        await page.keyboard.press('Enter');
+        await expect(keyboardFilesToggle).toHaveAttribute('aria-expanded', 'true');
+        await page.keyboard.press('Enter');
+        await expect(keyboardFilesToggle).toHaveAttribute('aria-expanded', 'false');
+
         const railStates = [
           { files: true, reference: true },
           { files: true, reference: false },

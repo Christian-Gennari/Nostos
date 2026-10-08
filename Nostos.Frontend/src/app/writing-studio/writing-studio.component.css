@@ -994,6 +994,11 @@
   background: var(--bg-hover);
 }
 
+.editor-header .icon-btn:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
 .sidebar-title-row {
   gap: 0.35rem;
 }
