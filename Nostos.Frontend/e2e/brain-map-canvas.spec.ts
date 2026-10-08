@@ -320,3 +320,46 @@ test('canvas and Sigma remeasure after orientation and height changes', async ({
     await context.close();
   }
 });
+
+test('focus fallback pins the canvas to the viewport and exits with Escape', async ({ browser }) => {
+  const { context, page } = await newCapturePage(browser, { width: 1440, height: 900 });
+  try {
+    await page.addInitScript(() => {
+      Object.defineProperty(document, 'fullscreenEnabled', {
+        configurable: true,
+        get: () => false,
+      });
+    });
+    await openMap(page);
+
+    const enter = page.getByRole('button', { name: 'Focus mode' });
+    await enter.focus();
+    await page.keyboard.press('Enter');
+    const entered = page.getByRole('button', { name: 'Exit focus mode' });
+    await expect(entered).toBeFocused();
+
+    const fallback = await page.evaluate(() => {
+      const stage = document.querySelector('.map-stage') as HTMLElement;
+      const rect = stage.getBoundingClientRect();
+      return {
+        nativeFullscreen: document.fullscreenElement === stage,
+        fallbackClass: stage.classList.contains('is-fullscreen'),
+        position: getComputedStyle(stage).position,
+        rect: [Math.round(rect.left), Math.round(rect.top), Math.round(rect.width), Math.round(rect.height)],
+        viewport: [innerWidth, innerHeight],
+      };
+    });
+    expect(fallback.nativeFullscreen).toBe(false);
+    expect(fallback.fallbackClass).toBe(true);
+    expect(fallback.position).toBe('fixed');
+    expect(fallback.rect).toEqual([0, 0, ...fallback.viewport]);
+
+    await page.keyboard.press('Escape');
+    const restored = page.getByRole('button', { name: 'Focus mode' });
+    await expect(restored).toBeFocused();
+    expect(await page.locator('.map-stage').evaluate((stage) => stage.classList.contains('is-fullscreen')))
+      .toBe(false);
+  } finally {
+    await context.close();
+  }
+});
