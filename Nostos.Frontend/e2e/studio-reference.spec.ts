@@ -65,6 +65,14 @@ async function openWriting(page: Page, viewport = { width: 1440, height: 900 }):
   await expect(page.locator('.header-doc-title')).toHaveText(writingTitle);
 }
 
+async function expectDarkEditor(page: Page): Promise<void> {
+  const editorDocument = page.frameLocator('.tox-edit-area iframe').locator('html');
+  await expect(editorDocument).toHaveAttribute('data-theme', 'dark');
+  await expect
+    .poll(() => editorDocument.evaluate((element) => getComputedStyle(element).backgroundColor))
+    .toBe('rgb(18, 19, 24)');
+}
+
 test.beforeAll(async () => {
   const fixture = loadFixture();
   baseUrl = fixture.baseUrl;
@@ -352,15 +360,11 @@ test('Reference browsing, inspection, keep, and insertion preserve the writing',
     'Insert note',
   );
   await expect(page.locator('.inspected-source-open')).toContainText('Open source');
-  await page.evaluate(() => {
-    document.documentElement.setAttribute('data-theme', 'dark');
-    localStorage.setItem('nostos.theme', 'dark');
-  });
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.locator('.sidebar-right').evaluate((element) => {
     (element as HTMLElement).style.width = '360px';
   });
-  await captureAfter(page, 'reference-source-note-only-desktop-1440x900-dark.png');
+  await captureAfter(page, 'reference-source-note-only-desktop-1440x900-light.png');
 
   await page.getByRole('button', { name: 'Back to ' + mainBookTitle }).click();
   await expect(page.locator('.reference-note-list .reference-source-row')).toHaveCount(40);
@@ -550,11 +554,72 @@ test('kept-source density and responsive Reference rows hold at 0, 3, 8, and 40'
   );
   expect(narrowRowGeometry.horizontalOverflow).toBeLessThanOrEqual(1);
   await captureAfter(page, 'reference-for-writing-forty-laptop-1280x720-light.png');
-  await page.evaluate(() => {
-    document.documentElement.setAttribute('data-theme', 'dark');
-    localStorage.setItem('nostos.theme', 'dark');
+
+  // Every dark capture starts Studio after setting the persisted theme, so the
+  // editor iframe gets its theme during TinyMCE initialization as well as in
+  // the shell. Changing only the outer document attribute leaves the iframe in
+  // its prior theme and is not a valid product journey.
+  const darkContext = await browser.newContext({
+    viewport: { width: 1280, height: 720 },
   });
-  await captureAfter(page, 'reference-for-writing-forty-laptop-1280x720-dark.png');
+  const darkPage = await darkContext.newPage();
+  await darkPage.addInitScript(() => localStorage.setItem('nostos.theme', 'dark'));
+  await openWriting(darkPage, { width: 1280, height: 720 });
+  await expectDarkEditor(darkPage);
+  await expect(darkPage.locator('.kept-sources-content .reference-source-row')).toHaveCount(40);
+  await darkPage.locator('.sidebar-right').evaluate((element) => {
+    (element as HTMLElement).style.width = '280px';
+  });
+  await captureAfter(darkPage, 'reference-for-writing-forty-laptop-1280x720-dark.png');
+
+  await darkPage.getByRole('tab', { name: 'Library' }).click();
+  await darkPage.locator('.library-tabs').getByRole('tab', { name: 'Books' }).click();
+  await darkPage.getByRole('textbox', { name: 'Search books' }).fill('S2 Reference Book');
+  await darkPage.locator('.list-item').filter({ hasText: mainBookTitle }).click();
+  await expect(darkPage.locator('.reference-note-list .reference-source-row')).toHaveCount(40);
+  await darkPage.setViewportSize({ width: 1024, height: 768 });
+  await darkPage.locator('.sidebar-right').evaluate((element) => {
+    (element as HTMLElement).style.width = '280px';
+  });
+  await expect(darkPage.locator('.reference-note-list .reference-source-row').first().locator(
+    '.library-keep-action.active',
+  )).toBeVisible();
+  await darkPage.waitForTimeout(350);
+  await expectDarkEditor(darkPage);
+  await captureAfter(darkPage, 'reference-book-notes-narrow-1024x768-dark.png');
+  const darkNoteOnlyRow = darkPage
+    .locator('.reference-note-list .reference-source-row-main')
+    .filter({ hasText: noteOnlyContent.slice(95, 130) })
+    .first();
+  await darkNoteOnlyRow.click();
+  await expectDarkEditor(darkPage);
+  await expect(darkPage.locator('.source-action-primary-row .nostos-button--primary')).toHaveText(
+    'Insert note',
+  );
+  await darkPage.setViewportSize({ width: 1440, height: 900 });
+  await darkPage.locator('.sidebar-right').evaluate((element) => {
+    (element as HTMLElement).style.width = '360px';
+  });
+  await captureAfter(darkPage, 'reference-source-note-only-desktop-1440x900-dark.png');
+
+  await darkPage.getByRole('button', { name: 'Back to ' + mainBookTitle }).click();
+  await darkPage.getByRole('button', { name: 'Back to Books' }).click();
+  await darkPage.locator('.list-item').filter({ hasText: mainBookTitle }).click();
+  const darkQuoteRow = darkPage
+    .locator('.reference-note-list .reference-source-row-main')
+    .filter({ hasText: longQuote.slice(0, 32) })
+    .first();
+  await darkQuoteRow.click();
+  await expectDarkEditor(darkPage);
+  await expect(darkPage.locator('.source-action-primary-row .nostos-button--primary')).toHaveText(
+    'Insert quote',
+  );
+  await darkPage.setViewportSize({ width: 1024, height: 768 });
+  await darkPage.locator('.sidebar-right').evaluate((element) => {
+    (element as HTMLElement).style.width = '280px';
+  });
+  await captureAfter(darkPage, 'reference-source-long-quote-desktop-1024x768-dark.png');
+  await darkContext.close();
 
   const touchContext = await browser.newContext({
     viewport: { width: 390, height: 844 },
@@ -576,17 +641,29 @@ test('kept-source density and responsive Reference rows hold at 0, 3, 8, and 40'
   const actionTarget = await touchPage
     .locator('.reference-row-action')
     .first()
-    .boundingBox();
-  expect(actionTarget?.width).toBeGreaterThanOrEqual(44);
-  expect(actionTarget?.height).toBeGreaterThanOrEqual(44);
+    .evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return { width: rect.width, height: rect.height, cssWidth: style.width, cssHeight: style.height };
+    });
+  expect(actionTarget.cssWidth).toBe('44px');
+  expect(actionTarget.cssHeight).toBe('44px');
+  // Chromium can report 43.99997px from its transformed layout rectangle even
+  // though the computed control box is exactly 44px. Compare at rendered-pixel
+  // precision while still guarding the actual CSS target above.
+  expect(Math.round(actionTarget.width)).toBeGreaterThanOrEqual(44);
+  expect(Math.round(actionTarget.height)).toBeGreaterThanOrEqual(44);
 
   await touchPage.locator('.kept-sources-content .reference-source-row-main').first().click();
   await expect(touchPage.locator('.inspected-source-card')).toHaveCount(1);
   await captureAfter(touchPage, 'mobile-reference-inspection-mobile-390x844-light.png');
-  await touchPage.evaluate(() => {
-    document.documentElement.setAttribute('data-theme', 'dark');
-    localStorage.setItem('nostos.theme', 'dark');
-  });
+
+  await touchPage.addInitScript(() => localStorage.setItem('nostos.theme', 'dark'));
+  await openWriting(touchPage, { width: 390, height: 844 });
+  await expectDarkEditor(touchPage);
+  await touchPage.getByRole('button', { name: 'Toggle reference sidebar' }).click();
+  await touchPage.locator('.kept-sources-content .reference-source-row-main').first().click();
+  await expect(touchPage.locator('.inspected-source-card')).toHaveCount(1);
   await captureAfter(touchPage, 'mobile-reference-inspection-mobile-390x844-dark.png');
   await touchContext.close();
 

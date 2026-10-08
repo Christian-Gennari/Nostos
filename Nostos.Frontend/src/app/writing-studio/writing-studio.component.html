@@ -249,9 +249,10 @@
             class="inspected-source-back"
             (click)="closeInspectedSource()"
             [attr.aria-label]="'Back to ' + inspectionReturnLabel()"
+            [title]="'Back to ' + inspectionReturnLabel()"
           >
             <nostos-icon name="arrow-left" [size]="16"></nostos-icon>
-            <span class="inspected-source-context">{{ inspectionReturnLabel() }}</span>
+            <span class="inspected-source-context">Back to {{ inspectionReturnLabel() }}</span>
           </button>
         </div>
 
@@ -467,18 +468,20 @@
 
     @if (!inspectedSource() && referenceMode() === 'library') {
       @if (activeSidebarTab() === 'brain') {
-        <div class="search-box">
-          <nostos-icon name="magnifying-glass" [size]="16"></nostos-icon>
-          <input
-            appInput
-            controlSize="compact"
-            type="text"
-            placeholder="Search topics..."
-            aria-label="Search topics"
-            [ngModel]="brainQuery()"
-            (ngModelChange)="brainQuery.set($event)"
-          />
-        </div>
+        @if (!selectedTopicId()) {
+          <div class="search-box">
+            <nostos-icon name="magnifying-glass" [size]="16"></nostos-icon>
+            <input
+              appInput
+              controlSize="compact"
+              type="text"
+              placeholder="Search topics..."
+              aria-label="Search topics"
+              [ngModel]="brainQuery()"
+              (ngModelChange)="brainQuery.set($event)"
+            />
+          </div>
+        }
         @if (!activeItem()) {
           <p class="reference-action-notice">Open a writing to keep or insert sources.</p>
         }
@@ -549,6 +552,7 @@
                       appIconButton
                       class="reference-row-action library-keep-action"
                       icon="bookmark-simple"
+                      [weight]="keptNoteIds().has(note.id) ? 'fill' : 'regular'"
                       [glyphSize]="16"
                       [class.active]="keptNoteIds().has(note.id)"
                       [disabled]="!activeItem() || keepingNoteIds().has(note.id)"
@@ -567,18 +571,20 @@
         </div>
       }
       @if (activeSidebarTab() === 'notes') {
-        <div class="search-box">
-          <nostos-icon name="magnifying-glass" [size]="16"></nostos-icon>
-          <input
-            appInput
-            controlSize="compact"
-            type="text"
-            placeholder="Search books..."
-            aria-label="Search books"
-            [ngModel]="bookQuery()"
-            (ngModelChange)="bookQuery.set($event)"
-          />
-        </div>
+        @if (!selectedBookId()) {
+          <div class="search-box">
+            <nostos-icon name="magnifying-glass" [size]="16"></nostos-icon>
+            <input
+              appInput
+              controlSize="compact"
+              type="text"
+              placeholder="Search books..."
+              aria-label="Search books"
+              [ngModel]="bookQuery()"
+              (ngModelChange)="bookQuery.set($event)"
+            />
+          </div>
+        }
         @if (!activeItem()) {
           <p class="reference-action-notice">Open a writing to keep or insert sources.</p>
         }
@@ -654,6 +660,7 @@
                       appIconButton
                       class="reference-row-action library-keep-action"
                       icon="bookmark-simple"
+                      [weight]="keptNoteIds().has(note.id) ? 'fill' : 'regular'"
                       [glyphSize]="16"
                       [class.active]="keptNoteIds().has(note.id)"
                       [disabled]="!activeItem() || keepingNoteIds().has(note.id)"

@@ -16,6 +16,7 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { DragDropModule } from '@angular/cdk/drag-drop';
 import { firstValueFrom } from 'rxjs';
+import { marked } from 'marked';
 
 import { WritingsService } from '../core/services/writings.service';
 import { ToastService } from '../core/services/toast.service';
@@ -36,6 +37,7 @@ import { InputDirective } from '../ui/form-control/form-control.directive';
 import { BadgeComponent } from '../ui/badge/badge.component';
 import { ConfirmModal } from '../ui/confirm-modal/confirm-modal.component';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
+import { noteWikilinksToText } from '../ui/pipes/note-format.pipe';
 import {
   buildNoteMarkdown,
   buildQuoteMarkdown,
@@ -1066,16 +1068,10 @@ export class WritingStudio implements OnInit, AfterViewInit {
 
   referencePreview(note: Note): string {
     const value = hasMeaningfulSelectedText(note) ? note.selectedText : note.content;
-    return (value ?? '')
-      .replace(/<[^>]*>/g, ' ')
-      .replace(/&nbsp;|&#160;/gi, ' ')
-      .replace(/&amp;/gi, '&')
-      .replace(/&lt;/gi, '<')
-      .replace(/&gt;/gi, '>')
-      .replace(/&quot;/gi, '"')
-      .replace(/&#39;|&apos;/gi, "'")
-      .replace(/\s+/g, ' ')
-      .trim();
+    const markdown = noteWikilinksToText(value ?? '');
+    const html = marked.parse(markdown, { async: false });
+    const text = new DOMParser().parseFromString(html, 'text/html').body.textContent ?? '';
+    return text.replace(/\s+/g, ' ').trim();
   }
 
   hasQuotePreview(note: Note): boolean {

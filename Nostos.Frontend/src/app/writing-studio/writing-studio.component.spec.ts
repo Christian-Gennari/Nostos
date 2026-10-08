@@ -13,6 +13,7 @@ import { NotesService } from '../core/services/notes.service';
 import { FlatTreeComponent } from '../ui/flat-tree/flat-tree.component';
 import { NoteCardComponent } from '../ui/note-card.component/note-card.component';
 import { MarkdownEditorComponent } from '../ui/markdown-editor/markdown-editor.component';
+import { NOSTOS_ICONS } from '../ui/icon/nostos-icons';
 import { WritingContentDto, WritingSourceDto } from '../core/dtos/writing.dtos';
 
 // Heavy editor / UI children are stubbed out: MarkdownEditor boots TinyMCE
@@ -204,7 +205,7 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
   it('uses the canonical search field and ghost action in both reference modes', () => {
     component.referenceMode.set('library');
     component.activeSidebarTab.set('notes');
-    component.selectedBookId.set('book-1');
+    component.selectedBookId.set(null);
     fixture.detectChanges();
 
     const bookSearch = fixture.nativeElement.querySelector(
@@ -212,6 +213,12 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
     ) as HTMLInputElement;
     expect(bookSearch.classList.contains('nostos-form-control')).toBe(true);
     expect(bookSearch.classList.contains('nostos-form-control--compact')).toBe(true);
+
+    component.selectedBookId.set('book-1');
+    fixture.detectChanges();
+    expect(
+      fixture.nativeElement.querySelector('input[placeholder="Search books..."]'),
+    ).toBeNull();
 
     const back = fixture.nativeElement.querySelector('.goto-btn') as HTMLButtonElement;
     expect(back.tagName).toBe('BUTTON');
@@ -1260,6 +1267,113 @@ describe('WritingStudio kept sources (#491)', () => {
     expect(editor.insertMarkdown).not.toHaveBeenCalled();
   });
 
+  it('renders source previews as readable Markdown text with wikilinks resolved to their labels', () => {
+    const preview = component.referencePreview({
+      id: 'preview-note',
+      bookId: 'book-1',
+      content:
+        '## [[S2 Topic 01 — Attention and the Reader]]\n\n**A note without** _markup_ and [[Attention|the displayed text]].',
+      createdAt: '2026-08-01T10:00:00Z',
+    } as any);
+
+    expect(preview).toBe(
+      'S2 Topic 01 — Attention and the Reader A note without markup and the displayed text.',
+    );
+    expect(preview).not.toMatch(/[\[\]_*`#|]/);
+  });
+
+  it('uses the filled bookmark glyph only while a Library source is kept', () => {
+    const libraryNote = {
+      id: sourceAlpha.id,
+      bookId: sourceAlpha.bookId,
+      content: sourceAlpha.content,
+      selectedText: sourceAlpha.selectedText,
+      createdAt: sourceAlpha.createdAt,
+      bookTitle: sourceAlpha.bookTitle,
+    } as any;
+    const pathsIn = (root: ParentNode): string[] =>
+      Array.from(root.querySelectorAll('path')).map((path) => path.getAttribute('d') ?? '');
+    const markupPaths = (markup: string): string[] =>
+      pathsIn(new DOMParser().parseFromString(markup, 'image/svg+xml'));
+
+    component.referenceMode.set('library');
+    component.activeSidebarTab.set('notes');
+    component.selectedBookId.set('book-1');
+    component.selectedBookNotes.set([libraryNote]);
+    component.keptSources.set([]);
+    fixture.detectChanges();
+
+    const button = fixture.nativeElement.querySelector('.library-keep-action') as HTMLButtonElement;
+    expect(button.classList.contains('active')).toBe(false);
+    expect(pathsIn(button.querySelector('svg')!)).toEqual(
+      markupPaths(NOSTOS_ICONS['bookmark-simple'].regular),
+    );
+
+    component.keptSources.set([sourceAlpha]);
+    fixture.detectChanges();
+
+    expect(button.classList.contains('active')).toBe(true);
+    expect(pathsIn(button.querySelector('svg')!)).toEqual(
+      markupPaths(NOSTOS_ICONS['bookmark-simple'].fill!),
+    );
+  });
+
+  it('hides Reference index search in detail and inspection, then restores query and index scroll', async () => {
+    const note = {
+      id: 'note-alpha',
+      bookId: 'book-1',
+      bookTitle: 'Book Alpha',
+      content: 'A note about attention',
+      createdAt: '2026-08-01T10:00:00Z',
+    } as any;
+    component.referenceMode.set('library');
+    component.activeSidebarTab.set('brain');
+    component.topics.set([{ id: 'topic-1', name: 'Attention', usageCount: 1 } as any]);
+    component.brainQuery.set('Attention');
+    fixture.detectChanges();
+
+    const indexScroll = fixture.nativeElement.querySelector(
+      '[data-reference-scroll="topics"]',
+    ) as HTMLElement;
+    indexScroll.scrollTop = 123;
+    component.captureReferenceScroll({ target: indexScroll } as unknown as Event);
+
+    component.selectedTopicId.set('topic-1');
+    component.selectedTopicNotes.set([note]);
+    fixture.detectChanges();
+    const topicNotesScroll = fixture.nativeElement.querySelector(
+      '[data-reference-scroll="topicNotes"]',
+    ) as HTMLElement;
+    topicNotesScroll.scrollTop = 456;
+    component.captureReferenceScroll({ target: topicNotesScroll } as unknown as Event);
+    expect(
+      fixture.nativeElement.querySelector('input[placeholder="Search topics..."]'),
+    ).toBeNull();
+
+    component.inspectSource(note);
+    fixture.detectChanges();
+    expect(
+      fixture.nativeElement.querySelector('input[placeholder="Search topics..."]'),
+    ).toBeNull();
+    expect(
+      (fixture.nativeElement.querySelector('.inspected-source-back') as HTMLButtonElement).textContent,
+    ).toContain('Back to Attention');
+
+    component.closeInspectedSource();
+    component.backToTopics();
+    fixture.detectChanges();
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+    const search = fixture.nativeElement.querySelector(
+      'input[placeholder="Search topics..."]',
+    ) as HTMLInputElement;
+    expect(search.value).toBe('Attention');
+    const restoredIndex = fixture.nativeElement.querySelector(
+      '[data-reference-scroll="topics"]',
+    ) as HTMLElement;
+    expect(restoredIndex.scrollTop).toBe(123);
+  });
+
   it('replaces the kept-source list with one inspected-source drill-down and returns to it', () => {
     component.activeItem.set(sampleDoc1);
     component.keptSources.set([sourceAlpha]);
@@ -1311,8 +1425,9 @@ describe('WritingStudio kept sources (#491)', () => {
     const back = fixture.nativeElement.querySelector(
       '.inspected-source-back',
     ) as HTMLButtonElement;
-    expect(back.textContent).toContain('Philosophy');
+    expect(back.textContent).toContain('Back to Philosophy');
     expect(back.getAttribute('aria-label')).toBe('Back to Philosophy');
+    expect(back.title).toBe('Back to Philosophy');
 
     back.click();
     fixture.detectChanges();
@@ -1322,7 +1437,7 @@ describe('WritingStudio kept sources (#491)', () => {
     expect(fixture.nativeElement.querySelectorAll('.reference-note-list .reference-source-row')).toHaveLength(1);
     expect(
       fixture.nativeElement.querySelector('input[placeholder="Search topics..."]'),
-    ).toBeTruthy();
+    ).toBeNull();
   });
 
   it('preserves book context in the inspected-source return path', () => {

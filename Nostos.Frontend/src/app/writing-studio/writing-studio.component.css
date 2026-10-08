@@ -1327,18 +1327,27 @@
   white-space: nowrap;
 }
 
-.reference-row-action {
-  width: 36px;
-  min-width: 36px;
-  height: 36px;
+.reference-row-action.icon-btn {
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
   align-self: center;
   justify-self: end;
   color: var(--color-text-muted);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
 }
 
-.reference-row-action:hover,
-.library-keep-action.active {
+.reference-row-action.icon-btn:hover,
+.reference-row-action.icon-btn:focus-visible {
+  background: var(--bg-hover);
+  color: var(--color-text-main);
+}
+
+.reference-row-action.icon-btn.active:not(:hover):not(:focus-visible) {
   color: var(--color-brand-accent);
+  background: transparent;
 }
 
 .brain-detail-header {
@@ -1375,6 +1384,16 @@
   background: var(--bg-surface);
 }
 
+/* The inspector hides date, source badge, and actions. NoteCard still reserves
+   its empty 32px footer, so remove that unused slot only in this Studio card. */
+.inspected-source-card ::ng-deep .note-footer {
+  display: none;
+}
+
+.inspected-source-card ::ng-deep .note-card-container {
+  padding-bottom: 0.45rem;
+}
+
 .inspected-source-provenance {
   display: flex;
   align-items: center;
@@ -1391,6 +1410,14 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+@media (pointer: coarse) {
+  .reference-row-action.icon-btn {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+  }
 }
 
 .inspected-source-open {

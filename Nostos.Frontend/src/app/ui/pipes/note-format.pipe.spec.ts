@@ -16,6 +16,14 @@ describe('NoteFormatPipe', () => {
     expect(html).toContain('>Freedom</a>');
   });
 
+  it('uses a wikilink alias as the visible text while resolving the canonical topic', () => {
+    const html = pipe.transform('Thinking about [[Freedom|liberty]].', map);
+
+    expect(html).toContain('data-topic-id="topic-1"');
+    expect(html).toContain('>liberty</a>');
+    expect(html).not.toContain('Freedom|liberty');
+  });
+
   it('keeps an unresolved wikilink visibly unresolved', () => {
     const html = pipe.transform('Thinking about [[Missing idea]].', map);
 
