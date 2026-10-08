@@ -304,6 +304,21 @@ public static class NostosProductComposition
             client.DefaultRequestHeaders.Accept.ParseAdd(
                 StandardEbooksProvider.OpdsAccept);
         });
+        // The full Standard Ebooks catalog is a multi-megabyte OPDS feed, so
+        // snapshot reads have their own timeout and never inherit the live
+        // search deadline.
+        services.AddHttpClient(StandardEbooksProvider.SnapshotHttpClientName, client =>
+        {
+            client.BaseAddress = new Uri(StandardEbooksCatalog.BaseUrl);
+            client.Timeout = TimeSpan.FromMinutes(2);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd(
+                StandardEbooksProvider.ApprovedUserAgent);
+            client.DefaultRequestHeaders.Accept.ParseAdd(
+                StandardEbooksProvider.OpdsAccept);
+        }).ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+        {
+            ConnectTimeout = TimeSpan.FromSeconds(30),
+        });
         services.AddSingleton<IContentProvider, StandardEbooksProvider>();
 
         services.AddHttpClient(WikisourceProvider.HttpClientName, client =>

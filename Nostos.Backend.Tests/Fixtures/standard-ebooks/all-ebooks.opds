@@ -1,0 +1,119 @@
+<?xml version='1.0' encoding='utf-8'?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:dc="http://purl.org/dc/terms/" xmlns:fh="http://purl.org/syndication/history/1.0" xmlns:schema="http://schema.org/">
+	<id>https://standardebooks.org/feeds/opds/all</id>
+	<link href="https://standardebooks.org/feeds/opds/all" rel="self" type="application/atom+xml;profile=opds-catalog;kind=acquisition; charset=utf-8" />
+	<link href="https://standardebooks.org/feeds/opds" rel="start" type="application/atom+xml;profile=opds-catalog;kind=navigation; charset=utf-8" />
+	<link href="https://standardebooks.org/feeds/opds" rel="up" type="application/atom+xml;profile=opds-catalog;kind=navigation; charset=utf-8" />
+	<link href="https://standardebooks.org/feeds/opds/all" rel="http://opds-spec.org/crawlable" type="application/atom+xml;profile=opds-catalog;kind=acquisition; charset=utf-8" />
+	<link href="https://standardebooks.org/opensearch" rel="search" title="Standard Ebooks" type="application/opensearchdescription+xml" />
+	<title>All Standard Ebooks</title>
+	<subtitle>All Standard Ebooks, most-recently-updated first. This is a Complete Acquisition Feed as defined in OPDS 1.2 §2.5.</subtitle>
+	<icon>https://standardebooks.org/images/logo.png</icon>
+	<updated>2026-10-07T02:11:51Z</updated>
+	<fh:complete />
+	<author>
+		<name>Standard Ebooks</name>
+		<uri>https://standardebooks.org</uri>
+	</author>
+	<entry>
+		<id>https://standardebooks.org/ebooks/ambrose-bierce/the-devils-dictionary</id>
+		<dc:identifier>https://standardebooks.org/ebooks/ambrose-bierce/the-devils-dictionary</dc:identifier>
+		<title>The Devil’s Dictionary</title>
+		<author>
+			<name>Ambrose Bierce</name>
+			<uri>https://standardebooks.org/ebooks/ambrose-bierce</uri>
+			<schema:alternateName>Ambrose Gwinnett Bierce</schema:alternateName>
+			<schema:sameAs>https://en.wikipedia.org/wiki/Ambrose_Bierce</schema:sameAs>
+			<schema:sameAs>https://id.loc.gov/authorities/names/n79100683.html</schema:sameAs>
+		</author>
+		<published>2021-03-16T22:46:04Z</published>
+		<dc:issued>2021-03-16T22:46:04Z</dc:issued>
+		<updated>2026-10-07T02:10:34Z</updated>
+		<dc:language>en-US</dc:language>
+		<dc:publisher>Standard Ebooks</dc:publisher>
+		<rights>Public domain in the United States. Users located outside of the United States must check their local laws before using this ebook. Original content released to the public domain via the Creative Commons CC0 1.0 Universal Public Domain Dedication.</rights>
+		<summary type="text">A witty, sharp collection of sardonic word definitions from the 1800s and early 1900s that provide a snapshot into the irreverent humor of early American culture.</summary>
+		<content type="html">&lt;p&gt;“&lt;b&gt;Dictionary&lt;/b&gt;&lt;em&gt;, n&lt;/em&gt;: A malevolent literary device for cramping the growth of a language and making it hard and inelastic. This dictionary, however, is a most useful work.”&lt;/p&gt; &lt;p&gt;&lt;a href="https://standardebooks.org/ebooks/ambrose-bierce"&gt;Bierce’s&lt;/a&gt; groundbreaking &lt;i&gt;Devil’s Dictionary&lt;/i&gt; had a complex publication history. Started in the mid-1800s as an irregular column in Californian newspapers under various titles, he gradually refined the new-at-the-time idea of an irreverent set of glossary-like definitions. The final name, as we see it titled in this work, did not appear until an 1881 column published in the periodical &lt;i&gt;The San Francisco Illustrated Wasp&lt;/i&gt;.&lt;/p&gt; &lt;p&gt;There were no publications of the complete glossary in the 1800s. Not until 1906 did a portion of Bierce’s collection get published by Doubleday, under the name &lt;i&gt;The Cynic’s Word Book&lt;/i&gt;—the publisher not wanting to use the word “Devil” in the title, to the great disappointment of the author. The 1906 word book only went from A to L, however, and the remainder was never released under the compromised title.&lt;/p&gt; &lt;p&gt;In 1911 the &lt;i&gt;Devil’s Dictionary&lt;/i&gt; as we know it was published in complete form as part of Bierce’s collected works (volume 7 of 12), including the remainder of the definitions from M to Z. It has been republished a number of times, including more recent efforts where older definitions from his columns that never made it into the original book were included. Due to the complex nature of copyright, some of those found definitions have unclear public domain status and were not included. This edition of the book includes, however, a set of definitions attributed to his one-and-only “Demon’s Dictionary” column, including Bierce’s classic definition of A: “the first letter in every properly constructed alphabet.”&lt;/p&gt; &lt;p&gt;Bierce enjoyed “quoting” his pseudonyms in his work. Most of the poetry, dramatic scenes and stories in this book attributed to others were self-authored and do not exist outside of this work. This includes the prolific &lt;em&gt;Father Gassalasca Jape&lt;/em&gt;, whom he thanks in the preface—“jape” of course having the definition: “a practical joke.”&lt;/p&gt; &lt;p&gt;This book is a product of its time and must be approached as such. Many of the definitions hold up well today, but some might be considered less palatable by modern readers. Regardless, the book’s humorous style is a valuable snapshot of American culture from past centuries.&lt;/p&gt;</content>
+		<category scheme="http://purl.org/dc/terms/LCSH" term="English language--Dictionaries--Humor" />
+		<category scheme="http://purl.org/dc/terms/LCSH" term="English language--Semantics--Humor" />
+		<category scheme="http://purl.org/dc/terms/LCSH" term="Vocabulary--Humor" />
+		<category scheme="https://standardebooks.org/vocab/subjects" term="Satire" />
+		<link href="https://standardebooks.org/ebooks/ambrose-bierce/the-devils-dictionary/downloads/cover.jpg" rel="http://opds-spec.org/image" type="image/jpeg" />
+		<link href="https://standardebooks.org/ebooks/ambrose-bierce/the-devils-dictionary/downloads/cover-thumbnail.jpg" rel="http://opds-spec.org/image/thumbnail" type="image/jpeg" />
+		<link href="https://standardebooks.org/ebooks/ambrose-bierce/the-devils-dictionary" rel="alternate" title="This ebook’s page at Standard Ebooks" type="application/xhtml+xml" />
+		<link href="https://standardebooks.org/ebooks/ambrose-bierce/the-devils-dictionary/downloads/ambrose-bierce_the-devils-dictionary.epub?source=feed" length="625036" rel="http://opds-spec.org/acquisition/open-access" title="Recommended compatible epub" type="application/epub+zip" />
+		<link href="https://standardebooks.org/ebooks/ambrose-bierce/the-devils-dictionary/downloads/ambrose-bierce_the-devils-dictionary_advanced.epub?source=feed" length="686941" rel="http://opds-spec.org/acquisition/open-access" title="Advanced epub" type="application/epub+zip" />
+		<link href="https://standardebooks.org/ebooks/ambrose-bierce/the-devils-dictionary/downloads/ambrose-bierce_the-devils-dictionary.kepub.epub?source=feed" length="561065" rel="http://opds-spec.org/acquisition/open-access" title="Kobo Kepub epub" type="application/kepub+zip" />
+		<link href="https://standardebooks.org/ebooks/ambrose-bierce/the-devils-dictionary/downloads/ambrose-bierce_the-devils-dictionary.azw3?source=feed" length="766812" rel="http://opds-spec.org/acquisition/open-access" title="Amazon Kindle azw3" type="application/x-mobipocket-ebook" />
+		<link href="https://standardebooks.org/ebooks/ambrose-bierce/the-devils-dictionary/text/single-page" length="655082" rel="http://opds-spec.org/acquisition/open-access" title="XHTML" type="application/xhtml+xml" />
+	</entry>
+	<entry>
+		<id>https://standardebooks.org/ebooks/saki/short-fiction</id>
+		<dc:identifier>https://standardebooks.org/ebooks/saki/short-fiction</dc:identifier>
+		<title>Short Fiction</title>
+		<author>
+			<name>Saki</name>
+			<uri>https://standardebooks.org/ebooks/saki</uri>
+			<schema:alternateName>Hector Hugh Munro</schema:alternateName>
+			<schema:sameAs>https://en.wikipedia.org/wiki/Saki</schema:sameAs>
+			<schema:sameAs>https://id.loc.gov/authorities/names/n81079486.html</schema:sameAs>
+		</author>
+		<published>2025-10-27T20:15:49Z</published>
+		<dc:issued>2025-10-27T20:15:49Z</dc:issued>
+		<updated>2026-10-07T01:20:42Z</updated>
+		<dc:language>en-GB</dc:language>
+		<dc:publisher>Standard Ebooks</dc:publisher>
+		<rights>Public domain in the United States. Users located outside of the United States must check their local laws before using this ebook. Original content released to the public domain via the Creative Commons CC0 1.0 Universal Public Domain Dedication.</rights>
+		<summary type="text">A collection of short stories by Saki, ordered by date of publication.</summary>
+		<content type="html">&lt;p&gt;&lt;a href="https://standardebooks.org/ebooks/saki"&gt;Saki’s&lt;/a&gt; name is regularly mentioned alongside &lt;a href="https://standardebooks.org/ebooks/o-henry"&gt;O. Henry&lt;/a&gt; and others as being in the pantheon of short story writers. Like O. Henry, Saki’s stories were written in the first several years of the twentieth century, but Saki is known more for his sharp and sometimes scathing wit (“New Wine in Old Bottles”) rather than for surprise endings, although he was capable of that as well (“Open Window”). A journalist as well as a writer of fiction, Saki lampooned the high society of his day in his series of “Reginald” and “Clovis” stories. He could also be quite macabre, with many of his stories demonstrating the peril of wild animals (“The Interlopers”) and, surprisingly, children (“Gabriel-Ernest”). He managed to mock the retail industry in his story accompanying a Selfridges advertisement (“The Romance of Business”), although it doesn’t seem that Selfridges caught the humor.&lt;/p&gt; &lt;p&gt;Although best known by his pseudonym, Saki also regularly used his real name of H. H. Munro in his contributions to the newspapers that first published almost all of his stories.&lt;/p&gt; &lt;p&gt;This Standard Ebooks edition contains every short fiction story that Saki published.&lt;/p&gt;</content>
+		<category scheme="http://purl.org/dc/terms/LCSH" term="England--Social life and customs--20th century--Fiction" />
+		<category scheme="http://purl.org/dc/terms/LCSH" term="Humorous stories, English" />
+		<category scheme="http://purl.org/dc/terms/LCSH" term="Satire, English" />
+		<category scheme="http://purl.org/dc/terms/LCSH" term="Short stories, English" />
+		<category scheme="https://standardebooks.org/vocab/subjects" term="Fiction" />
+		<category scheme="https://standardebooks.org/vocab/subjects" term="Shorts" />
+		<link href="https://standardebooks.org/ebooks/saki/short-fiction/downloads/cover.jpg" rel="http://opds-spec.org/image" type="image/jpeg" />
+		<link href="https://standardebooks.org/ebooks/saki/short-fiction/downloads/cover-thumbnail.jpg" rel="http://opds-spec.org/image/thumbnail" type="image/jpeg" />
+		<link href="https://standardebooks.org/ebooks/saki/short-fiction" rel="alternate" title="This ebook’s page at Standard Ebooks" type="application/xhtml+xml" />
+		<link href="https://standardebooks.org/ebooks/saki/short-fiction/downloads/saki_short-fiction.epub?source=feed" length="1286934" rel="http://opds-spec.org/acquisition/open-access" title="Recommended compatible epub" type="application/epub+zip" />
+		<link href="https://standardebooks.org/ebooks/saki/short-fiction/downloads/saki_short-fiction_advanced.epub?source=feed" length="1290426" rel="http://opds-spec.org/acquisition/open-access" title="Advanced epub" type="application/epub+zip" />
+		<link href="https://standardebooks.org/ebooks/saki/short-fiction/downloads/saki_short-fiction.kepub.epub?source=feed" length="1297551" rel="http://opds-spec.org/acquisition/open-access" title="Kobo Kepub epub" type="application/kepub+zip" />
+		<link href="https://standardebooks.org/ebooks/saki/short-fiction/downloads/saki_short-fiction.azw3?source=feed" length="1573544" rel="http://opds-spec.org/acquisition/open-access" title="Amazon Kindle azw3" type="application/x-mobipocket-ebook" />
+		<link href="https://standardebooks.org/ebooks/saki/short-fiction/text/single-page" length="1544830" rel="http://opds-spec.org/acquisition/open-access" title="XHTML" type="application/xhtml+xml" />
+	</entry>
+	<entry>
+		<id>https://standardebooks.org/ebooks/ivan-turgenev/fathers-and-children/constance-garnett</id>
+		<dc:identifier>https://standardebooks.org/ebooks/ivan-turgenev/fathers-and-children/constance-garnett</dc:identifier>
+		<title>Fathers and Children</title>
+		<author>
+			<name>Ivan Turgenev</name>
+			<uri>https://standardebooks.org/ebooks/ivan-turgenev</uri>
+			<schema:alternateName>Ivan Sergeyevich Turgenev</schema:alternateName>
+			<schema:sameAs>https://en.wikipedia.org/wiki/Ivan_Turgenev</schema:sameAs>
+			<schema:sameAs>https://id.loc.gov/authorities/names/n79144981.html</schema:sameAs>
+		</author>
+		<published>2019-03-25T19:30:29Z</published>
+		<dc:issued>2019-03-25T19:30:29Z</dc:issued>
+		<updated>2026-10-07T01:11:24Z</updated>
+		<dc:language>en-GB</dc:language>
+		<dc:publisher>Standard Ebooks</dc:publisher>
+		<rights>Public domain in the United States. Users located outside of the United States must check their local laws before using this ebook. Original content released to the public domain via the Creative Commons CC0 1.0 Universal Public Domain Dedication.</rights>
+		<summary type="text">Arkady returns to his father’s estate accompanied by his friend from university—a nihilist.</summary>
+		<content type="html">&lt;p&gt;Arkady, a university graduate, returns from St. Petersburg to his father’s estate with his mentor Bazarov—a nihilist.&lt;/p&gt; &lt;p&gt;&lt;i&gt;Fathers and Children&lt;/i&gt; (also known as &lt;i&gt;Fathers and Sons&lt;/i&gt;) is a novel written in 1862 by Russian writer &lt;a href="https://standardebooks.org/ebooks/ivan-turgenev"&gt;Ivan Turgenev&lt;/a&gt; and published in Moscow by &lt;i&gt;The Russian Messenger&lt;/i&gt;.&lt;/p&gt; &lt;p&gt;The main theme of the novel is the conflict between two generations—the “fathers,” the liberal serf owners, and the “children,” nihilists who reject their authority and traditions.&lt;/p&gt; &lt;p&gt;Turgenev’s novel also helped popularize the term “nihilism,” especially after the word’s use by an influential Russian nihilist movement in the 1860s.&lt;/p&gt; &lt;p&gt;Despite being harshly criticized in Russia, the novel was very well received in Europe, being praised by influential novelists like &lt;a href="https://standardebooks.org/ebooks/gustave-flaubert"&gt;Gustave Flaubert&lt;/a&gt; and &lt;a href="https://standardebooks.org/ebooks/guy-de-maupassant"&gt;Guy de Maupassant&lt;/a&gt;, making it the first Russian novel to gain recognition in the Western literary world.&lt;/p&gt;</content>
+		<category scheme="http://purl.org/dc/terms/LCSH" term="Historical fiction" />
+		<category scheme="http://purl.org/dc/terms/LCSH" term="Fathers and sons--Fiction" />
+		<category scheme="http://purl.org/dc/terms/LCSH" term="Domestic fiction" />
+		<category scheme="http://purl.org/dc/terms/LCSH" term="Russia--Social life and customs--1533-1917--Fiction" />
+		<category scheme="http://purl.org/dc/terms/LCSH" term="Russia--Social conditions--1801-1917--Fiction" />
+		<category scheme="http://purl.org/dc/terms/LCSH" term="Nihilism (Philosophy)--Fiction" />
+		<category scheme="https://standardebooks.org/vocab/subjects" term="Fiction" />
+		<link href="https://standardebooks.org/ebooks/ivan-turgenev/fathers-and-children/constance-garnett/downloads/cover.jpg" rel="http://opds-spec.org/image" type="image/jpeg" />
+		<link href="https://standardebooks.org/ebooks/ivan-turgenev/fathers-and-children/constance-garnett/downloads/cover-thumbnail.jpg" rel="http://opds-spec.org/image/thumbnail" type="image/jpeg" />
+		<link href="https://standardebooks.org/ebooks/ivan-turgenev/fathers-and-children/constance-garnett" rel="alternate" title="This ebook’s page at Standard Ebooks" type="application/xhtml+xml" />
+		<link href="https://standardebooks.org/ebooks/ivan-turgenev/fathers-and-children/constance-garnett/downloads/ivan-turgenev_fathers-and-children_constance-garnett.epub?source=feed" length="630338" rel="http://opds-spec.org/acquisition/open-access" title="Recommended compatible epub" type="application/epub+zip" />
+		<link href="https://standardebooks.org/ebooks/ivan-turgenev/fathers-and-children/constance-garnett/downloads/ivan-turgenev_fathers-and-children_constance-garnett_advanced.epub?source=feed" length="1192843" rel="http://opds-spec.org/acquisition/open-access" title="Advanced epub" type="application/epub+zip" />
+		<link href="https://standardebooks.org/ebooks/ivan-turgenev/fathers-and-children/constance-garnett/downloads/ivan-turgenev_fathers-and-children_constance-garnett.kepub.epub?source=feed" length="533712" rel="http://opds-spec.org/acquisition/open-access" title="Kobo Kepub epub" type="application/kepub+zip" />
+		<link href="https://standardebooks.org/ebooks/ivan-turgenev/fathers-and-children/constance-garnett/downloads/ivan-turgenev_fathers-and-children_constance-garnett.azw3?source=feed" length="663580" rel="http://opds-spec.org/acquisition/open-access" title="Amazon Kindle azw3" type="application/x-mobipocket-ebook" />
+		<link href="https://standardebooks.org/ebooks/ivan-turgenev/fathers-and-children/constance-garnett/text/single-page" length="542451" rel="http://opds-spec.org/acquisition/open-access" title="XHTML" type="application/xhtml+xml" />
+	</entry>
+</feed>

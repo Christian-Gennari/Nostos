@@ -38,9 +38,12 @@ internal sealed record StandardEbooksBook(
 internal static class StandardEbooksCatalog
 {
     public const string BaseUrl = "https://standardebooks.org";
+    public const string NewReleasesPath = "/feeds/opds/new-releases";
+    public const string AllEbooksPath = "/feeds/opds/all";
 
     private static readonly XNamespace Atom = "http://www.w3.org/2005/Atom";
-    private static readonly XNamespace Dc = "http://purl.org/dc/elements/1.1/";
+    private static readonly XNamespace DcTerms = "http://purl.org/dc/terms/";
+    private static readonly XNamespace LegacyDc = "http://purl.org/dc/elements/1.1/";
 
     private const string AcquisitionRel = "http://opds-spec.org/acquisition/open-access";
     private const string ImageRel = "http://opds-spec.org/image";
@@ -48,6 +51,41 @@ internal static class StandardEbooksCatalog
 
     public static bool IsFeed(XDocument document) =>
         document.Root?.Name == Atom + "feed";
+
+    /// <summary>
+    /// Resolves an optional OPDS continuation link, rejecting links that leave
+    /// Standard Ebooks' feed path. The all-ebooks feed is currently a single
+    /// complete document, but following an advertised <c>next</c> link keeps a
+    /// future paginated representation sequential and provider-local.
+    /// </summary>
+    public static Uri? NextPageUri(XDocument feed, Uri currentUri)
+    {
+        var link = feed.Root?.Elements(Atom + "link")
+            .FirstOrDefault(element => string.Equals(
+                ((string?)element.Attribute("rel"))?.Trim(),
+                "next",
+                StringComparison.OrdinalIgnoreCase));
+
+        if (link is null)
+            return null;
+
+        var href = ((string?)link.Attribute("href"))?.Trim();
+        if (string.IsNullOrWhiteSpace(href)
+            || !Uri.TryCreate(currentUri, href, out var next)
+            || next.Scheme != Uri.UriSchemeHttps
+            || !next.IsDefaultPort
+            || !string.IsNullOrEmpty(next.UserInfo)
+            || !IsStandardEbooksHost(next.Host)
+            || !(next.AbsolutePath.Equals("/feeds/opds", StringComparison.OrdinalIgnoreCase)
+                || next.AbsolutePath.StartsWith("/feeds/opds/", StringComparison.OrdinalIgnoreCase)))
+        {
+            throw ProviderException.InvalidResponse(
+                StandardEbooksProvider.ProviderIdentifier,
+                "the OPDS next-page link was not a Standard Ebooks catalog URL");
+        }
+
+        return next;
+    }
 
     public static IReadOnlyList<StandardEbooksBook> Parse(XDocument feed)
     {
@@ -58,7 +96,7 @@ internal static class StandardEbooksCatalog
 
         foreach (var entry in feed.Root!.Elements(Atom + "entry"))
         {
-            var identifier = Value(entry, Dc + "identifier") ?? Value(entry, Atom + "id");
+            var identifier = DcValue(entry, "identifier") ?? Value(entry, Atom + "id");
             var externalId = ExternalIdFromIdentifier(identifier);
             var title = Value(entry, Atom + "title");
 
@@ -116,9 +154,9 @@ internal static class StandardEbooksCatalog
                 Title: title,
                 Author: authors.Count == 0 ? null : string.Join(", ", authors),
                 Description: Value(entry, Atom + "summary"),
-                Language: NormalizeLanguage(Value(entry, Dc + "language")),
-                Publisher: Value(entry, Dc + "publisher"),
-                PublishedDate: Value(entry, Atom + "published") ?? Value(entry, Dc + "issued"),
+                Language: NormalizeLanguage(DcValue(entry, "language")),
+                Publisher: DcValue(entry, "publisher"),
+                PublishedDate: Value(entry, Atom + "published") ?? DcValue(entry, "issued"),
                 Categories: categories.Count == 0 ? null : string.Join(", ", categories),
                 Rights: Value(entry, Atom + "rights"),
                 ItemUrl: itemUrl,
@@ -296,4 +334,7 @@ internal static class StandardEbooksCatalog
 
     private static string? Value(XElement element, XName name) =>
         element.Element(name)?.Value.Trim() is { Length: > 0 } value ? value : null;
+
+    private static string? DcValue(XElement element, string name) =>
+        Value(element, DcTerms + name) ?? Value(element, LegacyDc + name);
 }
