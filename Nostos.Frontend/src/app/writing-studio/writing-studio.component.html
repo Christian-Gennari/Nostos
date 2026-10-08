@@ -162,8 +162,8 @@
             name="file-text"
             [size]="28" weight="light"></nostos-icon>
         </div>
-        <h2>Select a file to begin writing</h2>
-        <p class="empty-subtext">Choose a document from the tree, or create a new one to start.</p>
+        <h2>Open a document to begin writing</h2>
+        <p class="empty-subtext">Choose one from Files, or start a new document.</p>
         <button appButton variant="primary" class="empty-new-document" (click)="createItem('Document')">New document</button>
         @if (isCompact()) {
           <button appButton variant="secondary" class="empty-browse-files" (click)="openFilesDrawer()">Browse files</button>

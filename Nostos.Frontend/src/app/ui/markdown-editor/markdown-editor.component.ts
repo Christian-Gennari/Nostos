@@ -8,6 +8,8 @@ import { TinyMceApi, TinyMceLoader } from './tinymce-loader.service';
 
 /** Shared manuscript and toolbar measure: about 70 characters at the body face. */
 const STUDIO_MANUSCRIPT_MEASURE_PX = 600;
+const STUDIO_MANUSCRIPT_GUTTER = 'clamp(20px, 4%, 40px)';
+const STUDIO_TOOLBAR_FIRST_GLYPH_INSET_PX = 12;
 
 /**
  * Editor content page — warm ink on a white paper sheet, theme-independent.
@@ -103,7 +105,7 @@ const NOSTOS_EDITOR_CONTENT_CSS = `
     min-height: 100%;
     padding:
       clamp(2rem, 4vw, 3.5rem)
-      clamp(1.5rem, 4vw, 2.5rem)
+      ${STUDIO_MANUSCRIPT_GUTTER}
       7rem;
 
     color: var(--ink);
@@ -476,7 +478,10 @@ interface PendingTransientRestore {
         max-width: ${STUDIO_MANUSCRIPT_MEASURE_PX}px;
         margin-inline: auto;
         box-sizing: border-box;
-        padding: 4px clamp(1.5rem, 4vw, 2.5rem) !important;
+        padding-block: 4px !important;
+        --studio-toolbar-first-glyph-inset: ${STUDIO_TOOLBAR_FIRST_GLYPH_INSET_PX}px;
+        padding-inline-start: calc(${STUDIO_MANUSCRIPT_GUTTER} - var(--studio-toolbar-first-glyph-inset)) !important;
+        padding-inline-end: ${STUDIO_MANUSCRIPT_GUTTER} !important;
         flex-wrap: nowrap !important;
         overflow-x: hidden !important;
       }
@@ -602,6 +607,10 @@ interface PendingTransientRestore {
 
       /* Coarse pointers can occur on a tablet wider than the drawer breakpoint. */
       @media (pointer: coarse) {
+        :host ::ng-deep .tox .tox-toolbar__primary {
+          --studio-toolbar-first-glyph-inset: 17px;
+        }
+
         :host ::ng-deep .tox .tox-toolbar__primary .tox-tbtn,
         :host ::ng-deep .tox .tox-toolbar__overflow .tox-tbtn {
           min-width: 44px !important;

@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 import { apiPost, loadFixture } from './support/fixture';
-import { apiDelete } from './support/brain-fixture';
+import { apiDelete, cleanupBrain, seedBrain, type BrainSeed } from './support/brain-fixture';
 import { apiPut } from './support/visual-capture';
 
 const MANUSCRIPT = `# The Quiet Practice of Paying Attention
@@ -42,6 +42,14 @@ const COMPACT_VIEWPORTS = [
   { width: 844, height: 390, label: 'phone-landscape' },
 ] as const;
 
+const REFERENCE_STATE_NOTES = Array.from(
+  { length: 24 },
+  (_, index) =>
+    'Reference rail state note ' +
+    (index + 1) +
+    ': The active Library tab, selected book, inspected source, and scroll position should survive a rail collapse and reopen. This note keeps the selected book list long enough to scroll.',
+);
+
 async function measureShell(page: import('@playwright/test').Page) {
   return page.evaluate(() => {
     const pane = document.querySelector('.editor-pane');
@@ -50,6 +58,7 @@ async function measureShell(page: import('@playwright/test').Page) {
     const paragraph = editorBody?.querySelector('p');
     const text = paragraph?.firstChild;
     let firstLineCharacters = 0;
+    let manuscriptTextX: number | null = null;
 
     if (text?.nodeType === Node.TEXT_NODE) {
       const range = editorBody!.ownerDocument.createRange();
@@ -59,13 +68,25 @@ async function measureShell(page: import('@playwright/test').Page) {
         range.setEnd(text, index + 1);
         const rect = range.getBoundingClientRect();
         if (rect.width === 0 && rect.height === 0) continue;
-        if (firstTop === null) firstTop = rect.top;
+        if (firstTop === null) {
+          firstTop = rect.top;
+          manuscriptTextX = rect.left;
+        }
         else if (Math.abs(rect.top - firstTop) > 1) break;
         firstLineCharacters++;
       }
     }
 
     const toolbar = document.querySelector('.tox-toolbar__primary');
+    const toolbarGlyph = toolbar?.querySelector<SVGSVGElement>('.tox-tbtn svg');
+    const toolbarGlyphRectX = toolbarGlyph?.getBoundingClientRect().left ?? null;
+    const glyphBounds = toolbarGlyph?.getBBox();
+    const glyphTransform = toolbarGlyph?.getScreenCTM();
+    const toolbarGlyphX =
+      glyphBounds && glyphTransform
+        ? glyphTransform.a * glyphBounds.x + glyphTransform.c * glyphBounds.y + glyphTransform.e
+        : null;
+    const toolbarRect = toolbar?.getBoundingClientRect();
     const toolbarRows = new Set(
       Array.from(toolbar?.querySelectorAll('.tox-toolbar__group') ?? []).map((group) =>
         Math.round(group.getBoundingClientRect().top),
@@ -74,16 +95,40 @@ async function measureShell(page: import('@playwright/test').Page) {
     const paneRect = pane?.getBoundingClientRect();
     const iframeRect = iframe?.getBoundingClientRect();
     const footerRect = document.querySelector('.editor-footer')?.getBoundingClientRect();
+    const manuscriptTextViewportX =
+      iframeRect && manuscriptTextX !== null ? iframeRect.left + manuscriptTextX : null;
 
     return {
       paneWidth: Math.round(paneRect?.width ?? 0),
       firstLineCharacters,
+      toolbarGlyphX,
+      toolbarGlyphRectX,
+      toolbarRootX: toolbarRect?.left ?? null,
+      toolbarRootWidth: toolbarRect?.width ?? null,
+      manuscriptTextX: manuscriptTextViewportX,
+      iframeX: iframeRect?.left ?? null,
+      iframeWidth: iframeRect?.width ?? null,
+      toolbarGlyphInset: toolbarGlyphX !== null && toolbarRect ? toolbarGlyphX - toolbarRect.left : null,
+      manuscriptTextInset:
+        manuscriptTextViewportX !== null && iframeRect
+          ? manuscriptTextViewportX - iframeRect.left
+          : null,
+      toolbarTextDelta:
+        toolbarGlyphX !== null && manuscriptTextViewportX !== null
+          ? toolbarGlyphX - manuscriptTextViewportX
+          : null,
       toolbarRows,
       wordCountOverlapsManuscript: Boolean(
         iframeRect && footerRect && footerRect.top < iframeRect.bottom - 1,
       ),
     };
   });
+}
+
+function expectToolbarGlyphAligned(measurement: Awaited<ReturnType<typeof measureShell>>): void {
+  expect(measurement.toolbarGlyphX).not.toBeNull();
+  expect(measurement.manuscriptTextX).not.toBeNull();
+  expect(Math.abs(measurement.toolbarTextDelta ?? Number.POSITIVE_INFINITY)).toBeLessThanOrEqual(2);
 }
 
 async function waitForEditorFonts(page: import('@playwright/test').Page): Promise<void> {
@@ -125,7 +170,9 @@ test('Writing Studio shell stays editor-first across desktop and compact viewpor
   const { baseUrl } = loadFixture();
   const stamp = Date.now().toString(36);
   const title = `S1 Shell Browser Journey ${stamp} — a long title that must not crowd the save state or rail controls`;
+  const referenceBookTitle = 'S1 Reference State ' + stamp;
   let writingId: string | null = null;
+  let referenceFixture: BrainSeed | null = null;
   const contexts: Array<import('@playwright/test').BrowserContext> = [];
 
   try {
@@ -136,6 +183,7 @@ test('Writing Studio shell stays editor-first across desktop and compact viewpor
     });
     writingId = writing.id;
     await apiPut(baseUrl, `/api/writings/${writing.id}`, { name: title, content: MANUSCRIPT });
+    referenceFixture = await seedBrain(baseUrl, referenceBookTitle, REFERENCE_STATE_NOTES, []);
 
     for (const viewport of VIEWPORTS) {
       const context = await browser.newContext({
@@ -166,6 +214,7 @@ test('Writing Studio shell stays editor-first across desktop and compact viewpor
       const bothOpen = await measureShell(page);
       expect(bothOpen.firstLineCharacters).toBeLessThanOrEqual(75);
       expect(bothOpen.toolbarRows).toBeLessThanOrEqual(1);
+      if (viewport.label === 'desktop') expectToolbarGlyphAligned(bothOpen);
       console.log(
         `[studio-shell] ${viewport.label} ${viewport.width}x${viewport.height} both-open ${JSON.stringify(bothOpen)}`,
       );
@@ -212,6 +261,95 @@ test('Writing Studio shell stays editor-first across desktop and compact viewpor
       console.log(
         `[studio-shell] ${viewport.label} ${viewport.width}x${viewport.height} both-collapsed ${JSON.stringify(bothCollapsed)}`,
       );
+      if (viewport.label === 'desktop') expectToolbarGlyphAligned(bothCollapsed);
+
+      if (viewport.label === 'desktop') {
+        const railStates = [
+          { files: true, reference: true },
+          { files: true, reference: false },
+          { files: false, reference: true },
+          { files: false, reference: false },
+        ];
+
+        for (const state of railStates) {
+          const filesToggle = page.locator('.files-toggle');
+          const referenceToggle = page.locator('.reference-toggle');
+          if ((await filesToggle.getAttribute('aria-expanded')) !== String(state.files)) {
+            await filesToggle.click();
+          }
+          if ((await referenceToggle.getAttribute('aria-expanded')) !== String(state.reference)) {
+            await referenceToggle.click();
+          }
+
+          await page.locator('.zen-toggle').click();
+          await expect(page.locator('.zen-exit')).toBeVisible();
+          await expect(page.locator('body')).toHaveClass(/nostos-zen/);
+          await page.keyboard.press('Escape');
+          await expect(page.locator('.zen-exit')).toHaveCount(0);
+          await expect(page.locator('body')).not.toHaveClass(/nostos-zen/);
+          await expect(filesToggle).toHaveAttribute('aria-expanded', String(state.files));
+          await expect(referenceToggle).toHaveAttribute(
+            'aria-expanded',
+            String(state.reference),
+          );
+        }
+
+        await page.locator('.reference-toggle').click();
+        await page.getByRole('tab', { name: 'Library', exact: true }).click();
+        await page.getByRole('tab', { name: 'Books', exact: true }).click();
+        await page.getByPlaceholder('Search books...').fill(referenceBookTitle);
+        const referenceBook = page
+          .locator('.index-list .list-item')
+          .filter({ hasText: referenceBookTitle });
+        await expect(referenceBook).toBeVisible();
+        await referenceBook.click();
+        await expect(page.locator('.brain-detail-header .detail-title')).toHaveText('Book Notes');
+        await expect(page.locator('.library-note-row')).toHaveCount(REFERENCE_STATE_NOTES.length);
+
+        const referenceContent = page.locator('.brain-content');
+        const referenceScroll = await referenceContent.evaluate((element) => {
+          const maxScroll = element.scrollHeight - element.clientHeight;
+          element.scrollTop = Math.min(180, maxScroll);
+          return { top: element.scrollTop, max: maxScroll };
+        });
+        expect(referenceScroll.max).toBeGreaterThan(0);
+
+        await page.locator('.reference-toggle').click();
+        await expect(page.locator('.sidebar-right')).toBeHidden();
+        await page.locator('.reference-toggle').click();
+        await expect(page.locator('.sidebar-right')).toBeVisible();
+        await expect(page.getByRole('tab', { name: 'Library', exact: true })).toHaveAttribute(
+          'aria-selected',
+          'true',
+        );
+        await expect(page.getByRole('tab', { name: 'Books', exact: true })).toHaveAttribute(
+          'aria-selected',
+          'true',
+        );
+        await expect(page.locator('.brain-detail-header .detail-title')).toHaveText('Book Notes');
+        await expect.poll(() => referenceContent.evaluate((element) => element.scrollTop)).toBe(
+          referenceScroll.top,
+        );
+
+        await page.locator('.library-note-row .inspectable-note').first().click();
+        const inspectedSource = page.locator('.inspected-source-panel');
+        await expect(inspectedSource).toContainText('Reference rail state note 1');
+        await page.locator('.reference-toggle').click();
+        await expect(page.locator('.sidebar-right')).toBeHidden();
+        await page.locator('.reference-toggle').click();
+        await expect(page.locator('.sidebar-right')).toBeVisible();
+        await expect(inspectedSource).toContainText('Reference rail state note 1');
+        await expect(page.getByRole('tab', { name: 'Library', exact: true })).toHaveAttribute(
+          'aria-selected',
+          'true',
+        );
+        await expect(page.getByRole('tab', { name: 'Books', exact: true })).toHaveAttribute(
+          'aria-selected',
+          'true',
+        );
+        await expect(page.locator('.inspected-source-context')).toHaveText(referenceBookTitle);
+        await page.locator('.reference-toggle').click();
+      }
 
       await page.locator('.files-toggle').click();
       await typeAfterLayoutChange(page, `${viewport.label}-restore-files`);
@@ -265,6 +403,7 @@ test('Writing Studio shell stays editor-first across desktop and compact viewpor
       expect(drawersClosed.paneWidth).toBe(viewport.width);
       expect(drawersClosed.firstLineCharacters).toBeGreaterThanOrEqual(45);
       expect(drawersClosed.toolbarRows).toBeLessThanOrEqual(1);
+      if (viewport.label === 'phone') expectToolbarGlyphAligned(drawersClosed);
       console.log(
         `[studio-shell] ${viewport.label} ${viewport.width}x${viewport.height} drawers-closed ${JSON.stringify(drawersClosed)}`,
       );
@@ -274,6 +413,11 @@ test('Writing Studio shell stays editor-first across desktop and compact viewpor
       await expect(compactPage.locator('.reference-toggle')).toHaveAttribute(
         'aria-expanded',
         'false',
+      );
+      const filesDrawerOpen = await measureShell(compactPage);
+      if (viewport.label === 'phone') expectToolbarGlyphAligned(filesDrawerOpen);
+      console.log(
+        `[studio-shell] ${viewport.label} ${viewport.width}x${viewport.height} files-drawer ${JSON.stringify(filesDrawerOpen)}`,
       );
       await compactPage.locator('.files-rail-collapse').click();
       await expect(compactPage.locator('.files-toggle')).toBeFocused();
@@ -289,6 +433,11 @@ test('Writing Studio shell stays editor-first across desktop and compact viewpor
       await expect(compactPage.locator('.files-toggle')).toHaveAttribute(
         'aria-expanded',
         'false',
+      );
+      const referenceDrawerOpen = await measureShell(compactPage);
+      if (viewport.label === 'phone') expectToolbarGlyphAligned(referenceDrawerOpen);
+      console.log(
+        `[studio-shell] ${viewport.label} ${viewport.width}x${viewport.height} reference-drawer ${JSON.stringify(referenceDrawerOpen)}`,
       );
       await compactPage.locator('.reference-rail-collapse').click();
       await expect(compactPage.locator('.reference-toggle')).toBeFocused();
@@ -339,12 +488,19 @@ test('Writing Studio shell stays editor-first across desktop and compact viewpor
         console.log(`[studio-shell] phone header ${JSON.stringify(header)}`);
 
         await compactPage.goto(`${baseUrl}/studio`, { waitUntil: 'domcontentloaded' });
+        await expect(compactPage.locator('.empty-state h2')).toHaveText(
+          'Open a document to begin writing',
+        );
+        await expect(compactPage.locator('.empty-subtext')).toHaveText(
+          'Choose one from Files, or start a new document.',
+        );
         await expect(compactPage.locator('.empty-new-document')).toBeVisible();
         await expect(compactPage.locator('.empty-browse-files')).toBeVisible();
       }
     }
   } finally {
     await Promise.all(contexts.map((context) => context.close()));
+    if (referenceFixture) await cleanupBrain(baseUrl, referenceFixture);
     if (writingId) await apiDelete(baseUrl, `/api/writings/${writingId}`);
   }
 });

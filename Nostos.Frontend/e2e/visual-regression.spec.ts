@@ -105,7 +105,10 @@ test.describe('visual matrix — Writing Studio (fixture-served)', () => {
     try {
       await page.goto(`${fixture.baseUrl}/studio`, { waitUntil: 'domcontentloaded' });
       await page.locator('.editor-pane .empty-state').waitFor({ timeout: 30_000 });
-      await expect(page.locator('.editor-pane .empty-state h2')).toContainText('Select a file to begin writing');
+      await expect(page.locator('.editor-pane .empty-state h2')).toHaveText('Open a document to begin writing');
+      await expect(page.locator('.editor-pane .empty-subtext')).toHaveText(
+        'Choose one from Files, or start a new document.',
+      );
       const png = await capturePng(page, 'studio-empty-desktop');
       await writeGeometryReport(
         'studio-empty-desktop',
@@ -113,7 +116,7 @@ test.describe('visual matrix — Writing Studio (fixture-served)', () => {
           {
             id: 'studio-empty-state',
             pass: true,
-            message: 'empty studio shows the "Select a file to begin writing" state',
+            message: 'empty studio invites the user to open a document or start a new one',
             metrics: { png },
           },
         ],
