@@ -163,7 +163,20 @@
 
 .brain-browse-detail { max-width: 1100px; margin: 0 auto; }
 
-.brain-source-link { align-self: flex-start; }
+.brain-source-link {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--color-brand-accent);
+  font-weight: var(--fw-medium);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.brain-source-link:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+}
 
 .brain-header-tools .search-box {
   flex: 1 1 320px;
@@ -386,9 +399,8 @@
   width: 100%;
   min-height: 34px;
   margin-bottom: 2px;
-  /* Width of the actions overlay: 3 x 22px buttons + 2 x 2px gaps (70px) + the 6px
-     right inset. */
-  --actions-w: 76px;
+  /* Width reserves a 28px hit area for each desktop action plus the right inset. */
+  --actions-w: 94px;
   /* How far the NAME box stops short of the row's right edge: the 8px row
      padding plus the badge slot (badge min-width 20px). Together with
      --actions-w this locates where the buttons begin *inside the name box*. */
@@ -645,13 +657,13 @@
 
 
 
-/* 22x22 with a 13px glyph — the tree's `.action-mini`, not a 34x32 button. */
+/* Keep the utility glyphs quiet while giving each one a useful hit area. */
 .row-action {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 28px;
+  height: 28px;
   padding: 0;
   border: 0;
   border-radius: 4px;
@@ -695,7 +707,7 @@
 
 /* No hover on touch: a hover-revealed pair is unreachable there, so the selected
    row (and a keyboard-focused one) reveals its actions instead. */
-@media (hover: none) {
+@media (pointer: coarse), (hover: none) {
   .index-row-shell:has(.index-item.active) .row-actions,
   .index-row-shell:focus-within .row-actions {
     opacity: 1;
@@ -907,6 +919,11 @@
 
 /* Metadata reads as a quiet editorial caption, not a dashboard stat. */
 .topic-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
   font-size: 0.82rem;
   color: var(--color-text-light);
 }
@@ -914,8 +931,7 @@
 /* Actions are quiet until needed: no border at rest, so the header is type and
    air rather than three competing boxes. The hairline and fill arrive on hover,
    which keeps the destructive action from carrying the same weight as the rest. */
-.topic-actions,
-.review-actions {
+.topic-actions {
   display: flex;
   align-items: center;
   gap: 0.15rem;
@@ -924,26 +940,12 @@
   margin-top: 1.35rem;
 }
 
-/* Focused-note actions are one quiet row; primary/manual linking carries the
-   hierarchy, while optional assistance and utility actions remain subordinate. */
-.review-actions {
-  margin-top: 0;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
 .review-pagination {
   display: flex;
   justify-content: space-between;
   gap: 0.5rem;
   padding-top: 0.65rem;
   border-top: 1px solid var(--border-color);
-}
-
-.brain-note-section {
-  display: flex;
-  flex-direction: column;
-  gap: 0.45rem;
 }
 
 /* --- Notes inspector -------------------------------------------------------
@@ -971,11 +973,20 @@
   letter-spacing: -0.01em;
 }
 
+.note-inspector-context,
+.brain-note-panel-empty-topics,
+.brain-note-provenance {
+  color: var(--color-text-muted);
+}
+
+.note-inspector-context,
+.brain-note-panel-empty-topics {
+  font-size: 0.8rem;
+}
+
 .note-inspector-context {
   max-width: 42rem;
   margin: 0;
-  color: var(--color-text-muted);
-  font-size: 0.8rem;
   line-height: 1.45;
 }
 
@@ -1005,16 +1016,14 @@
   margin-top: 0;
 }
 
-.note-inspector-inline-actions,
-.note-inspector-primary-actions,
-.note-inspector-utility-actions {
+.note-inspector-inline-actions {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 0.45rem;
 }
 
-.note-inspector-inline-actions {
+.note-inspector-edit .note-inspector-inline-actions {
   margin-top: 0.65rem;
 }
 
@@ -1022,14 +1031,6 @@
   display: flex;
   flex-direction: column;
   gap: 0.55rem;
-}
-
-.note-inspector-utility-actions {
-  color: var(--color-text-muted);
-}
-
-.note-inspector .brain-source-link {
-  align-self: auto;
 }
 
 .note-topic-link {
@@ -1505,6 +1506,13 @@
   background: transparent;
 }
 
+.detail-select-wrap > .detail-tool-label {
+  color: var(--color-text-muted);
+  font-size: 0.68rem;
+  font-weight: var(--fw-medium);
+  letter-spacing: 0.02em;
+}
+
 .detail-select {
   min-width: 0;
   flex: 1 1 auto;
@@ -1593,11 +1601,12 @@
  * presence of a quote. */
 .note-card:hover {
   transform: translateY(-2px);
+  z-index: 1;
 }
 
 /* The shared note card owns editing, topic input and source navigation. The
    host wrapper supplies the grid boundary; these deep rules give each child a
-   full-height track and enforce the detail pane's hover/focus action contract. */
+   full-height track and the detail pane its quiet card surface. */
 :host ::ng-deep app-note-card {
   display: block;
   height: 100%;
@@ -1630,6 +1639,23 @@
   box-shadow: var(--shadow-sm);
 }
 
+:host ::ng-deep .cards-grid .note-footer {
+  flex-wrap: wrap;
+  row-gap: 0.5rem;
+  height: auto;
+  min-height: 32px;
+}
+
+:host ::ng-deep .cards-grid .note-metadata,
+:host ::ng-deep .cards-grid .note-actions.custom-actions {
+  flex: 1 1 100%;
+}
+
+:host ::ng-deep .cards-grid .note-actions.custom-actions {
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
 :host ::ng-deep app-note-card .content-row {
   display: flex;
   flex-direction: column;
@@ -1650,47 +1676,6 @@
      stretches its items to the tallest card in that row. */
   flex: 0 0 auto;
   min-height: 0;
-}
-
-:host ::ng-deep app-note-card .note-actions {
-  pointer-events: none;
-  opacity: 0;
-  transform: translateY(4px);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-sm);
-  transition: opacity var(--motion-fast) var(--ease-out), transform var(--motion-fast) var(--ease-out);
-}
-
-:host ::ng-deep .note-card:hover app-note-card .note-actions,
-:host ::ng-deep .note-card:focus-within app-note-card .note-actions {
-  pointer-events: auto !important;
-  opacity: 1 !important;
-  transform: translateY(0) !important;
-}
-
-:host ::ng-deep app-note-card button:focus-visible,
-:host ::ng-deep app-note-card a:focus-visible,
-:host ::ng-deep app-note-card textarea:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: -2px;
-}
-
-:host ::ng-deep app-note-card .note-actions .icon-btn {
-  border-radius: var(--radius-md);
-  transition: none;
-}
-
-:host ::ng-deep app-note-card .source-badge {
-  color: var(--color-text-muted);
-  transition: none;
-}
-
-:host ::ng-deep app-note-card .note-metadata {
-  color: var(--color-text-muted);
-}
-
-:host ::ng-deep app-note-card .expand-btn {
-  transition: opacity var(--motion-fast) var(--ease-out);
 }
 
 :host ::ng-deep a.topic-tag {
@@ -1848,11 +1833,8 @@
   .brain-note-filters { padding-inline: 1rem; }
 
   .brain-note-filter-row .nostos-chip,
-  .review-actions .nostos-button,
   .review-pagination .nostos-button,
   .brain-proposal-actions .nostos-button,
-  .note-inspector-primary-actions .nostos-button,
-  .note-inspector-utility-actions .nostos-button,
   .note-inspector-inline-actions .nostos-button {
     min-height: 44px;
   }
@@ -1923,7 +1905,7 @@
      are an out-of-flow overlay, so they can stay tall while the row stays 44px.
      Widening --actions-w moves the tail, the overlay and the fade edge together. */
   .index-row-shell {
-    --actions-w: 96px;
+    --actions-w: 142px;
   }
 
   .row-actions {
@@ -2112,7 +2094,6 @@
     grid-template-columns: 1fr; /* Single column cards */
   }
 
-  .related-row,
   .related-list {
     justify-content: flex-start;
   }
@@ -2120,48 +2101,6 @@
   .related-chip,
   .related-more {
     height: 44px;
-  }
-
-  :host ::ng-deep app-note-card .note-actions {
-    opacity: 1 !important;
-    pointer-events: auto !important;
-    transform: none !important;
-  }
-
-  :host ::ng-deep app-note-card .note-actions .icon-btn {
-    min-width: 44px;
-    min-height: 44px;
-  }
-
-  /* Give the footer and the topic header room to lay out as ROWS instead of
-     a single cramped line. Before this, each row was a nowrap flex whose two
-     44px buttons needed 102px of a 287px footer that was pinned to 32px tall:
-     the action cluster overhung the card by 49px, the header cluster by 69px,
-     and because `overflow-x` on .content-col is `auto` the whole pane grew a
-     horizontal scrollbar alongside the vertical one. Wrapping puts the actions
-     on their own full-width row inside the card, right-aligned, which is what
-     removes the overflow at its source rather than hiding it. */
-  :host ::ng-deep app-note-card .note-footer {
-    flex-wrap: wrap;
-    row-gap: 0.75rem;
-    /* The fixed 32px height was sized for the desktop 32px buttons; a wrapped
-       footer needs to grow to hold the 44px row. */
-    height: auto;
-    min-height: 32px;
-  }
-
-  :host ::ng-deep app-note-card .note-actions {
-    flex: 1 1 100%;
-    justify-content: flex-end;
-    gap: 0.5rem;
-    /* The desktop treatment is a hover-revealed boxed pill. On touch it is
-       always visible, so the box is permanent chrome around two buttons that
-       already read as buttons — drop it and let them sit on the card. */
-    background: transparent;
-    border: 0;
-    border-radius: 0;
-    box-shadow: none;
-    padding: 0;
   }
 
   .topic-head-row {
@@ -2259,8 +2198,7 @@
     transform: none;
   }
 
-  :host ::ng-deep app-note-card .note-card-container,
-  :host ::ng-deep app-note-card .note-actions {
+  :host ::ng-deep app-note-card .note-card-container {
     transition: none;
   }
 }
@@ -2268,8 +2206,7 @@
 /* --- BRAIN INDEX SECTIONS & NOTE PANEL (issue #158) --- */
 
 .brain-section-title,
-.brain-section-count,
-.brain-note-topic-tag {
+.brain-section-count {
   font-weight: var(--fw-semibold);
 }
 
@@ -2288,6 +2225,52 @@
   align-items: center;
   gap: 0.5rem;
   padding: 0.75rem 1.25rem 0.25rem;
+}
+
+.brain-section-heading,
+.review-section-heading,
+.review-inspector-heading {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.browse-section-header {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.35rem;
+}
+
+.review-section-header {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.review-entry {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.review-position {
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.review-return {
+  margin-top: 0.5rem;
+}
+
+@media (min-width: 769px) {
+  .note-inspector-review .review-return:not(.is-review-deep-link) {
+    display: none;
+  }
 }
 
 .brain-section-title {
@@ -2424,16 +2407,34 @@
   white-space: pre-wrap;
 }
 
-.brain-note-panel-topics {
+.brain-note-panel-topics,
+.brain-note-provenance {
   display: flex;
   flex-wrap: wrap;
   gap: 0.4rem;
   align-items: center;
 }
 
+.brain-date-group {
+  align-self: start;
+  white-space: nowrap;
+}
+
+.brain-source-flow {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  gap: 0 0.75rem;
+  min-width: 0;
+}
+
+.brain-source-unit {
+  display: flex;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
 .brain-note-panel-empty-topics {
-  font-size: 0.8rem;
-  color: var(--color-text-muted);
   margin: 0;
   font-style: italic;
 }
@@ -2466,25 +2467,11 @@
   color: color-mix(in srgb, var(--selection-ink) 72%, transparent);
 }
 
-/* Shared Button owns chrome, focus and disabled states; Brain owns only rail layout. */
-.rail-foot-action,
+/* Shared Button owns chrome, focus and disabled states; Brain owns rail layout. */
 .review-load-more {
   width: 100%;
   justify-content: flex-start;
-}
-
-.review-load-more { margin-top: 0.5rem; }
-
-/* The rail's foot.
- *
- * One restrained line, in the position the queued notes used to occupy: the way
- * INTO review in the index, and the way OUT of it while reviewing. It is not a
- * badge and carries no count — the whole point of the issue is that unlinked
- * notes do not get to advertise themselves from the default rail. */
-.rail-foot {
-  flex: 0 0 auto;
-  border-top: 1px solid var(--border-color);
-  padding: 0.5rem 0.75rem;
+  margin-top: 0.5rem;
 }
 
 /* The focused note.
@@ -2536,15 +2523,6 @@
     padding-left: 0.65rem;
   }
 
-  /* The reviewed note keeps a phone-sized measure: the pane's own padding comes
-     from `.content-col`'s mobile rules, so only the type scales down. */
-  .review-title {
-    font-size: 1.25rem;
-  }
-
-  .review-body {
-    max-width: none;
-  }
 }
 
 
@@ -2611,17 +2589,48 @@
   accent-color: var(--color-primary);
 }
 
-.brain-note-panel-actions {
-  display: flex;
-  justify-content: flex-start;
-  margin-top: 1rem;
-  padding-top: 0.9rem;
-  border-top: 1px solid var(--border-color);
+
+.brain-note-provenance {
+  font-size: 0.76rem;
+}
+
+.brain-note-provenance .brain-source-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.brain-note-actions {
+  position: relative;
+}
+
+.brain-note-more-disclosure {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 0.25rem);
+  right: 0;
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.35rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-md);
+}
+
+.brain-note-more-item.danger {
+  color: var(--color-danger);
 }
 
 @media (max-width: 768px) {
   .detail-tools {
     flex-wrap: wrap;
+  }
+
+  .brain-note-more-disclosure {
+    max-width: min(18rem, 100%);
   }
 
   .source-selection-tools {
@@ -2662,5 +2671,14 @@
     flex: 1;
     flex-wrap: nowrap;
     width: auto;
+  }
+}
+
+@media (pointer: coarse) {
+  :where(.brain-note-actions, .review-entry, .topic-meta, .source-selection-tools) button,
+  .review-return,
+  .brain-source-link,
+  .source-select-control {
+    min-height: 44px;
   }
 }

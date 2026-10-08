@@ -192,6 +192,22 @@ const detailWithNotes = (id: string, name: string): TopicDetailDto => ({
   ],
 });
 
+const detailWithFourNotes = (id: string, name: string): TopicDetailDto => {
+  const base = detailWithNotes(id, name);
+  return {
+    ...base,
+    notes: [...base.notes, {
+      noteId: `${id}-fourth`,
+      content: `A fourth thought about [[${name}]]`,
+      selectedText: undefined,
+      cfiRange: undefined,
+      bookId: 'b-fourth',
+      bookTitle: 'A Fourth Book',
+      createdAt: '2026-09-12T12:00:00Z',
+    }],
+  };
+};
+
 describe('SecondBrain', () => {
   let component: SecondBrain;
   let fixture: ComponentFixture<SecondBrain>;
@@ -375,7 +391,7 @@ describe('SecondBrain', () => {
       expect(fixture.nativeElement.querySelector('.brain-browse-detail')?.textContent).toContain('No topics linked');
     });
 
-    it('uses the Topics visual grammar for the Notes search, index and selected inspector', () => {
+    it('uses one ordered action row and a keyboard-operable More disclosure in Notes', async () => {
       component.setViewMode('notes');
       browse([linked]);
 
@@ -410,8 +426,31 @@ describe('SecondBrain', () => {
       ) as HTMLButtonElement;
       const suggest = actions.querySelector('[data-testid="browse-suggest-topics"]') as HTMLButtonElement;
       expect(link.classList.contains('nostos-button--primary')).toBe(true);
-      expect(suggest.classList.contains('nostos-button--secondary')).toBe(true);
-      expect(actions.querySelector('.note-inspector-utility-actions')?.textContent).toContain('Edit note');
+      const keep = [...actions.querySelectorAll('button')].find(
+        (button: HTMLButtonElement) => button.textContent?.includes('Keep with writing')
+      ) as HTMLButtonElement;
+      expect(keep.classList.contains('nostos-button--secondary')).toBe(true);
+      expect(suggest.classList.contains('nostos-button--ghost')).toBe(true);
+      const row = actions.querySelector('.brain-note-action-row') as HTMLElement;
+      const labels = [...row.querySelectorAll('button')].map((button) => button.textContent?.trim());
+      expect(labels).toEqual(['Link to topic', 'Keep with writing…', 'Suggest topics', 'More']);
+      expect(suggest.title).toBe('Optional — Nostos proposes topics, you decide');
+      expect(suggest.hasAttribute('aria-label')).toBe(false);
+      expect(detail.querySelector('.source-badge')?.textContent).toContain('Open book');
+      expect(detail.querySelector('.source-badge')?.getAttribute('title')).toBe('A Book');
+
+      const more = actions.querySelector('.brain-note-more-trigger') as HTMLButtonElement;
+      more.click();
+      fixture.detectChanges();
+      expect(more.getAttribute('aria-expanded')).toBe('true');
+      expect(actions.querySelector('[data-note-more-item]')?.textContent).toContain('Edit note');
+      const disclosure = actions.querySelector('.brain-note-more-disclosure') as HTMLElement;
+      disclosure.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      await Promise.resolve();
+      fixture.detectChanges();
+      expect(actions.querySelector('.brain-note-more-disclosure')).toBeNull();
+      expect(more.getAttribute('aria-expanded')).toBe('false');
+      expect(document.activeElement).toBe(more);
     });
 
     it('filters without topics, then enters focused review and returns to the filtered Notes view', () => {
@@ -477,6 +516,9 @@ describe('SecondBrain', () => {
       component.setViewMode('notes');
       browse([linked, unlinked]);
       component.openNotePanel(unlinked);
+      fixture.detectChanges();
+      const more = fixture.nativeElement.querySelector('.brain-browse-detail .brain-note-more-trigger') as HTMLButtonElement;
+      more.click();
       fixture.detectChanges();
       const sourceFilter = [...fixture.nativeElement.querySelectorAll('.brain-browse-detail button')]
         .find((button: HTMLButtonElement) => button.textContent?.includes('Show notes from this book')) as HTMLButtonElement;
@@ -577,6 +619,54 @@ describe('SecondBrain', () => {
   });
 
   describe('Brain → Writing source handoff (#492)', () => {
+    it('keeps Select sources beside the reading count for a one-note topic', () => {
+      component.selectTopic('c-alpha');
+      flushDetail('c-alpha', detail('c-alpha', 'Alpha'));
+      fixture.detectChanges();
+
+      const button = fixture.nativeElement.querySelector(
+        '.topic-meta [data-testid="topic-select-sources"]'
+      ) as HTMLButtonElement;
+      expect(button?.textContent?.trim()).toBe('Select sources');
+      expect(fixture.nativeElement.querySelector('.topic-meta')?.textContent)
+        .toContain('1 note from your reading');
+      expect(fixture.nativeElement.querySelector('.detail-tools')).toBeNull();
+    });
+
+    it('keeps Select sources in the toolbar when a topic has more than three notes', () => {
+      component.selectTopic('c-alpha');
+      flushDetail('c-alpha', detailWithFourNotes('c-alpha', 'Alpha'));
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('.note-search-box')).toBeTruthy();
+      expect(fixture.nativeElement.querySelector('.source-selection-tools [data-testid="topic-select-sources"]'))
+        .toBeTruthy();
+      expect(fixture.nativeElement.querySelector('.topic-meta [data-testid="topic-select-sources"]'))
+        .toBeNull();
+    });
+
+    it('offers one-note Keep with writing on evidence cards and hides card actions in selection mode', () => {
+      component.selectTopic('c-alpha');
+      flushDetail('c-alpha', detailWithNotes('c-alpha', 'Alpha'));
+      fixture.detectChanges();
+
+      const row = fixture.nativeElement.querySelector(
+        '[data-note-action-mode="evidence"] .brain-note-action-row'
+      ) as HTMLElement;
+      const actions = [...row.querySelectorAll('button')] as HTMLButtonElement[];
+      expect(actions.map((button) => button.textContent?.trim())).toEqual(['Keep with writing…', 'More']);
+      expect(actions[0].querySelector('nostos-icon')?.getAttribute('name')).toBe('bookmark-simple');
+
+      actions[0].click();
+      fixture.detectChanges();
+      expect(component.handoffNoteIds()).toEqual(['c-alpha-newest']);
+      http.expectOne('/api/writings').flush([]);
+
+      component.startSourceSelection();
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('[data-note-action-mode="evidence"]')).toBeNull();
+    });
+
     it('keeps selection controls hidden until Select sources is explicitly entered', () => {
       component.selectTopic('c-alpha');
       flushDetail('c-alpha', detailWithNotes('c-alpha', 'Alpha'));
@@ -584,11 +674,16 @@ describe('SecondBrain', () => {
 
       expect(component.sourceSelectionMode()).toBe(false);
       expect(fixture.nativeElement.querySelector('.source-select-control')).toBeNull();
+      expect(fixture.nativeElement.querySelector('.note-search-box')).toBeNull();
+      expect(fixture.nativeElement.querySelector('#source-filter')).toBeNull();
+      expect(fixture.nativeElement.querySelector('#note-sort')).toBeNull();
+      expect(fixture.nativeElement.querySelector('.note-count')).toBeNull();
 
-      const selectSources = [...fixture.nativeElement.querySelectorAll('button')].find(
-        (button: HTMLButtonElement) => button.textContent?.trim() === 'Select sources'
+      expect(fixture.nativeElement.querySelector('.detail-tools')).toBeNull();
+      const selectSources = fixture.nativeElement.querySelector(
+        '.topic-meta [data-testid="topic-select-sources"]'
       ) as HTMLButtonElement;
-      expect(selectSources).toBeTruthy();
+      expect(selectSources?.textContent?.trim()).toBe('Select sources');
 
       selectSources.click();
       fixture.detectChanges();
@@ -597,6 +692,7 @@ describe('SecondBrain', () => {
         ...fixture.nativeElement.querySelectorAll('.source-select-control input'),
       ] as HTMLInputElement[];
       expect(checkboxes.length).toBe(3);
+      expect(fixture.nativeElement.querySelector('[data-note-action-mode="evidence"]')).toBeNull();
       expect(component.selectedSourceCount()).toBe(0);
 
       checkboxes[0].checked = true;
@@ -628,10 +724,16 @@ describe('SecondBrain', () => {
       component.openNotePanel(hit);
       fixture.detectChanges();
 
-      const keep = [...fixture.nativeElement.querySelectorAll('.brain-note-panel-actions button')].find(
-        (button: HTMLButtonElement) => button.textContent?.includes('Keep with writing')
-      ) as HTMLButtonElement;
-      expect(keep).toBeTruthy();
+      const panelActions = [...fixture.nativeElement.querySelectorAll('.brain-note-panel-actions button')] as HTMLButtonElement[];
+      expect(panelActions.map((button) => button.textContent?.trim())).toEqual([
+        'Open in Notes', 'Keep with writing…',
+      ]);
+      expect(fixture.nativeElement.querySelector('.brain-note-provenance .brain-source-link')?.textContent)
+        .toContain('Open book');
+      expect(fixture.nativeElement.querySelector('.brain-note-provenance .brain-source-title')?.getAttribute('title'))
+        .toBe('Search source');
+      const keep = panelActions[1];
+      expect(keep.querySelector('nostos-icon')?.getAttribute('name')).toBe('bookmark-simple');
 
       keep.click();
       fixture.detectChanges();
@@ -774,7 +876,7 @@ describe('SecondBrain', () => {
 
   it('filters notes by source and keeps the live count in sync', async () => {
     component.selectTopic('c-alpha');
-    flushDetail('c-alpha', detailWithNotes('c-alpha', 'Alpha'));
+    flushDetail('c-alpha', detailWithFourNotes('c-alpha', 'Alpha'));
     await fixture.whenStable();
     fixture.detectChanges();
 
@@ -782,13 +884,14 @@ describe('SecondBrain', () => {
     const source = sourceTrigger.closest('app-dropdown') as HTMLElement;
     expect(source.textContent).toContain('Ideas in Motion (2)');
     expect(source.textContent).toContain('Meditations (1)');
-    expect(component.filteredNotes()).toHaveLength(3);
+    expect(component.filteredNotes()).toHaveLength(4);
+    expect(fixture.nativeElement.querySelector('.note-count')).toBeNull();
 
     component.setSourceFilter('Meditations');
     fixture.detectChanges();
     expect(component.filteredNotes().map((note) => note.noteId)).toEqual(['c-alpha-oldest']);
     expect(fixture.nativeElement.querySelector('.note-count')?.textContent).toContain(
-      'Showing 1 of 3 notes'
+      'Showing 1 of 4 notes'
     );
   });
 
@@ -877,7 +980,10 @@ describe('SecondBrain', () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    (fixture.nativeElement.querySelector('.note-actions .icon-btn') as HTMLButtonElement).click();
+    const more = fixture.nativeElement.querySelector('.note-actions .brain-note-more-trigger') as HTMLButtonElement;
+    more.click();
+    fixture.detectChanges();
+    (fixture.nativeElement.querySelector('.note-actions .brain-note-more-item') as HTMLButtonElement).click();
     fixture.detectChanges();
     const editor = fixture.nativeElement.querySelector('.note-input') as HTMLTextAreaElement;
     editor.value = 'Updated note about [[Alpha]]';
@@ -1798,9 +1904,9 @@ describe('SecondBrain', () => {
       limit: 25,
     });
 
-    /** Opens review through the rail's own affordance and answers the first page. */
+    /** Enters review directly for mode-specific tests and answers the first page. */
     const enterReview = (items: NoteSearchHit[] = sampleHits, totalCount = items.length): void => {
-      (fixture.nativeElement.querySelector('.rail-foot-action') as HTMLButtonElement).click();
+      component.openReview();
       fixture.detectChanges();
       http.expectOne((req) => req.url === '/api/notes/unlinked').flush(page(items, totalCount));
       fixture.detectChanges();
@@ -1857,26 +1963,40 @@ describe('SecondBrain', () => {
       expect(component.noteSearchHits()).toEqual([]);
     });
 
-    it('enters review from the rail foot and shows the queue with what is left', () => {
-      expect(fixture.nativeElement.querySelector('.rail-foot-action')?.textContent?.trim()).toBe(
-        'Review notes with no topic'
-      );
+    it('labels review mode and keeps it out of the Topics and All notes rails', () => {
+      expect(fixture.nativeElement.querySelector('.review-entry')).toBeNull();
+      expect(fixture.nativeElement.querySelector('.rail-foot-action')).toBeNull();
+      component.setViewMode('notes');
+      http.expectOne((req) => req.url === '/api/notes')
+        .flush(page(sampleHits, sampleHits.length));
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('.review-entry')).toBeNull();
 
-      enterReview();
+      component.setBrowseWithoutTopics(true);
+      http.expectOne((req) => req.url === '/api/notes' && req.params.get('withoutTopics') === 'true')
+        .flush(page(sampleHits, sampleHits.length));
+      fixture.detectChanges();
+      const entry = fixture.nativeElement.querySelector('.review-entry') as HTMLElement;
+      expect(entry.querySelector('button')?.textContent?.trim()).toBe('Review one by one');
+      expect(entry.querySelector('p')?.textContent?.trim()).toBe('Step through these notes in order. Optional: nothing changes unless you link one.');
+      expect(fixture.nativeElement.querySelectorAll('.review-entry button')).toHaveLength(1);
+
+      (entry.querySelector('button') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      http.expectOne((req) => req.url === '/api/notes/unlinked').flush(page(sampleHits));
+      fixture.detectChanges();
 
       expect(component.viewMode()).toBe('unlinked');
-      // The topic index is replaced, not augmented: no topic rows remain.
-      expect(fixture.nativeElement.querySelector('.index-row-shell')).toBeNull();
       expect(fixture.nativeElement.querySelector('.brain-section-title')?.textContent?.trim()).toBe(
-        'Without topics'
+        'Reviewing one by one'
       );
-      expect(fixture.nativeElement.querySelector('.brain-section-count')?.textContent?.trim()).toBe(
-        '2 notes'
-      );
+      expect(fixture.nativeElement.querySelector('.brain-header .index-stats')?.textContent?.trim())
+        .toBe('2 notes without topics');
+      expect(fixture.nativeElement.querySelector('.review-position')?.textContent?.trim()).toBe('1 of 2');
+      expect(fixture.nativeElement.querySelector('.review-section-header .review-return')?.textContent?.trim())
+        .toBe('Back to notes without topics');
       expect(fixture.nativeElement.querySelectorAll('.index-list .note-row-item').length).toBe(2);
-
-      // Review is a task the user enters, not a place to be restored into.
-      expect(localStorage.getItem('nostos.brain.viewMode')).toBeNull();
+      expect(localStorage.getItem('nostos.brain.viewMode')).toBe('notes');
     });
 
     it('reuses the ordinary NoteCard presentation in optional review', () => {
@@ -1895,13 +2015,17 @@ describe('SecondBrain', () => {
       );
       expect(fixture.nativeElement.querySelector('.review-pane .review-quote')).toBeNull();
       expect(fixture.nativeElement.querySelector('.review-pane')?.textContent).toContain('Link to topic');
-      expect(fixture.nativeElement.querySelector('.review-pane')?.textContent).toContain('Edit note');
+      const more = fixture.nativeElement.querySelector('.review-pane .brain-note-more-trigger') as HTMLButtonElement;
+      more.click();
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('.review-pane .brain-note-more-item')?.textContent)
+        .toContain('Edit note');
     });
 
     it('offers the same single-note handoff from the focused unlinked-review note', () => {
       enterReview();
 
-      const keep = [...fixture.nativeElement.querySelectorAll('.note-inspector-utility-actions button')].find(
+      const keep = [...fixture.nativeElement.querySelectorAll('.note-inspector-actions button')].find(
         (button: HTMLButtonElement) => button.textContent?.includes('Keep with writing')
       ) as HTMLButtonElement;
       expect(keep).toBeTruthy();
@@ -1987,8 +2111,8 @@ describe('SecondBrain', () => {
       expect(fixture.nativeElement.querySelector('.merge-picker')).toBeNull();
       expect(component.reviewQueue().map((row) => row.id)).toEqual(['hit-2']);
       expect(component.reviewTotal()).toBe(1);
-      expect(fixture.nativeElement.querySelector('.brain-section-count')?.textContent?.trim()).toBe(
-        '1 note'
+      expect(fixture.nativeElement.querySelector('.review-position')?.textContent?.trim()).toBe(
+        '1 of 1'
       );
       // Resolving moves the review on rather than emptying the pane.
       expect(component.viewMode()).toBe('unlinked');
@@ -2313,7 +2437,7 @@ describe('SecondBrain', () => {
       fixture.detectChanges();
       expect(component.proposalState()).toBe('empty');
       expect(fixture.nativeElement.querySelector('[data-testid="brain-proposals"]')?.textContent).toContain('No useful matches found');
-      expect(fixture.nativeElement.querySelector('.note-inspector-primary-actions')?.textContent).toContain('Link to topic');
+      expect(fixture.nativeElement.querySelector('.brain-note-action-row')?.textContent).toContain('Link to topic');
     });
 
     it('keeps manual linking usable when AI is unavailable, and ignores cancelled late results', () => {
@@ -2325,7 +2449,7 @@ describe('SecondBrain', () => {
       });
       fixture.detectChanges();
       expect(component.proposalState()).toBe('unavailable');
-      expect(fixture.nativeElement.querySelector('.note-inspector-primary-actions')?.textContent).toContain('Link to topic');
+      expect(fixture.nativeElement.querySelector('.brain-note-action-row')?.textContent).toContain('Link to topic');
       expect(fixture.nativeElement.querySelector('[data-testid="brain-proposals"]')?.textContent)
         .toContain('Manual linking');
 

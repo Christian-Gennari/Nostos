@@ -190,8 +190,14 @@ test('a selected note keeps its selection fill through focus and hover in light 
 
     // Click leaves the row focused. Focus-within must not demote the selected
     // surface to the pale hover fill.
+    const focusedInitial = await read();
+    expect(focusedInitial, 'selected note exists after click').not.toBeNull();
+    // The row animates from transparent to its selected fill. Wait for the
+    // computed style to reach the token value before asserting the ink pair.
+    await expect.poll(async () => (await read())?.bg, {
+      message: 'focused selected row reaches selection fill',
+    }).toBe(focusedInitial!.expectedBg);
     const focusedAfterClick = await read();
-    expect(focusedAfterClick, 'selected note exists after click').not.toBeNull();
     expect(focusedAfterClick!.bg, 'focused selected row keeps selection fill').toBe(
       focusedAfterClick!.expectedBg
     );
@@ -237,6 +243,9 @@ test('a long name dissolves into the actions instead of hard-cutting', async ({ 
   const page = await context!.newPage();
   try {
     await page.goto(`${fixture.baseUrl}/second-brain`, { waitUntil: 'domcontentloaded' });
+    // Earlier tests share this context and may leave Notes selected. Make the
+    // Topics precondition explicit before measuring its index row.
+    await page.getByRole('button', { name: 'Topics', exact: true }).click();
     await page.locator('.index-item').first().waitFor({ timeout: 30_000 });
 
     // A name long enough to run into the actions slot — the case the fade is for.

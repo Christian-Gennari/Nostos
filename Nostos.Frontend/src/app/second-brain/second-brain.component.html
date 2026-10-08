@@ -20,7 +20,7 @@
         <div class="brain-header-heading">
           <h1>Brain</h1>
           @if (isReviewing()) {
-          <span class="index-stats">{{ reviewTotal() }} {{ reviewTotal() === 1 ? 'note' : 'notes' }} to review</span>
+          <span class="index-stats">{{ reviewTotal() }} {{ reviewTotal() === 1 ? 'note' : 'notes' }} without topics</span>
           } @else if (isBrowsingNotes()) {
             @if (browseLoaded()) {
             <span class="index-stats">{{ browseTotal() }} {{ browseTotal() === 1 ? 'note' : 'notes' }}</span>
@@ -154,9 +154,21 @@
           </button>
         }
       </div>
-      <div class="brain-section-header">
-        <h2 class="brain-section-title">{{ browseWithoutTopics() ? 'Without topics' : 'All notes' }}</h2>
-        @if (browseLoaded()) { <span class="brain-section-count">{{ browseTotal() }} {{ browseTotal() === 1 ? 'note' : 'notes' }}</span> }
+      <div class="brain-section-header browse-section-header">
+        <div class="brain-section-heading">
+          <h2 class="brain-section-title">{{ browseWithoutTopics() ? 'Without topics' : 'All notes' }}</h2>
+          @if (browseLoaded()) {
+          <span class="brain-section-count">{{ browseTotal() }} {{ browseTotal() === 1 ? 'note' : 'notes' }}</span>
+          }
+        </div>
+        @if (browseWithoutTopics() && browseLoaded() && browseTotal() > 0) {
+        <div class="review-entry">
+          <button appButton variant="secondary" size="sm" type="button" (click)="openReview()">
+            Review one by one
+          </button>
+          <p class="note-inspector-context">Step through these notes in order. Optional: nothing changes unless you link one.</p>
+        </div>
+        }
       </div>
       <div class="index-list" role="list" aria-label="Saved notes" [attr.aria-busy]="browseLoading()">
         @if (browseLoading() && !browseLoaded()) {
@@ -183,13 +195,6 @@
           @if (browseError()) { <button appButton variant="ghost" size="sm" type="button" class="review-load-more" (click)="loadBrowsePage()">Retry loading notes</button> }
         }
       </div>
-      <div class="rail-foot">
-        @if (browseWithoutTopics()) {
-          <button appButton variant="ghost" size="sm" type="button" class="rail-foot-action" (click)="openReview()">Review these notes one by one</button>
-        } @else {
-          <button appButton variant="ghost" size="sm" type="button" class="rail-foot-action" (click)="setBrowseWithoutTopics(true)">See notes without topics</button>
-        }
-      </div>
       } @else if (isReviewing()) {
       <!--
         The review queue (issue #256).
@@ -200,11 +205,19 @@
         moment they are done. The count is the number still waiting, not the number
         of rows fetched, so it never reads as "this page is the whole queue".
       -->
-      <div class="brain-section-header">
-        <h2 class="brain-section-title">Without topics</h2>
-        <span class="brain-section-count" role="status" aria-live="polite" aria-atomic="true">
-          {{ reviewTotal() }} {{ reviewTotal() === 1 ? 'note' : 'notes' }}
-        </span>
+      <div class="brain-section-header review-section-header">
+        <div class="review-section-heading">
+          <h2 class="brain-section-title">Reviewing one by one</h2>
+          @if (reviewPosition(); as position) {
+          <span class="review-position" role="status" aria-live="polite" aria-atomic="true">
+            {{ position }} of {{ reviewTotal() }}
+          </span>
+          }
+        </div>
+        @if (!reviewId()) {
+        <button appButton variant="ghost" size="sm" type="button" class="review-return"
+          (click)="closeReview()">Back to notes without topics</button>
+        }
       </div>
 
       <div class="index-list" role="list" aria-label="Notes with no topic" [attr.aria-busy]="reviewLoading()">
@@ -219,9 +232,6 @@
         <div class="empty-index-state" role="status">
           <div class="empty-eyebrow">No notes here</div>
           <p>You can still browse all your saved notes.</p>
-          <button appButton variant="secondary" size="sm" type="button" class="empty-clear" (click)="closeReview()">
-            Back to {{ reviewReturnMode === 'notes' ? 'notes' : 'topics' }}
-          </button>
         </div>
         } @else {
         @for (row of reviewQueue(); track row.id) {
@@ -265,6 +275,7 @@
             class="sort-select"
             controlId="brain-sort"
             controlSize="compact"
+            appearance="subtle"
             ariaLabel="Sort topics"
             [options]="indexSortOptions"
             [value]="indexSort()"
@@ -434,17 +445,6 @@
         section: one restrained line at the foot of the rail, in the place the
         queued notes used to occupy, which becomes the way out while reviewing.
       -->
-      <div class="rail-foot">
-        @if (isReviewing()) {
-        <button appButton variant="ghost" size="sm" type="button" class="rail-foot-action" (click)="closeReview()">
-          Back to {{ reviewReturnMode === 'notes' ? 'notes' : 'topics' }}
-        </button>
-        } @else {
-        <button appButton variant="ghost" size="sm" type="button" class="rail-foot-action" (click)="openReview()">
-          Review notes with no topic
-        </button>
-        }
-      </div>
     </aside>
 
     <section
@@ -547,26 +547,7 @@
 
             @if (!browseEditing()) {
             <section class="note-inspector-actions" aria-label="Note actions">
-              <div class="note-inspector-primary-actions">
-                <button appButton variant="primary" size="sm" type="button"
-                  (click)="openBrowsePicker()">Link to topic</button>
-                <button appButton variant="secondary" size="sm" type="button"
-                  [disabled]="browseSaving() || proposalState() === 'loading' || proposalState() === 'linking'"
-                  (click)="askNostos()" data-testid="browse-suggest-topics">Suggest topics</button>
-              </div>
-              <div class="note-inspector-utility-actions">
-                <button appButton variant="ghost" size="sm" type="button"
-                  (click)="startBrowseEdit()">Edit note</button>
-                <button appButton variant="ghost" size="sm" type="button"
-                  (click)="openWritingHandoff([note.id])">Keep with writing…</button>
-                @if (note.bookId !== browseBookId()) {
-                  <button appButton variant="ghost" size="sm" type="button"
-                    (click)="setBrowseBook(note.bookId, note.bookTitle || 'Unknown source')">Show notes from this book</button>
-                }
-                <a appButton variant="ghost" size="sm" class="brain-source-link"
-                  [routerLink]="browseSourceParams(note) ? ['/read', note.bookId] : ['/library', note.bookId]"
-                  [queryParams]="browseSourceParams(note)">{{ browseSourceParams(note) ? 'Return to passage' : 'Open book' }}</a>
-              </div>
+              <ng-container *ngTemplateOutlet="noteActionGroup; context: { $implicit: note, mode: 'browse' }"></ng-container>
             </section>
             <ng-container *ngTemplateOutlet="topicProposals"></ng-container>
             }
@@ -610,13 +591,21 @@
       @if (reviewNote(); as note) {
       <button type="button" class="mobile-nav-header" (click)="clearReviewFocus()">
         <nostos-icon name="arrow-left" [size]="18"></nostos-icon>
-        <span>Back to notes</span>
+        <span>Back to review list</span>
       </button>
 
       <div class="note-inspector review-pane note-inspector-review" data-testid="brain-review-inspector">
         <header class="note-inspector-head">
           <div>
-            <div class="super-title">Without topics</div>
+            <div class="review-inspector-heading">
+              <span class="super-title">Reviewing one by one</span>
+              @if (reviewPosition(); as position) {
+              <span class="review-position">{{ position }} of {{ reviewTotal() }}</span>
+              }
+            </div>
+            <button appButton variant="ghost" size="sm" type="button" class="review-return"
+              [class.is-review-deep-link]="!!reviewId()"
+              (click)="closeReview()">Back to notes without topics</button>
             <h1 class="note-inspector-title">{{ note.bookTitle || 'An unknown source' }}</h1>
             <p class="note-inspector-context">Review is optional. Moving on does not change this note.</p>
           </div>
@@ -718,34 +707,7 @@
           </div>
           } @else {
           <section class="note-inspector-actions" aria-label="Note actions">
-            <div class="note-inspector-primary-actions">
-              <button appButton variant="primary" size="sm" type="button" (click)="openReviewPicker()">
-                Link to topic
-              </button>
-              <button
-                appButton variant="secondary" size="sm" type="button"
-                [disabled]="proposalState() === 'loading' || proposalState() === 'linking'"
-                (click)="askNostos()"
-                data-testid="review-suggest-topics"
-              >
-                Suggest topics
-              </button>
-            </div>
-            <div class="note-inspector-utility-actions">
-              <button appButton variant="ghost" size="sm" type="button" (click)="startReviewEdit()">
-                Edit note
-              </button>
-              <button appButton variant="ghost" size="sm" type="button" (click)="openWritingHandoff([note.id])">
-                Keep with writing…
-              </button>
-              @if (browseSourceParams(note); as target) {
-                <a appButton variant="ghost" size="sm" class="brain-source-link"
-                  [routerLink]="['/read', note.bookId]" [queryParams]="target">Return to passage</a>
-              } @else {
-                <a appButton variant="ghost" size="sm" class="brain-source-link"
-                  [routerLink]="['/library', note.bookId]">Open book</a>
-              }
-            </div>
+            <ng-container *ngTemplateOutlet="noteActionGroup; context: { $implicit: note, mode: 'review' }"></ng-container>
           </section>
 
           <ng-container *ngTemplateOutlet="topicProposals"></ng-container>
@@ -797,14 +759,18 @@
             <h1 class="topic-title">{{ detail.name }}</h1>
             }
             <div class="topic-meta">
-              {{ detail.notes.length }} {{ detail.notes.length === 1 ? 'note' : 'notes' }} from your reading
+              <span>{{ detail.notes.length }} {{ detail.notes.length === 1 ? 'note' : 'notes' }} from your reading</span>
+              @if (detail.notes.length <= 3 && !sourceSelectionMode()) {
+              <ng-container *ngTemplateOutlet="sourceSelectionAction"></ng-container>
+              }
             </div>
           </div>
         </div>
       </div>
 
-      @if (detail.notes.length > 0) {
+      @if (detail.notes.length > 3 || sourceSelectionMode()) {
       <div class="detail-tools" aria-label="Filter and sort notes">
+        @if (detail.notes.length > 3) {
         <div class="note-search-box">
           <nostos-icon name="magnifying-glass" [size]="15" class="search-icon"></nostos-icon>
           <label class="visually-hidden" for="note-search">Search notes</label>
@@ -861,13 +827,12 @@
           </div>
         </div>
 
+        @if (noteFiltersActive() && filteredNotes().length < detail.notes.length) {
         <span class="note-count" role="status" aria-live="polite" aria-atomic="true">
-          @if (noteFiltersActive()) {
           Showing {{ filteredNotes().length }} of {{ detail.notes.length }} notes
-          } @else {
-          {{ detail.notes.length }} {{ detail.notes.length === 1 ? 'note' : 'notes' }}
-          }
         </span>
+        }
+        }
 
         <div class="source-selection-tools">
           @if (sourceSelectionMode()) {
@@ -880,15 +845,14 @@
             [disabled]="selectedSourceCount() === 0"
             (click)="openSelectedSourcesHandoff()"
           >
+            <nostos-icon name="bookmark-simple" [size]="16"></nostos-icon>
             Keep with writing…
           </button>
           <button appButton variant="ghost" size="sm" type="button" (click)="cancelSourceSelection()">
             Cancel
           </button>
           } @else {
-          <button appButton variant="ghost" size="sm" type="button" (click)="startSourceSelection()">
-            Select sources
-          </button>
+          <ng-container *ngTemplateOutlet="sourceSelectionAction"></ng-container>
           }
         </div>
       </div>
@@ -931,7 +895,9 @@
             [note]="noteForCard(note)"
             [topicMap]="topicMap()"
             [showNavigation]="false"
-            [showActions]="!sourceSelectionMode()"
+            [showActions]="false"
+            [actionsTemplate]="sourceSelectionMode() ? null : noteActionGroup"
+            [actionsContext]="{ $implicit: noteForCard(note), mode: 'evidence', card: noteCardHost }"
             [showSource]="true"
             [showDate]="true"
             (update)="onUpdateNote($event)"
@@ -1162,24 +1128,109 @@
             <span class="brain-note-panel-empty-topics">No topics linked</span>
           }
         </div>
+        <div class="brain-note-provenance" data-testid="brain-note-provenance">
+          @if (note.createdAt) {
+          <span class="brain-date-group">
+            {{ note.createdAt | date : 'short' }} ·
+          </span>
+          }
+          <div class="brain-source-flow">
+            <span class="brain-source-unit">
+              <nostos-icon name="books" [size]="12"></nostos-icon>
+              <span class="brain-source-title" [title]="note.bookTitle || 'Unknown source'">
+                {{ note.bookTitle || 'Unknown source' }}
+              </span>
+            </span>
+            @if (note.bookId) {
+            <a class="brain-source-link"
+              [routerLink]="browseSourceParams(note) ? ['/read', note.bookId] : ['/library', note.bookId]"
+              [queryParams]="browseSourceParams(note)">
+              {{ browseSourceParams(note) ? 'Return to passage' : 'Open book' }}
+              <nostos-icon name="arrow-right" [size]="12"></nostos-icon>
+            </a>
+            }
+          </div>
+        </div>
         <div class="brain-note-panel-actions">
-          <button appButton variant="primary" size="sm" type="button" (click)="openSearchNoteInNotes()">
-            Open in Notes
-          </button>
-          <button
-            appButton
-            variant="secondary"
-            size="sm"
-            type="button"
-            (click)="openWritingHandoff([note.id])"
-          >
-            Keep with writing…
-          </button>
+          <ng-container *ngTemplateOutlet="noteActionGroup; context: { $implicit: note, mode: 'search' }"></ng-container>
         </div>
       </div>
     </aside>
     }
   </div>
+
+  <ng-template #sourceSelectionAction>
+    <button appButton variant="ghost" size="sm" type="button" data-testid="topic-select-sources"
+      (click)="startSourceSelection()">
+      Select sources
+    </button>
+  </ng-template>
+
+  <ng-template #noteActionGroup let-note let-mode="mode" let-card="card">
+    <div class="brain-note-actions" [attr.data-note-action-mode]="mode">
+      @if (mode === 'search') {
+      <div class="note-inspector-inline-actions brain-note-action-row" data-testid="brain-note-action-row" aria-label="Note actions">
+        <button appButton variant="primary" size="sm" type="button"
+          (click)="openSearchNoteInNotes()">Open in Notes</button>
+        <button appButton variant="secondary" size="sm" type="button"
+          (click)="openWritingHandoff([note.id])">
+          <nostos-icon name="bookmark-simple" [size]="16"></nostos-icon>
+          Keep with writing…
+        </button>
+      </div>
+      } @else {
+      <div class="note-inspector-inline-actions brain-note-action-row" data-testid="brain-note-action-row" aria-label="Note actions">
+        @if (mode !== 'evidence') {
+        <button appButton variant="primary" size="sm" type="button"
+          (click)="mode === 'review' ? openReviewPicker() : openBrowsePicker()">Link to topic</button>
+        }
+        <button appButton variant="secondary" size="sm" type="button"
+          (click)="openWritingHandoff([note.id])">
+          <nostos-icon name="bookmark-simple" [size]="16"></nostos-icon>
+          Keep with writing…
+        </button>
+        @if (mode !== 'evidence') {
+        <button appButton variant="ghost" size="sm" type="button"
+          [disabled]="proposalState() === 'loading' || proposalState() === 'linking'"
+          [attr.data-testid]="mode === 'review' ? 'review-suggest-topics' : 'browse-suggest-topics'"
+          title="Optional — Nostos proposes topics, you decide"
+          (click)="askNostos()">
+          <nostos-icon name="sparkle" [size]="15"></nostos-icon>
+          Suggest topics
+        </button>
+        }
+        <button appButton variant="ghost" size="sm" type="button" class="brain-note-more-trigger"
+          data-testid="brain-note-more-trigger"
+          [attr.aria-expanded]="noteMoreOpenKey() === noteMoreKey(mode, note.id)"
+          [attr.aria-controls]="'brain-note-more-' + mode + '-' + note.id"
+          aria-haspopup="true"
+          (click)="toggleNoteMore(noteMoreKey(mode, note.id), $event)">
+          More
+        </button>
+      </div>
+      @if (noteMoreOpenKey() === noteMoreKey(mode, note.id)) {
+      <div class="brain-note-more-disclosure" role="group" aria-label="More note actions"
+        [id]="'brain-note-more-' + mode + '-' + note.id"
+        (keydown)="handleNoteMoreKeydown($event)">
+        @if (mode !== 'search') {
+        <button appButton variant="ghost" size="sm" type="button" class="brain-note-more-item"
+          data-note-more-item (click)="performNoteMoreAction('edit', mode, note, card, $event)">Edit note</button>
+        }
+        @if (mode === 'browse' && note.bookId !== browseBookId()) {
+        <button appButton variant="ghost" size="sm" type="button" class="brain-note-more-item"
+          data-note-more-item
+          (click)="performNoteMoreAction('show-book', mode, note, card, $event)">Show notes from this book</button>
+        }
+        @if (mode === 'evidence') {
+        <button appButton variant="ghost" size="sm" type="button" class="brain-note-more-item danger"
+          data-note-more-item
+          (click)="performNoteMoreAction('delete', mode, note, card, $event)">Delete note</button>
+        }
+      </div>
+      }
+      }
+    </div>
+  </ng-template>
 
   <ng-template #topicProposals>
     @if (proposalState() !== 'idle') {

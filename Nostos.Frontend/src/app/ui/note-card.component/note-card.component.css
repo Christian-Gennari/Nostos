@@ -52,6 +52,11 @@
   text-decoration: underline;
 }
 
+.expand-btn:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
 /* --- Quote Block -----------------------------------------------------------
    The quote is the reason a quote-note exists, so it is the hero of the card,
    not a small tinted box competing with chrome for attention. Matches the
@@ -112,6 +117,16 @@
   height: 32px;
 }
 
+.note-footer-with-source {
+  height: auto;
+  min-height: 32px;
+  align-items: flex-start;
+}
+
+.note-footer-with-source .note-metadata {
+  align-items: flex-start;
+}
+
 /* Metadata Container */
 .note-metadata {
   display: flex;
@@ -123,17 +138,19 @@
      where a note came from, so both the row and the badge use the muted token
      (8.47:1 light / 10.98:1 dark). */
   color: var(--color-text-muted);
-  /* The date and the source badge are siblings in a `space-between` footer. On
-     a narrow card they must be allowed to wrap rather than pile onto the
-     action cluster, and each must be able to truncate: a flex item's default
-     min-width is auto, so a long book title pushes the row wider than the card
-     and the parent scroll container grows a horizontal scrollbar. */
+  /* Keep the date and provenance flow within the metadata row. Let the
+     source title shrink and ellipsize so long book names cannot widen the card. */
   flex-wrap: wrap;
+  flex: 1 1 auto;
   min-width: 0;
 }
 
-.note-metadata .source-badge {
-  min-width: 0;
+.note-date-group {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
 }
 
 .meta-separator {
@@ -143,28 +160,76 @@
 /* Source Badge Styling */
 .source-badge {
   display: flex;
+  flex: 1 1 0;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 4px;
+  column-gap: 0.75rem;
+  row-gap: 0.125rem;
   text-decoration: none;
   background: transparent;
-  padding: 2px 6px;
+  padding: 2px 0;
   border-radius: 4px;
   color: var(--color-text-muted);
   font-size: 0.75rem;
   cursor: pointer;
   transition: background-color 0.2s ease, color 0.2s ease;
-  max-width: 200px;
+  min-width: 0;
 }
 
-.source-badge span {
+.source-title-unit {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
   white-space: nowrap;
+}
+
+.source-title-unit nostos-icon {
+  flex: 0 0 auto;
+}
+
+.source-badge .source-book-title {
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.source-badge .source-nav-label {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.25rem;
+  color: inherit;
+  font-weight: var(--fw-medium);
+  white-space: nowrap;
+}
+
+.source-badge:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+:host ::ng-deep textarea:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: -2px;
 }
 
 .source-badge:hover {
   background-color: var(--bg-hover);
   color: var(--color-primary);
+}
+
+.note-actions.custom-actions {
+  pointer-events: auto !important;
+  opacity: 1;
+  transform: none;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  box-shadow: none;
 }
 
 .note-actions {
@@ -253,5 +318,11 @@
   .note-actions .icon-btn.delete:hover {
     background-color: transparent;
     color: inherit;
+  }
+}
+
+@media (pointer: coarse) {
+  .source-badge {
+    min-height: 44px;
   }
 }

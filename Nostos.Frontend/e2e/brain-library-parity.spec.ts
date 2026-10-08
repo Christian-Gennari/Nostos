@@ -327,15 +327,15 @@ test('brain sidebar row matches the library sidebar row', async ({ browser }) =>
     console.log('ACTION library:', JSON.stringify(libAction), '\n       brain  :', JSON.stringify(brainAction));
     console.log('ABOX   library:', JSON.stringify(libActionBox), '\n       brain  :', JSON.stringify(brainActionBox));
 
-    expect(
-      brainAction!.height,
-      `action height: brain ${brainAction!.height} vs library ${libAction!.height}`
-    ).toBe(libAction!.height);
+    // Slice A raises Brain's topic actions from the Library's 22px utility
+    // buttons to a minimum 28px desktop hit target; radius stays shared.
+    expect(brainAction!.height, 'desktop action hit target').toBeGreaterThanOrEqual(28);
+    expect(brainAction!.width, 'desktop action hit target width').toBeGreaterThanOrEqual(28);
     expect(brainAction!.borderRadius, 'action radius').toBe(libAction!.borderRadius);
-    expect(brainActionBox!.height, 'action overlay height').toBe(libActionBox!.height);
+    expect(brainActionBox!.height, 'action overlay hit target').toBeGreaterThanOrEqual(28);
 
     // Behaviour, not just geometry: the actions must be hidden at rest and
-    // revealed on hover, exactly as the tree's are. A 22px button permanently on
+    // revealed on hover, exactly as the tree's are. A 28px button permanently on
     // screen would satisfy the box checks above while looking nothing like the
     // Library — which is the state this replaced.
     await page.mouse.move(0, 0);
