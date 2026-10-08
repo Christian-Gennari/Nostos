@@ -208,14 +208,14 @@ test('captured source survives Brain → Keep with writing → Studio on the rea
     // "For this writing" is the default reference surface, so this row must be
     // backed by the persisted kept-source relation rather than transient Brain
     // component state.
-    const keptRow = page.locator('.kept-note-row', {
-      hasText: rawCapture,
+    const keptRow = page.locator('.kept-sources-content .reference-source-row', {
+      hasText: selectedText,
     });
     await expect(keptRow).toBeVisible();
     await expect(keptRow).toContainText(bookTitle);
     await expect(keptRow).toContainText(selectedText);
 
-    await keptRow.locator('app-note-card.inspectable-note').click();
+    await keptRow.locator('.reference-source-row-main').click();
 
     const inspectedSource = page.getByRole('region', {
       name: 'Inspected source',
@@ -250,8 +250,8 @@ test('captured source survives Brain → Keep with writing → Studio on the rea
       'Customer prose must survive the source handoff and a full Studio reload.',
     );
 
-    const reloadedKeptRow = page.locator('.kept-note-row', {
-      hasText: rawCapture,
+    const reloadedKeptRow = page.locator('.kept-sources-content .reference-source-row', {
+      hasText: selectedText,
     });
     await expect(reloadedKeptRow).toBeVisible();
     await expect(reloadedKeptRow).toContainText(bookTitle);

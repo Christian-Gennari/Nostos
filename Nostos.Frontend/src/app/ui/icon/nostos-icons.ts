@@ -95,6 +95,7 @@ import arrowsOut from '@phosphor-icons/core/regular/arrows-out.svg';
 import bookOpen from '@phosphor-icons/core/regular/book-open.svg';
 import book from '@phosphor-icons/core/regular/book.svg';
 import bookmarkSimple from '@phosphor-icons/core/regular/bookmark-simple.svg';
+import bookmarkSimpleFill from '@phosphor-icons/core/fill/bookmark-simple-fill.svg';
 import books from '@phosphor-icons/core/regular/books.svg';
 import brain from '@phosphor-icons/core/regular/brain.svg';
 import buildings from '@phosphor-icons/core/regular/buildings.svg';
@@ -210,7 +211,7 @@ export const NOSTOS_ICONS = {
   'arrows-out': { regular: arrowsOut, },
   'book': { regular: book, thin: bookThin, light: bookLight, },
   'book-open': { regular: bookOpen, thin: bookOpenThin, light: bookOpenLight, },
-  'bookmark-simple': { regular: bookmarkSimple, },
+  'bookmark-simple': { regular: bookmarkSimple, fill: bookmarkSimpleFill, },
   'books': { regular: books, light: booksLight, },
   'brain': { regular: brain, thin: brainThin, light: brainLight, },
   'buildings': { regular: buildings, },

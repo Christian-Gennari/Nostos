@@ -203,6 +203,11 @@ test('Writing Studio shell stays editor-first across desktop and compact viewpor
       await expect(page.locator('.header-save-status')).toHaveText('Saved');
       await expect(page.locator('.files-toggle')).toHaveAttribute('aria-expanded', 'true');
       await expect(page.locator('.reference-toggle')).toHaveAttribute('aria-expanded', 'true');
+      if (viewport.label === 'tablet-landscape') {
+        await page.locator('.sidebar-right').evaluate((element) => {
+          (element as HTMLElement).style.width = '280px';
+        });
+      }
 
       await page.waitForFunction(() => {
         const tinyMce = (window as any).tinymce;
@@ -214,6 +219,16 @@ test('Writing Studio shell stays editor-first across desktop and compact viewpor
       const bothOpen = await measureShell(page);
       expect(bothOpen.firstLineCharacters).toBeLessThanOrEqual(75);
       expect(bothOpen.toolbarRows).toBeLessThanOrEqual(1);
+      if (viewport.label === 'desktop' || viewport.label === 'tablet-landscape') {
+        const expectedRailWidth = viewport.label === 'desktop' ? 360 : 280;
+        await expect
+          .poll(() =>
+            page
+              .locator('.sidebar-right')
+              .evaluate((element) => Math.round(element.getBoundingClientRect().width)),
+          )
+          .toBe(expectedRailWidth);
+      }
       if (viewport.label === 'desktop') expectToolbarGlyphAligned(bothOpen);
       console.log(
         `[studio-shell] ${viewport.label} ${viewport.width}x${viewport.height} both-open ${JSON.stringify(bothOpen)}`,
@@ -325,8 +340,10 @@ test('Writing Studio shell stays editor-first across desktop and compact viewpor
           .filter({ hasText: referenceBookTitle });
         await expect(referenceBook).toBeVisible();
         await referenceBook.click();
-        await expect(page.locator('.brain-detail-header .detail-title')).toHaveText('Book Notes');
-        await expect(page.locator('.library-note-row')).toHaveCount(REFERENCE_STATE_NOTES.length);
+        await expect(page.locator('.brain-detail-header .goto-btn')).toHaveText('Back to Books');
+        await expect(page.locator('.reference-note-list .reference-source-row')).toHaveCount(
+          REFERENCE_STATE_NOTES.length,
+        );
 
         const referenceContent = page.locator('.brain-content');
         const referenceScroll = await referenceContent.evaluate((element) => {
@@ -348,12 +365,12 @@ test('Writing Studio shell stays editor-first across desktop and compact viewpor
           'aria-selected',
           'true',
         );
-        await expect(page.locator('.brain-detail-header .detail-title')).toHaveText('Book Notes');
+        await expect(page.locator('.brain-detail-header .goto-btn')).toHaveText('Back to Books');
         await expect.poll(() => referenceContent.evaluate((element) => element.scrollTop)).toBe(
           referenceScroll.top,
         );
 
-        await page.locator('.library-note-row .inspectable-note').first().click();
+        await page.locator('.reference-note-list .reference-source-row-main').first().click();
         const inspectedSource = page.locator('.inspected-source-panel');
         await expect(inspectedSource).toContainText('Reference rail state note 1');
         await page.locator('.reference-toggle').click();
@@ -369,7 +386,9 @@ test('Writing Studio shell stays editor-first across desktop and compact viewpor
           'aria-selected',
           'true',
         );
-        await expect(page.locator('.inspected-source-context')).toHaveText(referenceBookTitle);
+        await expect(page.locator('.inspected-source-context')).toHaveText(
+          'Back to ' + referenceBookTitle,
+        );
         await page.locator('.reference-toggle').click();
       }
 
@@ -457,10 +476,76 @@ test('Writing Studio shell stays editor-first across desktop and compact viewpor
         'false',
       );
       const referenceDrawerOpen = await measureShell(compactPage);
+      const expectedReferenceDrawerWidth =
+        viewport.label === 'tablet-portrait' ? 360 : viewport.width;
+      await expect
+        .poll(() =>
+          compactPage
+            .locator('.sidebar-right')
+            .evaluate((element) => element.getBoundingClientRect().width),
+        )
+        .toBe(expectedReferenceDrawerWidth);
       if (viewport.label === 'phone') expectToolbarGlyphAligned(referenceDrawerOpen);
       console.log(
         `[studio-shell] ${viewport.label} ${viewport.width}x${viewport.height} reference-drawer ${JSON.stringify(referenceDrawerOpen)}`,
       );
+
+      if (viewport.label === 'tablet-portrait') {
+        await compactPage.getByRole('tab', { name: 'Library', exact: true }).click();
+        await compactPage.getByRole('tab', { name: 'Books', exact: true }).click();
+        const bookSearch = compactPage.getByRole('textbox', { name: 'Search books' });
+        await bookSearch.fill(referenceBookTitle);
+        await compactPage.locator('.list-item').filter({ hasText: referenceBookTitle }).click();
+        await expect(compactPage.locator('.reference-note-list .reference-source-row')).toHaveCount(
+          REFERENCE_STATE_NOTES.length,
+        );
+        const bookNotes = compactPage.locator('[data-reference-scroll="bookNotes"]');
+        const bookNotesScroll = await bookNotes.evaluate((element) => {
+          const maxScroll = element.scrollHeight - element.clientHeight;
+          element.scrollTop = Math.min(180, maxScroll);
+          return { top: element.scrollTop, max: maxScroll };
+        });
+        expect(bookNotesScroll.max).toBeGreaterThan(0);
+
+        await compactPage.locator('.reference-rail-collapse').click();
+        await expect(compactPage.locator('.reference-toggle')).toHaveAttribute(
+          'aria-expanded',
+          'false',
+        );
+        await compactPage.locator('.reference-toggle').click();
+        await expect(compactPage.locator('.sidebar-right')).toHaveClass(/\bopen\b/);
+        await expect(compactPage.getByRole('tab', { name: 'Library', exact: true })).toHaveAttribute(
+          'aria-selected',
+          'true',
+        );
+        await expect(compactPage.locator('.library-tabs').getByRole('tab', { name: 'Books' })).toHaveAttribute(
+          'aria-selected',
+          'true',
+        );
+        await expect(compactPage.locator('.brain-detail-header .goto-btn')).toHaveText('Back to Books');
+        await expect
+          .poll(() => bookNotes.evaluate((element) => element.scrollTop))
+          .toBe(bookNotesScroll.top);
+
+        await compactPage.locator('.reference-note-list .reference-source-row-main').first().click();
+        await expect(compactPage.locator('.inspected-source-card')).toHaveCount(1);
+        await compactPage.locator('.reference-rail-collapse').click();
+        await compactPage.locator('.reference-toggle').click();
+        await expect(compactPage.locator('.sidebar-right')).toHaveClass(/\bopen\b/);
+        await expect(compactPage.locator('.inspected-source-card')).toHaveCount(1);
+        await expect(compactPage.locator('.inspected-source-context')).toHaveText(
+          'Back to ' + referenceBookTitle,
+        );
+        await expect(compactPage.getByRole('tab', { name: 'Library', exact: true })).toHaveAttribute(
+          'aria-selected',
+          'true',
+        );
+        await expect(compactPage.locator('.library-tabs').getByRole('tab', { name: 'Books' })).toHaveAttribute(
+          'aria-selected',
+          'true',
+        );
+      }
+
       await compactPage.locator('.reference-rail-collapse').click();
       await expect(compactPage.locator('.reference-toggle')).toBeFocused();
       await expect(compactPage.locator('.reference-toggle')).toHaveAttribute(
@@ -518,6 +603,25 @@ test('Writing Studio shell stays editor-first across desktop and compact viewpor
         );
         await expect(compactPage.locator('.empty-new-document')).toBeVisible();
         await expect(compactPage.locator('.empty-browse-files')).toBeVisible();
+        const referenceToggle = compactPage.locator('.reference-toggle');
+        await expect(referenceToggle).toHaveAttribute('aria-expanded', 'false');
+        await referenceToggle.click();
+        await expect(compactPage.locator('.sidebar-right')).toHaveClass(/\bopen\b/);
+        const browseLibrary = compactPage.getByRole('button', { name: 'Browse Library' });
+        await expect(browseLibrary).toBeVisible();
+        await browseLibrary.click();
+        await expect(compactPage.locator('.reference-mode-switch').getByRole('tab', { name: 'Library' })).toHaveAttribute(
+          'aria-selected',
+          'true',
+        );
+        await compactPage.locator('.reference-rail-collapse').click();
+        await expect(referenceToggle).toHaveAttribute('aria-expanded', 'false');
+        await referenceToggle.click();
+        await expect(compactPage.locator('.sidebar-right')).toHaveClass(/\bopen\b/);
+        await expect(compactPage.locator('.reference-mode-switch').getByRole('tab', { name: 'Library' })).toHaveAttribute(
+          'aria-selected',
+          'true',
+        );
       }
     }
   } finally {

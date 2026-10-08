@@ -249,18 +249,11 @@
             class="inspected-source-back"
             (click)="closeInspectedSource()"
             [attr.aria-label]="'Back to ' + inspectionReturnLabel()"
+            [title]="'Back to ' + inspectionReturnLabel()"
           >
             <nostos-icon name="arrow-left" [size]="16"></nostos-icon>
-            <span class="inspected-source-context">{{ inspectionReturnLabel() }}</span>
+            <span class="inspected-source-context">Back to {{ inspectionReturnLabel() }}</span>
           </button>
-          <span class="detail-title">Source</span>
-        </div>
-
-        <div class="inspected-source-heading">
-          <span>Selected note</span>
-          @if (sourceDisplayLocator(source); as locator) {
-            <span class="inspected-source-locator">{{ locator }}</span>
-          }
         </div>
 
         <app-note-card
@@ -268,84 +261,204 @@
           [note]="source"
           [topicMap]="topicMap()"
           [showActions]="false"
-          [showSource]="true"
+          [showSource]="false"
           [showDate]="false"
         ></app-note-card>
 
-        <div class="source-insertion-actions">
-          @if (canInsertQuote(source)) {
-            <button
-              appButton
-              variant="secondary"
-              size="sm"
-              [disabled]="!activeItem()"
-              (click)="insertQuote(source)"
+        <div class="inspected-source-provenance">
+          <span class="inspected-source-source-label">{{ sourceProvenance(source) }}</span>
+          @if (source.bookId) {
+            <a
+              class="inspected-source-open"
+              href=""
+              (click)="$event.preventDefault(); openSource(source)"
             >
-              Insert quote
-            </button>
+              Open source <span aria-hidden="true">→</span>
+            </a>
           }
-          @if (canInsertNote(source)) {
-            <button
-              appButton
-              variant="secondary"
-              size="sm"
-              [disabled]="!activeItem()"
-              (click)="insertNote(source)"
+        </div>
+
+        <div class="source-insertion-actions" role="group" aria-label="Source actions">
+          <div class="source-action-primary-row">
+            @if (canInsertQuote(source)) {
+              <button
+                appButton
+                variant="primary"
+                size="sm"
+                [disabled]="!!sourceActionDisabledReason()"
+                [attr.aria-describedby]="sourceActionDisabledReason() ? 'source-action-disabled-reason' : null"
+                [title]="sourceActionDisabledReason() || ''"
+                (click)="insertQuote(source)"
+              >
+                Insert quote
+              </button>
+            } @else if (canInsertNote(source)) {
+              <button
+                appButton
+                variant="primary"
+                size="sm"
+                [disabled]="!!sourceActionDisabledReason()"
+                [attr.aria-describedby]="sourceActionDisabledReason() ? 'source-action-disabled-reason' : null"
+                [title]="sourceActionDisabledReason() || ''"
+                (click)="insertNote(source)"
+              >
+                Insert note
+              </button>
+            }
+
+            @if (referenceMode() === 'library' && !keptNoteIds().has(source.id)) {
+              <button
+                appButton
+                variant="secondary"
+                size="sm"
+                [disabled]="!activeItem() || keepingNoteIds().has(source.id)"
+                [attr.aria-describedby]="!activeItem() ? 'source-action-disabled-reason' : null"
+                [title]="keepActionLabel(source.id)"
+                [attr.aria-label]="keepActionLabel(source.id)"
+                (click)="keepNote(source.id)"
+              >
+                <nostos-icon name="bookmark-simple" [size]="16"></nostos-icon>
+                Keep with writing
+              </button>
+            } @else if (keptNoteIds().has(source.id)) {
+              <span class="source-kept-state">
+                <nostos-icon name="bookmark-simple" [size]="16" weight="fill"></nostos-icon>
+                Kept with this writing
+              </span>
+            }
+
+            @if (canInsertReference(source) || (canInsertQuote(source) && canInsertNote(source)) || keptNoteIds().has(source.id)) {
+              <button
+                #sourceMoreTrigger
+                appButton
+                variant="ghost"
+                size="sm"
+                class="source-more-trigger"
+                aria-label="More source actions"
+                aria-controls="source-more-actions"
+                [attr.aria-expanded]="moreSourceActionsOpen()"
+                (click)="toggleMoreSourceActions()"
+              >
+                More
+                <nostos-icon [name]="moreSourceActionsOpen() ? 'caret-up' : 'caret-down'" [size]="14"></nostos-icon>
+              </button>
+            }
+          </div>
+
+          @if (moreSourceActionsOpen()) {
+            <div
+              id="source-more-actions"
+              class="source-more-actions"
+              role="group"
+              aria-label="More source actions"
+              (keydown.escape)="closeMoreSourceActions($event)"
             >
-              Insert note
-            </button>
+              @if (canInsertQuote(source) && canInsertNote(source)) {
+                <button
+                  appButton
+                  variant="ghost"
+                  size="sm"
+                  [disabled]="!!sourceActionDisabledReason()"
+                  [attr.aria-describedby]="sourceActionDisabledReason() ? 'source-action-disabled-reason' : null"
+                  [title]="sourceActionDisabledReason() || ''"
+                  (click)="insertNote(source)"
+                >
+                  Insert note
+                </button>
+              }
+              @if (canInsertReference(source)) {
+                <button
+                  appButton
+                  variant="ghost"
+                  size="sm"
+                  [disabled]="!!sourceActionDisabledReason()"
+                  [attr.aria-describedby]="sourceActionDisabledReason() ? 'source-action-disabled-reason' : null"
+                  [title]="sourceActionDisabledReason() || ''"
+                  (click)="insertReference(source)"
+                >
+                  Insert as reference
+                </button>
+              }
+              @if (keptNoteIds().has(source.id)) {
+                <button
+                  appButton
+                  variant="ghost"
+                  size="sm"
+                  class="remove-source-action"
+                  (click)="removeKeptSource(source.id, $event)"
+                >
+                  Remove from this writing
+                </button>
+              }
+            </div>
           }
-          @if (canInsertReference(source)) {
-            <button
-              appButton
-              variant="secondary"
-              size="sm"
-              [disabled]="!activeItem()"
-              (click)="insertReference(source)"
-            >
-              Insert as reference
-            </button>
+
+          @if (sourceActionDisabledReason(); as disabledReason) {
+            @if (!activeItem() || (editorWordCount() === null && (canInsertQuote(source) || canInsertNote(source) || canInsertReference(source)))) {
+              <p class="source-action-disabled-reason" id="source-action-disabled-reason">{{ disabledReason }}</p>
+            }
           }
-          <button appButton variant="ghost" size="sm" (click)="openSource(source)">
-            Open source
-          </button>
         </div>
       </section>
     }
 
     @if (!inspectedSource() && referenceMode() === 'writing') {
-      <div class="brain-content kept-sources-content">
+      <div
+        class="brain-content kept-sources-content reference-list-scroll"
+        data-reference-scroll="writing"
+        (scroll)="captureReferenceScroll($event)"
+      >
         @if (!activeItem()) {
-          <p class="empty-index calm-notice">No document open — choose or create one to keep sources.</p>
+          <div class="reference-empty-state">
+            <p>Keep notes here from Library or from Brain with Keep with writing. Open a writing to keep or insert sources.</p>
+            <button appButton variant="ghost" size="sm" class="reference-empty-link" (click)="setReferenceMode('library')">
+              Browse Library
+              <nostos-icon name="arrow-right" [size]="14"></nostos-icon>
+            </button>
+          </div>
+        } @else if (keptSourcesState() === 'loading') {
+          <p class="reference-state" role="status">Loading kept sources…</p>
+        } @else if (keptSourcesState() === 'error') {
+          <p class="reference-state reference-state-error" role="alert">
+            Kept sources could not be loaded.
+            <button appButton variant="ghost" size="sm" (click)="retryKeptSources()">Retry</button>
+          </p>
         } @else if (keptNotes().length === 0) {
-          <p class="empty-index calm-notice">No sources kept with this writing yet.</p>
+          <div class="reference-empty-state">
+            <p>No sources are kept with this writing yet. Keep notes here from Library or from Brain with Keep with writing.</p>
+            <button appButton variant="ghost" size="sm" class="reference-empty-link" (click)="setReferenceMode('library')">
+              Browse Library
+              <nostos-icon name="arrow-right" [size]="14"></nostos-icon>
+            </button>
+          </div>
         } @else {
           <div class="notes-list kept-notes-list">
             @for (note of keptNotes(); track note.id) {
-              <div class="kept-note-row">
-                <app-note-card
-                  class="inspectable-note"
-                  role="button"
-                  tabindex="0"
-                  [note]="note"
-                  [topicMap]="topicMap()"
-                  [showActions]="false"
-                  [showSource]="true"
+              <div class="reference-source-row">
+                <button
+                  appButton
+                  variant="ghost"
+                  size="sm"
+                  class="reference-source-row-main"
+                  [attr.aria-label]="sourceRowLabel(note)"
                   (click)="inspectSource(note)"
-                  (keydown.enter)="inspectSource(note)"
-                  (keydown.space)="inspectSource(note); $event.preventDefault()"
-                ></app-note-card>
-                <div class="kept-note-actions">
-                  <button
-                    appIconButton
-                    size="xxs"
-                    icon="x"
-                    [glyphSize]="14"
-                    (click)="removeKeptSource(note.id, $event)"
-                    title="Remove from writing"
-                    aria-label="Remove from writing"
-                  ></button>
-                </div>
+                >
+                  @if (hasQuotePreview(note)) {
+                    <span class="reference-source-preview is-quote">“{{ referencePreview(note) }}”</span>
+                  } @else {
+                    <span class="reference-source-preview">{{ referencePreview(note) }}</span>
+                  }
+                  <span class="reference-source-provenance">{{ sourceProvenance(note) }}</span>
+                </button>
+                <button
+                  appIconButton
+                  class="reference-row-action"
+                  icon="x"
+                  [glyphSize]="16"
+                  (click)="removeKeptSource(note.id, $event)"
+                  title="Remove from this writing"
+                  aria-label="Remove from this writing"
+                ></button>
               </div>
             }
           </div>
@@ -355,154 +468,217 @@
 
     @if (!inspectedSource() && referenceMode() === 'library') {
       @if (activeSidebarTab() === 'brain') {
-        <div class="search-box">
-          <nostos-icon name="magnifying-glass" [size]="16"></nostos-icon>
-          <input
-            appInput
-            controlSize="compact"
-            type="text"
-            placeholder="Search topics..."
-            [ngModel]="brainQuery()"
-            (ngModelChange)="brainQuery.set($event)"
-          />
-        </div>
+        @if (!selectedTopicId()) {
+          <div class="search-box">
+            <nostos-icon name="magnifying-glass" [size]="16"></nostos-icon>
+            <input
+              appInput
+              controlSize="compact"
+              type="text"
+              placeholder="Search topics..."
+              aria-label="Search topics"
+              [ngModel]="brainQuery()"
+              (ngModelChange)="brainQuery.set($event)"
+            />
+          </div>
+        }
+        @if (!activeItem()) {
+          <p class="reference-action-notice">Open a writing to keep or insert sources.</p>
+        }
 
-        <div class="brain-content">
+        <div
+          class="brain-content reference-list-scroll"
+          [attr.data-reference-scroll]="selectedTopicId() ? 'topicNotes' : 'topics'"
+          (scroll)="captureReferenceScroll($event)"
+        >
           @if (!selectedTopicId()) {
-            <div class="index-list">
-              @for (c of filteredTopics(); track c.id) {
-                <button class="list-item" (click)="selectTopic(c.id)">
-                  <div class="list-item-content">
-                    <span class="name">{{ c.name }}</span>
-                  </div>
-                  <span appBadge class="badge-count">{{ c.usageCount }}</span>
-                </button>
-              }
-            </div>
+            @if (topicIndexState() === 'loading') {
+              <p class="reference-state" role="status">Loading topics…</p>
+            } @else if (topicIndexState() === 'error') {
+              <p class="reference-state reference-state-error" role="alert">
+                Topics could not be loaded.
+                <button appButton variant="ghost" size="sm" (click)="retryTopicIndex()">Retry</button>
+              </p>
+            } @else {
+              <div class="index-list">
+                @for (c of filteredTopics(); track c.id) {
+                  <button class="list-item" (click)="selectTopic(c.id)">
+                    <div class="list-item-content">
+                      <span class="name">{{ c.name }}</span>
+                    </div>
+                    <span appBadge class="badge-count">{{ c.usageCount }}</span>
+                  </button>
+                }
+                @if (filteredTopics().length === 0) {
+                  <p class="reference-state">No topics match this search.</p>
+                }
+              </div>
+            }
           } @else {
             <div class="brain-detail-header">
-              <button appButton variant="ghost" size="sm" class="goto-btn" (click)="selectedTopicId.set(null)">
+              <button appButton variant="ghost" size="sm" class="goto-btn" (click)="backToTopics()">
                 <nostos-icon name="arrow-left" [size]="16"></nostos-icon>
-                Back
+                Back to Topics
               </button>
-              <span class="detail-title">Topic Notes</span>
             </div>
 
-            <div class="notes-list">
-              @for (note of selectedTopicNotes(); track note.id) {
-                <div class="library-note-row">
-                  <app-note-card
-                    [note]="note"
-                    [topicMap]="topicMap()"
-                    [showActions]="false"
-                    [showSource]="true"
-                    (click)="inspectSource(note)"
-                    (keydown.enter)="inspectSource(note)"
-                    (keydown.space)="inspectSource(note); $event.preventDefault()"
-                    class="inspectable-note"
-                    role="button"
-                    tabindex="0"
-                  ></app-note-card>
-                  <div class="library-note-actions">
+            @if (topicNotesState() === 'loading') {
+              <p class="reference-state" role="status">Loading topic notes…</p>
+            } @else if (topicNotesState() === 'error') {
+              <p class="reference-state reference-state-error" role="alert">
+                Notes for this topic could not be loaded.
+                <button appButton variant="ghost" size="sm" (click)="retryTopicNotes()">Retry</button>
+              </p>
+            } @else {
+              <div class="notes-list reference-note-list">
+                @for (note of selectedTopicNotes(); track note.id) {
+                  <div class="reference-source-row">
+                    <button
+                      appButton
+                      variant="ghost"
+                      size="sm"
+                      class="reference-source-row-main"
+                      [attr.aria-label]="sourceRowLabel(note)"
+                      (click)="inspectSource(note)"
+                    >
+                      @if (hasQuotePreview(note)) {
+                        <span class="reference-source-preview is-quote">“{{ referencePreview(note) }}”</span>
+                      } @else {
+                        <span class="reference-source-preview">{{ referencePreview(note) }}</span>
+                      }
+                      <span class="reference-source-provenance">{{ sourceProvenance(note) }}</span>
+                    </button>
                     <button
                       appIconButton
-                      size="xxs"
+                      class="reference-row-action library-keep-action"
                       icon="bookmark-simple"
-                      [glyphSize]="14"
+                      [weight]="keptNoteIds().has(note.id) ? 'fill' : 'regular'"
+                      [glyphSize]="16"
                       [class.active]="keptNoteIds().has(note.id)"
                       [disabled]="!activeItem() || keepingNoteIds().has(note.id)"
                       (click)="keepNote(note.id); $event.stopPropagation()"
-                      [title]="!activeItem() ? 'Open a document to keep sources' : (keptNoteIds().has(note.id) ? 'Kept' : 'Keep for this writing')"
-                      [attr.aria-label]="!activeItem() ? 'Open a document to keep sources' : (keptNoteIds().has(note.id) ? 'Kept' : 'Keep for this writing')"
+                      [title]="keepActionLabel(note.id)"
+                      [attr.aria-label]="keepActionLabel(note.id)"
                     ></button>
                   </div>
-                </div>
-              }
-              @if (selectedTopicNotes().length === 0) {
-                <p class="empty-index">No notes linked to this topic.</p>
-              }
-            </div>
+                }
+                @if (selectedTopicNotes().length === 0) {
+                  <p class="reference-state">No notes linked to this topic.</p>
+                }
+              </div>
+            }
           }
         </div>
       }
       @if (activeSidebarTab() === 'notes') {
-        <div class="search-box">
-          <nostos-icon name="magnifying-glass" [size]="16"></nostos-icon>
-          <input
-            appInput
-            controlSize="compact"
-            type="text"
-            placeholder="Search books..."
-            [ngModel]="bookQuery()"
-            (ngModelChange)="bookQuery.set($event)"
-          />
-        </div>
+        @if (!selectedBookId()) {
+          <div class="search-box">
+            <nostos-icon name="magnifying-glass" [size]="16"></nostos-icon>
+            <input
+              appInput
+              controlSize="compact"
+              type="text"
+              placeholder="Search books..."
+              aria-label="Search books"
+              [ngModel]="bookQuery()"
+              (ngModelChange)="bookQuery.set($event)"
+            />
+          </div>
+        }
+        @if (!activeItem()) {
+          <p class="reference-action-notice">Open a writing to keep or insert sources.</p>
+        }
 
-        <div class="brain-content">
+        <div
+          class="brain-content reference-list-scroll"
+          [attr.data-reference-scroll]="selectedBookId() ? 'bookNotes' : 'books'"
+          (scroll)="captureReferenceScroll($event)"
+        >
           @if (!selectedBookId()) {
-            <div class="index-list">
-              @for (book of filteredBooks(); track book.id) {
-                <button class="list-item" (click)="selectBook(book.id)">
-                  <div class="list-item-icon">
-                    <nostos-icon name="book" [size]="16"></nostos-icon>
-                  </div>
-                  <div class="list-item-content">
-                    <span class="name">{{ book.title }}</span>
-                    @if (book.author) {
-                      <span class="subtext">{{ book.author }}</span>
-                    }
-                  </div>
-                </button>
-              }
-            </div>
+            @if (bookIndexState() === 'loading') {
+              <p class="reference-state" role="status">Loading books…</p>
+            } @else if (bookIndexState() === 'error') {
+              <p class="reference-state reference-state-error" role="alert">
+                Books could not be loaded.
+                <button appButton variant="ghost" size="sm" (click)="retryBookIndex()">Retry</button>
+              </p>
+            } @else {
+              <div class="index-list">
+                @for (book of filteredBooks(); track book.id) {
+                  <button class="list-item" (click)="selectBook(book.id)">
+                    <div class="list-item-icon">
+                      <nostos-icon name="book" [size]="16"></nostos-icon>
+                    </div>
+                    <div class="list-item-content">
+                      <span class="name">{{ book.title }}</span>
+                      @if (book.author) {
+                        <span class="subtext">{{ book.author }}</span>
+                      }
+                    </div>
+                  </button>
+                }
+                @if (filteredBooks().length === 0) {
+                  <p class="reference-state">No books match this search.</p>
+                }
+              </div>
+            }
           } @else {
             <div class="brain-detail-header">
-              <button appButton variant="ghost" size="sm" class="goto-btn" (click)="selectedBookId.set(null)">
+              <button appButton variant="ghost" size="sm" class="goto-btn" (click)="backToBooks()">
                 <nostos-icon name="arrow-left" [size]="16"></nostos-icon>
-                Back
+                Back to Books
               </button>
-              <span class="detail-title">Book Notes</span>
             </div>
 
-            <div class="notes-list">
-              @for (note of selectedBookNotes(); track note.id) {
-                <div class="library-note-row">
-                  <app-note-card
-                    [note]="note"
-                    [topicMap]="topicMap()"
-                    [showActions]="false"
-                    [showSource]="true"
-                    [showDate]="false"
-                    (click)="inspectSource(note)"
-                    (keydown.enter)="inspectSource(note)"
-                    (keydown.space)="inspectSource(note); $event.preventDefault()"
-                    class="inspectable-note"
-                    role="button"
-                    tabindex="0"
-                  ></app-note-card>
-                  <div class="library-note-actions">
+            @if (bookNotesState() === 'loading') {
+              <p class="reference-state" role="status">Loading book notes…</p>
+            } @else if (bookNotesState() === 'error') {
+              <p class="reference-state reference-state-error" role="alert">
+                Notes for this book could not be loaded.
+                <button appButton variant="ghost" size="sm" (click)="retryBookNotes()">Retry</button>
+              </p>
+            } @else {
+              <div class="notes-list reference-note-list">
+                @for (note of selectedBookNotes(); track note.id) {
+                  <div class="reference-source-row">
+                    <button
+                      appButton
+                      variant="ghost"
+                      size="sm"
+                      class="reference-source-row-main"
+                      [attr.aria-label]="sourceRowLabel(note)"
+                      (click)="inspectSource(note)"
+                    >
+                      @if (hasQuotePreview(note)) {
+                        <span class="reference-source-preview is-quote">“{{ referencePreview(note) }}”</span>
+                      } @else {
+                        <span class="reference-source-preview">{{ referencePreview(note) }}</span>
+                      }
+                      <span class="reference-source-provenance">{{ sourceProvenance(note) }}</span>
+                    </button>
                     <button
                       appIconButton
-                      size="xxs"
+                      class="reference-row-action library-keep-action"
                       icon="bookmark-simple"
-                      [glyphSize]="14"
+                      [weight]="keptNoteIds().has(note.id) ? 'fill' : 'regular'"
+                      [glyphSize]="16"
                       [class.active]="keptNoteIds().has(note.id)"
                       [disabled]="!activeItem() || keepingNoteIds().has(note.id)"
                       (click)="keepNote(note.id); $event.stopPropagation()"
-                      [title]="!activeItem() ? 'Open a document to keep sources' : (keptNoteIds().has(note.id) ? 'Kept' : 'Keep for this writing')"
-                      [attr.aria-label]="!activeItem() ? 'Open a document to keep sources' : (keptNoteIds().has(note.id) ? 'Kept' : 'Keep for this writing')"
+                      [title]="keepActionLabel(note.id)"
+                      [attr.aria-label]="keepActionLabel(note.id)"
                     ></button>
                   </div>
-                </div>
-              }
-              @if (selectedBookNotes().length === 0) {
-                <p class="empty-index">No notes found in this book.</p>
-              }
-            </div>
+                }
+                @if (selectedBookNotes().length === 0) {
+                  <p class="reference-state">No notes found in this book.</p>
+                }
+              </div>
+            }
           }
         </div>
       }
-    }
+      }
   </aside>
 
   @if (isZen()) {

@@ -1,6 +1,27 @@
 import { Pipe, PipeTransform } from '@angular/core';
 import { TopicDto } from '../../core/services/topics.service';
 
+/**
+ * Apply the app's wikilink grammar with a caller-chosen rendering. Rich notes
+ * and text-only previews share this parser so their displayed labels agree.
+ */
+export function replaceNoteWikilinks(
+  content: string,
+  render: (topicName: string, displayText: string) => string,
+): string {
+  return content.replace(/\[\[(.*?)\]\]/g, (_match, rawLink: string) => {
+    const separator = rawLink.indexOf('|');
+    const topicName = (separator < 0 ? rawLink : rawLink.slice(0, separator)).trim();
+    const alias = separator < 0 ? '' : rawLink.slice(separator + 1).trim();
+    return render(topicName, alias || topicName);
+  });
+}
+
+/** Replace wikilinks with the text a reader sees in the rendered note. */
+export function noteWikilinksToText(content: string): string {
+  return replaceNoteWikilinks(content, (_topicName, displayText) => displayText);
+}
+
 @Pipe({
   name: 'noteFormat',
   standalone: true,
@@ -11,10 +32,9 @@ export class NoteFormatPipe implements PipeTransform {
 
     const topics = topicMap ?? new Map<string, TopicDto>();
 
-    return content.replace(/\[\[(.*?)\]\]/g, (_match, topicName: string) => {
-      const trimmedName = topicName.trim();
-      const escapedName = this.escapeHtml(trimmedName);
-      const topic = topics.get(trimmedName.toLocaleLowerCase());
+    return replaceNoteWikilinks(content, (topicName, displayText) => {
+      const escapedName = this.escapeHtml(displayText);
+      const topic = topics.get(topicName.toLocaleLowerCase());
 
       if (topic) {
         const href = `/second-brain?topicId=${encodeURIComponent(topic.id)}`;

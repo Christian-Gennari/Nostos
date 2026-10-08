@@ -1146,6 +1146,14 @@
   }
 }
 
+@media (max-height: 500px) {
+  .sidebar-right,
+  .sidebar-right:not(.open) {
+    width: 100vw !important;
+    max-width: 100vw;
+  }
+}
+
 @media (pointer: coarse) {
   .editor-header .icon-btn,
   .sidebar-header .icon-btn {
@@ -1156,6 +1164,365 @@
 
   .sidebar-left .files-new-document,
   .empty-state .nostos-button {
+    min-height: 44px;
+  }
+}
+
+/* --- S2 Reference sidebar content: compact rows and explicit action hierarchy --- */
+.sidebar-tabs.library-tabs {
+  gap: 1.15rem;
+  padding: 0;
+  margin: 0.2rem 0 0.45rem;
+  background: transparent;
+  border-bottom: 1px solid var(--border-color);
+  border-radius: 0;
+}
+
+.sidebar-tabs.library-tabs .tab-btn.toggle-opt {
+  position: relative;
+  flex: 0 0 auto;
+  min-height: 36px;
+  padding: 0.2rem 0.15rem 0.5rem;
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+}
+
+.sidebar-tabs.library-tabs .tab-btn.toggle-opt.active {
+  background: transparent;
+  color: var(--color-text-main);
+  font-weight: 600;
+}
+
+.sidebar-tabs.library-tabs .tab-btn.toggle-opt.active::after {
+  content: '';
+  position: absolute;
+  right: 0.1rem;
+  bottom: -1px;
+  left: 0.1rem;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--color-brand-accent);
+}
+
+.sidebar-tabs.library-tabs .tab-btn.toggle-opt:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.reference-action-notice {
+  margin: 0.05rem 1.15rem 0.5rem;
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+  line-height: 1.4;
+  white-space: normal;
+}
+
+.reference-list-scroll {
+  min-height: 0;
+  white-space: normal;
+  scrollbar-width: thin;
+}
+
+.reference-empty-state {
+  padding: 1.15rem 0.7rem;
+  color: var(--color-text-muted);
+  font-size: 0.84rem;
+  line-height: 1.55;
+  white-space: normal;
+}
+
+.reference-empty-state p {
+  margin: 0 0 0.6rem;
+}
+
+.reference-empty-link {
+  min-height: 36px;
+  padding-inline: 0;
+  color: var(--color-brand-accent);
+  gap: 0.3rem;
+}
+
+.reference-state {
+  margin: 0;
+  padding: 0.85rem 0.55rem;
+  color: var(--color-text-muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+  white-space: normal;
+}
+
+.reference-state-error {
+  color: var(--color-text-main);
+}
+
+.reference-state-error .nostos-button {
+  margin-left: 0.2rem;
+  color: var(--color-brand-accent);
+}
+
+.reference-source-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.55rem 0.25rem 0.55rem 0.4rem;
+  border-bottom: 1px solid var(--border-color);
+  white-space: normal;
+}
+
+.reference-source-row:last-child {
+  border-bottom: 0;
+}
+
+.reference-source-row-main {
+  display: flex;
+  min-width: 0;
+  min-height: 48px;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  gap: 0.3rem;
+  padding: 0.1rem 0.35rem 0.1rem 0.1rem;
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-main);
+  cursor: pointer;
+  text-align: left;
+  white-space: normal;
+}
+
+.reference-source-row-main:hover {
+  background: var(--bg-hover);
+}
+
+.reference-source-row-main:focus-visible,
+.reference-row-action:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.reference-source-preview {
+  display: -webkit-box;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text-main);
+  font-size: 0.84rem;
+  line-height: 1.38;
+  overflow-wrap: anywhere;
+  text-overflow: ellipsis;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.reference-source-preview.is-quote {
+  color: var(--color-text-main);
+  font-family: 'Newsreader', Georgia, serif;
+  font-style: italic;
+}
+
+.reference-source-provenance {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-size: 0.72rem;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reference-row-action.icon-btn {
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  align-self: center;
+  justify-self: end;
+  color: var(--color-text-muted);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+}
+
+.reference-row-action.icon-btn:hover,
+.reference-row-action.icon-btn:focus-visible {
+  background: var(--bg-hover);
+  color: var(--color-text-main);
+}
+
+.reference-row-action.icon-btn.active:not(:hover):not(:focus-visible) {
+  color: var(--color-brand-accent);
+  background: transparent;
+}
+
+.brain-detail-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  justify-content: flex-start;
+  padding: 0.15rem 0 0.35rem;
+  margin: 0 0 0.45rem;
+  background: var(--bg-sidebar);
+}
+
+.brain-detail-header .goto-btn {
+  min-height: 40px;
+  padding-left: 0.3rem;
+  color: var(--color-text-muted);
+  text-transform: none;
+}
+
+.inspected-source-panel {
+  padding: 0.35rem 0.65rem 1rem;
+}
+
+.inspected-source-nav {
+  justify-content: flex-start;
+  margin-bottom: 0.65rem;
+}
+
+.inspected-source-back {
+  max-width: 100%;
+}
+
+.inspected-source-card {
+  background: var(--bg-surface);
+}
+
+/* The inspector hides date, source badge, and actions. NoteCard still reserves
+   its empty 32px footer, so remove that unused slot only in this Studio card. */
+.inspected-source-card ::ng-deep .note-footer {
+  display: none;
+}
+
+.inspected-source-card ::ng-deep .note-card-container {
+  padding-bottom: 0.45rem;
+}
+
+.inspected-source-provenance {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-width: 0;
+  padding: 0.55rem 0.3rem 0.2rem;
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+
+.inspected-source-source-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (pointer: coarse) {
+  .reference-row-action.icon-btn {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+  }
+}
+
+.inspected-source-open {
+  display: inline-flex;
+  min-height: 36px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--color-brand-accent);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--color-brand-accent), transparent 58%);
+  text-underline-offset: 3px;
+}
+
+.inspected-source-open:hover {
+  color: var(--color-text-main);
+  text-decoration-color: currentColor;
+}
+
+.inspected-source-open:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.source-insertion-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.25rem;
+  padding: 0.3rem 0.2rem 0;
+}
+
+.source-action-primary-row {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.source-action-primary-row .nostos-button {
+  min-height: 38px;
+}
+
+.source-kept-state {
+  display: inline-flex;
+  min-height: 36px;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0 0.45rem;
+  color: var(--color-brand-accent);
+  font-size: 0.78rem;
+  white-space: normal;
+}
+
+.source-more-trigger {
+  gap: 0.25rem;
+}
+
+.source-more-actions {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.15rem 0 0.2rem;
+}
+
+.source-more-actions .nostos-button {
+  min-height: 36px;
+  color: var(--color-text-muted);
+}
+
+.source-more-actions .remove-source-action {
+  color: var(--color-text-main);
+}
+
+.source-action-disabled-reason {
+  margin: 0.15rem 0 0;
+  color: var(--color-text-muted);
+  font-size: 0.74rem;
+  line-height: 1.4;
+  white-space: normal;
+}
+
+@media (pointer: coarse) {
+  .reference-row-action {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+  }
+
+  .source-action-primary-row .nostos-button,
+  .source-more-actions .nostos-button,
+  .inspected-source-open,
+  .reference-empty-link {
     min-height: 44px;
   }
 }

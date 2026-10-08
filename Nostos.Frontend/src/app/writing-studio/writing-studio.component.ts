@@ -16,6 +16,7 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { DragDropModule } from '@angular/cdk/drag-drop';
 import { firstValueFrom } from 'rxjs';
+import { marked } from 'marked';
 
 import { WritingsService } from '../core/services/writings.service';
 import { ToastService } from '../core/services/toast.service';
@@ -36,6 +37,7 @@ import { InputDirective } from '../ui/form-control/form-control.directive';
 import { BadgeComponent } from '../ui/badge/badge.component';
 import { ConfirmModal } from '../ui/confirm-modal/confirm-modal.component';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
+import { noteWikilinksToText } from '../ui/pipes/note-format.pipe';
 import {
   buildNoteMarkdown,
   buildQuoteMarkdown,
@@ -67,6 +69,9 @@ const STUDIO_COMPACT_HEIGHT = 500;
 function isStudioCompactViewport(): boolean {
   return window.innerWidth <= STUDIO_COMPACT_WIDTH || window.innerHeight <= STUDIO_COMPACT_HEIGHT;
 }
+
+type ReferenceLoadState = 'idle' | 'loading' | 'loaded' | 'error';
+type ReferenceScrollKey = 'writing' | 'topics' | 'topicNotes' | 'books' | 'bookNotes';
 
 function studioSidebarMaxWidth(): number {
   return Math.max(
@@ -188,6 +193,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
 
   /** Kept source notes for the active writing document */
   keptSources = signal<WritingSourceDto[]>([]);
+  keptSourcesState = signal<ReferenceLoadState>('idle');
 
   /** Note IDs currently being kept (in-flight addSource request) to prevent concurrent races */
   keepingNoteIds = signal<Set<string>>(new Set());
@@ -420,14 +426,30 @@ export class WritingStudio implements OnInit, AfterViewInit {
   // Brain / Topics State
   brainQuery = signal('');
   topics = signal<TopicDto[]>([]);
+  topicIndexState = signal<ReferenceLoadState>('loading');
   selectedTopicId = signal<string | null>(null);
   selectedTopicNotes = signal<Note[]>([]);
+  topicNotesState = signal<ReferenceLoadState>('idle');
 
   // Books / Notes State
   books = signal<BookDto[]>([]);
+  bookIndexState = signal<ReferenceLoadState>('loading');
   bookQuery = signal('');
   selectedBookId = signal<string | null>(null);
   selectedBookNotes = signal<Note[]>([]);
+  bookNotesState = signal<ReferenceLoadState>('idle');
+
+  /** Local disclosure state for secondary source actions. */
+  moreSourceActionsOpen = signal(false);
+
+  /** Scroll positions belong to the parent surface and survive its child view. */
+  private referenceScrollPositions: Record<ReferenceScrollKey, number> = {
+    writing: 0,
+    topics: 0,
+    topicNotes: 0,
+    books: 0,
+    bookNotes: 0,
+  };
 
   /**
    * Label for the surface an inspected source drills down from.
@@ -650,12 +672,14 @@ export class WritingStudio implements OnInit, AfterViewInit {
   }
 
   loadKeptSources(writingId: string) {
+    this.keptSourcesState.set('loading');
     this.writingsService.listSources(writingId).subscribe({
       next: (sources) => {
         // A slow response for a document that is no longer active must not overwrite the
         // kept list of the document the writer has since switched to.
         if (this.activeItem()?.id !== writingId) return;
         this.keptSources.set(sources);
+        this.keptSourcesState.set('loaded');
         const pendingInspection = this.pendingInspectedSourceRestore;
         if (pendingInspection?.mode === 'writing') {
           const match = this.keptNotes().find((note) => note.id === pendingInspection.id);
@@ -663,7 +687,11 @@ export class WritingStudio implements OnInit, AfterViewInit {
           this.pendingInspectedSourceRestore = null;
         }
       },
-      error: () => this.toast.error('Failed to load kept sources'),
+      error: () => {
+        if (this.activeItem()?.id !== writingId) return;
+        this.keptSourcesState.set('error');
+        this.toast.error('Failed to load kept sources');
+      },
     });
   }
 
@@ -721,7 +749,11 @@ export class WritingStudio implements OnInit, AfterViewInit {
       next: () => {
         if (this.activeItem()?.id !== active.id) return;
         this.keptSources.update((prev) => prev.filter((s) => s.id !== noteId));
-        if (this.inspectedSource()?.id === noteId) this.inspectedSource.set(null);
+        if (this.inspectedSource()?.id === noteId) {
+          this.inspectedSource.set(null);
+          this.moreSourceActionsOpen.set(false);
+          this.restoreCurrentReferenceScroll();
+        }
       },
       error: () => {
         this.toast.error('Failed to remove source');
@@ -752,10 +784,12 @@ export class WritingStudio implements OnInit, AfterViewInit {
         ) {
           return;
         }
+        if (this.activeItem()?.id !== contentDto.id) this.editorWordCount.set(null);
         this.activeItem.set(contentDto);
         this.editorTitle.set(contentDto.name);
         this.editorText.set(contentDto.content);
         this.inspectedSource.set(null);
+        this.moreSourceActionsOpen.set(false);
 
         if (this.isCompact()) {
           const returnTo: 'files' | 'reference' = this.showFileSidebar()
@@ -848,6 +882,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
 
       if (this.activeItem()?.id === id) {
         this.activeItem.set(null);
+        this.editorWordCount.set(null);
         this.editorText.set('');
         this.editorTitle.set('');
         this.keptSources.set([]);
@@ -859,74 +894,243 @@ export class WritingStudio implements OnInit, AfterViewInit {
   // --- Brain & Notes Logic ---
 
   loadBrain() {
-    this.topicsService.list().subscribe((data) => this.topics.set(data));
+    this.topicIndexState.set('loading');
+    this.topicsService.list().subscribe({
+      next: (data) => {
+        this.topics.set(data);
+        this.topicIndexState.set('loaded');
+      },
+      error: () => this.topicIndexState.set('error'),
+    });
   }
 
   loadBooks() {
+    this.bookIndexState.set('loading');
     this.booksService
       .list({
         page: 1,
         pageSize: 50,
       })
-      .subscribe((data) => {
-        this.books.set(data.items);
+      .subscribe({
+        next: (data) => {
+          this.books.set(data.items);
+          this.bookIndexState.set('loaded');
+        },
+        error: () => this.bookIndexState.set('error'),
       });
   }
 
   setReferenceMode(mode: 'writing' | 'library'): void {
-    if (this.referenceMode() !== mode) this.inspectedSource.set(null);
+    this.rememberCurrentReferenceScroll();
+    if (this.referenceMode() !== mode) {
+      this.inspectedSource.set(null);
+      this.moreSourceActionsOpen.set(false);
+    }
     this.referenceMode.set(mode);
+    this.restoreCurrentReferenceScroll();
   }
 
   setLibraryTab(tab: 'brain' | 'notes'): void {
-    if (this.activeSidebarTab() !== tab) this.inspectedSource.set(null);
+    this.rememberCurrentReferenceScroll();
+    if (this.activeSidebarTab() !== tab) {
+      this.inspectedSource.set(null);
+      this.moreSourceActionsOpen.set(false);
+    }
     this.activeSidebarTab.set(tab);
+    this.restoreCurrentReferenceScroll();
   }
 
   selectTopic(id: string) {
+    this.rememberReferenceScroll('topics');
     this.inspectedSource.set(null);
+    this.moreSourceActionsOpen.set(false);
     this.selectedTopicId.set(id);
-    this.topicsService.get(id).subscribe((d) => {
-      // Map NoteContextDto (noteId) → Note (id) for NoteCardComponent compatibility
-      const mapped: Note[] = d.notes.map((n: NoteContextDto) => ({
-        id: n.noteId,
-        bookId: n.bookId,
-        content: n.content,
-        cfiRange: n.cfiRange,
-        selectedText: n.selectedText,
-        createdAt: '',
-        bookTitle: n.bookTitle,
-      }));
-      this.selectedTopicNotes.set(mapped);
-      const pendingInspection = this.pendingInspectedSourceRestore;
-      if (pendingInspection?.mode === 'library' && pendingInspection.tab === 'brain') {
-        const match = mapped.find((note) => note.id === pendingInspection.id);
-        if (match) this.inspectedSource.set(match);
-        this.pendingInspectedSourceRestore = null;
-      }
+    this.topicNotesState.set('loading');
+    this.topicsService.get(id).subscribe({
+      next: (d) => {
+        // Map NoteContextDto (noteId) → Note (id) for Reference row/card compatibility.
+        const mapped: Note[] = d.notes.map((n: NoteContextDto) => ({
+          id: n.noteId,
+          bookId: n.bookId,
+          content: n.content,
+          cfiRange: n.cfiRange,
+          selectedText: n.selectedText,
+          createdAt: n.createdAt ?? '',
+          bookTitle: n.bookTitle,
+        }));
+        this.selectedTopicNotes.set(mapped);
+        this.topicNotesState.set('loaded');
+        const pendingInspection = this.pendingInspectedSourceRestore;
+        if (pendingInspection?.mode === 'library' && pendingInspection.tab === 'brain') {
+          const match = mapped.find((note) => note.id === pendingInspection.id);
+          if (match) this.inspectedSource.set(match);
+          this.pendingInspectedSourceRestore = null;
+        }
+      },
+      error: () => this.topicNotesState.set('error'),
     });
+  }
+
+  retryTopicNotes(): void {
+    const id = this.selectedTopicId();
+    if (id) this.selectTopic(id);
+  }
+
+  backToTopics(): void {
+    this.rememberReferenceScroll('topicNotes');
+    this.selectedTopicId.set(null);
+    this.restoreReferenceScroll('topics');
   }
 
   selectBook(id: string) {
+    this.rememberReferenceScroll('books');
     this.inspectedSource.set(null);
+    this.moreSourceActionsOpen.set(false);
     this.selectedBookId.set(id);
-    this.notesService.list(id).subscribe((notes) => {
-      this.selectedBookNotes.set(notes);
-      const pendingInspection = this.pendingInspectedSourceRestore;
-      if (pendingInspection?.mode === 'library' && pendingInspection.tab === 'notes') {
-        const match = notes.find((note) => note.id === pendingInspection.id);
-        if (match) this.inspectedSource.set(match);
-        this.pendingInspectedSourceRestore = null;
-      }
+    this.bookNotesState.set('loading');
+    this.notesService.list(id).subscribe({
+      next: (notes) => {
+        this.selectedBookNotes.set(notes);
+        this.bookNotesState.set('loaded');
+        const pendingInspection = this.pendingInspectedSourceRestore;
+        if (pendingInspection?.mode === 'library' && pendingInspection.tab === 'notes') {
+          const match = notes.find((note) => note.id === pendingInspection.id);
+          if (match) this.inspectedSource.set(match);
+          this.pendingInspectedSourceRestore = null;
+        }
+      },
+      error: () => this.bookNotesState.set('error'),
     });
   }
 
+  retryBookNotes(): void {
+    const id = this.selectedBookId();
+    if (id) this.selectBook(id);
+  }
+
+  backToBooks(): void {
+    this.rememberReferenceScroll('bookNotes');
+    this.selectedBookId.set(null);
+    this.restoreReferenceScroll('books');
+  }
+
   inspectSource(note: Note): void {
+    this.rememberCurrentReferenceScroll();
+    this.moreSourceActionsOpen.set(false);
     this.inspectedSource.set(note);
   }
 
   closeInspectedSource(): void {
     this.inspectedSource.set(null);
+    this.moreSourceActionsOpen.set(false);
+    this.restoreCurrentReferenceScroll();
+  }
+
+  captureReferenceScroll(event: Event): void {
+    const element = event.target as HTMLElement;
+    const key = element.dataset['referenceScroll'] as ReferenceScrollKey | undefined;
+    if (key) this.referenceScrollPositions[key] = element.scrollTop;
+  }
+
+  private currentReferenceScrollKey(): ReferenceScrollKey {
+    if (this.referenceMode() === 'writing') return 'writing';
+    if (this.activeSidebarTab() === 'brain') {
+      return this.selectedTopicId() ? 'topicNotes' : 'topics';
+    }
+    return this.selectedBookId() ? 'bookNotes' : 'books';
+  }
+
+  private rememberCurrentReferenceScroll(): void {
+    this.rememberReferenceScroll(this.currentReferenceScrollKey());
+  }
+
+  private rememberReferenceScroll(key: ReferenceScrollKey): void {
+    const element = this.hostElement.nativeElement.querySelector(
+      `[data-reference-scroll="${key}"]`,
+    );
+    if (element) this.referenceScrollPositions[key] = element.scrollTop;
+  }
+
+  private restoreCurrentReferenceScroll(): void {
+    this.restoreReferenceScroll(this.currentReferenceScrollKey());
+  }
+
+  private restoreReferenceScroll(key: ReferenceScrollKey): void {
+    const restore = () => {
+      const element = this.hostElement.nativeElement.querySelector(
+        '[data-reference-scroll="' + key + '"]',
+      );
+      if (element) element.scrollTop = this.referenceScrollPositions[key];
+    };
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(restore);
+    else setTimeout(restore, 0);
+  }
+
+  referencePreview(note: Note): string {
+    const value = hasMeaningfulSelectedText(note) ? note.selectedText : note.content;
+    const markdown = noteWikilinksToText(value ?? '');
+    const html = marked.parse(markdown, { async: false });
+    const text = new DOMParser().parseFromString(html, 'text/html').body.textContent ?? '';
+    return text.replace(/\s+/g, ' ').trim();
+  }
+
+  hasQuotePreview(note: Note): boolean {
+    return hasMeaningfulSelectedText(note);
+  }
+
+  sourceProvenance(note: Note): string {
+    const title = note.bookTitle?.trim() || 'Unknown book';
+    const locator = this.sourceDisplayLocator(note);
+    return locator ? `${title} · ${locator}` : title;
+  }
+
+  sourceRowLabel(note: Note): string {
+    return `Inspect source from ${this.sourceProvenance(note)}: ${this.referencePreview(note)}`;
+  }
+
+  keepActionLabel(noteId: string): string {
+    if (!this.activeItem()) return 'Open a writing to keep or insert sources';
+    if (this.keepingNoteIds().has(noteId)) return 'Keeping with this writing';
+    if (this.keptNoteIds().has(noteId)) {
+      return 'Already kept with this writing; no change on click';
+    }
+    return 'Keep with this writing';
+  }
+
+  sourceActionDisabledReason(): string | null {
+    if (!this.activeItem()) return 'Open a writing to keep or insert sources';
+    if (this.editorWordCount() === null) return 'The editor is not ready for insertion yet';
+    return null;
+  }
+
+  retryKeptSources(): void {
+    const writingId = this.activeItem()?.id;
+    if (writingId) this.loadKeptSources(writingId);
+  }
+
+  retryTopicIndex(): void {
+    this.loadBrain();
+  }
+
+  retryBookIndex(): void {
+    this.loadBooks();
+  }
+
+  closeMoreSourceActions(event?: Event): void {
+    event?.preventDefault();
+    event?.stopPropagation();
+    if (!this.moreSourceActionsOpen()) return;
+    this.moreSourceActionsOpen.set(false);
+    const focusTrigger = () =>
+      this.hostElement.nativeElement
+        .querySelector('.source-more-trigger')
+        ?.focus();
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(focusTrigger);
+    else setTimeout(focusTrigger, 0);
+  }
+
+  toggleMoreSourceActions(): void {
+    this.moreSourceActionsOpen.update((open) => !open);
   }
 
   sourceDisplayLocator(source: Note): string | null {
