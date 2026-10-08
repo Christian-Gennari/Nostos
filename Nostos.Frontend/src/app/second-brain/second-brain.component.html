@@ -1130,20 +1130,26 @@
         </div>
         <div class="brain-note-provenance" data-testid="brain-note-provenance">
           @if (note.createdAt) {
-          <span>{{ note.createdAt | date : 'short' }}</span>
-          }
-          @if (note.createdAt && note.bookTitle) { <span aria-hidden="true">·</span> }
-          <span class="brain-source-title" [title]="note.bookTitle || 'Unknown source'">
-            {{ note.bookTitle || 'Unknown source' }}
+          <span class="brain-date-group">
+            {{ note.createdAt | date : 'short' }} ·
           </span>
-          @if (note.bookId) {
-          <a class="brain-source-link"
-            [routerLink]="browseSourceParams(note) ? ['/read', note.bookId] : ['/library', note.bookId]"
-            [queryParams]="browseSourceParams(note)">
-            {{ browseSourceParams(note) ? 'Return to passage' : 'Open book' }}
-            <nostos-icon name="arrow-right" [size]="14"></nostos-icon>
-          </a>
           }
+          <div class="brain-source-flow">
+            <span class="brain-source-unit">
+              <nostos-icon name="books" [size]="12"></nostos-icon>
+              <span class="brain-source-title" [title]="note.bookTitle || 'Unknown source'">
+                {{ note.bookTitle || 'Unknown source' }}
+              </span>
+            </span>
+            @if (note.bookId) {
+            <a class="brain-source-link"
+              [routerLink]="browseSourceParams(note) ? ['/read', note.bookId] : ['/library', note.bookId]"
+              [queryParams]="browseSourceParams(note)">
+              {{ browseSourceParams(note) ? 'Return to passage' : 'Open book' }}
+              <nostos-icon name="arrow-right" [size]="12"></nostos-icon>
+            </a>
+            }
+          </div>
         </div>
         <div class="brain-note-panel-actions">
           <ng-container *ngTemplateOutlet="noteActionGroup; context: { $implicit: note, mode: 'search' }"></ng-container>

@@ -166,7 +166,6 @@
 .brain-source-link {
   display: inline-flex;
   flex: 0 0 auto;
-  align-self: flex-start;
   align-items: center;
   gap: 0.25rem;
   color: var(--color-brand-accent);
@@ -2414,6 +2413,25 @@
   flex-wrap: wrap;
   gap: 0.4rem;
   align-items: center;
+}
+
+.brain-date-group {
+  align-self: start;
+  white-space: nowrap;
+}
+
+.brain-source-flow {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  gap: 0 0.75rem;
+  min-width: 0;
+}
+
+.brain-source-unit {
+  display: flex;
+  gap: 0.25rem;
+  min-width: 0;
 }
 
 .brain-note-panel-empty-topics {
