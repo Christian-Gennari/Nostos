@@ -280,8 +280,11 @@ test('Writing Studio shell stays editor-first across desktop and compact viewpor
         expect(keyboardFocusIndicatorVisible).toBe(true);
         await page.keyboard.press('Enter');
         await expect(keyboardFilesToggle).toHaveAttribute('aria-expanded', 'true');
+        await typeAfterLayoutChange(page, 'keyboard-files-open');
+        await keyboardFilesToggle.focus();
         await page.keyboard.press('Enter');
         await expect(keyboardFilesToggle).toHaveAttribute('aria-expanded', 'false');
+        await typeAfterLayoutChange(page, 'keyboard-files-closed');
 
         const railStates = [
           { files: true, reference: true },
