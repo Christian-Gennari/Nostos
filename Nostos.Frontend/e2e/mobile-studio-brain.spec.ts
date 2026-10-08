@@ -86,11 +86,12 @@ async function seedNestedFolder(): Promise<string> {
 /** Open the Studio at phone width, reveal the drawer, open the seeded document. */
 async function openStudioDocument(page: Page, title: string): Promise<void> {
   await page.goto(`${fixture.baseUrl}/studio`, { waitUntil: 'domcontentloaded' });
-  // The tree lives in a drawer that is closed at rest at phone width.
-  const openSidebar = page.getByRole('button', { name: 'Open Sidebar' });
-  if (await openSidebar.isVisible().catch(() => false)) {
-    await openSidebar.click();
+  // Compact Studio drawers are closed at rest; open Files from the persistent editor header.
+  const filesToggle = page.locator('.files-toggle');
+  if ((await filesToggle.getAttribute('aria-expanded')) !== 'true') {
+    await filesToggle.click();
   }
+  await expect(filesToggle).toHaveAttribute('aria-expanded', 'true');
   const row = page.locator('.file-list .tree-row', { hasText: title }).first();
   await row.waitFor({ timeout: 30_000 });
   await row.click();

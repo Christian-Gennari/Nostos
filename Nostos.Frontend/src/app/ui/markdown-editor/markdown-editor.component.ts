@@ -6,6 +6,9 @@ import { marked } from 'marked';
 import { ThemeService } from '../../core/services/theme.service';
 import { TinyMceApi, TinyMceLoader } from './tinymce-loader.service';
 
+/** Shared manuscript and toolbar measure: about 70 characters at the body face. */
+const STUDIO_MANUSCRIPT_MEASURE_PX = 600;
+
 /**
  * Editor content page — warm ink on a white paper sheet, theme-independent.
  * The paper intentionally does NOT follow the app theme: dark/sepia modes
@@ -95,7 +98,7 @@ const NOSTOS_EDITOR_CONTENT_CSS = `
   body {
     box-sizing: border-box;
     width: 100%;
-    max-width: 820px;
+    max-width: ${STUDIO_MANUSCRIPT_MEASURE_PX}px;
     margin: 0 auto;
     min-height: 100%;
     padding:
@@ -470,12 +473,18 @@ interface PendingTransientRestore {
 
       :host ::ng-deep .tox .tox-toolbar__primary {
         min-height: 44px;
-        padding: 4px 10px !important;
+        max-width: ${STUDIO_MANUSCRIPT_MEASURE_PX}px;
+        margin-inline: auto;
+        box-sizing: border-box;
+        padding: 4px clamp(1.5rem, 4vw, 2.5rem) !important;
+        flex-wrap: nowrap !important;
+        overflow-x: hidden !important;
       }
 
       /* Remove Oxide's grouped-control appearance */
       :host ::ng-deep .tox .tox-toolbar__group {
         gap: 2px;
+        flex-wrap: nowrap !important;
         padding: 0 4px !important;
         border: 0 !important;
       }
@@ -586,6 +595,19 @@ interface PendingTransientRestore {
 
         /* The Blocks label needs the width to stay readable; it was already
            112px on desktop, so widen rather than let it truncate to fit. */
+        :host ::ng-deep .tox .tox-toolbar__primary .tox-tbtn--select {
+          min-width: 118px !important;
+        }
+      }
+
+      /* Coarse pointers can occur on a tablet wider than the drawer breakpoint. */
+      @media (pointer: coarse) {
+        :host ::ng-deep .tox .tox-toolbar__primary .tox-tbtn,
+        :host ::ng-deep .tox .tox-toolbar__overflow .tox-tbtn {
+          min-width: 44px !important;
+          height: 44px !important;
+        }
+
         :host ::ng-deep .tox .tox-toolbar__primary .tox-tbtn--select {
           min-width: 118px !important;
         }

@@ -136,14 +136,23 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
 
   // --- Nostos UI v1 migration boundaries ---
   it('uses canonical UI primitives for ordinary Studio controls', () => {
-    component.isMobile.set(true);
+    component.isCompact.set(true);
     component.referenceMode.set('library');
     component.topics.set([{ id: 'topic-1', name: 'Memory', usageCount: 3 } as any]);
     fixture.detectChanges();
 
-    const openSidebar = fixture.nativeElement.querySelector('.btn-outline') as HTMLButtonElement;
-    expect(openSidebar.classList.contains('nostos-button')).toBe(true);
-    expect(openSidebar.classList.contains('nostos-button--secondary')).toBe(true);
+    const browseFiles = fixture.nativeElement.querySelector(
+      '.empty-browse-files',
+    ) as HTMLButtonElement;
+    expect(browseFiles.classList.contains('nostos-button')).toBe(true);
+    expect(browseFiles.classList.contains('nostos-button--secondary')).toBe(true);
+
+    const newDocument = fixture.nativeElement.querySelector(
+      '.files-new-document',
+    ) as HTMLButtonElement;
+    expect(newDocument.classList.contains('nostos-button')).toBe(true);
+    expect(newDocument.classList.contains('nostos-button--secondary')).toBe(true);
+    expect(newDocument.classList.contains('nostos-button--sm')).toBe(true);
 
     const search = fixture.nativeElement.querySelector(
       'input[placeholder="Search topics..."]',
@@ -211,7 +220,7 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
   });
 
   it('exposes a keyboard-accessible desktop resize separator for the file sidebar', () => {
-    component.isMobile.set(false);
+    component.isCompact.set(false);
     component.showFileSidebar.set(true);
     component.leftSidebarWidth.set(280);
     fixture.detectChanges();
@@ -246,6 +255,74 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
     expect(zenToggle()).toBeNull();
     expect(zenExit()).toBeNull();
     expect(deskTelemetry()).toBeNull();
+    expect(fixture.nativeElement.querySelector('.editor-header')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('.files-toggle')?.getAttribute('aria-label')).toBe(
+      'Hide files',
+    );
+    expect(
+      fixture.nativeElement.querySelector('.reference-toggle')?.getAttribute('aria-label'),
+    ).toBe('Hide reference');
+    expect(fixture.nativeElement.querySelector('.empty-new-document')?.textContent).toContain(
+      'New document',
+    );
+  });
+
+  it('toggles desktop rails independently and persists each preference', () => {
+    const filesToggle = fixture.nativeElement.querySelector('.files-toggle') as HTMLButtonElement;
+    const referenceToggle = fixture.nativeElement.querySelector(
+      '.reference-toggle',
+    ) as HTMLButtonElement;
+
+    filesToggle.click();
+    fixture.detectChanges();
+    expect(component.showFileSidebar()).toBe(false);
+    expect(component.showBrainSidebar()).toBe(true);
+    expect(localStorage.getItem('nostos.studio.filesRailOpen')).toBe('0');
+
+    referenceToggle.click();
+    fixture.detectChanges();
+    expect(component.showFileSidebar()).toBe(false);
+    expect(component.showBrainSidebar()).toBe(false);
+    expect(localStorage.getItem('nostos.studio.referenceRailOpen')).toBe('0');
+
+    component.enterZen();
+    component.exitZen();
+    expect(component.showFileSidebar()).toBe(false);
+    expect(component.showBrainSidebar()).toBe(false);
+  });
+
+  it('keeps compact drawers mutually exclusive and offers Browse files when empty', () => {
+    component.isCompact.set(true);
+    component.showFileSidebar.set(false);
+    component.showBrainSidebar.set(false);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('.empty-browse-files')?.textContent).toContain(
+      'Browse files',
+    );
+
+    const filesToggle = fixture.nativeElement.querySelector('.files-toggle') as HTMLButtonElement;
+    const referenceToggle = fixture.nativeElement.querySelector(
+      '.reference-toggle',
+    ) as HTMLButtonElement;
+
+    filesToggle.click();
+    fixture.detectChanges();
+    expect(component.showFileSidebar()).toBe(true);
+    expect(component.showBrainSidebar()).toBe(false);
+
+    referenceToggle.click();
+    fixture.detectChanges();
+    expect(component.showFileSidebar()).toBe(false);
+    expect(component.showBrainSidebar()).toBe(true);
+
+    const collapse = fixture.nativeElement.querySelector(
+      '.reference-rail-collapse',
+    ) as HTMLButtonElement;
+    collapse.click();
+    fixture.detectChanges();
+    expect(component.showBrainSidebar()).toBe(false);
+    expect(document.activeElement).toBe(referenceToggle);
   });
 
   it('shows the zen toggle in the document-action cluster with an active document', () => {
@@ -271,6 +348,8 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
     const telemetry = deskTelemetry();
     expect(telemetry).toBeTruthy();
     expect(telemetry!.textContent).toContain('4 words');
+    const wrapper = fixture.nativeElement.querySelector('.editor-wrapper') as HTMLElement;
+    expect(wrapper.contains(telemetry)).toBe(false);
 
     const saveStatus = headerSaveStatus();
     expect(saveStatus).toBeTruthy();
@@ -421,7 +500,7 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
     fixture.detectChanges();
 
     expect(getComputedStyle(header).display).toBe('none');
-    // The telemetry belongs to the stage; zen makes it invisible (expert §5).
+    // Focus hides the reserved footer line with the rest of the editor chrome.
     expect(getComputedStyle(telemetry).opacity).toBe('0');
   });
 
@@ -544,10 +623,13 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
     expect(wrapperBlock).toContain('padding-bottom: var(--studio-dock-clearance)');
     expect(wrapperBlock).not.toContain('padding-bottom: 8rem');
 
-    // The word count's baseline rides the same token. A detached `bottom` here
-    // re-parks it against the dock whenever the clearance changes.
-    const telemetryBlock = blockOf('.editor-desk-telemetry');
-    expect(telemetryBlock).toContain('bottom: var(--studio-dock-clearance)');
+    // The count now reserves a line outside TinyMCE and leaves the shared dock
+    // clearance below it instead of floating over manuscript text.
+    expect(css).toContain('.editor-footer');
+    expect(css).toContain('margin: 0 2.5rem var(--studio-dock-clearance)');
+    expect(css).toContain('position: static');
+    expect(css).toContain('body.nostos-zen');
+    expect(css).toContain('display: none');
   });
 
   it('declares the zen sheet full-width on seamless surface', () => {
@@ -1067,16 +1149,15 @@ describe('WritingStudio kept sources (#491)', () => {
     expect(component.keptNoteIds().has('note-alpha')).toBe(false);
   });
 
-  // 10. mobile: the References drawer toggle still opens/closes the sidebar.
-  it('mobile: the References drawer toggle still opens and closes the sidebar', () => {
-    component.isMobile.set(true);
+  // 10. compact: the Reference toggle opens/closes the rail and restores focus.
+  it('compact: the Reference toggle still opens and closes the rail', () => {
+    component.isCompact.set(true);
     component.activeItem.set(sampleDoc1);
     component.showBrainSidebar.set(false);
+    component.showFileSidebar.set(false);
     fixture.detectChanges();
 
-    const toggleBtn = fixture.nativeElement.querySelector(
-      '.sidebar-header-brain-toggle',
-    ) as HTMLButtonElement;
+    const toggleBtn = fixture.nativeElement.querySelector('.reference-toggle') as HTMLButtonElement;
     expect(toggleBtn).toBeTruthy();
 
     // Open drawer
@@ -1084,14 +1165,13 @@ describe('WritingStudio kept sources (#491)', () => {
     fixture.detectChanges();
     expect(component.showBrainSidebar()).toBe(true);
 
-    // Close via close button in reference sidebar
-    const closeBtn = fixture.nativeElement.querySelector(
-      '.sidebar-right .sidebar-title-row button',
-    ) as HTMLButtonElement;
+    // Close from the rail heading; focus returns to the persistent header toggle.
+    const closeBtn = fixture.nativeElement.querySelector('.reference-rail-collapse') as HTMLButtonElement;
     expect(closeBtn).toBeTruthy();
     closeBtn.click();
     fixture.detectChanges();
     expect(component.showBrainSidebar()).toBe(false);
+    expect(document.activeElement).toBe(toggleBtn);
   });
 
   it('browsing a kept source only inspects it and never inserts or changes prose', () => {
@@ -1290,7 +1370,7 @@ describe('WritingStudio kept sources (#491)', () => {
 
   it('returns mobile drafting to the editor after a successful deliberate insertion', async () => {
     component.activeItem.set(sampleDoc1);
-    component.isMobile.set(true);
+    component.isCompact.set(true);
     component.showBrainSidebar.set(true);
     fixture.detectChanges();
 
@@ -1679,7 +1759,7 @@ describe('WritingStudio writingId handoff (#492/#493 seam)', () => {
   it('lands a mobile handoff in the editor with both drawers closed', async () => {
     await createWithParams();
 
-    component.isMobile.set(true);
+    component.isCompact.set(true);
     component.showFileSidebar.set(true);
     component.showBrainSidebar.set(true);
 
@@ -1753,7 +1833,7 @@ describe('WritingStudio writingId handoff (#492/#493 seam)', () => {
   it('restores mobile reference state as one pane without reopening Documents', async () => {
     await createWithParams();
 
-    component.isMobile.set(true);
+    component.isCompact.set(true);
     component.showFileSidebar.set(true);
     component.showBrainSidebar.set(false);
 

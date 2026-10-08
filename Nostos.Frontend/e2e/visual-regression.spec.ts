@@ -207,12 +207,8 @@ test.describe('visual matrix — Writing Studio (fixture-served)', () => {
       await fileRow.waitFor({ timeout: 30_000 });
       const fileSidebar = page.locator('.sidebar-left');
       if (!(await fileSidebar.evaluate((el) => el.classList.contains('open')))) {
-        // The empty state exposes "Open Sidebar"; when a document is already
-        // active the editor header exposes the toggle instead.
-        await page
-          .locator('.editor-pane .empty-state .btn-outline, .editor-header .sidebar-header-toggle')
-          .first()
-          .click();
+        // The persistent editor-header control opens the default-closed Files drawer.
+        await page.locator('.files-toggle').click();
       }
       await expect(fileSidebar).toHaveClass(/\bopen\b/, { timeout: 15_000 });
       await fileRow.click();

@@ -1,27 +1,40 @@
-<div class="studio-layout">
+<div
+  class="studio-layout"
+  [class.files-collapsed]="!showFileSidebar()"
+  [class.reference-collapsed]="!showBrainSidebar()"
+>
   <div
     class="backdrop"
-    [class.visible]="isMobile() && (showFileSidebar() || showBrainSidebar())"
+    [class.visible]="isCompact() && (showFileSidebar() || showBrainSidebar())"
     (click)="closeSidebars()"
   ></div>
 
   <aside
     class="sidebar-left"
     [class.open]="showFileSidebar()"
-    [style.width.px]="!isMobile() && showFileSidebar() ? leftSidebarWidth() : null"
+    [style.width.px]="!isCompact() && showFileSidebar() ? leftSidebarWidth() : null"
   >
     <div class="sidebar-header">
       <div class="sidebar-title-row">
         <h2>Studio</h2>
         <div class="actions">
-          <button appIconButton size="xs" icon="folder-plus" [glyphSize]="16" weight="thin" (click)="createItem('Folder')" title="New Folder" aria-label="New folder"></button>
-          <button appIconButton size="xs" icon="plus" [glyphSize]="16" weight="thin" (click)="createItem('Document')" title="New Document" aria-label="New document"></button>
-          @if (isMobile()) {
-            <button appIconButton size="xs" class="mobile-only" icon="x" [glyphSize]="16" (click)="showFileSidebar.set(false)" aria-label="Close sidebar"></button>
-          }
+          <button appButton variant="secondary" size="sm" class="files-new-document" (click)="createItem('Document')">New document</button>
+          <button appIconButton size="xs" icon="folder-plus" [glyphSize]="16" weight="thin" (click)="createItem('Folder')" title="New folder" aria-label="New folder"></button>
+          <button
+            appIconButton
+            size="xs"
+            class="files-rail-collapse"
+            icon="sidebar-simple"
+            [glyphSize]="16"
+            weight="thin"
+            (click)="toggleFilesRailFromHeading()"
+            [title]="filesRailLabel()"
+            [attr.aria-label]="filesRailLabel()"
+            [attr.aria-expanded]="showFileSidebar()"
+            [attr.aria-pressed]="showFileSidebar()"
+          ></button>
         </div>
       </div>
-      <div class="section-label">Documents</div>
     </div>
 
     <div class="file-list">
@@ -53,51 +66,62 @@
   </aside>
 
   <main class="editor-pane">
-    @if (activeItem(); as item) {
-      <div class="editor-header">
+    <div class="editor-header">
+      <button
+        appIconButton
+        class="header-rail-toggle files-toggle"
+        icon="folder-open"
+        [glyphSize]="18"
+        weight="thin"
+        [class.active]="showFileSidebar()"
+        [pressed]="showFileSidebar()"
+        (click)="toggleFilesRail()"
+        [title]="filesRailLabel()"
+        [attr.aria-label]="filesRailLabel()"
+        [attr.aria-expanded]="showFileSidebar()"
+        [attr.aria-pressed]="showFileSidebar()"
+      ></button>
+
+      @if (activeItem(); as item) {
         <div class="header-doc-meta">
-          <span class="header-doc-title">{{ editorTitle() || item.name }}</span>
+          <span class="header-doc-title" [title]="editorTitle() || item.name">{{ editorTitle() || item.name }}</span>
           <span class="header-save-status" [class.is-saving]="saveStatus() === 'Saving...'">
             {{ saveStatus() }}
           </span>
         </div>
+      } @else {
+        <div class="header-doc-meta header-doc-meta-empty" aria-hidden="true"></div>
+      }
 
-        <div class="doc-actions">
-          @if (isMobile()) {
-            <button
-              appIconButton
-              class="sidebar-header-toggle"
-              [icon]="showFileSidebar() ? 'arrow-line-left' : 'arrow-line-right'"
-              [glyphSize]="18" weight="thin"
-              (click)="showFileSidebar.set(!showFileSidebar())"
-              title="Toggle Files"
-              aria-label="Toggle file sidebar"
-            ></button>
-          }
+      <div class="doc-actions">
+        <button
+          appIconButton
+          class="header-rail-toggle reference-toggle"
+          icon="book-open"
+          [glyphSize]="18"
+          weight="thin"
+          [class.active]="showBrainSidebar()"
+          [pressed]="showBrainSidebar()"
+          (click)="toggleReferenceRail()"
+          [title]="referenceRailLabel()"
+          [attr.aria-label]="referenceRailLabel()"
+          [attr.aria-expanded]="showBrainSidebar()"
+          [attr.aria-pressed]="showBrainSidebar()"
+        ></button>
 
-          @if (isMobile()) {
-            <button
-              appIconButton
-              class="sidebar-header-brain-toggle"
-              [class.active]="showBrainSidebar()"
-              icon="brain"
-              [glyphSize]="18" weight="thin"
-              (click)="showBrainSidebar.set(!showBrainSidebar())"
-              title="Toggle Reference"
-              aria-label="Toggle reference sidebar"
-            ></button>
-          }
-
+        @if (activeItem()) {
           <button
             appIconButton
             class="typewriter-toggle"
             [class.active]="typewriter()"
             icon="align-center-vertical"
-            [glyphSize]="18" weight="thin"
+            [glyphSize]="18"
+            weight="thin"
             [pressed]="typewriter()"
             (click)="toggleTypewriter()"
-            [title]="typewriter() ? 'Typewriter mode on: caret stays centered' : 'Typewriter mode: keep the caret centered'"
-            [attr.aria-label]="typewriter() ? 'Disable typewriter mode' : 'Enable typewriter mode'"
+            title="Typewriter: keep the current line centred"
+            aria-label="Toggle typewriter mode"
+            [attr.aria-pressed]="typewriter()"
           ></button>
 
           <button
@@ -105,14 +129,18 @@
             class="zen-toggle"
             [class.active]="isZen()"
             [icon]="isZen() ? 'corners-in' : 'corners-out'"
-            [glyphSize]="18" weight="thin"
+            [glyphSize]="18"
+            weight="thin"
             (click)="isZen() ? exitZen() : enterZen()"
-            [title]="isZen() ? 'Exit focus mode (Esc)' : 'Enter focus mode'"
-            [attr.aria-label]="isZen() ? 'Exit focus mode' : 'Enter focus mode'"
+            title="Focus: hide everything but the page — Esc to exit"
+            [attr.aria-label]="isZen() ? 'Exit Focus mode' : 'Enter Focus mode'"
+            [attr.aria-pressed]="isZen()"
           ></button>
-        </div>
+        }
       </div>
+    </div>
 
+    @if (activeItem()) {
       <div class="editor-wrapper">
         <app-markdown-editor
           #editor
@@ -121,7 +149,8 @@
           (contentChange)="editorText.set($event)"
           (wordCountChange)="editorWordCount.set($event)"
         ></app-markdown-editor>
-
+      </div>
+      <div class="editor-footer">
         <div class="editor-desk-telemetry" aria-live="polite">
           <span class="word-count-num">{{ displayWordCount() }}</span> {{ displayWordCount() === 1 ? 'word' : 'words' }}
         </div>
@@ -135,8 +164,9 @@
         </div>
         <h2>Select a file to begin writing</h2>
         <p class="empty-subtext">Choose a document from the tree, or create a new one to start.</p>
-        @if (isMobile()) {
-          <button appButton variant="secondary" class="btn-outline" (click)="showFileSidebar.set(true)">Open Sidebar</button>
+        <button appButton variant="primary" class="empty-new-document" (click)="createItem('Document')">New document</button>
+        @if (isCompact()) {
+          <button appButton variant="secondary" class="empty-browse-files" (click)="openFilesDrawer()">Browse files</button>
         }
       </div>
     }
@@ -146,9 +176,19 @@
     <div class="sidebar-header compact">
       <div class="sidebar-title-row">
         <h2>Reference</h2>
-        @if (isMobile()) {
-          <button appIconButton icon="sidebar-simple" [glyphSize]="16" (click)="showBrainSidebar.set(false)" aria-label="Close reference sidebar"></button>
-        }
+        <button
+          appIconButton
+          size="xs"
+          class="reference-rail-collapse"
+          icon="sidebar-simple"
+          [glyphSize]="16"
+          weight="thin"
+          (click)="toggleReferenceRailFromHeading()"
+          [title]="referenceRailLabel()"
+          [attr.aria-label]="referenceRailLabel()"
+          [attr.aria-expanded]="showBrainSidebar()"
+          [attr.aria-pressed]="showBrainSidebar()"
+        ></button>
       </div>
 
       <!-- Top-level reference mode switch: "For this writing" vs "Library" (issue #491) -->

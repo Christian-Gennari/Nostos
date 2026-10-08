@@ -871,3 +871,286 @@
     right: calc(env(safe-area-inset-right, 0px) + 0.75rem);
   }
 }
+
+/* --- #809 S1: editor-first shell, independent rails, and reserved count footer --- */
+@media (min-width: 901px) and (min-height: 501px) {
+  .studio-layout {
+    grid-template-columns: minmax(0, auto) minmax(0, 1fr) minmax(0, auto);
+  }
+
+  .sidebar-left {
+    width: clamp(220px, 24vw, 280px);
+  }
+
+  .sidebar-right {
+    width: clamp(280px, 28vw, 360px);
+  }
+
+  .sidebar-left:not(.open),
+  .sidebar-right:not(.open) {
+    display: none;
+  }
+
+  .sidebar-right > * {
+    min-width: 0;
+  }
+
+  /* Remove an auto track with its rail so a closed panel cannot leave a blank
+     column at the edge of the writing surface. */
+  .studio-layout.files-collapsed {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .studio-layout.reference-collapsed {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .studio-layout.files-collapsed.reference-collapsed {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.editor-pane {
+  --studio-dock-clearance: 96px;
+}
+
+.editor-wrapper {
+  --studio-dock-clearance: 96px;
+  flex: 1 1 0;
+  height: auto;
+  min-height: 0;
+  padding: 0;
+}
+
+.editor-footer {
+  display: flex;
+  flex: 0 0 1.25rem;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 1.25rem;
+  margin: 0 2.5rem var(--studio-dock-clearance);
+  pointer-events: none;
+}
+
+.editor-desk-telemetry {
+  position: static;
+  right: auto;
+  bottom: auto;
+  z-index: auto;
+  margin-left: auto;
+}
+
+.editor-header {
+  display: flex;
+  flex: 0 0 52px;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.5rem;
+  height: 52px;
+  min-width: 0;
+  padding: 0 1.25rem;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.editor-header > .icon-btn,
+.doc-actions .icon-btn {
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+}
+
+.header-doc-meta {
+  flex: 1 1 auto;
+  align-items: center;
+  min-width: 0;
+  gap: 0.5rem;
+}
+
+.header-doc-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: none;
+}
+
+.header-save-status {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.header-doc-meta-empty {
+  visibility: hidden;
+}
+
+.doc-actions {
+  flex: 0 0 auto;
+  gap: 0.25rem;
+}
+
+.editor-header .header-rail-toggle.active,
+.editor-header .typewriter-toggle.active,
+.editor-header .zen-toggle.active {
+  color: var(--color-text-main);
+  background: var(--bg-hover);
+}
+
+.sidebar-title-row {
+  gap: 0.35rem;
+}
+
+.sidebar-left .sidebar-title-row .actions {
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+}
+
+.sidebar-left .files-new-document {
+  min-height: 32px;
+  padding: 5px 8px;
+}
+
+.sidebar-header .icon-btn {
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+}
+
+.empty-state {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 0;
+}
+
+.empty-new-document,
+.empty-browse-files {
+  margin-top: 0.9rem;
+}
+
+.editor-footer,
+.editor-footer .editor-desk-telemetry {
+  line-height: 1;
+}
+
+:host-context(body.nostos-zen) .editor-wrapper {
+  --studio-dock-clearance: 24px;
+  padding-bottom: var(--studio-dock-clearance);
+}
+
+:host-context(body.nostos-zen) .editor-pane > .editor-header {
+  display: none;
+}
+
+:host-context(body.nostos-zen) .editor-footer {
+  display: none;
+}
+
+@media (max-width: 900px), (max-height: 500px) {
+  .studio-layout {
+    display: block;
+    position: relative;
+  }
+
+  .sidebar-left,
+  .sidebar-right {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    display: flex;
+    height: auto;
+    opacity: 1 !important;
+    box-shadow: 0 0 24px rgba(0, 0, 0, 0.15);
+    transition: transform var(--motion-base) var(--ease-standard);
+    z-index: 30;
+  }
+
+  .sidebar-left {
+    left: 0;
+    right: auto;
+    width: min(84vw, 320px) !important;
+    min-width: 0;
+    max-width: 320px;
+    transform: translateX(-100%);
+    border-right: 0;
+  }
+
+  .sidebar-right {
+    right: 0;
+    left: auto;
+    width: 360px !important;
+    min-width: 0;
+    max-width: 100vw;
+    transform: translateX(100%);
+    border-left: 0;
+  }
+
+  .sidebar-left:not(.open),
+  .sidebar-right:not(.open) {
+    display: flex;
+    width: min(84vw, 320px) !important;
+    opacity: 1 !important;
+  }
+
+  .sidebar-right:not(.open) {
+    width: 360px !important;
+  }
+
+  .sidebar-left.open,
+  .sidebar-right.open {
+    transform: translateX(0);
+  }
+
+  .sidebar-resizer {
+    display: none;
+  }
+
+  .editor-pane {
+    height: 100dvh;
+  }
+
+  .editor-header {
+    height: 52px;
+    flex-basis: 52px;
+    gap: 0.25rem;
+    padding: 0 0.75rem;
+  }
+
+  .editor-footer {
+    margin-right: 1.25rem;
+    margin-left: 1.25rem;
+  }
+
+  .sidebar-title-row {
+    margin-bottom: 0.35rem;
+  }
+}
+
+@media (max-width: 700px) {
+  .sidebar-right,
+  .sidebar-right:not(.open) {
+    width: 100vw !important;
+    max-width: 100vw;
+  }
+
+  .editor-pane,
+  .editor-wrapper {
+    --studio-dock-clearance: 76px;
+  }
+
+  .editor-footer {
+    margin-bottom: var(--studio-dock-clearance);
+  }
+}
+
+@media (pointer: coarse) {
+  .editor-header .icon-btn,
+  .sidebar-header .icon-btn {
+    flex-basis: 44px;
+    width: 44px;
+    height: 44px;
+  }
+
+  .sidebar-left .files-new-document,
+  .empty-state .nostos-button {
+    min-height: 44px;
+  }
+}
