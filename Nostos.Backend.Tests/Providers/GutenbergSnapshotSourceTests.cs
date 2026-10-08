@@ -1,9 +1,11 @@
+using System.Diagnostics;
 using System.Formats.Tar;
 using System.IO.Compression;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Nostos.Backend.Providers;
 using Nostos.Backend.Providers.Contracts;
@@ -148,11 +150,18 @@ public sealed class GutenbergSnapshotSourceTests
         """;
 
     private static (GutenbergProvider Provider, StubHttpMessageHandler Handler) CreateProvider(
-        GutenbergSnapshotLimits? limits = null)
+        GutenbergSnapshotLimits? limits = null,
+        GutenbergSnapshotDownloadOptions? downloadOptions = null)
     {
         var handler = new StubHttpMessageHandler();
         var factory = new StubHttpClientFactory(handler);
-        return (new GutenbergProvider(factory, NullLogger<GutenbergProvider>.Instance, limits), handler);
+        downloadOptions ??= new GutenbergSnapshotDownloadOptions
+        {
+            InitialRetryDelay = TimeSpan.Zero,
+            MaxRetryDelay = TimeSpan.Zero,
+            RetryJitterRatio = 0,
+        };
+        return (new GutenbergProvider(factory, NullLogger<GutenbergProvider>.Instance, limits, downloadOptions), handler);
     }
 
     private static byte[] BuildZipArchive(params (string Name, byte[] Content)[] entries)
@@ -223,16 +232,66 @@ public sealed class GutenbergSnapshotSourceTests
         zip[index + methodOffset + 1] = 0;
     }
 
-    private static HttpResponseMessage ArchiveResponse(byte[] archive, DateTimeOffset? lastModified = null)
+    private static HttpResponseMessage ArchiveResponse(
+        byte[] archive,
+        DateTimeOffset? lastModified = null,
+        string? etag = null,
+        bool acceptRanges = false,
+        long? declaredLength = null)
     {
         var response = new HttpResponseMessage(HttpStatusCode.OK)
         {
             Content = new ByteArrayContent(archive),
         };
         response.Content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+        if (declaredLength is { } length)
+            response.Content.Headers.ContentLength = length;
         if (lastModified is not null)
             response.Content.Headers.LastModified = lastModified;
+        if (etag is not null)
+            response.Headers.ETag = EntityTagHeaderValue.Parse(etag);
+        if (acceptRanges)
+            response.Headers.AcceptRanges.Add("bytes");
 
+        return response;
+    }
+
+    private static HttpResponseMessage TruncatedArchiveResponse(
+        byte[] archive,
+        int bytesToSend,
+        DateTimeOffset lastModified,
+        string etag,
+        bool acceptRanges = true)
+    {
+        var response = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(archive[..bytesToSend]),
+        };
+        response.Content.Headers.ContentLength = archive.Length;
+        response.Content.Headers.LastModified = lastModified;
+        response.Headers.ETag = EntityTagHeaderValue.Parse(etag);
+        if (acceptRanges)
+            response.Headers.AcceptRanges.Add("bytes");
+        return response;
+    }
+
+    private static HttpResponseMessage PartialArchiveResponse(
+        byte[] archive,
+        int offset,
+        string etag,
+        DateTimeOffset lastModified,
+        long? totalLength = null)
+    {
+        var total = totalLength ?? archive.Length;
+        var body = offset < archive.Length ? archive[offset..] : [];
+        var response = new HttpResponseMessage(HttpStatusCode.PartialContent)
+        {
+            Content = new ByteArrayContent(body),
+        };
+        response.Content.Headers.ContentRange = new ContentRangeHeaderValue(offset, total - 1, total);
+        response.Content.Headers.LastModified = lastModified;
+        response.Headers.ETag = EntityTagHeaderValue.Parse(etag);
+        response.Headers.AcceptRanges.Add("bytes");
         return response;
     }
 
@@ -400,6 +459,181 @@ public sealed class GutenbergSnapshotSourceTests
     }
 
     [Fact]
+    public async Task Read_honors_retry_after_on_a_service_unavailable_response()
+    {
+        var archive = BuildSnapshotArchive(("cache/epub/1342/pg1342.rdf", PrideRdf));
+        var getCount = 0;
+        long firstAttemptAt = 0;
+        long secondAttemptAt = 0;
+        var (provider, handler) = CreateProvider();
+        handler.Register(SnapshotPath, request =>
+        {
+            if (request.Method == HttpMethod.Head)
+                return ArchiveResponse(archive, LastModified);
+
+            getCount++;
+            if (getCount == 1)
+            {
+                firstAttemptAt = Stopwatch.GetTimestamp();
+                var unavailable = new HttpResponseMessage(HttpStatusCode.ServiceUnavailable);
+                unavailable.Headers.RetryAfter = new RetryConditionHeaderValue(TimeSpan.FromMilliseconds(250));
+                return unavailable;
+            }
+
+            secondAttemptAt = Stopwatch.GetTimestamp();
+            return ArchiveResponse(archive, LastModified);
+        });
+
+        var snapshot = await provider.ReadAsync(new ProviderSnapshotRequest(), CancellationToken.None);
+        var items = await DrainAsync(snapshot.Items);
+
+        items.Select(item => item.ExternalId).Should().Equal("1342");
+        Stopwatch.GetElapsedTime(firstAttemptAt, secondAttemptAt)
+            .Should().BeGreaterThanOrEqualTo(TimeSpan.FromMilliseconds(200));
+    }
+
+    [Fact]
+    public async Task Read_resumes_a_premature_download_with_range_and_if_range()
+    {
+        const string etag = "\"snapshot-v1\"";
+        var archive = BuildSnapshotArchive(("cache/epub/1342/pg1342.rdf", PrideRdf));
+        var cut = archive.Length / 2;
+        var (provider, handler) = CreateProvider();
+        handler.Register(SnapshotPath, request => request.Method == HttpMethod.Head
+            ? ArchiveResponse(archive, LastModified, etag, acceptRanges: true)
+            : request.Headers.Range is null
+                ? TruncatedArchiveResponse(archive, cut, LastModified, etag)
+                : PartialArchiveResponse(archive, cut, etag, LastModified));
+        var before = TempSnapshotFiles();
+
+        var snapshot = await provider.ReadAsync(new ProviderSnapshotRequest(), CancellationToken.None);
+        var items = await DrainAsync(snapshot.Items);
+
+        items.Select(item => item.ExternalId).Should().Equal("1342");
+        var downloads = handler.RecordedRequests.Where(request => request.Method == HttpMethod.Get).ToArray();
+        downloads.Should().HaveCount(2);
+        downloads.Should().ContainSingle(request => request.Headers.Range == null);
+        var resumed = downloads.Should().ContainSingle(request => request.Headers.Range != null).Which;
+        resumed.Headers.Range!.ToString().Should().Be($"bytes={cut}-");
+        resumed.Headers.IfRange!.EntityTag!.Tag.Should().Be(etag);
+        TempSnapshotFiles().Should().BeEquivalentTo(before);
+    }
+
+    [Fact]
+    public async Task Read_restarts_cleanly_when_the_server_ignores_a_range_request()
+    {
+        const string etag = "\"snapshot-v1\"";
+        var archive = BuildSnapshotArchive(("cache/epub/1342/pg1342.rdf", PrideRdf));
+        var cut = archive.Length / 2;
+        var (provider, handler) = CreateProvider();
+        handler.Register(SnapshotPath, request => request.Method == HttpMethod.Head
+            ? ArchiveResponse(archive, LastModified, etag, acceptRanges: true)
+            : request.Headers.Range is null
+                ? TruncatedArchiveResponse(archive, cut, LastModified, etag)
+                : ArchiveResponse(archive, LastModified, etag, acceptRanges: true));
+
+        var snapshot = await provider.ReadAsync(new ProviderSnapshotRequest(), CancellationToken.None);
+        var items = await DrainAsync(snapshot.Items);
+
+        items.Select(item => item.ExternalId).Should().Equal("1342");
+        var downloads = handler.RecordedRequests.Where(request => request.Method == HttpMethod.Get).ToArray();
+        downloads.Should().HaveCount(2);
+        downloads.Should().ContainSingle(request => request.Headers.Range != null)
+            .Which.Headers.Range!.ToString().Should().Be($"bytes={cut}-");
+    }
+
+    [Fact]
+    public async Task Read_restarts_from_zero_when_the_validator_changes_during_resume()
+    {
+        const string originalEtag = "\"snapshot-v1\"";
+        const string changedEtag = "\"snapshot-v2\"";
+        var archive = BuildSnapshotArchive(("cache/epub/1342/pg1342.rdf", PrideRdf));
+        var cut = archive.Length / 2;
+        var download = 0;
+        var (provider, handler) = CreateProvider();
+        handler.Register(SnapshotPath, request =>
+        {
+            if (request.Method == HttpMethod.Head)
+                return ArchiveResponse(archive, LastModified, originalEtag, acceptRanges: true);
+
+            return ++download switch
+            {
+                1 => TruncatedArchiveResponse(archive, cut, LastModified, originalEtag),
+                2 => PartialArchiveResponse(archive, cut, changedEtag, LastModified),
+                _ => ArchiveResponse(archive, LastModified, originalEtag, acceptRanges: true),
+            };
+        });
+        var before = TempSnapshotFiles();
+
+        var snapshot = await provider.ReadAsync(new ProviderSnapshotRequest(), CancellationToken.None);
+        var items = await DrainAsync(snapshot.Items);
+
+        items.Select(item => item.ExternalId).Should().Equal("1342");
+        var downloads = handler.RecordedRequests.Where(request => request.Method == HttpMethod.Get).ToArray();
+        downloads.Should().HaveCount(3);
+        downloads.Count(request => request.Headers.Range != null).Should().Be(1);
+        downloads.Count(request => request.Headers.Range == null).Should().Be(2,
+            "the changed validator forces a fresh body");
+        TempSnapshotFiles().Should().BeEquivalentTo(before);
+    }
+
+    [Fact]
+    public async Task Read_fails_after_bounded_attempts_and_deletes_the_partial_file()
+    {
+        const string etag = "\"snapshot-v1\"";
+        var archive = BuildSnapshotArchive(("cache/epub/1342/pg1342.rdf", PrideRdf));
+        var cut = archive.Length / 2;
+        var options = new GutenbergSnapshotDownloadOptions
+        {
+            MaxAttempts = 3,
+            InitialRetryDelay = TimeSpan.Zero,
+            MaxRetryDelay = TimeSpan.Zero,
+            RetryJitterRatio = 0,
+        };
+        var (provider, handler) = CreateProvider(downloadOptions: options);
+        handler.Register(SnapshotPath, request => request.Method == HttpMethod.Head
+            ? ArchiveResponse(archive, LastModified, etag)
+            : TruncatedArchiveResponse(archive, cut, LastModified, etag, acceptRanges: false));
+        var before = TempSnapshotFiles();
+
+        var snapshot = await provider.ReadAsync(new ProviderSnapshotRequest(), CancellationToken.None);
+        var act = () => DrainAsync(snapshot.Items);
+
+        var error = await act.Should().ThrowAsync<ProviderException>();
+        error.Which.Code.Should().Be(ProviderException.Unavailable);
+        handler.RecordedRequests.Count(request => request.Method == HttpMethod.Get).Should().Be(3);
+        handler.RecordedRequests.Where(request => request.Method == HttpMethod.Get)
+            .Should().OnlyContain(request => request.Headers.Range == null);
+        TempSnapshotFiles().Should().BeEquivalentTo(before);
+    }
+
+    [Fact]
+    public async Task Read_enforces_the_archive_cap_on_a_resumed_range_total()
+    {
+        const string etag = "\"snapshot-v1\"";
+        var archive = BuildSnapshotArchive(("cache/epub/1342/pg1342.rdf", PrideRdf));
+        var cut = archive.Length / 2;
+        var limit = archive.Length + 1L;
+        var limits = new GutenbergSnapshotLimits { MaxSnapshotBytes = limit };
+        var (provider, handler) = CreateProvider(limits);
+        handler.Register(SnapshotPath, request => request.Method == HttpMethod.Head
+            ? ArchiveResponse(archive, LastModified, etag, acceptRanges: true)
+            : request.Headers.Range is null
+                ? TruncatedArchiveResponse(archive, cut, LastModified, etag)
+                : PartialArchiveResponse(archive, cut, etag, LastModified, totalLength: limit + 1));
+        var before = TempSnapshotFiles();
+
+        var snapshot = await provider.ReadAsync(new ProviderSnapshotRequest(), CancellationToken.None);
+        var act = () => DrainAsync(snapshot.Items);
+
+        var error = await act.Should().ThrowAsync<ProviderException>();
+        error.Which.Code.Should().Be(ProviderException.ResponseInvalid);
+        error.Which.Message.Should().Contain("byte limit");
+        handler.RecordedRequests.Count(request => request.Method == HttpMethod.Get).Should().Be(2);
+        TempSnapshotFiles().Should().BeEquivalentTo(before);
+    }
+
+    [Fact]
     public async Task Read_reports_an_upstream_timeout_as_provider_unavailable()
     {
         var archive = BuildSnapshotArchive(("cache/epub/1342/pg1342.rdf", PrideRdf));
@@ -518,6 +752,9 @@ public sealed class GutenbergSnapshotSourceTests
         var body = new NonSeekableStream(new byte[limits.MaxSnapshotBytes * 16]);
         handler.Register(SnapshotPath, request => request.Method == HttpMethod.Head
             ? new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StreamContent(new NonSeekableStream([])),
+            }
             : new HttpResponseMessage(HttpStatusCode.OK) { Content = new StreamContent(body) });
         var before = TempSnapshotFiles();
 
@@ -655,5 +892,17 @@ public sealed class GutenbergSnapshotSourceTests
         registration!.Provider.Should().BeSameAs(provider);
         registration.Provider.Should().BeAssignableTo<IProviderSnapshotSource>(
             "a host reaches the bulk source through the registered provider");
+    }
+
+    [Fact]
+    public void Provider_default_constructor_remains_resolvable_by_host_DI()
+    {
+        using var services = new ServiceCollection()
+            .AddLogging()
+            .AddSingleton<IHttpClientFactory>(new StubHttpClientFactory())
+            .AddSingleton<IContentProvider, GutenbergProvider>()
+            .BuildServiceProvider();
+
+        services.GetRequiredService<IContentProvider>().Should().BeOfType<GutenbergProvider>();
     }
 }

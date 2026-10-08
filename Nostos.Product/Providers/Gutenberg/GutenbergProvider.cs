@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Formats.Tar;
 using System.IO.Compression;
 using System.Net;
@@ -58,16 +59,28 @@ public sealed partial class GutenbergProvider : IContentProvider,
     private readonly HttpClient _snapshotHttp;
     private readonly ILogger<GutenbergProvider> _logger;
     private readonly GutenbergSnapshotLimits _snapshotLimits;
+    private readonly GutenbergSnapshotDownloadOptions _snapshotDownloadOptions;
 
     public GutenbergProvider(
         IHttpClientFactory httpClientFactory,
         ILogger<GutenbergProvider> logger,
         GutenbergSnapshotLimits? snapshotLimits = null)
+        : this(httpClientFactory, logger, snapshotLimits, null)
+    {
+    }
+
+    public GutenbergProvider(
+        IHttpClientFactory httpClientFactory,
+        ILogger<GutenbergProvider> logger,
+        GutenbergSnapshotLimits? snapshotLimits,
+        GutenbergSnapshotDownloadOptions? snapshotDownloadOptions)
     {
         _http = httpClientFactory.CreateClient(HttpClientName);
         _snapshotHttp = httpClientFactory.CreateClient(SnapshotHttpClientName);
         _logger = logger;
         _snapshotLimits = snapshotLimits ?? new GutenbergSnapshotLimits();
+        _snapshotDownloadOptions = snapshotDownloadOptions ?? new GutenbergSnapshotDownloadOptions();
+        _snapshotDownloadOptions.Validate();
     }
 
     public string Id => ProviderIdentifier;
@@ -162,10 +175,12 @@ public sealed partial class GutenbergProvider : IContentProvider,
             using var probe = new HttpRequestMessage(HttpMethod.Head, GutenbergCatalog.SnapshotPath);
             ApplyValidators(probe, request);
 
+            using var probeTimeout = new CancellationTokenSource(_snapshotDownloadOptions.MaxDuration);
+            using var probeCancellation = CancellationTokenSource.CreateLinkedTokenSource(ct, probeTimeout.Token);
             using var response = await _snapshotHttp.SendAsync(
                 probe,
                 HttpCompletionOption.ResponseHeadersRead,
-                ct);
+                probeCancellation.Token);
 
             if (response.StatusCode == HttpStatusCode.NotModified)
             {
@@ -179,11 +194,17 @@ public sealed partial class GutenbergProvider : IContentProvider,
 
             return new ProviderSnapshot(
                 ProviderSnapshotStatus.Updated,
-                ReadSnapshotItemsAsync(),
+                ReadSnapshotItemsAsync(
+                    response.Content.Headers.ContentLength,
+                    SnapshotValidator.FromResponse(response)),
                 ETag: response.Headers.ETag?.ToString(),
                 LastModified: response.Content.Headers.LastModified);
         }
         catch (HttpRequestException ex)
+        {
+            throw ProviderException.UnavailableFor(Id, ex.Message);
+        }
+        catch (IOException ex)
         {
             throw ProviderException.UnavailableFor(Id, ex.Message);
         }
@@ -293,6 +314,8 @@ public sealed partial class GutenbergProvider : IContentProvider,
     /// throws or cancels as well as on normal completion.
     /// </summary>
     private async IAsyncEnumerable<ProviderItem> ReadSnapshotItemsAsync(
+        long? probedContentLength,
+        SnapshotValidator probedValidator,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
         var path = Path.Combine(
@@ -301,7 +324,7 @@ public sealed partial class GutenbergProvider : IContentProvider,
 
         try
         {
-            await DownloadSnapshotAsync(path, ct);
+            await DownloadSnapshotAsync(path, probedContentLength, probedValidator, ct);
 
             await using var file = new FileStream(
                 path,
@@ -328,35 +351,296 @@ public sealed partial class GutenbergProvider : IContentProvider,
         }
     }
 
-    private async Task DownloadSnapshotAsync(string path, CancellationToken ct)
+    private async Task DownloadSnapshotAsync(
+        string path,
+        long? probedContentLength,
+        SnapshotValidator probedValidator,
+        CancellationToken ct)
+    {
+        if (probedContentLength > _snapshotLimits.MaxSnapshotBytes)
+        {
+            throw ProviderException.InvalidResponse(
+                Id,
+                $"the catalogue snapshot declares {probedContentLength} bytes, over the {_snapshotLimits.MaxSnapshotBytes} byte limit");
+        }
+
+        using var deadline = new CancellationTokenSource(_snapshotDownloadOptions.MaxDuration);
+        using var downloadCancellation = CancellationTokenSource.CreateLinkedTokenSource(ct, deadline.Token);
+        var stopwatch = Stopwatch.StartNew();
+        SnapshotTransfer? transfer = null;
+        Exception? lastFailure = null;
+        TimeSpan? retryAfter = null;
+        var attemptsMade = 0;
+
+        for (var attempt = 1; attempt <= _snapshotDownloadOptions.MaxAttempts; attempt++)
+        {
+            if (ct.IsCancellationRequested)
+                ct.ThrowIfCancellationRequested();
+
+            var offset = File.Exists(path) ? new FileInfo(path).Length : 0;
+            var useRange = offset > 0
+                && transfer is { CanResume: true, TotalLength: not null }
+                && offset < transfer.TotalLength.Value
+                && transfer.Validator.TryCreateIfRange(out _);
+
+            // A partial body without a range-safe validator cannot be appended
+            // safely. Start the next attempt with an empty file instead.
+            if (offset > 0 && !useRange)
+            {
+                File.Delete(path);
+                offset = 0;
+                transfer = null;
+            }
+
+            SnapshotDownloadAttempt result;
+            try
+            {
+                attemptsMade++;
+                result = await DownloadSnapshotAttemptAsync(
+                    path,
+                    offset,
+                    useRange,
+                    transfer,
+                    probedContentLength,
+                    probedValidator,
+                    ct,
+                    downloadCancellation.Token);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (OperationCanceledException) when (deadline.IsCancellationRequested)
+            {
+                break;
+            }
+
+            if (result.Completed)
+                return;
+
+            if (result.RestartFromZero)
+            {
+                if (File.Exists(path))
+                    File.Delete(path);
+                transfer = null;
+            }
+            else
+            {
+                transfer = result.Transfer;
+            }
+
+            lastFailure = result.Error;
+            retryAfter = result.RetryAfter;
+
+            if (attempt >= _snapshotDownloadOptions.MaxAttempts)
+                break;
+
+            var remaining = _snapshotDownloadOptions.MaxDuration - stopwatch.Elapsed;
+            if (remaining <= TimeSpan.Zero)
+                break;
+
+            var delay = RetryDelay(attempt, retryAfter);
+            // A Retry-After longer than this transfer's remaining budget cannot
+            // be honoured without violating the overall wall-clock bound.
+            if (delay > remaining)
+                break;
+
+            try
+            {
+                await Task.Delay(delay, downloadCancellation.Token);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (OperationCanceledException) when (deadline.IsCancellationRequested)
+            {
+                break;
+            }
+        }
+
+        if (ct.IsCancellationRequested)
+            ct.ThrowIfCancellationRequested();
+
+        var reason = deadline.IsCancellationRequested || stopwatch.Elapsed >= _snapshotDownloadOptions.MaxDuration
+            ? "the download exceeded its time limit"
+            : $"the download failed after {attemptsMade} attempts";
+        if (lastFailure is not null)
+            reason += $": {lastFailure.Message}";
+
+        throw ProviderException.UnavailableFor(Id, reason);
+    }
+
+    private async Task<SnapshotDownloadAttempt> DownloadSnapshotAttemptAsync(
+        string path,
+        long offset,
+        bool useRange,
+        SnapshotTransfer? previousTransfer,
+        long? probedContentLength,
+        SnapshotValidator probedValidator,
+        CancellationToken callerToken,
+        CancellationToken downloadToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, GutenbergCatalog.SnapshotPath);
+        if (useRange && previousTransfer is { TotalLength: not null }
+            && previousTransfer.Validator.TryCreateIfRange(out var ifRange))
+        {
+            request.Headers.Range = new RangeHeaderValue(offset, null);
+            request.Headers.IfRange = ifRange;
+        }
+
+        HttpResponseMessage response;
+        try
+        {
+            response = await _snapshotHttp.SendAsync(
+                request,
+                HttpCompletionOption.ResponseHeadersRead,
+                downloadToken);
+        }
+        catch (OperationCanceledException) when (!downloadToken.IsCancellationRequested && !callerToken.IsCancellationRequested)
+        {
+            return SnapshotDownloadAttempt.Retry(previousTransfer, null, new TimeoutException("the snapshot request timed out"));
+        }
+        catch (HttpRequestException ex)
+        {
+            return SnapshotDownloadAttempt.Retry(previousTransfer, null, ex);
+        }
+        catch (IOException ex)
+        {
+            return SnapshotDownloadAttempt.Retry(previousTransfer, null, ex);
+        }
+
+        using (response)
+        {
+            if (IsTransientSnapshotStatus(response.StatusCode))
+            {
+                return SnapshotDownloadAttempt.Retry(
+                    previousTransfer,
+                    response.StatusCode is HttpStatusCode.TooManyRequests or HttpStatusCode.ServiceUnavailable
+                        ? GetRetryAfter(response)
+                        : null,
+                    new HttpRequestException("the catalogue snapshot answered HTTP " + (int)response.StatusCode));
+            }
+
+            if (useRange)
+            {
+                if (response.StatusCode == HttpStatusCode.OK)
+                {
+                    // If-Range failed or the server ignored Range. This is a
+                    // complete representation, so truncate the partial file
+                    // and use this response from byte zero after checking it.
+                    if (!TryGetFullTransfer(
+                            response,
+                            probedContentLength,
+                            probedValidator,
+                            out var fullTransfer,
+                            out var fullLength,
+                            out var fullError))
+                    {
+                        return SnapshotDownloadAttempt.Restart(fullError);
+                    }
+
+                    return await CopySnapshotResponseAsync(
+                        path,
+                        response,
+                        offset: 0,
+                        append: false,
+                        fullTransfer,
+                        fullLength,
+                        downloadToken);
+                }
+
+                if (response.StatusCode == HttpStatusCode.PartialContent)
+                {
+                    if (!TryGetPartialTransfer(
+                            response,
+                            offset,
+                            previousTransfer!,
+                            probedContentLength,
+                            probedValidator,
+                            out var partialTransfer,
+                            out var segmentLength,
+                            out var partialError))
+                    {
+                        return SnapshotDownloadAttempt.Restart(partialError);
+                    }
+
+                    return await CopySnapshotResponseAsync(
+                        path,
+                        response,
+                        offset,
+                        append: true,
+                        partialTransfer,
+                        segmentLength,
+                        downloadToken);
+                }
+
+                if (response.StatusCode == HttpStatusCode.RequestedRangeNotSatisfiable)
+                    return SnapshotDownloadAttempt.Restart(new IOException("the snapshot rejected the requested byte range"));
+
+                throw ProviderException.UnavailableFor(
+                    Id,
+                    "the catalogue snapshot answered HTTP " + (int)response.StatusCode);
+            }
+
+            if (response.StatusCode == HttpStatusCode.PartialContent)
+                return SnapshotDownloadAttempt.Restart(new IOException("the snapshot returned a partial response without a range request"));
+
+            if (response.StatusCode != HttpStatusCode.OK)
+            {
+                throw ProviderException.UnavailableFor(
+                    Id,
+                    "the catalogue snapshot answered HTTP " + (int)response.StatusCode);
+            }
+
+            if (!TryGetFullTransfer(
+                    response,
+                    probedContentLength,
+                    probedValidator,
+                    out var transfer,
+                    out var contentLength,
+                    out var error))
+            {
+                return SnapshotDownloadAttempt.Restart(error);
+            }
+
+            return await CopySnapshotResponseAsync(
+                path,
+                response,
+                offset: 0,
+                append: false,
+                transfer,
+                contentLength,
+                downloadToken);
+        }
+    }
+
+    private async Task<SnapshotDownloadAttempt> CopySnapshotResponseAsync(
+        string path,
+        HttpResponseMessage response,
+        long offset,
+        bool append,
+        SnapshotTransfer transfer,
+        long? expectedSegmentLength,
+        CancellationToken ct)
     {
         try
         {
-            using var request = new HttpRequestMessage(HttpMethod.Get, GutenbergCatalog.SnapshotPath);
-            using var response = await _snapshotHttp.SendAsync(
-                request,
-                HttpCompletionOption.ResponseHeadersRead,
-                ct);
-
-            if (!response.IsSuccessStatusCode)
-                throw ProviderException.UnavailableFor(Id, "the catalogue snapshot answered HTTP " + (int)response.StatusCode);
-
-            var declaredLength = response.Content.Headers.ContentLength;
-            if (declaredLength > _snapshotLimits.MaxSnapshotBytes)
-            {
-                throw ProviderException.InvalidResponse(
-                    Id,
-                    $"the catalogue snapshot declares {declaredLength} bytes, over the {_snapshotLimits.MaxSnapshotBytes} byte limit");
-            }
-
             await using var source = await response.Content.ReadAsStreamAsync(ct);
             await using var destination = new FileStream(
                 path,
-                FileMode.CreateNew,
-                FileAccess.Write,
+                append ? FileMode.Open : FileMode.Create,
+                append ? FileAccess.ReadWrite : FileAccess.Write,
                 FileShare.None,
                 64 * 1024,
-                FileOptions.Asynchronous);
+                FileOptions.Asynchronous | FileOptions.SequentialScan);
+
+            if (append)
+            {
+                if (destination.Length != offset)
+                    return SnapshotDownloadAttempt.Restart(new IOException("the partial snapshot file changed before resume"));
+                destination.Position = offset;
+            }
 
             var buffer = new byte[64 * 1024];
             long written = 0;
@@ -364,11 +648,12 @@ public sealed partial class GutenbergProvider : IContentProvider,
 
             while ((read = await source.ReadAsync(buffer, ct)) > 0)
             {
-                written += read;
+                if (expectedSegmentLength is { } segmentLimit && written + read > segmentLimit)
+                {
+                    throw ProviderException.InvalidResponse(Id, "the snapshot response exceeded its declared range length");
+                }
 
-                // Checked while streaming, because the declared length above is
-                // the source's claim rather than a fact.
-                if (written > _snapshotLimits.MaxSnapshotBytes)
+                if (offset + written + read > _snapshotLimits.MaxSnapshotBytes)
                 {
                     throw ProviderException.InvalidResponse(
                         Id,
@@ -376,16 +661,227 @@ public sealed partial class GutenbergProvider : IContentProvider,
                 }
 
                 await destination.WriteAsync(buffer.AsMemory(0, read), ct);
+                written += read;
             }
+
+            await destination.FlushAsync(ct);
+
+            if (expectedSegmentLength is { } declaredSegment && written < declaredSegment)
+            {
+                return SnapshotDownloadAttempt.Retry(
+                    transfer,
+                    null,
+                    new EndOfStreamException($"the snapshot response ended after {written} of {declaredSegment} declared bytes"));
+            }
+
+            var finalLength = offset + written;
+            if (transfer.TotalLength is not { } totalLength)
+            {
+                throw ProviderException.InvalidResponse(Id, "the catalogue snapshot has no declared content length");
+            }
+
+            if (finalLength > totalLength)
+                throw ProviderException.InvalidResponse(Id, "the snapshot exceeded its declared content length");
+
+            if (finalLength < totalLength)
+            {
+                return SnapshotDownloadAttempt.Retry(
+                    transfer,
+                    null,
+                    new EndOfStreamException($"the snapshot ended at {finalLength} of {totalLength} declared bytes"));
+            }
+
+            return SnapshotDownloadAttempt.Success(transfer);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            return SnapshotDownloadAttempt.Retry(transfer, null, new TimeoutException("the snapshot stream timed out"));
         }
         catch (HttpRequestException ex)
         {
-            throw ProviderException.UnavailableFor(Id, ex.Message);
+            return SnapshotDownloadAttempt.Retry(transfer, null, ex);
         }
-        catch (OperationCanceledException ex) when (!ct.IsCancellationRequested)
+        catch (IOException ex)
         {
-            throw ProviderException.UnavailableFor(Id, ex.Message);
+            return SnapshotDownloadAttempt.Retry(transfer, null, ex);
         }
+    }
+
+    private bool TryGetFullTransfer(
+        HttpResponseMessage response,
+        long? probedContentLength,
+        SnapshotValidator probedValidator,
+        out SnapshotTransfer transfer,
+        out long? expectedLength,
+        out Exception error)
+    {
+        var responseLength = response.Content.Headers.ContentLength;
+        expectedLength = responseLength ?? probedContentLength;
+        var responseValidator = SnapshotValidator.FromResponse(response);
+
+        if (expectedLength > _snapshotLimits.MaxSnapshotBytes)
+        {
+            throw ProviderException.InvalidResponse(
+                Id,
+                $"the catalogue snapshot declares {expectedLength} bytes, over the {_snapshotLimits.MaxSnapshotBytes} byte limit");
+        }
+
+        if ((probedContentLength is { } probed && expectedLength != probed)
+            || !probedValidator.Matches(responseValidator))
+        {
+            transfer = null!;
+            error = new IOException("the snapshot validator or length changed after the HEAD probe");
+            return false;
+        }
+
+        var validator = probedValidator.Merge(responseValidator);
+        var canResume = expectedLength is not null
+            && AcceptsByteRanges(response)
+            && validator.TryCreateIfRange(out _);
+        transfer = new SnapshotTransfer(expectedLength, validator, canResume);
+        error = new IOException("the snapshot metadata changed");
+        return true;
+    }
+
+    private bool TryGetPartialTransfer(
+        HttpResponseMessage response,
+        long offset,
+        SnapshotTransfer previousTransfer,
+        long? probedContentLength,
+        SnapshotValidator probedValidator,
+        out SnapshotTransfer transfer,
+        out long? expectedSegmentLength,
+        out Exception error)
+    {
+        var range = response.Content.Headers.ContentRange;
+        var responseValidator = SnapshotValidator.FromResponse(response);
+
+        if (range?.From != offset || range.To is not { } rangeEnd || range.Length is not { } totalLength)
+        {
+            transfer = null!;
+            expectedSegmentLength = null;
+            error = new IOException("the snapshot returned an invalid Content-Range");
+            return false;
+        }
+
+        if (totalLength > _snapshotLimits.MaxSnapshotBytes)
+        {
+            throw ProviderException.InvalidResponse(
+                Id,
+                $"the catalogue snapshot declares {totalLength} bytes, over the {_snapshotLimits.MaxSnapshotBytes} byte limit");
+        }
+
+        expectedSegmentLength = rangeEnd - offset + 1;
+        var responseLength = response.Content.Headers.ContentLength;
+        if (rangeEnd < offset
+            || (responseLength is { } declared && declared != expectedSegmentLength)
+            || totalLength != previousTransfer.TotalLength
+            || (probedContentLength is { } probed && totalLength != probed)
+            || !previousTransfer.Validator.Matches(responseValidator)
+            || !probedValidator.Matches(responseValidator))
+        {
+            transfer = null!;
+            error = new IOException("the snapshot validator or length changed during range recovery");
+            return false;
+        }
+
+        var validator = previousTransfer.Validator.Merge(responseValidator);
+        transfer = new SnapshotTransfer(
+            totalLength,
+            validator,
+            previousTransfer.CanResume && validator.TryCreateIfRange(out _));
+        error = new IOException("the snapshot range could not be resumed");
+        return true;
+    }
+
+    private static bool AcceptsByteRanges(HttpResponseMessage response) =>
+        response.Headers.AcceptRanges.Any(value => string.Equals(value, "bytes", StringComparison.OrdinalIgnoreCase));
+
+    private static bool IsTransientSnapshotStatus(HttpStatusCode statusCode) =>
+        statusCode is HttpStatusCode.RequestTimeout or HttpStatusCode.TooManyRequests
+            || (int)statusCode >= 500;
+
+    private static TimeSpan? GetRetryAfter(HttpResponseMessage response)
+    {
+        var retryAfter = response.Headers.RetryAfter;
+        if (retryAfter?.Delta is { } delta)
+            return delta < TimeSpan.Zero ? TimeSpan.Zero : delta;
+
+        if (retryAfter?.Date is { } date)
+        {
+            var wait = date - DateTimeOffset.UtcNow;
+            return wait < TimeSpan.Zero ? TimeSpan.Zero : wait;
+        }
+
+        return null;
+    }
+
+    private TimeSpan RetryDelay(int failedAttempt, TimeSpan? retryAfter)
+    {
+        var exponentialMs = _snapshotDownloadOptions.InitialRetryDelay.TotalMilliseconds
+            * Math.Pow(2, Math.Max(0, failedAttempt - 1));
+        var cappedMs = Math.Min(exponentialMs, _snapshotDownloadOptions.MaxRetryDelay.TotalMilliseconds);
+        var jitter = 1 + ((Random.Shared.NextDouble() * 2 - 1) * _snapshotDownloadOptions.RetryJitterRatio);
+        var jitteredMs = Math.Min(
+            _snapshotDownloadOptions.MaxRetryDelay.TotalMilliseconds,
+            Math.Max(0, cappedMs * jitter));
+        var backoff = TimeSpan.FromMilliseconds(jitteredMs);
+        return retryAfter is { } serverDelay && serverDelay > backoff ? serverDelay : backoff;
+    }
+
+    private readonly record struct SnapshotValidator(string? ETag, DateTimeOffset? LastModified)
+    {
+        public static SnapshotValidator FromResponse(HttpResponseMessage response) =>
+            new(response.Headers.ETag?.ToString(), response.Content.Headers.LastModified);
+
+        public bool Matches(SnapshotValidator candidate) =>
+            (ETag is null || string.Equals(ETag, candidate.ETag, StringComparison.Ordinal))
+            && (LastModified is null || LastModified == candidate.LastModified);
+
+        public SnapshotValidator Merge(SnapshotValidator candidate) =>
+            new(ETag ?? candidate.ETag, LastModified ?? candidate.LastModified);
+
+        public bool TryCreateIfRange(out RangeConditionHeaderValue condition)
+        {
+            if (ETag is not null
+                && EntityTagHeaderValue.TryParse(ETag, out var entityTag)
+                && !entityTag.IsWeak)
+            {
+                condition = new RangeConditionHeaderValue(entityTag);
+                return true;
+            }
+
+            if (LastModified is { } lastModified)
+            {
+                condition = new RangeConditionHeaderValue(lastModified);
+                return true;
+            }
+
+            condition = null!;
+            return false;
+        }
+    }
+
+    private sealed record SnapshotTransfer(long? TotalLength, SnapshotValidator Validator, bool CanResume);
+
+    private sealed record SnapshotDownloadAttempt(
+        bool Completed,
+        bool RestartFromZero,
+        SnapshotTransfer? Transfer,
+        TimeSpan? RetryAfter,
+        Exception? Error)
+    {
+        public static SnapshotDownloadAttempt Success(SnapshotTransfer transfer) =>
+            new(true, false, transfer, null, null);
+
+        public static SnapshotDownloadAttempt Restart(Exception error) =>
+            new(false, true, null, null, error);
+
+        public static SnapshotDownloadAttempt Retry(
+            SnapshotTransfer? transfer,
+            TimeSpan? retryAfter,
+            Exception error) =>
+            new(false, false, transfer, retryAfter, error);
     }
 
     /// <summary>
