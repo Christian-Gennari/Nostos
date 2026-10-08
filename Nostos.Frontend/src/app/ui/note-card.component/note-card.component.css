@@ -52,6 +52,11 @@
   text-decoration: underline;
 }
 
+.expand-btn:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
 /* --- Quote Block -----------------------------------------------------------
    The quote is the reason a quote-note exists, so it is the hero of the card,
    not a small tinted box competing with chrome for attention. Matches the
@@ -132,10 +137,6 @@
   min-width: 0;
 }
 
-.note-metadata .source-badge {
-  min-width: 0;
-}
-
 .meta-separator {
   opacity: 0.5;
 }
@@ -143,6 +144,7 @@
 /* Source Badge Styling */
 .source-badge {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 4px;
   text-decoration: none;
@@ -153,13 +155,19 @@
   font-size: 0.75rem;
   cursor: pointer;
   transition: background-color 0.2s ease, color 0.2s ease;
-  max-width: 200px;
+  flex: 1 1 100%;
+  min-width: 0;
 }
 
 .source-badge span {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.source-badge .source-book-title {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .source-badge .source-nav-label {
@@ -171,6 +179,11 @@
 .source-badge:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: 2px;
+}
+
+:host ::ng-deep textarea:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: -2px;
 }
 
 .source-badge:hover {

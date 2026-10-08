@@ -163,7 +163,21 @@
 
 .brain-browse-detail { max-width: 1100px; margin: 0 auto; }
 
-.brain-source-link { align-self: flex-start; }
+.brain-source-link {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-self: flex-start;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--color-brand-accent);
+  font-weight: var(--fw-medium);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.brain-source-link:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+}
 
 .brain-header-tools .search-box {
   flex: 1 1 320px;
@@ -906,6 +920,11 @@
 
 /* Metadata reads as a quiet editorial caption, not a dashboard stat. */
 .topic-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
   font-size: 0.82rem;
   color: var(--color-text-light);
 }
@@ -928,12 +947,6 @@
   gap: 0.5rem;
   padding-top: 0.65rem;
   border-top: 1px solid var(--border-color);
-}
-
-.brain-note-section {
-  display: flex;
-  flex-direction: column;
-  gap: 0.45rem;
 }
 
 /* --- Notes inspector -------------------------------------------------------
@@ -961,11 +974,20 @@
   letter-spacing: -0.01em;
 }
 
+.note-inspector-context,
+.brain-note-panel-empty-topics,
+.brain-note-provenance {
+  color: var(--color-text-muted);
+}
+
+.note-inspector-context,
+.brain-note-panel-empty-topics {
+  font-size: 0.8rem;
+}
+
 .note-inspector-context {
   max-width: 42rem;
   margin: 0;
-  color: var(--color-text-muted);
-  font-size: 0.8rem;
   line-height: 1.45;
 }
 
@@ -1002,7 +1024,7 @@
   gap: 0.45rem;
 }
 
-.note-inspector-inline-actions {
+.note-inspector-edit .note-inspector-inline-actions {
   margin-top: 0.65rem;
 }
 
@@ -1010,10 +1032,6 @@
   display: flex;
   flex-direction: column;
   gap: 0.55rem;
-}
-
-.note-inspector .brain-source-link {
-  align-self: auto;
 }
 
 .note-topic-link {
@@ -1584,11 +1602,12 @@
  * presence of a quote. */
 .note-card:hover {
   transform: translateY(-2px);
+  z-index: 1;
 }
 
 /* The shared note card owns editing, topic input and source navigation. The
    host wrapper supplies the grid boundary; these deep rules give each child a
-   full-height track and enforce the detail pane's hover/focus action contract. */
+   full-height track and the detail pane its quiet card surface. */
 :host ::ng-deep app-note-card {
   display: block;
   height: 100%;
@@ -1621,6 +1640,23 @@
   box-shadow: var(--shadow-sm);
 }
 
+:host ::ng-deep .cards-grid .note-footer {
+  flex-wrap: wrap;
+  row-gap: 0.5rem;
+  height: auto;
+  min-height: 32px;
+}
+
+:host ::ng-deep .cards-grid .note-metadata,
+:host ::ng-deep .cards-grid .note-actions.custom-actions {
+  flex: 1 1 100%;
+}
+
+:host ::ng-deep .cards-grid .note-actions.custom-actions {
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
 :host ::ng-deep app-note-card .content-row {
   display: flex;
   flex-direction: column;
@@ -1641,46 +1677,6 @@
      stretches its items to the tallest card in that row. */
   flex: 0 0 auto;
   min-height: 0;
-}
-
-:host ::ng-deep app-note-card .note-actions {
-  opacity: 0;
-  transform: translateY(4px);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-sm);
-  transition: opacity var(--motion-fast) var(--ease-out), transform var(--motion-fast) var(--ease-out);
-}
-
-:host ::ng-deep .note-card:hover app-note-card .note-actions,
-:host ::ng-deep .note-card:focus-within app-note-card .note-actions {
-  pointer-events: auto !important;
-  opacity: 1 !important;
-  transform: translateY(0) !important;
-}
-
-:host ::ng-deep app-note-card button:focus-visible,
-:host ::ng-deep app-note-card a:focus-visible,
-:host ::ng-deep app-note-card textarea:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: -2px;
-}
-
-:host ::ng-deep app-note-card .note-actions .icon-btn {
-  border-radius: var(--radius-md);
-  transition: none;
-}
-
-:host ::ng-deep app-note-card .source-badge {
-  color: var(--color-text-muted);
-  transition: none;
-}
-
-:host ::ng-deep app-note-card .note-metadata {
-  color: var(--color-text-muted);
-}
-
-:host ::ng-deep app-note-card .expand-btn {
-  transition: opacity var(--motion-fast) var(--ease-out);
 }
 
 :host ::ng-deep a.topic-tag {
@@ -2099,7 +2095,6 @@
     grid-template-columns: 1fr; /* Single column cards */
   }
 
-  .related-row,
   .related-list {
     justify-content: flex-start;
   }
@@ -2107,48 +2102,6 @@
   .related-chip,
   .related-more {
     height: 44px;
-  }
-
-  :host ::ng-deep app-note-card .note-actions {
-    opacity: 1 !important;
-    pointer-events: auto !important;
-    transform: none !important;
-  }
-
-  :host ::ng-deep app-note-card .note-actions .icon-btn {
-    min-width: 44px;
-    min-height: 44px;
-  }
-
-  /* Give the footer and the topic header room to lay out as ROWS instead of
-     a single cramped line. Before this, each row was a nowrap flex whose two
-     44px buttons needed 102px of a 287px footer that was pinned to 32px tall:
-     the action cluster overhung the card by 49px, the header cluster by 69px,
-     and because `overflow-x` on .content-col is `auto` the whole pane grew a
-     horizontal scrollbar alongside the vertical one. Wrapping puts the actions
-     on their own full-width row inside the card, right-aligned, which is what
-     removes the overflow at its source rather than hiding it. */
-  :host ::ng-deep app-note-card .note-footer {
-    flex-wrap: wrap;
-    row-gap: 0.75rem;
-    /* The fixed 32px height was sized for the desktop 32px buttons; a wrapped
-       footer needs to grow to hold the 44px row. */
-    height: auto;
-    min-height: 32px;
-  }
-
-  :host ::ng-deep app-note-card .note-actions {
-    flex: 1 1 100%;
-    justify-content: flex-end;
-    gap: 0.5rem;
-    /* The desktop treatment is a hover-revealed boxed pill. On touch it is
-       always visible, so the box is permanent chrome around two buttons that
-       already read as buttons — drop it and let them sit on the card. */
-    background: transparent;
-    border: 0;
-    border-radius: 0;
-    box-shadow: none;
-    padding: 0;
   }
 
   .topic-head-row {
@@ -2246,8 +2199,7 @@
     transform: none;
   }
 
-  :host ::ng-deep app-note-card .note-card-container,
-  :host ::ng-deep app-note-card .note-actions {
+  :host ::ng-deep app-note-card .note-card-container {
     transition: none;
   }
 }
@@ -2255,8 +2207,7 @@
 /* --- BRAIN INDEX SECTIONS & NOTE PANEL (issue #158) --- */
 
 .brain-section-title,
-.brain-section-count,
-.brain-note-topic-tag {
+.brain-section-count {
   font-weight: var(--fw-semibold);
 }
 
@@ -2290,6 +2241,7 @@
 .browse-section-header {
   flex-direction: column;
   align-items: stretch;
+  gap: 0.35rem;
 }
 
 .review-section-header {
@@ -2299,20 +2251,10 @@
 
 .review-entry {
   display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  flex-wrap: wrap;
-  gap: 0.25rem 0.65rem;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.3rem;
   min-width: 0;
-}
-
-.review-entry p {
-  flex: 1 1 100%;
-  margin: 0;
-  color: var(--color-text-muted);
-  font-size: 0.72rem;
-  line-height: 1.35;
-  text-align: right;
 }
 
 .review-position {
@@ -2326,17 +2268,9 @@
   margin-top: 0.5rem;
 }
 
-.note-inspector-review .review-return {
-  display: none;
-}
-
-.note-inspector-review .review-return.is-review-deep-link {
-  display: inline-flex;
-}
-
-@media (max-width: 768px) {
-  .note-inspector-review .review-return {
-    display: inline-flex;
+@media (min-width: 769px) {
+  .note-inspector-review .review-return:not(.is-review-deep-link) {
+    display: none;
   }
 }
 
@@ -2474,7 +2408,8 @@
   white-space: pre-wrap;
 }
 
-.brain-note-panel-topics {
+.brain-note-panel-topics,
+.brain-note-provenance {
   display: flex;
   flex-wrap: wrap;
   gap: 0.4rem;
@@ -2482,8 +2417,6 @@
 }
 
 .brain-note-panel-empty-topics {
-  font-size: 0.8rem;
-  color: var(--color-text-muted);
   margin: 0;
   font-style: italic;
 }
@@ -2640,36 +2573,19 @@
 
 
 .brain-note-provenance {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 0.35rem;
-  color: var(--color-text-muted);
   font-size: 0.76rem;
 }
 
-.brain-note-provenance .brain-source-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  color: var(--color-brand-accent);
-  font-weight: var(--fw-medium);
-  text-decoration: none;
-}
-
-.brain-note-provenance .brain-source-link:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
+.brain-note-provenance .brain-source-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .brain-note-actions {
   position: relative;
-}
-
-.brain-note-action-row {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.45rem;
 }
 
 .brain-note-more-disclosure {
@@ -2677,10 +2593,8 @@
   z-index: 5;
   top: calc(100% + 0.25rem);
   right: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  min-width: 12rem;
+  display: grid;
+  gap: 0.15rem;
   padding: 0.35rem;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
@@ -2698,7 +2612,6 @@
   }
 
   .brain-note-more-disclosure {
-    right: 0;
     max-width: min(18rem, 100%);
   }
 
@@ -2744,23 +2657,10 @@
 }
 
 @media (pointer: coarse) {
-  .brain-note-actions button,
-  .review-entry button,
+  :where(.brain-note-actions, .review-entry, .topic-meta, .source-selection-tools) button,
   .review-return,
-  .brain-note-provenance .brain-source-link,
-  .source-selection-tools > button,
+  .brain-source-link,
   .source-select-control {
-    min-height: 44px;
-  }
-
-  :host ::ng-deep app-note-card .note-actions {
-    opacity: 1 !important;
-    pointer-events: auto !important;
-    transform: none !important;
-  }
-
-  :host ::ng-deep app-note-card .note-actions .icon-btn {
-    min-width: 44px;
     min-height: 44px;
   }
 }

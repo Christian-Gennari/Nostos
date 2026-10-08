@@ -20,7 +20,7 @@
         <div class="brain-header-heading">
           <h1>Brain</h1>
           @if (isReviewing()) {
-          <span class="index-stats">{{ reviewTotal() }} {{ reviewTotal() === 1 ? 'note' : 'notes' }} to review</span>
+          <span class="index-stats">{{ reviewTotal() }} {{ reviewTotal() === 1 ? 'note' : 'notes' }} without topics</span>
           } @else if (isBrowsingNotes()) {
             @if (browseLoaded()) {
             <span class="index-stats">{{ browseTotal() }} {{ browseTotal() === 1 ? 'note' : 'notes' }}</span>
@@ -166,7 +166,7 @@
           <button appButton variant="secondary" size="sm" type="button" (click)="openReview()">
             Review one by one
           </button>
-          <p>Step through these notes in order. Optional — nothing changes unless you link one.</p>
+          <p class="note-inspector-context">Step through these notes in order. Optional: nothing changes unless you link one.</p>
         </div>
         }
       </div>
@@ -759,13 +759,16 @@
             <h1 class="topic-title">{{ detail.name }}</h1>
             }
             <div class="topic-meta">
-              {{ detail.notes.length }} {{ detail.notes.length === 1 ? 'note' : 'notes' }} from your reading
+              <span>{{ detail.notes.length }} {{ detail.notes.length === 1 ? 'note' : 'notes' }} from your reading</span>
+              @if (detail.notes.length <= 3 && !sourceSelectionMode()) {
+              <ng-container *ngTemplateOutlet="sourceSelectionAction"></ng-container>
+              }
             </div>
           </div>
         </div>
       </div>
 
-      @if (detail.notes.length > 0) {
+      @if (detail.notes.length > 3 || sourceSelectionMode()) {
       <div class="detail-tools" aria-label="Filter and sort notes">
         @if (detail.notes.length > 3) {
         <div class="note-search-box">
@@ -849,9 +852,7 @@
             Cancel
           </button>
           } @else {
-          <button appButton variant="ghost" size="sm" type="button" (click)="startSourceSelection()">
-            Select sources
-          </button>
+          <ng-container *ngTemplateOutlet="sourceSelectionAction"></ng-container>
           }
         </div>
       </div>
@@ -1132,7 +1133,9 @@
           <span>{{ note.createdAt | date : 'short' }}</span>
           }
           @if (note.createdAt && note.bookTitle) { <span aria-hidden="true">·</span> }
-          <span>{{ note.bookTitle || 'Unknown source' }}</span>
+          <span class="brain-source-title" [title]="note.bookTitle || 'Unknown source'">
+            {{ note.bookTitle || 'Unknown source' }}
+          </span>
           @if (note.bookId) {
           <a class="brain-source-link"
             [routerLink]="browseSourceParams(note) ? ['/read', note.bookId] : ['/library', note.bookId]"
@@ -1150,10 +1153,17 @@
     }
   </div>
 
+  <ng-template #sourceSelectionAction>
+    <button appButton variant="ghost" size="sm" type="button" data-testid="topic-select-sources"
+      (click)="startSourceSelection()">
+      Select sources
+    </button>
+  </ng-template>
+
   <ng-template #noteActionGroup let-note let-mode="mode" let-card="card">
     <div class="brain-note-actions" [attr.data-note-action-mode]="mode">
       @if (mode === 'search') {
-      <div class="brain-note-action-row" data-testid="brain-note-action-row" aria-label="Note actions">
+      <div class="note-inspector-inline-actions brain-note-action-row" data-testid="brain-note-action-row" aria-label="Note actions">
         <button appButton variant="primary" size="sm" type="button"
           (click)="openSearchNoteInNotes()">Open in Notes</button>
         <button appButton variant="secondary" size="sm" type="button"
@@ -1163,22 +1173,24 @@
         </button>
       </div>
       } @else {
-      <div class="brain-note-action-row" data-testid="brain-note-action-row" aria-label="Note actions">
+      <div class="note-inspector-inline-actions brain-note-action-row" data-testid="brain-note-action-row" aria-label="Note actions">
         @if (mode !== 'evidence') {
         <button appButton variant="primary" size="sm" type="button"
           (click)="mode === 'review' ? openReviewPicker() : openBrowsePicker()">Link to topic</button>
+        }
         <button appButton variant="secondary" size="sm" type="button"
           (click)="openWritingHandoff([note.id])">
           <nostos-icon name="bookmark-simple" [size]="16"></nostos-icon>
           Keep with writing…
         </button>
+        @if (mode !== 'evidence') {
         <button appButton variant="ghost" size="sm" type="button"
           [disabled]="proposalState() === 'loading' || proposalState() === 'linking'"
           [attr.data-testid]="mode === 'review' ? 'review-suggest-topics' : 'browse-suggest-topics'"
-          title="Optional assistance" aria-label="Suggest topics (optional)"
+          title="Optional — Nostos proposes topics, you decide"
           (click)="askNostos()">
           <nostos-icon name="sparkle" [size]="15"></nostos-icon>
-          Suggest topics Optional
+          Suggest topics
         </button>
         }
         <button appButton variant="ghost" size="sm" type="button" class="brain-note-more-trigger"

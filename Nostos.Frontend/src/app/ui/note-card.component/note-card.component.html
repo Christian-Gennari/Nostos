@@ -65,7 +65,7 @@
           [queryParams]="{ cfi: note.cfiRange }"
           (click)="$event.stopPropagation()"
           [attr.aria-label]="(note.cfiRange ? 'Return to passage in ' : 'Open book: ') + note.bookTitle"
-          [title]="note.cfiRange ? 'Return to passage' : 'Open book'"
+          [title]="note.bookTitle"
         >
           <nostos-icon name="books" [size]="12"></nostos-icon>
           <span class="source-book-title">{{ note.bookTitle }}</span>

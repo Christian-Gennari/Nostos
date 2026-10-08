@@ -38,7 +38,9 @@ test('Notes, review and topic evidence share one calm action hierarchy', async (
     const noteRow = page.locator('.index-list .note-row-item');
     await expect(noteRow).toHaveCount(1);
     await expect(page.locator('.review-entry')).toContainText('Review one by one');
-    await expect(page.locator('.review-entry')).toContainText('Step through these notes in order. Optional');
+    await expect(page.locator('.review-entry p')).toHaveText(
+      'Step through these notes in order. Optional: nothing changes unless you link one.'
+    );
 
     await noteRow.click();
     await expect(page.locator('.brain-browse-detail .note-text')).toContainText(unlinkedText);
@@ -46,7 +48,7 @@ test('Notes, review and topic evidence share one calm action hierarchy', async (
     await expect(page.locator('.brain-browse-detail .brain-note-action-row button')).toHaveText([
       'Link to topic',
       'Keep with writing…',
-      'Suggest topics Optional',
+      'Suggest topics',
       'More',
     ]);
 
@@ -68,7 +70,7 @@ test('Notes, review and topic evidence share one calm action hierarchy', async (
     await expect(page.locator('.note-inspector-actions .brain-note-action-row button')).toHaveText([
       'Link to topic',
       'Keep with writing…',
-      'Suggest topics Optional',
+      'Suggest topics',
       'More',
     ]);
 
@@ -86,8 +88,20 @@ test('Notes, review and topic evidence share one calm action hierarchy', async (
     await expect(evidence).toHaveCount(4);
     const evidenceMore = evidence.first().locator('.brain-note-more-trigger');
     await expect(evidenceMore).toBeVisible();
+    await expect(page.getByTestId('topic-select-sources')).toBeVisible();
+    await expect(page.locator('.topic-meta [data-testid="topic-select-sources"]')).toHaveCount(0);
+    await expect(page.locator('.detail-tools [data-testid="topic-select-sources"]')).toHaveCount(1);
+    const evidenceActions = evidence.first().locator('.brain-note-action-row button');
+    await expect(evidenceActions).toHaveText(['Keep with writing…', 'More']);
+    await expect(evidenceActions.first().locator('nostos-icon')).toHaveAttribute('name', 'bookmark-simple');
+    const keepBox = await evidenceActions.nth(0).boundingBox();
+    const moreBox = await evidenceActions.nth(1).boundingBox();
+    expect(keepBox).not.toBeNull();
+    expect(moreBox).not.toBeNull();
+    if (keepBox && moreBox) expect(Math.abs(keepBox.y - moreBox.y)).toBeLessThan(2);
     const sourceLink = evidence.first().locator('.source-badge');
     await expect(sourceLink).toContainText('Open book');
+    await expect(sourceLink).toHaveAttribute('title', bookTitle);
     await evidenceMore.click();
     const moreItems = evidence.first().locator('[data-note-more-item]');
     await expect(moreItems).toHaveText(['Edit note', 'Delete note']);
