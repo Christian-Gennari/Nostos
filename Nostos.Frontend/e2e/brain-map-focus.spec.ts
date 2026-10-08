@@ -177,7 +177,7 @@ test('map view closes the index rail and hands its space to the graph', async ({
         toggleBox: box(toggle),
         // The header must be the ONLY home for the switch and the search.
         modeSwitchCount: document.querySelectorAll('[aria-label="Topic view"]').length,
-        searchInputCount: document.querySelectorAll('input[aria-label="Search topics"]').length,
+        searchInputCount: document.querySelectorAll('input[aria-label="Search topics and notes"]').length,
         mapToolbarCount: document.querySelectorAll('.map-toolbar').length,
       };
     });
@@ -270,7 +270,7 @@ test('the mode switch is reachable and tappable on a phone in both modes', async
       };
       return {
         exit: box('.brain-header .view-mode-control [aria-label="Topic view"]'),
-        search: box('.brain-header input[aria-label="Search topics"]'),
+        search: box('.brain-header input[aria-label="Search topics and notes"]'),
         indexHidden:
           getComputedStyle(document.querySelector('.index-col') as HTMLElement).display === 'none',
         overflowX: document.documentElement.scrollWidth > window.innerWidth,
@@ -360,6 +360,8 @@ test('clicking empty space clears the selection', async ({ browser }) => {
       const container = document.querySelector('app-topic-map .sigma-container');
       if (!sigma || !graph || !container) return null;
       const box = container.getBoundingClientRect();
+      const overlays = [...document.querySelectorAll('.map-legend, .map-hud')]
+        .map((element) => element.getBoundingClientRect());
       const nodes: Array<{ x: number; y: number }> = [];
       graph.forEachNode((_id, a) => {
         const p = sigma.graphToViewport({ x: a.x, y: a.y });
@@ -371,8 +373,14 @@ test('clicking empty space clears the selection', async ({ browser }) => {
         for (let fy = 0.12; fy <= 0.9; fy += 0.05) {
           const x = box.left + box.width * fx;
           const y = box.top + box.height * fy;
-          // Keep clear of the floating toolbars at the top-left and top-right.
-          if (y < box.top + 120 && (x < box.left + 420 || x > box.right - 320)) continue;
+          // Clicks on the legend or selection/action HUD do not reach Sigma's
+          // empty canvas handler, so only consider genuinely uncovered points.
+          if (
+            overlays.some(
+              (overlay) =>
+                x >= overlay.left && x <= overlay.right && y >= overlay.top && y <= overlay.bottom
+            )
+          ) continue;
           const dist = Math.min(...nodes.map((n) => Math.hypot(n.x - x, n.y - y)));
           if (!best || dist > best.dist) best = { x, y, dist };
         }

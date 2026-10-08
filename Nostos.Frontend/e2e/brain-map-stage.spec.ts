@@ -72,10 +72,9 @@ test('map fills the main stage on desktop', async ({ browser }) => {
       const sigma = globals.__nostosSigma;
       const graph = globals.__nostosGraph;
 
-      // How much of the column the graph actually uses, and whether it still
-      // clears the floating dock. Both were wrong before: the wrapper capped the
-      // width at 1100px (66.8% of a 1600px column at 1920 wide) and the canvas
-      // stopped at `clamp(420px, 62dvh, 760px)`.
+      // The stage fills the content pane edge to edge. The canvas intentionally
+      // continues behind the floating dock; the map HUD is measured separately
+      // by the canvas geometry spec to ensure its controls stay clear.
       const colRect = col.getBoundingClientRect();
       const stageRect = stage.getBoundingClientRect();
       const containerRect = container.getBoundingClientRect();
@@ -100,7 +99,7 @@ test('map fills the main stage on desktop', async ({ browser }) => {
         rendererSize: sigma ? sigma.getDimensions() : null,
         stagePctOfColWidth: +((stageRect.width / colRect.width) * 100).toFixed(1),
         stagePctOfColHeight: +((stageRect.height / colRect.height) * 100).toFixed(1),
-        dockOverlapPx: dockRect
+        canvasDockOverlapPx: dockRect
           ? Math.round(
               Math.max(
                 0,
@@ -141,9 +140,10 @@ test('map fills the main stage on desktop', async ({ browser }) => {
       `graph must use the column height, measured ${geo.stagePctOfColHeight}%`
     ).toBeGreaterThanOrEqual(70);
 
-    // Growing the graph must not push it under the dock or overflow the page.
-    expect(geo.dockOverlapPx, 'the dock must not cover the graph canvas').toBe(0);
-    expect(geo.vOverflow, 'a taller map must not create page overflow').toBe(false);
+    // The graph surface extends behind the dock. Overlay clearance is checked
+    // against the actual dock rectangle in brain-map-canvas.spec.ts.
+    expect(geo.canvasDockOverlapPx, 'the canvas must continue under the dock').toBeGreaterThan(0);
+    expect(geo.vOverflow, 'the edge-to-edge map must not create page overflow').toBe(false);
 
     // The seeded brain must actually be in the graph.
     expect(geo.graphOrder, 'seeded topics must render as nodes').toBeGreaterThanOrEqual(5);
@@ -173,6 +173,17 @@ test('graph is framed and centred when the map opens', async ({ browser }) => {
       if (!sigma || !graph) return null;
 
       const dims = sigma.getDimensions();
+      const container = document.querySelector('.sigma-container') as HTMLElement;
+      const legend = document.querySelector('.map-legend') as HTMLElement | null;
+      const hud = document.querySelector('.map-hud') as HTMLElement | null;
+      const containerRect = container.getBoundingClientRect();
+      const topInset = legend
+        ? Math.max(0, legend.getBoundingClientRect().bottom - containerRect.top)
+        : 0;
+      const bottomInset = hud
+        ? Math.max(0, containerRect.bottom - hud.getBoundingClientRect().top)
+        : 0;
+      const openBandHeight = Math.max(1, dims.height - topInset - bottomInset);
       const xs: number[] = [];
       const ys: number[] = [];
       let offscreen = 0;
@@ -189,29 +200,27 @@ test('graph is framed and centred when the map opens', async ({ browser }) => {
       const maxY = Math.max(...ys);
       return {
         dims,
+        openBandHeight: Math.round(openBandHeight),
         nodes: xs.length,
         offscreen,
         fillW: Math.round((100 * (maxX - minX)) / dims.width),
-        fillH: Math.round((100 * (maxY - minY)) / dims.height),
+        fillH: Math.round((100 * (maxY - minY)) / openBandHeight),
         centreOffsetX: Math.round((minX + maxX) / 2 - dims.width / 2),
-        centreOffsetY: Math.round((minY + maxY) / 2 - dims.height / 2),
+        centreOffsetY: Math.round((minY + maxY) / 2 - (topInset + openBandHeight / 2)),
       };
     });
 
     console.log('FRAMING:', JSON.stringify(framed, null, 1));
     expect(framed, 'graph geometry must be measurable').not.toBeNull();
 
-    // Nothing may be off-screen on open, and the graph must use the stage.
-    //
-    // Thresholds note: node positions come from a ForceAtlas2 seed and the graph
-    // is normalized to fill 88% of the tighter axis, so the SHORTER axis reaches
-    // ~88% and the other is proportionally smaller for an unsquare graph. 60 is
-    // the honest floor for the wider axis; the tighter axis is held to 80.
+    // The graph is fitted into the open band between the legend and the complete
+    // HUD. This keeps nodes clear of controls while preserving the existing
+    // 80%-of-fit floor in the visible band rather than the full canvas.
     expect(framed!.offscreen, 'no nodes may open off-screen').toBe(0);
-    expect(Math.max(framed!.fillW, framed!.fillH), 'graph must use the stage').toBeGreaterThanOrEqual(80);
+    expect(Math.max(framed!.fillW, framed!.fillH), 'graph must use the visible band').toBeGreaterThanOrEqual(80);
     expect(Math.min(framed!.fillW, framed!.fillH), 'graph must not collapse').toBeGreaterThanOrEqual(15);
     expect(Math.abs(framed!.centreOffsetX), 'graph must be horizontally centred').toBeLessThanOrEqual(40);
-    expect(Math.abs(framed!.centreOffsetY), 'graph must be vertically centred').toBeLessThanOrEqual(40);
+    expect(Math.abs(framed!.centreOffsetY), 'graph must be centred between the overlays').toBeLessThanOrEqual(40);
   } finally {
     await context.close();
   }
@@ -409,7 +418,7 @@ test('map fills the stage on mobile', async ({ browser }) => {
   }
 });
 
-test('map does not hide behind the dock in landscape', async ({ browser }) => {
+test('map canvas continues under the dock while keeping nodes clear in landscape', async ({ browser }) => {
   const fixture = loadFixture();
   // Seed locally rather than relying on a previously-run test's data: without
   // topics the graph has no nodes, Sigma is never constructed, and the canvas
@@ -426,10 +435,8 @@ test('map does not hide behind the dock in landscape', async ({ browser }) => {
     ],
     ['Attention', 'Memory', 'Practice', 'Solitude', 'Reading']
   );
-  // 844x390 is a phone in landscape: wider than the 768px breakpoint, so every
-  // width-keyed rule missed it and the map kept the desktop treatment. The stage
-  // then overflowed the 390px viewport and the floating dock covered graph nodes
-  // (measured 17 of them).
+  // 844x390 is a phone in landscape: the canvas runs to the viewport edges
+  // beneath the floating dock, while its nodes stay in the open band above it.
   const { context, page } = await newCapturePage(browser, { width: 844, height: 390 }, true);
   try {
     await openMap(page, fixture.baseUrl);
@@ -469,7 +476,7 @@ test('map does not hide behind the dock in landscape', async ({ browser }) => {
 
     expect(geo.stageHeight, 'the stage must fit inside a short viewport').toBeLessThanOrEqual(390);
     expect(geo.stageBottom, 'the stage must not extend past the viewport').toBeLessThanOrEqual(390);
-    expect(geo.overlap, 'the dock must not overlap the graph canvas').toBe(0);
+    expect(geo.overlap, 'the full-bleed canvas must continue behind the dock').toBeGreaterThan(0);
     expect(geo.behindDock, 'no node may render underneath the dock').toBe(0);
     expect(geo.overflow, 'no horizontal overflow in landscape').toBe(false);
   } finally {

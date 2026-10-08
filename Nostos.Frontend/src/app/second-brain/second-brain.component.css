@@ -848,16 +848,8 @@
 .content-col.mobile-visible:has(app-topic-map) {
   display: flex;
   flex-direction: column;
-  /* Dock clearance, not the reading layout's 136px.
-   *
-   * The reading column reserves 136px so text never hides behind the floating
-   * dock. On the map that reserve is 152px of empty band BELOW the graph
-   * (measured at 1280x800: stage bottom 648, column content bottom 800), on the
-   * one surface that wants every pixel. The dock is a centred 332x65px pill, so
-   * what the graph actually has to clear is its own top edge.
-   * Padding (not the dock's own box) is what the layout can reclaim, hence a
-   * value tighter than the dock's full height. */
-  padding-bottom: 5.5rem;
+  overflow: hidden;
+  padding: 0;
 }
 
 .content-col.mobile-visible:has(app-topic-map) .map-wrapper {
@@ -1826,6 +1818,12 @@
     border-right: none;
   }
 
+  .brain-layout.map-view {
+    /* The phone dock is reserved by the workspace shell. Map is the one canvas
+       that continues behind it, while its controls stay clear of the dock. */
+    height: 100dvh;
+  }
+
   .brain-header {
     padding: 1rem 1rem 0.75rem;
     /* A phone has no width for a title row and a control cluster side by side
@@ -2192,40 +2190,18 @@
 }
 
 /*
- * The map view on a phone, in EITHER orientation.
- *
- * Width alone is the wrong test: an 844x390 landscape phone matches no
- * `max-width: 768px` rule, so it kept the desktop treatment — the stage
- * overflowed the 390px viewport by 64px (measured stage bottom 485) and the
- * floating dock then covered 17 graph nodes. Keying on height as well covers
- * every short viewport regardless of width.
+ * Phone and short canvas layout. The selected header stays above the map,
+ * while map-specific rules remove the editorial inset and dock reserve.
  */
 @media (max-width: 768px), (max-height: 500px) {
-/* --- MAP view on a phone ------------------------------------------------
-   The map is a full-bleed surface, but it was inheriting the reading layout:
-   1.5rem side padding, and a 96px bottom pad reserved for the dock. Measured
-   on a 390x844 phone that produced 37px gutters each side (74px of 390px
-   lost) and a 523px stage ending 163px above the dock — a third of the screen
-   was empty band while the graph was squeezed into the rest.
-
-   `.content-col:has(app-topic-map)` targets only the map view, so the
-   topic-reading layout keeps its padding. */
 .content-col.mobile-visible:has(app-topic-map) {
   display: flex;
   flex-direction: column;
-  /* Absorb the space under the persistent header, exactly as the reading
-     layout does. */
   flex: 1 1 auto;
   min-height: 0;
-  /* The map fills the column; it scrolls nowhere, so `auto` on the reading
-     layout is wrong here and can leave a scrollbar. */
+  width: 100%;
   overflow: hidden;
   padding: 0;
-  /* The shell already reserves the dock band (`main.workspace-content` carries
-     its own bottom padding), so reserving it again here wasted it: measured, the
-     column ended 58px above where the shell had already stopped, leaving blank
-     space the map could use. */
-  padding-bottom: 0;
 }
 
 /* The `.map-wrapper` and `app-topic-map` flex chain above applies at every
@@ -2235,12 +2211,8 @@
 }
 
 /*
- * Short viewports (landscape phones) need more bottom clearance than 58px.
- *
- * In landscape the dock does not behave like the flush full-width portrait rail:
- * it was measured occupying roughly 89px of the viewport (top 301 in a 390px
- * window). The 58px that clears the portrait rail left the stage ending under the
- * dock — measured a 20px overlap of the canvas. Reserve the taller clearance.
+ * Short viewports use a taller overlay inset because the centered desktop dock
+ * sits higher above the bottom edge. The canvas itself still fills the content.
  */
 @media (max-height: 500px) {
   /*
@@ -2263,22 +2235,6 @@
     display: none;
   }
 
-  .content-col.mobile-visible:has(app-topic-map) {
-    /* The column must claim the height left under the header. `flex: 1` (with
-       `min-height: 0`) is what does that; relying on `height: 100%` measured a
-       117px column (mostly its own bottom padding) and a 2px stage. */
-    display: flex;
-    flex-direction: column;
-    flex: 1 1 auto;
-    min-height: 0;
-    width: 100%;
-    /* Short viewports need their own dock clearance: the shell's reserve is sized
-       for the flush full-width portrait rail, while in landscape the dock floats
-       inset from the bottom edge and so occupies more of a short viewport than
-       that reserve covers. With the portrait value the stage ended under the dock
-       — measured a 20px canvas overlap and 1 node in the dock band. */
-    padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px));
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
