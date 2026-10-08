@@ -1328,22 +1328,19 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
   }
 
   /**
-   * Stage height covered by the overlays, which the fit should frame around.
-   *
-   * Only on a portrait stage: there the legend spans the top and the rail sits
-   * across the bottom, so a graph centred on the whole stage measured with its
-   * top third empty and its lower nodes under the rail. On a landscape stage
-   * both are small corner items and reserving full-width bands for them would
-   * only shrink a graph that is already bound by height.
+   * Insets occupied by the overlays. The graph fills the whole canvas, while
+   * its initial and fit framing keeps nodes in the open band between the legend
+   * and the HUD. The HUD is positioned above the dock (or at the safe screen edge
+   * in focus mode), so measuring it also accounts for that space.
    */
   private overlayInsets(): { top: number; bottom: number } {
     const stage = this.sigmaContainer?.nativeElement?.getBoundingClientRect();
-    if (!stage || !(stage.height > stage.width)) return { top: 0, bottom: 0 };
+    if (!stage) return { top: 0, bottom: 0 };
     const legend = this.mapLegend?.nativeElement?.getBoundingClientRect();
-    const rail = this.mapHud?.nativeElement?.querySelector('.map-actions')?.getBoundingClientRect();
+    const hud = this.mapHud?.nativeElement?.getBoundingClientRect();
     return {
       top: legend && legend.height ? Math.max(0, legend.bottom - stage.top) : 0,
-      bottom: rail && rail.height ? Math.max(0, stage.bottom - rail.top) : 0,
+      bottom: hud && hud.height ? Math.max(0, stage.bottom - hud.top) : 0,
     };
   }
 
@@ -1447,7 +1444,9 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
     const effectiveX = spanX > 0 ? spanX : Math.max(extent.maxX - extent.minX, 1e-6);
     const effectiveY = spanY > 0 ? spanY : Math.max(extent.maxY - extent.minY, 1e-6);
 
-    const freeHeight = Math.max(height * 0.5, height - insets.top - insets.bottom);
+    // A short landscape view can leave less than half the stage between the
+    // legend and HUD. Clamping upward would frame nodes under those overlays.
+    const freeHeight = Math.max(1, height - insets.top - insets.bottom);
     const ratio = Math.max(
       effectiveX / (width * occupancy.x),
       effectiveY / (freeHeight * occupancy.y),

@@ -36,20 +36,16 @@
 }
 
 /*
- * ONE surface.
- *
- * The map used to be a padded `--bg-surface` card holding a stage with a 1px
- * border AND a 1px inset-shadow border — a card inside a card with a doubled
- * rule. The stage is now the only frame: one hairline, one radius, the field
- * inside it.
+ * The stage is the graph canvas. It has no card frame of its own: the field
+ * runs to the content edges and the controls float above it.
  */
 .map-stage {
   position: relative;
   min-height: 360px;
   overflow: hidden;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-lg);
-  background: var(--bg-body);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 /* A graph surface should feel like a field, not a flat card. */
@@ -75,6 +71,14 @@
 .map-stage.is-fullscreen {
   border: 0;
   border-radius: 0;
+  padding: env(safe-area-inset-top, 0) env(safe-area-inset-right, 0) env(safe-area-inset-bottom, 0)
+    env(safe-area-inset-left, 0);
+}
+
+.map-stage:fullscreen .map-hud,
+.map-stage.is-fullscreen .map-hud {
+  /* Focus mode hides the app dock, so the overlays can use the bottom edge. */
+  bottom: 0.75rem;
 }
 
 .map-stage.is-fullscreen:not(:fullscreen) {
@@ -82,8 +86,6 @@
   inset: 0;
   z-index: calc(var(--layer-navigation, 50) + 1);
   min-height: 0;
-  padding: env(safe-area-inset-top, 0) env(safe-area-inset-right, 0) env(safe-area-inset-bottom, 0)
-    env(safe-area-inset-left, 0);
 }
 
 /* ── Overlays on the stage ── */
@@ -173,7 +175,7 @@
 .map-hud {
   position: absolute;
   right: 0.75rem;
-  bottom: 0.75rem;
+  bottom: calc(6.25rem + env(safe-area-inset-bottom, 0px));
   left: 0.75rem;
   z-index: 2;
   display: flex;
@@ -265,9 +267,11 @@
 
 .map-card-related .nostos-chip {
   max-width: 100%;
+  min-width: 0;
   overflow: hidden;
   font-size: 0.75rem;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .map-card-notes {
@@ -357,7 +361,7 @@
 
   .map-card-related .nostos-chip,
   .map-card-notes {
-    min-height: 36px;
+    min-height: 44px;
   }
 }
 
@@ -383,7 +387,7 @@
 
   .map-hud {
     right: 0.5rem;
-    bottom: 0.5rem;
+    bottom: calc(4.25rem + env(safe-area-inset-bottom, 0px));
     left: 0.5rem;
     flex-direction: column;
     align-items: stretch;
@@ -400,23 +404,16 @@
     padding: 0.7rem 0.75rem 0.75rem;
   }
 
-  /* One row of related topics that scrolls sideways, so the card keeps a
-     fixed, small height and the graph keeps the screen. */
+  /* Show every related topic at rest in two columns instead of clipping the
+     last chip behind a hidden horizontal scrollbar. Full names remain
+     available through each button's aria-label. */
   .map-card-related {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    scrollbar-width: none;
-    margin-inline: -0.75rem;
-    padding-inline: 0.75rem;
-  }
-
-  .map-card-related::-webkit-scrollbar {
-    display: none;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .map-card-related .nostos-chip {
-    flex: 0 0 auto;
-    max-width: 70%;
+    width: 100%;
   }
 }
 
@@ -436,7 +433,7 @@
 
   .map-hud {
     right: 0.5rem;
-    bottom: 0.5rem;
+    bottom: calc(6.25rem + env(safe-area-inset-bottom, 0px));
     left: 0.5rem;
     flex-direction: row;
     align-items: flex-end;
