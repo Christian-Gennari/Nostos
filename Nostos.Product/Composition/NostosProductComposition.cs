@@ -23,6 +23,7 @@ using Nostos.Backend.Services.Notes;
 using Nostos.Backend.Services.Notes.Imports;
 using Nostos.Backend.Services.Portability;
 using Nostos.Backend.Services.Portability.Migration;
+using Nostos.Backend.Services.Recovery;
 using Nostos.Product.BookText;
 using Nostos.Product.Services.Ai;
 
@@ -52,6 +53,11 @@ public sealed record NostosProductDescriptor(
 /// must set this to <c>false</c>: the group's handlers require them, and
 /// mapping the group without them fails endpoint creation.
 /// </param>
+/// <param name="ManagedBackupsAuthorizationPolicy">
+/// Optional host authorization policy for managed-backup history. Hosts with
+/// a default policy weaker than their product-access fallback should provide
+/// their customer product-access policy here.
+/// </param>
 public sealed record NostosProductEndpointPolicies(
     string? ExpensiveMutationRateLimitPolicy = null,
     string? ProviderFetchRateLimitPolicy = null,
@@ -59,7 +65,8 @@ public sealed record NostosProductEndpointPolicies(
     string? PortableExportAuthorizationPolicy = null,
     string? OpdsAuthorizationPolicy = null,
     string? MigrationAuthorizationPolicy = null,
-    bool MapMigrationTransferEndpoints = true)
+    bool MapMigrationTransferEndpoints = true,
+    string? ManagedBackupsAuthorizationPolicy = null)
 {
     public static NostosProductEndpointPolicies None { get; } = new();
 }
@@ -198,6 +205,7 @@ public static class NostosProductComposition
 
         services.AddScoped<IPortableArchiveService, PortableArchiveService>();
         services.TryAddScoped<IPortableArchiveExporter, DefaultPortableArchiveExporter>();
+        services.TryAddScoped<IManagedBackupCatalog, NotSupportedManagedBackupCatalog>();
         services.TryAddScoped<IMigrationJobStore, EfMigrationJobStore>();
         // Migration job creation is refused until a host wires a real phase
         // handler. A host with no engine (for example one that maps product
@@ -373,6 +381,7 @@ public static class NostosProductComposition
         routes.MapAiProviderSettingsEndpoints();
         routes.MapAssistantSettingsEndpoints();
         routes.MapDeploymentCapabilitiesEndpoints();
+        routes.MapManagedBackupEndpoints(policies.ManagedBackupsAuthorizationPolicy);
         routes.MapPortabilityEndpoints(policies);
         routes.MapMigrationEndpoints(policies);
         routes.MapOpdsEndpoints(
