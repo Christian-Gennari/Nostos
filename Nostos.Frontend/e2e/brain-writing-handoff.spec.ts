@@ -36,6 +36,9 @@ async function openHandoff(
   const dialog = page.getByRole('dialog', { name: 'Keep with writing', exact: true });
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole('status', { name: 'Loading writings' })).toHaveCount(0);
+  await expect(dialog.locator('#brain-writing-handoff-description')).toHaveText(
+    'Keep a reference to this note with a writing. The note stays in Brain; nothing is copied into your text.'
+  );
   return { dialog, trigger };
 }
 
@@ -127,13 +130,20 @@ test('existing writing handoff persists once and duplicate retry has one truthfu
     });
     const modalMetrics = await page.evaluate(() => {
       const card = document.querySelector('.handoff-dialog')!.getBoundingClientRect();
-      const header = document.querySelector('.handoff-header')!.getBoundingClientRect();
       const footer = document.querySelector('.handoff-actions')!.getBoundingClientRect();
       const list = document.querySelector('.destination-list')!.getBoundingClientRect();
       const listElement = document.querySelector('.destination-list') as HTMLElement;
+      const headerElement = document.querySelector('.handoff-header')!;
+      const shellHead = document.querySelector('.modal-head')!.getBoundingClientRect();
+      const header = headerElement.getBoundingClientRect();
       return {
         card: { top: card.top, bottom: card.bottom },
-        header: { top: header.top, bottom: header.bottom },
+        header: {
+          top: header.top,
+          bottom: header.bottom,
+          ownBorderBottom: getComputedStyle(headerElement).borderBottomWidth,
+          shellBottom: shellHead.bottom,
+        },
         footer: { top: footer.top, bottom: footer.bottom },
         list: { top: list.top, bottom: list.bottom },
         listScrolls: listElement.scrollHeight > listElement.clientHeight,
@@ -141,6 +151,8 @@ test('existing writing handoff persists once and duplicate retry has one truthfu
       };
     });
     expect(modalMetrics.header.top).toBeGreaterThanOrEqual(modalMetrics.card.top);
+    expect(modalMetrics.header.ownBorderBottom).toBe('0px');
+    expect(Math.abs(modalMetrics.header.shellBottom - modalMetrics.header.bottom)).toBeLessThanOrEqual(1);
     expect(modalMetrics.footer.bottom).toBeLessThanOrEqual(modalMetrics.card.bottom);
     expect(modalMetrics.header.bottom).toBeLessThanOrEqual(modalMetrics.list.top);
     expect(modalMetrics.footer.top).toBeGreaterThanOrEqual(modalMetrics.list.bottom);
@@ -165,16 +177,23 @@ test('existing writing handoff persists once and duplicate retry has one truthfu
     const mobileMetrics = await page.evaluate(() => {
       const card = document.querySelector('.handoff-dialog')!.getBoundingClientRect();
       const footer = document.querySelector('.handoff-actions')!.getBoundingClientRect();
+      const header = document.querySelector('.handoff-header')!;
+      const headerRect = header.getBoundingClientRect();
+      const shellHeadRect = document.querySelector('.modal-head')!.getBoundingClientRect();
       return {
         width: document.documentElement.clientWidth,
         height: document.documentElement.clientHeight,
         card: { top: card.top, bottom: card.bottom },
         footer: { top: footer.top, bottom: footer.bottom },
+        headerBorderBottom: getComputedStyle(header).borderBottomWidth,
+        headerToShellBottom: shellHeadRect.bottom - headerRect.bottom,
         horizontalOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
       };
     });
     expect(mobileMetrics.card.top).toBe(0);
     expect(mobileMetrics.footer.bottom).toBeLessThanOrEqual(mobileMetrics.height + 1);
+    expect(mobileMetrics.headerBorderBottom).toBe('0px');
+    expect(Math.abs(mobileMetrics.headerToShellBottom)).toBeLessThanOrEqual(1);
     expect(mobileMetrics.horizontalOverflow).toBeLessThanOrEqual(1);
 
     await page.setViewportSize({ width: 1280, height: 600 });

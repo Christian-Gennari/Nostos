@@ -35,10 +35,11 @@
 
   <div class="handoff-content">
     <p id="brain-writing-handoff-description" class="handoff-description">
-      {{ sourceCount() === 1 ? 'Keep a reference to this note' : 'Keep references to these notes' }}
-      ({{ sourceCount() }} {{ sourceCount() === 1 ? 'note' : 'notes' }}) with a writing.
-      The note{{ sourceCount() === 1 ? '' : 's' }} stay{{ sourceCount() === 1 ? 's' : '' }} in Brain;
-      nothing is copied into your text.
+      @if (sourceCount() === 1) {
+        Keep a reference to this note with a writing. The note stays in Brain; nothing is copied into your text.
+      } @else {
+        Keep references to these {{ sourceCount() }} notes with a writing. The notes stay in Brain; nothing is copied into your text.
+      }
     </p>
 
     @if (loadingDestinations()) {
@@ -119,7 +120,10 @@
             @if (filteredDestinations().length === 0) {
               <p class="empty-destinations filter-empty">No writings match that filter.</p>
             } @else {
-              <div class="destination-list">
+              <div
+                class="destination-list"
+                [style.--destination-list-scrollbar-width]="destinationListScrollbarWidth() + 'px'"
+              >
                 @for (writing of filteredDestinations(); track writing.id) {
                   <label
                     class="destination-option existing-destination"

@@ -57,6 +57,7 @@ export class BrainWritingHandoffComponent implements OnInit, AfterViewInit {
   private readonly router = inject(Router);
 
   readonly destinations = signal<WritingDto[]>([]);
+  readonly destinationListScrollbarWidth = signal(0);
   readonly destinationFilter = signal('');
   readonly loadingDestinations = signal(true);
   readonly destinationError = signal(false);
@@ -106,6 +107,7 @@ export class BrainWritingHandoffComponent implements OnInit, AfterViewInit {
   }
 
   ngAfterViewInit(): void {
+    this.destinationListScrollbarWidth.set(this.measureDestinationListScrollbarWidth());
     const activeElement = this.document.activeElement;
     this.returnFocusElement = activeElement instanceof HTMLElement ? activeElement : null;
     setTimeout(() => {
@@ -308,7 +310,6 @@ export class BrainWritingHandoffComponent implements OnInit, AfterViewInit {
     }
 
     if (added.length === 0 && alreadyCount > 0) {
-      this.dismissSuccessToastForWriting(writing);
       this.toast.info(
         `${alreadyCount === 1 ? 'This source is' : 'These sources are'} already kept with “${writing.name}”`
       );
@@ -327,15 +328,6 @@ export class BrainWritingHandoffComponent implements OnInit, AfterViewInit {
     this.restoreFocusAfterClose();
   }
 
-  private dismissSuccessToastForWriting(writing: WritingDto): void {
-    const writingLabel = `with “${writing.name}”`;
-    for (const toast of this.toast.toasts()) {
-      if (toast.type === 'success' && toast.message.includes(writingLabel)) {
-        this.toast.dismiss(toast.id);
-      }
-    }
-  }
-
   private restoreFocusAfterClose(): void {
     const target = this.returnFocusElement;
     if (!target) return;
@@ -345,6 +337,19 @@ export class BrainWritingHandoffComponent implements OnInit, AfterViewInit {
         target.focus({ preventScroll: true });
       }
     });
+  }
+
+  private measureDestinationListScrollbarWidth(): number {
+    const body = this.document.body;
+    if (!body) return 0;
+
+    const probe = this.document.createElement('div');
+    probe.style.cssText =
+      'position:fixed;left:-1000px;top:0;width:100px;height:100px;overflow-y:scroll;scrollbar-gutter:stable;box-sizing:border-box;padding:0;border:0;visibility:hidden;pointer-events:none;';
+    body.appendChild(probe);
+    const width = probe.offsetWidth - probe.clientWidth;
+    probe.remove();
+    return Math.max(0, width);
   }
 
   private uniqueNoteIds(): string[] {

@@ -91,6 +91,28 @@ describe('BrainWritingHandoffComponent', () => {
     expect(keep.disabled).toBe(false);
   });
 
+  it('describes a singular note reference without a redundant count', async () => {
+    await create();
+
+    const description = fixture.nativeElement.querySelector(
+      '#brain-writing-handoff-description'
+    ) as HTMLElement;
+    expect(description.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+      'Keep a reference to this note with a writing. The note stays in Brain; nothing is copied into your text.'
+    );
+  });
+
+  it('includes the source count in plural reference copy', async () => {
+    await create(['note-1', 'note-2']);
+
+    const description = fixture.nativeElement.querySelector(
+      '#brain-writing-handoff-description'
+    ) as HTMLElement;
+    expect(description.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+      'Keep references to these 2 notes with a writing. The notes stay in Brain; nothing is copied into your text.'
+    );
+  });
+
   it('creates a new root Document with the entered title', async () => {
     await create();
     const completed = vi.fn();
@@ -232,24 +254,18 @@ describe('BrainWritingHandoffComponent', () => {
     expect(TestBed.inject(ToastService).toasts().at(-1)?.message).toContain('1 already there');
   });
 
-  it('replaces a prior success toast with duplicate-only feedback on retry', async () => {
+  it('emits only the already-kept info toast for a duplicate-only action', async () => {
     await create();
     const toast = TestBed.inject(ToastService);
     component.chooseExisting(documentWriting.id);
     component.confirm();
 
-    http.expectOne('/api/writings/writing-1/notes').flush([]);
-    http.expectOne((request) =>
-      request.method === 'POST' && request.url === '/api/writings/writing-1/notes'
-    ).flush(source('note-1'));
-    expect(toast.toasts().some((item) => item.type === 'success')).toBe(true);
-
-    component.confirm();
     http.expectOne('/api/writings/writing-1/notes').flush([source('note-1')]);
 
     expect(toast.toasts()).toHaveLength(1);
     expect(toast.toasts()[0].type).toBe('info');
     expect(toast.toasts()[0].message).toContain('already kept');
+    http.expectNone((request) => request.method === 'POST');
   });
 
   it('composes one idempotent addSource call per missing source', async () => {

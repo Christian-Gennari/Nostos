@@ -10,13 +10,16 @@
   overflow: hidden;
 }
 
+:host ::ng-deep .modal-card.handoff-dialog.is-sheet .modal-head.is-divided {
+  padding: 0;
+}
+
 .handoff-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
   padding: 1.15rem 1.5rem;
-  border-bottom: 1px solid var(--border-color);
 }
 
 .handoff-heading {
@@ -167,7 +170,8 @@
   flex: 0 0 auto;
   flex-direction: column;
   gap: 0.35rem;
-  margin-left: 2.75rem;
+  /* Align with the destination label text column under its radio indicator. */
+  margin-inline-start: calc(1px + 0.85rem + 1.125rem + 0.8rem);
   color: var(--color-text-muted);
   font-size: 0.78rem;
   font-weight: 600;
@@ -204,6 +208,7 @@
 }
 
 .destination-list {
+  --destination-list-scrollbar-width: 0px;
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
@@ -213,8 +218,9 @@
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 0.15rem 0.2rem 0.15rem 0;
+  padding: 0.15rem 0;
   scrollbar-gutter: stable;
+  margin-inline-end: calc(0px - var(--destination-list-scrollbar-width, 0px));
 }
 
 .destination-list .destination-option {
