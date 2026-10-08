@@ -310,6 +310,34 @@ describe('BrainWritingHandoffComponent', () => {
     http.expectNone((request) => request.method !== 'GET');
   });
 
+  it('blocks Cancel, close, and Escape while a membership save is in flight', async () => {
+    await create();
+    const cancelled = vi.fn();
+    component.cancelled.subscribe(cancelled);
+
+    component.chooseExisting(documentWriting.id);
+    component.confirm();
+    fixture.detectChanges();
+    expect(component.saving()).toBe(true);
+    expect(
+      (fixture.nativeElement.querySelector('.handoff-close') as HTMLButtonElement).disabled
+    ).toBe(true);
+
+    component.cancel();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    expect(cancelled).not.toHaveBeenCalled();
+    expect(fixture.nativeElement.querySelector('.handoff-dialog')).toBeTruthy();
+
+    http.expectOne('/api/writings/writing-1/notes').flush([]);
+    http.expectOne((request) =>
+      request.method === 'POST' && request.url === '/api/writings/writing-1/notes'
+    ).flush(source('note-1'));
+    fixture.detectChanges();
+
+    expect(component.saving()).toBe(false);
+    expect(cancelled).not.toHaveBeenCalled();
+  });
+
   it('navigates to the exact writingId contract only when explicitly requested', async () => {
     await create();
     const router = TestBed.inject(Router);
