@@ -56,9 +56,17 @@ import {
 /** localStorage flag for typewriter mode in the studio. */
 const TYPEWRITER_KEY = 'nostos.typewriter';
 const STUDIO_SIDEBAR_WIDTH_KEY = 'nostos.studio.leftSidebarWidth';
+const STUDIO_FILES_RAIL_KEY = 'nostos.studio.filesRailOpen';
+const STUDIO_REFERENCE_RAIL_KEY = 'nostos.studio.referenceRailOpen';
 const STUDIO_SIDEBAR_MIN = 220;
 const STUDIO_SIDEBAR_MAX = 420;
-const STUDIO_SIDEBAR_DEFAULT = 280;
+const STUDIO_SIDEBAR_DEFAULT_MAX = 280;
+const STUDIO_COMPACT_WIDTH = 900;
+const STUDIO_COMPACT_HEIGHT = 500;
+
+function isStudioCompactViewport(): boolean {
+  return window.innerWidth <= STUDIO_COMPACT_WIDTH || window.innerHeight <= STUDIO_COMPACT_HEIGHT;
+}
 
 function studioSidebarMaxWidth(): number {
   return Math.max(
@@ -76,9 +84,24 @@ function readStudioSidebarWidth(): number {
     const stored = Number(localStorage.getItem(STUDIO_SIDEBAR_WIDTH_KEY));
     return Number.isFinite(stored) && stored > 0
       ? clampStudioSidebarWidth(stored)
-      : STUDIO_SIDEBAR_DEFAULT;
+      : Math.max(
+          STUDIO_SIDEBAR_MIN,
+          Math.min(STUDIO_SIDEBAR_DEFAULT_MAX, Math.floor(window.innerWidth * 0.24)),
+        );
   } catch {
-    return STUDIO_SIDEBAR_DEFAULT;
+    return Math.max(
+      STUDIO_SIDEBAR_MIN,
+      Math.min(STUDIO_SIDEBAR_DEFAULT_MAX, Math.floor(window.innerWidth * 0.24)),
+    );
+  }
+}
+
+function readStudioRailOpen(key: string): boolean {
+  try {
+    const stored = localStorage.getItem(key);
+    return stored === null ? true : stored === '1';
+  } catch {
+    return true;
   }
 }
 
@@ -145,9 +168,15 @@ export class WritingStudio implements OnInit, AfterViewInit {
     tab: 'brain' | 'notes';
   } | null = null;
 
-  isMobile = signal(window.innerWidth < 768);
-  showFileSidebar = signal(true);
-  showBrainSidebar = signal(!this.isMobile());
+  private readonly initialCompactMode = isStudioCompactViewport();
+  isCompact = signal(this.initialCompactMode);
+  showFileSidebar = signal(
+    !this.initialCompactMode && readStudioRailOpen(STUDIO_FILES_RAIL_KEY),
+  );
+  showBrainSidebar = signal(
+    !this.initialCompactMode && readStudioRailOpen(STUDIO_REFERENCE_RAIL_KEY),
+  );
+  private compactDrawerCaret: MarkdownEditorTransientState | null = null;
 
   /** Desktop file tree width. The divider is user-resizable; mobile owns its drawer width. */
   leftSidebarWidth = signal(readStudioSidebarWidth());
@@ -219,8 +248,109 @@ export class WritingStudio implements OnInit, AfterViewInit {
     return studioSidebarMaxWidth();
   }
 
+  filesRailLabel(): string {
+    return this.showFileSidebar() ? 'Hide files' : 'Show files';
+  }
+
+  referenceRailLabel(): string {
+    return this.showBrainSidebar() ? 'Hide reference' : 'Show reference';
+  }
+
+  toggleFilesRail(): void {
+    this.setRailOpen('files', !this.showFileSidebar());
+  }
+
+  toggleReferenceRail(): void {
+    this.setRailOpen('reference', !this.showBrainSidebar());
+  }
+
+  toggleFilesRailFromHeading(): void {
+    this.setRailOpen('files', false, true);
+  }
+
+  toggleReferenceRailFromHeading(): void {
+    this.setRailOpen('reference', false, true);
+  }
+
+  openFilesDrawer(): void {
+    this.setRailOpen('files', true);
+  }
+
+  private setRailOpen(
+    rail: 'files' | 'reference',
+    open: boolean,
+    fromHeading = false,
+    restoreCaretOnClose = true,
+  ): void {
+    const isFiles = rail === 'files';
+
+    if (this.isCompact()) {
+      if (open) {
+        this.captureCompactDrawerCaret();
+        if (isFiles) this.showBrainSidebar.set(false);
+        else this.showFileSidebar.set(false);
+        if (isFiles) this.showFileSidebar.set(true);
+        else this.showBrainSidebar.set(true);
+        this.focusDrawerCollapse(rail);
+        return;
+      }
+
+      if (isFiles) this.showFileSidebar.set(false);
+      else this.showBrainSidebar.set(false);
+      this.focusHeaderRailToggle(rail);
+      if (restoreCaretOnClose) this.restoreCompactDrawerCaret();
+      return;
+    }
+
+    if (isFiles) this.showFileSidebar.set(open);
+    else this.showBrainSidebar.set(open);
+    this.persistStudioRailOpen(
+      isFiles ? STUDIO_FILES_RAIL_KEY : STUDIO_REFERENCE_RAIL_KEY,
+      open,
+    );
+
+    // The heading control is removed with its rail when it collapses, so return
+    // focus to the persistent editor-header toggle in that case.
+    if (!open && fromHeading) this.focusHeaderRailToggle(rail);
+  }
+
+  private persistStudioRailOpen(key: string, open: boolean): void {
+    try {
+      localStorage.setItem(key, open ? '1' : '0');
+    } catch {
+      // The rail still toggles for this session when storage is unavailable.
+    }
+  }
+
+  private focusHeaderRailToggle(rail: 'files' | 'reference'): void {
+    const selector = rail === 'files' ? '.files-toggle' : '.reference-toggle';
+    const toggle = this.hostElement.nativeElement.querySelector(selector) as HTMLButtonElement | null;
+    toggle?.focus();
+  }
+
+  private focusDrawerCollapse(rail: 'files' | 'reference'): void {
+    const focus = () => {
+      const selector = rail === 'files' ? '.files-rail-collapse' : '.reference-rail-collapse';
+      const collapse = this.hostElement.nativeElement.querySelector(selector) as HTMLButtonElement | null;
+      collapse?.focus();
+    };
+    if (typeof window.requestAnimationFrame === 'function') window.requestAnimationFrame(focus);
+    else window.setTimeout(focus, 0);
+  }
+
+  private captureCompactDrawerCaret(): void {
+    this.compactDrawerCaret = this.markdownEditor?.captureTransientState() ?? null;
+  }
+
+  private restoreCompactDrawerCaret(): void {
+    const state = this.compactDrawerCaret;
+    this.compactDrawerCaret = null;
+    if (!state || !this.activeItem() || !this.markdownEditor) return;
+    void this.markdownEditor.restoreTransientState(state, this.editorText());
+  }
+
   startLeftSidebarResize(event: PointerEvent): void {
-    if (this.isMobile() || event.button !== 0) return;
+    if (this.isCompact() || event.button !== 0) return;
 
     const handle = event.currentTarget as HTMLElement | null;
     if (!handle) return;
@@ -253,7 +383,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
   }
 
   resizeLeftSidebarWithKeyboard(event: KeyboardEvent): void {
-    if (this.isMobile()) return;
+    if (this.isCompact()) return;
 
     const delta = event.key === 'ArrowLeft' ? -16 : event.key === 'ArrowRight' ? 16 : 0;
     if (delta === 0) return;
@@ -346,13 +476,20 @@ export class WritingStudio implements OnInit, AfterViewInit {
 
   constructor() {
     const onResize = () => {
-      const mobile = window.innerWidth < 768;
-      this.isMobile.set(mobile);
+      const compact = isStudioCompactViewport();
       this.leftSidebarWidth.set(clampStudioSidebarWidth(this.leftSidebarWidth()));
 
-      if (!mobile) {
-        this.showFileSidebar.set(true);
-        this.showBrainSidebar.set(true);
+      if (compact === this.isCompact()) return;
+
+      this.isCompact.set(compact);
+      if (compact) {
+        this.captureCompactDrawerCaret();
+        this.showFileSidebar.set(false);
+        this.showBrainSidebar.set(false);
+      } else {
+        this.compactDrawerCaret = null;
+        this.showFileSidebar.set(readStudioRailOpen(STUDIO_FILES_RAIL_KEY));
+        this.showBrainSidebar.set(readStudioRailOpen(STUDIO_REFERENCE_RAIL_KEY));
       }
     };
 
@@ -401,8 +538,9 @@ export class WritingStudio implements OnInit, AfterViewInit {
     this.loadBrain();
     this.loadBooks();
 
-    if (this.isMobile()) {
+    if (this.isCompact()) {
       this.showFileSidebar.set(false);
+      this.showBrainSidebar.set(false);
     }
   }
 
@@ -411,10 +549,12 @@ export class WritingStudio implements OnInit, AfterViewInit {
   }
 
   closeSidebars() {
-    if (this.isMobile()) {
-      this.showFileSidebar.set(false);
-      this.showBrainSidebar.set(false);
-    }
+    if (!this.isCompact()) return;
+    const returnTo: 'files' | 'reference' = this.showFileSidebar() ? 'files' : 'reference';
+    this.showFileSidebar.set(false);
+    this.showBrainSidebar.set(false);
+    this.focusHeaderRailToggle(returnTo);
+    this.restoreCompactDrawerCaret();
   }
 
   // --- Zen (focus) mode — issue #49 ---
@@ -617,9 +757,14 @@ export class WritingStudio implements OnInit, AfterViewInit {
         this.editorText.set(contentDto.content);
         this.inspectedSource.set(null);
 
-        if (this.isMobile()) {
+        if (this.isCompact()) {
+          const returnTo: 'files' | 'reference' = this.showFileSidebar()
+            ? 'files'
+            : 'reference';
+          this.compactDrawerCaret = null;
           this.showFileSidebar.set(false);
           if (fromHandoff) this.showBrainSidebar.set(false);
+          this.focusHeaderRailToggle(returnTo);
         }
 
         if (fromHandoff) this.restoreSourceReturnSurface(contentDto);
@@ -825,7 +970,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
       return;
     }
 
-    if (this.isMobile()) this.showBrainSidebar.set(false);
+    if (this.isCompact()) this.setRailOpen('reference', false, false, false);
   }
 
   async openSource(source: Note): Promise<void> {
@@ -1046,7 +1191,7 @@ export class WritingStudio implements OnInit, AfterViewInit {
           }
         : null;
 
-      if (this.isMobile()) {
+      if (this.isCompact()) {
         // Mobile remains one-pane: Documents never reopens over the returned
         // editor. The reference drawer may reopen because its existing close
         // control is the explicit route back to drafting.

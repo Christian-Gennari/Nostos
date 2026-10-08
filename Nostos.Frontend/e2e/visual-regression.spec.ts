@@ -105,7 +105,10 @@ test.describe('visual matrix — Writing Studio (fixture-served)', () => {
     try {
       await page.goto(`${fixture.baseUrl}/studio`, { waitUntil: 'domcontentloaded' });
       await page.locator('.editor-pane .empty-state').waitFor({ timeout: 30_000 });
-      await expect(page.locator('.editor-pane .empty-state h2')).toContainText('Select a file to begin writing');
+      await expect(page.locator('.editor-pane .empty-state h2')).toHaveText('Open a document to begin writing');
+      await expect(page.locator('.editor-pane .empty-subtext')).toHaveText(
+        'Choose one from Files, or start a new document.',
+      );
       const png = await capturePng(page, 'studio-empty-desktop');
       await writeGeometryReport(
         'studio-empty-desktop',
@@ -113,7 +116,7 @@ test.describe('visual matrix — Writing Studio (fixture-served)', () => {
           {
             id: 'studio-empty-state',
             pass: true,
-            message: 'empty studio shows the "Select a file to begin writing" state',
+            message: 'empty studio invites the user to open a document or start a new one',
             metrics: { png },
           },
         ],
@@ -207,12 +210,8 @@ test.describe('visual matrix — Writing Studio (fixture-served)', () => {
       await fileRow.waitFor({ timeout: 30_000 });
       const fileSidebar = page.locator('.sidebar-left');
       if (!(await fileSidebar.evaluate((el) => el.classList.contains('open')))) {
-        // The empty state exposes "Open Sidebar"; when a document is already
-        // active the editor header exposes the toggle instead.
-        await page
-          .locator('.editor-pane .empty-state .btn-outline, .editor-header .sidebar-header-toggle')
-          .first()
-          .click();
+        // The persistent editor-header control opens the default-closed Files drawer.
+        await page.locator('.files-toggle').click();
       }
       await expect(fileSidebar).toHaveClass(/\bopen\b/, { timeout: 15_000 });
       await fileRow.click();
