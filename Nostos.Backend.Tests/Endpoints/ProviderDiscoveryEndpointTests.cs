@@ -189,15 +189,16 @@ public sealed class ProviderDiscoveryEndpointTests : IClassFixture<LibraryEndpoi
         {
             Cover = new ProviderCover(coverUri, "image/png", ".png"),
         };
-        var provider = new EndpointProvider(
+        var provider = new CatalogEndpointProvider(
             "gutenberg",
             ProviderCapabilities.EbookAcquisition,
-            new ProviderSearchPage([]));
+            new ProviderSearchPage([]),
+            item);
         var snapshot = new SnapshotDiscovery(new ProviderDiscoveryResult(
             [item],
             HasMore: false,
             Sources: [new ProviderDiscoverySourceStatus("gutenberg", "Project Gutenberg", Succeeded: true)]));
-        var covers = new SnapshotCoverLookup(new ProviderCover(coverUri, "image/png", ".png"));
+        var covers = new SnapshotCoverLookup(item);
         var downloader = new FakeProviderContentDownloader { DefaultCoverPayload = [1, 2, 3] };
 
         await using var app = _factory.WithWebHostBuilder(builder =>
@@ -227,6 +228,7 @@ public sealed class ProviderDiscoveryEndpointTests : IClassFixture<LibraryEndpoi
         covers.LastExternalId.Should().Be("42");
         downloader.RequestedUrls.Should().ContainSingle().Which.Should().Be(coverUri);
         provider.SearchCount.Should().Be(0);
+        provider.CatalogCallCount.Should().Be(0, "the host cover lookup serves the discovery row's cover metadata");
     }
 
     [Fact]
@@ -394,7 +396,7 @@ public sealed class ProviderDiscoveryEndpointTests : IClassFixture<LibraryEndpoi
             Metadata: new ProviderMetadata(title),
             Assets: []);
 
-    private sealed class EndpointProvider :
+    private class EndpointProvider :
         IContentProvider,
         IProviderSearch,
         IProviderAcquisitionPlanner,
@@ -425,9 +427,19 @@ public sealed class ProviderDiscoveryEndpointTests : IClassFixture<LibraryEndpoi
             string id,
             ProviderCapabilities acquisition,
             Func<ProviderSearchQuery, CancellationToken, Task<ProviderSearchPage>> search)
+            : this(id, acquisition, search, supportsItemRetrieval: false)
+        {
+        }
+
+        protected EndpointProvider(
+            string id,
+            ProviderCapabilities acquisition,
+            Func<ProviderSearchQuery, CancellationToken, Task<ProviderSearchPage>> search,
+            bool supportsItemRetrieval)
         {
             Id = id;
-            Capabilities = ProviderCapabilities.Search | acquisition;
+            Capabilities = ProviderCapabilities.Search | acquisition |
+                (supportsItemRetrieval ? ProviderCapabilities.ItemRetrieval : ProviderCapabilities.None);
             _search = search;
         }
 
@@ -474,7 +486,30 @@ public sealed class ProviderDiscoveryEndpointTests : IClassFixture<LibraryEndpoi
         }
     }
 
-    private sealed class SnapshotCoverLookup(ProviderCover? cover) : IProviderCoverLookup
+    private sealed class CatalogEndpointProvider : EndpointProvider, IProviderCatalog
+    {
+        private readonly ProviderItem _item;
+
+        public CatalogEndpointProvider(
+            string id,
+            ProviderCapabilities acquisition,
+            ProviderSearchPage page,
+            ProviderItem item)
+            : base(id, acquisition, (_, _) => Task.FromResult(page), supportsItemRetrieval: true)
+        {
+            _item = item;
+        }
+
+        public int CatalogCallCount { get; private set; }
+
+        public Task<ProviderItem?> GetItemAsync(string externalId, CancellationToken ct)
+        {
+            CatalogCallCount++;
+            return Task.FromResult<ProviderItem?>(_item.ExternalId == externalId ? _item : null);
+        }
+    }
+
+    private sealed class SnapshotCoverLookup(ProviderItem item) : IProviderCoverLookup
     {
         public int CallCount { get; private set; }
         public string? LastProviderId { get; private set; }
@@ -485,6 +520,9 @@ public sealed class ProviderDiscoveryEndpointTests : IClassFixture<LibraryEndpoi
             CallCount++;
             LastProviderId = providerId;
             LastExternalId = externalId;
+            var cover = item.ProviderId == providerId && item.ExternalId == externalId
+                ? item.Cover
+                : null;
             return Task.FromResult(cover);
         }
     }
