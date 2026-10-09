@@ -44,7 +44,19 @@ test('Notes, review and topic evidence share one calm action hierarchy', async (
 
     await noteRow.click();
     await expect(page.locator('.brain-browse-detail .note-text')).toContainText(unlinkedText);
-    await expect(page.locator('.brain-browse-detail .source-badge')).toContainText('Open book');
+    const sourceBadge = page.locator('.brain-browse-detail .source-badge');
+    await expect(sourceBadge).toContainText('Open book');
+    // A short book link must not paint a full-width hover hit area.
+    const provenance = await sourceBadge.evaluate((element) => {
+      const metadata = element.closest('.note-metadata');
+      return {
+        badgeWidth: element.getBoundingClientRect().width,
+        metadataWidth: metadata?.getBoundingClientRect().width ?? 0,
+        flexGrow: getComputedStyle(element).flexGrow,
+      };
+    });
+    expect(provenance.flexGrow).toBe('0');
+    expect(provenance.metadataWidth - provenance.badgeWidth).toBeGreaterThan(48);
     await expect(page.locator('.brain-browse-detail .brain-note-action-row button')).toHaveText([
       'Link to topic',
       'Keep with writing…',
@@ -56,12 +68,33 @@ test('Notes, review and topic evidence share one calm action hierarchy', async (
     await more.focus();
     await page.keyboard.press('Enter');
     await expect(more).toHaveAttribute('aria-expanded', 'true');
+    const desktopTrigger = await more.boundingBox();
+    const desktopMenu = await page.locator('.brain-browse-detail .brain-note-more-disclosure').boundingBox();
+    expect(desktopTrigger).not.toBeNull();
+    expect(desktopMenu).not.toBeNull();
+    if (desktopTrigger && desktopMenu) {
+      expect(Math.abs(desktopMenu.x + desktopMenu.width - desktopTrigger.x - desktopTrigger.width)).toBeLessThan(4);
+      expect(desktopMenu.y - desktopTrigger.y - desktopTrigger.height).toBeGreaterThanOrEqual(0);
+      expect(desktopMenu.y - desktopTrigger.y - desktopTrigger.height).toBeLessThan(12);
+    }
     await page.keyboard.press('Tab');
     const editItem = page.locator('.brain-browse-detail [data-note-more-item]').first();
     await expect(editItem).toBeFocused();
     await page.keyboard.press('Escape');
     await expect(page.locator('.brain-note-more-disclosure')).toHaveCount(0);
     await expect(more).toBeFocused();
+
+    // The same popup stays inside a phone viewport after actions wrap.
+    await page.setViewportSize({ width: 390, height: 844 });
+    await more.click();
+    const mobileMenu = await page.locator('.brain-browse-detail .brain-note-more-disclosure').boundingBox();
+    expect(mobileMenu).not.toBeNull();
+    if (mobileMenu) {
+      expect(mobileMenu.x).toBeGreaterThanOrEqual(-1);
+      expect(mobileMenu.x + mobileMenu.width).toBeLessThanOrEqual(391);
+    }
+    await more.click();
+    await page.setViewportSize(DESKTOP_VIEWPORT);
 
     await page.locator('.review-entry').getByRole('button', { name: 'Review one by one' }).click();
     await expect(page.locator('[data-testid="brain-review-inspector"]')).toBeVisible();
