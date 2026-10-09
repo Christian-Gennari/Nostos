@@ -463,6 +463,12 @@ test('Writing Studio shell stays editor-first across desktop and compact viewpor
       await compactPage.keyboard.press('Escape');
       await expect(compactPage.locator('.files-toggle')).toBeFocused();
       await expect(compactPage.locator('.files-toggle')).toHaveAttribute('aria-expanded', 'false');
+      if (viewport.label === 'tablet-portrait') {
+        await compactPage.screenshot({
+          path: '/tmp/809-studio-files-drawer-escape-after-820x1180-light.png',
+          animations: 'disabled',
+        });
+      }
       await typeAfterLayoutChange(compactPage, `${viewport.label}-files-return`);
       await expectSameEditorInstance(compactPage);
 
@@ -562,6 +568,12 @@ test('Writing Studio shell stays editor-first across desktop and compact viewpor
         'aria-expanded',
         'false',
       );
+      if (viewport.label === 'tablet-portrait') {
+        await compactPage.screenshot({
+          path: '/tmp/809-studio-reference-drawer-escape-after-820x1180-light.png',
+          animations: 'disabled',
+        });
+      }
       await typeAfterLayoutChange(compactPage, `${viewport.label}-reference-return`);
       await expectSameEditorInstance(compactPage);
 
