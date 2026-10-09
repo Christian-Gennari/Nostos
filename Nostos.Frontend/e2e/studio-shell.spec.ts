@@ -55,6 +55,8 @@ async function measureShell(page: import('@playwright/test').Page) {
     const pane = document.querySelector('.editor-pane');
     const iframe = document.querySelector<HTMLIFrameElement>('.tox-edit-area__iframe');
     const editorBody = iframe?.contentDocument?.body;
+    const manuscriptRect = editorBody?.getBoundingClientRect();
+    const manuscriptStyle = editorBody && getComputedStyle(editorBody);
     const paragraph = editorBody?.querySelector('p');
     const text = paragraph?.firstChild;
     let firstLineCharacters = 0;
@@ -100,6 +102,13 @@ async function measureShell(page: import('@playwright/test').Page) {
 
     return {
       paneWidth: Math.round(paneRect?.width ?? 0),
+      manuscriptWidth: Math.round(manuscriptRect?.width ?? 0),
+      manuscriptTextWidth: manuscriptRect && manuscriptStyle
+        ? Math.round(manuscriptRect.width
+          - parseFloat(manuscriptStyle.paddingLeft)
+          - parseFloat(manuscriptStyle.paddingRight))
+        : 0,
+      manuscriptFontSize: manuscriptStyle?.fontSize ?? null,
       firstLineCharacters,
       toolbarGlyphX,
       toolbarGlyphRectX,
@@ -217,7 +226,7 @@ test('Writing Studio shell stays editor-first across desktop and compact viewpor
       });
 
       const bothOpen = await measureShell(page);
-      expect(bothOpen.firstLineCharacters).toBeLessThanOrEqual(75);
+      expect(bothOpen.firstLineCharacters).toBeLessThanOrEqual(115);
       expect(bothOpen.toolbarRows).toBeLessThanOrEqual(1);
       if (viewport.label === 'desktop' || viewport.label === 'tablet-landscape') {
         const expectedRailWidth = viewport.label === 'desktop' ? 360 : 280;
@@ -271,8 +280,14 @@ test('Writing Studio shell stays editor-first across desktop and compact viewpor
 
       const bothCollapsed = await measureShell(page);
       expect(bothCollapsed.paneWidth).toBe(viewport.width);
-      expect(bothCollapsed.firstLineCharacters).toBeLessThanOrEqual(75);
+      expect(bothCollapsed.firstLineCharacters).toBeLessThanOrEqual(115);
       expect(bothCollapsed.toolbarRows).toBeLessThanOrEqual(1);
+      if (viewport.label === 'desktop') {
+        // No sidebars: the manuscript should no longer be a 600px island
+        // centered in a much wider pane. The prose itself gets >700px.
+        expect(bothCollapsed.manuscriptWidth).toBe(820);
+        expect(bothCollapsed.manuscriptTextWidth).toBeGreaterThan(700);
+      }
       console.log(
         `[studio-shell] ${viewport.label} ${viewport.width}x${viewport.height} both-collapsed ${JSON.stringify(bothCollapsed)}`,
       );
@@ -459,7 +474,12 @@ test('Writing Studio shell stays editor-first across desktop and compact viewpor
       expect(drawersClosed.paneWidth).toBe(viewport.width);
       expect(drawersClosed.firstLineCharacters).toBeGreaterThanOrEqual(45);
       expect(drawersClosed.toolbarRows).toBeLessThanOrEqual(1);
-      if (viewport.label === 'phone') expectToolbarGlyphAligned(drawersClosed);
+      if (viewport.label === 'phone') {
+        expectToolbarGlyphAligned(drawersClosed);
+        // The mobile manuscript still fills the phone and uses its existing face.
+        expect(drawersClosed.manuscriptWidth).toBe(viewport.width);
+        expect(drawersClosed.manuscriptFontSize).toBe('17px');
+      }
       console.log(
         `[studio-shell] ${viewport.label} ${viewport.width}x${viewport.height} drawers-closed ${JSON.stringify(drawersClosed)}`,
       );
