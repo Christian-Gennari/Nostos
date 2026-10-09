@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Nostos.Backend.Endpoints;
 using Nostos.Backend.Providers;
+using Nostos.Backend.Providers.Acquisition;
 using Nostos.Backend.Providers.Contracts;
 using Nostos.Backend.Providers.Discovery;
 using Nostos.Backend.Tests.Support;
@@ -178,6 +179,54 @@ public sealed class ProviderDiscoveryEndpointTests : IClassFixture<LibraryEndpoi
         snapshot.LastRequest.ProviderIds.Should().BeEquivalentTo(
             ["gutenberg", "librivox"],
             "#774 sends the enabled set on every aggregate discovery call");
+    }
+
+    [Fact]
+    public async Task CoverProxy_UsesHostCoverMetadataWithoutFetchingItemDetailsPerResult()
+    {
+        var coverUri = new Uri("https://covers.example.com/42.jpg");
+        var item = Item("gutenberg", "42", ProviderMediaKind.Ebook, "The Republic") with
+        {
+            Cover = new ProviderCover(coverUri, "image/png", ".png"),
+        };
+        var provider = new EndpointProvider(
+            "gutenberg",
+            ProviderCapabilities.EbookAcquisition,
+            new ProviderSearchPage([]));
+        var snapshot = new SnapshotDiscovery(new ProviderDiscoveryResult(
+            [item],
+            HasMore: false,
+            Sources: [new ProviderDiscoverySourceStatus("gutenberg", "Project Gutenberg", Succeeded: true)]));
+        var covers = new SnapshotCoverLookup(new ProviderCover(coverUri, "image/png", ".png"));
+        var downloader = new FakeProviderContentDownloader { DefaultCoverPayload = [1, 2, 3] };
+
+        await using var app = _factory.WithWebHostBuilder(builder =>
+        {
+            ReplaceProvidersWithDiscovery(builder, snapshot, provider);
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<IProviderCoverLookup>();
+                services.AddSingleton<IProviderCoverLookup>(covers);
+                services.RemoveAll<IProviderContentDownloader>();
+                services.AddSingleton<IProviderContentDownloader>(downloader);
+            });
+        });
+        using var client = app.CreateClient();
+
+        var search = await client.GetFromJsonAsync<ProviderDiscoverySearchResultDto>(
+            "/api/providers/search?query=republic");
+        search!.Items.Should().ContainSingle();
+        search.Items[0].CoverUrl.Should().Be("/api/providers/gutenberg/items/42/cover");
+
+        using var response = await client.GetAsync(search.Items[0].CoverUrl);
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("image/png");
+        (await response.Content.ReadAsByteArrayAsync()).Should().Equal(1, 2, 3);
+        covers.CallCount.Should().Be(1);
+        covers.LastProviderId.Should().Be("gutenberg");
+        covers.LastExternalId.Should().Be("42");
+        downloader.RequestedUrls.Should().ContainSingle().Which.Should().Be(coverUri);
+        provider.SearchCount.Should().Be(0);
     }
 
     [Fact]
@@ -422,6 +471,21 @@ public sealed class ProviderDiscoveryEndpointTests : IClassFixture<LibraryEndpoi
             CallCount++;
             LastRequest = request;
             return Task.FromResult(result);
+        }
+    }
+
+    private sealed class SnapshotCoverLookup(ProviderCover? cover) : IProviderCoverLookup
+    {
+        public int CallCount { get; private set; }
+        public string? LastProviderId { get; private set; }
+        public string? LastExternalId { get; private set; }
+
+        public Task<ProviderCover?> GetCoverAsync(string providerId, string externalId, CancellationToken ct)
+        {
+            CallCount++;
+            LastProviderId = providerId;
+            LastExternalId = externalId;
+            return Task.FromResult(cover);
         }
     }
 }

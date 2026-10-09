@@ -192,6 +192,7 @@ public static class ProviderEndpoints
                 string providerId,
                 string externalId,
                 IProviderEnablementService enablement,
+                IProviderCoverLookup covers,
                 IProviderContentDownloader downloader,
                 CancellationToken ct) =>
             {
@@ -199,20 +200,20 @@ public static class ProviderEndpoints
                 if (provider is null)
                     return UnknownProvider(providerId);
 
-                if (provider.Catalog is null || provider.DownloadPolicy is null)
+                if (provider.DownloadPolicy is null)
                     return Results.NotFound();
 
                 try
                 {
-                    var item = await provider.Catalog.GetItemAsync(externalId, ct);
-                    if (item?.Cover is null)
+                    var cover = await covers.GetCoverAsync(providerId, externalId, ct);
+                    if (cover is null)
                         return Results.NotFound();
 
                     var bytes = await downloader.DownloadBytesAsync(
-                        item.Cover.Url, provider.DownloadPolicy, 12L * 1024 * 1024, ct);
+                        cover.Url, provider.DownloadPolicy, 12L * 1024 * 1024, ct);
 
-                    var contentType = item.Cover.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase)
-                        ? item.Cover.ContentType
+                    var contentType = cover.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase)
+                        ? cover.ContentType
                         : "image/jpeg";
 
                     return Results.File(bytes, contentType);

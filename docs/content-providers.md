@@ -266,6 +266,11 @@ values, and the endpoint drops any row whose provider id is not registered in
 outside it), so provider visibility is enforced at the HTTP boundary rather than
 trusted from the backend.
 
+A catalog-backed host can also register `IProviderCoverLookup` so the cover
+proxy reuses catalog cover metadata instead of issuing an item-detail request
+for every visible card. SelfHosted's default lookup continues to use the
+provider catalog.
+
 Discovery results are metadata only and may be stale. Acquisition never treats
 them as authority: when the user adds an item, the provider's planner
 re-resolves it against the live source and verifies the requested asset is still
