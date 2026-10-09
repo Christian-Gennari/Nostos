@@ -185,14 +185,17 @@ test('Cloud More has the same neutral rest state as its dock siblings in both th
 
     await more.click();
     await expect(more).toHaveAttribute('aria-expanded', 'true');
-    const openBg = await more.evaluate((el) => getComputedStyle(el).backgroundColor);
-    expect(openBg, theme + ': open More should be visually distinguishable').not.toBe(neutral[3].background);
+    await expect
+      .poll(() => more.evaluate((el) => getComputedStyle(el).backgroundColor))
+      .not.toBe(neutral[3].background);
 
     await page.keyboard.press('Escape');
     await expect(more).toHaveAttribute('aria-expanded', 'false');
     await expect(page.getByRole('dialog', { name: 'More' })).toHaveCount(0);
-    const closedBg = await more.evaluate((el) => getComputedStyle(el).backgroundColor);
-    expect(closedBg, theme + ': More should reset after touch/keyboard closure').toBe(neutral[3].background);
+    // Background-color is animated, so allow the shared dock transition to settle.
+    await expect
+      .poll(() => more.evaluate((el) => getComputedStyle(el).backgroundColor))
+      .toBe(neutral[3].background);
   }
 });
 
