@@ -1184,23 +1184,15 @@
 }
 
 /* --- S2 Reference sidebar content: compact rows and explicit action hierarchy --- */
+/* The Library sub-tabs use the same borderless track and raised selection as
+   the main Reference tabs, not a competing partial underline treatment. */
 .sidebar-tabs.library-tabs {
-  gap: 1.15rem;
-  padding: 0;
-  margin: 0.2rem 0 0.45rem;
-  background: transparent;
-  border-bottom: 1px solid var(--border-color);
-  border-radius: 0;
+  margin: 0.15rem 0 0.65rem;
 }
 
 .sidebar-tabs.library-tabs .tab-btn.toggle-opt {
-  position: relative;
-  flex: 0 0 auto;
   min-height: 36px;
-  padding: 0.2rem 0.15rem 0.5rem;
-  border-radius: 0;
-  background: transparent;
-  color: var(--color-text-muted);
+  padding: 0.4rem 0.5rem;
   font-size: 0.78rem;
 }
 
@@ -1208,28 +1200,6 @@
   .sidebar-tabs.library-tabs .tab-btn.toggle-opt {
     min-height: 44px;
   }
-}
-
-.sidebar-tabs.library-tabs .tab-btn.toggle-opt.active {
-  background: transparent;
-  color: var(--color-text-main);
-  font-weight: 600;
-}
-
-.sidebar-tabs.library-tabs .tab-btn.toggle-opt.active::after {
-  content: '';
-  position: absolute;
-  right: 0.1rem;
-  bottom: -1px;
-  left: 0.1rem;
-  height: 2px;
-  border-radius: 2px 2px 0 0;
-  background: var(--color-brand-accent);
-}
-
-.sidebar-tabs.library-tabs .tab-btn.toggle-opt:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
 }
 
 .reference-action-notice {
