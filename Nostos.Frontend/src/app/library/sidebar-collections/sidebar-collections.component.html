@@ -1,8 +1,4 @@
-<button class="floating-toggle" (click)="toggle()" [class.hidden]="expanded()">
-  <nostos-icon name="list" [size]="20"></nostos-icon>
-</button>
-
-<nav class="sidebar" [class.collapsed]="!expanded()">
+<nav id="library-collections-sidebar" class="sidebar" [class.collapsed]="!expanded()">
   <div class="sidebar-header">
     <!-- Kit v1 lockup: tile mark + wordmark as one piece of artwork. The tile is
          token-driven (shape = tile fill, doorway = the arch knockout). One mark
