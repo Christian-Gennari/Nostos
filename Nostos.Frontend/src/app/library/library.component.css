@@ -82,6 +82,10 @@ app-sidebar-collections.no-transition {
 }
 
 /* --- TOOLBAR --- */
+/* Only the phone toolbar renders a collections opener. */
+.floating-toggle {
+  display: none;
+}
 .toolbar {
   position: sticky;
   top: 0;
@@ -1388,13 +1392,63 @@ app-sidebar-collections.no-transition {
     gap: 8px;
     order: 1;
     width: 100%;
-    padding-left: 46px; /* Room for mobile collections button (38px + 8px gap) */
     box-sizing: border-box;
   }
 
   .toolbar-right .select-wrapper {
     flex: 1;
     min-width: 0;
+  }
+
+  /* The sidebar opener is a real member of the toolbar flex row, not a fixed
+     control trying to track it using viewport offsets. A 38px visible button
+     matches the compact sort/view/add chrome; the transparent 3px hit-area
+     extension gives it a 44px touch target without moving its neighbours. */
+  .floating-toggle {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 38px;
+    width: 38px;
+    height: 38px;
+    padding: 0;
+    margin: 0;
+    appearance: none;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface);
+    color: var(--color-text-main);
+    cursor: pointer;
+    touch-action: manipulation;
+    transition:
+      background-color var(--transition-fast),
+      transform var(--transition-fast);
+  }
+
+  .floating-toggle::after {
+    content: '';
+    position: absolute;
+    inset: -3px;
+  }
+
+  .floating-toggle:hover {
+    background: var(--bg-hover);
+    color: var(--color-text-main);
+  }
+
+  .floating-toggle:active {
+    transform: scale(0.96);
+  }
+
+  .floating-toggle:focus-visible {
+    outline: var(--focus-ring-width) solid var(--focus-ring);
+    outline-offset: 2px;
+  }
+
+  .floating-toggle.hidden {
+    opacity: 0;
+    pointer-events: none;
   }
 
   /* The view toggle's 38px track / 32px option now comes from

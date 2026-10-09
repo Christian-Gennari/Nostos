@@ -442,7 +442,16 @@ describe('SidebarCollections', () => {
         component = fixture.componentInstance;
         await fixture.whenStable();
 
-        // On mobile the drawer starts closed; open it via the toggle.
+        // The opener is rendered by the parent Library toolbar; model that
+        // sibling relationship without making the component own two toggles.
+        const toolbar = document.createElement('header');
+        toolbar.className = 'toolbar-right';
+        const opener = document.createElement('button');
+        opener.className = 'floating-toggle';
+        toolbar.appendChild(opener);
+        fixture.nativeElement.parentElement.appendChild(toolbar);
+
+        // On mobile the drawer starts closed.
         expect(component.expanded()).toBe(false);
         component.toggle();
         fixture.detectChanges();
@@ -452,9 +461,8 @@ describe('SidebarCollections', () => {
         await fixture.whenStable();
 
         expect(component.expanded()).toBe(false);
-        expect(document.activeElement).toBe(
-          fixture.nativeElement.querySelector('.floating-toggle'),
-        );
+        expect(document.activeElement).toBe(opener);
+        toolbar.remove();
       } finally {
         Object.defineProperty(window, 'innerWidth', {
           value: originalWidth,
