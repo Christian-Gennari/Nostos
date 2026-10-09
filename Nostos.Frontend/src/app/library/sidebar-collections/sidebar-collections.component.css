@@ -491,61 +491,12 @@ a.nav-item {
 }
 
 /* --- MOBILE DRAWER --- */
-.floating-toggle {
-  display: none;
-}
-
 @media (max-width: 768px) {
   /* Reset the host so library.css can own the drawer's positioning. */
   :host {
     height: auto;
     position: static;
     z-index: auto;
-  }
-
-  /* Top-left collections button in header on mobile */
-  .floating-toggle {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    position: fixed;
-    top: 12px;
-    left: 14px;
-    bottom: auto;
-    z-index: var(--layer-navigation);
-    width: 38px;
-    height: 38px;
-    border-radius: var(--radius-md, 4px);
-    background: var(--bg-surface);
-    /* The button sits on `--bg-surface`, so its glyph needs the foreground for
-       that ground — NOT the accent. `--color-primary` is the ink role and
-       resolves to green (#8fbfae) on dark, which reads as a green hamburger
-       against the porcelain header (6.53:1) instead of the near-white the
-       other header controls use (measured 14.37:1 dark / 17.20:1 light).
-       Matches `.icon-btn`'s treatment on the same toolbar. */
-    color: var(--color-text-main);
-    border: none;
-    box-shadow: var(--shadow-sm);
-    outline: 1px solid var(--border-color);
-    outline-offset: -1px;
-    cursor: pointer;
-    transition:
-      transform var(--transition-fast),
-      box-shadow var(--transition-fast),
-      background var(--transition-fast);
-  }
-
-  .floating-toggle:hover {
-    background: var(--bg-surface);
-  }
-
-  .floating-toggle:active {
-    transform: scale(0.94);
-  }
-  .floating-toggle.hidden {
-    opacity: 0;
-    transform: scale(0.8);
-    pointer-events: none;
   }
 
   /* The drawer slides as a whole: no clipped-rail behaviour, no fades. */
