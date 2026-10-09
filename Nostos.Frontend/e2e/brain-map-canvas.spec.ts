@@ -363,3 +363,70 @@ test('focus fallback pins the canvas to the viewport and exits with Escape', asy
     await context.close();
   }
 });
+
+test('the mobile topic map controls stay clear of the collapsed Ask Nostos trigger', async ({ browser }) => {
+  const { context, page } = await newCapturePage(browser, { width: 390, height: 844 }, true);
+  try {
+    await page.addInitScript(() => {
+      localStorage.setItem(
+        'nostos.library.preferences',
+        JSON.stringify({
+          viewMode: 'grid',
+          sort: 'lastread',
+          pageSize: 20,
+          sidebarExpanded: true,
+          groupByWork: true,
+          assistantEnabled: true,
+          assistantVoiceEnabled: true,
+        })
+      );
+    });
+    await page.route('**/api/assistant/status', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ available: true }),
+      });
+    });
+
+    await openMap(page);
+    const trigger = page.locator('[data-testid="assistant-trigger"]');
+    await expect(trigger).toBeVisible();
+
+    // 1. Unselected state: map-actions toolbar must sit above the Ask Nostos trigger.
+    const unselectedBoxes = await page.evaluate(() => {
+      const t = document.querySelector('[data-testid="assistant-trigger"]')?.getBoundingClientRect();
+      const a = document.querySelector('.map-actions')?.getBoundingClientRect();
+      if (!t || !a) return null;
+      return {
+        trigger: { top: t.top, bottom: t.bottom, left: t.left, right: t.right },
+        actions: { top: a.top, bottom: a.bottom, left: a.left, right: a.right },
+      };
+    });
+    expect(unselectedBoxes).not.toBeNull();
+    expect(unselectedBoxes!.actions.bottom, 'graph buttons must sit above Ask Nostos trigger')
+      .toBeLessThanOrEqual(unselectedBoxes!.trigger.top);
+
+    // 2. Selected state: selection card must also sit above the Ask Nostos trigger.
+    await selectFocusAndFit(page);
+    const selectedBoxes = await page.evaluate(() => {
+      const t = document.querySelector('[data-testid="assistant-trigger"]')?.getBoundingClientRect();
+      const a = document.querySelector('.map-actions')?.getBoundingClientRect();
+      const c = document.querySelector('.map-card')?.getBoundingClientRect();
+      if (!t || !a || !c) return null;
+      return {
+        trigger: { top: t.top, bottom: t.bottom, left: t.left, right: t.right },
+        actions: { top: a.top, bottom: a.bottom, left: a.left, right: a.right },
+        card: { top: c.top, bottom: c.bottom, left: c.left, right: c.right },
+      };
+    });
+    expect(selectedBoxes).not.toBeNull();
+    expect(selectedBoxes!.card.bottom, 'selection card must sit above Ask Nostos trigger')
+      .toBeLessThanOrEqual(selectedBoxes!.trigger.top);
+    expect(selectedBoxes!.actions.bottom, 'graph buttons must sit above the selection card')
+      .toBeLessThanOrEqual(selectedBoxes!.card.top);
+  } finally {
+    await context.close();
+  }
+});
+
