@@ -47,10 +47,10 @@ export const MOBILE_VIEWPORT: Viewport = { width: 390, height: 844 };
 export const LANDSCAPE_VIEWPORT: Viewport = { width: 844, height: 390 };
 
 /**
- * Fixed light rendering invariants for the EPUB rendition. The app ships
- * exactly one (light) theme; these constants mirror the single source of
- * truth — epub-reader.component.ts NOSTOS_LIGHT_RULES and the :root tokens
- * in styles.css. If the app tokens change, update these AND the docs
+ * Light-theme expectations for EPUB publisher-CSS normalization. These values
+ * are scoped to the EPUB assertion, not the app's general light/dark theme.
+ * They mirror epub-reader.component.ts NOSTOS_LIGHT_RULES and the :root tokens
+ * in styles.css. If these values change, update the assertion and docs
  * (docs/visual-verification.md §Fixed rendering invariants) in the same PR.
  */
 export const READER_IFRAME_LIGHT = { background: '#ffffff', color: '#1a1a1a' } as const;
