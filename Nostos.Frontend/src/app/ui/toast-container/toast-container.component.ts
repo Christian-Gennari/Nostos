@@ -58,8 +58,9 @@ import { NostosIconComponent } from '../icon/nostos-icon.component';
   styles: [
     `
       .toast-container {
+        --toast-bottom: calc(24px + var(--dock-rail-h) + 12px);
         position: fixed;
-        top: max(1rem, env(safe-area-inset-top, 0px));
+        bottom: var(--toast-bottom);
         right: max(1rem, env(safe-area-inset-right, 0px));
         z-index: var(--layer-system);
         display: flex;
@@ -72,7 +73,16 @@ import { NostosIconComponent } from '../icon/nostos-icon.component';
               env(safe-area-inset-right, 0px)
           )
         );
-        pointer-events: none;
+        max-height: max(
+          0px,
+          calc(
+            100dvh - var(--toast-bottom) -
+              env(safe-area-inset-top, 0px) - 12px
+          )
+        );
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        pointer-events: auto;
       }
 
       .toast {
@@ -152,7 +162,7 @@ import { NostosIconComponent } from '../icon/nostos-icon.component';
       @keyframes toast-enter {
         from {
           opacity: 0;
-          transform: translateY(-6px);
+          transform: translateY(6px);
         }
         to {
           opacity: 1;
@@ -167,13 +177,16 @@ import { NostosIconComponent } from '../icon/nostos-icon.component';
         }
         to {
           opacity: 0;
-          transform: translateY(-4px);
+          transform: translateY(4px);
         }
       }
 
       @media (max-width: 768px) {
         .toast-container {
-          top: calc(env(safe-area-inset-top, 0px) + 0.75rem);
+          --toast-bottom: calc(
+            var(--dock-rail-h) +
+              env(safe-area-inset-bottom, 0px) + 12px
+          );
           right: max(0.75rem, env(safe-area-inset-right, 0px));
           left: max(0.75rem, env(safe-area-inset-left, 0px));
           width: auto;
