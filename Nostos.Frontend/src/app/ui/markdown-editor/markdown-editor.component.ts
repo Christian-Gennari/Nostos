@@ -713,7 +713,7 @@ export class MarkdownEditorComponent implements OnInit, OnDestroy {
       // Apply the iframe theme at TinyMCE PreInit, before content CSS paints.
       // Waiting for init allows one light frame to flash in dark mode.
       editor.on('PreInit', () => this.syncIframeTheme(editor));
-      editor.on('Change Undo Redo blur', () => this.onHtmlChange(editor.getContent()));
+      editor.on('Change Undo Redo blur Input', () => this.onHtmlChange(editor.getContent()));
       editor.on('Input KeyUp Click NodeChange', () => this.followCaret(editor));
 
       const updateWordCount = () => {

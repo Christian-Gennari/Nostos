@@ -18,6 +18,7 @@ interface EditorMock {
   getContent: () => string;
   setContent: (html: string) => void;
   insertContent: (html: string) => void;
+  typeText?: (html: string) => void;
   focus: () => void;
   getBody: () => { style: Record<string, string> };
   getWin?: () => { scrollY?: number; scrollTo?: (x: number, y: number) => void };
@@ -79,19 +80,27 @@ describe('MarkdownEditorComponent', () => {
       init: (config: InitConfig) => {
         initCalls.push(config);
         let content = '';
-        const listeners = new Map<string, (...args: unknown[]) => void>();
-        const fire = (event: string) => listeners.get(event)?.();
+        const listeners = new Map<string, Array<(...args: unknown[]) => void>>();
+        const fire = (event: string) => {
+          for (const listener of listeners.get(event) ?? []) listener();
+        };
         const editor: EditorMock = {
           on: (event, cb) => {
             for (const e of event.split(/\s+/)) {
               registeredEditorEvents.push(e);
-              listeners.set(e, cb);
+              const callbacks = listeners.get(e) ?? [];
+              callbacks.push(cb);
+              listeners.set(e, callbacks);
             }
           },
           getContent: () => content,
           setContent: (html) => {
             content = html;
             fire('SetContent');
+          },
+          typeText: (html) => {
+            content = html;
+            fire('Input');
           },
           insertContent: (html) => {
             insertContentCalls.push(html);
@@ -268,6 +277,20 @@ describe('MarkdownEditorComponent', () => {
       expect(lightBlock).toContain(`${token}:`);
       expect(darkBlock).toContain(`${token}:`);
     }
+  });
+
+  it('emits Markdown on ordinary TinyMCE keyboard input without Change or blur', async () => {
+    const before = emitted.length;
+    const editor = editors[editors.length - 1];
+
+    // Model typing in the iframe: the DOM/content changes and TinyMCE
+    // fires Input, but no Change or blur event has occurred yet.
+    editor.typeText!('<h1>Title</h1><p>Typed at the end</p>');
+    await fixture.whenStable();
+
+    expect(emitted.length).toBe(before + 1);
+    expect(emitted[emitted.length - 1]).toContain('Typed at the end');
+    expect(emitted[emitted.length - 1]).toContain('# Title');
   });
 
   it('emits the wordcount-plugin count on init and on content events', async () => {
