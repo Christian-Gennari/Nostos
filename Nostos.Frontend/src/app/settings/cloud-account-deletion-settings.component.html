@@ -44,6 +44,7 @@
   busyLabel="Requesting deletion…"
   [busy]="requestPending()"
   [confirmDisabled]="!confirmationIsComplete()"
+  [stackOnNarrow]="false"
   [trapFocus]="true"
   (confirm)="requestDeletion()"
   (cancel)="closeConfirmation()"
@@ -54,8 +55,20 @@
       After that, Nostos will erase your library, files, notes, writing, backups, and sign-in identity.
     </p>
     <p>
-      Account deletion does not cancel a paid subscription. Cancel it separately before continuing.
-      Paddle normally keeps it active until the current billing period ends.
+      Your subscription will not renew while this deletion request is pending, so no further charge
+      will be made. The period you have already paid for is not refunded automatically; any refund
+      follows the applicable terms.
+    </p>
+
+    <p>
+      We recommend exporting your library first. Open
+      <a
+        #exportLink
+        href="/settings/library"
+        target="_blank"
+        rel="noopener noreferrer"
+      >Manage library</a>
+      to download a portable archive.
     </p>
 
     <label for="account-deletion-confirmation">Type DELETE to confirm</label>
@@ -66,7 +79,6 @@
       type="text"
       autocomplete="off"
       autocapitalize="characters"
-      autofocus
       spellcheck="false"
       [(ngModel)]="confirmationText"
       [disabled]="requestPending()"
@@ -76,18 +88,6 @@
     <span id="account-deletion-confirmation-help" class="account-deletion-help">
       The request will not be sent until the text matches.
     </span>
-
-    @if (accountManagementUrl(); as accountUrl) {
-      <p>
-        Cancel your subscription under
-        <a [href]="accountUrl" target="_blank" rel="noopener noreferrer">Account &amp; billing</a>.
-      </p>
-    }
-    <p>
-      We recommend exporting your library first. Open
-      <a href="/settings/library" target="_blank" rel="noopener noreferrer">Manage library</a>
-      to download a portable archive.
-    </p>
 
     @if (errorMessage(); as error) {
       <p class="account-deletion-error" role="alert">{{ error }}</p>

@@ -206,6 +206,10 @@ describe('CloudEntryComponent', () => {
     expect(compiled.textContent).toContain('Cancel deletion');
     expect(compiled.querySelector('a[href="https://nostos.page/account"]')?.textContent)
       .toContain('Account & billing');
+    expect(compiled.textContent).toContain(
+      'Your subscription will not renew while deletion is pending',
+    );
+    expect(compiled.textContent).toContain('Cancelling deletion restores your subscription');
 
     const cancel = Array.from(compiled.querySelectorAll('button')).find((button) =>
       (button.textContent ?? '').includes('Cancel deletion'),

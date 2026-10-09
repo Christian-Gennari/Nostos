@@ -986,7 +986,6 @@
 
                 @if (supportsAccountDeletion()) {
                   <app-cloud-account-deletion-settings
-                    [accountManagementUrl]="cloudAccountManagementUrl()"
                     (pending)="showAccountDeletionPending($event)"
                   />
                 }

@@ -54,6 +54,9 @@ export class ConfirmModal {
   /** Caller-owned requirement before the destructive action becomes available. */
   confirmDisabled = input<boolean>(false);
 
+  /** Stack the action buttons vertically on narrow screens. */
+  stackOnNarrow = input<boolean>(true);
+
   /** Opt-in focus containment for callers that need strict modal focus control. */
   trapFocus = input<boolean>(false);
 

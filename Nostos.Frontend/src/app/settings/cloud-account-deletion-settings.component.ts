@@ -1,6 +1,6 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { CommonModule } from '@angular/common';
-import { AfterViewChecked, Component, ElementRef, inject, input, output, signal, ViewChild } from '@angular/core';
+import { AfterViewChecked, Component, ElementRef, inject, output, signal, ViewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 
 import { CloudAccountDeletionStatus } from '../core/dtos/cloud-account-deletion.dtos';
@@ -20,7 +20,6 @@ export class CloudAccountDeletionSettingsComponent implements AfterViewChecked {
   private readonly deletion = inject(CloudAccountDeletionService);
   private readonly auth = inject(CloudAuthService);
 
-  readonly accountManagementUrl = input<string | null>(null);
   readonly pending = output<CloudAccountDeletionStatus>();
   readonly dialogOpen = signal(false);
   readonly requestPending = signal(false);
@@ -28,15 +27,15 @@ export class CloudAccountDeletionSettingsComponent implements AfterViewChecked {
   readonly sessionExpired = signal(false);
   readonly statusCheckPending = signal(false);
   confirmationText = '';
-  private focusConfirmationWhenReady = false;
+  private focusExportLinkWhenReady = false;
 
   @ViewChild('openButton', { read: ElementRef }) private openButton?: ElementRef<HTMLButtonElement>;
-  @ViewChild('confirmationInput') private confirmationInput?: ElementRef<HTMLInputElement>;
+  @ViewChild('exportLink') private exportLink?: ElementRef<HTMLAnchorElement>;
 
   ngAfterViewChecked(): void {
-    if (!this.focusConfirmationWhenReady || !this.confirmationInput?.nativeElement.isConnected) return;
-    this.confirmationInput.nativeElement.focus({ preventScroll: true });
-    this.focusConfirmationWhenReady = false;
+    if (!this.focusExportLinkWhenReady || !this.exportLink?.nativeElement.isConnected) return;
+    this.exportLink.nativeElement.focus({ preventScroll: true });
+    this.focusExportLinkWhenReady = false;
   }
 
   openConfirmation(): void {
@@ -44,7 +43,7 @@ export class CloudAccountDeletionSettingsComponent implements AfterViewChecked {
     this.errorMessage.set(null);
     this.sessionExpired.set(false);
     this.dialogOpen.set(true);
-    this.focusConfirmationWhenReady = true;
+    this.focusExportLinkWhenReady = true;
   }
 
   closeConfirmation(): void {

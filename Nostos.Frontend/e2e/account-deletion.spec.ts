@@ -127,8 +127,19 @@ test('Cloud settings confirms, enters pending state, and cancellation returns to
   await waitForConfirmationDialog(page);
   const confirmation = page.getByTestId('cloud-account-deletion-confirmation');
   const confirm = dialog.getByRole('button', { name: 'Request deletion' });
-  await expect(confirmation).toBeFocused();
+  const exportLink = dialog.getByRole('link', { name: 'Manage library' });
+  await expect(exportLink).toBeFocused();
   await expect(confirm).toBeDisabled();
+  await expect(dialog).toContainText(
+    'Your subscription will not renew while this deletion request is pending',
+  );
+  await expect(dialog).toContainText('not refunded automatically');
+  await expect(dialog.getByRole('link', { name: 'Account & billing' })).toHaveCount(0);
+
+  await page.keyboard.press('Tab');
+  await expect(confirmation).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(dialog.getByRole('button', { name: 'Keep account' })).toBeFocused();
 
   await confirmation.fill('DELETE');
   await expect(confirm).toBeEnabled();
@@ -141,6 +152,12 @@ test('Cloud settings confirms, enters pending state, and cancellation returns to
     '/api/portability/export',
   );
   await expect(page.getByRole('button', { name: 'Cancel deletion' })).toBeVisible();
+  await expect(
+    page.getByText(
+      'Your subscription will not renew while deletion is pending. Cancelling deletion restores your subscription.',
+    ),
+  ).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Account & billing' })).toBeVisible();
 
   await page.getByRole('button', { name: 'Cancel deletion' }).click();
   await expect(page.getByRole('tablist', { name: 'Settings sections' })).toBeVisible();
@@ -197,8 +214,28 @@ test('captures the hosted deletion controls in both themes and target viewports'
         path: path.join(output, `dialog-empty-${theme}-${viewport.name}.png`),
       });
 
+      if (viewport.width === 390) {
+        const cardBounds = await dialog.boundingBox();
+        const keepBounds = await dialog.getByRole('button', { name: 'Keep account' }).boundingBox();
+        const requestBounds = await dialog
+          .getByRole('button', { name: 'Request deletion' })
+          .boundingBox();
+        expect(cardBounds).not.toBeNull();
+        expect(cardBounds!.y + cardBounds!.height).toBeLessThanOrEqual(viewport.height);
+        expect(keepBounds).not.toBeNull();
+        expect(requestBounds).not.toBeNull();
+        expect(keepBounds!.x + keepBounds!.width).toBeLessThan(requestBounds!.x);
+      }
+
       await page.getByTestId('cloud-account-deletion-confirmation').fill('DELETE');
       await expect(dialog.getByRole('button', { name: 'Request deletion' })).toBeEnabled();
+      if (viewport.width === 390) {
+        await page.keyboard.press('Tab');
+        await expect(dialog.getByRole('button', { name: 'Keep account' })).toBeFocused();
+        await page.keyboard.press('Tab');
+        await expect(dialog.getByRole('button', { name: 'Request deletion' })).toBeFocused();
+        await page.getByTestId('cloud-account-deletion-confirmation').focus();
+      }
       await waitForConfirmationDialog(page);
       await page.screenshot({
         path: path.join(output, `dialog-ready-${theme}-${viewport.name}.png`),
