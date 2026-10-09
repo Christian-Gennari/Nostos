@@ -277,7 +277,10 @@ describe('LibraryTransferCoordinator — exclusive server maintenance', () => {
     const running = harness.coordinator.startImport(fileOfSize());
     await settleUntil(
       () => harness.coordinator.maintenanceWaiting()?.operation === 'completeUpload',
+      2_000,
     );
+    expect(harness.coordinator.maintenanceWaiting()?.operation)
+      .toBe('completeUpload');
     expect(harness.transport.calls.completeUpload).toBe(1);
 
     await vi.advanceTimersByTimeAsync(1000);
