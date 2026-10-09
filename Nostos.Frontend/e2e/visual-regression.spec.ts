@@ -1,5 +1,5 @@
 /**
- * Visual-regression evidence harness — the 15-image fixed-light matrix.
+ * Visual-regression evidence harness — fixture-served UI and optional real-library reader captures.
  *
  * Reusable, parameterized capture(surface, viewport, state) that turns the
  * mandatory visual-verification protocol (expert section 4) into a
@@ -7,16 +7,16 @@
  * JSON report under e2e/visual-evidence/, and the automated geometry checks
  * from the protocol run as real assertions:
  *
- *   - EPUB iframe foreground/background equal the fixed light normalization
+ *   - EPUB iframe foreground/background match the light normalization
  *     constants (and the shell surface matches too — no pale rim);
  *   - PDF scrollport bottom clears the shell toolbar at the final page;
  *   - Zen gutters balanced + all zen chrome display:none;
  *   - Library toolbar has no progress combobox; sidebar/drawer exposes the
  *     six contract filters.
  *
- * The theme system is gone: every capture is the app's ONE light rendering.
- * There is no theme parameterization and no theme-toggle interaction; the
- * EPUB/PDF reader checks are hardcoded fixed-light rendering invariants.
+ * This harness currently initializes the app in light theme. Light and dark
+ * are both supported app themes; the EPUB assertion below checks its
+ * light-specific normalization and does not describe the app's only rendering.
  *
  * Surfaces that need data the isolated fixture cannot provide are SKIPPED
  * with a clear, documented message — never faked:
@@ -566,7 +566,7 @@ test.describe('visual matrix — Reader surfaces (real library)', () => {
         }
 
         // No theme interaction: the app ships exactly one light rendering and
-        // the reader checks below are fixed-light invariants.
+        // the reader checks below cover light EPUB normalization and PDF clearance.
         const checks: GeometryCheck[] = [];
         if (tc.kind === 'epub') {
           checks.push(await checkEpubIframeLight(page));

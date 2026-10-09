@@ -5,7 +5,7 @@
  * cover), so this spec is real-library only and skips with a documented reason
  * otherwise — same contract as the reader surfaces in visual-regression.spec.ts.
  *
- *   VISUAL_QA_LIBRARY_URL=http://localhost:4310 npm run e2e -- book-detail-visual.spec.ts
+ *   VISUAL_QA_LIBRARY_URL=<library-origin> npm run e2e -- book-detail-visual.spec.ts
  *
  * The URL must serve the build under test and have at least one book with a
  * cover. Both viewports are captured from this one spec via newCapturePage's own
