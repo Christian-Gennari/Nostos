@@ -176,15 +176,16 @@ export class SidebarCollections implements OnInit {
 
   /**
    * Filter buttons only manage the mobile drawer: after a selection the
-   * drawer closes and focus returns to its opener (the floating toggle) so
+   * drawer closes and focus returns to its toolbar opener so
    * it can be reopened immediately. Desktop selection leaves the sidebar
    * untouched.
    */
   private closeDrawerOnMobile(): void {
     if (window.innerWidth < 768 && this.expanded()) {
       this.setExpanded(false);
-      (this.elementRef.nativeElement as HTMLElement)
-        .querySelector<HTMLButtonElement>('.floating-toggle')
+      // The opener lives in the sibling Library toolbar, not in this drawer.
+      (this.elementRef.nativeElement as HTMLElement).parentElement
+        ?.querySelector<HTMLButtonElement>('.toolbar-right .floating-toggle')
         ?.focus();
     }
   }
