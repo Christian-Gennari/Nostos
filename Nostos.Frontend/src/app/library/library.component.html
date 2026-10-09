@@ -29,6 +29,19 @@
       </div>
 
       <div class="toolbar-right">
+        <!-- Keep the mobile drawer opener in the same row as its neighbouring controls. -->
+        <button
+          type="button"
+          class="floating-toggle"
+          [class.hidden]="sidebarExpanded()"
+          (click)="$event.stopPropagation(); toggleSidebar()"
+          [attr.aria-expanded]="sidebarExpanded()"
+          aria-controls="library-collections-sidebar"
+          [attr.aria-label]="sidebarExpanded() ? 'Close collections sidebar' : 'Open collections sidebar'"
+          title="Collections"
+        >
+          <nostos-icon name="list" [size]="20"></nostos-icon>
+        </button>
         <div class="select-wrapper">
           <app-dropdown
             class="sort-select"
