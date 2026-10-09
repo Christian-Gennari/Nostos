@@ -222,6 +222,19 @@ describe('MarkdownEditorComponent', () => {
     expect(style).not.toContain('#1a1a1a');
   });
 
+  it('shares a wider manuscript measure with the toolbar without changing phone typography', () => {
+    const contentCss = String(initCalls[0].content_style);
+    const chromeCss = componentCss();
+
+    // Writing and toolbar must use the same desktop measure. A fixed 600px
+    // manuscript made the editor feel cramped on wide screens.
+    expect(contentCss).toContain('max-width: 820px');
+    expect(chromeCss).toContain('max-width: 820px');
+    expect(contentCss).toContain('@media (max-width: 640px)');
+    expect(contentCss).toContain('padding: 2rem 1.25rem 6rem');
+    expect(contentCss).toContain('font-size: 17px');
+  });
+
   it('keeps blockquotes flat and editorial instead of fading into the page', () => {
     const style = String(initCalls[0].content_style);
     const start = style.indexOf('blockquote {');
