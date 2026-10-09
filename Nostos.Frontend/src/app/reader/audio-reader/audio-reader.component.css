@@ -37,7 +37,7 @@
     max(1.5rem, env(safe-area-inset-right, 0px))
     max(1.5rem, env(safe-area-inset-bottom, 0px))
     max(1.5rem, env(safe-area-inset-left, 0px));
-  gap: 1.35rem;
+  gap: 4rem;
 }
 
 /* --- COVER ART --- */
@@ -596,7 +596,7 @@
       max(1rem, env(safe-area-inset-right, 0px))
       max(1rem, env(safe-area-inset-bottom, 0px))
       max(1rem, env(safe-area-inset-left, 0px));
-    gap: 1rem;
+    gap: 6rem;
     /* The unit stays centred: cover, scrubber, transport and the Playback
        pill are one block in the middle of the reading area, horizontally and
        vertically. An earlier revision of this pass pushed the controls to the
