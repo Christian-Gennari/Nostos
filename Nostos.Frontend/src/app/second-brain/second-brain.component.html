@@ -1204,34 +1204,34 @@
         </button>
         }
         <span class="brain-note-more-anchor">
-        <button appButton variant="ghost" size="sm" type="button" class="brain-note-more-trigger"
-          data-testid="brain-note-more-trigger"
-          [attr.aria-expanded]="noteMoreOpenKey() === noteMoreKey(mode, note.id)"
-          [attr.aria-controls]="'brain-note-more-' + mode + '-' + note.id"
-          aria-haspopup="true"
-          (click)="toggleNoteMore(noteMoreKey(mode, note.id), $event)">
-          More
-        </button>
-      @if (noteMoreOpenKey() === noteMoreKey(mode, note.id)) {
-      <div class="brain-note-more-disclosure" role="group" aria-label="More note actions"
-        [id]="'brain-note-more-' + mode + '-' + note.id"
-        (keydown)="handleNoteMoreKeydown($event)">
-        @if (mode !== 'search') {
-        <button appButton variant="ghost" size="sm" type="button" class="brain-note-more-item"
-          data-note-more-item (click)="performNoteMoreAction('edit', mode, note, card, $event)">Edit note</button>
-        }
-        @if (mode === 'browse' && note.bookId !== browseBookId()) {
-        <button appButton variant="ghost" size="sm" type="button" class="brain-note-more-item"
-          data-note-more-item
-          (click)="performNoteMoreAction('show-book', mode, note, card, $event)">Show notes from this book</button>
-        }
-        @if (mode === 'evidence') {
-        <button appButton variant="ghost" size="sm" type="button" class="brain-note-more-item danger"
-          data-note-more-item
-          (click)="performNoteMoreAction('delete', mode, note, card, $event)">Delete note</button>
-        }
-      </div>
-      }
+          <button appButton variant="ghost" size="sm" type="button" class="brain-note-more-trigger"
+            data-testid="brain-note-more-trigger"
+            [attr.aria-expanded]="noteMoreOpenKey() === noteMoreKey(mode, note.id)"
+            [attr.aria-controls]="'brain-note-more-' + mode + '-' + note.id"
+            aria-haspopup="true"
+            (click)="toggleNoteMore(noteMoreKey(mode, note.id), $event)">
+            More
+          </button>
+          @if (noteMoreOpenKey() === noteMoreKey(mode, note.id)) {
+            <div class="brain-note-more-disclosure" role="group" aria-label="More note actions"
+              [id]="'brain-note-more-' + mode + '-' + note.id"
+              (keydown)="handleNoteMoreKeydown($event)">
+              @if (mode !== 'search') {
+                <button appButton variant="ghost" size="sm" type="button" class="brain-note-more-item"
+                  data-note-more-item (click)="performNoteMoreAction('edit', mode, note, card, $event)">Edit note</button>
+              }
+              @if (mode === 'browse' && note.bookId !== browseBookId()) {
+                <button appButton variant="ghost" size="sm" type="button" class="brain-note-more-item"
+                  data-note-more-item
+                  (click)="performNoteMoreAction('show-book', mode, note, card, $event)">Show notes from this book</button>
+              }
+              @if (mode === 'evidence') {
+                <button appButton variant="ghost" size="sm" type="button" class="brain-note-more-item danger"
+                  data-note-more-item
+                  (click)="performNoteMoreAction('delete', mode, note, card, $event)">Delete note</button>
+              }
+            </div>
+          }
         </span>
       </div>
       }
