@@ -152,6 +152,50 @@ test('the rail does not create horizontal overflow or illegible labels', async (
   }
 });
 
+test('Cloud More has the same neutral rest state as its dock siblings in both themes', async ({ page }) => {
+  await openCloudLibrary(page);
+  const more = page.getByTestId('dock-more');
+
+  for (const theme of ['light', 'dark'] as const) {
+    await page.evaluate((choice) => {
+      if (choice === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+      else document.documentElement.removeAttribute('data-theme');
+    }, theme);
+
+    const neutral = await page.locator('app-app-dock .dock-item').evaluateAll((els) =>
+      els.map((el) => {
+        const style = getComputedStyle(el);
+        const r = el.getBoundingClientRect();
+        return {
+          background: style.backgroundColor,
+          iconInk: getComputedStyle(el.querySelector('nostos-icon')!).color,
+          fontFamily: style.fontFamily,
+          width: r.width,
+          height: r.height,
+        };
+      }),
+    );
+    expect(neutral).toHaveLength(4);
+    // Brain and More are both inactive on the Library route.
+    expect(neutral[3].background, theme + ': More rest background').toBe(neutral[1].background);
+    expect(neutral[3].iconInk, theme + ': More rest icon ink').toBe(neutral[1].iconInk);
+    expect(neutral[3].fontFamily).toBe(neutral[1].fontFamily);
+    expect(Math.abs(neutral[3].width - neutral[1].width)).toBeLessThanOrEqual(1);
+    expect(Math.abs(neutral[3].height - neutral[1].height)).toBeLessThanOrEqual(1);
+
+    await more.click();
+    await expect(more).toHaveAttribute('aria-expanded', 'true');
+    const openBg = await more.evaluate((el) => getComputedStyle(el).backgroundColor);
+    expect(openBg, theme + ': open More should be visually distinguishable').not.toBe(neutral[3].background);
+
+    await page.keyboard.press('Escape');
+    await expect(more).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.getByRole('dialog', { name: 'More' })).toHaveCount(0);
+    const closedBg = await more.evaluate((el) => getComputedStyle(el).backgroundColor);
+    expect(closedBg, theme + ': More should reset after touch/keyboard closure').toBe(neutral[3].background);
+  }
+});
+
 test('Cloud More is compact, anchored to its trigger, and closes accessibly', async ({ page }) => {
   await openCloudLibrary(page);
 
