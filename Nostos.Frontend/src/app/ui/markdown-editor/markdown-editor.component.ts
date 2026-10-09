@@ -6,8 +6,11 @@ import { marked } from 'marked';
 import { ThemeService } from '../../core/services/theme.service';
 import { TinyMceApi, TinyMceLoader } from './tinymce-loader.service';
 
-/** Shared manuscript and toolbar measure: about 70 characters at the body face. */
-const STUDIO_MANUSCRIPT_MEASURE_PX = 600;
+/** Shared desktop manuscript and toolbar measure. The old 600px cap made the
+ * Studio feel like a phone column on wide monitors, even with both rails closed.
+ * 820px keeps a readable column while using substantially more of the desk.
+ * The existing narrow-viewport body styles still own phone geometry. */
+const STUDIO_MANUSCRIPT_MEASURE_PX = 820;
 const STUDIO_MANUSCRIPT_GUTTER = 'clamp(20px, 4%, 40px)';
 const STUDIO_TOOLBAR_FIRST_GLYPH_INSET_PX = 12;
 
