@@ -272,6 +272,12 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
     expect(fixture.nativeElement.querySelector('.empty-new-document')?.textContent).toContain(
       'New document',
     );
+    const newInFiles = fixture.nativeElement.querySelector('.files-new-document') as HTMLButtonElement;
+    expect(newInFiles.textContent?.trim()).toBe('New');
+    expect(newInFiles.getAttribute('aria-label')).toBe('New document');
+    // No duplicate desktop hide buttons: the editor header owns both rail toggles.
+    expect(fixture.nativeElement.querySelector('.files-rail-collapse')).toBeNull();
+    expect(fixture.nativeElement.querySelector('.reference-rail-collapse')).toBeNull();
   });
 
   it('toggles desktop rails independently and persists each preference', () => {
@@ -318,6 +324,15 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
     expect(component.showFileSidebar()).toBe(true);
     expect(component.showBrainSidebar()).toBe(false);
 
+    const filesClose = fixture.nativeElement.querySelector('.files-rail-collapse') as HTMLButtonElement;
+    expect(filesClose).toBeTruthy();
+    filesClose.click();
+    fixture.detectChanges();
+    expect(component.showFileSidebar()).toBe(false);
+    expect(document.activeElement).toBe(filesToggle);
+
+    filesToggle.click();
+    fixture.detectChanges();
     referenceToggle.click();
     fixture.detectChanges();
     expect(component.showFileSidebar()).toBe(false);
