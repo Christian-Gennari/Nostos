@@ -23,10 +23,10 @@ describe('NoteCard source navigation', () => {
       cfiRange: 'epubcfi(/6/2)',
     } satisfies Note;
     fixture.componentInstance.showSource = true;
-    fixture.detectChanges();
   });
 
   it('keeps the default Library/CFI destination for existing consumers', () => {
+    fixture.detectChanges();
     const link = fixture.nativeElement.querySelector('.source-badge') as HTMLAnchorElement;
     const destination = new URL(link.href);
 
