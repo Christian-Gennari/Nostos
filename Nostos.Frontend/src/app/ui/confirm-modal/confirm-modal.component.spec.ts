@@ -30,6 +30,10 @@ describe('ConfirmModal', () => {
     expect(fixture.nativeElement.querySelector('.confirm-modal-card')).toBeNull();
   });
 
+  it('keeps focus trapping opt-in for existing confirmation callers', () => {
+    expect(component.trapFocus()).toBe(false);
+  });
+
   it('renders the caller-supplied heading, description and actions when open', () => {
     fixture.componentRef.setInput('isOpen', true);
     fixture.componentRef.setInput('heading', 'Delete “Meditations”?');

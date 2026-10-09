@@ -33,6 +33,8 @@ import { CloudAuthService } from '../core/services/cloud-auth.service';
 import { PortableLibraryService } from '../core/services/portable-library.service';
 import { ManagedBackupsService } from '../core/services/managed-backups.service';
 import { ManagedBackupListing } from '../core/dtos/managed-backups.dtos';
+import { CloudAccountDeletionService } from '../core/services/cloud-account-deletion.service';
+import { CloudAccountDeletionStatus } from '../core/dtos/cloud-account-deletion.dtos';
 import { CloudEntryService } from '../core/services/cloud-entry.service';
 import { LibraryImportFlowComponent } from '../library-transfer/components/library-import-flow.component';
 import {
@@ -166,6 +168,23 @@ const cloudEntryServiceMock = {
   firstRunImportPending: signal(false),
   importPortableArchive: vi.fn(async () => {}),
   finishFirstRunAfterImport: vi.fn(),
+  showAccountDeletionPending: vi.fn(),
+};
+
+const accountDeletionStatus: CloudAccountDeletionStatus = {
+  state: 'GracePeriod',
+  gracePeriodDays: 14,
+  requestedAtUtc: '2026-10-01T12:00:00Z',
+  eligibleAtUtc: '2026-10-15T12:00:00Z',
+  completedAtUtc: null,
+  canCancel: true,
+  portableExportUrl: '/api/portability/export',
+};
+
+const cloudAccountDeletionServiceMock = {
+  getStatus: vi.fn(() => of(accountDeletionStatus)),
+  requestDeletion: vi.fn(() => of(accountDeletionStatus)),
+  cancelDeletion: vi.fn(() => of({ ...accountDeletionStatus, state: 'Cancelled' })),
 };
 
 const cloudAiRefillServiceMock = {
@@ -395,6 +414,7 @@ describe('SettingsComponent backup-only surface', () => {
         { provide: CloudAiRefillService, useValue: cloudAiRefillServiceMock },
         { provide: CloudAuthService, useValue: cloudAuthServiceMock },
         { provide: CloudEntryService, useValue: cloudEntryServiceMock },
+        { provide: CloudAccountDeletionService, useValue: cloudAccountDeletionServiceMock },
         { provide: PortableLibraryService, useValue: portableLibraryServiceMock },
         { provide: ManagedBackupsService, useValue: managedBackupsServiceMock },
       ],
@@ -433,6 +453,11 @@ describe('SettingsComponent backup-only surface', () => {
     cloudEntryServiceMock.firstRunImportPending.set(false);
     cloudEntryServiceMock.importPortableArchive.mockClear();
     cloudEntryServiceMock.finishFirstRunAfterImport.mockClear();
+    cloudEntryServiceMock.showAccountDeletionPending.mockClear();
+    cloudAccountDeletionServiceMock.getStatus.mockClear();
+    cloudAccountDeletionServiceMock.requestDeletion.mockClear();
+    cloudAccountDeletionServiceMock.requestDeletion.mockReturnValue(of(accountDeletionStatus));
+    cloudAccountDeletionServiceMock.cancelDeletion.mockClear();
     capabilitiesServiceMock.get.mockClear();
     capabilitiesServiceMock.get.mockReturnValue(of(selfHostedCapabilities));
     managedBackupsServiceMock.getBackups.mockClear();
@@ -677,8 +702,40 @@ describe('SettingsComponent backup-only surface', () => {
     expect(navText).not.toContain('Account');
     expect(fixture.nativeElement.querySelector('[data-testid="cloud-account-settings"]')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="cloud-account-management-link"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="cloud-account-deletion-row"]')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="managed-ai-refill-link"]')).toBeNull();
     expect(cloudAuthServiceMock.getSession).not.toHaveBeenCalled();
+    expect(cloudAccountDeletionServiceMock.requestDeletion).not.toHaveBeenCalled();
+  });
+
+  it('keeps account deletion hidden in Cloud when its server capability is absent or off', () => {
+    fixture.componentInstance.deploymentCapabilities.set(cloudCapabilities);
+    fixture.detectChanges();
+    const accountTab = Array.from(
+      fixture.nativeElement.querySelectorAll('.settings-nav-item'),
+    ).find((item: any) => (item.textContent ?? '').includes('Account')) as HTMLButtonElement;
+    accountTab.click();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="cloud-account-settings"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="cloud-account-deletion-row"]')).toBeNull();
+    expect(cloudAccountDeletionServiceMock.requestDeletion).not.toHaveBeenCalled();
+  });
+
+  it('shows the deletion control only when the Cloud host advertises the capability', () => {
+    fixture.componentInstance.deploymentCapabilities.set({
+      ...cloudCapabilities,
+      supportsAccountDeletion: true,
+    });
+    fixture.detectChanges();
+    const accountTab = Array.from(
+      fixture.nativeElement.querySelectorAll('.settings-nav-item'),
+    ).find((item: any) => (item.textContent ?? '').includes('Account')) as HTMLButtonElement;
+    accountTab.click();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="cloud-account-deletion-row"]')).not.toBeNull();
+    expect(cloudAccountDeletionServiceMock.requestDeletion).not.toHaveBeenCalled();
   });
 
   it('keeps SelfHosted local backup settings and never requests managed backups when the capability is off', () => {
@@ -2074,6 +2131,7 @@ describe('SettingsComponent shared library transfer host', () => {
         { provide: CloudAiRefillService, useValue: cloudAiRefillServiceMock },
         { provide: CloudAuthService, useValue: cloudAuthServiceMock },
         { provide: CloudEntryService, useValue: cloudEntryServiceMock },
+        { provide: CloudAccountDeletionService, useValue: cloudAccountDeletionServiceMock },
         { provide: PortableLibraryService, useValue: portableLibraryServiceMock },
         { provide: LIBRARY_TRANSFER_TRANSPORT, useValue: transport },
         { provide: HASH_WORKER_FACTORY, useValue: () => null },

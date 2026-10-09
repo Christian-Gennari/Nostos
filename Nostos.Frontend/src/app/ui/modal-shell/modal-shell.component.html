@@ -19,6 +19,8 @@
       [attr.aria-label]="ariaLabel()"
       [attr.aria-labelledby]="ariaLabelledBy()"
       [attr.aria-describedby]="ariaDescribedBy()"
+      [cdkTrapFocus]="trapFocus()"
+      [cdkTrapFocusAutoCapture]="trapFocus()"
       (click)="$event.stopPropagation()"
     >
       <div class="modal-head" [class.is-divided]="headDivider()">

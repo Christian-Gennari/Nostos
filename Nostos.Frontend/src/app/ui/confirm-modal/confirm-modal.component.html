@@ -6,6 +6,7 @@
     [maxWidth]="'420px'"
     [layer]="120"
     [busy]="busy()"
+    [trapFocus]="trapFocus()"
     dialogRole="alertdialog"
     ariaLabelledBy="confirm-dialog-title"
     [ariaDescribedBy]="description() ? 'confirm-dialog-description' : null"
@@ -27,6 +28,8 @@
     @if (description()) {
       <p id="confirm-dialog-description" class="confirm-description">{{ description() }}</p>
     }
+
+    <ng-content></ng-content>
 
     <app-dialog-actions
       shellActions
@@ -51,7 +54,7 @@
         class="btn-confirm"
         [busy]="busy()"
         (click)="confirm.emit()"
-        [disabled]="busy()"
+        [disabled]="busy() || confirmDisabled()"
       >
         @if (busy()) {
           <nostos-icon name="circle-notch" [size]="14" class="spin-icon"></nostos-icon>

@@ -51,6 +51,12 @@ export class ConfirmModal {
   /** True while the confirmed action is in flight: locks the dialog. */
   busy = input<boolean>(false);
 
+  /** Caller-owned requirement before the destructive action becomes available. */
+  confirmDisabled = input<boolean>(false);
+
+  /** Opt-in focus containment for callers that need strict modal focus control. */
+  trapFocus = input<boolean>(false);
+
   tone = input<ConfirmTone>('danger');
 
   confirm = output<void>();

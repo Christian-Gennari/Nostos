@@ -34,4 +34,6 @@ export interface DeploymentCapabilities {
   hostedBrowserIntegrationEnabled?: boolean;
   /** Hosted nightly backup history; absent/false keeps the customer card hidden. */
   supportsManagedBackups?: boolean;
+  /** Hosted account deletion lifecycle; absent/false keeps the controls hidden. */
+  supportsAccountDeletion?: boolean;
 }
