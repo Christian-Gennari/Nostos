@@ -1434,6 +1434,7 @@ app-sidebar-collections.no-transition {
 
   .floating-toggle:hover {
     background: var(--bg-hover);
+    color: var(--color-text-main);
   }
 
   .floating-toggle:active {
