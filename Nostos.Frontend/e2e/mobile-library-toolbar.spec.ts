@@ -23,7 +23,7 @@ test.beforeAll(() => {
 async function openLibrary(page: Page): Promise<void> {
   await page.goto(`${fixture.baseUrl}/library`, { waitUntil: 'domcontentloaded' });
   await expect(page.locator('header.toolbar')).toBeVisible();
-  await expect(page.locator('.floating-toggle')).toBeVisible();
+  await expect(page.locator('.toolbar-right > .floating-toggle')).toBeVisible();
 }
 
 interface Box {
@@ -61,6 +61,12 @@ test('mobile header controls share the original compact rhythm', async ({ page }
   expect(boxes.search).not.toBeNull();
   expect(boxes.toolbar).not.toBeNull();
 
+  // The opener is part of the same flex row, with the same gutter as the
+  // neighbouring controls; a fixed-position sibling would fail this check.
+  expect(boxes.collections!.x).toBeGreaterThanOrEqual(13);
+  expect(boxes.sort!.x - (boxes.collections!.x + boxes.collections!.width)).toBeGreaterThanOrEqual(7);
+  expect(boxes.sort!.x - (boxes.collections!.x + boxes.collections!.width)).toBeLessThanOrEqual(9);
+
   const firstRow = [boxes.collections!, boxes.sort!, boxes.view!, boxes.add!];
   for (const box of firstRow) {
     expect(Math.abs(box.height - 38), `first-row height was ${box.height}px`).toBeLessThanOrEqual(0.5);
@@ -76,4 +82,23 @@ test('mobile header controls share the original compact rhythm', async ({ page }
   // The second row stays full-width inside the toolbar's 14px phone gutters.
   expect(boxes.search!.x).toBeGreaterThanOrEqual(13);
   expect(boxes.search!.x + boxes.search!.width).toBeLessThanOrEqual(377);
+});
+
+test('mobile sidebar opener keeps a 44px hit area and restores focus after filter selection', async ({ page }) => {
+  await openLibrary(page);
+  const toggle = page.locator('.toolbar-right > .floating-toggle');
+
+  const hitArea = await toggle.evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    // Three pixels outside the 38px visual box must still hit the opener.
+    const target = document.elementFromPoint(r.left - 2, r.top + r.height / 2);
+    return el === target || el.contains(target);
+  });
+  expect(hitArea).toBe(true);
+
+  await toggle.click();
+  await expect(page.locator('#library-collections-sidebar')).toBeVisible();
+  await page.locator('#library-collections-sidebar .nav-item').first().click();
+  await expect(toggle).toBeFocused();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
 });
