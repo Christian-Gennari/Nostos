@@ -65,10 +65,10 @@
 
         <a
           class="source-badge"
-          [routerLink]="['/library', note.bookId]"
-          [queryParams]="{ cfi: note.cfiRange }"
+          [routerLink]="sourceNavigation?.commands ?? ['/library', note.bookId]"
+          [queryParams]="sourceNavigation ? sourceNavigation.queryParams : { cfi: note.cfiRange }"
           (click)="$event.stopPropagation()"
-          [attr.aria-label]="(note.cfiRange ? 'Return to passage in ' : 'Open book: ') + note.bookTitle"
+          [attr.aria-label]="((sourceNavigation?.label ?? (note.cfiRange ? 'Return to passage' : 'Open book')) === 'Return to passage' ? 'Return to passage in ' : 'Open book: ') + note.bookTitle"
           [title]="note.bookTitle"
         >
           <span class="source-title-unit">
@@ -76,7 +76,7 @@
             <span class="source-book-title" [title]="note.bookTitle">{{ note.bookTitle }}</span>
           </span>
           <span class="source-nav-label">
-            {{ note.cfiRange ? 'Return to passage' : 'Open book' }}
+            {{ sourceNavigation?.label ?? (note.cfiRange ? 'Return to passage' : 'Open book') }}
             <nostos-icon name="arrow-right" [size]="12"></nostos-icon>
           </span>
         </a>

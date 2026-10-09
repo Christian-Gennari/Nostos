@@ -1172,6 +1172,15 @@
   .empty-state .nostos-button {
     min-height: 44px;
   }
+
+  .sidebar-right .search-box .nostos-form-control {
+    min-height: 44px;
+  }
+
+  .sidebar-right .brain-detail-header .goto-btn,
+  .inspected-source-back {
+    min-height: 44px;
+  }
 }
 
 /* --- S2 Reference sidebar content: compact rows and explicit action hierarchy --- */
@@ -1193,6 +1202,12 @@
   background: transparent;
   color: var(--color-text-muted);
   font-size: 0.78rem;
+}
+
+@media (pointer: coarse), (hover: none) {
+  .sidebar-tabs.library-tabs .tab-btn.toggle-opt {
+    min-height: 44px;
+  }
 }
 
 .sidebar-tabs.library-tabs .tab-btn.toggle-opt.active {
@@ -1530,5 +1545,22 @@
   .inspected-source-open,
   .reference-empty-link {
     min-height: 44px;
+  }
+
+  :host ::ng-deep .sidebar-left app-flat-tree .toggle-btn {
+    width: 44px;
+    height: 44px;
+    left: calc(var(--depth, 0) * var(--indent-step) - 10px);
+    justify-content: flex-start;
+    padding-left: 10px;
+  }
+
+  :host ::ng-deep .sidebar-left app-flat-tree .action-mini {
+    width: 44px;
+    height: 44px;
+  }
+
+  :host ::ng-deep .sidebar-left app-flat-tree .tree-row {
+    --actions-w: 140px;
   }
 }

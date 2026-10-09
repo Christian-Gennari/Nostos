@@ -10,6 +10,24 @@ import type { WritingContentDto, WritingSourceDto } from '../src/app/core/dtos/w
 
 const screenshotDir =
   process.env.STUDIO_REFERENCE_SCREENSHOT_DIR ?? '/tmp/nostos-studio-reference-after';
+async function undersizedVisibleControls(page: Page, rootSelector: string): Promise<string[]> {
+  return page.evaluate((selector) => {
+    const root = document.querySelector(selector);
+    if (!root) return ['missing root ' + selector];
+    const candidates = Array.from(root.querySelectorAll(
+      'button, select, textarea, input:not([type="hidden"]):not([type="checkbox"]), [role="tab"], a[appButton], a.source-badge, a.brain-source-link, a.empty-link',
+    ));
+    return candidates.flatMap((element) => {
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      if (!rect.width || !rect.height || style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0' || element.closest('[aria-hidden="true"]')) return [];
+      if (rect.width >= 44 && rect.height >= 44) return [];
+      const label = element.getAttribute('aria-label') || (element.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 50);
+      return [`${label || element.tagName}: ${rect.width.toFixed(1)}x${rect.height.toFixed(1)}`];
+    });
+  }, rootSelector);
+}
+
 const dockViewports = [
   { width: 1440, height: 900 },
   { width: 1280, height: 720 },
@@ -835,16 +853,66 @@ test('kept-source density and responsive Reference rows hold at 0, 3, 8, and 40'
       );
     }
   }
-  await touchPage.setViewportSize({ width: 390, height: 844 });
-  const referenceTabHeights = await touchPage
-    .locator('.reference-mode-switch .tab-btn')
-    .evaluateAll((tabs) =>
-      tabs.map((tab) => Math.round(tab.getBoundingClientRect().height)),
-    );
-  expect(referenceTabHeights.length).toBe(2);
-  if (!referenceTabHeights.every((height) => height >= 44)) {
-    touchTargetFailures.push(`Reference tab heights: ${JSON.stringify(referenceTabHeights)}`);
+  for (const viewport of [
+    { width: 390, height: 844 },
+    { width: 820, height: 1180 },
+  ]) {
+    await touchPage.setViewportSize(viewport);
+    const referenceTabHeights = await touchPage
+      .locator('.reference-mode-switch .tab-btn')
+      .evaluateAll((tabs) => tabs.map((tab) => tab.getBoundingClientRect().height));
+    expect(referenceTabHeights.length).toBe(2);
+    if (!referenceTabHeights.every((height) => height >= 44)) {
+      touchTargetFailures.push(`Reference tab heights ${viewport.width}x${viewport.height}: ${JSON.stringify(referenceTabHeights)}`);
+    }
+    const smallControls = await undersizedVisibleControls(touchPage, '.studio-layout');
+    if (smallControls.length) touchTargetFailures.push(`Studio For this writing ${viewport.width}x${viewport.height}: ${JSON.stringify(smallControls)}`);
   }
+  await ensureReferenceDrawerOpen(touchPage);
+  await touchPage.getByRole('tab', { name: 'Library', exact: true }).click();
+  await touchPage.locator('.library-tabs').getByRole('tab', { name: 'Books', exact: true }).click();
+  const touchBookSearch = touchPage.getByRole('textbox', { name: 'Search books' });
+  await touchBookSearch.fill(mainBookTitle);
+  await expect(touchPage.locator('.list-item').filter({ hasText: mainBookTitle })).toBeVisible();
+  for (const viewport of [
+    { width: 390, height: 844 },
+    { width: 820, height: 1180 },
+  ]) {
+    await touchPage.setViewportSize(viewport);
+    await ensureReferenceDrawerOpen(touchPage);
+    const smallControls = await undersizedVisibleControls(touchPage, '.studio-layout');
+    if (smallControls.length) touchTargetFailures.push(`Studio Library Books ${viewport.width}x${viewport.height}: ${JSON.stringify(smallControls)}`);
+  }
+  await touchPage.locator('.list-item').filter({ hasText: mainBookTitle }).click();
+  await expect(touchPage.locator('.reference-note-list .reference-source-row')).toHaveCount(40);
+  for (const viewport of [
+    { width: 390, height: 844 },
+    { width: 820, height: 1180 },
+  ]) {
+    await touchPage.setViewportSize(viewport);
+    await ensureReferenceDrawerOpen(touchPage);
+    const smallControls = await undersizedVisibleControls(touchPage, '.studio-layout');
+    if (smallControls.length) touchTargetFailures.push(`Studio book notes ${viewport.width}x${viewport.height}: ${JSON.stringify(smallControls)}`);
+  }
+  const touchLongQuoteRow = touchPage
+    .locator('.reference-note-list .reference-source-row-main')
+    .filter({ hasText: longQuote.slice(0, 32) })
+    .first();
+  await touchLongQuoteRow.click();
+  await expect(touchPage.locator('.inspected-source-card')).toContainText(longQuote);
+  for (const viewport of [
+    { width: 390, height: 844 },
+    { width: 820, height: 1180 },
+  ]) {
+    await touchPage.setViewportSize(viewport);
+    await ensureReferenceDrawerOpen(touchPage);
+    const smallControls = await undersizedVisibleControls(touchPage, '.studio-layout');
+    if (smallControls.length) touchTargetFailures.push(`Studio quote inspector ${viewport.width}x${viewport.height}: ${JSON.stringify(smallControls)}`);
+  }
+  await touchPage.getByRole('tab', { name: 'For this writing', exact: true }).click();
+  await expect(touchPage.locator('.kept-sources-content .reference-source-row')).toHaveCount(40);
+  await touchPage.setViewportSize({ width: 390, height: 844 });
+
   const keptSources = touchPage.locator('.kept-sources-content');
   await keptSources.evaluate((element) => {
     element.scrollTop = element.scrollHeight;
@@ -905,8 +973,13 @@ test('kept-source density and responsive Reference rows hold at 0, 3, 8, and 40'
     )
     .toBe(844);
   await expect(page.locator('.kept-sources-content .reference-source-row')).toHaveCount(40);
-  await page.locator('.kept-sources-content .reference-source-row-main').first().click();
-  await expect(page.locator('.inspected-source-card')).toHaveCount(1);
+  const longQuoteRow = page
+    .locator('.kept-sources-content .reference-source-row-main')
+    .filter({ hasText: longQuote.slice(0, 32) })
+    .first();
+  await expect(longQuoteRow).toBeVisible();
+  await longQuoteRow.click();
+  await expect(page.locator('.inspected-source-card')).toContainText(longQuote);
   const inspectorPanel = page.locator('.inspected-source-panel');
   for (const viewport of dockViewports) {
     await page.setViewportSize(viewport);
@@ -926,13 +999,13 @@ test('kept-source density and responsive Reference rows hold at 0, 3, 8, and 40'
     if (viewport.width === 1280) {
       await captureAfter(
         page,
-        'reference-inspector-actions-scroll-end-after-1280x720-light.png',
+        'reference-inspector-long-quote-actions-scroll-end-after-1280x720-light.png',
       );
     }
     if (viewport.width === 844) {
       await captureAfter(
         page,
-        'reference-inspector-actions-scroll-end-after-844x390-light.png',
+        'reference-inspector-long-quote-actions-scroll-end-after-844x390-light.png',
       );
     }
   }

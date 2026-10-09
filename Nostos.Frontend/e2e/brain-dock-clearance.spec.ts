@@ -13,6 +13,24 @@ const viewports = [
   { width: 844, height: 390 },
 ];
 
+async function undersizedVisibleControls(page: Page, rootSelector: string): Promise<string[]> {
+  return page.evaluate((selector) => {
+    const root = document.querySelector(selector);
+    if (!root) return ['missing root ' + selector];
+    const candidates = Array.from(root.querySelectorAll(
+      'button, select, textarea, input:not([type="hidden"]):not([type="checkbox"]), summary, a[appButton], a.source-badge, a.brain-source-link, a.empty-link',
+    ));
+    return candidates.flatMap((element) => {
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      if (!rect.width || !rect.height || style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0' || element.closest('[aria-hidden="true"]')) return [];
+      if (rect.width >= 44 && rect.height >= 44) return [];
+      const label = element.getAttribute('aria-label') || (element.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 50);
+      return [`${label || element.tagName}: ${rect.width.toFixed(1)}x${rect.height.toFixed(1)}`];
+    });
+  }, rootSelector);
+}
+
 async function scrollVisibleRowToEnd(page: Page, selector: string): Promise<void> {
   await page.evaluate((rowSelector) => {
     const rows = Array.from(document.querySelectorAll(rowSelector)).filter(
@@ -144,29 +162,47 @@ test('Brain topic index clears the dock and exposes 44px actions on coarse point
           animations: 'disabled',
         });
       }
+      if (viewport.width === 820 || viewport.width === 390) {
+        const smallControls = await undersizedVisibleControls(page, '.brain-layout');
+        if (smallControls.length) {
+          touchTargetFailures.push(`Brain Topics index ${viewport.width}x${viewport.height}: ${JSON.stringify(smallControls)}`);
+        }
+      }
     }
-    await page.setViewportSize({ width: 820, height: 1180 });
-    await list.evaluate((element) => {
-      element.scrollTop = element.scrollHeight;
-    });
-
     const lastRow = rows.last();
-    await lastRow.locator('.index-item').click();
-    const actions = lastRow.locator('.row-actions .row-action');
-    await expect(actions).toHaveCount(2);
-    const hitAreas = await actions.evaluateAll((buttons) =>
-      buttons.map((button) => {
-        const rect = button.getBoundingClientRect();
-        return { width: rect.width, height: rect.height };
-      }),
-    );
-    if (!hitAreas.every((area) => area.width >= 44 && area.height >= 44)) {
-      touchTargetFailures.push(`Topic row action hit areas: ${JSON.stringify(hitAreas)}`);
+    for (const viewport of [
+      { width: 820, height: 1180 },
+      { width: 390, height: 844 },
+    ]) {
+      await page.setViewportSize(viewport);
+      const backToTopics = page.getByRole('button', { name: 'Back to Index', exact: true });
+      if (await backToTopics.isVisible().catch(() => false)) await backToTopics.click();
+      await lastRow.locator('.index-item').focus();
+      const actions = lastRow.locator('.row-actions .row-action');
+      await expect(actions).toHaveCount(2);
+      const hitAreas = await actions.evaluateAll((buttons) =>
+        buttons.map((button) => {
+          const rect = button.getBoundingClientRect();
+          return { width: rect.width, height: rect.height };
+        }),
+      );
+      if (!hitAreas.every((area) => area.width >= 44 && area.height >= 44)) {
+        touchTargetFailures.push(`Topic row action hit areas ${viewport.width}x${viewport.height}: ${JSON.stringify(hitAreas)}`);
+      }
+      const smallControls = await undersizedVisibleControls(page, '.brain-layout');
+      if (smallControls.length) touchTargetFailures.push(`Brain Topics actions ${viewport.width}x${viewport.height}: ${JSON.stringify(smallControls)}`);
+      if (viewport.width === 820) {
+        await page.screenshot({
+          path: '/tmp/804-brain-topics-index-coarse-actions-after-820x1180-light.png',
+          animations: 'disabled',
+        });
+      } else {
+        await page.screenshot({
+          path: '/tmp/804-brain-topics-index-coarse-actions-after-390x844-light.png',
+          animations: 'disabled',
+        });
+      }
     }
-    await page.screenshot({
-      path: '/tmp/804-brain-topics-index-coarse-actions-after-820x1180-light.png',
-      animations: 'disabled',
-    });
     await page.evaluate(() => {
       localStorage.setItem('nostos.theme', 'dark');
       document.documentElement.setAttribute('data-theme', 'dark');
@@ -215,6 +251,10 @@ test('Brain topic index clears the dock and exposes 44px actions on coarse point
             `Without topics final row at ${viewport.width}x${viewport.height}: ${rowBox!.y + rowBox!.height}px > dock ${dockBox!.y}px`,
           );
         }
+      if (viewport.width === 390 || viewport.width === 820) {
+        const smallControls = await undersizedVisibleControls(page, '.brain-layout');
+        if (smallControls.length) touchTargetFailures.push(`Brain Without topics ${viewport.width}x${viewport.height}: ${JSON.stringify(smallControls)}`);
+      }
       if (viewport.width === 820) {
         await page.screenshot({
           path: '/tmp/804-brain-notes-without-topics-scroll-end-after-820x1180-light.png',
@@ -255,6 +295,10 @@ test('Brain topic index clears the dock and exposes 44px actions on coarse point
         searchPanelFailures.push(
           `${viewport.width}x${viewport.height}: action bottom ${panelEnd.actionBottom}px > dock top ${panelEnd.dockTop}px`,
         );
+      }
+      if (viewport.width === 390 || viewport.width === 820) {
+        const smallControls = await undersizedVisibleControls(page, '.brain-layout');
+        if (smallControls.length) touchTargetFailures.push(`Brain Search panel ${viewport.width}x${viewport.height}: ${JSON.stringify(smallControls)}`);
       }
       if (viewport.width === 820 || viewport.width === 844) {
         await page.screenshot({
@@ -299,6 +343,12 @@ test('Brain topic index clears the dock and exposes 44px actions on coarse point
           animations: 'disabled',
         });
       }
+      if (viewport.width === 390 || viewport.width === 820) {
+        const smallControls = await undersizedVisibleControls(page, '.brain-layout');
+        if (smallControls.length) {
+          touchTargetFailures.push(`Brain Topic detail ${viewport.width}x${viewport.height}: ${JSON.stringify(smallControls)}`);
+        }
+      }
     }
 
     await page
@@ -342,6 +392,12 @@ test('Brain topic index clears the dock and exposes 44px actions on coarse point
           dockFailures.push(
             `Review queue final row at ${viewport.width}x${viewport.height}: ${reviewEnd.rowBottom}px > dock ${reviewEnd.dockTop}px`,
           );
+        }
+      }
+      if ((viewport.width === 390 || viewport.width === 820) && await reviewList.isVisible()) {
+        const smallControls = await undersizedVisibleControls(page, '.brain-layout');
+        if (smallControls.length) {
+          touchTargetFailures.push(`Brain Review list ${viewport.width}x${viewport.height}: ${JSON.stringify(smallControls)}`);
         }
       }
       if (viewport.width === 820) {

@@ -4,6 +4,12 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 
+export interface NoteSourceNavigation {
+  commands: Array<string | number>;
+  queryParams: Record<string, string | number> | null;
+  label: 'Return to passage' | 'Open book';
+}
+
 import { Note } from '../../core/dtos/note.dtos';
 import { TopicDto } from '../../core/services/topics.service';
 import { TopicInputComponent } from '../topic-input.component/topic-input.component';
@@ -32,6 +38,8 @@ export class NoteCardComponent {
   @Input() showNavigation = false;
   @Input() showActions = true;
   @Input() showSource = false;
+  /** Optional context-specific source destination; null preserves the legacy Library link. */
+  @Input() sourceNavigation: NoteSourceNavigation | null = null;
   @Input() showDate = true;
   @Input() actionsTemplate: TemplateRef<unknown> | null = null;
   @Input() actionsContext: Record<string, unknown> = {};

@@ -56,6 +56,9 @@ export interface NoteContextDto {
   // API responses include this; optional keeps existing local fixtures
   // compatible until the detail-surface tests add their timestamp data.
   createdAt?: string;
+  sourceAnchorKind?: string;
+  sourceAnchorValue?: string | null;
+  anchorVerified?: boolean;
 }
 
 export interface TopicDetailDto {

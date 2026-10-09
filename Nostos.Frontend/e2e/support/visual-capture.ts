@@ -1012,8 +1012,8 @@ export async function checkBrainMapGeometry(page: Page): Promise<GeometryCheck> 
   // so there are no per-node DOM elements to measure (the earlier SVG-based
   // version of this check read `circle.map-node-visual`, which no longer exists).
   const measured = await page.evaluate(() => {
-    const badgeText = document.querySelector('.badge-count')?.textContent?.trim() ?? '';
-    const topicCount = Number.parseInt(badgeText, 10);
+    const statsText = document.querySelector('.brain-header .index-stats')?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+    const topicCount = Number.parseInt(statsText.match(/(\d+)\s+topics?/i)?.[1] ?? '', 10);
 
     const globals = globalThis as unknown as {
       __nostosSigma?: {

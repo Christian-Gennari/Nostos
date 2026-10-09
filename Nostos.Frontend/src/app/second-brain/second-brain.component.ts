@@ -19,7 +19,7 @@ import { ToastService } from '../core/services/toast.service';
 import { NotesService } from '../core/services/notes.service';
 import { Note, NoteSearchHit } from '../core/dtos/note.dtos';
 import { ConfirmModal } from '../ui/confirm-modal/confirm-modal.component';
-import { NoteCardComponent } from '../ui/note-card.component/note-card.component';
+import { NoteCardComponent, type NoteSourceNavigation } from '../ui/note-card.component/note-card.component';
 import { NoteCaptureDetailsComponent } from '../ui/note-capture-details/note-capture-details.component';
 import { NoteFormatPipe } from '../ui/pipes/note-format.pipe';
 import {
@@ -197,17 +197,31 @@ export class SecondBrain implements AfterViewChecked {
     return this.topics().some((item) => item.name.toLowerCase() === name.toLowerCase())
       ? null : name;
   });
-  browseSourceParams(note: NoteSearchHit): { sourcePage: number } | { sourceCfi: string } | null {
+  browseSourceParams(
+    note: NoteSearchHit | NoteContextDto,
+  ): { sourcePage: number } | { sourceCfi: string } | { sourceTime: number } | null {
     const anchor = note.anchorVerified ? note.sourceAnchorValue?.trim() : null;
-    if (note.sourceAnchorKind?.toLowerCase() === 'pdf_page' && anchor) {
+    const kind = note.sourceAnchorKind?.toLowerCase();
+    if (kind === 'pdf_page' && anchor) {
       const page = Number(anchor);
       if (Number.isInteger(page) && page > 0) return { sourcePage: page };
     }
-    if (note.sourceAnchorKind?.toLowerCase() === 'epub_cfi' && anchor) {
-      return { sourceCfi: anchor };
+    if (kind === 'epub_cfi' && anchor) return { sourceCfi: anchor };
+    if (kind === 'audio_timestamp' && anchor) {
+      const sourceTime = Number(anchor);
+      if (Number.isFinite(sourceTime) && sourceTime >= 0) return { sourceTime };
     }
     const cfi = note.cfiRange?.trim();
     return cfi?.startsWith('epubcfi(') ? { sourceCfi: cfi } : null;
+  }
+
+  noteSourceNavigation(note: NoteSearchHit | NoteContextDto): NoteSourceNavigation {
+    const queryParams = this.browseSourceParams(note);
+    return {
+      commands: [queryParams ? '/read' : '/library', note.bookId],
+      queryParams,
+      label: queryParams ? 'Return to passage' : 'Open book',
+    };
   }
 
   openBrowseTopic(name: string): void {
@@ -2111,6 +2125,9 @@ export class SecondBrain implements AfterViewChecked {
       selectedText: note.selectedText,
       createdAt: note.createdAt ?? '',
       bookTitle: note.bookTitle,
+      sourceAnchorKind: note.sourceAnchorKind,
+      sourceAnchorValue: note.sourceAnchorValue,
+      anchorVerified: note.anchorVerified,
     };
   }
 

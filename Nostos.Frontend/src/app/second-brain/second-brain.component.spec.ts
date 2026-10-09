@@ -1999,7 +1999,20 @@ describe('SecondBrain', () => {
       expect(localStorage.getItem('nostos.brain.viewMode')).toBe('notes');
     });
 
-    it('reuses the ordinary NoteCard presentation in optional review', () => {
+    it('resolves verified PDF and audio anchors through the shared Brain resolver', () => {
+    expect(component.browseSourceParams({
+      id: 'pdf-note', bookId: 'book-1', bookTitle: 'PDF', content: 'p',
+      selectedText: null, snippet: null, topicNames: [], createdAt: '2026-10-01',
+      sourceAnchorKind: 'pdf_page', sourceAnchorValue: '53', anchorVerified: true,
+    })).toEqual({ sourcePage: 53 });
+    expect(component.browseSourceParams({
+      id: 'audio-note', bookId: 'book-1', bookTitle: 'Audio', content: 'a',
+      selectedText: null, snippet: null, topicNames: [], createdAt: '2026-10-01',
+      sourceAnchorKind: 'audio_timestamp', sourceAnchorValue: '53.5', anchorVerified: true,
+    })).toEqual({ sourceTime: 53.5 });
+  });
+
+  it('reuses the ordinary NoteCard presentation in optional review', () => {
       enterReview();
 
       expect(fixture.nativeElement.querySelector('.note-inspector-title')?.textContent?.trim()).toBe(

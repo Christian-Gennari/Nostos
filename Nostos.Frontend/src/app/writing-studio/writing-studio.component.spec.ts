@@ -427,11 +427,42 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
     expect(document.body.classList.contains('nostos-zen')).toBe(false);
   });
 
-  it('Esc outside zen is ignored', () => {
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+  it('Esc outside zen closes a compact drawer and restores its header toggle focus', () => {
+    component.isCompact.set(true);
+    component.showFileSidebar.set(true);
+    fixture.detectChanges();
 
-    expect(component.isZen()).toBe(false);
-    expect(document.body.classList.contains('nostos-zen')).toBe(false);
+    const filesToggle = fixture.nativeElement.querySelector('.files-toggle') as HTMLButtonElement;
+    const filesEscape = new KeyboardEvent('keydown', { key: 'Escape', cancelable: true });
+    window.dispatchEvent(filesEscape);
+    fixture.detectChanges();
+
+    expect(component.showFileSidebar()).toBe(false);
+    expect(filesEscape.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(filesToggle);
+
+    component.showBrainSidebar.set(true);
+    fixture.detectChanges();
+    const referenceToggle = fixture.nativeElement.querySelector('.reference-toggle') as HTMLButtonElement;
+    const referenceEscape = new KeyboardEvent('keydown', { key: 'Escape', cancelable: true });
+    window.dispatchEvent(referenceEscape);
+    fixture.detectChanges();
+
+    expect(component.showBrainSidebar()).toBe(false);
+    expect(referenceEscape.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(referenceToggle);
+  });
+
+  it('does not close a compact drawer when a nested control has consumed Escape', () => {
+    component.isCompact.set(true);
+    component.showBrainSidebar.set(true);
+    fixture.detectChanges();
+
+    const event = new KeyboardEvent('keydown', { key: 'Escape', cancelable: true });
+    event.preventDefault();
+    window.dispatchEvent(event);
+
+    expect(component.showBrainSidebar()).toBe(true);
   });
 
   it('entering zen twice is idempotent', () => {

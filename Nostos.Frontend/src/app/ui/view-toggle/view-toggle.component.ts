@@ -237,6 +237,13 @@ const GLYPH_SIZE = 18;
         }
       }
 
+      @media (pointer: coarse), (hover: none) {
+        :host {
+          --vt-w: 44px;
+          --vt-h: 44px;
+        }
+      }
+
       @media (prefers-reduced-motion: reduce) {
         :host(.vt-animated)::before {
           transition: none;

@@ -460,7 +460,7 @@ test('Writing Studio shell stays editor-first across desktop and compact viewpor
       console.log(
         `[studio-shell] ${viewport.label} ${viewport.width}x${viewport.height} files-drawer ${JSON.stringify(filesDrawerOpen)}`,
       );
-      await compactPage.locator('.files-rail-collapse').click();
+      await compactPage.keyboard.press('Escape');
       await expect(compactPage.locator('.files-toggle')).toBeFocused();
       await expect(compactPage.locator('.files-toggle')).toHaveAttribute('aria-expanded', 'false');
       await typeAfterLayoutChange(compactPage, `${viewport.label}-files-return`);
@@ -529,7 +529,17 @@ test('Writing Studio shell stays editor-first across desktop and compact viewpor
 
         await compactPage.locator('.reference-note-list .reference-source-row-main').first().click();
         await expect(compactPage.locator('.inspected-source-card')).toHaveCount(1);
-        await compactPage.locator('.reference-rail-collapse').click();
+        const nestedMore = compactPage.getByRole('button', { name: 'More source actions' });
+        await nestedMore.click();
+        await expect(compactPage.locator('.source-more-actions')).toBeVisible();
+        await compactPage.locator('.source-more-actions button').first().focus();
+        await compactPage.keyboard.press('Escape');
+        await expect(compactPage.locator('.source-more-actions')).toHaveCount(0);
+        await expect(compactPage.locator('.sidebar-right')).toHaveClass(/\bopen\b/);
+        await expect(nestedMore).toBeFocused();
+        await compactPage.keyboard.press('Escape');
+        await expect(compactPage.locator('.sidebar-right')).not.toHaveClass(/\bopen\b/);
+        await expect(compactPage.locator('.reference-toggle')).toBeFocused();
         await compactPage.locator('.reference-toggle').click();
         await expect(compactPage.locator('.sidebar-right')).toHaveClass(/\bopen\b/);
         await expect(compactPage.locator('.inspected-source-card')).toHaveCount(1);
@@ -546,7 +556,7 @@ test('Writing Studio shell stays editor-first across desktop and compact viewpor
         );
       }
 
-      await compactPage.locator('.reference-rail-collapse').click();
+      await compactPage.keyboard.press('Escape');
       await expect(compactPage.locator('.reference-toggle')).toBeFocused();
       await expect(compactPage.locator('.reference-toggle')).toHaveAttribute(
         'aria-expanded',

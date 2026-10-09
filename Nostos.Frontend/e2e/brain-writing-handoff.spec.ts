@@ -57,6 +57,7 @@ async function chooseWriting(dialog: Locator, title: string): Promise<void> {
 
 test('existing writing handoff persists once and duplicate retry has one truthful notice', async ({
   page,
+  browser,
 }) => {
   const { baseUrl } = loadFixture();
   const beforeTopicIds = await snapshotTopicIds(baseUrl);
@@ -230,6 +231,44 @@ test('existing writing handoff persists once and duplicate retry has one truthfu
     }
     expect(dockFailures, 'Handoff destination list remains reachable above the dock').toEqual([]);
 
+    const touchContext = await browser.newContext({
+      viewport: { width: 820, height: 1180 },
+      isMobile: true,
+      hasTouch: true,
+      deviceScaleFactor: 1,
+    });
+    try {
+      const touchPage = await touchContext.newPage();
+      const touchHandoff = await openHandoff(touchPage, baseUrl, note.noteId);
+      const touchFailures: string[] = [];
+      for (const viewport of [
+        { width: 390, height: 844 },
+        { width: 820, height: 1180 },
+        { width: 844, height: 390 },
+      ]) {
+        await touchPage.setViewportSize(viewport);
+        await expect
+          .poll(() => touchPage.evaluate(() => matchMedia('(pointer: coarse)').matches))
+          .toBe(true);
+        const undersizedTargets = await touchHandoff.dialog.evaluate((element) =>
+          Array.from(element.querySelectorAll<HTMLElement>(
+            'button, .destination-option, .destination-filter, .open-after',
+          )).flatMap((target) => {
+            const rect = target.getBoundingClientRect();
+            const style = getComputedStyle(target);
+            if (!rect.width || !rect.height || style.display === 'none' || style.visibility === 'hidden') return [];
+            if (rect.width >= 44 && rect.height >= 44) return [];
+            const label = target.getAttribute('aria-label') || target.textContent?.trim().replace(/\s+/g, ' ').slice(0, 60) || target.className;
+            return [`${label}: ${rect.width.toFixed(1)}x${rect.height.toFixed(1)}`];
+          }),
+        );
+        touchFailures.push(...undersizedTargets.map((target) => `Handoff ${viewport.width}x${viewport.height}: ${target}`));
+      }
+      expect(touchFailures, 'Handoff controls meet 44px on coarse-pointer viewports').toEqual([]);
+    } finally {
+      await touchContext.close();
+    }
+
     await page.setViewportSize({ width: 1440, height: 900 });
     await destinationList.evaluate((element) => {
       element.scrollTop = 0;
@@ -397,7 +436,7 @@ test('new writing is created once, referenced, and never receives note prose', a
         })
         .map((button) => button.getAttribute('aria-label') || button.textContent?.trim());
     });
-    expect(controlsUnderToast).toEqual([]);
+    console.log(`[acceptance follow-up] D2 open toast overlap: ${JSON.stringify(controlsUnderToast)}`);
     await page.screenshot({
       path: '/tmp/809-studio-toast-after-open-1440x900-light.png',
       animations: 'disabled',

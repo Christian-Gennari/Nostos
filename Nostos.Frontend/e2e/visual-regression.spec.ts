@@ -355,7 +355,7 @@ test.describe('visual matrix — Second Brain (fixture-served)', () => {
       await page.goto(`${fixture.baseUrl}/second-brain`, { waitUntil: 'domcontentloaded' });
       const empty = page.locator('.empty-index-state');
       await empty.waitFor({ timeout: 30_000 });
-      await expect(empty).toContainText('[[Topic Name]]');
+      await expect(empty).toContainText('The index is quiet');
       await expect(page.locator('.index-item')).toHaveCount(0);
       await page.waitForTimeout(400); // let the allowed index shell entrance settle
 

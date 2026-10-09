@@ -3,6 +3,23 @@ import { expect, test } from '@playwright/test';
 import { apiDelete } from './support/brain-fixture';
 import { apiPost, loadFixture } from './support/fixture';
 
+async function undersizedVisibleControls(page: import('@playwright/test').Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const root = document.querySelector('.studio-layout');
+    if (!root) return ['missing Studio layout'];
+    return Array.from(root.querySelectorAll(
+      'button, select, textarea, input:not([type="hidden"]):not([type="checkbox"]), [role="tab"], a[appButton], a.source-badge',
+    )).flatMap((element) => {
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      if (!rect.width || !rect.height || style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0' || element.closest('[aria-hidden="true"]')) return [];
+      if (rect.width >= 44 && rect.height >= 44) return [];
+      const label = element.getAttribute('aria-label') || (element.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 50);
+      return [`${label || element.tagName}: ${rect.width.toFixed(1)}x${rect.height.toFixed(1)}`];
+    });
+  });
+}
+
 const viewports = [
   { width: 1440, height: 900 },
   { width: 1280, height: 720 },
@@ -73,9 +90,13 @@ test('Studio Files rail scroll end clears the dock across the acceptance viewpor
         );
       }
 
-      if (viewport.width === 820) {
+      if (viewport.width === 390 || viewport.width === 820) {
+        const smallControls = await undersizedVisibleControls(page);
+        if (smallControls.length) console.log(`[coarse-targets] Studio Files ${viewport.width}x${viewport.height}: ${JSON.stringify(smallControls)}`);
+      }
+      if (viewport.width === 820 || viewport.width === 390) {
         await page.screenshot({
-          path: '/tmp/809-studio-files-scroll-end-after-820x1180-light.png',
+          path: `/tmp/809-studio-files-scroll-end-after-${viewport.width}x${viewport.height}-light.png`,
           animations: 'disabled',
         });
       }
