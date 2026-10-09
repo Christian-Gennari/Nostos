@@ -236,7 +236,10 @@ test('Brain topic index clears the dock and exposes 44px actions on coarse point
       await loadMore.click();
       await expect.poll(() => noteRows.count()).toBeGreaterThan(previousCount);
     }
-    expect(await noteRows.count()).toBe(40);
+    // The browser fixture is shared across specs in one Playwright invocation.
+    // Other Brain specs can leave their own unlinked rows in it, so assert the
+    // synthetic set is present without assuming it is the only set.
+    expect(await noteRows.count()).toBeGreaterThanOrEqual(40);
     const notesList = page.locator('.index-list:visible').last();
     for (const viewport of viewports) {
       await page.setViewportSize(viewport);
@@ -374,7 +377,7 @@ test('Brain topic index clears the dock and exposes 44px actions on coarse point
       await reviewLoadMore.click();
       await expect.poll(() => reviewRows.count()).toBeGreaterThan(previousCount);
     }
-    expect(await reviewRows.count()).toBe(40);
+    expect(await reviewRows.count()).toBeGreaterThanOrEqual(40);
     for (const viewport of viewports) {
       await page.setViewportSize(viewport);
       if (await reviewList.isVisible()) {
