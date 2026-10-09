@@ -209,7 +209,13 @@ describe('CloudEntryComponent', () => {
     expect(compiled.textContent).toContain(
       'Your subscription will not renew while deletion is pending',
     );
-    expect(compiled.textContent).toContain('Cancelling deletion restores your subscription');
+    expect(compiled.textContent).toContain(
+      'Cancel deletion before your paid period ends to keep your subscription',
+    );
+    expect(compiled.textContent).toContain(
+      'after it ends, cancelling deletion still restores your account and library',
+    );
+    expect(compiled.textContent).toContain('you will need to subscribe again');
 
     const cancel = Array.from(compiled.querySelectorAll('button')).find((button) =>
       (button.textContent ?? '').includes('Cancel deletion'),

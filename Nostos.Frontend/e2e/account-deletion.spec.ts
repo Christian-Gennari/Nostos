@@ -154,7 +154,7 @@ test('Cloud settings confirms, enters pending state, and cancellation returns to
   await expect(page.getByRole('button', { name: 'Cancel deletion' })).toBeVisible();
   await expect(
     page.getByText(
-      'Your subscription will not renew while deletion is pending. Cancelling deletion restores your subscription.',
+      'Your subscription will not renew while deletion is pending. Cancel deletion before your paid period ends to keep your subscription; after it ends, cancelling deletion still restores your account and library, but you will need to subscribe again.',
     ),
   ).toBeVisible();
   await expect(page.getByRole('link', { name: 'Account & billing' })).toBeVisible();
