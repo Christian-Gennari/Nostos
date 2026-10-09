@@ -159,8 +159,9 @@
 
 /* Source Badge Styling */
 .source-badge {
-  display: flex;
-  flex: 1 1 0;
+  display: inline-flex;
+  flex: 0 1 auto;
+  max-width: 100%;
   flex-wrap: wrap;
   align-items: center;
   column-gap: 0.75rem;

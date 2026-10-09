@@ -333,6 +333,21 @@ test('Writing Studio shell stays editor-first across desktop and compact viewpor
 
         await page.locator('.reference-toggle').click();
         await page.getByRole('tab', { name: 'Library', exact: true }).click();
+        const libraryTabsChrome = await page.locator('.library-tabs').evaluate((element) => {
+          const style = getComputedStyle(element);
+          const active = element.querySelector('.tab-btn.active');
+          const buttons = Array.from(element.querySelectorAll('.tab-btn'));
+          return {
+            trackBackground: style.backgroundColor,
+            trackBottomBorder: style.borderBottomWidth,
+            activeBackground: active ? getComputedStyle(active).backgroundColor : '',
+            tabHeights: buttons.map((button) => button.getBoundingClientRect().height),
+          };
+        });
+        expect(libraryTabsChrome.trackBottomBorder).toBe('0px');
+        expect(libraryTabsChrome.trackBackground).not.toBe('rgba(0, 0, 0, 0)');
+        expect(libraryTabsChrome.activeBackground).not.toBe('rgba(0, 0, 0, 0)');
+        expect(libraryTabsChrome.tabHeights[0]).toBe(libraryTabsChrome.tabHeights[1]);
         await page.getByRole('tab', { name: 'Books', exact: true }).click();
         await page.getByPlaceholder('Search books...').fill(referenceBookTitle);
         const referenceBook = page
