@@ -658,11 +658,17 @@ export class ReaderShell implements OnInit, OnDestroy {
     if (!params) return null;
 
     const sourcePage = Number(params.get('sourcePage'));
+    const sourceTimeRaw = params.get('sourceTime');
+    const sourceTime = sourceTimeRaw === null ? Number.NaN : Number(sourceTimeRaw);
     const sourceCfi = params.get('sourceCfi');
     const sourceHref = params.get('sourceHref');
     const sourceSpineRaw = params.get('sourceSpine');
     const sourceOffsetRaw = params.get('sourceOffset');
     const sourceExcerpt = params.get('sourceExcerpt');
+
+    if (Number.isFinite(sourceTime) && sourceTime >= 0) {
+      return { type: 'audio', audioTime: sourceTime };
+    }
 
     if (Number.isInteger(sourcePage) && sourcePage > 0) {
       return {

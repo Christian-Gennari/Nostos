@@ -18,8 +18,9 @@ export interface ReaderProgress {
 }
 
 export interface ReaderSourceTarget {
-  type: 'pdf' | 'epub';
+  type: 'pdf' | 'epub' | 'audio';
   pdfPage?: number;
+  audioTime?: number;
   pdfPageLabel?: string | null;
   epubCfi?: string | null;
   epubResourceHref?: string | null;

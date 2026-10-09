@@ -60,7 +60,10 @@ public static class TopicsEndpoints
                         nc.Note.CfiRange,
                         nc.Note.BookId,
                         nc.Note.Book?.Title ?? "Unknown Book",
-                        nc.Note.CreatedAt
+                        nc.Note.CreatedAt,
+                        nc.Note.SourceAnchorKind,
+                        nc.Note.SourceAnchorValue,
+                        nc.Note.AnchorVerified
                     ))
                     .ToList();
 

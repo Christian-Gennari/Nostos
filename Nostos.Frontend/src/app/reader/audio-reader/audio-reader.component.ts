@@ -19,7 +19,7 @@ import { Subject, Subscription } from 'rxjs';
 import { sampleTime, filter } from 'rxjs/operators';
 import { BooksService } from '../../core/services/books.service';
 import { AssistantContextService } from '../../ui/assistant/assistant-context.service';
-import { IReader, ReaderProgress, TocItem } from '../reader.interface';
+import { IReader, ReaderProgress, ReaderSourceTarget, TocItem } from '../reader.interface';
 import { Book } from '../../core/dtos/book.dtos';
 
 import { BloomArtDirective } from '../../ui/bloom-art/bloom-art.directive';
@@ -55,6 +55,7 @@ export class AudioReader implements OnDestroy, IReader {
    * timestamp and its chapter. Additive only.
    */
   private unregisterAssistantContext: (() => void) | null = null;
+  private pendingSourceTime: number | null = null;
 
   // IReader Interface
   toc = signal<TocItem[]>([]);
@@ -254,6 +255,11 @@ export class AudioReader implements OnDestroy, IReader {
         this.duration.set(this.player?.duration() || 0);
         this.player?.rate(this.currentRate());
         this.restoreProgress();
+        if (this.pendingSourceTime !== null) {
+          const sourceTime = this.pendingSourceTime;
+          this.pendingSourceTime = null;
+          this.goToTime(Math.min(sourceTime, this.duration()));
+        }
         this.updateMediaSessionMetadata();
       },
       onloaderror: () => {
@@ -310,6 +316,16 @@ export class AudioReader implements OnDestroy, IReader {
     const current = this.player.seek() as number;
     const newTime = Math.max(0, Math.min(current + seconds, this.duration()));
     this.goToTime(newTime);
+  }
+
+  goToSource(target: ReaderSourceTarget): void {
+    if (target.type !== 'audio' || target.audioTime === undefined ||
+        !Number.isFinite(target.audioTime) || target.audioTime < 0) return;
+    if (!this.player || this.loading()) {
+      this.pendingSourceTime = target.audioTime;
+      return;
+    }
+    this.goToTime(Math.min(target.audioTime, this.duration()));
   }
 
   goToTime(seconds: number) {

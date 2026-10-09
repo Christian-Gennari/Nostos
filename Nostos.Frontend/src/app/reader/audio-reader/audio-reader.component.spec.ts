@@ -111,6 +111,18 @@ describe('AudioReader jump-to-timestamp (issue #6)', () => {
     fixture.componentRef.setInput('bookId', 'test-book-id');
   });
 
+  it('applies a queued source timestamp after audio metadata is available', () => {
+    fixture.detectChanges();
+    const player = mockPlayer(component);
+
+    component.goToSource({ type: 'audio', audioTime: 53 });
+    expect(component.currentTime()).toBe(0);
+    player.config.onload();
+
+    expect(player.seek).toHaveBeenCalledWith(53);
+    expect(component.currentTime()).toBe(53);
+  });
+
   it('does not enter edit mode when duration is zero', () => {
     expect(component.duration()).toBe(0);
     component.startEditingTime();

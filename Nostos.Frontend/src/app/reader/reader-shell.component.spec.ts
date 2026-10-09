@@ -402,6 +402,22 @@ describe('ReaderShell grounded book-text source navigation', () => {
     mockMatchMedia();
   });
 
+  it('passes a verified audio timestamp to the audio reader', async () => {
+    booksGetSpy.mockReturnValue(of(audiobook));
+    const fixture = await configureReaderShell({ sourceTime: 53 });
+    fixture.detectChanges();
+    fixture.detectChanges();
+    const reader = fixture.debugElement.query(By.directive(AudioReader)).componentInstance as AudioReader;
+
+    await new Promise((resolve) => setTimeout(resolve, 130));
+    (reader.player as any)?.config?.onload?.();
+    fixture.detectChanges();
+
+    expect(reader.currentTime()).toBe(53);
+    expect(reader.player?.seek).toHaveBeenCalledWith(53);
+    fixture.destroy();
+  });
+
   it('passes a grounded PDF physical page and logical label to the PDF reader', async () => {
     const pdfBook = { ...audiobook, id: 'book-1', type: 'ebook', fileName: 'source.pdf' } as Book;
     booksGetSpy.mockReturnValue(of(pdfBook));

@@ -10,6 +10,32 @@ import type { WritingContentDto, WritingSourceDto } from '../src/app/core/dtos/w
 
 const screenshotDir =
   process.env.STUDIO_REFERENCE_SCREENSHOT_DIR ?? '/tmp/nostos-studio-reference-after';
+async function undersizedVisibleControls(page: Page, rootSelector: string): Promise<string[]> {
+  return page.evaluate((selector) => {
+    const root = document.querySelector(selector);
+    if (!root) return ['missing root ' + selector];
+    const candidates = Array.from(root.querySelectorAll(
+      'button, select, textarea, input:not([type="hidden"]):not([type="checkbox"]), [role="tab"], a[appButton], a.source-badge, a.brain-source-link, a.empty-link',
+    ));
+    return candidates.flatMap((element) => {
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      if (!rect.width || !rect.height || style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0' || element.closest('[aria-hidden="true"]')) return [];
+      if (rect.width >= 44 && rect.height >= 44) return [];
+      const label = element.getAttribute('aria-label') || (element.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 50);
+      return [`${label || element.tagName}: ${rect.width.toFixed(1)}x${rect.height.toFixed(1)}`];
+    });
+  }, rootSelector);
+}
+
+const dockViewports = [
+  { width: 1440, height: 900 },
+  { width: 1280, height: 720 },
+  { width: 1024, height: 768 },
+  { width: 820, height: 1180 },
+  { width: 390, height: 844 },
+  { width: 844, height: 390 },
+];
 
 let baseUrl = '';
 let writingId = '';
@@ -63,6 +89,25 @@ async function openWriting(page: Page, viewport = { width: 1440, height: 900 }):
     { timeout: 45_000 },
   );
   await expect(page.locator('.header-doc-title')).toHaveText(writingTitle);
+}
+
+async function ensureReferenceDrawerOpen(page: Page): Promise<void> {
+  const toggle = page.locator('.reference-toggle');
+  const drawer = page.locator('.sidebar-right');
+  await expect(toggle).toBeVisible();
+  if ((await toggle.getAttribute('aria-expanded')) === 'false') {
+    await toggle.click();
+  }
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  await expect(drawer).toHaveClass(/\bopen\b/);
+  const viewport = page.viewportSize();
+  if (viewport) {
+    await expect
+      .poll(() =>
+        drawer.evaluate((element) => Math.round(element.getBoundingClientRect().right)),
+      )
+      .toBe(viewport.width);
+  }
 }
 
 async function expectDarkEditor(page: Page): Promise<void> {
@@ -253,6 +298,7 @@ test.afterAll(async () => {
 test('Reference browsing, inspection, keep, and insertion preserve the writing', async ({ page }) => {
   const browserErrors: string[] = [];
   const apiFailures: string[] = [];
+  const dockFailures: string[] = [];
   page.on('pageerror', (error) => browserErrors.push(error.message));
   page.on('console', (message) => {
     if (message.type() === 'error') browserErrors.push(message.text());
@@ -312,13 +358,67 @@ test('Reference browsing, inspection, keep, and insertion preserve the writing',
   await captureAfter(page, 'reference-library-topics-desktop-1280x720-light.png');
 
   const topicIndex = page.locator('[data-reference-scroll="topics"]');
+  for (const viewport of dockViewports) {
+    await page.setViewportSize(viewport);
+    await ensureReferenceDrawerOpen(page);
+    await expect(topicIndex).toBeVisible();
+    await topicIndex.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    const topicIndexEnd = await page.evaluate(() => {
+      const row = document
+        .querySelector('[data-reference-scroll="topics"] .list-item:last-child')!
+        .getBoundingClientRect();
+      const dock = document.querySelector('app-app-dock')!.getBoundingClientRect();
+      return { rowBottom: row.bottom, dockTop: dock.top };
+    });
+    if (topicIndexEnd.rowBottom > topicIndexEnd.dockTop) {
+      dockFailures.push(`Reference Topics at ${viewport.width}x${viewport.height}: ${topicIndexEnd.rowBottom}px > dock ${topicIndexEnd.dockTop}px`);
+    }
+    if (viewport.width === 820 || viewport.width === 390 || viewport.width === 844) {
+      await captureAfter(
+        page,
+        'reference-topics-scroll-end-after-' + viewport.width + 'x' + viewport.height + '-light.png',
+      );
+    }
+  }
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await ensureReferenceDrawerOpen(page);
   await topicIndex.evaluate((element) => {
-    element.scrollTop = 520;
+    element.scrollTop = element.scrollHeight;
   });
   const topicScroll = await topicIndex.evaluate((element) => element.scrollTop);
+  await captureAfter(page, 'reference-topics-scroll-end-after-1280x720-light.png');
   await page.locator('.list-item').filter({ hasText: topicNames[39] }).click();
   await expect(page.getByRole('button', { name: 'Back to Topics' })).toBeVisible();
   await expect(page.locator('.reference-note-list .reference-source-row')).toHaveCount(1);
+  const topicNotes = page.locator('[data-reference-scroll="topicNotes"]');
+  for (const viewport of dockViewports) {
+    await page.setViewportSize(viewport);
+    await ensureReferenceDrawerOpen(page);
+    await expect(topicNotes).toBeVisible();
+    await topicNotes.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    const topicNotesEnd = await page.evaluate(() => {
+      const row = document
+        .querySelector('[data-reference-scroll="topicNotes"] .reference-source-row:last-child')!
+        .getBoundingClientRect();
+      const dock = document.querySelector('app-app-dock')!.getBoundingClientRect();
+      return { rowBottom: row.bottom, dockTop: dock.top };
+    });
+    if (topicNotesEnd.rowBottom > topicNotesEnd.dockTop) {
+      dockFailures.push(`Reference topic notes at ${viewport.width}x${viewport.height}: ${topicNotesEnd.rowBottom}px > dock ${topicNotesEnd.dockTop}px`);
+    }
+    if (viewport.width === 820 || viewport.width === 844) {
+      await captureAfter(
+        page,
+        'reference-topic-notes-scroll-end-after-' + viewport.width + 'x' + viewport.height + '-light.png',
+      );
+    }
+  }
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await ensureReferenceDrawerOpen(page);
   await typeAndRemoveProbe(page, 'S2Topic');
   await page.getByRole('button', { name: 'Back to Topics' }).click();
   await expect(topicSearch).toHaveValue('S2 Topic');
@@ -346,6 +446,39 @@ test('Reference browsing, inspection, keep, and insertion preserve the writing',
   await captureAfter(page, 'reference-book-index-tablet-820x1180-light.png');
 
   const bookIndex = page.locator('[data-reference-scroll="books"]');
+  await bookSearch.fill('');
+  await expect(bookIndex.locator('.list-item').first()).toBeVisible();
+  for (const viewport of dockViewports) {
+    await page.setViewportSize(viewport);
+    await ensureReferenceDrawerOpen(page);
+    await expect(bookIndex).toBeVisible();
+    await bookIndex.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    const bookIndexEnd = await page.evaluate(() => {
+      const row = document
+        .querySelector('[data-reference-scroll="books"] .list-item:last-child')!
+        .getBoundingClientRect();
+      const dock = document.querySelector('app-app-dock')!.getBoundingClientRect();
+      return { rowBottom: row.bottom, dockTop: dock.top };
+    });
+    if (bookIndexEnd.rowBottom > bookIndexEnd.dockTop) {
+      dockFailures.push(`Reference Books at ${viewport.width}x${viewport.height}: ${bookIndexEnd.rowBottom}px > dock ${bookIndexEnd.dockTop}px`);
+    }
+    if (viewport.width === 820 || viewport.width === 390 || viewport.width === 844) {
+      await captureAfter(
+        page,
+        'reference-books-scroll-end-after-' + viewport.width + 'x' + viewport.height + '-light.png',
+      );
+    }
+  }
+  await page.setViewportSize({ width: 820, height: 1180 });
+  await ensureReferenceDrawerOpen(page);
+  await bookIndex.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await captureAfter(page, 'reference-books-scroll-end-after-820x1180-light.png');
+  await bookSearch.fill('S2 Reference Book');
   await bookIndex.evaluate((element) => {
     element.scrollTop = 420;
   });
@@ -353,6 +486,37 @@ test('Reference browsing, inspection, keep, and insertion preserve the writing',
   await page.locator('.list-item').filter({ hasText: mainBookTitle }).click();
   await expect(page.getByRole('button', { name: 'Back to Books' })).toBeVisible();
   await expect(page.locator('.reference-note-list .reference-source-row')).toHaveCount(40);
+  const bookNotes = page.locator('[data-reference-scroll="bookNotes"]');
+  for (const viewport of dockViewports) {
+    await page.setViewportSize(viewport);
+    await ensureReferenceDrawerOpen(page);
+    await expect(bookNotes).toBeVisible();
+    await bookNotes.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    const bookNotesEnd = await page.evaluate(() => {
+      const row = document
+        .querySelector('[data-reference-scroll="bookNotes"] .reference-source-row:last-child')!
+        .getBoundingClientRect();
+      const dock = document.querySelector('app-app-dock')!.getBoundingClientRect();
+      return { rowBottom: row.bottom, dockTop: dock.top };
+    });
+    if (bookNotesEnd.rowBottom > bookNotesEnd.dockTop) {
+      dockFailures.push(`Reference book notes at ${viewport.width}x${viewport.height}: ${bookNotesEnd.rowBottom}px > dock ${bookNotesEnd.dockTop}px`);
+    }
+    if (viewport.width === 820 || viewport.width === 844) {
+      await captureAfter(
+        page,
+        'reference-book-notes-scroll-end-after-' + viewport.width + 'x' + viewport.height + '-light.png',
+      );
+    }
+  }
+  await page.setViewportSize({ width: 820, height: 1180 });
+  await ensureReferenceDrawerOpen(page);
+  await bookNotes.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await captureAfter(page, 'reference-book-notes-scroll-end-after-820x1180-light.png');
   await page.locator('.reference-rail-collapse').click();
   await expect(page.locator('.reference-toggle')).toHaveAttribute('aria-expanded', 'false');
   await typeAndRemoveProbe(page, 'S2BookNotes');
@@ -504,6 +668,7 @@ test('Reference browsing, inspection, keep, and insertion preserve the writing',
     await apiGet<WritingSourceDto[]>(baseUrl, '/api/writings/' + writingId + '/notes'),
   ).toHaveLength(1);
   expect(manuscriptBeforeInsert.content).not.toContain(longQuote);
+  expect(dockFailures, 'Reference topic/book lists clear the dock').toEqual([]);
   expect(browserErrors).toEqual([]);
   expect(apiFailures).toEqual([]);
 });
@@ -512,6 +677,8 @@ test('kept-source density and responsive Reference rows hold at 0, 3, 8, and 40'
   page,
   browser,
 }) => {
+  const dockFailures: string[] = [];
+  const touchTargetFailures: string[] = [];
   const addSources = async (start: number, end: number) => {
     for (let index = start; index < end; index++) {
       await apiPost(baseUrl, '/api/writings/' + writingId + '/notes', {
@@ -671,6 +838,110 @@ test('kept-source density and responsive Reference rows hold at 0, 3, 8, and 40'
   await expect(touchPage.locator('.kept-sources-content .reference-source-row')).toHaveCount(
     40,
   );
+  const writingSourceList = touchPage.locator('.kept-sources-content');
+  for (const viewport of dockViewports) {
+    await touchPage.setViewportSize(viewport);
+    await ensureReferenceDrawerOpen(touchPage);
+    await expect(writingSourceList).toBeVisible();
+    await writingSourceList.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    const writingListEnd = await touchPage.evaluate(() => {
+      const row = document
+        .querySelector('.kept-sources-content .reference-source-row:last-child')!
+        .getBoundingClientRect();
+      const dock = document.querySelector('app-app-dock')!.getBoundingClientRect();
+      return { rowBottom: row.bottom, dockTop: dock.top };
+    });
+    if (writingListEnd.rowBottom > writingListEnd.dockTop) {
+      dockFailures.push(`For this writing at ${viewport.width}x${viewport.height}: ${writingListEnd.rowBottom}px > dock ${writingListEnd.dockTop}px`);
+    }
+    if (viewport.width === 390 || viewport.width === 820 || viewport.width === 844) {
+      await captureAfter(
+        touchPage,
+        'reference-for-writing-scroll-end-after-' +
+          viewport.width + 'x' + viewport.height + '-light.png',
+      );
+    }
+  }
+  for (const viewport of [
+    { width: 390, height: 844 },
+    { width: 820, height: 1180 },
+  ]) {
+    await touchPage.setViewportSize(viewport);
+    const referenceTabHeights = await touchPage
+      .locator('.reference-mode-switch .tab-btn')
+      .evaluateAll((tabs) => tabs.map((tab) => tab.getBoundingClientRect().height));
+    expect(referenceTabHeights.length).toBe(2);
+    if (!referenceTabHeights.every((height) => height >= 44)) {
+      touchTargetFailures.push(`Reference tab heights ${viewport.width}x${viewport.height}: ${JSON.stringify(referenceTabHeights)}`);
+    }
+    const smallControls = await undersizedVisibleControls(touchPage, '.studio-layout');
+    if (smallControls.length) touchTargetFailures.push(`Studio For this writing ${viewport.width}x${viewport.height}: ${JSON.stringify(smallControls)}`);
+  }
+  await ensureReferenceDrawerOpen(touchPage);
+  await touchPage.getByRole('tab', { name: 'Library', exact: true }).click();
+  await touchPage.locator('.library-tabs').getByRole('tab', { name: 'Books', exact: true }).click();
+  const touchBookSearch = touchPage.getByRole('textbox', { name: 'Search books' });
+  await touchBookSearch.fill(mainBookTitle);
+  await expect(touchPage.locator('.list-item').filter({ hasText: mainBookTitle })).toBeVisible();
+  for (const viewport of [
+    { width: 390, height: 844 },
+    { width: 820, height: 1180 },
+  ]) {
+    await touchPage.setViewportSize(viewport);
+    await ensureReferenceDrawerOpen(touchPage);
+    const smallControls = await undersizedVisibleControls(touchPage, '.studio-layout');
+    if (smallControls.length) touchTargetFailures.push(`Studio Library Books ${viewport.width}x${viewport.height}: ${JSON.stringify(smallControls)}`);
+  }
+  await touchPage.locator('.list-item').filter({ hasText: mainBookTitle }).click();
+  await expect(touchPage.locator('.reference-note-list .reference-source-row')).toHaveCount(40);
+  for (const viewport of [
+    { width: 390, height: 844 },
+    { width: 820, height: 1180 },
+  ]) {
+    await touchPage.setViewportSize(viewport);
+    await ensureReferenceDrawerOpen(touchPage);
+    const smallControls = await undersizedVisibleControls(touchPage, '.studio-layout');
+    if (smallControls.length) touchTargetFailures.push(`Studio book notes ${viewport.width}x${viewport.height}: ${JSON.stringify(smallControls)}`);
+  }
+  const touchLongQuoteRow = touchPage
+    .locator('.reference-note-list .reference-source-row-main')
+    .filter({ hasText: longQuote.slice(0, 32) })
+    .first();
+  await touchLongQuoteRow.click();
+  await expect(touchPage.locator('.inspected-source-card')).toContainText(longQuote);
+  for (const viewport of [
+    { width: 390, height: 844 },
+    { width: 820, height: 1180 },
+  ]) {
+    await touchPage.setViewportSize(viewport);
+    await ensureReferenceDrawerOpen(touchPage);
+    const smallControls = await undersizedVisibleControls(touchPage, '.studio-layout');
+    if (smallControls.length) touchTargetFailures.push(`Studio quote inspector ${viewport.width}x${viewport.height}: ${JSON.stringify(smallControls)}`);
+  }
+  await touchPage.getByRole('tab', { name: 'For this writing', exact: true }).click();
+  await expect(touchPage.locator('.kept-sources-content .reference-source-row')).toHaveCount(40);
+  await touchPage.setViewportSize({ width: 390, height: 844 });
+
+  const keptSources = touchPage.locator('.kept-sources-content');
+  await keptSources.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  const keptSourcesEnd = await touchPage.evaluate(() => {
+    const row = document
+      .querySelector('.kept-sources-content .reference-source-row:last-child')!
+      .getBoundingClientRect();
+    const dock = document.querySelector('app-app-dock')!.getBoundingClientRect();
+    return { rowBottom: row.bottom, dockTop: dock.top };
+  });
+  if (keptSourcesEnd.rowBottom > keptSourcesEnd.dockTop) {
+    dockFailures.push(`For this writing at 390x844: ${keptSourcesEnd.rowBottom}px > dock ${keptSourcesEnd.dockTop}px`);
+  }
+  await captureAfter(
+    touchPage,
+    'reference-for-writing-scroll-end-after-390x844-light.png',
+  );
   const actionTarget = await touchPage
     .locator('.reference-row-action')
     .first()
@@ -679,24 +950,25 @@ test('kept-source density and responsive Reference rows hold at 0, 3, 8, and 40'
       const style = getComputedStyle(element);
       return { width: rect.width, height: rect.height, cssWidth: style.width, cssHeight: style.height };
     });
-  expect(actionTarget.cssWidth).toBe('44px');
-  expect(actionTarget.cssHeight).toBe('44px');
+  if (actionTarget.cssWidth !== '44px' || actionTarget.cssHeight !== '44px') {
+    touchTargetFailures.push(`Reference row action CSS size: ${JSON.stringify(actionTarget)}`);
+  }
   // Chromium can report 43.99997px from its transformed layout rectangle even
   // though the computed control box is exactly 44px. Compare at rendered-pixel
   // precision while still guarding the actual CSS target above.
-  expect(Math.round(actionTarget.width)).toBeGreaterThanOrEqual(44);
-  expect(Math.round(actionTarget.height)).toBeGreaterThanOrEqual(44);
+  if (Math.round(actionTarget.width) < 44 || Math.round(actionTarget.height) < 44) {
+    touchTargetFailures.push(`Reference row action box: ${JSON.stringify(actionTarget)}`);
+  }
 
-  await touchPage.locator('.kept-sources-content .reference-source-row-main').first().click();
-  await expect(touchPage.locator('.inspected-source-card')).toHaveCount(1);
+  await keptSources.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
   await captureAfter(touchPage, 'mobile-reference-inspection-mobile-390x844-light.png');
 
   await touchPage.addInitScript(() => localStorage.setItem('nostos.theme', 'dark'));
   await openWriting(touchPage, { width: 390, height: 844 });
   await expectDarkEditor(touchPage);
   await touchPage.locator('.reference-toggle').click();
-  await touchPage.locator('.kept-sources-content .reference-source-row-main').first().click();
-  await expect(touchPage.locator('.inspected-source-card')).toHaveCount(1);
   await captureAfter(touchPage, 'mobile-reference-inspection-mobile-390x844-dark.png');
   await touchContext.close();
 
@@ -712,7 +984,76 @@ test('kept-source density and responsive Reference rows hold at 0, 3, 8, and 40'
     )
     .toBe(844);
   await expect(page.locator('.kept-sources-content .reference-source-row')).toHaveCount(40);
-  await page.locator('.kept-sources-content .reference-source-row-main').first().click();
-  await expect(page.locator('.inspected-source-card')).toHaveCount(1);
-  await captureAfter(page, 'mobile-reference-inspection-landscape-844x390-light.png');
+  const longQuoteRow = page
+    .locator('.kept-sources-content .reference-source-row-main')
+    .filter({ hasText: longQuote.slice(0, 32) })
+    .first();
+  await expect(longQuoteRow).toBeVisible();
+  await longQuoteRow.click();
+  await expect(page.locator('.inspected-source-card')).toContainText(longQuote);
+  const inspectorPanel = page.locator('.inspected-source-panel');
+  const inspectorActionRow = page.locator('.source-action-primary-row');
+  const referenceDrawer = page.locator('.sidebar-right');
+  for (const viewport of dockViewports) {
+    await page.setViewportSize(viewport);
+    if (!(await referenceDrawer.evaluate((element) => element.classList.contains('open')))) {
+      await page.locator('.reference-toggle').click();
+    }
+    await expect(referenceDrawer).toHaveClass(/\bopen\b/);
+    await expect
+      .poll(() =>
+        referenceDrawer.evaluate((element) =>
+          Math.round(element.getBoundingClientRect().right),
+        ),
+      )
+      .toBe(viewport.width);
+    await expect(inspectorPanel).toBeVisible();
+    await expect(inspectorActionRow).toBeVisible();
+    const drawerBounds = await referenceDrawer.boundingBox();
+    expect(drawerBounds).not.toBeNull();
+    expect(drawerBounds!.x, `Reference drawer starts on-screen at ${viewport.width}x${viewport.height}`).toBeGreaterThanOrEqual(0);
+    expect(
+      drawerBounds!.x + drawerBounds!.width,
+      `Reference drawer ends on-screen at ${viewport.width}x${viewport.height}`,
+    ).toBeLessThanOrEqual(viewport.width);
+    if (viewport.width === 844 && viewport.height === 390) {
+      expect(drawerBounds!.width, 'Reference drawer fills short landscape').toBeGreaterThanOrEqual(
+        viewport.width * 0.9,
+      );
+      expect(drawerBounds!.x, 'Reference drawer starts at the short-landscape edge').toBeLessThanOrEqual(
+        1,
+      );
+    }
+    await inspectorPanel.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    const inspectorEnd = await page.evaluate(() => {
+      const action = document
+        .querySelector('.source-action-primary-row')!
+        .getBoundingClientRect();
+      const dock = document.querySelector('app-app-dock')!.getBoundingClientRect();
+      return { actionBottom: action.bottom, dockTop: dock.top, actionHeight: action.height };
+    });
+    expect(
+      inspectorEnd.actionHeight,
+      `Reference action row is visible at ${viewport.width}x${viewport.height}`,
+    ).toBeGreaterThan(0);
+    if (inspectorEnd.actionBottom > inspectorEnd.dockTop) {
+      dockFailures.push(`Reference inspector actions at ${viewport.width}x${viewport.height}: ${inspectorEnd.actionBottom}px > dock ${inspectorEnd.dockTop}px`);
+    }
+    if (viewport.width === 1280) {
+      await captureAfter(
+        page,
+        'reference-inspector-long-quote-actions-scroll-end-after-1280x720-light.png',
+      );
+    }
+    if (viewport.width === 844) {
+      await captureAfter(
+        page,
+        'reference-inspector-long-quote-actions-scroll-end-after-844x390-light.png',
+      );
+    }
+  }
+  expect(dockFailures, 'All Reference lists and inspector clear the dock').toEqual([]);
+  expect(touchTargetFailures, 'Reference coarse-pointer controls meet 44px').toEqual([]);
 });

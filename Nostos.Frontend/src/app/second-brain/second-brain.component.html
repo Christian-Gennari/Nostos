@@ -488,6 +488,7 @@
                 [showNavigation]="false"
                 [showActions]="false"
                 [showSource]="true"
+                [sourceNavigation]="noteSourceNavigation(note)"
                 [showDate]="true"
                 (topicClick)="setViewMode('list'); selectTopic($event)"
               ></app-note-card>
@@ -638,6 +639,7 @@
               [showNavigation]="false"
               [showActions]="false"
               [showSource]="true"
+                [sourceNavigation]="noteSourceNavigation(note)"
               [showDate]="true"
             ></app-note-card>
           </div>
@@ -899,6 +901,7 @@
             [actionsTemplate]="sourceSelectionMode() ? null : noteActionGroup"
             [actionsContext]="{ $implicit: noteForCard(note), mode: 'evidence', card: noteCardHost }"
             [showSource]="true"
+                [sourceNavigation]="noteSourceNavigation(note)"
             [showDate]="true"
             (update)="onUpdateNote($event)"
             (delete)="onDeleteNote($event)"
@@ -973,6 +976,7 @@
                 [showNavigation]="false"
                 [showActions]="false"
                 [showSource]="true"
+                [sourceNavigation]="noteSourceNavigation(note)"
                 [showDate]="true"
                 (topicClick)="selectTopic($event)"
               ></app-note-card>

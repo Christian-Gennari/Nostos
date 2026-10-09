@@ -159,6 +159,12 @@ let nextDropdownId = 0;
         font-size: 0.9rem;
       }
 
+      @media (pointer: coarse), (hover: none) {
+        :host(.nostos-dropdown--compact) .nostos-dropdown__trigger {
+          min-height: var(--control-h-touch);
+        }
+      }
+
       /* Low-chrome toolbar controls still read as controls through their label,
          caret and hover/focus behaviour, so they use the app hairline instead of
          the stronger form-field boundary. The popup itself is unchanged. */

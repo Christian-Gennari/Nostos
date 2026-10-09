@@ -24,7 +24,10 @@ public record NoteContextDto(
     string? CfiRange,
     Guid BookId,
     string BookTitle,
-    DateTime CreatedAt
+    DateTime CreatedAt,
+    string SourceAnchorKind = "unknown",
+    string? SourceAnchorValue = null,
+    bool AnchorVerified = false
 );
 
 // For the whole-brain knowledge graph

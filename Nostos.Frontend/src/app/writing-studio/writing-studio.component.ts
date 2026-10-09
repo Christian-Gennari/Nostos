@@ -582,8 +582,19 @@ export class WritingStudio implements OnInit, AfterViewInit {
   // --- Zen (focus) mode — issue #49 ---
 
   private readonly onKeyDown = (event: KeyboardEvent) => {
-    if (event.key === 'Escape' && this.isZen()) {
+    if (event.key !== 'Escape') return;
+    if (this.isZen()) {
       this.exitZen();
+      return;
+    }
+    if (event.defaultPrevented || !this.isCompact()) return;
+
+    if (this.showFileSidebar()) {
+      this.setRailOpen('files', false);
+      event.preventDefault();
+    } else if (this.showBrainSidebar()) {
+      this.setRailOpen('reference', false);
+      event.preventDefault();
     }
   };
 

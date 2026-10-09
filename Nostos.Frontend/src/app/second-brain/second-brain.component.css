@@ -315,12 +315,8 @@
   min-height: 0;
   overflow-y: auto;
   position: relative;
-  /* Padding matches header horizontal padding exactly.
-     The top padding is what keeps the first row off the sort row's hairline: with
-     none, the first topic row's box began 1px under the rule, so the list
-     appeared to start flush against the boundary and a row's hover surface
-     touched it. */
-  padding: 0.5rem 1.25rem 1.5rem;
+  /* The top padding clears the sort row's hairline; the bottom clears the dock. */
+  padding: 0.5rem 1.25rem 5.5rem;
 }
 
 .index-loading {
@@ -705,9 +701,38 @@
   outline-offset: -2px;
 }
 
-/* No hover on touch: a hover-revealed pair is unreachable there, so the selected
-   row (and a keyboard-focused one) reveals its actions instead. */
-@media (pointer: coarse), (hover: none) {
+/* Touch and keyboard reveal row actions because hover is unavailable. */
+@media (pointer: coarse), (hover: none), (max-width: 768px) {
+  .brain-area,
+  .search-box input,
+  .brain-note-filter-row .nostos-chip,
+  .review-pagination .nostos-button,
+  .brain-proposal-actions .nostos-button,
+  .note-inspector-inline-actions .nostos-button,
+  .note-search-box input {
+    min-height: 44px;
+  }
+
+  .index-item {
+    min-height: 44px;
+  }
+
+  .index-row-shell {
+    --actions-w: 96px;
+  }
+
+  .clear-search,
+  .clear-note-search,
+  .brain-note-panel-close {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .row-action {
+    width: 44px;
+    height: 44px;
+  }
+
   .index-row-shell:has(.index-item.active) .row-actions,
   .index-row-shell:focus-within .row-actions {
     opacity: 1;
@@ -1795,7 +1820,6 @@
 
   /* 3. Index Column Behavior */
   .index-col {
-    width: 100%;
     /* Flex child, so it fills the space left under the header rather than
        claiming the full layout height. */
     flex: 1 1 auto;
@@ -1827,57 +1851,28 @@
   .brain-areas { width: 100%; }
   .brain-area {
     flex: 1 1 0;
-    min-height: 44px;
     min-width: 0;
   }
   .brain-note-filters { padding-inline: 1rem; }
-
-  .brain-note-filter-row .nostos-chip,
-  .review-pagination .nostos-button,
-  .brain-proposal-actions .nostos-button,
-  .note-inspector-inline-actions .nostos-button {
-    min-height: 44px;
-  }
 
   .brain-header-tools .search-box {
     flex: 1 1 auto;
     min-width: 0;
   }
 
-  .search-box,
-  .sort-select {
-    min-height: 44px;
-  }
-
-  /* A 44px-tall box whose inner INPUT is only 37px still leaves a 37px tap
-     area for the (portrait) tap that lands on the text, which is where a thumb
-     aims. Height the input itself rather than only the wrapper. */
-  .search-box input,
-  .note-search-box input {
-    min-height: 44px;
-  }
-
-  .sort-shell,
   .detail-select-shell {
     min-height: 44px;
   }
 
-  /* The mobile rung (34x32 option in a 38px track) is the component's, so this
-     surface no longer states it — and the two surfaces cannot disagree about it
-     again. The deliberate trade-off it carries is recorded there: the option sits
-     below the 44px tap-target minimum the rest of this header keeps, because
-     visible parity between the two view toggles was chosen over the larger
-     target, which is why the 44px assertion in mobile-studio-brain.spec.ts was
-     narrowed to the search field. */
+  /* The shared view toggle keeps its compact track; this surface's coarse-pointer
+     rule above expands the options without changing their desktop geometry. */
 
   .clear-search {
     flex-basis: 44px;
-    min-width: 44px;
-    min-height: 44px;
   }
 
   .index-list {
-    padding: 0.5rem 1rem 1.5rem;
+    padding-inline: 1rem;
   }
 
   /* The list narrows its inset to 1rem on a phone, so the sort row follows it. */
@@ -1886,12 +1881,10 @@
   }
 
   .index-item {
-    min-height: 44px;
     padding-top: 0;
     padding-bottom: 0;
   }
 
-  .index-row-shell,
   .note-row-shell {
     min-height: 44px;
   }
@@ -1904,27 +1897,11 @@
      desktop-inconsistent height just because the tap target did — the actions
      are an out-of-flow overlay, so they can stay tall while the row stays 44px.
      Widening --actions-w moves the tail, the overlay and the fade edge together. */
-  .index-row-shell {
-    --actions-w: 142px;
-  }
-
-  .row-actions {
-    height: 44px;
-  }
-
   /* NOT `opacity: 1` here. Revealing the pair on every row at rest is exactly
      the wall-of-icons state the Library's tree avoids; the `(hover: none)` block
      inside the component reveals them on the selected or focused row instead. */
-  .row-action {
-    width: 44px;
-    height: 44px;
-  }
 
   /* When class.mobile-hidden is active (Selection made), hide index completely */
-  .index-col.mobile-hidden {
-    display: none;
-  }
-
   /* 4. Content Column Behavior */
   .content-col {
     display: none; /* Hidden by default on mobile (Landing state is Index) */
@@ -1934,7 +1911,6 @@
     /* No dock clearance here: the shell already reserves the dock's exact height
        (--dock-rail-h) for every page, so padding for it again was a second reserve
        and the surplus showed as blank space between the content and the dock. */
-    padding-bottom: 1.5rem;
     background-image: none; /* Cleaner look on small screens */
   }
 
@@ -2084,12 +2060,6 @@
     height: 44px;
   }
 
-  .clear-note-search {
-    flex-basis: 44px;
-    min-width: 44px;
-    min-height: 44px;
-  }
-
   .cards-grid {
     grid-template-columns: 1fr; /* Single column cards */
   }
@@ -2133,6 +2103,10 @@
  * while map-specific rules remove the editorial inset and dock reserve.
  */
 @media (max-width: 768px), (max-height: 500px) {
+.index-col.mobile-hidden {
+  display: none;
+}
+
 .content-col.mobile-visible:has(app-topic-map) {
   display: flex;
   flex-direction: column;
@@ -2170,7 +2144,12 @@
     flex-direction: column;
   }
 
-  .index-col.mobile-hidden {
+  .index-col {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  .content-col:not(.mobile-visible) {
     display: none;
   }
 
@@ -2208,10 +2187,6 @@
 .brain-section-title,
 .brain-section-count {
   font-weight: var(--fw-semibold);
-}
-
-.brain-section-title,
-.brain-section-count {
   font-size: 0.72rem;
 }
 
@@ -2360,7 +2335,7 @@
   display: flex;
   flex-direction: column;
   z-index: 10;
-  padding: 1.5rem;
+  padding: 1.5rem 1.5rem 7rem;
   overflow-y: auto;
 }
 
@@ -2508,14 +2483,6 @@
 
   .related-item {
     align-items: stretch;
-  }
-
-  .related-chip,
-  .related-evidence-toggle,
-  .related-more,
-  .topic-management summary,
-  .topic-action {
-    min-height: 44px;
   }
 
   .related-evidence {
@@ -2674,11 +2641,16 @@
   }
 }
 
-@media (pointer: coarse) {
+@media (pointer: coarse), (hover: none), (max-width: 768px) {
   :where(.brain-note-actions, .review-entry, .topic-meta, .source-selection-tools) button,
   .review-return,
   .brain-source-link,
-  .source-select-control {
+  .source-select-control,
+  .related-chip,
+  .related-evidence-toggle,
+  .related-more,
+  .topic-management summary,
+  .topic-action {
     min-height: 44px;
   }
 }
