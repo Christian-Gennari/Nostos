@@ -1,6 +1,6 @@
 {
   "artifact": "studio-empty-desktop.png",
-  "capturedAt": "2026-09-13T10:56:03.365Z",
+  "capturedAt": "2026-10-09T10:51:12.593Z",
   "name": "studio-empty-desktop",
   "surface": "studio",
   "viewport": {
@@ -12,9 +12,9 @@
     {
       "id": "studio-empty-state",
       "pass": true,
-      "message": "empty studio shows the \"Select a file to begin writing\" state",
+      "message": "empty studio invites the user to open a document or start a new one",
       "metrics": {
-        "png": "/home/dev/coding/projects/nostos-rebirth/Nostos.Frontend/e2e/visual-evidence/studio-empty-desktop.png"
+        "png": "e2e/visual-evidence/studio-empty-desktop.png"
       }
     }
   ],

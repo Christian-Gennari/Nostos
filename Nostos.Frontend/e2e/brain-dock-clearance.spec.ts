@@ -156,9 +156,10 @@ test('Brain topic index clears the dock and exposes 44px actions on coarse point
             `Topics final row at ${viewport.width}x${viewport.height}: ${rowBox!.y + rowBox!.height}px > dock ${dockBox!.y}px; ${JSON.stringify(layoutMetrics)}`,
           );
         }
-      if (viewport.width === 820) {
+      if (viewport.width === 820 || viewport.width === 844) {
         await page.screenshot({
-          path: '/tmp/804-brain-topics-index-scroll-end-after-820x1180-light.png',
+          path: '/tmp/804-brain-topics-index-scroll-end-after-' +
+            viewport.width + 'x' + viewport.height + '-light.png',
           animations: 'disabled',
         });
       }
@@ -258,9 +259,10 @@ test('Brain topic index clears the dock and exposes 44px actions on coarse point
         const smallControls = await undersizedVisibleControls(page, '.brain-layout');
         if (smallControls.length) touchTargetFailures.push(`Brain Without topics ${viewport.width}x${viewport.height}: ${JSON.stringify(smallControls)}`);
       }
-      if (viewport.width === 820) {
+      if (viewport.width === 820 || viewport.width === 844) {
         await page.screenshot({
-          path: '/tmp/804-brain-notes-without-topics-scroll-end-after-820x1180-light.png',
+          path: '/tmp/804-brain-notes-without-topics-scroll-end-after-' +
+            viewport.width + 'x' + viewport.height + '-light.png',
           animations: 'disabled',
         });
       }
@@ -340,9 +342,10 @@ test('Brain topic index clears the dock and exposes 44px actions on coarse point
             `Topic evidence final card at ${viewport.width}x${viewport.height}: ${cardBox!.y + cardBox!.height}px > dock ${dockBox!.y}px`,
           );
         }
-      if (viewport.width === 820) {
+      if (viewport.width === 820 || viewport.width === 844) {
         await page.screenshot({
-          path: '/tmp/804-brain-topic-detail-scroll-end-after-820x1180-light.png',
+          path: '/tmp/804-brain-topic-detail-scroll-end-after-' +
+            viewport.width + 'x' + viewport.height + '-light.png',
           animations: 'disabled',
         });
       }
@@ -403,9 +406,10 @@ test('Brain topic index clears the dock and exposes 44px actions on coarse point
           touchTargetFailures.push(`Brain Review list ${viewport.width}x${viewport.height}: ${JSON.stringify(smallControls)}`);
         }
       }
-      if (viewport.width === 820) {
+      if (viewport.width === 820 || viewport.width === 844) {
         await page.screenshot({
-          path: '/tmp/804-brain-review-list-scroll-end-after-820x1180-light.png',
+          path: '/tmp/804-brain-review-list-scroll-end-after-' +
+            viewport.width + 'x' + viewport.height + '-light.png',
           animations: 'disabled',
         });
       }

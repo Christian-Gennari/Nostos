@@ -1,6 +1,6 @@
 {
   "artifact": "brain-map-desktop.png",
-  "capturedAt": "2026-09-15T14:36:28.719Z",
+  "capturedAt": "2026-10-09T10:51:31.154Z",
   "name": "brain-map-desktop",
   "surface": "brain",
   "viewport": {
@@ -45,18 +45,18 @@
         "tracks": [
           {
             "selector": ".index-col",
-            "visible": true,
-            "clientWidth": 319,
-            "scrollWidth": 319,
+            "visible": false,
+            "clientWidth": 0,
+            "scrollWidth": 0,
             "left": 0,
-            "right": 320
+            "right": 0
           },
           {
             "selector": ".content-col",
             "visible": true,
-            "clientWidth": 1120,
-            "scrollWidth": 1120,
-            "left": 320,
+            "clientWidth": 1440,
+            "scrollWidth": 1440,
+            "left": 0,
             "right": 1440
           }
         ],

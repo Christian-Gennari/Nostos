@@ -93,12 +93,20 @@ async function openWriting(page: Page, viewport = { width: 1440, height: 900 }):
 
 async function ensureReferenceDrawerOpen(page: Page): Promise<void> {
   const toggle = page.locator('.reference-toggle');
-  if (
-    (await toggle.count()) > 0 &&
-    (await toggle.isVisible()) &&
-    (await toggle.getAttribute('aria-expanded')) === 'false'
-  ) {
+  const drawer = page.locator('.sidebar-right');
+  await expect(toggle).toBeVisible();
+  if ((await toggle.getAttribute('aria-expanded')) === 'false') {
     await toggle.click();
+  }
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  await expect(drawer).toHaveClass(/\bopen\b/);
+  const viewport = page.viewportSize();
+  if (viewport) {
+    await expect
+      .poll(() =>
+        drawer.evaluate((element) => Math.round(element.getBoundingClientRect().right)),
+      )
+      .toBe(viewport.width);
   }
 }
 
@@ -833,6 +841,8 @@ test('kept-source density and responsive Reference rows hold at 0, 3, 8, and 40'
   const writingSourceList = touchPage.locator('.kept-sources-content');
   for (const viewport of dockViewports) {
     await touchPage.setViewportSize(viewport);
+    await ensureReferenceDrawerOpen(touchPage);
+    await expect(writingSourceList).toBeVisible();
     await writingSourceList.evaluate((element) => {
       element.scrollTop = element.scrollHeight;
     });
@@ -846,10 +856,11 @@ test('kept-source density and responsive Reference rows hold at 0, 3, 8, and 40'
     if (writingListEnd.rowBottom > writingListEnd.dockTop) {
       dockFailures.push(`For this writing at ${viewport.width}x${viewport.height}: ${writingListEnd.rowBottom}px > dock ${writingListEnd.dockTop}px`);
     }
-    if (viewport.width === 820) {
+    if (viewport.width === 390 || viewport.width === 820 || viewport.width === 844) {
       await captureAfter(
         touchPage,
-        'reference-for-writing-scroll-end-after-820x1180-light.png',
+        'reference-for-writing-scroll-end-after-' +
+          viewport.width + 'x' + viewport.height + '-light.png',
       );
     }
   }
@@ -981,8 +992,38 @@ test('kept-source density and responsive Reference rows hold at 0, 3, 8, and 40'
   await longQuoteRow.click();
   await expect(page.locator('.inspected-source-card')).toContainText(longQuote);
   const inspectorPanel = page.locator('.inspected-source-panel');
+  const inspectorActionRow = page.locator('.source-action-primary-row');
+  const referenceDrawer = page.locator('.sidebar-right');
   for (const viewport of dockViewports) {
     await page.setViewportSize(viewport);
+    if (!(await referenceDrawer.evaluate((element) => element.classList.contains('open')))) {
+      await page.locator('.reference-toggle').click();
+    }
+    await expect(referenceDrawer).toHaveClass(/\bopen\b/);
+    await expect
+      .poll(() =>
+        referenceDrawer.evaluate((element) =>
+          Math.round(element.getBoundingClientRect().right),
+        ),
+      )
+      .toBe(viewport.width);
+    await expect(inspectorPanel).toBeVisible();
+    await expect(inspectorActionRow).toBeVisible();
+    const drawerBounds = await referenceDrawer.boundingBox();
+    expect(drawerBounds).not.toBeNull();
+    expect(drawerBounds!.x, `Reference drawer starts on-screen at ${viewport.width}x${viewport.height}`).toBeGreaterThanOrEqual(0);
+    expect(
+      drawerBounds!.x + drawerBounds!.width,
+      `Reference drawer ends on-screen at ${viewport.width}x${viewport.height}`,
+    ).toBeLessThanOrEqual(viewport.width);
+    if (viewport.width === 844 && viewport.height === 390) {
+      expect(drawerBounds!.width, 'Reference drawer fills short landscape').toBeGreaterThanOrEqual(
+        viewport.width * 0.9,
+      );
+      expect(drawerBounds!.x, 'Reference drawer starts at the short-landscape edge').toBeLessThanOrEqual(
+        1,
+      );
+    }
     await inspectorPanel.evaluate((element) => {
       element.scrollTop = element.scrollHeight;
     });
@@ -991,8 +1032,12 @@ test('kept-source density and responsive Reference rows hold at 0, 3, 8, and 40'
         .querySelector('.source-action-primary-row')!
         .getBoundingClientRect();
       const dock = document.querySelector('app-app-dock')!.getBoundingClientRect();
-      return { actionBottom: action.bottom, dockTop: dock.top };
+      return { actionBottom: action.bottom, dockTop: dock.top, actionHeight: action.height };
     });
+    expect(
+      inspectorEnd.actionHeight,
+      `Reference action row is visible at ${viewport.width}x${viewport.height}`,
+    ).toBeGreaterThan(0);
     if (inspectorEnd.actionBottom > inspectorEnd.dockTop) {
       dockFailures.push(`Reference inspector actions at ${viewport.width}x${viewport.height}: ${inspectorEnd.actionBottom}px > dock ${inspectorEnd.dockTop}px`);
     }

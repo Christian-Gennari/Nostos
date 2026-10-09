@@ -63,6 +63,14 @@ test('Studio Files rail scroll end clears the dock across the acceptance viewpor
     if ((await filesToggle.getAttribute('aria-expanded')) !== 'true') {
       await filesToggle.click();
     }
+    await expect(filesToggle).toHaveAttribute('aria-expanded', 'true');
+    await expect
+      .poll(() =>
+        page.locator('.sidebar-left').evaluate((element) =>
+          Math.round(element.getBoundingClientRect().left),
+        ),
+      )
+      .toBe(0);
 
     const fileList = page.locator('.file-list');
     const rows = fileList.locator('.tree-row');
@@ -74,9 +82,19 @@ test('Studio Files rail scroll end clears the dock across the acceptance viewpor
       if ((await filesToggle.getAttribute('aria-expanded')) !== 'true') {
         await filesToggle.click();
       }
+      await expect(filesToggle).toHaveAttribute('aria-expanded', 'true');
+      await expect
+        .poll(() =>
+          page.locator('.sidebar-left').evaluate((element) =>
+            Math.round(element.getBoundingClientRect().left),
+          ),
+        )
+        .toBe(0);
+      await expect(fileList).toBeVisible();
       await fileList.evaluate((element) => {
         element.scrollTop = element.scrollHeight;
       });
+      await expect(rows.last()).toBeVisible();
       const scrollEnd = await page.evaluate(() => {
         const row = document
           .querySelector('.file-list .tree-row:last-child')!
@@ -94,7 +112,7 @@ test('Studio Files rail scroll end clears the dock across the acceptance viewpor
         const smallControls = await undersizedVisibleControls(page);
         if (smallControls.length) console.log(`[coarse-targets] Studio Files ${viewport.width}x${viewport.height}: ${JSON.stringify(smallControls)}`);
       }
-      if (viewport.width === 820 || viewport.width === 390) {
+      if (viewport.width === 820 || viewport.width === 390 || viewport.width === 844) {
         await page.screenshot({
           path: `/tmp/809-studio-files-scroll-end-after-${viewport.width}x${viewport.height}-light.png`,
           animations: 'disabled',
