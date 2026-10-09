@@ -181,6 +181,7 @@
     <div class="sidebar-header compact">
       <div class="sidebar-title-row">
         <h2>Reference</h2>
+        @if (isCompact()) {
         <button
           appIconButton
           size="xs"
@@ -194,6 +195,7 @@
           [attr.aria-expanded]="showBrainSidebar()"
           [attr.aria-pressed]="showBrainSidebar()"
         ></button>
+        }
       </div>
 
       <!-- Top-level reference mode switch: "For this writing" vs "Library" (issue #491) -->
