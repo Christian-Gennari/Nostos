@@ -13,9 +13,12 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { ActivatedRoute, NavigationStart, Router, RouterLink } from '@angular/router';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
 import { ToastService } from '../core/services/toast.service';
+import { CloudAuthService } from '../core/services/cloud-auth.service';
+import { DeploymentCapabilitiesService } from '../core/services/deployment-capabilities.service';
 import { NotesService } from '../core/services/notes.service';
 import { Note, NoteSearchHit } from '../core/dtos/note.dtos';
 import { ConfirmModal } from '../ui/confirm-modal/confirm-modal.component';
@@ -71,6 +74,24 @@ import {
   type SourceOption,
 } from './second-brain.helpers';
 
+const REVIEW_STORAGE_PREFIX = 'nostos.brain.reviewReturn.v1';
+
+interface ReviewReturnState {
+  returnMode: 'list' | 'notes';
+  searchQuery: string;
+  selectedId: string | null;
+  noteSearchQuery: string;
+  sourceFilter: string;
+  noteSort: NoteSort;
+  browseQuery: string;
+  browseBookId: string | null;
+  browseBookTitle: string;
+  browseWithoutTopics: boolean;
+  browseOldestFirst: boolean;
+  focusedNoteId: string | null;
+  reviewId: string | null;
+}
+
 @Component({
   standalone: true,
   selector: 'app-brain',
@@ -121,6 +142,9 @@ export class SecondBrain implements AfterViewChecked {
   private readonly assistantContext = inject(AssistantContextService);
   private readonly assistant = inject(AssistantService);
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly cloudAuth = inject(CloudAuthService);
+  private readonly capabilities = inject(DeploymentCapabilitiesService);
   private readonly host = inject(ElementRef<HTMLElement>);
 
   /** The focused note context provider for browsing or optional review. */
@@ -283,7 +307,10 @@ export class SecondBrain implements AfterViewChecked {
   });
   private reviewSeq = 0;
   private reviewMutated = false;
+  private reviewReturnState: ReviewReturnState | null = null;
   private reviewReturnNote: NoteSearchHit | null = null;
+  private reviewStorageKey: string | null = null;
+  private restoringReviewFocusId = signal<string | null>(null);
   private reviewBrowseQuery = '';
   private reviewBookId: string | null = null;
   private reviewOldestFirst = false;
@@ -397,6 +424,12 @@ export class SecondBrain implements AfterViewChecked {
   reviewNote = computed<NoteSearchHit | null>(() => {
     const queue = this.reviewQueue();
     if (!queue.length) return null;
+
+    const restoringId = this.restoringReviewFocusId();
+    if (restoringId) {
+      return queue.find((row) => row.id === restoringId) ?? null;
+    }
+
     const id = this.reviewId();
     return (id ? queue.find((row) => row.id === id) : undefined) ?? queue[0];
   });
@@ -536,6 +569,16 @@ export class SecondBrain implements AfterViewChecked {
   private destroyRef = inject(DestroyRef);
 
   constructor() {
+    const navigationSubscription = this.router.events.subscribe((event) => {
+      if (
+        event instanceof NavigationStart &&
+        (event.url.split(/[?#]/)[0] !== this.router.url.split(/[?#]/)[0] ||
+         !event.url.includes('/second-brain'))
+      ) {
+        this.clearReviewReturnState();
+      }
+    });
+
     const routeSubscription = this.route.queryParamMap.subscribe((params) => {
       const noteId = params.get('noteId');
       if (noteId) {
@@ -616,6 +659,7 @@ export class SecondBrain implements AfterViewChecked {
       if (this.browseTimer !== null) clearTimeout(this.browseTimer);
       this.unregisterAssistantContext();
       routeSubscription.unsubscribe();
+      navigationSubscription.unsubscribe();
       assistantActionSubscription.unsubscribe();
       assistantTurnSubscription.unsubscribe();
     });
@@ -664,12 +708,175 @@ export class SecondBrain implements AfterViewChecked {
       error: () => undefined,
     });
 
-    if (this.viewMode() === 'notes') this.loadBrowsePage();
+    this.initializeReviewSession();
+    if (this.viewMode() === 'notes' && !this.reviewReturnState) this.loadBrowsePage();
 
     // Deliberately nothing else. The rail used to fetch the unlinked notes here,
     // on every visit, purely so it could render them as a second section under
     // the topic index (issue #256). They now load only when the user opens
     // review mode.
+  }
+
+  private readReviewReturnState(): ReviewReturnState | null {
+    if (!this.reviewStorageKey) return null;
+
+    try {
+      const raw = sessionStorage.getItem(this.reviewStorageKey);
+      if (!raw) return null;
+
+      const value: unknown = JSON.parse(raw);
+      if (!value || typeof value !== 'object') return null;
+
+      const state = value as Partial<ReviewReturnState>;
+      if (
+        (state.returnMode !== 'list' && state.returnMode !== 'notes') ||
+        typeof state.searchQuery !== 'string' ||
+        typeof state.noteSearchQuery !== 'string' ||
+        typeof state.sourceFilter !== 'string' ||
+        !['newest', 'oldest', 'source'].includes(state.noteSort ?? '') ||
+        typeof state.browseQuery !== 'string' ||
+        typeof state.browseBookTitle !== 'string' ||
+        typeof state.browseWithoutTopics !== 'boolean' ||
+        typeof state.browseOldestFirst !== 'boolean' ||
+        (state.selectedId != null && typeof state.selectedId !== 'string') ||
+        (state.browseBookId != null && typeof state.browseBookId !== 'string') ||
+        (state.focusedNoteId != null && typeof state.focusedNoteId !== 'string') ||
+        (state.reviewId != null && typeof state.reviewId !== 'string')
+      ) {
+        sessionStorage.removeItem(this.reviewStorageKey);
+        return null;
+      }
+
+      return state as ReviewReturnState;
+    } catch {
+      return null;
+    }
+  }
+
+  private persistReviewReturnState(): void {
+    if (!this.reviewStorageKey || !this.reviewReturnState) return;
+    try {
+      sessionStorage.setItem(
+        this.reviewStorageKey,
+        JSON.stringify({
+          ...this.reviewReturnState,
+          reviewId: this.reviewId(),
+        }),
+      );
+    } catch {
+      // Storage unavailable: review remains functional within this visit.
+    }
+  }
+
+  private clearReviewReturnState(): void {
+    this.reviewReturnState = null;
+    this.restoringReviewFocusId.set(null);
+    if (!this.reviewStorageKey) return;
+
+    try {
+      sessionStorage.removeItem(this.reviewStorageKey);
+    } catch {
+      // Storage unavailable.
+    }
+  }
+
+  private initializeReviewSession(): void {
+    this.capabilities.get().pipe(
+      takeUntilDestroyed(this.destroyRef),
+    ).subscribe({
+      next: (capabilities) => {
+        if (capabilities.deploymentMode === 'SelfHosted') {
+          this.setReviewIdentity('selfhosted');
+          return;
+        }
+
+        if (capabilities.deploymentMode !== 'Cloud') return;
+
+        this.cloudAuth.sessionChanges$.pipe(
+          takeUntilDestroyed(this.destroyRef),
+        ).subscribe((session) => {
+          const identity = session.authenticated ? session.accountId : null;
+          this.setReviewIdentity(identity ? `account:${identity}` : null);
+        });
+
+        this.cloudAuth.getSession().pipe(
+          takeUntilDestroyed(this.destroyRef),
+        ).subscribe({
+          error: () => {
+            // Do not infer a user or self-hosted context from an auth failure.
+            this.setReviewIdentity(null);
+          },
+        });
+      },
+      error: () => {
+        // Deployment identity is unknown: persistence stays disabled.
+      },
+    });
+  }
+
+  private setReviewIdentity(identity: string | null): void {
+    const nextKey = identity
+      ? `${REVIEW_STORAGE_PREFIX}:${encodeURIComponent(identity)}`
+      : null;
+
+    if (nextKey === this.reviewStorageKey) return;
+
+    const previousKey = this.reviewStorageKey;
+    this.reviewStorageKey = nextKey;
+
+    if (previousKey) {
+      try {
+        sessionStorage.removeItem(previousKey);
+      } catch {
+        // Storage unavailable.
+      }
+
+      if (this.isReviewing()) {
+        ++this.reviewSeq;
+        this.reviewLoading.set(false);
+        this.reviewQueue.set([]);
+        this.reviewTotal.set(0);
+        this.viewMode.set('list');
+      }
+
+      this.reviewReturnState = null;
+      this.restoringReviewFocusId.set(null);
+    }
+
+    if (!nextKey) return;
+
+    // Never carry the previous account's active UI into a new account.
+    // A fresh instance may restore only the authenticated account's own key.
+    if (previousKey) return;
+
+    // Explicit route query params (noteId, topicId, conceptId) take precedence
+    // over any asynchronous restoration of stored review state.
+    const currentParams = this.route.snapshot.queryParamMap;
+    if (currentParams.has('noteId') || currentParams.has('topicId') || currentParams.has('conceptId')) {
+      return;
+    }
+
+    if (this.isReviewing()) {
+      this.persistReviewReturnState();
+      return;
+    }
+
+    const saved = this.readReviewReturnState();
+    if (!saved) return;
+
+    this.reviewReturnState = saved;
+    this.reviewReturnMode = saved.returnMode;
+    this.reviewBrowseQuery =
+      saved.returnMode === 'notes' ? saved.browseQuery : '';
+    this.reviewBookId =
+      saved.returnMode === 'notes' ? saved.browseBookId : null;
+    this.reviewOldestFirst =
+      saved.returnMode === 'notes' && saved.browseOldestFirst;
+
+    this.reviewId.set(saved.reviewId);
+    this.restoringReviewFocusId.set(saved.reviewId);
+    this.viewMode.set('unlinked');
+    this.loadReviewPage();
   }
 
   private unregisterAssistantContext(): void {
@@ -1063,6 +1270,21 @@ export class SecondBrain implements AfterViewChecked {
     if (this.browseHasUnsavedEdit()) return;
     this.reviewReturnMode = this.isBrowsingNotes() ? 'notes' : 'list';
     this.reviewReturnNote = this.reviewReturnMode === 'notes' ? this.panelNote() : null;
+    this.reviewReturnState = {
+      returnMode: this.reviewReturnMode,
+      searchQuery: this.searchQuery(),
+      selectedId: this.selectedId(),
+      noteSearchQuery: this.noteSearchQuery(),
+      sourceFilter: this.sourceFilter(),
+      noteSort: this.noteSort(),
+      browseQuery: this.browseQuery(),
+      browseBookId: this.browseBookId(),
+      browseBookTitle: this.browseBookTitle(),
+      browseWithoutTopics: this.browseWithoutTopics(),
+      browseOldestFirst: this.browseOldestFirst(),
+      focusedNoteId: this.panelNote()?.id ?? null,
+      reviewId: null,
+    };
     this.reviewMutated = false;
     this.reviewBrowseQuery = this.reviewReturnMode === 'notes' ? this.browseQuery() : '';
     this.reviewBookId = this.reviewReturnMode === 'notes' ? this.browseBookId() : null;
@@ -1083,17 +1305,82 @@ export class SecondBrain implements AfterViewChecked {
     this.reviewEditing.set(false);
     this.closeReviewPicker();
     this.viewMode.set('unlinked');
+    this.persistReviewReturnState();
     this.loadReviewPage();
   }
 
   /** Return to the previous Brain area, preserving an unchanged Notes list. */
   closeReview(): void {
     if (this.reviewHasUnsavedEdit()) return;
-    this.setViewMode(this.reviewReturnMode);
-    if (this.reviewReturnMode === 'notes') {
-      if (this.reviewMutated) this.reloadBrowse();
-      else if (this.reviewReturnNote) this.panelNote.set(this.reviewReturnNote);
+
+    const state = this.reviewReturnState;
+    const mode = state?.returnMode ?? this.reviewReturnMode;
+
+    if (state && mode === 'notes') {
+      this.browseQuery.set(state.browseQuery);
+      this.browseBookId.set(state.browseBookId);
+      this.browseBookTitle.set(state.browseBookTitle);
+      this.browseWithoutTopics.set(state.browseWithoutTopics);
+      this.browseOldestFirst.set(state.browseOldestFirst);
+      if (this.reviewMutated) {
+        this.browseLoaded.set(false);
+        this.browseNotes.set([]);
+        this.browseTotal.set(0);
+      }
     }
+
+    if (this.reviewMutated) {
+      this.setViewMode(mode);
+      if (mode === 'notes') {
+        this.reloadBrowse();
+      }
+    } else {
+      // Unchanged review: preserve current loaded Notes page and selected note without refetch
+      this.viewMode.set(mode as BrainViewMode);
+      try {
+        localStorage.setItem(BRAIN_VIEW_MODE_STORAGE_KEY, mode);
+      } catch {
+        /* storage unavailable */
+      }
+      if (mode === 'notes' && this.reviewReturnNote) {
+        this.panelNote.set(this.reviewReturnNote);
+      }
+      this.clearReviewReturnState();
+    }
+
+    if (state) {
+      this.setSearchQuery(state.searchQuery);
+
+      if (mode === 'list' && state.selectedId) {
+        const topicId = state.selectedId;
+        this.topicsService.get(topicId).subscribe({
+          next: () => {
+            if (this.viewMode() !== 'list') return;
+            this.selectTopic(topicId);
+            this.noteSearchQuery.set(state.noteSearchQuery);
+            this.sourceFilter.set(state.sourceFilter);
+            this.noteSort.set(state.noteSort);
+          },
+          error: () => {
+            this.clearSelection();
+          },
+        });
+      }
+
+      if (mode === 'notes' && state.focusedNoteId && !this.panelNote()) {
+        const noteId = state.focusedNoteId;
+        this.notesService.get(noteId).subscribe({
+          next: (note) => {
+            if (this.isBrowsingNotes() && !this.panelNote()) {
+              this.panelNote.set(note);
+            }
+          },
+          error: () => {},
+        });
+      }
+    }
+
+    this.clearReviewReturnState();
     this.reviewReturnNote = null;
   }
 
@@ -1128,9 +1415,24 @@ export class SecondBrain implements AfterViewChecked {
         this.reviewTotal.set(page.totalCount ?? this.reviewQueue().length);
         if (advanceFromId && this.reviewNote()?.id === advanceFromId && fresh.length) {
           this.reviewId.set(fresh[0].id);
+          this.persistReviewReturnState();
         }
         this.reviewLoading.set(false);
         this.reviewLoaded.set(true);
+
+        const restoringId = this.restoringReviewFocusId();
+        if (restoringId) {
+          if (this.reviewQueue().some((note) => note.id === restoringId)) {
+            this.restoringReviewFocusId.set(null);
+          } else if (fresh.length > 0 && this.reviewHasMore()) {
+            this.loadReviewPage();
+          } else {
+            this.restoringReviewFocusId.set(null);
+            this.reviewId.set(null);
+            this.persistReviewReturnState();
+            this.toast.info('The previously selected note is no longer in this review queue');
+          }
+        }
       },
       error: () => {
         if (seq !== this.reviewSeq) return;
@@ -1146,7 +1448,9 @@ export class SecondBrain implements AfterViewChecked {
     if (this.reviewHasUnsavedEdit()) return;
     this.reviewEditing.set(false);
     this.closeReviewPicker();
+    this.restoringReviewFocusId.set(null);
     this.reviewId.set(null);
+    this.persistReviewReturnState();
   }
 
   /** Focus a queued note. Focusing decides nothing — it only moves the review on. */
@@ -1154,7 +1458,9 @@ export class SecondBrain implements AfterViewChecked {
     if (this.reviewHasUnsavedEdit()) return;
     this.reviewEditing.set(false);
     this.closeReviewPicker();
+    this.restoringReviewFocusId.set(null);
     this.reviewId.set(id);
+    this.persistReviewReturnState();
   }
 
   /**
@@ -1333,6 +1639,7 @@ export class SecondBrain implements AfterViewChecked {
     if (this.reviewId() === noteId) {
       const following = remaining[index] ?? remaining[index - 1] ?? null;
       this.reviewId.set(following ? following.id : null);
+      this.persistReviewReturnState();
     }
     if (remaining.length === 0 && this.reviewTotal() > 0) this.loadReviewPage();
   }
@@ -1891,6 +2198,9 @@ export class SecondBrain implements AfterViewChecked {
     // visible, always explainable, and always clearable, and the query simply
     // carries across the toggle the way a persistent filter should.
     this.viewMode.set(mode as BrainViewMode);
+    if (mode !== 'unlinked') {
+      this.clearReviewReturnState();
+    }
     if (mode === 'notes' && !this.browseLoaded() && !this.browseLoading()) this.loadBrowsePage();
     try {
       localStorage.setItem(BRAIN_VIEW_MODE_STORAGE_KEY, mode);

@@ -2,6 +2,9 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { of } from 'rxjs';
+import { DeploymentCapabilitiesService } from '../core/services/deployment-capabilities.service';
+import { NOTE_SEARCH_DEBOUNCE_MS } from './second-brain.helpers';
 import { provideRouter } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 
@@ -267,7 +270,17 @@ describe('SecondBrain', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [SecondBrain],
-      providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()],
+      providers: [
+        provideRouter([]),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        {
+          provide: DeploymentCapabilitiesService,
+          useValue: {
+            get: () => of({ deploymentMode: 'SelfHosted' }),
+          },
+        },
+      ],
     }).compileComponents();
 
     fixture = TestBed.createComponent(SecondBrain);
@@ -283,6 +296,7 @@ describe('SecondBrain', () => {
   afterEach(() => {
     http.verify();
     localStorage.clear();
+    sessionStorage.clear();
   });
 
   describe('Notes browsing (#590)', () => {
@@ -302,6 +316,80 @@ describe('SecondBrain', () => {
         .flush({ items, totalCount, offset: 0, limit: 25 });
       fixture.detectChanges();
     };
+
+    it('restores intentional review and its Notes return filters after reload', async () => {
+      component.setViewMode('notes');
+      browse([unlinked]);
+
+      component.setBrowseQuery('thought');
+      await new Promise((resolve) => setTimeout(resolve, NOTE_SEARCH_DEBOUNCE_MS + 10));
+      browse([unlinked]);
+
+      component.setBrowseWithoutTopics(true);
+      browse([unlinked]);
+
+      component.setBrowseBook('book-b', 'Another Book');
+      browse([unlinked]);
+
+      component.openNotePanel(unlinked);
+      component.openReview();
+
+      http.expectOne((request) => request.url === '/api/notes')
+        .flush({ items: [unlinked], totalCount: 1 });
+
+      component.focusReviewNote(unlinked.id);
+      component.startReviewEdit();
+      component.reviewEditContent.set('Unsaved draft');
+
+      const currentKey = sessionStorage.getItem('nostos.brain.reviewReturn.v1:selfhosted');
+      expect(currentKey).toBeTruthy();
+
+      // Clean up outstanding timers/state before destroying
+      fixture.destroy();
+      http.verify();
+
+      fixture = TestBed.createComponent(SecondBrain);
+      component = fixture.componentInstance;
+      fixture.detectChanges();
+
+      http.expectOne('/api/topics').flush(topics);
+      http.expectOne('/api/topics/stats').flush(stats);
+
+      http.expectOne((request) =>
+        request.url === '/api/notes' &&
+        request.params.get('withoutTopics') === 'true'
+      ).flush({ items: [unlinked], totalCount: 1 });
+
+      await fixture.whenStable();
+
+      expect(component.isReviewing()).toBe(true);
+      expect(component.reviewNote()?.id).toBe(unlinked.id);
+      expect(component.reviewEditing()).toBe(false);
+      expect(component.reviewEditContent()).toBe('');
+
+      component.closeReview();
+
+      expect(component.isBrowsingNotes()).toBe(true);
+      expect(component.browseQuery()).toBe('thought');
+      expect(component.browseBookId()).toBe('book-b');
+      expect(component.browseWithoutTopics()).toBe(true);
+
+      const notesReq = http.match((request) =>
+        request.url === '/api/notes' &&
+        request.params.get('bookId') === 'book-b'
+      );
+      if (notesReq.length > 0) {
+        notesReq.forEach((r) => r.flush({ items: [unlinked], totalCount: 1 }));
+      }
+
+      http.expectOne(`/api/notes/${unlinked.id}`).flush(unlinked);
+      fixture.detectChanges();
+
+      expect(component.panelNote()?.content).toBe(unlinked.content);
+      expect(
+        sessionStorage.getItem('nostos.brain.reviewReturn.v1:selfhosted')
+      ).toBeNull();
+    });
 
     it('restores canonical capture wording without closing the inspector', () => {
       component.setViewMode('notes');
@@ -2536,6 +2624,12 @@ describe('SecondBrain topic-link routing', () => {
         provideRouter([{ path: 'second-brain', component: SecondBrain }]),
         provideHttpClient(),
         provideHttpClientTesting(),
+        {
+          provide: DeploymentCapabilitiesService,
+          useValue: {
+            get: () => of({ deploymentMode: 'SelfHosted' }),
+          },
+        },
       ],
     }).compileComponents();
 
@@ -2583,6 +2677,12 @@ describe('SecondBrain topic-link routing', () => {
         provideRouter([{ path: 'second-brain', component: SecondBrain }]),
         provideHttpClient(),
         provideHttpClientTesting(),
+        {
+          provide: DeploymentCapabilitiesService,
+          useValue: {
+            get: () => of({ deploymentMode: 'SelfHosted' }),
+          },
+        },
       ],
     }).compileComponents();
 
