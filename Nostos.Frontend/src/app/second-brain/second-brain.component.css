@@ -315,12 +315,8 @@
   min-height: 0;
   overflow-y: auto;
   position: relative;
-  /* Padding matches header horizontal padding exactly.
-     The top padding is what keeps the first row off the sort row's hairline: with
-     none, the first topic row's box began 1px under the rule, so the list
-     appeared to start flush against the boundary and a row's hover surface
-     touched it. */
-  padding: 0.5rem 1.25rem 1.5rem;
+  /* The top padding clears the sort row's hairline; the bottom clears the dock. */
+  padding: 0.5rem 1.25rem 5.5rem;
 }
 
 .index-loading {
@@ -705,9 +701,13 @@
   outline-offset: -2px;
 }
 
-/* No hover on touch: a hover-revealed pair is unreachable there, so the selected
-   row (and a keyboard-focused one) reveals its actions instead. */
+/* Touch and keyboard reveal row actions because hover is unavailable. */
 @media (pointer: coarse), (hover: none) {
+  .row-action {
+    width: 44px;
+    height: 44px;
+  }
+
   .index-row-shell:has(.index-item.active) .row-actions,
   .index-row-shell:focus-within .row-actions {
     opacity: 1;
@@ -1877,7 +1877,7 @@
   }
 
   .index-list {
-    padding: 0.5rem 1rem 1.5rem;
+    padding: 0.5rem 1rem 5.5rem;
   }
 
   /* The list narrows its inset to 1rem on a phone, so the sort row follows it. */
@@ -2170,7 +2170,16 @@
     flex-direction: column;
   }
 
+  .index-col {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
   .index-col.mobile-hidden {
+    display: none;
+  }
+
+  .content-col:not(.mobile-visible) {
     display: none;
   }
 
@@ -2360,7 +2369,7 @@
   display: flex;
   flex-direction: column;
   z-index: 10;
-  padding: 1.5rem;
+  padding: 1.5rem 1.5rem 7rem;
   overflow-y: auto;
 }
 

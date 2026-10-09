@@ -159,6 +159,81 @@ test('existing writing handoff persists once and duplicate retry has one truthfu
     expect(modalMetrics.listScrolls).toBe(true);
     expect(modalMetrics.bodyOverflow).toBe('hidden');
 
+    const destinationList = dialog.locator('.destination-list');
+    await expect(dialog.locator('.existing-destination')).toHaveCount(10);
+    const dockViewports = [
+      { width: 1440, height: 900 },
+      { width: 1280, height: 720 },
+      { width: 1024, height: 768 },
+      { width: 820, height: 1180 },
+      { width: 390, height: 844 },
+      { width: 844, height: 390 },
+    ];
+    const dockFailures: string[] = [];
+    for (const viewport of dockViewports) {
+      await page.setViewportSize(viewport);
+      await destinationList.evaluate((element) => {
+        element.scrollTop = element.scrollHeight;
+      });
+      const listEnd = await page.evaluate(() => {
+        const rowElement = document.querySelector(
+          '.destination-list .existing-destination:last-child',
+        ) as HTMLElement;
+        const row = rowElement.getBoundingClientRect();
+        const list = document.querySelector('.destination-list')!.getBoundingClientRect();
+        const footer = document.querySelector('.handoff-actions')!.getBoundingClientRect();
+        const dock = document.querySelector('app-app-dock')!.getBoundingClientRect();
+        const probeX = row.left + row.width / 2;
+        const probeY = Math.min(row.bottom - 2, dock.top + 2);
+        const hit = document.elementFromPoint(probeX, probeY);
+        return {
+          rowBottom: row.bottom,
+          listBottom: list.bottom,
+          footerTop: footer.top,
+          dockTop: dock.top,
+          rowOverlapsDock: row.top < dock.bottom && row.bottom > dock.top &&
+            row.left < dock.right && row.right > dock.left,
+          rowHitAtDockBoundary: rowElement.contains(hit),
+        };
+      });
+      if (viewport.width === 820 || viewport.width === 844) {
+        await page.screenshot({
+          path: '/tmp/804-brain-handoff-list-scroll-end-after-' +
+            viewport.width + 'x' + viewport.height + '-light.png',
+          animations: 'disabled',
+        });
+      }
+        if (listEnd.rowBottom > listEnd.footerTop) {
+          dockFailures.push(
+            `Handoff final destination at ${viewport.width}x${viewport.height}: ${listEnd.rowBottom}px > footer ${listEnd.footerTop}px`,
+          );
+        }
+        if (listEnd.rowBottom > listEnd.listBottom + 1) {
+          dockFailures.push(
+            `Handoff final destination at ${viewport.width}x${viewport.height}: ${listEnd.rowBottom}px > list ${listEnd.listBottom}px`,
+          );
+        }
+        if (listEnd.rowOverlapsDock) {
+          if (!listEnd.rowHitAtDockBoundary) {
+            dockFailures.push(
+              `Handoff row hit target at dock boundary is blocked at ${viewport.width}x${viewport.height}`,
+            );
+          }
+      }
+      if (viewport.width === 820 || viewport.width === 844) {
+        await page.screenshot({
+          path: '/tmp/804-brain-handoff-list-scroll-end-after-' +
+            viewport.width + 'x' + viewport.height + '-light.png',
+          animations: 'disabled',
+        });
+      }
+    }
+    expect(dockFailures, 'Handoff destination list remains reachable above the dock').toEqual([]);
+
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await destinationList.evaluate((element) => {
+      element.scrollTop = 0;
+    });
     await page.screenshot({
       path: '/tmp/writing-handoff-existing-desktop-light.png',
       animations: 'disabled',
@@ -295,10 +370,38 @@ test('new writing is created once, referenced, and never receives note prose', a
       animations: 'disabled',
     });
 
+    await page
+      .getByRole('checkbox', { name: 'Open writing after keeping' })
+      .check();
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.evaluate(() => localStorage.setItem('nostos.theme', 'light'));
     await titleInput.press('Enter');
     await expect(page.locator('.toast-success')).toContainText(
       `Kept 1 source with “${writingTitle}”`
     );
+    await expect(page).toHaveURL(/\/studio/);
+    const controlsUnderToast = await page.locator('.toast-success').evaluate((toast) => {
+      const toastBox = toast.getBoundingClientRect();
+      return Array.from(document.querySelectorAll('button'))
+        .filter((button) => !toast.contains(button))
+        .filter((button) => {
+          const rect = button.getBoundingClientRect();
+          return (
+            rect.width > 0 &&
+            rect.height > 0 &&
+            rect.left < toastBox.right &&
+            rect.right > toastBox.left &&
+            rect.top < toastBox.bottom &&
+            rect.bottom > toastBox.top
+          );
+        })
+        .map((button) => button.getAttribute('aria-label') || button.textContent?.trim());
+    });
+    expect(controlsUnderToast).toEqual([]);
+    await page.screenshot({
+      path: '/tmp/809-studio-toast-after-open-1440x900-light.png',
+      animations: 'disabled',
+    });
     const writings = await apiGet<WritingDto[]>(baseUrl, '/api/writings');
     const created = writings.find((writing) => writing.name === writingTitle);
     expect(created).toBeTruthy();

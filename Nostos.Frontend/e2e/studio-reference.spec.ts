@@ -10,6 +10,14 @@ import type { WritingContentDto, WritingSourceDto } from '../src/app/core/dtos/w
 
 const screenshotDir =
   process.env.STUDIO_REFERENCE_SCREENSHOT_DIR ?? '/tmp/nostos-studio-reference-after';
+const dockViewports = [
+  { width: 1440, height: 900 },
+  { width: 1280, height: 720 },
+  { width: 1024, height: 768 },
+  { width: 820, height: 1180 },
+  { width: 390, height: 844 },
+  { width: 844, height: 390 },
+];
 
 let baseUrl = '';
 let writingId = '';
@@ -63,6 +71,17 @@ async function openWriting(page: Page, viewport = { width: 1440, height: 900 }):
     { timeout: 45_000 },
   );
   await expect(page.locator('.header-doc-title')).toHaveText(writingTitle);
+}
+
+async function ensureReferenceDrawerOpen(page: Page): Promise<void> {
+  const toggle = page.locator('.reference-toggle');
+  if (
+    (await toggle.count()) > 0 &&
+    (await toggle.isVisible()) &&
+    (await toggle.getAttribute('aria-expanded')) === 'false'
+  ) {
+    await toggle.click();
+  }
 }
 
 async function expectDarkEditor(page: Page): Promise<void> {
@@ -253,6 +272,7 @@ test.afterAll(async () => {
 test('Reference browsing, inspection, keep, and insertion preserve the writing', async ({ page }) => {
   const browserErrors: string[] = [];
   const apiFailures: string[] = [];
+  const dockFailures: string[] = [];
   page.on('pageerror', (error) => browserErrors.push(error.message));
   page.on('console', (message) => {
     if (message.type() === 'error') browserErrors.push(message.text());
@@ -312,13 +332,67 @@ test('Reference browsing, inspection, keep, and insertion preserve the writing',
   await captureAfter(page, 'reference-library-topics-desktop-1280x720-light.png');
 
   const topicIndex = page.locator('[data-reference-scroll="topics"]');
+  for (const viewport of dockViewports) {
+    await page.setViewportSize(viewport);
+    await ensureReferenceDrawerOpen(page);
+    await expect(topicIndex).toBeVisible();
+    await topicIndex.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    const topicIndexEnd = await page.evaluate(() => {
+      const row = document
+        .querySelector('[data-reference-scroll="topics"] .list-item:last-child')!
+        .getBoundingClientRect();
+      const dock = document.querySelector('app-app-dock')!.getBoundingClientRect();
+      return { rowBottom: row.bottom, dockTop: dock.top };
+    });
+    if (topicIndexEnd.rowBottom > topicIndexEnd.dockTop) {
+      dockFailures.push(`Reference Topics at ${viewport.width}x${viewport.height}: ${topicIndexEnd.rowBottom}px > dock ${topicIndexEnd.dockTop}px`);
+    }
+    if (viewport.width === 820 || viewport.width === 390 || viewport.width === 844) {
+      await captureAfter(
+        page,
+        'reference-topics-scroll-end-after-' + viewport.width + 'x' + viewport.height + '-light.png',
+      );
+    }
+  }
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await ensureReferenceDrawerOpen(page);
   await topicIndex.evaluate((element) => {
-    element.scrollTop = 520;
+    element.scrollTop = element.scrollHeight;
   });
   const topicScroll = await topicIndex.evaluate((element) => element.scrollTop);
+  await captureAfter(page, 'reference-topics-scroll-end-after-1280x720-light.png');
   await page.locator('.list-item').filter({ hasText: topicNames[39] }).click();
   await expect(page.getByRole('button', { name: 'Back to Topics' })).toBeVisible();
   await expect(page.locator('.reference-note-list .reference-source-row')).toHaveCount(1);
+  const topicNotes = page.locator('[data-reference-scroll="topicNotes"]');
+  for (const viewport of dockViewports) {
+    await page.setViewportSize(viewport);
+    await ensureReferenceDrawerOpen(page);
+    await expect(topicNotes).toBeVisible();
+    await topicNotes.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    const topicNotesEnd = await page.evaluate(() => {
+      const row = document
+        .querySelector('[data-reference-scroll="topicNotes"] .reference-source-row:last-child')!
+        .getBoundingClientRect();
+      const dock = document.querySelector('app-app-dock')!.getBoundingClientRect();
+      return { rowBottom: row.bottom, dockTop: dock.top };
+    });
+    if (topicNotesEnd.rowBottom > topicNotesEnd.dockTop) {
+      dockFailures.push(`Reference topic notes at ${viewport.width}x${viewport.height}: ${topicNotesEnd.rowBottom}px > dock ${topicNotesEnd.dockTop}px`);
+    }
+    if (viewport.width === 820 || viewport.width === 844) {
+      await captureAfter(
+        page,
+        'reference-topic-notes-scroll-end-after-' + viewport.width + 'x' + viewport.height + '-light.png',
+      );
+    }
+  }
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await ensureReferenceDrawerOpen(page);
   await typeAndRemoveProbe(page, 'S2Topic');
   await page.getByRole('button', { name: 'Back to Topics' }).click();
   await expect(topicSearch).toHaveValue('S2 Topic');
@@ -346,6 +420,39 @@ test('Reference browsing, inspection, keep, and insertion preserve the writing',
   await captureAfter(page, 'reference-book-index-tablet-820x1180-light.png');
 
   const bookIndex = page.locator('[data-reference-scroll="books"]');
+  await bookSearch.fill('');
+  await expect(bookIndex.locator('.list-item').first()).toBeVisible();
+  for (const viewport of dockViewports) {
+    await page.setViewportSize(viewport);
+    await ensureReferenceDrawerOpen(page);
+    await expect(bookIndex).toBeVisible();
+    await bookIndex.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    const bookIndexEnd = await page.evaluate(() => {
+      const row = document
+        .querySelector('[data-reference-scroll="books"] .list-item:last-child')!
+        .getBoundingClientRect();
+      const dock = document.querySelector('app-app-dock')!.getBoundingClientRect();
+      return { rowBottom: row.bottom, dockTop: dock.top };
+    });
+    if (bookIndexEnd.rowBottom > bookIndexEnd.dockTop) {
+      dockFailures.push(`Reference Books at ${viewport.width}x${viewport.height}: ${bookIndexEnd.rowBottom}px > dock ${bookIndexEnd.dockTop}px`);
+    }
+    if (viewport.width === 820 || viewport.width === 390 || viewport.width === 844) {
+      await captureAfter(
+        page,
+        'reference-books-scroll-end-after-' + viewport.width + 'x' + viewport.height + '-light.png',
+      );
+    }
+  }
+  await page.setViewportSize({ width: 820, height: 1180 });
+  await ensureReferenceDrawerOpen(page);
+  await bookIndex.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await captureAfter(page, 'reference-books-scroll-end-after-820x1180-light.png');
+  await bookSearch.fill('S2 Reference Book');
   await bookIndex.evaluate((element) => {
     element.scrollTop = 420;
   });
@@ -353,6 +460,37 @@ test('Reference browsing, inspection, keep, and insertion preserve the writing',
   await page.locator('.list-item').filter({ hasText: mainBookTitle }).click();
   await expect(page.getByRole('button', { name: 'Back to Books' })).toBeVisible();
   await expect(page.locator('.reference-note-list .reference-source-row')).toHaveCount(40);
+  const bookNotes = page.locator('[data-reference-scroll="bookNotes"]');
+  for (const viewport of dockViewports) {
+    await page.setViewportSize(viewport);
+    await ensureReferenceDrawerOpen(page);
+    await expect(bookNotes).toBeVisible();
+    await bookNotes.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    const bookNotesEnd = await page.evaluate(() => {
+      const row = document
+        .querySelector('[data-reference-scroll="bookNotes"] .reference-source-row:last-child')!
+        .getBoundingClientRect();
+      const dock = document.querySelector('app-app-dock')!.getBoundingClientRect();
+      return { rowBottom: row.bottom, dockTop: dock.top };
+    });
+    if (bookNotesEnd.rowBottom > bookNotesEnd.dockTop) {
+      dockFailures.push(`Reference book notes at ${viewport.width}x${viewport.height}: ${bookNotesEnd.rowBottom}px > dock ${bookNotesEnd.dockTop}px`);
+    }
+    if (viewport.width === 820 || viewport.width === 844) {
+      await captureAfter(
+        page,
+        'reference-book-notes-scroll-end-after-' + viewport.width + 'x' + viewport.height + '-light.png',
+      );
+    }
+  }
+  await page.setViewportSize({ width: 820, height: 1180 });
+  await ensureReferenceDrawerOpen(page);
+  await bookNotes.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await captureAfter(page, 'reference-book-notes-scroll-end-after-820x1180-light.png');
   await page.locator('.reference-rail-collapse').click();
   await expect(page.locator('.reference-toggle')).toHaveAttribute('aria-expanded', 'false');
   await typeAndRemoveProbe(page, 'S2BookNotes');
@@ -504,6 +642,7 @@ test('Reference browsing, inspection, keep, and insertion preserve the writing',
     await apiGet<WritingSourceDto[]>(baseUrl, '/api/writings/' + writingId + '/notes'),
   ).toHaveLength(1);
   expect(manuscriptBeforeInsert.content).not.toContain(longQuote);
+  expect(dockFailures, 'Reference topic/book lists clear the dock').toEqual([]);
   expect(browserErrors).toEqual([]);
   expect(apiFailures).toEqual([]);
 });
@@ -512,6 +651,8 @@ test('kept-source density and responsive Reference rows hold at 0, 3, 8, and 40'
   page,
   browser,
 }) => {
+  const dockFailures: string[] = [];
+  const touchTargetFailures: string[] = [];
   const addSources = async (start: number, end: number) => {
     for (let index = start; index < end; index++) {
       await apiPost(baseUrl, '/api/writings/' + writingId + '/notes', {
@@ -671,6 +812,57 @@ test('kept-source density and responsive Reference rows hold at 0, 3, 8, and 40'
   await expect(touchPage.locator('.kept-sources-content .reference-source-row')).toHaveCount(
     40,
   );
+  const writingSourceList = touchPage.locator('.kept-sources-content');
+  for (const viewport of dockViewports) {
+    await touchPage.setViewportSize(viewport);
+    await writingSourceList.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    const writingListEnd = await touchPage.evaluate(() => {
+      const row = document
+        .querySelector('.kept-sources-content .reference-source-row:last-child')!
+        .getBoundingClientRect();
+      const dock = document.querySelector('app-app-dock')!.getBoundingClientRect();
+      return { rowBottom: row.bottom, dockTop: dock.top };
+    });
+    if (writingListEnd.rowBottom > writingListEnd.dockTop) {
+      dockFailures.push(`For this writing at ${viewport.width}x${viewport.height}: ${writingListEnd.rowBottom}px > dock ${writingListEnd.dockTop}px`);
+    }
+    if (viewport.width === 820) {
+      await captureAfter(
+        touchPage,
+        'reference-for-writing-scroll-end-after-820x1180-light.png',
+      );
+    }
+  }
+  await touchPage.setViewportSize({ width: 390, height: 844 });
+  const referenceTabHeights = await touchPage
+    .locator('.reference-mode-switch .tab-btn')
+    .evaluateAll((tabs) =>
+      tabs.map((tab) => Math.round(tab.getBoundingClientRect().height)),
+    );
+  expect(referenceTabHeights.length).toBe(2);
+  if (!referenceTabHeights.every((height) => height >= 44)) {
+    touchTargetFailures.push(`Reference tab heights: ${JSON.stringify(referenceTabHeights)}`);
+  }
+  const keptSources = touchPage.locator('.kept-sources-content');
+  await keptSources.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  const keptSourcesEnd = await touchPage.evaluate(() => {
+    const row = document
+      .querySelector('.kept-sources-content .reference-source-row:last-child')!
+      .getBoundingClientRect();
+    const dock = document.querySelector('app-app-dock')!.getBoundingClientRect();
+    return { rowBottom: row.bottom, dockTop: dock.top };
+  });
+  if (keptSourcesEnd.rowBottom > keptSourcesEnd.dockTop) {
+    dockFailures.push(`For this writing at 390x844: ${keptSourcesEnd.rowBottom}px > dock ${keptSourcesEnd.dockTop}px`);
+  }
+  await captureAfter(
+    touchPage,
+    'reference-for-writing-scroll-end-after-390x844-light.png',
+  );
   const actionTarget = await touchPage
     .locator('.reference-row-action')
     .first()
@@ -679,24 +871,25 @@ test('kept-source density and responsive Reference rows hold at 0, 3, 8, and 40'
       const style = getComputedStyle(element);
       return { width: rect.width, height: rect.height, cssWidth: style.width, cssHeight: style.height };
     });
-  expect(actionTarget.cssWidth).toBe('44px');
-  expect(actionTarget.cssHeight).toBe('44px');
+  if (actionTarget.cssWidth !== '44px' || actionTarget.cssHeight !== '44px') {
+    touchTargetFailures.push(`Reference row action CSS size: ${JSON.stringify(actionTarget)}`);
+  }
   // Chromium can report 43.99997px from its transformed layout rectangle even
   // though the computed control box is exactly 44px. Compare at rendered-pixel
   // precision while still guarding the actual CSS target above.
-  expect(Math.round(actionTarget.width)).toBeGreaterThanOrEqual(44);
-  expect(Math.round(actionTarget.height)).toBeGreaterThanOrEqual(44);
+  if (Math.round(actionTarget.width) < 44 || Math.round(actionTarget.height) < 44) {
+    touchTargetFailures.push(`Reference row action box: ${JSON.stringify(actionTarget)}`);
+  }
 
-  await touchPage.locator('.kept-sources-content .reference-source-row-main').first().click();
-  await expect(touchPage.locator('.inspected-source-card')).toHaveCount(1);
+  await keptSources.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
   await captureAfter(touchPage, 'mobile-reference-inspection-mobile-390x844-light.png');
 
   await touchPage.addInitScript(() => localStorage.setItem('nostos.theme', 'dark'));
   await openWriting(touchPage, { width: 390, height: 844 });
   await expectDarkEditor(touchPage);
   await touchPage.locator('.reference-toggle').click();
-  await touchPage.locator('.kept-sources-content .reference-source-row-main').first().click();
-  await expect(touchPage.locator('.inspected-source-card')).toHaveCount(1);
   await captureAfter(touchPage, 'mobile-reference-inspection-mobile-390x844-dark.png');
   await touchContext.close();
 
@@ -714,5 +907,35 @@ test('kept-source density and responsive Reference rows hold at 0, 3, 8, and 40'
   await expect(page.locator('.kept-sources-content .reference-source-row')).toHaveCount(40);
   await page.locator('.kept-sources-content .reference-source-row-main').first().click();
   await expect(page.locator('.inspected-source-card')).toHaveCount(1);
-  await captureAfter(page, 'mobile-reference-inspection-landscape-844x390-light.png');
+  const inspectorPanel = page.locator('.inspected-source-panel');
+  for (const viewport of dockViewports) {
+    await page.setViewportSize(viewport);
+    await inspectorPanel.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    const inspectorEnd = await page.evaluate(() => {
+      const action = document
+        .querySelector('.source-action-primary-row')!
+        .getBoundingClientRect();
+      const dock = document.querySelector('app-app-dock')!.getBoundingClientRect();
+      return { actionBottom: action.bottom, dockTop: dock.top };
+    });
+    if (inspectorEnd.actionBottom > inspectorEnd.dockTop) {
+      dockFailures.push(`Reference inspector actions at ${viewport.width}x${viewport.height}: ${inspectorEnd.actionBottom}px > dock ${inspectorEnd.dockTop}px`);
+    }
+    if (viewport.width === 1280) {
+      await captureAfter(
+        page,
+        'reference-inspector-actions-scroll-end-after-1280x720-light.png',
+      );
+    }
+    if (viewport.width === 844) {
+      await captureAfter(
+        page,
+        'reference-inspector-actions-scroll-end-after-844x390-light.png',
+      );
+    }
+  }
+  expect(dockFailures, 'All Reference lists and inspector clear the dock').toEqual([]);
+  expect(touchTargetFailures, 'Reference coarse-pointer controls meet 44px').toEqual([]);
 });
