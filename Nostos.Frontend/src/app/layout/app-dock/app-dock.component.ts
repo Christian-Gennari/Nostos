@@ -202,6 +202,11 @@ function isNarrowViewport(): boolean {
         padding: 8px 12px 7px;
         border: 0;
         border-bottom: 2px solid transparent;
+        /* Links and the native More button must paint exactly the same at rest.
+           In particular, a button's default ButtonFace is not a dock state. */
+        -webkit-appearance: none;
+        appearance: none;
+        background: transparent;
         /* Concentric with the container: the bar's 3px padding is the gap
            between the item box and the box edge, so the inner corner is the
            outer one minus that gap. Without this the hover wash reads as a
@@ -210,6 +215,8 @@ function isNarrowViewport(): boolean {
         color: var(--color-text-muted);
         cursor: pointer;
         font-family: 'Hanken Grotesk', sans-serif;
+        font-size: inherit;
+        line-height: inherit;
         text-decoration: none;
         transition:
           background-color var(--motion-fast) ease,
@@ -218,9 +225,13 @@ function isNarrowViewport(): boolean {
         touch-action: manipulation;
       }
 
-      .dock-item:hover {
-        background: var(--bg-hover);
-        color: var(--color-text-main);
+      /* Touch browsers may retain :hover after a tap. More is not a route
+         and therefore must not look selected after its sheet closes. */
+      @media (hover: hover) {
+        .dock-item:hover {
+          background: var(--bg-hover);
+          color: var(--color-text-main);
+        }
       }
 
       .dock-item:active {

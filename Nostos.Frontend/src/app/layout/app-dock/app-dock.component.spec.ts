@@ -124,6 +124,10 @@ describe('AppDockComponent', () => {
       fixture.nativeElement.querySelectorAll('.dock-item .label'),
     ).map((label) => label.textContent?.trim());
     expect(labels).toEqual(['Library', 'Brain', 'Studio', 'More']);
+    const more = fixture.nativeElement.querySelector('[data-testid="dock-more"]') as HTMLButtonElement;
+    expect(more.tagName).toBe('BUTTON');
+    expect(more.classList).toContain('dock-item');
+    expect(more.classList).not.toContain('dock-item-open');
   });
 
   it('keeps Settings as a direct dock destination on a narrow SelfHosted shell', () => {
