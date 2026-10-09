@@ -13,8 +13,19 @@ describe('CloudEntryComponent', () => {
     checkoutRedirect: ReturnType<typeof signal<string | null>>;
     productReady: ReturnType<typeof signal<boolean>>;
     selectedOffer: ReturnType<typeof signal<any>>;
+    accountDeletionStatus: ReturnType<typeof signal<any>>;
+    accountDeletionStatusLoading: ReturnType<typeof signal<boolean>>;
+    accountDeletionStatusFailed: ReturnType<typeof signal<boolean>>;
+    accountDeletionActionPending: ReturnType<typeof signal<boolean>>;
+    accountDeletionActionError: ReturnType<typeof signal<string | null>>;
+    accountDeletionSessionExpired: ReturnType<typeof signal<boolean>>;
+    deletionExportUrl: ReturnType<typeof signal<string | null>>;
+    canCancelDeletion: ReturnType<typeof signal<boolean>>;
+    accountManagementUrl: ReturnType<typeof signal<string | null>>;
     beginCheckout: ReturnType<typeof vi.fn>;
     checkSubscription: ReturnType<typeof vi.fn>;
+    cancelAccountDeletion: ReturnType<typeof vi.fn>;
+    retryAccountDeletionStatus: ReturnType<typeof vi.fn>;
     loginUrl: ReturnType<typeof vi.fn>;
     startFresh: ReturnType<typeof vi.fn>;
     openManageLibraryFromFirstRun: ReturnType<typeof vi.fn>;
@@ -51,8 +62,19 @@ describe('CloudEntryComponent', () => {
         planName: 'Standard',
         billingCadence: 'Monthly',
       }),
+      accountDeletionStatus: signal<any>(null),
+      accountDeletionStatusLoading: signal(false),
+      accountDeletionStatusFailed: signal(false),
+      accountDeletionActionPending: signal(false),
+      accountDeletionActionError: signal<string | null>(null),
+      accountDeletionSessionExpired: signal(false),
+      deletionExportUrl: signal<string | null>(null),
+      canCancelDeletion: signal(true),
+      accountManagementUrl: signal<string | null>(null),
       beginCheckout: vi.fn(),
       checkSubscription: vi.fn(),
+      cancelAccountDeletion: vi.fn(),
+      retryAccountDeletionStatus: vi.fn(),
       loginUrl: vi.fn().mockReturnValue('/api/auth/login'),
       startFresh: vi.fn(),
       openManageLibraryFromFirstRun: vi.fn(),
@@ -157,6 +179,49 @@ describe('CloudEntryComponent', () => {
 
     checkBtn.click();
     expect(mockEntry.checkSubscription).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the pending deadline and both grace-period actions', () => {
+    mockEntry.view.set({ kind: 'account_deletion' });
+    mockEntry.accountDeletionStatus.set({
+      state: 'GracePeriod',
+      gracePeriodDays: 14,
+      requestedAtUtc: '2026-10-01T12:00:00Z',
+      eligibleAtUtc: '2026-10-15T12:00:00Z',
+      completedAtUtc: null,
+      canCancel: true,
+      portableExportUrl: '/api/portability/export',
+    });
+    mockEntry.deletionExportUrl.set('/api/portability/export');
+    mockEntry.accountManagementUrl.set('https://nostos.page/account');
+
+    const fixture = TestBed.createComponent(CloudEntryComponent);
+    fixture.detectChanges();
+
+    const compiled = fixture.nativeElement as HTMLElement;
+    expect(compiled.textContent).toContain('Deletion pending');
+    expect(compiled.textContent).toContain('October 15, 2026');
+    expect(compiled.querySelector('a[href="/api/portability/export"]')?.textContent)
+      .toContain('Export my library');
+    expect(compiled.textContent).toContain('Cancel deletion');
+    expect(compiled.querySelector('a[href="https://nostos.page/account"]')?.textContent)
+      .toContain('Account & billing');
+    expect(compiled.textContent).toContain(
+      'Your subscription will not renew while deletion is pending',
+    );
+    expect(compiled.textContent).toContain(
+      'Cancel deletion before your paid period ends to keep your subscription',
+    );
+    expect(compiled.textContent).toContain(
+      'after it ends, cancelling deletion still restores your account and library',
+    );
+    expect(compiled.textContent).toContain('you will need to subscribe again');
+
+    const cancel = Array.from(compiled.querySelectorAll('button')).find((button) =>
+      (button.textContent ?? '').includes('Cancel deletion'),
+    ) as HTMLButtonElement;
+    cancel.click();
+    expect(mockEntry.cancelAccountDeletion).toHaveBeenCalledTimes(1);
   });
 
   it('omits Continue to checkout button when canCheckout is false', () => {

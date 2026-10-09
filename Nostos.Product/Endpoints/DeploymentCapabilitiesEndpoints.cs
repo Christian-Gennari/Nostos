@@ -56,7 +56,9 @@ public static class DeploymentCapabilitiesEndpoints
             HostedBrowserIntegrationEnabled: deployment.Mode == DeploymentMode.Cloud
                 && deployment.Capabilities.HostedBrowserIntegrationEnabled,
             SupportsManagedBackups: deployment.Mode == DeploymentMode.Cloud
-                && deployment.Capabilities.SupportsManagedBackups);
+                && deployment.Capabilities.SupportsManagedBackups,
+            SupportsAccountDeletion: deployment.Mode == DeploymentMode.Cloud
+                && deployment.Capabilities.SupportsAccountDeletion);
 }
 
 public sealed record DeploymentCapabilitiesResponse(
@@ -75,4 +77,5 @@ public sealed record DeploymentCapabilitiesResponse(
     bool SupportsLibraryMigration = false,
     bool SupportsSafeActivation = false,
     bool HostedBrowserIntegrationEnabled = false,
-    bool SupportsManagedBackups = false);
+    bool SupportsManagedBackups = false,
+    bool SupportsAccountDeletion = false);

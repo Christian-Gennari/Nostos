@@ -174,6 +174,84 @@
         </div>
       }
 
+      @case ('account_deletion') {
+        <p class="cloud-entry__eyebrow">Account</p>
+        <h1>Deletion pending</h1>
+        <p>Access to your library has closed.</p>
+
+        @if (entry.accountDeletionStatus(); as deletion) {
+          @if (deletion.state === 'GracePeriod' && deletion.eligibleAtUtc) {
+            <p>
+              Your account deletion becomes final on
+              <time [attr.datetime]="deletion.eligibleAtUtc">{{ deletion.eligibleAtUtc | date:'long' }}</time>
+              in your local time.
+            </p>
+          } @else if (deletion.state === 'GracePeriod') {
+            <p>The deletion request is still pending, but Nostos could not read its final date.</p>
+          } @else if (deletion.state === 'Destroying') {
+            <p>The grace period has ended and account erasure is in progress.</p>
+          } @else if (deletion.state === 'Failed') {
+            <p>Nostos has not confirmed final erasure and will retry the cleanup.</p>
+          }
+        } @else {
+          <p>The deletion request is on file. Nostos is checking its final date.</p>
+        }
+
+        @if (entry.accountDeletionStatusFailed()) {
+          <p class="cloud-entry__status" role="alert">
+            Nostos could not load the deletion status. You can still try to export or cancel; the server will confirm whether each action is available.
+          </p>
+        }
+
+        <p>
+          Your subscription will not renew while deletion is pending. Cancel deletion before your paid
+          period ends to keep your subscription; after it ends, cancelling deletion still restores your
+          account and library, but you will need to subscribe again. You can check its status under
+          @if (entry.accountManagementUrl(); as accountUrl) {
+            <a [href]="accountUrl" target="_blank" rel="noopener noreferrer">Account &amp; billing</a>.
+          } @else {
+            Account &amp; billing.
+          }
+        </p>
+
+        @if (entry.accountDeletionActionError(); as error) {
+          <p class="cloud-entry__status" role="alert">{{ error }}</p>
+        }
+
+        <div class="cloud-entry__actions">
+          @if (entry.deletionExportUrl(); as exportUrl) {
+            <a appButton variant="secondary" [href]="exportUrl">Export my library</a>
+          }
+          @if (entry.canCancelDeletion()) {
+            <button
+              appButton
+              variant="primary"
+              type="button"
+              [disabled]="entry.accountDeletionActionPending()"
+              [busy]="entry.accountDeletionActionPending()"
+              (click)="cancelDeletion()"
+            >
+              Cancel deletion
+            </button>
+          }
+          @if (entry.accountDeletionStatusFailed()) {
+            <button
+              appButton
+              variant="ghost"
+              type="button"
+              [disabled]="entry.accountDeletionStatusLoading()"
+              [busy]="entry.accountDeletionStatusLoading()"
+              (click)="checkDeletionStatus()"
+            >
+              Check status
+            </button>
+          }
+          @if (entry.accountDeletionSessionExpired()) {
+            <a appButton variant="ghost" [href]="entry.loginUrl()">Sign in again</a>
+          }
+        </div>
+      }
+
       @case ('inactive') {
         <p class="cloud-entry__eyebrow">Access</p>
         <h1>Your subscription isn’t active.</h1>
@@ -270,8 +348,13 @@
 
       @case ('account_unavailable') {
         <p class="cloud-entry__eyebrow">Account</p>
-        <h1>This Nostos Cloud account isn’t available.</h1>
-        <p>It cannot be reactivated from this browser. Contact Nostos support if you think this is unexpected.</p>
+        @if (entry.accountDeletionStatus()?.state === 'Deleted') {
+          <h1>Your account has been deleted.</h1>
+          <p>The deletion is complete. This account and its library are no longer available.</p>
+        } @else {
+          <h1>This Nostos Cloud account isn’t available.</h1>
+          <p>It cannot be reactivated from this browser. Contact Nostos support if you think this is unexpected.</p>
+        }
       }
 
       @case ('backend_error') {

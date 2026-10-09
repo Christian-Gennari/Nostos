@@ -983,6 +983,12 @@
                     Sign out
                   </button>
                 </div>
+
+                @if (supportsAccountDeletion()) {
+                  <app-cloud-account-deletion-settings
+                    (pending)="showAccountDeletionPending($event)"
+                  />
+                }
               </div>
             </section>
           </section>

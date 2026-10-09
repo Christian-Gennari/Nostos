@@ -1,0 +1,111 @@
+<div class="setting-row account-deletion-row" data-testid="cloud-account-deletion-row">
+  <div class="setting-label">
+    <span class="label-text">Delete Cloud account</span>
+    <span class="label-desc">Request deletion of this account and its data.</span>
+  </div>
+  <button
+    #openButton
+    appButton
+    type="button"
+    variant="ghost"
+    class="account-deletion-trigger"
+    data-testid="cloud-account-deletion-open"
+    (click)="openConfirmation()"
+  >
+    Delete account
+  </button>
+</div>
+
+@if (errorMessage(); as error) {
+  <p class="account-deletion-error" role="alert">{{ error }}</p>
+  @if (sessionExpired()) {
+    <a appButton variant="secondary" [href]="loginUrl()">Sign in again</a>
+  }
+  @if (!requestPending()) {
+    <button
+      appButton
+      type="button"
+      variant="ghost"
+      [disabled]="statusCheckPending()"
+      [busy]="statusCheckPending()"
+      (click)="checkDeletionStatus()"
+    >
+      Check deletion status
+    </button>
+  }
+}
+
+<app-confirm-modal
+  [isOpen]="dialogOpen()"
+  heading="Delete your Nostos Cloud account?"
+  description="Access to your library will close immediately."
+  confirmLabel="Request deletion"
+  cancelLabel="Keep account"
+  busyLabel="Requesting deletion…"
+  [busy]="requestPending()"
+  [confirmDisabled]="!confirmationIsComplete()"
+  [stackOnNarrow]="false"
+  [trapFocus]="true"
+  (confirm)="requestDeletion()"
+  (cancel)="closeConfirmation()"
+>
+  <div class="account-deletion-confirmation">
+    <p>You will have 14 days to change your mind and cancel the request.</p>
+    <p>
+      After that, Nostos will erase your library, files, notes, writing, backups, and sign-in identity.
+    </p>
+    <p>
+      Your subscription will not renew while this deletion request is pending, so no further charge
+      will be made. The period you have already paid for is not refunded automatically; any refund
+      follows the applicable terms.
+    </p>
+
+    <p>
+      We recommend exporting your library first. Open
+      <a
+        #exportLink
+        href="/settings/library"
+        target="_blank"
+        rel="noopener noreferrer"
+      >Manage library</a>
+      to download a portable archive.
+    </p>
+
+    <label for="account-deletion-confirmation">Type DELETE to confirm</label>
+    <input
+      #confirmationInput
+      id="account-deletion-confirmation"
+      name="account-deletion-confirmation"
+      type="text"
+      autocomplete="off"
+      autocapitalize="characters"
+      spellcheck="false"
+      [(ngModel)]="confirmationText"
+      [disabled]="requestPending()"
+      aria-describedby="account-deletion-confirmation-help"
+      data-testid="cloud-account-deletion-confirmation"
+    >
+    <span id="account-deletion-confirmation-help" class="account-deletion-help">
+      The request will not be sent until the text matches.
+    </span>
+
+    @if (errorMessage(); as error) {
+      <p class="account-deletion-error" role="alert">{{ error }}</p>
+      @if (sessionExpired()) {
+        <a appButton variant="secondary" [href]="loginUrl()">Sign in again</a>
+      }
+      @if (!requestPending()) {
+        <button
+          appButton
+          type="button"
+          variant="ghost"
+          [disabled]="statusCheckPending()"
+          [busy]="statusCheckPending()"
+          (click)="checkDeletionStatus()"
+        >
+          Check deletion status
+        </button>
+      }
+    }
+  </div>
+</app-confirm-modal>

@@ -1,5 +1,6 @@
 import { Component, HostListener, input, output } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { CdkTrapFocus } from '@angular/cdk/a11y';
 
 /**
  * How the shell presents itself.
@@ -39,7 +40,7 @@ export type ModalShellVariant = 'sheet' | 'dialog';
 @Component({
   selector: 'app-modal-shell',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, CdkTrapFocus],
   templateUrl: './modal-shell.component.html',
   styleUrl: './modal-shell.component.css',
 })
@@ -65,6 +66,9 @@ export class ModalShell {
 
   /** True while the caller is saving: locks every dismissal path. */
   busy = input<boolean>(false);
+
+  /** Trap focus and return it to the opener when this dialog closes. */
+  trapFocus = input<boolean>(false);
 
   /**
    * Whether a backdrop tap closes. Left at the callers' existing behaviour —

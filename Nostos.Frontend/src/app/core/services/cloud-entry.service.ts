@@ -4,7 +4,9 @@ import { firstValueFrom } from 'rxjs';
 
 import { CloudOnboardingSnapshot } from '../dtos/cloud-onboarding.dtos';
 import { CloudSession } from '../dtos/cloud-auth.dtos';
+import { CloudAccountDeletionStatus } from '../dtos/cloud-account-deletion.dtos';
 import { DeploymentCapabilities } from '../dtos/deployment-capabilities.dtos';
+import { CloudAccountDeletionService } from './cloud-account-deletion.service';
 import { BooksService } from './books.service';
 import { CloudAuthService } from './cloud-auth.service';
 import { CloudOnboardingService } from './cloud-onboarding.service';
@@ -21,6 +23,7 @@ export type CloudEntryKind =
   | 'provisioning_failed'
   | 'payment_recovery'
   | 'canceled'
+  | 'account_deletion'
   | 'inactive'
   | 'account_unavailable'
   | 'backend_error';
@@ -51,6 +54,22 @@ export class CloudEntryService {
   readonly actionError = signal<string | null>(null);
   readonly checkoutRedirect = signal<string | null>(null);
   readonly firstRunImportPending = signal(false);
+  readonly accountDeletionStatus = signal<CloudAccountDeletionStatus | null>(null);
+  readonly accountDeletionStatusLoading = signal(false);
+  readonly accountDeletionStatusFailed = signal(false);
+  readonly accountDeletionActionPending = signal(false);
+  readonly accountDeletionActionError = signal<string | null>(null);
+  readonly accountDeletionSessionExpired = signal(false);
+  readonly deletionExportUrl = computed(() => {
+    const status = this.accountDeletionStatus();
+    return status ? status.portableExportUrl : '/api/portability/export';
+  });
+  readonly canCancelDeletion = computed(
+    () => this.accountDeletionStatus()?.canCancel ?? true,
+  );
+  readonly accountManagementUrl = computed(
+    () => this.deploymentCapabilities()?.accountManagementUrl ?? null,
+  );
   readonly productReady = computed(() => this.view().kind === 'product');
   readonly selectedOffer = computed(() => this.view().onboarding?.selectedOffer ?? null);
 
@@ -77,6 +96,7 @@ export class CloudEntryService {
     private readonly onboarding: CloudOnboardingService,
     private readonly portableLibrary: PortableLibraryService,
     private readonly books: BooksService,
+    private readonly accountDeletion: CloudAccountDeletionService,
   ) {}
 
   async initialize(force = false): Promise<void> {
@@ -85,6 +105,12 @@ export class CloudEntryService {
     this.checkoutRedirect.set(null);
     this.requestedOffer.set(null);
     this.firstRunImportPending.set(false);
+    this.accountDeletionStatus.set(null);
+    this.accountDeletionStatusLoading.set(false);
+    this.accountDeletionStatusFailed.set(false);
+    this.accountDeletionActionPending.set(false);
+    this.accountDeletionActionError.set(null);
+    this.accountDeletionSessionExpired.set(false);
     this.view.set({ kind: 'loading' });
 
     try {
@@ -106,11 +132,17 @@ export class CloudEntryService {
         return;
       }
 
-      if (
-        session.accountState === 'Disabled' ||
-        session.accountState === 'Deleted' ||
-        session.accountState === 'DeletionRequested'
-      ) {
+      if (session.accountState === 'DeletionRequested') {
+        if (capabilities.supportsAccountDeletion === true) {
+          this.view.set({ kind: 'account_deletion' });
+          await this.refreshAccountDeletionStatus();
+        } else {
+          this.view.set({ kind: 'account_unavailable' });
+        }
+        return;
+      }
+
+      if (session.accountState === 'Disabled' || session.accountState === 'Deleted') {
         this.view.set({ kind: 'account_unavailable' });
         return;
       }
@@ -129,6 +161,50 @@ export class CloudEntryService {
     return isSignedOutState
       ? this.auth.loginUrl(returnUrl, this.requestedOffer(), 'login')
       : this.auth.loginUrl(returnUrl, this.requestedOffer());
+  }
+
+  showAccountDeletionPending(status: CloudAccountDeletionStatus): void {
+    this.accountDeletionStatus.set(status);
+    this.accountDeletionStatusFailed.set(false);
+    this.accountDeletionActionError.set(null);
+    this.accountDeletionSessionExpired.set(false);
+    this.view.set({ kind: status.state === 'Deleted' ? 'account_unavailable' : 'account_deletion' });
+  }
+
+  async retryAccountDeletionStatus(): Promise<void> {
+    this.accountDeletionActionError.set(null);
+    this.accountDeletionSessionExpired.set(false);
+    await this.refreshAccountDeletionStatus();
+  }
+
+  async cancelAccountDeletion(): Promise<void> {
+    if (this.accountDeletionActionPending()) return;
+
+    this.accountDeletionActionPending.set(true);
+    this.accountDeletionActionError.set(null);
+    this.accountDeletionSessionExpired.set(false);
+    try {
+      const status = await firstValueFrom(this.accountDeletion.cancelDeletion());
+      if (status.state === 'Cancelled' || status.state === 'Active') {
+        await this.initialize(true);
+        return;
+      }
+
+      this.applyAccountDeletionStatus(status);
+      if (!status.canCancel) {
+        this.accountDeletionActionError.set(
+          'The 14-day grace period has ended. This deletion can no longer be cancelled.',
+        );
+      }
+    } catch (error) {
+      this.accountDeletionActionError.set(this.accountDeletionFailureMessage(error));
+      this.accountDeletionSessionExpired.set(
+        error instanceof HttpErrorResponse && error.status === 401,
+      );
+      await this.refreshAccountDeletionStatus();
+    } finally {
+      this.accountDeletionActionPending.set(false);
+    }
   }
 
   async retry(): Promise<void> {
@@ -247,6 +323,62 @@ export class CloudEntryService {
     } finally {
       this.actionPending.set(false);
     }
+  }
+
+  private async refreshAccountDeletionStatus(): Promise<void> {
+    this.accountDeletionStatusLoading.set(true);
+    this.accountDeletionStatusFailed.set(false);
+
+    try {
+      const status = await firstValueFrom(this.accountDeletion.getStatus());
+      if (status.state === 'Cancelled' || status.state === 'Active') {
+        this.accountDeletionStatus.set(status);
+        await this.initialize(true);
+        return;
+      }
+
+      this.applyAccountDeletionStatus(status);
+    } catch (error) {
+      this.accountDeletionStatusFailed.set(true);
+      if (error instanceof HttpErrorResponse && error.status === 401) {
+        this.accountDeletionSessionExpired.set(true);
+      }
+      this.view.set({ kind: 'account_deletion' });
+    } finally {
+      this.accountDeletionStatusLoading.set(false);
+    }
+  }
+
+  private applyAccountDeletionStatus(status: CloudAccountDeletionStatus): void {
+    this.accountDeletionStatus.set(status);
+    this.accountDeletionStatusFailed.set(false);
+
+    if (status.state === 'Deleted') {
+      this.view.set({ kind: 'account_unavailable' });
+      return;
+    }
+
+    this.view.set({ kind: 'account_deletion' });
+  }
+
+  private accountDeletionFailureMessage(error: unknown): string {
+    const response = error instanceof HttpErrorResponse ? error : null;
+    const code = typeof response?.error?.error === 'string' ? response.error.error : null;
+
+    if (code === 'deletion_not_recoverable') {
+      return 'The 14-day grace period has ended. This deletion can no longer be cancelled.';
+    }
+    if (code === 'account_lifecycle_busy') {
+      return 'An account change is still in progress. Nostos could not confirm cancellation; check the status before trying again.';
+    }
+    if (response?.status === 401) {
+      return 'Your sign-in session expired. Nostos could not confirm whether cancellation succeeded; sign in again and check the status.';
+    }
+    if (response?.status === 0) {
+      return 'Nostos could not confirm whether cancellation succeeded. Check the status below before leaving this page.';
+    }
+
+    return 'Nostos could not confirm cancellation. Check the current deletion status before trying again.';
   }
 
   private async refreshOnboarding(): Promise<void> {

@@ -100,6 +100,7 @@ public sealed class DeploymentConfigurationTests
         response.AccountManagementUrl.Should().Be(DeploymentDescriptor.DefaultCloudAccountManagementUrl);
         response.FeedbackUrl.Should().Be(DeploymentDescriptor.DefaultCloudFeedbackUrl);
         response.SupportsManagedBackups.Should().BeFalse();
+        response.SupportsAccountDeletion.Should().BeFalse();
     }
 
     [Fact]
@@ -122,6 +123,28 @@ public sealed class DeploymentConfigurationTests
 
         DeploymentCapabilitiesEndpoints.ToResponse(cloud).SupportsManagedBackups.Should().BeTrue();
         DeploymentCapabilitiesEndpoints.ToResponse(selfHosted).SupportsManagedBackups.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Account_deletion_requires_cloud_host_opt_in_and_cannot_be_advertised_by_selfhosted()
+    {
+        var cloud = DeploymentDescriptor.For(DeploymentMode.Cloud) with
+        {
+            Capabilities = DeploymentDescriptor.For(DeploymentMode.Cloud).Capabilities with
+            {
+                SupportsAccountDeletion = true,
+            },
+        };
+        var selfHosted = DeploymentDescriptor.For(DeploymentMode.SelfHosted) with
+        {
+            Capabilities = DeploymentDescriptor.For(DeploymentMode.SelfHosted).Capabilities with
+            {
+                SupportsAccountDeletion = true,
+            },
+        };
+
+        DeploymentCapabilitiesEndpoints.ToResponse(cloud).SupportsAccountDeletion.Should().BeTrue();
+        DeploymentCapabilitiesEndpoints.ToResponse(selfHosted).SupportsAccountDeletion.Should().BeFalse();
     }
 
     [Fact]
