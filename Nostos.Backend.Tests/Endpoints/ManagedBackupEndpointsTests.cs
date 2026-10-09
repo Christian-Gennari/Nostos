@@ -109,6 +109,123 @@ public sealed class ManagedBackupEndpointsTests
         Assert.Equal(1, catalog.ListCalls);
     }
 
+    [Fact]
+    public async Task Restore_requires_authentication_and_confirmation()
+    {
+        var restorer = new FixtureManagedBackupRestorer();
+        await using var host = await TestHost.StartAsync(
+            new NotSupportedManagedBackupCatalog(),
+            restorer: restorer);
+
+        var url = ManagedBackupEndpoints.Route
+            + $"/{Guid.NewGuid()}/restore";
+
+        using var anonymous = await host.Client.PostAsJsonAsync(
+            url, new ManagedBackupRestoreRequest(true));
+
+        Assert.Equal(HttpStatusCode.Unauthorized, anonymous.StatusCode);
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, url)
+        {
+            Content = JsonContent.Create(
+                new ManagedBackupRestoreRequest(false))
+        };
+        request.Headers.Add("X-Test-Authenticated", "1");
+
+        using var rejected = await host.Client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.BadRequest, rejected.StatusCode);
+        Assert.Equal(0, restorer.Calls);
+    }
+
+    [Fact]
+    public async Task Restore_respects_product_access_policy()
+    {
+        var restorer = new FixtureManagedBackupRestorer();
+        await using var host = await TestHost.StartAsync(
+            new NotSupportedManagedBackupCatalog(),
+            "ProductAccess",
+            restorer);
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            ManagedBackupEndpoints.Route + $"/{Guid.NewGuid()}/restore")
+        {
+            Content = JsonContent.Create(
+                new ManagedBackupRestoreRequest(true))
+        };
+        request.Headers.Add("X-Test-Authenticated", "1");
+
+        using var response = await host.Client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(0, restorer.Calls);
+    }
+
+    [Fact]
+    public async Task Restore_without_provider_fails_closed()
+    {
+        await using var host = await TestHost.StartAsync(
+            new NotSupportedManagedBackupCatalog());
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            ManagedBackupEndpoints.Route + $"/{Guid.NewGuid()}/restore")
+        {
+            Content = JsonContent.Create(
+                new ManagedBackupRestoreRequest(true))
+        };
+        request.Headers.Add("X-Test-Authenticated", "1");
+
+        using var response = await host.Client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.NotImplemented, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Confirmed_restore_returns_product_contract()
+    {
+        var restorer = new FixtureManagedBackupRestorer();
+        await using var host = await TestHost.StartAsync(
+            new NotSupportedManagedBackupCatalog(),
+            restorer: restorer);
+
+        var id = Guid.NewGuid();
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            ManagedBackupEndpoints.Route + $"/{id}/restore")
+        {
+            Content = JsonContent.Create(
+                new ManagedBackupRestoreRequest(true))
+        };
+        request.Headers.Add("X-Test-Authenticated", "1");
+
+        using var response = await host.Client.SendAsync(request);
+        var result = await response.Content
+            .ReadFromJsonAsync<ManagedBackupRestoreResult>();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.NotNull(result);
+        Assert.Equal(id, result.BackupId);
+        Assert.Equal(1, restorer.Calls);
+    }
+
+    private sealed class FixtureManagedBackupRestorer : IManagedBackupRestorer
+    {
+        public int Calls { get; private set; }
+
+        public Task<ManagedBackupRestoreResult> RestoreAsync(
+            Guid backupId,
+            CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return Task.FromResult(new ManagedBackupRestoreResult(
+                backupId,
+                new DateTime(2026, 10, 9, 14, 0, 0, DateTimeKind.Utc)));
+        }
+    }
+
     private sealed class FixtureManagedBackupCatalog(ManagedBackupListing listing) : IManagedBackupCatalog
     {
         public int ListCalls { get; private set; }
@@ -134,13 +251,16 @@ public sealed class ManagedBackupEndpointsTests
 
         public static async Task<TestHost> StartAsync(
             IManagedBackupCatalog catalog,
-            string? authorizationPolicy = null)
+            string? authorizationPolicy = null,
+            IManagedBackupRestorer? restorer = null)
         {
             var builder = WebApplication.CreateBuilder();
             builder.WebHost.UseTestServer();
             builder.Logging.ClearProviders();
             builder.Services.AddRouting();
             builder.Services.AddSingleton<IManagedBackupCatalog>(catalog);
+            builder.Services.AddSingleton<IManagedBackupRestorer>(
+                restorer ?? new NotSupportedManagedBackupRestorer());
             builder.Services
                 .AddAuthentication("Test")
                 .AddScheme<AuthenticationSchemeOptions, TestAuthenticationHandler>("Test", _ => { });

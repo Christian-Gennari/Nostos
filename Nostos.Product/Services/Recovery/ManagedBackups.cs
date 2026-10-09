@@ -11,6 +11,40 @@ public interface IManagedBackupCatalog
 }
 
 /// <summary>
+/// Restores a backup belonging to the authenticated customer.
+/// Implementations resolve tenant ownership server-side.
+/// </summary>
+public interface IManagedBackupRestorer
+{
+    Task<ManagedBackupRestoreResult> RestoreAsync(
+        Guid backupId,
+        CancellationToken cancellationToken = default);
+}
+
+public sealed record ManagedBackupRestoreRequest(bool Confirm);
+
+public sealed record ManagedBackupRestoreResult(
+    Guid BackupId,
+    DateTime RestoredAtUtc);
+
+public enum ManagedBackupRestoreError
+{
+    NotFound,
+    Conflict,
+    InvalidBackup
+}
+
+/// <summary>
+/// A known provider rejection, not an unknown transport or activation outcome.
+/// </summary>
+public sealed class ManagedBackupRestoreException(
+    ManagedBackupRestoreError code,
+    string message) : Exception(message)
+{
+    public ManagedBackupRestoreError Code { get; } = code;
+}
+
+/// <summary>
 /// The product-level response exposed at GET /api/managed-backups.
 /// </summary>
 public sealed record ManagedBackupListing(
@@ -46,4 +80,16 @@ public sealed class NotSupportedManagedBackupCatalog : IManagedBackupCatalog
 {
     public Task<ManagedBackupListing> ListAsync(CancellationToken cancellationToken = default) =>
         Task.FromException<ManagedBackupListing>(new ManagedBackupsNotSupportedException());
+}
+
+/// <summary>
+/// Fail-closed default when the host supplies no managed restore adapter.
+/// </summary>
+public sealed class NotSupportedManagedBackupRestorer : IManagedBackupRestorer
+{
+    public Task<ManagedBackupRestoreResult> RestoreAsync(
+        Guid backupId,
+        CancellationToken cancellationToken = default) =>
+        Task.FromException<ManagedBackupRestoreResult>(
+            new ManagedBackupsNotSupportedException());
 }

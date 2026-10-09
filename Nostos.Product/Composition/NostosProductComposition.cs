@@ -207,6 +207,7 @@ public static class NostosProductComposition
         services.AddScoped<IPortableArchiveService, PortableArchiveService>();
         services.TryAddScoped<IPortableArchiveExporter, DefaultPortableArchiveExporter>();
         services.TryAddScoped<IManagedBackupCatalog, NotSupportedManagedBackupCatalog>();
+        services.TryAddScoped<IManagedBackupRestorer, NotSupportedManagedBackupRestorer>();
         services.TryAddScoped<IMigrationJobStore, EfMigrationJobStore>();
         // Migration job creation is refused until a host wires a real phase
         // handler. A host with no engine (for example one that maps product
@@ -411,7 +412,9 @@ public static class NostosProductComposition
         routes.MapAiProviderSettingsEndpoints();
         routes.MapAssistantSettingsEndpoints();
         routes.MapDeploymentCapabilitiesEndpoints();
-        routes.MapManagedBackupEndpoints(policies.ManagedBackupsAuthorizationPolicy);
+        routes.MapManagedBackupEndpoints(
+            policies.ManagedBackupsAuthorizationPolicy,
+            policies.LargeTransferRateLimitPolicy);
         routes.MapPortabilityEndpoints(policies);
         routes.MapMigrationEndpoints(policies);
         routes.MapOpdsEndpoints(
