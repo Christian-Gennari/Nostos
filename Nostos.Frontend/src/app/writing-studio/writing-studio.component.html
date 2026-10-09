@@ -18,7 +18,10 @@
       <div class="sidebar-title-row">
         <h2>Studio</h2>
         <div class="actions">
-          <button appButton variant="secondary" size="sm" class="files-new-document" (click)="createItem('Document')">New document</button>
+          <button appButton variant="secondary" size="sm" class="files-new-document" type="button" (click)="createItem('Document')" title="New document" aria-label="New document">
+            <nostos-icon name="plus" [size]="14"></nostos-icon>
+            New
+          </button>
           <button appIconButton size="xs" icon="folder-plus" [glyphSize]="16" weight="thin" (click)="createItem('Folder')" title="New folder" aria-label="New folder"></button>
           <button
             appIconButton
