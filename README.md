@@ -58,12 +58,8 @@ Keep different kinds of books in one collection without flattening them into the
 - **Free-source acquisition:** Search and import supported public-domain material from Project Gutenberg and LibriVox. Imported books become ordinary Nostos library items rather than remaining dependent on the source.
 
 <div align="center">
-  <img
-    width="2880"
-    height="1800"
-    alt="Nostos Library Interface"
-    src="docs/screenshots/library.png"
-  />
+<img width="1919" height="916" alt="image" src="https://github.com/user-attachments/assets/b145d36c-75ad-4468-a3b9-34b08cffe646" />
+
 </div>
 
 <details>
