@@ -82,8 +82,10 @@ app-sidebar-collections.no-transition {
 }
 
 /* --- TOOLBAR --- */
-/* Only the phone toolbar renders a collections opener. */
-.floating-toggle {
+/* The mobile Collections opener must never occupy a desktop toolbar slot.
+   Target the native appIconButton host explicitly: its global .icon-btn rule
+   also sets display, so a bare .floating-toggle can lose the cascade. */
+.toolbar-right > button.floating-toggle {
   display: none;
 }
 .toolbar {
@@ -1403,8 +1405,9 @@ app-sidebar-collections.no-transition {
   /* The sidebar opener is a real member of the toolbar flex row, not a fixed
      control trying to track it using viewport offsets. A 38px visible button
      matches the compact sort/view/add chrome; the transparent 3px hit-area
-     extension gives it a 44px touch target without moving its neighbours. */
-  .floating-toggle {
+     extension gives it a 44px touch target without moving its neighbours.
+     Match the desktop hide selector so this mobile rule overrides it. */
+  .toolbar-right > button.floating-toggle {
     position: relative;
     display: inline-flex;
     align-items: center;
