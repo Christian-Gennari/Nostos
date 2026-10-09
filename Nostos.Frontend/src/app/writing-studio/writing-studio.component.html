@@ -23,6 +23,7 @@
             New
           </button>
           <button appIconButton size="xs" icon="folder-plus" [glyphSize]="16" weight="thin" (click)="createItem('Folder')" title="New folder" aria-label="New folder"></button>
+          @if (isCompact()) {
           <button
             appIconButton
             size="xs"
@@ -36,6 +37,7 @@
             [attr.aria-expanded]="showFileSidebar()"
             [attr.aria-pressed]="showFileSidebar()"
           ></button>
+          }
         </div>
       </div>
     </div>
