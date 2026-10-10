@@ -136,6 +136,14 @@ public sealed class StoredAssetRead(
     public Stream Content { get; } = content;
     public StorageByteRange? Range { get; } = range;
 
+    /// <summary>
+    /// The same open read, presented under another file name. For a download
+    /// whose name should describe the content rather than repeat the name it is
+    /// stored under. The returned instance owns the stream; dispose only it.
+    /// </summary>
+    public StoredAssetRead WithFileName(string fileName) =>
+        new(Info with { FileName = fileName }, Content, Range, owner);
+
     public async ValueTask DisposeAsync()
     {
         await Content.DisposeAsync();

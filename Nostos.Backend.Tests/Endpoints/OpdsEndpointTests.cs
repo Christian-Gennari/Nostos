@@ -359,7 +359,7 @@ public sealed class OpdsEndpointTests : IClassFixture<LibraryEndpointFactory>
             .Where(endpoint => endpoint.RoutePattern.RawText?.StartsWith("/opds", StringComparison.Ordinal) == true)
             .ToList();
 
-        opdsEndpoints.Should().HaveCount(3);
+        opdsEndpoints.Should().HaveCount(6);
         opdsEndpoints.Should().OnlyContain(endpoint =>
             endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>().Count == 0);
     }

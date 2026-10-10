@@ -337,6 +337,74 @@ public sealed class SelfHostedActivationCandidateMediaBuilderTests
         public bool SameVolume(string first, string second) => false;
     }
 
+    [Fact]
+    public async Task Build_places_every_track_of_a_multi_track_audiobook_where_track_storage_reads_it()
+    {
+        // Issue #835. Tracks sit flat in the book folder, beside the cover:
+        // the live layout, and the one retention accepts.
+        using var files = new ActivationFiles();
+        ResetCandidate(files);
+        await using var source = await LocalPortableTestLibrary.CreateAsync();
+        var bookId = await PortableMultiTrackTests.SeedMultiTrackBookAsync(source);
+        var archive = await SelfHostedActivationTestSupport.ExportArchiveAsync(source);
+        await using var staging = new InMemoryPortableImportStaging(new InMemoryPortableImportStagingStore());
+        var prepared = await SelfHostedActivationTestSupport.PrepareStagedAsync(archive, staging);
+        var builder = new SelfHostedActivationCandidateMediaBuilder(files.Paths, staging);
+
+        var result = await builder.BuildMediaAsync(files.Id, prepared);
+
+        prepared.Media.Count(item => item.Descriptor.Kind == "track").Should().Be(3);
+        result.FileCount.Should().Be(4, "three tracks and a cover");
+        Directory.GetDirectories(Path.Combine(result.Root, bookId.ToString())).Should().BeEmpty();
+
+        var storage = CreateStorage(result.Root);
+        for (var number = 1; number <= 3; number++)
+        {
+            await using var opened = await storage.OpenTrackAsync(bookId, number);
+            opened.Should().NotBeNull();
+            (await SelfHostedActivationTestSupport.ReadAllAsync(opened!.Content))
+                .Should().Equal(PortableMultiTrackTests.TrackBytes[number - 1]);
+        }
+
+        storage.GetBookFileName(bookId).Should().BeNull("a track is never the primary file");
+        (await storage.GetBookCoverInfoAsync(bookId)).Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task Build_rejects_malformed_and_duplicate_track_descriptors()
+    {
+        using var files = new ActivationFiles();
+        ResetCandidate(files);
+        var (staging, prepared) = await PrepareAsync();
+        await using var _ = staging;
+        var builder = new SelfHostedActivationCandidateMediaBuilder(files.Paths, staging);
+        var original = prepared.Media[0];
+        var book = Guid.NewGuid();
+        PortableArchiveMediaEntry Track(string fileName, string? path = null) =>
+            new(book, "track", path ?? $"media/books/{book:N}/{fileName}", fileName, "audio/mpeg", 1, "aa");
+
+        var cases = new[]
+        {
+            new[] { Track("0001.mp3") },                       // no prefix
+            new[] { Track("track-1.mp3") },                    // not padded
+            new[] { Track("track-0000.mp3") },                 // numbering starts at 1
+            new[] { Track("track-0001.epub") },                // not audio
+            new[] { Track("track-0001.mp3", $"media/books/{book:N}/tracks/track-0001.mp3") },
+            new[] { Track("track-0001.mp3"), Track("track-0001.mp3") },
+        };
+
+        foreach (var descriptors in cases)
+        {
+            var fabricated = Fabricate(
+                prepared,
+                descriptors.Select(descriptor => new PortablePreparedMedia(descriptor, original.Reference)).ToList());
+            var build = async () => await builder.BuildMediaAsync(files.Id, fabricated);
+
+            await build.Should().ThrowAsync<MigrationActivationException>(
+                $"'{descriptors[0].FileName}' x{descriptors.Length} is not a valid track set");
+        }
+    }
+
     private static void ResetCandidate(ActivationFiles files)
     {
         var candidate = files.Paths.CandidateMedia(files.Id);

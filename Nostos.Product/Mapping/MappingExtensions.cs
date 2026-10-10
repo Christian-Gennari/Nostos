@@ -1,3 +1,4 @@
+using Nostos.Backend.Services;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Nostos.Backend.Data.Models;
@@ -144,8 +145,25 @@ public static class MappingExtensions
                     RightsStatement: model.Acquisition.RightsStatement,
                     AcquiredAt: model.Acquisition.AcquiredAt),
             Status: model.Status,
-            StatusMessage: model.StatusMessage
+            StatusMessage: model.StatusMessage,
+            Tracks: ToTrackDtos(model.FileDetails.TracksJson)
         );
+    }
+
+    private static List<BookTrackDto>? ToTrackDtos(string? tracksJson)
+    {
+        var tracks = BookTrackList.Parse(tracksJson);
+        if (tracks.Count == 0)
+            return null;
+
+        return tracks
+            .Select(track => new BookTrackDto(
+                track.Number,
+                AudiobookManifest.TrackTitle(track),
+                track.DurationMs / 1000d,
+                track.Bytes,
+                track.ContentType))
+            .ToList();
     }
 
     public static EditionSummaryDto ToEditionSummary(BookModel model)

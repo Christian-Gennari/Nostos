@@ -11,7 +11,8 @@ public class BookRepository : IBookRepository
     // page query and its total count can never disagree about what the
     // catalogue contains.
     private static readonly Expression<Func<BookModel, bool>> BooksWithFiles = b =>
-        b.FileDetails.HasFile && b.FileDetails.FileName != null;
+        b.FileDetails.HasFile
+        && (b.FileDetails.FileName != null || b.FileDetails.TracksJson != null);
 
     private readonly NostosDbContext _db;
 

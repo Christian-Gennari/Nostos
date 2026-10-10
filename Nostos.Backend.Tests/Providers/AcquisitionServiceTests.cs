@@ -382,45 +382,6 @@ public sealed class AcquisitionServiceTests
     }
 
     [Fact]
-    public async Task AssemblyFailure_AssemblerThrows_FailsAndCleansUp()
-    {
-        using var h = AcquisitionHarness.Create();
-
-        var assemblingProvider = new FakeAssemblingContentProvider("assembler", "Assembling Source");
-        assemblingProvider.PlanResult = new ProviderAcquisitionPlan(
-            ProviderId: "assembler",
-            ExternalId: "multi-1",
-            Asset: new ProviderAsset("audio-asset", ProviderMediaKind.Audiobook, "Full Audiobook", "mp3-multi"),
-            Metadata: new ProviderMetadata(Title: "Audiobook To Assemble"),
-            Parts: new[]
-            {
-                new ProviderDownloadPart(new Uri("https://example.com/part1.mp3"), ".mp3", 500),
-                new ProviderDownloadPart(new Uri("https://example.com/part2.mp3"), ".mp3", 500),
-            },
-            Output: new ProviderOutput(".m4b", "audio/mp4", "M4B"));
-
-        assemblingProvider.ExceptionToThrowOnAssemble = new InvalidOperationException("Transcode / assemble crashed");
-
-        var registry = new ProviderRegistry(new[] { assemblingProvider });
-        var service = h.CreateService(registry);
-
-        var result = await service.AcquireAsync(new AcquisitionRequest("assembler", "multi-1"), null, CancellationToken.None);
-
-        result.Outcome.Should().Be(AcquisitionOutcome.Failed);
-        result.ErrorCode.Should().Be("acquisition_failed");
-
-        // Book row remains marked as Failed
-        await using var db = await h.ContextFactory.CreateDbContextAsync();
-        var book = await db.Books.SingleOrDefaultAsync(b => b.Title == "Audiobook To Assemble");
-        book.Should().NotBeNull("book row must be kept on assembly failure");
-        book!.Status.Should().Be(BookStatus.Failed);
-        book.StatusMessage.Should().Be("The import failed unexpectedly.");
-
-        // Staging root contains no directories afterwards
-        Directory.GetDirectories(h.WorkingRootDir).Should().BeEmpty();
-    }
-
-    [Fact]
     public async Task Validation_EmptyParts_ReturnsProviderNoDownloadableAssets()
     {
         using var h = AcquisitionHarness.Create();
@@ -794,11 +755,11 @@ public sealed class AcquisitionServiceTests
     }
 
     [Fact]
-    public async Task AcquireAsync_SetsMilestones_DownloadingThenTranscodingThenReady()
+    public async Task AcquireAsync_SetsMilestones_DownloadingThenReady()
     {
         using var h = AcquisitionHarness.Create();
 
-        var assemblingProvider = new FakeAssemblingContentProvider("assembler", "Assembling Source");
+        var assemblingProvider = new FakeContentProvider("assembler", "Single File Source");
         assemblingProvider.PlanResult = new ProviderAcquisitionPlan(
             ProviderId: "assembler",
             ExternalId: "milestone-1",
@@ -808,7 +769,7 @@ public sealed class AcquisitionServiceTests
             {
                 new ProviderDownloadPart(new Uri("https://example.com/part1.mp3"), ".mp3", 500),
             },
-            Output: new ProviderOutput(".m4b", "audio/mp4", "M4B"));
+            Output: new ProviderOutput(".mp3", "audio/mpeg", "MP3"));
 
         var recordedStatuses = new List<BookStatus>();
 

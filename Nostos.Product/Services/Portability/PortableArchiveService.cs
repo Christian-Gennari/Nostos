@@ -17,7 +17,8 @@ public sealed class PortableArchiveService(
     IBookAssetStorage assets,
     ILogger<PortableArchiveService> logger,
     IBookTextIngestionScheduler? bookTextScheduler = null,
-    TimeProvider? timeProvider = null)
+    TimeProvider? timeProvider = null,
+    IBookTrackStorage? trackStorage = null)
     : IPortableArchiveService
 {
     private const int CopyBufferSize = 128 * 1024;
@@ -30,6 +31,7 @@ public sealed class PortableArchiveService(
 
     private readonly NostosDbContext _db = db;
     private readonly IBookAssetStorage _assets = assets;
+    private readonly IBookTrackStorage? _tracks = trackStorage;
     private readonly ILogger<PortableArchiveService> _logger = logger;
     private readonly IBookTextIngestionScheduler? _bookTextScheduler = bookTextScheduler;
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
@@ -411,22 +413,14 @@ public sealed class PortableArchiveService(
                         media.Reference,
                         cancellationToken);
 
-                    if (media.Descriptor.Kind == PortableArchiveFormat.BookMediaKind)
-                    {
-                        await _assets.SaveBookFileAsync(
-                            media.Descriptor.BookId,
-                            content,
-                            media.Descriptor.FileName,
-                            cancellationToken);
-                    }
-                    else
-                    {
-                        await _assets.SaveBookCoverAsync(
-                            media.Descriptor.BookId,
-                            content,
-                            media.Descriptor.FileName,
-                            cancellationToken);
-                    }
+                    await PortableMediaStorage.SaveAsync(
+                        _assets,
+                        _tracks,
+                        media.Descriptor.BookId,
+                        media.Descriptor.Kind,
+                        media.Descriptor.FileName,
+                        content,
+                        cancellationToken);
                 }
 
                 await VerifyRelationalIntegrityAsync(
@@ -761,6 +755,14 @@ public sealed class PortableArchiveService(
                     PortableArchiveFormat.BookMediaKind));
             }
 
+            foreach (var track in BookTrackList.Parse(book.TracksJson))
+            {
+                media.Add(new PortableSourceMedia(
+                    book.Id,
+                    PortableArchiveFormat.TrackMediaKind,
+                    track.FileName));
+            }
+
             if (book.HasCover)
             {
                 media.Add(new PortableSourceMedia(
@@ -840,8 +842,11 @@ public sealed class PortableArchiveService(
             audio?.Duration,
             audio?.Narrator,
             book.FileDetails.ChaptersJson,
-            book.FileDetails.HasFile,
-            !string.IsNullOrWhiteSpace(book.FileDetails.CoverFileName));
+            // A multi-track audiobook reports HasFile with no primary file; its
+            // media travels as tracks instead.
+            book.FileDetails.HasFile && book.FileDetails.TracksJson is null,
+            !string.IsNullOrWhiteSpace(book.FileDetails.CoverFileName),
+            book.FileDetails.TracksJson);
     }
 
     private async Task<IReadOnlyList<PinnedPortableSourceMedia>> PinSourceMediaAsync(
@@ -852,7 +857,7 @@ public sealed class PortableArchiveService(
 
         foreach (var source in snapshot.Media)
         {
-            var info = await GetAssetInfoAsync(source.BookId, source.Kind, ct);
+            var info = await GetAssetInfoAsync(source.BookId, source.Kind, source.FileName, ct);
             if (info is null)
             {
                 throw new PortableArchiveException(
@@ -860,13 +865,18 @@ public sealed class PortableArchiveService(
                     $"Book {source.BookId} references a {source.Kind} asset that is missing from storage.");
             }
 
+            // A track keeps the name it is stored under; a book file or cover
+            // is named after its kind, with the stored file's extension.
             var extension = Path.GetExtension(info.FileName).ToLowerInvariant();
-            if (source.Kind == PortableArchiveFormat.BookMediaKind)
-                BookAssetFormats.RequireBookExtension($"book{extension}");
-            else
-                BookAssetFormats.RequireCoverExtension($"cover{extension}");
+            var canonicalFileName = PortableArchiveFormat.CanonicalMediaFileName(
+                    source.Kind,
+                    source.Kind == PortableArchiveFormat.TrackMediaKind
+                        ? source.FileName ?? string.Empty
+                        : $"{source.Kind}{extension}")
+                ?? throw new InvalidOperationException(
+                    $"Unsupported {source.Kind} file type: {extension}");
 
-            await using var opened = await OpenAssetAsync(source.BookId, source.Kind, ct);
+            await using var opened = await OpenAssetAsync(source.BookId, source.Kind, source.FileName, ct);
             if (opened is null)
             {
                 throw new PortableArchiveException(
@@ -879,7 +889,7 @@ public sealed class PortableArchiveService(
                 PortableArchiveLimits.MaxSingleEntryBytes,
                 ct);
 
-            var after = await GetAssetInfoAsync(source.BookId, source.Kind, ct);
+            var after = await GetAssetInfoAsync(source.BookId, source.Kind, source.FileName, ct);
             if (after is null
                 || after.Length != info.Length
                 || after.LastModified != info.LastModified
@@ -892,8 +902,8 @@ public sealed class PortableArchiveService(
             pinned.Add(new PinnedPortableSourceMedia(
                 source.BookId,
                 source.Kind,
-                PortableArchiveValidation.MediaPath(source.BookId, source.Kind, extension),
-                $"{source.Kind}{extension}",
+                PortableArchiveFormat.MediaPath(source.BookId, canonicalFileName),
+                canonicalFileName,
                 info.ContentType,
                 info.Length,
                 info.LastModified,
@@ -910,7 +920,7 @@ public sealed class PortableArchiveService(
         Memory<byte> copyBuffer,
         CancellationToken ct)
     {
-        var info = await GetAssetInfoAsync(pinned.BookId, pinned.Kind, ct);
+        var info = await GetAssetInfoAsync(pinned.BookId, pinned.Kind, pinned.FileName, ct);
         if (info is null)
         {
             throw new PortableArchiveException(
@@ -925,7 +935,7 @@ public sealed class PortableArchiveService(
             throw SourceMediaChanged(pinned.BookId, pinned.Kind);
         }
 
-        await using var opened = await OpenAssetAsync(pinned.BookId, pinned.Kind, ct);
+        await using var opened = await OpenAssetAsync(pinned.BookId, pinned.Kind, pinned.FileName, ct);
         if (opened is null)
         {
             throw new PortableArchiveException(
@@ -959,7 +969,7 @@ public sealed class PortableArchiveService(
             throw SourceMediaChanged(pinned.BookId, pinned.Kind);
         }
 
-        var afterCopy = await GetAssetInfoAsync(pinned.BookId, pinned.Kind, ct);
+        var afterCopy = await GetAssetInfoAsync(pinned.BookId, pinned.Kind, pinned.FileName, ct);
         if (afterCopy is null
             || afterCopy.Length != pinned.Length
             || afterCopy.LastModified != pinned.LastModified
@@ -981,18 +991,16 @@ public sealed class PortableArchiveService(
     private Task<StoredAssetInfo?> GetAssetInfoAsync(
         Guid bookId,
         string kind,
+        string? fileName,
         CancellationToken ct) =>
-        kind == PortableArchiveFormat.BookMediaKind
-            ? _assets.GetBookFileInfoAsync(bookId, ct)
-            : _assets.GetBookCoverInfoAsync(bookId, ct);
+        PortableMediaStorage.GetInfoAsync(_assets, _tracks, bookId, kind, fileName, ct);
 
     private Task<StoredAssetRead?> OpenAssetAsync(
         Guid bookId,
         string kind,
+        string? fileName,
         CancellationToken ct) =>
-        kind == PortableArchiveFormat.BookMediaKind
-            ? _assets.OpenBookFileAsync(bookId, null, ct)
-            : _assets.OpenBookCoverAsync(bookId, ct);
+        PortableMediaStorage.OpenAsync(_assets, _tracks, bookId, kind, fileName, ct);
 
     private static PortableArchiveException SourceMediaChanged(Guid bookId, string kind) =>
         new(
@@ -1206,18 +1214,14 @@ public sealed class PortableArchiveService(
     {
         foreach (var descriptor in media)
         {
-            var info = descriptor.Kind == PortableArchiveFormat.BookMediaKind
-                ? await _assets.GetBookFileInfoAsync(descriptor.BookId, ct)
-                : await _assets.GetBookCoverInfoAsync(descriptor.BookId, ct);
+            var info = await GetAssetInfoAsync(descriptor.BookId, descriptor.Kind, descriptor.FileName, ct);
 
             PortableArchiveValidation.ValidateStoredMediaLength(
                 descriptor.Path,
                 info?.Length,
                 descriptor.Length);
 
-            await using var opened = descriptor.Kind == PortableArchiveFormat.BookMediaKind
-                ? await _assets.OpenBookFileAsync(descriptor.BookId, null, ct)
-                : await _assets.OpenBookCoverAsync(descriptor.BookId, ct);
+            await using var opened = await OpenAssetAsync(descriptor.BookId, descriptor.Kind, descriptor.FileName, ct);
 
             PortableArchiveValidation.ValidateStoredMediaCanReopen(
                 descriptor.Path,

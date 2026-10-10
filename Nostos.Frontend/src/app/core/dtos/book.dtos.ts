@@ -26,6 +26,15 @@ export interface BookChapter {
   startTime: number;
 }
 
+/** One track of a multi-track audiobook. `duration` is in seconds. */
+export interface BookTrack {
+  number: number;
+  title: string;
+  duration: number;
+  bytes: number;
+  contentType: string;
+}
+
 export interface EditionSummaryDto {
   id: string;
   type: 'ebook' | 'audiobook' | 'physical' | string;
@@ -110,6 +119,13 @@ export interface Book {
    */
   status?: number;
   statusMessage?: string | null;
+
+  /**
+   * The ordered tracks of a multi-track audiobook; absent for a single-file
+   * book. Such a book has `hasFile` true and no `fileName`. Positions elsewhere
+   * (lastLocation, chapters) stay in seconds across the whole book.
+   */
+  tracks?: BookTrack[] | null;
 }
 
 /**

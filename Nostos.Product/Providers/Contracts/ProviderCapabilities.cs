@@ -33,10 +33,12 @@ public enum ProviderCapabilities
     RightsInformation = 1 << 5,
 
     /// <summary>
-    /// Implements <see cref="IAcquisitionAssembler"/>: what the source delivers
-    /// is not yet one playable file and has to be combined first.
+    /// The source delivers an audiobook as several ordered audio files, which
+    /// are stored as the book's tracks. Without this flag a plan with more than
+    /// one part is refused, so a multi-part item can never reach the library
+    /// with only its first part.
     /// </summary>
-    RequiresAssembly = 1 << 6,
+    MultiTrackAudiobook = 1 << 6,
 }
 
 /// <summary>The kind of reading material an item or asset represents.</summary>

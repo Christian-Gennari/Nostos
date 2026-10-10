@@ -6,7 +6,7 @@ using SixLabors.ImageSharp.Processing;
 
 namespace Nostos.Backend.Services;
 
-public class FileStorageService : IFileStorageService, IBookAssetStorage
+public class FileStorageService : IFileStorageService, IBookAssetStorage, IBookTrackStorage
 {
     private const int CopyBufferSize = 81920;
 
@@ -175,9 +175,13 @@ public class FileStorageService : IFileStorageService, IBookAssetStorage
         if (!Directory.Exists(folder))
             return null;
 
+        // A multi-track audiobook keeps its tracks in this folder too, and
+        // they share an extension with a single-file audiobook. A track is
+        // never the primary file.
         return Directory
             .EnumerateFiles(folder)
-            .FirstOrDefault(f => AllowedBookExtensions.Contains(Path.GetExtension(f)));
+            .FirstOrDefault(f => AllowedBookExtensions.Contains(Path.GetExtension(f))
+                && !BookTrackFormats.IsTrackFileName(Path.GetFileName(f)));
     }
 
     public bool DeleteBookFile(Guid bookId)
@@ -371,6 +375,152 @@ public class FileStorageService : IFileStorageService, IBookAssetStorage
         return Task.FromResult(DeleteCover(bookId));
     }
 
+    // ------------------------------------------------------------------
+    // Tracks (multi-track audiobooks)
+    // ------------------------------------------------------------------
+
+    public async Task<string> SaveTrackAsync(
+        Guid bookId,
+        int number,
+        Stream content,
+        string fileName,
+        CancellationToken ct = default)
+    {
+        var (folder, finalPath) = TrackDestination(bookId, number, fileName);
+        var tempPath = TempSiblingPath(folder, finalPath);
+
+        try
+        {
+            await WriteStreamAsync(content, tempPath, ct);
+            CommitStagedTrack(folder, number, tempPath, finalPath);
+        }
+        catch
+        {
+            TryDelete(tempPath);
+            throw;
+        }
+
+        return Path.GetFileName(finalPath);
+    }
+
+    public async Task<string> AdoptTrackAsync(
+        Guid bookId,
+        int number,
+        string sourcePath,
+        string fileName,
+        CancellationToken ct = default)
+    {
+        if (!File.Exists(sourcePath))
+            throw new FileNotFoundException("The staged track to adopt does not exist.", sourcePath);
+
+        var (folder, finalPath) = TrackDestination(bookId, number, fileName);
+        var tempPath = TempSiblingPath(folder, finalPath);
+
+        try
+        {
+            try
+            {
+                File.Move(sourcePath, tempPath, overwrite: true);
+            }
+            catch (IOException)
+            {
+                await using var source = new FileStream(
+                    sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read, CopyBufferSize, useAsync: true);
+                await WriteStreamAsync(source, tempPath, ct);
+                TryDelete(sourcePath);
+            }
+
+            CommitStagedTrack(folder, number, tempPath, finalPath);
+        }
+        catch
+        {
+            TryDelete(tempPath);
+            throw;
+        }
+
+        return Path.GetFileName(finalPath);
+    }
+
+    public Task<StoredAssetInfo?> GetTrackInfoAsync(
+        Guid bookId,
+        int number,
+        CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        var path = FindTrackPath(bookId, number);
+        return Task.FromResult(path is null ? null : InfoFromPath(path, MediaTypeMap.ForBookFile(path)));
+    }
+
+    public Task<StoredAssetRead?> OpenTrackAsync(
+        Guid bookId,
+        int number,
+        StorageByteRange? range = null,
+        CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        var path = FindTrackPath(bookId, number);
+        return Task.FromResult<StoredAssetRead?>(
+            path is null ? null : OpenPath(path, MediaTypeMap.ForBookFile(path), range));
+    }
+
+    public Task DeleteTracksAsync(Guid bookId, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        var folder = BookFolder(bookId);
+        if (!Directory.Exists(folder))
+            return Task.CompletedTask;
+
+        foreach (var path in Directory.EnumerateFiles(folder, BookTrackFormats.FileNamePrefix + "*"))
+            TryDelete(path);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Tracks are stored flat in the book folder, beside its cover, under
+    /// <see cref="BookTrackFormats.CanonicalFileName"/>. Flat on purpose:
+    /// backup, restore and library-switch retention all treat a book folder as
+    /// a set of files and refuse or ignore unexpected subfolders.
+    /// </summary>
+    private (string Folder, string FinalPath) TrackDestination(Guid bookId, int number, string fileName)
+    {
+        var extension = BookTrackFormats.RequireTrackExtension(fileName);
+        var folder = BookFolder(bookId);
+        Directory.CreateDirectory(folder);
+        return (folder, Path.Combine(folder, BookTrackFormats.CanonicalFileName(number, extension)));
+    }
+
+    private string? FindTrackPath(Guid bookId, int number)
+    {
+        if (number is < 1 or > BookTrackList.MaxTracks)
+            return null;
+
+        var folder = BookFolder(bookId);
+        if (!Directory.Exists(folder))
+            return null;
+
+        return Directory
+            .EnumerateFiles(folder, $"{BookTrackFormats.FileNamePrefix}{number:D4}.*")
+            .FirstOrDefault(path => BookTrackFormats.IsCanonicalFileName(Path.GetFileName(path), number));
+    }
+
+    /// <summary>
+    /// One file per track number: the staged file is renamed into place first
+    /// and a same-numbered track in another format is removed only afterwards.
+    /// </summary>
+    private void CommitStagedTrack(string folder, int number, string tempPath, string finalPath)
+    {
+        File.Move(tempPath, finalPath, overwrite: true);
+
+        foreach (var existing in Directory.EnumerateFiles(folder, $"{BookTrackFormats.FileNamePrefix}{number:D4}.*"))
+        {
+            if (existing.EndsWith(".partial", StringComparison.Ordinal)
+                || string.Equals(existing, finalPath, StringComparison.Ordinal))
+                continue;
+
+            TryDelete(existing);
+        }
+    }
+
     private static StoredAssetInfo InfoFromPath(string path, string contentType)
     {
         var file = new FileInfo(path);
@@ -446,7 +596,8 @@ public class FileStorageService : IFileStorageService, IBookAssetStorage
     {
         foreach (var existingFile in Directory.EnumerateFiles(bookFolder))
         {
-            if (!AllowedBookExtensions.Contains(Path.GetExtension(existingFile)))
+            if (!AllowedBookExtensions.Contains(Path.GetExtension(existingFile))
+                || BookTrackFormats.IsTrackFileName(Path.GetFileName(existingFile)))
                 continue;
 
             if (string.Equals(existingFile, except, StringComparison.Ordinal))

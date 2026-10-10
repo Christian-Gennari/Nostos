@@ -970,6 +970,9 @@ internal sealed class SelfHostedMigrationRecoveryService :
         if (string.Equals(stem, "book", StringComparison.OrdinalIgnoreCase)) return ("book", extension);
         if (string.Equals(stem, "cover", StringComparison.OrdinalIgnoreCase)) return ("cover", extension);
         if (stem.StartsWith("cover-thumb-", StringComparison.OrdinalIgnoreCase)) return ("thumbnail", extension);
+        // A track of a multi-track audiobook. Exact, case-correct name only:
+        // anything that merely resembles one stays "other".
+        if (BookTrackFormats.TryParseCanonicalFileName(fileName, out _)) return ("track", extension);
         return ("other", extension);
     }
 

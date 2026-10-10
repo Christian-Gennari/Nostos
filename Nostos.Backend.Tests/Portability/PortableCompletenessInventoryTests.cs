@@ -127,6 +127,7 @@ public sealed class PortableCompletenessInventoryTests
                     "FileName",
                     "CoverFileName",
                     "ChaptersJson",
+                    "TracksJson",
                 ],
                 excluded:
                 [

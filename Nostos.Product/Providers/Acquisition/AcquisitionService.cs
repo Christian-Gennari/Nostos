@@ -2,6 +2,7 @@ using System.Runtime.ExceptionServices;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Nostos.Backend.Data;
+using Nostos.Backend.Providers.Acquisition.Media;
 using Nostos.Backend.Providers.Contracts;
 using Nostos.Backend.Services;
 using Nostos.Backend.Services.Library;
@@ -35,12 +36,13 @@ public sealed class AcquisitionService(
     ILibraryService library,
     IDbContextFactory<NostosDbContext> contexts,
     IWebHostEnvironment environment,
-    ITranscodeLimiter transcodeLimiter,
+    IAudioDurationProbe durationProbe,
     IOptions<AcquisitionOptions> options,
     ILogger<AcquisitionService> logger,
     IAcquisitionWorkingRootProvider? workingRootProvider = null,
     IBookTextIngestionScheduler? bookTextScheduler = null,
-    BookFileMutationGate? fileMutationGate = null) : IAcquisitionService
+    BookFileMutationGate? fileMutationGate = null,
+    IBookTrackStorage? trackStorage = null) : IAcquisitionService
 {
     private readonly AcquisitionOptions _options = options.Value;
     private readonly BookFileMutationGate _fileMutationGate = fileMutationGate ?? new();
@@ -147,6 +149,14 @@ public sealed class AcquisitionService(
             throw new AcquisitionException(
                 AcquisitionException.InvalidRequest, "The source returned no title for this item.");
 
+        // More than one part is a multi-track audiobook: every part is stored
+        // as a track. Refused here, before a row exists or a byte is fetched,
+        // when the provider never declared that shape or this host cannot hold
+        // it — otherwise only the first part would reach the library.
+        var multiTrack = plan.Parts.Count > 1;
+        if (multiTrack)
+            RequireMultiTrackSupport(provider, plan);
+
         // --- 4. Authoritative duplicate check, now the asset id is known --
         var existing = await FindProvenanceAsync(plan.ProviderId, plan.ExternalId, plan.Asset.Id, ct);
         if (existing is { } existingBookId)
@@ -209,16 +219,28 @@ public sealed class AcquisitionService(
 
             var parts = await DownloadPartsAsync(provider.Id, plan, policy, workingRoot, progress, ct);
 
-            await library.SetBookStatusAsync(bookId, BookStatus.Transcoding, statusMessage: null, ct);
-            var artifact = await AssembleAsync(provider, plan, parts, workingRoot, progress, ct);
-            ValidateArtifact(artifact, plan);
+            progress.Report(new AcquisitionProgress("validating", 66));
+            ValidateParts(parts, plan);
+
+            AcquisitionArtifact? artifact = null;
+            IReadOnlyList<MeasuredTrack>? tracks = null;
+            if (multiTrack)
+            {
+                tracks = await MeasureTracksAsync(plan, parts, progress, ct);
+            }
+            else
+            {
+                // A single part IS the file.
+                artifact = new AcquisitionArtifact(parts[0].FilePath, parts[0].FileExtension, plan.Output.ContentType);
+                ValidateArtifact(artifact, plan);
+            }
 
             var cover = request.IncludeCover
                 ? await TryDownloadCoverAsync(plan, policy, ct)
                 : null;
 
             // --- 8. Commit ------------------------------------------------
-            return await CommitAsync(provider, plan, artifact, cover, request, bookId, createdByUs, progress, ct);
+            return await CommitAsync(provider, plan, artifact, tracks, cover, request, bookId, createdByUs, progress, ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -388,37 +410,78 @@ public sealed class AcquisitionService(
         return new AcquisitionProgress("downloading", Math.Clamp(percent, 10, 65), $"{completed}/{totalParts} files");
     }
 
-    private async Task<AcquisitionArtifact> AssembleAsync(
-        ProviderRegistration provider,
+    private void RequireMultiTrackSupport(ProviderRegistration provider, ProviderAcquisitionPlan plan)
+    {
+        if (!provider.Provider.Capabilities.HasFlag(ProviderCapabilities.MultiTrackAudiobook)
+            || plan.Asset.Kind != ProviderMediaKind.Audiobook)
+        {
+            throw new AcquisitionException(
+                AcquisitionException.MultiTrackUnsupported,
+                $"{provider.Provider.DisplayName} returned {plan.Parts.Count} files for an item it does not offer as a multi-track audiobook.");
+        }
+
+        if (trackStorage is null)
+            throw new AcquisitionException(
+                AcquisitionException.MultiTrackUnsupported,
+                "This server cannot store multi-track audiobooks yet.");
+
+        foreach (var part in plan.Parts)
+        {
+            if (!BookTrackFormats.TrackExtensions.Contains(NormalizeExtension(part.FileExtension)))
+                throw new AcquisitionException(
+                    AcquisitionException.MultiTrackUnsupported,
+                    $"'{part.FileExtension}' files cannot be stored as audiobook tracks.");
+        }
+    }
+
+    /// <summary>
+    /// Measures every downloaded part: how long it plays, and the checksum of
+    /// its bytes. Both come from the file that actually arrived. The durations
+    /// place the chapters and map a position in the book onto a track; size and
+    /// checksum let the book's download archive be laid out without reading
+    /// the audio again.
+    /// </summary>
+    private async Task<IReadOnlyList<MeasuredTrack>> MeasureTracksAsync(
         ProviderAcquisitionPlan plan,
         IReadOnlyList<AcquisitionPart> parts,
-        string workingRoot,
         ProgressSink progress,
         CancellationToken ct)
     {
-        progress.Report(new AcquisitionProgress("validating", 68));
-        ValidateParts(parts, plan);
+        var tracks = new List<MeasuredTrack>(parts.Count);
 
-        if (provider.Assembler is null)
+        for (var index = 0; index < parts.Count; index++)
         {
-            // A provider that delivers one usable file needs no assembly step,
-            // and the part IS the artifact. Declaring RequiresAssembly without
-            // an assembler is rejected at startup, so this branch is safe.
-            var single = parts[0];
-            return new AcquisitionArtifact(single.FilePath, single.FileExtension, plan.Output.ContentType);
+            ct.ThrowIfCancellationRequested();
+            var part = parts[index];
+
+            var duration = durationProbe.ProbeDuration(part.FilePath);
+            if (duration is null || duration.Value <= TimeSpan.Zero)
+                throw new AcquisitionException(
+                    AcquisitionException.TrackUnreadable,
+                    $"File {index + 1} of {parts.Count} from the source is not playable audio.");
+
+            uint crc;
+            await using (var stream = new FileStream(
+                part.FilePath, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, useAsync: true))
+            {
+                (crc, _) = await Crc32.ComputeAsync(stream, ct);
+            }
+
+            // The source's own name for the section is the track title; there
+            // is nothing to invent when it has none.
+            var label = plan.Parts[index].Label;
+            tracks.Add(new MeasuredTrack(
+                part,
+                Number: index + 1,
+                Title: string.IsNullOrWhiteSpace(label) ? null : label.Trim(),
+                DurationMs: (long)Math.Round(duration.Value.TotalMilliseconds),
+                Crc32: crc));
+
+            progress.Report(new AcquisitionProgress(
+                "validating", 66 + (int)((index + 1) / (double)parts.Count * 4), $"{index + 1}/{parts.Count} files"));
         }
 
-        progress.Report(new AcquisitionProgress("assembling", 72, plan.Output.Label));
-
-        // Serialised across the process: an encode of this size already
-        // saturates the box, so two at once would stall everything else.
-        using var slot = await transcodeLimiter.AcquireAsync(ct);
-
-        var artifact = await provider.Assembler.AssembleAsync(
-            new AcquisitionAssemblyContext(plan, parts, workingRoot), ct);
-
-        progress.Report(new AcquisitionProgress("assembling", 92, plan.Output.Label));
-        return artifact;
+        return tracks;
     }
 
     private static void ValidateParts(IReadOnlyList<AcquisitionPart> parts, ProviderAcquisitionPlan plan)
@@ -439,14 +502,9 @@ public sealed class AcquisitionService(
 
     private static void ValidateArtifact(AcquisitionArtifact artifact, ProviderAcquisitionPlan plan)
     {
-        if (!File.Exists(artifact.FilePath))
+        if (!File.Exists(artifact.FilePath) || new FileInfo(artifact.FilePath).Length <= 0)
             throw new AcquisitionException(
-                AcquisitionException.AssemblyFailed, "The assembled file was not produced.");
-
-        var length = new FileInfo(artifact.FilePath).Length;
-        if (length <= 0)
-            throw new AcquisitionException(
-                AcquisitionException.AssemblyFailed, "The assembled file is empty.");
+                AcquisitionException.ArtifactInvalid, "The downloaded file is empty.");
 
         // The artifact's extension decides what the library stores and which
         // reader eventually opens it, so a mismatch with the plan is a bug worth
@@ -454,8 +512,8 @@ public sealed class AcquisitionService(
         var expected = NormalizeExtension(plan.Output.FileExtension);
         if (!string.Equals(artifact.FileExtension, expected, StringComparison.OrdinalIgnoreCase))
             throw new AcquisitionException(
-                AcquisitionException.AssemblyFailed,
-                $"Assembly produced a '{artifact.FileExtension}' file where '{expected}' was expected.");
+                AcquisitionException.ArtifactInvalid,
+                $"The source delivered a '{artifact.FileExtension}' file where '{expected}' was expected.");
     }
 
     /// <summary>Cover artwork is small enough to hold in memory, unlike a book file.</summary>
@@ -504,7 +562,8 @@ public sealed class AcquisitionService(
     private async Task<AcquisitionResult> CommitAsync(
         ProviderRegistration provider,
         ProviderAcquisitionPlan plan,
-        AcquisitionArtifact artifact,
+        AcquisitionArtifact? artifact,
+        IReadOnlyList<MeasuredTrack>? tracks,
         byte[]? cover,
         AcquisitionRequest request,
         Guid bookId,
@@ -512,16 +571,34 @@ public sealed class AcquisitionService(
         ProgressSink progress,
         CancellationToken ct)
     {
-        progress.Report(new AcquisitionProgress("importing", 94, BookId: bookId));
+        progress.Report(new AcquisitionProgress("importing", 70, BookId: bookId));
 
-        // Commit the caller-owned staging artifact into durable storage. The
-        // local provider can turn this into a rename; remote storage streams the
-        // file and removes scratch only after success.
-        var storedBytes = new FileInfo(artifact.FilePath).Length;
-        string? staged;
+        // Commit the caller-owned staging files into durable storage. The
+        // local provider can turn this into a rename; remote storage streams
+        // each file and removes scratch only after success.
+        long storedBytes;
+        string? staged = null;
+        IReadOnlyList<LibraryAcquiredTrack>? storedTracks = null;
         try
         {
-            staged = await storage.AdoptBookFileAsync(bookId, artifact.FilePath, $"book{artifact.FileExtension}", ct);
+            if (tracks is not null)
+            {
+                storedBytes = tracks.Sum(track => track.Part.Bytes);
+                storedTracks = await StoreTracksAsync(bookId, tracks, progress, ct);
+            }
+            else
+            {
+                storedBytes = new FileInfo(artifact!.FilePath).Length;
+                staged = await storage.AdoptBookFileAsync(bookId, artifact.FilePath, $"book{artifact.FileExtension}", ct);
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // Tracks are stored one by one, so a cancellation can leave some
+            // behind. A row this acquisition created is deleted by the caller,
+            // but a matched row stays, and must not keep orphaned audio.
+            await RollbackAsync(bookId, storedNothing: tracks is null, multiTrack: tracks is not null);
+            throw;
         }
         catch (Exception ex)
         {
@@ -529,22 +606,32 @@ public sealed class AcquisitionService(
                 "Storing the acquired file for {ExternalId} failed with {ExceptionType}; details suppressed.",
                 plan.ExternalId,
                 ex.GetType().Name);
-            await RollbackAsync(bookId, createdByUs, storedNothing: true, plan, ct);
+            await RollbackAsync(bookId, storedNothing: tracks is null, multiTrack: tracks is not null);
             await library.SetBookStatusAsync(bookId, BookStatus.Failed, "The file could not be stored, so nothing was imported.", CancellationToken.None);
             return AcquisitionResult.Failed(
                 "storage_failed", "The file could not be stored, so nothing was imported.");
         }
+
+        progress.Report(new AcquisitionProgress("importing", 94, BookId: bookId));
 
         // Stored BEFORE the provenance write so the file name can travel with it:
         // one SaveChanges, and the row can never point at a cover that is not on
         // disk. Cover art stays a nicety — a failure here is not a failed import.
         var coverFileName = await TryAttachCoverAsync(bookId, cover, plan, ct);
 
+        // For a multi-track book the measured track lengths ARE the chapter
+        // boundaries and the total: one chapter per track, starting where the
+        // previous tracks end. That beats anything the source claimed.
+        var chapters = tracks is null ? plan.Chapters : ChaptersOf(tracks);
+        var duration = tracks is null
+            ? plan.Metadata.Duration
+            : FormatDuration(TimeSpan.FromMilliseconds(tracks.Sum(track => track.DurationMs)));
+
         var attach = await library.AttachAcquiredAssetAsync(new LibraryAttachAcquiredAssetRequest(
             ClientId: "acquisition",
             IdempotencyKey: $"acquire-{plan.ProviderId}-{plan.ExternalId}-{plan.Asset.Id}-{Guid.NewGuid():N}",
             BookId: bookId,
-            FileName: Path.GetFileName(staged),
+            FileName: staged is null ? string.Empty : Path.GetFileName(staged),
             ProviderId: plan.ProviderId,
             ProviderDisplayName: provider.Provider.DisplayName,
             ExternalId: plan.ExternalId,
@@ -553,17 +640,15 @@ public sealed class AcquisitionService(
             SourceUrl: plan.Source?.ItemUrl,
             RightsStatement: plan.Source?.RightsStatement,
             AcquiredAt: DateTime.UtcNow,
-            // What the assembler measured on the produced file beats what the
-            // source claimed: for an audiobook that is the difference between
-            // chapter markers that line up and ones that drift.
-            Duration: artifact.Duration ?? plan.Metadata.Duration,
-            Chapters: artifact.Chapters ?? plan.Chapters,
-            CoverFileName: coverFileName), ct);
+            Duration: duration,
+            Chapters: chapters,
+            CoverFileName: coverFileName,
+            Tracks: storedTracks), ct);
 
         if (ErrorCodeOf(attach) is { } attachError)
         {
             logger.LogError("Recording provenance for {ExternalId} failed: {Code}", plan.ExternalId, attachError);
-            await RollbackAsync(bookId, createdByUs, storedNothing: false, plan, ct);
+            await RollbackAsync(bookId, storedNothing: false, multiTrack: tracks is not null);
             await library.SetBookStatusAsync(bookId, BookStatus.Failed, attach.Reply, CancellationToken.None);
             return AcquisitionResult.Failed(attachError, attach.Reply);
         }
@@ -577,11 +662,67 @@ public sealed class AcquisitionService(
 
         var book = DataOf(await library.GetBookAsync(bookId, ct)) as BookDto;
         logger.LogInformation(
-            "Acquired {Provider}/{ExternalId} ({AssetId}) into book {BookId} ({Bytes} bytes).",
-            plan.ProviderId, plan.ExternalId, plan.Asset.Id, bookId, storedBytes);
+            "Acquired {Provider}/{ExternalId} ({AssetId}) into book {BookId} ({Bytes} bytes, {Tracks} tracks).",
+            plan.ProviderId, plan.ExternalId, plan.Asset.Id, bookId, storedBytes, tracks?.Count ?? 0);
 
         return AcquisitionResult.Acquired(bookId, book, $"Imported into library: {book?.Title ?? plan.Metadata.Title}.");
     }
+
+    private async Task<IReadOnlyList<LibraryAcquiredTrack>> StoreTracksAsync(
+        Guid bookId,
+        IReadOnlyList<MeasuredTrack> tracks,
+        ProgressSink progress,
+        CancellationToken ct)
+    {
+        var stored = new List<LibraryAcquiredTrack>(tracks.Count);
+
+        foreach (var track in tracks)
+        {
+            var fileName = await trackStorage!.AdoptTrackAsync(
+                bookId, track.Number, track.Part.FilePath, $"track{track.Part.FileExtension}", ct);
+
+            stored.Add(new LibraryAcquiredTrack(
+                track.Number,
+                fileName,
+                MediaTypeMap.ForBookFile(fileName),
+                track.DurationMs,
+                track.Part.Bytes,
+                track.Crc32,
+                track.Title));
+
+            // On a host whose storage is remote this is the long step, so it
+            // reports per track instead of sitting still.
+            progress.Report(new AcquisitionProgress(
+                "importing",
+                70 + (int)(stored.Count / (double)tracks.Count * 24),
+                $"{stored.Count}/{tracks.Count} files",
+                BookId: bookId));
+        }
+
+        return stored;
+    }
+
+    private static List<BookChapterDto> ChaptersOf(IReadOnlyList<MeasuredTrack> tracks)
+    {
+        var chapters = new List<BookChapterDto>(tracks.Count);
+        long cursorMs = 0;
+
+        foreach (var track in tracks)
+        {
+            chapters.Add(new BookChapterDto(track.Title ?? $"Section {track.Number}", cursorMs / 1000.0));
+            cursorMs += track.DurationMs;
+        }
+
+        return chapters;
+    }
+
+    /// <summary>
+    /// Matches the "hh:mm:ss" the rest of the app stores in
+    /// <c>AudioBookModel.Duration</c>, but without TimeSpan's 24-hour wrap — a
+    /// very long recording must not come back as "02:00:00".
+    /// </summary>
+    private static string FormatDuration(TimeSpan duration) =>
+        $"{(int)duration.TotalHours:D2}:{duration.Minutes:D2}:{duration.Seconds:D2}";
 
     /// <summary>
     /// Creates or matches the book the asset will belong to, and reports
@@ -716,28 +857,29 @@ public sealed class AcquisitionService(
             ForceCreate: edition);
     }
 
-    private async Task RollbackAsync(
-        Guid bookId,
-        bool createdByUs,
-        bool storedNothing,
-        ProviderAcquisitionPlan plan,
-        CancellationToken ct)
+    private async Task RollbackAsync(Guid bookId, bool storedNothing, bool multiTrack)
     {
-        if (!storedNothing)
+        try
         {
-            try
+            if (multiTrack)
+            {
+                // Tracks only ever land on a book that had no file, so every
+                // track present belongs to this acquisition.
+                await trackStorage!.DeleteTracksAsync(bookId, CancellationToken.None);
+            }
+            else if (!storedNothing)
             {
                 // Only the primary file: a matched book may have had a cover
                 // before this acquisition, and rollback must not take it with it.
                 await storage.DeleteBookFileAsync(bookId, CancellationToken.None);
             }
-            catch (Exception ex)
-            {
-                logger.LogWarning(
-                    "Could not remove the stored file for book {BookId} during rollback; exception type {ExceptionType}. Details suppressed.",
-                    bookId,
-                    ex.GetType().Name);
-            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(
+                "Could not remove the stored media for book {BookId} during rollback; exception type {ExceptionType}. Details suppressed.",
+                bookId,
+                ex.GetType().Name);
         }
 
         // Deliberately DO NOT delete the book row on failure:
@@ -847,9 +989,7 @@ public sealed class AcquisitionService(
     private static long EstimatedBytes(ProviderAcquisitionPlan plan)
     {
         var declared = plan.Parts.Sum(p => p.ExpectedBytes ?? 0);
-        // The assembled result is roughly the size of its parts again, and the
-        // answer must be conservative rather than optimistic.
-        return declared > 0 ? declared * 2 : 0;
+        return declared;
     }
 
     private void EnsureFreeSpace(string workingRoot, long expectedBytes)

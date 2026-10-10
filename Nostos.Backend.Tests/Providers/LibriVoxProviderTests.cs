@@ -37,31 +37,13 @@ public sealed class LibriVoxProviderTests
         throw new FileNotFoundException($"LibriVox test fixture '{filename}' could not be located in output directory or repo tree.");
     }
 
-    private sealed class StubMediaProcessRunner : IMediaProcessRunner
-    {
-        public MediaToolAvailability Availability { get; set; } =
-            new(true, "/usr/bin/ffmpeg", "/usr/bin/ffprobe", null);
-
-        public Task<TimeSpan?> ProbeDurationAsync(string path, CancellationToken ct) =>
-            Task.FromResult<TimeSpan?>(TimeSpan.FromSeconds(10));
-
-        public Task<int?> ProbeChapterCountAsync(string path, CancellationToken ct) =>
-            Task.FromResult<int?>(1);
-
-        public Task RunFfmpegAsync(IReadOnlyList<string> arguments, CancellationToken ct) =>
-            Task.CompletedTask;
-    }
-
     private static (LibriVoxProvider Provider, StubHttpMessageHandler Handler) CreateProvider(
-        StubHttpMessageHandler? handler = null,
-        IMediaProcessRunner? runner = null)
+        StubHttpMessageHandler? handler = null)
     {
         handler ??= new StubHttpMessageHandler();
         var factory = new StubHttpClientFactory(handler, new Uri("https://librivox.org"));
-        var mediaRunner = runner ?? new StubMediaProcessRunner();
-        var assembler = new LibriVoxM4bAssembler(mediaRunner, NullLogger<LibriVoxM4bAssembler>.Instance);
         var logger = NullLogger<LibriVoxProvider>.Instance;
-        var provider = new LibriVoxProvider(factory, assembler, logger);
+        var provider = new LibriVoxProvider(factory, logger);
         return (provider, handler);
     }
 
@@ -235,9 +217,9 @@ public sealed class LibriVoxProviderTests
 
         plan.Should().NotBeNull();
         plan!.ExternalId.Should().Be("2469");
-        plan.Output.FileExtension.Should().Be(".m4b");
-        plan.Output.ContentType.Should().Be("audio/mp4");
-        plan.Output.Label.Should().Be("M4B audiobook");
+        plan.Output.FileExtension.Should().Be(".mp3");
+        plan.Output.ContentType.Should().Be("audio/mpeg");
+        plan.Output.Label.Should().Be("MP3 audiobook");
         plan.Chapters.Should().BeNull();
 
         plan.Parts.Should().HaveCount(2);
@@ -355,7 +337,7 @@ public sealed class LibriVoxProviderTests
     public void PolicyAndCapabilities_AndProviderRegistryRegistration_AreValid()
     {
         // 12. Policy/capabilities: AllowedHosts contains "archive.org"; MaxBytesPerPart <= MaxTotalBytes; MaxParts > 0;
-        // Capabilities declares AudiobookAcquisition and RequiresAssembly, does NOT declare EbookAcquisition;
+        // Capabilities declares AudiobookAcquisition and MultiTrackAudiobook, does NOT declare EbookAcquisition;
         // and new ProviderRegistry(new IContentProvider[] { provider }) does not throw, and registry.Find("librivox") is not null.
         var (provider, _) = CreateProvider();
 
@@ -364,7 +346,7 @@ public sealed class LibriVoxProviderTests
         provider.MaxParts.Should().BeGreaterThan(0);
 
         provider.Capabilities.HasFlag(ProviderCapabilities.AudiobookAcquisition).Should().BeTrue();
-        provider.Capabilities.HasFlag(ProviderCapabilities.RequiresAssembly).Should().BeTrue();
+        provider.Capabilities.HasFlag(ProviderCapabilities.MultiTrackAudiobook).Should().BeTrue();
         provider.Capabilities.HasFlag(ProviderCapabilities.EbookAcquisition).Should().BeFalse();
 
         var registryAction = () => new ProviderRegistry(new IContentProvider[] { provider });

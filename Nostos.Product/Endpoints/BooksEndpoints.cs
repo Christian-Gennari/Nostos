@@ -358,6 +358,16 @@ public static class BooksEndpoints
                     await storage.SaveBookFileAsync(id, uploadStream, file.FileName, ct);
                 }
 
+                // A book holds either one primary file or a track list, never
+                // both. The uploaded file replaces the tracks; they are removed
+                // only now that the replacement is safely stored.
+                if (book.FileDetails.TracksJson is not null)
+                {
+                    book.FileDetails.TracksJson = null;
+                    if (request.HttpContext.RequestServices.GetService<IBookTrackStorage>() is { } trackStorage)
+                        await trackStorage.DeleteTracksAsync(id, ct);
+                }
+
                 book.FileDetails.HasFile = true;
                 book.FileDetails.FileName = $"book{Path.GetExtension(file.FileName)}";
                 // A local-upload row is incomplete until the canonical file
@@ -406,7 +416,9 @@ public static class BooksEndpoints
                     ct)
         );
 
-        // Download file (attachment) — used by the book detail "Download File" button
+        // Download file (attachment) — used by the book detail "Download File" button.
+        // A multi-track audiobook has no single file to hand over, so it is
+        // delivered as one archive computed over its stored tracks.
         group.MapGet(
             "/{id}/file/download",
             async (
@@ -415,14 +427,89 @@ public static class BooksEndpoints
                 HttpContext http,
                 CancellationToken ct
             ) =>
-                await StoredAssetHttpResult.CreateBookFileAsync(
+            {
+                if (http.RequestServices.GetService<AudiobookPackageService>() is { } packages
+                    && await packages.BuildAsync(id, ct) is { } package)
+                {
+                    return await StoredAssetHttpResult.CreateAsync(
+                        http,
+                        _ => Task.FromResult<StoredAssetInfo?>(package.Info(".zip", "application/zip")),
+                        (range, _) => Task.FromResult<StoredAssetRead?>(
+                            package.Open(".zip", "application/zip", range)),
+                        attachment: true,
+                        enableRanges: true,
+                        cacheControl: null,
+                        ct);
+                }
+
+                return await StoredAssetHttpResult.CreateBookFileAsync(
                     http,
                     storage,
                     id,
                     attachment: true,
                     enableRanges: true,
                     cacheControl: null,
-                    ct)
+                    ct);
+            }
+        );
+
+        // Stream one track of a multi-track audiobook (inline) for playback;
+        // supports HTTP Range requests like the single-file stream above.
+        group.MapGet(
+            "/{id}/tracks/{number:int}",
+            async (
+                Guid id,
+                int number,
+                HttpContext http,
+                CancellationToken ct
+            ) =>
+                http.RequestServices.GetService<IBookTrackStorage>() is not { } tracks
+                    ? Results.NotFound()
+                    : await StoredAssetHttpResult.CreateAsync(
+                        http,
+                        token => tracks.GetTrackInfoAsync(id, number, token),
+                        (range, token) => tracks.OpenTrackAsync(id, number, range, token),
+                        attachment: false,
+                        enableRanges: true,
+                        cacheControl: "private, max-age=300",
+                        ct)
+        );
+
+        // Download one track (attachment), named after its place and title in
+        // the book rather than its storage name.
+        group.MapGet(
+            "/{id}/tracks/{number:int}/download",
+            async (
+                Guid id,
+                int number,
+                IBookRepository repo,
+                HttpContext http,
+                CancellationToken ct
+            ) =>
+            {
+                if (http.RequestServices.GetService<IBookTrackStorage>() is not { } tracks)
+                    return Results.NotFound();
+
+                var book = await repo.GetByIdAsync(id);
+                var list = BookTrackList.Parse(book?.FileDetails.TracksJson);
+                var track = list.FirstOrDefault(candidate => candidate.Number == number);
+                if (track is null)
+                    return Results.NotFound();
+
+                var downloadName = AudiobookPackageNaming.TrackEntryName(track, list.Count);
+                return await StoredAssetHttpResult.CreateAsync(
+                    http,
+                    async token =>
+                        await tracks.GetTrackInfoAsync(id, number, token) is { } info
+                            ? info with { FileName = downloadName }
+                            : null,
+                    async (range, token) =>
+                        (await tracks.OpenTrackAsync(id, number, range, token))?.WithFileName(downloadName),
+                    attachment: true,
+                    enableRanges: true,
+                    cacheControl: null,
+                    ct);
+            }
         );
 
         // Upload cover

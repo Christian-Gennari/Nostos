@@ -23,7 +23,6 @@ public sealed class ProviderRegistryTests
         registration.Catalog.Should().BeSameAs(provider);
         registration.Planner.Should().BeSameAs(provider);
         registration.DownloadPolicy.Should().BeSameAs(provider);
-        registration.Assembler.Should().BeSameAs(provider);
     }
 
     [Theory]
@@ -148,14 +147,14 @@ public sealed class ProviderRegistryTests
     }
 
     [Fact]
-    public void DeclaringRequiresAssembly_WithoutIAcquisitionAssembler_ThrowsInvalidOperationException()
+    public void DeclaringMultiTrackAudiobook_WithoutAudiobookAcquisition_ThrowsInvalidOperationException()
     {
-        var provider = new MinimalFakeProvider("archive", "Archive", ProviderCapabilities.RequiresAssembly);
+        var provider = new MinimalFakeProvider("archive", "Archive", ProviderCapabilities.MultiTrackAudiobook);
 
         var act = () => new ProviderRegistry(new[] { provider });
 
         act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*declares ProviderCapabilities.RequiresAssembly = True but does not implement IAcquisitionAssembler*");
+            .WithMessage("*declares ProviderCapabilities.MultiTrackAudiobook without ProviderCapabilities.AudiobookAcquisition*");
     }
 
     [Fact]
@@ -321,8 +320,7 @@ public sealed class ProviderRegistryTests
         IProviderSearch,
         IProviderCatalog,
         IProviderAcquisitionPlanner,
-        IProviderDownloadPolicy,
-        IAcquisitionAssembler
+        IProviderDownloadPolicy
     {
         public FullFeaturedFakeProvider(string id, string displayName)
         {
@@ -331,7 +329,8 @@ public sealed class ProviderRegistryTests
             Capabilities = ProviderCapabilities.Search
                 | ProviderCapabilities.ItemRetrieval
                 | ProviderCapabilities.EbookAcquisition
-                | ProviderCapabilities.RequiresAssembly;
+                | ProviderCapabilities.AudiobookAcquisition
+                | ProviderCapabilities.MultiTrackAudiobook;
         }
 
         public string Id { get; }
@@ -351,9 +350,6 @@ public sealed class ProviderRegistryTests
             throw new NotImplementedException();
 
         public Task<ProviderAcquisitionPlan?> PlanAcquisitionAsync(ProviderAcquisitionRequest request, CancellationToken ct = default) =>
-            throw new NotImplementedException();
-
-        public Task<AcquisitionArtifact> AssembleAsync(AcquisitionAssemblyContext context, CancellationToken ct = default) =>
             throw new NotImplementedException();
     }
 

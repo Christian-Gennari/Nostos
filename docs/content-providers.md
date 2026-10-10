@@ -45,7 +45,6 @@ has to stub out:
 | `IProviderCatalog` | Full detail for one external item id. |
 | `IProviderAcquisitionPlanner` | Resolve item + asset into concrete download parts and an output format. |
 | `IProviderDownloadPolicy` | Which hosts may be downloaded from, and within what bounds. |
-| `IAcquisitionAssembler` | Combine downloaded parts into one file (multi-track audiobooks only). |
 
 `ProviderRegistry` resolves each provider into a `ProviderRegistration` bundle
 (provider + the capability implementations it actually supplies), so no caller
@@ -87,12 +86,15 @@ AcquisitionRequest { ProviderId, ExternalId, AssetId?, CollectionIds? }
   6. free-space pre-flight
   7. download every part (bounded concurrency, caps, retries)
   8. validate the parts
-  9. assemble (provider assembler, or the single part is the artifact)
+  9. one part: it is the file. Several parts: measure each one's duration
+     and CRC-32; they become the tracks of a multi-track audiobook
  10. cover artwork (best effort, image-validated)
   ---------- commit: library writes ----------
  11. create/match the book via ILibraryService
- 12. adopt the staged file into storage (a rename on the same volume)
- 13. AttachAcquiredAssetAsync: file details + provenance in ONE transaction
+ 12. adopt the staged file, or each track, into storage (a rename on the
+     same volume)
+ 13. AttachAcquiredAssetAsync: file details or track list + provenance in ONE
+     transaction
  14. cover (best effort)
  15. staging directory removed (finally)
 ```
@@ -131,7 +133,8 @@ whole mechanism:
 
 | Failure | What survives |
 | --- | --- |
-| Download/validation/assembly | Nothing. No book, no files, no staging directory. |
+| Download/validation/measurement | Nothing stored. The book row stays, marked Failed, so the import can be retried; no files, no staging directory. |
+| Storing tracks | Tracks stored before the failure are removed again. |
 | Storage (`AdoptBookFileAsync`) | No book (rolled back), no files, no staging directory. |
 | Provenance write | The adopted file is deleted, and a book this run created is deleted. Staging directory removed. |
 
@@ -176,8 +179,8 @@ through it too:
 - `SaveBookFileAsync(bookId, IFormFile)` — a thin wrapper over the above, so
   manual uploads and remote acquisitions cannot drift apart.
 - `AdoptBookFileAsync(bookId, sourcePath, fileName, ct)` — moves an
-  already-materialised file into place. Acquisition downloads and assembles
-  hundreds of megabytes into staging, and must not keep a second copy of it.
+  already-materialised file into place. Acquisition downloads hundreds of
+  megabytes into staging, and must not keep a second copy of it.
   The destination is derived entirely from the book id and a validated
   extension; only the source is a path.
 - `DeleteBookFile(bookId)` — removes only the primary file, leaving covers
@@ -347,11 +350,8 @@ delay between pages; SelfHosted search remains live and on demand.
   and get the app OOM-killed. Staging lives beside the books directory, which
   also makes committing the result a rename rather than a copy.
 - **Concurrency is bounded.** `Acquisition:DownloadConcurrency` (default 3) per
-  job, and `Acquisition:MaxConcurrentTranscodes` (default 1) process-wide —
-  encoding a feature-length audiobook already saturates the machine, and a
-  second concurrent encode makes the whole server unresponsive rather than
-  merely slow.
-- **Cancellation propagates** through planning, download, assembly and cleanup.
+  job, and `Acquisition:MaxConcurrentJobs` (default 2) imports at once.
+- **Cancellation propagates** through planning, download, storing and cleanup.
 
 ## Configuration
 
@@ -375,8 +375,8 @@ delay between pages; SelfHosted search remains live and on demand.
     "DownloadTimeoutSeconds": 900,   // per part
     "AcquisitionTimeoutMinutes": 240,// whole job
     "MaxRedirects": 5,
-    "MaxConcurrentTranscodes": 1,    // process-wide, 1..4
-    "FreeSpaceFactor": 2.5,          // required free space vs expected bytes
+    "MaxConcurrentJobs": 2,          // imports at once, 1..3
+    "FreeSpaceFactor": 1.5,          // required free space vs expected bytes
     "MinimumFreeSpaceBytes": 536870912,
     "JobRetentionMinutes": 180,      // how long a finished job stays pollable
     "MaxRetainedJobs": 50
@@ -411,9 +411,9 @@ delay between pages; SelfHosted search remains live and on demand.
 
 - Never write to the database, never touch `Storage`, never create a book.
 - Never return a URL to a client, and never accept one from a client.
-- Never implement reader behaviour. If the source's representation does not
-  match how Nostos models a book (a multi-track audiobook, say), implement
-  `IAcquisitionAssembler` and normalize it during acquisition instead.
+- Never implement reader behaviour. A source that publishes an audiobook as
+  several audio files declares `ProviderCapabilities.MultiTrackAudiobook` and
+  plans one part per file; the pipeline stores them as the book's tracks.
 - Declare capabilities honestly; the registry enforces the correspondence with
   the interfaces at startup.
 
@@ -583,7 +583,7 @@ Standard-Ebooks-specific behavior is added to the library or EPUB reader.
 ## LibriVox (built-in provider)
 
 Registered as `librivox`. The worked example of a provider whose material is
-**not** a single file — the case `RequiresAssembly` exists for.
+**not** a single file — the case `MultiTrackAudiobook` exists for.
 
 **Protocol.** LibriVox's JSON API, not the website:
 
@@ -619,89 +619,69 @@ not sent at all.
 - `PartCount` — the section count, which is what the user needs to judge a
   recording's size.
 
-**One asset, deliberately.** A LibriVox item offers exactly one asset, `m4b`.
-There is no per-track asset: the multi-track form is an implementation detail of
-the source, not something a user should be able to import. Asking for any other
-asset fails with `provider_asset_unavailable` rather than quietly importing the
-M4B anyway.
+**One asset, deliberately.** A LibriVox item offers exactly one asset: the whole
+recording. There is no per-section asset, because a user imports a book, not one
+chapter of it. Asking for any other asset fails with `provider_asset_unavailable`.
+The asset's id is `m4b` for historical reasons: it is part of persisted
+provenance and of catalog snapshots, where it is what recognises a recording as
+already imported, so it was not renamed when the M4B conversion was removed.
 
-### The M4B assembly
-
-```
-ordered MP3 sections -> download -> validate -> ffprobe each -> concat -> AAC -> single .m4b -> chapters
-```
-
-The audio reader plays one stream, so the track set is absorbed here, once. What
-lands in the library is one local `.m4b`; nothing downstream knows LibriVox
-exists.
-
-Four details are load-bearing, and each was verified against ffmpeg before being
-relied on:
-
-1. **`-ar 44100` is required.** Sections are recorded by different volunteers
-   over years. The first section of a real recording measured here was
-   **22.05 kHz**; without an explicit rate the AAC encoder adopts the first
-   input's rate and silently downsamples the entire book.
-2. **Chapters are measured, not read from the API.** The feed's per-section
-   `playtime` is rounded and drifts; across forty sections that accumulates into
-   tens of seconds of misalignment. Each downloaded file is probed with ffprobe
-   and the chapter spans are cumulative real durations. (On the recording used
-   for the smoke test the API and the measurement agreed to the second — which is
-   luck, not a guarantee.)
-3. **The ffmetadata chapter key is `title`, with `TIMEBASE=1/1000`.** The
-   plausible-looking `CHAPTERTITLE` is not a key ffmpeg recognises and fails
-   *silently*, producing chapters with blank names. Values are escaped for
-   `=`, `;`, `#` and `\`, because chapter titles come from volunteers and
-   contain those characters.
-4. **`-map_chapters 1` is required alongside `-map_metadata 1`.** By default
-   ffmpeg copies chapters from the first input that has any, so an ID3 chapter
-   tag on section one would win over the generated table.
-
-The effective command is:
+### Multi-track import
 
 ```
-ffmpeg -f concat -safe 0 -i concat.txt -i chapters.txt \
-       -map 0:a -map_metadata 1 -map_chapters 1 \
-       -c:a aac -b:a 64k -ac 1 -ar 44100 -movflags +faststart -f ipod out.m4b
+ordered MP3 sections -> download -> validate -> measure each -> store each as a track
 ```
 
-The concat *demuxer* is used rather than the concat filter: these recordings run
-to tens of sections, and a filter graph would need an input and a pad per
-section. `-movflags +faststart` matters because the file is hundreds of
-megabytes and the reader streams it with Range requests — without it the index
-atom sits at the end of the file and seeking stalls. `-ac 1`/`-b:a 64k` matches
-the sources (mono 64 kbps speech); a higher bitrate cannot restore detail that
-was never recorded.
+Each section is stored **unchanged** as one track of a single audiobook. Nothing
+is decoded, resampled or re-encoded, so an import costs a download and needs no
+media tool on the server. (Until issue #835 the sections were re-encoded into
+one chaptered M4B with ffmpeg, which took about one CPU core for ten minutes or
+more per book and was the most expensive thing the server did.)
 
-The finished file is then verified before it is accepted: the chapter count
-ffprobe can see must equal the number generated, and the duration must match the
-measured total within a small tolerance. A chapter table that silently failed to
-apply is exactly the failure this step exists to catch, so the pipeline does not
-report success merely because the tracks downloaded.
+- **Tracks.** A multi-track audiobook has `HasFile = true`, no `FileName`, and
+  an ordered track list in `FileInfoDetails.TracksJson` (`BookTrackList`):
+  number, stored name (`track-0001.mp3`), content type, duration, size and
+  CRC-32. Storage goes through `IBookTrackStorage`, a seam separate from
+  `IBookAssetStorage` so a host can adopt it independently; a host without it
+  refuses a multi-track import before downloading anything.
+- **Measured, not claimed.** Each track's duration is read from the downloaded
+  file with the tag library Nostos already uses for uploads. The feed's
+  per-section `playtime` is rounded and drifts, which over forty sections is
+  tens of seconds. On fifteen sections from six recordings the managed
+  measurement agreed with ffprobe to within 27 ms per file.
+- **Chapters.** One chapter per track, starting where the tracks before it end.
+- **One timeline.** Reading progress, chapters, note anchors and the
+  assistant's audio timestamp stay in seconds across the whole book. Only the
+  player and the delivery layer translate a position into a track and an
+  offset. The player moves between tracks on the audio element's own `ended`
+  event, so a duration that is a few milliseconds off cannot cut a track short.
+- **Stored flat.** Tracks sit in the book's folder beside its cover, not in a
+  subfolder: backup, restore and library-switch retention treat a book folder
+  as a set of files and refuse unexpected directories.
 
-### Runtime prerequisite: ffmpeg and ffprobe
+### Downloading a multi-track audiobook
 
-Importing a LibriVox recording **requires `ffmpeg` and `ffprobe` on the server**.
-This is a real dependency and is treated as one:
+There is no single file to hand over, so the Download button and OPDS deliver
+the book as **one archive, computed on the fly**: an uncompressed ZIP that is
+also a [Readium audiobook package](https://readium.org/webpub-manifest/profiles/audiobook)
+(`manifest.json`, the cover, and the tracks named `01 - Title.mp3` so they sort
+in listening order). Unzipped it is an ordered folder of the original MP3s.
 
-- it is **detected at startup** by `MediaProcessRunner`, which resolves each tool
-  on `PATH` (or from `Media:FfmpegPath` / `Media:FfprobePath`) and checks it is a
-  real executable — availability is a fact rather than an assumption;
-- it is **reported at the point of use**: with the tools absent, the import fails
-  with `media_tool_missing` and the message
-  *"Importing a LibriVox recording needs ffmpeg and ffprobe on the server's PATH
-  (or Media:FfmpegPath / Media:FfprobePath set to their full paths)."*
-- it **degrades partially**, not catastrophically: with the tools absent the app
-  starts normally, and LibriVox search and item detail still work — only the
-  acquisition step fails.
+It is never stored. Because every track's size and CRC-32 were recorded at
+import, the archive's layout is known before a byte is sent
+(`StoredZipLayout`), which gives it an exact `Content-Length`, an entity tag and
+byte-range support — an interrupted download resumes — with no temporary file.
 
-Gutenberg imports need no external tooling, and a server without ffmpeg is a
-perfectly valid Nostos deployment.
+| Route | What it serves |
+| --- | --- |
+| `GET /api/books/{id}/tracks/{n}` | One track, inline, with ranges (playback). |
+| `GET /api/books/{id}/tracks/{n}/download` | One track as an attachment. |
+| `GET /api/books/{id}/file/download` | The whole book as a `.zip`. |
+| `GET /opds/books/{id}/audiobook` | The same archive as `application/audiobook+zip`. |
+| `GET /opds/books/{id}/manifest.json` | A streaming manifest (`application/audiobook+json`) whose tracks are the route below. |
+| `GET /opds/books/{id}/tracks/{n}` | One track for OPDS clients. |
 
-**Encoding cost.** Speech AAC encodes at roughly 70–100× real time on one core,
-so a 13-hour audiobook takes about 8–10 minutes. Encodes are serialised process-wide
-(`AcquisitionOptions:MaxConcurrentTranscodes`, default 1) because one encode
-already saturates the box.
+Single-file books are unaffected by all of this.
 
 ### Operational notes
 

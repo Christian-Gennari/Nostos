@@ -100,7 +100,7 @@ public sealed class StandardEbooksProviderTests
         provider.Capabilities.HasFlag(ProviderCapabilities.CoverArt).Should().BeTrue();
         provider.Capabilities.HasFlag(ProviderCapabilities.RightsInformation).Should().BeTrue();
         provider.Capabilities.HasFlag(ProviderCapabilities.AudiobookAcquisition).Should().BeFalse();
-        provider.Capabilities.HasFlag(ProviderCapabilities.RequiresAssembly).Should().BeFalse();
+        provider.Capabilities.HasFlag(ProviderCapabilities.MultiTrackAudiobook).Should().BeFalse();
 
         provider.AllowedHosts.Should().Equal("standardebooks.org");
         provider.MaxParts.Should().Be(1);

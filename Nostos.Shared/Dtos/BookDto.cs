@@ -89,7 +89,24 @@ public record BookDto(
     // Life-cycle status for create-on-confirm imports. Ready = 0, Downloading = 1,
     // Transcoding = 2, Failed = 3, UploadPending = 4. APPENDED to preserve positional record stability.
     Nostos.Shared.Enums.BookStatus Status = Nostos.Shared.Enums.BookStatus.Ready,
-    string? StatusMessage = null
+    string? StatusMessage = null,
+    // The ordered tracks of a multi-track audiobook; null for a single-file
+    // book. Such a book reports HasFile = true with no FileName: the tracks are
+    // its media. APPENDED to preserve positional record stability.
+    IEnumerable<BookTrackDto>? Tracks = null
+);
+
+/// <summary>
+/// One track of a multi-track audiobook. <paramref name="Duration"/> is in
+/// seconds; positions elsewhere (progress, chapters) stay in seconds across the
+/// whole book, and a client maps them onto tracks with these durations.
+/// </summary>
+public sealed record BookTrackDto(
+    int Number,
+    string Title,
+    double Duration,
+    long Bytes,
+    string ContentType
 );
 
 /// <summary>

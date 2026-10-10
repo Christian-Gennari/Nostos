@@ -1158,6 +1158,9 @@ namespace Nostos.Backend.Migrations
                             b1.Property<string>("LocationsJson")
                                 .HasColumnType("TEXT");
 
+                            b1.Property<string>("TracksJson")
+                                .HasColumnType("TEXT");
+
                             b1.HasKey("BookModelId");
 
                             b1.ToTable("Books");

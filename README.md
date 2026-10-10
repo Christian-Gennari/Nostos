@@ -52,7 +52,7 @@ Keep different kinds of books in one collection without flattening them into the
 
 - **Physical books:** Add books with metadata and ISBN lookup while keeping them alongside digital titles.
 - **EPUB and PDF:** Store and read files directly in Nostos.
-- **Audiobooks:** Import M4B, M4A, and MP3 audio with chapter-aware playback.
+- **Audiobooks:** Import M4B, M4A, and MP3 audio with chapter-aware playback. Multi-track audiobooks play as one continuous book.
 - **Collections and filtering:** Organize books into nested collections, move them with drag and drop, and filter by reading state, rating, recency, or collection.
 - **Works and editions:** Nostos can group matching editions using normalized ISBNs or title and author identity.
 - **Free-source acquisition:** Search and import supported public-domain material from Project Gutenberg and LibriVox. Imported books become ordinary Nostos library items rather than remaining dependent on the source.
@@ -231,7 +231,6 @@ Nostos/
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/download)
 - [Node.js LTS](https://nodejs.org/) with npm
-- Optional: `ffmpeg` and `ffprobe` for LibriVox audiobook imports, which are assembled into chaptered `.m4b` files
 
 ### Development
 

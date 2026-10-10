@@ -791,3 +791,121 @@ describe('AudioReader sleep timer (issue #47)', () => {
     ).not.toBeNull();
   });
 });
+
+describe('AudioReader with a multi-track audiobook (issue #835)', () => {
+  // The playlist player drives one <audio> element; the test environment has
+  // no media stack, so a minimal element stands in for it.
+  class StubAudio extends EventTarget {
+    static instances: StubAudio[] = [];
+    src = '';
+    preload = '';
+    currentTime = 0;
+    paused = true;
+    ended = false;
+    playbackRate = 1;
+    defaultPlaybackRate = 1;
+    constructor() {
+      super();
+      StubAudio.instances.push(this);
+    }
+    load(): void {}
+    play(): Promise<void> {
+      this.paused = false;
+      this.dispatchEvent(new Event('playing'));
+      return Promise.resolve();
+    }
+    pause(): void {
+      this.paused = true;
+    }
+    removeAttribute(): void {
+      this.src = '';
+    }
+  }
+
+  let fixture: ComponentFixture<AudioReader>;
+  let component: AudioReader;
+
+  beforeEach(async () => {
+    StubAudio.instances = [];
+    howlerState.instances.length = 0;
+    vi.stubGlobal('Audio', StubAudio);
+    await TestBed.configureTestingModule({
+      imports: [AudioReader],
+      providers: [
+        { provide: BooksService, useValue: { updateProgress: vi.fn(() => of(null)) } },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(AudioReader);
+    component = fixture.componentInstance;
+    fixture.componentRef.setInput('bookId', 'multi-track-book');
+    fixture.componentRef.setInput(
+      'book',
+      makeBook({
+        fileName: null,
+        lastLocation: '130',
+        chapters: [
+          { title: 'One', startTime: 0 },
+          { title: 'Two', startTime: 100 },
+        ],
+        tracks: [
+          { number: 1, title: 'One', duration: 100, bytes: 10, contentType: 'audio/mpeg' },
+          { number: 2, title: 'Two', duration: 200, bytes: 20, contentType: 'audio/mpeg' },
+        ],
+      }),
+    );
+  });
+
+  afterEach(() => {
+    fixture.destroy();
+    vi.unstubAllGlobals();
+  });
+
+  it('plays the tracks through one audio element instead of a single file', () => {
+    fixture.detectChanges();
+
+    expect(StubAudio.instances.length).toBe(1);
+    expect(StubAudio.instances[0].src).toBe('/api/books/multi-track-book/tracks/1');
+    expect(howlerState.instances.length).toBe(0);
+  });
+
+  it('shows one continuous book and resumes at the saved position in the right track', () => {
+    fixture.detectChanges();
+    const audio = StubAudio.instances[0];
+
+    audio.dispatchEvent(new Event('loadedmetadata'));
+
+    expect(component.loading()).toBe(false);
+    expect(component.duration()).toBe(300);
+    // 130 s into the book is 30 s into the second track.
+    expect(audio.src).toBe('/api/books/multi-track-book/tracks/2');
+    expect(component.currentTime()).toBe(130);
+
+    audio.dispatchEvent(new Event('loadedmetadata'));
+    expect(audio.currentTime).toBe(30);
+    expect(component.timeLabels()).toEqual({ current: '2:10', total: '5:00' });
+  });
+
+  it('does not restart playback when the book object is refreshed', () => {
+    fixture.detectChanges();
+    const audio = StubAudio.instances[0];
+    audio.dispatchEvent(new Event('loadedmetadata'));
+
+    fixture.componentRef.setInput(
+      'book',
+      makeBook({
+        fileName: null,
+        lastLocation: '5',
+        tracks: [
+          { number: 1, title: 'One', duration: 100, bytes: 10, contentType: 'audio/mpeg' },
+          { number: 2, title: 'Two', duration: 200, bytes: 20, contentType: 'audio/mpeg' },
+        ],
+      }),
+    );
+    fixture.detectChanges();
+
+    expect(StubAudio.instances.length).toBe(1);
+    expect(component.currentTime()).toBe(130);
+  });
+});
+

@@ -85,7 +85,9 @@ public sealed class AcquisitionException(string code, string message) : Exceptio
     public const string NoAssets = "provider_no_downloadable_assets";
     public const string TooManyParts = "download_too_many_parts";
     public const string PartMissing = "download_part_missing";
-    public const string AssemblyFailed = "assembly_failed";
+    public const string ArtifactInvalid = "acquired_file_invalid";
+    public const string MultiTrackUnsupported = "multi_track_unsupported";
+    public const string TrackUnreadable = "track_unreadable";
     public const string InsufficientSpace = "insufficient_free_space";
     public const string Conflict = "acquisition_conflict";
 }

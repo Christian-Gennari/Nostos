@@ -258,6 +258,8 @@ builder.Services.AddSingleton<IFileStorageService>(
     sp => sp.GetRequiredService<FileStorageService>());
 builder.Services.AddSingleton<IBookAssetStorage>(
     sp => sp.GetRequiredService<FileStorageService>());
+builder.Services.AddSingleton<IBookTrackStorage>(
+    sp => sp.GetRequiredService<FileStorageService>());
 builder.Services.AddNostosSelfHostedHealthChecks();
 
 builder.Services.AddSingleton<BackupSettingsProvider>();

@@ -72,6 +72,8 @@ public sealed class MigrationSchemaUpgradeTests : IDisposable
                 .Should().StartWith(currentMigrationId, "the durable-transfer migration is the next pending one");
         }
 
+        await LaterBookColumns.RestoreAsync(originalOptions);
+
         // 2. Populate representative preexisting library/notes/writing/
         //    settings/backup data.
         await SeedLegacyDataAsync(originalOptions);

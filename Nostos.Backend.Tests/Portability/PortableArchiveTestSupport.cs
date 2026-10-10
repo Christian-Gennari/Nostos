@@ -77,7 +77,8 @@ internal sealed class LocalPortableTestLibrary : IAsyncDisposable
             Storage,
             NullLogger<PortableArchiveService>.Instance,
             bookTextScheduler: null,
-            timeProvider: timeProvider);
+            timeProvider: timeProvider,
+            trackStorage: Storage);
 
     public async ValueTask DisposeAsync()
     {

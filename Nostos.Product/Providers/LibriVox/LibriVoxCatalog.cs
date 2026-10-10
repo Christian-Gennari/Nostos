@@ -68,10 +68,14 @@ internal static partial class LibriVoxCatalog
     public const string RightsUrl = "https://librivox.org/pages/public-domain/";
 
     /// <summary>
-    /// The one asset a LibriVox item offers: every section, combined into a
-    /// single chaptered M4B. There is deliberately no per-track asset — the
-    /// multi-track form is an implementation detail of the source, not
-    /// something a user should be able to import.
+    /// The one asset a LibriVox item offers: the whole recording, every
+    /// section. There is deliberately no per-section asset — a user imports a
+    /// book, not one chapter of it.
+    ///
+    /// The value is historical. This id is part of persisted provenance and of
+    /// catalog snapshots, where it is what recognises a recording as already
+    /// imported; it dates from when the sections were combined into one M4B.
+    /// Renaming it would let every such book be imported a second time.
     /// </summary>
     public const string AudiobookAssetId = "m4b";
 

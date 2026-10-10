@@ -776,15 +776,15 @@ describe('Library', () => {
     );
   });
 
-  it('names the transcode stage rather than calling everything downloading', () => {
+  it('names the saving stage rather than calling everything downloading', () => {
     component.viewMode.set('grid');
-    component.rawBooks.set([importingBook({ status: 2 })]);
-    importEntries.set([activity({ stage: 'assembling', percent: 72 })]);
+    component.rawBooks.set([importingBook({ status: 1 })]);
+    importEntries.set([activity({ stage: 'importing', percent: 82 })]);
     fixture.detectChanges();
 
     const host = fixture.nativeElement as HTMLElement;
-    expect(host.querySelector('.import-status-label')!.textContent).toBe('Transcoding');
-    expect(host.querySelector('.cover-progress-percent')!.textContent).toBe('72%');
+    expect(host.querySelector('.import-status-label')!.textContent).toBe('Saving');
+    expect(host.querySelector('.cover-progress-percent')!.textContent).toBe('82%');
   });
 
   it('falls back to the book status while the feed has not caught up', () => {

@@ -230,7 +230,7 @@ describe('BookDetail reset progress', () => {
   it('reuses per-book feed percentages and changes to reader actions on completion', async () => {
     await setup(readableBook({ status: 2, hasFile: false, fileName: null, progressPercent: 42 }));
     httpMock.expectOne('/api/imports/active').flush([{
-      id: 'job-1', source: 'job', state: 'running', stage: 'assembling',
+      id: 'job-1', source: 'job', state: 'running', stage: 'importing',
       percent: 73, detail: null, providerId: 'librivox', externalId: '123',
       assetId: 'mp3', bookId: 'b1', title: 'Meditations', author: null,
       coverUrl: null, errorCode: null, message: null, createdAt: '',
@@ -241,7 +241,7 @@ describe('BookDetail reset progress', () => {
     const bar = fixture.nativeElement.querySelector('.detail-import-track') as HTMLElement;
     expect(bar.getAttribute('aria-valuenow')).toBe('73');
     expect(fixture.nativeElement.querySelector('.detail-import-progress')?.textContent)
-      .toContain('Transcoding');
+      .toContain('Saving');
     expect(fixture.nativeElement.querySelector('.detail-import-progress')?.textContent)
       .toContain('73%');
     // Not the independent reading progress (42%).

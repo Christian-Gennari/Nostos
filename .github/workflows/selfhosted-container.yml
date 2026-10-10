@@ -41,8 +41,6 @@ jobs:
 
           curl -fsS http://127.0.0.1:18080/ >/dev/null
           curl -fsS http://127.0.0.1:18080/api/runtime/capabilities             | grep -q '"deploymentMode":"SelfHosted"'
-          docker exec nostos-runtime-test ffmpeg -version >/dev/null
-          docker exec nostos-runtime-test ffprobe -version >/dev/null
 
           runtime_user="$(docker inspect -f '{{.Config.User}}' nostos-runtime-test)"
           test -n "$runtime_user"

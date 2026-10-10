@@ -376,7 +376,7 @@ public static class MigrationPreflightEvaluator
             input.SupportedFormatVersions ?? new HashSet<int> { 1 };
 
         var supportedDataVersions =
-            input.SupportedDataVersions ?? new HashSet<int> { 1, 2, 3 };
+            input.SupportedDataVersions ?? new HashSet<int> { 1, 2, 3, 4 };
 
         if (request.IsOperationalBackup
             || (!string.IsNullOrWhiteSpace(request.DeclaredFormatName)

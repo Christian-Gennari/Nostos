@@ -400,6 +400,8 @@ export class ReaderShell implements OnInit, OnDestroy {
 
   // --- UNIFIED READER LOGIC ---
   fileType = computed<'pdf' | 'epub' | 'audio' | null>(() => {
+    // A multi-track audiobook has tracks instead of a single file name.
+    if (this.book()?.tracks?.length) return 'audio';
     const fileName = this.book()?.fileName?.toLowerCase();
     if (!fileName) return null;
     if (fileName.endsWith('.pdf')) return 'pdf';

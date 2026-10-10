@@ -8,6 +8,7 @@ import { BookDetailStore } from './book-detail.store';
 
 // DTOs
 import { Book, EditionSummaryDto, LinkableBookDto } from '../core/dtos/book.dtos';
+import { formatBytes } from '../library-transfer/library-transfer.copy';
 
 /**
  * How many RENDERED LINES a review may occupy before Book Details opens it as a
@@ -718,6 +719,18 @@ export class BookDetail implements OnInit, OnDestroy {
 
   onBookUpdated(updatedBook: Book): void {
     this.store.book.set(updatedBook);
+  }
+
+  /**
+   * What a multi-track audiobook's download is: every track in one ZIP. Shown
+   * on the button so a several-hundred-megabyte download is not a surprise.
+   * Null for a single-file book, whose button needs no explanation.
+   */
+  downloadHint(book: Book | null): string | null {
+    const tracks = book?.tracks;
+    if (!tracks?.length) return null;
+    const bytes = tracks.reduce((total, track) => total + track.bytes, 0);
+    return `${tracks.length} tracks · ${formatBytes(bytes)}`;
   }
 
   downloadFile() {

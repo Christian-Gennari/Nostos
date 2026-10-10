@@ -65,8 +65,8 @@ export function isImportInFlight(activity: ImportActivity): boolean {
  * The server's stages are deliberately few and provider-agnostic, and several of
  * them are the same thing to a reader: resolving a manifest, checking free space
  * and fetching bytes are all "downloading" from where they sit. Two labels the
- * user actually cares about — Downloading and Transcoding — plus the terminal
- * ones.
+ * user actually cares about — Downloading and Saving — plus the terminal ones.
+ * (`transcoding` and `assembling` are stages older servers reported.)
  */
 export function importStageLabel(activity: ImportActivity): string {
   switch (activity.state) {
@@ -84,7 +84,7 @@ export function importStageLabel(activity: ImportActivity): string {
     case 'transcoding':
     case 'assembling':
     case 'importing':
-      return 'Transcoding';
+      return 'Saving';
     case 'queued':
     case 'starting':
       return 'Queued';

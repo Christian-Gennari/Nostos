@@ -185,4 +185,16 @@ public interface IPortableLibraryVerifier
         IBookAssetStorage assets,
         IReadOnlyList<PortableArchiveMediaEntry> expected,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// As above, for a host that can also hold the tracks of multi-track
+    /// audiobooks. The default forwards to the track-less overload, which
+    /// reports an expected track as a failure rather than passing it unseen.
+    /// </summary>
+    Task<PortableLibraryVerificationReport> VerifyMediaAsync(
+        IBookAssetStorage assets,
+        IBookTrackStorage? tracks,
+        IReadOnlyList<PortableArchiveMediaEntry> expected,
+        CancellationToken ct = default) =>
+        VerifyMediaAsync(assets, expected, ct);
 }

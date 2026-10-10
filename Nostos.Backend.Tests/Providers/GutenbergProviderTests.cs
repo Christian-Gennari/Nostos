@@ -390,7 +390,7 @@ public sealed class GutenbergProviderTests
         // 12. Policy and registration: AllowedHosts contains "gutenberg.org";
         // MaxParts is 1; MaxBytesPerPart == MaxTotalBytes;
         // Capabilities includes Search, ItemRetrieval, EbookAcquisition, CoverArt and RightsInformation
-        // and does NOT include AudiobookAcquisition or RequiresAssembly;
+        // and does NOT include AudiobookAcquisition or MultiTrackAudiobook;
         // `new ProviderRegistry(new IContentProvider[]{ provider })` does not throw.
         var (provider, _) = CreateProvider();
 
@@ -405,7 +405,7 @@ public sealed class GutenbergProviderTests
         provider.Capabilities.Should().HaveFlag(ProviderCapabilities.RightsInformation);
 
         provider.Capabilities.Should().NotHaveFlag(ProviderCapabilities.AudiobookAcquisition);
-        provider.Capabilities.Should().NotHaveFlag(ProviderCapabilities.RequiresAssembly);
+        provider.Capabilities.Should().NotHaveFlag(ProviderCapabilities.MultiTrackAudiobook);
 
         var act = () => new ProviderRegistry(new IContentProvider[] { provider });
         act.Should().NotThrow();

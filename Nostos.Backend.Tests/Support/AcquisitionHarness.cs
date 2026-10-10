@@ -9,6 +9,7 @@ using Nostos.Backend.Configuration;
 using Nostos.Backend.Data;
 using Nostos.Backend.Providers;
 using Nostos.Backend.Providers.Acquisition;
+using Nostos.Backend.Providers.Acquisition.Media;
 using Nostos.Backend.Providers.Contracts;
 using Nostos.Backend.Services;
 using Nostos.Backend.Services.Library;
@@ -79,58 +80,44 @@ public sealed class FakeContentProvider : IContentProvider,
     }
 }
 
-public sealed class FakeAssemblingContentProvider : IContentProvider,
+/// <summary>
+/// A provider that delivers an audiobook as several ordered audio files, the
+/// way LibriVox does.
+/// </summary>
+public sealed class FakeMultiTrackContentProvider : IContentProvider,
     IProviderSearch,
     IProviderCatalog,
     IProviderAcquisitionPlanner,
-    IProviderDownloadPolicy,
-    IAcquisitionAssembler
+    IProviderDownloadPolicy
 {
-    public FakeAssemblingContentProvider(
-        string id = "fake-assembler",
-        string displayName = "Fake Assembling Provider",
-        string? rightsNotice = "Public Domain (Fake)",
-        IReadOnlyList<string>? allowedHosts = null,
-        long maxBytesPerPart = 10 * 1024 * 1024,
-        long maxTotalBytes = 50 * 1024 * 1024,
-        int maxParts = 10)
+    public FakeMultiTrackContentProvider(
+        string id = "fake-multitrack",
+        string displayName = "Fake Multi-Track Provider")
     {
         Id = id;
         DisplayName = displayName;
-        RightsNotice = rightsNotice;
-        AllowedHosts = allowedHosts ?? new[] { "example.com", "fake.org" };
-        MaxBytesPerPart = maxBytesPerPart;
-        MaxTotalBytes = maxTotalBytes;
-        MaxParts = maxParts;
     }
 
     public string Id { get; }
     public string DisplayName { get; }
-    public ProviderCapabilities Capabilities =>
+    public ProviderCapabilities Capabilities { get; set; } =
         ProviderCapabilities.Search |
         ProviderCapabilities.ItemRetrieval |
-        ProviderCapabilities.EbookAcquisition |
         ProviderCapabilities.AudiobookAcquisition |
         ProviderCapabilities.CoverArt |
         ProviderCapabilities.RightsInformation |
-        ProviderCapabilities.RequiresAssembly;
+        ProviderCapabilities.MultiTrackAudiobook;
 
-    public string? RightsNotice { get; }
+    public string? RightsNotice => "Public Domain (Fake)";
 
-    public IReadOnlyList<string> AllowedHosts { get; set; }
-    public long MaxBytesPerPart { get; set; }
-    public long MaxTotalBytes { get; set; }
-    public int MaxParts { get; set; }
+    public IReadOnlyList<string> AllowedHosts { get; set; } = new[] { "example.com", "fake.org" };
+    public long MaxBytesPerPart { get; set; } = 10 * 1024 * 1024;
+    public long MaxTotalBytes { get; set; } = 50 * 1024 * 1024;
+    public int MaxParts { get; set; } = 10;
 
     public ProviderSearchPage SearchResult { get; set; } = new(Array.Empty<ProviderItem>());
     public ProviderItem? ItemResult { get; set; }
     public ProviderAcquisitionPlan? PlanResult { get; set; }
-    public Exception? ExceptionToThrowOnPlan { get; set; }
-    public int PlanCallCount { get; private set; }
-
-    public Func<AcquisitionAssemblyContext, CancellationToken, Task<AcquisitionArtifact>>? AssembleFunc { get; set; }
-    public Exception? ExceptionToThrowOnAssemble { get; set; }
-    public int AssembleCallCount { get; private set; }
 
     public Task<ProviderSearchPage> SearchAsync(ProviderSearchQuery query, CancellationToken ct = default) =>
         Task.FromResult(SearchResult);
@@ -138,28 +125,37 @@ public sealed class FakeAssemblingContentProvider : IContentProvider,
     public Task<ProviderItem?> GetItemAsync(string externalId, CancellationToken ct = default) =>
         Task.FromResult(ItemResult);
 
-    public Task<ProviderAcquisitionPlan?> PlanAcquisitionAsync(ProviderAcquisitionRequest request, CancellationToken ct = default)
+    public Task<ProviderAcquisitionPlan?> PlanAcquisitionAsync(ProviderAcquisitionRequest request, CancellationToken ct = default) =>
+        Task.FromResult(PlanResult);
+
+    /// <summary>A plan of <paramref name="titles"/>.Length MP3 parts, one per title.</summary>
+    public static ProviderAcquisitionPlan PlanOf(string providerId, string externalId, string title, params string?[] titles) =>
+        new(
+            ProviderId: providerId,
+            ExternalId: externalId,
+            Asset: new ProviderAsset("audio-asset", ProviderMediaKind.Audiobook, "Full Audiobook", "mp3-multi"),
+            Metadata: new ProviderMetadata(Title: title),
+            Parts: titles
+                .Select((label, index) => new ProviderDownloadPart(
+                    new Uri($"https://example.com/part{index + 1}.mp3"), ".mp3", null, label))
+                .ToList(),
+            Output: new ProviderOutput(".mp3", "audio/mpeg", "MP3 audiobook"));
+}
+
+/// <summary>
+/// Stands in for reading a duration out of real audio: every file "plays" for
+/// <see cref="Duration"/>, or is unreadable when that is null.
+/// </summary>
+public sealed class FakeAudioDurationProbe : IAudioDurationProbe
+{
+    public TimeSpan? Duration { get; set; } = TimeSpan.FromSeconds(90);
+    public Func<string, TimeSpan?>? DurationFor { get; set; }
+    public List<string> ProbedPaths { get; } = new();
+
+    public TimeSpan? ProbeDuration(string filePath)
     {
-        PlanCallCount++;
-        if (ExceptionToThrowOnPlan is not null)
-            throw ExceptionToThrowOnPlan;
-
-        return Task.FromResult(PlanResult);
-    }
-
-    public async Task<AcquisitionArtifact> AssembleAsync(AcquisitionAssemblyContext context, CancellationToken ct = default)
-    {
-        AssembleCallCount++;
-        if (ExceptionToThrowOnAssemble is not null)
-            throw ExceptionToThrowOnAssemble;
-
-        if (AssembleFunc is not null)
-            return await AssembleFunc(context, ct);
-
-        // Default assembly implementation: write combined artifact
-        var outputPath = Path.Combine(context.WorkingDirectory, $"assembled{context.Plan.Output.FileExtension}");
-        await File.WriteAllBytesAsync(outputPath, new byte[] { 1, 2, 3, 4 }, ct);
-        return new AcquisitionArtifact(outputPath, context.Plan.Output.FileExtension, context.Plan.Output.ContentType);
+        ProbedPaths.Add(filePath);
+        return DurationFor is null ? Duration : DurationFor(filePath);
     }
 }
 
@@ -167,6 +163,8 @@ public sealed class FakeProviderContentDownloader : IProviderContentDownloader
 {
     public List<Uri> RequestedUrls { get; } = new();
     public byte[] DefaultPayload { get; set; } = new byte[] { 10, 20, 30, 40, 50 };
+    /// <summary>Per-URL content, for tests where the parts must differ.</summary>
+    public Func<Uri, byte[]>? PayloadFor { get; set; }
     public byte[]? DefaultCoverPayload { get; set; }
     public Func<CancellationToken, Task>? OnDownloadAsync { get; set; }
     public Exception? ExceptionToThrowOnDownload { get; set; }
@@ -195,9 +193,10 @@ public sealed class FakeProviderContentDownloader : IProviderContentDownloader
         if (!string.IsNullOrEmpty(dir))
             Directory.CreateDirectory(dir);
 
-        await File.WriteAllBytesAsync(destinationPath, DefaultPayload, ct);
-        progress?.Report(DefaultPayload.Length);
-        return DefaultPayload.Length;
+        var payload = PayloadFor?.Invoke(url) ?? DefaultPayload;
+        await File.WriteAllBytesAsync(destinationPath, payload, ct);
+        progress?.Report(payload.Length);
+        return payload.Length;
     }
 
     public Task<byte[]> DownloadBytesAsync(
@@ -227,7 +226,7 @@ public sealed class AcquisitionHarness : IDisposable
     public IDbContextFactory<NostosDbContext> ContextFactory { get; }
     public FileStorageService Storage { get; }
     public LibraryService Library { get; }
-    public TranscodeLimiter Limiter { get; }
+    public FakeAudioDurationProbe DurationProbe { get; }
     public FakeProviderContentDownloader Downloader { get; }
     public AcquisitionOptions AcquisitionOpts { get; }
     public TestWebHostEnvironment Environment { get; }
@@ -241,7 +240,7 @@ public sealed class AcquisitionHarness : IDisposable
         IDbContextFactory<NostosDbContext> contextFactory,
         FileStorageService storage,
         LibraryService library,
-        TranscodeLimiter limiter,
+        FakeAudioDurationProbe durationProbe,
         FakeProviderContentDownloader downloader,
         AcquisitionOptions acquisitionOpts,
         TestWebHostEnvironment environment)
@@ -254,7 +253,7 @@ public sealed class AcquisitionHarness : IDisposable
         ContextFactory = contextFactory;
         Storage = storage;
         Library = library;
-        Limiter = limiter;
+        DurationProbe = durationProbe;
         Downloader = downloader;
         AcquisitionOpts = acquisitionOpts;
         Environment = environment;
@@ -306,9 +305,8 @@ public sealed class AcquisitionHarness : IDisposable
             DownloadConcurrency = 2,
             DownloadAttempts = 2,
         };
-        var acqOptionsWrapper = Microsoft.Extensions.Options.Options.Create(acqOptions);
 
-        var limiter = new TranscodeLimiter(acqOptionsWrapper, new SilentLogger<TranscodeLimiter>());
+        var durationProbe = new FakeAudioDurationProbe();
         var downloader = new FakeProviderContentDownloader();
 
         return new AcquisitionHarness(
@@ -320,7 +318,7 @@ public sealed class AcquisitionHarness : IDisposable
             contextFactory,
             storage,
             library,
-            limiter,
+            durationProbe,
             downloader,
             acqOptions,
             env);
@@ -330,7 +328,9 @@ public sealed class AcquisitionHarness : IDisposable
         IProviderRegistry registry,
         IBookAssetStorage? storageOverride = null,
         IProviderContentDownloader? downloaderOverride = null,
-        ILibraryService? libraryOverride = null)
+        ILibraryService? libraryOverride = null,
+        IBookTrackStorage? trackStorageOverride = null,
+        bool withTrackStorage = true)
     {
         return new AcquisitionService(
             registry,
@@ -339,9 +339,10 @@ public sealed class AcquisitionHarness : IDisposable
             libraryOverride ?? Library,
             ContextFactory,
             Environment,
-            Limiter,
+            DurationProbe,
             Microsoft.Extensions.Options.Options.Create(AcquisitionOpts),
-            new SilentLogger<AcquisitionService>());
+            new SilentLogger<AcquisitionService>(),
+            trackStorage: withTrackStorage ? trackStorageOverride ?? Storage : null);
     }
 
     public void Dispose()
