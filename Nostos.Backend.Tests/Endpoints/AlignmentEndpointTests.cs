@@ -8,16 +8,23 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Nostos.Backend.Data;
-using Nostos.Backend.Data.Models;
+using Nostos.Backend.Services;
 using Nostos.Backend.Services.Ai;
 using Nostos.Backend.Tests.Support;
 using Nostos.Product.Alignment;
+using Nostos.Product.BookText;
 using Nostos.Product.Services.Ai;
 using Nostos.Shared.Dtos;
 using Xunit;
 
 namespace Nostos.Backend.Tests.Endpoints;
 
+/// <summary>
+/// Full-host coverage for audiobook-to-EPUB alignment.
+///
+/// No real transcription, ffmpeg invocation or book-storage read occurs.
+/// Each test has its own SQLite database and isolated test storage root.
+/// </summary>
 public sealed class AlignmentEndpointTests
 {
     private const string Passage =
@@ -25,441 +32,807 @@ public sealed class AlignmentEndpointTests
         "the quiet orchard before sunrise.";
 
     [Fact]
-    public async Task Missing_source_is_a_typed_404()
+    public async Task Missing_source_returns_404_without_transcription()
     {
-        using var factory = new LibraryEndpointFactory();
-        var alignment = new FakeAlignmentService();
-        using var host = CreateHost(factory, alignment: alignment);
-        using var client = host.CreateClient();
+        using var harness = new Harness();
+        using var client = harness.Client();
 
-        var response = await LocateAsync(
+        var response = await PostAsync(
             client, Guid.NewGuid(), Guid.NewGuid());
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
         (await ProblemCodeAsync(response))
             .Should().Be("alignment_book_not_found");
-        alignment.CallCount.Should().Be(0);
+
+        harness.Transcriber.CallCount.Should().Be(0);
+        harness.Cutter.CallCount.Should().Be(0);
+        harness.Usage.BeginCount.Should().Be(0);
     }
 
     [Fact]
-    public async Task Missing_target_is_a_typed_404()
+    public async Task Missing_target_returns_404_without_transcription()
     {
-        using var factory = new LibraryEndpointFactory();
-        var alignment = new FakeAlignmentService();
-        using var host = CreateHost(factory, alignment: alignment);
-        using var client = host.CreateClient();
+        using var harness = new Harness();
+        using var client = harness.Client();
 
-        var source = await CreateBookAsync(client, "audiobook");
+        var (source, _) = await SeedPairAsync(client, harness);
 
-        var response = await LocateAsync(
+        var response = await PostAsync(
             client, source, Guid.NewGuid());
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
         (await ProblemCodeAsync(response))
             .Should().Be("alignment_book_not_found");
-        alignment.CallCount.Should().Be(0);
+
+        harness.Transcriber.CallCount.Should().Be(0);
+        harness.Cutter.CallCount.Should().Be(0);
+        harness.Usage.BeginCount.Should().Be(0);
     }
 
     [Fact]
-    public async Task Invalid_position_is_rejected_before_alignment()
+    public async Task Different_works_are_rejected_before_provider_usage()
     {
-        using var factory = new LibraryEndpointFactory();
-        var alignment = new FakeAlignmentService();
-        using var host = CreateHost(factory, alignment: alignment);
-        using var client = host.CreateClient();
+        using var harness = new Harness();
+        using var client = harness.Client();
 
-        var response = await LocateAsync(
-            client, Guid.NewGuid(), Guid.NewGuid(), 0);
+        var (source, target) = await SeedPairAsync(
+            client, harness, sameWork: false);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var response = await PostAsync(client, source, target);
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
         (await ProblemCodeAsync(response))
-            .Should().Be("alignment_invalid_request");
-        alignment.CallCount.Should().Be(0);
+            .Should().Be("alignment_work_mismatch");
+
+        harness.Transcriber.CallCount.Should().Be(0);
+        harness.Cutter.CallCount.Should().Be(0);
+        harness.Usage.BeginCount.Should().Be(0);
     }
 
     [Fact]
-    public async Task Source_must_be_an_audiobook()
+    public async Task Non_audio_source_is_rejected()
     {
-        using var factory = new LibraryEndpointFactory();
-        var alignment = new FakeAlignmentService();
-        using var host = CreateHost(factory, alignment: alignment);
-        using var client = host.CreateClient();
+        using var harness = new Harness();
+        using var client = harness.Client();
 
-        var source = await CreateBookAsync(client, "ebook");
-        var target = await CreateBookAsync(client, "ebook");
+        var (source, target) = await SeedPairAsync(client, harness);
 
-        var response = await LocateAsync(client, source, target);
+        var response = await PostAsync(client, target, source);
 
-        response.StatusCode.Should().Be(
-            HttpStatusCode.UnprocessableEntity);
+        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
         (await ProblemCodeAsync(response))
             .Should().Be("alignment_source_not_audio");
-        alignment.CallCount.Should().Be(0);
+
+        harness.Transcriber.CallCount.Should().Be(0);
+        harness.Usage.BeginCount.Should().Be(0);
     }
 
     [Fact]
     public async Task Target_must_be_an_epub()
     {
-        using var factory = new LibraryEndpointFactory();
-        var alignment = new FakeAlignmentService();
-        using var host = CreateHost(factory, alignment: alignment);
-        using var client = host.CreateClient();
+        using var harness = new Harness();
+        using var client = harness.Client();
 
-        var source = await CreateBookAsync(client, "audiobook");
-        var target = await CreateBookAsync(client, "ebook");
+        var (source, target) = await SeedPairAsync(client, harness);
 
-        var response = await LocateAsync(client, source, target);
+        await harness.SetTargetFileNameAsync(target, "book.pdf");
 
-        response.StatusCode.Should().Be(
-            HttpStatusCode.UnprocessableEntity);
+        var response = await PostAsync(client, source, target);
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
         (await ProblemCodeAsync(response))
             .Should().Be("alignment_target_not_epub");
-        alignment.CallCount.Should().Be(0);
+
+        harness.Transcriber.CallCount.Should().Be(0);
+        harness.Usage.BeginCount.Should().Be(0);
     }
 
     [Fact]
-    public async Task Different_works_are_rejected_before_ai_usage()
+    public async Task Missing_source_media_is_a_typed_failure()
     {
-        using var factory = new LibraryEndpointFactory();
-        var alignment = new FakeAlignmentService();
-        var usage = new RecordingUsageAccounting();
+        using var harness = new Harness();
+        using var client = harness.Client();
 
-        using var host = CreateHost(
-            factory, alignment: alignment, usage: usage);
-        using var client = host.CreateClient();
+        var (source, target) = await SeedPairAsync(client, harness);
 
-        var (source, target) = await SeedEditionsAsync(
-            client, factory, sameWork: false);
+        await harness.SetHasFileAsync(source, false);
 
-        var response = await LocateAsync(client, source, target);
+        var response = await PostAsync(client, source, target);
 
-        response.StatusCode.Should().Be(
-            HttpStatusCode.UnprocessableEntity);
+        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
         (await ProblemCodeAsync(response))
-            .Should().Be("alignment_work_mismatch");
+            .Should().Be("alignment_source_media_missing");
 
-        alignment.CallCount.Should().Be(0);
-        usage.BeginCount.Should().Be(0);
-        usage.CompleteCount.Should().Be(0);
+        harness.Transcriber.CallCount.Should().Be(0);
+        harness.Cutter.CallCount.Should().Be(0);
+        harness.Usage.BeginCount.Should().Be(0);
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(0)]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    public async Task Invalid_positions_do_not_start_alignment(double position)
+    {
+        using var harness = new Harness();
+        using var client = harness.Client();
+
+        var (source, target) = await SeedPairAsync(client, harness);
+
+        // System.Text.Json cannot serialize non-finite numbers by default.
+        // Send these values as JSON strings to verify that the endpoint rejects
+        // them, or treats them as invalid JSON, without invoking transcription.
+        using var content = double.IsFinite(position)
+            ? JsonContent.Create(new
+            {
+                positionSeconds = position,
+                targetBookId = target,
+            })
+            : new StringContent(
+                $$"""
+                {"positionSeconds":"{{position}}","targetBookId":"{{target}}"}
+                """,
+                System.Text.Encoding.UTF8,
+                "application/json");
+
+        var response = await client.PostAsync(Route(source), content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        harness.Transcriber.CallCount.Should().Be(0);
+        harness.Cutter.CallCount.Should().Be(0);
+        harness.Usage.BeginCount.Should().Be(0);
     }
 
     [Fact]
-    public async Task Access_denial_prevents_alignment_and_usage()
+    public async Task Access_denial_stops_before_clip_cutting_and_usage()
     {
-        using var factory = new LibraryEndpointFactory();
-        var alignment = new FakeAlignmentService();
-        var usage = new RecordingUsageAccounting();
+        using var harness = new Harness { Allowed = false };
+        using var client = harness.Client();
 
-        using var host = CreateHost(
-            factory,
-            alignment: alignment,
-            usage: usage,
-            allowed: false);
+        var (source, target) = await SeedPairAsync(client, harness);
 
-        using var client = host.CreateClient();
-        var (source, target) = await SeedEditionsAsync(
-            client, factory, sameWork: true);
-
-        var response = await LocateAsync(client, source, target);
+        var response = await PostAsync(client, source, target);
 
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         (await ProblemCodeAsync(response))
             .Should().Be(SttErrorCodes.AccessDenied);
 
-        alignment.CallCount.Should().Be(0);
-        usage.BeginCount.Should().Be(0);
+        harness.Cutter.CallCount.Should().Be(0);
+        harness.Transcriber.CallCount.Should().Be(0);
+        harness.Usage.BeginCount.Should().Be(0);
     }
 
     [Fact]
-    public async Task Located_result_returns_the_end_locator()
+    public async Task Missing_target_media_is_rejected_before_transcription()
     {
-        using var factory = new LibraryEndpointFactory();
-        var alignment = new FakeAlignmentService
-        {
-            Result = new AlignmentLocateResult(
-                Located: true,
-                Reason: null,
-                Score: 0.98,
-                Excerpt: Passage,
-                Locator: new AlignmentLocator(
-                    3, "chapter-4.xhtml", null, 147)),
-        };
+        using var harness = new Harness();
+        using var client = harness.Client();
 
-        using var host = CreateHost(factory, alignment: alignment);
-        using var client = host.CreateClient();
+        var (source, target) = await SeedPairAsync(client, harness);
 
-        var (source, target) = await SeedEditionsAsync(
-            client, factory, sameWork: true);
+        await harness.SetHasFileAsync(target, false);
 
-        var response = await LocateAsync(
-            client, source, target, 65);
+        var response = await PostAsync(client, source, target);
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        (await ProblemCodeAsync(response))
+            .Should().Be("alignment_target_not_epub");
+
+        harness.Documents.CallCount.Should().Be(0);
+        harness.Cutter.CallCount.Should().Be(0);
+        harness.Transcriber.CallCount.Should().Be(0);
+        harness.Usage.BeginCount.Should().Be(0);
+        harness.Usage.CompleteCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Invalid_target_id_is_rejected_without_accessing_media()
+    {
+        using var harness = new Harness();
+        using var client = harness.Client();
+
+        var (source, _) = await SeedPairAsync(client, harness);
+
+        var response = await PostAsync(client, source, Guid.Empty);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await ProblemCodeAsync(response))
+            .Should().Be("alignment_invalid_request");
+
+        harness.Documents.CallCount.Should().Be(0);
+        harness.Cutter.CallCount.Should().Be(0);
+        harness.Transcriber.CallCount.Should().Be(0);
+        harness.Usage.BeginCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Missing_target_media_is_rejected_before_transcription()
+    {
+        using var harness = new Harness();
+        using var client = harness.Client();
+
+        var (source, target) = await SeedPairAsync(client, harness);
+
+        await harness.SetHasFileAsync(target, false);
+
+        var response = await PostAsync(client, source, target);
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        (await ProblemCodeAsync(response))
+            .Should().Be("alignment_target_not_epub");
+
+        harness.Documents.CallCount.Should().Be(0);
+        harness.Cutter.CallCount.Should().Be(0);
+        harness.Transcriber.CallCount.Should().Be(0);
+        harness.Usage.BeginCount.Should().Be(0);
+        harness.Usage.CompleteCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Invalid_target_id_is_rejected_without_accessing_media()
+    {
+        using var harness = new Harness();
+        using var client = harness.Client();
+
+        var (source, _) = await SeedPairAsync(client, harness);
+
+        var response = await PostAsync(client, source, Guid.Empty);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await ProblemCodeAsync(response))
+            .Should().Be("alignment_invalid_request");
+
+        harness.Documents.CallCount.Should().Be(0);
+        harness.Cutter.CallCount.Should().Be(0);
+        harness.Transcriber.CallCount.Should().Be(0);
+        harness.Usage.BeginCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Located_result_uses_end_locator_and_accounts_once()
+    {
+        using var harness = new Harness();
+        harness.Transcriber.Result = new SttResult(Passage, "en", 19.5);
+
+        using var client = harness.Client();
+
+        var (source, target) = await SeedPairAsync(client, harness);
+
+        var response = await PostAsync(
+            client, source, target, position: 65);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        using var document = JsonDocument.Parse(
+        using var body = JsonDocument.Parse(
             await response.Content.ReadAsStringAsync());
 
-        var body = document.RootElement;
+        var root = body.RootElement;
 
-        body.GetProperty("located").GetBoolean().Should().BeTrue();
-        body.GetProperty("score").GetDouble().Should().Be(0.98);
-        body.GetProperty("excerpt").GetString().Should().Be(Passage);
+        root.GetProperty("located").GetBoolean().Should().BeTrue();
+        root.GetProperty("score").GetDouble().Should().BeApproximately(
+            1.0, 0.000001);
 
-        var locator = body.GetProperty("locator");
-        locator.GetProperty("spineIndex").GetInt32().Should().Be(3);
+        root.GetProperty("excerpt").GetString()
+            .Should().Contain("golden lantern");
+
+        var locator = root.GetProperty("locator");
+
+        locator.GetProperty("spineIndex").GetInt32().Should().Be(2);
         locator.GetProperty("resourceHref").GetString()
-            .Should().Be("chapter-4.xhtml");
-        locator.GetProperty("textOffset").GetInt32().Should().Be(147);
+            .Should().Be("chapter-3.xhtml");
 
-        alignment.CallCount.Should().Be(1);
-        alignment.LastPosition.Should().Be(65);
+        // The listener is at the END of the recognized passage.
+        // The source resource begins at text offset 100.
+        locator.GetProperty("textOffset").GetInt32()
+            .Should().Be(100 + Passage.Length);
+
+        harness.Cutter.CallCount.Should().Be(1);
+        harness.Cutter.LastPositionSeconds.Should().Be(65);
+        harness.Cutter.LastClipSeconds.Should().Be(20);
+
+        harness.Transcriber.CallCount.Should().Be(1);
+        harness.Transcriber.LastFileName.Should().Be("alignment.wav");
+        harness.Transcriber.LastContentType.Should().Be("audio/wav");
+        harness.Transcriber.LastLanguageHint.Should().Be("en");
+
+        harness.Documents.CallCount.Should().Be(1);
+
+        harness.Usage.BeginCount.Should().Be(1);
+        harness.Usage.CompleteCount.Should().Be(1);
+
+        harness.Usage.LastUsage.Should().Be(
+            new TranscriptionUsage(1, 19.5, "Completed"));
     }
 
     [Theory]
-    [InlineData("insufficient_speech")]
-    [InlineData("no_match")]
-    [InlineData("weak_match")]
-    [InlineData("ambiguous")]
-    public async Task Matcher_rejection_is_a_normal_200(string reason)
+    [InlineData("", "insufficient_speech")]
+    [InlineData("a chapter title", "insufficient_speech")]
+    [InlineData(
+        "Every sailor aboard the ship feared the storm approaching across the northern ocean.",
+        "no_match")]
+    public async Task Matcher_decline_is_200_and_still_accounts_one_transcription(
+        string transcript,
+        string expectedReason)
     {
-        using var factory = new LibraryEndpointFactory();
-        var alignment = new FakeAlignmentService
-        {
-            Result = AlignmentLocateResult.Declined(reason),
-        };
+        using var harness = new Harness();
+        harness.Transcriber.Result = new SttResult(
+            transcript, "en", 18);
 
-        using var host = CreateHost(factory, alignment: alignment);
-        using var client = host.CreateClient();
+        using var client = harness.Client();
 
-        var (source, target) = await SeedEditionsAsync(
-            client, factory, sameWork: true);
+        var (source, target) = await SeedPairAsync(client, harness);
 
-        var response = await LocateAsync(client, source, target);
+        var response = await PostAsync(client, source, target);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        using var document = JsonDocument.Parse(
+        using var body = JsonDocument.Parse(
             await response.Content.ReadAsStringAsync());
 
-        document.RootElement.GetProperty("located")
+        body.RootElement.GetProperty("located")
             .GetBoolean().Should().BeFalse();
-        document.RootElement.GetProperty("reason")
-            .GetString().Should().Be(reason);
 
-        alignment.CallCount.Should().Be(1);
+        body.RootElement.GetProperty("reason")
+            .GetString().Should().Be(expectedReason);
+
+        body.RootElement.TryGetProperty("locator", out _)
+            .Should().BeFalse();
+
+        harness.Cutter.CallCount.Should().Be(1);
+        harness.Transcriber.CallCount.Should().Be(1);
+
+        harness.Usage.BeginCount.Should().Be(1);
+        harness.Usage.CompleteCount.Should().Be(1);
+
+        harness.Usage.LastUsage.Should().Be(
+            new TranscriptionUsage(1, 18, "Completed"));
     }
 
     [Fact]
-    public async Task Provider_failure_is_typed_and_not_retried()
+    public async Task Provider_failure_is_typed_and_is_never_retried()
     {
-        using var factory = new LibraryEndpointFactory();
-        var alignment = new FakeAlignmentService
-        {
-            Failure = new SttException(
-                SttErrorCodes.Provider,
-                "The transcription provider failed."),
-        };
+        using var harness = new Harness();
 
-        using var host = CreateHost(factory, alignment: alignment);
-        using var client = host.CreateClient();
+        harness.Transcriber.Failure = new SttException(
+            SttErrorCodes.Provider,
+            "The transcription gateway is unavailable.");
 
-        var (source, target) = await SeedEditionsAsync(
-            client, factory, sameWork: true);
+        using var client = harness.Client();
 
-        var response = await LocateAsync(client, source, target);
+        var (source, target) = await SeedPairAsync(client, harness);
+
+        var response = await PostAsync(client, source, target);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
         (await ProblemCodeAsync(response))
             .Should().Be(SttErrorCodes.Provider);
-        alignment.CallCount.Should().Be(1);
+
+        harness.Cutter.CallCount.Should().Be(1);
+        harness.Transcriber.CallCount.Should().Be(1);
+
+        harness.Usage.BeginCount.Should().Be(1);
+        harness.Usage.CompleteCount.Should().Be(1);
+        harness.Usage.LastUsage.Should().Be(
+            new TranscriptionUsage(1, null, "ProviderError"));
     }
 
     [Fact]
-    public async Task Usage_reservation_denial_is_typed()
+    public async Task Unavailable_transcriber_does_not_cut_audio_or_reserve_usage()
     {
-        using var factory = new LibraryEndpointFactory();
-        var usage = new RecordingUsageAccounting
-        {
-            BlockReason = AiUsageBlockReason.LimitReached,
-        };
+        using var harness = new Harness();
 
-        // The real alignment service is exercised separately in service tests.
-        // Here we verify the endpoint maps host accounting failures.
-        var alignment = new FakeAlignmentService
-        {
-            Failure = new AiUsageException(
-                AiUsageBlockReason.LimitReached,
-                "The AI allowance is exhausted."),
-        };
+        harness.Transcriber.Available = false;
 
-        using var host = CreateHost(
-            factory, alignment: alignment, usage: usage);
-        using var client = host.CreateClient();
+        using var client = harness.Client();
 
-        var (source, target) = await SeedEditionsAsync(
-            client, factory, sameWork: true);
+        var (source, target) = await SeedPairAsync(client, harness);
 
-        var response = await LocateAsync(client, source, target);
+        var response = await PostAsync(client, source, target);
 
-        response.StatusCode.Should().Be(
-            HttpStatusCode.TooManyRequests);
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        (await ProblemCodeAsync(response))
+            .Should().Be("alignment_transcription_unavailable");
+
+        harness.Cutter.CallCount.Should().Be(0);
+        harness.Transcriber.CallCount.Should().Be(0);
+        harness.Usage.BeginCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Usage_limit_denial_never_calls_transcriber()
+    {
+        using var harness = new Harness();
+
+        harness.Usage.BeginFailure = new AiUsageException(
+            AiUsageBlockReason.LimitReached,
+            "The transcription allowance is exhausted.");
+
+        using var client = harness.Client();
+
+        var (source, target) = await SeedPairAsync(client, harness);
+
+        var response = await PostAsync(client, source, target);
+
+        response.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
         (await ProblemCodeAsync(response))
             .Should().Be("ai_usage_limit_reached");
 
-        alignment.CallCount.Should().Be(1);
+        harness.Usage.BeginCount.Should().Be(1);
+        harness.Usage.CompleteCount.Should().Be(0);
+        harness.Transcriber.CallCount.Should().Be(0);
     }
 
-    internal static WebApplicationFactory<Program> CreateHost(
-        LibraryEndpointFactory factory,
-        IAlignmentService? alignment = null,
-        IAiUsageAccountingService? usage = null,
-        bool allowed = true)
+    [Fact]
+    public async Task Provider_timeout_is_reported_once_without_retrying()
     {
-        return factory.WithWebHostBuilder(builder =>
-        {
-            builder.ConfigureServices(services =>
-            {
-                if (alignment is not null)
-                {
-                    services.RemoveAll<IAlignmentService>();
-                    services.AddSingleton(alignment);
-                }
+        using var harness = new Harness();
 
-                if (usage is not null)
-                {
-                    services.RemoveAll<IAiUsageAccountingService>();
-                    services.AddSingleton(usage);
-                }
+        harness.Transcriber.Failure = SttException.TimedOut();
 
-                services.RemoveAll<IAiAccessPolicy>();
-                services.AddSingleton<IAiAccessPolicy>(
-                    new TestAccessPolicy(allowed));
-            });
-        });
+        using var client = harness.Client();
+        var (source, target) = await SeedPairAsync(client, harness);
+
+        var response = await PostAsync(client, source, target);
+
+        response.StatusCode.Should().Be(HttpStatusCode.GatewayTimeout);
+        (await ProblemCodeAsync(response))
+            .Should().Be(SttErrorCodes.Timeout);
+
+        harness.Cutter.CallCount.Should().Be(1);
+        harness.Transcriber.CallCount.Should().Be(1);
+
+        harness.Usage.BeginCount.Should().Be(1);
+        harness.Usage.CompleteCount.Should().Be(1);
+        harness.Usage.LastUsage.Should().Be(
+            new TranscriptionUsage(1, null, "ProviderError"));
     }
 
-    internal static async Task<(Guid Source, Guid Target)> SeedEditionsAsync(
+    [Fact]
+    public async Task Provider_timeout_is_reported_once_without_retrying()
+    {
+        using var harness = new Harness();
+
+        harness.Transcriber.Failure = SttException.TimedOut();
+
+        using var client = harness.Client();
+        var (source, target) = await SeedPairAsync(client, harness);
+
+        var response = await PostAsync(client, source, target);
+
+        response.StatusCode.Should().Be(HttpStatusCode.GatewayTimeout);
+        (await ProblemCodeAsync(response))
+            .Should().Be(SttErrorCodes.Timeout);
+
+        harness.Cutter.CallCount.Should().Be(1);
+        harness.Transcriber.CallCount.Should().Be(1);
+
+        harness.Usage.BeginCount.Should().Be(1);
+        harness.Usage.CompleteCount.Should().Be(1);
+        harness.Usage.LastUsage.Should().Be(
+            new TranscriptionUsage(1, null, "ProviderError"));
+    }
+
+    [Fact]
+    public async Task Clip_failure_does_not_reserve_provider_usage()
+    {
+        using var harness = new Harness();
+
+        harness.Cutter.Failure = new AudioClipException(
+            AudioClipErrorCodes.Unavailable,
+            "ffmpeg is unavailable.");
+
+        using var client = harness.Client();
+
+        var (source, target) = await SeedPairAsync(client, harness);
+
+        var response = await PostAsync(client, source, target);
+
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        (await ProblemCodeAsync(response))
+            .Should().Be(AudioClipErrorCodes.Unavailable);
+
+        harness.Cutter.CallCount.Should().Be(1);
+        harness.Transcriber.CallCount.Should().Be(0);
+        harness.Usage.BeginCount.Should().Be(0);
+    }
+
+    private static string Route(Guid source) =>
+        $"/api/books/{source}/alignment/locate-text";
+
+    private static Task<HttpResponseMessage> PostAsync(
         HttpClient client,
-        LibraryEndpointFactory factory,
-        bool sameWork)
+        Guid source,
+        Guid target,
+        double position = 65) =>
+        client.PostAsJsonAsync(Route(source), new
+        {
+            positionSeconds = position,
+            targetBookId = target,
+        });
+
+    private static async Task<string?> ProblemCodeAsync(
+        HttpResponseMessage response)
     {
-        var source = await CreateBookAsync(client, "audiobook");
-        var target = await CreateBookAsync(client, "ebook");
+        using var body = JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync());
 
-        var options = new DbContextOptionsBuilder<NostosDbContext>()
-            .UseSqlite($"Data Source={factory.DatabasePath}")
-            .Options;
+        return body.RootElement.GetProperty("title").GetString();
+    }
 
-        await using var db = new NostosDbContext(options);
+    private static async Task<(Guid Source, Guid Target)> SeedPairAsync(
+        HttpClient client,
+        Harness harness,
+        bool sameWork = true)
+    {
+        // Distinct titles prevent the library's create-or-match behavior from
+        // implicitly treating these editions as the same record.
+        var source = await CreateBookAsync(
+            client, "audiobook", "Alignment Audio Edition");
 
-        var audio = await db.Books.SingleAsync(x => x.Id == source);
-        var epub = await db.Books.SingleAsync(x => x.Id == target);
+        var target = await CreateBookAsync(
+            client, "ebook", "Alignment EPUB Edition");
 
-        audio.FileDetails.HasFile = true;
-        audio.FileDetails.FileName = "book.mp3";
-        audio.Metadata.Language = "en";
-
-        epub.FileDetails.HasFile = true;
-        epub.FileDetails.FileName = "book.epub";
-
-        if (sameWork)
-            epub.WorkId = audio.WorkId;
-
-        await db.SaveChangesAsync();
+        await harness.SeedMediaAsync(source, target, sameWork);
 
         return (source, target);
     }
 
-    internal static async Task<Guid> CreateBookAsync(
+    private static async Task<Guid> CreateBookAsync(
         HttpClient client,
-        string type)
+        string type,
+        string title)
     {
         var response = await client.PostAsJsonAsync(
             "/api/books",
             new
             {
                 type,
-                title = $"Alignment Test {Guid.NewGuid():N}",
-                author = "Test Author",
+                title,
+                author = "Alignment Test Author",
                 forceCreate = true,
             });
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
 
         var book = await response.Content.ReadFromJsonAsync<BookDto>();
+        book.Should().NotBeNull();
+
         return book!.Id;
     }
 
-    internal static Task<HttpResponseMessage> LocateAsync(
-        HttpClient client,
-        Guid source,
-        Guid target,
-        double position = 45)
+    private sealed class Harness : IDisposable
     {
-        return client.PostAsJsonAsync(
-            $"/api/books/{source}/alignment/locate-text",
-            new
+        private readonly LibraryEndpointFactory factory = new();
+        private readonly WebApplicationFactory<Program> host;
+
+        public bool Allowed { get; set; } = true;
+
+        public FakeAlignmentTranscriber Transcriber { get; } = new();
+        public FakeAudioClipCutter Cutter { get; } = new();
+        public FakeAlignmentDocuments Documents { get; } = new();
+        public RecordingUsageAccounting Usage { get; } = new();
+
+        public Harness()
+        {
+            host = factory.WithWebHostBuilder(builder =>
             {
-                positionSeconds = position,
-                targetBookId = target,
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<IAlignmentTranscriber>();
+                    services.AddSingleton<IAlignmentTranscriber>(Transcriber);
+
+                    services.RemoveAll<IAudioClipCutter>();
+                    services.AddSingleton<IAudioClipCutter>(Cutter);
+
+                    services.RemoveAll<IAlignmentDocumentProvider>();
+                    services.AddSingleton<IAlignmentDocumentProvider>(Documents);
+
+                    services.RemoveAll<IAiAccessPolicy>();
+                    services.AddSingleton<IAiAccessPolicy>(
+                        new ConfigurableAccessPolicy(() => Allowed));
+
+                    services.RemoveAll<IAiUsageAccountingService>();
+                    services.AddSingleton<IAiUsageAccountingService>(Usage);
+                });
             });
+        }
+
+        public HttpClient Client() => host.CreateClient();
+
+        public async Task SeedMediaAsync(
+            Guid source,
+            Guid target,
+            bool sameWork)
+        {
+            var options = new DbContextOptionsBuilder<NostosDbContext>()
+                .UseSqlite($"Data Source={factory.DatabasePath}")
+                .Options;
+
+            await using var db = new NostosDbContext(options);
+
+            var audio = await db.Books.SingleAsync(x => x.Id == source);
+            var epub = await db.Books.SingleAsync(x => x.Id == target);
+
+            audio.FileDetails.HasFile = true;
+            audio.FileDetails.FileName = "book.mp3";
+            audio.Metadata.Language = "en";
+
+            epub.FileDetails.HasFile = true;
+            epub.FileDetails.FileName = "book.epub";
+
+            if (sameWork)
+                epub.WorkId = audio.WorkId;
+
+            await db.SaveChangesAsync();
+        }
+
+        public async Task SetHasFileAsync(Guid id, bool hasFile)
+        {
+            var options = new DbContextOptionsBuilder<NostosDbContext>()
+                .UseSqlite($"Data Source={factory.DatabasePath}")
+                .Options;
+
+            await using var db = new NostosDbContext(options);
+
+            var book = await db.Books.SingleAsync(x => x.Id == id);
+            book.FileDetails.HasFile = hasFile;
+
+            await db.SaveChangesAsync();
+        }
+
+        public async Task SetTargetFileNameAsync(
+            Guid id,
+            string fileName)
+        {
+            var options = new DbContextOptionsBuilder<NostosDbContext>()
+                .UseSqlite($"Data Source={factory.DatabasePath}")
+                .Options;
+
+            await using var db = new NostosDbContext(options);
+
+            var book = await db.Books.SingleAsync(x => x.Id == id);
+            book.FileDetails.FileName = fileName;
+
+            await db.SaveChangesAsync();
+        }
+
+        public void Dispose()
+        {
+            host.Dispose();
+            factory.Dispose();
+        }
     }
 
-    internal static async Task<string?> ProblemCodeAsync(
-        HttpResponseMessage response)
-    {
-        using var document = JsonDocument.Parse(
-            await response.Content.ReadAsStringAsync());
-
-        return document.RootElement.GetProperty("title").GetString();
-    }
-
-    private sealed class TestAccessPolicy(bool allowed) : IAiAccessPolicy
+    private sealed class ConfigurableAccessPolicy(
+        Func<bool> allowed) : IAiAccessPolicy
     {
         public Task<bool> IsAllowedAsync(
             CancellationToken cancellationToken = default) =>
-            Task.FromResult(allowed);
+            Task.FromResult(allowed());
     }
 
-    private sealed class FakeAlignmentService : IAlignmentService
+    private sealed class FakeAudioClipCutter : IAudioClipCutter
     {
-        public AlignmentLocateResult Result { get; set; } =
-            AlignmentLocateResult.Declined("no_match");
-
-        public Exception? Failure { get; set; }
         public int CallCount { get; private set; }
-        public double LastPosition { get; private set; }
+        public double LastPositionSeconds { get; private set; }
+        public double LastClipSeconds { get; private set; }
 
-        public Task<AlignmentLocateResult> LocateAsync(
-            AudioBookModel source,
-            EBookModel target,
+        public AudioClipException? Failure { get; set; }
+
+        public Task<AudioClip> CutAsync(
+            Nostos.Backend.Data.Models.AudioBookModel book,
             double positionSeconds,
+            double clipSeconds,
             CancellationToken ct = default)
         {
             CallCount++;
-            LastPosition = positionSeconds;
+            LastPositionSeconds = positionSeconds;
+            LastClipSeconds = clipSeconds;
 
             if (Failure is not null)
                 throw Failure;
 
-            return Task.FromResult(Result);
+            // The fake transcriber does not decode this stream.
+            return Task.FromResult(new AudioClip(
+                new MemoryStream([1, 2, 3, 4]),
+                Math.Min(positionSeconds, clipSeconds)));
         }
     }
 
-    internal sealed class RecordingUsageAccounting : IAiUsageAccountingService
+    private sealed class FakeAlignmentTranscriber : IAlignmentTranscriber
+    {
+        public bool Available { get; set; } = true;
+
+        public SttResult Result { get; set; } =
+            new(Passage, "en", 19.5);
+
+        public SttException? Failure { get; set; }
+
+        public int CallCount { get; private set; }
+        public string? LastFileName { get; private set; }
+        public string? LastContentType { get; private set; }
+        public string? LastLanguageHint { get; private set; }
+
+        public Task<bool> IsAvailableAsync(
+            CancellationToken ct = default) =>
+            Task.FromResult(Available);
+
+        public async Task<SttResult> TranscribeAsync(
+            Stream audio,
+            string fileName,
+            string? contentType,
+            string? languageHint,
+            CancellationToken ct = default)
+        {
+            CallCount++;
+            LastFileName = fileName;
+            LastContentType = contentType;
+            LastLanguageHint = languageHint;
+
+            using var buffer = new MemoryStream();
+            await audio.CopyToAsync(buffer, ct);
+
+            if (Failure is not null)
+                throw Failure;
+
+            return Result;
+        }
+    }
+
+    private sealed class FakeAlignmentDocuments : IAlignmentDocumentProvider
+    {
+        public int CallCount { get; private set; }
+
+        public Task<BookTextExtractedDocument> GetAsync(
+            Guid bookId,
+            IBookAssetStorage storage,
+            IBookTextExtractor extractor,
+            CancellationToken ct = default)
+        {
+            CallCount++;
+
+            var document = new BookTextExtractedDocument(
+                BookTextSourceFormat.Epub,
+                [
+                    new BookTextArtifactBlock(
+                        0,
+                        Passage,
+                        [],
+                        [
+                            new BookTextSourceSegment(
+                                0,
+                                Passage.Length,
+                                new EpubBookTextSourceLocator(
+                                    SpineIndex: 2,
+                                    ResourceHref: "chapter-3.xhtml",
+                                    StartTextOffset: 100,
+                                    EndTextOffset: 100 + Passage.Length)),
+                        ]),
+                ]);
+
+            return Task.FromResult(document);
+        }
+    }
+
+    private sealed class RecordingUsageAccounting :
+        IAiUsageAccountingService
     {
         public int BeginCount { get; private set; }
         public int CompleteCount { get; private set; }
-        public AiUsageBlockReason? BlockReason { get; set; }
+
         public TranscriptionUsage? LastUsage { get; private set; }
+
+        public AiUsageException? BeginFailure { get; set; }
 
         public Task<AiUsageLease?> BeginSttAsync(
             CancellationToken cancellationToken = default)
         {
             BeginCount++;
 
-            if (BlockReason is { } reason)
-                throw new AiUsageException(reason, "Usage denied.");
+            if (BeginFailure is not null)
+                throw BeginFailure;
 
             return Task.FromResult<AiUsageLease?>(
                 new AiUsageLease(Guid.NewGuid(), AiUsageKind.Stt));

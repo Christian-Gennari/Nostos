@@ -4,12 +4,27 @@ using Nostos.Product.BookText;
 namespace Nostos.Product.Alignment;
 
 /// <summary>
+/// Supplies an extracted EPUB document for alignment.
+///
+/// Production uses the revision-aware cache. Tests can supply a deterministic
+/// document without opening stored publications or running extraction.
+/// </summary>
+public interface IAlignmentDocumentProvider
+{
+    Task<BookTextExtractedDocument> GetAsync(
+        Guid bookId,
+        IBookAssetStorage storage,
+        IBookTextExtractor extractor,
+        CancellationToken ct = default);
+}
+
+/// <summary>
 /// Small, process-local cache of extracted EPUB documents.
 ///
 /// Keys include the book id, storage identity and extractor version.
 /// A replaced publication therefore cannot reuse the prior extraction.
 /// </summary>
-public sealed class AlignmentDocumentCache
+public sealed class AlignmentDocumentCache : IAlignmentDocumentProvider
 {
     private const int Capacity = 4;
     private readonly SemaphoreSlim gate = new(1, 1);

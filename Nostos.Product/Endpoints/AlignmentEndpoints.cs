@@ -199,5 +199,22 @@ public static class AlignmentEndpoints
         {
             throw;
         }
+        catch (OperationCanceledException)
+        {
+            return Failure(
+                "alignment_operation_timeout",
+                StatusCodes.Status504GatewayTimeout,
+                "The alignment operation timed out. It was not retried.");
+        }
+        catch (Exception)
+        {
+            // Unexpected failures must not expose internal exception details.
+            // In particular, do not retry a transcription: the upstream
+            // operation may already have consumed billable usage.
+            return Failure(
+                "alignment_internal_error",
+                StatusCodes.Status500InternalServerError,
+                "Alignment could not be completed. No automatic retry was attempted.");
+        }
     }
 }

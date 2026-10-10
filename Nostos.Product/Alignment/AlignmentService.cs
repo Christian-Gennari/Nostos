@@ -52,7 +52,7 @@ public sealed class AlignmentService(
     IAlignmentTranscriber transcriber,
     IBookAssetStorage storage,
     IEnumerable<IBookTextExtractor> extractors,
-    AlignmentDocumentCache cache,
+    IAlignmentDocumentProvider cache,
     AlignmentOptions options,
     IAiUsageAccountingService usage) : IAlignmentService
 {
@@ -118,16 +118,9 @@ public sealed class AlignmentService(
         await using var clip = await cutter.CutAsync(
             source, positionSeconds, options.ClipSeconds, ct);
 
-        AiUsageLease? lease;
-
-        try
-        {
-            lease = await usage.BeginSttAsync(ct);
-        }
-        catch (AiUsageException)
-        {
-            throw;
-        }
+        // BeginSttAsync is the accounting boundary. No provider request
+        // must occur when the host refuses the reservation.
+        var lease = await usage.BeginSttAsync(ct);
 
         SttResult transcription;
 
