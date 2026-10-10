@@ -1,4 +1,5 @@
-import { Injectable, inject, signal } from '@angular/core';
+import { Injectable, inject, signal, computed, DestroyRef } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ToastService } from '../core/services/toast.service';
 import { HttpEventType } from '@angular/common/http';
 import { finalize } from 'rxjs';
@@ -13,6 +14,8 @@ import { NotesService } from '../core/services/notes.service';
 import { CollectionsService } from '../core/services/collections.service';
 import { TopicsService } from '../core/services/topics.service';
 import { TopicAutocompleteService } from '../ui/topic-autocomplete-panel/topic-autocomplete.service';
+import { ImportService } from '../core/services/import.service';
+import { isImportInFlight, importStageLabel } from '../core/dtos/import.dtos';
 
 @Injectable()
 export class BookDetailStore {
@@ -23,6 +26,9 @@ export class BookDetailStore {
   private topicsService = inject(TopicsService);
   private autocompleteService = inject(TopicAutocompleteService);
   private toast = inject(ToastService);
+  private imports = inject(ImportService);
+  private destroyRef = inject(DestroyRef);
+  readonly importConnectionState = this.imports.connectionState;
 
   // --- STATE ---
   readonly loading = signal(false);
@@ -32,6 +38,36 @@ export class BookDetailStore {
   readonly notes = signal<Note[]>([]);
   readonly collections = signal<Collection[]>([]);
   readonly topicMap = signal<Map<string, TopicDto>>(new Map());
+
+  /** The same per-book import feed that supplies the Library cover and row. */
+  readonly importActivity = computed(() => {
+    const book = this.book();
+    return book ? this.imports.progressByBookId().get(book.id) : undefined;
+  });
+  readonly isImporting = computed(() => {
+    const book = this.book();
+    const activity = this.importActivity();
+    return !!book && (book.status === 1 || book.status === 2 ||
+      (!!activity && isImportInFlight(activity)));
+  });
+  readonly importStage = computed(() => {
+    const activity = this.importActivity();
+    if (activity && isImportInFlight(activity)) return importStageLabel(activity);
+    return this.book()?.status === 2 ? 'Transcoding' : 'Downloading';
+  });
+  readonly importPercent = computed(() => {
+    const activity = this.importActivity();
+    return activity && isImportInFlight(activity) ? activity.percent : null;
+  });
+  readonly uploadingFile = signal(false);
+
+  constructor() {
+    // Terminal import updates are already fetched by ImportService. Apply the
+    // resulting single-book patch here as well as in Library, without a reload.
+    this.imports.bookPatched.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((book) => {
+      if (this.book()?.id === book.id) this.book.set(book);
+    });
+  }
 
   /** True while a reset-progress command is in flight (duplicate-click guard). */
   readonly resettingProgress = signal(false);
@@ -72,6 +108,9 @@ export class BookDetailStore {
             data.coverUrl += `?t=${Date.now()}`;
           }
           this.book.set(data);
+          // Direct navigation and refresh must discover the import even when
+          // the Library has never mounted in this browser session.
+          if (data.status === 1 || data.status === 2) this.imports.ensureConnected();
         },
         error: () => {
           this.error.set('Book not found');
@@ -359,9 +398,12 @@ export class BookDetailStore {
 
   uploadFile(file: File) {
     const b = this.book();
-    if (!b) return;
+    if (!b || this.isImporting() || this.uploadingFile()) return;
 
-    this.booksService.uploadFile(b.id, file).subscribe({
+    this.uploadingFile.set(true);
+    this.booksService.uploadFile(b.id, file).pipe(
+      finalize(() => this.uploadingFile.set(false)),
+    ).subscribe({
       next: (event) => {
         if (event.type === HttpEventType.Response) {
           this.loadBook(b.id, { background: true });
@@ -375,6 +417,7 @@ export class BookDetailStore {
     const status = (error as { status?: number } | null)?.status;
     if (status === 0) return 'The connection was interrupted. Try the upload again.';
     if (status === 408 || status === 504) return 'The upload timed out. Try again.';
+    if (status === 409) return 'This book is already importing or uploading a file. Wait until it finishes.';
     if (status === 413) return 'This file is larger than this server allows.';
     if (status === 429) return 'Too many uploads are running right now. Try again in a moment.';
     if (status != null && status >= 400 && status < 500) {

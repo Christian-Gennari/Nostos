@@ -7,6 +7,7 @@ import { of } from 'rxjs';
 import { BookDetail } from './book-detail.component';
 import { Book } from '../core/dtos/book.dtos';
 import { ToastService } from '../core/services/toast.service';
+import { ImportService } from '../core/services/import.service';
 
 const book: Book = {
   id: 'b1',
@@ -200,6 +201,71 @@ describe('BookDetail reset progress', () => {
     const actions = fixture.nativeElement.querySelector('.primary-actions') as HTMLElement;
     expect(actions.textContent).toContain('Upload File');
     expect(actions.querySelector('input[type="file"][accept*=".epub"]')).toBeTruthy();
+  });
+
+  it('shows a truthful import state on direct entry and blocks every upload entry point', async () => {
+    await setup(readableBook({ status: 1, hasFile: false, fileName: null }));
+    // Direct Book Details navigation must discover imports without visiting Library.
+    const active = httpMock.expectOne('/api/imports/active');
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.detail-import-progress')?.textContent)
+      .toContain('Downloading');
+    expect(fixture.nativeElement.querySelector('.detail-import-progress')?.textContent)
+      .not.toContain('%'); // No fabricated percentage before the feed arrives.
+    expect(fixture.nativeElement.querySelector('.primary-actions')?.textContent)
+      .not.toContain('Upload File');
+
+    const picker = vi.fn();
+    component.fileInput = { nativeElement: { click: picker } } as any;
+    component.triggerFilePicker();
+    component.onFileUploadSelected({
+      target: { files: [new File(['data'], 'other.epub')], value: 'other.epub' },
+    } as unknown as Event);
+    component.store.uploadFile(new File(['data'], 'other.epub'));
+    expect(picker).not.toHaveBeenCalled();
+    httpMock.expectNone('/api/books/b1/file');
+    active.flush([]);
+  });
+
+  it('reuses per-book feed percentages and changes to reader actions on completion', async () => {
+    await setup(readableBook({ status: 2, hasFile: false, fileName: null, progressPercent: 42 }));
+    httpMock.expectOne('/api/imports/active').flush([{
+      id: 'job-1', source: 'job', state: 'running', stage: 'assembling',
+      percent: 73, detail: null, providerId: 'librivox', externalId: '123',
+      assetId: 'mp3', bookId: 'b1', title: 'Meditations', author: null,
+      coverUrl: null, errorCode: null, message: null, createdAt: '',
+      updatedAt: '', canRetry: true,
+    }]);
+    fixture.detectChanges();
+
+    const bar = fixture.nativeElement.querySelector('.detail-import-track') as HTMLElement;
+    expect(bar.getAttribute('aria-valuenow')).toBe('73');
+    expect(fixture.nativeElement.querySelector('.detail-import-progress')?.textContent)
+      .toContain('Transcoding');
+    expect(fixture.nativeElement.querySelector('.detail-import-progress')?.textContent)
+      .toContain('73%');
+    // Not the independent reading progress (42%).
+    expect(bar.getAttribute('aria-valuenow')).not.toBe('42');
+
+    const imports = TestBed.inject(ImportService);
+    // The real terminal event removes the running entry before the book fetch resolves.
+    imports.dismiss(imports.imports()[0]);
+    imports.bookPatched.next(
+      readableBook({ status: 0, hasFile: true, fileName: 'book.epub' }),
+    );
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.detail-import-progress')).toBeNull();
+    expect(fixture.nativeElement.querySelector('.primary-actions')?.textContent)
+      .toContain('Read Book');
+  });
+
+  it('renders a failed provider import without hiding its failure reason', async () => {
+    await setup(readableBook({
+      status: 3, hasFile: false, fileName: null, statusMessage: 'Download failed',
+    }));
+    expect(fixture.nativeElement.querySelector('.detail-import-failed')?.textContent)
+      .toContain('Download failed');
+    expect(fixture.nativeElement.querySelector('.detail-import-progress')).toBeNull();
   });
 
   it('toggles the status dropdown menu open and closed on chip click', async () => {

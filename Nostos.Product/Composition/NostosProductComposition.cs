@@ -281,6 +281,7 @@ public static class NostosProductComposition
             DefaultAcquisitionWorkingRootProvider>();
         services.AddSingleton<ITranscodeLimiter, TranscodeLimiter>();
         services.AddSingleton<IProviderContentDownloader, ProviderContentDownloader>();
+        services.AddSingleton<BookFileMutationGate>();
         services.AddScoped<IAcquisitionService, AcquisitionService>();
 
         services.AddHttpClient(GutenbergProvider.HttpClientName, client =>
