@@ -16,7 +16,7 @@ namespace Nostos.Backend.Tests.Portability;
 /// </summary>
 public sealed class PortableMultiTrackTests
 {
-    private static readonly byte[][] TrackBytes =
+    internal static readonly byte[][] TrackBytes =
     [
         Enumerable.Repeat((byte)0xA1, 3000).ToArray(),
         Enumerable.Repeat((byte)0xB2, 17).ToArray(),
@@ -191,7 +191,7 @@ public sealed class PortableMultiTrackTests
         corrupted.Failures.Should().ContainSingle();
     }
 
-    private static async Task<Guid> SeedMultiTrackBookAsync(LocalPortableTestLibrary library)
+    internal static async Task<Guid> SeedMultiTrackBookAsync(LocalPortableTestLibrary library)
     {
         var now = DateTime.UtcNow.AddDays(-3);
         var work = new WorkModel

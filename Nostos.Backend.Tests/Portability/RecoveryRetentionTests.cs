@@ -46,6 +46,50 @@ public sealed class RecoveryRetentionTests
     }
 
     [Fact]
+    public async Task Capture_RetainsTheTracksOfAMultiTrackAudiobook()
+    {
+        // Issue #835. A multi-track audiobook keeps its audio as track files
+        // in the book folder. Losing them from the recovery copy would restore
+        // a book with a cover and no sound.
+        using var bed = new RecoveryTestBed();
+        await bed.SeedLiveLibraryAsync();
+        var folder = Path.Combine(bed.Paths.LiveMedia, FirstBook.ToString("N"));
+        File.WriteAllText(Path.Combine(folder, "track-0001.mp3"), "first track");
+        File.WriteAllText(Path.Combine(folder, "track-0002.mp3"), "second track");
+        File.WriteAllText(Path.Combine(folder, "track-notes.txt"), "merely resembles a track");
+        var service = bed.CreateService();
+
+        var capture = await service.CaptureAsync(bed.JobId, bed.OperationId, bed.Revision,
+            new MigrationExistingCounts(Books: 2, BookCollections: 4), default);
+
+        capture.Media.Should().HaveCount(8);
+        capture.Media.Where(pin => pin.Kind == "track").Select(pin => pin.RelativePath).Should().BeEquivalentTo(
+            $"{FirstBook:N}/track-0001.mp3", $"{FirstBook:N}/track-0002.mp3");
+        capture.Media.Single(pin => pin.RelativePath == $"{FirstBook:N}/track-notes.txt").Kind.Should().Be("other");
+        capture.Media.Single(pin => pin.RelativePath == $"{FirstBook:N}/track-0002.mp3")
+            .Sha256.Should().Be(PortableArchiveTestSupport.Sha256Hex("second track"u8.ToArray()));
+    }
+
+    [Fact]
+    public async Task Capture_StillRefusesASubfolderInABookFolder()
+    {
+        // Why tracks are stored flat: retention fails closed on any directory
+        // it does not know, and a tracks/ subfolder would have blocked every
+        // library switch for a library holding a multi-track audiobook.
+        using var bed = new RecoveryTestBed();
+        await bed.SeedLiveLibraryAsync();
+        var subfolder = Path.Combine(bed.Paths.LiveMedia, FirstBook.ToString("N"), "tracks");
+        Directory.CreateDirectory(subfolder);
+        File.WriteAllText(Path.Combine(subfolder, "0001.mp3"), "nested");
+        var service = bed.CreateService();
+
+        Func<Task> capture = () => service.CaptureAsync(bed.JobId, bed.OperationId, bed.Revision,
+            new MigrationExistingCounts(Books: 2, BookCollections: 4), default);
+
+        await capture.Should().ThrowAsync<MigrationActivationException>();
+    }
+
+    [Fact]
     public async Task PrepareRetention_RequiresJournalIdentityAndExclusiveLease()
     {
         using var bed = new RecoveryTestBed();
