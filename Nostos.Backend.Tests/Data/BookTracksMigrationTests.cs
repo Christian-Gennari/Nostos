@@ -40,7 +40,7 @@ public sealed class BookTracksMigrationTests : IDisposable
         {
             (await db.Database.EnsureCreatedAsync()).Should().BeTrue();
             migrationId = db.Database.GetMigrations().Single(id => id.Contains("AddBookTracks"));
-            db.Database.GetMigrations().Last().Should().Be(migrationId, "this is the newest migration");
+            db.Database.GetMigrations().Should().Contain(PreviousMigration, "the migration upgrades from this one");
 
             var history = db.GetService<IHistoryRepository>();
             await db.Database.ExecuteSqlRawAsync(history.GetCreateScript());
@@ -87,7 +87,7 @@ public sealed class BookTracksMigrationTests : IDisposable
         await using (var db = new NostosDbContext(options))
         {
             await db.GetService<IMigrator>().MigrateAsync(PreviousMigration);
-            (await db.Database.GetPendingMigrationsAsync()).Should().Equal(migrationId);
+            (await db.Database.GetPendingMigrationsAsync()).Should().StartWith(migrationId);
         }
 
         (await ColumnsAsync(path)).Should().NotContain(Column);
@@ -97,8 +97,8 @@ public sealed class BookTracksMigrationTests : IDisposable
         // 3. Apply the migration.
         await using (var db = new NostosDbContext(options))
         {
-            await db.Database.MigrateAsync();
-            (await db.Database.GetPendingMigrationsAsync()).Should().BeEmpty();
+            await db.GetService<IMigrator>().MigrateAsync(migrationId);
+            (await db.Database.GetPendingMigrationsAsync()).Should().NotContain(migrationId);
         }
 
         (await ColumnsAsync(path)).Should().Contain(Column);
