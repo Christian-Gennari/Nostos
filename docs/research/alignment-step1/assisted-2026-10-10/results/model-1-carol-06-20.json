@@ -1,0 +1,51 @@
+{
+  "sourceSha256": "8557960c8d5e62e23ebfeedacad8ad0a4ebf8d056c1ad37210b2a528c2a2d6cb",
+  "extractorVersion": "nostos-book-text-v2",
+  "settings": {
+    "minimumScore": 0.85,
+    "minimumMargin": 0.12,
+    "minimumTokens": 8,
+    "maximumTokens": 24
+  },
+  "transcript": {
+    "audioSha256": "7db3154f408e4f1a76f3e5c97bc15b1478fc1884f1d5ffe469c7aaabd19dd84b",
+    "recordedAt": "2026-10-10T14:56:57.1465035+00:00",
+    "elapsedMilliseconds": 3131.8146,
+    "result": {
+      "text": "frisked into the sitting room and was now standing there, perfectly winded. \u0022There\u0027s the saucepan that the gruel was in,\u0022 cried Scrooge, starting off again and going around the fireplace. \u0022There\u0027s the door by which the ghost of Jacob Marley entered.\u0022",
+      "language": "en",
+      "durationSeconds": 20
+    }
+  },
+  "match": {
+    "accepted": true,
+    "reason": "matched",
+    "score": 0.9583333333333334,
+    "runnerUpScore": 0,
+    "start": {
+      "blockOrder": 689,
+      "globalTextOffset": 147450,
+      "locator": {
+        "type": "epub",
+        "spineIndex": 2,
+        "resourceHref": "1597581767207061809_46-h-1.htm.xhtml",
+        "cfi": null,
+        "startTextOffset": 2856,
+        "endTextOffset": 2856
+      }
+    },
+    "end": {
+      "blockOrder": 689,
+      "globalTextOffset": 147586,
+      "locator": {
+        "type": "epub",
+        "spineIndex": 2,
+        "resourceHref": "1597581767207061809_46-h-1.htm.xhtml",
+        "cfi": null,
+        "startTextOffset": 2992,
+        "endTextOffset": 2992
+      }
+    },
+    "passage": "was in cried scrooge starting off again and going round the fireplace there s the door by which the ghost of jacob marley entered"
+  }
+}

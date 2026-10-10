@@ -1,0 +1,51 @@
+{
+  "sourceSha256": "d401ad6b118e84d01b8dd1a3d034fd41784feb14c50f1f7a0fc17f3263fa8e9f",
+  "extractorVersion": "nostos-book-text-v2",
+  "settings": {
+    "minimumScore": 0.85,
+    "minimumMargin": 0.12,
+    "minimumTokens": 8,
+    "maximumTokens": 24
+  },
+  "transcript": {
+    "audioSha256": "30d3b2546adebcbfb07fb5c34327345add385e043acd86a229353d62edff100d",
+    "recordedAt": "2026-10-10T15:01:29.8718452+00:00",
+    "elapsedMilliseconds": 2906.8776,
+    "result": {
+      "text": "But why did you not tell me that before? If I had known as much this morning, I certainly would not have called on him. It is very unlucky; but as I have actually paid the visit, we cannot",
+      "language": "en",
+      "durationSeconds": 10
+    }
+  },
+  "match": {
+    "accepted": true,
+    "reason": "matched",
+    "score": 1,
+    "runnerUpScore": 0,
+    "start": {
+      "blockOrder": 87,
+      "globalTextOffset": 33357,
+      "locator": {
+        "type": "epub",
+        "spineIndex": 1,
+        "resourceHref": "1306980130634175271_1342-h-0.htm.xhtml",
+        "cfi": null,
+        "startTextOffset": 33357,
+        "endTextOffset": 33357
+      }
+    },
+    "end": {
+      "blockOrder": 87,
+      "globalTextOffset": 33481,
+      "locator": {
+        "type": "epub",
+        "spineIndex": 1,
+        "resourceHref": "1306980130634175271_1342-h-0.htm.xhtml",
+        "cfi": null,
+        "startTextOffset": 33481,
+        "endTextOffset": 33481
+      }
+    },
+    "passage": "this morning i certainly would not have called on him it is very unlucky but as i have actually paid the visit we cannot"
+  }
+}

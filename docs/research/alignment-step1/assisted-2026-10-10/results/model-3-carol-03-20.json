@@ -1,0 +1,51 @@
+{
+  "sourceSha256": "8557960c8d5e62e23ebfeedacad8ad0a4ebf8d056c1ad37210b2a528c2a2d6cb",
+  "extractorVersion": "nostos-book-text-v2",
+  "settings": {
+    "minimumScore": 0.85,
+    "minimumMargin": 0.12,
+    "minimumTokens": 8,
+    "maximumTokens": 24
+  },
+  "transcript": {
+    "audioSha256": "1e80a6e00f6c54c163a914ae5675cb4b960e6215939b83967e6b19543e865885",
+    "recordedAt": "2026-10-10T15:08:01.6440801+00:00",
+    "elapsedMilliseconds": 2697.2798,
+    "result": {
+      "text": "their capacity for adventure by observing that they are good for anything from pitch-and-toss to manslaughter, between which opposite extremes, no doubt, there lies a tolerably wide and comprehensive range of subjects. Without venturing for Scrooge quite as hardly as this, I don\u0027t mind calling on you to believe that he was ready for a good broad field of strange",
+      "language": null,
+      "durationSeconds": null
+    }
+  },
+  "match": {
+    "accepted": true,
+    "reason": "matched",
+    "score": 0.9583333333333334,
+    "runnerUpScore": 0,
+    "start": {
+      "blockOrder": 363,
+      "globalTextOffset": 72216,
+      "locator": {
+        "type": "epub",
+        "spineIndex": 1,
+        "resourceHref": "1597581767207061809_46-h-0.htm.xhtml",
+        "cfi": null,
+        "startTextOffset": 72216,
+        "endTextOffset": 72216
+      }
+    },
+    "end": {
+      "blockOrder": 363,
+      "globalTextOffset": 72326,
+      "locator": {
+        "type": "epub",
+        "spineIndex": 1,
+        "resourceHref": "1597581767207061809_46-h-0.htm.xhtml",
+        "cfi": null,
+        "startTextOffset": 72326,
+        "endTextOffset": 72326
+      }
+    },
+    "passage": "as hardily as this i don t mind calling on you to believe that he was ready for a good broad field of strange"
+  }
+}

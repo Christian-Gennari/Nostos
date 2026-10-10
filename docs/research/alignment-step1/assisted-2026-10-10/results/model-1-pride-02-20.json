@@ -1,0 +1,51 @@
+{
+  "sourceSha256": "d401ad6b118e84d01b8dd1a3d034fd41784feb14c50f1f7a0fc17f3263fa8e9f",
+  "extractorVersion": "nostos-book-text-v2",
+  "settings": {
+    "minimumScore": 0.85,
+    "minimumMargin": 0.12,
+    "minimumTokens": 8,
+    "maximumTokens": 24
+  },
+  "transcript": {
+    "audioSha256": "f241515b14cf40142008b576ef8ea304440ccbdb3c1f5841c097736ca05f76e1",
+    "recordedAt": "2026-10-10T15:00:19.2136876+00:00",
+    "elapsedMilliseconds": 2897.9069,
+    "result": {
+      "text": "it would be for one of them. Sir William and Lady Lucas are determined to go, merely on that account, for in general, you know, they visit no newcomers. Indeed, you must go, for it will be impossible for us to visit him if you do not. You are over-scrupulous, surely. I dare say Mr. Bingley will be very glad to see you, and I will send a few lines by you to assure",
+      "language": "en",
+      "durationSeconds": 20
+    }
+  },
+  "match": {
+    "accepted": true,
+    "reason": "matched",
+    "score": 1,
+    "runnerUpScore": 0,
+    "start": {
+      "blockOrder": 54,
+      "globalTextOffset": 28758,
+      "locator": {
+        "type": "epub",
+        "spineIndex": 1,
+        "resourceHref": "1306980130634175271_1342-h-0.htm.xhtml",
+        "cfi": null,
+        "startTextOffset": 28758,
+        "endTextOffset": 28758
+      }
+    },
+    "end": {
+      "blockOrder": 54,
+      "globalTextOffset": 28863,
+      "locator": {
+        "type": "epub",
+        "spineIndex": 1,
+        "resourceHref": "1306980130634175271_1342-h-0.htm.xhtml",
+        "cfi": null,
+        "startTextOffset": 28863,
+        "endTextOffset": 28863
+      }
+    },
+    "passage": "surely i dare say mr bingley will be very glad to see you and i will send a few lines by you to assure"
+  }
+}

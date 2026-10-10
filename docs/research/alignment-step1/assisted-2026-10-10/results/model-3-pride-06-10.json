@@ -1,0 +1,51 @@
+{
+  "sourceSha256": "d401ad6b118e84d01b8dd1a3d034fd41784feb14c50f1f7a0fc17f3263fa8e9f",
+  "extractorVersion": "nostos-book-text-v2",
+  "settings": {
+    "minimumScore": 0.85,
+    "minimumMargin": 0.12,
+    "minimumTokens": 8,
+    "maximumTokens": 24
+  },
+  "transcript": {
+    "audioSha256": "f6d22a2957b22cf923af1c91794608547d147e67fa032f10b580bb79f27c1c3d",
+    "recordedAt": "2026-10-10T15:18:15.3578979+00:00",
+    "elapsedMilliseconds": 1676.09,
+    "result": {
+      "text": "handsome features, noble mien, and the report which was in general circulation within five minutes after his entrance, of his having ten thousand a year.",
+      "language": null,
+      "durationSeconds": null
+    }
+  },
+  "match": {
+    "accepted": true,
+    "reason": "matched",
+    "score": 1,
+    "runnerUpScore": 0,
+    "start": {
+      "blockOrder": 103,
+      "globalTextOffset": 37887,
+      "locator": {
+        "type": "epub",
+        "spineIndex": 1,
+        "resourceHref": "1306980130634175271_1342-h-0.htm.xhtml",
+        "cfi": null,
+        "startTextOffset": 37887,
+        "endTextOffset": 37887
+      }
+    },
+    "end": {
+      "blockOrder": 103,
+      "globalTextOffset": 38031,
+      "locator": {
+        "type": "epub",
+        "spineIndex": 1,
+        "resourceHref": "1306980130634175271_1342-h-0.htm.xhtml",
+        "cfi": null,
+        "startTextOffset": 38031,
+        "endTextOffset": 38031
+      }
+    },
+    "passage": "features noble mien and the report which was in general circulation within five minutes after his entrance of his having ten thousand a year"
+  }
+}

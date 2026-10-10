@@ -1,0 +1,29 @@
+{
+  "sourceSha256": "d401ad6b118e84d01b8dd1a3d034fd41784feb14c50f1f7a0fc17f3263fa8e9f",
+  "extractorVersion": "nostos-book-text-v2",
+  "settings": {
+    "minimumScore": 0.85,
+    "minimumMargin": 0.12,
+    "minimumTokens": 8,
+    "maximumTokens": 24
+  },
+  "transcript": {
+    "audioSha256": "f8a4db7ed76a941063ca7d34da25f6e36adec2eb81ab8db6ff402325d33d80a0",
+    "recordedAt": "2026-10-10T15:20:32.9785133+00:00",
+    "elapsedMilliseconds": 2604.2716,
+    "result": {
+      "text": "This is a LibriVox recording. All LibriVox recordings are in the public domain. For more information, please visit LibriVox.org. Today\u0027s reading, Pride and Prejudice by Jane Austen, Chapters 1 to 3. Read by Chris Garange. Chapter 1",
+      "language": null,
+      "durationSeconds": null
+    }
+  },
+  "match": {
+    "accepted": false,
+    "reason": "no_match",
+    "score": 0,
+    "runnerUpScore": 0,
+    "start": null,
+    "end": null,
+    "passage": null
+  }
+}

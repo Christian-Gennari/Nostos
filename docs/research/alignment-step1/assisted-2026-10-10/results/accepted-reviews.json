@@ -1,0 +1,494 @@
+[
+  {
+    "providerTag": "model-1",
+    "clipId": "carol-01-10",
+    "matchSha256": "8bc28fd0110476f27120a8dbc64b34a5f296606a14300b977876fe7fbaba3c37",
+    "outcome": "correct",
+    "reviewedBy": "Codex: direct EPUB text and independent local Whisper reference inspection",
+    "reviewedAt": "2026-10-10",
+    "verificationMethod": "machine-assisted",
+    "referenceSha256": "d277a6b80e85228309fc3212b0aecb7260e5e67492d2b29a0c952d1ab7d33ee5",
+    "observation": "Candidate ends at I know in STAVE ONE; reference and source paragraph agree. This is assisted reference agreement, not human audio listening."
+  },
+  {
+    "providerTag": "model-1",
+    "clipId": "carol-01-20",
+    "matchSha256": "dd4851f7b5483da468a771b4ab8c43e3b2275a08a83d63ba247132c1f2a4e1fc",
+    "outcome": "correct",
+    "reviewedBy": "Codex: direct EPUB text and independent local Whisper reference inspection",
+    "reviewedAt": "2026-10-10",
+    "verificationMethod": "machine-assisted",
+    "referenceSha256": "6c5ac36e45197f19d535512628cb77f52c5e76163efa0632bec15b84d2e15abf",
+    "observation": "Candidate ends at I know in STAVE ONE; reference and source paragraph agree. This is assisted reference agreement, not human audio listening."
+  },
+  {
+    "providerTag": "model-1",
+    "clipId": "carol-02-10",
+    "matchSha256": "0985b6688f83a7da9199336d6bdd3397e74d5f7e836a1793bf0f26b8b83b5619",
+    "outcome": "correct",
+    "reviewedBy": "Codex: direct EPUB text and independent local Whisper reference inspection",
+    "reviewedAt": "2026-10-10",
+    "verificationMethod": "machine-assisted",
+    "referenceSha256": "bf1f297596185a95b1de131e309d82b98ed873597e1f6b78356cd86bc798e4d4",
+    "observation": "Candidate ends at upon his in the Hamlet comparison; reference and source paragraph agree. This is assisted reference agreement, not human audio listening."
+  },
+  {
+    "providerTag": "model-1",
+    "clipId": "carol-02-20",
+    "matchSha256": "f782f00268a25363e57f4bc7df32ae880bfe0ae85212d09464f891191a2f4fdb",
+    "outcome": "correct",
+    "reviewedBy": "Codex: direct EPUB text and independent local Whisper reference inspection",
+    "reviewedAt": "2026-10-10",
+    "verificationMethod": "machine-assisted",
+    "referenceSha256": "64c92f23d49ef401bf7b80e8e20b84825c5668ecaed9ed32d9674cc8146de5c2",
+    "observation": "Candidate ends at upon his in the Hamlet comparison; reference and source paragraph agree. This is assisted reference agreement, not human audio listening."
+  },
+  {
+    "providerTag": "model-1",
+    "clipId": "carol-03-10",
+    "matchSha256": "79d956fab00be37a0c251f2bd780d834372794ae8121c66886889523bacd7f9e",
+    "outcome": "correct",
+    "reviewedBy": "Codex: direct EPUB text and independent local Whisper reference inspection",
+    "reviewedAt": "2026-10-10",
+    "verificationMethod": "machine-assisted",
+    "referenceSha256": "f2c46573e542dec9e5ef0d7560eff21746b21af97761988dd1c373beb97d9d4c",
+    "observation": "Candidate restores clipped strange where reference writes strain; source paragraph independently confirms broad field of strange appearances. This is assisted reference agreement, not human audio listening."
+  },
+  {
+    "providerTag": "model-1",
+    "clipId": "carol-03-20",
+    "matchSha256": "74ee1307fab75a71d32f6e697b417d94f7313e13b1bc6b8be93c59b74b88bc53",
+    "outcome": "correct",
+    "reviewedBy": "Codex: direct EPUB text and independent local Whisper reference inspection",
+    "reviewedAt": "2026-10-10",
+    "verificationMethod": "machine-assisted",
+    "referenceSha256": "2389e0b0f5741a55eae1222358fd8574a41b7b0112851ee01ec139f5a4dbfa61",
+    "observation": "Candidate restores clipped strange where reference writes strain; source paragraph independently confirms broad field of strange appearances. This is assisted reference agreement, not human audio listening."
+  },
+  {
+    "providerTag": "model-1",
+    "clipId": "carol-04-10",
+    "matchSha256": "9165920e605f477e4751f3dc78baa8f5d1e2974c16657f79d22393aafea7f97f",
+    "outcome": "correct",
+    "reviewedBy": "Codex: direct EPUB text and independent local Whisper reference inspection",
+    "reviewedAt": "2026-10-10",
+    "verificationMethod": "machine-assisted",
+    "referenceSha256": "a47fd860d21559f3797fc409537fcdad2f5b700ea601ca92db74eb11575a4445",
+    "observation": "Candidate ends at bright gleaming berries in the transformed room; reference and source paragraph agree. This is assisted reference agreement, not human audio listening."
+  },
+  {
+    "providerTag": "model-1",
+    "clipId": "carol-04-20",
+    "matchSha256": "014e93003114195698d7412a9909fe8bc289d337d81dddf72cfeb3661679b0d2",
+    "outcome": "correct",
+    "reviewedBy": "Codex: direct EPUB text and independent local Whisper reference inspection",
+    "reviewedAt": "2026-10-10",
+    "verificationMethod": "machine-assisted",
+    "referenceSha256": "55e4f10275e66490b713a08b5c41ac9eba1add3a814c1b948f9c96e6fcd276c5",
+    "observation": "Candidate ends at bright gleaming berries in the transformed room; reference and source paragraph agree. This is assisted reference agreement, not human audio listening."
+  },
+  {
+    "providerTag": "model-1",
+    "clipId": "carol-05-10",
+    "matchSha256": "29077c9288c2cf1af0b724a7cfa95cf3e395ef1c2408d2b0d7f7d88d7ab78fae",
+    "outcome": "correct",
+    "reviewedBy": "Codex: direct EPUB text and independent local Whisper reference inspection",
+    "reviewedAt": "2026-10-10",
+    "verificationMethod": "machine-assisted",
+    "referenceSha256": "d90b087dd74fcf04d57933bfaa6b3a69030170ef2520c1b32379e8559590b91c",
+    "observation": "Candidate ends at the second they are not torn down after bed curtains; source context distinguishes the repeated clause. This is assisted reference agreement, not human audio listening."
+  },
+  {
+    "providerTag": "model-1",
+    "clipId": "carol-05-20",
+    "matchSha256": "450aaed0a3a9eeb4d6d659c237a44ca3a46a491aee64720796177a0ccd41bfa0",
+    "outcome": "correct",
+    "reviewedBy": "Codex: direct EPUB text and independent local Whisper reference inspection",
+    "reviewedAt": "2026-10-10",
+    "verificationMethod": "machine-assisted",
+    "referenceSha256": "b69ff818d21da6dc19d06ae9dea9122c0595a440ca78928e6bd4fd6eb0016ba5",
+    "observation": "Candidate ends at the second they are not torn down after bed curtains; source context distinguishes the repeated clause. This is assisted reference agreement, not human audio listening."
+  },
+  {
+    "providerTag": "model-1",
+    "clipId": "carol-06-10",
+    "matchSha256": "6ae9132c648d722943039032e66740d384cdb7dbd5f42bd4e97816f8dd3cf2ea",
+    "outcome": "correct",
+    "reviewedBy": "Codex: direct EPUB text and independent local Whisper reference inspection",
+    "reviewedAt": "2026-10-10",
+    "verificationMethod": "machine-assisted",
+    "referenceSha256": "8a03ecf14e89c721a7c274fd0e5c83ff4447dca82664082237cdfd84eb5d4adb",
+    "observation": "Candidate ends at Jacob Marley entered in STAVE FIVE; reference and source agree despite around/round variation. This is assisted reference agreement, not human audio listening."
+  },
+  {
+    "providerTag": "model-1",
+    "clipId": "carol-06-20",
+    "matchSha256": "3f2aa6fed861b7c6d0e9cd290f536fa0fc9f6bf942af3ce6ba2ae58d56967af5",
+    "outcome": "correct",
+    "reviewedBy": "Codex: direct EPUB text and independent local Whisper reference inspection",
+    "reviewedAt": "2026-10-10",
+    "verificationMethod": "machine-assisted",
+    "referenceSha256": "85bd91f25b53588b01f098ac2d375143c7180406e473ffb51b1fd85801c32420",
+    "observation": "Candidate ends at Jacob Marley entered in STAVE FIVE; reference and source agree despite around/round variation. This is assisted reference agreement, not human audio listening."
+  },
+  {
+    "providerTag": "model-1",
+    "clipId": "pride-01-10",
+    "matchSha256": "9abacf1e17ae8e45998726b219c6b07d7efa01f839c1e46348669d891b25c812",
+    "outcome": "correct",
+    "reviewedBy": "Codex: direct EPUB text and independent local Whisper reference inspection",
+    "reviewedAt": "2026-10-10",
+    "verificationMethod": "machine-assisted",
+    "observation": "Candidate ends at A single in the single-man dialogue; both duration references and source block 43 agree. Assisted agreement only; not human audio listening."
+  },
+  {
+    "providerTag": "model-1",
+    "clipId": "pride-01-20",
+    "matchSha256": "4c75de076ce398b047d2b02af582b8670a4759ad82752acf99a01750932f66b8",
+    "outcome": "correct",
+    "reviewedBy": "Codex: direct EPUB text and independent local Whisper reference inspection",
+    "reviewedAt": "2026-10-10",
+    "verificationMethod": "machine-assisted",
+    "observation": "Candidate ends at A single in the single-man dialogue; both duration references and source block 43 agree. Assisted agreement only; not human audio listening."
+  },
+  {
+    "providerTag": "model-1",
+    "clipId": "pride-02-10",
+    "matchSha256": "3a07a742327b96daef0bbc094e6957f8ac03d01dd00d8131433a3219729d1c84",
+    "outcome": "correct",
+    "reviewedBy": "Codex: direct EPUB text and independent local Whisper reference inspection",
+    "reviewedAt": "2026-10-10",
+    "verificationMethod": "machine-assisted",
+    "observation": "Candidate ends at to assure in Mr Bingley dialogue; frozen range explicitly accounts for the low-confidence adjacent word in the 10-second reference. Assisted agreement only; not human audio listening."
+  },
+  {
+    "providerTag": "model-1",
+    "clipId": "pride-02-20",
+    "matchSha256": "bc78729cc24042dcb43fc38c8a6390368efcfad8847e855027c60e40adc4652a",
+    "outcome": "correct",
+    "reviewedBy": "Codex: direct EPUB text and independent local Whisper reference inspection",
+    "reviewedAt": "2026-10-10",
+    "verificationMethod": "machine-assisted",
+    "observation": "Candidate ends at to assure in Mr Bingley dialogue; frozen range explicitly accounts for the low-confidence adjacent word in the 10-second reference. Assisted agreement only; not human audio listening."
+  },
+  {
+    "providerTag": "model-1",
+    "clipId": "pride-03-10",
+    "matchSha256": "3e6f1e3da893ea083878506db849a94a398b015e1087c19af344d7ac26aca859",
+    "outcome": "correct",
+    "reviewedBy": "Codex: direct EPUB text and independent local Whisper reference inspection",
+    "reviewedAt": "2026-10-10",
+    "verificationMethod": "machine-assisted",
+    "observation": "Candidate ends at To-morrow fortnight in source block 77; source locator correctly crosses the preceding Lizzy question into the next paragraph. Assisted agreement only; not human audio listening."
+  },
+  {
+    "providerTag": "model-1",
+    "clipId": "pride-03-20",
+    "matchSha256": "22b48d1117f3c417328fa89d5409590628cc4cfe5771b166ff31abd7f4314a0d",
+    "outcome": "correct",
+    "reviewedBy": "Codex: direct EPUB text and independent local Whisper reference inspection",
+    "reviewedAt": "2026-10-10",
+    "verificationMethod": "machine-assisted",
+    "observation": "Candidate ends at To-morrow fortnight in source block 77; source locator correctly crosses the preceding Lizzy question into the next paragraph. Assisted agreement only; not human audio listening."
+  },
+  {
+    "providerTag": "model-1",
+    "clipId": "pride-04-10",
+    "matchSha256": "dea6d4f27b53f94b3d64f01b5921b421ac9fc3534e3166de816c23129d1d98a6",
+    "outcome": "correct",
+    "reviewedBy": "Codex: direct EPUB text and independent local Whisper reference inspection",
+    "reviewedAt": "2026-10-10",
+    "verificationMethod": "machine-assisted",
+    "observation": "Candidate ends at we cannot in the paid-visit dialogue, matching both independent references and source block 87. Not human audio listening."
+  },
+  {
+    "providerTag": "model-1",
+    "clipId": "pride-04-20",
+    "matchSha256": "92c46c3a83b7c23a65575278e506878af81c127e70013f6c233685f783845315",
+    "outcome": "correct",
+    "reviewedBy": "Codex: direct EPUB text and independent local Whisper reference inspection",
+    "reviewedAt": "2026-10-10",
+    "verificationMethod": "machine-assisted",
+    "observation": "Candidate ends at we cannot in the paid-visit dialogue, matching both independent references and source block 87. Not human audio listening."
+  },
+  {
+    "providerTag": "model-1",
+    "clipId": "pride-05-10",
+    "matchSha256": "4b0f83180ef53c540c85766d1d286580dc7991f784b4fa38b84d071c7ebe1eb3",
+    "outcome": "correct",
+    "reviewedBy": "Codex: direct EPUB text and independent local Whisper reference inspection",
+    "reviewedAt": "2026-10-10",
+    "verificationMethod": "machine-assisted",
+    "observation": "Candidate ends at soon afterwards in the dinner invitation, crossing from the upper-window paragraph into source block 99; references and source text agree. Not human audio listening."
+  },
+  {
+    "providerTag": "model-1",
+    "clipId": "pride-05-20",
+    "matchSha256": "bf082c7406e7001df30fb8f69a145762dd4141f2e79031f2fcda28a9c5b3eb0c",
+    "outcome": "correct",
+    "reviewedBy": "Codex: direct EPUB text and independent local Whisper reference inspection",
+    "reviewedAt": "2026-10-10",
+    "verificationMethod": "machine-assisted",
+    "observation": "Candidate ends at soon afterwards in the dinner invitation, crossing from the upper-window paragraph into source block 99; references and source text agree. Not human audio listening."
+  },
+  {
+    "providerTag": "model-1",
+    "clipId": "pride-06-10",
+    "matchSha256": "4bf5a098835f4742fc40d669610ea42d0f2f545e3bd7df317446e2d650b5f8ef",
+    "outcome": "correct",
+    "reviewedBy": "Codex: direct EPUB text and independent local Whisper reference inspection",
+    "reviewedAt": "2026-10-10",
+    "verificationMethod": "machine-assisted",
+    "observation": "Candidate ends at year/The (10s) or The gentlemen (20s), inside the pre-frozen cutoff range in source block 103. The 20s independent reference has low-confidence adjacent words; this is explicitly assisted agreement. Not human audio listening."
+  },
+  {
+    "providerTag": "model-1",
+    "clipId": "pride-06-20",
+    "matchSha256": "4f133e6a48b11d68ccbd9a3d817b6fdafa6582c60db139dc9d5684f45190535d",
+    "outcome": "correct",
+    "reviewedBy": "Codex: direct EPUB text and independent local Whisper reference inspection",
+    "reviewedAt": "2026-10-10",
+    "verificationMethod": "machine-assisted",
+    "observation": "Candidate ends at year/The (10s) or The gentlemen (20s), inside the pre-frozen cutoff range in source block 103. The 20s independent reference has low-confidence adjacent words; this is explicitly assisted agreement. Not human audio listening."
+  },
+  {
+    "providerTag": "model-3",
+    "clipId": "carol-01-10",
+    "matchSha256": "43206d533b25d8d4068d2d36684ceb36c32fca81ed4025e7789da77e2a4b399e",
+    "outcome": "correct",
+    "reviewedBy": "Codex: direct EPUB text and independent local Whisper reference inspection",
+    "reviewedAt": "2026-10-10",
+    "verificationMethod": "machine-assisted",
+    "observation": "Candidate ends at I know in STAVE ONE; reference and source paragraph agree. This is assisted reference agreement, not human audio listening."
+  },
+  {
+    "providerTag": "model-3",
+    "clipId": "carol-01-20",
+    "matchSha256": "118dde9e2ba6391107822b6fd42a652e72d66211af46f982c50934efe25e6fea",
+    "outcome": "correct",
+    "reviewedBy": "Codex: direct EPUB text and independent local Whisper reference inspection",
+    "reviewedAt": "2026-10-10",
+    "verificationMethod": "machine-assisted",
+    "observation": "Candidate ends at I know in STAVE ONE; reference and source paragraph agree. This is assisted reference agreement, not human audio listening."
+  },
+  {
+    "providerTag": "model-3",
+    "clipId": "carol-02-10",
+    "matchSha256": "ba416fc30ca6fda4ed073c6ebea3c5e2cd217a770dc3660f4847d63dcfd25e0c",
+    "outcome": "correct",
+    "reviewedBy": "Codex: direct EPUB text and independent local Whisper reference inspection",
+    "reviewedAt": "2026-10-10",
+    "verificationMethod": "machine-assisted",
+    "observation": "Candidate ends at easterly wind instead of the reference upon his; its endpoint remains within the pre-frozen 34-character cutoff interval. This is bounded source agreement, not exact spoken timing or human listening."
+  },
+  {
+    "providerTag": "model-3",
+    "clipId": "carol-02-20",
+    "matchSha256": "e5e1b9b4284a60bf61e9caf3a408e98023dad5c818e422fdc4dacfd739decad5",
+    "outcome": "correct",
+    "reviewedBy": "Codex: direct EPUB text and independent local Whisper reference inspection",
+    "reviewedAt": "2026-10-10",
+    "verificationMethod": "machine-assisted",
+    "observation": "Candidate ends at easterly wind instead of the reference upon his; its endpoint remains within the pre-frozen 34-character cutoff interval. This is bounded source agreement, not exact spoken timing or human listening."
+  },
+  {
+    "providerTag": "model-3",
+    "clipId": "carol-03-10",
+    "matchSha256": "1ced36be111952d939aaee35bbfa36697c31a95035c0ad1d5001fd759649f92c",
+    "outcome": "correct",
+    "reviewedBy": "Codex: direct EPUB text and independent local Whisper reference inspection",
+    "reviewedAt": "2026-10-10",
+    "verificationMethod": "machine-assisted",
+    "observation": "Candidate restores clipped strange where reference writes strain; source paragraph independently confirms broad field of strange appearances. This is assisted reference agreement, not human audio listening."
+  },
+  {
+    "providerTag": "model-3",
+    "clipId": "carol-03-20",
+    "matchSha256": "7c33f4b308807a3063753b8e5c54f6b861ccef6f2535d9b1897c53122d917542",
+    "outcome": "correct",
+    "reviewedBy": "Codex: direct EPUB text and independent local Whisper reference inspection",
+    "reviewedAt": "2026-10-10",
+    "verificationMethod": "machine-assisted",
+    "observation": "Candidate restores clipped strange where reference writes strain; source paragraph independently confirms broad field of strange appearances. This is assisted reference agreement, not human audio listening."
+  },
+  {
+    "providerTag": "model-3",
+    "clipId": "carol-04-10",
+    "matchSha256": "3c9c8e1e87443b3613484457786239473ea9e30be3a19d8820038aac356ab27f",
+    "outcome": "correct",
+    "reviewedBy": "Codex: direct EPUB text and independent local Whisper reference inspection",
+    "reviewedAt": "2026-10-10",
+    "verificationMethod": "machine-assisted",
+    "observation": "Candidate ends at bright gleaming berries in the transformed room; reference and source paragraph agree. This is assisted reference agreement, not human audio listening."
+  },
+  {
+    "providerTag": "model-3",
+    "clipId": "carol-04-20",
+    "matchSha256": "0823646d7558c34e94ffe11bca31b74fc773ce4ead38f06f7e5ebb72e22ba8fa",
+    "outcome": "correct",
+    "reviewedBy": "Codex: direct EPUB text and independent local Whisper reference inspection",
+    "reviewedAt": "2026-10-10",
+    "verificationMethod": "machine-assisted",
+    "observation": "Candidate ends at bright gleaming berries in the transformed room; reference and source paragraph agree. This is assisted reference agreement, not human audio listening."
+  },
+  {
+    "providerTag": "model-3",
+    "clipId": "carol-05-10",
+    "matchSha256": "dbeebd707bf56d952134949e9c9a2cd986bd99508d4c17bd0abf12b9bc43be11",
+    "outcome": "incorrect_accepted",
+    "reviewedBy": "Codex: direct EPUB text and independent local Whisper reference inspection",
+    "reviewedAt": "2026-10-10",
+    "verificationMethod": "machine-assisted",
+    "observation": "Incorrect accepted endpoint: Provider transcript omits the second they are not torn down clause present in both independent references and the frozen source expectation. Candidate ends at arms (offset2028), behind the frozen interval minimum2041 by13 characters. Same paragraph, stale spoken endpoint; score1 does not establish correct handoff. Not human audio listening."
+  },
+  {
+    "providerTag": "model-3",
+    "clipId": "carol-05-20",
+    "matchSha256": "beadb9ffa50b3ce3af39dd14a13aaf3309d918bca5cdc0da5ff3d6d4bd23449d",
+    "outcome": "correct",
+    "reviewedBy": "Codex: direct EPUB text and independent local Whisper reference inspection",
+    "reviewedAt": "2026-10-10",
+    "verificationMethod": "machine-assisted",
+    "observation": "Candidate ends at the second they are not torn down after bed curtains; source context distinguishes the repeated clause. This is assisted reference agreement, not human audio listening."
+  },
+  {
+    "providerTag": "model-3",
+    "clipId": "carol-06-10",
+    "matchSha256": "08356a4fdb5bf7e3768b77f26fb9711fea39f5ed1a0684c26820360d380850f1",
+    "outcome": "correct",
+    "reviewedBy": "Codex: direct EPUB text and independent local Whisper reference inspection",
+    "reviewedAt": "2026-10-10",
+    "verificationMethod": "machine-assisted",
+    "observation": "Candidate ends at Jacob Marley entered in STAVE FIVE; reference and source agree despite around/round variation. This is assisted reference agreement, not human audio listening."
+  },
+  {
+    "providerTag": "model-3",
+    "clipId": "carol-06-20",
+    "matchSha256": "c992a8fb0533df4679bc89b8330b1dcca62f70e7c56c0b53df5171474fa67cbc",
+    "outcome": "correct",
+    "reviewedBy": "Codex: direct EPUB text and independent local Whisper reference inspection",
+    "reviewedAt": "2026-10-10",
+    "verificationMethod": "machine-assisted",
+    "observation": "Candidate ends at Jacob Marley entered in STAVE FIVE; reference and source agree despite around/round variation. This is assisted reference agreement, not human audio listening."
+  },
+  {
+    "providerTag": "model-3",
+    "clipId": "pride-01-10",
+    "matchSha256": "f832304ecfb8d685b3d920cf5ab310c814dceff267c9ffb5a16fc1977f577fef",
+    "outcome": "correct",
+    "reviewedBy": "Codex: direct EPUB text and independent local Whisper reference inspection",
+    "reviewedAt": "2026-10-10",
+    "verificationMethod": "machine-assisted",
+    "observation": "Candidate ends at A single in source block43, matching the frozen range and independent reference. Assisted agreement only; not human audio listening."
+  },
+  {
+    "providerTag": "model-3",
+    "clipId": "pride-01-20",
+    "matchSha256": "4c79c0fa39a5847de5c83bd0441e97ee5aebc66531859f326700944793934909",
+    "outcome": "correct",
+    "reviewedBy": "Codex: direct EPUB text and independent local Whisper reference inspection",
+    "reviewedAt": "2026-10-10",
+    "verificationMethod": "machine-assisted",
+    "observation": "Source block43 ends at A single; fixed range and independent reference agree. Assisted source agreement only; not human audio listening."
+  },
+  {
+    "providerTag": "model-3",
+    "clipId": "pride-02-10",
+    "matchSha256": "f51e6d11dc67243ed40a08b8d71367a34a5a2fb925115e51979552ef009dfeb4",
+    "outcome": "incorrect_accepted",
+    "reviewedBy": "Codex: direct EPUB text and independent local Whisper reference inspection",
+    "reviewedAt": "2026-10-10",
+    "verificationMethod": "machine-assisted",
+    "observation": "Provider transcript omits the closing speech present in independent reference: candidate ends at 28764, 87 characters behind the frozen interval. At surely instead of to assure. Assisted source agreement only; not human audio listening."
+  },
+  {
+    "providerTag": "model-3",
+    "clipId": "pride-02-20",
+    "matchSha256": "79ebf18d21de167a8beb80a78dcea8a02be35948a8140cf4e1e2a94527bba2b3",
+    "outcome": "correct",
+    "reviewedBy": "Codex: direct EPUB text and independent local Whisper reference inspection",
+    "reviewedAt": "2026-10-10",
+    "verificationMethod": "machine-assisted",
+    "observation": "Source block54 ends at to assure; fixed range and independent reference agree. Assisted source agreement only; not human audio listening."
+  },
+  {
+    "providerTag": "model-3",
+    "clipId": "pride-03-10",
+    "matchSha256": "c1642f583152e66abad5038e5bcd213f6f7bae35fbbebdd5210299e71ebf914a",
+    "outcome": "incorrect_accepted",
+    "reviewedBy": "Codex: direct EPUB text and independent local Whisper reference inspection",
+    "reviewedAt": "2026-10-10",
+    "verificationMethod": "machine-assisted",
+    "observation": "Provider transcript omits the closing speech present in independent reference: candidate ends at 31915, 11 characters behind the frozen interval. At the Lizzy question in block76 instead of the To-morrow fortnight answer in block77. Assisted source agreement only; not human audio listening."
+  },
+  {
+    "providerTag": "model-3",
+    "clipId": "pride-03-20",
+    "matchSha256": "d69374ff31b0263da67cc14595973345c1698cea0df834a02237caa2b1d2d01d",
+    "outcome": "correct",
+    "reviewedBy": "Codex: direct EPUB text and independent local Whisper reference inspection",
+    "reviewedAt": "2026-10-10",
+    "verificationMethod": "machine-assisted",
+    "observation": "Source block77 ends at To-morrow fortnight; correct crossing into the answer paragraph. Assisted source agreement only; not human audio listening."
+  },
+  {
+    "providerTag": "model-3",
+    "clipId": "pride-04-10",
+    "matchSha256": "ef3c1c449e55225c6990aa97476b6dcd31b4bab707390906708128fd4469fb6e",
+    "outcome": "correct",
+    "reviewedBy": "Codex: direct EPUB text and independent local Whisper reference inspection",
+    "reviewedAt": "2026-10-10",
+    "verificationMethod": "machine-assisted",
+    "observation": "Source block87 ends at we cannot in the paid-visit dialogue; independent reference agrees. Assisted source agreement only; not human audio listening."
+  },
+  {
+    "providerTag": "model-3",
+    "clipId": "pride-04-20",
+    "matchSha256": "707363fb966fd4a0af591b39aa339c643f69c5f2cc41dda115ab5ed9b7261c3c",
+    "outcome": "correct",
+    "reviewedBy": "Codex: direct EPUB text and independent local Whisper reference inspection",
+    "reviewedAt": "2026-10-10",
+    "verificationMethod": "machine-assisted",
+    "observation": "Source block87 ends at we cannot in the paid-visit dialogue; independent reference agrees. Assisted source agreement only; not human audio listening."
+  },
+  {
+    "providerTag": "model-3",
+    "clipId": "pride-05-10",
+    "matchSha256": "477e292579859021afd6c47dadde87cf2ff4040d238745b68db48575e2a689b8",
+    "outcome": "incorrect_accepted",
+    "reviewedBy": "Codex: direct EPUB text and independent local Whisper reference inspection",
+    "reviewedAt": "2026-10-10",
+    "verificationMethod": "machine-assisted",
+    "observation": "Incorrect accepted endpoint: transcript omits the dinner-invitation opening present in the independent reference. Candidate remains in block98 at36290, 33 characters behind the expected block99 interval. Frozen range unchanged. Assisted source inspection only; not human audio listening."
+  },
+  {
+    "providerTag": "model-3",
+    "clipId": "pride-05-20",
+    "matchSha256": "82e1c7f57edaf32d0ee9398becf26b77c786e19def9723b0116862c95db9df8b",
+    "outcome": "correct",
+    "reviewedBy": "Codex: direct EPUB text and independent local Whisper reference inspection",
+    "reviewedAt": "2026-10-10",
+    "verificationMethod": "machine-assisted",
+    "observation": "Candidate ends at soon afterwards in source block99; independent reference and frozen source range agree. Assisted source inspection only; not human audio listening."
+  },
+  {
+    "providerTag": "model-3",
+    "clipId": "pride-06-10",
+    "matchSha256": "a6f999bfab1c725f663a01ceb449f1d5321e940cb963caaac097b6286fe92ef8",
+    "outcome": "correct",
+    "reviewedBy": "Codex: direct EPUB text and independent local Whisper reference inspection",
+    "reviewedAt": "2026-10-10",
+    "verificationMethod": "machine-assisted",
+    "observation": "Candidate ends at ten thousand a year in source block103; independent reference agrees within the frozen cutoff range. Assisted source inspection only; not human audio listening."
+  },
+  {
+    "providerTag": "model-3",
+    "clipId": "pride-06-20",
+    "matchSha256": "c7df87e85801a13230ee699d336ad5e46c22a4c357d5ab661ac6e678f79b78a3",
+    "outcome": "correct",
+    "reviewedBy": "Codex: direct EPUB text and independent local Whisper reference inspection",
+    "reviewedAt": "2026-10-10",
+    "verificationMethod": "machine-assisted",
+    "observation": "Candidate ends at ten thousand a year in source block103. Frozen range allows the adjacent clipped The gentlemen from the independent reference; this is not exact spoken-character timing. Assisted source inspection only; not human audio listening."
+  }
+]

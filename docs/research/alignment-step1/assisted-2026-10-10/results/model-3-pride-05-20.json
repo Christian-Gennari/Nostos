@@ -1,0 +1,51 @@
+{
+  "sourceSha256": "d401ad6b118e84d01b8dd1a3d034fd41784feb14c50f1f7a0fc17f3263fa8e9f",
+  "extractorVersion": "nostos-book-text-v2",
+  "settings": {
+    "minimumScore": 0.85,
+    "minimumMargin": 0.12,
+    "minimumTokens": 8,
+    "maximumTokens": 24
+  },
+  "transcript": {
+    "audioSha256": "af6a28d41725b77cb025b4dc1f403bc46c7924ffc09642dba6688dce62e6f440",
+    "recordedAt": "2026-10-10T15:17:51.181457+00:00",
+    "elapsedMilliseconds": 2798.493,
+    "result": {
+      "text": "minutes with him in his library. He had entertained hopes of being admitted to a sight of the young ladies, of whose beauty he had heard much; but he saw only the father. The ladies were somewhat more fortunate, for they had the advantage of ascertaining from an upper window that he wore a blue coat, and rode a black horse.\n\nAn invitation to dinner was soon afterwards",
+      "language": null,
+      "durationSeconds": null
+    }
+  },
+  "match": {
+    "accepted": true,
+    "reason": "matched",
+    "score": 1,
+    "runnerUpScore": 0,
+    "start": {
+      "blockOrder": 98,
+      "globalTextOffset": 36204,
+      "locator": {
+        "type": "epub",
+        "spineIndex": 1,
+        "resourceHref": "1306980130634175271_1342-h-0.htm.xhtml",
+        "cfi": null,
+        "startTextOffset": 36204,
+        "endTextOffset": 36204
+      }
+    },
+    "end": {
+      "blockOrder": 99,
+      "globalTextOffset": 36335,
+      "locator": {
+        "type": "epub",
+        "spineIndex": 1,
+        "resourceHref": "1306980130634175271_1342-h-0.htm.xhtml",
+        "cfi": null,
+        "startTextOffset": 36335,
+        "endTextOffset": 36335
+      }
+    },
+    "passage": "of ascertaining from an upper window that he wore a blue coat and rode a black horse an invitation to dinner was soon afterwards"
+  }
+}

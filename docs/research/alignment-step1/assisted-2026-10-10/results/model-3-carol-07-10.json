@@ -1,0 +1,29 @@
+{
+  "sourceSha256": "8557960c8d5e62e23ebfeedacad8ad0a4ebf8d056c1ad37210b2a528c2a2d6cb",
+  "extractorVersion": "nostos-book-text-v2",
+  "settings": {
+    "minimumScore": 0.85,
+    "minimumMargin": 0.12,
+    "minimumTokens": 8,
+    "maximumTokens": 24
+  },
+  "transcript": {
+    "audioSha256": "05209127aa91d4086b8c5e403847ba899f29860f512f0f8adb47a790a1931853",
+    "recordedAt": "2026-10-10T15:10:18.745315+00:00",
+    "elapsedMilliseconds": 1564.3111,
+    "result": {
+      "text": "please visit librivox.org. A Christmas Carol",
+      "language": null,
+      "durationSeconds": null
+    }
+  },
+  "match": {
+    "accepted": false,
+    "reason": "insufficient_speech",
+    "score": 0,
+    "runnerUpScore": 0,
+    "start": null,
+    "end": null,
+    "passage": null
+  }
+}

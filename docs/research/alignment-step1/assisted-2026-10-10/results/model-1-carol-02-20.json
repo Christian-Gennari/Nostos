@@ -1,0 +1,51 @@
+{
+  "sourceSha256": "8557960c8d5e62e23ebfeedacad8ad0a4ebf8d056c1ad37210b2a528c2a2d6cb",
+  "extractorVersion": "nostos-book-text-v2",
+  "settings": {
+    "minimumScore": 0.85,
+    "minimumMargin": 0.12,
+    "minimumTokens": 8,
+    "maximumTokens": 24
+  },
+  "transcript": {
+    "audioSha256": "bf0594c4d22b866348f275416b97dc78b8f8340d31f8d0c01ed4b8e967f0eb48",
+    "recordedAt": "2026-10-10T14:54:17.3894298+00:00",
+    "elapsedMilliseconds": 2782.554,
+    "result": {
+      "text": "was dead. This must be distinctly understood, or nothing wonderful can come of the story I am going to relate. If we were not perfectly convinced that Hamlet\u0027s father died before the play began, there would be nothing more remarkable in his taking a stroll at night, in an easterly wind, upon his",
+      "language": "en",
+      "durationSeconds": 20
+    }
+  },
+  "match": {
+    "accepted": true,
+    "reason": "matched",
+    "score": 1,
+    "runnerUpScore": 0,
+    "start": {
+      "blockOrder": 36,
+      "globalTextOffset": 2809,
+      "locator": {
+        "type": "epub",
+        "spineIndex": 1,
+        "resourceHref": "1597581767207061809_46-h-0.htm.xhtml",
+        "cfi": null,
+        "startTextOffset": 2809,
+        "endTextOffset": 2809
+      }
+    },
+    "end": {
+      "blockOrder": 36,
+      "globalTextOffset": 2938,
+      "locator": {
+        "type": "epub",
+        "spineIndex": 1,
+        "resourceHref": "1597581767207061809_46-h-0.htm.xhtml",
+        "cfi": null,
+        "startTextOffset": 2938,
+        "endTextOffset": 2938
+      }
+    },
+    "passage": "died before the play began there would be nothing more remarkable in his taking a stroll at night in an easterly wind upon his"
+  }
+}

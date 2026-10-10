@@ -1,0 +1,51 @@
+{
+  "sourceSha256": "d401ad6b118e84d01b8dd1a3d034fd41784feb14c50f1f7a0fc17f3263fa8e9f",
+  "extractorVersion": "nostos-book-text-v2",
+  "settings": {
+    "minimumScore": 0.85,
+    "minimumMargin": 0.12,
+    "minimumTokens": 8,
+    "maximumTokens": 24
+  },
+  "transcript": {
+    "audioSha256": "e368aaf724f02f9a3543fe6e6d26f6f28aee3e605759cda075c51df200cf17e3",
+    "recordedAt": "2026-10-10T15:11:55.8545695+00:00",
+    "elapsedMilliseconds": 1918.2536,
+    "result": {
+      "text": "be in the house by the end of next week.\u0022 \u0022What is his name?\u0022 \u0022Bingley.\u0022 \u0022Is he married or single?\u0022 \u0022Oh! single, my dear, to be sure! A single",
+      "language": null,
+      "durationSeconds": null
+    }
+  },
+  "match": {
+    "accepted": true,
+    "reason": "matched",
+    "score": 1,
+    "runnerUpScore": 0,
+    "start": {
+      "blockOrder": 39,
+      "globalTextOffset": 27218,
+      "locator": {
+        "type": "epub",
+        "spineIndex": 1,
+        "resourceHref": "1306980130634175271_1342-h-0.htm.xhtml",
+        "cfi": null,
+        "startTextOffset": 27218,
+        "endTextOffset": 27218
+      }
+    },
+    "end": {
+      "blockOrder": 43,
+      "globalTextOffset": 27341,
+      "locator": {
+        "type": "epub",
+        "spineIndex": 1,
+        "resourceHref": "1306980130634175271_1342-h-0.htm.xhtml",
+        "cfi": null,
+        "startTextOffset": 27341,
+        "endTextOffset": 27341
+      }
+    },
+    "passage": "the end of next week what is his name bingley is he married or single oh single my dear to be sure a single"
+  }
+}

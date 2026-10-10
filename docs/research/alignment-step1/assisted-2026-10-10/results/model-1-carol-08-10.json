@@ -1,0 +1,29 @@
+{
+  "sourceSha256": "8557960c8d5e62e23ebfeedacad8ad0a4ebf8d056c1ad37210b2a528c2a2d6cb",
+  "extractorVersion": "nostos-book-text-v2",
+  "settings": {
+    "minimumScore": 0.85,
+    "minimumMargin": 0.12,
+    "minimumTokens": 8,
+    "maximumTokens": 24
+  },
+  "transcript": {
+    "audioSha256": "11eb806bd6802486d5ac4cf9fcd485e85521eb1799ceb97deb59f7ffc449c859",
+    "recordedAt": "2026-10-10T14:58:20.718492+00:00",
+    "elapsedMilliseconds": 7244.4507,
+    "result": {
+      "text": ".org. A Christmas Carol by Charles Dickens. Stave 3, the second of the Three Spirits.",
+      "language": "en",
+      "durationSeconds": 10
+    }
+  },
+  "match": {
+    "accepted": false,
+    "reason": "no_match",
+    "score": 0,
+    "runnerUpScore": 0,
+    "start": null,
+    "end": null,
+    "passage": null
+  }
+}

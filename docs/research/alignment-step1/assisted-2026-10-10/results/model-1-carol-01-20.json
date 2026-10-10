@@ -1,0 +1,51 @@
+{
+  "sourceSha256": "8557960c8d5e62e23ebfeedacad8ad0a4ebf8d056c1ad37210b2a528c2a2d6cb",
+  "extractorVersion": "nostos-book-text-v2",
+  "settings": {
+    "minimumScore": 0.85,
+    "minimumMargin": 0.12,
+    "minimumTokens": 8,
+    "maximumTokens": 24
+  },
+  "transcript": {
+    "audioSha256": "6c628c94f423a2481bc45b4b3f8a4758228c7621fcc8470354a0e34f1d6776d4",
+    "recordedAt": "2026-10-10T14:53:31.9205498+00:00",
+    "elapsedMilliseconds": 2763.151,
+    "result": {
+      "text": "the clerk, the undertaker, and the chief mourner. Scrooge signed it, and Scrooge\u0027s name was good upon change for anything he chose to put his hand to. Old Marley was as dead as a doornail. Mind, I don\u0027t mean to say that I know",
+      "language": "en",
+      "durationSeconds": 20
+    }
+  },
+  "match": {
+    "accepted": true,
+    "reason": "matched",
+    "score": 0.92,
+    "runnerUpScore": 0,
+    "start": {
+      "blockOrder": 33,
+      "globalTextOffset": 1579,
+      "locator": {
+        "type": "epub",
+        "spineIndex": 1,
+        "resourceHref": "1597581767207061809_46-h-0.htm.xhtml",
+        "cfi": null,
+        "startTextOffset": 1579,
+        "endTextOffset": 1579
+      }
+    },
+    "end": {
+      "blockOrder": 34,
+      "globalTextOffset": 1681,
+      "locator": {
+        "type": "epub",
+        "spineIndex": 1,
+        "resourceHref": "1597581767207061809_46-h-0.htm.xhtml",
+        "cfi": null,
+        "startTextOffset": 1681,
+        "endTextOffset": 1681
+      }
+    },
+    "passage": "chose to put his hand to old marley was as dead as a door nail mind i don t mean to say that i know"
+  }
+}

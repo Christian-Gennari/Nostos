@@ -1,0 +1,51 @@
+{
+  "sourceSha256": "8557960c8d5e62e23ebfeedacad8ad0a4ebf8d056c1ad37210b2a528c2a2d6cb",
+  "extractorVersion": "nostos-book-text-v2",
+  "settings": {
+    "minimumScore": 0.85,
+    "minimumMargin": 0.12,
+    "minimumTokens": 8,
+    "maximumTokens": 24
+  },
+  "transcript": {
+    "audioSha256": "be67a11ab5e40a6aee85b1ef876f8c745c0491c11e9ff97f486385052c4879d9",
+    "recordedAt": "2026-10-10T14:56:33.1268243+00:00",
+    "elapsedMilliseconds": 2503.6398,
+    "result": {
+      "text": "Said Scrooge, starting off again and going around the fireplace. There\u0027s the door by which the ghost of Jacob Marley entered.",
+      "language": "en",
+      "durationSeconds": 10
+    }
+  },
+  "match": {
+    "accepted": true,
+    "reason": "matched",
+    "score": 0.9090909090909091,
+    "runnerUpScore": 0,
+    "start": {
+      "blockOrder": 689,
+      "globalTextOffset": 147459,
+      "locator": {
+        "type": "epub",
+        "spineIndex": 2,
+        "resourceHref": "1597581767207061809_46-h-1.htm.xhtml",
+        "cfi": null,
+        "startTextOffset": 2865,
+        "endTextOffset": 2865
+      }
+    },
+    "end": {
+      "blockOrder": 689,
+      "globalTextOffset": 147586,
+      "locator": {
+        "type": "epub",
+        "spineIndex": 2,
+        "resourceHref": "1597581767207061809_46-h-1.htm.xhtml",
+        "cfi": null,
+        "startTextOffset": 2992,
+        "endTextOffset": 2992
+      }
+    },
+    "passage": "cried scrooge starting off again and going round the fireplace there s the door by which the ghost of jacob marley entered"
+  }
+}
