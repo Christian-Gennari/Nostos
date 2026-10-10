@@ -1611,3 +1611,50 @@ button.edition-select-card:focus-visible {
   font-size: 0.76rem;
   color: var(--color-text-light);
 }
+
+/* Book Details uses the same acquisition stage/percentage as the Library.
+   This is import progress, not the separate reading-progress percentage. */
+.detail-import-progress {
+  width: min(340px, 100%);
+  max-width: 100%;
+  min-width: 0;
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: var(--bg-surface);
+  text-align: left;
+}
+.detail-import-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+.detail-import-track {
+  height: 5px;
+  border-radius: 100px;
+  background: var(--border-color);
+  overflow: hidden;
+}
+.detail-import-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: currentColor;
+  color: var(--color-text);
+  transition: width 150ms ease-out;
+}
+.detail-import-progress p,
+.detail-import-failed {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--color-text-muted);
+}
+.detail-import-failed {
+  flex-basis: 100%;
+}
