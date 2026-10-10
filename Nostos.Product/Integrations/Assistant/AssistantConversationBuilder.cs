@@ -33,11 +33,11 @@ internal sealed class AssistantConversationBuilder(
         if (!string.IsNullOrWhiteSpace(request.Context?.BrainReviewNoteId))
         {
             messages.Add(LlmMessage.System(
-                $"The user is reviewing the unlinked note '{request.Context!.BrainReviewNoteId}' in the Second Brain. "
+                $"The user is working with note '{request.Context!.BrainReviewNoteId}' in the Second Brain; it may already have topic links. "
                 + "To suggest where it belongs, read it with notes_read_for_review (that noteId), then look for matching "
                 + "existing topics with topics_list or topics_search. "
                 + $"When the user asks for candidates, explicitly call topics_propose_links with this noteId and at most {MaxTopicSuggestions} existing topic IDs, each with a brief reason grounded in the note and relevant topic evidence. "
-                + "If none fit, call it with an empty candidate list. Listing or searching topics alone never produces suggestions. "
+                + "Only propose additional topics not already linked to this note. If none fit, call it with an empty candidate list. Listing or searching topics alone never produces suggestions. "
                 + "Never create a topic to satisfy a suggestion, and never link a note without the user choosing."));
         }
 
