@@ -116,6 +116,14 @@ public class FileInfoDetails
     // Store chapters as a JSON string
     public string? ChaptersJson { get; set; }
 
+    /// <summary>
+    /// The ordered track list of a multi-track audiobook, as JSON
+    /// (see <c>BookTrackList</c>). Null for every single-file book. A book
+    /// with tracks has <see cref="HasFile"/> true and no <see cref="FileName"/>:
+    /// the tracks are its media, and there is no primary file beside them.
+    /// </summary>
+    public string? TracksJson { get; set; }
+
     // Store epub.js locations (heavy JSON string) (For instant calculation of progress state, cache basically)
     public string? LocationsJson { get; set; }
 }
