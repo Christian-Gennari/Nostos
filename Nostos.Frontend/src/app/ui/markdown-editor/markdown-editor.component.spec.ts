@@ -174,7 +174,7 @@ describe('MarkdownEditorComponent', () => {
     expect(css).toContain('-webkit-text-fill-color: transparent');
     expect(css).toContain('caret-color: transparent');
     expect(css).toContain('.tox .tox-throbber');
-    expect(fixture.componentInstance.editorStarting).toBe(false);
+    expect(fixture.componentInstance.editorStarting()).toBe(false);
   });
 
   it('reveals the native fallback and leaves startup retryable when TinyMCE loading fails', async () => {
@@ -188,7 +188,7 @@ describe('MarkdownEditorComponent', () => {
 
     await expect(component.initEditor()).rejects.toThrow('TinyMCE unavailable');
 
-    expect(component.editorStarting).toBe(false);
+    expect(component.editorStarting()).toBe(false);
     expect(component.editorInit).toBeNull();
   });
 

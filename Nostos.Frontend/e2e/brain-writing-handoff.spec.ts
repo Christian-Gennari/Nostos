@@ -55,6 +55,22 @@ async function chooseWriting(dialog: Locator, title: string): Promise<void> {
   }
 }
 
+async function expectNoToastHeaderOverlap(page: import('@playwright/test').Page, selector: string): Promise<void> {
+  const overlaps = await page.locator('.toast-success').last().evaluate((toast, headerSelector) => {
+    const toastRect = toast.getBoundingClientRect();
+    return Array.from(document.querySelectorAll(`${headerSelector} button, ${headerSelector} input, ${headerSelector} select, ${headerSelector} [role="tab"]`))
+      .filter((control) => {
+        const rect = control.getBoundingClientRect();
+        const style = getComputedStyle(control);
+        return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' &&
+          rect.left < toastRect.right && rect.right > toastRect.left &&
+          rect.top < toastRect.bottom && rect.bottom > toastRect.top;
+      })
+      .map((control) => control.getAttribute('aria-label') || control.textContent?.trim());
+  }, selector);
+  expect(overlaps, `success toast must not cover ${selector}`).toEqual([]);
+}
+
 test('existing writing handoff persists once and duplicate retry has one truthful notice', async ({
   page,
   browser,
@@ -320,6 +336,7 @@ test('existing writing handoff persists once and duplicate retry has one truthfu
 
     await dialog.getByRole('button', { name: 'Keep with writing' }).click();
     await expect(page.locator('.toast-success')).toContainText(`Kept 1 source with “${writingTitle}”`);
+    await expectNoToastHeaderOverlap(page, '.brain-header-tools');
     const persisted = await apiGet<WritingSourceDto[]>(baseUrl, `/api/writings/${writing.id}/notes`);
     expect(persisted).toHaveLength(1);
     expect(persisted[0].id).toBe(note.noteId);
@@ -419,24 +436,7 @@ test('new writing is created once, referenced, and never receives note prose', a
       `Kept 1 source with “${writingTitle}”`
     );
     await expect(page).toHaveURL(/\/studio/);
-    const controlsUnderToast = await page.locator('.toast-success').evaluate((toast) => {
-      const toastBox = toast.getBoundingClientRect();
-      return Array.from(document.querySelectorAll('button'))
-        .filter((button) => !toast.contains(button))
-        .filter((button) => {
-          const rect = button.getBoundingClientRect();
-          return (
-            rect.width > 0 &&
-            rect.height > 0 &&
-            rect.left < toastBox.right &&
-            rect.right > toastBox.left &&
-            rect.top < toastBox.bottom &&
-            rect.bottom > toastBox.top
-          );
-        })
-        .map((button) => button.getAttribute('aria-label') || button.textContent?.trim());
-    });
-    console.log(`[acceptance follow-up] D2 open toast overlap: ${JSON.stringify(controlsUnderToast)}`);
+    await expectNoToastHeaderOverlap(page, '.editor-header, .sidebar-right .sidebar-header');
     await page.screenshot({
       path: '/tmp/809-studio-toast-after-open-1440x900-light.png',
       animations: 'disabled',
@@ -466,6 +466,89 @@ test('new writing is created once, referenced, and never receives note prose', a
     if (bookId) {
       await cleanupBrain(baseUrl, { bookId, topicNames: [], beforeTopicIds });
     }
+  }
+});
+
+test('destination loading and retryable errors remain clear, then a recovered keep persists', async ({ browser }) => {
+  const { baseUrl } = loadFixture();
+  const context = await browser.newContext({ serviceWorkers: 'block' });
+  const page = await context.newPage();
+  const beforeTopicIds = await snapshotTopicIds(baseUrl);
+  const stamp = Date.now().toString(36);
+  const title = `Recovered handoff ${stamp}`;
+  let bookId: string | null = null;
+  let createdWritingId: string | null = null;
+  let releaseFirstList!: () => void;
+  let signalFirstList!: () => void;
+  let listAttempt = 0;
+  const firstListStarted = new Promise<void>((resolve) => { signalFirstList = resolve; });
+  const firstListGate = new Promise<void>((resolve) => { releaseFirstList = resolve; });
+  const interceptedResponses: number[] = [];
+
+  page.on('response', (response) => {
+    if (response.url().endsWith('/api/writings') && response.request().method() === 'GET') {
+      interceptedResponses.push(response.status());
+    }
+  });
+  await page.route('**/api/writings**', async (route) => {
+    if (route.request().method() !== 'GET' || !/\/api\/writings\/?$/.test(new URL(route.request().url()).pathname)) return route.continue();
+    listAttempt++;
+    if (listAttempt === 1) {
+      signalFirstList();
+      await firstListGate;
+      return route.continue();
+    }
+    if (listAttempt === 2) {
+      return route.fulfill({ status: 503, contentType: 'application/json', body: '{"error":"synthetic unavailable"}' });
+    }
+    return route.continue();
+  });
+
+  try {
+    const note = await seedNote(baseUrl, `Handoff loading error ${stamp}`, 'A synthetic note for a retryable destination load.');
+    bookId = note.bookId;
+    await page.goto(`${baseUrl}/second-brain?noteId=${note.noteId}`, { waitUntil: 'domcontentloaded' });
+    const trigger = page.getByRole('button', { name: 'Keep with writing…', exact: true });
+    await expect(trigger).toBeVisible();
+    await trigger.click();
+    const dialog = page.getByRole('dialog', { name: 'Keep with writing', exact: true });
+    await firstListStarted;
+    await expect(dialog.getByRole('status', { name: 'Loading writings' })).toBeVisible();
+    await page.screenshot({ path: '/tmp/804-handoff-loading-1280x800-light.png', animations: 'disabled' });
+    releaseFirstList();
+    await expect(dialog.getByRole('status', { name: 'Loading writings' })).toHaveCount(0);
+
+    await dialog.getByRole('button', { name: 'Close writing picker' }).click();
+    await trigger.click();
+    await expect(dialog.getByRole('alert')).toContainText('Writings could not be loaded.');
+    await expect(dialog.getByRole('button', { name: 'Retry' })).toBeVisible();
+    await page.screenshot({ path: '/tmp/804-handoff-error-1280x800-light.png', animations: 'disabled' });
+    await dialog.getByRole('button', { name: 'Retry' }).click();
+    await expect(dialog.getByRole('alert')).toHaveCount(0);
+    await expect(dialog.getByRole('radio', { name: /New writing/ })).toBeChecked();
+
+    await dialog.getByRole('textbox', { name: 'Title' }).fill(title);
+    await dialog.getByRole('button', { name: 'Keep with writing' }).click();
+    await expect(page.locator('.toast-success')).toContainText(`Kept 1 source with “${title}”`);
+    await expectNoToastHeaderOverlap(page, '.brain-header-tools');
+
+    const writings = await apiGet<WritingDto[]>(baseUrl, '/api/writings');
+    const created = writings.find((writing) => writing.name === title);
+    expect(created).toBeTruthy();
+    createdWritingId = created!.id;
+    const sources = await apiGet<WritingSourceDto[]>(baseUrl, `/api/writings/${createdWritingId}/notes`);
+    expect(sources.map((source) => source.id)).toEqual([note.noteId]);
+    const manuscript = await apiGet<WritingContentDto>(baseUrl, `/api/writings/${createdWritingId}`);
+    expect(manuscript.content ?? '').not.toContain('A synthetic note for a retryable destination load.');
+    expect(interceptedResponses).toEqual([200, 503, 200]);
+  } finally {
+    if (!createdWritingId) {
+      const writings = await apiGet<WritingDto[]>(baseUrl, '/api/writings').catch(() => []);
+      createdWritingId = writings.find((writing) => writing.name === title)?.id ?? null;
+    }
+    if (createdWritingId) await apiDelete(baseUrl, `/api/writings/${createdWritingId}`);
+    if (bookId) await cleanupBrain(baseUrl, { bookId, topicNames: [], beforeTopicIds });
+    await context.close();
   }
 });
 

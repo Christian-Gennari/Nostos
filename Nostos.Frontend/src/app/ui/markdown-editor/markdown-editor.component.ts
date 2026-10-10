@@ -1,4 +1,4 @@
-import { Component, input, output, effect, inject, OnDestroy, OnInit } from '@angular/core';
+import { Component, input, output, effect, inject, signal, OnDestroy, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 
 import TurndownService from 'turndown';
@@ -376,7 +376,7 @@ interface PendingTransientRestore {
   selector: 'app-markdown-editor',
   standalone: true,
   imports: [FormsModule],
-  template: ` <textarea id="markdown-tinymce-editor" [class.editor-starting]="editorStarting" [(ngModel)]="htmlContent"></textarea> `,
+  template: ` <textarea id="markdown-tinymce-editor" [class.editor-starting]="editorStarting()" [(ngModel)]="htmlContent"></textarea> `,
   styles: [
     `
       :host {
@@ -639,7 +639,7 @@ export class MarkdownEditorComponent implements OnInit, OnDestroy {
   typewriter = input<boolean>(false);
 
   htmlContent = '';
-  editorStarting = true;
+  editorStarting = signal(true);
   private editorId = 'markdown-tinymce-editor';
 
   private turndownService = new TurndownService({
@@ -846,7 +846,7 @@ export class MarkdownEditorComponent implements OnInit, OnDestroy {
   private async initEditor(): Promise<void> {
     if (this.editor || this.destroyed) return;
 
-    this.editorStarting = true;
+    this.editorStarting.set(true);
     try {
       const tinyMce = await this.tinyMceLoader.load();
       if (this.destroyed || this.editor) return;
@@ -869,7 +869,7 @@ export class MarkdownEditorComponent implements OnInit, OnDestroy {
       this.editorInit = null;
       throw error;
     } finally {
-      this.editorStarting = false;
+      this.editorStarting.set(false);
     }
   }
 

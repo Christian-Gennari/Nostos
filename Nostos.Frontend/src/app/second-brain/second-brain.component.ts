@@ -1342,8 +1342,15 @@ export class SecondBrain implements AfterViewChecked {
       } catch {
         /* storage unavailable */
       }
-      if (mode === 'notes' && this.reviewReturnNote) {
-        this.panelNote.set(this.reviewReturnNote);
+      if (mode === 'notes') {
+        if (this.reviewReturnNote) {
+          this.panelNote.set(this.reviewReturnNote);
+        }
+        // After a full reload, review can restore its return filters and note
+        // but the previous Notes page is no longer in memory. Re-fetch it so
+        // returning from review does not show an empty list beside the restored
+        // inspector.
+        if (!this.browseLoaded() && !this.browseLoading()) this.loadBrowsePage();
       }
       this.clearReviewReturnState();
     }

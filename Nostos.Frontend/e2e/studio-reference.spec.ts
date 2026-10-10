@@ -1057,3 +1057,86 @@ test('kept-source density and responsive Reference rows hold at 0, 3, 8, and 40'
   expect(dockFailures, 'All Reference lists and inspector clear the dock').toEqual([]);
   expect(touchTargetFailures, 'Reference coarse-pointer controls meet 44px').toEqual([]);
 });
+
+test('source insertion stays unavailable through editor startup failure, then inserts and autosaves after retry', async ({ browser }) => {
+  const context = await browser.newContext({ serviceWorkers: 'block' });
+  const page = await context.newPage();
+  const disposition = { value: 'hold' as 'hold' | 'abort' | 'continue' };
+  let releaseTinyMce!: () => void;
+  let signalTinyMceRequest!: () => void;
+  const tinyMceRequested = new Promise<void>((resolve) => { signalTinyMceRequest = resolve; });
+  const tinyMceGate = new Promise<void>((resolve) => { releaseTinyMce = resolve; });
+  const writing = await apiGet<WritingContentDto>(baseUrl, '/api/writings/' + writingId);
+  const initialContent = writing.content ?? '';
+
+  await page.route('**/tinymce/tinymce.min.js', async (route) => {
+    if (disposition.value === 'hold') {
+      signalTinyMceRequest();
+      await tinyMceGate;
+    }
+    if (disposition.value === 'abort') return route.abort();
+    return route.continue();
+  });
+  await page.addInitScript(() => localStorage.setItem('nostos.theme', 'light'));
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(baseUrl + '/studio?writingId=' + writingId, { waitUntil: 'domcontentloaded' });
+  await tinyMceRequested;
+  await expect(page.locator('.header-doc-title')).toHaveText(writingTitle);
+  await page.getByRole('tab', { name: 'Library' }).click();
+  await page.locator('.library-tabs').getByRole('tab', { name: 'Books' }).click();
+  await page.locator('.list-item').filter({ hasText: mainBookTitle }).click();
+  const quoteRow = page
+    .locator('.reference-note-list .reference-source-row-main')
+    .filter({ hasText: longQuote.slice(0, 32) })
+    .first();
+  await quoteRow.click();
+  const insertQuote = page.getByRole('button', { name: 'Insert quote', exact: true });
+  await expect(insertQuote).toBeDisabled();
+  await expect(page.locator('#source-action-disabled-reason')).toContainText(
+    'The editor is not ready for insertion yet',
+  );
+  await page.screenshot({ path: '/tmp/809-studio-insert-editor-loading-1440x900-light.png', animations: 'disabled' });
+
+  disposition.value = 'abort';
+  releaseTinyMce();
+  await expect(page.locator('textarea.editor-starting')).toHaveCount(0, { timeout: 15_000 });
+  await expect(insertQuote).toBeDisabled();
+  await expect(page.locator('#source-action-disabled-reason')).toContainText(
+    'The editor is not ready for insertion yet',
+  );
+  await page.screenshot({ path: '/tmp/809-studio-insert-editor-error-1440x900-light.png', animations: 'disabled' });
+
+  disposition.value = 'continue';
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.locator('.tox-tinymce').waitFor({ timeout: 45_000 });
+  await expect(page.locator('.header-doc-title')).toHaveText(writingTitle);
+  await page.getByRole('tab', { name: 'Library' }).click();
+  await page.locator('.library-tabs').getByRole('tab', { name: 'Books' }).click();
+  await page.locator('.list-item').filter({ hasText: mainBookTitle }).click();
+  const retriedQuoteRow = page
+    .locator('.reference-note-list .reference-source-row-main')
+    .filter({ hasText: longQuote.slice(0, 32) })
+    .first();
+  await retriedQuoteRow.click();
+  const retryInsert = page.getByRole('button', { name: 'Insert quote', exact: true });
+  await expect(retryInsert).toBeEnabled();
+  const editorBody = page.frameLocator('.tox-edit-area iframe').locator('body');
+  await editorBody.click();
+  await page.keyboard.press('Control+End');
+  await retryInsert.click();
+  const insertedQuote = editorBody.locator('blockquote').last();
+  await expect(insertedQuote).toContainText(longQuote);
+  await expect
+    .poll(async () => (await apiGet<WritingContentDto>(baseUrl, '/api/writings/' + writingId)).content)
+    .toContain(longQuote);
+  const persisted = await apiGet<WritingContentDto>(baseUrl, '/api/writings/' + writingId);
+  expect(persisted.content).not.toBe(initialContent);
+  await page.screenshot({ path: '/tmp/809-studio-insert-recovered-1440x900-light.png', animations: 'disabled' });
+  await page.addInitScript(() => localStorage.setItem('nostos.theme', 'dark'));
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.locator('.tox-tinymce').waitFor({ timeout: 45_000 });
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await expect(page.frameLocator('.tox-edit-area iframe').locator('body')).toContainText(longQuote);
+  await page.screenshot({ path: '/tmp/809-studio-insert-recovered-1440x900-dark.png', animations: 'disabled' });
+  await context.close();
+});
