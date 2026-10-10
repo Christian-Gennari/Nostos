@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Nostos.Backend.Endpoints;
 using Nostos.Backend.Providers;
+using Nostos.Backend.Providers.Acquisition;
 using Nostos.Backend.Providers.Contracts;
 using Nostos.Backend.Providers.Discovery;
 using Nostos.Backend.Tests.Support;
@@ -181,6 +182,56 @@ public sealed class ProviderDiscoveryEndpointTests : IClassFixture<LibraryEndpoi
     }
 
     [Fact]
+    public async Task CoverProxy_UsesHostCoverMetadataWithoutFetchingItemDetailsPerResult()
+    {
+        var coverUri = new Uri("https://covers.example.com/42.jpg");
+        var item = Item("gutenberg", "42", ProviderMediaKind.Ebook, "The Republic") with
+        {
+            Cover = new ProviderCover(coverUri, "image/png", ".png"),
+        };
+        var provider = new CatalogEndpointProvider(
+            "gutenberg",
+            ProviderCapabilities.EbookAcquisition,
+            new ProviderSearchPage([]),
+            item);
+        var snapshot = new SnapshotDiscovery(new ProviderDiscoveryResult(
+            [item],
+            HasMore: false,
+            Sources: [new ProviderDiscoverySourceStatus("gutenberg", "Project Gutenberg", Succeeded: true)]));
+        var covers = new SnapshotCoverLookup(item);
+        var downloader = new FakeProviderContentDownloader { DefaultCoverPayload = [1, 2, 3] };
+
+        await using var app = _factory.WithWebHostBuilder(builder =>
+        {
+            ReplaceProvidersWithDiscovery(builder, snapshot, provider);
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<IProviderCoverLookup>();
+                services.AddSingleton<IProviderCoverLookup>(covers);
+                services.RemoveAll<IProviderContentDownloader>();
+                services.AddSingleton<IProviderContentDownloader>(downloader);
+            });
+        });
+        using var client = app.CreateClient();
+
+        var search = await client.GetFromJsonAsync<ProviderDiscoverySearchResultDto>(
+            "/api/providers/search?query=republic");
+        search!.Items.Should().ContainSingle();
+        search.Items[0].CoverUrl.Should().Be("/api/providers/gutenberg/items/42/cover");
+
+        using var response = await client.GetAsync(search.Items[0].CoverUrl);
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("image/png");
+        (await response.Content.ReadAsByteArrayAsync()).Should().Equal(1, 2, 3);
+        covers.CallCount.Should().Be(1);
+        covers.LastProviderId.Should().Be("gutenberg");
+        covers.LastExternalId.Should().Be("42");
+        downloader.RequestedUrls.Should().ContainSingle().Which.Should().Be(coverUri);
+        provider.SearchCount.Should().Be(0);
+        provider.CatalogCallCount.Should().Be(0, "the host cover lookup serves the discovery row's cover metadata");
+    }
+
+    [Fact]
     public async Task AggregateSearch_DropsRowsForProvidersThisHostDoesNotRun()
     {
         var gutenberg = new EndpointProvider(
@@ -345,7 +396,7 @@ public sealed class ProviderDiscoveryEndpointTests : IClassFixture<LibraryEndpoi
             Metadata: new ProviderMetadata(title),
             Assets: []);
 
-    private sealed class EndpointProvider :
+    private class EndpointProvider :
         IContentProvider,
         IProviderSearch,
         IProviderAcquisitionPlanner,
@@ -376,9 +427,19 @@ public sealed class ProviderDiscoveryEndpointTests : IClassFixture<LibraryEndpoi
             string id,
             ProviderCapabilities acquisition,
             Func<ProviderSearchQuery, CancellationToken, Task<ProviderSearchPage>> search)
+            : this(id, acquisition, search, supportsItemRetrieval: false)
+        {
+        }
+
+        protected EndpointProvider(
+            string id,
+            ProviderCapabilities acquisition,
+            Func<ProviderSearchQuery, CancellationToken, Task<ProviderSearchPage>> search,
+            bool supportsItemRetrieval)
         {
             Id = id;
-            Capabilities = ProviderCapabilities.Search | acquisition;
+            Capabilities = ProviderCapabilities.Search | acquisition |
+                (supportsItemRetrieval ? ProviderCapabilities.ItemRetrieval : ProviderCapabilities.None);
             _search = search;
         }
 
@@ -422,6 +483,47 @@ public sealed class ProviderDiscoveryEndpointTests : IClassFixture<LibraryEndpoi
             CallCount++;
             LastRequest = request;
             return Task.FromResult(result);
+        }
+    }
+
+    private sealed class CatalogEndpointProvider : EndpointProvider, IProviderCatalog
+    {
+        private readonly ProviderItem _item;
+
+        public CatalogEndpointProvider(
+            string id,
+            ProviderCapabilities acquisition,
+            ProviderSearchPage page,
+            ProviderItem item)
+            : base(id, acquisition, (_, _) => Task.FromResult(page), supportsItemRetrieval: true)
+        {
+            _item = item;
+        }
+
+        public int CatalogCallCount { get; private set; }
+
+        public Task<ProviderItem?> GetItemAsync(string externalId, CancellationToken ct)
+        {
+            CatalogCallCount++;
+            return Task.FromResult<ProviderItem?>(_item.ExternalId == externalId ? _item : null);
+        }
+    }
+
+    private sealed class SnapshotCoverLookup(ProviderItem item) : IProviderCoverLookup
+    {
+        public int CallCount { get; private set; }
+        public string? LastProviderId { get; private set; }
+        public string? LastExternalId { get; private set; }
+
+        public Task<ProviderCover?> GetCoverAsync(string providerId, string externalId, CancellationToken ct)
+        {
+            CallCount++;
+            LastProviderId = providerId;
+            LastExternalId = externalId;
+            var cover = item.ProviderId == providerId && item.ExternalId == externalId
+                ? item.Cover
+                : null;
+            return Task.FromResult(cover);
         }
     }
 }

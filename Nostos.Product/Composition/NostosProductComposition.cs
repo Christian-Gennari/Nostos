@@ -271,6 +271,10 @@ public static class NostosProductComposition
         // before this method and it wins.
         services.TryAddSingleton<IProviderDiscovery>(sp =>
             sp.GetRequiredService<ProviderDiscoveryService>());
+        // Host-overridable metadata lookup for proxied covers. SelfHosted
+        // resolves covers through the provider catalog; catalog-backed hosts
+        // can reuse discovery metadata and avoid one detail request per card.
+        services.TryAddSingleton<IProviderCoverLookup, ProviderCoverLookup>();
         services.TryAddSingleton<
             IAcquisitionWorkingRootProvider,
             DefaultAcquisitionWorkingRootProvider>();
