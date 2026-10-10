@@ -1632,7 +1632,7 @@ button.edition-select-card:focus-visible {
   gap: 1rem;
   font-size: 0.8rem;
   font-weight: 600;
-  color: var(--color-text);
+  color: var(--color-text-main);
 }
 .detail-import-track {
   height: 5px;
@@ -1645,7 +1645,7 @@ button.edition-select-card:focus-visible {
   height: 100%;
   border-radius: inherit;
   background: currentColor;
-  color: var(--color-text);
+  color: var(--color-text-main);
   transition: width 150ms ease-out;
 }
 .detail-import-progress p,
