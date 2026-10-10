@@ -58,7 +58,12 @@ public static class DeploymentCapabilitiesEndpoints
             SupportsManagedBackups: deployment.Mode == DeploymentMode.Cloud
                 && deployment.Capabilities.SupportsManagedBackups,
             SupportsAccountDeletion: deployment.Mode == DeploymentMode.Cloud
-                && deployment.Capabilities.SupportsAccountDeletion);
+                && deployment.Capabilities.SupportsAccountDeletion,
+            // Restore is offered only by a host that also lists backups and
+            // supplies a restore adapter; listing alone never shows the button.
+            SupportsManagedBackupRestore: deployment.Mode == DeploymentMode.Cloud
+                && deployment.Capabilities.SupportsManagedBackups
+                && deployment.Capabilities.SupportsManagedBackupRestore);
 }
 
 public sealed record DeploymentCapabilitiesResponse(
@@ -78,4 +83,5 @@ public sealed record DeploymentCapabilitiesResponse(
     bool SupportsSafeActivation = false,
     bool HostedBrowserIntegrationEnabled = false,
     bool SupportsManagedBackups = false,
-    bool SupportsAccountDeletion = false);
+    bool SupportsAccountDeletion = false,
+    bool SupportsManagedBackupRestore = false);

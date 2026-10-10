@@ -104,6 +104,42 @@ public sealed class DeploymentConfigurationTests
     }
 
     [Fact]
+    public void Managed_backup_restore_needs_its_own_cloud_opt_in_beyond_the_listing()
+    {
+        var listingOnly = DeploymentDescriptor.For(DeploymentMode.Cloud) with
+        {
+            Capabilities = DeploymentDescriptor.For(DeploymentMode.Cloud).Capabilities with
+            {
+                SupportsManagedBackups = true,
+            },
+        };
+        var withRestore = listingOnly with
+        {
+            Capabilities = listingOnly.Capabilities with { SupportsManagedBackupRestore = true },
+        };
+        var restoreWithoutListing = DeploymentDescriptor.For(DeploymentMode.Cloud) with
+        {
+            Capabilities = DeploymentDescriptor.For(DeploymentMode.Cloud).Capabilities with
+            {
+                SupportsManagedBackupRestore = true,
+            },
+        };
+        var selfHosted = DeploymentDescriptor.For(DeploymentMode.SelfHosted) with
+        {
+            Capabilities = DeploymentDescriptor.For(DeploymentMode.SelfHosted).Capabilities with
+            {
+                SupportsManagedBackups = true,
+                SupportsManagedBackupRestore = true,
+            },
+        };
+
+        DeploymentCapabilitiesEndpoints.ToResponse(listingOnly).SupportsManagedBackupRestore.Should().BeFalse();
+        DeploymentCapabilitiesEndpoints.ToResponse(withRestore).SupportsManagedBackupRestore.Should().BeTrue();
+        DeploymentCapabilitiesEndpoints.ToResponse(restoreWithoutListing).SupportsManagedBackupRestore.Should().BeFalse();
+        DeploymentCapabilitiesEndpoints.ToResponse(selfHosted).SupportsManagedBackupRestore.Should().BeFalse();
+    }
+
+    [Fact]
     public void Managed_backups_require_cloud_host_opt_in_and_cannot_be_advertised_by_selfhosted()
     {
         var cloud = DeploymentDescriptor.For(DeploymentMode.Cloud) with
