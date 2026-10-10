@@ -12,6 +12,7 @@ using Nostos.Backend.Providers.Contracts;
 using Nostos.Backend.Providers.Discovery;
 using Nostos.Backend.Providers.Gutenberg;
 using Nostos.Backend.Providers.LibriVox;
+using Nostos.Backend.Providers.Litteraturbanken;
 using Nostos.Backend.Providers.StandardEbooks;
 using Nostos.Backend.Providers.Wikisource;
 using Nostos.Backend.Serialization;
@@ -337,6 +338,16 @@ public static class NostosProductComposition
                 "Nostos/1.0 (+https://github.com/Christian-Gennari/Nostos-Rebirth)");
         });
         services.AddSingleton<IContentProvider, WikisourceProvider>();
+
+        services.AddHttpClient(LitteraturbankenProvider.HttpClientName, client =>
+        {
+            client.BaseAddress = new Uri(LitteraturbankenProvider.BaseUrl);
+            client.Timeout = TimeSpan.FromSeconds(20);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd(
+                "Nostos/1.0 (+https://github.com/Christian-Gennari/Nostos)");
+            client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
+        });
+        services.AddSingleton<IContentProvider, LitteraturbankenProvider>();
 
         services.Configure<MediaToolOptions>(
             configuration.GetSection(MediaToolOptions.SectionName));
