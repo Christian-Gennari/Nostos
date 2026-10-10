@@ -122,6 +122,12 @@ const managedBackupListing: ManagedBackupListing = {
 
 const managedBackupsServiceMock = {
   getBackups: vi.fn((): Observable<ManagedBackupListing> => of(managedBackupListing)),
+  restore: vi.fn(() =>
+    of({
+      backupId: managedBackupListing.backups[0].id,
+      restoredAtUtc: '2026-10-09T14:00:00Z',
+    }),
+  ),
 };
 
 const managedAiUsage: CloudManagedAiUsage = {
@@ -462,6 +468,13 @@ describe('SettingsComponent backup-only surface', () => {
     capabilitiesServiceMock.get.mockReturnValue(of(selfHostedCapabilities));
     managedBackupsServiceMock.getBackups.mockClear();
     managedBackupsServiceMock.getBackups.mockReturnValue(of(managedBackupListing));
+    managedBackupsServiceMock.restore.mockClear();
+    managedBackupsServiceMock.restore.mockReturnValue(
+      of({
+        backupId: managedBackupListing.backups[0].id,
+        restoredAtUtc: '2026-10-09T14:00:00Z',
+      }),
+    );
     portableLibraryServiceMock.exportArchive.mockClear();
     portableLibraryServiceMock.exportArchive.mockReturnValue(
       of(
@@ -760,9 +773,156 @@ describe('SettingsComponent backup-only surface', () => {
     expect(card.textContent).toContain('protected media 2.0 KB');
     expect(card.textContent).toContain('retained for up to 14 days');
     expect(card.textContent).toContain('Completed');
-    expect(card.querySelectorAll('button')).toHaveLength(0);
-    expect(card.textContent).not.toContain('Restore');
+    const restoreButtons = card.querySelectorAll(
+      '[data-testid="managed-backup-restore"]',
+    );
+    expect(card.querySelectorAll('button')).toHaveLength(1);
+    expect(restoreButtons).toHaveLength(1);
+    expect(restoreButtons[0].textContent).toContain('Restore');
+    expect(managedBackupsServiceMock.restore).not.toHaveBeenCalled();
     expect(managedBackupsServiceMock.getBackups).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not expose managed restore in SelfHosted mode', () => {
+    openManageLibraryPage();
+    fixture.detectChanges();
+
+    fixture.componentInstance.requestManagedRestore('nightly-backup-1');
+
+    expect(fixture.componentInstance.pendingManagedRestore()).toBeNull();
+    expect(managedBackupsServiceMock.restore).not.toHaveBeenCalled();
+    expect(
+      fixture.nativeElement.querySelector('[data-testid="managed-backup-restore"]'),
+    ).toBeNull();
+  });
+
+  it('requires destructive confirmation before calling restore', () => {
+
+    openManageLibraryPage({
+      ...cloudCapabilities,
+      supportsManagedBackups: true,
+    });
+
+    const component = fixture.componentInstance;
+    component.requestManagedRestore('nightly-backup-1');
+    fixture.detectChanges();
+
+    expect(managedBackupsServiceMock.restore).not.toHaveBeenCalled();
+    expect(component.pendingManagedRestore()).toBe('nightly-backup-1');
+
+    const dialog = fixture.nativeElement.querySelector(
+      '.confirm-modal-card',
+    ) as HTMLElement;
+
+    expect(dialog.textContent).toContain('Replace your current library');
+    expect(dialog.textContent).toContain('Restore library');
+
+    component.cancelManagedRestore();
+
+    expect(component.pendingManagedRestore()).toBeNull();
+    expect(managedBackupsServiceMock.restore).not.toHaveBeenCalled();
+  });
+
+  it('blocks duplicate submissions and dismissal while restoring', () => {
+
+    const pending = new Subject<{
+      backupId: string;
+      restoredAtUtc: string;
+    }>();
+
+    managedBackupsServiceMock.restore.mockReturnValue(
+      pending.asObservable(),
+    );
+
+    openManageLibraryPage({
+      ...cloudCapabilities,
+      supportsManagedBackups: true,
+    });
+
+    const component = fixture.componentInstance;
+    component.requestManagedRestore('nightly-backup-1');
+    component.confirmManagedRestore();
+    component.confirmManagedRestore();
+    component.cancelManagedRestore();
+
+    fixture.detectChanges();
+
+    expect(managedBackupsServiceMock.restore).toHaveBeenCalledTimes(1);
+    expect(managedBackupsServiceMock.restore).toHaveBeenCalledWith(
+      'nightly-backup-1',
+      { confirm: true },
+    );
+    expect(component.managedRestoreBusy()).toBe(true);
+    expect(component.pendingManagedRestore()).toBe('nightly-backup-1');
+
+    const status = fixture.nativeElement.querySelector(
+      '[data-testid="managed-restore-progress"]',
+    ) as HTMLElement;
+
+    expect(status.getAttribute('role')).toBe('status');
+    expect(status.textContent).not.toMatch(/\d+%/u);
+
+    const button = fixture.nativeElement.querySelector(
+      '[data-testid="managed-backup-restore"]',
+    ) as HTMLButtonElement;
+
+    expect(button.disabled).toBe(true);
+  });
+
+  it('keeps unknown restore outcomes visible and prevents retry', () => {
+
+    managedBackupsServiceMock.restore.mockReturnValue(
+      throwError(() => new HttpErrorResponse({ status: 0 })),
+    );
+
+    openManageLibraryPage({
+      ...cloudCapabilities,
+      supportsManagedBackups: true,
+    });
+
+    const component = fixture.componentInstance;
+    component.requestManagedRestore('nightly-backup-1');
+    component.confirmManagedRestore();
+    fixture.detectChanges();
+
+    expect(component.managedRestoreBusy()).toBe(false);
+    expect(component.managedRestoreUncertain()).toBe(true);
+    expect(component.managedRestoreError()).toContain(
+      'may already have been replaced',
+    );
+
+    component.requestManagedRestore('nightly-backup-1');
+
+    expect(component.pendingManagedRestore()).toBeNull();
+    expect(managedBackupsServiceMock.restore).toHaveBeenCalledTimes(1);
+
+    const error = fixture.nativeElement.querySelector(
+      '[data-testid="managed-restore-error"]',
+    ) as HTMLElement;
+
+    expect(error.getAttribute('role')).toBe('alert');
+  });
+
+  it('reports verified rejection without treating it as an unknown outcome', () => {
+
+    managedBackupsServiceMock.restore.mockReturnValue(
+      throwError(() => new HttpErrorResponse({ status: 422 })),
+    );
+
+    openManageLibraryPage({
+      ...cloudCapabilities,
+      supportsManagedBackups: true,
+    });
+
+    const component = fixture.componentInstance;
+    component.requestManagedRestore('nightly-backup-1');
+    component.confirmManagedRestore();
+
+    expect(component.managedRestoreBusy()).toBe(false);
+    expect(component.managedRestoreUncertain()).toBe(false);
+    expect(component.managedRestoreError()).toContain(
+      'failed staged restore verification',
+    );
   });
 
   it('shows the authenticated Cloud identity and signs out through the BFF', () => {

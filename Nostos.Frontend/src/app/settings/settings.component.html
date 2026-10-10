@@ -475,11 +475,45 @@
                       </div>
                       <div class="history-actions">
                         <span appBadge tone="success">{{ backup.state | titlecase }}</span>
+                        <button
+                          appButton
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          data-testid="managed-backup-restore"
+                          [disabled]="managedRestoreBusy() || managedRestoreUncertain() || managedBackupsLoading()"
+                          (click)="requestManagedRestore(backup.id)"
+                        >
+                          Restore
+                        </button>
                       </div>
                     </div>
                   }
                 </div>
               }
+            }
+
+            @if (managedRestoreError(); as error) {
+              <p
+                class="label-desc"
+                role="alert"
+                data-testid="managed-restore-error"
+              >
+                {{ error }}
+              </p>
+            }
+
+            @if (managedRestoreBusy()) {
+              <p
+                class="label-desc"
+                role="status"
+                aria-live="polite"
+                data-testid="managed-restore-progress"
+              >
+                Restoring your library… Nostos is preparing and verifying
+                the backup before activation. This may take several minutes.
+                No percentage is available.
+              </p>
             }
           </div>
         </section>
@@ -1690,6 +1724,26 @@
         }
       </div>
     </div>
+
+    @if (isManageLibraryPage && supportsManagedBackups()) {
+      <app-confirm-modal
+        [isOpen]="!!pendingManagedRestore()"
+        heading="Replace your current library?"
+        description="Restoring this backup replaces your current active library, including books, notes, writing, and media, with its state at backup time. Later changes will no longer appear in your active library. Hosted recovery verifies the replacement before activation and retains previous resources for recovery."
+        confirmLabel="Restore library"
+        busyLabel="Restoring…"
+        [busy]="managedRestoreBusy()"
+        [trapFocus]="true"
+        (confirm)="confirmManagedRestore()"
+        (cancel)="cancelManagedRestore()"
+      >
+        @if (managedRestoreBusy()) {
+          <p role="status" aria-live="polite">
+            Preparing and verifying your library. Keep this page open.
+          </p>
+        }
+      </app-confirm-modal>
+    }
 
     @if (supportsLocalBackupConfiguration()) {
     <!-- Restore overwrites live data and delete removes the archive: both ask

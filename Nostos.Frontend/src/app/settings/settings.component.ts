@@ -295,6 +295,11 @@ export class SettingsComponent implements OnInit, OnDestroy {
   readonly managedBackups = signal<ManagedBackupListing | null>(null);
   readonly managedBackupsLoading = signal(false);
   readonly managedBackupsFailed = signal(false);
+
+  readonly pendingManagedRestore = signal<string | null>(null);
+  readonly managedRestoreBusy = signal(false);
+  readonly managedRestoreError = signal<string | null>(null);
+  readonly managedRestoreUncertain = signal(false);
   readonly supportsPrivateNetworkAccess = computed(
     () => this.deploymentCapabilities()?.supportsPrivateNetworkAccess === true,
   );
@@ -747,6 +752,127 @@ export class SettingsComponent implements OnInit, OnDestroy {
         this.managedBackups.set(null);
         this.managedBackupsFailed.set(true);
         this.managedBackupsLoading.set(false);
+      },
+    });
+  }
+
+  requestManagedRestore(id: string): void {
+    if (
+      !this.isManageLibraryPage ||
+      !this.supportsManagedBackups() ||
+      this.managedBackupsLoading() ||
+      this.managedRestoreBusy() ||
+      this.managedRestoreUncertain() ||
+      !this.managedBackups()?.backups.some(
+        backup => backup.id === id && backup.state === 'completed',
+      )
+    ) return;
+
+    this.managedRestoreError.set(null);
+    this.pendingManagedRestore.set(id);
+  }
+
+  cancelManagedRestore(): void {
+    if (this.managedRestoreBusy()) return;
+    this.pendingManagedRestore.set(null);
+  }
+
+  confirmManagedRestore(): void {
+    const id = this.pendingManagedRestore();
+
+    if (
+      !id ||
+      this.managedRestoreBusy() ||
+      this.managedRestoreUncertain() ||
+      !this.isManageLibraryPage ||
+      !this.supportsManagedBackups() ||
+      !this.managedBackups()?.backups.some(
+        backup => backup.id === id && backup.state === 'completed',
+      )
+    ) return;
+
+    this.managedRestoreBusy.set(true);
+    this.managedRestoreError.set(null);
+
+    this.managedBackupsService.restore(id, { confirm: true }).subscribe({
+      next: result => {
+        if (result.backupId !== id || !result.restoredAtUtc) {
+          this.managedRestoreBusy.set(false);
+          this.pendingManagedRestore.set(null);
+          this.managedRestoreUncertain.set(true);
+          this.managedRestoreError.set(
+            'The restore response was unexpected. Your library may have ' +
+            'been replaced. Reload Nostos, inspect your library, and contact ' +
+            'support before attempting another restore.',
+          );
+          return;
+        }
+
+        // Activation has been explicitly confirmed by the server.
+        // Reinitialize the application against the newly active library.
+        // This discards in-memory library and managed-backup list state.
+        window.location.reload();
+      },
+      error: (error: unknown) => {
+        this.managedRestoreBusy.set(false);
+        this.pendingManagedRestore.set(null);
+
+        if (error instanceof HttpErrorResponse) {
+          if (error.status === 404) {
+            this.managedRestoreError.set(
+              'This backup is no longer available for your account. ' +
+              'Reload the backup list before selecting another.',
+            );
+            return;
+          }
+
+          if (error.status === 409) {
+            this.managedRestoreError.set(
+              'The restore was rejected because the library mapping changed. ' +
+              'Reload Nostos before selecting another backup.',
+            );
+            return;
+          }
+
+          if (error.status === 422) {
+            this.managedRestoreError.set(
+              'The backup failed staged restore verification and was not activated.',
+            );
+            return;
+          }
+
+          if (error.status === 501) {
+            this.managedRestoreError.set(
+              'Managed backup restore is not supported by this host.',
+            );
+            return;
+          }
+
+          if (error.status === 401 || error.status === 403) {
+            this.managedRestoreError.set(
+              'Your session does not permit this restore. ' +
+              'Sign in again and inspect your library before retrying.',
+            );
+            return;
+          }
+
+          if (error.status === 400 || error.status === 429) {
+            this.managedRestoreError.set(
+              'The restore request was rejected. ' +
+              'Review the request or wait for the rate limit to clear.',
+            );
+            return;
+          }
+        }
+
+        // A timeout, lost connection, or 5xx may occur after activation.
+        // Do not assert that the original library is still active.
+        this.managedRestoreUncertain.set(true);
+        this.managedRestoreError.set(
+          'Nostos could not confirm the restore outcome. Your library may ' +
+          'already have been replaced. Reload Nostos and inspect the library ' +
+          'before doing anything else. Contact support if the outcome is unclear.',
+        );
       },
     });
   }

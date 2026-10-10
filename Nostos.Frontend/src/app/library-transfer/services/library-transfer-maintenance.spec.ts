@@ -276,7 +276,9 @@ describe('LibraryTransferCoordinator — exclusive server maintenance', () => {
 
     const running = harness.coordinator.startImport(fileOfSize());
     await settleUntil(
-      () => harness.coordinator.maintenanceWaiting()?.operation === 'completeUpload',
+      () =>
+        harness.coordinator.maintenanceWaiting()?.operation === 'completeUpload' &&
+        harness.transport.calls.completeUpload === 1,
       2_000,
     );
     expect(harness.coordinator.maintenanceWaiting()?.operation)
