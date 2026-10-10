@@ -30,7 +30,6 @@ public sealed class LitteraturbankenProvider : IContentProvider,
     private const int MaxSearchLimit = 24;
     private const int SnapshotPageSize = 100;
     private const int MaxSnapshotPages = 1_000;
-    private const int MaxSnapshotRows = SnapshotPageSize * MaxSnapshotPages;
     private const string IncludeFields =
         "lbworkid,titlepath,title,titleid,work_titleid,shorttitle,mediatype," +
         "authors.authorid,authors.full_name,export.type,export.size,license," +
@@ -166,35 +165,42 @@ public sealed class LitteraturbankenProvider : IContentProvider,
                 $"the catalog exceeded {MaxSnapshotPages} sequential pages");
         }
 
-        var pageEnd = checked(cursor.Offset + SnapshotPageSize);
+        // The catalog cannot be paged past 10,000 rows by offset (it answers
+        // HTTP 500), and its default sort scatters the rows of one work across
+        // the whole result. Page by key instead: sort by work id, start every
+        // request at offset 0, and resume from the first row of the work that
+        // straddled the previous page.
         var response = await LoadCatalogAsync(
-            BuildSnapshotQuery(),
-            cursor.Offset,
-            pageEnd,
-            ct);
-        var endOffset = (long)cursor.Offset + response.Data.Count;
-        if (response.Hits < endOffset)
+            BuildSnapshotQuery(cursor.AfterWorkId),
+            from: 0,
+            to: SnapshotPageSize,
+            ct,
+            SnapshotSortField);
+        if (response.Hits < response.Data.Count)
             throw ProviderException.InvalidResponse(Id, "the catalog total was smaller than its returned page");
 
-        var hasMore = response.Hits > endOffset;
+        var hasMore = response.Hits > response.Data.Count;
 
         if (hasMore && response.Data.Count == 0)
             throw ProviderException.InvalidResponse(Id, "the catalog page was empty before its reported end");
 
         // Keep a work whose rows straddle this page together. The following
-        // request overlaps from the first row of that work, so the host stores
+        // request restarts from the first row of that work, so the host stores
         // one metadata item with the full set of eligible formats.
-        var trailingId = hasMore && response.Data.Count > 0
-            ? NormalizeExternalId(response.Data[^1].ExternalId)
+        var trailingWorkId = hasMore
+            ? NormalizeWorkKey(response.Data[^1].ExternalId)
             : null;
-        var trailingRows = trailingId is null
+        if (hasMore && trailingWorkId is null)
+            throw ProviderException.InvalidResponse(Id, "the catalog returned an unusable work id");
+
+        var trailingRows = trailingWorkId is null
             ? 0
             : response.Data
                 .AsEnumerable()
                 .Reverse()
                 .TakeWhile(row => string.Equals(
-                    NormalizeExternalId(row.ExternalId),
-                    trailingId,
+                    NormalizeWorkKey(row.ExternalId),
+                    trailingWorkId,
                     StringComparison.Ordinal))
                 .Count();
         var usableCount = response.Data.Count - trailingRows;
@@ -217,8 +223,10 @@ public sealed class LitteraturbankenProvider : IContentProvider,
         string? nextCursor = null;
         if (hasMore)
         {
-            var nextOffset = cursor.Offset + usableCount;
-            if (nextOffset <= cursor.Offset)
+            // Rows are sorted by work id, so the restart key must move forward.
+            if (usableCount == 0
+                || (cursor.AfterWorkId is not null
+                    && string.CompareOrdinal(trailingWorkId, cursor.AfterWorkId) <= 0))
             {
                 throw ProviderException.InvalidResponse(
                     Id,
@@ -232,7 +240,7 @@ public sealed class LitteraturbankenProvider : IContentProvider,
                     $"the catalog exceeded {MaxSnapshotPages} sequential pages");
             }
 
-            nextCursor = cursor.Next(nextOffset).Encode();
+            nextCursor = cursor.Next(trailingWorkId!).Encode();
         }
 
         return new ProviderSnapshot(
@@ -316,7 +324,8 @@ public sealed class LitteraturbankenProvider : IContentProvider,
         string query,
         int from,
         int to,
-        CancellationToken ct)
+        CancellationToken ct,
+        string sortField = "sortkey|asc")
     {
         using var form = new FormUrlEncodedContent(new Dictionary<string, string>
         {
@@ -324,7 +333,7 @@ public sealed class LitteraturbankenProvider : IContentProvider,
             ["to"] = to.ToString(System.Globalization.CultureInfo.InvariantCulture),
             ["include"] = IncludeFields,
             ["exclude"] = ExcludeFields,
-            ["sort_field"] = "sortkey|asc",
+            ["sort_field"] = sortField,
             ["q"] = query,
         });
         var queryString = await form.ReadAsStringAsync(ct);
@@ -685,9 +694,35 @@ public sealed class LitteraturbankenProvider : IContentProvider,
             + "(license:cc-0 OR license:pd OR license:cc-by)";
     }
 
-    private static string BuildSnapshotQuery() =>
+    private const string SnapshotSortField = "lbworkid|asc";
+
+    private static string BuildSnapshotQuery(string? afterWorkId) =>
         "searchable:true AND show:true AND "
-        + "(license:cc-0 OR license:pd OR license:cc-by)";
+        + "(license:cc-0 OR license:pd OR license:cc-by)"
+        + (afterWorkId is null ? string.Empty : " AND lbworkid:>=" + afterWorkId);
+
+    /// <summary>
+    /// Validates a raw catalogue work id for use as a paging key. Wider than
+    /// <see cref="NormalizeExternalId"/>: ids that are not offered as items
+    /// still take part in the sort order the cursor walks.
+    /// </summary>
+    private static string? NormalizeWorkKey(string? value)
+    {
+        var id = value?.Trim();
+        if (id is null || id.Length > 32 || id.Length < 3
+            || !id.StartsWith("lb", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        for (var index = 2; index < id.Length; index++)
+        {
+            if (!char.IsAsciiDigit(id[index]) && !char.IsAsciiLetterLower(id[index]))
+                return null;
+        }
+
+        return id;
+    }
 
     private static string BuildItemQuery(string externalId) =>
         "lbworkid:" + externalId
@@ -713,18 +748,18 @@ public sealed class LitteraturbankenProvider : IContentProvider,
         IReadOnlyList<SourcedAsset> Assets,
         RightsCatalog Rights);
 
-    private readonly record struct SnapshotCursor(int Offset, int PagesRead)
+    private readonly record struct SnapshotCursor(string? AfterWorkId, int PagesRead)
     {
-        private const string Version = "v1";
+        private const string Version = "v2";
 
-        public static SnapshotCursor Start => new(0, 0);
+        public static SnapshotCursor Start => new(null, 0);
 
-        public SnapshotCursor Next(int offset) => new(offset, PagesRead + 1);
+        public SnapshotCursor Next(string afterWorkId) => new(afterWorkId, PagesRead + 1);
 
         public string Encode() => string.Join(
             '|',
             Version,
-            Offset.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            AfterWorkId ?? string.Empty,
             PagesRead.ToString(System.Globalization.CultureInfo.InvariantCulture));
 
         public static SnapshotCursor Decode(string value, string providerId)
@@ -732,25 +767,19 @@ public sealed class LitteraturbankenProvider : IContentProvider,
             var parts = value.Split('|');
             if (parts.Length != 3
                 || !string.Equals(parts[0], Version, StringComparison.Ordinal)
-                || !int.TryParse(
-                    parts[1],
-                    System.Globalization.NumberStyles.None,
-                    System.Globalization.CultureInfo.InvariantCulture,
-                    out var offset)
+                || NormalizeWorkKey(parts[1]) is not { } afterWorkId
                 || !int.TryParse(
                     parts[2],
                     System.Globalization.NumberStyles.None,
                     System.Globalization.CultureInfo.InvariantCulture,
                     out var pagesRead)
-                || offset <= 0
-                || offset > MaxSnapshotRows
                 || pagesRead <= 0
                 || pagesRead >= MaxSnapshotPages)
             {
                 throw ProviderException.InvalidResponse(providerId, "the catalog cursor was invalid");
             }
 
-            return new SnapshotCursor(offset, pagesRead);
+            return new SnapshotCursor(afterWorkId, pagesRead);
         }
     }
 

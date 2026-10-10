@@ -297,40 +297,88 @@ public sealed class LitteraturbankenProviderTests
             .And.Contain("license:cc-0 OR license:pd OR license:cc-by");
     }
 
+    /// <summary>
+    /// Behaves like the live catalog for the snapshot query: honours
+    /// <c>sort_field</c> and the <c>lbworkid:&gt;=</c> filter, and rejects
+    /// offset paging at 10,000 rows (the real service answers HTTP 500).
+    /// </summary>
+    private static HttpResponseMessage ServeCatalog(
+        HttpRequestMessage request,
+        IReadOnlyList<(string Id, object Row)> catalog)
+    {
+        var path = request.RequestUri!.AbsolutePath;
+        if (path == "/red/etc/license/license.json")
+            return Json(RightsLicenseJson);
+        if (path == "/red/etc/provenance/provenance.json")
+            return Json(ProvenanceJson);
+        if (path != "/api/query_string/etext,faksimil")
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+
+        var from = int.Parse(ReadQueryValue(request.RequestUri!, "from"));
+        var to = int.Parse(ReadQueryValue(request.RequestUri!, "to"));
+        if (from >= 10_000)
+            return new HttpResponseMessage(HttpStatusCode.InternalServerError);
+
+        var query = ReadQueryValue(request.RequestUri!, "q");
+        IEnumerable<(string Id, object Row)> matches = catalog;
+        const string marker = "lbworkid:>=";
+        var markerIndex = query.IndexOf(marker, StringComparison.Ordinal);
+        if (markerIndex >= 0)
+        {
+            var after = query[(markerIndex + marker.Length)..].Split(' ')[0];
+            matches = matches.Where(entry =>
+                string.CompareOrdinal(entry.Id, after) >= 0);
+        }
+
+        // Default order scatters the rows of one work, as the live catalog does.
+        matches = ReadQueryValue(request.RequestUri!, "sort_field") == "lbworkid|asc"
+            ? matches.OrderBy(entry => entry.Id, StringComparer.Ordinal)
+            : matches.OrderBy(entry => (entry.Id.GetHashCode() & 0x7fffffff) % 997)
+                .ThenBy(entry => entry.Id, StringComparer.Ordinal);
+
+        var all = matches.ToArray();
+        var page = all.Skip(from).Take(to - from).Select(entry => entry.Row).ToArray();
+        return Json(CatalogJson(all.Length, page));
+    }
+
+    private static async Task<(List<ProviderItem> Items, int Pages)> WalkSnapshotAsync(
+        LitteraturbankenProvider provider)
+    {
+        var items = new List<ProviderItem>();
+        string? cursor = null;
+        var pages = 0;
+        do
+        {
+            var snapshot = await provider.ReadAsync(
+                new ProviderSnapshotRequest(Cursor: cursor),
+                CancellationToken.None);
+            items.AddRange(await ReadItemsAsync(snapshot.Items));
+            cursor = snapshot.NextCursor;
+            pages++;
+        }
+        while (cursor is not null && pages < 20);
+
+        return (items, pages);
+    }
+
     [Fact]
     public async Task Snapshot_OverlapsPageBoundaryToKeepAllFormatsOfOneWorkTogether()
     {
-        var rows = Enumerable.Range(1, 99)
-            .Select(index => CatalogRow("lb" + (1000 + index), "Work " + index))
+        var catalog = Enumerable.Range(1, 99)
+            .Select(index => ("lb" + (1000 + index), CatalogRow("lb" + (1000 + index), "Work " + index)))
             .Concat(
             [
-                CatalogRow("lb100", "Kåtornas folk"),
-                CatalogRow("lb100", "Kåtornas folk", mediaType: "faksimil", format: "pdf", size: 8_000_000),
-                CatalogRow("lb9999", "Last work"),
+                ("lb1100", CatalogRow("lb1100", "Kåtornas folk")),
+                ("lb1100", CatalogRow("lb1100", "Kåtornas folk", mediaType: "faksimil", format: "pdf", size: 8_000_000)),
+                ("lb9999", CatalogRow("lb9999", "Last work")),
             ])
             .ToArray();
-        var (provider, handler) = CreateProvider(request =>
-        {
-            var path = request.RequestUri!.AbsolutePath;
-            if (path == "/api/query_string/etext,faksimil")
-            {
-                var offset = int.Parse(ReadQueryValue(request.RequestUri!, "from"));
-                var page = rows.Skip(offset).Take(100).ToArray();
-                return Json(CatalogJson(rows.Length, page));
-            }
-
-            if (path == "/red/etc/license/license.json")
-                return Json(RightsLicenseJson);
-            if (path == "/red/etc/provenance/provenance.json")
-                return Json(ProvenanceJson);
-
-            return new HttpResponseMessage(HttpStatusCode.NotFound);
-        });
+        var (provider, handler) = CreateProvider(request => ServeCatalog(request, catalog));
 
         var firstPage = await provider.ReadAsync(new ProviderSnapshotRequest(), CancellationToken.None);
         var firstItems = await ReadItemsAsync(firstPage.Items);
         firstItems.Should().HaveCount(99);
-        firstItems.Should().NotContain(item => item.ExternalId == "lb100");
+        firstItems.Should().NotContain(item => item.ExternalId == "lb1100");
         firstPage.NextCursor.Should().NotBeNull();
 
         var secondPage = await provider.ReadAsync(
@@ -339,16 +387,55 @@ public sealed class LitteraturbankenProviderTests
         var secondItems = await ReadItemsAsync(secondPage.Items);
         secondPage.NextCursor.Should().BeNull();
         secondItems.Should().HaveCount(2);
-        var combinedWork = secondItems.Single(item => item.ExternalId == "lb100");
+        var combinedWork = secondItems.Single(item => item.ExternalId == "lb1100");
         combinedWork.Assets.Should().BeEmpty();
         combinedWork.Source!.RightsStatement.Should().Contain("EPUB:").And.Contain("PDF:");
 
-        var offsets = handler.RecordedRequests
+        var catalogRequests = handler.RecordedRequests
             .Where(message => message.RequestUri!.AbsolutePath == "/api/query_string/etext,faksimil")
-            .Select(message => ReadQueryValue(message.RequestUri!, "from"))
             .ToArray();
-        offsets.Should().HaveCount(2);
-        offsets.Should().Contain("0").And.Contain("99");
+        catalogRequests.Should().HaveCount(2);
+        catalogRequests.Should().OnlyContain(message =>
+            ReadQueryValue(message.RequestUri!, "from") == "0"
+            && ReadQueryValue(message.RequestUri!, "to") == "100"
+            && ReadQueryValue(message.RequestUri!, "sort_field") == "lbworkid|asc");
+        var queries = catalogRequests
+            .Select(message => ReadQueryValue(message.RequestUri!, "q"))
+            .ToArray();
+        queries.Should().ContainSingle(query => !query.Contains("lbworkid:>="));
+        queries.Should().ContainSingle(query => query.EndsWith("lbworkid:>=lb1100", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Snapshot_PublishesEachWorkOnceWhenTheSourceScattersItsRowsAndExceedsTenThousandOffsets()
+    {
+        // Regression for the first production sync: rows of one work were far
+        // apart in the source's default order, so two pages produced the same
+        // item and the host's primary key rejected the generation. Ids with
+        // letters are skipped as items but must still be walked past.
+        var catalog = new List<(string Id, object Row)>();
+        for (var index = 0; index < 230; index++)
+        {
+            var id = "lb" + (20000 + index);
+            catalog.Add((id, CatalogRow(id, "Work " + index)));
+            if (index % 7 == 0)
+            {
+                catalog.Add((id, CatalogRow(id, "Work " + index, mediaType: "faksimil", format: "pdf", size: 4_000_000)));
+            }
+        }
+
+        catalog.Add(("lb0889slfmxtqsqq3m", CatalogRow("lb0889slfmxtqsqq3m", "Letter id")));
+        var (provider, handler) = CreateProvider(request => ServeCatalog(request, catalog));
+
+        var (items, pages) = await WalkSnapshotAsync(provider);
+
+        pages.Should().BeGreaterThan(2);
+        items.Select(item => item.ExternalId).Should()
+            .OnlyHaveUniqueItems()
+            .And.HaveCount(230);
+        handler.RecordedRequests
+            .Where(message => message.RequestUri!.AbsolutePath == "/api/query_string/etext,faksimil")
+            .Should().OnlyContain(message => ReadQueryValue(message.RequestUri!, "from") == "0");
     }
 
     [Fact]
