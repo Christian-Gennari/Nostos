@@ -61,6 +61,11 @@ catch (SttException exception)
     Console.Error.WriteLine($"Transcription failed: {exception.Code}. No automatic retry.");
     return 3;
 }
+catch (OperationCanceledException)
+{
+    Console.Error.WriteLine("Transcription canceled or timed out. Outcome may be billed; do not retry.");
+    return 3;
+}
 catch (Exception exception) when (exception is IOException or ArgumentException or JsonException)
 {
     Console.Error.WriteLine(exception.Message);

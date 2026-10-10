@@ -99,7 +99,8 @@ public sealed class PassageMatcher
     {
         var block = document.Blocks[token.Block];
         var offset = token.Offset + (end ? token.Length : 0);
-        var segment = block.SourceSegments.FirstOrDefault(x => token.Offset >= x.TextStart && token.Offset < x.TextStart + x.TextLength)
+        var character = end ? offset - 1 : offset;
+        var segment = block.SourceSegments.FirstOrDefault(x => character >= x.TextStart && character < x.TextStart + x.TextLength)
             ?? throw new InvalidDataException("Extracted token has no source provenance.");
         var locator = segment.Locator switch
         {

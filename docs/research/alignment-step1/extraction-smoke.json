@@ -1,0 +1,76 @@
+[
+  {
+    "book": "carol",
+    "kind": "text-only extraction roundtrip; not an audio benchmark",
+    "sourceSha256": "8557960c8d5e62e23ebfeedacad8ad0a4ebf8d056c1ad37210b2a528c2a2d6cb",
+    "extractorVersion": "nostos-book-text-v2",
+    "match": {
+      "accepted": true,
+      "reason": "matched",
+      "score": 1,
+      "runnerUpScore": 0,
+      "start": {
+        "blockOrder": 33,
+        "globalTextOffset": 1533,
+        "locator": {
+          "type": "epub",
+          "spineIndex": 1,
+          "resourceHref": "1597581767207061809_46-h-0.htm.xhtml",
+          "cfi": null,
+          "startTextOffset": 1533,
+          "endTextOffset": 1533
+        }
+      },
+      "end": {
+        "blockOrder": 33,
+        "globalTextOffset": 1642,
+        "locator": {
+          "type": "epub",
+          "spineIndex": 1,
+          "resourceHref": "1597581767207061809_46-h-0.htm.xhtml",
+          "cfi": null,
+          "startTextOffset": 1642,
+          "endTextOffset": 1642
+        }
+      },
+      "passage": "s name was good upon change for anything he chose to put his hand to old marley was as dead as a door nail"
+    }
+  },
+  {
+    "book": "pride",
+    "kind": "text-only extraction roundtrip; not an audio benchmark",
+    "sourceSha256": "d401ad6b118e84d01b8dd1a3d034fd41784feb14c50f1f7a0fc17f3263fa8e9f",
+    "extractorVersion": "nostos-book-text-v2",
+    "match": {
+      "accepted": true,
+      "reason": "matched",
+      "score": 1,
+      "runnerUpScore": 0,
+      "start": {
+        "blockOrder": 28,
+        "globalTextOffset": 25973,
+        "locator": {
+          "type": "epub",
+          "spineIndex": 1,
+          "resourceHref": "1306980130634175271_1342-h-0.htm.xhtml",
+          "cfi": null,
+          "startTextOffset": 25973,
+          "endTextOffset": 25973
+        }
+      },
+      "end": {
+        "blockOrder": 28,
+        "globalTextOffset": 26088,
+        "locator": {
+          "type": "epub",
+          "spineIndex": 1,
+          "resourceHref": "1306980130634175271_1342-h-0.htm.xhtml",
+          "cfi": null,
+          "startTextOffset": 26088,
+          "endTextOffset": 26088
+        }
+      },
+      "passage": "it is a truth universally acknowledged that a single man in possession of a good fortune must be in want of a wife"
+    }
+  }
+]

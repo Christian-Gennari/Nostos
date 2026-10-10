@@ -1,0 +1,249 @@
+{
+  "settingsSha256": "08e98178d302d6ec99f6da1cc78a227796c956b1eb26139c0b3d965cf9be08b8",
+  "examplesSha256": "1a1fc6e4a16136fdc871454d2397d522f4892b6a40208f266c04525cf9e55061",
+  "cliSha256": "4453bed7fab76696406ba25103b484ead7e1be68f31d149a3863183742ec8f9f",
+  "caseCount": 10,
+  "passed": true,
+  "cases": [
+    {
+      "name": "unique phrase with punctuation",
+      "passed": true,
+      "match": {
+        "accepted": true,
+        "reason": "matched",
+        "score": 1,
+        "runnerUpScore": 0,
+        "start": {
+          "blockOrder": 0,
+          "globalTextOffset": 0,
+          "locator": {
+            "type": "epub",
+            "spineIndex": 0,
+            "resourceHref": "synthetic-0.xhtml",
+            "cfi": null,
+            "startTextOffset": 0,
+            "endTextOffset": 0
+          }
+        },
+        "end": {
+          "blockOrder": 0,
+          "globalTextOffset": 87,
+          "locator": {
+            "type": "epub",
+            "spineIndex": 0,
+            "resourceHref": "synthetic-0.xhtml",
+            "cfi": null,
+            "startTextOffset": 87,
+            "endTextOffset": 87
+          }
+        },
+        "passage": "the patient traveller carried a golden lantern through the quiet orchard before sunrise"
+      }
+    },
+    {
+      "name": "substitution",
+      "passed": true,
+      "match": {
+        "accepted": true,
+        "reason": "matched",
+        "score": 0.9230769230769231,
+        "runnerUpScore": 0,
+        "start": {
+          "blockOrder": 0,
+          "globalTextOffset": 0,
+          "locator": {
+            "type": "epub",
+            "spineIndex": 0,
+            "resourceHref": "synthetic-0.xhtml",
+            "cfi": null,
+            "startTextOffset": 0,
+            "endTextOffset": 0
+          }
+        },
+        "end": {
+          "blockOrder": 0,
+          "globalTextOffset": 87,
+          "locator": {
+            "type": "epub",
+            "spineIndex": 0,
+            "resourceHref": "synthetic-0.xhtml",
+            "cfi": null,
+            "startTextOffset": 87,
+            "endTextOffset": 87
+          }
+        },
+        "passage": "the patient traveller carried a golden lantern through the quiet orchard before sunrise"
+      }
+    },
+    {
+      "name": "insertion",
+      "passed": true,
+      "match": {
+        "accepted": true,
+        "reason": "matched",
+        "score": 0.9285714285714286,
+        "runnerUpScore": 0,
+        "start": {
+          "blockOrder": 0,
+          "globalTextOffset": 0,
+          "locator": {
+            "type": "epub",
+            "spineIndex": 0,
+            "resourceHref": "synthetic-0.xhtml",
+            "cfi": null,
+            "startTextOffset": 0,
+            "endTextOffset": 0
+          }
+        },
+        "end": {
+          "blockOrder": 0,
+          "globalTextOffset": 87,
+          "locator": {
+            "type": "epub",
+            "spineIndex": 0,
+            "resourceHref": "synthetic-0.xhtml",
+            "cfi": null,
+            "startTextOffset": 87,
+            "endTextOffset": 87
+          }
+        },
+        "passage": "the patient traveller carried a golden lantern through the quiet orchard before sunrise"
+      }
+    },
+    {
+      "name": "deletion",
+      "passed": true,
+      "match": {
+        "accepted": true,
+        "reason": "matched",
+        "score": 0.9230769230769231,
+        "runnerUpScore": 0,
+        "start": {
+          "blockOrder": 0,
+          "globalTextOffset": 0,
+          "locator": {
+            "type": "epub",
+            "spineIndex": 0,
+            "resourceHref": "synthetic-0.xhtml",
+            "cfi": null,
+            "startTextOffset": 0,
+            "endTextOffset": 0
+          }
+        },
+        "end": {
+          "blockOrder": 0,
+          "globalTextOffset": 87,
+          "locator": {
+            "type": "epub",
+            "spineIndex": 0,
+            "resourceHref": "synthetic-0.xhtml",
+            "cfi": null,
+            "startTextOffset": 87,
+            "endTextOffset": 87
+          }
+        },
+        "passage": "the patient traveller carried a golden lantern through the quiet orchard before sunrise"
+      }
+    },
+    {
+      "name": "duplicate paragraph",
+      "passed": true,
+      "match": {
+        "accepted": false,
+        "reason": "ambiguous",
+        "score": 1,
+        "runnerUpScore": 1,
+        "start": null,
+        "end": null,
+        "passage": null
+      }
+    },
+    {
+      "name": "nearly identical alternatives",
+      "passed": true,
+      "match": {
+        "accepted": false,
+        "reason": "ambiguous",
+        "score": 1,
+        "runnerUpScore": 0.9230769230769231,
+        "start": null,
+        "end": null,
+        "passage": null
+      }
+    },
+    {
+      "name": "empty speech",
+      "passed": true,
+      "match": {
+        "accepted": false,
+        "reason": "insufficient_speech",
+        "score": 0,
+        "runnerUpScore": 0,
+        "start": null,
+        "end": null,
+        "passage": null
+      }
+    },
+    {
+      "name": "short heading",
+      "passed": true,
+      "match": {
+        "accepted": false,
+        "reason": "insufficient_speech",
+        "score": 0,
+        "runnerUpScore": 0,
+        "start": null,
+        "end": null,
+        "passage": null
+      }
+    },
+    {
+      "name": "wrong book",
+      "passed": true,
+      "match": {
+        "accepted": false,
+        "reason": "no_match",
+        "score": 0,
+        "runnerUpScore": 0,
+        "start": null,
+        "end": null,
+        "passage": null
+      }
+    },
+    {
+      "name": "crosses block boundary",
+      "passed": true,
+      "match": {
+        "accepted": true,
+        "reason": "matched",
+        "score": 1,
+        "runnerUpScore": 0,
+        "start": {
+          "blockOrder": 0,
+          "globalTextOffset": 0,
+          "locator": {
+            "type": "epub",
+            "spineIndex": 0,
+            "resourceHref": "synthetic-0.xhtml",
+            "cfi": null,
+            "startTextOffset": 0,
+            "endTextOffset": 0
+          }
+        },
+        "end": {
+          "blockOrder": 1,
+          "globalTextOffset": 87,
+          "locator": {
+            "type": "epub",
+            "spineIndex": 1,
+            "resourceHref": "synthetic-1.xhtml",
+            "cfi": null,
+            "startTextOffset": 40,
+            "endTextOffset": 40
+          }
+        },
+        "passage": "the patient traveller carried a golden lantern through the quiet orchard before sunrise"
+      }
+    }
+  ]
+}

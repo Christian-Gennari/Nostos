@@ -1,0 +1,6 @@
+{
+  "minimumScore": 0.85,
+  "minimumMargin": 0.12,
+  "minimumTokens": 8,
+  "maximumTokens": 24
+}

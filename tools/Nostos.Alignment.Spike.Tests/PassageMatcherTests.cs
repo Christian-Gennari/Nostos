@@ -47,4 +47,19 @@ public sealed class PassageMatcherTests
 
     [Fact]
     public void Rejects_near_identical_distant_alternatives() => Assert.Equal("ambiguous", Matcher(Passage, Passage.Replace("golden", "silver")).Locate(Passage, new()).Reason);
+
+    [Fact]
+    public void End_offset_uses_the_segment_containing_the_last_character()
+    {
+        var boundary = Passage.IndexOf("sunrise", StringComparison.Ordinal) + 3;
+        var document = new BookTextExtractedDocument(BookTextSourceFormat.Epub,
+            [new BookTextArtifactBlock(0, Passage, [],
+                [new BookTextSourceSegment(0, boundary, new EpubBookTextSourceLocator(0, "first.xhtml", StartTextOffset: 0, EndTextOffset: boundary)),
+                 new BookTextSourceSegment(boundary, Passage.Length-boundary, new EpubBookTextSourceLocator(1, "second.xhtml", StartTextOffset: 50, EndTextOffset: 50+Passage.Length-boundary))])]);
+        var match = new PassageMatcher(document).Locate(Passage, new());
+        Assert.True(match.Accepted);
+        var end = Assert.IsType<EpubBookTextSourceLocator>(match.End!.Locator);
+        Assert.Equal("second.xhtml", end.ResourceHref);
+        Assert.Equal(50 + Passage.Length - 1 - boundary, end.EndTextOffset);
+    }
 }
