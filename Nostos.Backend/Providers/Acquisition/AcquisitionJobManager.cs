@@ -104,7 +104,7 @@ public sealed class AcquisitionJobManager : BackgroundService, IAcquisitionJobMa
         // A small fixed number of workers: enough that a short ebook import is
         // not stuck behind a multi-hour audiobook, few enough that the sources
         // behind these catalogs are not hammered.
-        var workers = Math.Clamp(_options.ClampTranscodeConcurrency() + 1, 1, 3);
+        var workers = _options.ClampJobConcurrency();
 
         var running = Enumerable
             .Range(0, workers)

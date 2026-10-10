@@ -226,8 +226,27 @@ public sealed record LibraryAttachAcquiredAssetRequest(
     /// an import that wrote the image but never set this produced a cover nothing
     /// could display. Appended, never inserted: this record is positional.
     /// </summary>
-    string? CoverFileName = null
+    string? CoverFileName = null,
+    /// <summary>
+    /// The stored tracks of a multi-track audiobook, in playing order. When
+    /// present the book has no primary file and <see cref="FileName"/> must be
+    /// empty: a book holds one file or a track list, never both.
+    /// </summary>
+    IReadOnlyList<LibraryAcquiredTrack>? Tracks = null
 );
+
+/// <summary>
+/// One track as storage holds it: its bare stored name plus the length, size
+/// and CRC-32 measured from the stored bytes.
+/// </summary>
+public sealed record LibraryAcquiredTrack(
+    int Number,
+    string FileName,
+    string ContentType,
+    long DurationMs,
+    long Bytes,
+    uint Crc32,
+    string? Title);
 
 /// <summary>
 /// Data payload of an acquisition attachment. Deliberately not

@@ -8,13 +8,11 @@ namespace Nostos.Backend.Providers.LibriVox;
 /// <summary>
 /// LibriVox as a Nostos content source.
 ///
-/// LibriVox publishes a recording as a numbered list of MP3 sections. Nostos
-/// models a book as ONE local file, so this provider declares
-/// <see cref="ProviderCapabilities.RequiresAssembly"/> and the acquisition
-/// pipeline combines the sections into a single chaptered M4B through
-/// <see cref="LibriVoxM4bAssembler"/>. The multi-track shape is absorbed at
-/// acquisition and never becomes a concept the library, the audio reader, the
-/// progress model, downloads or backups have to learn.
+/// LibriVox publishes a recording as a numbered list of MP3 sections. This
+/// provider declares <see cref="ProviderCapabilities.MultiTrackAudiobook"/>
+/// and plans one part per section; the acquisition pipeline stores each
+/// section unchanged as a track of one audiobook. Nothing is re-encoded, so an
+/// import costs a download and needs no media tool on the server.
 ///
 /// Everything LibriVox-shaped stays inside this namespace.
 /// </summary>
@@ -23,7 +21,6 @@ public sealed class LibriVoxProvider : IContentProvider,
     IProviderCatalog,
     IProviderAcquisitionPlanner,
     IProviderDownloadPolicy,
-    IAcquisitionAssembler,
     IProviderSnapshotSource
 {
     public const string ProviderIdentifier = "librivox";
@@ -71,18 +68,15 @@ public sealed class LibriVoxProvider : IContentProvider,
     private readonly HttpClient _http;
     private readonly HttpClient _snapshotHttp;
     private readonly ILogger<LibriVoxProvider> _logger;
-    private readonly LibriVoxM4bAssembler _assembler;
     private readonly TimeProvider _clock;
 
     public LibriVoxProvider(
         IHttpClientFactory httpClientFactory,
-        LibriVoxM4bAssembler assembler,
         ILogger<LibriVoxProvider> logger,
         TimeProvider? clock = null)
     {
         _http = httpClientFactory.CreateClient(HttpClientName);
         _snapshotHttp = httpClientFactory.CreateClient(SnapshotHttpClientName);
-        _assembler = assembler;
         _logger = logger;
         _clock = clock ?? TimeProvider.System;
     }
@@ -92,9 +86,9 @@ public sealed class LibriVoxProvider : IContentProvider,
     public string DisplayName => "LibriVox";
 
     /// <summary>
-    /// <see cref="ProviderCapabilities.RequiresAssembly"/> is the honest
+    /// <see cref="ProviderCapabilities.MultiTrackAudiobook"/> is the honest
     /// declaration here: what LibriVox serves is a track set, and nothing
-    /// downstream may treat a downloaded section as the book.
+    /// downstream may treat one downloaded section as the book.
     /// </summary>
     public ProviderCapabilities Capabilities =>
         ProviderCapabilities.Search
@@ -102,7 +96,7 @@ public sealed class LibriVoxProvider : IContentProvider,
         | ProviderCapabilities.AudiobookAcquisition
         | ProviderCapabilities.CoverArt
         | ProviderCapabilities.RightsInformation
-        | ProviderCapabilities.RequiresAssembly;
+        | ProviderCapabilities.MultiTrackAudiobook;
 
     public string? RightsNotice => LibriVoxCatalog.RightsStatement;
 
@@ -119,18 +113,8 @@ public sealed class LibriVoxProvider : IContentProvider,
 
     public long MaxTotalBytes => MaxTotalBytesForRecording;
 
-    /// <summary>One part per section: the concatenation order IS the recording.</summary>
+    /// <summary>One part per section: the part order IS the recording.</summary>
     public int MaxParts => MaxSectionsPerRecording;
-
-    // --- IAcquisitionAssembler -------------------------------------------
-    // The registry resolves an assembler from the registered provider object, so
-    // the provider IS the assembler and forwards to the class that owns the
-    // media pipeline. Declaring RequiresAssembly without implementing this
-    // interface would stop the app at startup, which is the point: a track set
-    // must never reach the library as if it were the book.
-
-    public Task<AcquisitionArtifact> AssembleAsync(AcquisitionAssemblyContext context, CancellationToken ct) =>
-        _assembler.AssembleAsync(context, ct);
 
     // --- IProviderSearch -------------------------------------------------
 
@@ -406,9 +390,9 @@ public sealed class LibriVoxProvider : IContentProvider,
             ExternalId: book.Id,
             Asset: AudioAsset,
             Metadata: MetadataFor(book),
-            // One part per section, in playing order. The DOWNLOAD ORDER here is
-            // the concatenation order, which is why the catalogue sorts by
-            // section number rather than trusting the array.
+            // One part per section, in playing order. The part order here is
+            // the track order, which is why the catalogue sorts by section
+            // number rather than trusting the array.
             Parts: book.Sections
                 .Select(section => new ProviderDownloadPart(
                     Url: section.ListenUrl,
@@ -418,15 +402,15 @@ public sealed class LibriVoxProvider : IContentProvider,
                     ExpectedBytes: null,
                     Label: section.Title))
                 .ToList(),
-            Output: new ProviderOutput(".m4b", "audio/mp4", "M4B audiobook"),
+            Output: new ProviderOutput(".mp3", "audio/mpeg", "MP3 audiobook"),
             Cover: book.Cover,
             Source: new ProviderSourceInfo(
                 ItemUrl: book.Url,
                 RightsStatement: LibriVoxCatalog.RightsStatement,
                 RightsUrl: LibriVoxCatalog.RightsUrl),
-            // Chapters are deliberately NOT guessed here: the assembler measures
-            // them from the files that were actually downloaded, which is the
-            // only source of chapter boundaries that does not drift.
+            // Chapters are deliberately NOT guessed here: the pipeline measures
+            // each downloaded track, which is the only source of chapter
+            // boundaries that does not drift.
             Chapters: null);
     }
 

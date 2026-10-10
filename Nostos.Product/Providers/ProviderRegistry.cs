@@ -12,8 +12,7 @@ public sealed record ProviderRegistration(
     IProviderSearch? Search,
     IProviderCatalog? Catalog,
     IProviderAcquisitionPlanner? Planner,
-    IProviderDownloadPolicy? DownloadPolicy,
-    IAcquisitionAssembler? Assembler)
+    IProviderDownloadPolicy? DownloadPolicy)
 {
     public string Id => Provider.Id;
 }
@@ -54,8 +53,7 @@ public sealed class ProviderRegistry : IProviderRegistry
                 provider as IProviderSearch,
                 provider as IProviderCatalog,
                 provider as IProviderAcquisitionPlanner,
-                provider as IProviderDownloadPolicy,
-                provider as IAcquisitionAssembler);
+                provider as IProviderDownloadPolicy);
 
             if (!_byId.TryAdd(registration.Id, registration))
                 throw new InvalidOperationException(
@@ -100,10 +98,15 @@ public sealed class ProviderRegistry : IProviderRegistry
         CheckPair(id, claimsAcquisition, provider is IProviderDownloadPolicy,
             "ProviderCapabilities.{Ebook,Audiobook}Acquisition", nameof(IProviderDownloadPolicy));
 
-        // Declaring assembly without an assembler would mean a multi-part item
-        // silently ships its parts to the library as if they were the artifact.
-        CheckPair(id, caps.HasFlag(ProviderCapabilities.RequiresAssembly), provider is IAcquisitionAssembler,
-            "ProviderCapabilities.RequiresAssembly", nameof(IAcquisitionAssembler));
+        // Tracks are audio. A provider that could not deliver an audiobook has
+        // nothing a track list could be made of.
+        if (caps.HasFlag(ProviderCapabilities.MultiTrackAudiobook)
+            && !caps.HasFlag(ProviderCapabilities.AudiobookAcquisition))
+        {
+            throw new InvalidOperationException(
+                $"Provider '{id}' declares ProviderCapabilities.MultiTrackAudiobook without " +
+                "ProviderCapabilities.AudiobookAcquisition.");
+        }
 
         if (provider is not IProviderDownloadPolicy policy)
             return;

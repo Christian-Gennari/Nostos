@@ -38,19 +38,18 @@ public sealed class AcquisitionOptions
     public int MaxRedirects { get; set; } = 5;
 
     /// <summary>
-    /// Transcodes running at once. One by default: encoding a feature-length
-    /// audiobook already saturates a self-hosted machine, and a second
-    /// concurrent encode makes the whole server unresponsive rather than merely
-    /// slow.
+    /// Imports running at once. Two by default: enough that a short ebook is
+    /// not stuck behind a long audiobook download, few enough that the sources
+    /// behind these catalogs are not hammered.
     /// </summary>
-    public int MaxConcurrentTranscodes { get; set; } = 1;
+    public int MaxConcurrentJobs { get; set; } = 2;
 
     /// <summary>
     /// Free space required before starting, as a multiple of the bytes the job
-    /// expects to write (all parts plus the assembled result). Downloading and
-    /// then encoding needs both sets on disk at once.
+    /// expects to write. Above 1 so an import cannot run the volume it shares
+    /// with the library down to nothing.
     /// </summary>
-    public double FreeSpaceFactor { get; set; } = 2.5;
+    public double FreeSpaceFactor { get; set; } = 1.5;
 
     public long MinimumFreeSpaceBytes { get; set; } = 512L * 1024 * 1024;
 
@@ -64,7 +63,7 @@ public sealed class AcquisitionOptions
 
     public int ClampDownloadAttempts() => Math.Clamp(DownloadAttempts, 1, 6);
 
-    public int ClampTranscodeConcurrency() => Math.Clamp(MaxConcurrentTranscodes, 1, 4);
+    public int ClampJobConcurrency() => Math.Clamp(MaxConcurrentJobs, 1, 3);
 
     /// <summary>
     /// The effective staging root.

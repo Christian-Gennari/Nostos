@@ -157,8 +157,83 @@ public static class OpdsEndpoints
                     ct)
         );
 
+        // A multi-track audiobook, three ways. The package is the whole book as
+        // one Readium audiobook archive; the manifest lets a client that can
+        // stream play it without downloading everything; the track route is
+        // what that manifest points at.
+        var packageEndpoint = group.MapGet(
+            "/books/{id:guid}/audiobook",
+            async (
+                Guid id,
+                AudiobookPackageService packages,
+                HttpContext http,
+                CancellationToken ct
+            ) =>
+            {
+                if (await packages.BuildAsync(id, ct) is not { } package)
+                    return Results.NotFound();
+
+                return await StoredAssetHttpResult.CreateAsync(
+                    http,
+                    _ => Task.FromResult<StoredAssetInfo?>(
+                        package.Info(AudiobookManifest.PackageExtension, AudiobookManifest.PackageMediaType)),
+                    (range, _) => Task.FromResult<StoredAssetRead?>(
+                        package.Open(AudiobookManifest.PackageExtension, AudiobookManifest.PackageMediaType, range)),
+                    attachment: true,
+                    enableRanges: true,
+                    cacheControl: null,
+                    ct);
+            }
+        );
+
+        group.MapGet(
+            "/books/{id:guid}/manifest.json",
+            async (
+                Guid id,
+                AudiobookPackageService packages,
+                HttpContext context,
+                CancellationToken ct
+            ) =>
+            {
+                var manifest = await packages.BuildStreamingManifestAsync(
+                    id,
+                    track => GetAbsoluteUrl(context, options, $"/opds/books/{id}/tracks/{track.Number}"),
+                    GetAbsoluteUrl(context, options, $"/opds/books/{id}/cover"),
+                    GetAbsoluteUrl(context, options, $"/opds/books/{id}/manifest.json"),
+                    ct);
+
+                return manifest is null
+                    ? Results.NotFound()
+                    : Results.Bytes(manifest, AudiobookManifest.ManifestMediaType);
+            }
+        );
+
+        var trackEndpoint = group.MapGet(
+            "/books/{id:guid}/tracks/{number:int}",
+            async (
+                Guid id,
+                int number,
+                HttpContext http,
+                CancellationToken ct
+            ) =>
+                http.RequestServices.GetService<IBookTrackStorage>() is not { } tracks
+                    ? Results.NotFound()
+                    : await StoredAssetHttpResult.CreateAsync(
+                        http,
+                        token => tracks.GetTrackInfoAsync(id, number, token),
+                        (range, token) => tracks.OpenTrackAsync(id, number, range, token),
+                        attachment: false,
+                        enableRanges: true,
+                        cacheControl: null,
+                        ct)
+        );
+
         if (!string.IsNullOrWhiteSpace(mediaRateLimitPolicy))
+        {
             fileEndpoint.RequireRateLimiting(mediaRateLimitPolicy);
+            packageEndpoint.RequireRateLimiting(mediaRateLimitPolicy);
+            trackEndpoint.RequireRateLimiting(mediaRateLimitPolicy);
+        }
 
         group.MapGet(
             "/books/{id:guid}/cover",
@@ -239,6 +314,26 @@ public static class OpdsEndpoints
                     AcquisitionRel,
                     GetAbsoluteUrl(context, options, $"/opds/books/{book.Id}/file"),
                     MediaTypeMap.ForBookFile(book.FileDetails.FileName)
+                )
+            );
+        }
+        else if (book.FileDetails.TracksJson is not null)
+        {
+            // A multi-track audiobook has no single stored file. It is offered
+            // as one Readium audiobook package to download, and as a manifest
+            // for clients that stream.
+            entry.Add(
+                Link(
+                    AcquisitionRel,
+                    GetAbsoluteUrl(context, options, $"/opds/books/{book.Id}/audiobook"),
+                    AudiobookManifest.PackageMediaType
+                )
+            );
+            entry.Add(
+                Link(
+                    AcquisitionRel,
+                    GetAbsoluteUrl(context, options, $"/opds/books/{book.Id}/manifest.json"),
+                    AudiobookManifest.ManifestMediaType
                 )
             );
         }

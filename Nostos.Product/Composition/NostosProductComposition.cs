@@ -198,6 +198,7 @@ public static class NostosProductComposition
         services.AddScoped<ILibraryService, LibraryService>();
         services.AddScoped<LibraryReceiptRetentionService>();
         services.AddScoped<MediaMetadataService>();
+        services.AddScoped<AudiobookPackageService>();
         services.AddScoped<NoteProcessorService>();
         services.AddScoped<INoteService, NoteService>();
         services.AddScoped<KoreaderNoteImportService>();
@@ -279,7 +280,7 @@ public static class NostosProductComposition
         services.TryAddSingleton<
             IAcquisitionWorkingRootProvider,
             DefaultAcquisitionWorkingRootProvider>();
-        services.AddSingleton<ITranscodeLimiter, TranscodeLimiter>();
+        services.TryAddSingleton<IAudioDurationProbe, AtlAudioDurationProbe>();
         services.AddSingleton<IProviderContentDownloader, ProviderContentDownloader>();
         services.AddSingleton<BookFileMutationGate>();
         services.AddScoped<IAcquisitionService, AcquisitionService>();
@@ -354,11 +355,6 @@ public static class NostosProductComposition
             client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
         });
         services.AddSingleton<IContentProvider, LitteraturbankenProvider>();
-
-        services.Configure<MediaToolOptions>(
-            configuration.GetSection(MediaToolOptions.SectionName));
-        services.AddSingleton<IMediaProcessRunner, MediaProcessRunner>();
-        services.AddSingleton<LibriVoxM4bAssembler>();
 
         services.AddHttpClient(LibriVoxProvider.HttpClientName, client =>
         {

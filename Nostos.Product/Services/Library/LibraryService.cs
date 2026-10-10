@@ -561,7 +561,31 @@ public sealed class LibraryService : ILibraryService
         // A bare file name only. Anything with a directory component would let
         // the caller choose where a book's file is read from.
         var fileName = request.FileName?.Trim() ?? string.Empty;
-        if (fileName.Length is 0 or > 64
+
+        // A multi-track audiobook: the track list is the book's media and
+        // there is no primary file beside it.
+        IReadOnlyList<BookTrack>? tracks = null;
+        if (request.Tracks is { Count: > 0 })
+        {
+            tracks = request.Tracks
+                .Select(track => new BookTrack(
+                    track.Number,
+                    track.FileName,
+                    track.ContentType,
+                    track.DurationMs,
+                    track.Bytes,
+                    track.Crc32,
+                    NullIfEmpty(track.Title)))
+                .ToList();
+
+            if (fileName.Length != 0 || BookTrackList.Validate(tracks) is not null)
+            {
+                return NoChange(Failure("invalid_track_list",
+                    BookTrackList.Validate(tracks) ?? "A book holds one file or a track list, never both.",
+                    state.StateVersion));
+            }
+        }
+        else if (fileName.Length is 0 or > 64
             || !string.Equals(Path.GetFileName(fileName), fileName, StringComparison.Ordinal))
         {
             return NoChange(Failure("invalid_file_name",
@@ -608,8 +632,15 @@ public sealed class LibraryService : ILibraryService
                 state.StateVersion));
         }
 
+        if (tracks is not null && book is not AudioBookModel)
+        {
+            return NoChange(Failure("invalid_track_list",
+                "Only an audiobook can hold a track list.", state.StateVersion));
+        }
+
         book.FileDetails.HasFile = true;
-        book.FileDetails.FileName = fileName;
+        book.FileDetails.FileName = tracks is null ? fileName : null;
+        book.FileDetails.TracksJson = tracks is null ? null : BookTrackList.Serialize(tracks);
         // The cover is written to disk by the importer, so the row has to be told
         // its name: the cover URL is derived from this column, and writing only
         // the file left imported books with a cover nothing could display.
@@ -646,7 +677,7 @@ public sealed class LibraryService : ILibraryService
             ExternalId = request.ExternalId.Trim(),
             AssetId = request.AssetId.Trim(),
             AssetFormat = NullIfEmpty(request.AssetFormat),
-            ImportedExtension = Path.GetExtension(fileName).ToLowerInvariant(),
+            ImportedExtension = Path.GetExtension(tracks is null ? fileName : tracks[0].FileName).ToLowerInvariant(),
             SourceUrl = NullIfEmpty(request.SourceUrl),
             RightsStatement = NullIfEmpty(request.RightsStatement),
             AcquiredAt = request.AcquiredAt ?? Now,
