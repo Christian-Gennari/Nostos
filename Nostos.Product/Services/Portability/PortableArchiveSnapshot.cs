@@ -18,7 +18,9 @@ internal sealed record PortableExportSnapshot(
 /// </summary>
 internal sealed record PortableSourceMedia(
     Guid BookId,
-    string Kind);
+    string Kind,
+    // The canonical stored name; set for tracks only, where a book has many.
+    string? FileName = null);
 
 /// <summary>
 /// A source media revision pinned by length, last-modified, entity tag and

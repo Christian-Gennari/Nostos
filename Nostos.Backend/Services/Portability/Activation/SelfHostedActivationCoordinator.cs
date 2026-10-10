@@ -826,7 +826,8 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
                 $"The activated library failed authoritative verification ({FirstFailureCode(database.Failures)}).");
         }
 
-        var media = await _verifier.VerifyMediaAsync(_assets, expected.Media, CancellationToken.None);
+        var media = await _verifier.VerifyMediaAsync(
+            _assets, _assets as IBookTrackStorage, expected.Media, CancellationToken.None);
         if (!media.Passed)
         {
             throw new MigrationActivationException(MigrationActivationErrorCodes.Failed,

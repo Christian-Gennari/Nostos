@@ -510,8 +510,20 @@ public sealed class PortableLibraryVerifier : IPortableLibraryVerifier
             comparison.Failures.TotalCount);
     }
 
+    public Task<PortableLibraryVerificationReport> VerifyMediaAsync(
+        IBookAssetStorage assets,
+        IReadOnlyList<PortableArchiveMediaEntry> expected,
+        CancellationToken ct = default) =>
+        VerifyMediaAsync(assets, tracks: null, expected, ct);
+
+    /// <summary>
+    /// Verifies stored media including the tracks of multi-track audiobooks.
+    /// Without <paramref name="tracks"/> an expected track is reported as a
+    /// failure, never skipped.
+    /// </summary>
     public async Task<PortableLibraryVerificationReport> VerifyMediaAsync(
         IBookAssetStorage assets,
+        IBookTrackStorage? tracks,
         IReadOnlyList<PortableArchiveMediaEntry> expected,
         CancellationToken ct = default)
     {
@@ -531,15 +543,16 @@ public sealed class PortableLibraryVerifier : IPortableLibraryVerifier
             StoredAssetRead? opened;
             try
             {
-                if (descriptor.Kind == PortableArchiveFormat.BookMediaKind)
+                if (PortableArchiveFormat.IsKnownMediaKind(descriptor.Kind)
+                    && PortableMediaStorage.IsAvailable(tracks, descriptor.Kind)
+                    && PortableArchiveFormat.CanonicalMediaFileName(descriptor.Kind, descriptor.FileName) is not null)
                 {
-                    info = await assets.GetBookFileInfoAsync(descriptor.BookId, ct).ConfigureAwait(false);
-                    opened = await assets.OpenBookFileAsync(descriptor.BookId, null, ct).ConfigureAwait(false);
-                }
-                else if (descriptor.Kind == PortableArchiveFormat.CoverMediaKind)
-                {
-                    info = await assets.GetBookCoverInfoAsync(descriptor.BookId, ct).ConfigureAwait(false);
-                    opened = await assets.OpenBookCoverAsync(descriptor.BookId, ct).ConfigureAwait(false);
+                    info = await PortableMediaStorage
+                        .GetInfoAsync(assets, tracks, descriptor.BookId, descriptor.Kind, descriptor.FileName, ct)
+                        .ConfigureAwait(false);
+                    opened = await PortableMediaStorage
+                        .OpenAsync(assets, tracks, descriptor.BookId, descriptor.Kind, descriptor.FileName, ct)
+                        .ConfigureAwait(false);
                 }
                 else
                 {
@@ -1339,7 +1352,7 @@ public sealed class PortableLibraryVerifier : IPortableLibraryVerifier
             return false;
         }
 
-        if (descriptor.Kind is not (PortableArchiveFormat.BookMediaKind or PortableArchiveFormat.CoverMediaKind))
+        if (!PortableArchiveFormat.IsKnownMediaKind(descriptor.Kind))
         {
             failure = Failure(
                 PortableLibraryVerificationErrorCodes.ExpectedStateInvalid,
@@ -1364,14 +1377,8 @@ public sealed class PortableLibraryVerifier : IPortableLibraryVerifier
             return false;
         }
 
-        string canonicalFileName;
-        try
-        {
-            canonicalFileName = descriptor.Kind == PortableArchiveFormat.BookMediaKind
-                ? "book" + BookAssetFormats.RequireBookExtension(descriptor.FileName)
-                : "cover" + BookAssetFormats.RequireCoverExtension(descriptor.FileName);
-        }
-        catch (InvalidOperationException)
+        if (PortableArchiveFormat.CanonicalMediaFileName(descriptor.Kind, descriptor.FileName)
+            is not { } canonicalFileName)
         {
             failure = Failure(
                 PortableLibraryVerificationErrorCodes.ExpectedStateInvalid,
@@ -1393,8 +1400,7 @@ public sealed class PortableLibraryVerifier : IPortableLibraryVerifier
             return false;
         }
 
-        var extension = Path.GetExtension(descriptor.FileName).ToLowerInvariant();
-        var expectedArchivePath = $"media/books/{descriptor.BookId:N}/{descriptor.Kind}{extension}";
+        var expectedArchivePath = PortableArchiveFormat.MediaPath(descriptor.BookId, canonicalFileName);
         if (!string.Equals(descriptor.Path, expectedArchivePath, StringComparison.Ordinal))
         {
             failure = Failure(
@@ -1980,6 +1986,16 @@ public sealed class PortableLibraryVerifier : IPortableLibraryVerifier
             Ef(("FileInfoDetails", nameof(FileInfoDetails.ChaptersJson))),
             (context, failures) => CompareField(failures, "book", context.Row.Id, nameof(FileInfoDetails.ChaptersJson), context.Row.FileDetails.ChaptersJson, context.Expected.ChaptersJson)),
         Entry<BookContext>(
+            nameof(PortableBook.TracksJson),
+            Ef(("FileInfoDetails", nameof(FileInfoDetails.TracksJson))),
+            (context, failures) => CompareField(
+                failures,
+                "book",
+                context.Row.Id,
+                nameof(FileInfoDetails.TracksJson),
+                context.Row.FileDetails.TracksJson,
+                string.IsNullOrWhiteSpace(context.Expected.TracksJson) ? null : context.Expected.TracksJson)),
+        Entry<BookContext>(
             nameof(PortableBook.HasBookFile),
             Ef(("FileInfoDetails", nameof(FileInfoDetails.HasFile)), ("FileInfoDetails", nameof(FileInfoDetails.FileName))),
             (context, failures) =>
@@ -1990,7 +2006,9 @@ public sealed class PortableLibraryVerifier : IPortableLibraryVerifier
                     context.Row.Id,
                     nameof(FileInfoDetails.HasFile),
                     context.Row.FileDetails.HasFile,
-                    context.Expected.HasBookFile);
+                    // A multi-track audiobook has a file to play without a
+                    // primary book file.
+                    context.Expected.HasBookFile || !string.IsNullOrWhiteSpace(context.Expected.TracksJson));
                 CompareField(
                     failures,
                     "book",

@@ -114,8 +114,19 @@ public static class PortableLibraryRecoverySource
             .Select(x => new PortableWork(x.Id, x.Title, x.Author, x.CreatedAt))
             .ToList();
 
+        var retainedTracks = retainedMedia
+            .Where(item => string.Equals(item.Kind, PortableArchiveFormat.TrackMediaKind, StringComparison.Ordinal))
+            .GroupBy(item => item.BookId)
+            .ToDictionary(
+                group => group.Key,
+                group => group.ToDictionary(item => item.FileName, item => item.Length, StringComparer.Ordinal));
+
         var books = (await db.Books.AsNoTracking().OrderBy(x => x.Id).ToListAsync(ct).ConfigureAwait(false))
-            .Select(x => ToPortableBook(x, booksWithFile.Contains(x.Id), booksWithCover.Contains(x.Id)))
+            .Select(x => ToPortableBook(
+                x,
+                booksWithFile.Contains(x.Id),
+                booksWithCover.Contains(x.Id),
+                RetainedTracksJson(x, retainedTracks.GetValueOrDefault(x.Id))))
             .ToList();
 
         var collections = (await db.Collections.AsNoTracking().OrderBy(x => x.Id).ToListAsync(ct).ConfigureAwait(false))
@@ -190,16 +201,16 @@ public static class PortableLibraryRecoverySource
         var primary = new List<PortableArchiveMediaEntry>();
         foreach (var item in retainedMedia)
         {
-            if (item.Kind is not (PortableArchiveFormat.BookMediaKind or PortableArchiveFormat.CoverMediaKind))
+            if (!PortableArchiveFormat.IsKnownMediaKind(item.Kind)
+                || PortableArchiveFormat.CanonicalMediaFileName(item.Kind, item.FileName) is not { } canonicalFileName)
             {
                 continue;
             }
 
-            var extension = Path.GetExtension(item.FileName).ToLowerInvariant();
             primary.Add(new PortableArchiveMediaEntry(
                 item.BookId,
                 item.Kind,
-                $"media/books/{item.BookId:N}/{item.Kind}{extension}",
+                PortableArchiveFormat.MediaPath(item.BookId, canonicalFileName),
                 item.FileName,
                 string.Empty,
                 item.Length,
@@ -209,7 +220,23 @@ public static class PortableLibraryRecoverySource
         return primary;
     }
 
-    private static PortableBook ToPortableBook(BookModel book, bool hasBookFile, bool hasCover)
+    /// <summary>
+    /// A book's track list, kept only when the retained copy really holds every
+    /// track it names at the recorded size. Like the other media flags, this
+    /// describes the retained media rather than trusting the database's claim.
+    /// </summary>
+    private static string? RetainedTracksJson(BookModel book, Dictionary<string, long>? retained)
+    {
+        var tracks = BookTrackList.Parse(book.FileDetails.TracksJson);
+        if (tracks.Count == 0 || retained is null || retained.Count != tracks.Count)
+            return null;
+
+        return tracks.All(track => retained.TryGetValue(track.FileName, out var length) && length == track.Bytes)
+            ? book.FileDetails.TracksJson
+            : null;
+    }
+
+    private static PortableBook ToPortableBook(BookModel book, bool hasBookFile, bool hasCover, string? tracksJson)
     {
         var type = book switch
         {
@@ -272,7 +299,8 @@ public static class PortableLibraryRecoverySource
             audio?.Narrator,
             book.FileDetails.ChaptersJson,
             hasBookFile,
-            hasCover);
+            hasCover,
+            tracksJson);
     }
 
     /// <summary>

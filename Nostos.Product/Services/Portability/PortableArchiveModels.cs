@@ -12,12 +12,69 @@ internal static class PortableArchiveFormat
     public const int Version = 1;
     // Bumped from 1 to 2 with WritingNotes (issue #491), and from 2 to 3
     // with remembered e-reader book mappings (NoteImportBookLink, issue #677).
-    // Archives with DataVersion 1 and 2 remain supported.
-    public const int DataVersion = 3;
+    // Bumped from 3 to 4 with multi-track audiobooks (issue #835): a book may
+    // carry a track list and "track" media. An older build must refuse such
+    // an archive rather than import the book without its audio.
+    // Archives with DataVersion 1, 2 and 3 remain supported.
+    public const int DataVersion = 4;
     public const string ManifestPath = "manifest.json";
     public const string DataPath = "data/library.json";
     public const string BookMediaKind = "book";
     public const string CoverMediaKind = "cover";
+
+    /// <summary>
+    /// One track of a multi-track audiobook. Unlike the other kinds a book may
+    /// have many, so a track is identified by its canonical file name
+    /// (<c>track-0001.mp3</c>) as well as its book.
+    /// </summary>
+    public const string TrackMediaKind = "track";
+
+    public static bool IsKnownMediaKind(string kind) =>
+        kind is BookMediaKind or CoverMediaKind or TrackMediaKind;
+
+    /// <summary>
+    /// The archive path of a media item. Every kind lives directly in its
+    /// book's folder under its canonical file name.
+    /// </summary>
+    public static string MediaPath(Guid bookId, string canonicalFileName) =>
+        $"media/books/{bookId:N}/{canonicalFileName.ToLowerInvariant()}";
+
+    /// <summary>
+    /// What makes a media item unique within an archive: one book file and one
+    /// cover per book, and one track per canonical name.
+    /// </summary>
+    public static (Guid BookId, string Kind, string Discriminator) MediaKey(
+        Guid bookId, string kind, string fileName) =>
+        (bookId, kind, kind == TrackMediaKind ? fileName.ToLowerInvariant() : string.Empty);
+
+    /// <summary>
+    /// The canonical stored name for a media item, or null when the name is not
+    /// valid for its kind (unknown kind, unsupported extension, malformed track
+    /// name).
+    /// </summary>
+    public static string? CanonicalMediaFileName(string kind, string fileName)
+    {
+        try
+        {
+            switch (kind)
+            {
+                case BookMediaKind:
+                    return BookMediaKind + BookAssetFormats.RequireBookExtension(fileName);
+                case CoverMediaKind:
+                    return CoverMediaKind + BookAssetFormats.RequireCoverExtension(fileName);
+                case TrackMediaKind:
+                    return BookTrackFormats.TryParseCanonicalFileName(fileName.ToLowerInvariant(), out var number)
+                        ? BookTrackFormats.CanonicalFileName(number, Path.GetExtension(fileName))
+                        : null;
+                default:
+                    return null;
+            }
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
+    }
 }
 
 internal sealed record PortableLibraryData(
@@ -58,8 +115,13 @@ internal sealed record PortableBook(
     string? Duration,
     string? Narrator,
     string? ChaptersJson,
+    // True only for a single primary file. A multi-track audiobook has none:
+    // its media is TracksJson plus one "track" media item per track.
     bool HasBookFile,
-    bool HasCover);
+    bool HasCover,
+    // The track list of a multi-track audiobook (data version 4+). Appended
+    // and optional so archives written before it existed still read.
+    string? TracksJson = null);
 
 internal sealed record PortableBookMetadata(
     string? Subtitle,

@@ -9,7 +9,7 @@ namespace Nostos.Backend.Services.Portability;
 internal static class PortableArchiveValidation
 {
     internal static string MediaPath(Guid bookId, string kind, string extension) =>
-        $"media/books/{bookId:N}/{kind}{extension.ToLowerInvariant()}";
+        PortableArchiveFormat.MediaPath(bookId, $"{kind}{extension}");
 
     internal static void ValidateArchiveEntryCount(int count)
     {
@@ -396,7 +396,7 @@ internal static class PortableArchiveValidation
                 + $"This build supports version {PortableArchiveFormat.Version}.");
         }
 
-        if (manifest.DataVersion is not (1 or 2 or 3))
+        if (manifest.DataVersion is not (1 or 2 or 3 or 4))
         {
             throw new PortableArchiveException(
                 "unsupported_data_version",
@@ -436,6 +436,8 @@ internal static class PortableArchiveValidation
     {
         var bookIds = data.Books.Select(x => x.Id).ToHashSet();
         var mediaKeys = new HashSet<(Guid BookId, string Kind)>();
+        var uniqueMedia = new HashSet<(Guid BookId, string Kind, string Discriminator)>();
+        var trackLengths = new Dictionary<Guid, Dictionary<string, long>>();
         var mediaPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var media in manifest.Media)
@@ -447,21 +449,22 @@ internal static class PortableArchiveValidation
                     $"Portable media '{media.Path}' references an unknown book.");
             }
 
-            if (media.Kind is not (
-                PortableArchiveFormat.BookMediaKind
-                or PortableArchiveFormat.CoverMediaKind))
+            if (!PortableArchiveFormat.IsKnownMediaKind(media.Kind))
             {
                 throw new PortableArchiveException(
                     "invalid_media_kind",
                     $"Portable media '{media.Path}' has an unsupported kind.");
             }
 
-            if (!mediaKeys.Add((media.BookId, media.Kind)))
+            if (media.FileName is null
+                || !uniqueMedia.Add(PortableArchiveFormat.MediaKey(media.BookId, media.Kind, media.FileName)))
             {
                 throw new PortableArchiveException(
                     "duplicate_media",
                     $"Book {media.BookId} has duplicate '{media.Kind}' media.");
             }
+
+            mediaKeys.Add((media.BookId, media.Kind));
 
             if (!mediaPaths.Add(media.Path))
             {
@@ -479,8 +482,14 @@ internal static class PortableArchiveValidation
                     $"Portable media '{media.Path}' has an unsafe filename.");
             }
 
-            var extension = Path.GetExtension(media.FileName).ToLowerInvariant();
-            var canonicalFileName = $"{media.Kind}{extension}";
+            var canonicalFileName = PortableArchiveFormat.CanonicalMediaFileName(media.Kind, media.FileName);
+            if (canonicalFileName is null)
+            {
+                throw new PortableArchiveException(
+                    "invalid_media_filename",
+                    $"Portable media '{media.Path}' uses an unsupported extension.");
+            }
+
             if (!string.Equals(
                 media.FileName,
                 canonicalFileName,
@@ -491,22 +500,14 @@ internal static class PortableArchiveValidation
                     $"Portable media '{media.Path}' filename is not canonical.");
             }
 
-            try
+            if (media.Kind == PortableArchiveFormat.TrackMediaKind)
             {
-                if (media.Kind == PortableArchiveFormat.BookMediaKind)
-                    BookAssetFormats.RequireBookExtension(media.FileName);
-                else
-                    BookAssetFormats.RequireCoverExtension(media.FileName);
-            }
-            catch (InvalidOperationException exception)
-            {
-                throw new PortableArchiveException(
-                    "invalid_media_filename",
-                    $"Portable media '{media.Path}' uses an unsupported extension.",
-                    exception);
+                if (!trackLengths.TryGetValue(media.BookId, out var lengths))
+                    trackLengths[media.BookId] = lengths = new Dictionary<string, long>(StringComparer.Ordinal);
+                lengths[canonicalFileName] = media.Length;
             }
 
-            var expectedPath = MediaPath(media.BookId, media.Kind, extension);
+            var expectedPath = PortableArchiveFormat.MediaPath(media.BookId, canonicalFileName);
             if (!string.Equals(
                 media.Path,
                 expectedPath,
@@ -549,12 +550,58 @@ internal static class PortableArchiveValidation
                     "missing_referenced_media",
                     $"Book {book.Id} cover state does not match the archive media manifest.");
             }
+
+            ValidateBookTracks(book, hasBook, trackLengths.GetValueOrDefault(book.Id));
+        }
+    }
+
+    /// <summary>
+    /// A book's track list and its track media must describe exactly the same
+    /// files: every listed track present with the listed size, and no track
+    /// media the list does not name. A book holds a primary file or tracks,
+    /// never both, and only an audiobook can hold tracks.
+    /// </summary>
+    private static void ValidateBookTracks(
+        PortableBook book,
+        bool hasBookFile,
+        Dictionary<string, long>? trackMedia)
+    {
+        var mediaCount = trackMedia?.Count ?? 0;
+        if (string.IsNullOrWhiteSpace(book.TracksJson))
+        {
+            if (mediaCount != 0)
+            {
+                throw new PortableArchiveException(
+                    "missing_referenced_media",
+                    $"Book {book.Id} has track media but no track list.");
+            }
+
+            return;
+        }
+
+        var tracks = BookTrackList.Parse(book.TracksJson);
+        if (BookTrackList.Validate(tracks) is not null
+            || hasBookFile
+            || !string.Equals(book.Type, "audiobook", StringComparison.Ordinal))
+        {
+            throw new PortableArchiveException(
+                "invalid_track_list",
+                $"Book {book.Id} has an invalid track list.");
+        }
+
+        if (tracks.Count != mediaCount
+            || tracks.Any(track =>
+                !trackMedia!.TryGetValue(track.FileName, out var length) || length != track.Bytes))
+        {
+            throw new PortableArchiveException(
+                "missing_referenced_media",
+                $"Book {book.Id} track list does not match the archive media manifest.");
         }
     }
 
     internal static void ValidatePortableData(PortableLibraryData data)
     {
-        if (data.Version is not (1 or 2 or 3))
+        if (data.Version is not (1 or 2 or 3 or 4))
         {
             throw new PortableArchiveException(
                 "unsupported_data_version",

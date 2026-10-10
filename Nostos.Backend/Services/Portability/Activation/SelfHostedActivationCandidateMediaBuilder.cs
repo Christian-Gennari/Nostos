@@ -40,7 +40,7 @@ internal interface ISelfHostedActivationCandidateMediaBuilder
 
 /// <summary>
 /// Streams every staged media item from <see cref="IPortableImportStaging"/> into
-/// <c>&lt;candidate-media-root&gt;/&lt;book-id&gt;/{book,cover}&lt;ext&gt;</c>, one
+/// <c>&lt;candidate-media-root&gt;/&lt;book-id&gt;/{book,cover,track-NNNN}&lt;ext&gt;</c>, one
 /// item at a time through one bounded buffer, hashing while copying and verifying
 /// exact length and SHA-256 against the committed descriptor. Each file is written
 /// to a sibling <c>.partial</c>, flushed to disk, then renamed into place, so a
@@ -69,6 +69,7 @@ internal sealed class SelfHostedActivationCandidateMediaBuilder(
     private const string PartialSuffix = ".partial";
     private const string BookKind = "book";
     private const string CoverKind = "cover";
+    private const string TrackKind = "track";
 
     internal Action<string>? BeforeRenameForTesting { get; set; }
 
@@ -257,7 +258,7 @@ internal sealed class SelfHostedActivationCandidateMediaBuilder(
             : StringComparison.Ordinal;
         var targets = new HashSet<string>(
             OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
-        var keys = new HashSet<(Guid BookId, string Kind)>();
+        var keys = new HashSet<(Guid BookId, string Kind, string Discriminator)>();
         var planned = new PlannedMedia[media.Count];
 
         for (var index = 0; index < media.Count; index++)
@@ -276,7 +277,7 @@ internal sealed class SelfHostedActivationCandidateMediaBuilder(
                 throw Failure("A prepared media item has an empty book identifier.");
             }
 
-            if (descriptor.Kind is not (BookKind or CoverKind))
+            if (descriptor.Kind is not (BookKind or CoverKind or TrackKind))
             {
                 throw Failure($"Book {entityId} has a prepared media item with an unsupported kind.");
             }
@@ -292,9 +293,16 @@ internal sealed class SelfHostedActivationCandidateMediaBuilder(
             string canonicalFileName;
             try
             {
-                canonicalFileName = descriptor.Kind == BookKind
-                    ? BookKind + BookAssetFormats.RequireBookExtension(descriptor.FileName)
-                    : CoverKind + BookAssetFormats.RequireCoverExtension(descriptor.FileName);
+                canonicalFileName = descriptor.Kind switch
+                {
+                    BookKind => BookKind + BookAssetFormats.RequireBookExtension(descriptor.FileName),
+                    CoverKind => CoverKind + BookAssetFormats.RequireCoverExtension(descriptor.FileName),
+                    // A track keeps its own numbered name: a book has many.
+                    _ => BookTrackFormats.TryParseCanonicalFileName(
+                            descriptor.FileName.ToLowerInvariant(), out var trackNumber)
+                        ? BookTrackFormats.CanonicalFileName(trackNumber, Path.GetExtension(descriptor.FileName))
+                        : throw new InvalidOperationException("Not a canonical track file name."),
+                };
             }
             catch (InvalidOperationException)
             {
@@ -306,16 +314,18 @@ internal sealed class SelfHostedActivationCandidateMediaBuilder(
                 throw Failure($"Book {entityId} has a prepared media item filename that is not canonical.");
             }
 
-            var extension = Path.GetExtension(descriptor.FileName).ToLowerInvariant();
             if (!string.Equals(
                     descriptor.Path,
-                    $"media/books/{descriptor.BookId:N}/{descriptor.Kind}{extension}",
+                    $"media/books/{descriptor.BookId:N}/{canonicalFileName}",
                     StringComparison.Ordinal))
             {
                 throw Failure($"Book {entityId} has a prepared media item path that is not canonical.");
             }
 
-            if (!keys.Add((descriptor.BookId, descriptor.Kind)))
+            if (!keys.Add((
+                    descriptor.BookId,
+                    descriptor.Kind,
+                    descriptor.Kind == TrackKind ? canonicalFileName : string.Empty)))
             {
                 throw Failure($"Book {entityId} has a duplicate prepared {descriptor.Kind} media item.");
             }

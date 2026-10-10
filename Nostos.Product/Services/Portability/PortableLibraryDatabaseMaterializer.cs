@@ -80,8 +80,11 @@ internal static class PortableLibraryDatabaseMaterializer
         ArgumentNullException.ThrowIfNull(data);
         ArgumentNullException.ThrowIfNull(stagedMedia);
 
-        var mediaByKey = stagedMedia.ToDictionary(
-            x => (x.Descriptor.BookId, x.Descriptor.Kind));
+        // Tracks are not looked up here: a book's track list travels in the
+        // relational payload, and a book may have many of them.
+        var mediaByKey = stagedMedia
+            .Where(x => x.Descriptor.Kind != PortableArchiveFormat.TrackMediaKind)
+            .ToDictionary(x => (x.Descriptor.BookId, x.Descriptor.Kind));
 
         var works = data.Works.ToDictionary(
             x => x.Id,
@@ -197,8 +200,11 @@ internal static class PortableLibraryDatabaseMaterializer
             };
             book.FileDetails = new FileInfoDetails
             {
-                HasFile = bookMedia is not null,
+                // A multi-track audiobook has a file to play but no primary
+                // file: its track list is its media.
+                HasFile = bookMedia is not null || !string.IsNullOrWhiteSpace(source.TracksJson),
                 FileName = bookMedia?.Descriptor.FileName,
+                TracksJson = string.IsNullOrWhiteSpace(source.TracksJson) ? null : source.TracksJson,
                 CoverFileName = coverMedia?.Descriptor.FileName,
                 // Chapter metadata is portable and retained because there is
                 // no lazy server-side re-extraction path today. epub.js

@@ -175,9 +175,13 @@ public class FileStorageService : IFileStorageService, IBookAssetStorage, IBookT
         if (!Directory.Exists(folder))
             return null;
 
+        // A multi-track audiobook keeps its tracks in this folder too, and
+        // they share an extension with a single-file audiobook. A track is
+        // never the primary file.
         return Directory
             .EnumerateFiles(folder)
-            .FirstOrDefault(f => AllowedBookExtensions.Contains(Path.GetExtension(f)));
+            .FirstOrDefault(f => AllowedBookExtensions.Contains(Path.GetExtension(f))
+                && !BookTrackFormats.IsTrackFileName(Path.GetFileName(f)));
     }
 
     public bool DeleteBookFile(Guid bookId)
@@ -375,13 +379,6 @@ public class FileStorageService : IFileStorageService, IBookAssetStorage, IBookT
     // Tracks (multi-track audiobooks)
     // ------------------------------------------------------------------
 
-    /// <summary>
-    /// Tracks live in their own subfolder. The primary-file lookup above scans
-    /// the book folder for any allowed extension, and <c>.mp3</c> is one, so a
-    /// track stored beside <c>book.*</c> would be mistaken for the book file.
-    /// </summary>
-    public const string TracksFolderName = "tracks";
-
     public async Task<string> SaveTrackAsync(
         Guid bookId,
         int number,
@@ -469,18 +466,25 @@ public class FileStorageService : IFileStorageService, IBookAssetStorage, IBookT
     public Task DeleteTracksAsync(Guid bookId, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
-        var folder = TracksFolder(bookId);
-        if (Directory.Exists(folder))
-            Directory.Delete(folder, recursive: true);
+        var folder = BookFolder(bookId);
+        if (!Directory.Exists(folder))
+            return Task.CompletedTask;
+
+        foreach (var path in Directory.EnumerateFiles(folder, BookTrackFormats.FileNamePrefix + "*"))
+            TryDelete(path);
         return Task.CompletedTask;
     }
 
-    private string TracksFolder(Guid bookId) => Path.Combine(BookFolder(bookId), TracksFolderName);
-
+    /// <summary>
+    /// Tracks are stored flat in the book folder, beside its cover, under
+    /// <see cref="BookTrackFormats.CanonicalFileName"/>. Flat on purpose:
+    /// backup, restore and library-switch retention all treat a book folder as
+    /// a set of files and refuse or ignore unexpected subfolders.
+    /// </summary>
     private (string Folder, string FinalPath) TrackDestination(Guid bookId, int number, string fileName)
     {
         var extension = BookTrackFormats.RequireTrackExtension(fileName);
-        var folder = TracksFolder(bookId);
+        var folder = BookFolder(bookId);
         Directory.CreateDirectory(folder);
         return (folder, Path.Combine(folder, BookTrackFormats.CanonicalFileName(number, extension)));
     }
@@ -490,12 +494,12 @@ public class FileStorageService : IFileStorageService, IBookAssetStorage, IBookT
         if (number is < 1 or > BookTrackList.MaxTracks)
             return null;
 
-        var folder = TracksFolder(bookId);
+        var folder = BookFolder(bookId);
         if (!Directory.Exists(folder))
             return null;
 
         return Directory
-            .EnumerateFiles(folder, $"{number:D4}.*")
+            .EnumerateFiles(folder, $"{BookTrackFormats.FileNamePrefix}{number:D4}.*")
             .FirstOrDefault(path => BookTrackFormats.IsCanonicalFileName(Path.GetFileName(path), number));
     }
 
@@ -507,7 +511,7 @@ public class FileStorageService : IFileStorageService, IBookAssetStorage, IBookT
     {
         File.Move(tempPath, finalPath, overwrite: true);
 
-        foreach (var existing in Directory.EnumerateFiles(folder, $"{number:D4}.*"))
+        foreach (var existing in Directory.EnumerateFiles(folder, $"{BookTrackFormats.FileNamePrefix}{number:D4}.*"))
         {
             if (existing.EndsWith(".partial", StringComparison.Ordinal)
                 || string.Equals(existing, finalPath, StringComparison.Ordinal))
@@ -592,7 +596,8 @@ public class FileStorageService : IFileStorageService, IBookAssetStorage, IBookT
     {
         foreach (var existingFile in Directory.EnumerateFiles(bookFolder))
         {
-            if (!AllowedBookExtensions.Contains(Path.GetExtension(existingFile)))
+            if (!AllowedBookExtensions.Contains(Path.GetExtension(existingFile))
+                || BookTrackFormats.IsTrackFileName(Path.GetFileName(existingFile)))
                 continue;
 
             if (string.Equals(existingFile, except, StringComparison.Ordinal))

@@ -17,7 +17,7 @@ namespace Nostos.Backend.Services;
 /// is what lets that archive advertise its length and honour range requests.
 /// </summary>
 /// <param name="Number">1-based position in the book.</param>
-/// <param name="FileName">Bare stored file name, e.g. <c>0001.mp3</c>.</param>
+/// <param name="FileName">Bare stored file name, e.g. <c>track-0001.mp3</c>.</param>
 public sealed record BookTrack(
     int Number,
     string FileName,
@@ -121,12 +121,20 @@ public static class BookTrackFormats
         return extension;
     }
 
-    /// <summary>The one name a track is stored under: zero-padded number plus extension.</summary>
+    /// <summary>
+    /// Every stored track name starts with this. Storage keeps tracks beside a
+    /// book's cover rather than in a folder of their own, so the prefix is what
+    /// tells a track apart from a primary <c>book.*</c> file with the same
+    /// extension.
+    /// </summary>
+    public const string FileNamePrefix = "track-";
+
+    /// <summary>The one name a track is stored under: prefix, zero-padded number, extension.</summary>
     public static string CanonicalFileName(int number, string extension)
     {
         if (number is < 1 or > BookTrackList.MaxTracks)
             throw new ArgumentOutOfRangeException(nameof(number));
-        return $"{number:D4}{RequireTrackExtension("x" + extension)}";
+        return $"{FileNamePrefix}{number:D4}{RequireTrackExtension("x" + extension)}";
     }
 
     public static bool IsCanonicalFileName(string fileName, int number)
@@ -136,7 +144,10 @@ public static class BookTrackFormats
 
         var extension = Path.GetExtension(fileName);
         return TrackExtensions.Contains(extension)
-            && string.Equals(fileName, $"{number:D4}{extension.ToLowerInvariant()}", StringComparison.Ordinal);
+            && string.Equals(
+                fileName,
+                $"{FileNamePrefix}{number:D4}{extension.ToLowerInvariant()}",
+                StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -147,9 +158,17 @@ public static class BookTrackFormats
     {
         number = 0;
         var stem = Path.GetFileNameWithoutExtension(fileName);
-        return stem.Length == 4
-            && stem.All(char.IsAsciiDigit)
-            && int.TryParse(stem, out number)
+        if (!stem.StartsWith(FileNamePrefix, StringComparison.Ordinal))
+            return false;
+
+        var digits = stem[FileNamePrefix.Length..];
+        return digits.Length == 4
+            && digits.All(char.IsAsciiDigit)
+            && int.TryParse(digits, out number)
             && IsCanonicalFileName(fileName, number);
     }
+
+    /// <summary>True for any file that is, by name, a stored track or its in-progress write.</summary>
+    public static bool IsTrackFileName(string fileName) =>
+        fileName.StartsWith(FileNamePrefix, StringComparison.Ordinal);
 }
