@@ -28,7 +28,7 @@ internal sealed class AssistantConversationBuilder(
 
         // The Brain review flow is named explicitly, not left to be inferred from
         // the context blob: the note id is what notes_read_for_review needs, and
-        // the "small set of existing topics, never create or auto-link" rule is
+        // the "small set of additional topics, never create or auto-link" rule is
         // the whole point of the review (issue #261 §5).
         if (!string.IsNullOrWhiteSpace(request.Context?.BrainReviewNoteId))
         {
