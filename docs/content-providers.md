@@ -316,6 +316,10 @@ therefore disabled by default and uses only the public search, license, and
 provenance data exposed by the site's own frontend. Search results are limited
 to exact per-work CC0, public-domain, or CC BY codes and original EPUB/PDF
 exports under the 128 MiB acquisition cap; other rights and formats are omitted.
+Hosts that maintain a discovery index can read the same rights-filtered catalog
+through the provider snapshot contract. Litteraturbanken has no incremental
+change feed, so each scheduled snapshot scans metadata in full with a one-second
+delay between pages; SelfHosted search remains live and on demand.
 
 ## Security and resource limits
 

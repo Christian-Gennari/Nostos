@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text.Json;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -257,6 +258,114 @@ public sealed class LitteraturbankenProviderTests
     }
 
     [Fact]
+    public async Task Snapshot_UsesRightsFilteredCatalogAndPublishesThinItems()
+    {
+        var (provider, handler) = CreateProvider(request =>
+        {
+            var path = request.RequestUri!.AbsolutePath;
+            if (path == "/api/query_string/etext,faksimil")
+                return Json(TwoFormatCatalogJson);
+            if (path == "/red/etc/license/license.json")
+                return Json(RightsLicenseJson);
+            if (path == "/red/etc/provenance/provenance.json")
+                return Json(ProvenanceJson);
+
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+
+        var snapshot = await provider.ReadAsync(
+            new ProviderSnapshotRequest(ETag: "ignored", IfModifiedSince: DateTimeOffset.UtcNow),
+            CancellationToken.None);
+
+        snapshot.Status.Should().Be(ProviderSnapshotStatus.Updated);
+        snapshot.ETag.Should().BeNull("the source has no catalog-wide validator");
+        snapshot.LastModified.Should().BeNull("the source has no catalog update feed");
+        snapshot.NextCursor.Should().BeNull();
+        var items = await ReadItemsAsync(snapshot.Items);
+        items.Should().ContainSingle();
+        items[0].ExternalId.Should().Be("lb100");
+        items[0].Assets.Should().BeEmpty("catalog sync publishes metadata only");
+        items[0].Source!.RightsStatement.Should().Contain("EPUB:").And.Contain("PDF:");
+
+        var request = handler.RecordedRequests.Single(message =>
+            message.RequestUri!.AbsolutePath == "/api/query_string/etext,faksimil");
+        ReadQueryValue(request.RequestUri!, "from").Should().Be("0");
+        ReadQueryValue(request.RequestUri!, "to").Should().Be("100");
+        ReadQueryValue(request.RequestUri!, "q")
+            .Should().Contain("searchable:true")
+            .And.Contain("show:true")
+            .And.Contain("license:cc-0 OR license:pd OR license:cc-by");
+    }
+
+    [Fact]
+    public async Task Snapshot_OverlapsPageBoundaryToKeepAllFormatsOfOneWorkTogether()
+    {
+        var rows = Enumerable.Range(1, 99)
+            .Select(index => CatalogRow("lb" + (1000 + index), "Work " + index))
+            .Concat(
+            [
+                CatalogRow("lb100", "Kåtornas folk"),
+                CatalogRow("lb100", "Kåtornas folk", mediaType: "faksimil", format: "pdf", size: 8_000_000),
+                CatalogRow("lb9999", "Last work"),
+            ])
+            .ToArray();
+        var (provider, handler) = CreateProvider(request =>
+        {
+            var path = request.RequestUri!.AbsolutePath;
+            if (path == "/api/query_string/etext,faksimil")
+            {
+                var offset = int.Parse(ReadQueryValue(request.RequestUri!, "from"));
+                var page = rows.Skip(offset).Take(100).ToArray();
+                return Json(CatalogJson(rows.Length, page));
+            }
+
+            if (path == "/red/etc/license/license.json")
+                return Json(RightsLicenseJson);
+            if (path == "/red/etc/provenance/provenance.json")
+                return Json(ProvenanceJson);
+
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+
+        var firstPage = await provider.ReadAsync(new ProviderSnapshotRequest(), CancellationToken.None);
+        var firstItems = await ReadItemsAsync(firstPage.Items);
+        firstItems.Should().HaveCount(99);
+        firstItems.Should().NotContain(item => item.ExternalId == "lb100");
+        firstPage.NextCursor.Should().NotBeNull();
+
+        var secondPage = await provider.ReadAsync(
+            new ProviderSnapshotRequest(Cursor: firstPage.NextCursor),
+            CancellationToken.None);
+        var secondItems = await ReadItemsAsync(secondPage.Items);
+        secondPage.NextCursor.Should().BeNull();
+        secondItems.Should().HaveCount(2);
+        var combinedWork = secondItems.Single(item => item.ExternalId == "lb100");
+        combinedWork.Assets.Should().BeEmpty();
+        combinedWork.Source!.RightsStatement.Should().Contain("EPUB:").And.Contain("PDF:");
+
+        var offsets = handler.RecordedRequests
+            .Where(message => message.RequestUri!.AbsolutePath == "/api/query_string/etext,faksimil")
+            .Select(message => ReadQueryValue(message.RequestUri!, "from"))
+            .ToArray();
+        offsets.Should().HaveCount(2);
+        offsets.Should().Contain("0").And.Contain("99");
+    }
+
+    [Fact]
+    public async Task Snapshot_RejectsMalformedContinuationCursor()
+    {
+        var (provider, handler) = CreateProvider();
+
+        var act = () => provider.ReadAsync(
+            new ProviderSnapshotRequest(Cursor: "v2|100|1"),
+            CancellationToken.None);
+
+        var error = await act.Should().ThrowAsync<ProviderException>();
+        error.Which.Code.Should().Be(ProviderException.ResponseInvalid);
+        handler.RecordedRequests.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task Search_MapsTransportFailureToProviderUnavailable()
     {
         var (provider, _) = CreateProvider(_ =>
@@ -275,6 +384,46 @@ public sealed class LitteraturbankenProviderTests
         {
             Content = new StringContent(value, System.Text.Encoding.UTF8, "application/json"),
         };
+
+    private static object CatalogRow(
+        string id,
+        string title,
+        string mediaType = "etext",
+        string format = "epub",
+        long size = 301593) => new
+    {
+        lbworkid = id,
+        title,
+        shorttitle = title,
+        titleid = title.Replace(' ', '_'),
+        work_titleid = title.Replace(' ', '_'),
+        mediatype = mediaType,
+        license = mediaType == "faksimil" ? "pd" : "cc-0",
+        printed = true,
+        searchable = true,
+        show = true,
+        sort_date_imprint = new { plain = "1916" },
+        authors = new[] { new { authorid = "TestAuthor", full_name = "Test Author" } },
+        provenance = new[] { new { library = "GUB", signum = "Shelf 1" } },
+        export = new[] { new { type = format, size } },
+    };
+
+    private static string CatalogJson(int hits, IReadOnlyCollection<object> rows) =>
+        JsonSerializer.Serialize(new
+        {
+            hits,
+            distinct_hits = rows.Select(row => JsonSerializer.SerializeToElement(row)
+                .GetProperty("lbworkid").GetString()).Distinct().Count(),
+            data = rows,
+        });
+
+    private static async Task<List<ProviderItem>> ReadItemsAsync(IAsyncEnumerable<ProviderItem> items)
+    {
+        var result = new List<ProviderItem>();
+        await foreach (var item in items)
+            result.Add(item);
+        return result;
+    }
 
     private static string ReadQueryValue(Uri uri, string name)
     {

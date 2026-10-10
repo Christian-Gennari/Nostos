@@ -20,7 +20,7 @@ namespace Nostos.Backend.Tests.Endpoints;
 public sealed class ProviderSettingsEndpointTests
 {
     private static readonly string[] GeneralProviders =
-        ["gutenberg", "standard-ebooks", "wikisource", "librivox"];
+        ["gutenberg", "standard-ebooks", "wikisource", "librivox", "litteraturbanken"];
 
     [Fact]
     public async Task Get_lists_all_registered_providers_with_their_effective_choices()
@@ -34,8 +34,7 @@ public sealed class ProviderSettingsEndpointTests
         var body = await response.Content.ReadFromJsonAsync<ProviderSettingsResponseDto>();
         body!.Providers.Select(provider => provider.Id)
             .Should().BeEquivalentTo(GeneralProviders);
-        body.Providers.Should().OnlyContain(provider => provider.Enabled);
-        body.Providers.Should().OnlyContain(provider => provider.EnabledByDefault);
+        body.Providers.Should().OnlyContain(provider => provider.Enabled == provider.EnabledByDefault);
         body.Providers.Should().OnlyContain(provider => !string.IsNullOrWhiteSpace(provider.Description));
 
         var gutenberg = body.Providers.Single(provider => provider.Id == "gutenberg");
@@ -43,6 +42,10 @@ public sealed class ProviderSettingsEndpointTests
         gutenberg.Description.Should().Be("Public-domain ebooks in many languages.");
         gutenberg.RightsNotice.Should().Be("Public domain in the USA (Project Gutenberg)");
         gutenberg.Capabilities.Should().Contain("search");
+
+        var litteraturbanken = body.Providers.Single(provider => provider.Id == "litteraturbanken");
+        litteraturbanken.Enabled.Should().BeFalse();
+        litteraturbanken.EnabledByDefault.Should().BeFalse();
     }
 
     [Fact]

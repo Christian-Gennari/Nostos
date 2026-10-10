@@ -15,7 +15,8 @@ public sealed class LitteraturbankenProvider : IContentProvider,
     IProviderSearch,
     IProviderCatalog,
     IProviderAcquisitionPlanner,
-    IProviderDownloadPolicy
+    IProviderDownloadPolicy,
+    IProviderSnapshotSource
 {
     public const string ProviderIdentifier = "litteraturbanken";
     public const string HttpClientName = "litteraturbanken";
@@ -27,6 +28,9 @@ public sealed class LitteraturbankenProvider : IContentProvider,
     private const long MaxFileBytes = 128L * 1024 * 1024;
     private const int MaxSearchRows = 100;
     private const int MaxSearchLimit = 24;
+    private const int SnapshotPageSize = 100;
+    private const int MaxSnapshotPages = 1_000;
+    private const int MaxSnapshotRows = SnapshotPageSize * MaxSnapshotPages;
     private const string IncludeFields =
         "lbworkid,titlepath,title,titleid,work_titleid,shorttitle,mediatype," +
         "authors.authorid,authors.full_name,export.type,export.size,license," +
@@ -66,6 +70,9 @@ public sealed class LitteraturbankenProvider : IContentProvider,
         "Automated access is not confirmed by Litteraturbanken; only source-reported CC0, public-domain, or CC BY items are offered.";
 
     public bool EnabledByDefault => false;
+
+    /// <summary>Delay between catalog pages to keep a full sync courteous.</summary>
+    public static readonly TimeSpan SnapshotPageDelay = TimeSpan.FromSeconds(1);
 
     public string? Description =>
         "Swedish texts with source-reported CC0, public-domain, or CC BY rights.";
@@ -131,6 +138,107 @@ public sealed class LitteraturbankenProvider : IContentProvider,
         var hasMore = items.Count > offset + limit || response.Hits > response.Data.Count;
 
         return new ProviderSearchPage(page, HasMore: hasMore);
+    }
+
+    /// <summary>
+    /// Reads a complete, rights-filtered catalog for hosts that maintain a
+    /// synchronized discovery index. Litteraturbanken exposes no incremental
+    /// feed or reliable catalog-wide validator, so each sync is a full scan.
+    /// Pages contain metadata only; downloads are resolved against the live
+    /// catalog during acquisition.
+    /// </summary>
+    public async Task<ProviderSnapshot> ReadAsync(
+        ProviderSnapshotRequest request,
+        CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        var cursor = request.Cursor is { Length: > 0 } encoded
+            ? SnapshotCursor.Decode(encoded, Id)
+            : SnapshotCursor.Start;
+
+        if (cursor.PagesRead > 0)
+            await Task.Delay(SnapshotPageDelay, ct);
+
+        if (cursor.PagesRead >= MaxSnapshotPages)
+        {
+            throw ProviderException.InvalidResponse(
+                Id,
+                $"the catalog exceeded {MaxSnapshotPages} sequential pages");
+        }
+
+        var pageEnd = checked(cursor.Offset + SnapshotPageSize);
+        var response = await LoadCatalogAsync(
+            BuildSnapshotQuery(),
+            cursor.Offset,
+            pageEnd,
+            ct);
+        var endOffset = (long)cursor.Offset + response.Data.Count;
+        if (response.Hits < endOffset)
+            throw ProviderException.InvalidResponse(Id, "the catalog total was smaller than its returned page");
+
+        var hasMore = response.Hits > endOffset;
+
+        if (hasMore && response.Data.Count == 0)
+            throw ProviderException.InvalidResponse(Id, "the catalog page was empty before its reported end");
+
+        // Keep a work whose rows straddle this page together. The following
+        // request overlaps from the first row of that work, so the host stores
+        // one metadata item with the full set of eligible formats.
+        var trailingId = hasMore && response.Data.Count > 0
+            ? NormalizeExternalId(response.Data[^1].ExternalId)
+            : null;
+        var trailingRows = trailingId is null
+            ? 0
+            : response.Data
+                .AsEnumerable()
+                .Reverse()
+                .TakeWhile(row => string.Equals(
+                    NormalizeExternalId(row.ExternalId),
+                    trailingId,
+                    StringComparison.Ordinal))
+                .Count();
+        var usableCount = response.Data.Count - trailingRows;
+        var records = response.Data
+            .Take(usableCount)
+            .Select(ToCatalogRecord)
+            .Where(record => record is not null)
+            .Select(record => record!)
+            .Where(IsRightsAllowed)
+            .ToList();
+
+        var rights = await GetRightsCatalogAsync(ct);
+        var items = records
+            .GroupBy(record => record.ExternalId, StringComparer.Ordinal)
+            .Select(group => BuildWork(group, rights))
+            .Where(work => work is not null)
+            .Select(work => work!.Item with { Assets = [] })
+            .ToList();
+
+        string? nextCursor = null;
+        if (hasMore)
+        {
+            var nextOffset = cursor.Offset + usableCount;
+            if (nextOffset <= cursor.Offset)
+            {
+                throw ProviderException.InvalidResponse(
+                    Id,
+                    "one work exceeded the catalog page size");
+            }
+
+            if (cursor.PagesRead + 1 >= MaxSnapshotPages)
+            {
+                throw ProviderException.InvalidResponse(
+                    Id,
+                    $"the catalog exceeded {MaxSnapshotPages} sequential pages");
+            }
+
+            nextCursor = cursor.Next(nextOffset).Encode();
+        }
+
+        return new ProviderSnapshot(
+            ProviderSnapshotStatus.Updated,
+            items.ToAsyncEnumerable(),
+            NextCursor: nextCursor);
     }
 
     public async Task<ProviderItem?> GetItemAsync(string externalId, CancellationToken ct)
@@ -246,6 +354,18 @@ public sealed class LitteraturbankenProvider : IContentProvider,
         catch (JsonException ex)
         {
             throw ProviderException.InvalidResponse(Id, ex.Message);
+        }
+        catch (HttpRequestException ex)
+        {
+            throw ProviderException.UnavailableFor(Id, ex.Message);
+        }
+        catch (IOException ex)
+        {
+            throw ProviderException.UnavailableFor(Id, ex.Message);
+        }
+        catch (OperationCanceledException ex) when (!ct.IsCancellationRequested)
+        {
+            throw ProviderException.UnavailableFor(Id, ex.Message);
         }
     }
 
@@ -565,6 +685,10 @@ public sealed class LitteraturbankenProvider : IContentProvider,
             + "(license:cc-0 OR license:pd OR license:cc-by)";
     }
 
+    private static string BuildSnapshotQuery() =>
+        "searchable:true AND show:true AND "
+        + "(license:cc-0 OR license:pd OR license:cc-by)";
+
     private static string BuildItemQuery(string externalId) =>
         "lbworkid:" + externalId
         + " AND searchable:true AND show:true AND "
@@ -588,6 +712,47 @@ public sealed class LitteraturbankenProvider : IContentProvider,
         ProviderItem Item,
         IReadOnlyList<SourcedAsset> Assets,
         RightsCatalog Rights);
+
+    private readonly record struct SnapshotCursor(int Offset, int PagesRead)
+    {
+        private const string Version = "v1";
+
+        public static SnapshotCursor Start => new(0, 0);
+
+        public SnapshotCursor Next(int offset) => new(offset, PagesRead + 1);
+
+        public string Encode() => string.Join(
+            '|',
+            Version,
+            Offset.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            PagesRead.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+        public static SnapshotCursor Decode(string value, string providerId)
+        {
+            var parts = value.Split('|');
+            if (parts.Length != 3
+                || !string.Equals(parts[0], Version, StringComparison.Ordinal)
+                || !int.TryParse(
+                    parts[1],
+                    System.Globalization.NumberStyles.None,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    out var offset)
+                || !int.TryParse(
+                    parts[2],
+                    System.Globalization.NumberStyles.None,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    out var pagesRead)
+                || offset <= 0
+                || offset > MaxSnapshotRows
+                || pagesRead <= 0
+                || pagesRead >= MaxSnapshotPages)
+            {
+                throw ProviderException.InvalidResponse(providerId, "the catalog cursor was invalid");
+            }
+
+            return new SnapshotCursor(offset, pagesRead);
+        }
+    }
 
     private sealed record SourcedAsset(
         ProviderAsset Asset,
