@@ -95,16 +95,24 @@ public sealed class AiProviderSettingsService(
         var alignment = await AlignmentTranscriptionSettingsStore.LoadAsync(db, ct);
         var effectiveAlignment = ResolveAlignmentStt(row, alignment);
 
+        // Return the saved alignment section even while voice transcription is
+        // selected. Effective resolution still uses voice settings, but the
+        // owner must be able to inspect and edit the dedicated configuration
+        // without first switching it on.
+        var displayedAlignment = alignment is null
+            ? effectiveAlignment.Provider
+            : ResolveStoredAlignment(alignment);
+
         return new AiProviderSettingsResponse(
             ToDto(ResolveLlm(row)),
             ToDto(ResolveStt(row)),
             ToDto(ResolveEmbedding(row)),
             new AlignmentTranscriptionSectionDto(
-                effectiveAlignment.Enabled,
-                effectiveAlignment.BaseUrl,
-                effectiveAlignment.Model,
-                effectiveAlignment.HasKey,
-                effectiveAlignment.KeyFromServerEnv,
+                displayedAlignment.Enabled,
+                displayedAlignment.BaseUrl,
+                displayedAlignment.Model,
+                displayedAlignment.HasKey,
+                displayedAlignment.KeyFromServerEnv,
                 effectiveAlignment.UseVoiceTranscription,
                 alignment?.ApiStyle ?? AlignmentTranscriptionApiStyles.OpenAiMultipart));
     }
@@ -686,6 +694,15 @@ public sealed class AiProviderSettingsService(
                 UseVoiceTranscription: true);
         }
 
+        return new EffectiveAlignmentSttConfig(
+            ResolveStoredAlignment(alignment),
+            alignment.ApiStyle,
+            UseVoiceTranscription: false);
+    }
+
+    private EffectiveAiProviderConfig ResolveStoredAlignment(
+        AlignmentTranscriptionSettingsStore.StoredSettings alignment)
+    {
         const string environmentVariable = "NOSTOS_ALIGNMENT_STT_TOKEN";
 
         var (key, fromEnv) = ResolveKey(
@@ -693,18 +710,13 @@ public sealed class AiProviderSettingsService(
             environmentVariable,
             "alignment transcription");
 
-        var provider = new EffectiveAiProviderConfig(
+        return new EffectiveAiProviderConfig(
             alignment.Enabled ?? false,
             alignment.BaseUrl ?? string.Empty,
             alignment.Model ?? string.Empty,
             environmentVariable,
             key,
             fromEnv);
-
-        return new EffectiveAlignmentSttConfig(
-            provider,
-            alignment.ApiStyle,
-            UseVoiceTranscription: false);
     }
 
     private EffectiveAiProviderConfig ResolveEmbedding(AiProviderSettingsModel? row)

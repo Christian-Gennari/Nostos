@@ -14,21 +14,49 @@ namespace Nostos.Backend.Services.Ai;
 /// </summary>
 public sealed class JsonBase64SttProvider(
     IHttpClientFactory httpClientFactory,
-    SpeechOptions options) : ISTtProvider
+    SpeechOptions options,
+    IAiProviderConfigResolver? config = null) : ISTtProvider
 {
     public const string HttpClientName = "stt-json-base64";
 
     private const string TranscriptionsPath = "v4/ai/transcription-model";
 
-    public Task<SttResult> TranscribeAsync(
+    /// <summary>
+    /// Resolves the alignment configuration per call. The optional resolver
+    /// preserves explicit-config construction in transport tests; normal host
+    /// dependency injection supplies it automatically.
+    /// </summary>
+    public async Task<SttResult> TranscribeAsync(
         Stream audio,
         string fileName,
         string? contentType,
         string? languageHint,
         CancellationToken ct = default)
     {
-        throw SttException.NotConfigured(
-            "Alignment transcription requires an effective provider configuration.");
+        ArgumentNullException.ThrowIfNull(audio);
+
+        if (config is null)
+        {
+            throw SttException.NotConfigured(
+                "Alignment transcription provider configuration");
+        }
+
+        var effective = await config.GetEffectiveAlignmentSttAsync(ct);
+
+        if (effective.ApiStyle != AlignmentTranscriptionApiStyles.JsonBase64)
+        {
+            throw new SttException(
+                SttErrorCodes.InvalidRequest,
+                "The selected alignment transcription configuration does not use the JSON transport.");
+        }
+
+        return await TranscribeWithConfigAsync(
+            audio,
+            fileName,
+            contentType,
+            languageHint,
+            effective.Provider,
+            ct);
     }
 
     /// <summary>

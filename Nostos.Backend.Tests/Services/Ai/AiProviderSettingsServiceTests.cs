@@ -504,6 +504,132 @@ public sealed class AiProviderSettingsServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Alignment_settings_preserve_the_dedicated_section_while_using_voice()
+    {
+        const string key = "dedicated-alignment-secret";
+        const string customUrl = "https://dedicated.example.test";
+        const string customModel = "dedicated-test-model";
+
+        var service = CreateService(new StubHttpMessageHandler());
+
+        await service.UpdateAsync(new AiProviderSettingsUpdateRequest(
+            null,
+            null,
+            AlignmentTranscription: new AlignmentTranscriptionSectionUpdate(
+                Enabled: true,
+                BaseUrl: customUrl,
+                Model: customModel,
+                ApiKey: key,
+                UseVoiceTranscription: false,
+                ApiStyle: AlignmentTranscriptionApiStyles.JsonBase64)));
+
+        await service.UpdateAsync(new AiProviderSettingsUpdateRequest(
+            null,
+            null,
+            AlignmentTranscription: new AlignmentTranscriptionSectionUpdate(
+                Enabled: null,
+                BaseUrl: null,
+                Model: null,
+                ApiKey: null,
+                UseVoiceTranscription: true)));
+
+        var settings = await service.GetAsync();
+        var alignment = settings.AlignmentTranscription!;
+
+        // The settings response describes the dedicated, saved section.
+        alignment.UseVoiceTranscription.Should().BeTrue();
+        alignment.Enabled.Should().BeTrue();
+        alignment.BaseUrl.Should().Be(customUrl);
+        alignment.Model.Should().Be(customModel);
+        alignment.ApiStyle.Should().Be(AlignmentTranscriptionApiStyles.JsonBase64);
+        alignment.HasKey.Should().BeTrue();
+        alignment.KeyFromServerEnv.Should().BeFalse();
+
+        // The runtime configuration must nevertheless use ordinary voice STT.
+        var effective = await service.GetEffectiveAlignmentSttAsync();
+        var voice = await service.GetEffectiveSttAsync();
+
+        effective.UseVoiceTranscription.Should().BeTrue();
+        effective.ApiStyle.Should().Be(AlignmentTranscriptionApiStyles.OpenAiMultipart);
+        effective.Provider.Should().BeEquivalentTo(voice);
+
+        // Switching back restores the dedicated configuration without
+        // requiring the owner to enter the model, URL or key again.
+        await service.UpdateAsync(new AiProviderSettingsUpdateRequest(
+            null,
+            null,
+            AlignmentTranscription: new AlignmentTranscriptionSectionUpdate(
+                Enabled: null,
+                BaseUrl: null,
+                Model: null,
+                ApiKey: null,
+                UseVoiceTranscription: false)));
+
+        effective = await service.GetEffectiveAlignmentSttAsync();
+
+        effective.UseVoiceTranscription.Should().BeFalse();
+        effective.Enabled.Should().BeTrue();
+        effective.IsAvailable.Should().BeTrue();
+        effective.BaseUrl.Should().Be(customUrl);
+        effective.Model.Should().Be(customModel);
+        effective.ApiKey.Should().Be(key);
+        effective.ApiStyle.Should().Be(AlignmentTranscriptionApiStyles.JsonBase64);
+    }
+
+    [Fact]
+    public async Task Alignment_effective_availability_respects_enabled_and_key()
+    {
+        var service = CreateService(new StubHttpMessageHandler());
+
+        await service.UpdateAsync(new AiProviderSettingsUpdateRequest(
+            null,
+            null,
+            AlignmentTranscription: new AlignmentTranscriptionSectionUpdate(
+                Enabled: true,
+                BaseUrl: "https://alignment.example.test",
+                Model: "test-model",
+                ApiKey: null,
+                UseVoiceTranscription: false,
+                ApiStyle: AlignmentTranscriptionApiStyles.JsonBase64)));
+
+        var effective = await service.GetEffectiveAlignmentSttAsync();
+
+        effective.Enabled.Should().BeTrue();
+        effective.HasKey.Should().BeFalse();
+        effective.IsAvailable.Should().BeFalse();
+
+        await service.UpdateAsync(new AiProviderSettingsUpdateRequest(
+            null,
+            null,
+            AlignmentTranscription: new AlignmentTranscriptionSectionUpdate(
+                Enabled: null,
+                BaseUrl: null,
+                Model: null,
+                ApiKey: "test-key")));
+
+        effective = await service.GetEffectiveAlignmentSttAsync();
+
+        effective.Enabled.Should().BeTrue();
+        effective.HasKey.Should().BeTrue();
+        effective.IsAvailable.Should().BeTrue();
+
+        await service.UpdateAsync(new AiProviderSettingsUpdateRequest(
+            null,
+            null,
+            AlignmentTranscription: new AlignmentTranscriptionSectionUpdate(
+                Enabled: false,
+                BaseUrl: null,
+                Model: null,
+                ApiKey: null)));
+
+        effective = await service.GetEffectiveAlignmentSttAsync();
+
+        effective.Enabled.Should().BeFalse();
+        effective.HasKey.Should().BeTrue();
+        effective.IsAvailable.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task Alignment_rejects_unsupported_api_styles()
     {
         var service = CreateService(new StubHttpMessageHandler());

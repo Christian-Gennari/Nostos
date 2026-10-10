@@ -227,6 +227,196 @@ public sealed class JsonBase64SttProviderTests
         handler.RecordedRequests.Should().HaveCount(1);
     }
 
+    [Fact]
+    public async Task Disabled_configuration_prevents_outbound_request()
+    {
+        var handler = new StubHttpMessageHandler();
+        var provider = CreateProvider(handler);
+
+        var act = () => provider.TranscribeWithConfigAsync(
+            new MemoryStream([1, 2, 3]),
+            "clip.wav",
+            "audio/wav",
+            null,
+            Config() with { Enabled = false });
+
+        var exception =
+            (await act.Should().ThrowAsync<SttException>()).Which;
+
+        exception.Code.Should().Be(SttErrorCodes.Disabled);
+        handler.RecordedRequests.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Empty_audio_is_rejected_before_send()
+    {
+        var handler = new StubHttpMessageHandler();
+        var provider = CreateProvider(handler);
+
+        var act = () => provider.TranscribeWithConfigAsync(
+            new MemoryStream(),
+            "clip.wav",
+            "audio/wav",
+            null,
+            Config());
+
+        var exception =
+            (await act.Should().ThrowAsync<SttException>()).Which;
+
+        exception.Code.Should().Be(SttErrorCodes.InvalidRequest);
+        handler.RecordedRequests.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Network_failure_is_typed_and_never_retried()
+    {
+        var handler = new StubHttpMessageHandler();
+        var attempts = 0;
+
+        handler.Register("/v4/ai/transcription-model", _ =>
+        {
+            attempts++;
+            throw new HttpRequestException("Sensitive transport details");
+        });
+
+        var provider = CreateProvider(handler);
+
+        var act = () => provider.TranscribeWithConfigAsync(
+            new MemoryStream([1, 2, 3]),
+            "clip.wav",
+            "audio/wav",
+            null,
+            Config());
+
+        var exception =
+            (await act.Should().ThrowAsync<SttException>()).Which;
+
+        exception.Code.Should().Be(SttErrorCodes.Provider);
+        exception.Message.Should().NotContain(Key);
+        exception.Message.Should().NotContain("Sensitive transport details");
+        attempts.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Successful_response_may_omit_optional_metadata()
+    {
+        var handler = new StubHttpMessageHandler();
+
+        handler.Register(
+            "/v4/ai/transcription-model",
+            _ => Json("""{"text":"  A passage from the book.  "}"""));
+
+        var provider = CreateProvider(handler);
+
+        var result = await provider.TranscribeWithConfigAsync(
+            new MemoryStream([1, 2, 3]),
+            "clip.wav",
+            "audio/wav",
+            null,
+            Config());
+
+        result.Text.Should().Be("A passage from the book.");
+        result.Language.Should().BeNull();
+        result.DurationSeconds.Should().BeNull();
+        handler.RecordedRequests.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public async Task Response_with_invalid_optional_duration_ignores_duration()
+    {
+        var handler = new StubHttpMessageHandler();
+
+        handler.Register(
+            "/v4/ai/transcription-model",
+            _ => Json("""
+                {
+                    "text": "A passage",
+                    "language": "en",
+                    "durationInSeconds": -4
+                }
+                """));
+
+        var provider = CreateProvider(handler);
+
+        var result = await provider.TranscribeWithConfigAsync(
+            new MemoryStream([1, 2, 3]),
+            "clip.wav",
+            "audio/wav",
+            null,
+            Config());
+
+        result.Text.Should().Be("A passage");
+        result.Language.Should().Be("en");
+        result.DurationSeconds.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Json_endpoint_does_not_append_the_path_twice()
+    {
+        var handler = new StubHttpMessageHandler();
+        Uri? actualUri = null;
+
+        handler.Register("/v4/ai/transcription-model", request =>
+        {
+            actualUri = request.RequestUri;
+            return Json("""{"text":"A passage"}""");
+        });
+
+        var provider = CreateProvider(handler);
+
+        var effective = Config() with
+        {
+            BaseUrl = "https://transcription.example.test/v4/ai/transcription-model",
+        };
+
+        var result = await provider.TranscribeWithConfigAsync(
+            new MemoryStream([1, 2, 3]),
+            "clip.wav",
+            "audio/wav",
+            null,
+            effective);
+
+        result.Text.Should().Be("A passage");
+        actualUri!.AbsoluteUri.Should().Be(
+            "https://transcription.example.test/v4/ai/transcription-model");
+
+        handler.RecordedRequests.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public async Task Request_with_supported_wav_alias_uses_canonical_media_type()
+    {
+        var handler = new StubHttpMessageHandler();
+        string? body = null;
+
+        handler.Register("/v4/ai/transcription-model", request =>
+        {
+            body = request.Content!.ReadAsStringAsync()
+                .GetAwaiter().GetResult();
+
+            return Json("""{"text":"A passage"}""");
+        });
+
+        var provider = CreateProvider(handler);
+
+        var result = await provider.TranscribeWithConfigAsync(
+            new MemoryStream([1, 2, 3]),
+            "clip.wav",
+            "audio/x-wav",
+            null,
+            Config());
+
+        result.Text.Should().Be("A passage");
+
+        using var document = JsonDocument.Parse(body!);
+        document.RootElement
+            .GetProperty("mediaType")
+            .GetString()
+            .Should().Be("audio/wav");
+
+        handler.RecordedRequests.Should().HaveCount(1);
+    }
+
     private static EffectiveAiProviderConfig Config() => new(
         Enabled: true,
         BaseUrl: "https://transcription.example.test",
