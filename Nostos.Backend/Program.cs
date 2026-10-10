@@ -186,7 +186,22 @@ builder.Services.AddHttpClient(NineRouterSttProvider.HttpClientName, client =>
 {
     client.Timeout = TimeSpan.FromMinutes(5);
 });
-builder.Services.AddSingleton<ISTtProvider, NineRouterSttProvider>();
+builder.Services.AddSingleton<NineRouterSttProvider>();
+builder.Services.AddSingleton<ISTtProvider>(
+    sp => sp.GetRequiredService<NineRouterSttProvider>());
+
+// Alignment transcription is a separate concrete service. It resolves
+// effective settings per call and never changes the voice STT registration.
+builder.Services.AddHttpClient(
+    JsonBase64SttProvider.HttpClientName,
+    client => client.Timeout = TimeSpan.FromSeconds(90))
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+    {
+        AllowAutoRedirect = false,
+    });
+
+builder.Services.AddSingleton<JsonBase64SttProvider>();
+builder.Services.AddSingleton<AlignmentSttProvider>();
 
 // --- ASSISTANT LLM BRIDGE (issue #261 §3, §7) ---
 builder.Services.AddHttpClient(NineRouterLlmProvider.HttpClientName, client =>

@@ -31,15 +31,26 @@ public sealed record AiProviderSectionDto(
     bool HasKey,
     bool KeyFromServerEnv);
 
+public sealed record AlignmentTranscriptionSectionDto(
+    bool Enabled,
+    string BaseUrl,
+    string Model,
+    bool HasKey,
+    bool KeyFromServerEnv,
+    bool UseVoiceTranscription = true,
+    string ApiStyle = AlignmentTranscriptionApiStyles.OpenAiMultipart);
+
 /// <summary>
-/// <see cref="Embedding"/> is appended and optional: a host that manages
-/// embeddings itself omits it, and the settings page then shows no card.
+/// The optional surfaces are appended to preserve positional construction
+/// compatibility with hosts that only provide LLM and voice STT settings.
 /// </summary>
 public sealed record AiProviderSettingsResponse(
     AiProviderSectionDto Llm,
     AiProviderSectionDto Stt,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    AiProviderSectionDto? Embedding = null);
+    AiProviderSectionDto? Embedding = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    AlignmentTranscriptionSectionDto? AlignmentTranscription = null);
 
 public sealed record AiProviderSectionUpdate(
     bool? Enabled,
@@ -47,10 +58,19 @@ public sealed record AiProviderSectionUpdate(
     string? Model,
     string? ApiKey);
 
+public sealed record AlignmentTranscriptionSectionUpdate(
+    bool? Enabled,
+    string? BaseUrl,
+    string? Model,
+    string? ApiKey,
+    bool? UseVoiceTranscription = null,
+    string? ApiStyle = null);
+
 public sealed record AiProviderSettingsUpdateRequest(
     AiProviderSectionUpdate? Llm,
     AiProviderSectionUpdate? Stt,
-    AiProviderSectionUpdate? Embedding = null);
+    AiProviderSectionUpdate? Embedding = null,
+    AlignmentTranscriptionSectionUpdate? AlignmentTranscription = null);
 
 public sealed record AiProviderModelsRequest(
     string Kind,

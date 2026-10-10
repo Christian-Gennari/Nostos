@@ -75,6 +75,15 @@ public sealed class AiProviderSettingsService(
     public async Task<EffectiveAiProviderConfig> GetEffectiveEmbeddingAsync(CancellationToken ct = default) =>
         ResolveEmbedding(await LoadRowAsync(ct));
 
+    public async Task<EffectiveAlignmentSttConfig> GetEffectiveAlignmentSttAsync(
+        CancellationToken ct = default)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        var row = await LoadRowAsync(db, ct);
+        var alignment = await AlignmentTranscriptionSettingsStore.LoadAsync(db, ct);
+        return ResolveAlignmentStt(row, alignment);
+    }
+
     // ------------------------------------------------------------------
     // GET / PUT
     // ------------------------------------------------------------------
@@ -83,10 +92,21 @@ public sealed class AiProviderSettingsService(
     {
         await using var db = await dbFactory.CreateDbContextAsync(ct);
         var row = await LoadRowAsync(db, ct);
+        var alignment = await AlignmentTranscriptionSettingsStore.LoadAsync(db, ct);
+        var effectiveAlignment = ResolveAlignmentStt(row, alignment);
+
         return new AiProviderSettingsResponse(
             ToDto(ResolveLlm(row)),
             ToDto(ResolveStt(row)),
-            ToDto(ResolveEmbedding(row)));
+            ToDto(ResolveEmbedding(row)),
+            new AlignmentTranscriptionSectionDto(
+                effectiveAlignment.Enabled,
+                effectiveAlignment.BaseUrl,
+                effectiveAlignment.Model,
+                effectiveAlignment.HasKey,
+                effectiveAlignment.KeyFromServerEnv,
+                effectiveAlignment.UseVoiceTranscription,
+                alignment?.ApiStyle ?? AlignmentTranscriptionApiStyles.OpenAiMultipart));
     }
 
     public async Task<AiProviderSettingsResponse> UpdateAsync(
@@ -120,8 +140,21 @@ public sealed class AiProviderSettingsService(
             ApplyEmbeddingUpdate(row, request.Embedding);
         }
 
+        AlignmentTranscriptionSettingsStore.StoredSettings? alignment = null;
+        if (request.AlignmentTranscription is not null)
+        {
+            alignment = ApplyAlignmentUpdate(
+                await AlignmentTranscriptionSettingsStore.LoadAsync(db, ct),
+                request.AlignmentTranscription);
+        }
+
         row.UpdatedAtUtc = DateTime.UtcNow;
         await db.SaveChangesAsync(ct);
+
+        if (alignment is not null)
+        {
+            await AlignmentTranscriptionSettingsStore.SaveAsync(db, alignment, ct);
+        }
 
         // Re-read so the response is the same effective shape as GET.
         return await GetAsync(ct);
@@ -196,6 +229,38 @@ public sealed class AiProviderSettingsService(
         row.EmbeddingApiKeyEncrypted = ApplyKey(update.ApiKey, row.EmbeddingApiKeyEncrypted);
     }
 
+    private AlignmentTranscriptionSettingsStore.StoredSettings ApplyAlignmentUpdate(
+        AlignmentTranscriptionSettingsStore.StoredSettings? existing,
+        AlignmentTranscriptionSectionUpdate update)
+    {
+        ValidateBaseUrl(update.BaseUrl);
+        ValidateModel(update.Model);
+
+        if (update.ApiStyle is not null
+            && !AlignmentTranscriptionApiStyles.IsSupported(update.ApiStyle))
+        {
+            throw new AiProviderValidationException(
+                "apiStyle must be 'openai-multipart' or 'json-base64'.");
+        }
+
+        return new AlignmentTranscriptionSettingsStore.StoredSettings(
+            Enabled: update.Enabled ?? existing?.Enabled,
+            BaseUrl: update.BaseUrl is null
+                ? existing?.BaseUrl
+                : update.BaseUrl.Trim(),
+            Model: update.Model is null
+                ? existing?.Model
+                : update.Model.Trim(),
+            ApiKeyEncrypted: ApplyKey(
+                update.ApiKey, existing?.ApiKeyEncrypted),
+            UseVoiceTranscription: update.UseVoiceTranscription
+                ?? existing?.UseVoiceTranscription
+                ?? true,
+            ApiStyle: update.ApiStyle
+                ?? existing?.ApiStyle
+                ?? AlignmentTranscriptionApiStyles.OpenAiMultipart);
+    }
+
     /// <summary>
     /// The apiKey contract, exactly: omitted/<c>null</c> = unchanged,
     /// <c>""</c> = clear, non-empty = store encrypted. Getting this wrong either
@@ -256,6 +321,10 @@ public sealed class AiProviderSettingsService(
         ValidateResolvedBaseUrl(baseUrl, kind);
         var apiKey = ResolveApiKey(request.ApiKey, effective);
 
+        // Model discovery is separate from transcription. Both alignment
+        // transports use the existing models response parser. A provider
+        // without a discovery endpoint reports an upstream error.
+
         // Try {baseUrl}/models, then {baseUrl}/v1/models. The LLM and embedding
         // base URLs already end in /v1, STT's does not, so the first attempt
         // covers the former and the fallback the latter.
@@ -305,6 +374,20 @@ public sealed class AiProviderSettingsService(
             if (string.IsNullOrWhiteSpace(model))
             {
                 return new AiProviderTestResult(false, null, $"{KindLabel(kind)} model is not configured.");
+            }
+
+            if (kind == AiProviderKind.AlignmentTranscription)
+            {
+                var alignment = await GetEffectiveAlignmentSttAsync(ct);
+                return alignment.ApiStyle switch
+                {
+                    AlignmentTranscriptionApiStyles.OpenAiMultipart =>
+                        await TestSttAsync(baseUrl, model, apiKey, ct),
+                    AlignmentTranscriptionApiStyles.JsonBase64 =>
+                        await TestJsonAlignmentAsync(baseUrl, model, apiKey, ct),
+                    _ => new AiProviderTestResult(
+                        false, null, "Unsupported alignment transcription API style."),
+                };
             }
 
             return kind switch
@@ -383,6 +466,78 @@ public sealed class AiProviderSettingsService(
         return ok
             ? new AiProviderTestResult(true, $"Reached {model}.", null)
             : new AiProviderTestResult(false, null, error);
+    }
+
+    private async Task<AiProviderTestResult> TestJsonAlignmentAsync(
+        string baseUrl,
+        string model,
+        string? apiKey,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            return new AiProviderTestResult(
+                false, null, "Alignment transcription key is not configured.");
+        }
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            JsonBase64SttProvider.BuildUri(baseUrl));
+
+        request.Headers.Authorization =
+            new AuthenticationHeaderValue("Bearer", apiKey);
+
+        request.Headers.TryAddWithoutValidation(
+            "ai-gateway-protocol-version", "0.0.1");
+        request.Headers.TryAddWithoutValidation(
+            "ai-transcription-model-specification-version", "4");
+        request.Headers.TryAddWithoutValidation("ai-model-id", model);
+
+        request.Content = System.Net.Http.Json.JsonContent.Create(new
+        {
+            audio = Convert.ToBase64String(SilentWav()),
+            mediaType = "audio/wav",
+        });
+
+        var client = httpClientFactory.CreateClient(HttpClientName);
+
+        try
+        {
+            using var response = await client.SendAsync(
+                request,
+                HttpCompletionOption.ResponseHeadersRead,
+                ct);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                return new AiProviderTestResult(
+                    false, null, $"HTTP {(int)response.StatusCode}");
+            }
+
+            var body = await response.Content.ReadAsStringAsync(ct);
+            JsonBase64SttProvider.ParseResponse(body);
+
+            return new AiProviderTestResult(
+                true, $"Reached {model}.", null);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (OperationCanceledException)
+        {
+            return new AiProviderTestResult(
+                false, null, "Alignment transcription timed out.");
+        }
+        catch (HttpRequestException)
+        {
+            return new AiProviderTestResult(
+                false, null, "Alignment transcription provider could not be reached.");
+        }
+        catch (SttException ex)
+        {
+            return new AiProviderTestResult(false, null, ex.Message);
+        }
     }
 
     private async Task<AiProviderTestResult> TestEmbeddingAsync(
@@ -473,8 +628,15 @@ public sealed class AiProviderSettingsService(
             .AsNoTracking()
             .FirstOrDefaultAsync(s => s.Id == AiProviderSettingsModel.SingletonId, ct);
 
-    private async Task<EffectiveAiProviderConfig> EffectiveAsync(AiProviderKind kind, CancellationToken ct)
+    private async Task<EffectiveAiProviderConfig> EffectiveAsync(
+        AiProviderKind kind,
+        CancellationToken ct)
     {
+        if (kind == AiProviderKind.AlignmentTranscription)
+        {
+            return (await GetEffectiveAlignmentSttAsync(ct)).Provider;
+        }
+
         var row = await LoadRowAsync(ct);
         return kind switch
         {
@@ -510,6 +672,39 @@ public sealed class AiProviderSettingsService(
             speechOptions.ApiKeyEnvironmentVariable,
             key,
             fromEnv);
+    }
+
+    private EffectiveAlignmentSttConfig ResolveAlignmentStt(
+        AiProviderSettingsModel? row,
+        AlignmentTranscriptionSettingsStore.StoredSettings? alignment)
+    {
+        if (alignment?.UseVoiceTranscription ?? true)
+        {
+            return new EffectiveAlignmentSttConfig(
+                ResolveStt(row),
+                AlignmentTranscriptionApiStyles.OpenAiMultipart,
+                UseVoiceTranscription: true);
+        }
+
+        const string environmentVariable = "NOSTOS_ALIGNMENT_STT_TOKEN";
+
+        var (key, fromEnv) = ResolveKey(
+            alignment.ApiKeyEncrypted,
+            environmentVariable,
+            "alignment transcription");
+
+        var provider = new EffectiveAiProviderConfig(
+            alignment.Enabled ?? false,
+            alignment.BaseUrl ?? string.Empty,
+            alignment.Model ?? string.Empty,
+            environmentVariable,
+            key,
+            fromEnv);
+
+        return new EffectiveAlignmentSttConfig(
+            provider,
+            alignment.ApiStyle,
+            UseVoiceTranscription: false);
     }
 
     private EffectiveAiProviderConfig ResolveEmbedding(AiProviderSettingsModel? row)
@@ -579,13 +774,16 @@ public sealed class AiProviderSettingsService(
         "llm" => AiProviderKind.Llm,
         "stt" => AiProviderKind.Stt,
         "embedding" => AiProviderKind.Embedding,
-        _ => throw new AiProviderValidationException("kind must be 'llm', 'stt' or 'embedding'."),
+        "alignment-transcription" => AiProviderKind.AlignmentTranscription,
+        _ => throw new AiProviderValidationException(
+            "kind must be 'llm', 'stt', 'embedding' or 'alignment-transcription'."),
     };
 
     private static string KindLabel(AiProviderKind kind) => kind switch
     {
         AiProviderKind.Llm => "LLM",
         AiProviderKind.Embedding => "Embedding",
+        AiProviderKind.AlignmentTranscription => "Alignment transcription",
         _ => "STT",
     };
 

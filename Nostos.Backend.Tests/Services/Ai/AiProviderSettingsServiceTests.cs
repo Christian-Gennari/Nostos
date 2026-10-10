@@ -339,6 +339,263 @@ public sealed class AiProviderSettingsServiceTests : IDisposable
     }
 
     // ------------------------------------------------------------------
+    // Alignment transcription settings
+    // ------------------------------------------------------------------
+
+    [Fact]
+    public async Task Existing_settings_default_alignment_to_voice_transcription()
+    {
+        var path = _fixture.CreateDatabasePath();
+
+        await using (var db = _fixture.CreateContext(path))
+        {
+            db.AiProviderSettings.Add(new AiProviderSettingsModel
+            {
+                Id = AiProviderSettingsModel.SingletonId,
+                SttEnabled = true,
+                SttBaseUrl = "http://voice.example.test",
+                SttModel = "voice-test-model",
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var service = CreateService(new StubHttpMessageHandler(), path);
+
+        var settings = await service.GetAsync();
+
+        settings.AlignmentTranscription.Should().NotBeNull();
+        settings.AlignmentTranscription!.UseVoiceTranscription.Should().BeTrue();
+        settings.AlignmentTranscription.ApiStyle.Should().Be(
+            AlignmentTranscriptionApiStyles.OpenAiMultipart);
+
+        var effective = await service.GetEffectiveAlignmentSttAsync();
+
+        effective.UseVoiceTranscription.Should().BeTrue();
+        effective.ApiStyle.Should().Be(
+            AlignmentTranscriptionApiStyles.OpenAiMultipart);
+        effective.BaseUrl.Should().Be("http://voice.example.test");
+        effective.Model.Should().Be("voice-test-model");
+    }
+
+    [Fact]
+    public async Task Alignment_settings_round_trip_and_encrypt_the_key()
+    {
+        const string key = "alignment-test-secret";
+        var path = _fixture.CreateDatabasePath();
+        var service = CreateService(new StubHttpMessageHandler(), path);
+
+        var updated = await service.UpdateAsync(new AiProviderSettingsUpdateRequest(
+            Llm: null,
+            Stt: null,
+            AlignmentTranscription: new AlignmentTranscriptionSectionUpdate(
+                Enabled: true,
+                BaseUrl: "https://transcription.example.test",
+                Model: "alignment-test-model",
+                ApiKey: key,
+                UseVoiceTranscription: false,
+                ApiStyle: AlignmentTranscriptionApiStyles.JsonBase64)));
+
+        updated.AlignmentTranscription!.UseVoiceTranscription.Should().BeFalse();
+        updated.AlignmentTranscription.ApiStyle.Should().Be(
+            AlignmentTranscriptionApiStyles.JsonBase64);
+        updated.AlignmentTranscription.Model.Should().Be("alignment-test-model");
+        updated.AlignmentTranscription.HasKey.Should().BeTrue();
+        updated.AlignmentTranscription.KeyFromServerEnv.Should().BeFalse();
+
+        var effective = await service.GetEffectiveAlignmentSttAsync();
+        effective.Enabled.Should().BeTrue();
+        effective.IsAvailable.Should().BeTrue();
+        effective.ApiKey.Should().Be(key);
+        effective.ApiStyle.Should().Be(AlignmentTranscriptionApiStyles.JsonBase64);
+
+        await using (var db = _fixture.CreateContext(path))
+        {
+            var connection = db.Database.GetDbConnection();
+            await db.Database.OpenConnectionAsync();
+
+            try
+            {
+                await using var command = connection.CreateCommand();
+                command.CommandText = """
+                    SELECT ApiKeyEncrypted
+                    FROM AlignmentTranscriptionSettings
+                    WHERE Id = 1;
+                    """;
+
+                var encrypted = (string?)await command.ExecuteScalarAsync();
+                encrypted.Should().NotBeNullOrWhiteSpace();
+                encrypted.Should().NotContain(key);
+            }
+            finally
+            {
+                await db.Database.CloseConnectionAsync();
+            }
+        }
+
+        // Null key preserves the secret; changing the model does not erase it.
+        updated = await service.UpdateAsync(new AiProviderSettingsUpdateRequest(
+            null,
+            null,
+            AlignmentTranscription: new AlignmentTranscriptionSectionUpdate(
+                null, null, "replacement-model", null)));
+
+        updated.AlignmentTranscription!.Model.Should().Be("replacement-model");
+        (await service.GetEffectiveAlignmentSttAsync()).ApiKey.Should().Be(key);
+
+        // Explicit empty key clears the stored credential.
+        updated = await service.UpdateAsync(new AiProviderSettingsUpdateRequest(
+            null,
+            null,
+            AlignmentTranscription: new AlignmentTranscriptionSectionUpdate(
+                null, null, null, "")));
+
+        updated.AlignmentTranscription!.HasKey.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Alignment_resolution_switches_between_voice_and_custom_settings()
+    {
+        const string key = "alignment-secret";
+        var service = CreateService(new StubHttpMessageHandler());
+
+        await service.UpdateAsync(new AiProviderSettingsUpdateRequest(
+            null,
+            null,
+            AlignmentTranscription: new AlignmentTranscriptionSectionUpdate(
+                true,
+                "https://custom.example.test",
+                "custom-model",
+                key,
+                false,
+                AlignmentTranscriptionApiStyles.JsonBase64)));
+
+        var custom = await service.GetEffectiveAlignmentSttAsync();
+        custom.UseVoiceTranscription.Should().BeFalse();
+        custom.BaseUrl.Should().Be("https://custom.example.test");
+        custom.ApiStyle.Should().Be(AlignmentTranscriptionApiStyles.JsonBase64);
+        custom.IsAvailable.Should().BeTrue();
+
+        await service.UpdateAsync(new AiProviderSettingsUpdateRequest(
+            null,
+            null,
+            AlignmentTranscription: new AlignmentTranscriptionSectionUpdate(
+                null, null, null, null,
+                UseVoiceTranscription: true)));
+
+        var voice = await service.GetEffectiveAlignmentSttAsync();
+        var ordinaryStt = await service.GetEffectiveSttAsync();
+
+        voice.UseVoiceTranscription.Should().BeTrue();
+        voice.ApiStyle.Should().Be(
+            AlignmentTranscriptionApiStyles.OpenAiMultipart);
+        voice.Provider.Should().BeEquivalentTo(ordinaryStt);
+
+        await service.UpdateAsync(new AiProviderSettingsUpdateRequest(
+            null,
+            null,
+            AlignmentTranscription: new AlignmentTranscriptionSectionUpdate(
+                null, null, null, null,
+                UseVoiceTranscription: false)));
+
+        var restored = await service.GetEffectiveAlignmentSttAsync();
+        restored.Model.Should().Be("custom-model");
+        restored.ApiKey.Should().Be(key);
+        restored.ApiStyle.Should().Be(AlignmentTranscriptionApiStyles.JsonBase64);
+    }
+
+    [Fact]
+    public async Task Alignment_rejects_unsupported_api_styles()
+    {
+        var service = CreateService(new StubHttpMessageHandler());
+
+        var act = () => service.UpdateAsync(
+            new AiProviderSettingsUpdateRequest(
+                null,
+                null,
+                AlignmentTranscription: new AlignmentTranscriptionSectionUpdate(
+                    null, null, null, null,
+                    ApiStyle: "unsupported")));
+
+        await act.Should().ThrowAsync<AiProviderValidationException>();
+    }
+
+    [Fact]
+    public async Task Alignment_json_connection_test_sends_the_expected_wire_format()
+    {
+        var handler = new StubHttpMessageHandler();
+        string? body = null;
+        string? model = null;
+        string? version = null;
+
+        handler.Register("/v4/ai/transcription-model", request =>
+        {
+            body = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+            model = request.Headers.GetValues("ai-model-id").Single();
+            version = request.Headers.GetValues(
+                "ai-transcription-model-specification-version").Single();
+
+            return Json(
+                """{"text":"","language":"en","durationInSeconds":1}""");
+        });
+
+        var service = CreateService(handler);
+        await service.UpdateAsync(new AiProviderSettingsUpdateRequest(
+            null,
+            null,
+            AlignmentTranscription: new AlignmentTranscriptionSectionUpdate(
+                true,
+                "https://transcription.example.test",
+                "test-transcription-model",
+                "test-key",
+                false,
+                AlignmentTranscriptionApiStyles.JsonBase64)));
+
+        var result = await service.TestAsync(new AiProviderTestRequest(
+            "alignment-transcription", null, null, null));
+
+        result.Ok.Should().BeTrue();
+        model.Should().Be("test-transcription-model");
+        version.Should().Be("4");
+
+        using var document = JsonDocument.Parse(body!);
+        document.RootElement.GetProperty("mediaType")
+            .GetString().Should().Be("audio/wav");
+
+        var bytes = Convert.FromBase64String(
+            document.RootElement.GetProperty("audio").GetString()!);
+
+        Encoding.ASCII.GetString(bytes, 0, 4).Should().Be("RIFF");
+        handler.RecordedRequests.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public async Task Alignment_model_listing_uses_the_effective_configuration()
+    {
+        var handler = new StubHttpMessageHandler();
+        handler.Register("/v1/models",
+            Json("""{"data":[{"id":"alignment-model-a"},{"id":"alignment-model-b"}]}"""));
+
+        var service = CreateService(handler);
+        await service.UpdateAsync(new AiProviderSettingsUpdateRequest(
+            null,
+            null,
+            AlignmentTranscription: new AlignmentTranscriptionSectionUpdate(
+                true,
+                "https://transcription.example.test",
+                "alignment-model-a",
+                "test-key",
+                false,
+                AlignmentTranscriptionApiStyles.JsonBase64)));
+
+        var result = await service.ListModelsAsync(
+            new AiProviderModelsRequest(
+                "alignment-transcription", null, null));
+
+        result.Models.Should().Equal(
+            "alignment-model-a", "alignment-model-b");
+    }
+
+    // ------------------------------------------------------------------
     // Helpers
     // ------------------------------------------------------------------
 

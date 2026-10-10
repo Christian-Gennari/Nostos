@@ -6,17 +6,22 @@ public enum AiProviderKind
     Llm,
     Stt,
     Embedding,
+    AlignmentTranscription,
+}
+
+/// <summary>The supported alignment transcription wire formats.</summary>
+public static class AlignmentTranscriptionApiStyles
+{
+    public const string OpenAiMultipart = "openai-multipart";
+    public const string JsonBase64 = "json-base64";
+
+    public static bool IsSupported(string? value) =>
+        value is OpenAiMultipart or JsonBase64;
 }
 
 /// <summary>
-/// The effective configuration for one provider surface (LLM, STT or embeddings): the
-/// stored override when set, otherwise the existing appsettings/env fallback.
-///
-/// <see cref="IsAvailable"/> is the ONE definition of "this surface can run",
-/// mirroring the original <c>AssistantOptions.IsAvailable()</c> rule — the kill
-/// switch is on, a base URL is configured, and a key is usable. The key is
-/// carried here only so a provider can attach it to an outbound request; it is
-/// never returned, logged, or hinted at.
+/// The effective configuration for one provider surface: the stored override
+/// when set, otherwise the host's existing configuration fallback.
 /// </summary>
 public sealed record EffectiveAiProviderConfig(
     bool Enabled,
@@ -32,7 +37,7 @@ public sealed record EffectiveAiProviderConfig(
     /// <summary>
     /// The single derived answer to "can this surface run": enabled, addressed,
     /// and credentialed. Enabling a surface without a key must never throw at
-    /// startup — it simply reports unavailable here.
+    /// startup.
     /// </summary>
     public bool IsAvailable =>
         Enabled
@@ -41,10 +46,26 @@ public sealed record EffectiveAiProviderConfig(
 }
 
 /// <summary>
-/// Read-only access to the effective provider configuration. This is the small
-/// surface the providers depend on; the full settings service (read/update,
-/// model listing, connection tests) extends it. Split out so a provider never
-/// has to see the update or secret-handling API.
+/// Effective alignment settings, including the wire format and whether the
+/// ordinary voice transcription configuration was selected.
+/// </summary>
+public sealed record EffectiveAlignmentSttConfig(
+    EffectiveAiProviderConfig Provider,
+    string ApiStyle,
+    bool UseVoiceTranscription)
+{
+    public bool Enabled => Provider.Enabled;
+    public bool IsAvailable => Provider.IsAvailable;
+    public bool HasKey => Provider.HasKey;
+    public string BaseUrl => Provider.BaseUrl;
+    public string Model => Provider.Model;
+    public string? ApiKey => Provider.ApiKey;
+    public string ApiKeyEnvironmentVariable => Provider.ApiKeyEnvironmentVariable;
+    public bool KeyFromServerEnv => Provider.KeyFromServerEnv;
+}
+
+/// <summary>
+/// Read-only access to effective provider configurations.
 /// </summary>
 public interface IAiProviderConfigResolver
 {
@@ -53,10 +74,8 @@ public interface IAiProviderConfigResolver
     Task<EffectiveAiProviderConfig> GetEffectiveSttAsync(CancellationToken ct = default);
 
     /// <summary>
-    /// The embedding surface (issue #683). Defaults to "not configured" so a
-    /// host that predates embeddings — or one that supplies them through a
-    /// managed <c>IEmbeddingProvider</c> instead of BYOK settings — keeps
-    /// compiling and simply reports the surface as unavailable.
+    /// A host that predates embeddings keeps compiling and reports the surface
+    /// as unavailable.
     /// </summary>
     Task<EffectiveAiProviderConfig> GetEffectiveEmbeddingAsync(CancellationToken ct = default) =>
         Task.FromResult(new EffectiveAiProviderConfig(
@@ -66,16 +85,24 @@ public interface IAiProviderConfigResolver
             ApiKeyEnvironmentVariable: string.Empty,
             ApiKey: null,
             KeyFromServerEnv: false));
+
+    /// <summary>
+    /// Older hosts transparently use the voice transcription configuration.
+    /// </summary>
+    async Task<EffectiveAlignmentSttConfig> GetEffectiveAlignmentSttAsync(
+        CancellationToken ct = default) =>
+        new(
+            await GetEffectiveSttAsync(ct),
+            AlignmentTranscriptionApiStyles.OpenAiMultipart,
+            UseVoiceTranscription: true);
 }
 
 /// <summary>
-/// A request that fails validation (bad URL, empty model, unknown kind). The
-/// endpoint turns it into a 400 with the message.
+/// A request that fails validation (bad URL, empty model, unknown kind).
 /// </summary>
 public sealed class AiProviderValidationException(string message) : Exception(message);
 
 /// <summary>
-/// The upstream provider could not satisfy a models/test call. The endpoint
-/// turns it into a 502 carrying the provider's own message.
+/// The upstream provider could not satisfy a models/test call.
 /// </summary>
 public sealed class AiProviderUpstreamException(string message) : Exception(message);
