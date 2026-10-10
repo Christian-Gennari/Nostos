@@ -2,17 +2,11 @@ namespace Nostos.Backend.Data.Models;
 
 /// <summary>
 /// Singleton row holding the server-wide overrides for the assistant's LLM,
-/// voice STT and passage-embedding providers (assistant-milestone plan, "AI
-/// provider settings"; embeddings: issue #683).
+/// voice STT, alignment transcription and passage-embedding providers.
 ///
-/// Nostos is a single-user, unauthenticated app: there are no accounts, so the
-/// provider configuration is server-wide and there is exactly one row. Every
-/// column is nullable on purpose — <c>NULL</c> means "no override, use the
-/// appsettings/env fallback", so a stored <c>false</c> (an explicit kill switch)
-/// is distinguishable from "never set". The base URL/model columns hold the
-/// owner's own override; the key columns hold
-/// <see cref="Microsoft.AspNetCore.DataProtection"/>-encrypted ciphertext and
-/// are NEVER returned to a client.
+/// Every provider override column is nullable. NULL means "no override",
+/// preserving the distinction between an explicit false and an unset value.
+/// API key columns contain ASP.NET Data Protection ciphertext, never plaintext.
 /// </summary>
 public class AiProviderSettingsModel
 {
@@ -36,6 +30,29 @@ public class AiProviderSettingsModel
 
     /// <summary>Data-Protection ciphertext of the owner-supplied STT key, or null.</summary>
     public string? SttApiKeyEncrypted { get; set; }
+
+    // --- STT (audiobook alignment) overrides ---
+    public bool? AlignmentTranscriptionEnabled { get; set; }
+    public string? AlignmentTranscriptionBaseUrl { get; set; }
+    public string? AlignmentTranscriptionModel { get; set; }
+
+    /// <summary>
+    /// Data-Protection ciphertext of the owner-supplied alignment key, or null.
+    /// Uses the same protection purpose as the other provider credentials.
+    /// </summary>
+    public string? AlignmentTranscriptionApiKeyEncrypted { get; set; }
+
+    /// <summary>
+    /// NULL means use voice transcription. An explicit false selects the
+    /// dedicated alignment configuration.
+    /// </summary>
+    public bool? AlignmentTranscriptionUseVoiceTranscription { get; set; }
+
+    /// <summary>
+    /// NULL means openai-multipart. Other supported values are defined by
+    /// AlignmentTranscriptionApiStyles.
+    /// </summary>
+    public string? AlignmentTranscriptionApiStyle { get; set; }
 
     // --- Embedding (semantic retrieval) overrides ---
     public bool? EmbeddingEnabled { get; set; }

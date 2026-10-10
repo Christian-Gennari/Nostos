@@ -9,7 +9,38 @@ public enum AiProviderKind
     AlignmentTranscription,
 }
 
-/// <summary>The supported alignment transcription wire formats.</summary>
+/// <summary>
+/// Supported alignment transcription wire formats.
+///
+/// <para>
+/// <see cref="OpenAiMultipart"/> uses
+/// POST {BaseUrl}/v1/audio/transcriptions with multipart/form-data
+/// fields file, model, response_format=verbose_json and optional language.
+/// The response is JSON containing text and optionally language and duration.
+/// </para>
+///
+/// <para>
+/// <see cref="JsonBase64"/> implements one specific JSON transcription
+/// protocol, not a generic JSON transcription API. It sends
+/// POST {BaseUrl}/v4/ai/transcription-model, unless BaseUrl already ends
+/// in that path. Authentication is HTTP Bearer. Required headers are
+/// ai-gateway-protocol-version: 0.0.1,
+/// ai-transcription-model-specification-version: 4 and
+/// ai-model-id: {Model}.
+/// The JSON request body is
+/// {"audio":"&lt;base64 WAV bytes&gt;","mediaType":"audio/wav"}.
+/// The response is a JSON object containing a required string text,
+/// optional string language, and optional numeric durationInSeconds.
+/// Only WAV audio is supported by this transport.
+/// </para>
+///
+/// <para>
+/// Selecting json-base64 does not make arbitrary providers using JSON
+/// compatible. An upstream service must implement this exact protocol.
+/// Model discovery is separately supported only where the provider exposes
+/// a compatible /models or /v1/models endpoint.
+/// </para>
+/// </summary>
 public static class AlignmentTranscriptionApiStyles
 {
     public const string OpenAiMultipart = "openai-multipart";

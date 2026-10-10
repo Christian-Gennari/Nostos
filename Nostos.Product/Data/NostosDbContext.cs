@@ -647,11 +647,28 @@ public class NostosDbContext : DbContext
         // CHECK constraint pins it, so no second row can ever be written. Every
         // value column is nullable: NULL means "no override", which is what lets
         // an explicit `enabled: false` be told apart from "never set".
+        //
+        // Alignment defaults are resolved in the service rather than stored
+        // as database defaults. Existing rows therefore retain NULL in the
+        // new columns and transparently use voice STT and multipart transport.
         modelBuilder.Entity<AiProviderSettingsModel>(e =>
         {
             e.ToTable(t => t.HasCheckConstraint(
                 "CK_AiProviderSettings_SingletonId",
                 $"\"Id\" = {AiProviderSettingsModel.SingletonId}"));
+
+            e.Property(x => x.AlignmentTranscriptionEnabled)
+                .IsRequired(false);
+            e.Property(x => x.AlignmentTranscriptionBaseUrl)
+                .IsRequired(false);
+            e.Property(x => x.AlignmentTranscriptionModel)
+                .IsRequired(false);
+            e.Property(x => x.AlignmentTranscriptionApiKeyEncrypted)
+                .IsRequired(false);
+            e.Property(x => x.AlignmentTranscriptionUseVoiceTranscription)
+                .IsRequired(false);
+            e.Property(x => x.AlignmentTranscriptionApiStyle)
+                .IsRequired(false);
         });
 
         // --- ASSISTANT SETTINGS (issue #262 §7) ---

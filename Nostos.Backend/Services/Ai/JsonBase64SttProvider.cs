@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -7,10 +8,34 @@ using Nostos.Backend.Configuration;
 namespace Nostos.Backend.Services.Ai;
 
 /// <summary>
-/// Vendor-neutral transcription transport using a base64-encoded audio payload.
+/// Transcription transport for a specific JSON/base64 wire protocol.
 ///
+/// <para>
+/// Sends POST {BaseUrl}/v4/ai/transcription-model, unless BaseUrl already
+/// ends in that path, with Bearer authentication and these headers:
+/// ai-gateway-protocol-version: 0.0.1,
+/// ai-transcription-model-specification-version: 4,
+/// ai-model-id: {Model}.
+/// </para>
+///
+/// <para>
+/// The application/json request is
+/// {"audio":"&lt;base64 WAV bytes&gt;","mediaType":"audio/wav"}.
+/// The application/json response must contain a string text property and may
+/// contain string language and numeric durationInSeconds properties.
+/// </para>
+///
+/// <para>
+/// This is not a universal JSON transcription adapter. Providers implementing
+/// a different endpoint, header set, request schema or response schema are
+/// incompatible. Only WAV audio is accepted.
+/// </para>
+///
+/// <para>
 /// Sends one request per call. No retry, fallback provider, local receipt,
-/// audio file, or credential logging is performed.
+/// audio file, or credential logging is performed. Audio is bounded by
+/// SpeechOptions.MaxUploadBytes and responses by MaxResponseBytes.
+/// </para>
 /// </summary>
 public sealed class JsonBase64SttProvider(
     IHttpClientFactory httpClientFactory,
@@ -18,6 +43,8 @@ public sealed class JsonBase64SttProvider(
     IAiProviderConfigResolver? config = null) : ISTtProvider
 {
     public const string HttpClientName = "stt-json-base64";
+
+    internal const int MaxResponseBytes = 2 * 1024 * 1024;
 
     private const string TranscriptionsPath = "v4/ai/transcription-model";
 
@@ -61,7 +88,8 @@ public sealed class JsonBase64SttProvider(
 
     /// <summary>
     /// Transcribes with the explicit effective settings selected by the
-    /// alignment dispatcher.
+    /// alignment dispatcher. Request construction, size checks and response
+    /// parsing are shared with connection testing.
     /// </summary>
     public async Task<SttResult> TranscribeWithConfigAsync(
         Stream audio,
@@ -91,16 +119,12 @@ public sealed class JsonBase64SttProvider(
                 "Alignment transcription base URL and model");
         }
 
-        // The supported JSON wire contract carries WAV audio. The transport
-        // does not pretend that other codecs have been converted to WAV.
         if (!string.Equals(contentType, "audio/wav", StringComparison.OrdinalIgnoreCase)
             && !string.Equals(contentType, "audio/x-wav", StringComparison.OrdinalIgnoreCase))
         {
             throw SttException.UnsupportedFormat(contentType);
         }
 
-        using var buffer = new MemoryStream();
-        var chunk = new byte[8192];
         var limit = options.MaxUploadBytes;
 
         if (limit <= 0)
@@ -108,15 +132,42 @@ public sealed class JsonBase64SttProvider(
             throw SttException.TooLarge(limit);
         }
 
-        int count;
-        while ((count = await audio.ReadAsync(chunk, ct)) > 0)
+        using var buffer = new MemoryStream();
+        var chunk = ArrayPool<byte>.Shared.Rent(8192);
+
+        try
         {
-            if (buffer.Length > limit - count)
+            // Check known remaining length before buffering. The loop below
+            // remains authoritative for streams whose length is unavailable.
+            if (audio.CanSeek)
             {
-                throw SttException.TooLarge(limit);
+                try
+                {
+                    if (audio.Length - audio.Position > limit)
+                    {
+                        throw SttException.TooLarge(limit);
+                    }
+                }
+                catch (NotSupportedException)
+                {
+                    // Some seekable stream implementations do not expose Length.
+                }
             }
 
-            await buffer.WriteAsync(chunk.AsMemory(0, count), ct);
+            int count;
+            while ((count = await audio.ReadAsync(chunk.AsMemory(), ct)) > 0)
+            {
+                if (buffer.Length > limit - count)
+                {
+                    throw SttException.TooLarge(limit);
+                }
+
+                await buffer.WriteAsync(chunk.AsMemory(0, count), ct);
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(chunk);
         }
 
         if (buffer.Length == 0)
@@ -126,7 +177,18 @@ public sealed class JsonBase64SttProvider(
                 "The audio clip is empty.");
         }
 
-        var client = httpClientFactory.CreateClient(HttpClientName);
+        // MemoryStream owns the buffered audio. Convert directly from its
+        // backing array rather than allocating another full WAV via ToArray().
+        if (!buffer.TryGetBuffer(out var segment) || segment.Array is null)
+        {
+            throw SttException.ProviderFailure(
+                "The audio buffer could not be prepared.");
+        }
+
+        var encodedAudio = Convert.ToBase64String(
+            segment.Array,
+            segment.Offset,
+            checked((int)buffer.Length));
 
         using var request = new HttpRequestMessage(
             HttpMethod.Post,
@@ -144,9 +206,11 @@ public sealed class JsonBase64SttProvider(
 
         request.Content = JsonContent.Create(new
         {
-            audio = Convert.ToBase64String(buffer.ToArray()),
+            audio = encodedAudio,
             mediaType = "audio/wav",
         });
+
+        var client = httpClientFactory.CreateClient(HttpClientName);
 
         HttpResponseMessage response;
         try
@@ -166,8 +230,8 @@ public sealed class JsonBase64SttProvider(
         }
         catch (HttpRequestException)
         {
-            // The outcome of a network failure may already have been billed.
-            // Deliberately do not retry or expose request/credential details.
+            // The provider may already have processed or billed this call.
+            // Deliberately do not retry or expose transport exception details.
             throw SttException.ProviderFailure(
                 "network failure; the request outcome is unknown");
         }
@@ -197,6 +261,8 @@ public sealed class JsonBase64SttProvider(
 
             if (!response.IsSuccessStatusCode)
             {
+                // Error bodies are deliberately not read: the status is
+                // sufficient and may not contain safe diagnostic text.
                 throw SttException.ProviderFailure(
                     $"HTTP {(int)response.StatusCode}");
             }
@@ -204,7 +270,7 @@ public sealed class JsonBase64SttProvider(
             string body;
             try
             {
-                body = await response.Content.ReadAsStringAsync(ct);
+                body = await ReadBoundedResponseAsync(response.Content, ct);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -219,8 +285,59 @@ public sealed class JsonBase64SttProvider(
                 throw SttException.ProviderFailure(
                     "response could not be read");
             }
+            catch (IOException)
+            {
+                throw SttException.ProviderFailure(
+                    "response could not be read");
+            }
 
             return ParseResponse(body);
+        }
+    }
+
+    /// <summary>
+    /// Reads at most MaxResponseBytes plus one byte to distinguish an
+    /// oversized response from a response exactly at the limit.
+    /// </summary>
+    internal static async Task<string> ReadBoundedResponseAsync(
+        HttpContent content,
+        CancellationToken ct)
+    {
+        if (content.Headers.ContentLength is > MaxResponseBytes)
+        {
+            throw SttException.InvalidResponse(
+                "transcription response exceeds the size limit");
+        }
+
+        await using var source = await content.ReadAsStreamAsync(ct);
+        using var buffer = new MemoryStream();
+        var chunk = ArrayPool<byte>.Shared.Rent(8192);
+
+        try
+        {
+            int count;
+            while ((count = await source.ReadAsync(chunk.AsMemory(), ct)) > 0)
+            {
+                if (buffer.Length > MaxResponseBytes - count)
+                {
+                    throw SttException.InvalidResponse(
+                        "transcription response exceeds the size limit");
+                }
+
+                buffer.Write(chunk, 0, count);
+            }
+
+            buffer.Position = 0;
+            using var reader = new StreamReader(
+                buffer,
+                System.Text.Encoding.UTF8,
+                detectEncodingFromByteOrderMarks: true);
+
+            return await reader.ReadToEndAsync(ct);
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(chunk);
         }
     }
 
