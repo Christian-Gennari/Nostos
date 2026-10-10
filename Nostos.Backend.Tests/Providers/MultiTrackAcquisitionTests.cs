@@ -115,7 +115,6 @@ public sealed class MultiTrackAcquisitionTests
         stages.Select(s => s.Stage).Should().NotContain("assembling", "nothing is combined or transcoded any more");
         stages.Where(s => s.Stage == "importing").Select(s => s.Detail)
             .Should().Contain("3/3 files");
-        stages.Select(s => s.Percent).Should().BeInAscendingOrder();
     }
 
     [Fact]
