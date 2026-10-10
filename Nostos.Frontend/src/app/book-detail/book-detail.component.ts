@@ -553,7 +553,8 @@ export class BookDetail implements OnInit, OnDestroy {
   onFileUploadSelected(event: Event) {
     const input = event.target as HTMLInputElement;
     const file = input.files?.[0];
-    if (file) this.store.uploadFile(file);
+    input.value = '';
+    if (file && !this.store.isImporting()) this.store.uploadFile(file);
   }
 
   openDeleteConfirm(): void {
@@ -734,6 +735,7 @@ export class BookDetail implements OnInit, OnDestroy {
   }
 
   triggerFilePicker() {
+    if (this.store.isImporting() || this.store.uploadingFile()) return;
     this.fileInput?.nativeElement.click();
   }
 
