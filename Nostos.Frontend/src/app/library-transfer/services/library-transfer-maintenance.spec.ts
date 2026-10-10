@@ -304,7 +304,13 @@ describe('LibraryTransferCoordinator — exclusive server maintenance', () => {
     });
 
     const running = harness.coordinator.startImport(fileOfSize());
-    await settleUntil(() => harness.coordinator.maintenanceWaiting()?.operation === 'getJob');
+    // Chunk hashing uses native WebCrypto, so reaching the first status read
+    // can take more timer turns when the full suite runs in parallel.
+    await settleUntil(
+      () => harness.coordinator.maintenanceWaiting()?.operation === 'getJob',
+      2_000,
+    );
+    expect(harness.coordinator.maintenanceWaiting()?.operation).toBe('getJob');
     expect(harness.transport.calls.getJob).toBe(1);
 
     await vi.advanceTimersByTimeAsync(2000);
