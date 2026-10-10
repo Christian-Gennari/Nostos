@@ -241,9 +241,17 @@
             </button>
             }
 
-            <button appButton variant="secondary" (click)="downloadFile()">
+            <button
+              appButton
+              variant="secondary"
+              (click)="downloadFile()"
+              [attr.title]="downloadHint(store.book())"
+            >
               <nostos-icon name="download-simple" [size]="18"></nostos-icon>
               <span>Download</span>
+              @if (downloadHint(store.book()); as hint) {
+              <span class="download-hint">{{ hint }}</span>
+              }
             </button>
             } @else if (store.book()?.type !== 'physical') {
             <button appButton variant="primary" [disabled]="store.uploadingFile()" (click)="triggerFilePicker()">

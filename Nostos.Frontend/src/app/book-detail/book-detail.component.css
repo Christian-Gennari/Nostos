@@ -1151,6 +1151,19 @@ button.edition-select-card:focus-visible {
   gap: 0.5rem;
   width: 100%;
 }
+/* What a multi-track download contains ("54 tracks · 521 MiB"). Secondary to
+   the label, and dropped where the action row has no room for it. */
+.download-hint {
+  color: var(--color-text-muted);
+  font-weight: var(--fw-medium);
+  font-size: 0.85em;
+  white-space: nowrap;
+}
+@media (max-width: 720px) {
+  .download-hint {
+    display: none;
+  }
+}
 /* Inside the hero strip the action row is the last element, so it owns no
    bottom margin and may wrap once the viewport narrows. */
 .stage-strip .primary-actions {

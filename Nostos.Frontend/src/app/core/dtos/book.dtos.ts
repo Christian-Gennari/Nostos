@@ -119,6 +119,13 @@ export interface Book {
    */
   status?: number;
   statusMessage?: string | null;
+
+  /**
+   * The ordered tracks of a multi-track audiobook; absent for a single-file
+   * book. Such a book has `hasFile` true and no `fileName`. Positions elsewhere
+   * (lastLocation, chapters) stay in seconds across the whole book.
+   */
+  tracks?: BookTrack[] | null;
 }
 
 /**
