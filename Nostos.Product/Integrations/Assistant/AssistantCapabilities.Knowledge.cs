@@ -280,7 +280,7 @@ public static partial class AssistantCapabilities
             "topics_propose_links",
             AssistantTrustClass.Suggest,
             AssistantCapabilityCategory.Organization,
-            "Explicitly proposes up to three existing topics for one real note, each with a concrete evidence-based reason. Use only after reading the note and relevant topic material. Ordinary topic listing/search never creates suggestions. This tool does not link or create anything.",
+            "Explicitly proposes up to three additional existing topics not already linked to the note, each with a concrete evidence-based reason. Use only after reading the note and relevant topic material. Ordinary topic listing/search never creates suggestions. This tool does not link or create anything.",
             """
             {
               "type": "object",
@@ -309,7 +309,8 @@ public static partial class AssistantCapabilities
                 if (Id(args, "noteId") is not { } noteId)
                     return Invalid("'noteId' is required.");
 
-                if (await notes.GetForReviewAsync(noteId, ct) is null)
+                var review = await notes.GetForReviewAsync(noteId, ct);
+                if (review is null)
                     return AssistantToolResult.Fail(
                         AssistantErrorCodes.NotFound,
                         "The note no longer exists.");
@@ -322,6 +323,7 @@ public static partial class AssistantCapabilities
                 var available = (await topics.GetAllWithUsageCountAsync())
                     .ToDictionary(topic => topic.Id);
                 var seen = new HashSet<Guid>();
+                var linkedTopicIds = review.TopicIds.ToHashSet();
                 var proposals = new List<object>();
                 foreach (var item in candidates.EnumerateArray())
                 {
@@ -329,6 +331,10 @@ public static partial class AssistantCapabilities
                         || !seen.Add(topicId)
                         || !available.TryGetValue(topicId, out var topic))
                         return Invalid("Every proposed topic must be a distinct existing topic ID.");
+
+                    // Server-owned note associations, not the model's opinion, decide novelty.
+                    // Already-linked candidates are simply omitted so mixed batches still help.
+                    if (linkedTopicIds.Contains(topicId)) continue;
 
                     var reason = Str(item, "reason")?.Trim();
                     if (string.IsNullOrWhiteSpace(reason) || reason.Length > 240)
