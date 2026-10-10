@@ -557,8 +557,8 @@ internal static class PortableArchiveValidation
 
     /// <summary>
     /// A book's track list and its track media must describe exactly the same
-    /// files: every listed track present with the listed size, and no track
-    /// media the list does not name. A book holds a primary file or tracks,
+    /// files: every listed track present, and no track media the list does
+    /// not name. A book holds a primary file or tracks,
     /// never both, and only an audiobook can hold tracks.
     /// </summary>
     private static void ValidateBookTracks(
@@ -589,9 +589,12 @@ internal static class PortableArchiveValidation
                 $"Book {book.Id} has an invalid track list.");
         }
 
+        // Names only. An archive's media entries are verified against their own
+        // declared length and hash; requiring the length to equal the track
+        // list's as well would reject a host's operational archive, which
+        // carries placeholders and protects the real media separately.
         if (tracks.Count != mediaCount
-            || tracks.Any(track =>
-                !trackMedia!.TryGetValue(track.FileName, out var length) || length != track.Bytes))
+            || tracks.Any(track => !trackMedia!.ContainsKey(track.FileName)))
         {
             throw new PortableArchiveException(
                 "missing_referenced_media",
