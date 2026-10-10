@@ -206,7 +206,26 @@
           </div>
 
           <div class="primary-actions">
-            @if (store.book()?.hasFile) { @if (isAudioBook(store.book())) {
+            @if (store.isImporting()) {
+            <div class="detail-import-progress" role="status"
+                 [attr.aria-label]="store.importStage() + (store.importPercent() !== null ? ', ' + store.importPercent() + ' percent' : '')">
+              <div class="detail-import-heading">
+                <span>{{ store.importStage() }}</span>
+                @if (store.importPercent() !== null) {
+                  <span>{{ store.importPercent() }}%</span>
+                }
+              </div>
+              @if (store.importPercent() !== null) {
+              <div class="detail-import-track" role="progressbar"
+                   [attr.aria-label]="store.importStage()"
+                   [attr.aria-valuenow]="store.importPercent()"
+                   aria-valuemin="0" aria-valuemax="100">
+                <span [style.width.%]="store.importPercent()"></span>
+              </div>
+              }
+              <p>The file will be available when this import finishes.</p>
+            </div>
+            } @else if (store.book()?.hasFile) { @if (isAudioBook(store.book())) {
             <button appButton variant="primary" (click)="openReader()">
               <nostos-icon name="headphones" [size]="18"></nostos-icon>
               <span>Listen</span>
@@ -223,12 +242,17 @@
               <span>Download</span>
             </button>
             } @else if (store.book()?.type !== 'physical') {
-            <button appButton variant="primary" (click)="triggerFilePicker()">
+            <button appButton variant="primary" [disabled]="store.uploadingFile()" (click)="triggerFilePicker()">
               <nostos-icon name="book-open" [size]="18"></nostos-icon>
               <span>Upload File</span>
             </button>
             }
 
+            @if (store.book()?.status === 3) {
+              <div class="detail-import-failed" role="status">
+                <span>Import failed{{ store.book()?.statusMessage ? ': ' + store.book()?.statusMessage : '.' }}</span>
+              </div>
+            }
             <div class="edit-menu-container">
               <button
                 appButton
