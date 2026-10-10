@@ -26,6 +26,7 @@ using Nostos.Backend.Services.Portability;
 using Nostos.Backend.Services.Portability.Migration;
 using Nostos.Backend.Services.Recovery;
 using Nostos.Product.BookText;
+using Nostos.Product.Alignment;
 using Nostos.Product.Services.Ai;
 
 namespace Nostos.Product.Composition;
@@ -172,6 +173,20 @@ public static class NostosProductComposition
         services.AddScoped<BookTextEmbeddingEngine>();
         services.AddScoped<IBookTextSearchService, BookTextSearchService>();
         services.AddScoped<BookTextBackfillService>();
+
+        var alignment = configuration.GetSection(AlignmentOptions.SectionName)
+            .Get<AlignmentOptions>() ?? new AlignmentOptions();
+
+        if (!double.IsFinite(alignment.ClipSeconds) ||
+            alignment.ClipSeconds <= 0 || alignment.ClipSeconds > 60)
+            throw new InvalidOperationException(
+                "Alignment:ClipSeconds must be between 0 and 60.");
+
+        services.AddSingleton(alignment);
+        services.AddSingleton<AlignmentDocumentCache>();
+        services.TryAddScoped<IAudioClipCutter, FfmpegAudioClipCutter>();
+        services.TryAddScoped<IAlignmentService, AlignmentService>();
+        services.TryAddScoped<IAlignmentTranscriber, VoiceAlignmentTranscriber>();
 
         services.AddSingleton(LibraryReceiptRetentionOptions.Normalize(
             configuration.GetSection("LibraryReceiptRetention").Get<LibraryReceiptRetentionOptions>()
@@ -396,6 +411,7 @@ public static class NostosProductComposition
         policies ??= NostosProductEndpointPolicies.None;
 
         routes.MapBooksEndpoints(policies);
+        routes.MapAlignmentEndpoints();
         routes.MapProviderEndpoints(policies);
         routes.MapProviderSettingsEndpoints();
         routes.MapImportEndpoints();

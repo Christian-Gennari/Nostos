@@ -1,7 +1,7 @@
 using System.Text.RegularExpressions;
 using Nostos.Product.BookText;
 
-namespace Nostos.Alignment.Spike;
+namespace Nostos.Product.Alignment;
 
 public sealed record MatcherSettings(double MinimumScore = 0.85, double MinimumMargin = 0.12,
     int MinimumTokens = 8, int MaximumTokens = 24);
@@ -10,7 +10,7 @@ public sealed record PassageLocation(int BlockOrder, int GlobalTextOffset, BookT
 public sealed record PassageMatch(bool Accepted, string Reason, double Score, double RunnerUpScore,
     PassageLocation? Start, PassageLocation? End, string? Passage);
 
-/// <summary>Experimental lexical locator. It never receives expected locations or chapter hints.</summary>
+/// <summary>Lexical locator. It never receives expected locations or chapter hints.</summary>
 public sealed class PassageMatcher
 {
     private static readonly Regex Words = new(@"[\p{L}\p{N}]+", RegexOptions.Compiled);

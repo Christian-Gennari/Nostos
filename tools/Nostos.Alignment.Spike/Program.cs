@@ -5,6 +5,7 @@ using System.Text.Json;
 using Nostos.Alignment.Spike;
 using Nostos.Backend.Services.Ai;
 using Nostos.Product.BookText;
+using Nostos.Product.Alignment;
 
 var json = new JsonSerializerOptions(JsonSerializerDefaults.Web) { WriteIndented = true };
 try
