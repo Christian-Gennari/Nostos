@@ -772,6 +772,63 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
     }
 
     [Fact]
+    public async Task Already_linked_topic_proposals_are_excluded_even_when_model_recommends_them()
+    {
+        var h = CreateHarness();
+        var book = await SeedBookAsync(h, "The Republic");
+        var note = await SeedNoteAsync(h, book.Id, "The reluctance to rule");
+        var justice = await SeedTopicAsync(h, "justice");
+        var rule = await SeedTopicAsync(h, "rule");
+        var obligation = await SeedTopicAsync(h, "political obligation");
+        h.Db.NoteTopics.AddRange(
+            new NoteTopicModel { NoteId = note.Id, TopicId = justice.Id },
+            new NoteTopicModel { NoteId = note.Id, TopicId = rule.Id },
+            new NoteTopicModel { NoteId = note.Id, TopicId = obligation.Id });
+        await h.Db.SaveChangesAsync();
+        var before = await StoreSnapshotAsync(h);
+
+        h.Llm
+            .CallsTool("notes_read_for_review", $"""{"noteId":"{{note.Id}}"}""")
+            .CallsTool("topics_list")
+            .CallsTool("topics_propose_links", $"""{"noteId":"{{note.Id}}","candidates":[{"topicId":"{{justice.Id}}","reason":"The note names justice."},{"topicId":"{{rule.Id}}","reason":"The note addresses who governs."},{"topicId":"{{obligation.Id}}","reason":"The note describes a duty to rule."}]}""")
+            .Returns("Three possible topics.");
+
+        var response = await h.Orchestrator.HandleTurnAsync(Turn(
+            "Suggest additional connections for this note.",
+            Context(surface: "second-brain", route: "/second-brain", brainReviewNoteId: note.Id.ToString())));
+
+        response.Suggestions.Should().BeEmpty();
+        (await StoreSnapshotAsync(h)).Should().BeEquivalentTo(before);
+    }
+
+    [Fact]
+    public async Task Mixed_topic_proposals_keep_only_new_grounded_connections()
+    {
+        var h = CreateHarness();
+        var book = await SeedBookAsync(h, "The Republic");
+        var note = await SeedNoteAsync(h, book.Id, "The quality of rulers");
+        var alreadyLinked = await SeedTopicAsync(h, "justice");
+        var newTopic = await SeedTopicAsync(h, "responsibility");
+        h.Db.NoteTopics.Add(new NoteTopicModel { NoteId = note.Id, TopicId = alreadyLinked.Id });
+        await h.Db.SaveChangesAsync();
+        var before = await StoreSnapshotAsync(h);
+
+        h.Llm
+            .CallsTool("notes_read_for_review", $"""{"noteId":"{{note.Id}}"}""")
+            .CallsTool("topics_list")
+            .CallsTool("topics_propose_links", $"""{"noteId":"{{note.Id}}","candidates":[{"topicId":"{{alreadyLinked.Id}}","reason":"The note is about justice."},{"topicId":"{{newTopic.Id}}","reason":"It concerns the responsibility to govern."}]}""")
+            .Returns("I found connections.");
+
+        var response = await h.Orchestrator.HandleTurnAsync(Turn(
+            "Suggest additional connections for this note.",
+            Context(surface: "second-brain", route: "/second-brain", brainReviewNoteId: note.Id.ToString())));
+
+        response.Suggestions.Should().ContainSingle()
+            .Which.Value.Should().Be(newTopic.Id.ToString());
+        (await StoreSnapshotAsync(h)).Should().BeEquivalentTo(before);
+    }
+
+    [Fact]
     public async Task Topic_suggestions_are_capped_and_never_create_a_topic()
     {
         var h = CreateHarness();
