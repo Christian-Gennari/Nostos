@@ -39,9 +39,11 @@ public sealed class AcquisitionService(
     IOptions<AcquisitionOptions> options,
     ILogger<AcquisitionService> logger,
     IAcquisitionWorkingRootProvider? workingRootProvider = null,
-    IBookTextIngestionScheduler? bookTextScheduler = null) : IAcquisitionService
+    IBookTextIngestionScheduler? bookTextScheduler = null,
+    BookFileMutationGate? fileMutationGate = null) : IAcquisitionService
 {
     private readonly AcquisitionOptions _options = options.Value;
+    private readonly BookFileMutationGate _fileMutationGate = fileMutationGate ?? new();
 
     public async Task<AcquisitionResult> AcquireAsync(
         AcquisitionRequest request,
@@ -178,6 +180,15 @@ public sealed class AcquisitionService(
                 DataOf(current) as BookDto,
                 "This book is already in your library with a local file; nothing was imported.");
         }
+
+        // A manual upload can race the create-or-match step. Own this book for
+        // the rest of the job, then re-read under the same gate the upload uses.
+        // If an upload won first, do not overwrite it with provider media.
+        using var fileLease = await _fileMutationGate.EnterAsync(bookId, ct);
+        var latest = DataOf(await library.GetBookAsync(bookId, ct)) as BookDto;
+        if (latest?.HasFile == true)
+            return AcquisitionResult.AlreadyInLibrary(
+                bookId, latest, "This book already has a local file; nothing was imported.");
 
         await library.SetBookStatusAsync(bookId, BookStatus.Downloading, statusMessage: null, ct);
         progress.Report(new AcquisitionProgress("downloading", 10, BookId: bookId));
