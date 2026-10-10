@@ -76,4 +76,5 @@ public sealed record NoteReviewDto(
     string? BookTitle,
     string Content,
     string? SelectedText,
-    IReadOnlyList<string> TopicNames);
+    IReadOnlyList<string> TopicNames,
+    IReadOnlyList<Guid> TopicIds);
