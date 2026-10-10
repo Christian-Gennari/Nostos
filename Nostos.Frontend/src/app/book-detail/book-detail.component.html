@@ -223,7 +223,11 @@
                 <span [style.width.%]="store.importPercent()"></span>
               </div>
               }
-              <p>The file will be available when this import finishes.</p>
+              @if (store.importConnectionState() === 'reconnecting') {
+                <p>Reconnecting to import progress…</p>
+              } @else {
+                <p>The file will be available when this import finishes.</p>
+              }
             </div>
             } @else if (store.book()?.hasFile) { @if (isAudioBook(store.book())) {
             <button appButton variant="primary" (click)="openReader()">
