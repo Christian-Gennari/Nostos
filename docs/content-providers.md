@@ -309,6 +309,14 @@ enforced on the server.
   deletes books, downloaded files, metadata or provenance. Re-enabling restores
   access.
 
+### Litteraturbanken
+
+Litteraturbanken has not confirmed third-party automated access. Its provider is
+therefore disabled by default and uses only the public search, license, and
+provenance data exposed by the site's own frontend. Search results are limited
+to exact per-work CC0, public-domain, or CC BY codes and original EPUB/PDF
+exports under the 128 MiB acquisition cap; other rights and formats are omitted.
+
 ## Security and resource limits
 
 - **https only.** A plaintext download could be rewritten in transit, and an
