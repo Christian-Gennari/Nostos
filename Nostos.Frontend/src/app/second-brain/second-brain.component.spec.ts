@@ -2511,6 +2511,51 @@ describe('SecondBrain', () => {
       expect(proposal.textContent).not.toContain('A related climb.');
     });
 
+    it('never renders pre-linked topics among inline suggestions', () => {
+      enterReview();
+      component.reviewQueue.update((rows) => rows.map((row) => row.id === 'hit-1'
+        ? { ...row, topicNames: ['Alpha'] } : row));
+      fixture.detectChanges();
+
+      component.askNostos();
+      http.expectOne('/api/assistant/turn/stream').flush({
+        reply: 'Some related topics.', acknowledgement: null, anchorPrompt: null, pendingPlan: null,
+        suggestions: [
+          { kind: 'topic', label: 'Alpha', reason: 'Already connected.', value: 'c-alpha', noteId: 'hit-1' },
+          { kind: 'topic', label: 'Beta', reason: 'Another grounded connection.', value: 'c-beta', noteId: 'hit-1' },
+        ],
+      });
+      fixture.detectChanges();
+
+      expect(component.proposalState()).toBe('ready');
+      const cards = fixture.nativeElement.querySelectorAll('[data-testid="brain-proposal"]');
+      expect(cards.length).toBe(1);
+      expect(cards[0].textContent).toContain('Beta');
+      expect(cards[0].textContent).not.toContain('Alpha');
+      expect(TestBed.inject(AssistantService).entries()).toEqual([]);
+    });
+
+    it('treats exclusively pre-linked proposals as no additional connections', () => {
+      enterReview();
+      component.reviewQueue.update((rows) => rows.map((row) => row.id === 'hit-1'
+        ? { ...row, topicNames: ['Alpha'] } : row));
+      fixture.detectChanges();
+
+      component.askNostos();
+      http.expectOne('/api/assistant/turn/stream').flush({
+        reply: 'A topic.', acknowledgement: null, anchorPrompt: null, pendingPlan: null,
+        suggestions: [
+          { kind: 'topic', label: 'Alpha', reason: 'Already connected.', value: 'c-alpha', noteId: 'hit-1' },
+        ],
+      });
+      fixture.detectChanges();
+
+      expect(component.proposalState()).toBe('empty');
+      expect(fixture.nativeElement.querySelector('[data-testid="brain-proposal"]')).toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="brain-proposals"]')?.textContent)
+        .toContain('No additional connections found');
+    });
+
     it('drops late proposals when review focus changes, without linking or showing old chips', () => {
       enterReview();
       component.askNostos();
@@ -2537,7 +2582,7 @@ describe('SecondBrain', () => {
       });
       fixture.detectChanges();
       expect(component.proposalState()).toBe('empty');
-      expect(fixture.nativeElement.querySelector('[data-testid="brain-proposals"]')?.textContent).toContain('No useful matches found');
+      expect(fixture.nativeElement.querySelector('[data-testid="brain-proposals"]')?.textContent).toContain('No additional connections found');
       expect(fixture.nativeElement.querySelector('.brain-note-action-row')?.textContent).toContain('Link to topic');
     });
 
