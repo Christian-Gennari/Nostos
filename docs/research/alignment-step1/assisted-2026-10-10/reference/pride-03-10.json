@@ -1,0 +1,203 @@
+{
+  "kind": "machine-assisted-reference",
+  "decoder": "faster-whisper 1.2.1",
+  "model": "base",
+  "weightsSha256": "d01c3014881c9c6f3133c182f3d2887eb6ca1c789a7538c5c007196857a0a6a9",
+  "audioSha256": "4c2c18580eec4de1a59b21f1183d69dd7d005624cec0a5ffdfba1e2964df76b5",
+  "recordedAt": "2026-10-10",
+  "elapsedSeconds": 1.5697447969578207,
+  "transcript": "their father, she times them ill. I do not cough for my own amusement,\" replied Kitty fretfully. When is your next ball to be Lizzie? Tomorrow fortnight.",
+  "segments": [
+    {
+      "start": 0.0,
+      "end": 5.56,
+      "text": " their father, she times them ill. I do not cough for my own amusement,\" replied Kitty",
+      "avgLogprob": -0.3390049587848575,
+      "noSpeechProbability": 0.043256621807813644,
+      "words": [
+        {
+          "start": 0.0,
+          "end": 0.12,
+          "word": " their",
+          "probability": 0.5576026439666748
+        },
+        {
+          "start": 0.12,
+          "end": 0.4,
+          "word": " father,",
+          "probability": 0.965170681476593
+        },
+        {
+          "start": 0.78,
+          "end": 0.9,
+          "word": " she",
+          "probability": 0.9679168462753296
+        },
+        {
+          "start": 0.9,
+          "end": 1.28,
+          "word": " times",
+          "probability": 0.9283037185668945
+        },
+        {
+          "start": 1.28,
+          "end": 1.48,
+          "word": " them",
+          "probability": 0.9830476641654968
+        },
+        {
+          "start": 1.48,
+          "end": 1.76,
+          "word": " ill.",
+          "probability": 0.9944767355918884
+        },
+        {
+          "start": 2.74,
+          "end": 3.0,
+          "word": " I",
+          "probability": 0.36374592781066895
+        },
+        {
+          "start": 3.0,
+          "end": 3.1,
+          "word": " do",
+          "probability": 0.9961931705474854
+        },
+        {
+          "start": 3.1,
+          "end": 3.24,
+          "word": " not",
+          "probability": 0.9982742071151733
+        },
+        {
+          "start": 3.24,
+          "end": 3.56,
+          "word": " cough",
+          "probability": 0.9365131855010986
+        },
+        {
+          "start": 3.56,
+          "end": 3.76,
+          "word": " for",
+          "probability": 0.9393806457519531
+        },
+        {
+          "start": 3.76,
+          "end": 3.9,
+          "word": " my",
+          "probability": 0.9985947012901306
+        },
+        {
+          "start": 3.9,
+          "end": 4.08,
+          "word": " own",
+          "probability": 0.9966321587562561
+        },
+        {
+          "start": 4.08,
+          "end": 5.02,
+          "word": " amusement,\"",
+          "probability": 0.7950238883495331
+        },
+        {
+          "start": 5.02,
+          "end": 5.22,
+          "word": " replied",
+          "probability": 0.9889107942581177
+        },
+        {
+          "start": 5.22,
+          "end": 5.56,
+          "word": " Kitty",
+          "probability": 0.7090457677841187
+        }
+      ]
+    },
+    {
+      "start": 5.56,
+      "end": 8.34,
+      "text": " fretfully. When is your next ball to be Lizzie?",
+      "avgLogprob": -0.3390049587848575,
+      "noSpeechProbability": 0.043256621807813644,
+      "words": [
+        {
+          "start": 5.56,
+          "end": 6.16,
+          "word": " fretfully.",
+          "probability": 0.7138310670852661
+        },
+        {
+          "start": 6.9,
+          "end": 7.0,
+          "word": " When",
+          "probability": 0.058914829045534134
+        },
+        {
+          "start": 7.0,
+          "end": 7.12,
+          "word": " is",
+          "probability": 0.943321704864502
+        },
+        {
+          "start": 7.12,
+          "end": 7.24,
+          "word": " your",
+          "probability": 0.9882832765579224
+        },
+        {
+          "start": 7.24,
+          "end": 7.52,
+          "word": " next",
+          "probability": 0.9974838495254517
+        },
+        {
+          "start": 7.52,
+          "end": 7.76,
+          "word": " ball",
+          "probability": 0.9193766713142395
+        },
+        {
+          "start": 7.76,
+          "end": 7.92,
+          "word": " to",
+          "probability": 0.9538078904151917
+        },
+        {
+          "start": 7.92,
+          "end": 8.04,
+          "word": " be",
+          "probability": 0.9946463704109192
+        },
+        {
+          "start": 8.04,
+          "end": 8.34,
+          "word": " Lizzie?",
+          "probability": 0.5769661962985992
+        }
+      ]
+    },
+    {
+      "start": 9.1,
+      "end": 9.88,
+      "text": " Tomorrow fortnight.",
+      "avgLogprob": -0.3390049587848575,
+      "noSpeechProbability": 0.043256621807813644,
+      "words": [
+        {
+          "start": 9.1,
+          "end": 9.3,
+          "word": " Tomorrow",
+          "probability": 0.8755878806114197
+        },
+        {
+          "start": 9.3,
+          "end": 9.88,
+          "word": " fortnight.",
+          "probability": 0.6840030550956726
+        }
+      ]
+    }
+  ],
+  "networkUsed": false,
+  "gatewaySpendUsd": 0
+}

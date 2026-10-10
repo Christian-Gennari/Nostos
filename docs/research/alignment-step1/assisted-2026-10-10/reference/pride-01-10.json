@@ -1,0 +1,248 @@
+{
+  "kind": "machine-assisted-reference",
+  "decoder": "faster-whisper 1.2.1",
+  "model": "base",
+  "weightsSha256": "d01c3014881c9c6f3133c182f3d2887eb6ca1c789a7538c5c007196857a0a6a9",
+  "audioSha256": "e368aaf724f02f9a3543fe6e6d26f6f28aee3e605759cda075c51df200cf17e3",
+  "recordedAt": "2026-10-10",
+  "elapsedSeconds": 1.634299049153924,
+  "transcript": "to be in the house by the end of next week. What is his name? Bingley. Is he married or single? Oh, single my dear, to be sure. A single...",
+  "segments": [
+    {
+      "start": 0.0,
+      "end": 1.76,
+      "text": " to be in the house by the end of next week.",
+      "avgLogprob": -0.3524101313490134,
+      "noSpeechProbability": 0.030619783326983452,
+      "words": [
+        {
+          "start": 0.0,
+          "end": 0.08,
+          "word": " to",
+          "probability": 0.3096454441547394
+        },
+        {
+          "start": 0.08,
+          "end": 0.2,
+          "word": " be",
+          "probability": 0.9879390001296997
+        },
+        {
+          "start": 0.2,
+          "end": 0.3,
+          "word": " in",
+          "probability": 0.9914218783378601
+        },
+        {
+          "start": 0.3,
+          "end": 0.42,
+          "word": " the",
+          "probability": 0.9861729741096497
+        },
+        {
+          "start": 0.42,
+          "end": 0.64,
+          "word": " house",
+          "probability": 0.9613444209098816
+        },
+        {
+          "start": 0.64,
+          "end": 0.88,
+          "word": " by",
+          "probability": 0.9741131067276001
+        },
+        {
+          "start": 0.88,
+          "end": 1.0,
+          "word": " the",
+          "probability": 0.9950897097587585
+        },
+        {
+          "start": 1.0,
+          "end": 1.18,
+          "word": " end",
+          "probability": 0.9962463974952698
+        },
+        {
+          "start": 1.18,
+          "end": 1.3,
+          "word": " of",
+          "probability": 0.9953784942626953
+        },
+        {
+          "start": 1.3,
+          "end": 1.5,
+          "word": " next",
+          "probability": 0.9907289743423462
+        },
+        {
+          "start": 1.5,
+          "end": 1.76,
+          "word": " week.",
+          "probability": 0.997619092464447
+        }
+      ]
+    },
+    {
+      "start": 2.58,
+      "end": 3.32,
+      "text": " What is his name?",
+      "avgLogprob": -0.3524101313490134,
+      "noSpeechProbability": 0.030619783326983452,
+      "words": [
+        {
+          "start": 2.58,
+          "end": 2.82,
+          "word": " What",
+          "probability": 0.3338755965232849
+        },
+        {
+          "start": 2.82,
+          "end": 2.98,
+          "word": " is",
+          "probability": 0.9758756160736084
+        },
+        {
+          "start": 2.98,
+          "end": 3.14,
+          "word": " his",
+          "probability": 0.9803347587585449
+        },
+        {
+          "start": 3.14,
+          "end": 3.32,
+          "word": " name?",
+          "probability": 0.9991058707237244
+        }
+      ]
+    },
+    {
+      "start": 4.22,
+      "end": 4.56,
+      "text": " Bingley.",
+      "avgLogprob": -0.3524101313490134,
+      "noSpeechProbability": 0.030619783326983452,
+      "words": [
+        {
+          "start": 4.22,
+          "end": 4.56,
+          "word": " Bingley.",
+          "probability": 0.8205700814723969
+        }
+      ]
+    },
+    {
+      "start": 5.28,
+      "end": 6.32,
+      "text": " Is he married or single?",
+      "avgLogprob": -0.3524101313490134,
+      "noSpeechProbability": 0.030619783326983452,
+      "words": [
+        {
+          "start": 5.28,
+          "end": 5.4,
+          "word": " Is",
+          "probability": 0.9542383551597595
+        },
+        {
+          "start": 5.4,
+          "end": 5.5,
+          "word": " he",
+          "probability": 0.9942370653152466
+        },
+        {
+          "start": 5.5,
+          "end": 5.8,
+          "word": " married",
+          "probability": 0.9946334362030029
+        },
+        {
+          "start": 5.8,
+          "end": 6.0,
+          "word": " or",
+          "probability": 0.9595819711685181
+        },
+        {
+          "start": 6.0,
+          "end": 6.32,
+          "word": " single?",
+          "probability": 0.9657374620437622
+        }
+      ]
+    },
+    {
+      "start": 6.96,
+      "end": 8.72,
+      "text": " Oh, single my dear, to be sure.",
+      "avgLogprob": -0.3524101313490134,
+      "noSpeechProbability": 0.030619783326983452,
+      "words": [
+        {
+          "start": 6.96,
+          "end": 7.2,
+          "word": " Oh,",
+          "probability": 0.832517683506012
+        },
+        {
+          "start": 7.46,
+          "end": 7.7,
+          "word": " single",
+          "probability": 0.8927742838859558
+        },
+        {
+          "start": 7.7,
+          "end": 8.0,
+          "word": " my",
+          "probability": 0.82733154296875
+        },
+        {
+          "start": 8.0,
+          "end": 8.2,
+          "word": " dear,",
+          "probability": 0.9559094309806824
+        },
+        {
+          "start": 8.32,
+          "end": 8.38,
+          "word": " to",
+          "probability": 0.8948736190795898
+        },
+        {
+          "start": 8.38,
+          "end": 8.46,
+          "word": " be",
+          "probability": 0.9854092001914978
+        },
+        {
+          "start": 8.46,
+          "end": 8.72,
+          "word": " sure.",
+          "probability": 0.9903160929679871
+        }
+      ]
+    },
+    {
+      "start": 9.34,
+      "end": 9.98,
+      "text": " A single...",
+      "avgLogprob": -0.3524101313490134,
+      "noSpeechProbability": 0.030619783326983452,
+      "words": [
+        {
+          "start": 9.34,
+          "end": 9.44,
+          "word": " A",
+          "probability": 0.9440160989761353
+        },
+        {
+          "start": 9.44,
+          "end": 9.98,
+          "word": " single...",
+          "probability": 0.4387431666254997
+        }
+      ]
+    }
+  ],
+  "networkUsed": false,
+  "gatewaySpendUsd": 0
+}

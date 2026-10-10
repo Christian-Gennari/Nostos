@@ -1,0 +1,51 @@
+{
+  "sourceSha256": "d401ad6b118e84d01b8dd1a3d034fd41784feb14c50f1f7a0fc17f3263fa8e9f",
+  "extractorVersion": "nostos-book-text-v2",
+  "settings": {
+    "minimumScore": 0.85,
+    "minimumMargin": 0.12,
+    "minimumTokens": 8,
+    "maximumTokens": 24
+  },
+  "transcript": {
+    "audioSha256": "e81a74c562a953228669ee08e9fb4f5278558f2866d0cde1d5c16c4a87624754",
+    "recordedAt": "2026-10-10T15:02:33.4055502+00:00",
+    "elapsedMilliseconds": 19021.5161,
+    "result": {
+      "text": "somewhat more fortunate, for they had the advantage of ascertaining from an upper window that he wore a blue coat and rode a black horse. An invitation to dinner was soon afterwards",
+      "language": "en",
+      "durationSeconds": 10
+    }
+  },
+  "match": {
+    "accepted": true,
+    "reason": "matched",
+    "score": 1,
+    "runnerUpScore": 0,
+    "start": {
+      "blockOrder": 98,
+      "globalTextOffset": 36204,
+      "locator": {
+        "type": "epub",
+        "spineIndex": 1,
+        "resourceHref": "1306980130634175271_1342-h-0.htm.xhtml",
+        "cfi": null,
+        "startTextOffset": 36204,
+        "endTextOffset": 36204
+      }
+    },
+    "end": {
+      "blockOrder": 99,
+      "globalTextOffset": 36335,
+      "locator": {
+        "type": "epub",
+        "spineIndex": 1,
+        "resourceHref": "1306980130634175271_1342-h-0.htm.xhtml",
+        "cfi": null,
+        "startTextOffset": 36335,
+        "endTextOffset": 36335
+      }
+    },
+    "passage": "of ascertaining from an upper window that he wore a blue coat and rode a black horse an invitation to dinner was soon afterwards"
+  }
+}

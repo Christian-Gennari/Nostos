@@ -1,0 +1,241 @@
+{
+  "kind": "machine-assisted-reference",
+  "decoder": "faster-whisper 1.2.1",
+  "weightsSha256": "d01c3014881c9c6f3133c182f3d2887eb6ca1c789a7538c5c007196857a0a6a9",
+  "audioSha256": "f9083356496b1269e96ce442ea1ff43b21829747a8b681bf151499f940ef230d",
+  "recordedAt": "2026-10-10T14:47:05.382266+00:00",
+  "elapsedSeconds": 1.5680607110261917,
+  "transcript": "Brevox Recordings are in the public domain. For more information or to volunteer, please visit librevox.org. Today is reading by Cara Schalenberg, www.kray.org. Pride and Prejudice by Jane Austin.",
+  "segments": [
+    {
+      "start": 0.0,
+      "end": 2.26,
+      "text": " Brevox Recordings are in the public domain.",
+      "avgLogprob": -0.3756480920510214,
+      "noSpeechProbability": 0.0959070473909378,
+      "words": [
+        {
+          "start": 0.0,
+          "end": 0.4,
+          "word": " Brevox",
+          "probability": 0.4856741229693095
+        },
+        {
+          "start": 0.4,
+          "end": 1.12,
+          "word": " Recordings",
+          "probability": 0.7222116887569427
+        },
+        {
+          "start": 1.12,
+          "end": 1.38,
+          "word": " are",
+          "probability": 0.9370216727256775
+        },
+        {
+          "start": 1.38,
+          "end": 1.5,
+          "word": " in",
+          "probability": 0.9934751391410828
+        },
+        {
+          "start": 1.5,
+          "end": 1.58,
+          "word": " the",
+          "probability": 0.9784090518951416
+        },
+        {
+          "start": 1.58,
+          "end": 1.84,
+          "word": " public",
+          "probability": 0.9247224926948547
+        },
+        {
+          "start": 1.84,
+          "end": 2.26,
+          "word": " domain.",
+          "probability": 0.9982640147209167
+        }
+      ]
+    },
+    {
+      "start": 2.96,
+      "end": 8.02,
+      "text": " For more information or to volunteer, please visit librevox.org.",
+      "avgLogprob": -0.3756480920510214,
+      "noSpeechProbability": 0.0959070473909378,
+      "words": [
+        {
+          "start": 2.96,
+          "end": 3.12,
+          "word": " For",
+          "probability": 0.9721784591674805
+        },
+        {
+          "start": 3.12,
+          "end": 3.3,
+          "word": " more",
+          "probability": 0.997576892375946
+        },
+        {
+          "start": 3.3,
+          "end": 3.84,
+          "word": " information",
+          "probability": 0.9946867227554321
+        },
+        {
+          "start": 3.84,
+          "end": 4.08,
+          "word": " or",
+          "probability": 0.9052244424819946
+        },
+        {
+          "start": 4.08,
+          "end": 4.22,
+          "word": " to",
+          "probability": 0.9633482098579407
+        },
+        {
+          "start": 4.22,
+          "end": 4.74,
+          "word": " volunteer,",
+          "probability": 0.997526228427887
+        },
+        {
+          "start": 5.0,
+          "end": 5.12,
+          "word": " please",
+          "probability": 0.9251982569694519
+        },
+        {
+          "start": 5.12,
+          "end": 5.52,
+          "word": " visit",
+          "probability": 0.9986841082572937
+        },
+        {
+          "start": 5.52,
+          "end": 6.82,
+          "word": " librevox",
+          "probability": 0.6603852584958076
+        },
+        {
+          "start": 6.82,
+          "end": 8.02,
+          "word": ".org.",
+          "probability": 0.9884979128837585
+        }
+      ]
+    },
+    {
+      "start": 10.0,
+      "end": 15.62,
+      "text": " Today is reading by Cara Schalenberg, www.kray.org.",
+      "avgLogprob": -0.3756480920510214,
+      "noSpeechProbability": 0.0959070473909378,
+      "words": [
+        {
+          "start": 9.81,
+          "end": 10.22,
+          "word": " Today",
+          "probability": 0.928742527961731
+        },
+        {
+          "start": 10.22,
+          "end": 10.4,
+          "word": " is",
+          "probability": 0.6099631190299988
+        },
+        {
+          "start": 10.4,
+          "end": 10.6,
+          "word": " reading",
+          "probability": 0.9216853976249695
+        },
+        {
+          "start": 10.6,
+          "end": 10.82,
+          "word": " by",
+          "probability": 0.9962587356567383
+        },
+        {
+          "start": 10.82,
+          "end": 11.1,
+          "word": " Cara",
+          "probability": 0.4843985140323639
+        },
+        {
+          "start": 11.1,
+          "end": 11.66,
+          "word": " Schalenberg,",
+          "probability": 0.6492611070473989
+        },
+        {
+          "start": 12.5,
+          "end": 12.92,
+          "word": " www",
+          "probability": 0.9312148690223694
+        },
+        {
+          "start": 12.92,
+          "end": 14.4,
+          "word": ".kray",
+          "probability": 0.702804426352183
+        },
+        {
+          "start": 14.4,
+          "end": 15.62,
+          "word": ".org.",
+          "probability": 0.993888258934021
+        }
+      ]
+    },
+    {
+      "start": 16.96,
+      "end": 19.84,
+      "text": " Pride and Prejudice by Jane Austin.",
+      "avgLogprob": -0.3756480920510214,
+      "noSpeechProbability": 0.0959070473909378,
+      "words": [
+        {
+          "start": 16.96,
+          "end": 17.6,
+          "word": " Pride",
+          "probability": 0.9025353789329529
+        },
+        {
+          "start": 17.6,
+          "end": 18.04,
+          "word": " and",
+          "probability": 0.9392927289009094
+        },
+        {
+          "start": 18.04,
+          "end": 18.74,
+          "word": " Prejudice",
+          "probability": 0.7627116541067759
+        },
+        {
+          "start": 18.74,
+          "end": 19.18,
+          "word": " by",
+          "probability": 0.8768608570098877
+        },
+        {
+          "start": 19.18,
+          "end": 19.46,
+          "word": " Jane",
+          "probability": 0.9854559302330017
+        },
+        {
+          "start": 19.46,
+          "end": 19.84,
+          "word": " Austin.",
+          "probability": 0.6218771934509277
+        }
+      ]
+    }
+  ],
+  "networkUsed": false,
+  "gatewaySpendUsd": 0
+}

@@ -1,0 +1,322 @@
+[
+  {
+    "providerTag": "model-1",
+    "clipId": "carol-01-10",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-1-carol-01-10.json"
+  },
+  {
+    "providerTag": "model-1",
+    "clipId": "carol-01-20",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-1-carol-01-20.json"
+  },
+  {
+    "providerTag": "model-1",
+    "clipId": "carol-02-10",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-1-carol-02-10.json"
+  },
+  {
+    "providerTag": "model-1",
+    "clipId": "carol-02-20",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-1-carol-02-20.json"
+  },
+  {
+    "providerTag": "model-1",
+    "clipId": "carol-03-10",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-1-carol-03-10.json"
+  },
+  {
+    "providerTag": "model-1",
+    "clipId": "carol-03-20",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-1-carol-03-20.json"
+  },
+  {
+    "providerTag": "model-1",
+    "clipId": "carol-04-10",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-1-carol-04-10.json"
+  },
+  {
+    "providerTag": "model-1",
+    "clipId": "carol-04-20",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-1-carol-04-20.json"
+  },
+  {
+    "providerTag": "model-1",
+    "clipId": "carol-05-10",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-1-carol-05-10.json"
+  },
+  {
+    "providerTag": "model-1",
+    "clipId": "carol-05-20",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-1-carol-05-20.json"
+  },
+  {
+    "providerTag": "model-1",
+    "clipId": "carol-06-10",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-1-carol-06-10.json"
+  },
+  {
+    "providerTag": "model-1",
+    "clipId": "carol-06-20",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-1-carol-06-20.json"
+  },
+  {
+    "providerTag": "model-1",
+    "clipId": "carol-07-10",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-1-carol-07-10.json"
+  },
+  {
+    "providerTag": "model-1",
+    "clipId": "carol-07-20",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-1-carol-07-20.json"
+  },
+  {
+    "providerTag": "model-1",
+    "clipId": "carol-08-10",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-1-carol-08-10.json"
+  },
+  {
+    "providerTag": "model-1",
+    "clipId": "carol-08-20",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-1-carol-08-20.json"
+  },
+  {
+    "providerTag": "model-1",
+    "clipId": "pride-01-10",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-1-pride-01-10.json"
+  },
+  {
+    "providerTag": "model-1",
+    "clipId": "pride-01-20",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-1-pride-01-20.json"
+  },
+  {
+    "providerTag": "model-1",
+    "clipId": "pride-02-10",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-1-pride-02-10.json"
+  },
+  {
+    "providerTag": "model-1",
+    "clipId": "pride-02-20",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-1-pride-02-20.json"
+  },
+  {
+    "providerTag": "model-1",
+    "clipId": "pride-03-10",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-1-pride-03-10.json"
+  },
+  {
+    "providerTag": "model-1",
+    "clipId": "pride-03-20",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-1-pride-03-20.json"
+  },
+  {
+    "providerTag": "model-1",
+    "clipId": "pride-04-10",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-1-pride-04-10.json"
+  },
+  {
+    "providerTag": "model-1",
+    "clipId": "pride-04-20",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-1-pride-04-20.json"
+  },
+  {
+    "providerTag": "model-1",
+    "clipId": "pride-05-10",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-1-pride-05-10.json"
+  },
+  {
+    "providerTag": "model-1",
+    "clipId": "pride-05-20",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-1-pride-05-20.json"
+  },
+  {
+    "providerTag": "model-1",
+    "clipId": "pride-06-10",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-1-pride-06-10.json"
+  },
+  {
+    "providerTag": "model-1",
+    "clipId": "pride-06-20",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-1-pride-06-20.json"
+  },
+  {
+    "providerTag": "model-1",
+    "clipId": "pride-07-10",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-1-pride-07-10.json"
+  },
+  {
+    "providerTag": "model-1",
+    "clipId": "pride-07-20",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-1-pride-07-20.json"
+  },
+  {
+    "providerTag": "model-1",
+    "clipId": "pride-08-10",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-1-pride-08-10.json"
+  },
+  {
+    "providerTag": "model-1",
+    "clipId": "pride-08-20",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-1-pride-08-20.json"
+  },
+  {
+    "providerTag": "model-3",
+    "clipId": "carol-01-10",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-3-carol-01-10.json"
+  },
+  {
+    "providerTag": "model-3",
+    "clipId": "carol-01-20",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-3-carol-01-20.json"
+  },
+  {
+    "providerTag": "model-3",
+    "clipId": "carol-02-10",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-3-carol-02-10.json"
+  },
+  {
+    "providerTag": "model-3",
+    "clipId": "carol-02-20",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-3-carol-02-20.json"
+  },
+  {
+    "providerTag": "model-3",
+    "clipId": "carol-03-10",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-3-carol-03-10.json"
+  },
+  {
+    "providerTag": "model-3",
+    "clipId": "carol-03-20",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-3-carol-03-20.json"
+  },
+  {
+    "providerTag": "model-3",
+    "clipId": "carol-04-10",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-3-carol-04-10.json"
+  },
+  {
+    "providerTag": "model-3",
+    "clipId": "carol-04-20",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-3-carol-04-20.json"
+  },
+  {
+    "providerTag": "model-3",
+    "clipId": "carol-05-10",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-3-carol-05-10.json"
+  },
+  {
+    "providerTag": "model-3",
+    "clipId": "carol-05-20",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-3-carol-05-20.json"
+  },
+  {
+    "providerTag": "model-3",
+    "clipId": "carol-06-10",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-3-carol-06-10.json"
+  },
+  {
+    "providerTag": "model-3",
+    "clipId": "carol-06-20",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-3-carol-06-20.json"
+  },
+  {
+    "providerTag": "model-3",
+    "clipId": "carol-07-10",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-3-carol-07-10.json"
+  },
+  {
+    "providerTag": "model-3",
+    "clipId": "carol-07-20",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-3-carol-07-20.json"
+  },
+  {
+    "providerTag": "model-3",
+    "clipId": "carol-08-10",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-3-carol-08-10.json"
+  },
+  {
+    "providerTag": "model-3",
+    "clipId": "carol-08-20",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-3-carol-08-20.json"
+  },
+  {
+    "providerTag": "model-3",
+    "clipId": "pride-01-10",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-3-pride-01-10.json"
+  },
+  {
+    "providerTag": "model-3",
+    "clipId": "pride-01-20",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-3-pride-01-20.json"
+  },
+  {
+    "providerTag": "model-3",
+    "clipId": "pride-02-10",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-3-pride-02-10.json"
+  },
+  {
+    "providerTag": "model-3",
+    "clipId": "pride-02-20",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-3-pride-02-20.json"
+  },
+  {
+    "providerTag": "model-3",
+    "clipId": "pride-03-10",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-3-pride-03-10.json"
+  },
+  {
+    "providerTag": "model-3",
+    "clipId": "pride-03-20",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-3-pride-03-20.json"
+  },
+  {
+    "providerTag": "model-3",
+    "clipId": "pride-04-10",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-3-pride-04-10.json"
+  },
+  {
+    "providerTag": "model-3",
+    "clipId": "pride-04-20",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-3-pride-04-20.json"
+  },
+  {
+    "providerTag": "model-3",
+    "clipId": "pride-05-10",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-3-pride-05-10.json"
+  },
+  {
+    "providerTag": "model-3",
+    "clipId": "pride-05-20",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-3-pride-05-20.json"
+  },
+  {
+    "providerTag": "model-3",
+    "clipId": "pride-06-10",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-3-pride-06-10.json"
+  },
+  {
+    "providerTag": "model-3",
+    "clipId": "pride-06-20",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-3-pride-06-20.json"
+  },
+  {
+    "providerTag": "model-3",
+    "clipId": "pride-07-10",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-3-pride-07-10.json"
+  },
+  {
+    "providerTag": "model-3",
+    "clipId": "pride-07-20",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-3-pride-07-20.json"
+  },
+  {
+    "providerTag": "model-3",
+    "clipId": "pride-08-10",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-3-pride-08-10.json"
+  },
+  {
+    "providerTag": "model-3",
+    "clipId": "pride-08-20",
+    "artifactPath": "docs/research/alignment-step1/assisted-2026-10-10/results/transcripts/model-3-pride-08-20.json"
+  }
+]

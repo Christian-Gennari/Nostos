@@ -1,0 +1,332 @@
+{
+  "kind": "machine-assisted-reference",
+  "decoder": "faster-whisper 1.2.1",
+  "model": "base",
+  "weightsSha256": "d01c3014881c9c6f3133c182f3d2887eb6ca1c789a7538c5c007196857a0a6a9",
+  "audioSha256": "1fdb142d1a6c6ca7668af17fcbc710f2955628bb3e11c605ea917894cc1ca9e3",
+  "recordedAt": "2026-10-10",
+  "elapsedSeconds": 2.672436243388802,
+  "transcript": "Broken voice would scarcely answer to his call. He had been sobbing violently in his conflict with the spirit, and his face was wet with tears. They are not torn down, cried Scrooge, folding one of his bed curtains in his arms. They are not torn down",
+  "segments": [
+    {
+      "start": 0.0,
+      "end": 2.68,
+      "text": " Broken voice would scarcely answer to his call.",
+      "avgLogprob": -0.21531604352544564,
+      "noSpeechProbability": 0.006939834449440241,
+      "words": [
+        {
+          "start": 0.0,
+          "end": 0.22,
+          "word": " Broken",
+          "probability": 0.4849221408367157
+        },
+        {
+          "start": 0.22,
+          "end": 0.62,
+          "word": " voice",
+          "probability": 0.9689586162567139
+        },
+        {
+          "start": 0.62,
+          "end": 0.94,
+          "word": " would",
+          "probability": 0.9890362620353699
+        },
+        {
+          "start": 0.94,
+          "end": 1.5,
+          "word": " scarcely",
+          "probability": 0.9505138993263245
+        },
+        {
+          "start": 1.5,
+          "end": 1.92,
+          "word": " answer",
+          "probability": 0.9958756566047668
+        },
+        {
+          "start": 1.92,
+          "end": 2.18,
+          "word": " to",
+          "probability": 0.9846534132957458
+        },
+        {
+          "start": 2.18,
+          "end": 2.36,
+          "word": " his",
+          "probability": 0.9816485643386841
+        },
+        {
+          "start": 2.36,
+          "end": 2.68,
+          "word": " call.",
+          "probability": 0.9737391471862793
+        }
+      ]
+    },
+    {
+      "start": 3.6,
+      "end": 9.74,
+      "text": " He had been sobbing violently in his conflict with the spirit, and his face was wet with tears.",
+      "avgLogprob": -0.21531604352544564,
+      "noSpeechProbability": 0.006939834449440241,
+      "words": [
+        {
+          "start": 3.6,
+          "end": 3.82,
+          "word": " He",
+          "probability": 0.9870142936706543
+        },
+        {
+          "start": 3.82,
+          "end": 4.04,
+          "word": " had",
+          "probability": 0.9981784820556641
+        },
+        {
+          "start": 4.04,
+          "end": 4.24,
+          "word": " been",
+          "probability": 0.9972014427185059
+        },
+        {
+          "start": 4.24,
+          "end": 4.8,
+          "word": " sobbing",
+          "probability": 0.9963410198688507
+        },
+        {
+          "start": 4.8,
+          "end": 5.38,
+          "word": " violently",
+          "probability": 0.9431986808776855
+        },
+        {
+          "start": 5.38,
+          "end": 5.74,
+          "word": " in",
+          "probability": 0.9457008838653564
+        },
+        {
+          "start": 5.74,
+          "end": 5.86,
+          "word": " his",
+          "probability": 0.993657648563385
+        },
+        {
+          "start": 5.86,
+          "end": 6.32,
+          "word": " conflict",
+          "probability": 0.9925599098205566
+        },
+        {
+          "start": 6.32,
+          "end": 6.54,
+          "word": " with",
+          "probability": 0.997585654258728
+        },
+        {
+          "start": 6.54,
+          "end": 6.7,
+          "word": " the",
+          "probability": 0.986381471157074
+        },
+        {
+          "start": 6.7,
+          "end": 7.0,
+          "word": " spirit,",
+          "probability": 0.6072655916213989
+        },
+        {
+          "start": 7.58,
+          "end": 7.78,
+          "word": " and",
+          "probability": 0.9929209351539612
+        },
+        {
+          "start": 7.78,
+          "end": 7.96,
+          "word": " his",
+          "probability": 0.9966712594032288
+        },
+        {
+          "start": 7.96,
+          "end": 8.24,
+          "word": " face",
+          "probability": 0.999421238899231
+        },
+        {
+          "start": 8.24,
+          "end": 8.82,
+          "word": " was",
+          "probability": 0.9950567483901978
+        },
+        {
+          "start": 8.82,
+          "end": 9.08,
+          "word": " wet",
+          "probability": 0.995262622833252
+        },
+        {
+          "start": 9.08,
+          "end": 9.44,
+          "word": " with",
+          "probability": 0.9885063171386719
+        },
+        {
+          "start": 9.44,
+          "end": 9.74,
+          "word": " tears.",
+          "probability": 0.9953339695930481
+        }
+      ]
+    },
+    {
+      "start": 12.44,
+      "end": 17.94,
+      "text": " They are not torn down, cried Scrooge, folding one of his bed curtains in his arms.",
+      "avgLogprob": -0.21531604352544564,
+      "noSpeechProbability": 0.006939834449440241,
+      "words": [
+        {
+          "start": 12.229999999999999,
+          "end": 12.54,
+          "word": " They",
+          "probability": 0.7297642827033997
+        },
+        {
+          "start": 12.54,
+          "end": 12.66,
+          "word": " are",
+          "probability": 0.9801046848297119
+        },
+        {
+          "start": 12.66,
+          "end": 13.04,
+          "word": " not",
+          "probability": 0.9841012358665466
+        },
+        {
+          "start": 13.04,
+          "end": 13.76,
+          "word": " torn",
+          "probability": 0.9876448512077332
+        },
+        {
+          "start": 13.76,
+          "end": 14.36,
+          "word": " down,",
+          "probability": 0.9781818985939026
+        },
+        {
+          "start": 14.68,
+          "end": 14.9,
+          "word": " cried",
+          "probability": 0.43411535024642944
+        },
+        {
+          "start": 14.9,
+          "end": 15.6,
+          "word": " Scrooge,",
+          "probability": 0.9272067695856094
+        },
+        {
+          "start": 16.02,
+          "end": 16.24,
+          "word": " folding",
+          "probability": 0.9805195927619934
+        },
+        {
+          "start": 16.24,
+          "end": 16.44,
+          "word": " one",
+          "probability": 0.9968128800392151
+        },
+        {
+          "start": 16.44,
+          "end": 16.52,
+          "word": " of",
+          "probability": 0.9945588707923889
+        },
+        {
+          "start": 16.52,
+          "end": 16.68,
+          "word": " his",
+          "probability": 0.9901588559150696
+        },
+        {
+          "start": 16.68,
+          "end": 16.86,
+          "word": " bed",
+          "probability": 0.9783177375793457
+        },
+        {
+          "start": 16.86,
+          "end": 17.2,
+          "word": " curtains",
+          "probability": 0.47352227568626404
+        },
+        {
+          "start": 17.2,
+          "end": 17.44,
+          "word": " in",
+          "probability": 0.9845811724662781
+        },
+        {
+          "start": 17.44,
+          "end": 17.6,
+          "word": " his",
+          "probability": 0.9967756867408752
+        },
+        {
+          "start": 17.6,
+          "end": 17.94,
+          "word": " arms.",
+          "probability": 0.9953395128250122
+        }
+      ]
+    },
+    {
+      "start": 17.94,
+      "end": 19.98,
+      "text": " They are not torn down",
+      "avgLogprob": -0.36856651306152344,
+      "noSpeechProbability": 0.2673074007034302,
+      "words": [
+        {
+          "start": 17.94,
+          "end": 18.62,
+          "word": " They",
+          "probability": 0.47142696380615234
+        },
+        {
+          "start": 18.62,
+          "end": 18.78,
+          "word": " are",
+          "probability": 0.9755176305770874
+        },
+        {
+          "start": 18.78,
+          "end": 19.06,
+          "word": " not",
+          "probability": 0.8747071027755737
+        },
+        {
+          "start": 19.06,
+          "end": 19.58,
+          "word": " torn",
+          "probability": 0.9931012392044067
+        },
+        {
+          "start": 19.58,
+          "end": 19.98,
+          "word": " down",
+          "probability": 0.974123477935791
+        }
+      ]
+    }
+  ],
+  "networkUsed": false,
+  "gatewaySpendUsd": 0
+}

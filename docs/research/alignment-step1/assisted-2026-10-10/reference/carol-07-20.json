@@ -1,0 +1,245 @@
+{
+  "kind": "machine-assisted-reference",
+  "decoder": "faster-whisper 1.2.1",
+  "model": "base",
+  "weightsSha256": "d01c3014881c9c6f3133c182f3d2887eb6ca1c789a7538c5c007196857a0a6a9",
+  "audioSha256": "ec27454a4bd5e5cb2f97b0cd238f019901781fdeb9a892e0a9a72491712608e4",
+  "recordedAt": "2026-10-10",
+  "elapsedSeconds": 1.7472470155917108,
+  "transcript": "This is a Librevox Recording. All Librevox recordings are in the public domain. For more information or to volunteer, please visit Librevox.org. This recording by Mark Bradford. A Christmas Carol",
+  "segments": [
+    {
+      "start": 1.0399999999999998,
+      "end": 3.32,
+      "text": " This is a Librevox Recording.",
+      "avgLogprob": -0.31515567484548535,
+      "noSpeechProbability": 0.45310521125793457,
+      "words": [
+        {
+          "start": 1.0399999999999998,
+          "end": 1.86,
+          "word": " This",
+          "probability": 0.7547209858894348
+        },
+        {
+          "start": 1.86,
+          "end": 2.34,
+          "word": " is",
+          "probability": 0.9880449175834656
+        },
+        {
+          "start": 2.34,
+          "end": 2.44,
+          "word": " a",
+          "probability": 0.7543410062789917
+        },
+        {
+          "start": 2.44,
+          "end": 2.98,
+          "word": " Librevox",
+          "probability": 0.6928164809942245
+        },
+        {
+          "start": 2.98,
+          "end": 3.32,
+          "word": " Recording.",
+          "probability": 0.7681811153888702
+        }
+      ]
+    },
+    {
+      "start": 3.82,
+      "end": 7.0,
+      "text": " All Librevox recordings are in the public domain.",
+      "avgLogprob": -0.31515567484548535,
+      "noSpeechProbability": 0.45310521125793457,
+      "words": [
+        {
+          "start": 3.82,
+          "end": 4.64,
+          "word": " All",
+          "probability": 0.9934427738189697
+        },
+        {
+          "start": 4.64,
+          "end": 5.24,
+          "word": " Librevox",
+          "probability": 0.9878153204917908
+        },
+        {
+          "start": 5.24,
+          "end": 5.58,
+          "word": " recordings",
+          "probability": 0.7804194092750549
+        },
+        {
+          "start": 5.58,
+          "end": 6.02,
+          "word": " are",
+          "probability": 0.9961550831794739
+        },
+        {
+          "start": 6.02,
+          "end": 6.18,
+          "word": " in",
+          "probability": 0.99693763256073
+        },
+        {
+          "start": 6.18,
+          "end": 6.28,
+          "word": " the",
+          "probability": 0.9884846806526184
+        },
+        {
+          "start": 6.28,
+          "end": 6.54,
+          "word": " public",
+          "probability": 0.9320344924926758
+        },
+        {
+          "start": 6.54,
+          "end": 7.0,
+          "word": " domain.",
+          "probability": 0.9990336894989014
+        }
+      ]
+    },
+    {
+      "start": 7.86,
+      "end": 12.94,
+      "text": " For more information or to volunteer, please visit Librevox.org.",
+      "avgLogprob": -0.31515567484548535,
+      "noSpeechProbability": 0.45310521125793457,
+      "words": [
+        {
+          "start": 7.86,
+          "end": 8.2,
+          "word": " For",
+          "probability": 0.9933706521987915
+        },
+        {
+          "start": 8.2,
+          "end": 8.38,
+          "word": " more",
+          "probability": 0.99769526720047
+        },
+        {
+          "start": 8.38,
+          "end": 9.0,
+          "word": " information",
+          "probability": 0.9978808164596558
+        },
+        {
+          "start": 9.0,
+          "end": 9.46,
+          "word": " or",
+          "probability": 0.9104481339454651
+        },
+        {
+          "start": 9.46,
+          "end": 9.58,
+          "word": " to",
+          "probability": 0.9722124934196472
+        },
+        {
+          "start": 9.58,
+          "end": 9.92,
+          "word": " volunteer,",
+          "probability": 0.9954909682273865
+        },
+        {
+          "start": 10.74,
+          "end": 11.06,
+          "word": " please",
+          "probability": 0.9887875914573669
+        },
+        {
+          "start": 11.06,
+          "end": 11.38,
+          "word": " visit",
+          "probability": 0.9991814494132996
+        },
+        {
+          "start": 11.38,
+          "end": 12.38,
+          "word": " Librevox",
+          "probability": 0.8590897470712662
+        },
+        {
+          "start": 12.38,
+          "end": 12.94,
+          "word": ".org.",
+          "probability": 0.9972443878650665
+        }
+      ]
+    },
+    {
+      "start": 13.82,
+      "end": 16.26,
+      "text": " This recording by Mark Bradford.",
+      "avgLogprob": -0.31515567484548535,
+      "noSpeechProbability": 0.45310521125793457,
+      "words": [
+        {
+          "start": 13.82,
+          "end": 14.64,
+          "word": " This",
+          "probability": 0.8228145837783813
+        },
+        {
+          "start": 14.64,
+          "end": 15.0,
+          "word": " recording",
+          "probability": 0.9527507424354553
+        },
+        {
+          "start": 15.0,
+          "end": 15.56,
+          "word": " by",
+          "probability": 0.7894594073295593
+        },
+        {
+          "start": 15.56,
+          "end": 15.86,
+          "word": " Mark",
+          "probability": 0.8180451393127441
+        },
+        {
+          "start": 15.86,
+          "end": 16.26,
+          "word": " Bradford.",
+          "probability": 0.9823236465454102
+        }
+      ]
+    },
+    {
+      "start": 18.46,
+      "end": 19.58,
+      "text": " A Christmas Carol",
+      "avgLogprob": -0.31515567484548535,
+      "noSpeechProbability": 0.45310521125793457,
+      "words": [
+        {
+          "start": 18.46,
+          "end": 18.88,
+          "word": " A",
+          "probability": 0.8422675132751465
+        },
+        {
+          "start": 18.88,
+          "end": 19.2,
+          "word": " Christmas",
+          "probability": 0.9580388069152832
+        },
+        {
+          "start": 19.2,
+          "end": 19.58,
+          "word": " Carol",
+          "probability": 0.8954059481620789
+        }
+      ]
+    }
+  ],
+  "networkUsed": false,
+  "gatewaySpendUsd": 0
+}

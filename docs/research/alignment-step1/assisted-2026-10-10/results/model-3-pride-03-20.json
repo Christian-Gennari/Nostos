@@ -1,0 +1,51 @@
+{
+  "sourceSha256": "d401ad6b118e84d01b8dd1a3d034fd41784feb14c50f1f7a0fc17f3263fa8e9f",
+  "extractorVersion": "nostos-book-text-v2",
+  "settings": {
+    "minimumScore": 0.85,
+    "minimumMargin": 0.12,
+    "minimumTokens": 8,
+    "maximumTokens": 24
+  },
+  "transcript": {
+    "audioSha256": "5f50ce978bc2f2fa1e043ff36883f273db028e59ac8da4c3e1ac16163f8e2810",
+    "recordedAt": "2026-10-10T15:16:28.3369386+00:00",
+    "elapsedMilliseconds": 3025.0091,
+    "result": {
+      "text": "daughters. Don\u0027t keep coughing so, Kitty, for heaven\u0027s sake! Have a little compassion on my nerves. You tear them to pieces.\u0022\n\n\u0022Kitty has no discretion in her coughs,\u0022 said her father; \u0022she times them ill.\u0022\n\n\u0022I do not cough for my own amusement,\u0022 replied Kitty fretfully. \u0022When is your next ball to be, Lizzy?\u0022\n\n\u0022To-morrow fortnight.\u0022",
+      "language": null,
+      "durationSeconds": null
+    }
+  },
+  "match": {
+    "accepted": true,
+    "reason": "matched",
+    "score": 1,
+    "runnerUpScore": 0,
+    "start": {
+      "blockOrder": 75,
+      "globalTextOffset": 31803,
+      "locator": {
+        "type": "epub",
+        "spineIndex": 1,
+        "resourceHref": "1306980130634175271_1342-h-0.htm.xhtml",
+        "cfi": null,
+        "startTextOffset": 31803,
+        "endTextOffset": 31803
+      }
+    },
+    "end": {
+      "blockOrder": 77,
+      "globalTextOffset": 31938,
+      "locator": {
+        "type": "epub",
+        "spineIndex": 1,
+        "resourceHref": "1306980130634175271_1342-h-0.htm.xhtml",
+        "cfi": null,
+        "startTextOffset": 31938,
+        "endTextOffset": 31938
+      }
+    },
+    "passage": "them ill i do not cough for my own amusement replied kitty fretfully when is your next ball to be lizzy to morrow fortnight"
+  }
+}

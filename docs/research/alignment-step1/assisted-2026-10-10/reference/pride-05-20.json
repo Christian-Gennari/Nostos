@@ -1,0 +1,467 @@
+{
+  "kind": "machine-assisted-reference",
+  "decoder": "faster-whisper 1.2.1",
+  "model": "base",
+  "weightsSha256": "d01c3014881c9c6f3133c182f3d2887eb6ca1c789a7538c5c007196857a0a6a9",
+  "audioSha256": "af6a28d41725b77cb025b4dc1f403bc46c7924ffc09642dba6688dce62e6f440",
+  "recordedAt": "2026-10-10",
+  "elapsedSeconds": 2.8520394321531057,
+  "transcript": "minutes with him in his library. He had entertained hopes of being admitted to a sight of the young ladies of whose beauty he had heard much, but he saw only the father. The ladies were somewhat more fortunate, for they had the advantage of ascertaining from an upper window that he wore a blue coat and rode a black horse. An invitation to dinner was soon afterwards.",
+  "segments": [
+    {
+      "start": 0.0,
+      "end": 4.1,
+      "text": " minutes with him in his library. He had entertained hopes of being admitted to a sight",
+      "avgLogprob": -0.13205293638677132,
+      "noSpeechProbability": 0.003654269501566887,
+      "words": [
+        {
+          "start": 0.0,
+          "end": 0.3,
+          "word": " minutes",
+          "probability": 0.9369500279426575
+        },
+        {
+          "start": 0.3,
+          "end": 0.5,
+          "word": " with",
+          "probability": 0.9645400643348694
+        },
+        {
+          "start": 0.5,
+          "end": 0.62,
+          "word": " him",
+          "probability": 0.997061550617218
+        },
+        {
+          "start": 0.62,
+          "end": 0.7,
+          "word": " in",
+          "probability": 0.9924708604812622
+        },
+        {
+          "start": 0.7,
+          "end": 0.84,
+          "word": " his",
+          "probability": 0.997256338596344
+        },
+        {
+          "start": 0.84,
+          "end": 1.1,
+          "word": " library.",
+          "probability": 0.9715918898582458
+        },
+        {
+          "start": 1.78,
+          "end": 1.92,
+          "word": " He",
+          "probability": 0.9899438619613647
+        },
+        {
+          "start": 1.92,
+          "end": 2.12,
+          "word": " had",
+          "probability": 0.9644972681999207
+        },
+        {
+          "start": 2.12,
+          "end": 2.34,
+          "word": " entertained",
+          "probability": 0.9611271023750305
+        },
+        {
+          "start": 2.34,
+          "end": 2.86,
+          "word": " hopes",
+          "probability": 0.9940410256385803
+        },
+        {
+          "start": 2.86,
+          "end": 3.06,
+          "word": " of",
+          "probability": 0.9894399046897888
+        },
+        {
+          "start": 3.06,
+          "end": 3.22,
+          "word": " being",
+          "probability": 0.9963130354881287
+        },
+        {
+          "start": 3.22,
+          "end": 3.62,
+          "word": " admitted",
+          "probability": 0.9943022727966309
+        },
+        {
+          "start": 3.62,
+          "end": 3.82,
+          "word": " to",
+          "probability": 0.9970805048942566
+        },
+        {
+          "start": 3.82,
+          "end": 3.9,
+          "word": " a",
+          "probability": 0.9562661647796631
+        },
+        {
+          "start": 3.9,
+          "end": 4.1,
+          "word": " sight",
+          "probability": 0.7465944290161133
+        }
+      ]
+    },
+    {
+      "start": 4.1,
+      "end": 9.34,
+      "text": " of the young ladies of whose beauty he had heard much, but he saw only the father. The",
+      "avgLogprob": -0.13205293638677132,
+      "noSpeechProbability": 0.003654269501566887,
+      "words": [
+        {
+          "start": 4.1,
+          "end": 4.26,
+          "word": " of",
+          "probability": 0.9963542222976685
+        },
+        {
+          "start": 4.26,
+          "end": 4.32,
+          "word": " the",
+          "probability": 0.9918479919433594
+        },
+        {
+          "start": 4.32,
+          "end": 4.5,
+          "word": " young",
+          "probability": 0.9964763522148132
+        },
+        {
+          "start": 4.5,
+          "end": 4.88,
+          "word": " ladies",
+          "probability": 0.9138422012329102
+        },
+        {
+          "start": 4.88,
+          "end": 5.08,
+          "word": " of",
+          "probability": 0.8977223038673401
+        },
+        {
+          "start": 5.08,
+          "end": 5.28,
+          "word": " whose",
+          "probability": 0.9898876547813416
+        },
+        {
+          "start": 5.28,
+          "end": 5.64,
+          "word": " beauty",
+          "probability": 0.9904600381851196
+        },
+        {
+          "start": 5.64,
+          "end": 5.88,
+          "word": " he",
+          "probability": 0.8105401992797852
+        },
+        {
+          "start": 5.88,
+          "end": 6.0,
+          "word": " had",
+          "probability": 0.9258190989494324
+        },
+        {
+          "start": 6.0,
+          "end": 6.16,
+          "word": " heard",
+          "probability": 0.8603683710098267
+        },
+        {
+          "start": 6.16,
+          "end": 6.48,
+          "word": " much,",
+          "probability": 0.9966009855270386
+        },
+        {
+          "start": 6.98,
+          "end": 7.22,
+          "word": " but",
+          "probability": 0.994657039642334
+        },
+        {
+          "start": 7.22,
+          "end": 7.36,
+          "word": " he",
+          "probability": 0.9923602938652039
+        },
+        {
+          "start": 7.36,
+          "end": 7.54,
+          "word": " saw",
+          "probability": 0.9834233522415161
+        },
+        {
+          "start": 7.54,
+          "end": 7.92,
+          "word": " only",
+          "probability": 0.9940847754478455
+        },
+        {
+          "start": 7.92,
+          "end": 8.1,
+          "word": " the",
+          "probability": 0.9951533079147339
+        },
+        {
+          "start": 8.1,
+          "end": 8.4,
+          "word": " father.",
+          "probability": 0.8248683214187622
+        },
+        {
+          "start": 9.16,
+          "end": 9.34,
+          "word": " The",
+          "probability": 0.9909160733222961
+        }
+      ]
+    },
+    {
+      "start": 9.34,
+      "end": 13.08,
+      "text": " ladies were somewhat more fortunate, for they had the advantage of ascertaining from",
+      "avgLogprob": -0.13205293638677132,
+      "noSpeechProbability": 0.003654269501566887,
+      "words": [
+        {
+          "start": 9.34,
+          "end": 9.62,
+          "word": " ladies",
+          "probability": 0.9938160181045532
+        },
+        {
+          "start": 9.62,
+          "end": 9.84,
+          "word": " were",
+          "probability": 0.9951906204223633
+        },
+        {
+          "start": 9.84,
+          "end": 10.2,
+          "word": " somewhat",
+          "probability": 0.9969220757484436
+        },
+        {
+          "start": 10.2,
+          "end": 10.4,
+          "word": " more",
+          "probability": 0.9869084358215332
+        },
+        {
+          "start": 10.4,
+          "end": 10.8,
+          "word": " fortunate,",
+          "probability": 0.9991476535797119
+        },
+        {
+          "start": 11.2,
+          "end": 11.36,
+          "word": " for",
+          "probability": 0.9840072989463806
+        },
+        {
+          "start": 11.36,
+          "end": 11.52,
+          "word": " they",
+          "probability": 0.9963542222976685
+        },
+        {
+          "start": 11.52,
+          "end": 11.7,
+          "word": " had",
+          "probability": 0.9981886744499207
+        },
+        {
+          "start": 11.7,
+          "end": 11.84,
+          "word": " the",
+          "probability": 0.9912506341934204
+        },
+        {
+          "start": 11.84,
+          "end": 12.2,
+          "word": " advantage",
+          "probability": 0.9984169006347656
+        },
+        {
+          "start": 12.2,
+          "end": 12.4,
+          "word": " of",
+          "probability": 0.9995548129081726
+        },
+        {
+          "start": 12.4,
+          "end": 12.98,
+          "word": " ascertaining",
+          "probability": 0.991314689318339
+        },
+        {
+          "start": 12.98,
+          "end": 13.08,
+          "word": " from",
+          "probability": 0.9936361312866211
+        }
+      ]
+    },
+    {
+      "start": 13.08,
+      "end": 19.12,
+      "text": " an upper window that he wore a blue coat and rode a black horse. An invitation to dinner",
+      "avgLogprob": -0.13205293638677132,
+      "noSpeechProbability": 0.003654269501566887,
+      "words": [
+        {
+          "start": 13.08,
+          "end": 13.22,
+          "word": " an",
+          "probability": 0.9576435685157776
+        },
+        {
+          "start": 13.22,
+          "end": 13.38,
+          "word": " upper",
+          "probability": 0.9732280969619751
+        },
+        {
+          "start": 13.38,
+          "end": 13.74,
+          "word": " window",
+          "probability": 0.9951773881912231
+        },
+        {
+          "start": 13.74,
+          "end": 14.24,
+          "word": " that",
+          "probability": 0.8596738576889038
+        },
+        {
+          "start": 14.24,
+          "end": 14.4,
+          "word": " he",
+          "probability": 0.9968405961990356
+        },
+        {
+          "start": 14.4,
+          "end": 14.58,
+          "word": " wore",
+          "probability": 0.9995633959770203
+        },
+        {
+          "start": 14.58,
+          "end": 14.68,
+          "word": " a",
+          "probability": 0.9969416260719299
+        },
+        {
+          "start": 14.68,
+          "end": 14.88,
+          "word": " blue",
+          "probability": 0.9966475367546082
+        },
+        {
+          "start": 14.88,
+          "end": 15.18,
+          "word": " coat",
+          "probability": 0.9378138780593872
+        },
+        {
+          "start": 15.18,
+          "end": 15.7,
+          "word": " and",
+          "probability": 0.8201645016670227
+        },
+        {
+          "start": 15.7,
+          "end": 15.86,
+          "word": " rode",
+          "probability": 0.9114994406700134
+        },
+        {
+          "start": 15.86,
+          "end": 15.98,
+          "word": " a",
+          "probability": 0.9977093935012817
+        },
+        {
+          "start": 15.98,
+          "end": 16.18,
+          "word": " black",
+          "probability": 0.9929278492927551
+        },
+        {
+          "start": 16.18,
+          "end": 16.54,
+          "word": " horse.",
+          "probability": 0.9813450574874878
+        },
+        {
+          "start": 17.92,
+          "end": 18.26,
+          "word": " An",
+          "probability": 0.9834017753601074
+        },
+        {
+          "start": 18.26,
+          "end": 18.58,
+          "word": " invitation",
+          "probability": 0.98855060338974
+        },
+        {
+          "start": 18.58,
+          "end": 18.9,
+          "word": " to",
+          "probability": 0.9921016097068787
+        },
+        {
+          "start": 18.9,
+          "end": 19.12,
+          "word": " dinner",
+          "probability": 0.9750311970710754
+        }
+      ]
+    },
+    {
+      "start": 19.12,
+      "end": 19.84,
+      "text": " was soon afterwards.",
+      "avgLogprob": -0.7082606894629342,
+      "noSpeechProbability": 0.17929379642009735,
+      "words": [
+        {
+          "start": 19.12,
+          "end": 19.32,
+          "word": " was",
+          "probability": 0.25316938757896423
+        },
+        {
+          "start": 19.32,
+          "end": 19.52,
+          "word": " soon",
+          "probability": 0.9704223275184631
+        },
+        {
+          "start": 19.52,
+          "end": 19.84,
+          "word": " afterwards.",
+          "probability": 0.7450388073921204
+        }
+      ]
+    }
+  ],
+  "networkUsed": false,
+  "gatewaySpendUsd": 0
+}

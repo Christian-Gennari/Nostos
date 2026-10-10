@@ -39,6 +39,11 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
+      - name: Test offline alignment experiment
+        run: |
+          dotnet test tools/Nostos.Alignment.Spike.Tests/Nostos.Alignment.Spike.Tests.csproj --configuration Release
+          python3 -m unittest discover -s tools/Nostos.Alignment.Spike.Tests -p 'test_*.py' -v
+
       - name: Restore
         run: dotnet restore Nostos.sln
 

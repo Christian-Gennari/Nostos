@@ -1,0 +1,51 @@
+{
+  "sourceSha256": "d401ad6b118e84d01b8dd1a3d034fd41784feb14c50f1f7a0fc17f3263fa8e9f",
+  "extractorVersion": "nostos-book-text-v2",
+  "settings": {
+    "minimumScore": 0.85,
+    "minimumMargin": 0.12,
+    "minimumTokens": 8,
+    "maximumTokens": 24
+  },
+  "transcript": {
+    "audioSha256": "e1d665a4a7a77eeeb0be3a71579e4cccf48576e1f21b8959b6868d39b8b90402",
+    "recordedAt": "2026-10-10T15:15:19.5257375+00:00",
+    "elapsedMilliseconds": 1663.5583,
+    "result": {
+      "text": "It will be impossible for us to visit him if you do not. You are over-scrupulous, surely.",
+      "language": null,
+      "durationSeconds": null
+    }
+  },
+  "match": {
+    "accepted": true,
+    "reason": "matched",
+    "score": 1,
+    "runnerUpScore": 0,
+    "start": {
+      "blockOrder": 53,
+      "globalTextOffset": 28673,
+      "locator": {
+        "type": "epub",
+        "spineIndex": 1,
+        "resourceHref": "1306980130634175271_1342-h-0.htm.xhtml",
+        "cfi": null,
+        "startTextOffset": 28673,
+        "endTextOffset": 28673
+      }
+    },
+    "end": {
+      "blockOrder": 54,
+      "globalTextOffset": 28764,
+      "locator": {
+        "type": "epub",
+        "spineIndex": 1,
+        "resourceHref": "1306980130634175271_1342-h-0.htm.xhtml",
+        "cfi": null,
+        "startTextOffset": 28764,
+        "endTextOffset": 28764
+      }
+    },
+    "passage": "it will be impossible for us to visit him if you do not you are over scrupulous surely"
+  }
+}

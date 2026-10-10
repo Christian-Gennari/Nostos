@@ -1,0 +1,218 @@
+{
+  "kind": "machine-assisted-reference",
+  "decoder": "faster-whisper 1.2.1",
+  "model": "base",
+  "weightsSha256": "d01c3014881c9c6f3133c182f3d2887eb6ca1c789a7538c5c007196857a0a6a9",
+  "audioSha256": "71302e6e9dbe23473e3a94ce24a04397b8fbf179153516c635053a3b75bbff2b",
+  "recordedAt": "2026-10-10",
+  "elapsedSeconds": 1.5954815219156444,
+  "transcript": "range of subjects. Without venturing for scrooge quite as heartily as this, I don't mind calling on you to believe that he was ready for a good broad field of strain.",
+  "segments": [
+    {
+      "start": 0.0,
+      "end": 6.52,
+      "text": " range of subjects. Without venturing for scrooge quite as heartily as this, I don't mind calling",
+      "avgLogprob": -0.28936318821377227,
+      "noSpeechProbability": 0.0496831052005291,
+      "words": [
+        {
+          "start": 0.0,
+          "end": 0.28,
+          "word": " range",
+          "probability": 0.00796961598098278
+        },
+        {
+          "start": 0.28,
+          "end": 0.44,
+          "word": " of",
+          "probability": 0.9949465394020081
+        },
+        {
+          "start": 0.44,
+          "end": 0.94,
+          "word": " subjects.",
+          "probability": 0.9429840445518494
+        },
+        {
+          "start": 2.16,
+          "end": 2.66,
+          "word": " Without",
+          "probability": 0.7928568124771118
+        },
+        {
+          "start": 2.66,
+          "end": 3.18,
+          "word": " venturing",
+          "probability": 0.9756318926811218
+        },
+        {
+          "start": 3.18,
+          "end": 3.44,
+          "word": " for",
+          "probability": 0.9870647192001343
+        },
+        {
+          "start": 3.44,
+          "end": 3.84,
+          "word": " scrooge",
+          "probability": 0.7337019518017769
+        },
+        {
+          "start": 3.84,
+          "end": 4.16,
+          "word": " quite",
+          "probability": 0.9010008573532104
+        },
+        {
+          "start": 4.16,
+          "end": 4.38,
+          "word": " as",
+          "probability": 0.9985755681991577
+        },
+        {
+          "start": 4.38,
+          "end": 4.7,
+          "word": " heartily",
+          "probability": 0.6320504397153854
+        },
+        {
+          "start": 4.7,
+          "end": 4.94,
+          "word": " as",
+          "probability": 0.9826111197471619
+        },
+        {
+          "start": 4.94,
+          "end": 5.12,
+          "word": " this,",
+          "probability": 0.9917218089103699
+        },
+        {
+          "start": 5.66,
+          "end": 5.76,
+          "word": " I",
+          "probability": 0.9899444580078125
+        },
+        {
+          "start": 5.76,
+          "end": 6.02,
+          "word": " don't",
+          "probability": 0.9927975833415985
+        },
+        {
+          "start": 6.02,
+          "end": 6.16,
+          "word": " mind",
+          "probability": 0.9946958422660828
+        },
+        {
+          "start": 6.16,
+          "end": 6.52,
+          "word": " calling",
+          "probability": 0.9900370836257935
+        }
+      ]
+    },
+    {
+      "start": 6.52,
+      "end": 9.9,
+      "text": " on you to believe that he was ready for a good broad field of strain.",
+      "avgLogprob": -0.28936318821377227,
+      "noSpeechProbability": 0.0496831052005291,
+      "words": [
+        {
+          "start": 6.52,
+          "end": 6.8,
+          "word": " on",
+          "probability": 0.9959948062896729
+        },
+        {
+          "start": 6.8,
+          "end": 6.98,
+          "word": " you",
+          "probability": 0.997358500957489
+        },
+        {
+          "start": 6.98,
+          "end": 7.12,
+          "word": " to",
+          "probability": 0.9408408999443054
+        },
+        {
+          "start": 7.12,
+          "end": 7.38,
+          "word": " believe",
+          "probability": 0.9961811304092407
+        },
+        {
+          "start": 7.38,
+          "end": 7.62,
+          "word": " that",
+          "probability": 0.9233474731445312
+        },
+        {
+          "start": 7.62,
+          "end": 7.98,
+          "word": " he",
+          "probability": 0.9792667031288147
+        },
+        {
+          "start": 7.98,
+          "end": 8.14,
+          "word": " was",
+          "probability": 0.9976567029953003
+        },
+        {
+          "start": 8.14,
+          "end": 8.38,
+          "word": " ready",
+          "probability": 0.9975451827049255
+        },
+        {
+          "start": 8.38,
+          "end": 8.58,
+          "word": " for",
+          "probability": 0.9961497783660889
+        },
+        {
+          "start": 8.58,
+          "end": 8.7,
+          "word": " a",
+          "probability": 0.9773610830307007
+        },
+        {
+          "start": 8.7,
+          "end": 8.88,
+          "word": " good",
+          "probability": 0.9840171933174133
+        },
+        {
+          "start": 8.88,
+          "end": 9.18,
+          "word": " broad",
+          "probability": 0.452604204416275
+        },
+        {
+          "start": 9.18,
+          "end": 9.4,
+          "word": " field",
+          "probability": 0.7271677255630493
+        },
+        {
+          "start": 9.4,
+          "end": 9.66,
+          "word": " of",
+          "probability": 0.9963409304618835
+        },
+        {
+          "start": 9.66,
+          "end": 9.9,
+          "word": " strain.",
+          "probability": 0.7317595481872559
+        }
+      ]
+    }
+  ],
+  "networkUsed": false,
+  "gatewaySpendUsd": 0
+}

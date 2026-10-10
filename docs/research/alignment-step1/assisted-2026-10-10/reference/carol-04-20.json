@@ -1,0 +1,431 @@
+{
+  "kind": "machine-assisted-reference",
+  "decoder": "faster-whisper 1.2.1",
+  "model": "base",
+  "weightsSha256": "d01c3014881c9c6f3133c182f3d2887eb6ca1c789a7538c5c007196857a0a6a9",
+  "audioSha256": "b3911cf40229ce71dfce3085604dfed48695cc5147faf586c4a2ef61066068cf",
+  "recordedAt": "2026-10-10",
+  "elapsedSeconds": 2.0846888008527458,
+  "transcript": "The moment Scrooge's hand was on the lock, a strange voice called him by his name and bade him enter, he obeyed. It was his own room, there was no doubt about that, but it had undergone a surprising transformation. The walls and ceiling were so hung with living green that it looked like a perfect grove, from every part of which bright gleaming berries.",
+  "segments": [
+    {
+      "start": 0.0,
+      "end": 6.16,
+      "text": " The moment Scrooge's hand was on the lock, a strange voice called him by his name and bade him enter, he obeyed.",
+      "avgLogprob": -0.20046903444140146,
+      "noSpeechProbability": 0.02242765948176384,
+      "words": [
+        {
+          "start": 0.0,
+          "end": 0.26,
+          "word": " The",
+          "probability": 0.8741230964660645
+        },
+        {
+          "start": 0.26,
+          "end": 0.5,
+          "word": " moment",
+          "probability": 0.9652610421180725
+        },
+        {
+          "start": 0.5,
+          "end": 1.02,
+          "word": " Scrooge's",
+          "probability": 0.8867406845092773
+        },
+        {
+          "start": 1.02,
+          "end": 1.22,
+          "word": " hand",
+          "probability": 0.9919997453689575
+        },
+        {
+          "start": 1.22,
+          "end": 1.42,
+          "word": " was",
+          "probability": 0.9979704022407532
+        },
+        {
+          "start": 1.42,
+          "end": 1.54,
+          "word": " on",
+          "probability": 0.9986621141433716
+        },
+        {
+          "start": 1.54,
+          "end": 1.66,
+          "word": " the",
+          "probability": 0.9972326159477234
+        },
+        {
+          "start": 1.66,
+          "end": 1.86,
+          "word": " lock,",
+          "probability": 0.9718416929244995
+        },
+        {
+          "start": 2.2,
+          "end": 2.3,
+          "word": " a",
+          "probability": 0.9901549816131592
+        },
+        {
+          "start": 2.3,
+          "end": 2.6,
+          "word": " strange",
+          "probability": 0.9965918064117432
+        },
+        {
+          "start": 2.6,
+          "end": 2.96,
+          "word": " voice",
+          "probability": 0.9960313439369202
+        },
+        {
+          "start": 2.96,
+          "end": 3.24,
+          "word": " called",
+          "probability": 0.9423850178718567
+        },
+        {
+          "start": 3.24,
+          "end": 3.44,
+          "word": " him",
+          "probability": 0.9795672297477722
+        },
+        {
+          "start": 3.44,
+          "end": 3.56,
+          "word": " by",
+          "probability": 0.9941866397857666
+        },
+        {
+          "start": 3.56,
+          "end": 3.78,
+          "word": " his",
+          "probability": 0.9944325089454651
+        },
+        {
+          "start": 3.78,
+          "end": 4.02,
+          "word": " name",
+          "probability": 0.9979004859924316
+        },
+        {
+          "start": 4.02,
+          "end": 4.28,
+          "word": " and",
+          "probability": 0.44066113233566284
+        },
+        {
+          "start": 4.28,
+          "end": 4.54,
+          "word": " bade",
+          "probability": 0.6619656980037689
+        },
+        {
+          "start": 4.54,
+          "end": 4.68,
+          "word": " him",
+          "probability": 0.9828883409500122
+        },
+        {
+          "start": 4.68,
+          "end": 4.96,
+          "word": " enter,",
+          "probability": 0.9167324304580688
+        },
+        {
+          "start": 5.54,
+          "end": 5.68,
+          "word": " he",
+          "probability": 0.4490285813808441
+        },
+        {
+          "start": 5.68,
+          "end": 6.16,
+          "word": " obeyed.",
+          "probability": 0.9386891722679138
+        }
+      ]
+    },
+    {
+      "start": 6.88,
+      "end": 12.4,
+      "text": " It was his own room, there was no doubt about that, but it had undergone a surprising transformation.",
+      "avgLogprob": -0.20046903444140146,
+      "noSpeechProbability": 0.02242765948176384,
+      "words": [
+        {
+          "start": 6.88,
+          "end": 7.12,
+          "word": " It",
+          "probability": 0.925952672958374
+        },
+        {
+          "start": 7.12,
+          "end": 7.26,
+          "word": " was",
+          "probability": 0.9981301426887512
+        },
+        {
+          "start": 7.26,
+          "end": 7.48,
+          "word": " his",
+          "probability": 0.9882992506027222
+        },
+        {
+          "start": 7.48,
+          "end": 7.7,
+          "word": " own",
+          "probability": 0.9968622922897339
+        },
+        {
+          "start": 7.7,
+          "end": 7.96,
+          "word": " room,",
+          "probability": 0.9975162744522095
+        },
+        {
+          "start": 8.26,
+          "end": 8.36,
+          "word": " there",
+          "probability": 0.9872829914093018
+        },
+        {
+          "start": 8.36,
+          "end": 8.5,
+          "word": " was",
+          "probability": 0.9977487921714783
+        },
+        {
+          "start": 8.5,
+          "end": 8.68,
+          "word": " no",
+          "probability": 0.9991043210029602
+        },
+        {
+          "start": 8.68,
+          "end": 8.86,
+          "word": " doubt",
+          "probability": 0.999631404876709
+        },
+        {
+          "start": 8.86,
+          "end": 9.18,
+          "word": " about",
+          "probability": 0.997789740562439
+        },
+        {
+          "start": 9.18,
+          "end": 9.48,
+          "word": " that,",
+          "probability": 0.9967334270477295
+        },
+        {
+          "start": 10.18,
+          "end": 10.34,
+          "word": " but",
+          "probability": 0.9916292428970337
+        },
+        {
+          "start": 10.34,
+          "end": 10.42,
+          "word": " it",
+          "probability": 0.9867391586303711
+        },
+        {
+          "start": 10.42,
+          "end": 10.54,
+          "word": " had",
+          "probability": 0.9971970319747925
+        },
+        {
+          "start": 10.54,
+          "end": 11.0,
+          "word": " undergone",
+          "probability": 0.9911478161811829
+        },
+        {
+          "start": 11.0,
+          "end": 11.32,
+          "word": " a",
+          "probability": 0.9802156090736389
+        },
+        {
+          "start": 11.32,
+          "end": 11.72,
+          "word": " surprising",
+          "probability": 0.9962944388389587
+        },
+        {
+          "start": 11.72,
+          "end": 12.4,
+          "word": " transformation.",
+          "probability": 0.9972237348556519
+        }
+      ]
+    },
+    {
+      "start": 13.32,
+      "end": 19.84,
+      "text": " The walls and ceiling were so hung with living green that it looked like a perfect grove, from every part of which bright gleaming berries.",
+      "avgLogprob": -0.20046903444140146,
+      "noSpeechProbability": 0.02242765948176384,
+      "words": [
+        {
+          "start": 13.32,
+          "end": 13.5,
+          "word": " The",
+          "probability": 0.9951796531677246
+        },
+        {
+          "start": 13.5,
+          "end": 13.7,
+          "word": " walls",
+          "probability": 0.9693836569786072
+        },
+        {
+          "start": 13.7,
+          "end": 13.9,
+          "word": " and",
+          "probability": 0.9694628715515137
+        },
+        {
+          "start": 13.9,
+          "end": 14.18,
+          "word": " ceiling",
+          "probability": 0.8570205569267273
+        },
+        {
+          "start": 14.18,
+          "end": 14.4,
+          "word": " were",
+          "probability": 0.9967398047447205
+        },
+        {
+          "start": 14.4,
+          "end": 14.58,
+          "word": " so",
+          "probability": 0.9986532926559448
+        },
+        {
+          "start": 14.58,
+          "end": 14.82,
+          "word": " hung",
+          "probability": 0.991929292678833
+        },
+        {
+          "start": 14.82,
+          "end": 14.98,
+          "word": " with",
+          "probability": 0.991200864315033
+        },
+        {
+          "start": 14.98,
+          "end": 15.22,
+          "word": " living",
+          "probability": 0.9788364768028259
+        },
+        {
+          "start": 15.22,
+          "end": 15.52,
+          "word": " green",
+          "probability": 0.9891384243965149
+        },
+        {
+          "start": 15.52,
+          "end": 15.72,
+          "word": " that",
+          "probability": 0.9386191964149475
+        },
+        {
+          "start": 15.72,
+          "end": 15.82,
+          "word": " it",
+          "probability": 0.9929225444793701
+        },
+        {
+          "start": 15.82,
+          "end": 15.98,
+          "word": " looked",
+          "probability": 0.9954517483711243
+        },
+        {
+          "start": 15.98,
+          "end": 16.22,
+          "word": " like",
+          "probability": 0.9959447979927063
+        },
+        {
+          "start": 16.22,
+          "end": 16.32,
+          "word": " a",
+          "probability": 0.9935252666473389
+        },
+        {
+          "start": 16.32,
+          "end": 16.62,
+          "word": " perfect",
+          "probability": 0.9963096976280212
+        },
+        {
+          "start": 16.62,
+          "end": 17.32,
+          "word": " grove,",
+          "probability": 0.9725175499916077
+        },
+        {
+          "start": 17.58,
+          "end": 17.84,
+          "word": " from",
+          "probability": 0.9918531775474548
+        },
+        {
+          "start": 17.84,
+          "end": 18.1,
+          "word": " every",
+          "probability": 0.9966599941253662
+        },
+        {
+          "start": 18.1,
+          "end": 18.32,
+          "word": " part",
+          "probability": 0.998297393321991
+        },
+        {
+          "start": 18.32,
+          "end": 18.5,
+          "word": " of",
+          "probability": 0.9857476353645325
+        },
+        {
+          "start": 18.5,
+          "end": 18.74,
+          "word": " which",
+          "probability": 0.993450403213501
+        },
+        {
+          "start": 18.74,
+          "end": 19.08,
+          "word": " bright",
+          "probability": 0.8439502716064453
+        },
+        {
+          "start": 19.08,
+          "end": 19.56,
+          "word": " gleaming",
+          "probability": 0.9218760430812836
+        },
+        {
+          "start": 19.56,
+          "end": 19.84,
+          "word": " berries.",
+          "probability": 0.9050479531288147
+        }
+      ]
+    }
+  ],
+  "networkUsed": false,
+  "gatewaySpendUsd": 0
+}

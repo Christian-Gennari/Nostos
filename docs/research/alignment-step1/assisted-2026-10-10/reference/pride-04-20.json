@@ -1,0 +1,458 @@
+{
+  "kind": "machine-assisted-reference",
+  "decoder": "faster-whisper 1.2.1",
+  "model": "base",
+  "weightsSha256": "d01c3014881c9c6f3133c182f3d2887eb6ca1c789a7538c5c007196857a0a6a9",
+  "audioSha256": "4f25cbd7ed6eaae6e59dca1ffadaf3243ad8f89673518e99b18a2bf81c5bbdea",
+  "recordedAt": "2026-10-10",
+  "elapsedSeconds": 2.0821995679289103,
+  "transcript": "While Mary is adjusting her ideas, he continued, let us return to Mr. Bingley. I am sick of Mr. Bingley, cried his wife. I am sorry to hear that, but why did you not tell me that before? If I had known as much this morning, I certainly would not have called on him. It is very unlucky, but does I have actually paid the visit we cannot\u2014",
+  "segments": [
+    {
+      "start": 0.0,
+      "end": 4.52,
+      "text": " While Mary is adjusting her ideas, he continued, let us return to Mr. Bingley.",
+      "avgLogprob": -0.19155945709866026,
+      "noSpeechProbability": 0.019601790234446526,
+      "words": [
+        {
+          "start": 0.0,
+          "end": 0.58,
+          "word": " While",
+          "probability": 0.3587105870246887
+        },
+        {
+          "start": 0.58,
+          "end": 1.0,
+          "word": " Mary",
+          "probability": 0.9745819568634033
+        },
+        {
+          "start": 1.0,
+          "end": 1.28,
+          "word": " is",
+          "probability": 0.9951658248901367
+        },
+        {
+          "start": 1.28,
+          "end": 1.62,
+          "word": " adjusting",
+          "probability": 0.991472601890564
+        },
+        {
+          "start": 1.62,
+          "end": 1.86,
+          "word": " her",
+          "probability": 0.9987061023712158
+        },
+        {
+          "start": 1.86,
+          "end": 2.24,
+          "word": " ideas,",
+          "probability": 0.9909175038337708
+        },
+        {
+          "start": 2.44,
+          "end": 2.54,
+          "word": " he",
+          "probability": 0.9201489686965942
+        },
+        {
+          "start": 2.54,
+          "end": 2.84,
+          "word": " continued,",
+          "probability": 0.9836369156837463
+        },
+        {
+          "start": 3.24,
+          "end": 3.36,
+          "word": " let",
+          "probability": 0.2908058762550354
+        },
+        {
+          "start": 3.36,
+          "end": 3.52,
+          "word": " us",
+          "probability": 0.9954276084899902
+        },
+        {
+          "start": 3.52,
+          "end": 3.8,
+          "word": " return",
+          "probability": 0.9952344298362732
+        },
+        {
+          "start": 3.8,
+          "end": 3.98,
+          "word": " to",
+          "probability": 0.9943932294845581
+        },
+        {
+          "start": 3.98,
+          "end": 4.18,
+          "word": " Mr.",
+          "probability": 0.9844402074813843
+        },
+        {
+          "start": 4.28,
+          "end": 4.52,
+          "word": " Bingley.",
+          "probability": 0.9610747694969177
+        }
+      ]
+    },
+    {
+      "start": 5.06,
+      "end": 10.62,
+      "text": " I am sick of Mr. Bingley, cried his wife. I am sorry to hear that, but why did you not",
+      "avgLogprob": -0.19155945709866026,
+      "noSpeechProbability": 0.019601790234446526,
+      "words": [
+        {
+          "start": 5.06,
+          "end": 5.32,
+          "word": " I",
+          "probability": 0.0996469035744667
+        },
+        {
+          "start": 5.32,
+          "end": 5.48,
+          "word": " am",
+          "probability": 0.9667739868164062
+        },
+        {
+          "start": 5.48,
+          "end": 5.78,
+          "word": " sick",
+          "probability": 0.9001830816268921
+        },
+        {
+          "start": 5.78,
+          "end": 6.0,
+          "word": " of",
+          "probability": 0.9900256395339966
+        },
+        {
+          "start": 6.0,
+          "end": 6.18,
+          "word": " Mr.",
+          "probability": 0.9955774545669556
+        },
+        {
+          "start": 6.3,
+          "end": 6.6,
+          "word": " Bingley,",
+          "probability": 0.9909097254276276
+        },
+        {
+          "start": 6.88,
+          "end": 7.04,
+          "word": " cried",
+          "probability": 0.7228753566741943
+        },
+        {
+          "start": 7.04,
+          "end": 7.28,
+          "word": " his",
+          "probability": 0.9929733276367188
+        },
+        {
+          "start": 7.28,
+          "end": 7.46,
+          "word": " wife.",
+          "probability": 0.9981874823570251
+        },
+        {
+          "start": 8.12,
+          "end": 8.28,
+          "word": " I",
+          "probability": 0.9741868376731873
+        },
+        {
+          "start": 8.28,
+          "end": 8.38,
+          "word": " am",
+          "probability": 0.8605942726135254
+        },
+        {
+          "start": 8.38,
+          "end": 8.6,
+          "word": " sorry",
+          "probability": 0.9902014136314392
+        },
+        {
+          "start": 8.6,
+          "end": 8.82,
+          "word": " to",
+          "probability": 0.9949278831481934
+        },
+        {
+          "start": 8.82,
+          "end": 8.98,
+          "word": " hear",
+          "probability": 0.9964560866355896
+        },
+        {
+          "start": 8.98,
+          "end": 9.24,
+          "word": " that,",
+          "probability": 0.9977320432662964
+        },
+        {
+          "start": 9.74,
+          "end": 9.96,
+          "word": " but",
+          "probability": 0.9951647520065308
+        },
+        {
+          "start": 9.96,
+          "end": 10.2,
+          "word": " why",
+          "probability": 0.9933344125747681
+        },
+        {
+          "start": 10.2,
+          "end": 10.34,
+          "word": " did",
+          "probability": 0.9869908690452576
+        },
+        {
+          "start": 10.34,
+          "end": 10.46,
+          "word": " you",
+          "probability": 0.9887657761573792
+        },
+        {
+          "start": 10.46,
+          "end": 10.62,
+          "word": " not",
+          "probability": 0.9974374771118164
+        }
+      ]
+    },
+    {
+      "start": 10.62,
+      "end": 15.34,
+      "text": " tell me that before? If I had known as much this morning, I certainly would not have called",
+      "avgLogprob": -0.19155945709866026,
+      "noSpeechProbability": 0.019601790234446526,
+      "words": [
+        {
+          "start": 10.62,
+          "end": 11.0,
+          "word": " tell",
+          "probability": 0.9981605410575867
+        },
+        {
+          "start": 11.0,
+          "end": 11.16,
+          "word": " me",
+          "probability": 0.9753575921058655
+        },
+        {
+          "start": 11.16,
+          "end": 11.34,
+          "word": " that",
+          "probability": 0.9943934679031372
+        },
+        {
+          "start": 11.34,
+          "end": 11.76,
+          "word": " before?",
+          "probability": 0.9945449829101562
+        },
+        {
+          "start": 12.38,
+          "end": 12.5,
+          "word": " If",
+          "probability": 0.986066997051239
+        },
+        {
+          "start": 12.5,
+          "end": 12.66,
+          "word": " I",
+          "probability": 0.9977033734321594
+        },
+        {
+          "start": 12.66,
+          "end": 12.82,
+          "word": " had",
+          "probability": 0.9968535304069519
+        },
+        {
+          "start": 12.82,
+          "end": 13.08,
+          "word": " known",
+          "probability": 0.9971079230308533
+        },
+        {
+          "start": 13.08,
+          "end": 13.32,
+          "word": " as",
+          "probability": 0.9687783122062683
+        },
+        {
+          "start": 13.32,
+          "end": 13.54,
+          "word": " much",
+          "probability": 0.9985950589179993
+        },
+        {
+          "start": 13.54,
+          "end": 13.76,
+          "word": " this",
+          "probability": 0.9964635968208313
+        },
+        {
+          "start": 13.76,
+          "end": 14.1,
+          "word": " morning,",
+          "probability": 0.9991278052330017
+        },
+        {
+          "start": 14.2,
+          "end": 14.3,
+          "word": " I",
+          "probability": 0.997897744178772
+        },
+        {
+          "start": 14.3,
+          "end": 14.74,
+          "word": " certainly",
+          "probability": 0.9884185194969177
+        },
+        {
+          "start": 14.74,
+          "end": 14.92,
+          "word": " would",
+          "probability": 0.9952844977378845
+        },
+        {
+          "start": 14.92,
+          "end": 15.04,
+          "word": " not",
+          "probability": 0.987458348274231
+        },
+        {
+          "start": 15.04,
+          "end": 15.2,
+          "word": " have",
+          "probability": 0.9946607947349548
+        },
+        {
+          "start": 15.2,
+          "end": 15.34,
+          "word": " called",
+          "probability": 0.9960404634475708
+        }
+      ]
+    },
+    {
+      "start": 15.34,
+      "end": 19.98,
+      "text": " on him. It is very unlucky, but does I have actually paid the visit we cannot\u2014",
+      "avgLogprob": -0.19155945709866026,
+      "noSpeechProbability": 0.019601790234446526,
+      "words": [
+        {
+          "start": 15.34,
+          "end": 15.56,
+          "word": " on",
+          "probability": 0.9974914789199829
+        },
+        {
+          "start": 15.56,
+          "end": 15.74,
+          "word": " him.",
+          "probability": 0.9981912970542908
+        },
+        {
+          "start": 16.26,
+          "end": 16.4,
+          "word": " It",
+          "probability": 0.8519704341888428
+        },
+        {
+          "start": 16.4,
+          "end": 16.5,
+          "word": " is",
+          "probability": 0.9925948977470398
+        },
+        {
+          "start": 16.5,
+          "end": 16.7,
+          "word": " very",
+          "probability": 0.997940719127655
+        },
+        {
+          "start": 16.7,
+          "end": 17.16,
+          "word": " unlucky,",
+          "probability": 0.9849036931991577
+        },
+        {
+          "start": 17.72,
+          "end": 17.92,
+          "word": " but",
+          "probability": 0.9947829842567444
+        },
+        {
+          "start": 17.92,
+          "end": 18.04,
+          "word": " does",
+          "probability": 0.8148956298828125
+        },
+        {
+          "start": 18.04,
+          "end": 18.24,
+          "word": " I",
+          "probability": 0.9912987351417542
+        },
+        {
+          "start": 18.24,
+          "end": 18.4,
+          "word": " have",
+          "probability": 0.988315999507904
+        },
+        {
+          "start": 18.4,
+          "end": 18.7,
+          "word": " actually",
+          "probability": 0.9781835675239563
+        },
+        {
+          "start": 18.7,
+          "end": 19.02,
+          "word": " paid",
+          "probability": 0.9955924153327942
+        },
+        {
+          "start": 19.02,
+          "end": 19.24,
+          "word": " the",
+          "probability": 0.9795589447021484
+        },
+        {
+          "start": 19.24,
+          "end": 19.5,
+          "word": " visit",
+          "probability": 0.9945278763771057
+        },
+        {
+          "start": 19.5,
+          "end": 19.68,
+          "word": " we",
+          "probability": 0.36757856607437134
+        },
+        {
+          "start": 19.68,
+          "end": 19.98,
+          "word": " cannot\u2014",
+          "probability": 0.5526683032512665
+        }
+      ]
+    }
+  ],
+  "networkUsed": false,
+  "gatewaySpendUsd": 0
+}

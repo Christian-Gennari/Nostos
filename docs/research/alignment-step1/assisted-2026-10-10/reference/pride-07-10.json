@@ -1,0 +1,148 @@
+{
+  "kind": "machine-assisted-reference",
+  "decoder": "faster-whisper 1.2.1",
+  "weightsSha256": "d01c3014881c9c6f3133c182f3d2887eb6ca1c789a7538c5c007196857a0a6a9",
+  "audioSha256": "3346942951348258b87a8c96aa36892c47971fbaca238aadd2c49e38ef5d9a3e",
+  "recordedAt": "2026-10-10T14:47:01.015444+00:00",
+  "elapsedSeconds": 3.922213004902005,
+  "transcript": "Today's reading, Pride and Prejudice, by Jane Austen, chapters 1 to 3, read by Chris Corvans. Chapter 1",
+  "segments": [
+    {
+      "start": 0.8,
+      "end": 7.06,
+      "text": " Today's reading, Pride and Prejudice, by Jane Austen, chapters 1 to 3, read by Chris",
+      "avgLogprob": -0.4471188916100396,
+      "noSpeechProbability": 0.27024590969085693,
+      "words": [
+        {
+          "start": 0.8,
+          "end": 1.36,
+          "word": " Today's",
+          "probability": 0.8319359421730042
+        },
+        {
+          "start": 1.36,
+          "end": 1.66,
+          "word": " reading,",
+          "probability": 0.9310670495033264
+        },
+        {
+          "start": 1.94,
+          "end": 2.12,
+          "word": " Pride",
+          "probability": 0.34595537185668945
+        },
+        {
+          "start": 2.12,
+          "end": 2.32,
+          "word": " and",
+          "probability": 0.8806023001670837
+        },
+        {
+          "start": 2.32,
+          "end": 2.84,
+          "word": " Prejudice,",
+          "probability": 0.7785418132940928
+        },
+        {
+          "start": 3.02,
+          "end": 3.1,
+          "word": " by",
+          "probability": 0.992369532585144
+        },
+        {
+          "start": 3.1,
+          "end": 3.36,
+          "word": " Jane",
+          "probability": 0.9380703568458557
+        },
+        {
+          "start": 3.36,
+          "end": 3.84,
+          "word": " Austen,",
+          "probability": 0.8368517160415649
+        },
+        {
+          "start": 4.42,
+          "end": 4.66,
+          "word": " chapters",
+          "probability": 0.6968212127685547
+        },
+        {
+          "start": 4.66,
+          "end": 4.98,
+          "word": " 1",
+          "probability": 0.5905247926712036
+        },
+        {
+          "start": 4.98,
+          "end": 5.24,
+          "word": " to",
+          "probability": 0.5629518628120422
+        },
+        {
+          "start": 5.24,
+          "end": 5.64,
+          "word": " 3,",
+          "probability": 0.9935116171836853
+        },
+        {
+          "start": 6.3,
+          "end": 6.56,
+          "word": " read",
+          "probability": 0.8512864112854004
+        },
+        {
+          "start": 6.56,
+          "end": 6.76,
+          "word": " by",
+          "probability": 0.9984686970710754
+        },
+        {
+          "start": 6.76,
+          "end": 7.06,
+          "word": " Chris",
+          "probability": 0.8115074634552002
+        }
+      ]
+    },
+    {
+      "start": 7.06,
+      "end": 7.48,
+      "text": " Corvans.",
+      "avgLogprob": -1.2621929428794167,
+      "noSpeechProbability": 0.22825820744037628,
+      "words": [
+        {
+          "start": 7.06,
+          "end": 7.48,
+          "word": " Corvans.",
+          "probability": 0.20826329911748567
+        }
+      ]
+    },
+    {
+      "start": 8.16,
+      "end": 9.42,
+      "text": " Chapter 1",
+      "avgLogprob": -1.2621929428794167,
+      "noSpeechProbability": 0.22825820744037628,
+      "words": [
+        {
+          "start": 8.16,
+          "end": 9.0,
+          "word": " Chapter",
+          "probability": 0.6258506178855896
+        },
+        {
+          "start": 9.0,
+          "end": 9.42,
+          "word": " 1",
+          "probability": 0.6583617925643921
+        }
+      ]
+    }
+  ],
+  "networkUsed": false,
+  "gatewaySpendUsd": 0
+}

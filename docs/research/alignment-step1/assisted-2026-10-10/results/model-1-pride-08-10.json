@@ -1,0 +1,29 @@
+{
+  "sourceSha256": "d401ad6b118e84d01b8dd1a3d034fd41784feb14c50f1f7a0fc17f3263fa8e9f",
+  "extractorVersion": "nostos-book-text-v2",
+  "settings": {
+    "minimumScore": 0.85,
+    "minimumMargin": 0.12,
+    "minimumTokens": 8,
+    "maximumTokens": 24
+  },
+  "transcript": {
+    "audioSha256": "ed5897c9ef1c2bf87a84dcc4d18dd2d54a2ee41ec490b66d941d827ab032eec7",
+    "recordedAt": "2026-10-10T15:05:12.9085544+00:00",
+    "elapsedMilliseconds": 9659.0379,
+    "result": {
+      "text": "Today\u0027s reading by Kara Shallenberg, www.kray.org. Pride and Prejudice by Jane Austen.",
+      "language": "en",
+      "durationSeconds": 10
+    }
+  },
+  "match": {
+    "accepted": false,
+    "reason": "no_match",
+    "score": 0,
+    "runnerUpScore": 0,
+    "start": null,
+    "end": null,
+    "passage": null
+  }
+}

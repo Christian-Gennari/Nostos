@@ -1,0 +1,395 @@
+{
+  "kind": "machine-assisted-reference",
+  "decoder": "faster-whisper 1.2.1",
+  "model": "base",
+  "weightsSha256": "d01c3014881c9c6f3133c182f3d2887eb6ca1c789a7538c5c007196857a0a6a9",
+  "audioSha256": "5f50ce978bc2f2fa1e043ff36883f273db028e59ac8da4c3e1ac16163f8e2810",
+  "recordedAt": "2026-10-10",
+  "elapsedSeconds": 2.8685282529331744,
+  "transcript": "daughters. Don't keep coughing so, Kitty, for heaven's sake. Have a little compassion on my nerves. You tear them to pieces.\" Kitty has no discretion in her coughs, said her father. She times them ill. \"'I do not cough for my own amusement,' replied Kitty fretfully. When is your next ball to be Lizzie tomorrow fortnight.",
+  "segments": [
+    {
+      "start": 0.0,
+      "end": 4.72,
+      "text": " daughters. Don't keep coughing so, Kitty, for heaven's sake. Have a little compassion",
+      "avgLogprob": -0.2546276285862311,
+      "noSpeechProbability": 0.0165281742811203,
+      "words": [
+        {
+          "start": 0.0,
+          "end": 0.3,
+          "word": " daughters.",
+          "probability": 0.8752739429473877
+        },
+        {
+          "start": 1.08,
+          "end": 1.34,
+          "word": " Don't",
+          "probability": 0.7956766784191132
+        },
+        {
+          "start": 1.34,
+          "end": 1.56,
+          "word": " keep",
+          "probability": 0.9974222183227539
+        },
+        {
+          "start": 1.56,
+          "end": 1.9,
+          "word": " coughing",
+          "probability": 0.9076659679412842
+        },
+        {
+          "start": 1.9,
+          "end": 2.24,
+          "word": " so,",
+          "probability": 0.7523548007011414
+        },
+        {
+          "start": 2.46,
+          "end": 2.54,
+          "word": " Kitty,",
+          "probability": 0.5153166055679321
+        },
+        {
+          "start": 2.68,
+          "end": 2.78,
+          "word": " for",
+          "probability": 0.9893274307250977
+        },
+        {
+          "start": 2.78,
+          "end": 3.22,
+          "word": " heaven's",
+          "probability": 0.8868944048881531
+        },
+        {
+          "start": 3.22,
+          "end": 3.34,
+          "word": " sake.",
+          "probability": 0.9981672763824463
+        },
+        {
+          "start": 3.82,
+          "end": 3.94,
+          "word": " Have",
+          "probability": 0.9717332720756531
+        },
+        {
+          "start": 3.94,
+          "end": 4.04,
+          "word": " a",
+          "probability": 0.9948723912239075
+        },
+        {
+          "start": 4.04,
+          "end": 4.22,
+          "word": " little",
+          "probability": 0.9948275685310364
+        },
+        {
+          "start": 4.22,
+          "end": 4.72,
+          "word": " compassion",
+          "probability": 0.9664252400398254
+        }
+      ]
+    },
+    {
+      "start": 4.72,
+      "end": 7.58,
+      "text": " on my nerves. You tear them to pieces.\"",
+      "avgLogprob": -0.2546276285862311,
+      "noSpeechProbability": 0.0165281742811203,
+      "words": [
+        {
+          "start": 4.72,
+          "end": 4.86,
+          "word": " on",
+          "probability": 0.7967311143875122
+        },
+        {
+          "start": 4.86,
+          "end": 5.04,
+          "word": " my",
+          "probability": 0.9778625965118408
+        },
+        {
+          "start": 5.04,
+          "end": 5.32,
+          "word": " nerves.",
+          "probability": 0.9951419830322266
+        },
+        {
+          "start": 5.58,
+          "end": 5.64,
+          "word": " You",
+          "probability": 0.9818572998046875
+        },
+        {
+          "start": 5.64,
+          "end": 5.9,
+          "word": " tear",
+          "probability": 0.6333413124084473
+        },
+        {
+          "start": 5.9,
+          "end": 6.08,
+          "word": " them",
+          "probability": 0.9951487183570862
+        },
+        {
+          "start": 6.08,
+          "end": 6.2,
+          "word": " to",
+          "probability": 0.9863839745521545
+        },
+        {
+          "start": 6.2,
+          "end": 7.58,
+          "word": " pieces.\"",
+          "probability": 0.8924971520900726
+        }
+      ]
+    },
+    {
+      "start": 7.58,
+      "end": 11.7,
+      "text": " Kitty has no discretion in her coughs, said her father. She times them ill.",
+      "avgLogprob": -0.2546276285862311,
+      "noSpeechProbability": 0.0165281742811203,
+      "words": [
+        {
+          "start": 7.58,
+          "end": 7.9,
+          "word": " Kitty",
+          "probability": 0.4580038785934448
+        },
+        {
+          "start": 7.9,
+          "end": 8.18,
+          "word": " has",
+          "probability": 0.9900614023208618
+        },
+        {
+          "start": 8.18,
+          "end": 8.42,
+          "word": " no",
+          "probability": 0.9996503591537476
+        },
+        {
+          "start": 8.42,
+          "end": 8.86,
+          "word": " discretion",
+          "probability": 0.985451340675354
+        },
+        {
+          "start": 8.86,
+          "end": 9.08,
+          "word": " in",
+          "probability": 0.9968544840812683
+        },
+        {
+          "start": 9.08,
+          "end": 9.22,
+          "word": " her",
+          "probability": 0.9982567429542542
+        },
+        {
+          "start": 9.22,
+          "end": 9.66,
+          "word": " coughs,",
+          "probability": 0.9161127805709839
+        },
+        {
+          "start": 9.84,
+          "end": 9.96,
+          "word": " said",
+          "probability": 0.9140676259994507
+        },
+        {
+          "start": 9.96,
+          "end": 10.12,
+          "word": " her",
+          "probability": 0.997883141040802
+        },
+        {
+          "start": 10.12,
+          "end": 10.38,
+          "word": " father.",
+          "probability": 0.9737460613250732
+        },
+        {
+          "start": 10.8,
+          "end": 10.9,
+          "word": " She",
+          "probability": 0.6784725785255432
+        },
+        {
+          "start": 10.9,
+          "end": 11.28,
+          "word": " times",
+          "probability": 0.8951313495635986
+        },
+        {
+          "start": 11.28,
+          "end": 11.46,
+          "word": " them",
+          "probability": 0.9902995824813843
+        },
+        {
+          "start": 11.46,
+          "end": 11.7,
+          "word": " ill.",
+          "probability": 0.9926518797874451
+        }
+      ]
+    },
+    {
+      "start": 12.78,
+      "end": 17.92,
+      "text": " \"'I do not cough for my own amusement,' replied Kitty fretfully. When is your next ball to",
+      "avgLogprob": -0.2546276285862311,
+      "noSpeechProbability": 0.0165281742811203,
+      "words": [
+        {
+          "start": 12.78,
+          "end": 13.0,
+          "word": " \"'I",
+          "probability": 0.5019579343497753
+        },
+        {
+          "start": 13.0,
+          "end": 13.1,
+          "word": " do",
+          "probability": 0.9960097074508667
+        },
+        {
+          "start": 13.1,
+          "end": 13.22,
+          "word": " not",
+          "probability": 0.9986047148704529
+        },
+        {
+          "start": 13.22,
+          "end": 13.54,
+          "word": " cough",
+          "probability": 0.9939655661582947
+        },
+        {
+          "start": 13.54,
+          "end": 13.76,
+          "word": " for",
+          "probability": 0.9839354753494263
+        },
+        {
+          "start": 13.76,
+          "end": 13.9,
+          "word": " my",
+          "probability": 0.9994387030601501
+        },
+        {
+          "start": 13.9,
+          "end": 14.08,
+          "word": " own",
+          "probability": 0.9974371194839478
+        },
+        {
+          "start": 14.08,
+          "end": 15.0,
+          "word": " amusement,'",
+          "probability": 0.9238515794277191
+        },
+        {
+          "start": 15.0,
+          "end": 15.22,
+          "word": " replied",
+          "probability": 0.985421359539032
+        },
+        {
+          "start": 15.22,
+          "end": 15.56,
+          "word": " Kitty",
+          "probability": 0.9839710593223572
+        },
+        {
+          "start": 15.56,
+          "end": 16.16,
+          "word": " fretfully.",
+          "probability": 0.8153552711009979
+        },
+        {
+          "start": 16.76,
+          "end": 17.0,
+          "word": " When",
+          "probability": 0.18715843558311462
+        },
+        {
+          "start": 17.0,
+          "end": 17.12,
+          "word": " is",
+          "probability": 0.9834981560707092
+        },
+        {
+          "start": 17.12,
+          "end": 17.24,
+          "word": " your",
+          "probability": 0.9920142292976379
+        },
+        {
+          "start": 17.24,
+          "end": 17.5,
+          "word": " next",
+          "probability": 0.9982158541679382
+        },
+        {
+          "start": 17.5,
+          "end": 17.76,
+          "word": " ball",
+          "probability": 0.8575382232666016
+        },
+        {
+          "start": 17.76,
+          "end": 17.92,
+          "word": " to",
+          "probability": 0.9612899422645569
+        }
+      ]
+    },
+    {
+      "start": 17.92,
+      "end": 19.9,
+      "text": " be Lizzie tomorrow fortnight.",
+      "avgLogprob": -0.5990238010883331,
+      "noSpeechProbability": 0.07795596867799759,
+      "words": [
+        {
+          "start": 17.92,
+          "end": 18.06,
+          "word": " be",
+          "probability": 0.20267827808856964
+        },
+        {
+          "start": 18.06,
+          "end": 18.36,
+          "word": " Lizzie",
+          "probability": 0.8500222265720367
+        },
+        {
+          "start": 18.36,
+          "end": 19.3,
+          "word": " tomorrow",
+          "probability": 0.7544682621955872
+        },
+        {
+          "start": 19.3,
+          "end": 19.9,
+          "word": " fortnight.",
+          "probability": 0.6866443604230881
+        }
+      ]
+    }
+  ],
+  "networkUsed": false,
+  "gatewaySpendUsd": 0
+}

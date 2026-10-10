@@ -1,0 +1,14 @@
+{
+  "date": "2026-10-10",
+  "clipId": "carol-05-10",
+  "providerTag": "model-3",
+  "observedFailure": "Accepted endpoint lags the repeated clause omitted from the transcript",
+  "candidateTextOffset": 2028,
+  "expectedMinTextOffset": 2041,
+  "expectedMaxTextOffset": 2075,
+  "sourceLocationErrorCharacters": 13,
+  "paragraphSame": true,
+  "matchingScore": 1.0,
+  "actionTaken": "Recorded incorrect_accepted; did not widen interval, retune matcher or resend audio",
+  "referenceMethod": "machine-assisted; human audio remains unverified"
+}

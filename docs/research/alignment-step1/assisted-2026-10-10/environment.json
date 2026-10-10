@@ -1,0 +1,7 @@
+{
+  "dotnet": "10.0.112",
+  "ffmpeg": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers",
+  "ffprobe": "ffprobe version 6.1.1-3ubuntu5 Copyright (c) 2007-2023 the FFmpeg developers",
+  "python": "Python 3.12.3",
+  "referenceDecoder": "faster-whisper 1.2.1, CPU int8, beam_size=5, English, word timestamps, condition_on_previous_text=False, HF_HUB_OFFLINE=1"
+}

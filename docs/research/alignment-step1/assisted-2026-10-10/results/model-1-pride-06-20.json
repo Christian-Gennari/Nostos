@@ -1,0 +1,51 @@
+{
+  "sourceSha256": "d401ad6b118e84d01b8dd1a3d034fd41784feb14c50f1f7a0fc17f3263fa8e9f",
+  "extractorVersion": "nostos-book-text-v2",
+  "settings": {
+    "minimumScore": 0.85,
+    "minimumMargin": 0.12,
+    "minimumTokens": 8,
+    "maximumTokens": 24
+  },
+  "transcript": {
+    "audioSha256": "737689decc3381052c0af68cf42a6eb433c447ce61cb6c907e4fda485718435f",
+    "recordedAt": "2026-10-10T15:04:01.1260585+00:00",
+    "elapsedMilliseconds": 2281.6755,
+    "result": {
+      "text": "with an air of decided fashion. His brother-in-law, Mr. Hurst, merely looked the gentleman, but his friend Mr. Darcy soon drew the attention of the room by his fine, tall person, handsome features, noble mien, and the report which was in general circulation within five minutes after his entrance, of his having ten thousand a year. The gent-",
+      "language": "en",
+      "durationSeconds": 20
+    }
+  },
+  "match": {
+    "accepted": true,
+    "reason": "matched",
+    "score": 0.9583333333333334,
+    "runnerUpScore": 0,
+    "start": {
+      "blockOrder": 103,
+      "globalTextOffset": 37903,
+      "locator": {
+        "type": "epub",
+        "spineIndex": 1,
+        "resourceHref": "1306980130634175271_1342-h-0.htm.xhtml",
+        "cfi": null,
+        "startTextOffset": 37903,
+        "endTextOffset": 37903
+      }
+    },
+    "end": {
+      "blockOrder": 103,
+      "globalTextOffset": 38046,
+      "locator": {
+        "type": "epub",
+        "spineIndex": 1,
+        "resourceHref": "1306980130634175271_1342-h-0.htm.xhtml",
+        "cfi": null,
+        "startTextOffset": 38046,
+        "endTextOffset": 38046
+      }
+    },
+    "passage": "mien and the report which was in general circulation within five minutes after his entrance of his having ten thousand a year the gentlemen"
+  }
+}

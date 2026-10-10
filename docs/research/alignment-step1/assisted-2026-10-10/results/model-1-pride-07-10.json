@@ -1,0 +1,29 @@
+{
+  "sourceSha256": "d401ad6b118e84d01b8dd1a3d034fd41784feb14c50f1f7a0fc17f3263fa8e9f",
+  "extractorVersion": "nostos-book-text-v2",
+  "settings": {
+    "minimumScore": 0.85,
+    "minimumMargin": 0.12,
+    "minimumTokens": 8,
+    "maximumTokens": 24
+  },
+  "transcript": {
+    "audioSha256": "3346942951348258b87a8c96aa36892c47971fbaca238aadd2c49e38ef5d9a3e",
+    "recordedAt": "2026-10-10T15:04:19.5759961+00:00",
+    "elapsedMilliseconds": 2217.7834,
+    "result": {
+      "text": "Today\u0027s reading: Pride and Prejudice by Jane Austen, chapters 1 to 3, read by Chris Gorringe. Chapter 1.",
+      "language": "en",
+      "durationSeconds": 10
+    }
+  },
+  "match": {
+    "accepted": false,
+    "reason": "no_match",
+    "score": 0,
+    "runnerUpScore": 0,
+    "start": null,
+    "end": null,
+    "passage": null
+  }
+}

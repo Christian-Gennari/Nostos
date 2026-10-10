@@ -1,0 +1,51 @@
+{
+  "sourceSha256": "8557960c8d5e62e23ebfeedacad8ad0a4ebf8d056c1ad37210b2a528c2a2d6cb",
+  "extractorVersion": "nostos-book-text-v2",
+  "settings": {
+    "minimumScore": 0.85,
+    "minimumMargin": 0.12,
+    "minimumTokens": 8,
+    "maximumTokens": 24
+  },
+  "transcript": {
+    "audioSha256": "1fdb142d1a6c6ca7668af17fcbc710f2955628bb3e11c605ea917894cc1ca9e3",
+    "recordedAt": "2026-10-10T14:56:10.4558592+00:00",
+    "elapsedMilliseconds": 4406.606,
+    "result": {
+      "text": "broken voice would scarcely answer to his call. He had been sobbing violently in his conflict with the spirit, and his face was wet with tears. \u0022They are not torn down,\u0022 cried Scrooge, folding one of his bed curtains in his arms. \u0022They are not torn down.\u0022",
+      "language": "en",
+      "durationSeconds": 20
+    }
+  },
+  "match": {
+    "accepted": true,
+    "reason": "matched",
+    "score": 1,
+    "runnerUpScore": 0,
+    "start": {
+      "blockOrder": 684,
+      "globalTextOffset": 146522,
+      "locator": {
+        "type": "epub",
+        "spineIndex": 2,
+        "resourceHref": "1597581767207061809_46-h-1.htm.xhtml",
+        "cfi": null,
+        "startTextOffset": 1928,
+        "endTextOffset": 1928
+      }
+    },
+    "end": {
+      "blockOrder": 685,
+      "globalTextOffset": 146647,
+      "locator": {
+        "type": "epub",
+        "spineIndex": 2,
+        "resourceHref": "1597581767207061809_46-h-1.htm.xhtml",
+        "cfi": null,
+        "startTextOffset": 2053,
+        "endTextOffset": 2053
+      }
+    },
+    "passage": "wet with tears they are not torn down cried scrooge folding one of his bed curtains in his arms they are not torn down"
+  }
+}

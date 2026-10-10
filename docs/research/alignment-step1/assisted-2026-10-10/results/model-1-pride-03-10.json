@@ -1,0 +1,51 @@
+{
+  "sourceSha256": "d401ad6b118e84d01b8dd1a3d034fd41784feb14c50f1f7a0fc17f3263fa8e9f",
+  "extractorVersion": "nostos-book-text-v2",
+  "settings": {
+    "minimumScore": 0.85,
+    "minimumMargin": 0.12,
+    "minimumTokens": 8,
+    "maximumTokens": 24
+  },
+  "transcript": {
+    "audioSha256": "4c2c18580eec4de1a59b21f1183d69dd7d005624cec0a5ffdfba1e2964df76b5",
+    "recordedAt": "2026-10-10T15:00:43.2148914+00:00",
+    "elapsedMilliseconds": 2743.3459,
+    "result": {
+      "text": "her father. \u0022She times them ill.\u0022 \u0022I do not cough for my own amusement,\u0022 replied Kitty fretfully. \u0022When is your next ball to be, Lizzy?\u0022 \u0022Tomorrow fortnight.\u0022",
+      "language": "en",
+      "durationSeconds": 10
+    }
+  },
+  "match": {
+    "accepted": true,
+    "reason": "matched",
+    "score": 0.92,
+    "runnerUpScore": 0,
+    "start": {
+      "blockOrder": 75,
+      "globalTextOffset": 31797,
+      "locator": {
+        "type": "epub",
+        "spineIndex": 1,
+        "resourceHref": "1306980130634175271_1342-h-0.htm.xhtml",
+        "cfi": null,
+        "startTextOffset": 31797,
+        "endTextOffset": 31797
+      }
+    },
+    "end": {
+      "blockOrder": 77,
+      "globalTextOffset": 31938,
+      "locator": {
+        "type": "epub",
+        "spineIndex": 1,
+        "resourceHref": "1306980130634175271_1342-h-0.htm.xhtml",
+        "cfi": null,
+        "startTextOffset": 31938,
+        "endTextOffset": 31938
+      }
+    },
+    "passage": "times them ill i do not cough for my own amusement replied kitty fretfully when is your next ball to be lizzy to morrow fortnight"
+  }
+}

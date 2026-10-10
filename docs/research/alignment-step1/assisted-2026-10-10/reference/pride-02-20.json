@@ -1,0 +1,515 @@
+{
+  "kind": "machine-assisted-reference",
+  "decoder": "faster-whisper 1.2.1",
+  "model": "base",
+  "weightsSha256": "d01c3014881c9c6f3133c182f3d2887eb6ca1c789a7538c5c007196857a0a6a9",
+  "audioSha256": "f241515b14cf40142008b576ef8ea304440ccbdb3c1f5841c097736ca05f76e1",
+  "recordedAt": "2026-10-10",
+  "elapsedSeconds": 2.2643426922149956,
+  "transcript": "it would be for one of them. So will you, and Lady Lucas, are determined to go, merely on that account, for in general you know they visit no newcomers. Indeed you must go, for it will be impossible for us to visit him if you do not. You are over scrupulous, surely. I dare say Mr. Bingley will be very glad to see you, and I will send a few lines by you to assure\u2014",
+  "segments": [
+    {
+      "start": 0.0,
+      "end": 4.16,
+      "text": " it would be for one of them. So will you, and Lady Lucas, are determined to go, merely",
+      "avgLogprob": -0.2305177143560006,
+      "noSpeechProbability": 0.07938438653945923,
+      "words": [
+        {
+          "start": 0.0,
+          "end": 0.08,
+          "word": " it",
+          "probability": 0.6996040940284729
+        },
+        {
+          "start": 0.08,
+          "end": 0.18,
+          "word": " would",
+          "probability": 0.916786253452301
+        },
+        {
+          "start": 0.18,
+          "end": 0.34,
+          "word": " be",
+          "probability": 0.9939701557159424
+        },
+        {
+          "start": 0.34,
+          "end": 0.5,
+          "word": " for",
+          "probability": 0.9888584613800049
+        },
+        {
+          "start": 0.5,
+          "end": 0.64,
+          "word": " one",
+          "probability": 0.9800593256950378
+        },
+        {
+          "start": 0.64,
+          "end": 0.72,
+          "word": " of",
+          "probability": 0.9970281720161438
+        },
+        {
+          "start": 0.72,
+          "end": 0.86,
+          "word": " them.",
+          "probability": 0.995749831199646
+        },
+        {
+          "start": 1.38,
+          "end": 1.58,
+          "word": " So",
+          "probability": 0.8843317031860352
+        },
+        {
+          "start": 1.58,
+          "end": 1.76,
+          "word": " will",
+          "probability": 0.7336942553520203
+        },
+        {
+          "start": 1.76,
+          "end": 1.86,
+          "word": " you,",
+          "probability": 0.29669761657714844
+        },
+        {
+          "start": 1.98,
+          "end": 2.0,
+          "word": " and",
+          "probability": 0.4559269845485687
+        },
+        {
+          "start": 2.0,
+          "end": 2.28,
+          "word": " Lady",
+          "probability": 0.6376259326934814
+        },
+        {
+          "start": 2.28,
+          "end": 2.54,
+          "word": " Lucas,",
+          "probability": 0.693199634552002
+        },
+        {
+          "start": 2.74,
+          "end": 2.84,
+          "word": " are",
+          "probability": 0.9392235279083252
+        },
+        {
+          "start": 2.84,
+          "end": 3.26,
+          "word": " determined",
+          "probability": 0.9956788420677185
+        },
+        {
+          "start": 3.26,
+          "end": 3.44,
+          "word": " to",
+          "probability": 0.9954754710197449
+        },
+        {
+          "start": 3.44,
+          "end": 3.58,
+          "word": " go,",
+          "probability": 0.9941961765289307
+        },
+        {
+          "start": 3.94,
+          "end": 4.16,
+          "word": " merely",
+          "probability": 0.9782941341400146
+        }
+      ]
+    },
+    {
+      "start": 4.16,
+      "end": 9.0,
+      "text": " on that account, for in general you know they visit no newcomers. Indeed you must go,",
+      "avgLogprob": -0.2305177143560006,
+      "noSpeechProbability": 0.07938438653945923,
+      "words": [
+        {
+          "start": 4.16,
+          "end": 4.36,
+          "word": " on",
+          "probability": 0.9918406009674072
+        },
+        {
+          "start": 4.36,
+          "end": 4.5,
+          "word": " that",
+          "probability": 0.9957643747329712
+        },
+        {
+          "start": 4.5,
+          "end": 4.84,
+          "word": " account,",
+          "probability": 0.9976898431777954
+        },
+        {
+          "start": 5.26,
+          "end": 5.36,
+          "word": " for",
+          "probability": 0.9618956446647644
+        },
+        {
+          "start": 5.36,
+          "end": 5.54,
+          "word": " in",
+          "probability": 0.9349257349967957
+        },
+        {
+          "start": 5.54,
+          "end": 5.84,
+          "word": " general",
+          "probability": 0.9909811615943909
+        },
+        {
+          "start": 5.84,
+          "end": 6.06,
+          "word": " you",
+          "probability": 0.9051253795623779
+        },
+        {
+          "start": 6.06,
+          "end": 6.22,
+          "word": " know",
+          "probability": 0.9904415607452393
+        },
+        {
+          "start": 6.22,
+          "end": 6.4,
+          "word": " they",
+          "probability": 0.970805823802948
+        },
+        {
+          "start": 6.4,
+          "end": 6.68,
+          "word": " visit",
+          "probability": 0.9618253707885742
+        },
+        {
+          "start": 6.68,
+          "end": 6.94,
+          "word": " no",
+          "probability": 0.9931574463844299
+        },
+        {
+          "start": 6.94,
+          "end": 7.58,
+          "word": " newcomers.",
+          "probability": 0.963057816028595
+        },
+        {
+          "start": 7.98,
+          "end": 8.28,
+          "word": " Indeed",
+          "probability": 0.9714226722717285
+        },
+        {
+          "start": 8.28,
+          "end": 8.46,
+          "word": " you",
+          "probability": 0.8694175481796265
+        },
+        {
+          "start": 8.46,
+          "end": 8.68,
+          "word": " must",
+          "probability": 0.9988353848457336
+        },
+        {
+          "start": 8.68,
+          "end": 9.0,
+          "word": " go,",
+          "probability": 0.9574280381202698
+        }
+      ]
+    },
+    {
+      "start": 9.36,
+      "end": 11.8,
+      "text": " for it will be impossible for us to visit him if you do not.",
+      "avgLogprob": -0.2305177143560006,
+      "noSpeechProbability": 0.07938438653945923,
+      "words": [
+        {
+          "start": 9.36,
+          "end": 9.54,
+          "word": " for",
+          "probability": 0.9907810091972351
+        },
+        {
+          "start": 9.54,
+          "end": 9.68,
+          "word": " it",
+          "probability": 0.9970400929450989
+        },
+        {
+          "start": 9.68,
+          "end": 9.82,
+          "word": " will",
+          "probability": 0.9837751984596252
+        },
+        {
+          "start": 9.82,
+          "end": 9.96,
+          "word": " be",
+          "probability": 0.997501790523529
+        },
+        {
+          "start": 9.96,
+          "end": 10.34,
+          "word": " impossible",
+          "probability": 0.9928370118141174
+        },
+        {
+          "start": 10.34,
+          "end": 10.6,
+          "word": " for",
+          "probability": 0.997529923915863
+        },
+        {
+          "start": 10.6,
+          "end": 10.74,
+          "word": " us",
+          "probability": 0.995540201663971
+        },
+        {
+          "start": 10.74,
+          "end": 10.92,
+          "word": " to",
+          "probability": 0.9970245957374573
+        },
+        {
+          "start": 10.92,
+          "end": 11.14,
+          "word": " visit",
+          "probability": 0.9964545965194702
+        },
+        {
+          "start": 11.14,
+          "end": 11.34,
+          "word": " him",
+          "probability": 0.9859979152679443
+        },
+        {
+          "start": 11.34,
+          "end": 11.44,
+          "word": " if",
+          "probability": 0.9643683433532715
+        },
+        {
+          "start": 11.44,
+          "end": 11.52,
+          "word": " you",
+          "probability": 0.9974561333656311
+        },
+        {
+          "start": 11.52,
+          "end": 11.6,
+          "word": " do",
+          "probability": 0.9904431700706482
+        },
+        {
+          "start": 11.6,
+          "end": 11.8,
+          "word": " not.",
+          "probability": 0.997760534286499
+        }
+      ]
+    },
+    {
+      "start": 12.78,
+      "end": 17.9,
+      "text": " You are over scrupulous, surely. I dare say Mr. Bingley will be very glad to see you, and",
+      "avgLogprob": -0.2305177143560006,
+      "noSpeechProbability": 0.07938438653945923,
+      "words": [
+        {
+          "start": 12.78,
+          "end": 12.98,
+          "word": " You",
+          "probability": 0.8748334050178528
+        },
+        {
+          "start": 12.98,
+          "end": 13.1,
+          "word": " are",
+          "probability": 0.9963434338569641
+        },
+        {
+          "start": 13.1,
+          "end": 13.34,
+          "word": " over",
+          "probability": 0.8089963793754578
+        },
+        {
+          "start": 13.34,
+          "end": 13.92,
+          "word": " scrupulous,",
+          "probability": 0.8163137237230936
+        },
+        {
+          "start": 14.14,
+          "end": 14.38,
+          "word": " surely.",
+          "probability": 0.8728088140487671
+        },
+        {
+          "start": 14.8,
+          "end": 14.92,
+          "word": " I",
+          "probability": 0.5258308053016663
+        },
+        {
+          "start": 14.92,
+          "end": 15.08,
+          "word": " dare",
+          "probability": 0.241249680519104
+        },
+        {
+          "start": 15.08,
+          "end": 15.3,
+          "word": " say",
+          "probability": 0.9934264421463013
+        },
+        {
+          "start": 15.3,
+          "end": 15.56,
+          "word": " Mr.",
+          "probability": 0.6003044247627258
+        },
+        {
+          "start": 15.68,
+          "end": 15.94,
+          "word": " Bingley",
+          "probability": 0.9296260476112366
+        },
+        {
+          "start": 15.94,
+          "end": 16.1,
+          "word": " will",
+          "probability": 0.9572305679321289
+        },
+        {
+          "start": 16.1,
+          "end": 16.22,
+          "word": " be",
+          "probability": 0.9964964985847473
+        },
+        {
+          "start": 16.22,
+          "end": 16.44,
+          "word": " very",
+          "probability": 0.9913433790206909
+        },
+        {
+          "start": 16.44,
+          "end": 16.66,
+          "word": " glad",
+          "probability": 0.9991559982299805
+        },
+        {
+          "start": 16.66,
+          "end": 16.84,
+          "word": " to",
+          "probability": 0.9988124370574951
+        },
+        {
+          "start": 16.84,
+          "end": 17.0,
+          "word": " see",
+          "probability": 0.9987659454345703
+        },
+        {
+          "start": 17.0,
+          "end": 17.22,
+          "word": " you,",
+          "probability": 0.9975294470787048
+        },
+        {
+          "start": 17.6,
+          "end": 17.9,
+          "word": " and",
+          "probability": 0.9926579594612122
+        }
+      ]
+    },
+    {
+      "start": 17.9,
+      "end": 19.98,
+      "text": " I will send a few lines by you to assure\u2014",
+      "avgLogprob": -0.2305177143560006,
+      "noSpeechProbability": 0.07938438653945923,
+      "words": [
+        {
+          "start": 17.9,
+          "end": 18.02,
+          "word": " I",
+          "probability": 0.9951316118240356
+        },
+        {
+          "start": 18.02,
+          "end": 18.14,
+          "word": " will",
+          "probability": 0.9820496439933777
+        },
+        {
+          "start": 18.14,
+          "end": 18.34,
+          "word": " send",
+          "probability": 0.995546817779541
+        },
+        {
+          "start": 18.34,
+          "end": 18.5,
+          "word": " a",
+          "probability": 0.9450145959854126
+        },
+        {
+          "start": 18.5,
+          "end": 18.66,
+          "word": " few",
+          "probability": 0.9990600943565369
+        },
+        {
+          "start": 18.66,
+          "end": 18.94,
+          "word": " lines",
+          "probability": 0.9782832860946655
+        },
+        {
+          "start": 18.94,
+          "end": 19.28,
+          "word": " by",
+          "probability": 0.9749265313148499
+        },
+        {
+          "start": 19.28,
+          "end": 19.5,
+          "word": " you",
+          "probability": 0.9927862286567688
+        },
+        {
+          "start": 19.5,
+          "end": 19.66,
+          "word": " to",
+          "probability": 0.9296536445617676
+        },
+        {
+          "start": 19.66,
+          "end": 19.98,
+          "word": " assure\u2014",
+          "probability": 0.6570258587598801
+        }
+      ]
+    }
+  ],
+  "networkUsed": false,
+  "gatewaySpendUsd": 0
+}
