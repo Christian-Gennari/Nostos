@@ -438,7 +438,8 @@ public sealed class NoteService : INoteService
                 .Where(nc => nc.Topic is not null)
                 .Select(nc => nc.Topic!.Topic)
                 .OrderBy(name => name)
-                .ToList());
+                .ToList(),
+            note.NoteTopics.Select(link => link.TopicId).ToList());
     }
 
     // ------------------------------------------------------------------

@@ -15,6 +15,8 @@ export type AssistantEventDelivery = 'sending' | 'complete' | 'retryable';
  */
 export interface AssistantConversationEvent extends AssistantEntry {
   remember: boolean;
+  /** Brain-initiated assistant work stays in the note inspector, not the chat. */
+  hiddenFromTranscript?: boolean;
   delivery: AssistantEventDelivery;
   historyContext: AssistantHistoricalContextDto | null;
   historyEvidence: AssistantHistoricalEvidenceDto[];
@@ -27,8 +29,11 @@ export interface AssistantConversationEvent extends AssistantEntry {
 export function projectVisibleTranscript(
   ledger: readonly AssistantConversationEvent[],
 ): AssistantEntry[] {
-  return ledger.map(
+  const hiddenTurns = new Set(ledger.filter((event) => event.hiddenFromTranscript)
+    .map((event) => event.turnId));
+  return ledger.filter((event) => !hiddenTurns.has(event.turnId)).map(
     ({
+      hiddenFromTranscript: _hiddenFromTranscript,
       remember: _remember,
       delivery: _delivery,
       historyContext: _historyContext,
@@ -45,7 +50,8 @@ export function projectPlainModelHistory(
   ledger: readonly AssistantConversationEvent[],
 ): AssistantHistoryMessage[] {
   return ledger
-    .filter((event) => event.remember && event.delivery !== 'retryable')
+    .filter((event) => event.remember && event.delivery !== 'retryable'
+      && !ledger.some((root) => root.turnId === event.turnId && root.hiddenFromTranscript))
     .map((event) => ({
       role: event.kind === 'user' ? 'user' : 'assistant',
       text: event.text,
@@ -60,7 +66,8 @@ export function projectContextualModelHistory(
   ledger: readonly AssistantConversationEvent[],
 ): AssistantHistoryMessage[] {
   return ledger
-    .filter((event) => event.remember && event.delivery !== 'retryable')
+    .filter((event) => event.remember && event.delivery !== 'retryable'
+      && !ledger.some((root) => root.turnId === event.turnId && root.hiddenFromTranscript))
     .map((event) => {
       const turnArtifacts = ledger
         .filter((candidate) => candidate.turnId === event.turnId)

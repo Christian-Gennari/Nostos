@@ -100,6 +100,31 @@ describe('assistant history projections', () => {
     ]);
   });
 
+  it('keeps Brain-initiated operations out of chat and future conversation history', () => {
+    const inlineUser = event({
+      id: 'inline-user', turnId: 'inline-1',
+      text: 'Internal link command with topic IDs',
+      hiddenFromTranscript: true,
+    });
+    const inlineReply = event({
+      id: 'inline-reply', turnId: 'inline-1',
+      kind: 'assistant', text: 'Possible connections.',
+      suggestions: [{
+        kind: 'topic', label: 'Justice', reason: 'A link.', value: 'topic-1', noteId: 'note-1',
+      }],
+    });
+    const conversation = event({
+      id: 'regular-user', turnId: 'turn-2', text: 'What am I reading?',
+    });
+
+    expect(projectVisibleTranscript([inlineUser, inlineReply, conversation]))
+      .toEqual([expect.objectContaining({ id: 'regular-user', text: 'What am I reading?' })]);
+    expect(projectPlainModelHistory([inlineUser, inlineReply, conversation]))
+      .toEqual([{ role: 'user', text: 'What am I reading?' }]);
+    expect(projectContextualModelHistory([inlineUser, inlineReply, conversation]))
+      .toEqual([{ role: 'user', text: 'What am I reading?' }]);
+  });
+
   it('attaches deduplicated artifact facts once to the historical user root', () => {
     const handle = {
       kind: 'book_text' as const,

@@ -1206,6 +1206,60 @@ describe('AssistantService voice transcript alignment', () => {
     expect(service.rawTranscript()?.processingMode).toBe('verbatim');
   });
 
+  it('runs inline Brain proposals and accepted links without synthetic conversation entries', () => {
+    fake.set({ surface: 'second-brain', route: '/second-brain', brainReviewNoteId: 'note-1' });
+
+    const proposalTurn = service.requestTopicProposals('note-1');
+    expect(proposalTurn).toBeTruthy();
+    expect(service.entries()).toEqual([]);
+    const proposal = http.expectOne('/api/assistant/turn/stream');
+    expect(proposal.request.body.message).toContain('additional existing topics');
+    expect(proposal.request.body.message).not.toContain('note-1');
+    expect(proposal.request.body.context.brainReviewNoteId).toBe('note-1');
+    proposal.flush(turn({
+      reply: 'Justice looks relevant.',
+      suggestions: [{
+        kind: 'topic', label: 'Justice', reason: 'Relevant to the note.',
+        value: 'topic-justice', noteId: 'note-1',
+      }],
+    }));
+    expect(service.entries()).toEqual([]);
+    expect(service.history()).toEqual([]);
+
+    service.applySuggestion({
+      kind: 'topic', label: 'Justice', reason: 'Relevant to the note.',
+      value: 'topic-justice', noteId: 'note-1',
+    }, true);
+    const link = http.expectOne('/api/assistant/turn/stream');
+    expect(link.request.body.message).toContain('topic-justice');
+    link.flush(turn({ reply: 'Linked.', executedCapabilities: ['notes_link_existing_topic'] }));
+    expect(service.entries()).toEqual([]);
+    expect(service.history()).toEqual([]);
+
+    service.updateDraft('An ordinary question');
+    service.submit();
+    const question = http.expectOne('/api/assistant/turn/stream');
+    expect(question.request.body.history).toEqual([]);
+    question.flush(turn({ reply: 'An ordinary answer' }));
+    expect(service.entries().map((entry) => entry.text))
+      .toEqual(['An ordinary question', 'An ordinary answer']);
+  });
+
+  it('does not restore an internal inline request into the visible composer or transcript', () => {
+    fake.set({ surface: 'second-brain', route: '/second-brain', brainReviewNoteId: 'note-1' });
+    service.requestTopicProposals('note-1');
+    const request = http.expectOne('/api/assistant/turn/stream');
+    expect(request.request.body.context.brainReviewNoteId).toBe('note-1');
+    request.error(new ProgressEvent('error'));
+
+    http.verify();
+    TestBed.resetTestingModule();
+    configureService({ surface: 'second-brain', route: '/second-brain', brainReviewNoteId: 'note-1' });
+
+    expect(service.draft()).toBe('');
+    expect(service.entries()).toEqual([]);
+  });
+
   it('ignores a suggestion that is not a topic and does nothing on the wire', () => {
     service.applySuggestion({ kind: 'collection', label: 'Essays', reason: 'A collection.', value: 'col-1' });
 

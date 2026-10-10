@@ -620,9 +620,11 @@ export class SecondBrain implements AfterViewChecked {
           this.proposalMessage.set(event.error);
           return;
         }
-        const noteId = this.focusedNote()?.id;
+        const note = this.focusedNote();
+        const linkedNames = new Set((note?.topicNames ?? []).map((name) => name.trim().toLocaleLowerCase()));
         const candidates = (event.response?.suggestions ?? []).filter((item) =>
-          item.kind === 'topic' && item.noteId === noteId && item.value && item.reason?.trim()).slice(0, 3);
+          item.kind === 'topic' && item.noteId === note?.id && item.value && item.reason?.trim()
+          && !linkedNames.has(item.label.trim().toLocaleLowerCase())).slice(0, 3);
         this.proposalCandidates.set(candidates);
         this.proposalState.set(candidates.length ? 'ready' : 'empty');
         return;
@@ -1126,8 +1128,15 @@ export class SecondBrain implements AfterViewChecked {
     const note = this.focusedNote();
     if (!note || this.proposalState() !== 'ready' || this.proposalNoteKey !== this.focusedNoteKey()
       || candidate.noteId !== note.id || !candidate.value || this.assistant.sending()) return;
+    // The server validates canonical IDs; also reject any link that became visible
+    // locally while the user was considering this proposal.
+    if (note.topicNames.some((name) => name.trim().toLocaleLowerCase() === candidate.label.trim().toLocaleLowerCase())) {
+      this.proposalCandidates.update((items) => items.filter((item) => item.value !== candidate.value));
+      if (!this.proposalCandidates().length) this.proposalState.set('empty');
+      return;
+    }
     this.proposalAccepted = candidate;
-    const turnId = this.assistant.applySuggestion(candidate);
+    const turnId = this.assistant.applySuggestion(candidate, true);
     if (!turnId) {
       this.proposalAccepted = null;
       this.proposalState.set('error');
