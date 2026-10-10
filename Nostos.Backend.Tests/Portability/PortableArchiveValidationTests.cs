@@ -506,7 +506,7 @@ public sealed class PortableArchiveValidationTests
         PortableArchiveValidation.ValidatePortableData(EmptyData(version: 2));
         PortableArchiveValidation.ValidatePortableData(EmptyData(version: 3));
 
-        RejectData(EmptyData(version: 4), "unsupported_data_version");
+        RejectData(EmptyData(version: 5), "unsupported_data_version");
         RejectData(
             EmptyData(version: 1) with { WritingNotes = [] },
             "unexpected_version_data");

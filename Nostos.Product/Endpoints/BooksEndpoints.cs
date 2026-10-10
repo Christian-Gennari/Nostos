@@ -424,12 +424,12 @@ public static class BooksEndpoints
             async (
                 Guid id,
                 IBookAssetStorage storage,
-                AudiobookPackageService packages,
                 HttpContext http,
                 CancellationToken ct
             ) =>
             {
-                if (await packages.BuildAsync(id, ct) is { } package)
+                if (http.RequestServices.GetService<AudiobookPackageService>() is { } packages
+                    && await packages.BuildAsync(id, ct) is { } package)
                 {
                     return await StoredAssetHttpResult.CreateAsync(
                         http,
@@ -503,7 +503,8 @@ public static class BooksEndpoints
                         await tracks.GetTrackInfoAsync(id, number, token) is { } info
                             ? info with { FileName = downloadName }
                             : null,
-                    (range, token) => tracks.OpenTrackAsync(id, number, range, token),
+                    async (range, token) =>
+                        (await tracks.OpenTrackAsync(id, number, range, token))?.WithFileName(downloadName),
                     attachment: true,
                     enableRanges: true,
                     cacheControl: null,

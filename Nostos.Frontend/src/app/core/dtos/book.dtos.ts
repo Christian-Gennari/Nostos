@@ -26,6 +26,15 @@ export interface BookChapter {
   startTime: number;
 }
 
+/** One track of a multi-track audiobook. `duration` is in seconds. */
+export interface BookTrack {
+  number: number;
+  title: string;
+  duration: number;
+  bytes: number;
+  contentType: string;
+}
+
 export interface EditionSummaryDto {
   id: string;
   type: 'ebook' | 'audiobook' | 'physical' | string;

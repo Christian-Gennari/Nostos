@@ -81,21 +81,6 @@ public sealed class LibriVoxSnapshotSourceTests
         return result;
     }
 
-    private sealed class StubMediaProcessRunner : IMediaProcessRunner
-    {
-        public MediaToolAvailability Availability { get; set; } =
-            new(true, "/usr/bin/ffmpeg", "/usr/bin/ffprobe", null);
-
-        public Task<TimeSpan?> ProbeDurationAsync(string path, CancellationToken ct) =>
-            Task.FromResult<TimeSpan?>(TimeSpan.FromSeconds(10));
-
-        public Task<int?> ProbeChapterCountAsync(string path, CancellationToken ct) =>
-            Task.FromResult<int?>(1);
-
-        public Task RunFfmpegAsync(IReadOnlyList<string> arguments, CancellationToken ct) =>
-            Task.CompletedTask;
-    }
-
     /// <summary>
     /// A clock fixed at the scan start whose timers fire immediately while
     /// recording the delay they were asked for, so the inter-page pause is
@@ -143,7 +128,6 @@ public sealed class LibriVoxSnapshotSourceTests
     private static LibriVoxProvider CreateProvider(IHttpClientFactory factory, TimeProvider clock) =>
         new(
             factory,
-            new LibriVoxM4bAssembler(new StubMediaProcessRunner(), NullLogger<LibriVoxM4bAssembler>.Instance),
             NullLogger<LibriVoxProvider>.Instance,
             clock);
 

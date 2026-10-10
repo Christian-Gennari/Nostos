@@ -511,6 +511,136 @@ public sealed class FileStorageServiceTests : IDisposable
         public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 
+    // ------------------------------------------------------------------
+    // Tracks (multi-track audiobooks)
+    // ------------------------------------------------------------------
+
+    [Fact]
+    public async Task Track_is_stored_flat_under_its_canonical_name_and_reads_back()
+    {
+        var bookId = Guid.NewGuid();
+        var bytes = Enumerable.Range(0, 5000).Select(i => (byte)(i % 251)).ToArray();
+
+        var stored = await _sut.SaveTrackAsync(bookId, 3, new MemoryStream(bytes), "whatever.MP3");
+
+        stored.Should().Be("track-0003.mp3");
+        File.Exists(Path.Combine(_tempDirectory, bookId.ToString(), "track-0003.mp3")).Should().BeTrue();
+        Directory.GetDirectories(Path.Combine(_tempDirectory, bookId.ToString()))
+            .Should().BeEmpty("backup, restore and library-switch retention refuse subfolders in a book folder");
+
+        var info = await _sut.GetTrackInfoAsync(bookId, 3);
+        info!.Length.Should().Be(bytes.Length);
+        info.ContentType.Should().Be("audio/mpeg");
+
+        await using var whole = await _sut.OpenTrackAsync(bookId, 3);
+        (await ReadAllAsync(whole!.Content)).Should().Equal(bytes);
+
+        await using var ranged = await _sut.OpenTrackAsync(bookId, 3, new StorageByteRange(100, 199));
+        var slice = new byte[100];
+        await ranged!.Content.ReadExactlyAsync(slice);
+        slice.Should().Equal(bytes[100..200]);
+    }
+
+    [Fact]
+    public async Task Adopted_track_moves_the_staged_file_into_place()
+    {
+        var bookId = Guid.NewGuid();
+        var staged = Path.Combine(_tempDirectory, "staged-part.mp3");
+        await File.WriteAllBytesAsync(staged, [1, 2, 3, 4]);
+
+        var stored = await _sut.AdoptTrackAsync(bookId, 1, staged, "track.mp3");
+
+        stored.Should().Be("track-0001.mp3");
+        File.Exists(staged).Should().BeFalse("adoption consumes the staged file");
+        (await _sut.GetTrackInfoAsync(bookId, 1))!.Length.Should().Be(4);
+    }
+
+    [Fact]
+    public async Task A_track_is_never_mistaken_for_the_primary_book_file()
+    {
+        // Tracks share an extension with a single-file audiobook, and the
+        // primary-file lookup scans the folder by extension.
+        var bookId = Guid.NewGuid();
+        await _sut.SaveTrackAsync(bookId, 1, new MemoryStream([1, 2, 3]), "a.mp3");
+        await _sut.SaveTrackAsync(bookId, 2, new MemoryStream([4, 5, 6]), "b.mp3");
+
+        _sut.GetBookFileName(bookId).Should().BeNull();
+        (await _sut.GetBookFileInfoAsync(bookId)).Should().BeNull();
+        (await _sut.DeleteBookFileAsync(bookId)).Should().BeFalse();
+        (await _sut.GetTrackInfoAsync(bookId, 1)).Should().NotBeNull("deleting the primary file leaves tracks alone");
+    }
+
+    [Fact]
+    public async Task Storing_a_primary_file_does_not_delete_tracks()
+    {
+        // Replacing a book file removes other book.* files in the folder. That
+        // sweep works by extension and must skip tracks; the caller decides
+        // when a book stops being multi-track.
+        var bookId = Guid.NewGuid();
+        await _sut.SaveTrackAsync(bookId, 1, new MemoryStream([1, 2, 3]), "a.mp3");
+
+        await _sut.SaveBookFileAsync(bookId, new MemoryStream([9, 9]), "replacement.m4b");
+
+        (await _sut.GetTrackInfoAsync(bookId, 1)).Should().NotBeNull();
+        Path.GetFileName(_sut.GetBookFileName(bookId)).Should().Be("book.m4b");
+    }
+
+    [Fact]
+    public async Task Deleting_tracks_removes_every_track_and_nothing_else()
+    {
+        var bookId = Guid.NewGuid();
+        await _sut.SaveBookCoverAsync(bookId, new MemoryStream([1]), "cover.jpg");
+        await _sut.SaveTrackAsync(bookId, 1, new MemoryStream([1, 2, 3]), "a.mp3");
+        await _sut.SaveTrackAsync(bookId, 2, new MemoryStream([4, 5, 6]), "b.m4a");
+
+        await _sut.DeleteTracksAsync(bookId);
+
+        (await _sut.GetTrackInfoAsync(bookId, 1)).Should().BeNull();
+        (await _sut.GetTrackInfoAsync(bookId, 2)).Should().BeNull();
+        _sut.GetBookCoverPath(bookId).Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task Restoring_a_track_in_another_format_leaves_one_file_per_number()
+    {
+        var bookId = Guid.NewGuid();
+        await _sut.SaveTrackAsync(bookId, 1, new MemoryStream([1, 2, 3]), "a.mp3");
+
+        await _sut.SaveTrackAsync(bookId, 1, new MemoryStream([7, 7]), "a.m4a");
+
+        Directory.GetFiles(Path.Combine(_tempDirectory, bookId.ToString()), "track-0001.*")
+            .Select(Path.GetFileName)
+            .Should().Equal("track-0001.m4a");
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(2001)]
+    public async Task Out_of_range_track_numbers_find_nothing_and_cannot_be_stored(int number)
+    {
+        var bookId = Guid.NewGuid();
+
+        (await _sut.GetTrackInfoAsync(bookId, number)).Should().BeNull();
+        (await _sut.OpenTrackAsync(bookId, number)).Should().BeNull();
+        var act = () => _sut.SaveTrackAsync(bookId, number, new MemoryStream([1]), "a.mp3");
+        await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public async Task A_non_audio_file_cannot_be_stored_as_a_track()
+    {
+        var act = () => _sut.SaveTrackAsync(Guid.NewGuid(), 1, new MemoryStream([1]), "chapter.epub");
+        await act.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    private static async Task<byte[]> ReadAllAsync(Stream stream)
+    {
+        using var buffer = new MemoryStream();
+        await stream.CopyToAsync(buffer);
+        return buffer.ToArray();
+    }
+
     private sealed class FakeWebHostEnvironment : IWebHostEnvironment
     {
         public string ApplicationName { get; set; } = "Nostos.Tests";

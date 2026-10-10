@@ -371,7 +371,7 @@ public sealed class LibriVoxProvider : IContentProvider,
 
         // There is exactly one asset. A caller naming a different one is asking
         // for something this source does not offer, and that fails loudly rather
-        // than silently importing the M4B anyway.
+        // than silently importing the recording anyway.
         var assetId = request.AssetId?.Trim();
         if (!string.IsNullOrEmpty(assetId) &&
             !string.Equals(assetId, LibriVoxCatalog.AudiobookAssetId, StringComparison.OrdinalIgnoreCase))
@@ -419,7 +419,7 @@ public sealed class LibriVoxProvider : IContentProvider,
     private static ProviderAsset AudioAsset => new(
         Id: LibriVoxCatalog.AudiobookAssetId,
         Kind: ProviderMediaKind.Audiobook,
-        Label: "M4B audiobook (single file)",
+        Label: "MP3 audiobook (original tracks)",
         SourceFormat: "librivox-mp3-sections",
         SizeBytes: null,
         IsPreferred: true);
@@ -439,8 +439,8 @@ public sealed class LibriVoxProvider : IContentProvider,
         ExternalId: book.Id,
         MediaKind: ProviderMediaKind.Audiobook,
         Metadata: MetadataFor(book),
-        // Discovery remains thin. Detail exposes the one normalized M4B asset;
-        // raw MP3 sections never become user-selectable formats.
+        // Discovery remains thin. Detail exposes the one whole-recording asset;
+        // individual sections never become user-selectable formats.
         Assets: includeAssets ? [AudioAsset] : [],
         Cover: book.Cover,
         Source: new ProviderSourceInfo(

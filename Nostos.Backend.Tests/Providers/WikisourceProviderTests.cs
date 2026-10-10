@@ -287,7 +287,7 @@ public sealed class WikisourceProviderTests
         provider.Capabilities.Should().HaveFlag(ProviderCapabilities.CoverArt);
         provider.Capabilities.Should().HaveFlag(ProviderCapabilities.RightsInformation);
         provider.Capabilities.Should().NotHaveFlag(ProviderCapabilities.AudiobookAcquisition);
-        provider.Capabilities.Should().NotHaveFlag(ProviderCapabilities.RequiresAssembly);
+        provider.Capabilities.Should().NotHaveFlag(ProviderCapabilities.MultiTrackAudiobook);
         provider.RightsNotice.Should().BeNull();
 
         var registry = new ProviderRegistry(new IContentProvider[] { provider });

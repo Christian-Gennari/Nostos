@@ -19,12 +19,15 @@ public sealed class PortableArchiveReaderTests(ITestOutputHelper output)
     private const int LegacyDataVersion = 1;
     private const int IntermediateDataVersion = 2;
     private const int CurrentDataVersion = 3;
+    // What this build writes. Version 4 added multi-track audiobooks (#835);
+    // the downgrade fixtures above still describe the shape changes up to 3.
+    private const int ExportDataVersion = 4;
 
     private static readonly DateTime FixedUtc =
         new(2026, 10, 4, 12, 0, 0, DateTimeKind.Utc);
 
     [Fact]
-    public async Task Prepare_import_commits_v3_archive_with_byte_identical_staged_content()
+    public async Task Prepare_import_commits_current_archive_with_byte_identical_staged_content()
     {
         await using var source = await LocalPortableTestLibrary.CreateAsync();
         var ids = await PortableArchiveTestSupport.PopulateRepresentativeAsync(
@@ -41,7 +44,7 @@ public sealed class PortableArchiveReaderTests(ITestOutputHelper output)
         var prepared = outcome.Prepared!;
         prepared.IntegrityVerified.Should().BeTrue();
         prepared.FormatVersion.Should().Be(SupportedFormatVersion);
-        prepared.DataVersion.Should().Be(CurrentDataVersion);
+        prepared.DataVersion.Should().Be(ExportDataVersion);
         prepared.ArchiveBytes.Should().Be(bytes.LongLength);
         prepared.PreparedAtUtc.Should().Be(FixedUtc);
         prepared.MediaFiles.Should().Be(5);

@@ -9,6 +9,7 @@ import {
   effect,
   signal,
   computed,
+  untracked,
   OnDestroy,
   HostListener,
 } from '@angular/core';
@@ -21,6 +22,7 @@ import { BooksService } from '../../core/services/books.service';
 import { AssistantContextService } from '../../ui/assistant/assistant-context.service';
 import { IReader, ReaderProgress, ReaderSourceTarget, TocItem } from '../reader.interface';
 import { Book } from '../../core/dtos/book.dtos';
+import { AudioPlayer, TrackPlaylistPlayer } from './track-playlist-player';
 
 import { BloomArtDirective } from '../../ui/bloom-art/bloom-art.directive';
 import { NostosIconComponent } from '../../ui/icon/nostos-icon.component';
@@ -93,7 +95,9 @@ export class AudioReader implements OnDestroy, IReader {
   }
 
   // Player State
-  player: Howl | null = null;
+  // A single-file book plays through Howler; a multi-track one through the
+  // playlist player. Both speak seconds across the whole book.
+  player: AudioPlayer | null = null;
   isPlaying = signal(false);
   currentTime = signal(0);
   duration = signal(0);
@@ -245,11 +249,11 @@ export class AudioReader implements OnDestroy, IReader {
     // Show the remembered speed immediately; applied to Howl on load.
     this.currentRate.set(this.restoreSavedRate());
 
-    const src = `/api/books/${id}/file`;
-    this.player = new Howl({
-      src: [src],
-      html5: true,
-      format: ['mp3', 'm4a', 'm4b'],
+    // Read without tracking: this runs inside the effect keyed on the book id,
+    // and a refreshed book object (a saved position, say) must not restart
+    // playback.
+    const tracks = untracked(() => this.book())?.tracks ?? [];
+    const callbacks = {
       onload: () => {
         this.loading.set(false);
         this.duration.set(this.player?.duration() || 0);
@@ -286,6 +290,24 @@ export class AudioReader implements OnDestroy, IReader {
         this.updateProgressState();
         this.updateMediaSessionPlaybackState('none');
       },
+    };
+
+    if (tracks.length > 0) {
+      this.player = new TrackPlaylistPlayer(
+        tracks.map((track) => ({
+          url: `/api/books/${id}/tracks/${track.number}`,
+          duration: track.duration,
+        })),
+        callbacks,
+      );
+      return;
+    }
+
+    this.player = new Howl({
+      src: [`/api/books/${id}/file`],
+      html5: true,
+      format: ['mp3', 'm4a', 'm4b'],
+      ...callbacks,
     });
   }
 

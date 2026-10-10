@@ -165,12 +165,12 @@ public static class OpdsEndpoints
             "/books/{id:guid}/audiobook",
             async (
                 Guid id,
-                AudiobookPackageService packages,
                 HttpContext http,
                 CancellationToken ct
             ) =>
             {
-                if (await packages.BuildAsync(id, ct) is not { } package)
+                if (http.RequestServices.GetService<AudiobookPackageService>() is not { } packages
+                    || await packages.BuildAsync(id, ct) is not { } package)
                     return Results.NotFound();
 
                 return await StoredAssetHttpResult.CreateAsync(
@@ -190,11 +190,13 @@ public static class OpdsEndpoints
             "/books/{id:guid}/manifest.json",
             async (
                 Guid id,
-                AudiobookPackageService packages,
                 HttpContext context,
                 CancellationToken ct
             ) =>
             {
+                if (context.RequestServices.GetService<AudiobookPackageService>() is not { } packages)
+                    return Results.NotFound();
+
                 var manifest = await packages.BuildStreamingManifestAsync(
                     id,
                     track => GetAbsoluteUrl(context, options, $"/opds/books/{id}/tracks/{track.Number}"),

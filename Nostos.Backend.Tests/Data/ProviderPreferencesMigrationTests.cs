@@ -56,8 +56,11 @@ public sealed class ProviderPreferencesMigrationTests : IDisposable
         {
             await db.GetService<IMigrator>().MigrateAsync(PreviousMigration);
             (await db.Database.GetAppliedMigrationsAsync()).Should().NotContain(currentMigrationId);
-            (await db.Database.GetPendingMigrationsAsync()).Should().Equal([currentMigrationId]);
+            (await db.Database.GetPendingMigrationsAsync())
+                .Should().StartWith(currentMigrationId, "the provider-preferences migration is the next pending one");
         }
+
+        await LaterBookColumns.RestoreAsync(originalOptions);
 
         // 2. Seed representative preexisting library/settings data, then capture
         //    the values a destructive migration would quietly take with it.
@@ -82,8 +85,9 @@ public sealed class ProviderPreferencesMigrationTests : IDisposable
         await using (var db = new NostosDbContext(copyOptions))
         {
             (await db.Database.GetPendingMigrationsAsync())
-                .Should().Equal([currentMigrationId], "the new migration is the only pending one");
-            await db.Database.MigrateAsync();
+                .Should().StartWith(currentMigrationId, "the new migration is the next pending one");
+            // Up to this migration only; later ones have their own upgrade test.
+            await db.GetService<IMigrator>().MigrateAsync(currentMigrationId);
             (await db.Database.GetAppliedMigrationsAsync()).Should().Contain(currentMigrationId);
         }
 
