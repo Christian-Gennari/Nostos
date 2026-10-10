@@ -790,7 +790,11 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         h.Llm
             .CallsTool("notes_read_for_review", JsonSerializer.Serialize(new { noteId = note.Id }))
             .CallsTool("topics_list")
-            .CallsTool("topics_propose_links", JsonSerializer.Serialize(new { noteId = note.Id, candidates = new[] {\n                new { topicId = justice.Id, reason = "The note names justice." },\n                new { topicId = rule.Id, reason = "The note addresses who governs." },\n                new { topicId = obligation.Id, reason = "The note describes a duty to rule." },\n            } }))
+            .CallsTool("topics_propose_links", JsonSerializer.Serialize(new { noteId = note.Id, candidates = new[] {
+                new { topicId = justice.Id, reason = "The note names justice." },
+                new { topicId = rule.Id, reason = "The note addresses who governs." },
+                new { topicId = obligation.Id, reason = "The note describes a duty to rule." },
+            } }))
             .Returns("Three possible topics.");
 
         var response = await h.Orchestrator.HandleTurnAsync(Turn(
@@ -816,7 +820,10 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         h.Llm
             .CallsTool("notes_read_for_review", JsonSerializer.Serialize(new { noteId = note.Id }))
             .CallsTool("topics_list")
-            .CallsTool("topics_propose_links", JsonSerializer.Serialize(new { noteId = note.Id, candidates = new[] {\n                new { topicId = alreadyLinked.Id, reason = "The note is about justice." },\n                new { topicId = newTopic.Id, reason = "It concerns the responsibility to govern." },\n            } }))
+            .CallsTool("topics_propose_links", JsonSerializer.Serialize(new { noteId = note.Id, candidates = new[] {
+                new { topicId = alreadyLinked.Id, reason = "The note is about justice." },
+                new { topicId = newTopic.Id, reason = "It concerns the responsibility to govern." },
+            } }))
             .Returns("I found connections.");
 
         var response = await h.Orchestrator.HandleTurnAsync(Turn(
