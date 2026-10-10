@@ -170,9 +170,33 @@ Upload a book file (epub, pdf, mobi, azw3, m4b, m4a, mp3, txt).
 
 For audio files, metadata (chapters, duration) is extracted automatically via ATL.NET.
 
+Uploading a file to a multi-track audiobook replaces its tracks: a book holds
+one file or a track list, never both.
+
 ### `GET /api/books/{id}/file`
 
 Download/stream the book file. Supports HTTP range requests for streaming.
+`404` for a multi-track audiobook, which has no single file; play it through
+the track route below.
+
+### `GET /api/books/{id}/file/download`
+
+Download the book as an attachment. For a multi-track audiobook this is one
+uncompressed `.zip` of its tracks, cover and a Readium audiobook
+`manifest.json`, generated on the fly. It has an exact `Content-Length`, an
+`ETag`, and supports range requests, so an interrupted download can resume.
+
+### `GET /api/books/{id}/tracks/{number}`
+
+Stream one track of a multi-track audiobook (1-based). Supports HTTP range
+requests. A book's tracks are listed in `BookDto.tracks` (`number`, `title`,
+`duration` in seconds, `bytes`, `contentType`); `tracks` is absent for a
+single-file book. Positions elsewhere (`lastLocation`, `chapters`) are seconds
+across the whole book.
+
+### `GET /api/books/{id}/tracks/{number}/download`
+
+Download one track as an attachment, named after its place and title.
 
 ### `POST /api/books/{id}/cover`
 
