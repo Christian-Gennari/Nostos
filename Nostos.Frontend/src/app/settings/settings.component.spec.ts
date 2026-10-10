@@ -761,7 +761,11 @@ describe('SettingsComponent backup-only surface', () => {
 
   it('shows a read-only Cloud nightly backup list with the supplied retention window', () => {
     managedBackupsServiceMock.getBackups.mockReturnValue(of(managedBackupListing));
-    openManageLibraryPage({ ...cloudCapabilities, supportsManagedBackups: true });
+    openManageLibraryPage({
+      ...cloudCapabilities,
+      supportsManagedBackups: true,
+      supportsManagedBackupRestore: true,
+    });
 
     const card = fixture.nativeElement.querySelector(
       '[data-testid="managed-backups-card"]',
@@ -783,6 +787,23 @@ describe('SettingsComponent backup-only surface', () => {
     expect(managedBackupsServiceMock.getBackups).toHaveBeenCalledTimes(1);
   });
 
+  it('lists managed backups without a Restore action when the host cannot restore', () => {
+    openManageLibraryPage({
+      ...cloudCapabilities,
+      supportsManagedBackups: true,
+      supportsManagedBackupRestore: false,
+    });
+
+    const card = fixture.nativeElement.querySelector('[data-testid="managed-backups-card"]');
+    expect(card).not.toBeNull();
+    expect(card.querySelectorAll('[data-testid="managed-backup"]')).toHaveLength(1);
+    expect(card.querySelector('[data-testid="managed-backup-restore"]')).toBeNull();
+
+    fixture.componentInstance.requestManagedRestore('nightly-backup-1');
+    expect(fixture.componentInstance.pendingManagedRestore()).toBeNull();
+    expect(managedBackupsServiceMock.restore).not.toHaveBeenCalled();
+  });
+
   it('does not expose managed restore in SelfHosted mode', () => {
     openManageLibraryPage();
     fixture.detectChanges();
@@ -801,6 +822,7 @@ describe('SettingsComponent backup-only surface', () => {
     openManageLibraryPage({
       ...cloudCapabilities,
       supportsManagedBackups: true,
+      supportsManagedBackupRestore: true,
     });
 
     const component = fixture.componentInstance;
@@ -837,6 +859,7 @@ describe('SettingsComponent backup-only surface', () => {
     openManageLibraryPage({
       ...cloudCapabilities,
       supportsManagedBackups: true,
+      supportsManagedBackupRestore: true,
     });
 
     const component = fixture.componentInstance;
@@ -878,6 +901,7 @@ describe('SettingsComponent backup-only surface', () => {
     openManageLibraryPage({
       ...cloudCapabilities,
       supportsManagedBackups: true,
+      supportsManagedBackupRestore: true,
     });
 
     const component = fixture.componentInstance;
@@ -912,6 +936,7 @@ describe('SettingsComponent backup-only surface', () => {
     openManageLibraryPage({
       ...cloudCapabilities,
       supportsManagedBackups: true,
+      supportsManagedBackupRestore: true,
     });
 
     const component = fixture.componentInstance;

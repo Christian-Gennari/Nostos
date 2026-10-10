@@ -289,6 +289,11 @@ export class SettingsComponent implements OnInit, OnDestroy {
   readonly supportsLocalBackupConfiguration = computed(
     () => this.deploymentCapabilities()?.supportsLocalBackupConfiguration === true,
   );
+  readonly supportsManagedRestore = computed(
+    () =>
+      this.deploymentCapabilities()?.supportsManagedBackups === true &&
+      this.deploymentCapabilities()?.supportsManagedBackupRestore === true,
+  );
   readonly supportsManagedBackups = computed(
     () => this.deploymentCapabilities()?.supportsManagedBackups === true,
   );
@@ -759,7 +764,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
   requestManagedRestore(id: string): void {
     if (
       !this.isManageLibraryPage ||
-      !this.supportsManagedBackups() ||
+      !this.supportsManagedRestore() ||
       this.managedBackupsLoading() ||
       this.managedRestoreBusy() ||
       this.managedRestoreUncertain() ||
@@ -785,7 +790,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
       this.managedRestoreBusy() ||
       this.managedRestoreUncertain() ||
       !this.isManageLibraryPage ||
-      !this.supportsManagedBackups() ||
+      !this.supportsManagedRestore() ||
       !this.managedBackups()?.backups.some(
         backup => backup.id === id && backup.state === 'completed',
       )

@@ -475,6 +475,7 @@
                       </div>
                       <div class="history-actions">
                         <span appBadge tone="success">{{ backup.state | titlecase }}</span>
+                        @if (supportsManagedRestore()) {
                         <button
                           appButton
                           type="button"
@@ -486,6 +487,7 @@
                         >
                           Restore
                         </button>
+                        }
                       </div>
                     </div>
                   }
@@ -1725,7 +1727,7 @@
       </div>
     </div>
 
-    @if (isManageLibraryPage && supportsManagedBackups()) {
+    @if (isManageLibraryPage && supportsManagedRestore()) {
       <app-confirm-modal
         [isOpen]="!!pendingManagedRestore()"
         heading="Replace your current library?"

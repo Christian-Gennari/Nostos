@@ -32,7 +32,8 @@ public sealed record DeploymentCapabilities(
     string? FeedbackUrl,
     bool HostedBrowserIntegrationEnabled = false,
     bool SupportsManagedBackups = false,
-    bool SupportsAccountDeletion = false);
+    bool SupportsAccountDeletion = false,
+    bool SupportsManagedBackupRestore = false);
 
 /// <summary>
 /// Server-authoritative deployment descriptor resolved once during startup.
