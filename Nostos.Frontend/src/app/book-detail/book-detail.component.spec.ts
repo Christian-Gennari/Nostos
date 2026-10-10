@@ -247,7 +247,10 @@ describe('BookDetail reset progress', () => {
     // Not the independent reading progress (42%).
     expect(bar.getAttribute('aria-valuenow')).not.toBe('42');
 
-    TestBed.inject(ImportService).bookPatched.next(
+    const imports = TestBed.inject(ImportService);
+    // The real terminal event removes the running entry before the book fetch resolves.
+    imports.dismiss(imports.imports()[0]);
+    imports.bookPatched.next(
       readableBook({ status: 0, hasFile: true, fileName: 'book.epub' }),
     );
     fixture.detectChanges();
