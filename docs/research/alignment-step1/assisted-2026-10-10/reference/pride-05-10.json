@@ -1,0 +1,218 @@
+{
+  "kind": "machine-assisted-reference",
+  "decoder": "faster-whisper 1.2.1",
+  "model": "base",
+  "weightsSha256": "d01c3014881c9c6f3133c182f3d2887eb6ca1c789a7538c5c007196857a0a6a9",
+  "audioSha256": "e81a74c562a953228669ee08e9fb4f5278558f2866d0cde1d5c16c4a87624754",
+  "recordedAt": "2026-10-10",
+  "elapsedSeconds": 1.49671054398641,
+  "transcript": "more fortunate, for they had the advantage of ascertaining from an upper window that he wore a blue coat and rode a black horse. An invitation to dinner was soon afterwards",
+  "segments": [
+    {
+      "start": 0.0,
+      "end": 4.26,
+      "text": " more fortunate, for they had the advantage of ascertaining from an upper window that",
+      "avgLogprob": -0.2133938033133745,
+      "noSpeechProbability": 0.006591542158275843,
+      "words": [
+        {
+          "start": 0.0,
+          "end": 0.2,
+          "word": " more",
+          "probability": 0.222471684217453
+        },
+        {
+          "start": 0.2,
+          "end": 0.82,
+          "word": " fortunate,",
+          "probability": 0.9922615885734558
+        },
+        {
+          "start": 1.22,
+          "end": 1.36,
+          "word": " for",
+          "probability": 0.9848690032958984
+        },
+        {
+          "start": 1.36,
+          "end": 1.52,
+          "word": " they",
+          "probability": 0.9938596487045288
+        },
+        {
+          "start": 1.52,
+          "end": 1.7,
+          "word": " had",
+          "probability": 0.9950425624847412
+        },
+        {
+          "start": 1.7,
+          "end": 1.84,
+          "word": " the",
+          "probability": 0.9348881244659424
+        },
+        {
+          "start": 1.84,
+          "end": 2.18,
+          "word": " advantage",
+          "probability": 0.9972792267799377
+        },
+        {
+          "start": 2.18,
+          "end": 2.4,
+          "word": " of",
+          "probability": 0.9986178874969482
+        },
+        {
+          "start": 2.4,
+          "end": 2.98,
+          "word": " ascertaining",
+          "probability": 0.9903554717699686
+        },
+        {
+          "start": 2.98,
+          "end": 3.08,
+          "word": " from",
+          "probability": 0.9887296557426453
+        },
+        {
+          "start": 3.08,
+          "end": 3.22,
+          "word": " an",
+          "probability": 0.9153876900672913
+        },
+        {
+          "start": 3.22,
+          "end": 3.38,
+          "word": " upper",
+          "probability": 0.9575055837631226
+        },
+        {
+          "start": 3.38,
+          "end": 3.74,
+          "word": " window",
+          "probability": 0.9955503940582275
+        },
+        {
+          "start": 3.74,
+          "end": 4.26,
+          "word": " that",
+          "probability": 0.8591085076332092
+        }
+      ]
+    },
+    {
+      "start": 4.26,
+      "end": 9.84,
+      "text": " he wore a blue coat and rode a black horse. An invitation to dinner was soon afterwards",
+      "avgLogprob": -0.2133938033133745,
+      "noSpeechProbability": 0.006591542158275843,
+      "words": [
+        {
+          "start": 4.26,
+          "end": 4.4,
+          "word": " he",
+          "probability": 0.9902880191802979
+        },
+        {
+          "start": 4.4,
+          "end": 4.58,
+          "word": " wore",
+          "probability": 0.9994383454322815
+        },
+        {
+          "start": 4.58,
+          "end": 4.68,
+          "word": " a",
+          "probability": 0.994202196598053
+        },
+        {
+          "start": 4.68,
+          "end": 4.88,
+          "word": " blue",
+          "probability": 0.9946187734603882
+        },
+        {
+          "start": 4.88,
+          "end": 5.16,
+          "word": " coat",
+          "probability": 0.903975784778595
+        },
+        {
+          "start": 5.16,
+          "end": 5.7,
+          "word": " and",
+          "probability": 0.8986567854881287
+        },
+        {
+          "start": 5.7,
+          "end": 5.86,
+          "word": " rode",
+          "probability": 0.8878803849220276
+        },
+        {
+          "start": 5.86,
+          "end": 5.98,
+          "word": " a",
+          "probability": 0.9974743723869324
+        },
+        {
+          "start": 5.98,
+          "end": 6.18,
+          "word": " black",
+          "probability": 0.9898253083229065
+        },
+        {
+          "start": 6.18,
+          "end": 6.54,
+          "word": " horse.",
+          "probability": 0.9746175408363342
+        },
+        {
+          "start": 7.9,
+          "end": 8.26,
+          "word": " An",
+          "probability": 0.9648933410644531
+        },
+        {
+          "start": 8.26,
+          "end": 8.58,
+          "word": " invitation",
+          "probability": 0.9790140986442566
+        },
+        {
+          "start": 8.58,
+          "end": 8.9,
+          "word": " to",
+          "probability": 0.9947274327278137
+        },
+        {
+          "start": 8.9,
+          "end": 9.12,
+          "word": " dinner",
+          "probability": 0.9803020358085632
+        },
+        {
+          "start": 9.12,
+          "end": 9.3,
+          "word": " was",
+          "probability": 0.9877213835716248
+        },
+        {
+          "start": 9.3,
+          "end": 9.52,
+          "word": " soon",
+          "probability": 0.9940468072891235
+        },
+        {
+          "start": 9.52,
+          "end": 9.84,
+          "word": " afterwards",
+          "probability": 0.554890513420105
+        }
+      ]
+    }
+  ],
+  "networkUsed": false,
+  "gatewaySpendUsd": 0
+}

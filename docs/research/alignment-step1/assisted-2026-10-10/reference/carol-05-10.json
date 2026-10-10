@@ -1,0 +1,158 @@
+{
+  "kind": "machine-assisted-reference",
+  "decoder": "faster-whisper 1.2.1",
+  "model": "base",
+  "weightsSha256": "d01c3014881c9c6f3133c182f3d2887eb6ca1c789a7538c5c007196857a0a6a9",
+  "audioSha256": "debfc78e179d7431e6a37548d027580b2bdd6d46b5544f4738e26236f96340bf",
+  "recordedAt": "2026-10-10",
+  "elapsedSeconds": 2.2803691518492997,
+  "transcript": "They are not torn down, cried Scrooge, folding one of his bed curtains in his arms. They are not torn down",
+  "segments": [
+    {
+      "start": 1.9799999999999995,
+      "end": 7.94,
+      "text": " They are not torn down, cried Scrooge, folding one of his bed curtains in his arms.",
+      "avgLogprob": -0.3168667738254254,
+      "noSpeechProbability": 0.21468473970890045,
+      "words": [
+        {
+          "start": 1.9799999999999995,
+          "end": 2.54,
+          "word": " They",
+          "probability": 0.5030776262283325
+        },
+        {
+          "start": 2.54,
+          "end": 2.66,
+          "word": " are",
+          "probability": 0.9472281336784363
+        },
+        {
+          "start": 2.66,
+          "end": 3.02,
+          "word": " not",
+          "probability": 0.9707983136177063
+        },
+        {
+          "start": 3.02,
+          "end": 3.76,
+          "word": " torn",
+          "probability": 0.9911388754844666
+        },
+        {
+          "start": 3.76,
+          "end": 4.38,
+          "word": " down,",
+          "probability": 0.9745749235153198
+        },
+        {
+          "start": 4.66,
+          "end": 4.9,
+          "word": " cried",
+          "probability": 0.2460414171218872
+        },
+        {
+          "start": 4.9,
+          "end": 5.6,
+          "word": " Scrooge,",
+          "probability": 0.9318867623806
+        },
+        {
+          "start": 6.02,
+          "end": 6.24,
+          "word": " folding",
+          "probability": 0.9650920629501343
+        },
+        {
+          "start": 6.24,
+          "end": 6.44,
+          "word": " one",
+          "probability": 0.9958220720291138
+        },
+        {
+          "start": 6.44,
+          "end": 6.54,
+          "word": " of",
+          "probability": 0.9951111674308777
+        },
+        {
+          "start": 6.54,
+          "end": 6.68,
+          "word": " his",
+          "probability": 0.9933294057846069
+        },
+        {
+          "start": 6.68,
+          "end": 6.86,
+          "word": " bed",
+          "probability": 0.9811997413635254
+        },
+        {
+          "start": 6.86,
+          "end": 7.2,
+          "word": " curtains",
+          "probability": 0.7352098226547241
+        },
+        {
+          "start": 7.2,
+          "end": 7.44,
+          "word": " in",
+          "probability": 0.9896599650382996
+        },
+        {
+          "start": 7.44,
+          "end": 7.58,
+          "word": " his",
+          "probability": 0.998063862323761
+        },
+        {
+          "start": 7.58,
+          "end": 7.94,
+          "word": " arms.",
+          "probability": 0.9934230446815491
+        }
+      ]
+    },
+    {
+      "start": 7.94,
+      "end": 9.98,
+      "text": " They are not torn down",
+      "avgLogprob": -0.3636164665222168,
+      "noSpeechProbability": 0.24689187109470367,
+      "words": [
+        {
+          "start": 7.94,
+          "end": 8.64,
+          "word": " They",
+          "probability": 0.47139930725097656
+        },
+        {
+          "start": 8.64,
+          "end": 8.78,
+          "word": " are",
+          "probability": 0.9756297469139099
+        },
+        {
+          "start": 8.78,
+          "end": 9.06,
+          "word": " not",
+          "probability": 0.9168480038642883
+        },
+        {
+          "start": 9.06,
+          "end": 9.58,
+          "word": " torn",
+          "probability": 0.993020236492157
+        },
+        {
+          "start": 9.58,
+          "end": 9.98,
+          "word": " down",
+          "probability": 0.9742635488510132
+        }
+      ]
+    }
+  ],
+  "networkUsed": false,
+  "gatewaySpendUsd": 0
+}

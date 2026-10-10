@@ -1,0 +1,110 @@
+{
+  "kind": "machine-assisted-reference",
+  "decoder": "faster-whisper 1.2.1",
+  "model": "base",
+  "weightsSha256": "d01c3014881c9c6f3133c182f3d2887eb6ca1c789a7538c5c007196857a0a6a9",
+  "audioSha256": "11eb806bd6802486d5ac4cf9fcd485e85521eb1799ceb97deb59f7ffc449c859",
+  "recordedAt": "2026-10-10",
+  "elapsedSeconds": 2.1518012187443674,
+  "transcript": "A Christmas Carol by Charles Dickens 3, the 2nd of the 3 Spirits.",
+  "segments": [
+    {
+      "start": 0.0,
+      "end": 4.06,
+      "text": " A Christmas Carol by Charles Dickens",
+      "avgLogprob": -0.6583777340975675,
+      "noSpeechProbability": 0.1219319999217987,
+      "words": [
+        {
+          "start": 0.0,
+          "end": 0.92,
+          "word": " A",
+          "probability": 0.14098197221755981
+        },
+        {
+          "start": 0.92,
+          "end": 2.58,
+          "word": " Christmas",
+          "probability": 0.9074486494064331
+        },
+        {
+          "start": 2.58,
+          "end": 2.94,
+          "word": " Carol",
+          "probability": 0.8489587306976318
+        },
+        {
+          "start": 2.94,
+          "end": 3.18,
+          "word": " by",
+          "probability": 0.940349817276001
+        },
+        {
+          "start": 3.18,
+          "end": 3.52,
+          "word": " Charles",
+          "probability": 0.9952749013900757
+        },
+        {
+          "start": 3.52,
+          "end": 4.06,
+          "word": " Dickens",
+          "probability": 0.9807591736316681
+        }
+      ]
+    },
+    {
+      "start": 4.06,
+      "end": 7.76,
+      "text": " 3, the 2nd of the 3 Spirits.",
+      "avgLogprob": -0.6909572362899781,
+      "noSpeechProbability": 0.11792463064193726,
+      "words": [
+        {
+          "start": 4.06,
+          "end": 5.58,
+          "word": " 3,",
+          "probability": 0.22986425459384918
+        },
+        {
+          "start": 5.88,
+          "end": 6.44,
+          "word": " the",
+          "probability": 0.301424115896225
+        },
+        {
+          "start": 6.44,
+          "end": 6.84,
+          "word": " 2nd",
+          "probability": 0.7892448604106903
+        },
+        {
+          "start": 6.84,
+          "end": 6.96,
+          "word": " of",
+          "probability": 0.9344705939292908
+        },
+        {
+          "start": 6.96,
+          "end": 7.08,
+          "word": " the",
+          "probability": 0.8781699538230896
+        },
+        {
+          "start": 7.08,
+          "end": 7.3,
+          "word": " 3",
+          "probability": 0.7975583672523499
+        },
+        {
+          "start": 7.3,
+          "end": 7.76,
+          "word": " Spirits.",
+          "probability": 0.7818650205930074
+        }
+      ]
+    }
+  ],
+  "networkUsed": false,
+  "gatewaySpendUsd": 0
+}

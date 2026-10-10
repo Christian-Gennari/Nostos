@@ -1,0 +1,173 @@
+{
+  "kind": "machine-assisted-reference",
+  "decoder": "faster-whisper 1.2.1",
+  "model": "base",
+  "weightsSha256": "d01c3014881c9c6f3133c182f3d2887eb6ca1c789a7538c5c007196857a0a6a9",
+  "audioSha256": "f6d22a2957b22cf923af1c91794608547d147e67fa032f10b580bb79f27c1c3d",
+  "recordedAt": "2026-10-10",
+  "elapsedSeconds": 1.4062486379407346,
+  "transcript": "Handsome features, noble mean, and the report which was in general circulation within five minutes after his entrance of his having ten thousand a year.",
+  "segments": [
+    {
+      "start": 0.0,
+      "end": 8.62,
+      "text": " Handsome features, noble mean, and the report which was in general circulation within five minutes after his entrance of his having ten thousand a year.",
+      "avgLogprob": -0.18577212281525135,
+      "noSpeechProbability": 0.009146877564489841,
+      "words": [
+        {
+          "start": 0.0,
+          "end": 0.76,
+          "word": " Handsome",
+          "probability": 0.6318530738353729
+        },
+        {
+          "start": 0.76,
+          "end": 1.08,
+          "word": " features,",
+          "probability": 0.9681784510612488
+        },
+        {
+          "start": 1.56,
+          "end": 1.78,
+          "word": " noble",
+          "probability": 0.9516741633415222
+        },
+        {
+          "start": 1.78,
+          "end": 2.1,
+          "word": " mean,",
+          "probability": 0.8850765824317932
+        },
+        {
+          "start": 2.6,
+          "end": 2.68,
+          "word": " and",
+          "probability": 0.9906944036483765
+        },
+        {
+          "start": 2.68,
+          "end": 2.8,
+          "word": " the",
+          "probability": 0.9723392724990845
+        },
+        {
+          "start": 2.8,
+          "end": 3.06,
+          "word": " report",
+          "probability": 0.9894619584083557
+        },
+        {
+          "start": 3.06,
+          "end": 3.46,
+          "word": " which",
+          "probability": 0.8872880935668945
+        },
+        {
+          "start": 3.46,
+          "end": 3.62,
+          "word": " was",
+          "probability": 0.9951313734054565
+        },
+        {
+          "start": 3.62,
+          "end": 3.8,
+          "word": " in",
+          "probability": 0.988014280796051
+        },
+        {
+          "start": 3.8,
+          "end": 4.1,
+          "word": " general",
+          "probability": 0.9804897904396057
+        },
+        {
+          "start": 4.1,
+          "end": 4.72,
+          "word": " circulation",
+          "probability": 0.9841804504394531
+        },
+        {
+          "start": 4.72,
+          "end": 4.96,
+          "word": " within",
+          "probability": 0.9908584952354431
+        },
+        {
+          "start": 4.96,
+          "end": 5.38,
+          "word": " five",
+          "probability": 0.6763131618499756
+        },
+        {
+          "start": 5.38,
+          "end": 5.6,
+          "word": " minutes",
+          "probability": 0.9971286654472351
+        },
+        {
+          "start": 5.6,
+          "end": 5.98,
+          "word": " after",
+          "probability": 0.9794212579727173
+        },
+        {
+          "start": 5.98,
+          "end": 6.12,
+          "word": " his",
+          "probability": 0.938552737236023
+        },
+        {
+          "start": 6.12,
+          "end": 6.38,
+          "word": " entrance",
+          "probability": 0.9677243232727051
+        },
+        {
+          "start": 6.38,
+          "end": 6.92,
+          "word": " of",
+          "probability": 0.5551861524581909
+        },
+        {
+          "start": 6.92,
+          "end": 7.16,
+          "word": " his",
+          "probability": 0.9837830662727356
+        },
+        {
+          "start": 7.16,
+          "end": 7.44,
+          "word": " having",
+          "probability": 0.9850576519966125
+        },
+        {
+          "start": 7.44,
+          "end": 7.76,
+          "word": " ten",
+          "probability": 0.6983967423439026
+        },
+        {
+          "start": 7.76,
+          "end": 8.22,
+          "word": " thousand",
+          "probability": 0.875923216342926
+        },
+        {
+          "start": 8.22,
+          "end": 8.38,
+          "word": " a",
+          "probability": 0.9772846698760986
+        },
+        {
+          "start": 8.38,
+          "end": 8.62,
+          "word": " year.",
+          "probability": 0.9992615580558777
+        }
+      ]
+    }
+  ],
+  "networkUsed": false,
+  "gatewaySpendUsd": 0
+}

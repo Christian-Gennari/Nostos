@@ -1,0 +1,500 @@
+{
+  "kind": "machine-assisted-reference",
+  "decoder": "faster-whisper 1.2.1",
+  "model": "base",
+  "weightsSha256": "d01c3014881c9c6f3133c182f3d2887eb6ca1c789a7538c5c007196857a0a6a9",
+  "audioSha256": "ae7e907f880bb1625b7941881911a564b935dc803356187bfead152b3637f33b",
+  "recordedAt": "2026-10-10",
+  "elapsedSeconds": 2.185941261705011,
+  "transcript": "One day in a shade and four to see the place, and was so much delighted with it that he agreed with Mr. Morris immediately, that he is to take possession before Mikkelmas, and some of his servants are to be in the house by the end of next week. What is his name? Bingley. Is he married or single? Oh, single my dear, to be sure. A single\u2014",
+  "segments": [
+    {
+      "start": 0.0,
+      "end": 4.34,
+      "text": " One day in a shade and four to see the place, and was so much delighted with it that he",
+      "avgLogprob": -0.2976317806999282,
+      "noSpeechProbability": 0.014303225092589855,
+      "words": [
+        {
+          "start": 0.0,
+          "end": 0.12,
+          "word": " One",
+          "probability": 0.07866467535495758
+        },
+        {
+          "start": 0.12,
+          "end": 0.22,
+          "word": " day",
+          "probability": 0.9981476068496704
+        },
+        {
+          "start": 0.22,
+          "end": 0.34,
+          "word": " in",
+          "probability": 0.9141940474510193
+        },
+        {
+          "start": 0.34,
+          "end": 0.42,
+          "word": " a",
+          "probability": 0.751998782157898
+        },
+        {
+          "start": 0.42,
+          "end": 0.64,
+          "word": " shade",
+          "probability": 0.3316417336463928
+        },
+        {
+          "start": 0.64,
+          "end": 0.92,
+          "word": " and",
+          "probability": 0.937024712562561
+        },
+        {
+          "start": 0.92,
+          "end": 1.24,
+          "word": " four",
+          "probability": 0.8623132109642029
+        },
+        {
+          "start": 1.24,
+          "end": 1.48,
+          "word": " to",
+          "probability": 0.922808825969696
+        },
+        {
+          "start": 1.48,
+          "end": 1.58,
+          "word": " see",
+          "probability": 0.9827640056610107
+        },
+        {
+          "start": 1.58,
+          "end": 1.72,
+          "word": " the",
+          "probability": 0.9966632723808289
+        },
+        {
+          "start": 1.72,
+          "end": 1.92,
+          "word": " place,",
+          "probability": 0.9655655026435852
+        },
+        {
+          "start": 2.36,
+          "end": 2.48,
+          "word": " and",
+          "probability": 0.9500136375427246
+        },
+        {
+          "start": 2.48,
+          "end": 2.6,
+          "word": " was",
+          "probability": 0.7360503673553467
+        },
+        {
+          "start": 2.6,
+          "end": 2.88,
+          "word": " so",
+          "probability": 0.9982298016548157
+        },
+        {
+          "start": 2.88,
+          "end": 3.14,
+          "word": " much",
+          "probability": 0.9974729418754578
+        },
+        {
+          "start": 3.14,
+          "end": 3.36,
+          "word": " delighted",
+          "probability": 0.9888185858726501
+        },
+        {
+          "start": 3.36,
+          "end": 3.68,
+          "word": " with",
+          "probability": 0.9899255037307739
+        },
+        {
+          "start": 3.68,
+          "end": 3.88,
+          "word": " it",
+          "probability": 0.9943653345108032
+        },
+        {
+          "start": 3.88,
+          "end": 4.2,
+          "word": " that",
+          "probability": 0.817945122718811
+        },
+        {
+          "start": 4.2,
+          "end": 4.34,
+          "word": " he",
+          "probability": 0.9953688979148865
+        }
+      ]
+    },
+    {
+      "start": 4.34,
+      "end": 8.7,
+      "text": " agreed with Mr. Morris immediately, that he is to take possession before Mikkelmas, and",
+      "avgLogprob": -0.2976317806999282,
+      "noSpeechProbability": 0.014303225092589855,
+      "words": [
+        {
+          "start": 4.34,
+          "end": 4.58,
+          "word": " agreed",
+          "probability": 0.9810519218444824
+        },
+        {
+          "start": 4.58,
+          "end": 4.8,
+          "word": " with",
+          "probability": 0.9915733933448792
+        },
+        {
+          "start": 4.8,
+          "end": 5.02,
+          "word": " Mr.",
+          "probability": 0.9465146064758301
+        },
+        {
+          "start": 5.1,
+          "end": 5.28,
+          "word": " Morris",
+          "probability": 0.8737715482711792
+        },
+        {
+          "start": 5.28,
+          "end": 5.8,
+          "word": " immediately,",
+          "probability": 0.9934388995170593
+        },
+        {
+          "start": 6.34,
+          "end": 6.44,
+          "word": " that",
+          "probability": 0.9647438526153564
+        },
+        {
+          "start": 6.44,
+          "end": 6.56,
+          "word": " he",
+          "probability": 0.961025595664978
+        },
+        {
+          "start": 6.56,
+          "end": 6.66,
+          "word": " is",
+          "probability": 0.7399740815162659
+        },
+        {
+          "start": 6.66,
+          "end": 6.74,
+          "word": " to",
+          "probability": 0.996300458908081
+        },
+        {
+          "start": 6.74,
+          "end": 6.92,
+          "word": " take",
+          "probability": 0.9971517324447632
+        },
+        {
+          "start": 6.92,
+          "end": 7.26,
+          "word": " possession",
+          "probability": 0.9930143356323242
+        },
+        {
+          "start": 7.26,
+          "end": 7.64,
+          "word": " before",
+          "probability": 0.9952817559242249
+        },
+        {
+          "start": 7.64,
+          "end": 8.12,
+          "word": " Mikkelmas,",
+          "probability": 0.4312828580538432
+        },
+        {
+          "start": 8.6,
+          "end": 8.7,
+          "word": " and",
+          "probability": 0.995618462562561
+        }
+      ]
+    },
+    {
+      "start": 8.7,
+      "end": 11.72,
+      "text": " some of his servants are to be in the house by the end of next week.",
+      "avgLogprob": -0.2976317806999282,
+      "noSpeechProbability": 0.014303225092589855,
+      "words": [
+        {
+          "start": 8.7,
+          "end": 8.92,
+          "word": " some",
+          "probability": 0.9948188662528992
+        },
+        {
+          "start": 8.92,
+          "end": 9.06,
+          "word": " of",
+          "probability": 0.997266411781311
+        },
+        {
+          "start": 9.06,
+          "end": 9.2,
+          "word": " his",
+          "probability": 0.9966129660606384
+        },
+        {
+          "start": 9.2,
+          "end": 9.48,
+          "word": " servants",
+          "probability": 0.9964489936828613
+        },
+        {
+          "start": 9.48,
+          "end": 9.94,
+          "word": " are",
+          "probability": 0.961724042892456
+        },
+        {
+          "start": 9.94,
+          "end": 10.08,
+          "word": " to",
+          "probability": 0.9938576817512512
+        },
+        {
+          "start": 10.08,
+          "end": 10.18,
+          "word": " be",
+          "probability": 0.9949733018875122
+        },
+        {
+          "start": 10.18,
+          "end": 10.3,
+          "word": " in",
+          "probability": 0.9938160181045532
+        },
+        {
+          "start": 10.3,
+          "end": 10.42,
+          "word": " the",
+          "probability": 0.996911883354187
+        },
+        {
+          "start": 10.42,
+          "end": 10.64,
+          "word": " house",
+          "probability": 0.9510408043861389
+        },
+        {
+          "start": 10.64,
+          "end": 10.88,
+          "word": " by",
+          "probability": 0.9947779178619385
+        },
+        {
+          "start": 10.88,
+          "end": 11.0,
+          "word": " the",
+          "probability": 0.9987913966178894
+        },
+        {
+          "start": 11.0,
+          "end": 11.18,
+          "word": " end",
+          "probability": 0.9957695007324219
+        },
+        {
+          "start": 11.18,
+          "end": 11.28,
+          "word": " of",
+          "probability": 0.9940925240516663
+        },
+        {
+          "start": 11.28,
+          "end": 11.46,
+          "word": " next",
+          "probability": 0.9919549822807312
+        },
+        {
+          "start": 11.46,
+          "end": 11.72,
+          "word": " week.",
+          "probability": 0.9983332753181458
+        }
+      ]
+    },
+    {
+      "start": 12.52,
+      "end": 13.32,
+      "text": " What is his name?",
+      "avgLogprob": -0.2976317806999282,
+      "noSpeechProbability": 0.014303225092589855,
+      "words": [
+        {
+          "start": 12.52,
+          "end": 12.82,
+          "word": " What",
+          "probability": 0.21137434244155884
+        },
+        {
+          "start": 12.82,
+          "end": 12.98,
+          "word": " is",
+          "probability": 0.990016520023346
+        },
+        {
+          "start": 12.98,
+          "end": 13.1,
+          "word": " his",
+          "probability": 0.9889214038848877
+        },
+        {
+          "start": 13.1,
+          "end": 13.32,
+          "word": " name?",
+          "probability": 0.9983258843421936
+        }
+      ]
+    },
+    {
+      "start": 14.22,
+      "end": 14.56,
+      "text": " Bingley.",
+      "avgLogprob": -0.2976317806999282,
+      "noSpeechProbability": 0.014303225092589855,
+      "words": [
+        {
+          "start": 14.22,
+          "end": 14.56,
+          "word": " Bingley.",
+          "probability": 0.8475789725780487
+        }
+      ]
+    },
+    {
+      "start": 15.28,
+      "end": 16.3,
+      "text": " Is he married or single?",
+      "avgLogprob": -0.2976317806999282,
+      "noSpeechProbability": 0.014303225092589855,
+      "words": [
+        {
+          "start": 15.28,
+          "end": 15.4,
+          "word": " Is",
+          "probability": 0.9630341529846191
+        },
+        {
+          "start": 15.4,
+          "end": 15.5,
+          "word": " he",
+          "probability": 0.9970699548721313
+        },
+        {
+          "start": 15.5,
+          "end": 15.78,
+          "word": " married",
+          "probability": 0.9964402318000793
+        },
+        {
+          "start": 15.78,
+          "end": 16.0,
+          "word": " or",
+          "probability": 0.8911435604095459
+        },
+        {
+          "start": 16.0,
+          "end": 16.3,
+          "word": " single?",
+          "probability": 0.9617510437965393
+        }
+      ]
+    },
+    {
+      "start": 16.98,
+      "end": 18.72,
+      "text": " Oh, single my dear, to be sure.",
+      "avgLogprob": -0.2976317806999282,
+      "noSpeechProbability": 0.014303225092589855,
+      "words": [
+        {
+          "start": 16.98,
+          "end": 17.18,
+          "word": " Oh,",
+          "probability": 0.808385968208313
+        },
+        {
+          "start": 17.46,
+          "end": 17.7,
+          "word": " single",
+          "probability": 0.9677627086639404
+        },
+        {
+          "start": 17.7,
+          "end": 18.0,
+          "word": " my",
+          "probability": 0.8510539531707764
+        },
+        {
+          "start": 18.0,
+          "end": 18.2,
+          "word": " dear,",
+          "probability": 0.9853547811508179
+        },
+        {
+          "start": 18.32,
+          "end": 18.38,
+          "word": " to",
+          "probability": 0.9799260497093201
+        },
+        {
+          "start": 18.38,
+          "end": 18.46,
+          "word": " be",
+          "probability": 0.9896314740180969
+        },
+        {
+          "start": 18.46,
+          "end": 18.72,
+          "word": " sure.",
+          "probability": 0.9894043207168579
+        }
+      ]
+    },
+    {
+      "start": 19.32,
+      "end": 19.98,
+      "text": " A single\u2014",
+      "avgLogprob": -0.2976317806999282,
+      "noSpeechProbability": 0.014303225092589855,
+      "words": [
+        {
+          "start": 19.32,
+          "end": 19.44,
+          "word": " A",
+          "probability": 0.9514194130897522
+        },
+        {
+          "start": 19.44,
+          "end": 19.98,
+          "word": " single\u2014",
+          "probability": 0.5386696681380272
+        }
+      ]
+    }
+  ],
+  "networkUsed": false,
+  "gatewaySpendUsd": 0
+}

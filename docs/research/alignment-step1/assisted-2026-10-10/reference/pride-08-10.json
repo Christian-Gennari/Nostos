@@ -1,0 +1,106 @@
+{
+  "kind": "machine-assisted-reference",
+  "decoder": "faster-whisper 1.2.1",
+  "weightsSha256": "d01c3014881c9c6f3133c182f3d2887eb6ca1c789a7538c5c007196857a0a6a9",
+  "audioSha256": "ed5897c9ef1c2bf87a84dcc4d18dd2d54a2ee41ec490b66d941d827ab032eec7",
+  "recordedAt": "2026-10-10T14:47:03.813583+00:00",
+  "elapsedSeconds": 1.154098181053996,
+  "transcript": "Today's reading by Kara Schalenberg, www.kray.org, pride and prejudice by Jane Austin.",
+  "segments": [
+    {
+      "start": 0.0,
+      "end": 9.82,
+      "text": " Today's reading by Kara Schalenberg, www.kray.org, pride and prejudice by Jane Austin.",
+      "avgLogprob": -0.4906977598483746,
+      "noSpeechProbability": 0.0707993283867836,
+      "words": [
+        {
+          "start": 0.0,
+          "end": 0.4,
+          "word": " Today's",
+          "probability": 0.5586529225111008
+        },
+        {
+          "start": 0.4,
+          "end": 0.62,
+          "word": " reading",
+          "probability": 0.7343493103981018
+        },
+        {
+          "start": 0.62,
+          "end": 0.82,
+          "word": " by",
+          "probability": 0.9946334362030029
+        },
+        {
+          "start": 0.82,
+          "end": 1.08,
+          "word": " Kara",
+          "probability": 0.23291267454624176
+        },
+        {
+          "start": 1.08,
+          "end": 1.7,
+          "word": " Schalenberg,",
+          "probability": 0.6242454449335734
+        },
+        {
+          "start": 2.02,
+          "end": 2.92,
+          "word": " www",
+          "probability": 0.7757855653762817
+        },
+        {
+          "start": 2.92,
+          "end": 4.4,
+          "word": ".kray",
+          "probability": 0.6948733627796173
+        },
+        {
+          "start": 4.4,
+          "end": 5.64,
+          "word": ".org,",
+          "probability": 0.989391416311264
+        },
+        {
+          "start": 5.9,
+          "end": 7.56,
+          "word": " pride",
+          "probability": 0.2920491099357605
+        },
+        {
+          "start": 7.56,
+          "end": 8.04,
+          "word": " and",
+          "probability": 0.981272280216217
+        },
+        {
+          "start": 8.04,
+          "end": 8.42,
+          "word": " prejudice",
+          "probability": 0.9083373546600342
+        },
+        {
+          "start": 8.42,
+          "end": 9.2,
+          "word": " by",
+          "probability": 0.8614696264266968
+        },
+        {
+          "start": 9.2,
+          "end": 9.46,
+          "word": " Jane",
+          "probability": 0.985532820224762
+        },
+        {
+          "start": 9.46,
+          "end": 9.82,
+          "word": " Austin.",
+          "probability": 0.5833645462989807
+        }
+      ]
+    }
+  ],
+  "networkUsed": false,
+  "gatewaySpendUsd": 0
+}

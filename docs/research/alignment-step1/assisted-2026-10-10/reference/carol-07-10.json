@@ -1,0 +1,119 @@
+{
+  "kind": "machine-assisted-reference",
+  "decoder": "faster-whisper 1.2.1",
+  "model": "base",
+  "weightsSha256": "d01c3014881c9c6f3133c182f3d2887eb6ca1c789a7538c5c007196857a0a6a9",
+  "audioSha256": "05209127aa91d4086b8c5e403847ba899f29860f512f0f8adb47a790a1931853",
+  "recordedAt": "2026-10-10",
+  "elapsedSeconds": 1.357522910926491,
+  "transcript": "Here please visit librivox.org This recording by Mark Bradford A Christmas Carol",
+  "segments": [
+    {
+      "start": 0.0,
+      "end": 2.92,
+      "text": " Here please visit librivox.org",
+      "avgLogprob": -0.47029995918273926,
+      "noSpeechProbability": 0.12808364629745483,
+      "words": [
+        {
+          "start": 0.0,
+          "end": 0.18,
+          "word": " Here",
+          "probability": 0.5191507339477539
+        },
+        {
+          "start": 0.18,
+          "end": 1.06,
+          "word": " please",
+          "probability": 0.15668489038944244
+        },
+        {
+          "start": 1.06,
+          "end": 1.4,
+          "word": " visit",
+          "probability": 0.9954686164855957
+        },
+        {
+          "start": 1.4,
+          "end": 2.38,
+          "word": " librivox",
+          "probability": 0.6354814916849136
+        },
+        {
+          "start": 2.38,
+          "end": 2.92,
+          "word": ".org",
+          "probability": 0.9926636517047882
+        }
+      ]
+    },
+    {
+      "start": 3.8,
+      "end": 6.28,
+      "text": " This recording by Mark Bradford",
+      "avgLogprob": -0.47029995918273926,
+      "noSpeechProbability": 0.12808364629745483,
+      "words": [
+        {
+          "start": 3.8,
+          "end": 4.64,
+          "word": " This",
+          "probability": 0.2745097577571869
+        },
+        {
+          "start": 4.64,
+          "end": 5.02,
+          "word": " recording",
+          "probability": 0.9853181838989258
+        },
+        {
+          "start": 5.02,
+          "end": 5.56,
+          "word": " by",
+          "probability": 0.9594905376434326
+        },
+        {
+          "start": 5.56,
+          "end": 5.86,
+          "word": " Mark",
+          "probability": 0.8445284962654114
+        },
+        {
+          "start": 5.86,
+          "end": 6.28,
+          "word": " Bradford",
+          "probability": 0.9767616391181946
+        }
+      ]
+    },
+    {
+      "start": 8.040000000000001,
+      "end": 9.6,
+      "text": " A Christmas Carol",
+      "avgLogprob": -0.47029995918273926,
+      "noSpeechProbability": 0.12808364629745483,
+      "words": [
+        {
+          "start": 8.040000000000001,
+          "end": 8.88,
+          "word": " A",
+          "probability": 0.45296475291252136
+        },
+        {
+          "start": 8.88,
+          "end": 9.22,
+          "word": " Christmas",
+          "probability": 0.9751717448234558
+        },
+        {
+          "start": 9.22,
+          "end": 9.6,
+          "word": " Carol",
+          "probability": 0.9146266579627991
+        }
+      ]
+    }
+  ],
+  "networkUsed": false,
+  "gatewaySpendUsd": 0
+}

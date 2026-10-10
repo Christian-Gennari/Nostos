@@ -69,6 +69,33 @@ success says nothing about audiobook feasibility.
 
 ## Transcribe, replay, inspect
 
+The owner-approved 2026-10-10 pilot uses **machine-assisted references**, because
+this session cannot ingest audio. Its exact manifest and reference evidence live
+in `docs/research/alignment-step1/assisted-2026-10-10/`. Download the ten recorded
+source files; four Pride and Prejudice introductions use the first LibriVox
+edition at endpoints 20s (chapters 1–3) and 25s (chapters 4–5), replacing candidate
+clips that contained story text. No silence padding or threshold changes.
+
+```sh
+python3 tools/Nostos.Alignment.Spike/benchmark.py materialize "$ALIGNMENT_DATA" "$ALIGNMENT_DLL" docs/research/alignment-step1/assisted-2026-10-10/manifest.json
+```
+
+This regenerates extraction/clips and validates source, clip and reference hashes.
+Changed bytes stop reproduction. To decode independent references in a fresh
+directory, use `reference.py --weights /existing/cached/model --output /fresh/reference
+/path/to/clip.wav` with faster-whisper 1.2.1. Downloads are disabled; evidence
+includes weights/audio hashes, word timing and confidence. Direct EPUB inspection
+established expected ranges; `annotation-selection.py` records the chosen passages
+and cutoff decisions. The experimental matcher did not construct reference labels.
+
+An assisted manifest sets `annotationMethod: machine-assisted`; each clip needs
+`annotationStatus: confirmed-reference`, `referenceFile` and `referenceSha256`.
+Uncertain references cannot be frozen. Legacy `heardExcerpt` contains reference
+text, not a claim of listening. Accepted inspection receipts must set
+`verificationMethod: machine-assisted`. Final scoring separates
+`assistedContinuationGate` and always leaves the human `continuationGate: false`.
+Perfect assisted agreement still needs independent human audio/source verification.
+
 `transcribe <adapter.dll> <clip.wav> <transcript.json>` instantiates one concrete,
 parameterless `ISTtProvider`, calls once with the English hint and WAV media type,
 and stores clip identity, latency and the existing `SttResult`. It has a 90-second

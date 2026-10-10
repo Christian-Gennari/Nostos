@@ -1,0 +1,233 @@
+{
+  "kind": "machine-assisted-reference",
+  "decoder": "faster-whisper 1.2.1",
+  "model": "base",
+  "weightsSha256": "d01c3014881c9c6f3133c182f3d2887eb6ca1c789a7538c5c007196857a0a6a9",
+  "audioSha256": "b8a84366e44b42f8b0acec2659774c6b9e78af9758a3dd5e3581cbf73f870a8d",
+  "recordedAt": "2026-10-10",
+  "elapsedSeconds": 1.5274270088411868,
+  "transcript": "But it had undergone a surprising transformation. The walls and ceiling were so hung with living green that it looked like a perfect grove from every part of which bright gleaming berries.",
+  "segments": [
+    {
+      "start": 0.0,
+      "end": 2.42,
+      "text": " But it had undergone a surprising transformation.",
+      "avgLogprob": -0.18329282342032951,
+      "noSpeechProbability": 0.016508959233760834,
+      "words": [
+        {
+          "start": 0.0,
+          "end": 0.34,
+          "word": " But",
+          "probability": 0.7072136998176575
+        },
+        {
+          "start": 0.34,
+          "end": 0.44,
+          "word": " it",
+          "probability": 0.988471508026123
+        },
+        {
+          "start": 0.44,
+          "end": 0.56,
+          "word": " had",
+          "probability": 0.9952030181884766
+        },
+        {
+          "start": 0.56,
+          "end": 1.02,
+          "word": " undergone",
+          "probability": 0.9874747693538666
+        },
+        {
+          "start": 1.02,
+          "end": 1.32,
+          "word": " a",
+          "probability": 0.9204486012458801
+        },
+        {
+          "start": 1.32,
+          "end": 1.72,
+          "word": " surprising",
+          "probability": 0.9958981871604919
+        },
+        {
+          "start": 1.72,
+          "end": 2.42,
+          "word": " transformation.",
+          "probability": 0.9969993829727173
+        }
+      ]
+    },
+    {
+      "start": 3.32,
+      "end": 7.32,
+      "text": " The walls and ceiling were so hung with living green that it looked like a perfect grove",
+      "avgLogprob": -0.18329282342032951,
+      "noSpeechProbability": 0.016508959233760834,
+      "words": [
+        {
+          "start": 3.32,
+          "end": 3.5,
+          "word": " The",
+          "probability": 0.9856786131858826
+        },
+        {
+          "start": 3.5,
+          "end": 3.7,
+          "word": " walls",
+          "probability": 0.9804236888885498
+        },
+        {
+          "start": 3.7,
+          "end": 3.9,
+          "word": " and",
+          "probability": 0.9377864003181458
+        },
+        {
+          "start": 3.9,
+          "end": 4.18,
+          "word": " ceiling",
+          "probability": 0.9011538624763489
+        },
+        {
+          "start": 4.18,
+          "end": 4.4,
+          "word": " were",
+          "probability": 0.9909310340881348
+        },
+        {
+          "start": 4.4,
+          "end": 4.6,
+          "word": " so",
+          "probability": 0.9963828325271606
+        },
+        {
+          "start": 4.6,
+          "end": 4.82,
+          "word": " hung",
+          "probability": 0.9907357096672058
+        },
+        {
+          "start": 4.82,
+          "end": 4.96,
+          "word": " with",
+          "probability": 0.9757453799247742
+        },
+        {
+          "start": 4.96,
+          "end": 5.22,
+          "word": " living",
+          "probability": 0.9646732807159424
+        },
+        {
+          "start": 5.22,
+          "end": 5.52,
+          "word": " green",
+          "probability": 0.99378901720047
+        },
+        {
+          "start": 5.52,
+          "end": 5.72,
+          "word": " that",
+          "probability": 0.9232714176177979
+        },
+        {
+          "start": 5.72,
+          "end": 5.84,
+          "word": " it",
+          "probability": 0.9917066097259521
+        },
+        {
+          "start": 5.84,
+          "end": 5.98,
+          "word": " looked",
+          "probability": 0.994148850440979
+        },
+        {
+          "start": 5.98,
+          "end": 6.22,
+          "word": " like",
+          "probability": 0.9958035349845886
+        },
+        {
+          "start": 6.22,
+          "end": 6.32,
+          "word": " a",
+          "probability": 0.993114173412323
+        },
+        {
+          "start": 6.32,
+          "end": 6.6,
+          "word": " perfect",
+          "probability": 0.9943390488624573
+        },
+        {
+          "start": 6.6,
+          "end": 7.32,
+          "word": " grove",
+          "probability": 0.9458970427513123
+        }
+      ]
+    },
+    {
+      "start": 7.32,
+      "end": 9.84,
+      "text": " from every part of which bright gleaming berries.",
+      "avgLogprob": -0.18329282342032951,
+      "noSpeechProbability": 0.016508959233760834,
+      "words": [
+        {
+          "start": 7.32,
+          "end": 7.82,
+          "word": " from",
+          "probability": 0.6859807968139648
+        },
+        {
+          "start": 7.82,
+          "end": 8.1,
+          "word": " every",
+          "probability": 0.9958550333976746
+        },
+        {
+          "start": 8.1,
+          "end": 8.32,
+          "word": " part",
+          "probability": 0.9979280233383179
+        },
+        {
+          "start": 8.32,
+          "end": 8.5,
+          "word": " of",
+          "probability": 0.9931387305259705
+        },
+        {
+          "start": 8.5,
+          "end": 8.74,
+          "word": " which",
+          "probability": 0.9898521304130554
+        },
+        {
+          "start": 8.74,
+          "end": 9.08,
+          "word": " bright",
+          "probability": 0.8771912455558777
+        },
+        {
+          "start": 9.08,
+          "end": 9.56,
+          "word": " gleaming",
+          "probability": 0.8774755597114563
+        },
+        {
+          "start": 9.56,
+          "end": 9.84,
+          "word": " berries.",
+          "probability": 0.9006727933883667
+        }
+      ]
+    }
+  ],
+  "networkUsed": false,
+  "gatewaySpendUsd": 0
+}

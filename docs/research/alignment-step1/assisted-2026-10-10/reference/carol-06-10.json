@@ -1,0 +1,158 @@
+{
+  "kind": "machine-assisted-reference",
+  "decoder": "faster-whisper 1.2.1",
+  "model": "base",
+  "weightsSha256": "d01c3014881c9c6f3133c182f3d2887eb6ca1c789a7538c5c007196857a0a6a9",
+  "audioSha256": "be67a11ab5e40a6aee85b1ef876f8c745c0491c11e9ff97f486385052c4879d9",
+  "recordedAt": "2026-10-10",
+  "elapsedSeconds": 1.3960930057801306,
+  "transcript": "That scrooge, starting off again, and going around the fireplace. There's the door by which the ghost of Jacob Marley entered.",
+  "segments": [
+    {
+      "start": 0.0,
+      "end": 3.86,
+      "text": " That scrooge, starting off again, and going around the fireplace.",
+      "avgLogprob": -0.20726935267448426,
+      "noSpeechProbability": 0.009848136454820633,
+      "words": [
+        {
+          "start": 0.0,
+          "end": 0.14,
+          "word": " That",
+          "probability": 0.13388323783874512
+        },
+        {
+          "start": 0.14,
+          "end": 0.82,
+          "word": " scrooge,",
+          "probability": 0.8605787009000778
+        },
+        {
+          "start": 1.26,
+          "end": 1.58,
+          "word": " starting",
+          "probability": 0.9907755255699158
+        },
+        {
+          "start": 1.58,
+          "end": 1.84,
+          "word": " off",
+          "probability": 0.9952577948570251
+        },
+        {
+          "start": 1.84,
+          "end": 2.14,
+          "word": " again,",
+          "probability": 0.9910885095596313
+        },
+        {
+          "start": 2.74,
+          "end": 2.8,
+          "word": " and",
+          "probability": 0.9515054225921631
+        },
+        {
+          "start": 2.8,
+          "end": 3.02,
+          "word": " going",
+          "probability": 0.9951283931732178
+        },
+        {
+          "start": 3.02,
+          "end": 3.28,
+          "word": " around",
+          "probability": 0.9626911878585815
+        },
+        {
+          "start": 3.28,
+          "end": 3.46,
+          "word": " the",
+          "probability": 0.981270968914032
+        },
+        {
+          "start": 3.46,
+          "end": 3.86,
+          "word": " fireplace.",
+          "probability": 0.98304682970047
+        }
+      ]
+    },
+    {
+      "start": 4.7,
+      "end": 9.64,
+      "text": " There's the door by which the ghost of Jacob Marley entered.",
+      "avgLogprob": -0.20726935267448426,
+      "noSpeechProbability": 0.009848136454820633,
+      "words": [
+        {
+          "start": 4.7,
+          "end": 5.36,
+          "word": " There's",
+          "probability": 0.8535776734352112
+        },
+        {
+          "start": 5.36,
+          "end": 5.5,
+          "word": " the",
+          "probability": 0.9259124994277954
+        },
+        {
+          "start": 5.5,
+          "end": 6.0,
+          "word": " door",
+          "probability": 0.9668699502944946
+        },
+        {
+          "start": 6.0,
+          "end": 6.58,
+          "word": " by",
+          "probability": 0.8259583115577698
+        },
+        {
+          "start": 6.58,
+          "end": 6.88,
+          "word": " which",
+          "probability": 0.9977092742919922
+        },
+        {
+          "start": 6.88,
+          "end": 7.2,
+          "word": " the",
+          "probability": 0.9772805571556091
+        },
+        {
+          "start": 7.2,
+          "end": 7.64,
+          "word": " ghost",
+          "probability": 0.9062982797622681
+        },
+        {
+          "start": 7.64,
+          "end": 7.96,
+          "word": " of",
+          "probability": 0.993522584438324
+        },
+        {
+          "start": 7.96,
+          "end": 8.44,
+          "word": " Jacob",
+          "probability": 0.9697015881538391
+        },
+        {
+          "start": 8.44,
+          "end": 9.1,
+          "word": " Marley",
+          "probability": 0.9483897387981415
+        },
+        {
+          "start": 9.1,
+          "end": 9.64,
+          "word": " entered.",
+          "probability": 0.9896215200424194
+        }
+      ]
+    }
+  ],
+  "networkUsed": false,
+  "gatewaySpendUsd": 0
+}

@@ -1,0 +1,277 @@
+{
+  "kind": "machine-assisted-reference",
+  "decoder": "faster-whisper 1.2.1",
+  "weightsSha256": "d01c3014881c9c6f3133c182f3d2887eb6ca1c789a7538c5c007196857a0a6a9",
+  "audioSha256": "f8a4db7ed76a941063ca7d34da25f6e36adec2eb81ab8db6ff402325d33d80a0",
+  "recordedAt": "2026-10-10T14:47:02.659019+00:00",
+  "elapsedSeconds": 1.6431744513101876,
+  "transcript": "This is a Librivox recording. All Librivox recordings are in the public domain. For more information, please visit Librivox.org. Today's reading, Pride and Fedgetists by Jane Austen, chapters 1 to 3, read by Chris Garwich. Chapter 1",
+  "segments": [
+    {
+      "start": 0.0,
+      "end": 5.24,
+      "text": " This is a Librivox recording. All Librivox recordings are in the public domain.",
+      "avgLogprob": -0.3240049934723008,
+      "noSpeechProbability": 0.12387128174304962,
+      "words": [
+        {
+          "start": 0.0,
+          "end": 0.46,
+          "word": " This",
+          "probability": 0.534886360168457
+        },
+        {
+          "start": 0.46,
+          "end": 0.68,
+          "word": " is",
+          "probability": 0.9929755926132202
+        },
+        {
+          "start": 0.68,
+          "end": 0.78,
+          "word": " a",
+          "probability": 0.9290028810501099
+        },
+        {
+          "start": 0.78,
+          "end": 1.3,
+          "word": " Librivox",
+          "probability": 0.8062871992588043
+        },
+        {
+          "start": 1.3,
+          "end": 1.72,
+          "word": " recording.",
+          "probability": 0.5614350438117981
+        },
+        {
+          "start": 2.4,
+          "end": 2.76,
+          "word": " All",
+          "probability": 0.9884963035583496
+        },
+        {
+          "start": 2.76,
+          "end": 3.58,
+          "word": " Librivox",
+          "probability": 0.9919896125793457
+        },
+        {
+          "start": 3.58,
+          "end": 4.04,
+          "word": " recordings",
+          "probability": 0.9837338924407959
+        },
+        {
+          "start": 4.04,
+          "end": 4.34,
+          "word": " are",
+          "probability": 0.9906342029571533
+        },
+        {
+          "start": 4.34,
+          "end": 4.44,
+          "word": " in",
+          "probability": 0.9957963228225708
+        },
+        {
+          "start": 4.44,
+          "end": 4.54,
+          "word": " the",
+          "probability": 0.979915201663971
+        },
+        {
+          "start": 4.54,
+          "end": 4.8,
+          "word": " public",
+          "probability": 0.9080553650856018
+        },
+        {
+          "start": 4.8,
+          "end": 5.24,
+          "word": " domain.",
+          "probability": 0.9986385703086853
+        }
+      ]
+    },
+    {
+      "start": 5.9,
+      "end": 9.36,
+      "text": " For more information, please visit Librivox.org.",
+      "avgLogprob": -0.3240049934723008,
+      "noSpeechProbability": 0.12387128174304962,
+      "words": [
+        {
+          "start": 5.9,
+          "end": 6.02,
+          "word": " For",
+          "probability": 0.9966804385185242
+        },
+        {
+          "start": 6.02,
+          "end": 6.16,
+          "word": " more",
+          "probability": 0.9986991882324219
+        },
+        {
+          "start": 6.16,
+          "end": 6.76,
+          "word": " information,",
+          "probability": 0.9983364939689636
+        },
+        {
+          "start": 7.06,
+          "end": 7.34,
+          "word": " please",
+          "probability": 0.9877424240112305
+        },
+        {
+          "start": 7.34,
+          "end": 7.72,
+          "word": " visit",
+          "probability": 0.9992007613182068
+        },
+        {
+          "start": 7.72,
+          "end": 8.52,
+          "word": " Librivox",
+          "probability": 0.8913260698318481
+        },
+        {
+          "start": 8.52,
+          "end": 9.36,
+          "word": ".org.",
+          "probability": 0.9956256151199341
+        }
+      ]
+    },
+    {
+      "start": 10.76,
+      "end": 17.4,
+      "text": " Today's reading, Pride and Fedgetists by Jane Austen, chapters 1 to 3, read by Chris Garwich.",
+      "avgLogprob": -0.3240049934723008,
+      "noSpeechProbability": 0.12387128174304962,
+      "words": [
+        {
+          "start": 10.76,
+          "end": 11.36,
+          "word": " Today's",
+          "probability": 0.9611778557300568
+        },
+        {
+          "start": 11.36,
+          "end": 11.66,
+          "word": " reading,",
+          "probability": 0.9855696558952332
+        },
+        {
+          "start": 11.94,
+          "end": 12.12,
+          "word": " Pride",
+          "probability": 0.3893842399120331
+        },
+        {
+          "start": 12.12,
+          "end": 12.32,
+          "word": " and",
+          "probability": 0.8473078608512878
+        },
+        {
+          "start": 12.32,
+          "end": 12.88,
+          "word": " Fedgetists",
+          "probability": 0.3552529215812683
+        },
+        {
+          "start": 12.88,
+          "end": 13.1,
+          "word": " by",
+          "probability": 0.86867356300354
+        },
+        {
+          "start": 13.1,
+          "end": 13.36,
+          "word": " Jane",
+          "probability": 0.9361175894737244
+        },
+        {
+          "start": 13.36,
+          "end": 13.84,
+          "word": " Austen,",
+          "probability": 0.8024210333824158
+        },
+        {
+          "start": 14.4,
+          "end": 14.66,
+          "word": " chapters",
+          "probability": 0.4388982653617859
+        },
+        {
+          "start": 14.66,
+          "end": 14.96,
+          "word": " 1",
+          "probability": 0.6452333331108093
+        },
+        {
+          "start": 14.96,
+          "end": 15.24,
+          "word": " to",
+          "probability": 0.44555655121803284
+        },
+        {
+          "start": 15.24,
+          "end": 15.64,
+          "word": " 3,",
+          "probability": 0.9954953193664551
+        },
+        {
+          "start": 16.3,
+          "end": 16.54,
+          "word": " read",
+          "probability": 0.8900453448295593
+        },
+        {
+          "start": 16.54,
+          "end": 16.78,
+          "word": " by",
+          "probability": 0.998860239982605
+        },
+        {
+          "start": 16.78,
+          "end": 17.04,
+          "word": " Chris",
+          "probability": 0.7853086590766907
+        },
+        {
+          "start": 17.04,
+          "end": 17.4,
+          "word": " Garwich.",
+          "probability": 0.3189034089446068
+        }
+      ]
+    },
+    {
+      "start": 18.86,
+      "end": 19.34,
+      "text": " Chapter 1",
+      "avgLogprob": -0.3240049934723008,
+      "noSpeechProbability": 0.12387128174304962,
+      "words": [
+        {
+          "start": 18.86,
+          "end": 19.06,
+          "word": " Chapter",
+          "probability": 0.9021317362785339
+        },
+        {
+          "start": 19.06,
+          "end": 19.34,
+          "word": " 1",
+          "probability": 0.91544109582901
+        }
+      ]
+    }
+  ],
+  "networkUsed": false,
+  "gatewaySpendUsd": 0
+}

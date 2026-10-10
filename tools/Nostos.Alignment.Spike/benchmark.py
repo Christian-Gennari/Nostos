@@ -5,6 +5,7 @@ import json
 import re
 import statistics
 import subprocess
+import shutil
 from pathlib import Path
 
 
@@ -62,9 +63,39 @@ def prepare(args):
     print("32 candidate clips prepared. These are NOT verified benchmark fixtures.")
 
 
+def materialize(args):
+    """Reproduce a recorded fixture revision; never manufacture fresh annotations."""
+    root = Path(args.root).resolve()
+    template = Path(args.manifest).resolve()
+    manifest = load(template)
+    root.mkdir(parents=True, exist_ok=True)
+    if (root / "manifest.json").exists():
+        raise ValueError("Manifest already exists; preserve evidence.")
+    for source in manifest["sources"]:
+        if digest(root / source["file"]) != source["sha256"]:
+            raise ValueError("Download the exact recorded source bytes: " + source["file"])
+    for book in manifest["books"]:
+        cli(args.dll, "extract", root / book["epubFile"], root / book["extractedFile"])
+    for clip in manifest["clips"]:
+        subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin",
+                        "-ss", str(clip["startSeconds"]), "-i", str(root / clip["trackFile"]),
+                        "-t", str(clip["durationSeconds"]), "-ar", "16000", "-ac", "1",
+                        "-c:a", "pcm_s16le", "-y", str(root / clip["file"])], check=True)
+        if clip.get("referenceFile"):
+            destination = root / clip["referenceFile"]
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(template.parent / clip["referenceFile"], destination)
+    validate(manifest, root)
+    shutil.copyfile(template, root / "manifest.json")
+    print("Recorded fixtures reproduced and hashes verified; annotations remain assisted when recorded as such.")
+
+
 def validate(manifest, root):
     if manifest.get("language") != "en" or len(manifest["clips"]) != 32:
         raise ValueError("Expected exactly 32 English clips.")
+    method = manifest.get("annotationMethod", "human")
+    if method not in ("human", "machine-assisted"):
+        raise ValueError("Unknown annotation method.")
     for source in manifest["sources"]:
         if digest(root / source["file"]) != source["sha256"]:
             raise ValueError("Source hash changed: " + source["file"])
@@ -96,7 +127,13 @@ def validate(manifest, root):
         if abs(float(timing["format"]["duration"])-clip["durationSeconds"]) > 0.01:
             raise ValueError("Actual clip duration differs.")
         if not clip.get("reviewedBy") or not clip.get("reviewedAt") or not clip.get("heardExcerpt"):
-            raise ValueError("Independent listening receipt missing: " + clip["id"])
+            raise ValueError("Reference inspection receipt missing: " + clip["id"])
+        if method == "machine-assisted":
+            if clip.get("annotationStatus") != "confirmed-reference":
+                raise ValueError("Uncertain assisted annotation: " + clip["id"])
+            reference = root / clip["referenceFile"]
+            if digest(reference) != clip["referenceSha256"] or load(reference)["audioSha256"] != clip["sha256"]:
+                raise ValueError("Assisted reference identity changed.")
         group = positions.setdefault(clip["positionId"], [])
         group.append(clip)
         if clip["kind"] == "introduction":
@@ -136,6 +173,7 @@ def freeze(args):
             calibration["settingsSha256"] != digest(args.settings)):
         raise ValueError("Offline calibration did not pass with these settings.")
     save(root / "freeze.json", {"manifestSha256": digest(root / "manifest.json"),
+          "annotationMethod": load(root / "manifest.json").get("annotationMethod", "human"),
           "settingsSha256": digest(args.settings), "calibrationSha256": digest(args.calibration),
           "calibrationReceipt": load(args.calibration)})
     print("Fixture and offline calibration hashes frozen. Keep this receipt before model output.")
@@ -177,6 +215,7 @@ def replay(args):
     if digest(root / "manifest.json") != frozen["manifestSha256"] or digest(args.settings) != frozen["settingsSha256"]:
         raise ValueError("Frozen benchmark inputs changed.")
     validate(manifest, root)
+    method = manifest.get("annotationMethod", "human")
     entries = load(args.index)
     seen, results = set(), []
     books = {b["id"]: b for b in manifest["books"]}
@@ -226,14 +265,16 @@ def replay(args):
                         "sourceErrorsCharacters": [r["sourceLocationErrorCharacters"] for r in rows],
                         "audioSeconds": sum(r["durationSeconds"] for r in rows),
                         "automatedGate": len(rows) == 32 and correct >= 11 and bad == 0,
-                        "continuationGate": False, "reason": "Accepted locations still require independent audio/EPUB inspection."})
-    save(output / "report.json", {"freeze": frozen, "results": results, "summary": summary})
+                        "continuationGate": False, "assistedContinuationGate": False,
+                        "reason": "Accepted locations still require reference/source inspection; assisted labels cannot establish human ground truth."})
+    save(output / "report.json", {"freeze": frozen, "annotationMethod": method, "results": results, "summary": summary})
     print("Replay recorded. Automated scores alone do not authorize continuation.")
 
 
 def finalize(args):
     report_path = Path(args.report).resolve()
     report = load(report_path)
+    method = report.get("annotationMethod", "human")
     reviews = load(args.reviews)
     review_map = {(r["providerTag"], r["clipId"]): r for r in reviews}
     if len(review_map) != len(reviews):
@@ -250,15 +291,20 @@ def finalize(args):
             raise ValueError("Accepted location requires an audio/EPUB inspection receipt: " + row["clipId"])
         if receipt["outcome"] == "correct" and row["outcome"] != "correct":
             raise ValueError("Manual review cannot erase a mismatch against frozen ground truth.")
+        if method == "machine-assisted" and receipt.get("verificationMethod") != "machine-assisted":
+            raise ValueError("Assisted reference inspection must not be described as manual listening.")
         row["manualAcceptance"] = receipt
     for summary in report["summary"]:
         rows = [r for r in report["results"] if r["providerTag"] == summary["providerTag"]]
         outcome = lambda r: r["manualAcceptance"]["outcome"] if r["manualAcceptance"] else r["outcome"]
         correct = len({r["positionId"] for r in rows if r["kind"] == "passage" and outcome(r) == "correct"})
         bad = sum(outcome(r) == "incorrect_accepted" for r in rows)
-        summary.update(manuallyCorrectPositionsOf12=correct, manuallyIncorrectAccepted=bad,
-                       continuationGate=len(rows) == 32 and correct >= 11 and bad == 0,
-                       reason="Independent acceptance receipts applied; economics must be reconciled separately.")
+        passed = len(rows) == 32 and correct >= 11 and bad == 0
+        summary.update(inspectedCorrectPositionsOf12=correct, inspectedIncorrectAccepted=bad,
+                       continuationGate=passed and method == "human",
+                       assistedContinuationGate=passed and method == "machine-assisted",
+                       reason="Assisted reference agreement only; human zero-error gate remains unverified." if method == "machine-assisted"
+                           else "Independent acceptance receipts applied; economics must be reconciled separately.")
     save(report_path.parent / "final-report.json", report)
     print("Manual acceptance applied. Read the gate and economic evidence before recommending a next step.")
 
@@ -267,6 +313,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
     p = commands.add_parser("prepare"); p.add_argument("root"); p.add_argument("dll"); p.set_defaults(run=prepare)
+    p = commands.add_parser("materialize"); p.add_argument("root"); p.add_argument("dll"); p.add_argument("manifest"); p.set_defaults(run=materialize)
     p = commands.add_parser("freeze"); p.add_argument("root"); p.add_argument("settings"); p.add_argument("calibration"); p.set_defaults(run=freeze)
     p = commands.add_parser("calibrate"); p.add_argument("output"); p.add_argument("dll"); p.add_argument("settings"); p.set_defaults(run=calibrate)
     p = commands.add_parser("replay"); p.add_argument("root"); p.add_argument("dll"); p.add_argument("settings"); p.add_argument("index"); p.add_argument("output"); p.set_defaults(run=replay)

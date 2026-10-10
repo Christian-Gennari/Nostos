@@ -1,0 +1,182 @@
+{
+  "kind": "machine-assisted-reference",
+  "decoder": "faster-whisper 1.2.1",
+  "model": "base",
+  "weightsSha256": "d01c3014881c9c6f3133c182f3d2887eb6ca1c789a7538c5c007196857a0a6a9",
+  "audioSha256": "4bc363ccbc8ed1f53cb6ca6f4da6830c29d085fe5c69b60d898945cccc63eab8",
+  "recordedAt": "2026-10-10",
+  "elapsedSeconds": 2.604847965296358,
+  "transcript": "he chose to put his hand to. Old Marley was as dead as a doornail. or. Mind. I don't mean to say that I know.",
+  "segments": [
+    {
+      "start": 0.0,
+      "end": 5.64,
+      "text": " he chose to put his hand to. Old Marley was as dead as a doornail.",
+      "avgLogprob": -0.3365219545861085,
+      "noSpeechProbability": 0.004186706151813269,
+      "words": [
+        {
+          "start": 0.0,
+          "end": 0.24,
+          "word": " he",
+          "probability": 0.7871429920196533
+        },
+        {
+          "start": 0.24,
+          "end": 0.58,
+          "word": " chose",
+          "probability": 0.9896775484085083
+        },
+        {
+          "start": 0.58,
+          "end": 0.86,
+          "word": " to",
+          "probability": 0.9976648092269897
+        },
+        {
+          "start": 0.86,
+          "end": 1.0,
+          "word": " put",
+          "probability": 0.9994112253189087
+        },
+        {
+          "start": 1.0,
+          "end": 1.2,
+          "word": " his",
+          "probability": 0.9968557357788086
+        },
+        {
+          "start": 1.2,
+          "end": 1.4,
+          "word": " hand",
+          "probability": 0.9969697594642639
+        },
+        {
+          "start": 1.4,
+          "end": 1.64,
+          "word": " to.",
+          "probability": 0.9598793983459473
+        },
+        {
+          "start": 2.92,
+          "end": 3.26,
+          "word": " Old",
+          "probability": 0.9416537880897522
+        },
+        {
+          "start": 3.26,
+          "end": 3.66,
+          "word": " Marley",
+          "probability": 0.9019578695297241
+        },
+        {
+          "start": 3.66,
+          "end": 4.06,
+          "word": " was",
+          "probability": 0.9935144186019897
+        },
+        {
+          "start": 4.06,
+          "end": 4.3,
+          "word": " as",
+          "probability": 0.9945407509803772
+        },
+        {
+          "start": 4.3,
+          "end": 4.5,
+          "word": " dead",
+          "probability": 0.9944080114364624
+        },
+        {
+          "start": 4.5,
+          "end": 5.02,
+          "word": " as",
+          "probability": 0.9888936877250671
+        },
+        {
+          "start": 5.02,
+          "end": 5.14,
+          "word": " a",
+          "probability": 0.9667999744415283
+        },
+        {
+          "start": 5.14,
+          "end": 5.64,
+          "word": " doornail.",
+          "probability": 0.6090803345044454
+        }
+      ]
+    },
+    {
+      "start": 5.64,
+      "end": 9.74,
+      "text": " or. Mind. I don't mean to say that I know.",
+      "avgLogprob": -0.5095860537360696,
+      "noSpeechProbability": 0.18685612082481384,
+      "words": [
+        {
+          "start": 5.64,
+          "end": 5.68,
+          "word": " or.",
+          "probability": 0.03874506801366806
+        },
+        {
+          "start": 6.98,
+          "end": 7.42,
+          "word": " Mind.",
+          "probability": 0.8690963983535767
+        },
+        {
+          "start": 8.2,
+          "end": 8.4,
+          "word": " I",
+          "probability": 0.9930140376091003
+        },
+        {
+          "start": 8.4,
+          "end": 8.62,
+          "word": " don't",
+          "probability": 0.9907104074954987
+        },
+        {
+          "start": 8.62,
+          "end": 8.72,
+          "word": " mean",
+          "probability": 0.9469007849693298
+        },
+        {
+          "start": 8.72,
+          "end": 8.86,
+          "word": " to",
+          "probability": 0.9967883825302124
+        },
+        {
+          "start": 8.86,
+          "end": 9.1,
+          "word": " say",
+          "probability": 0.9975197911262512
+        },
+        {
+          "start": 9.1,
+          "end": 9.38,
+          "word": " that",
+          "probability": 0.9291929602622986
+        },
+        {
+          "start": 9.38,
+          "end": 9.54,
+          "word": " I",
+          "probability": 0.9928291440010071
+        },
+        {
+          "start": 9.54,
+          "end": 9.74,
+          "word": " know.",
+          "probability": 0.9738484621047974
+        }
+      ]
+    }
+  ],
+  "networkUsed": false,
+  "gatewaySpendUsd": 0
+}

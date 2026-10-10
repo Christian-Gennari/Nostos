@@ -1,0 +1,323 @@
+{
+  "kind": "machine-assisted-reference",
+  "decoder": "faster-whisper 1.2.1",
+  "model": "base",
+  "weightsSha256": "d01c3014881c9c6f3133c182f3d2887eb6ca1c789a7538c5c007196857a0a6a9",
+  "audioSha256": "6c628c94f423a2481bc45b4b3f8a4758228c7621fcc8470354a0e34f1d6776d4",
+  "recordedAt": "2026-10-10",
+  "elapsedSeconds": 2.941979048307985,
+  "transcript": "the clerk, the undertaker, and the chief-morner. Scrooge signed it, and Scrooge's name was good upon change, for anything he chose to put his hand to. Old Marley was as dead as a doornail. Mind, I don't mean to say that I know.",
+  "segments": [
+    {
+      "start": 0.0,
+      "end": 3.56,
+      "text": " the clerk, the undertaker, and the chief-morner.",
+      "avgLogprob": -0.27628528888408954,
+      "noSpeechProbability": 0.028063202276825905,
+      "words": [
+        {
+          "start": 0.0,
+          "end": 0.6,
+          "word": " the",
+          "probability": 0.1943177729845047
+        },
+        {
+          "start": 0.6,
+          "end": 0.84,
+          "word": " clerk,",
+          "probability": 0.9294871687889099
+        },
+        {
+          "start": 1.36,
+          "end": 1.5,
+          "word": " the",
+          "probability": 0.9954793453216553
+        },
+        {
+          "start": 1.5,
+          "end": 2.02,
+          "word": " undertaker,",
+          "probability": 0.9817428886890411
+        },
+        {
+          "start": 2.7,
+          "end": 2.82,
+          "word": " and",
+          "probability": 0.991980791091919
+        },
+        {
+          "start": 2.82,
+          "end": 2.98,
+          "word": " the",
+          "probability": 0.9847007989883423
+        },
+        {
+          "start": 2.98,
+          "end": 3.18,
+          "word": " chief",
+          "probability": 0.8837805390357971
+        },
+        {
+          "start": 3.18,
+          "end": 3.56,
+          "word": "-morner.",
+          "probability": 0.7184238930543264
+        }
+      ]
+    },
+    {
+      "start": 4.84,
+      "end": 10.58,
+      "text": " Scrooge signed it, and Scrooge's name was good upon change, for anything he chose",
+      "avgLogprob": -0.27628528888408954,
+      "noSpeechProbability": 0.028063202276825905,
+      "words": [
+        {
+          "start": 4.84,
+          "end": 5.46,
+          "word": " Scrooge",
+          "probability": 0.8816824704408646
+        },
+        {
+          "start": 5.46,
+          "end": 5.7,
+          "word": " signed",
+          "probability": 0.9003027677536011
+        },
+        {
+          "start": 5.7,
+          "end": 5.98,
+          "word": " it,",
+          "probability": 0.9993475079536438
+        },
+        {
+          "start": 6.56,
+          "end": 6.68,
+          "word": " and",
+          "probability": 0.9981974959373474
+        },
+        {
+          "start": 6.68,
+          "end": 7.2,
+          "word": " Scrooge's",
+          "probability": 0.9917262315750122
+        },
+        {
+          "start": 7.2,
+          "end": 7.4,
+          "word": " name",
+          "probability": 0.9984464049339294
+        },
+        {
+          "start": 7.4,
+          "end": 7.7,
+          "word": " was",
+          "probability": 0.9973873496055603
+        },
+        {
+          "start": 7.7,
+          "end": 7.9,
+          "word": " good",
+          "probability": 0.9931262731552124
+        },
+        {
+          "start": 7.9,
+          "end": 8.28,
+          "word": " upon",
+          "probability": 0.995960533618927
+        },
+        {
+          "start": 8.28,
+          "end": 8.7,
+          "word": " change,",
+          "probability": 0.9863982796669006
+        },
+        {
+          "start": 9.36,
+          "end": 9.54,
+          "word": " for",
+          "probability": 0.9915848970413208
+        },
+        {
+          "start": 9.54,
+          "end": 9.92,
+          "word": " anything",
+          "probability": 0.991087019443512
+        },
+        {
+          "start": 9.92,
+          "end": 10.24,
+          "word": " he",
+          "probability": 0.9905154705047607
+        },
+        {
+          "start": 10.24,
+          "end": 10.58,
+          "word": " chose",
+          "probability": 0.9886360168457031
+        }
+      ]
+    },
+    {
+      "start": 10.58,
+      "end": 11.64,
+      "text": " to put his hand to.",
+      "avgLogprob": -0.27628528888408954,
+      "noSpeechProbability": 0.028063202276825905,
+      "words": [
+        {
+          "start": 10.58,
+          "end": 10.86,
+          "word": " to",
+          "probability": 0.9986168146133423
+        },
+        {
+          "start": 10.86,
+          "end": 11.0,
+          "word": " put",
+          "probability": 0.9989191293716431
+        },
+        {
+          "start": 11.0,
+          "end": 11.2,
+          "word": " his",
+          "probability": 0.997534990310669
+        },
+        {
+          "start": 11.2,
+          "end": 11.42,
+          "word": " hand",
+          "probability": 0.9978113770484924
+        },
+        {
+          "start": 11.42,
+          "end": 11.64,
+          "word": " to.",
+          "probability": 0.9826173186302185
+        }
+      ]
+    },
+    {
+      "start": 12.82,
+      "end": 15.64,
+      "text": " Old Marley was as dead as a doornail.",
+      "avgLogprob": -0.27628528888408954,
+      "noSpeechProbability": 0.028063202276825905,
+      "words": [
+        {
+          "start": 12.82,
+          "end": 13.26,
+          "word": " Old",
+          "probability": 0.9750783443450928
+        },
+        {
+          "start": 13.26,
+          "end": 13.66,
+          "word": " Marley",
+          "probability": 0.8935136795043945
+        },
+        {
+          "start": 13.66,
+          "end": 14.08,
+          "word": " was",
+          "probability": 0.9960988759994507
+        },
+        {
+          "start": 14.08,
+          "end": 14.28,
+          "word": " as",
+          "probability": 0.9934826493263245
+        },
+        {
+          "start": 14.28,
+          "end": 14.48,
+          "word": " dead",
+          "probability": 0.9950324296951294
+        },
+        {
+          "start": 14.48,
+          "end": 15.02,
+          "word": " as",
+          "probability": 0.9904125332832336
+        },
+        {
+          "start": 15.02,
+          "end": 15.16,
+          "word": " a",
+          "probability": 0.9619364142417908
+        },
+        {
+          "start": 15.16,
+          "end": 15.64,
+          "word": " doornail.",
+          "probability": 0.6046356459458669
+        }
+      ]
+    },
+    {
+      "start": 16.86,
+      "end": 19.74,
+      "text": " Mind, I don't mean to say that I know.",
+      "avgLogprob": -0.4959980567296346,
+      "noSpeechProbability": 0.19054122269153595,
+      "words": [
+        {
+          "start": 16.86,
+          "end": 17.34,
+          "word": " Mind,",
+          "probability": 0.19561760127544403
+        },
+        {
+          "start": 18.16,
+          "end": 18.4,
+          "word": " I",
+          "probability": 0.9906826019287109
+        },
+        {
+          "start": 18.4,
+          "end": 18.6,
+          "word": " don't",
+          "probability": 0.9913860261440277
+        },
+        {
+          "start": 18.6,
+          "end": 18.72,
+          "word": " mean",
+          "probability": 0.9408766627311707
+        },
+        {
+          "start": 18.72,
+          "end": 18.86,
+          "word": " to",
+          "probability": 0.9975074529647827
+        },
+        {
+          "start": 18.86,
+          "end": 19.12,
+          "word": " say",
+          "probability": 0.9981562495231628
+        },
+        {
+          "start": 19.12,
+          "end": 19.38,
+          "word": " that",
+          "probability": 0.9438857436180115
+        },
+        {
+          "start": 19.38,
+          "end": 19.54,
+          "word": " I",
+          "probability": 0.9951990246772766
+        },
+        {
+          "start": 19.54,
+          "end": 19.74,
+          "word": " know.",
+          "probability": 0.9665524363517761
+        }
+      ]
+    }
+  ],
+  "networkUsed": false,
+  "gatewaySpendUsd": 0
+}

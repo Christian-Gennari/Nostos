@@ -1,0 +1,428 @@
+{
+  "kind": "machine-assisted-reference",
+  "decoder": "faster-whisper 1.2.1",
+  "model": "base",
+  "weightsSha256": "d01c3014881c9c6f3133c182f3d2887eb6ca1c789a7538c5c007196857a0a6a9",
+  "audioSha256": "1e80a6e00f6c54c163a914ae5675cb4b960e6215939b83967e6b19543e865885",
+  "recordedAt": "2026-10-10",
+  "elapsedSeconds": 2.04388930182904,
+  "transcript": "Did their capacity for adventure, by observing that they are good for anything from pitch and toss to manslaughter, between which opposite extremes no doubt their lies a tolerably wide and comprehensive range of subjects. Without venturing for Scrooge quite as heartily as this, I don't mind calling on you to believe that he was ready for a good broad field of strain.",
+  "segments": [
+    {
+      "start": 0.0,
+      "end": 5.28,
+      "text": " Did their capacity for adventure, by observing that they are good for anything from pitch and toss to manslaughter,",
+      "avgLogprob": -0.2706897539250991,
+      "noSpeechProbability": 0.012973704375326633,
+      "words": [
+        {
+          "start": 0.0,
+          "end": 0.1,
+          "word": " Did",
+          "probability": 0.09040315449237823
+        },
+        {
+          "start": 0.1,
+          "end": 0.24,
+          "word": " their",
+          "probability": 0.9605132341384888
+        },
+        {
+          "start": 0.24,
+          "end": 0.74,
+          "word": " capacity",
+          "probability": 0.9923420548439026
+        },
+        {
+          "start": 0.74,
+          "end": 0.98,
+          "word": " for",
+          "probability": 0.9931609630584717
+        },
+        {
+          "start": 0.98,
+          "end": 1.4,
+          "word": " adventure,",
+          "probability": 0.9747324585914612
+        },
+        {
+          "start": 1.84,
+          "end": 1.96,
+          "word": " by",
+          "probability": 0.9945462942123413
+        },
+        {
+          "start": 1.96,
+          "end": 2.34,
+          "word": " observing",
+          "probability": 0.9949557185173035
+        },
+        {
+          "start": 2.34,
+          "end": 2.54,
+          "word": " that",
+          "probability": 0.9916050434112549
+        },
+        {
+          "start": 2.54,
+          "end": 2.7,
+          "word": " they",
+          "probability": 0.974956750869751
+        },
+        {
+          "start": 2.7,
+          "end": 2.78,
+          "word": " are",
+          "probability": 0.9111902713775635
+        },
+        {
+          "start": 2.78,
+          "end": 2.98,
+          "word": " good",
+          "probability": 0.9874021410942078
+        },
+        {
+          "start": 2.98,
+          "end": 3.18,
+          "word": " for",
+          "probability": 0.9887837767601013
+        },
+        {
+          "start": 3.18,
+          "end": 3.54,
+          "word": " anything",
+          "probability": 0.9903662204742432
+        },
+        {
+          "start": 3.54,
+          "end": 3.9,
+          "word": " from",
+          "probability": 0.9424304962158203
+        },
+        {
+          "start": 3.9,
+          "end": 4.16,
+          "word": " pitch",
+          "probability": 0.7804408073425293
+        },
+        {
+          "start": 4.16,
+          "end": 4.32,
+          "word": " and",
+          "probability": 0.6884192824363708
+        },
+        {
+          "start": 4.32,
+          "end": 4.52,
+          "word": " toss",
+          "probability": 0.8951733112335205
+        },
+        {
+          "start": 4.52,
+          "end": 4.74,
+          "word": " to",
+          "probability": 0.9806885719299316
+        },
+        {
+          "start": 4.74,
+          "end": 5.28,
+          "word": " manslaughter,",
+          "probability": 0.9059338569641113
+        }
+      ]
+    },
+    {
+      "start": 5.84,
+      "end": 10.8,
+      "text": " between which opposite extremes no doubt their lies a tolerably wide and comprehensive range of subjects.",
+      "avgLogprob": -0.2706897539250991,
+      "noSpeechProbability": 0.012973704375326633,
+      "words": [
+        {
+          "start": 5.84,
+          "end": 6.1,
+          "word": " between",
+          "probability": 0.9809670448303223
+        },
+        {
+          "start": 6.1,
+          "end": 6.42,
+          "word": " which",
+          "probability": 0.9990500807762146
+        },
+        {
+          "start": 6.42,
+          "end": 6.8,
+          "word": " opposite",
+          "probability": 0.8460964560508728
+        },
+        {
+          "start": 6.8,
+          "end": 7.24,
+          "word": " extremes",
+          "probability": 0.9681805968284607
+        },
+        {
+          "start": 7.24,
+          "end": 7.48,
+          "word": " no",
+          "probability": 0.6700842380523682
+        },
+        {
+          "start": 7.48,
+          "end": 7.7,
+          "word": " doubt",
+          "probability": 0.9989890456199646
+        },
+        {
+          "start": 7.7,
+          "end": 7.92,
+          "word": " their",
+          "probability": 0.7578384280204773
+        },
+        {
+          "start": 7.92,
+          "end": 8.14,
+          "word": " lies",
+          "probability": 0.9411811232566833
+        },
+        {
+          "start": 8.14,
+          "end": 8.28,
+          "word": " a",
+          "probability": 0.33021804690361023
+        },
+        {
+          "start": 8.28,
+          "end": 8.84,
+          "word": " tolerably",
+          "probability": 0.9569016695022583
+        },
+        {
+          "start": 8.84,
+          "end": 9.2,
+          "word": " wide",
+          "probability": 0.9054162502288818
+        },
+        {
+          "start": 9.2,
+          "end": 9.36,
+          "word": " and",
+          "probability": 0.9456461071968079
+        },
+        {
+          "start": 9.36,
+          "end": 9.76,
+          "word": " comprehensive",
+          "probability": 0.9898227453231812
+        },
+        {
+          "start": 9.76,
+          "end": 10.24,
+          "word": " range",
+          "probability": 0.995866060256958
+        },
+        {
+          "start": 10.24,
+          "end": 10.44,
+          "word": " of",
+          "probability": 0.9987727999687195
+        },
+        {
+          "start": 10.44,
+          "end": 10.8,
+          "word": " subjects.",
+          "probability": 0.9780083298683167
+        }
+      ]
+    },
+    {
+      "start": 12.199999999999992,
+      "end": 15.12,
+      "text": " Without venturing for Scrooge quite as heartily as this,",
+      "avgLogprob": -0.2706897539250991,
+      "noSpeechProbability": 0.012973704375326633,
+      "words": [
+        {
+          "start": 12.199999999999992,
+          "end": 12.679999999999996,
+          "word": " Without",
+          "probability": 0.9530330300331116
+        },
+        {
+          "start": 12.679999999999996,
+          "end": 13.16,
+          "word": " venturing",
+          "probability": 0.9760019779205322
+        },
+        {
+          "start": 13.16,
+          "end": 13.44,
+          "word": " for",
+          "probability": 0.9679923057556152
+        },
+        {
+          "start": 13.44,
+          "end": 13.84,
+          "word": " Scrooge",
+          "probability": 0.8766918480396271
+        },
+        {
+          "start": 13.84,
+          "end": 14.16,
+          "word": " quite",
+          "probability": 0.9202216267585754
+        },
+        {
+          "start": 14.16,
+          "end": 14.4,
+          "word": " as",
+          "probability": 0.9991926550865173
+        },
+        {
+          "start": 14.4,
+          "end": 14.7,
+          "word": " heartily",
+          "probability": 0.6864071786403656
+        },
+        {
+          "start": 14.7,
+          "end": 14.92,
+          "word": " as",
+          "probability": 0.9817173480987549
+        },
+        {
+          "start": 14.92,
+          "end": 15.12,
+          "word": " this,",
+          "probability": 0.9976186156272888
+        }
+      ]
+    },
+    {
+      "start": 15.68,
+      "end": 19.92,
+      "text": " I don't mind calling on you to believe that he was ready for a good broad field of strain.",
+      "avgLogprob": -0.2706897539250991,
+      "noSpeechProbability": 0.012973704375326633,
+      "words": [
+        {
+          "start": 15.68,
+          "end": 15.76,
+          "word": " I",
+          "probability": 0.9889963865280151
+        },
+        {
+          "start": 15.76,
+          "end": 16.02,
+          "word": " don't",
+          "probability": 0.990668535232544
+        },
+        {
+          "start": 16.02,
+          "end": 16.16,
+          "word": " mind",
+          "probability": 0.9963279366493225
+        },
+        {
+          "start": 16.16,
+          "end": 16.42,
+          "word": " calling",
+          "probability": 0.9906653165817261
+        },
+        {
+          "start": 16.42,
+          "end": 16.8,
+          "word": " on",
+          "probability": 0.9965808987617493
+        },
+        {
+          "start": 16.8,
+          "end": 16.98,
+          "word": " you",
+          "probability": 0.997121274471283
+        },
+        {
+          "start": 16.98,
+          "end": 17.12,
+          "word": " to",
+          "probability": 0.9450699090957642
+        },
+        {
+          "start": 17.12,
+          "end": 17.38,
+          "word": " believe",
+          "probability": 0.9964836835861206
+        },
+        {
+          "start": 17.38,
+          "end": 17.62,
+          "word": " that",
+          "probability": 0.9618680477142334
+        },
+        {
+          "start": 17.62,
+          "end": 17.98,
+          "word": " he",
+          "probability": 0.9877854585647583
+        },
+        {
+          "start": 17.98,
+          "end": 18.12,
+          "word": " was",
+          "probability": 0.997835099697113
+        },
+        {
+          "start": 18.12,
+          "end": 18.36,
+          "word": " ready",
+          "probability": 0.9965141415596008
+        },
+        {
+          "start": 18.36,
+          "end": 18.58,
+          "word": " for",
+          "probability": 0.996369481086731
+        },
+        {
+          "start": 18.58,
+          "end": 18.7,
+          "word": " a",
+          "probability": 0.9720067977905273
+        },
+        {
+          "start": 18.7,
+          "end": 18.86,
+          "word": " good",
+          "probability": 0.9885314702987671
+        },
+        {
+          "start": 18.86,
+          "end": 19.16,
+          "word": " broad",
+          "probability": 0.7531420588493347
+        },
+        {
+          "start": 19.16,
+          "end": 19.4,
+          "word": " field",
+          "probability": 0.6629540324211121
+        },
+        {
+          "start": 19.4,
+          "end": 19.64,
+          "word": " of",
+          "probability": 0.9970791339874268
+        },
+        {
+          "start": 19.64,
+          "end": 19.92,
+          "word": " strain.",
+          "probability": 0.19423985481262207
+        }
+      ]
+    }
+  ],
+  "networkUsed": false,
+  "gatewaySpendUsd": 0
+}

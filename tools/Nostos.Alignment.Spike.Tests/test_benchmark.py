@@ -46,6 +46,30 @@ class EvidenceGateTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Duplicate"):
                 benchmark.finalize(SimpleNamespace(report=root / "report.json", reviews=root / "reviews.json"))
 
+    def test_assisted_success_cannot_pass_human_gate(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            benchmark.save(root / "match.json", {})
+            hashed = benchmark.digest(root / "match.json")
+            rows, reviews = [], []
+            for i in range(32):
+                accepted = i < 24
+                rows.append({"providerTag": "model-1", "clipId": str(i), "positionId": str(i // 2),
+                             "kind": "passage" if accepted else "introduction", "manualAcceptance": None,
+                             "outcome": "correct" if accepted else "correct_rejection",
+                             "matchSha256": hashed, "matchFile": "match.json"})
+                if accepted:
+                    reviews.append({"providerTag": "model-1", "clipId": str(i), "matchSha256": hashed,
+                                    "outcome": "correct", "reviewedBy": "test", "reviewedAt": "2026-10-10",
+                                    "verificationMethod": "machine-assisted", "observation": "Reference agreement"})
+            benchmark.save(root / "report.json", {"annotationMethod": "machine-assisted", "results": rows,
+                           "summary": [{"providerTag": "model-1"}]})
+            benchmark.save(root / "reviews.json", reviews)
+            benchmark.finalize(SimpleNamespace(report=root / "report.json", reviews=root / "reviews.json"))
+            result = benchmark.load(root / "final-report.json")["summary"][0]
+            self.assertTrue(result["assistedContinuationGate"])
+            self.assertFalse(result["continuationGate"])
+
 
 if __name__ == "__main__":
     unittest.main()

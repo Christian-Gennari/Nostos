@@ -1,0 +1,440 @@
+{
+  "kind": "machine-assisted-reference",
+  "decoder": "faster-whisper 1.2.1",
+  "model": "base",
+  "weightsSha256": "d01c3014881c9c6f3133c182f3d2887eb6ca1c789a7538c5c007196857a0a6a9",
+  "audioSha256": "737689decc3381052c0af68cf42a6eb433c447ce61cb6c907e4fda485718435f",
+  "recordedAt": "2026-10-10",
+  "elapsedSeconds": 2.889137155842036,
+  "transcript": "with an air of decided fashion. His brother-in-law, Mr. Hurst, merely looked to the gentleman, but his friend Mr. Darcy soon drew the attention of the room by his fine, tall person, handsome features, noble mean, and the report which was in general circulation within five minutes after his entrance, of his having ten thousand a year. Yeah. The gentleman.",
+  "segments": [
+    {
+      "start": 0.0,
+      "end": 5.78,
+      "text": " with an air of decided fashion. His brother-in-law, Mr. Hurst, merely looked to the gentleman, but",
+      "avgLogprob": -0.21687136888504027,
+      "noSpeechProbability": 0.010109089314937592,
+      "words": [
+        {
+          "start": 0.0,
+          "end": 0.38,
+          "word": " with",
+          "probability": 0.5609349608421326
+        },
+        {
+          "start": 0.38,
+          "end": 0.56,
+          "word": " an",
+          "probability": 0.986112654209137
+        },
+        {
+          "start": 0.56,
+          "end": 0.72,
+          "word": " air",
+          "probability": 0.4162014424800873
+        },
+        {
+          "start": 0.72,
+          "end": 0.84,
+          "word": " of",
+          "probability": 0.9890639185905457
+        },
+        {
+          "start": 0.84,
+          "end": 1.2,
+          "word": " decided",
+          "probability": 0.9155487418174744
+        },
+        {
+          "start": 1.2,
+          "end": 1.68,
+          "word": " fashion.",
+          "probability": 0.9725373387336731
+        },
+        {
+          "start": 2.24,
+          "end": 2.36,
+          "word": " His",
+          "probability": 0.9874967336654663
+        },
+        {
+          "start": 2.36,
+          "end": 2.66,
+          "word": " brother",
+          "probability": 0.9780465960502625
+        },
+        {
+          "start": 2.66,
+          "end": 2.82,
+          "word": "-in",
+          "probability": 0.9904023706912994
+        },
+        {
+          "start": 2.82,
+          "end": 2.94,
+          "word": "-law,",
+          "probability": 0.9980866611003876
+        },
+        {
+          "start": 3.08,
+          "end": 3.34,
+          "word": " Mr.",
+          "probability": 0.965374231338501
+        },
+        {
+          "start": 3.42,
+          "end": 3.76,
+          "word": " Hurst,",
+          "probability": 0.6434827595949173
+        },
+        {
+          "start": 4.1,
+          "end": 4.28,
+          "word": " merely",
+          "probability": 0.9753638505935669
+        },
+        {
+          "start": 4.28,
+          "end": 4.62,
+          "word": " looked",
+          "probability": 0.998178243637085
+        },
+        {
+          "start": 4.62,
+          "end": 4.76,
+          "word": " to",
+          "probability": 0.20234987139701843
+        },
+        {
+          "start": 4.76,
+          "end": 4.82,
+          "word": " the",
+          "probability": 0.9964800477027893
+        },
+        {
+          "start": 4.82,
+          "end": 5.12,
+          "word": " gentleman,",
+          "probability": 0.8245273232460022
+        },
+        {
+          "start": 5.64,
+          "end": 5.78,
+          "word": " but",
+          "probability": 0.9827096462249756
+        }
+      ]
+    },
+    {
+      "start": 5.78,
+      "end": 10.62,
+      "text": " his friend Mr. Darcy soon drew the attention of the room by his fine, tall person, handsome",
+      "avgLogprob": -0.21687136888504027,
+      "noSpeechProbability": 0.010109089314937592,
+      "words": [
+        {
+          "start": 5.78,
+          "end": 5.94,
+          "word": " his",
+          "probability": 0.9924145340919495
+        },
+        {
+          "start": 5.94,
+          "end": 6.14,
+          "word": " friend",
+          "probability": 0.9972200393676758
+        },
+        {
+          "start": 6.14,
+          "end": 6.42,
+          "word": " Mr.",
+          "probability": 0.8950994610786438
+        },
+        {
+          "start": 6.56,
+          "end": 6.86,
+          "word": " Darcy",
+          "probability": 0.8687824308872223
+        },
+        {
+          "start": 6.86,
+          "end": 7.2,
+          "word": " soon",
+          "probability": 0.8840481042861938
+        },
+        {
+          "start": 7.2,
+          "end": 7.44,
+          "word": " drew",
+          "probability": 0.9937939643859863
+        },
+        {
+          "start": 7.44,
+          "end": 7.6,
+          "word": " the",
+          "probability": 0.996239423751831
+        },
+        {
+          "start": 7.6,
+          "end": 7.9,
+          "word": " attention",
+          "probability": 0.998155415058136
+        },
+        {
+          "start": 7.9,
+          "end": 8.12,
+          "word": " of",
+          "probability": 0.9907888770103455
+        },
+        {
+          "start": 8.12,
+          "end": 8.2,
+          "word": " the",
+          "probability": 0.9958077669143677
+        },
+        {
+          "start": 8.2,
+          "end": 8.4,
+          "word": " room",
+          "probability": 0.9940195083618164
+        },
+        {
+          "start": 8.4,
+          "end": 8.56,
+          "word": " by",
+          "probability": 0.9749351143836975
+        },
+        {
+          "start": 8.56,
+          "end": 8.76,
+          "word": " his",
+          "probability": 0.9981805086135864
+        },
+        {
+          "start": 8.76,
+          "end": 9.12,
+          "word": " fine,",
+          "probability": 0.9946643114089966
+        },
+        {
+          "start": 9.34,
+          "end": 9.46,
+          "word": " tall",
+          "probability": 0.979680597782135
+        },
+        {
+          "start": 9.46,
+          "end": 9.94,
+          "word": " person,",
+          "probability": 0.898457944393158
+        },
+        {
+          "start": 10.4,
+          "end": 10.62,
+          "word": " handsome",
+          "probability": 0.9712494015693665
+        }
+      ]
+    },
+    {
+      "start": 10.62,
+      "end": 15.6,
+      "text": " features, noble mean, and the report which was in general circulation within five minutes",
+      "avgLogprob": -0.21687136888504027,
+      "noSpeechProbability": 0.010109089314937592,
+      "words": [
+        {
+          "start": 10.62,
+          "end": 11.06,
+          "word": " features,",
+          "probability": 0.9928755760192871
+        },
+        {
+          "start": 11.56,
+          "end": 11.74,
+          "word": " noble",
+          "probability": 0.993425726890564
+        },
+        {
+          "start": 11.74,
+          "end": 12.12,
+          "word": " mean,",
+          "probability": 0.9313214421272278
+        },
+        {
+          "start": 12.6,
+          "end": 12.66,
+          "word": " and",
+          "probability": 0.9975913763046265
+        },
+        {
+          "start": 12.66,
+          "end": 12.78,
+          "word": " the",
+          "probability": 0.9913294315338135
+        },
+        {
+          "start": 12.78,
+          "end": 13.06,
+          "word": " report",
+          "probability": 0.9958719611167908
+        },
+        {
+          "start": 13.06,
+          "end": 13.44,
+          "word": " which",
+          "probability": 0.9465361833572388
+        },
+        {
+          "start": 13.44,
+          "end": 13.6,
+          "word": " was",
+          "probability": 0.9940525889396667
+        },
+        {
+          "start": 13.6,
+          "end": 13.8,
+          "word": " in",
+          "probability": 0.9760312438011169
+        },
+        {
+          "start": 13.8,
+          "end": 14.1,
+          "word": " general",
+          "probability": 0.9889944195747375
+        },
+        {
+          "start": 14.1,
+          "end": 14.72,
+          "word": " circulation",
+          "probability": 0.9845976829528809
+        },
+        {
+          "start": 14.72,
+          "end": 14.94,
+          "word": " within",
+          "probability": 0.9914060831069946
+        },
+        {
+          "start": 14.94,
+          "end": 15.34,
+          "word": " five",
+          "probability": 0.9405907988548279
+        },
+        {
+          "start": 15.34,
+          "end": 15.6,
+          "word": " minutes",
+          "probability": 0.9941139817237854
+        }
+      ]
+    },
+    {
+      "start": 15.6,
+      "end": 18.58,
+      "text": " after his entrance, of his having ten thousand a year.",
+      "avgLogprob": -0.21687136888504027,
+      "noSpeechProbability": 0.010109089314937592,
+      "words": [
+        {
+          "start": 15.6,
+          "end": 15.96,
+          "word": " after",
+          "probability": 0.9924821257591248
+        },
+        {
+          "start": 15.96,
+          "end": 16.1,
+          "word": " his",
+          "probability": 0.9940727353096008
+        },
+        {
+          "start": 16.1,
+          "end": 16.38,
+          "word": " entrance,",
+          "probability": 0.9415739178657532
+        },
+        {
+          "start": 16.82,
+          "end": 16.94,
+          "word": " of",
+          "probability": 0.9874093532562256
+        },
+        {
+          "start": 16.94,
+          "end": 17.14,
+          "word": " his",
+          "probability": 0.9841399192810059
+        },
+        {
+          "start": 17.14,
+          "end": 17.44,
+          "word": " having",
+          "probability": 0.9937082529067993
+        },
+        {
+          "start": 17.44,
+          "end": 17.76,
+          "word": " ten",
+          "probability": 0.9174365997314453
+        },
+        {
+          "start": 17.76,
+          "end": 18.2,
+          "word": " thousand",
+          "probability": 0.7057396173477173
+        },
+        {
+          "start": 18.2,
+          "end": 18.38,
+          "word": " a",
+          "probability": 0.9322977066040039
+        },
+        {
+          "start": 18.38,
+          "end": 18.58,
+          "word": " year.",
+          "probability": 0.9994826316833496
+        }
+      ]
+    },
+    {
+      "start": 18.58,
+      "end": 18.64,
+      "text": " Yeah.",
+      "avgLogprob": -0.966356348991394,
+      "noSpeechProbability": 0.37755662202835083,
+      "words": [
+        {
+          "start": 18.58,
+          "end": 18.64,
+          "word": " Yeah.",
+          "probability": 0.014843967743217945
+        }
+      ]
+    },
+    {
+      "start": 19.5,
+      "end": 19.92,
+      "text": " The gentleman.",
+      "avgLogprob": -0.966356348991394,
+      "noSpeechProbability": 0.37755662202835083,
+      "words": [
+        {
+          "start": 19.5,
+          "end": 19.78,
+          "word": " The",
+          "probability": 0.5430288910865784
+        },
+        {
+          "start": 19.78,
+          "end": 19.92,
+          "word": " gentleman.",
+          "probability": 0.12390058487653732
+        }
+      ]
+    }
+  ],
+  "networkUsed": false,
+  "gatewaySpendUsd": 0
+}

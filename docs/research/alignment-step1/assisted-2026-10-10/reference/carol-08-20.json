@@ -1,0 +1,269 @@
+{
+  "kind": "machine-assisted-reference",
+  "decoder": "faster-whisper 1.2.1",
+  "model": "base",
+  "weightsSha256": "d01c3014881c9c6f3133c182f3d2887eb6ca1c789a7538c5c007196857a0a6a9",
+  "audioSha256": "4987a008f39a32bb1083351a97b487bcbaa0a821d4891b2b563e560e7e14a107",
+  "recordedAt": "2026-10-10",
+  "elapsedSeconds": 5.364578970242292,
+  "transcript": "This is a LibreVox recording. All LibreVox recordings are in the public domain. For more information or to volunteer, visit LibreVox.org. A Christmas Carol by Charles Dickens. 3. The 2nd of the 3 Spirits.",
+  "segments": [
+    {
+      "start": 1.4399999999999986,
+      "end": 6.02,
+      "text": " This is a LibreVox recording. All LibreVox recordings are in the public domain.",
+      "avgLogprob": -0.23165315189040625,
+      "noSpeechProbability": 0.27854493260383606,
+      "words": [
+        {
+          "start": 1.4399999999999986,
+          "end": 2.2,
+          "word": " This",
+          "probability": 0.7034565210342407
+        },
+        {
+          "start": 2.2,
+          "end": 2.36,
+          "word": " is",
+          "probability": 0.991115927696228
+        },
+        {
+          "start": 2.36,
+          "end": 2.48,
+          "word": " a",
+          "probability": 0.8815885782241821
+        },
+        {
+          "start": 2.48,
+          "end": 2.96,
+          "word": " LibreVox",
+          "probability": 0.593407392501831
+        },
+        {
+          "start": 2.96,
+          "end": 3.42,
+          "word": " recording.",
+          "probability": 0.7871307134628296
+        },
+        {
+          "start": 3.86,
+          "end": 3.98,
+          "word": " All",
+          "probability": 0.976323664188385
+        },
+        {
+          "start": 3.98,
+          "end": 4.56,
+          "word": " LibreVox",
+          "probability": 0.9869887679815292
+        },
+        {
+          "start": 4.56,
+          "end": 4.94,
+          "word": " recordings",
+          "probability": 0.9878504872322083
+        },
+        {
+          "start": 4.94,
+          "end": 5.14,
+          "word": " are",
+          "probability": 0.9964650869369507
+        },
+        {
+          "start": 5.14,
+          "end": 5.26,
+          "word": " in",
+          "probability": 0.9960197806358337
+        },
+        {
+          "start": 5.26,
+          "end": 5.34,
+          "word": " the",
+          "probability": 0.971100389957428
+        },
+        {
+          "start": 5.34,
+          "end": 5.6,
+          "word": " public",
+          "probability": 0.958350419998169
+        },
+        {
+          "start": 5.6,
+          "end": 6.02,
+          "word": " domain.",
+          "probability": 0.9991542100906372
+        }
+      ]
+    },
+    {
+      "start": 6.6,
+      "end": 10.56,
+      "text": " For more information or to volunteer, visit LibreVox.org.",
+      "avgLogprob": -0.23165315189040625,
+      "noSpeechProbability": 0.27854493260383606,
+      "words": [
+        {
+          "start": 6.6,
+          "end": 6.72,
+          "word": " For",
+          "probability": 0.9923515915870667
+        },
+        {
+          "start": 6.72,
+          "end": 6.92,
+          "word": " more",
+          "probability": 0.9987591505050659
+        },
+        {
+          "start": 6.92,
+          "end": 7.5,
+          "word": " information",
+          "probability": 0.9963012933731079
+        },
+        {
+          "start": 7.5,
+          "end": 7.82,
+          "word": " or",
+          "probability": 0.9342391490936279
+        },
+        {
+          "start": 7.82,
+          "end": 7.94,
+          "word": " to",
+          "probability": 0.9930365681648254
+        },
+        {
+          "start": 7.94,
+          "end": 8.4,
+          "word": " volunteer,",
+          "probability": 0.9951587319374084
+        },
+        {
+          "start": 8.96,
+          "end": 9.18,
+          "word": " visit",
+          "probability": 0.9922926425933838
+        },
+        {
+          "start": 9.18,
+          "end": 10.0,
+          "word": " LibreVox",
+          "probability": 0.8825080990791321
+        },
+        {
+          "start": 10.0,
+          "end": 10.56,
+          "word": ".org.",
+          "probability": 0.9941949248313904
+        }
+      ]
+    },
+    {
+      "start": 11.56,
+      "end": 14.02,
+      "text": " A Christmas Carol by Charles Dickens.",
+      "avgLogprob": -0.23165315189040625,
+      "noSpeechProbability": 0.27854493260383606,
+      "words": [
+        {
+          "start": 11.56,
+          "end": 12.32,
+          "word": " A",
+          "probability": 0.7756107449531555
+        },
+        {
+          "start": 12.32,
+          "end": 12.6,
+          "word": " Christmas",
+          "probability": 0.9736029505729675
+        },
+        {
+          "start": 12.6,
+          "end": 12.96,
+          "word": " Carol",
+          "probability": 0.8665154576301575
+        },
+        {
+          "start": 12.96,
+          "end": 13.18,
+          "word": " by",
+          "probability": 0.9669469594955444
+        },
+        {
+          "start": 13.18,
+          "end": 13.52,
+          "word": " Charles",
+          "probability": 0.9949054718017578
+        },
+        {
+          "start": 13.52,
+          "end": 14.02,
+          "word": " Dickens.",
+          "probability": 0.9698123931884766
+        }
+      ]
+    },
+    {
+      "start": 14.02,
+      "end": 15.58,
+      "text": " 3.",
+      "avgLogprob": -0.7632846832275391,
+      "noSpeechProbability": 0.12538878619670868,
+      "words": [
+        {
+          "start": 14.02,
+          "end": 15.58,
+          "word": " 3.",
+          "probability": 0.05994207039475441
+        }
+      ]
+    },
+    {
+      "start": 15.92,
+      "end": 17.78,
+      "text": " The 2nd of the 3 Spirits.",
+      "avgLogprob": -0.7632846832275391,
+      "noSpeechProbability": 0.12538878619670868,
+      "words": [
+        {
+          "start": 15.92,
+          "end": 16.44,
+          "word": " The",
+          "probability": 0.28494271636009216
+        },
+        {
+          "start": 16.44,
+          "end": 16.86,
+          "word": " 2nd",
+          "probability": 0.6296209841966629
+        },
+        {
+          "start": 16.86,
+          "end": 16.96,
+          "word": " of",
+          "probability": 0.8721255660057068
+        },
+        {
+          "start": 16.96,
+          "end": 17.08,
+          "word": " the",
+          "probability": 0.94804847240448
+        },
+        {
+          "start": 17.08,
+          "end": 17.3,
+          "word": " 3",
+          "probability": 0.7812631130218506
+        },
+        {
+          "start": 17.3,
+          "end": 17.78,
+          "word": " Spirits.",
+          "probability": 0.836114784081777
+        }
+      ]
+    }
+  ],
+  "networkUsed": false,
+  "gatewaySpendUsd": 0
+}
