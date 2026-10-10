@@ -67,8 +67,8 @@ public sealed class AlignmentDocumentCache
                     "The target EPUB is not available in storage.");
             }
 
-            // The existing EPUB extractor requires seekable ZIP input.
-            // The backing temporary stream is outside library storage.
+            // The EPUB extractor requires seekable ZIP input.
+            // Temporary files are never placed in library storage.
             var tempPath = Path.Combine(
                 Path.GetTempPath(),
                 $"nostos-alignment-{Guid.NewGuid():N}.epub");
@@ -87,7 +87,25 @@ public sealed class AlignmentDocumentCache
                 {
                     await asset.Content.CopyToAsync(temp, ct);
                     temp.Position = 0;
-                    document = await extractor.ExtractAsync(temp, ct);
+
+                    try
+                    {
+                        document = await extractor.ExtractAsync(temp, ct);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        throw;
+                    }
+                    catch (Exception ex) when (
+                        ex is InvalidDataException or
+                        IOException or
+                        ArgumentException)
+                    {
+                        throw new AlignmentException(
+                            "alignment_target_text_unavailable",
+                            422,
+                            "The stored EPUB could not be extracted.");
+                    }
                 }
             }
             finally

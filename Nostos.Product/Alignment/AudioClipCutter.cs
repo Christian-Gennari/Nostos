@@ -1,5 +1,7 @@
 using System.Buffers.Binary;
+using System.ComponentModel;
 using System.Diagnostics;
+using System.Globalization;
 using Nostos.Backend.Data.Models;
 using Nostos.Backend.Services;
 
@@ -35,12 +37,13 @@ public interface IAudioClipCutter
 }
 
 /// <summary>
-/// Decodes only the requested portions of an audiobook through ffmpeg.
-/// Input comes from the storage abstraction; no absolute library paths
-/// are passed to child processes.
+/// Decodes requested audiobook portions through ffmpeg.
 ///
-/// Each segment produces raw PCM, not a standalone WAV. The segments
-/// are concatenated and given exactly one WAV header.
+/// Input is streamed from the storage abstraction, and no absolute
+/// library paths are passed to the child process.
+///
+/// Each segment produces raw PCM. Segments are concatenated in track
+/// order and receive one WAV header.
 /// </summary>
 public sealed class FfmpegAudioClipCutter(
     IBookAssetStorage assets,
@@ -49,6 +52,9 @@ public sealed class FfmpegAudioClipCutter(
     public const int SampleRate = 16000;
     public const int Channels = 1;
     public const int BitsPerSample = 16;
+
+    private const int BytesPerSecond =
+        SampleRate * Channels * BitsPerSample / 8;
 
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(60);
 
@@ -75,11 +81,20 @@ public sealed class FfmpegAudioClipCutter(
             var tracks = BookTrackList.Parse(book.FileDetails.TracksJson);
 
             if (tracks.Count > 0)
+            {
                 return await CutTracksAsync(
-                    book.Id, tracks, positionSeconds, clipSeconds, deadline.Token);
+                    book.Id,
+                    tracks,
+                    positionSeconds,
+                    clipSeconds,
+                    deadline.Token);
+            }
 
             return await CutSingleAsync(
-                book.Id, positionSeconds, clipSeconds, deadline.Token);
+                book.Id,
+                positionSeconds,
+                clipSeconds,
+                deadline.Token);
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
@@ -100,12 +115,14 @@ public sealed class FfmpegAudioClipCutter(
 
         try
         {
-            plan = AudioClipPlanner.Plan(tracks, positionSeconds, clipSeconds);
+            plan = AudioClipPlanner.Plan(
+                tracks, positionSeconds, clipSeconds);
         }
         catch (ArgumentException ex)
         {
             throw new AudioClipException(
-                AudioClipErrorCodes.InvalidPosition, ex.Message);
+                AudioClipErrorCodes.InvalidPosition,
+                ex.Message);
         }
 
         if (plan.Count == 0)
@@ -132,7 +149,9 @@ public sealed class FfmpegAudioClipCutter(
             ct.ThrowIfCancellationRequested();
 
             await using var source = await storage.OpenTrackAsync(
-                bookId, segment.TrackNumber, ct: ct);
+                bookId,
+                segment.TrackNumber,
+                ct: ct);
 
             if (source is null)
             {
@@ -182,7 +201,11 @@ public sealed class FfmpegAudioClipCutter(
         using var pcm = new MemoryStream();
 
         await DecodeAsync(
-            source.Content, pcm, start, duration, ct);
+            source.Content,
+            pcm,
+            start,
+            duration,
+            ct);
 
         return CreateWav(pcm);
     }
@@ -200,32 +223,36 @@ public sealed class FfmpegAudioClipCutter(
             checked((int)pcm.Length + 44));
 
         Span<byte> header = stackalloc byte[44];
+
         "RIFF"u8.CopyTo(header);
         BinaryPrimitives.WriteUInt32LittleEndian(
             header[4..], checked((uint)(pcm.Length + 36)));
+
         "WAVE"u8.CopyTo(header[8..]);
         "fmt "u8.CopyTo(header[12..]);
+
         BinaryPrimitives.WriteUInt32LittleEndian(header[16..], 16);
         BinaryPrimitives.WriteUInt16LittleEndian(header[20..], 1);
         BinaryPrimitives.WriteUInt16LittleEndian(header[22..], Channels);
         BinaryPrimitives.WriteUInt32LittleEndian(header[24..], SampleRate);
-        BinaryPrimitives.WriteUInt32LittleEndian(
-            header[28..], SampleRate * Channels * BitsPerSample / 8);
+        BinaryPrimitives.WriteUInt32LittleEndian(header[28..], BytesPerSecond);
         BinaryPrimitives.WriteUInt16LittleEndian(
             header[32..], Channels * BitsPerSample / 8);
         BinaryPrimitives.WriteUInt16LittleEndian(header[34..], BitsPerSample);
+
         "data"u8.CopyTo(header[36..]);
         BinaryPrimitives.WriteUInt32LittleEndian(
             header[40..], checked((uint)pcm.Length));
 
         output.Write(header);
+
         pcm.Position = 0;
         pcm.CopyTo(output);
         output.Position = 0;
 
         return new AudioClip(
             output,
-            pcm.Length / (double)(SampleRate * Channels * BitsPerSample / 8));
+            pcm.Length / (double)BytesPerSecond);
     }
 
     private static async Task DecodeAsync(
@@ -235,24 +262,6 @@ public sealed class FfmpegAudioClipCutter(
         double durationSeconds,
         CancellationToken ct)
     {
-        var args = new[]
-        {
-            "-hide_banner",
-            "-loglevel", "error",
-            "-nostdin",
-            "-i", "pipe:0",
-            "-ss", offsetSeconds.ToString("0.######",
-                System.Globalization.CultureInfo.InvariantCulture),
-            "-t", durationSeconds.ToString("0.######",
-                System.Globalization.CultureInfo.InvariantCulture),
-            "-vn",
-            "-ac", "1",
-            "-ar", "16000",
-            "-f", "s16le",
-            "-acodec", "pcm_s16le",
-            "pipe:1",
-        };
-
         var startInfo = new ProcessStartInfo("ffmpeg")
         {
             UseShellExecute = false,
@@ -262,16 +271,40 @@ public sealed class FfmpegAudioClipCutter(
             CreateNoWindow = true,
         };
 
-        foreach (var arg in args)
-            startInfo.ArgumentList.Add(arg);
+        string FormatSeconds(double seconds) =>
+            seconds.ToString("0.######", CultureInfo.InvariantCulture);
+
+        string[] arguments =
+        [
+            "-hide_banner",
+            "-loglevel", "error",
+            "-nostdin",
+            "-i", "pipe:0",
+            "-ss", FormatSeconds(offsetSeconds),
+            "-t", FormatSeconds(durationSeconds),
+            "-vn",
+            "-ac", "1",
+            "-ar", "16000",
+            "-f", "s16le",
+            "-acodec", "pcm_s16le",
+            "pipe:1",
+        ];
+
+        foreach (var argument in arguments)
+            startInfo.ArgumentList.Add(argument);
 
         using var process = new Process { StartInfo = startInfo };
 
         try
         {
-            process.Start();
+            if (!process.Start())
+            {
+                throw new AudioClipException(
+                    AudioClipErrorCodes.Unavailable,
+                    "ffmpeg could not be started.");
+            }
         }
-        catch (System.ComponentModel.Win32Exception)
+        catch (Win32Exception)
         {
             throw new AudioClipException(
                 AudioClipErrorCodes.Unavailable,
@@ -286,32 +319,42 @@ public sealed class FfmpegAudioClipCutter(
                     process.Kill(entireProcessTree: true);
             }
             catch (InvalidOperationException) { }
-            catch (System.ComponentModel.Win32Exception) { }
+            catch (Win32Exception) { }
         });
 
-        // All three pipes must be serviced concurrently. In particular,
-        // waiting for stdin before draining stdout can deadlock ffmpeg.
-        var writer = Task.Run(async () =>
+        // All three pipes must be serviced concurrently.
+        // Waiting for stdin before stdout would risk deadlock.
+        var writer = WriteInputAsync();
+        var reader = process.StandardOutput.BaseStream.CopyToAsync(
+            output, ct);
+        var errors = process.StandardError.ReadToEndAsync(ct);
+
+        async Task WriteInputAsync()
         {
             try
             {
                 await input.CopyToAsync(
                     process.StandardInput.BaseStream, ct);
             }
-            catch (IOException) when (process.HasExited)
+            catch (IOException) when (!ct.IsCancellationRequested)
             {
-                // ffmpeg may stop reading after -t.
+                // ffmpeg can close stdin when the selected portion is
+                // complete. The process exit code remains authoritative.
+            }
+            catch (ObjectDisposedException) when (!ct.IsCancellationRequested)
+            {
+                // The decoder already closed its input pipe.
             }
             finally
             {
-                process.StandardInput.Close();
+                try
+                {
+                    process.StandardInput.Close();
+                }
+                catch (IOException) { }
+                catch (ObjectDisposedException) { }
             }
-        }, ct);
-
-        var reader = process.StandardOutput.BaseStream.CopyToAsync(
-            output, ct);
-
-        var errors = process.StandardError.ReadToEndAsync(ct);
+        }
 
         try
         {
@@ -320,8 +363,13 @@ public sealed class FfmpegAudioClipCutter(
         }
         catch
         {
-            if (!process.HasExited)
-                process.Kill(entireProcessTree: true);
+            try
+            {
+                if (!process.HasExited)
+                    process.Kill(entireProcessTree: true);
+            }
+            catch (InvalidOperationException) { }
+            catch (Win32Exception) { }
 
             await process.WaitForExitAsync(CancellationToken.None);
             throw;

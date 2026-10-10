@@ -56,13 +56,23 @@ public static class AlignmentEndpoints
         // Use the canonical library read path for both editions before
         // examining raw repository models or accessing stored media.
         var sourceRead = await library.GetBookAsync(audioBookId, ct);
-        if (LibraryHttpMapper.MapError(sourceRead) is { } sourceError)
-            return sourceError;
+        if (LibraryHttpMapper.MapError(sourceRead) is not null)
+        {
+            return Failure(
+                "alignment_book_not_found",
+                StatusCodes.Status404NotFound,
+                "The source audiobook was not found or is not accessible.");
+        }
 
         var targetRead = await library.GetBookAsync(
             request.TargetBookId, ct);
-        if (LibraryHttpMapper.MapError(targetRead) is { } targetError)
-            return targetError;
+        if (LibraryHttpMapper.MapError(targetRead) is not null)
+        {
+            return Failure(
+                "alignment_book_not_found",
+                StatusCodes.Status404NotFound,
+                "The target ebook was not found or is not accessible.");
+        }
 
         var source = await books.GetByIdAsync(audioBookId);
         var target = await books.GetByIdAsync(request.TargetBookId);
