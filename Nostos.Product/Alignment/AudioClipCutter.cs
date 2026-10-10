@@ -7,7 +7,8 @@ using Nostos.Backend.Services;
 
 namespace Nostos.Product.Alignment;
 
-public sealed class AudioClipException(string code, string message) : Exception(message)
+public sealed class AudioClipException(string code, string message)
+    : Exception(message)
 {
     public string Code { get; } = code;
 }
@@ -37,13 +38,8 @@ public interface IAudioClipCutter
 }
 
 /// <summary>
-/// Decodes requested audiobook portions through ffmpeg.
-///
-/// Input is streamed from the storage abstraction, and no absolute
-/// library paths are passed to the child process.
-///
-/// Each segment produces raw PCM. Segments are concatenated in track
-/// order and receive one WAV header.
+/// Extracts a short PCM clip through ffmpeg using seekable HTTP ranges
+/// backed exclusively by the host's storage interfaces.
 /// </summary>
 public sealed class FfmpegAudioClipCutter(
     IBookAssetStorage assets,
@@ -56,7 +52,14 @@ public sealed class FfmpegAudioClipCutter(
     private const int BytesPerSecond =
         SampleRate * Channels * BitsPerSample / 8;
 
-    private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(60);
+    public const int MaxPcmBytes = 4 * 1024 * 1024;
+    public const int MaxStderrBytes = 8 * 1024;
+
+    private static readonly TimeSpan Timeout =
+        TimeSpan.FromSeconds(60);
+
+    private static readonly TimeSpan ExitGrace =
+        TimeSpan.FromSeconds(3);
 
     public async Task<AudioClip> CutAsync(
         AudioBookModel book,
@@ -64,8 +67,10 @@ public sealed class FfmpegAudioClipCutter(
         double clipSeconds,
         CancellationToken ct = default)
     {
-        if (!double.IsFinite(positionSeconds) || positionSeconds < 0 ||
-            !double.IsFinite(clipSeconds) || clipSeconds <= 0 ||
+        if (!double.IsFinite(positionSeconds) ||
+            positionSeconds <= 0 ||
+            !double.IsFinite(clipSeconds) ||
+            clipSeconds <= 0 ||
             clipSeconds > 60)
         {
             throw new AudioClipException(
@@ -73,35 +78,92 @@ public sealed class FfmpegAudioClipCutter(
                 "The requested audio position or clip duration is invalid.");
         }
 
-        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var tracks = BookTrackList.Parse(book.FileDetails.TracksJson);
+
+        if (tracks.Count == 0)
+        {
+            ValidateSingleFilePosition(
+                book.Duration,
+                positionSeconds);
+        }
+
+        using var deadline =
+            CancellationTokenSource.CreateLinkedTokenSource(ct);
+
         deadline.CancelAfter(Timeout);
 
         try
         {
-            var tracks = BookTrackList.Parse(book.FileDetails.TracksJson);
-
-            if (tracks.Count > 0)
-            {
-                return await CutTracksAsync(
+            return tracks.Count > 0
+                ? await CutTracksAsync(
                     book.Id,
                     tracks,
                     positionSeconds,
                     clipSeconds,
+                    deadline.Token)
+                : await CutSingleAsync(
+                    book.Id,
+                    positionSeconds,
+                    clipSeconds,
                     deadline.Token);
-            }
-
-            return await CutSingleAsync(
-                book.Id,
-                positionSeconds,
-                clipSeconds,
-                deadline.Token);
         }
-        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        catch (OperationCanceledException)
+            when (!ct.IsCancellationRequested)
         {
             throw new AudioClipException(
                 AudioClipErrorCodes.Timeout,
                 "Audio clip extraction exceeded its timeout.");
         }
+    }
+
+    public static void ValidateSingleFilePosition(
+        string? storedDuration,
+        double positionSeconds)
+    {
+        if (!double.IsFinite(positionSeconds) ||
+            positionSeconds <= 0)
+        {
+            throw new AudioClipException(
+                AudioClipErrorCodes.InvalidPosition,
+                "A positive, finite playback position is required.");
+        }
+
+        if (TryParseDurationSeconds(storedDuration, out var durationSeconds) &&
+            positionSeconds > durationSeconds)
+        {
+            throw new AudioClipException(
+                AudioClipErrorCodes.InvalidPosition,
+                "The playback position exceeds the audiobook duration.");
+        }
+    }
+
+    // Stored durations are "h:mm:ss" (or "m:ss") and can exceed 24 hours, which
+    // TimeSpan.Parse reads as days. An unparseable duration means "unknown".
+    private static bool TryParseDurationSeconds(string? stored, out double seconds)
+    {
+        seconds = 0;
+        if (string.IsNullOrWhiteSpace(stored))
+            return false;
+
+        var parts = stored.Trim().Split(':');
+        if (parts.Length is < 2 or > 3)
+            return false;
+
+        foreach (var part in parts)
+        {
+            if (!double.TryParse(
+                    part,
+                    NumberStyles.AllowDecimalPoint,
+                    CultureInfo.InvariantCulture,
+                    out var value))
+            {
+                return false;
+            }
+
+            seconds = seconds * 60 + value;
+        }
+
+        return seconds > 0;
     }
 
     private async Task<AudioClip> CutTracksAsync(
@@ -118,11 +180,11 @@ public sealed class FfmpegAudioClipCutter(
             plan = AudioClipPlanner.Plan(
                 tracks, positionSeconds, clipSeconds);
         }
-        catch (ArgumentException ex)
+        catch (ArgumentException)
         {
             throw new AudioClipException(
                 AudioClipErrorCodes.InvalidPosition,
-                ex.Message);
+                "The audiobook position or track layout is invalid.");
         }
 
         if (plan.Count == 0)
@@ -148,20 +210,29 @@ public sealed class FfmpegAudioClipCutter(
         {
             ct.ThrowIfCancellationRequested();
 
-            await using var source = await storage.OpenTrackAsync(
+            var info = await storage.GetTrackInfoAsync(
                 bookId,
                 segment.TrackNumber,
-                ct: ct);
+                ct);
 
-            if (source is null)
+            if (info is null || info.Length <= 0)
             {
                 throw new AudioClipException(
                     AudioClipErrorCodes.MediaMissing,
-                    $"Audiobook track {segment.TrackNumber} is missing.");
+                    "The requested audiobook track is unavailable.");
             }
 
+            await using var server = await LoopbackRangeServer.StartAsync(
+                info.Length,
+                (range, token) => storage.OpenTrackAsync(
+                    bookId,
+                    segment.TrackNumber,
+                    range,
+                    token),
+                ct);
+
             await DecodeAsync(
-                source.Content,
+                server.Url,
                 pcm,
                 segment.StartSeconds,
                 segment.DurationSeconds,
@@ -178,30 +249,27 @@ public sealed class FfmpegAudioClipCutter(
         CancellationToken ct)
     {
         var duration = Math.Min(positionSeconds, clipSeconds);
-
-        if (duration <= 0)
-        {
-            throw new AudioClipException(
-                AudioClipErrorCodes.InvalidPosition,
-                "The requested position contains no preceding audio.");
-        }
-
         var start = positionSeconds - duration;
 
-        await using var source = await assets.OpenBookFileAsync(
-            bookId, ct: ct);
+        var info = await assets.GetBookFileInfoAsync(bookId, ct);
 
-        if (source is null)
+        if (info is null || info.Length <= 0)
         {
             throw new AudioClipException(
                 AudioClipErrorCodes.MediaMissing,
                 "The audiobook media is missing.");
         }
 
+        await using var server = await LoopbackRangeServer.StartAsync(
+            info.Length,
+            (range, token) =>
+                assets.OpenBookFileAsync(bookId, range, token),
+            ct);
+
         using var pcm = new MemoryStream();
 
         await DecodeAsync(
-            source.Content,
+            server.Url,
             pcm,
             start,
             duration,
@@ -210,9 +278,21 @@ public sealed class FfmpegAudioClipCutter(
         return CreateWav(pcm);
     }
 
+    public static void ValidatePcmLength(long length)
+    {
+        if (length < 0 || length > MaxPcmBytes)
+        {
+            throw new AudioClipException(
+                AudioClipErrorCodes.DecodeFailed,
+                "The decoded audio clip exceeds the permitted size.");
+        }
+    }
+
     private static AudioClip CreateWav(MemoryStream pcm)
     {
-        if (pcm.Length == 0 || pcm.Length > int.MaxValue - 44)
+        ValidatePcmLength(pcm.Length);
+
+        if (pcm.Length == 0)
         {
             throw new AudioClipException(
                 AudioClipErrorCodes.DecodeFailed,
@@ -225,6 +305,7 @@ public sealed class FfmpegAudioClipCutter(
         Span<byte> header = stackalloc byte[44];
 
         "RIFF"u8.CopyTo(header);
+
         BinaryPrimitives.WriteUInt32LittleEndian(
             header[4..], checked((uint)(pcm.Length + 36)));
 
@@ -236,11 +317,15 @@ public sealed class FfmpegAudioClipCutter(
         BinaryPrimitives.WriteUInt16LittleEndian(header[22..], Channels);
         BinaryPrimitives.WriteUInt32LittleEndian(header[24..], SampleRate);
         BinaryPrimitives.WriteUInt32LittleEndian(header[28..], BytesPerSecond);
+
         BinaryPrimitives.WriteUInt16LittleEndian(
             header[32..], Channels * BitsPerSample / 8);
-        BinaryPrimitives.WriteUInt16LittleEndian(header[34..], BitsPerSample);
+
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            header[34..], BitsPerSample);
 
         "data"u8.CopyTo(header[36..]);
+
         BinaryPrimitives.WriteUInt32LittleEndian(
             header[40..], checked((uint)pcm.Length));
 
@@ -248,6 +333,7 @@ public sealed class FfmpegAudioClipCutter(
 
         pcm.Position = 0;
         pcm.CopyTo(output);
+
         output.Position = 0;
 
         return new AudioClip(
@@ -256,8 +342,8 @@ public sealed class FfmpegAudioClipCutter(
     }
 
     private static async Task DecodeAsync(
-        Stream input,
-        Stream output,
+        Uri input,
+        MemoryStream output,
         double offsetSeconds,
         double durationSeconds,
         CancellationToken ct)
@@ -265,23 +351,23 @@ public sealed class FfmpegAudioClipCutter(
         var startInfo = new ProcessStartInfo("ffmpeg")
         {
             UseShellExecute = false,
-            RedirectStandardInput = true,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             CreateNoWindow = true,
         };
 
-        string FormatSeconds(double seconds) =>
-            seconds.ToString("0.######", CultureInfo.InvariantCulture);
+        static string Seconds(double value) =>
+            value.ToString("0.######", CultureInfo.InvariantCulture);
 
         string[] arguments =
         [
             "-hide_banner",
             "-loglevel", "error",
             "-nostdin",
-            "-i", "pipe:0",
-            "-ss", FormatSeconds(offsetSeconds),
-            "-t", FormatSeconds(durationSeconds),
+            "-protocol_whitelist", "file,http,tcp",
+            "-ss", Seconds(offsetSeconds),
+            "-i", input.AbsoluteUri,
+            "-t", Seconds(durationSeconds),
             "-vn",
             "-ac", "1",
             "-ar", "16000",
@@ -311,75 +397,147 @@ public sealed class FfmpegAudioClipCutter(
                 "ffmpeg is not installed or cannot be started.");
         }
 
-        using var cancellation = ct.Register(() =>
-        {
-            try
-            {
-                if (!process.HasExited)
-                    process.Kill(entireProcessTree: true);
-            }
-            catch (InvalidOperationException) { }
-            catch (Win32Exception) { }
-        });
+        using var cancellation = ct.Register(
+            () => KillProcessTree(process));
 
-        // All three pipes must be serviced concurrently.
-        // Waiting for stdin before stdout would risk deadlock.
-        var writer = WriteInputAsync();
-        var reader = process.StandardOutput.BaseStream.CopyToAsync(
-            output, ct);
-        var errors = process.StandardError.ReadToEndAsync(ct);
+        var readOutput = ReadOutputAsync(
+            process.StandardOutput.BaseStream,
+            output,
+            ct);
 
-        async Task WriteInputAsync()
-        {
-            try
-            {
-                await input.CopyToAsync(
-                    process.StandardInput.BaseStream, ct);
-            }
-            catch (IOException) when (!ct.IsCancellationRequested)
-            {
-                // ffmpeg can close stdin when the selected portion is
-                // complete. The process exit code remains authoritative.
-            }
-            catch (ObjectDisposedException) when (!ct.IsCancellationRequested)
-            {
-                // The decoder already closed its input pipe.
-            }
-            finally
-            {
-                try
-                {
-                    process.StandardInput.Close();
-                }
-                catch (IOException) { }
-                catch (ObjectDisposedException) { }
-            }
-        }
+        var readErrors = DrainStderrAsync(
+            process.StandardError.BaseStream,
+            ct);
 
         try
         {
-            await Task.WhenAll(writer, reader, errors);
-            await process.WaitForExitAsync(ct);
+            await Task.WhenAll(
+                readOutput,
+                readErrors,
+                process.WaitForExitAsync(ct));
+
+            if (process.ExitCode != 0)
+            {
+                throw new AudioClipException(
+                    AudioClipErrorCodes.DecodeFailed,
+                    "ffmpeg could not decode the requested audiobook segment.");
+            }
         }
         catch
         {
+            KillProcessTree(process);
+
+            // Process exit is deliberately bounded even when the original
+            // request was cancelled. Never wait indefinitely in cleanup.
             try
             {
-                if (!process.HasExited)
-                    process.Kill(entireProcessTree: true);
+                await process.WaitForExitAsync(
+                    CancellationToken.None).WaitAsync(ExitGrace);
             }
-            catch (InvalidOperationException) { }
-            catch (Win32Exception) { }
+            catch (TimeoutException)
+            {
+            }
+            catch (InvalidOperationException)
+            {
+            }
 
-            await process.WaitForExitAsync(CancellationToken.None);
+            // Both readers were already started. Observe completed faults,
+            // but do not await a permanently blocked pipe.
+            _ = readOutput.ContinueWith(
+                task => _ = task.Exception,
+                CancellationToken.None,
+                TaskContinuationOptions.OnlyOnFaulted,
+                TaskScheduler.Default);
+
+            _ = readErrors.ContinueWith(
+                task => _ = task.Exception,
+                CancellationToken.None,
+                TaskContinuationOptions.OnlyOnFaulted,
+                TaskScheduler.Default);
+
             throw;
         }
+    }
 
-        if (process.ExitCode != 0)
+    private static async Task ReadOutputAsync(
+        Stream source,
+        MemoryStream destination,
+        CancellationToken ct)
+    {
+        var buffer = new byte[64 * 1024];
+
+        while (true)
         {
-            throw new AudioClipException(
-                AudioClipErrorCodes.DecodeFailed,
-                "ffmpeg could not decode the requested audiobook segment.");
+            var read = await source.ReadAsync(buffer, ct);
+
+            if (read == 0)
+                break;
+
+            ValidatePcmLength(destination.Length + read);
+
+            destination.Write(buffer, 0, read);
+        }
+    }
+
+    /// <summary>
+    /// Drains stderr concurrently without accumulating arbitrary provider
+    /// output. Only the final 8 KiB are retained in process memory.
+    /// The retained text is deliberately never sent to API clients.
+    /// </summary>
+    private static async Task<byte[]> DrainStderrAsync(
+        Stream source,
+        CancellationToken ct)
+    {
+        var tail = new byte[MaxStderrBytes];
+        var buffer = new byte[4096];
+        var written = 0;
+
+        while (true)
+        {
+            var count = await source.ReadAsync(buffer, ct);
+
+            if (count == 0)
+                break;
+
+            if (count >= tail.Length)
+            {
+                buffer.AsSpan(count - tail.Length, tail.Length)
+                    .CopyTo(tail);
+                written = tail.Length;
+                continue;
+            }
+
+            if (written + count > tail.Length)
+            {
+                var discard = written + count - tail.Length;
+
+                tail.AsSpan(discard, written - discard)
+                    .CopyTo(tail);
+
+                written -= discard;
+            }
+
+            buffer.AsSpan(0, count)
+                .CopyTo(tail.AsSpan(written));
+
+            written += count;
+        }
+
+        return tail[..written];
+    }
+
+    private static void KillProcessTree(Process process)
+    {
+        try
+        {
+            if (!process.HasExited)
+                process.Kill(entireProcessTree: true);
+        }
+        catch (InvalidOperationException)
+        {
+        }
+        catch (Win32Exception)
+        {
         }
     }
 }

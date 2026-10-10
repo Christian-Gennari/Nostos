@@ -5,6 +5,7 @@ using Nostos.Backend.Data.Models;
 using Nostos.Backend.Services.Ai;
 using Nostos.Backend.Services.Library;
 using Nostos.Product.Alignment;
+using Nostos.Product.Composition;
 using Nostos.Product.Http;
 using Nostos.Product.Services.Ai;
 
@@ -17,10 +18,22 @@ public static class AlignmentEndpoints
         Guid TargetBookId);
 
     public static IEndpointRouteBuilder MapAlignmentEndpoints(
-        this IEndpointRouteBuilder routes)
+        this IEndpointRouteBuilder routes,
+        NostosProductEndpointPolicies? policies = null)
     {
-        routes.MapPost(
-            "/api/books/{audioBookId:guid}/alignment/locate-text",
+        policies ??= NostosProductEndpointPolicies.None;
+
+        var group = routes.MapGroup("/api/books");
+
+        if (!string.IsNullOrWhiteSpace(
+            policies.ExpensiveMutationRateLimitPolicy))
+        {
+            group.RequireRateLimiting(
+                policies.ExpensiveMutationRateLimitPolicy);
+        }
+
+        group.MapPost(
+            "/{audioBookId:guid}/alignment/locate-text",
             LocateTextAsync);
 
         return routes;
@@ -53,9 +66,8 @@ public static class AlignmentEndpoints
                 "A valid source, target and positive position are required.");
         }
 
-        // Use the canonical library read path for both editions before
-        // examining raw repository models or accessing stored media.
         var sourceRead = await library.GetBookAsync(audioBookId, ct);
+
         if (LibraryHttpMapper.MapError(sourceRead) is not null)
         {
             return Failure(
@@ -66,6 +78,7 @@ public static class AlignmentEndpoints
 
         var targetRead = await library.GetBookAsync(
             request.TargetBookId, ct);
+
         if (LibraryHttpMapper.MapError(targetRead) is not null)
         {
             return Failure(
@@ -105,7 +118,8 @@ public static class AlignmentEndpoints
                 "The target edition must be an EPUB.");
         }
 
-        if (audio.WorkId == Guid.Empty || audio.WorkId != epub.WorkId)
+        if (audio.WorkId == Guid.Empty ||
+            audio.WorkId != epub.WorkId)
         {
             return Failure(
                 "alignment_work_mismatch",
@@ -183,7 +197,8 @@ public static class AlignmentEndpoints
             var status = ex.Code switch
             {
                 SttErrorCodes.AccessDenied => 403,
-                SttErrorCodes.Disabled or SttErrorCodes.NotConfigured => 503,
+                SttErrorCodes.Disabled or
+                    SttErrorCodes.NotConfigured => 503,
                 SttErrorCodes.RateLimited => 429,
                 SttErrorCodes.Timeout => 504,
                 SttErrorCodes.TooLarge => 413,
@@ -195,7 +210,8 @@ public static class AlignmentEndpoints
 
             return Failure(ex.Code, status, ex.Message);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (OperationCanceledException)
+            when (ct.IsCancellationRequested)
         {
             throw;
         }
@@ -208,9 +224,6 @@ public static class AlignmentEndpoints
         }
         catch (Exception)
         {
-            // Unexpected failures must not expose internal exception details.
-            // In particular, do not retry a transcription: the upstream
-            // operation may already have consumed billable usage.
             return Failure(
                 "alignment_internal_error",
                 StatusCodes.Status500InternalServerError,

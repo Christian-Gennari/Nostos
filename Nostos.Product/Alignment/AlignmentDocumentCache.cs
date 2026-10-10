@@ -5,9 +5,6 @@ namespace Nostos.Product.Alignment;
 
 /// <summary>
 /// Supplies an extracted EPUB document for alignment.
-///
-/// Production uses the revision-aware cache. Tests can supply a deterministic
-/// document without opening stored publications or running extraction.
 /// </summary>
 public interface IAlignmentDocumentProvider
 {
@@ -19,21 +16,51 @@ public interface IAlignmentDocumentProvider
 }
 
 /// <summary>
-/// Small, process-local cache of extracted EPUB documents.
-///
-/// Keys include the book id, storage identity and extractor version.
-/// A replaced publication therefore cannot reuse the prior extraction.
+/// Bounded, revision-aware, process-local EPUB extraction cache.
+/// The storage read itself supplies the revision used for the cache key.
 /// </summary>
-public sealed class AlignmentDocumentCache : IAlignmentDocumentProvider
+public sealed class AlignmentDocumentCache(
+    AlignmentOptions options) : IAlignmentDocumentProvider
 {
     private const int Capacity = 4;
+
     private readonly SemaphoreSlim gate = new(1, 1);
     private readonly Dictionary<string, CacheEntry> entries = [];
     private readonly LinkedList<string> order = [];
 
+    private long totalCharacters;
+
     private sealed record CacheEntry(
         BookTextExtractedDocument Document,
+        long Characters,
         LinkedListNode<string> Node);
+
+    public static void ValidateEpubLength(
+        long length,
+        long maximum)
+    {
+        if (maximum <= 0)
+            throw new ArgumentOutOfRangeException(nameof(maximum));
+
+        if (length < 0 || length > maximum)
+        {
+            throw new AlignmentException(
+                "alignment_target_too_large",
+                413,
+                "The EPUB exceeds the alignment extraction size limit.");
+        }
+    }
+
+    public static long CountCharacters(
+        BookTextExtractedDocument document)
+    {
+        long count = 0;
+
+        foreach (var block in document.Blocks)
+            count = checked(count + block.Text.Length);
+
+        return count;
+    }
 
     public async Task<BookTextExtractedDocument> GetAsync(
         Guid bookId,
@@ -41,36 +68,12 @@ public sealed class AlignmentDocumentCache : IAlignmentDocumentProvider
         IBookTextExtractor extractor,
         CancellationToken ct = default)
     {
-        var info = await storage.GetBookFileInfoAsync(bookId, ct);
-
-        if (info is null)
-        {
-            throw new AlignmentException(
-                "alignment_target_media_missing",
-                422,
-                "The target EPUB is not available in storage.");
-        }
-
-        var key = string.Join(":",
-            bookId.ToString("N"),
-            info.EntityTag,
-            info.Length.ToString(
-                System.Globalization.CultureInfo.InvariantCulture),
-            info.LastModified.UtcTicks.ToString(
-                System.Globalization.CultureInfo.InvariantCulture),
-            BookTextArtifactSchema.CurrentExtractorVersion);
-
         await gate.WaitAsync(ct);
 
         try
         {
-            if (entries.TryGetValue(key, out var cached))
-            {
-                order.Remove(cached.Node);
-                order.AddFirst(cached.Node);
-                return cached.Document;
-            }
-
+            // Open first. A separate metadata lookup could race with
+            // replacement and create a cache entry for the wrong revision.
             await using var asset = await storage.OpenBookFileAsync(
                 bookId, ct: ct);
 
@@ -82,8 +85,20 @@ public sealed class AlignmentDocumentCache : IAlignmentDocumentProvider
                     "The target EPUB is not available in storage.");
             }
 
-            // The EPUB extractor requires seekable ZIP input.
-            // Temporary files are never placed in library storage.
+            ValidateEpubLength(
+                asset.Info.Length,
+                options.MaxEpubBytes);
+
+            var key = CreateKey(bookId, asset.Info);
+
+            if (entries.TryGetValue(key, out var cached))
+            {
+                order.Remove(cached.Node);
+                order.AddFirst(cached.Node);
+
+                return cached.Document;
+            }
+
             var tempPath = Path.Combine(
                 Path.GetTempPath(),
                 $"nostos-alignment-{Guid.NewGuid():N}.epub");
@@ -92,35 +107,65 @@ public sealed class AlignmentDocumentCache : IAlignmentDocumentProvider
 
             try
             {
-                await using (var temp = new FileStream(
+                await using var temp = new FileStream(
                     tempPath,
                     FileMode.CreateNew,
                     FileAccess.ReadWrite,
                     FileShare.None,
                     81920,
-                    FileOptions.Asynchronous | FileOptions.SequentialScan))
-                {
-                    await asset.Content.CopyToAsync(temp, ct);
-                    temp.Position = 0;
+                    FileOptions.Asynchronous |
+                    FileOptions.SequentialScan);
 
-                    try
-                    {
-                        document = await extractor.ExtractAsync(temp, ct);
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        throw;
-                    }
-                    catch (Exception ex) when (
-                        ex is InvalidDataException or
-                        IOException or
-                        ArgumentException)
-                    {
-                        throw new AlignmentException(
-                            "alignment_target_text_unavailable",
-                            422,
-                            "The stored EPUB could not be extracted.");
-                    }
+                // Do not trust a provider's declared Content-Length.
+                // Enforce the limit while bytes are actually staged.
+                var copied = 0L;
+                var buffer = new byte[81920];
+
+                while (true)
+                {
+                    var read = await asset.Content.ReadAsync(
+                        buffer, ct);
+
+                    if (read == 0)
+                        break;
+
+                    copied = checked(copied + read);
+
+                    ValidateEpubLength(
+                        copied,
+                        options.MaxEpubBytes);
+
+                    await temp.WriteAsync(
+                        buffer.AsMemory(0, read), ct);
+                }
+
+                if (copied != asset.Info.Length)
+                {
+                    throw new AlignmentException(
+                        "alignment_target_text_unavailable",
+                        422,
+                        "The stored EPUB length changed during extraction.");
+                }
+
+                temp.Position = 0;
+
+                try
+                {
+                    document = await extractor.ExtractAsync(temp, ct);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex) when (
+                    ex is InvalidDataException or
+                    IOException or
+                    ArgumentException)
+                {
+                    throw new AlignmentException(
+                        "alignment_target_text_unavailable",
+                        422,
+                        "The stored EPUB could not be extracted.");
                 }
             }
             finally
@@ -138,12 +183,29 @@ public sealed class AlignmentDocumentCache : IAlignmentDocumentProvider
                     "The EPUB has no extractable text.");
             }
 
-            var node = order.AddFirst(key);
-            entries[key] = new CacheEntry(document, node);
+            var characters = CountCharacters(document);
 
-            while (entries.Count > Capacity)
+            // Do not cache documents larger than the entire budget.
+            // They may still be used for this one alignment request.
+            if (characters > options.MaxCachedCharacters)
+                return document;
+
+            var node = order.AddFirst(key);
+
+            entries.Add(
+                key,
+                new CacheEntry(document, characters, node));
+
+            totalCharacters = checked(totalCharacters + characters);
+
+            while (entries.Count > Capacity ||
+                   totalCharacters > options.MaxCachedCharacters)
             {
                 var oldest = order.Last!;
+
+                var removed = entries[oldest.Value];
+
+                totalCharacters -= removed.Characters;
                 entries.Remove(oldest.Value);
                 order.RemoveLast();
             }
@@ -155,4 +217,17 @@ public sealed class AlignmentDocumentCache : IAlignmentDocumentProvider
             gate.Release();
         }
     }
+
+    private static string CreateKey(
+        Guid bookId,
+        StoredAssetInfo info) =>
+        string.Join(
+            ":",
+            bookId.ToString("N"),
+            info.EntityTag,
+            info.Length.ToString(
+                System.Globalization.CultureInfo.InvariantCulture),
+            info.LastModified.UtcTicks.ToString(
+                System.Globalization.CultureInfo.InvariantCulture),
+            BookTextArtifactSchema.CurrentExtractorVersion);
 }

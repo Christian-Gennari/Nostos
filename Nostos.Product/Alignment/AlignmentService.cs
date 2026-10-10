@@ -18,7 +18,14 @@ public sealed class AlignmentException(
 public sealed class AlignmentOptions
 {
     public const string SectionName = "Alignment";
+
     public double ClipSeconds { get; set; } = 20;
+
+    public long MaxEpubBytes { get; set; } =
+        200L * 1024 * 1024;
+
+    public long MaxCachedCharacters { get; set; } =
+        20_000_000;
 }
 
 public sealed record AlignmentLocator(
@@ -62,7 +69,8 @@ public sealed class AlignmentService(
         double positionSeconds,
         CancellationToken ct = default)
     {
-        if (!double.IsFinite(positionSeconds) || positionSeconds <= 0)
+        if (!double.IsFinite(positionSeconds) ||
+            positionSeconds <= 0)
         {
             throw new AlignmentException(
                 AudioClipErrorCodes.InvalidPosition,
@@ -90,7 +98,8 @@ public sealed class AlignmentService(
                 "The target must be an EPUB with stored media.");
         }
 
-        if (source.WorkId == Guid.Empty || source.WorkId != target.WorkId)
+        if (source.WorkId == Guid.Empty ||
+            source.WorkId != target.WorkId)
         {
             throw new AlignmentException(
                 "alignment_work_mismatch",
@@ -109,23 +118,29 @@ public sealed class AlignmentService(
         var extractor = extractors.Single(
             x => x.Format == BookTextSourceFormat.Epub);
 
-        // Do all local preparation before reserving provider usage.
+        // Complete local preparation before reserving provider usage.
         var document = await cache.GetAsync(
             target.Id, storage, extractor, ct);
 
         var matcher = new PassageMatcher(document);
 
         await using var clip = await cutter.CutAsync(
-            source, positionSeconds, options.ClipSeconds, ct);
+            source,
+            positionSeconds,
+            options.ClipSeconds,
+            ct);
 
-        // BeginSttAsync is the accounting boundary. No provider request
-        // must occur when the host refuses the reservation.
+        // A failed clip has not made a provider request and therefore
+        // cannot leave an accounting reservation behind.
         var lease = await usage.BeginSttAsync(ct);
 
-        SttResult transcription;
+        SttResult? transcription = null;
+        var resultCategory = "ProviderError";
 
         try
         {
+            ct.ThrowIfCancellationRequested();
+
             transcription = await transcriber.TranscribeAsync(
                 clip.Audio,
                 "alignment.wav",
@@ -134,33 +149,36 @@ public sealed class AlignmentService(
                     ? null
                     : source.Metadata.Language.Trim(),
                 ct);
+
+            resultCategory = "Completed";
         }
         catch (OperationCanceledException)
         {
-            await usage.CompleteSttAsync(
-                lease,
-                new TranscriptionUsage(1, null, "Cancelled"),
-                CancellationToken.None);
+            resultCategory = "Cancelled";
             throw;
         }
-        catch
+        finally
         {
+            // Exactly one accounting completion attempt per successful
+            // reservation. Cancellation cannot cancel this cleanup.
+            //
+            // Completion deliberately precedes matching: matching is
+            // local work and cannot make another provider request.
             await usage.CompleteSttAsync(
                 lease,
-                new TranscriptionUsage(1, null, "ProviderError"),
+                new TranscriptionUsage(
+                    resultCategory == "Completed" ? 1 :
+                        resultCategory == "ProviderError" ? 1 : 1,
+                    resultCategory == "Completed"
+                        ? transcription?.DurationSeconds
+                        : null,
+                    resultCategory),
                 CancellationToken.None);
-            throw;
         }
 
-        await usage.CompleteSttAsync(
-            lease,
-            new TranscriptionUsage(
-                1, transcription.DurationSeconds, "Completed"),
-            CancellationToken.None);
-
-        // Matching is local. A rejection is a successful transcription
-        // and consumes no additional provider request.
-        var match = matcher.Locate(transcription.Text, new MatcherSettings());
+        var match = matcher.Locate(
+            transcription!.Text,
+            new MatcherSettings());
 
         if (!match.Accepted)
             return AlignmentLocateResult.Declined(match.Reason);

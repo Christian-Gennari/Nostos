@@ -182,6 +182,14 @@ public static class NostosProductComposition
             throw new InvalidOperationException(
                 "Alignment:ClipSeconds must be between 0 and 60.");
 
+        if (alignment.MaxEpubBytes <= 0)
+            throw new InvalidOperationException(
+                "Alignment:MaxEpubBytes must be positive.");
+
+        if (alignment.MaxCachedCharacters <= 0)
+            throw new InvalidOperationException(
+                "Alignment:MaxCachedCharacters must be positive.");
+
         services.AddSingleton(alignment);
         services.AddSingleton<AlignmentDocumentCache>();
         services.TryAddSingleton<IAlignmentDocumentProvider>(
@@ -413,7 +421,7 @@ public static class NostosProductComposition
         policies ??= NostosProductEndpointPolicies.None;
 
         routes.MapBooksEndpoints(policies);
-        routes.MapAlignmentEndpoints();
+        routes.MapAlignmentEndpoints(policies);
         routes.MapProviderEndpoints(policies);
         routes.MapProviderSettingsEndpoints();
         routes.MapImportEndpoints();
