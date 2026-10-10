@@ -109,7 +109,8 @@ public sealed class AlignmentSttProviderTests
 
         resolver.AlignmentResolutionCount.Should().Be(2);
 
-        handler.RecordedRequestPaths.Should().Equal(
+        // The stub handler does not record in call order.
+        handler.RecordedRequestPaths.Should().BeEquivalentTo(
             "/v1/audio/transcriptions",
             "/v4/ai/transcription-model");
 
