@@ -8,6 +8,7 @@ using Nostos.Shared.Enums;
 using Nostos.Product.Composition;
 using Nostos.Product.Http;
 using Nostos.Product.BookText;
+using Nostos.Backend.Providers.Acquisition;
 
 namespace Nostos.Backend.Endpoints;
 
@@ -312,9 +313,17 @@ public static class BooksEndpoints
                 IBookAssetStorage storage,
                 MediaMetadataService metadataService,
                 IBookTextIngestionScheduler bookTextScheduler,
+                BookFileMutationGate fileMutationGate,
                 CancellationToken ct
             ) =>
             {
+                // Reject rather than queue behind an active acquisition; waiting
+                // would turn a stale upload click into an unexpected replacement.
+                using var fileLease = fileMutationGate.TryEnter(id);
+                if (fileLease is null)
+                    return Results.Conflict(new { code = "book_import_in_progress",
+                        message = "Wait for this book's current import or upload to finish." });
+
                 var book = await repo.GetByIdAsync(id);
                 if (book is null)
                     return Results.NotFound();
@@ -325,6 +334,10 @@ public static class BooksEndpoints
                         "Physical books are metadata-only. Add the digital file as a separate edition."
                     );
                 }
+
+                if (book.Status is BookStatus.Downloading or BookStatus.Transcoding)
+                    return Results.Conflict(new { code = "book_import_in_progress",
+                        message = "This book is still importing. Wait until it finishes before uploading a file." });
 
                 var form = await request.ReadFormAsync(ct);
                 var file = form.Files.FirstOrDefault();
