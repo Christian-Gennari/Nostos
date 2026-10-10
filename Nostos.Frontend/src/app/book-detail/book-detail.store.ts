@@ -28,6 +28,7 @@ export class BookDetailStore {
   private toast = inject(ToastService);
   private imports = inject(ImportService);
   private destroyRef = inject(DestroyRef);
+  readonly importConnectionState = this.imports.connectionState;
 
   // --- STATE ---
   readonly loading = signal(false);
