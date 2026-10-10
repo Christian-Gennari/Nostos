@@ -601,7 +601,10 @@ export class AssistantService {
         // A reload can interrupt an in-flight request after the server committed
         // but before the browser received the response. Treat it as uncertain:
         // restore the exact request/TurnId and let canonical receipts decide.
-        this.draft.set(restoredRetry.text);
+        const inlineTurn = restoredEvents.some((event) =>
+          event.turnId === restoredRetry.turnId && event.hiddenFromTranscript);
+        // Never place an internal Brain operation (including topic IDs) in the composer.
+        this.draft.set(inlineTurn ? '' : restoredRetry.text);
         this.updateUserDelivery(
           restoredRetry.userEntryId,
           'retryable',
@@ -953,13 +956,14 @@ export class AssistantService {
     if (this.sending() || !noteId || context.brainReviewNoteId !== noteId) return null;
 
     return this.startPreparedTurn({
-      text: `Suggest up to three existing topics for note ${noteId}. Read the note and existing topic evidence, then explicitly propose only grounded links. If none fit, return no proposals. Do not link anything.`,
+      text: 'Suggest up to three additional existing topics for this note. Read the note and existing topic evidence, then explicitly propose only grounded links that are not already present. If none fit, return no proposals. Do not link anything.',
       context,
       requestAnchor: this.effectiveAnchor(context),
       captureBookTitle: null,
       continuationPrompt: null,
       continuationSkipped: false,
       displayAnchor: this.effectiveAnchor(context),
+      hiddenFromTranscript: true,
     });
   }
 
@@ -968,7 +972,7 @@ export class AssistantService {
    * so the resulting existing-topic link may execute through the normal Act
    * path without asking for a second approval.
    */
-  applySuggestion(suggestion: AssistantSuggestionDto): string | null {
+  applySuggestion(suggestion: AssistantSuggestionDto, inline = false): string | null {
     if (this.sending() || suggestion.kind !== 'topic' || !suggestion.value) return null;
 
     const context = this.context();
@@ -977,10 +981,20 @@ export class AssistantService {
       return null;
     }
 
-    return this.dispatchTurn(
-      `Link note ${suggestion.noteId} to the existing topic “${suggestion.label}” (ID ${suggestion.value}).`,
-      this.effectiveAnchor(context),
-    );
+    const text = `Link note ${suggestion.noteId} to the existing topic “${suggestion.label}” (ID ${suggestion.value}).`;
+    if (inline) {
+      return this.startPreparedTurn({
+        text,
+        context,
+        requestAnchor: this.effectiveAnchor(context),
+        captureBookTitle: null,
+        continuationPrompt: null,
+        continuationSkipped: false,
+        displayAnchor: this.effectiveAnchor(context),
+        hiddenFromTranscript: true,
+      });
+    }
+    return this.dispatchTurn(text, this.effectiveAnchor(context));
   }
 
   /** "None of these": leave the note unlinked, with no error. */
@@ -1158,6 +1172,7 @@ export class AssistantService {
     continuationPrompt: AssistantAnchorPrompt | null;
     continuationSkipped: boolean;
     displayAnchor: AssistantAnchor | null;
+    hiddenFromTranscript?: boolean;
   }): string {
     const turnId = createId();
     const conversationId = this.conversationId();
@@ -1172,6 +1187,8 @@ export class AssistantService {
       true,
       'sending',
       toHistoricalContext(options.context),
+      [],
+      options.hiddenFromTranscript ?? false,
     );
 
     const request: AssistantTurnRequestDto = {
@@ -1661,6 +1678,7 @@ export class AssistantService {
     delivery: AssistantEventDelivery = 'complete',
     historyContext: AssistantHistoricalContextDto | null = null,
     suggestions: AssistantSuggestionDto[] = [],
+    hiddenFromTranscript = false,
   ): string {
     const id = createId();
     this.eventLedger.update((events) => [
@@ -1675,6 +1693,7 @@ export class AssistantService {
         sources,
         suggestions,
         remember,
+        hiddenFromTranscript,
         delivery,
         historyContext,
         historyEvidence: [],
