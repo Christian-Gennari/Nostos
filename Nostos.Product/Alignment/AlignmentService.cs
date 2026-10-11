@@ -465,10 +465,41 @@ public sealed class AlignmentService(
             var start = match.Start.Locator;
             var end = match.End.Locator;
 
+            // The matcher locates the transcript's LAST words, spoken in the
+            // final seconds of the clip. Locating its opening words as well
+            // gives the text the whole clip covers, so a target anywhere in the
+            // clip is found and its time is interpolated over the right span.
+            // When the opening cannot be placed, the closing words stand for
+            // the clip as before: that starts playback early, never late.
+            var observedStartOffset = match.Start.GlobalTextOffset;
+            var spoken = Words.Matches(transcription.Text);
+            var settings = new MatcherSettings();
+
+            if (spoken.Count >= settings.MaximumTokens * 2)
+            {
+                var opening = matcher.Locate(
+                    string.Join(
+                        ' ',
+                        spoken.Take(settings.MaximumTokens).Select(word => word.Value)),
+                    settings);
+
+                // A clip cannot cover more text than fast speech allows.
+                var earliestPlausible = match.End.GlobalTextOffset
+                    - (int)Math.Ceiling(options.ProbeSeconds * 40);
+
+                if (opening.Accepted &&
+                    opening.Start is not null &&
+                    opening.Start.GlobalTextOffset < match.Start.GlobalTextOffset &&
+                    opening.Start.GlobalTextOffset >= earliestPlausible)
+                {
+                    observedStartOffset = opening.Start.GlobalTextOffset;
+                }
+            }
+
             var observation = new AudioAlignmentSearch.Observation(
                 clipStart,
                 clipEnd,
-                match.Start.GlobalTextOffset,
+                observedStartOffset,
                 match.End.GlobalTextOffset,
                 match.Score);
 

@@ -45,7 +45,7 @@ public sealed class PdfBookTextExtractor : IBookTextExtractor
             ct.ThrowIfCancellationRequested();
             var text = BookTextNormalization.Normalize(
                 wordSeparated
-                    ? string.Join(' ', page.GetWords().Select(word => word.Text))
+                    ? WordsInReadingOrder(page)
                     : page.Text);
             if (text.Length == 0)
                 continue;
@@ -69,6 +69,46 @@ public sealed class PdfBookTextExtractor : IBookTextExtractor
         }
 
         return Task.FromResult(new BookTextExtractedDocument(Format, blocks));
+    }
+
+    /// <summary>
+    /// The page's words, top line first and left to right within a line.
+    ///
+    /// A PDF stores words in drawing order, which for an OCR layer is often
+    /// not reading order ("him bestow implored to a trifle"). Lines are
+    /// rebuilt from the words' baselines: a word joins the current line when
+    /// its baseline is within half a word height of it. This reads a
+    /// single-column page correctly; a multi-column page is read across the
+    /// columns, which is the known limit of this simple ordering.
+    /// </summary>
+    private static string WordsInReadingOrder(UglyToad.PdfPig.Content.Page page)
+    {
+        var words = page.GetWords()
+            .Where(word => !string.IsNullOrWhiteSpace(word.Text))
+            .OrderByDescending(word => word.BoundingBox.Bottom)
+            .ToList();
+
+        var lines = new List<List<UglyToad.PdfPig.Content.Word>>();
+        double lineBaseline = 0;
+
+        foreach (var word in words)
+        {
+            var height = Math.Max(1, word.BoundingBox.Height);
+            if (lines.Count == 0 ||
+                Math.Abs(word.BoundingBox.Bottom - lineBaseline) > height * 0.5)
+            {
+                lines.Add([]);
+                lineBaseline = word.BoundingBox.Bottom;
+            }
+
+            lines[^1].Add(word);
+        }
+
+        return string.Join(
+            '\n',
+            lines.Select(line => string.Join(
+                ' ',
+                line.OrderBy(word => word.BoundingBox.Left).Select(word => word.Text))));
     }
 }
 
