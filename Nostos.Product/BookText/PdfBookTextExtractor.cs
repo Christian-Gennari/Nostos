@@ -5,29 +5,6 @@ namespace Nostos.Product.BookText;
 
 public sealed class PdfBookTextExtractor : IBookTextExtractor
 {
-    private readonly bool wordSeparated;
-
-    /// <summary>The extraction the book-text index is built from.</summary>
-    public PdfBookTextExtractor() : this(wordSeparated: false)
-    {
-    }
-
-    /// <summary>
-    /// <paramref name="wordSeparated"/> rebuilds each page from its positioned
-    /// words, with a space between them. <c>page.Text</c> is the raw letter
-    /// stream: a PDF that carries no space glyph at a line end, and most
-    /// scanned PDFs with an OCR layer, come out with words run together
-    /// ("boyis", "indeed.There"), which is useless for matching speech.
-    ///
-    /// It is opt-in rather than the default because the index is versioned by
-    /// its extractor output: changing the default re-extracts and re-embeds
-    /// every PDF in every library.
-    /// </summary>
-    public PdfBookTextExtractor(bool wordSeparated)
-    {
-        this.wordSeparated = wordSeparated;
-    }
-
     public BookTextSourceFormat Format => BookTextSourceFormat.Pdf;
 
     public Task<BookTextExtractedDocument> ExtractAsync(Stream source, CancellationToken ct = default)
@@ -43,10 +20,20 @@ public sealed class PdfBookTextExtractor : IBookTextExtractor
         foreach (var page in document.GetPages())
         {
             ct.ThrowIfCancellationRequested();
+            // Placed words, not `page.Text`: see PdfReadingOrder for why the raw
+            // glyph stream is not usable text.
             var text = BookTextNormalization.Normalize(
-                wordSeparated
-                    ? WordsInReadingOrder(page)
-                    : page.Text);
+                PdfReadingOrder.Compose(
+                    page.GetWords()
+                        .Select(word => new PlacedWord(
+                            word.Text,
+                            word.BoundingBox.Left,
+                            word.BoundingBox.Right,
+                            word.BoundingBox.Bottom,
+                            word.BoundingBox.Height))
+                        .ToList(),
+                    page.CropBox.Bounds.Left,
+                    page.CropBox.Bounds.Right));
             if (text.Length == 0)
                 continue;
 
@@ -69,46 +56,6 @@ public sealed class PdfBookTextExtractor : IBookTextExtractor
         }
 
         return Task.FromResult(new BookTextExtractedDocument(Format, blocks));
-    }
-
-    /// <summary>
-    /// The page's words, top line first and left to right within a line.
-    ///
-    /// A PDF stores words in drawing order, which for an OCR layer is often
-    /// not reading order ("him bestow implored to a trifle"). Lines are
-    /// rebuilt from the words' baselines: a word joins the current line when
-    /// its baseline is within half a word height of it. This reads a
-    /// single-column page correctly; a multi-column page is read across the
-    /// columns, which is the known limit of this simple ordering.
-    /// </summary>
-    private static string WordsInReadingOrder(UglyToad.PdfPig.Content.Page page)
-    {
-        var words = page.GetWords()
-            .Where(word => !string.IsNullOrWhiteSpace(word.Text))
-            .OrderByDescending(word => word.BoundingBox.Bottom)
-            .ToList();
-
-        var lines = new List<List<UglyToad.PdfPig.Content.Word>>();
-        double lineBaseline = 0;
-
-        foreach (var word in words)
-        {
-            var height = Math.Max(1, word.BoundingBox.Height);
-            if (lines.Count == 0 ||
-                Math.Abs(word.BoundingBox.Bottom - lineBaseline) > height * 0.5)
-            {
-                lines.Add([]);
-                lineBaseline = word.BoundingBox.Bottom;
-            }
-
-            lines[^1].Add(word);
-        }
-
-        return string.Join(
-            '\n',
-            lines.Select(line => string.Join(
-                ' ',
-                line.OrderBy(word => word.BoundingBox.Left).Select(word => word.Text))));
     }
 }
 

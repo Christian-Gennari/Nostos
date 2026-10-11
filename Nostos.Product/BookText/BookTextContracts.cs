@@ -11,7 +11,10 @@ namespace Nostos.Product.BookText;
 public static class BookTextArtifactSchema
 {
     public const int CurrentVersion = 1;
-    public const string CurrentExtractorVersion = "nostos-book-text-v2";
+    // v3: PDF pages are composed from placed words in reading order
+    // (PdfReadingOrder) instead of the raw glyph stream. Every stored
+    // extraction is rebuilt, and with it the index and embeddings.
+    public const string CurrentExtractorVersion = "nostos-book-text-v3";
     public const string SuggestedFileName = "extraction-v1.jsonl.gz";
 }
 

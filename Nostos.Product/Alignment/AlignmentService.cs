@@ -127,9 +127,6 @@ public sealed class AlignmentService(
     IAlignmentAudioRevisionProvider audioRevisions,
     ILogger<AlignmentService> logger) : IAlignmentService
 {
-    private static readonly IBookTextExtractor AlignmentPdfExtractor =
-        new PdfBookTextExtractor(wordSeparated: true);
-
     private static readonly Regex Words = new(
         @"[\p{L}\p{N}]+",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
@@ -472,6 +469,7 @@ public sealed class AlignmentService(
             // When the opening cannot be placed, the closing words stand for
             // the clip as before: that starts playback early, never late.
             var observedStartOffset = match.Start.GlobalTextOffset;
+            PassageLocation? openingStart = null;
             var spoken = Words.Matches(transcription.Text);
             var settings = new MatcherSettings();
 
@@ -493,6 +491,7 @@ public sealed class AlignmentService(
                     opening.Start.GlobalTextOffset >= earliestPlausible)
                 {
                     observedStartOffset = opening.Start.GlobalTextOffset;
+                    openingStart = opening.Start;
                 }
             }
 
@@ -537,21 +536,27 @@ public sealed class AlignmentService(
                 }
             }
 
-            // Persist the two approximate clip boundaries. Each is
-            // revision-bound and uses its own text-source locator.
+            // Persist only pairs the transcript supports. The clip END and the
+            // end of the matched words are always one. The clip START is one
+            // only when the opening words were located too; pairing it with
+            // the start of the closing words would put an anchor some ten
+            // seconds out, and later searches interpolate between anchors.
             if (audioRevision is not null &&
                 snapshot.Revision is not null)
             {
-                anyAnchorStored |= await TryStoreAnchorAsync(
-                    target,
-                    source,
-                    audioRevision,
-                    snapshot.Revision,
-                    clipStart,
-                    match.Start.GlobalTextOffset,
-                    ToAnchorLocator(start),
-                    match.Score,
-                    ct);
+                if (openingStart is not null)
+                {
+                    anyAnchorStored |= await TryStoreAnchorAsync(
+                        target,
+                        source,
+                        audioRevision,
+                        snapshot.Revision,
+                        clipStart,
+                        openingStart.GlobalTextOffset,
+                        ToAnchorLocator(openingStart.Locator),
+                        match.Score,
+                        ct);
+                }
 
                 anyAnchorStored |= await TryStoreAnchorAsync(
                     target,
@@ -576,6 +581,28 @@ public sealed class AlignmentService(
                     Score: match.Score,
                     AnchorStored: anyAnchorStored);
             }
+        }
+
+        // The search stopped without the target inside a probed clip, but a
+        // probe ended within a clip or so of it. Counting on from that exact
+        // pair at the book's pace is a few seconds of extrapolation, which is
+        // a better answer than asking the reader to accept "roughly".
+        if (search.NearTargetPositionSeconds is { } near &&
+            ConsistentWithAnchors(
+                near,
+                targetOffset,
+                before,
+                after,
+                options.ProbeSeconds * 2))
+        {
+            return new AlignmentLocateAudioResult(
+                Located: true,
+                Reason: null,
+                PositionSeconds: near,
+                ApproximatePositionSeconds: null,
+                Probes: probes,
+                Score: 0,
+                AnchorStored: anyAnchorStored);
         }
 
         return AlignmentLocateAudioResult.Declined(
@@ -626,11 +653,7 @@ public sealed class AlignmentService(
                 "The text edition must be an EPUB or PDF with stored media.");
         }
 
-        // Matching speech needs real word boundaries, which the indexing
-        // extraction does not guarantee for PDFs (see PdfBookTextExtractor).
-        var extractor = format == BookTextSourceFormat.Pdf
-            ? AlignmentPdfExtractor
-            : extractors.Single(x => x.Format == format);
+        var extractor = extractors.Single(x => x.Format == format);
 
         return await cache.GetAsync(
             book.Id, storage, extractor, ct);
