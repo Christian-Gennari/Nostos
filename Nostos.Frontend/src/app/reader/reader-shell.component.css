@@ -869,6 +869,24 @@
    feedback utility (PDF's five 44px header tools cannot fit a 320px header).
    A quiet link row, not another control language: same panel, one tap to open
    the panel and one to the link, 44px tall for touch. */
+/* The switch-edition entry at 320px: the first row of the panel, so it is
+   reachable without scrolling. An ordinary ghost button stretched to a row. */
+/* `.nostos-button` centres its content; a row reads from the left. */
+.typo-switch.nostos-button {
+  display: flex;
+  width: calc(100% + 0.5rem);
+  min-height: 44px;
+  margin: 0 -0.25rem 0.5rem;
+  padding-inline: 0.25rem;
+  justify-content: flex-start;
+  gap: 0.5rem;
+}
+
+.typo-switch-label {
+  flex: 1;
+  text-align: left;
+}
+
 .typo-feedback {
   display: flex;
   align-items: center;

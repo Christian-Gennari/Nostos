@@ -14,18 +14,14 @@ import {
   HostListener,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { HttpErrorResponse } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
 import { Howl } from 'howler';
 import { Subject, Subscription } from 'rxjs';
 import { sampleTime, filter } from 'rxjs/operators';
 import { BooksService } from '../../core/services/books.service';
-import { AlignmentService } from '../../core/services/alignment.service';
-import { AlignmentLocatedResult, isAlignmentUnavailableCode } from '../../core/dtos/alignment.dtos';
 import { AssistantContextService } from '../../ui/assistant/assistant-context.service';
 import { IReader, ReaderProgress, ReaderSourceTarget, TocItem } from '../reader.interface';
-import { Book, EditionSummaryDto } from '../../core/dtos/book.dtos';
+import { Book } from '../../core/dtos/book.dtos';
 import { AudioPlayer, TrackPlaylistPlayer } from './track-playlist-player';
 
 import { BloomArtDirective } from '../../ui/bloom-art/bloom-art.directive';
@@ -112,45 +108,6 @@ export class AudioReader implements OnDestroy, IReader {
   // so the UI can show a visible loading state instead of a dead-looking player.
   loading = signal(true);
   loadError = signal<string | null>(null);
-
-  // --- Continue in EPUB ---
-  /**
-   * An eligible target must be another ebook edition with an actual EPUB file.
-   * The server remains authoritative about access and work membership.
-   */
-  readonly alignmentTarget = computed<EditionSummaryDto | null>(() => {
-    const book = this.book();
-    if (!book || book.type !== 'audiobook') return null;
-
-    return book.otherEditions?.find(edition => {
-      if (edition.id === book.id ||
-          edition.type.toLowerCase() !== 'ebook' ||
-          !edition.hasFile) {
-        return false;
-      }
-
-      const format = edition.format?.trim().toLowerCase();
-      const fileName = edition.fileName?.trim().toLowerCase();
-
-      return format === 'epub' ||
-        format === '.epub' ||
-        !!fileName?.endsWith('.epub');
-    }) ?? null;
-  });
-
-  readonly alignmentBusy = signal(false);
-  readonly alignmentUnavailable = signal(false);
-  readonly alignmentMessage = signal<string | null>(null);
-  readonly alignmentDeclined = signal(false);
-
-  readonly canContinueInEbook = computed(
-    () => this.alignmentTarget() !== null && !this.alignmentUnavailable(),
-  );
-
-  private alignmentRequest: Subscription | null = null;
-  private alignmentRequestGeneration = 0;
-  private alignmentBookId: string | null = null;
-  private declinedTargetBookId: string | null = null;
 
   // --- Sleep timer (issue #47) ---
   // Armed preset in minutes; null means the timer is off. Session-only state:
@@ -241,11 +198,6 @@ export class AudioReader implements OnDestroy, IReader {
     effect(() => {
       const id = this.bookId();
       if (id) {
-        if (this.alignmentBookId !== id) {
-          this.resetAlignmentState();
-          this.alignmentBookId = id;
-        }
-
         // Init Player
         this.initPlayer(id);
       }
@@ -377,158 +329,23 @@ export class AudioReader implements OnDestroy, IReader {
   }
 
   /**
-   * A declined alignment is not a failure to open the ebook. Its saved
-   * reading position remains available as a separate, explicit choice.
+   * Pauses, saves progress, and returns the real media position on the book's
+   * whole timeline, for continuing in another edition. Null when nothing has
+   * been played yet or the audio is not ready.
    */
-  openEbookAnyway(): void {
-    const targetBookId = this.declinedTargetBookId;
-    if (!this.alignmentDeclined() || !targetBookId) return;
-
-    void this.injector.get(Router).navigate(['/read', targetBookId]);
-  }
-
-  continueInEbook(): void {
-    if (this.alignmentBusy() || this.alignmentUnavailable()) return;
-
-    const target = this.alignmentTarget();
+  handoffPosition(): number | null {
     const player = this.player;
-
-    if (!target || !player || this.loading() || this.loadError()) return;
+    if (!player || this.loading() || this.loadError()) return null;
 
     // Prefer the real media position to the UI's once-per-second snapshot.
-    // This also ensures a position across the entire multi-track book.
     const position = player.seek() as number;
-
-    if (!Number.isFinite(position) || position <= 0) {
-      this.alignmentMessage.set('Play a little of the audiobook first.');
-      this.alignmentDeclined.set(false);
-      this.declinedTargetBookId = null;
-      return;
-    }
-
-    // Set the guard synchronously, before pausing or subscribing.
-    this.alignmentBusy.set(true);
-    this.alignmentMessage.set(null);
-    this.alignmentDeclined.set(false);
-    this.declinedTargetBookId = null;
+    if (!Number.isFinite(position) || position <= 0) return null;
 
     player.pause();
     this.currentTime.set(position);
     this.updateProgressState();
     this.saveProgressImmediately();
-
-    const sourceBookId = this.bookId();
-    const targetBookId = target.id;
-    const generation = ++this.alignmentRequestGeneration;
-
-    this.alignmentRequest = this.injector.get(AlignmentService)
-      .locateText(sourceBookId, {
-        positionSeconds: position,
-        targetBookId,
-      })
-      .subscribe({
-        next: result => {
-          if (generation !== this.alignmentRequestGeneration) return;
-
-          this.alignmentBusy.set(false);
-
-          if (!result.located) {
-            this.alignmentDeclined.set(true);
-            this.declinedTargetBookId = targetBookId;
-            this.alignmentMessage.set(
-              'The passage could not be matched confidently in this ebook edition.',
-            );
-            return;
-          }
-
-          if (!this.hasUsableEpubLocator(result)) {
-            this.alignmentMessage.set(
-              'The passage was found, but its reading location is unavailable.',
-            );
-            return;
-          }
-
-          const locator = result.locator;
-          const queryParams: Record<string, string | number> = {};
-
-          if (locator.resourceHref) {
-            queryParams['sourceHref'] = locator.resourceHref;
-          }
-          if (locator.spineIndex != null) {
-            queryParams['sourceSpine'] = locator.spineIndex;
-          }
-          if (locator.textOffset != null) {
-            queryParams['sourceOffset'] = locator.textOffset;
-          }
-          if (locator.cfi) {
-            queryParams['sourceCfi'] = locator.cfi;
-          }
-          if (result.excerpt) {
-            queryParams['sourceExcerpt'] = result.excerpt;
-          }
-
-          void this.injector.get(Router).navigate(
-            ['/read', targetBookId],
-            { queryParams },
-          ).then(navigated => {
-            if (!navigated && generation === this.alignmentRequestGeneration) {
-              this.alignmentMessage.set('Could not open the ebook. Please try again.');
-            }
-          }).catch(() => {
-            if (generation === this.alignmentRequestGeneration) {
-              this.alignmentMessage.set('Could not open the ebook. Please try again.');
-            }
-          });
-        },
-        error: (error: unknown) => {
-          if (generation !== this.alignmentRequestGeneration) return;
-
-          this.alignmentBusy.set(false);
-          this.alignmentDeclined.set(false);
-          this.declinedTargetBookId = null;
-
-          const code = error instanceof HttpErrorResponse
-            ? error.error?.title
-            : null;
-
-          if (isAlignmentUnavailableCode(code)) {
-            this.alignmentUnavailable.set(true);
-            this.alignmentMessage.set(
-              'Continue in ebook needs transcription to be available. Check Settings.',
-            );
-          } else if (code === 'ai_rate_limited' ||
-                     code === 'stt_rate_limited' ||
-                     code === 'ai_usage_limit_reached') {
-            this.alignmentMessage.set(
-              'Transcription is temporarily limited. Try again later.',
-            );
-          } else {
-            this.alignmentMessage.set(
-              'Could not find your place in the ebook. Please try again.',
-            );
-          }
-        },
-      });
-  }
-
-  private hasUsableEpubLocator(result: AlignmentLocatedResult): boolean {
-    const locator = result.locator;
-    if (!locator) return false;
-
-    // The reader shell only recognizes EPUB source navigation when at least
-    // a CFI or resource href exists.
-    return !!(locator.cfi || locator.resourceHref);
-  }
-
-  private resetAlignmentState(): void {
-    ++this.alignmentRequestGeneration;
-    this.alignmentRequest?.unsubscribe();
-    this.alignmentRequest = null;
-    this.alignmentBusy.set(false);
-    this.alignmentUnavailable.set(false);
-    this.alignmentMessage.set(null);
-    this.alignmentDeclined.set(false);
-    this.declinedTargetBookId = null;
+    return position;
   }
 
   seek(event: any) {
@@ -986,7 +803,6 @@ export class AudioReader implements OnDestroy, IReader {
   }
 
   ngOnDestroy() {
-    this.resetAlignmentState();
     this.unregisterAssistantContext?.();
     this.unregisterAssistantContext = null;
     this.saveProgressImmediately();

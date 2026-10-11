@@ -91,6 +91,23 @@
       }
       }
 
+      <!-- Continue in another edition of the same work. Present only when one
+           exists and can be opened. Its icon is where it leads. Below 360px on
+           a format with a View settings panel it joins that panel, like
+           Feedback, because five 44px tools do not fit a 320px header. -->
+      @if (showHeaderSwitch()) {
+      <button
+        appIconButton
+        [icon]="switchEditionIcon()"
+        [glyphSize]="20"
+        (click)="openSwitchEdition()"
+        title="Continue in another edition"
+        aria-label="Continue in another edition"
+        aria-haspopup="dialog"
+        data-testid="reader-switch-edition"
+      ></button>
+      }
+
       <!-- A quiet utility beside the reading tools: Cloud only, and available
            even when the book fails to load, which is exactly when a problem is
            worth reporting. The Reader is a separate shell, so it owns this
@@ -586,6 +603,22 @@
          theme, so it is the same setting as Settings → Appearance and both
          readers follow it without reloading. Kept first and identical for EPUB
          and PDF; PDF "Page colours" below stays a separate page-pixel control. -->
+    @if (showPanelSwitch()) {
+    <button
+      appButton
+      type="button"
+      variant="ghost"
+      class="typo-switch"
+      (click)="openSwitchEdition()"
+      aria-haspopup="dialog"
+      data-testid="reader-switch-edition-panel"
+    >
+      <nostos-icon [name]="switchEditionIcon()" [size]="16"></nostos-icon>
+      <span class="typo-switch-label">Continue in another edition</span>
+      <nostos-icon name="caret-right" [size]="13"></nostos-icon>
+    </button>
+    }
+
     <div class="typo-row" data-testid="reader-appearance">
       <span class="typo-label" id="reader-appearance">App appearance</span>
       <div class="typo-opts" role="group" aria-labelledby="reader-appearance" aria-describedby="reader-appearance-hint">
@@ -701,66 +734,6 @@
     </div>
     }
     } @if (epubReader) {
-    @if (epubReader.alignmentTarget()) {
-    <div class="typo-row" data-testid="epub-listening-action">
-      <span class="typo-label" id="epub-listening-label">Audiobook</span>
-
-      @if (epubReader.canContinueListening()) {
-      <div class="typo-opts" role="group" aria-labelledby="epub-listening-label">
-        <button
-          type="button"
-          appButton variant="secondary" size="sm"
-          [disabled]="epubReader.alignmentBusy()"
-          [attr.aria-busy]="epubReader.alignmentBusy()"
-          [attr.aria-label]="epubReader.alignmentBusy() ? 'Finding your place in the audiobook' : 'Continue listening'"
-          (click)="epubReader.continueListening()"
-          data-testid="epub-continue-listening"
-        >
-          {{ epubReader.alignmentBusy() ? 'Finding your place…' : 'Continue listening' }}
-        </button>
-      </div>
-      }
-
-      <div
-        aria-live="polite"
-        aria-atomic="true"
-        data-testid="epub-alignment-status"
-      >
-        @if (epubReader.alignmentBusy()) {
-          <span role="status">Finding your place in the audiobook…</span>
-        } @else if (epubReader.alignmentMessage()) {
-          <div role="status">
-            <span>{{ epubReader.alignmentMessage() }}</span>
-
-            @if (epubReader.alignmentDeclined()) {
-              <div class="typo-opts">
-                @if (epubReader.alignmentApproximatePosition() !== null) {
-                <button
-                  type="button"
-                  appButton variant="secondary" size="sm"
-                  (click)="epubReader.jumpToApproximateAudio()"
-                  data-testid="epub-jump-approximate"
-                >
-                  Jump to roughly the same place
-                </button>
-                } @else {
-                <button
-                  type="button"
-                  appButton variant="secondary" size="sm"
-                  (click)="epubReader.openAudiobookAnyway()"
-                  data-testid="epub-open-audiobook-anyway"
-                >
-                  Open audiobook anyway
-                </button>
-                }
-              </div>
-            }
-          </div>
-        }
-      </div>
-    </div>
-    }
-
     <div class="typo-row">
       <span class="typo-label" id="typo-typeface">Typeface</span>
       <div class="typo-opts" role="group" aria-labelledby="typo-typeface">
@@ -856,3 +829,11 @@
   </div>
   }
 </div>
+
+<app-switch-edition-dialog
+  [isOpen]="switchEditionOpen()"
+  [book]="book()"
+  [audioPositionSeconds]="switchAudioPosition()"
+  [visibleExcerpt]="switchVisibleExcerpt()"
+  (closed)="switchEditionOpen.set(false)"
+/>

@@ -1,0 +1,154 @@
+@if (isOpen()) {
+<app-modal-shell
+  [isOpen]="true"
+  variant="dialog"
+  cardClass="switch-edition-card"
+  [maxWidth]="'480px'"
+  [maxHeight]="'min(640px, calc(100vh - 2.5rem))'"
+  [layer]="110"
+  ariaLabelledBy="switch-edition-title"
+  [style.--modal-head-padding]="'1.15rem 1.25rem 0.9rem'"
+  (closed)="close()"
+>
+  <header class="switch-head" shellHeader>
+    <div class="switch-heading-text">
+      <h2 id="switch-edition-title" class="switch-title">Continue in another edition</h2>
+      @if (book()?.title) {
+      <p class="switch-subtitle">{{ book()?.title }}</p>
+      }
+    </div>
+    <button
+      appIconButton
+      icon="x"
+      [glyphSize]="20"
+      title="Close"
+      aria-label="Close"
+      (click)="close()"
+    ></button>
+  </header>
+
+  <div class="switch-body" data-testid="switch-edition-dialog">
+    <ul class="switch-list">
+      @for (target of targets(); track target.edition.id) {
+      <li>
+        <!-- The row is the action. What it will do is said in words on the row,
+             because "same sentence" and "where you left off" are different
+             promises and the reader should know which one they are getting. -->
+        <button
+          type="button"
+          class="switch-row"
+          [disabled]="!!busyEditionId()"
+          [attr.aria-busy]="busyEditionId() === target.edition.id"
+          (click)="choose(target)"
+          [attr.data-testid]="'switch-edition-' + target.kind"
+        >
+          <span class="switch-icon">
+            <nostos-icon [name]="iconFor(target.kind)" [size]="16"></nostos-icon>
+          </span>
+          <span class="switch-content">
+            <span class="switch-format">{{ target.format }}</span>
+            @if (target.subtitle) {
+            <span class="switch-sub">{{ target.subtitle }}</span>
+            }
+            <span class="switch-meta">
+              @if (busyEditionId() === target.edition.id) {
+                Finding your place…
+              } @else if (target.sameSentence && target.kind === 'audiobook') {
+                Starts where this page begins
+              } @else if (target.sameSentence) {
+                Opens at the sentence you’re hearing
+              } @else if (target.edition.progressPercent) {
+                Opens where you left off · {{ target.edition.progressPercent }}%
+              } @else {
+                Opens at the beginning
+              }
+            </span>
+          </span>
+          <span class="switch-trail" aria-hidden="true">
+            @if (busyEditionId() === target.edition.id) {
+            <nostos-loading-indicator size="sm" [decorative]="true" />
+            } @else {
+            <nostos-icon name="caret-right" [size]="16"></nostos-icon>
+            }
+          </span>
+        </button>
+
+        @if (slow() && busyEditionId() === target.edition.id) {
+        <div class="switch-outcome" role="status" data-testid="switch-edition-slow">
+          <p class="switch-outcome-text">Still looking. This is taking longer than usual.</p>
+          <div class="switch-outcome-actions">
+            <button
+              appButton
+              type="button"
+              variant="secondary"
+              size="sm"
+              (click)="stopWaitingAndOpen(target.edition.id)"
+            >
+              Open where you left off
+            </button>
+          </div>
+        </div>
+        }
+
+        @if (declined(); as outcome) {
+          @if (outcome.editionId === target.edition.id) {
+          <div class="switch-outcome" role="status" data-testid="switch-edition-declined">
+            <p class="switch-outcome-text">{{ outcome.message }}</p>
+            <div class="switch-outcome-actions">
+              @if (outcome.approximateSeconds !== null) {
+              <button
+                appButton
+                type="button"
+                variant="secondary"
+                size="sm"
+                (click)="openApproximate()"
+                data-testid="switch-edition-approximate"
+              >
+                Jump to roughly the same place
+              </button>
+              }
+              <button
+                appButton
+                type="button"
+                [variant]="outcome.approximateSeconds !== null ? 'ghost' : 'secondary'"
+                size="sm"
+                (click)="openWhereLeft(target.edition.id)"
+                data-testid="switch-edition-open-anyway"
+              >
+                Open where you left off
+              </button>
+            </div>
+          </div>
+          }
+        }
+
+        @if (error(); as problem) {
+          @if (problem.editionId === target.edition.id) {
+          <div class="switch-outcome" role="alert" data-testid="switch-edition-error">
+            <p class="switch-outcome-text">{{ problem.message }}</p>
+            <div class="switch-outcome-actions">
+              <button
+                appButton
+                type="button"
+                variant="secondary"
+                size="sm"
+                (click)="openWhereLeft(target.edition.id)"
+              >
+                Open where you left off
+              </button>
+            </div>
+          </div>
+          }
+        }
+      </li>
+      }
+    </ul>
+
+    @if (unavailable()) {
+    <p class="switch-note" role="status" data-testid="switch-edition-unavailable">
+      Jumping to the same sentence isn’t available right now, so editions open where you left off.
+    </p>
+    }
+  </div>
+</app-modal-shell>
+}

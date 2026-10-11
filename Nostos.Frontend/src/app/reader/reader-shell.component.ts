@@ -29,6 +29,8 @@ import { PdfReader } from './pdf-reader/pdf-reader.component';
 import { EpubReader } from './epub-reader/epub-reader.component';
 import type { SelectionAnchor } from './epub-reader/epub-annotation-manager';
 import { AudioReader } from './audio-reader/audio-reader.component';
+import { EditionSummaryDto } from '../core/dtos/book.dtos';
+import { SwitchEditionDialog } from './switch-edition/switch-edition-dialog.component';
 import { TopicInputComponent } from '../ui/topic-input.component/topic-input.component';
 import { NoteCardComponent } from '../ui/note-card.component/note-card.component';
 import { ConfirmModal } from '../ui/confirm-modal/confirm-modal.component';
@@ -69,6 +71,7 @@ export function selectionPreview(text: string | null, max = SELECTION_PREVIEW_MA
     PdfReader,
     EpubReader,
     AudioReader,
+    SwitchEditionDialog,
     TopicInputComponent,
     NoteCardComponent,
     IconButtonComponent,
@@ -100,6 +103,7 @@ export class ReaderShell implements OnInit, OnDestroy {
 
     this.dockQuery?.addEventListener?.('change', this.onDockQueryChange);
     this.veryNarrowQuery?.addEventListener?.('change', this.onVeryNarrowChange);
+    this.phoneQuery?.addEventListener?.('change', this.onPhoneChange);
   }
 
   // ------------------------------------------------------------------
@@ -131,6 +135,18 @@ export class ReaderShell implements OnInit, OnDestroy {
   readonly veryNarrow = signal(this.veryNarrowQuery?.matches ?? false);
   private readonly onVeryNarrowChange = (event: MediaQueryListEvent) =>
     this.veryNarrow.set(event.matches);
+
+  /**
+   * Phone widths. Six 44px tools squeeze the title to a few characters here, so
+   * when the switch-edition tool is present Feedback yields its header slot.
+   */
+  private readonly phoneQuery: MediaQueryList | null =
+    typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+      ? window.matchMedia('(max-width: 480px)')
+      : null;
+  readonly phone = signal(this.phoneQuery?.matches ?? false);
+  private readonly onPhoneChange = (event: MediaQueryListEvent) =>
+    this.phone.set(event.matches);
 
   /** Where the captured EPUB selection sits; null docks the menu. */
   selectionAnchor = signal<SelectionAnchor | null>(null);
@@ -212,14 +228,70 @@ export class ReaderShell implements OnInit, OnDestroy {
    * Audio keeps it at every width, because that format has no such panel and
    * its three-tool header never overflows.
    */
-  readonly showHeaderFeedback = computed(
-    () => !this.veryNarrow() || !this.hasViewSettingsPanel(),
-  );
+  readonly showHeaderFeedback = computed(() => !this.showPanelFeedback());
 
   /** The narrow replacement, a quiet link row inside the View settings panel. */
   readonly showPanelFeedback = computed(
-    () => this.veryNarrow() && this.hasViewSettingsPanel(),
+    () =>
+      this.hasViewSettingsPanel() &&
+      (this.veryNarrow() || (this.phone() && this.canSwitchEdition())),
   );
+
+  // --- Continue in another edition ---
+
+  /** Other editions of this work that can actually be opened. */
+  private readonly switchableEditions = computed<EditionSummaryDto[]>(() => {
+    const book = this.book();
+    const editions: EditionSummaryDto[] = book?.otherEditions ?? [];
+    return editions.filter((edition) => edition.id !== book?.id && edition.hasFile);
+  });
+
+  readonly canSwitchEdition = computed(
+    () => !this.loadError() && !!this.fileType() && this.switchableEditions().length > 0,
+  );
+
+  /**
+   * The tool shows where it leads: headphones when every other edition is an
+   * audiobook, an open book when none is, the editions mark when they are mixed.
+   */
+  readonly switchEditionIcon = computed<'headphones' | 'book-open' | 'stack'>(() => {
+    const editions = this.switchableEditions();
+    const audio = editions.filter((edition) => edition.type?.toLowerCase() === 'audiobook').length;
+    if (audio === editions.length) return 'headphones';
+    return audio === 0 ? 'book-open' : 'stack';
+  });
+
+  /** At 320px an EPUB/PDF header holds four tools, so this one joins the panel. */
+  readonly showHeaderSwitch = computed(
+    () => this.canSwitchEdition() && !(this.veryNarrow() && this.hasViewSettingsPanel()),
+  );
+  readonly showPanelSwitch = computed(
+    () => this.canSwitchEdition() && this.veryNarrow() && this.hasViewSettingsPanel(),
+  );
+
+  readonly switchEditionOpen = signal(false);
+  readonly switchAudioPosition = signal<number | null>(null);
+  readonly switchVisibleExcerpt = signal<string | null>(null);
+
+  /**
+   * Captures where the reader is right now, then opens the dialog. The
+   * position is read once, on opening: the audiobook pauses and saves, and the
+   * ebook reports the first text on the visible page.
+   */
+  openSwitchEdition(): void {
+    if (!this.canSwitchEdition()) return;
+
+    const audio = this.audioReader as unknown as { handoffPosition?: () => number | null } | undefined;
+    this.switchAudioPosition.set(
+      this.fileType() === 'audio' ? (audio?.handoffPosition?.() ?? null) : null,
+    );
+    this.switchVisibleExcerpt.set(
+      this.fileType() === 'epub' ? (this.epubReader?.visibleExcerpt?.() ?? null) : null,
+    );
+
+    this.typoOpen.set(false);
+    this.switchEditionOpen.set(true);
+  }
 
   /** View settings panel (EPUB and PDF) toggled by the Aa control. */
   typoOpen = signal(false);
@@ -538,6 +610,7 @@ export class ReaderShell implements OnInit, OnDestroy {
     if (this.saveFeedbackTimer) clearTimeout(this.saveFeedbackTimer);
     this.dockQuery?.removeEventListener?.('change', this.onDockQueryChange);
     this.veryNarrowQuery?.removeEventListener?.('change', this.onVeryNarrowChange);
+    this.phoneQuery?.removeEventListener?.('change', this.onPhoneChange);
   }
 
   private watchBookNavigation(): void {
