@@ -394,6 +394,28 @@ public sealed class HighlightImportEndpointTests : IDisposable
     }
 
     [Fact]
+    public async Task A_pdf_sidecar_named_only_by_its_file_is_offered_the_book_and_never_filed_unasked()
+    {
+        using var factory = new LibraryEndpointFactory();
+        var client = factory.CreateClient();
+        var book = await CreateBookAsync(client, "Synthetic Reader PDF", "Ada Reader");
+        var sidecar = Path.Combine(AppContext.BaseDirectory, "Fixtures", "koreader", "metadata.pdf-untitled.lua");
+
+        var preview = await PreviewAsync(client, sidecar);
+        var only = preview.Books.Should().ContainSingle().Subject;
+        only.AnnotationCount.Should().Be(2);
+        only.Match.Should().Be("suggested", "a file name is a resemblance, not an identity");
+        only.BookId.Should().BeNull();
+        only.Candidates.Should().ContainSingle().Which.BookId.Should().Be(book.Id);
+
+        var result = await CommitAsync(client, sidecar, new HighlightImportDecision(only.SourceKey, book.Id));
+        result.Books.Single().ImportedCount.Should().Be(2);
+
+        // The owner's answer is remembered by KOReader's file checksum.
+        (await PreviewAsync(client, sidecar)).Books.Single().Match.Should().Be("remembered");
+    }
+
+    [Fact]
     public async Task A_file_that_is_neither_source_is_rejected()
     {
         using var factory = new LibraryEndpointFactory();

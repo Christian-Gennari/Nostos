@@ -35,6 +35,25 @@ public sealed class KoreaderMetadataParserTests
     }
 
     [Fact]
+    public void Pdf_without_embedded_metadata_is_named_by_what_the_device_shows()
+    {
+        var document = KoreaderMetadataParser.Parse(Fixture("metadata.pdf-untitled.lua"));
+
+        document.Title.Should().Be("Ada Reader - Synthetic Reader PDF");
+        document.Author.Should().BeNull("\"N/A\" is KOReader's placeholder, not an author");
+        document.Annotations.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void File_name_names_the_book_when_nothing_else_does()
+    {
+        var document = KoreaderMetadataParser.Parse(
+            "return { [\"doc_path\"] = \"/mnt/onboard/Books/Some Book.v2.pdf\", [\"doc_props\"] = {} }");
+
+        document.Title.Should().Be("Some Book.v2");
+    }
+
+    [Fact]
     public void Highlight_across_a_paragraph_break_keeps_its_whole_text()
     {
         var document = KoreaderMetadataParser.Parse(Fixture("metadata.multiline.lua"));
@@ -74,6 +93,7 @@ public sealed class KoreaderMetadataParserTests
     [InlineData("return {")]
     [InlineData("return { [\"doc_props\"] = { [\"title\"] = \"Unclosed }")]
     [InlineData("SQLite format 3")]
+    [InlineData("return { [\"doc_props\"] = {}, [\"stats\"] = { [\"title\"] = \"N/A\" } }")]
     public void Malformed_input_is_a_format_error(string source)
     {
         var parse = () => KoreaderMetadataParser.Parse(source);

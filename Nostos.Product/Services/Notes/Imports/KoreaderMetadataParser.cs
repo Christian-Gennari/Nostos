@@ -53,8 +53,19 @@ internal static class KoreaderMetadataParser
             }
         }
 
+        // A PDF without embedded metadata has an empty doc_props. KOReader then
+        // shows the file name as the title, and so does this: it is what the
+        // owner sees on the device, and the import asks before filing under it.
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            var stats = root.Get("stats") as LuaTable;
+            title = Known(stats?.Get("title") as string)
+                ?? FileTitle(root.Get("doc_path") as string);
+            author ??= Known(stats?.Get("authors") as string);
+        }
+
         if (string.IsNullOrWhiteSpace(title) && string.IsNullOrWhiteSpace(isbn))
-            throw new FormatException("KOReader metadata must contain doc_props.title or an ISBN.");
+            throw new FormatException("KOReader metadata must name its book: a title, an ISBN or a file path.");
 
         return new KoreaderMetadataDocument(
             Clean(title),
@@ -80,6 +91,20 @@ internal static class KoreaderMetadataParser
 
     private static string? Scalar(LuaTable values, string key) =>
         Clean(values.Get(key) as string);
+
+    // KOReader's statistics write "N/A" for a property the document lacks.
+    private static string? Known(string? value) =>
+        Clean(value) is { } known && known != "N/A" ? known : null;
+
+    private static string? FileTitle(string? path)
+    {
+        var name = Clean(path)?.Split('/', '\\')[^1];
+        if (string.IsNullOrEmpty(name))
+            return null;
+
+        var extension = name.LastIndexOf('.');
+        return Clean(extension > 0 ? name[..extension] : name);
+    }
 
     private static string? Clean(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
