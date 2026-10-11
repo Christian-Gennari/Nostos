@@ -871,11 +871,13 @@
    the panel and one to the link, 44px tall for touch. */
 /* The switch-edition entry at 320px: the first row of the panel, so it is
    reachable without scrolling. An ordinary ghost button stretched to a row. */
-.typo-switch {
+/* `.nostos-button` centres its content; a row reads from the left. */
+.typo-switch.nostos-button {
   display: flex;
-  width: 100%;
+  width: calc(100% + 0.5rem);
   min-height: 44px;
-  margin-bottom: 0.5rem;
+  margin: 0 -0.25rem 0.5rem;
+  padding-inline: 0.25rem;
   justify-content: flex-start;
   gap: 0.5rem;
 }
