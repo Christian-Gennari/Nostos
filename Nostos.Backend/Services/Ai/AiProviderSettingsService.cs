@@ -887,7 +887,8 @@ public sealed class AiProviderSettingsService(
             {
                 logger.LogWarning(
                     "Stored {Surface} API key could not be decrypted ({ErrorType}); "
-                        + "falling back to environment variable '{Variable}'.",
+                        + "falling back to environment variable '{Variable}'. "
+                        + "Re-enter and save this key in Settings if the original Data Protection key ring is unavailable.",
                     surface,
                     ex.GetType().Name,
                     environmentVariable);
