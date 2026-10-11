@@ -29,6 +29,7 @@ import { Subject } from 'rxjs';
 import { debounceTime, distinctUntilChanged, filter } from 'rxjs/operators';
 
 import { PdfAnnotationManager, PageHighlight } from './pdf-annotation-manager';
+import { isDesktopMouseSelection } from '../epub-reader/epub-annotation-manager';
 import {
   DEFAULT_HIGHLIGHT_COLOUR,
   HighlightColour,
@@ -180,6 +181,8 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
   /** The book's highlighter pen (issue #208), owned by the shell. */
   highlightColour = input<HighlightColour>(DEFAULT_HIGHLIGHT_COLOUR);
   selectionCaptured = output<string>();
+  /** A plain page click abandoned a selection captured outside highlight mode. */
+  selectionDismissed = output<void>();
   commitFailed = output<void>();
   /** Neutral PDF surface click asks the shared shell to reveal or hide chrome. */
   surfaceInteracted = output<void>();
@@ -948,18 +951,37 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
     this.surfaceClickSuppression = null;
   }
 
-  onTextSelection() {
+  /**
+   * Captures the current selection as a pending highlight. Touch completion
+   * and the viewer's own selection event only capture while highlight mode is
+   * on; releasing a desktop mouse selection captures regardless of the mode,
+   * the same as the EPUB reader (#657).
+   */
+  onTextSelection(event?: MouseEvent) {
     this.onNativeSelectionChange();
+    const outsideMode =
+      !this.highlightMode() && !!event && isDesktopMouseSelection(event, window);
     if (
       this.commitInFlight
-      || !this.highlightMode()
+      || (!this.highlightMode() && !outsideMode)
       || this.textCapability() === 'unavailable'
     ) return;
 
     const highlight = this.highlightService.captureHighlight(true);
-    if (!highlight) return;
+    if (!highlight) {
+      // Outside highlight mode nothing else closes the docked bar on a click
+      // away, so a plain click on the page abandons the mark it offered.
+      if (outsideMode && this.pendingHighlight) {
+        this.pendingHighlight = null;
+        this.selectionDismissed.emit();
+      }
+      return;
+    }
 
     if (highlight.status === 'cross-page') {
+      // Outside highlight mode the reader may only be selecting to copy:
+      // leave the selection alone and say nothing.
+      if (outsideMode) return;
       // Reject the new invalid selection without destroying an older pending
       // one that the shell may still be offering to Save or Cancel.
       this.highlightWarning.set(

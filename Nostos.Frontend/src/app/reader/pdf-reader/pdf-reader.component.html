@@ -1,7 +1,7 @@
 <div
   class="pdf-container"
   [class.inverted]="pageInverted()"
-  (mouseup)="onTextSelection()"
+  (mouseup)="onTextSelection($event)"
   (click)="onSurfaceClick($event)"
   (touchstart)="onSurfaceTouchStart($event)"
   (touchend)="onSurfaceTouchEnd($event)"

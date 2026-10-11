@@ -73,6 +73,7 @@ class PdfReaderStub {
   sidebarVisibleChange = output<boolean>();
   noteCreated = output<void>();
   selectionCaptured = output<unknown>();
+  selectionDismissed = output<void>();
   commitFailed = output<unknown>();
   surfaceInteracted = output<void>();
   textCapability = signal<'unknown' | 'available' | 'unavailable'>('available');

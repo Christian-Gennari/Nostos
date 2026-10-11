@@ -220,6 +220,7 @@
         (sidebarVisibleChange)="tocOpen.set($event)"
         (noteCreated)="handleNoteCreated()"
         (selectionCaptured)="handleSelectionCaptured($event)"
+        (selectionDismissed)="discardHighlight()"
         (commitFailed)="handleCommitFailed()"
         (surfaceInteracted)="handleSurfaceInteraction()"
       />
