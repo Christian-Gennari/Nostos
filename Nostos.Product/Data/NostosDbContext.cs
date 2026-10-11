@@ -22,6 +22,7 @@ public class NostosDbContext : DbContext
     {
     }
     public DbSet<BookModel> Books => Set<BookModel>();
+    public DbSet<AlignmentAnchorModel> AlignmentAnchors => Set<AlignmentAnchorModel>();
     public DbSet<WorkModel> Works => Set<WorkModel>();
     public DbSet<WritingModel> Writings => Set<WritingModel>();
     public DbSet<WritingNoteModel> WritingNotes => Set<WritingNoteModel>();
@@ -464,6 +465,60 @@ public class NostosDbContext : DbContext
                 .HasForeignKey(bm => bm.WorkId)
                 .OnDelete(DeleteBehavior.Cascade);
             b.HasIndex(bm => bm.WorkId);
+        });
+
+        // --- DERIVED AUDIOBOOK / EPUB ALIGNMENT ANCHORS ---
+        // Both foreign keys refer to the same TPH book table. Database-level
+        // cascade delete removes anchors when either edition is deleted.
+        // Anchors are derived and excluded from portable library state.
+        modelBuilder.Entity<AlignmentAnchorModel>(e =>
+        {
+            e.HasKey(a => a.Id);
+
+            e.HasOne(a => a.AudioBook)
+                .WithMany()
+                .HasForeignKey(a => a.AudioBookId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasOne(a => a.TextBook)
+                .WithMany()
+                .HasForeignKey(a => a.TextBookId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            e.Property(a => a.AudioRevision)
+                .IsRequired()
+                .HasMaxLength(128);
+
+            e.Property(a => a.TextRevision)
+                .IsRequired()
+                .HasMaxLength(512);
+
+            e.Property(a => a.ResourceHref)
+                .IsRequired()
+                .HasMaxLength(2048);
+
+            e.Property(a => a.Cfi)
+                .HasMaxLength(2048);
+
+            // Explicit index names: the generated ones exceed PostgreSQL's
+            // 63-character identifier limit and would collide once truncated.
+            e.HasIndex(a => new
+            {
+                a.AudioBookId,
+                a.TextBookId,
+                a.AudioRevision,
+                a.TextRevision,
+                a.AudioPositionMs,
+            }).HasDatabaseName("IX_AlignmentAnchors_Pair_AudioPosition");
+
+            e.HasIndex(a => new
+            {
+                a.AudioBookId,
+                a.TextBookId,
+                a.AudioRevision,
+                a.TextRevision,
+                a.TextGlobalOffset,
+            }).HasDatabaseName("IX_AlignmentAnchors_Pair_TextOffset");
         });
 
         // Normalized identity uniqueness (filtered: NULLs are unlimited).

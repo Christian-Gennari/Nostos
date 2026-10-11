@@ -195,6 +195,8 @@ public static class NostosProductComposition
         services.TryAddSingleton<IAlignmentDocumentProvider>(
             sp => sp.GetRequiredService<AlignmentDocumentCache>());
         services.TryAddScoped<IAudioClipCutter, FfmpegAudioClipCutter>();
+        services.TryAddScoped<IAlignmentAnchorStore, EfAlignmentAnchorStore>();
+        services.TryAddScoped<IAlignmentAudioRevisionProvider, AlignmentAudioRevisionProvider>();
         services.TryAddScoped<IAlignmentService, AlignmentService>();
         services.TryAddScoped<IAlignmentTranscriber, VoiceAlignmentTranscriber>();
 

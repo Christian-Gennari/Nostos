@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Nostos.Backend.Data.Models;
 using Nostos.Backend.Services;
 using Nostos.Backend.Services.Ai;
@@ -39,7 +40,8 @@ public sealed record AlignmentLocateResult(
     string? Reason,
     double? Score,
     string? Excerpt,
-    AlignmentLocator? Locator)
+    AlignmentLocator? Locator,
+    bool AnchorStored = false)
 {
     public static AlignmentLocateResult Declined(string reason) =>
         new(false, reason, null, null, null);
@@ -61,7 +63,10 @@ public sealed class AlignmentService(
     IEnumerable<IBookTextExtractor> extractors,
     IAlignmentDocumentProvider cache,
     AlignmentOptions options,
-    IAiUsageAccountingService usage) : IAlignmentService
+    IAiUsageAccountingService usage,
+    IAlignmentAnchorStore anchors,
+    IAlignmentAudioRevisionProvider audioRevisions,
+    ILogger<AlignmentService> logger) : IAlignmentService
 {
     public async Task<AlignmentLocateResult> LocateAsync(
         AudioBookModel source,
@@ -118,11 +123,11 @@ public sealed class AlignmentService(
         var extractor = extractors.Single(
             x => x.Format == BookTextSourceFormat.Epub);
 
-        // Complete local preparation before reserving provider usage.
-        var document = await cache.GetAsync(
+        // The document and revision belong to the same storage read.
+        var snapshot = await cache.GetAsync(
             target.Id, storage, extractor, ct);
 
-        var matcher = new PassageMatcher(document);
+        var matcher = new PassageMatcher(snapshot.Document);
 
         await using var clip = await cutter.CutAsync(
             source,
@@ -130,8 +135,6 @@ public sealed class AlignmentService(
             options.ClipSeconds,
             ct);
 
-        // A failed clip has not made a provider request and therefore
-        // cannot leave an accounting reservation behind.
         var lease = await usage.BeginSttAsync(ct);
 
         SttResult? transcription = null;
@@ -159,16 +162,10 @@ public sealed class AlignmentService(
         }
         finally
         {
-            // Exactly one accounting completion attempt per successful
-            // reservation. Cancellation cannot cancel this cleanup.
-            //
-            // Completion deliberately precedes matching: matching is
-            // local work and cannot make another provider request.
             await usage.CompleteSttAsync(
                 lease,
                 new TranscriptionUsage(
-                    resultCategory == "Completed" ? 1 :
-                        resultCategory == "ProviderError" ? 1 : 1,
+                    1,
                     resultCategory == "Completed"
                         ? transcription?.DurationSeconds
                         : null,
@@ -191,15 +188,71 @@ public sealed class AlignmentService(
                 "The matched passage has no EPUB end locator.");
         }
 
+        var locator = new AlignmentLocator(
+            end.SpineIndex,
+            end.ResourceHref,
+            end.Cfi,
+            end.EndTextOffset);
+
+        var anchorStored = false;
+
+        // Persistence is best-effort. A failed revision lookup or database
+        // operation cannot turn an accepted alignment into an HTTP failure.
+        if (snapshot.Revision is not null)
+        {
+            try
+            {
+                var audioRevision = await audioRevisions.GetAsync(
+                    source, ct);
+
+                if (audioRevision is not null &&
+                    double.IsFinite(match.Score) &&
+                    positionSeconds <= long.MaxValue / 1000d)
+                {
+                    var positionMs = checked(
+                        (long)Math.Round(
+                            positionSeconds * 1000,
+                            MidpointRounding.AwayFromZero));
+
+                    anchorStored = await anchors.SaveAsync(
+                        new AlignmentAnchorInput(
+                            source.Id,
+                            target.Id,
+                            audioRevision,
+                            snapshot.Revision,
+                            positionMs,
+                            match.End.GlobalTextOffset,
+                            locator.SpineIndex,
+                            locator.ResourceHref,
+                            locator.Cfi,
+                            locator.TextOffset,
+                            match.Score),
+                        ct);
+                }
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                // Include identifiers, but no transcription text,
+                // secrets, storage paths or provider credentials.
+                logger.LogWarning(
+                    "Alignment anchor persistence failed for " +
+                    "audio book {AudioBookId} and text book {TextBookId}: {ErrorType}",
+                    source.Id,
+                    target.Id,
+                    ex.GetType().Name);
+            }
+        }
+
         return new AlignmentLocateResult(
             Located: true,
             Reason: null,
             Score: match.Score,
             Excerpt: match.Passage,
-            Locator: new AlignmentLocator(
-                end.SpineIndex,
-                end.ResourceHref,
-                end.Cfi,
-                end.EndTextOffset));
+            Locator: locator,
+            AnchorStored: anchorStored);
     }
 }
