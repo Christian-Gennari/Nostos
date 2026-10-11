@@ -35,6 +35,7 @@ RUN apt-get update \
 ENV ASPNETCORE_ENVIRONMENT=Production \
     ASPNETCORE_URLS=http://0.0.0.0:8080 \
     Persistence__DatabasePath=/data/nostos.db \
+    DataProtection__KeysPath=/data/keys \
     Storage__BooksRoot=/data/books \
     Storage__BackupsRoot=/data/backups \
     TMPDIR=/tmp/nostos

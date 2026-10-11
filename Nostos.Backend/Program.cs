@@ -215,7 +215,8 @@ builder.Services.AddSingleton<IAiAccessPolicy, AllowAllAiAccessPolicy>();
 builder.Services.AddSingleton<IAiUsageAccountingService>(NoOpAiUsageAccountingService.Instance);
 
 // --- AI PROVIDER SETTINGS ---
-builder.Services.AddNostosSelfHostedDataProtection();
+builder.Services.AddNostosSelfHostedDataProtection(
+    builder.Configuration, builder.Environment.ContentRootPath);
 
 builder.Services.AddHttpClient(AiProviderSettingsService.HttpClientName, client =>
 {

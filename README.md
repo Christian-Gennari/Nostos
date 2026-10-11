@@ -280,7 +280,9 @@ Or use the included Compose file:
 docker compose up -d
 ```
 
-Then open **http://localhost:5099**. The named `nostos-data` volume contains `nostos.db`, stored books, and local backup archives, so replacing the container does not replace your library data.
+Then open **http://localhost:5099**. The named `nostos-data` volume contains `nostos.db`, stored books, local backup archives, and the Data Protection key ring in `keys/`, so replacing the container preserves both library data and provider keys saved in Settings. The image sets `DataProtection__KeysPath=/data/keys`; custom container configurations must keep that directory on persistent storage.
+
+Older images stored the key ring at `/home/app/.aspnet/DataProtection-Keys` inside the container. Before replacing an older container, preserve that directory's key files in the volume's `keys/` directory, with ownership that allows the app user to read and write them. If the old container has already been removed and its key ring was not saved, the encrypted provider keys cannot be recovered: re-enter and save the affected keys in Settings. Keys supplied through environment variables still work. Keep the key ring private and back it up together with the database; it is needed to decrypt saved secrets and is not part of portable library exports.
 
 To update to the newest verified SelfHosted image:
 
@@ -305,7 +307,7 @@ If you prefer to build from the source you cloned instead of pulling GHCR:
 docker build --pull -t nostos:selfhosted .
 ```
 
-For a non-container install, the historical database location remains `<content root>/nostos.db` unless `Persistence__DatabasePath` is configured explicitly. `Storage__BooksRoot` and `Storage__BackupsRoot` can likewise override their local paths.
+For a non-container install, the historical database location remains `<content root>/nostos.db` unless `Persistence__DatabasePath` is configured explicitly. `Storage__BooksRoot` and `Storage__BackupsRoot` can likewise override their local paths. Data Protection retains its platform default key location unless `DataProtection__KeysPath` is set; relative key paths are resolved from the content root. When changing an existing key location, copy the old key files to the new location before restarting to retain access to saved provider keys.
 
 For provider-specific behavior and requirements, see [Content Providers & Acquisition](docs/content-providers.md).
 
