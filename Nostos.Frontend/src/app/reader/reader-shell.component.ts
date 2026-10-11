@@ -107,7 +107,7 @@ export class ReaderShell implements OnInit, OnDestroy {
   }
 
   // ------------------------------------------------------------------
-  // Selection menu (#650, EPUB)
+  // Selection menu (#650)
   // ------------------------------------------------------------------
 
   /**
@@ -148,7 +148,7 @@ export class ReaderShell implements OnInit, OnDestroy {
   private readonly onPhoneChange = (event: MediaQueryListEvent) =>
     this.phone.set(event.matches);
 
-  /** Where the captured EPUB selection sits; null docks the menu. */
+  /** Where the captured selection sits; null docks the menu. */
   selectionAnchor = signal<SelectionAnchor | null>(null);
   noteDraftOpen = signal(false);
   noteDraft = signal('');
@@ -165,7 +165,7 @@ export class ReaderShell implements OnInit, OnDestroy {
     { left: number; width: number; top: number | null; bottom: number | null } | null
   >(() => {
     const anchor = this.selectionAnchor();
-    if (!anchor || this.dockedLayout() || this.fileType() !== 'epub') return null;
+    if (!anchor || this.dockedLayout()) return null;
     if (typeof window === 'undefined') return null;
 
     const gap = 8;
@@ -1030,7 +1030,7 @@ export class ReaderShell implements OnInit, OnDestroy {
   }
 
   /**
-   * Anchors the menu at the captured EPUB selection. On desktop the menu takes
+   * Anchors the menu at the captured selection. On desktop the menu takes
    * focus (without scrolling) so Escape and keyboard actions reach it; the
    * docked phone bar deliberately leaves focus alone.
    */

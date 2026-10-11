@@ -956,6 +956,24 @@ describe('PdfReader highlight trust regressions (#478)', () => {
     expect(captured).toHaveBeenCalledWith('same difficult selection');
   });
 
+  it('anchors the menu at a released mouse selection, never at a mid-drag viewer event', () => {
+    const component = fixture.componentInstance;
+    const anchored = vi.fn();
+    component.selectionAnchored.subscribe(anchored);
+    const rect = { top: 100, bottom: 120, left: 40, right: 260, width: 220, height: 20 };
+    vi.spyOn(window, 'getSelection').mockReturnValue({
+      rangeCount: 1,
+      getRangeAt: () => ({ getBoundingClientRect: () => rect }),
+      removeAllRanges: vi.fn(),
+    } as unknown as Selection);
+
+    component.onTextSelection();
+    expect(anchored).toHaveBeenLastCalledWith(null);
+
+    component.onTextSelection({ button: 0 } as MouseEvent);
+    expect(anchored).toHaveBeenLastCalledWith({ top: 100, bottom: 120, left: 40, right: 260 });
+  });
+
   it('abandons a mark captured outside highlight mode on a plain page click', () => {
     const component = fixture.componentInstance;
     fixture.componentRef.setInput('highlightMode', false);

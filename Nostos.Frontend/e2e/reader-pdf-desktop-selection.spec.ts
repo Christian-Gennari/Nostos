@@ -1,7 +1,7 @@
 /**
- * Real-engine proof that the PDF reader opens the selection bar when a desktop
- * mouse selection is released, with highlight mode off — the EPUB reader's
- * #657 behaviour. Production Angular build, real backend, real PDF.js.
+ * Real-engine proof that the PDF reader opens the selection menu at the text
+ * when a desktop mouse selection is released, with highlight mode off — the
+ * EPUB reader's #650/#657 behaviour. Production Angular build, real backend, real PDF.js.
  */
 import { expect, test, type Page } from '@playwright/test';
 
@@ -71,7 +71,7 @@ function textPdf(pageTexts: string[]): Buffer {
   return Buffer.from(out, 'latin1');
 }
 
-async function dragAcrossText(page: Page): Promise<void> {
+async function dragAcrossText(page: Page): Promise<{ x: number; y: number; width: number; height: number }> {
   const span = page.locator('.textLayer span', { hasText: 'Desktop selection passage' }).first();
   await span.waitFor({ timeout: 60_000 });
   const box = await span.boundingBox();
@@ -82,13 +82,14 @@ async function dragAcrossText(page: Page): Promise<void> {
   await page.mouse.move(box.x + box.width / 2, y, { steps: 8 });
   await page.mouse.move(box.x + box.width - 2, y, { steps: 8 });
   await page.mouse.up();
+  return box;
 }
 
 test.describe('PDF desktop selection without highlight mode', () => {
   test.use({ serviceWorkers: 'block' });
   const run = newRunId();
 
-  test('mouse release opens the bar, a page click closes it, Highlight saves', async ({ page }) => {
+  test('mouse release opens the menu at the text, a click away closes it, Highlight saves', async ({ page }) => {
     const { baseUrl } = loadFixture();
     const bookId = await seedBook(
       baseUrl,
@@ -101,22 +102,31 @@ test.describe('PDF desktop selection without highlight mode', () => {
     await page.goto(`${baseUrl}/read/${bookId}`, { waitUntil: 'domcontentloaded' });
     await page.locator('#viewerContainer canvas').first().waitFor({ timeout: 60_000 });
 
-    const bar = page.getByTestId('selection-bar');
-    await dragAcrossText(page);
-    await expect(bar).toBeVisible();
-    await expect(bar.locator('.selected-text')).toContainText('Desktop selection');
-    await page.screenshot({ path: test.info().outputPath('pdf-selection-bar.png') });
+    const menu = page.getByTestId('selection-menu');
+    const text = await dragAcrossText(page);
+    await expect(menu).toBeVisible();
+    await expect(page.getByTestId('selection-bar')).toHaveCount(0);
+    await expect(menu.locator('.selected-text')).toContainText('Desktop selection');
+    await page.screenshot({ path: test.info().outputPath('pdf-selection-menu.png') });
 
-    // A plain click on the page, away from the text, abandons the offer.
+    // Anchored just below the selected text, overlapping it horizontally.
+    const menuBox = await menu.boundingBox();
+    if (!menuBox) throw new Error('selection menu has no box');
+    expect(menuBox.y).toBeGreaterThanOrEqual(text.y + text.height);
+    expect(menuBox.y - (text.y + text.height)).toBeLessThan(24);
+    expect(menuBox.x).toBeLessThan(text.x + text.width);
+    expect(menuBox.x + menuBox.width).toBeGreaterThan(text.x);
+
+    // A click away from the menu abandons the offer.
     const pageBox = await page.locator('.page').first().boundingBox();
     if (!pageBox) throw new Error('PDF page has no box');
     await page.mouse.click(pageBox.x + pageBox.width / 2, pageBox.y + pageBox.height * 0.8);
-    await expect(bar).toHaveCount(0);
+    await expect(menu).toHaveCount(0);
 
     await dragAcrossText(page);
-    await expect(bar).toBeVisible();
+    await expect(menu).toBeVisible();
     await page.getByTestId('selection-highlight').click();
-    await expect(bar).toHaveCount(0);
+    await expect(menu).toHaveCount(0);
     await expect
       .poll(async () => {
         const notes = await apiGet<any[]>(baseUrl, `/api/books/${bookId}/notes`);

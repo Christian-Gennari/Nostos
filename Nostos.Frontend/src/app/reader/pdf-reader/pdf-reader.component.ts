@@ -29,7 +29,10 @@ import { Subject } from 'rxjs';
 import { debounceTime, distinctUntilChanged, filter } from 'rxjs/operators';
 
 import { PdfAnnotationManager, PageHighlight } from './pdf-annotation-manager';
-import { isDesktopMouseSelection } from '../epub-reader/epub-annotation-manager';
+import {
+  isDesktopMouseSelection,
+  type SelectionAnchor,
+} from '../epub-reader/epub-annotation-manager';
 import {
   DEFAULT_HIGHLIGHT_COLOUR,
   HighlightColour,
@@ -181,6 +184,12 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
   /** The book's highlighter pen (issue #208), owned by the shell. */
   highlightColour = input<HighlightColour>(DEFAULT_HIGHLIGHT_COLOUR);
   selectionCaptured = output<string>();
+  /**
+   * Where a released mouse selection sits in the viewport, so the shell can
+   * anchor its menu at the text like the EPUB reader (#650). Null when it could
+   * not be measured or the capture was not a mouse release.
+   */
+  selectionAnchored = output<SelectionAnchor | null>();
   /** A plain page click abandoned a selection captured outside highlight mode. */
   selectionDismissed = output<void>();
   commitFailed = output<void>();
@@ -959,8 +968,8 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
    */
   onTextSelection(event?: MouseEvent) {
     this.onNativeSelectionChange();
-    const outsideMode =
-      !this.highlightMode() && !!event && isDesktopMouseSelection(event, window);
+    const mouseRelease = !!event && isDesktopMouseSelection(event, window);
+    const outsideMode = !this.highlightMode() && mouseRelease;
     if (
       this.commitInFlight
       || (!this.highlightMode() && !outsideMode)
@@ -969,8 +978,8 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
 
     const highlight = this.highlightService.captureHighlight(true);
     if (!highlight) {
-      // Outside highlight mode nothing else closes the docked bar on a click
-      // away, so a plain click on the page abandons the mark it offered.
+      // Outside highlight mode a docked bar (narrow window) has no scrim to
+      // click away on, so a plain click on the page abandons the mark.
       if (outsideMode && this.pendingHighlight) {
         this.pendingHighlight = null;
         this.selectionDismissed.emit();
@@ -1011,6 +1020,18 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
 
     this.selectionCaptured.emit(highlight.selectedText);
     this.assistantSelection.set(highlight.selectedText);
+    // Only a finished mouse selection anchors the menu: the viewer's own
+    // selection event also fires while a drag is still growing.
+    this.selectionAnchored.emit(mouseRelease ? this.anchorForSelection() : null);
+  }
+
+  /** The live selection's box in the viewport; null when it cannot be measured. */
+  private anchorForSelection(): SelectionAnchor | null {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return null;
+    const rect = selection.getRangeAt(0).getBoundingClientRect?.();
+    if (!rect || (rect.width === 0 && rect.height === 0)) return null;
+    return { top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right };
   }
 
   // --- Helpers ---
