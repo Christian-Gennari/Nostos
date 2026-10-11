@@ -1074,6 +1074,39 @@ describe('LibraryImportFlowComponent', () => {
     expect(harness.store.load()).toBeNull();
   });
 
+  it('keeps the completion message until Done when the job is no longer discoverable', async () => {
+    const harness = setup();
+    const completed = vi.fn();
+    harness.component.importCompleted.subscribe(completed);
+    const file = await portableFile();
+
+    selectFile(harness, file);
+    await waitForKind(harness, 'ready-empty');
+
+    harness.fixture.componentRef.setInput('supportsSafeActivation', true);
+    harness.fixture.componentRef.setInput('activationState', 'completed');
+    harness.fixture.detectChanges();
+    harness.fixture.detectChanges();
+    expect(testId(harness, 'import-completed')).toBeTruthy();
+
+    // What production does after an activation: the record is cleared and the
+    // next status check returns the coordinator to idle.
+    harness.store.clear();
+    harness.coordinator.dismiss();
+    harness.fixture.detectChanges();
+    harness.fixture.detectChanges();
+
+    expect(harness.coordinator.state().kind).toBe('idle');
+    expect(testId(harness, 'import-completed')).toBeTruthy();
+    expect(testId(harness, 'import-idle')).toBeNull();
+    expect(completed).toHaveBeenCalledTimes(1);
+
+    (testId(harness, 'import-done') as HTMLButtonElement).click();
+    harness.fixture.detectChanges();
+    expect(testId(harness, 'import-completed')).toBeNull();
+    expect(testId(harness, 'import-idle')).toBeTruthy();
+  });
+
   it('separates the completed upload from live server processing progress', () => {
     const state = signal<TransferFlowState>({
       kind: 'checking', jobId: 'job-processing', jobState: 'Transferring',

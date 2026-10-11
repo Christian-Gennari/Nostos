@@ -497,6 +497,12 @@ public sealed class PortableExportWriterTests(ITestOutputHelper output)
             PortableArchiveProgressPhase.Snapshotting,
             PortableArchiveProgressPhase.IndexingMedia,
             PortableArchiveProgressPhase.WritingArchive);
+
+        // Data, five media files and the manifest: a finished export counts
+        // every entry it wrote instead of stopping one short of its total.
+        var final = progress.Reports[^1];
+        final.TotalItems.Should().Be(7);
+        final.ItemsProcessed.Should().Be(final.TotalItems);
     }
 
     [Fact]

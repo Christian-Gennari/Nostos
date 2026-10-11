@@ -492,7 +492,7 @@ app.MapHealthChecks("/health/ready", new HealthCheckOptions
 
 // --- SERVE ANGULAR FRONTEND ---
 app.UseDefaultFiles();
-app.UseStaticFiles();
+app.UseStaticFiles(Nostos.Product.Http.NostosFrontendStaticFiles.CreateOptions());
 
 // ------------------------------
 

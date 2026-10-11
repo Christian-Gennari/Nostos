@@ -330,6 +330,15 @@ public sealed class PortableArchiveService(
 
             await manifestStream.DisposeAsync();
 
+            // The manifest is the last counted entry; without this report a
+            // finished export stays one item short of its own total.
+            progress?.Report(new PortableArchiveProgress(
+                PortableArchiveProgressPhase.WritingArchive,
+                mediaBytes,
+                null,
+                totalItems,
+                totalItems));
+
             await archive.DisposeAsync();
             return (dataLength, dataSha256);
         }

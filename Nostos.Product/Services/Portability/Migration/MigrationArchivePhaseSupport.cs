@@ -61,12 +61,7 @@ internal sealed class MigrationArchiveProgressPump : IProgress<PortableArchivePr
             try
             {
                 await _context.ReportProgressAsync(
-                    new MigrationProgress(
-                        _phase,
-                        value.BytesProcessed,
-                        value.TotalBytes,
-                        value.TotalItems is null ? null : value.ItemsProcessed,
-                        value.TotalItems),
+                    MigrationArchiveProgressMapping.ToJobProgress(_phase, value),
                     CancellationToken.None).ConfigureAwait(false);
             }
             catch (MigrationJobStoreException)
