@@ -143,7 +143,7 @@ describe('AiProviderService', () => {
     const request = http.expectOne('/api/settings/ai-provider/models');
     expect(request.request.method).toBe('POST');
     expect(request.request.body).toEqual({
-      kind: 'alignmentStt',
+      kind: 'alignment-transcription',
       baseUrl: 'https://transcription.example/v1',
     });
     request.flush({ models: ['alignment-model'] });
@@ -165,7 +165,7 @@ describe('AiProviderService', () => {
 
     const request = http.expectOne('/api/settings/ai-provider/test');
     expect(request.request.method).toBe('POST');
-    expect(request.request.body).toEqual({ kind: 'alignmentStt' });
+    expect(request.request.body).toEqual({ kind: 'alignment-transcription' });
     request.flush({ ok: true, detail: 'Reached the voice transcription provider.' });
   });
 });
