@@ -329,6 +329,16 @@ export class SettingsComponent implements OnInit, OnDestroy {
     () => this.deploymentCapabilities()?.supportsManagedBackups === true,
   );
   readonly managedBackups = signal<ManagedBackupListing | null>(null);
+  /** Newest backup: the only one shown until the restore list is opened. */
+  readonly latestManagedBackup = computed(() => {
+    const backups = this.managedBackups()?.backups ?? [];
+    return backups.reduce<(typeof backups)[number] | null>(
+      (latest, backup) =>
+        !latest || backup.createdAtUtc > latest.createdAtUtc ? backup : latest,
+      null,
+    );
+  });
+  readonly managedBackupsExpanded = signal(false);
   readonly managedBackupsLoading = signal(false);
   readonly managedBackupsFailed = signal(false);
 

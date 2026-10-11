@@ -768,8 +768,16 @@ describe('SettingsComponent backup-only surface', () => {
     expect(managedBackupsServiceMock.getBackups).not.toHaveBeenCalled();
   });
 
-  it('shows a read-only Cloud nightly backup list with the supplied retention window', () => {
-    managedBackupsServiceMock.getBackups.mockReturnValue(of(managedBackupListing));
+  it('summarises Cloud nightly backups and keeps the restore list collapsed until asked', () => {
+    managedBackupsServiceMock.getBackups.mockReturnValue(
+      of({
+        ...managedBackupListing,
+        backups: [
+          ...managedBackupListing.backups,
+          { ...managedBackupListing.backups[0], id: 'nightly-backup-0', createdAtUtc: '2026-10-06T00:30:00Z' },
+        ],
+      }),
+    );
     openManageLibraryPage({
       ...cloudCapabilities,
       supportsManagedBackups: true,
@@ -781,22 +789,34 @@ describe('SettingsComponent backup-only surface', () => {
     ) as HTMLElement;
     expect(card).not.toBeNull();
     expect(card.textContent).toContain('Nightly backups');
-    expect(card.textContent).toContain('Oct 7, 2026');
-    expect(card.textContent).toContain('Archive 1.0 KB');
-    expect(card.textContent).toContain('protected media 2.0 KB');
-    expect(card.textContent).toContain('retained for up to 14 days');
-    expect(card.textContent).toContain('Completed');
+    expect(card.textContent).toContain('up to 14 days');
+    expect(
+      card.querySelector('[data-testid="managed-backups-latest"]')?.textContent,
+    ).toContain('Last backup Oct 7, 2026');
+    expect(card.textContent).not.toContain('Archive');
+    expect(card.textContent).not.toContain('protected media');
+    expect(card.textContent).not.toContain('Completed');
+    expect(card.querySelectorAll('[data-testid="managed-backup"]')).toHaveLength(0);
+
+    const toggle = card.querySelector(
+      '[data-testid="managed-backups-toggle"]',
+    ) as HTMLButtonElement;
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    toggle.click();
+    fixture.detectChanges();
+
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(card.querySelectorAll('[data-testid="managed-backup"]')).toHaveLength(2);
     const restoreButtons = card.querySelectorAll(
       '[data-testid="managed-backup-restore"]',
     );
-    expect(card.querySelectorAll('button')).toHaveLength(1);
-    expect(restoreButtons).toHaveLength(1);
+    expect(restoreButtons).toHaveLength(2);
     expect(restoreButtons[0].textContent).toContain('Restore');
     expect(managedBackupsServiceMock.restore).not.toHaveBeenCalled();
     expect(managedBackupsServiceMock.getBackups).toHaveBeenCalledTimes(1);
   });
 
-  it('lists managed backups without a Restore action when the host cannot restore', () => {
+  it('shows only the last backup, with no list or Restore action, when the host cannot restore', () => {
     openManageLibraryPage({
       ...cloudCapabilities,
       supportsManagedBackups: true,
@@ -805,7 +825,9 @@ describe('SettingsComponent backup-only surface', () => {
 
     const card = fixture.nativeElement.querySelector('[data-testid="managed-backups-card"]');
     expect(card).not.toBeNull();
-    expect(card.querySelectorAll('[data-testid="managed-backup"]')).toHaveLength(1);
+    expect(card.querySelector('[data-testid="managed-backups-latest"]')).not.toBeNull();
+    expect(card.querySelector('[data-testid="managed-backups-toggle"]')).toBeNull();
+    expect(card.querySelectorAll('[data-testid="managed-backup"]')).toHaveLength(0);
     expect(card.querySelector('[data-testid="managed-backup-restore"]')).toBeNull();
 
     fixture.componentInstance.requestManagedRestore('nightly-backup-1');
@@ -893,6 +915,9 @@ describe('SettingsComponent backup-only surface', () => {
 
     expect(status.getAttribute('role')).toBe('status');
     expect(status.textContent).not.toMatch(/\d+%/u);
+
+    component.managedBackupsExpanded.set(true);
+    fixture.detectChanges();
 
     const button = fixture.nativeElement.querySelector(
       '[data-testid="managed-backup-restore"]',
