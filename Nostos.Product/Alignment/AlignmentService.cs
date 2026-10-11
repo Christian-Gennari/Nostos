@@ -26,7 +26,10 @@ public sealed class AlignmentOptions
     public int MaxProbes { get; set; } = 5;
     public int MatchToleranceCharacters { get; set; } = 40;
     public int ConsistencyToleranceCharacters { get; set; } = 40;
-    public double LeadInSeconds { get; set; } = 1.0;
+    // Measured live: a located start can fall a few seconds after the sentence
+    // when the narrator is quicker than the clip maths assumes. Starting a little
+    // early costs nothing; starting late loses the sentence.
+    public double LeadInSeconds { get; set; } = 3.0;
     public double MaximumLocalRateRatio { get; set; } = 5;
 
     // Historical configuration name. Applies to both EPUB and PDF.
