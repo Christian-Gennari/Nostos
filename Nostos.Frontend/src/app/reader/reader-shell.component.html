@@ -220,6 +220,8 @@
         (sidebarVisibleChange)="tocOpen.set($event)"
         (noteCreated)="handleNoteCreated()"
         (selectionCaptured)="handleSelectionCaptured($event)"
+        (selectionAnchored)="handleSelectionAnchored($event)"
+        (selectionDismissed)="discardHighlight()"
         (commitFailed)="handleCommitFailed()"
         (surfaceInteracted)="handleSurfaceInteraction()"
       />
@@ -244,13 +246,13 @@
 
       @if (pendingSelectionText() !== null) {
       <!-- One set of selection actions (#650), placed two ways. A fine-pointer
-           desktop anchors it at the marked EPUB text; phones, touch-first
-           devices and the PDF reader keep the bottom-docked bar, the
+           desktop anchors it at the marked text; phones and touch-first
+           devices keep the bottom-docked bar, the
            thumb-safe place that leaves the selection handles alone. -->
       <ng-template #selectionActions>
         <!-- Anchored (desktop menu): 32px desktop controls, a quiet Cancel and
              a Copy action, since the capture replaced the native selection
-             (#657). Docked (phones, PDF): unchanged 44px touch targets. -->
+             (#657). Docked (phones): unchanged 44px touch targets. -->
         @let anchored = !!selectionMenuPlacement();
         @if (noteDraftOpen()) {
           <div class="selection-note">

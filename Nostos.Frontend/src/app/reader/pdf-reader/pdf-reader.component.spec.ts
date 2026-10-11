@@ -938,6 +938,73 @@ describe('PdfReader highlight trust regressions (#478)', () => {
     expect(firstDto.highlightColour).toBe('amber');
   });
 
+  it('captures a desktop mouse selection without highlight mode, but not a touch one', () => {
+    const component = fixture.componentInstance;
+    fixture.componentRef.setInput('highlightMode', false);
+    fixture.detectChanges();
+    const captured = vi.fn();
+    component.selectionCaptured.subscribe(captured);
+
+    // Touch completion and the viewer's selection event carry no mouse event.
+    component.onTextSelection();
+    expect(captured).not.toHaveBeenCalled();
+
+    component.onTextSelection({ button: 2 } as MouseEvent);
+    expect(captured).not.toHaveBeenCalled();
+
+    component.onTextSelection({ button: 0 } as MouseEvent);
+    expect(captured).toHaveBeenCalledWith('same difficult selection');
+  });
+
+  it('anchors the menu at a released mouse selection, never at a mid-drag viewer event', () => {
+    const component = fixture.componentInstance;
+    const anchored = vi.fn();
+    component.selectionAnchored.subscribe(anchored);
+    const rect = { top: 100, bottom: 120, left: 40, right: 260, width: 220, height: 20 };
+    vi.spyOn(window, 'getSelection').mockReturnValue({
+      rangeCount: 1,
+      getRangeAt: () => ({ getBoundingClientRect: () => rect }),
+      removeAllRanges: vi.fn(),
+    } as unknown as Selection);
+
+    component.onTextSelection();
+    expect(anchored).toHaveBeenLastCalledWith(null);
+
+    component.onTextSelection({ button: 0 } as MouseEvent);
+    expect(anchored).toHaveBeenLastCalledWith({ top: 100, bottom: 120, left: 40, right: 260 });
+  });
+
+  it('abandons a mark captured outside highlight mode on a plain page click', () => {
+    const component = fixture.componentInstance;
+    fixture.componentRef.setInput('highlightMode', false);
+    fixture.detectChanges();
+    const dismissed = vi.fn();
+    component.selectionDismissed.subscribe(dismissed);
+
+    component.onTextSelection({ button: 0 } as MouseEvent);
+    captureHighlight.mockReturnValue(null);
+    component.onTextSelection({ button: 0 } as MouseEvent);
+    expect(dismissed).toHaveBeenCalledTimes(1);
+
+    // Nothing pending any more: a second click has nothing to abandon.
+    component.onTextSelection({ button: 0 } as MouseEvent);
+    expect(dismissed).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves a cross-page selection alone outside highlight mode', () => {
+    const component = fixture.componentInstance;
+    fixture.componentRef.setInput('highlightMode', false);
+    fixture.detectChanges();
+    const removeAllRanges = vi.fn();
+    vi.spyOn(window, 'getSelection').mockReturnValue({ removeAllRanges } as unknown as Selection);
+    captureHighlight.mockReturnValue({ status: 'cross-page', selectedText: 'two pages' });
+
+    component.onTextSelection({ button: 0 } as MouseEvent);
+
+    expect(component.highlightWarning()).toBeNull();
+    expect(removeAllRanges).not.toHaveBeenCalled();
+  });
+
   it('publishes current native PDF selection without highlight mode and clears it when stale', () => {
     const component = fixture.componentInstance;
     const context = TestBed.inject(AssistantContextService);
