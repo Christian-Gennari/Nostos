@@ -351,7 +351,28 @@
             No backups yet. Create your first backup to get started.
           </div>
         } @else {
-          <div class="history-list">
+          <div class="card-body">
+            <button
+              appButton
+              type="button"
+              variant="ghost"
+              size="sm"
+              data-testid="backup-history-toggle"
+              aria-controls="backup-history-list"
+              [attr.aria-expanded]="historyExpanded()"
+              (click)="historyExpanded.set(!historyExpanded())"
+            >
+              <nostos-icon
+                [name]="historyExpanded() ? 'caret-up' : 'caret-down'"
+                [size]="14"
+              ></nostos-icon>
+              {{ historyExpanded() ? 'Hide backups' : 'Show backups' }}
+            </button>
+          </div>
+        }
+
+        @if (history().length > 0 && historyExpanded()) {
+          <div class="history-list" id="backup-history-list">
             @for (item of history(); track item.id) {
               <div class="history-item">
                 <div class="history-info">
@@ -438,9 +459,6 @@
             <div class="card-header-copy">
               <h2>Nightly backups</h2>
             </div>
-            @if (managedBackups(); as listing) {
-              <span appBadge>{{ listing.backups.length }}</span>
-            }
           </div>
 
           <div class="card-body">
@@ -454,44 +472,67 @@
               </p>
             } @else if (managedBackups(); as listing) {
               <p class="label-desc card-purpose" data-testid="managed-backups-retention">
-                Nightly backups are retained for up to {{ listing.retentionDays }} days. Other recovery
-                mechanisms have separate retention periods.
+                Nostos backs up your library every night and keeps each backup for up to
+                {{ listing.retentionDays }} days.
               </p>
 
-              @if (listing.backups.length === 0) {
+              @if (latestManagedBackup(); as latest) {
+                <p class="last-backup-info" data-testid="managed-backups-latest">
+                  Last backup {{ latest.createdAtUtc | date:'medium' }}
+                </p>
+
+                @if (supportsManagedRestore()) {
+                  <button
+                    appButton
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    data-testid="managed-backups-toggle"
+                    aria-controls="managed-backups-list"
+                    [attr.aria-expanded]="managedBackupsExpanded()"
+                    (click)="managedBackupsExpanded.set(!managedBackupsExpanded())"
+                  >
+                    <nostos-icon
+                      [name]="managedBackupsExpanded() ? 'caret-up' : 'caret-down'"
+                      [size]="14"
+                    ></nostos-icon>
+                    Restore from a backup
+                  </button>
+
+                  @if (managedBackupsExpanded()) {
+                    <div
+                      class="history-list"
+                      id="managed-backups-list"
+                      role="list"
+                      aria-label="Nightly managed backups"
+                    >
+                      @for (backup of listing.backups; track backup.id) {
+                        <div class="history-item" role="listitem" data-testid="managed-backup">
+                          <div class="history-info">
+                            <span class="history-date">{{ backup.createdAtUtc | date:'medium' }}</span>
+                          </div>
+                          <div class="history-actions">
+                            <button
+                              appButton
+                              type="button"
+                              variant="secondary"
+                              size="sm"
+                              data-testid="managed-backup-restore"
+                              [disabled]="managedRestoreBusy() || managedRestoreUncertain() || managedBackupsLoading()"
+                              (click)="requestManagedRestore(backup.id)"
+                            >
+                              Restore
+                            </button>
+                          </div>
+                        </div>
+                      }
+                    </div>
+                  }
+                }
+              } @else {
                 <p class="empty-state" data-testid="managed-backups-empty">
                   No nightly backups are available yet.
                 </p>
-              } @else {
-                <div class="history-list" role="list" aria-label="Nightly managed backups">
-                  @for (backup of listing.backups; track backup.id) {
-                    <div class="history-item" role="listitem" data-testid="managed-backup">
-                      <div class="history-info">
-                        <span class="history-date">{{ backup.createdAtUtc | date:'medium' }}</span>
-                        <span class="history-meta">
-                          Archive {{ formatSize(backup.archiveBytes) }}
-                          &middot; protected media {{ formatSize(backup.mediaBytes) }}
-                        </span>
-                      </div>
-                      <div class="history-actions">
-                        <span appBadge tone="success">{{ backup.state | titlecase }}</span>
-                        @if (supportsManagedRestore()) {
-                        <button
-                          appButton
-                          type="button"
-                          variant="secondary"
-                          size="sm"
-                          data-testid="managed-backup-restore"
-                          [disabled]="managedRestoreBusy() || managedRestoreUncertain() || managedBackupsLoading()"
-                          (click)="requestManagedRestore(backup.id)"
-                        >
-                          Restore
-                        </button>
-                        }
-                      </div>
-                    </div>
-                  }
-                </div>
               }
             }
 
