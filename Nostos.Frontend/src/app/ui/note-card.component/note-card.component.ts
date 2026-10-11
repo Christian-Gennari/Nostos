@@ -14,6 +14,7 @@ import { Note } from '../../core/dtos/note.dtos';
 import {
   HIGHLIGHT_COLOURS,
   HighlightColour,
+  HighlightColourOption,
   noteHighlightColour,
 } from '../../reader/highlight-colours';
 import { TopicDto } from '../../core/services/topics.service';
@@ -68,6 +69,19 @@ export class NoteCardComponent {
   /** The pen picked in the editor; a highlight's colour is changed here (#861). */
   editColour: HighlightColour = noteHighlightColour({});
   readonly highlightColours = HIGHLIGHT_COLOURS;
+
+  /**
+   * The pen to show on the card, or null when there is none to show: a note
+   * that is not a highlight, or one from a source that does not carry the
+   * field (search hits, Writing Studio sources). Guessing amber there would
+   * mislabel a recoloured highlight, so an unknown pen shows nothing. A
+   * highlight whose pen is known to be unrecorded (null) is amber.
+   */
+  get penColour(): HighlightColourOption | null {
+    if (!this.note.selectedText || this.note.highlightColour === undefined) return null;
+    const colour = noteHighlightColour(this.note);
+    return HIGHLIGHT_COLOURS.find((option) => option.id === colour) ?? null;
+  }
 
   // Collapse logic
   isExpanded = false;

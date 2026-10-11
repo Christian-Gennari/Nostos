@@ -133,6 +133,43 @@ describe('NoteCard highlight pen (issue #861)', () => {
     ]);
   });
 
+  describe('the pen on the card', () => {
+    async function show(note: Note) {
+      await TestBed.configureTestingModule({
+        imports: [NoteCardComponent],
+        providers: [provideRouter([])],
+      }).compileComponents();
+      fixture = TestBed.createComponent(NoteCardComponent);
+      fixture.componentInstance.note = note;
+      fixture.detectChanges();
+      return fixture.nativeElement.querySelector('.note-pen') as HTMLElement | null;
+    }
+
+    it('marks a highlight with one small dot in its pen', async () => {
+      const dot = await show(highlight);
+
+      expect(dot?.getAttribute('data-testid')).toBe('note-pen-sage');
+      expect(dot?.style.background).toBe('var(--highlight-sage)');
+      expect(dot?.getAttribute('aria-label')).toBe('Sage highlight');
+    });
+
+    it('shows amber for a highlight known to have no recorded pen', async () => {
+      const dot = await show({ ...highlight, highlightColour: null });
+
+      expect(dot?.getAttribute('data-testid')).toBe('note-pen-amber');
+    });
+
+    it('shows nothing when the source does not say which pen (search hits)', async () => {
+      const { highlightColour: _unknown, ...hit } = highlight;
+
+      expect(await show(hit)).toBeNull();
+    });
+
+    it('shows nothing for a note that is not a highlight', async () => {
+      expect(await show({ ...highlight, selectedText: undefined, content: 'A thought.' })).toBeNull();
+    });
+  });
+
   it('shows no pens for a note that is not a highlight', async () => {
     await edit({ ...highlight, selectedText: undefined, content: 'Just a thought.' });
 

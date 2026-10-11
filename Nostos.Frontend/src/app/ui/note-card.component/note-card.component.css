@@ -145,6 +145,22 @@
   min-width: 0;
 }
 
+/* The highlight's pen (issue #861): a 9px dot, the reader's pen swatch at
+   card scale. The hairline keeps amber and sage visible on the light card. */
+.note-pen {
+  flex: 0 0 auto;
+  width: 9px;
+  height: 9px;
+  border: 1px solid var(--border-color);
+  border-radius: 50%;
+}
+
+/* With a source line the row is top-aligned and may wrap; sit the dot on the
+   first line of 12px text instead of at the row's top edge. */
+.note-footer-with-source .note-pen {
+  margin-top: 4px;
+}
+
 .note-date-group {
   display: inline-flex;
   flex: 0 0 auto;

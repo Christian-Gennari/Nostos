@@ -72,6 +72,18 @@
 
     <div class="note-footer" [class.note-footer-with-source]="showSource && !!note.bookTitle">
       <div class="note-metadata">
+        @if (penColour; as pen) {
+        <!-- The highlight's pen, as one small dot: enough to scan a list by
+             colour without restyling the card (issue #861). -->
+        <span
+          class="note-pen"
+          role="img"
+          [style.background]="'var(--highlight-' + pen.id + ')'"
+          [attr.aria-label]="pen.label + ' highlight'"
+          [attr.title]="pen.label + ' highlight'"
+          [attr.data-testid]="'note-pen-' + pen.id"
+        ></span>
+        }
         @if (showDate && note.createdAt) {
         <span class="note-date-group">
           <span class="note-date">{{ note.createdAt | date : 'short' }}</span>
