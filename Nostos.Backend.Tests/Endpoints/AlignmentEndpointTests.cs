@@ -581,8 +581,323 @@ public sealed class AlignmentEndpointTests
         harness.Usage.BeginCount.Should().Be(0);
     }
 
+    [Fact]
+    public async Task Reverse_alignment_rejects_missing_source()
+    {
+        using var harness = new Harness();
+        using var client = harness.Client();
+
+        var response = await PostAudioAsync(
+            client,
+            Guid.NewGuid(),
+            Guid.NewGuid());
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await ProblemCodeAsync(response))
+            .Should().Be("alignment_book_not_found");
+
+        harness.Cutter.CallCount.Should().Be(0);
+        harness.Transcriber.CallCount.Should().Be(0);
+        harness.Usage.BeginCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Reverse_alignment_rejects_different_works()
+    {
+        using var harness = new Harness();
+        using var client = harness.Client();
+
+        var (audio, epub) = await SeedPairAsync(
+            client, harness, sameWork: false);
+
+        var response = await PostAudioAsync(
+            client, epub, audio);
+
+        response.StatusCode.Should().Be(
+            HttpStatusCode.UnprocessableEntity);
+
+        (await ProblemCodeAsync(response))
+            .Should().Be("alignment_work_mismatch");
+
+        harness.Cutter.CallCount.Should().Be(0);
+        harness.Usage.BeginCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Reverse_alignment_rejects_invalid_excerpt()
+    {
+        using var harness = new Harness();
+        using var client = harness.Client();
+
+        var (audio, epub) = await SeedPairAsync(client, harness);
+
+        var response = await PostAudioAsync(
+            client, epub, audio, " ");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        harness.Cutter.CallCount.Should().Be(0);
+        harness.Usage.BeginCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Reverse_alignment_excerpt_not_found_uses_no_ai()
+    {
+        using var harness = new Harness();
+        using var client = harness.Client();
+
+        var (audio, epub) = await SeedPairAsync(client, harness);
+
+        var response = await PostAudioAsync(
+            client,
+            epub,
+            audio,
+            "The distant captain crossed the frozen northern sea " +
+            "while every passenger waited for the rising morning sun.");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var body = JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync());
+
+        body.RootElement.GetProperty("located")
+            .GetBoolean().Should().BeFalse();
+
+        body.RootElement.GetProperty("reason")
+            .GetString().Should().Be("excerpt_not_found");
+
+        harness.Documents.CallCount.Should().Be(1);
+        harness.Cutter.CallCount.Should().Be(0);
+        harness.Transcriber.CallCount.Should().Be(0);
+        harness.Usage.BeginCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Reverse_alignment_access_denial_uses_no_ai()
+    {
+        using var harness = new Harness { Allowed = false };
+        using var client = harness.Client();
+
+        var (audio, epub) = await SeedPairAsync(client, harness);
+
+        var response = await PostAudioAsync(
+            client, epub, audio);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        (await ProblemCodeAsync(response))
+            .Should().Be(SttErrorCodes.AccessDenied);
+
+        harness.Documents.CallCount.Should().Be(0);
+        harness.Cutter.CallCount.Should().Be(0);
+        harness.Transcriber.CallCount.Should().Be(0);
+        harness.Usage.BeginCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Reverse_alignment_rejects_wrong_direction()
+    {
+        using var harness = new Harness();
+        using var client = harness.Client();
+
+        var (audio, epub) = await SeedPairAsync(client, harness);
+
+        var response = await PostAudioAsync(
+            client, audio, epub);
+
+        response.StatusCode.Should().Be(
+            HttpStatusCode.UnprocessableEntity);
+
+        (await ProblemCodeAsync(response))
+            .Should().Be("alignment_source_not_epub");
+
+        harness.Cutter.CallCount.Should().Be(0);
+        harness.Usage.BeginCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Reverse_alignment_with_unavailable_duration_uses_no_ai()
+    {
+        using var harness = new Harness();
+        using var client = harness.Client();
+
+        var (audio, epub) = await SeedPairAsync(client, harness);
+
+        await harness.SetAudioDurationAsync(
+            audio, "0:00", null);
+
+        var response = await PostAudioAsync(
+            client, epub, audio);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var body = JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync());
+
+        body.RootElement.GetProperty("located")
+            .GetBoolean().Should().BeFalse();
+
+        body.RootElement.GetProperty("reason")
+            .GetString().Should().Be("duration_unknown");
+
+        body.RootElement.GetProperty("probes")
+            .GetInt32().Should().Be(0);
+
+        harness.Cutter.CallCount.Should().Be(0);
+        harness.Transcriber.CallCount.Should().Be(0);
+        harness.Usage.BeginCount.Should().Be(0);
+        harness.Usage.CompleteCount.Should().Be(0);
+    }
+
+    [Theory]
+    [InlineData("[]")]
+    [InlineData("{invalid")]
+    [InlineData("null")]
+    public async Task Reverse_alignment_malformed_tracks_decline_without_ai(
+        string tracksJson)
+    {
+        using var harness = new Harness();
+        using var client = harness.Client();
+
+        var (audio, epub) = await SeedPairAsync(client, harness);
+
+        await harness.SetAudioDurationAsync(
+            audio, "3:00:00", tracksJson);
+
+        var response = await PostAudioAsync(
+            client, epub, audio);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var body = JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync());
+
+        body.RootElement.GetProperty("located")
+            .GetBoolean().Should().BeFalse();
+
+        body.RootElement.GetProperty("reason")
+            .GetString().Should().Be("duration_unknown");
+
+        harness.Cutter.CallCount.Should().Be(0);
+        harness.Transcriber.CallCount.Should().Be(0);
+        harness.Usage.BeginCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Reverse_alignment_uses_bounded_probe_options()
+    {
+        using var harness = new Harness();
+        harness.AlignmentSettings.MaxProbes = 100;
+        harness.AlignmentSettings.ProbeSeconds = 100;
+
+        using var client = harness.Client();
+
+        var (audio, epub) = await SeedPairAsync(client, harness);
+
+        await harness.SetAudioDurationAsync(
+            audio, "1:00:00", null);
+
+        harness.Transcriber.Result = new SttResult(
+            "a chapter title", "en", 18);
+
+        var response = await PostAudioAsync(
+            client, epub, audio);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var body = JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync());
+
+        body.RootElement.GetProperty("located")
+            .GetBoolean().Should().BeFalse();
+
+        body.RootElement.GetProperty("probes")
+            .GetInt32().Should().BeInRange(1, 8);
+
+        harness.Cutter.CallCount.Should().BeInRange(1, 8);
+        harness.Cutter.LastClipSeconds.Should().Be(30);
+
+        harness.Usage.BeginCount.Should().Be(
+            harness.Transcriber.CallCount);
+
+        harness.Usage.CompleteCount.Should().Be(
+            harness.Usage.BeginCount);
+    }
+
+    [Fact]
+    public async Task Reverse_alignment_rejects_location_contradicting_revision_anchors()
+    {
+        using var harness = new Harness();
+
+        // Text order is increasing, but audio order is reversed.
+        // The search may still find the requested passage, but it
+        // must not report it as a trustworthy located position.
+        harness.AnchorOverride = new FakeReverseAnchorStore
+        {
+            Before = new Nostos.Backend.Data.Models.AlignmentAnchorModel
+            {
+                AudioPositionMs = 400_000,
+                TextGlobalOffset = 0,
+            },
+            After = new Nostos.Backend.Data.Models.AlignmentAnchorModel
+            {
+                AudioPositionMs = 100_000,
+                TextGlobalOffset = 1000,
+            },
+        };
+
+        harness.Transcriber.Result = new SttResult(
+            Passage, "en", 19.5);
+
+        using var client = harness.Client();
+
+        var (audio, epub) = await SeedPairAsync(client, harness);
+
+        await harness.SetAudioDurationAsync(
+            audio, "1:00:00", null);
+
+        var response = await PostAudioAsync(
+            client, epub, audio);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var body = JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync());
+
+        var root = body.RootElement;
+
+        root.GetProperty("located").GetBoolean()
+            .Should().BeFalse();
+
+        root.GetProperty("reason").GetString()
+            .Should().Be("inconsistent_probes");
+
+        (root.TryGetProperty("positionSeconds", out var position) &&
+            position.ValueKind == JsonValueKind.Number)
+            .Should().BeFalse("a contradicted result must not carry a position");
+
+        harness.AnchorOverride.SaveCount.Should().Be(0);
+        harness.Transcriber.CallCount.Should().Be(1);
+        harness.Usage.BeginCount.Should().Be(1);
+        harness.Usage.CompleteCount.Should().Be(1);
+    }
+
     private static string Route(Guid source) =>
         $"/api/books/{source}/alignment/locate-text";
+
+    private static string AudioRoute(Guid textBookId) =>
+        $"/api/books/{textBookId}/alignment/locate-audio";
+
+    private static Task<HttpResponseMessage> PostAudioAsync(
+        HttpClient client,
+        Guid textBookId,
+        Guid audioBookId,
+        string excerpt = Passage) =>
+        client.PostAsJsonAsync(AudioRoute(textBookId), new
+        {
+            targetBookId = audioBookId,
+            excerpt,
+        });
 
     private static Task<HttpResponseMessage> PostAsync(
         HttpClient client,
@@ -658,6 +973,19 @@ public sealed class AlignmentEndpointTests
         public FakeAudioRevisionProvider AudioRevisions { get; } = new();
         public RecordingUsageAccounting Usage { get; } = new();
 
+        public FakeReverseAnchorStore? AnchorOverride { get; set; }
+
+        public AlignmentOptions AlignmentSettings { get; } = new()
+        {
+            ClipSeconds = 20,
+            ProbeSeconds = 20,
+            MaxProbes = 5,
+            MatchToleranceCharacters = 40,
+            ConsistencyToleranceCharacters = 40,
+            LeadInSeconds = 1,
+            MaximumLocalRateRatio = 5,
+        };
+
         public Harness()
         {
             host = factory.WithWebHostBuilder(builder =>
@@ -669,6 +997,16 @@ public sealed class AlignmentEndpointTests
 
                     services.RemoveAll<IAudioClipCutter>();
                     services.AddSingleton<IAudioClipCutter>(Cutter);
+
+                    services.RemoveAll<AlignmentOptions>();
+                    services.AddSingleton(AlignmentSettings);
+
+                    if (AnchorOverride is not null)
+                    {
+                        services.RemoveAll<IAlignmentAnchorStore>();
+                        services.AddSingleton<IAlignmentAnchorStore>(
+                            AnchorOverride);
+                    }
 
                     services.RemoveAll<IAlignmentDocumentProvider>();
                     services.AddSingleton<IAlignmentDocumentProvider>(Documents);
@@ -760,6 +1098,26 @@ public sealed class AlignmentEndpointTests
                 .ToListAsync();
         }
 
+        public async Task SetAudioDurationAsync(
+            Guid audioBookId,
+            string? duration,
+            string? tracksJson)
+        {
+            using var scope = host.Services.CreateScope();
+
+            var db = scope.ServiceProvider
+                .GetRequiredService<NostosDbContext>();
+
+            var audio = await db.Set<
+                Nostos.Backend.Data.Models.AudioBookModel>()
+                .SingleAsync(b => b.Id == audioBookId);
+
+            audio.Duration = duration;
+            audio.FileDetails.TracksJson = tracksJson;
+
+            await db.SaveChangesAsync();
+        }
+
         public void Dispose()
         {
             host.Dispose();
@@ -841,6 +1199,79 @@ public sealed class AlignmentEndpointTests
 
             return Result;
         }
+    }
+
+    private sealed class FakeReverseAnchorStore : IAlignmentAnchorStore
+    {
+        public Nostos.Backend.Data.Models.AlignmentAnchorModel?
+            Before { get; set; }
+
+        public Nostos.Backend.Data.Models.AlignmentAnchorModel?
+            After { get; set; }
+
+        public int SaveCount { get; private set; }
+
+        public Task<bool> SaveAsync(
+            AlignmentAnchorInput anchor,
+            CancellationToken ct = default)
+        {
+            SaveCount++;
+            return Task.FromResult(true);
+        }
+
+        public Task<IReadOnlyList<
+            Nostos.Backend.Data.Models.AlignmentAnchorModel>> GetNearbyAsync(
+            Guid audioBookId,
+            Guid textBookId,
+            string audioRevision,
+            string textRevision,
+            long audioPositionMs,
+            long radiusMs,
+            int limit = 100,
+            CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<
+                Nostos.Backend.Data.Models.AlignmentAnchorModel>>(
+                []);
+
+        public Task<Nostos.Backend.Data.Models.AlignmentAnchorModel?>
+            AtOrBeforeTextAsync(
+                Guid audioBookId,
+                Guid textBookId,
+                string audioRevision,
+                string textRevision,
+                int textGlobalOffset,
+                CancellationToken ct = default) =>
+            Task.FromResult(Before);
+
+        public Task<Nostos.Backend.Data.Models.AlignmentAnchorModel?>
+            AtOrAfterTextAsync(
+                Guid audioBookId,
+                Guid textBookId,
+                string audioRevision,
+                string textRevision,
+                int textGlobalOffset,
+                CancellationToken ct = default) =>
+            Task.FromResult(After);
+
+        public Task<Nostos.Backend.Data.Models.AlignmentAnchorModel?>
+            AtOrBeforeAudioAsync(
+                Guid audioBookId,
+                Guid textBookId,
+                string audioRevision,
+                string textRevision,
+                long audioPositionMs,
+                CancellationToken ct = default) =>
+            Task.FromResult(Before);
+
+        public Task<Nostos.Backend.Data.Models.AlignmentAnchorModel?>
+            AtOrAfterAudioAsync(
+                Guid audioBookId,
+                Guid textBookId,
+                string audioRevision,
+                string textRevision,
+                long audioPositionMs,
+                CancellationToken ct = default) =>
+            Task.FromResult(After);
     }
 
     private sealed class FakeAudioRevisionProvider :

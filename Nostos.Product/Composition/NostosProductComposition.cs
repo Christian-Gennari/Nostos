@@ -190,6 +190,33 @@ public static class NostosProductComposition
             throw new InvalidOperationException(
                 "Alignment:MaxCachedCharacters must be positive.");
 
+        // Normalize the reverse search's maximum per-request spend
+        // and the length of each probe before validating dependent
+        // settings or registering the singleton.
+        alignment.NormalizeProbeSettings();
+
+        if (alignment.MatchToleranceCharacters < 0 ||
+            alignment.MatchToleranceCharacters > 500)
+            throw new InvalidOperationException(
+                "Alignment:MatchToleranceCharacters must be between 0 and 500.");
+
+        if (alignment.ConsistencyToleranceCharacters < 0 ||
+            alignment.ConsistencyToleranceCharacters > 500)
+            throw new InvalidOperationException(
+                "Alignment:ConsistencyToleranceCharacters must be between 0 and 500.");
+
+        if (!double.IsFinite(alignment.LeadInSeconds) ||
+            alignment.LeadInSeconds < 0 ||
+            alignment.LeadInSeconds > alignment.ProbeSeconds)
+            throw new InvalidOperationException(
+                "Alignment:LeadInSeconds must be nonnegative and no larger than ProbeSeconds.");
+
+        if (!double.IsFinite(alignment.MaximumLocalRateRatio) ||
+            alignment.MaximumLocalRateRatio < 1 ||
+            alignment.MaximumLocalRateRatio > 100)
+            throw new InvalidOperationException(
+                "Alignment:MaximumLocalRateRatio must be between 1 and 100.");
+
         services.AddSingleton(alignment);
         services.AddSingleton<AlignmentDocumentCache>();
         services.TryAddSingleton<IAlignmentDocumentProvider>(
