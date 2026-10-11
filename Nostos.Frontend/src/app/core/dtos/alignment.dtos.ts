@@ -4,6 +4,12 @@ export interface LocateTextRequest {
   targetBookId: string;
 }
 
+/** Request for EPUB -> audiobook position alignment. */
+export interface LocateAudioRequest {
+  targetBookId: string;
+  excerpt: string;
+}
+
 /**
  * EPUB position returned by the alignment matcher.
  * The fields correspond to the reader shell's grounded-source navigation.
@@ -20,6 +26,7 @@ export interface AlignmentLocatedResult {
   score: number;
   excerpt: string;
   locator: AlignmentEpubLocator;
+  anchorStored?: boolean;
 }
 
 export interface AlignmentDeclinedResult {
@@ -30,6 +37,27 @@ export interface AlignmentDeclinedResult {
 export type LocateTextResult =
   | AlignmentLocatedResult
   | AlignmentDeclinedResult;
+
+/** Confident EPUB -> audiobook match. All positions are in seconds. */
+export interface AlignmentAudioLocatedResult {
+  located: true;
+  positionSeconds: number;
+  probes: number;
+  score: number;
+  anchorStored: boolean;
+}
+
+/** No confident match; a coarse position may still be available. */
+export interface AlignmentAudioDeclinedResult {
+  located: false;
+  reason: string | null;
+  approximatePositionSeconds?: number | null;
+  probes: number;
+}
+
+export type LocateAudioResult =
+  | AlignmentAudioLocatedResult
+  | AlignmentAudioDeclinedResult;
 
 /**
  * ASP.NET Core ProblemDetails responses put the typed error code in `title`.

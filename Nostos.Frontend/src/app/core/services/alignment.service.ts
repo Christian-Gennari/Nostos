@@ -3,16 +3,17 @@ import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 
 import {
+  LocateAudioRequest,
+  LocateAudioResult,
   LocateTextRequest,
   LocateTextResult,
 } from '../dtos/alignment.dtos';
 
 /**
- * Locates the passage preceding an audiobook position in another EPUB
- * edition of the same work.
+ * Matches positions between audiobook and EPUB editions of the same work.
  *
- * This is an expensive, non-idempotent operation. The service does not
- * automatically retry failed requests.
+ * Alignment is expensive and may consume transcription allowance.
+ * Requests are never automatically retried.
  */
 @Injectable({ providedIn: 'root' })
 export class AlignmentService {
@@ -24,6 +25,16 @@ export class AlignmentService {
   ): Observable<LocateTextResult> {
     return this.http.post<LocateTextResult>(
       `/api/books/${encodeURIComponent(audioBookId)}/alignment/locate-text`,
+      request,
+    );
+  }
+
+  locateAudio(
+    textBookId: string,
+    request: LocateAudioRequest,
+  ): Observable<LocateAudioResult> {
+    return this.http.post<LocateAudioResult>(
+      `/api/books/${encodeURIComponent(textBookId)}/alignment/locate-audio`,
       request,
     );
   }

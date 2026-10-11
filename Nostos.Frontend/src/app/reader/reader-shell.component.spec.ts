@@ -106,6 +106,16 @@ class PdfReaderStub {
 
 @Component({ selector: 'app-epub-reader', standalone: true, template: '' })
 class EpubReaderStub {
+  // Continue listening (#844): the shell renders this state in View settings.
+  alignmentTarget = () => null;
+  canContinueListening = () => false;
+  alignmentBusy = () => false;
+  alignmentMessage = () => null;
+  alignmentDeclined = () => false;
+  alignmentApproximatePosition = () => null;
+  continueListening = vi.fn();
+  jumpToApproximateAudio = vi.fn();
+  openAudiobookAnyway = vi.fn();
   bookId = input.required<string>();
   // The shell passes the loaded Book down so the reader can restore the saved
   // position without a second GET (issue #225 §1.2).
