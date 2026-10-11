@@ -206,55 +206,6 @@
       </div>
     </div>
 
-    <!-- Keep edition switching separate from the three playback transports. -->
-    @if (canContinueInEbook()) {
-      <div class="audio-edition-action">
-        <button
-          type="button"
-          class="playback-pill"
-          [disabled]="alignmentBusy() || loading() || !!loadError()"
-          [attr.aria-label]="alignmentBusy() ? 'Finding your place in the ebook' : 'Continue in ebook'"
-          [attr.aria-busy]="alignmentBusy()"
-          (click)="continueInEbook()"
-          data-testid="audio-continue-ebook"
-        >
-          @if (alignmentBusy()) {
-            <nostos-loading-indicator size="sm" [decorative]="true" />
-            <span>Finding your place…</span>
-          } @else {
-            <nostos-icon name="book-open" [size]="16"></nostos-icon>
-            <span>Continue in ebook</span>
-          }
-        </button>
-      </div>
-    }
-
-    <div
-      class="audio-alignment-status"
-      aria-live="polite"
-      aria-atomic="true"
-      data-testid="audio-alignment-status"
-    >
-      @if (alignmentBusy()) {
-        <span role="status">Finding your place in the ebook…</span>
-      } @else if (alignmentMessage()) {
-        <div class="sleep-status" role="status">
-          <span>{{ alignmentMessage() }}</span>
-
-          @if (alignmentDeclined()) {
-            <button
-              type="button"
-              class="time-label-btn"
-              (click)="openEbookAnyway()"
-              data-testid="audio-open-ebook-anyway"
-            >
-              Open ebook anyway
-            </button>
-          }
-        </div>
-      }
-    </div>
-
     @if (sleepStatusMessage()) {
       <div class="sleep-status" role="status" data-testid="sleep-status-message">
         {{ sleepStatusMessage() }}
