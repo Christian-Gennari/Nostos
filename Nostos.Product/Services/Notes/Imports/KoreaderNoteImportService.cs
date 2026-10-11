@@ -3,6 +3,7 @@ using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Nostos.Backend.Data;
 using Nostos.Backend.Services.Library;
+using Nostos.Shared.Dtos;
 
 namespace Nostos.Backend.Services.Notes.Imports;
 
@@ -40,6 +41,8 @@ public sealed class KoreaderNoteImportService
         var imported = 0;
         var duplicates = 0;
         var skipped = 0;
+        var bookId = match.BookId!.Value;
+        var existing = await ImportedNotesAsync(_db, bookId, ct);
 
         foreach (var annotation in document.Annotations)
         {
@@ -52,32 +55,30 @@ public sealed class KoreaderNoteImportService
             }
 
             var (anchorKind, anchorValue) = Anchor(annotation);
-            var fingerprint = Fingerprint(
-                match.BookId!.Value,
-                anchorKind,
-                anchorValue,
-                selectedText,
-                content);
+            var fingerprint = Fingerprint(bookId, anchorKind, anchorValue, selectedText, content);
 
             anchorValue ??= $"annotation:{fingerprint}";
 
-            var alreadyImported = await _db.Notes.AsNoTracking().AnyAsync(note =>
-                note.BookId == match.BookId.Value
-                && note.CaptureSource == "import"
-                && note.SourceAnchorKind == anchorKind
-                && note.SourceAnchorValue == anchorValue
-                && note.SelectedText == selectedText
-                && note.Content == content,
-                ct);
-
-            if (alreadyImported)
+            if (existing.ContainsKey(Identity(anchorKind, anchorValue, selectedText, content)))
             {
                 duplicates++;
                 continue;
             }
 
+            var earlier = EarlierShapes(annotation, selectedText, content)
+                .Select(shape => Identity(shape.AnchorKind, shape.AnchorValue, shape.Text, shape.Content))
+                .FirstOrDefault(existing.ContainsKey);
+            if (earlier is not null)
+            {
+                await RepairAsync(_db, _notes, existing[earlier], anchorKind, anchorValue, selectedText, content, ct);
+                existing.Remove(earlier);
+                existing[Identity(anchorKind, anchorValue, selectedText, content)] = Guid.Empty;
+                duplicates++;
+                continue;
+            }
+
             var result = await _notes.CaptureAsync(new CaptureNoteRequest(
-                BookId: match.BookId.Value,
+                BookId: bookId,
                 Content: content,
                 SelectedText: selectedText,
                 CaptureSource: "import",
@@ -92,6 +93,7 @@ public sealed class KoreaderNoteImportService
             if (!result.Success)
                 throw new InvalidOperationException(result.ErrorMessage ?? "KOReader note import failed.");
 
+            existing[Identity(anchorKind, anchorValue, selectedText, content)] = result.Value!.Id;
             imported++;
         }
 
@@ -104,6 +106,54 @@ public sealed class KoreaderNoteImportService
             duplicates,
             skipped,
             null);
+    }
+
+    /// <summary>A book's imported notes, keyed by what makes each one the same annotation.</summary>
+    internal static async Task<Dictionary<string, Guid>> ImportedNotesAsync(
+        NostosDbContext db,
+        Guid bookId,
+        CancellationToken ct)
+    {
+        var notes = await db.Notes
+            .AsNoTracking()
+            .Where(note => note.BookId == bookId && note.CaptureSource == "import")
+            .Select(note => new { note.Id, note.SourceAnchorKind, note.SourceAnchorValue, note.SelectedText, note.Content })
+            .ToListAsync(ct);
+
+        var byIdentity = new Dictionary<string, Guid>(StringComparer.Ordinal);
+        foreach (var note in notes)
+            byIdentity.TryAdd(Identity(note.SourceAnchorKind, note.SourceAnchorValue, note.SelectedText, note.Content), note.Id);
+        return byIdentity;
+    }
+
+    internal static string Identity(string kind, string? value, string? text, string? content) =>
+        string.Join('\n', kind, value ?? string.Empty, text ?? string.Empty, content ?? string.Empty);
+
+    /// <summary>
+    /// Brings a note stored in an earlier shape up to what the sidecar says.
+    /// The text goes through the note service so topics follow it; the anchor
+    /// is provenance the service never rewrites.
+    /// </summary>
+    internal static async Task RepairAsync(
+        NostosDbContext db,
+        INoteService notes,
+        Guid noteId,
+        string anchorKind,
+        string anchorValue,
+        string? selectedText,
+        string content,
+        CancellationToken ct)
+    {
+        var result = await notes.UpdateAsync(noteId, new UpdateNoteDto(content, selectedText), ct);
+        if (!result.Success)
+            throw new InvalidOperationException(result.ErrorMessage ?? "KOReader note repair failed.");
+
+        // Tracked, not a bulk statement: SaveChanges is what advances the
+        // library revision for a portable row.
+        var stored = await db.Notes.FirstAsync(note => note.Id == noteId, ct);
+        stored.SourceAnchorKind = anchorKind;
+        stored.SourceAnchorValue = anchorValue;
+        await db.SaveChangesAsync(ct);
     }
 
     private async Task<BookMatch> MatchBookAsync(
@@ -162,10 +212,80 @@ public sealed class KoreaderNoteImportService
                 $"{annotation.PositionStart ?? string.Empty}|{annotation.PositionEnd ?? string.Empty}");
         }
 
+        // A page bookmark has no selection, but in a reflowable book its
+        // `page` is still an xpointer. `pageno` there is only a count of
+        // screens at the device's font size, which nothing else can open.
+        if (annotation.Page is { } pointer && pointer.StartsWith("/body/", StringComparison.Ordinal))
+            return ("koreader_xpointer", $"{pointer}|");
+
+        return PageAnchor(annotation);
+    }
+
+    private static (string Kind, string? Value) PageAnchor(KoreaderAnnotation annotation)
+    {
         var page = Clean(annotation.PageNumber) ?? Clean(annotation.Page);
         return page is null
             ? ("koreader_unknown", null)
             : ("koreader_page", page);
+    }
+
+    /// <summary>
+    /// Every shape an earlier version of this import could have stored the
+    /// same annotation in. A re-import recognises these and corrects the note
+    /// in place rather than adding a second copy beside it:
+    /// a value with a line break was cut at the break and kept its Lua quoting,
+    /// a page bookmark was anchored to its screen count, and a PDF highlight
+    /// lost its text.
+    /// </summary>
+    internal static IReadOnlyList<ImportedNoteShape> EarlierShapes(
+        KoreaderAnnotation annotation,
+        string? selectedText,
+        string content)
+    {
+        var current = Anchor(annotation);
+        var anchors = new List<(string Kind, string? Value)> { current };
+        var page = PageAnchor(annotation);
+        if (page != current)
+            anchors.Add(page);
+
+        var texts = new List<string?> { selectedText };
+        if (CutAtLineBreak(selectedText) is { } cutText)
+            texts.Add(cutText);
+        if (selectedText is not null && content.Length > 0)
+            texts.Add(null);
+
+        var contents = new List<string> { content };
+        if (CutAtLineBreak(content) is { } cutContent)
+            contents.Add(cutContent);
+
+        var shapes = new List<ImportedNoteShape>();
+        foreach (var anchor in anchors)
+        {
+            foreach (var text in texts)
+            {
+                foreach (var body in contents)
+                {
+                    if (anchor == current && text == selectedText && body == content)
+                        continue;
+                    shapes.Add(new ImportedNoteShape(anchor.Kind, anchor.Value, text, body));
+                }
+            }
+        }
+
+        return shapes;
+    }
+
+    // The line-based reader kept the first source line of a %q string as it
+    // stood: opening quote, escapes unresolved, and the backslash that
+    // continued it onto the next line.
+    private static string? CutAtLineBreak(string? value)
+    {
+        var lineBreak = value?.IndexOf('\n') ?? -1;
+        if (lineBreak < 0)
+            return null;
+
+        var firstLine = value![..lineBreak].Replace("\\", "\\\\").Replace("\"", "\\\"");
+        return Clean($"\"{firstLine}\\");
     }
 
     internal static string Fingerprint(
@@ -199,3 +319,9 @@ public sealed class KoreaderNoteImportService
 
     private sealed record BookMatchRow(Guid Id, string Title);
 }
+
+internal sealed record ImportedNoteShape(
+    string AnchorKind,
+    string? AnchorValue,
+    string? Text,
+    string Content);

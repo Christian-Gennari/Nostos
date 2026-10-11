@@ -347,6 +347,39 @@ public sealed class NoteService : INoteService
         return NoteCommandResult<NoteDto>.Ok(existing.ToDto());
     }
 
+    public async Task<NoteCommandResult<NoteDto>> SetImportedLocationAsync(
+        Guid noteId,
+        string? cfiRange,
+        CancellationToken ct = default)
+    {
+        var location = cfiRange?.Trim() ?? string.Empty;
+        if (!location.StartsWith("epubcfi(", StringComparison.Ordinal)
+            || !location.EndsWith(')')
+            || location.Length > 1024)
+        {
+            return NoteCommandResult<NoteDto>.Fail(
+                NoteErrorCodes.LocationNotAllowed, "An EPUB CFI range is required.");
+        }
+
+        var existing = await _notes.GetByIdWithTopicsAsync(noteId);
+        if (existing is null)
+            return NoteCommandResult<NoteDto>.Fail(NoteErrorCodes.NoteNotFound, "Note not found.");
+
+        if (existing.CaptureSource != "import")
+        {
+            return NoteCommandResult<NoteDto>.Fail(
+                NoteErrorCodes.LocationNotAllowed, "Only an imported highlight can be located.");
+        }
+
+        if (string.IsNullOrWhiteSpace(existing.CfiRange))
+        {
+            existing.CfiRange = location;
+            await _notes.SaveChangesAsync();
+        }
+
+        return NoteCommandResult<NoteDto>.Ok(existing.ToDto());
+    }
+
     public async Task<NoteCommandResult<bool>> DeleteAsync(Guid noteId, CancellationToken ct = default)
     {
         var existing = await _notes.GetByIdAsync(noteId);

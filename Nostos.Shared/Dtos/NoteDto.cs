@@ -39,6 +39,8 @@ public record CreateNoteDto(
 
 public record UpdateNoteDto(string Content, string? SelectedText = null);
 
+public record NoteLocationDto(string? CfiRange);
+
 /// <summary>
 /// A note found by searching note text, or listed because it belongs to no topic
 /// (issue #158). `Snippet` is the fragment around the match, so the index can show

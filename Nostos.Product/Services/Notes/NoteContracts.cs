@@ -39,6 +39,10 @@ public static class NoteErrorCodes
     // half (or an out-of-bounds value) can never be replayed exactly once and
     // is therefore rejected rather than silently treated as a new command.
     public const string InvalidIdempotency = "invalid_idempotency";
+
+    // Only an imported highlight can be given a reader location after the
+    // fact; every other note records its own when it is made.
+    public const string LocationNotAllowed = "location_not_allowed";
 }
 
 /// <summary>

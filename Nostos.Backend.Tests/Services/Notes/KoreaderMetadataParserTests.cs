@@ -26,6 +26,12 @@ public sealed class KoreaderMetadataParserTests
         second.Text.Should().Be("A second synthetic PDF highlight.");
         second.Note.Should().Be("A thought about the second passage.");
         KoreaderNoteImportService.Anchor(second).Should().Be(("koreader_page", "15"));
+
+        // The line-based reader stored this one as its note alone, without the text.
+        KoreaderNoteImportService
+            .EarlierShapes(second, second.Text, second.Note!)
+            .Should().ContainSingle()
+            .Which.Should().Be(new ImportedNoteShape("koreader_page", "15", null, "A thought about the second passage."));
     }
 
     [Fact]
@@ -33,7 +39,7 @@ public sealed class KoreaderMetadataParserTests
     {
         var document = KoreaderMetadataParser.Parse(Fixture("metadata.multiline.lua"));
 
-        document.Annotations.Should().HaveCount(2);
+        document.Annotations.Should().HaveCount(3);
         document.Annotations[0].Text.Should().Be("The end of one paragraph.\nThe start of the next.");
         document.Annotations[0].Note.Should().Be("She said \"wait\" here.");
         document.Annotations[0].PositionEnd.Should().Be("/body/DocFragment[3]/body/p[5]/text().21");
@@ -52,6 +58,16 @@ public sealed class KoreaderMetadataParserTests
             "koreader_xpointer",
             "/body/DocFragment[3]/body/p[4]/text().0|/body/DocFragment[3]/body/p[4]/text().33"));
         KoreaderNoteImportService.Anchor(document.Annotations[1]).Should().Be(("koreader_page", "27"));
+    }
+
+    [Fact]
+    public void Page_bookmark_in_a_reflowable_book_keeps_its_xpointer_not_its_screen_count()
+    {
+        var bookmark = KoreaderMetadataParser.Parse(Fixture("metadata.multiline.lua")).Annotations[2];
+
+        KoreaderNoteImportService.Anchor(bookmark).Should().Be((
+            "koreader_xpointer",
+            "/body/DocFragment[3]/body/p[12]/text().0|"));
     }
 
     [Theory]
