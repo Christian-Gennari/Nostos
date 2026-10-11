@@ -30,6 +30,15 @@ describe('AiProviderService', () => {
       hasKey: false,
       keyFromServerEnv: false,
     },
+    alignmentTranscription: {
+      enabled: true,
+      baseUrl: '',
+      model: '',
+      hasKey: false,
+      keyFromServerEnv: false,
+      useVoiceTranscription: true,
+      apiStyle: 'openai-multipart',
+    },
   };
 
   beforeEach(() => {
@@ -74,6 +83,40 @@ describe('AiProviderService', () => {
     request.flush(effective);
   });
 
+  it('updates alignment transcription without sending an untouched key', () => {
+    service.update({
+      alignmentTranscription: {
+        useVoiceTranscription: false,
+        apiStyle: 'json-base64',
+        model: 'alignment-model',
+      },
+    }).subscribe();
+
+    const request = http.expectOne('/api/settings/ai-provider');
+    expect(request.request.method).toBe('PUT');
+    expect(request.request.body).toEqual({
+      alignmentTranscription: {
+        useVoiceTranscription: false,
+        apiStyle: 'json-base64',
+        model: 'alignment-model',
+      },
+    });
+    expect(request.request.body.alignmentTranscription).not.toHaveProperty('apiKey');
+    request.flush(effective);
+  });
+
+  it('passes an explicit alignment key clear through', () => {
+    service.update({
+      alignmentTranscription: { apiKey: '' },
+    }).subscribe();
+
+    const request = http.expectOne('/api/settings/ai-provider');
+    expect(request.request.body).toEqual({
+      alignmentTranscription: { apiKey: '' },
+    });
+    request.flush(effective);
+  });
+
   it('asks the models route for ids of one kind', () => {
     let models: string[] | undefined;
     service
@@ -91,6 +134,21 @@ describe('AiProviderService', () => {
     expect(models).toEqual(['whisper-1']);
   });
 
+  it('loads models for the alignment transcription kind', () => {
+    service.loadModels({
+      kind: 'alignmentStt',
+      baseUrl: 'https://transcription.example/v1',
+    }).subscribe();
+
+    const request = http.expectOne('/api/settings/ai-provider/models');
+    expect(request.request.method).toBe('POST');
+    expect(request.request.body).toEqual({
+      kind: 'alignmentStt',
+      baseUrl: 'https://transcription.example/v1',
+    });
+    request.flush({ models: ['alignment-model'] });
+  });
+
   it('returns the test result even when the provider failed', () => {
     let ok: boolean | undefined;
     service.test({ kind: 'llm', model: 'qwen3-32b' }).subscribe((result) => (ok = result.ok));
@@ -100,5 +158,14 @@ describe('AiProviderService', () => {
     request.flush({ ok: false, error: '401 Unauthorized' });
 
     expect(ok).toBe(false);
+  });
+
+  it('tests alignment transcription using its own kind', () => {
+    service.test({ kind: 'alignmentStt' }).subscribe();
+
+    const request = http.expectOne('/api/settings/ai-provider/test');
+    expect(request.request.method).toBe('POST');
+    expect(request.request.body).toEqual({ kind: 'alignmentStt' });
+    request.flush({ ok: true, detail: 'Reached the voice transcription provider.' });
   });
 });

@@ -10,7 +10,9 @@
  */
 
 /** The independently configurable providers behind one "AI provider" card. */
-export type AiProviderKind = 'llm' | 'stt' | 'embedding';
+export type AiProviderKind = 'llm' | 'stt' | 'embedding' | 'alignmentStt';
+
+export type AlignmentTranscriptionApiStyle = 'openai-multipart' | 'json-base64';
 
 /** One provider's effective settings, as `GET`/`PUT` report them. */
 export interface AiProviderSection {
@@ -26,6 +28,12 @@ export interface AiProviderSection {
   keyFromServerEnv: boolean;
 }
 
+/** Alignment transcription can reuse voice STT or use its own provider. */
+export interface AlignmentTranscriptionSection extends AiProviderSection {
+  useVoiceTranscription: boolean;
+  apiStyle: AlignmentTranscriptionApiStyle;
+}
+
 /** The whole card's effective state. */
 export interface AiProviderSettings {
   llm: AiProviderSection;
@@ -35,6 +43,8 @@ export interface AiProviderSettings {
    * embeddings itself (or predates them); the card then shows no section.
    */
   embedding?: AiProviderSection;
+  /** Absent when the host does not expose alignment transcription settings. */
+  alignmentTranscription?: AlignmentTranscriptionSection;
 }
 
 /**
@@ -49,11 +59,17 @@ export interface AiProviderSectionUpdate {
   apiKey?: string;
 }
 
+export interface AlignmentTranscriptionSectionUpdate extends AiProviderSectionUpdate {
+  useVoiceTranscription?: boolean;
+  apiStyle?: AlignmentTranscriptionApiStyle;
+}
+
 /** `PUT /api/settings/ai-provider` body: only the sections the user changed. */
 export interface AiProviderUpdate {
   llm?: AiProviderSectionUpdate;
   stt?: AiProviderSectionUpdate;
   embedding?: AiProviderSectionUpdate;
+  alignmentTranscription?: AlignmentTranscriptionSectionUpdate;
 }
 
 /** `POST .../models` body. `baseUrl`/`apiKey` omitted fall back to effective values. */
