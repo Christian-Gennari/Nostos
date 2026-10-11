@@ -2013,7 +2013,7 @@ describe('ReaderShell in-text selection actions (#650, EPUB)', () => {
     (el('selection-highlight') as HTMLButtonElement).click();
 
     expect(stub().commitHighlight).toHaveBeenCalledTimes(1);
-    expect(stub().commitHighlight.mock.calls[0]).toEqual([]);
+    expect(stub().commitHighlight.mock.calls[0]).toEqual(['', expect.any(String)]);
   });
 
   it('Add note takes the note at the text and saves it with the mark', async () => {
@@ -2032,7 +2032,7 @@ describe('ReaderShell in-text selection actions (#650, EPUB)', () => {
     render();
     (el('selection-save-note') as HTMLButtonElement).click();
 
-    expect(stub().commitHighlight).toHaveBeenCalledWith('The rage that starts it all.');
+    expect(stub().commitHighlight).toHaveBeenCalledWith('The rage that starts it all.', expect.any(String));
 
     component.handleNoteCreated();
     render();
@@ -2052,7 +2052,7 @@ describe('ReaderShell in-text selection actions (#650, EPUB)', () => {
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     expect(stub().commitHighlight).not.toHaveBeenCalled();
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true }));
-    expect(stub().commitHighlight).toHaveBeenCalledWith('A thought');
+    expect(stub().commitHighlight).toHaveBeenCalledWith('A thought', expect.any(String));
   });
 
   it('a failed save keeps the menu and the typed note', async () => {
@@ -2202,7 +2202,7 @@ describe('ReaderShell in-text selection actions (#650, EPUB)', () => {
     expect(el('selection-note-input')).not.toBeNull();
   });
 
-  it('docked bar: a pen dot highlights in that colour and keeps it as the pen', async () => {
+  it('docked bar: a pen dot picks the colour without saving; Highlight saves in it', async () => {
     const component = await openBook();
     component.dockedLayout.set(true);
     await capture(component);
@@ -2211,14 +2211,43 @@ describe('ReaderShell in-text selection actions (#650, EPUB)', () => {
     render();
 
     expect(component.highlightColour()).toBe('sage');
+    expect(el('selection-pen-sage')!.getAttribute('aria-pressed')).toBe('true');
+    expect(stub().commitHighlight).not.toHaveBeenCalled();
+    expect(component.pendingSelectionText()).not.toBeNull();
+    expect(el('selection-bar')).not.toBeNull();
+
+    (el('selection-highlight') as HTMLButtonElement).click();
+    render();
     expect(stub().commitHighlight).toHaveBeenCalledTimes(1);
     expect(stub().commitHighlight).toHaveBeenCalledWith('', 'sage');
 
-    // Writing a note is not the moment to pick a colour by committing.
     component.highlightSaving.set(false);
     component.openNoteDraft();
     render();
     expect(el('selection-pen-sage')).toBeNull();
+  });
+
+  it('docked bar: the pager steps aside while a passage is offered with the chrome showing', async () => {
+    const component = await openBook();
+    component.dockedLayout.set(true);
+    component.chromeVisible.set(true);
+    render();
+    const pager = el('reader-chrome-bottom')!;
+    expect(pager.hasAttribute('inert')).toBe(false);
+
+    await capture(component);
+    expect(component.chromeShown()).toBe(true);
+    expect(component.pagerShown()).toBe(false);
+    expect(pager.hasAttribute('inert')).toBe(true);
+    expect(el('reader-layout')!.classList.contains('selection-docked')).toBe(true);
+    // The header does not share the bar's edge and stays.
+    expect(el('reader-chrome-top')!.hasAttribute('inert')).toBe(false);
+
+    component.discardHighlight();
+    render();
+    expect(component.pagerShown()).toBe(true);
+    expect(pager.hasAttribute('inert')).toBe(false);
+    expect(el('reader-layout')!.classList.contains('selection-docked')).toBe(false);
   });
 
   it('a tap on the page drops the offered passage, but never a note being written', async () => {
@@ -2297,7 +2326,7 @@ describe('ReaderShell in-text selection actions (#650, EPUB)', () => {
     render();
     (el('selection-save-note') as HTMLButtonElement).click();
 
-    expect(pdf.commitHighlight).toHaveBeenCalledWith('A note on this PDF passage.');
+    expect(pdf.commitHighlight).toHaveBeenCalledWith('A note on this PDF passage.', expect.any(String));
     expect(el('selection-bar')!.classList.contains('epub-actions')).toBe(false);
   });
 

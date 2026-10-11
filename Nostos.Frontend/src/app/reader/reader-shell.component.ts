@@ -516,6 +516,17 @@ export class ReaderShell implements OnInit, OnDestroy {
       || this.notesOpen(),
   );
 
+  /**
+   * The docked selection bar sits where the pager does, so the pager steps
+   * aside while a passage is offered there. The bar lives inside the page's
+   * own stacking context and cannot simply be raised above the chrome.
+   */
+  readonly pagerShown = computed(
+    () =>
+      this.chromeShown()
+      && !(this.pendingSelectionText() !== null && !this.selectionMenuPlacement()),
+  );
+
   handleSurfaceInteraction(): void {
     if (!this.immersiveReader()) return;
 
@@ -913,26 +924,13 @@ export class ReaderShell implements OnInit, OnDestroy {
     if (bookId) writeHighlightColour(bookId, colour);
   }
 
-  /**
-   * A pen dot in the docked selection bar: one tap picks the pen and marks the
-   * passage with it, so a phone needs no trip to the notes panel to change
-   * colour.
-   */
-  highlightWith(colour: HighlightColour): void {
-    if (this.highlightSaving()) return;
-    this.setHighlightColour(colour);
-    this.committingNote = false;
-    this.highlightSaving.set(true);
-    // Handed over explicitly: the reader's pen input only catches up with the
-    // signal at the next change detection, after this save has started.
-    this.activeReader()?.commitHighlight('', colour);
-  }
-
   commitHighlight() {
     if (this.highlightSaving()) return;
     this.committingNote = false;
     this.highlightSaving.set(true);
-    this.activeReader()?.commitHighlight();
+    // The pen is handed over explicitly so the save never depends on the
+    // reader's pen input having caught up with a dot tapped a moment ago.
+    this.activeReader()?.commitHighlight('', this.highlightColour());
   }
 
   /** "Add note": reveal the note field in the same menu, at the text. */
@@ -951,7 +949,7 @@ export class ReaderShell implements OnInit, OnDestroy {
     if (!content || this.highlightSaving()) return;
     this.committingNote = true;
     this.highlightSaving.set(true);
-    this.activeReader()?.commitHighlight(content);
+    this.activeReader()?.commitHighlight(content, this.highlightColour());
   }
 
   onNoteDraftKeydown(event: KeyboardEvent): void {

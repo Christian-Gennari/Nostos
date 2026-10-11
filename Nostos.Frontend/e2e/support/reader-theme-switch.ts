@@ -83,6 +83,27 @@ async function openViewSettings(page: Page) {
   await expect(page.locator('[data-testid="reader-appearance"]')).toBeVisible();
 }
 
+/**
+ * The phone panel has to fit a phone: short enough for a screen whose browser
+ * bars are showing, with no choice clipped or pushed out sideways.
+ */
+async function expectCompactPanel(page: Page, maxHeight = 470) {
+  const panel = page.locator('[data-testid="typo-panel"]');
+  const box = (await panel.boundingBox())!;
+  expect(box.height, 'panel height').toBeLessThanOrEqual(maxHeight);
+  const clipped = await panel.evaluate((el) => {
+    const outer = el.getBoundingClientRect();
+    return [...el.querySelectorAll<HTMLElement>('.typo-opt, .typo-step, .typo-step-value, .typo-label')]
+      .filter((c) => {
+        const r = c.getBoundingClientRect();
+        return c.scrollWidth > c.clientWidth + 1 || r.left < outer.left || r.right > outer.right;
+      })
+      .map((c) => c.textContent?.trim());
+  });
+  expect(clipped, 'clipped controls').toEqual([]);
+  expect(await panel.evaluate((el) => el.scrollHeight <= el.clientHeight + 1)).toBe(true);
+}
+
 async function chooseTheme(page: Page, label: 'Light' | 'Dark') {
   await page.locator('[data-testid="reader-appearance"] .typo-opt', { hasText: label }).click();
   await expect(page.locator('[data-testid="reader-appearance"] .typo-opt', { hasText: label }))
@@ -128,6 +149,7 @@ export function readerThemeSwitchSpecs(viewportName: 'desktop' | 'mobile') {
     await chooseTheme(page, 'Dark');
     expect(await htmlTheme(page)).toBe('dark');
     await expect(frame.locator('body')).toHaveClass(/nostos-dark/);
+    if (viewportName === 'mobile') await expectCompactPanel(page);
     await snap(page, `reader-theme-epub-panel-dark-${viewportName}`);
 
     // Same document (no re-render), same position, and the choice is the
@@ -160,6 +182,7 @@ export function readerThemeSwitchSpecs(viewportName: 'desktop' | 'mobile') {
     expect(await htmlTheme(page)).toBe('dark');
     await expect(page.locator('.pdf-container')).toHaveClass(/inverted/);
     await expect(page.locator('.typo-label', { hasText: 'Page colours' })).toBeVisible();
+    if (viewportName === 'mobile') await expectCompactPanel(page);
     await snap(page, `reader-theme-pdf-panel-dark-${viewportName}`);
 
     await expect(page.locator('#viewerContainer')).toHaveAttribute('data-e2e-marker', '1');
@@ -170,4 +193,23 @@ export function readerThemeSwitchSpecs(viewportName: 'desktop' | 'mobile') {
     await expect(page.locator('#viewerContainer')).toHaveAttribute('data-e2e-marker', '1');
     expect((await progress.textContent())?.trim()).toBe(before);
   });
+
+  if (viewportName === 'mobile') {
+    // 360px is the narrowest width with a label column; below it rows stack.
+    for (const [width, maxHeight] of [[360, 470], [320, 620]] as const) {
+      test(`View settings stays compact and unclipped at ${width}px`, async ({ page }) => {
+        await page.setViewportSize({ width, height: 780 });
+        for (const id of [epubId, pdfId]) {
+          await page.goto(`${baseUrl}/read/${id}`, { waitUntil: 'domcontentloaded' });
+          await page.locator('#epub-viewer iframe, #viewerContainer canvas').first().waitFor({ timeout: 60_000 });
+          await page.waitForTimeout(800);
+          await openViewSettings(page);
+          await chooseTheme(page, 'Dark');
+          await expectCompactPanel(page, maxHeight);
+          await snap(page, `reader-theme-${id === epubId ? 'epub' : 'pdf'}-panel-dark-${width}`);
+          await chooseTheme(page, 'Light');
+        }
+      });
+    }
+  }
 }

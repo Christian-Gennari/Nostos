@@ -65,6 +65,18 @@ async function snap(page: Page, name: string) {
   await page.screenshot({ path: path.join(EVIDENCE_DIR, `reader-selection-${name}.png`) });
 }
 
+/** Every docked action is the topmost element at its own centre: nothing is drawn over it. */
+async function expectBarUncovered(page: Page) {
+  for (const id of ['selection-pen-rose', 'selection-copy', 'selection-cancel', 'selection-add-note', 'selection-highlight']) {
+    const onTop = await page.getByTestId(id).evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return !!hit && el.contains(hit);
+    });
+    expect(onTop, `${id} is not covered`).toBe(true);
+  }
+}
+
 async function revealEpubChrome(page: Page) {
   const chrome = page.getByTestId('reader-chrome-top');
   if ((await chrome.getAttribute('aria-hidden')) !== 'true') return;
@@ -378,7 +390,26 @@ export function mobileSelectionSpecs() {
     expect(await iframeSelection(page)).toBe('');
   });
 
-  test('phone: a pen dot highlights in that colour; a tap on the page drops an offer without turning the page', async ({ page }) => {
+  test('phone: with the reader chrome showing, the pager steps aside for the docked bar', async ({ page }) => {
+    const { baseUrl } = loadFixture();
+    const bookId = await seedEpub(baseUrl, `Selection C ${run}`);
+    await openReader(page, baseUrl, bookId);
+    await revealEpubChrome(page);
+    const pager = page.getByTestId('reader-chrome-bottom');
+    await expect(pager).toBeVisible();
+
+    await selectWords(page);
+    await expect(page.locator('[data-testid="selection-bar"]')).toBeVisible();
+    await expect(pager).toBeHidden();
+    await expect(page.getByTestId('reader-chrome-top')).toBeVisible();
+    await expectBarUncovered(page);
+    await snap(page, 'mobile-bar-with-chrome');
+
+    await page.locator('[data-testid="selection-cancel"]').tap();
+    await expect(pager).toBeVisible();
+  });
+
+  test('phone: a pen dot picks the colour and Highlight saves in it; a tap on the page drops an offer without turning the page', async ({ page }) => {
     const { baseUrl } = loadFixture();
     const bookId = await seedEpub(baseUrl, `Selection P ${run}`);
     await openReader(page, baseUrl, bookId);
@@ -400,7 +431,18 @@ export function mobileSelectionSpecs() {
 
     const selected = await selectWords(page);
     await expect(bar).toBeVisible();
+    // A pen dot only picks the colour; nothing is saved until Highlight.
+    const pendingFill = () =>
+      page.locator('.epubjs-hl-pending').first().evaluate((el) => getComputedStyle(el).fill);
+    const amberFill = await pendingFill();
     await page.locator('[data-testid="selection-pen-sage"]').tap();
+    // The offered passage is redrawn in the pen just picked.
+    await expect.poll(pendingFill).not.toBe(amberFill);
+    await expect(page.locator('.epubjs-hl-pending')).toHaveCount(1);
+    await page.waitForTimeout(400);
+    await expect(bar).toBeVisible();
+    expect(await notes(baseUrl, bookId)).toHaveLength(0);
+    await page.locator('[data-testid="selection-highlight"]').tap();
     await expect(bar).toHaveCount(0);
     const saved = await notes(baseUrl, bookId);
     expect(saved).toHaveLength(1);

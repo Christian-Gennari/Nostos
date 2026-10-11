@@ -149,7 +149,26 @@ export class EpubAnnotationManager {
    * already saved keep the pen stored with them.
    */
   setHighlightColour(colour: HighlightColour): void {
+    if (colour === this.highlightColour) return;
     this.highlightColour = colour;
+
+    // An offered passage previews the pen it will be saved in. The fill is
+    // baked into the mark when it is drawn, so a new pen is a redraw.
+    const pending = this.pendingHighlight;
+    if (pending?.temporaryAnnotation && !this.committing) {
+      this.removePendingAnnotation();
+      pending.temporaryAnnotation = this.drawPendingAnnotation(pending.cfiRange);
+    }
+  }
+
+  private drawPendingAnnotation(cfiRange: string): PendingHighlightAnnotation {
+    return this.rendition.annotations.highlight(
+      cfiRange,
+      { nostosPending: true },
+      undefined,
+      'epubjs-hl-pending',
+      { fill: this.highlightFill() },
+    ) as unknown as PendingHighlightAnnotation;
   }
 
   setOnSelectionCaptured(callback: (text: string, anchor: SelectionAnchor | null) => void) {
@@ -402,13 +421,7 @@ export class EpubAnnotationManager {
       this.pendingHighlight = null;
     }
 
-    const temporaryAnnotation = this.rendition.annotations.highlight(
-      cfiRange,
-      { nostosPending: true },
-      undefined,
-      'epubjs-hl-pending',
-      { fill: this.highlightFill() },
-    ) as unknown as PendingHighlightAnnotation;
+    const temporaryAnnotation = this.drawPendingAnnotation(cfiRange);
 
     this.pendingHighlight = {
       cfiRange,
