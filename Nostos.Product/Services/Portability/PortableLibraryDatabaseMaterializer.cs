@@ -253,6 +253,7 @@ internal static class PortableLibraryDatabaseMaterializer
                 SourceAnchorKind = x.SourceAnchorKind,
                 SourceAnchorValue = x.SourceAnchorValue,
                 AnchorVerified = x.AnchorVerified,
+                HighlightColour = x.HighlightColour,
             });
         db.Notes.AddRange(notes.Values);
 

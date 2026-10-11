@@ -917,6 +917,10 @@ namespace Nostos.Backend.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("HighlightColour")
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("ProcessingMode")
                         .IsRequired()
                         .ValueGeneratedOnAdd()

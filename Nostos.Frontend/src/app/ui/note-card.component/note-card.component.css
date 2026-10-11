@@ -297,6 +297,37 @@
   border-color: var(--border-focus);
 }
 
+/* The highlight's pen in the editor (issue #861): the reader's `.hl-pen` dots,
+   so one colour control reads the same in both places. 22px dots on a 34px
+   pitch; the ::before hit area is 34x44 for the reason given there (a wider
+   box would overlap its neighbour's). */
+.edit-pens {
+  display: flex;
+  gap: 12px;
+  margin: 0 2px 0.75rem;
+}
+
+.edit-pen {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border-color);
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.edit-pen::before {
+  content: '';
+  position: absolute;
+  inset: -11px -6px;
+}
+
+.edit-pen.is-active {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
 .edit-actions {
   display: flex;
   justify-content: flex-end;

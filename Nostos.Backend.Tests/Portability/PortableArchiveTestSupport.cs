@@ -253,6 +253,7 @@ internal static class PortableArchiveTestSupport
             RawContent = "raw thought",
             SelectedText = "selected passage",
             CfiRange = "epubcfi(/6/4!/4/2)",
+            HighlightColour = "sage",
             CaptureSource = "voice",
             ProcessingMode = "light_polish",
             SourceAnchorKind = "epub_cfi",

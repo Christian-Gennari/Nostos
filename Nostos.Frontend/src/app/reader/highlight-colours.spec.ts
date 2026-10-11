@@ -5,6 +5,7 @@ import {
   highlightColourKey,
   highlightFillRef,
   highlightFillVar,
+  noteHighlightColour,
   readHighlightColour,
   resolveHighlightFill,
   writeHighlightColour,
@@ -60,5 +61,29 @@ describe('highlight colours', () => {
     } finally {
       root.style.removeProperty('--highlight-sage');
     }
+  });
+
+  it("draws a saved highlight in the note's own pen (issue #861)", () => {
+    expect(noteHighlightColour({ highlightColour: 'rose', cfiRange: 'epubcfi(/6/4)' })).toBe('rose');
+    // The stored field wins over a PDF payload's older embedded colour, which
+    // a recolour leaves untouched.
+    expect(
+      noteHighlightColour({
+        highlightColour: 'blue',
+        cfiRange: JSON.stringify({ pageNumber: 2, rects: [], colour: 'sage' }),
+      }),
+    ).toBe('blue');
+  });
+
+  it('falls back to a PDF payload colour, then to the default pen', () => {
+    // A PDF highlight older than the field kept its pen in the location JSON.
+    expect(
+      noteHighlightColour({ cfiRange: JSON.stringify({ pageNumber: 2, rects: [], colour: 'sage' }) }),
+    ).toBe('sage');
+    // An EPUB highlight with no recorded pen, and an import, are amber.
+    expect(noteHighlightColour({ cfiRange: 'epubcfi(/6/4)' })).toBe(DEFAULT_HIGHLIGHT_COLOUR);
+    expect(noteHighlightColour({ highlightColour: null })).toBe(DEFAULT_HIGHLIGHT_COLOUR);
+    expect(noteHighlightColour({ highlightColour: 'gray' })).toBe(DEFAULT_HIGHLIGHT_COLOUR);
+    expect(noteHighlightColour({ cfiRange: '{not json' })).toBe(DEFAULT_HIGHLIGHT_COLOUR);
   });
 });

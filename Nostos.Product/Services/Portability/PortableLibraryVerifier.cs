@@ -2190,6 +2190,10 @@ public sealed class PortableLibraryVerifier : IPortableLibraryVerifier
             nameof(PortableNote.AnchorVerified),
             Ef(("NoteModel", nameof(NoteModel.AnchorVerified))),
             (context, failures) => CompareField(failures, "note", context.Row.Id, nameof(PortableNote.AnchorVerified), context.Row.AnchorVerified, context.Expected.AnchorVerified)),
+        Entry<NoteContext>(
+            nameof(PortableNote.HighlightColour),
+            Ef(("NoteModel", nameof(NoteModel.HighlightColour))),
+            (context, failures) => CompareField(failures, "note", context.Row.Id, nameof(PortableNote.HighlightColour), context.Row.HighlightColour, context.Expected.HighlightColour)),
     ];
 
     private static readonly IReadOnlyList<ComparisonEntry<TopicContext>> TopicComparisons =

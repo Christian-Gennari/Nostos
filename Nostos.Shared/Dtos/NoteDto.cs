@@ -19,7 +19,10 @@ public record NoteDto(
     string ProcessingMode = "verbatim",
     string SourceAnchorKind = "unknown",
     string? SourceAnchorValue = null,
-    bool AnchorVerified = false
+    bool AnchorVerified = false,
+    // APPENDED (issue #861): the highlighter pen, by name (amber | sage | blue |
+    // rose). Null = none recorded; a reader draws that in amber.
+    string? HighlightColour = null
 );
 
 public record CreateNoteDto(
@@ -34,10 +37,17 @@ public record CreateNoteDto(
     string ProcessingMode = "verbatim",
     string SourceAnchorKind = "unknown",
     string? SourceAnchorValue = null,
-    bool AnchorVerified = false
+    bool AnchorVerified = false,
+    // APPENDED (issue #861): the pen a highlight is made with, by name.
+    string? HighlightColour = null
 );
 
-public record UpdateNoteDto(string Content, string? SelectedText = null);
+// HighlightColour APPENDED (issue #861). Null leaves the stored pen unchanged,
+// so a client that only edits text never clears a colour.
+public record UpdateNoteDto(
+    string Content,
+    string? SelectedText = null,
+    string? HighlightColour = null);
 
 public record NoteLocationDto(string? CfiRange);
 

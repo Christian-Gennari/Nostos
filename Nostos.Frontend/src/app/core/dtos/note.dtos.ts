@@ -13,6 +13,11 @@ export interface Note {
   sourceAnchorKind?: string;
   sourceAnchorValue?: string | null;
   anchorVerified?: boolean;
+  /**
+   * The highlighter pen, by name (amber | sage | blue | rose). Absent or null
+   * when none was recorded; `noteHighlightColour` resolves what to draw.
+   */
+  highlightColour?: string | null;
 }
 
 /**
@@ -94,11 +99,15 @@ export interface CreateNoteDto {
   content: string;
   cfiRange?: string;
   selectedText?: string;
+  /** The pen a highlight is made with, by name. */
+  highlightColour?: string;
 }
 
 export interface UpdateNoteDto {
   content: string;
   selectedText?: string; // <--- ADDED
+  /** Omitted leaves the stored pen as it is. */
+  highlightColour?: string;
 }
 
 /**

@@ -2471,6 +2471,7 @@ export class SecondBrain implements AfterViewChecked {
       sourceAnchorKind: note.sourceAnchorKind,
       sourceAnchorValue: note.sourceAnchorValue,
       anchorVerified: note.anchorVerified,
+      highlightColour: note.highlightColour,
     };
   }
 
@@ -2567,7 +2568,12 @@ export class SecondBrain implements AfterViewChecked {
     this.relatedEvidenceId.update((current) => (current === id ? null : id));
   }
 
-  onUpdateNote(event: { id: string; content: string; selectedText?: string }): void {
+  onUpdateNote(event: {
+    id: string;
+    content: string;
+    selectedText?: string;
+    highlightColour?: string;
+  }): void {
     const topicId = this.selectedId();
     const detail = this.selectedDetail();
     const original = detail?.notes.find((note) => note.noteId === event.id);
@@ -2578,14 +2584,23 @@ export class SecondBrain implements AfterViewChecked {
       ...detail,
       notes: detail.notes.map((note) =>
         note.noteId === event.id
-          ? { ...note, content: event.content, selectedText: event.selectedText }
+          ? {
+              ...note,
+              content: event.content,
+              selectedText: event.selectedText,
+              highlightColour: event.highlightColour ?? note.highlightColour,
+            }
           : note
       ),
     };
     this.commitDetail(topicId, optimisticDetail);
 
     this.notesService
-      .update(event.id, { content: event.content, selectedText: event.selectedText })
+      .update(event.id, {
+        content: event.content,
+        selectedText: event.selectedText,
+        highlightColour: event.highlightColour,
+      })
       .subscribe({
         next: (updated) => {
           const current = this.topicData.detail(topicId);
@@ -2699,6 +2714,7 @@ export class SecondBrain implements AfterViewChecked {
       bookId: updated.bookId ?? previous.bookId,
       bookTitle: updated.bookTitle ?? previous.bookTitle,
       createdAt: updated.createdAt || previous.createdAt,
+      highlightColour: updated.highlightColour ?? previous.highlightColour,
     };
   }
 

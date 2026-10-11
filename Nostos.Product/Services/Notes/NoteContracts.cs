@@ -43,6 +43,33 @@ public static class NoteErrorCodes
     // Only an imported highlight can be given a reader location after the
     // fact; every other note records its own when it is made.
     public const string LocationNotAllowed = "location_not_allowed";
+
+    // A highlight colour is one of the four pen names; anything else is refused
+    // rather than stored and silently drawn as the default.
+    public const string InvalidHighlightColour = "invalid_highlight_colour";
+}
+
+/// <summary>
+/// The highlighter pens a highlight can be stored with (issue #861). A colour
+/// is a NAME at every layer above CSS; the fill itself lives in the
+/// frontend's <c>--highlight-&lt;name&gt;</c> tokens.
+/// </summary>
+public static class NoteHighlightColours
+{
+    /// <summary>The default pen, and what a note with no recorded colour is drawn in.</summary>
+    public const string Amber = "amber";
+
+    public static readonly IReadOnlyList<string> All = [Amber, "sage", "blue", "rose"];
+
+    /// <summary>
+    /// The canonical name for <paramref name="value"/>, or null when it is not
+    /// one of the pens.
+    /// </summary>
+    public static string? Normalize(string? value)
+    {
+        var name = value?.Trim().ToLowerInvariant();
+        return name is not null && All.Contains(name) ? name : null;
+    }
 }
 
 /// <summary>
@@ -67,7 +94,9 @@ public sealed record CaptureNoteRequest(
     // Both optional: absent => today's (non-idempotent) behaviour; present =>
     // exactly-once keyed on the (ClientId, IdempotencyKey) pair.
     string? ClientId = null,
-    string? IdempotencyKey = null);
+    string? IdempotencyKey = null,
+    // APPENDED (issue #861): the highlighter pen, by name.
+    string? HighlightColour = null);
 
 /// <summary>
 /// Read model for the note-review flow (issue #261): what the note says, which

@@ -139,6 +139,115 @@ public sealed class NoteServiceTests : IClassFixture<SqliteTestFixture>
     }
 
     // ------------------------------------------------------------------
+    // Highlight colour (issue #861)
+    // ------------------------------------------------------------------
+
+    [Fact]
+    public async Task Create_stores_the_highlighter_pen_by_canonical_name()
+    {
+        var h = CreateHarness();
+        using var _ = h;
+        var book = await SeedBookAsync(h);
+
+        var result = await h.Service.CreateAsync(book.Id, new CreateNoteDto(
+            Content: "", CfiRange: "epubcfi(/6/4!/4/2,/1:0,/1:5)", SelectedText: "a passage",
+            HighlightColour: " Sage "));
+
+        result.Success.Should().BeTrue();
+        result.Value!.HighlightColour.Should().Be("sage");
+        (await h.Db.Notes.AsNoTracking().SingleAsync()).HighlightColour.Should().Be("sage");
+    }
+
+    [Fact]
+    public async Task A_note_made_without_a_pen_records_none()
+    {
+        var h = CreateHarness();
+        using var _ = h;
+        var book = await SeedBookAsync(h);
+
+        var result = await h.Service.CreateAsync(book.Id, new CreateNoteDto("a plain note"));
+
+        result.Value!.HighlightColour.Should().BeNull(
+            "no colour is invented for a note that never chose one; readers draw null as amber");
+    }
+
+    [Fact]
+    public async Task Create_refuses_a_colour_that_is_not_a_pen()
+    {
+        var h = CreateHarness();
+        using var _ = h;
+        var book = await SeedBookAsync(h);
+
+        var result = await h.Service.CreateAsync(book.Id, new CreateNoteDto(
+            Content: "", SelectedText: "a passage", HighlightColour: "#ffda00"));
+
+        result.Success.Should().BeFalse();
+        result.ErrorCode.Should().Be("invalid_highlight_colour");
+        result.ErrorMessage.Should().Be("Highlight colour must be one of: amber, sage, blue, rose.");
+        (await h.Db.Notes.CountAsync()).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Update_changes_the_pen_and_an_edit_without_one_keeps_it()
+    {
+        var h = CreateHarness();
+        using var _ = h;
+        var book = await SeedBookAsync(h);
+        var created = await h.Service.CreateAsync(book.Id, new CreateNoteDto(
+            Content: "", SelectedText: "a passage", HighlightColour: "amber"));
+        var id = created.Value!.Id;
+
+        var recoloured = await h.Service.UpdateAsync(id, new UpdateNoteDto("", "a passage", "rose"));
+        recoloured.Success.Should().BeTrue();
+        recoloured.Value!.HighlightColour.Should().Be("rose");
+
+        // A client that only edits text sends no colour; the pen must survive.
+        var edited = await h.Service.UpdateAsync(id, new UpdateNoteDto("a thought", "a passage"));
+        edited.Value!.HighlightColour.Should().Be("rose");
+        edited.Value.Content.Should().Be("a thought");
+        (await h.Db.Notes.AsNoTracking().SingleAsync()).HighlightColour.Should().Be("rose");
+    }
+
+    [Fact]
+    public async Task Update_gives_an_imported_highlight_a_pen_of_the_owners_choice()
+    {
+        var h = CreateHarness();
+        using var _ = h;
+        var book = await SeedBookAsync(h);
+        var imported = await h.Service.CaptureAsync(new CaptureNoteRequest(
+            BookId: book.Id, Content: "", SelectedText: "an imported passage",
+            CaptureSource: "import", SourceAnchorKind: "koreader_xpointer",
+            SourceAnchorValue: "/body/DocFragment[2]/body/p[1]/text().0",
+            HighlightColour: NoteHighlightColours.Amber));
+        imported.Value!.HighlightColour.Should().Be("amber");
+
+        var recoloured = await h.Service.UpdateAsync(
+            imported.Value.Id, new UpdateNoteDto("", "an imported passage", "blue"));
+
+        recoloured.Value!.HighlightColour.Should().Be("blue");
+        recoloured.Value.CaptureSource.Should().Be("import");
+    }
+
+    [Fact]
+    public async Task Update_refuses_an_unknown_colour_and_changes_nothing()
+    {
+        var h = CreateHarness();
+        using var _ = h;
+        var book = await SeedBookAsync(h);
+        var created = await h.Service.CreateAsync(book.Id, new CreateNoteDto(
+            Content: "before", SelectedText: "a passage", HighlightColour: "sage"));
+
+        var result = await h.Service.UpdateAsync(
+            created.Value!.Id, new UpdateNoteDto("after", "a passage", "gray"));
+
+        result.Success.Should().BeFalse();
+        result.ErrorCode.Should().Be("invalid_highlight_colour");
+        var stored = await h.Db.Notes.AsNoTracking().SingleAsync();
+        stored.HighlightColour.Should().Be("sage");
+        stored.Content.Should().Be("before");
+    }
+
+    // ------------------------------------------------------------------
     // Link to an existing topic
     // ------------------------------------------------------------------
 

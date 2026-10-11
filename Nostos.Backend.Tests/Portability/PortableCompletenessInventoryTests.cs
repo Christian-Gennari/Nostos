@@ -202,6 +202,9 @@ public sealed class PortableCompletenessInventoryTests
                     "SourceAnchorKind",
                     "SourceAnchorValue",
                     "AnchorVerified",
+                    // The highlighter pen (issue #861): a restore that dropped
+                    // it would turn every colour-coded highlight amber.
+                    "HighlightColour",
                 ],
                 excludedNavigations:
                 [

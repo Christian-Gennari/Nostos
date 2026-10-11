@@ -1120,16 +1120,26 @@ export class ReaderShell implements OnInit, OnDestroy {
 
   // --- HANDLERS FOR NOTE CARD ---
 
-  onUpdateNote(event: { id: string; content: string; selectedText?: string }) {
+  onUpdateNote(event: {
+    id: string;
+    content: string;
+    selectedText?: string;
+    highlightColour?: HighlightColour;
+  }) {
     this.notesService
       .update(event.id, {
         content: event.content,
         selectedText: event.selectedText,
+        highlightColour: event.highlightColour,
       })
       .subscribe({
         next: (updated) => {
           // Update local state so we see the change immediately without reload
           this.dbNotes.update((notes) => notes.map((n) => (n.id === updated.id ? updated : n)));
+          // A changed pen is redrawn on the page now, not at the next open.
+          if (event.highlightColour) {
+            this.activeReader()?.recolourHighlight?.(updated, event.highlightColour);
+          }
         },
       });
   }

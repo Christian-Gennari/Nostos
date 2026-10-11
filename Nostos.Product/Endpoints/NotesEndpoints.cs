@@ -160,7 +160,11 @@ public static class NotesEndpoints
             async (Guid id, UpdateNoteDto dto, INoteService notes) =>
             {
                 var result = await notes.UpdateAsync(id, dto);
-                return result.Success ? Results.Ok(result.Value) : Results.NotFound();
+                if (result.Success)
+                    return Results.Ok(result.Value);
+                return result.ErrorCode == NoteErrorCodes.NoteNotFound
+                    ? Results.NotFound()
+                    : Results.BadRequest(new { error = result.ErrorMessage });
             }
         );
 

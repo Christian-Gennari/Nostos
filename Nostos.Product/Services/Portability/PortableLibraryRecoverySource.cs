@@ -141,7 +141,8 @@ public static class PortableLibraryRecoverySource
         var notes = (await db.Notes.AsNoTracking().OrderBy(x => x.Id).ToListAsync(ct).ConfigureAwait(false))
             .Select(x => new PortableNote(
                 x.Id, x.Content, x.CfiRange, x.SelectedText, x.CreatedAt, x.BookId, x.RawContent,
-                x.CaptureSource, x.ProcessingMode, x.SourceAnchorKind, x.SourceAnchorValue, x.AnchorVerified))
+                x.CaptureSource, x.ProcessingMode, x.SourceAnchorKind, x.SourceAnchorValue, x.AnchorVerified,
+                x.HighlightColour))
             .ToList();
 
         var topics = (await db.Topics.AsNoTracking().OrderBy(x => x.Id).ToListAsync(ct).ConfigureAwait(false))

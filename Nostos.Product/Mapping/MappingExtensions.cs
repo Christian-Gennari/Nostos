@@ -211,7 +211,8 @@ public static class MappingExtensions
             ProcessingMode: model.ProcessingMode,
             SourceAnchorKind: model.SourceAnchorKind,
             SourceAnchorValue: model.SourceAnchorValue,
-            AnchorVerified: model.AnchorVerified
+            AnchorVerified: model.AnchorVerified,
+            HighlightColour: model.HighlightColour
         );
 
     public static CollectionDto ToDto(this CollectionModel model) =>
@@ -312,6 +313,7 @@ public static class MappingExtensions
             SourceAnchorKind = dto.SourceAnchorKind,
             SourceAnchorValue = dto.SourceAnchorValue,
             AnchorVerified = dto.AnchorVerified,
+            HighlightColour = dto.HighlightColour,
         };
 
     public static CollectionModel ToModel(this CreateCollectionDto dto) =>
@@ -444,6 +446,12 @@ public static class MappingExtensions
         if (dto.SelectedText != null)
         {
             model.SelectedText = dto.SelectedText;
+        }
+
+        // Null means "not sent": editing a note's text must not clear its pen.
+        if (dto.HighlightColour != null)
+        {
+            model.HighlightColour = dto.HighlightColour;
         }
     }
 

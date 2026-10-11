@@ -222,7 +222,8 @@ public sealed class NoteService : INoteService
             ProcessingMode: request.ProcessingMode,
             SourceAnchorKind: request.SourceAnchorKind,
             SourceAnchorValue: request.SourceAnchorValue,
-            AnchorVerified: request.AnchorVerified);
+            AnchorVerified: request.AnchorVerified,
+            HighlightColour: request.HighlightColour);
 
         return CreateAsync(request.BookId, dto, request.ClientId, request.IdempotencyKey, ct);
     }
@@ -241,7 +242,11 @@ public sealed class NoteService : INoteService
             return NoteCommandResult<NoteDto>.Fail(
                 NoteErrorCodes.EmptyNote, "Note must have content or selected text.");
 
+        if (!TryNormalizeHighlightColour(dto.HighlightColour, out var colour))
+            return InvalidHighlightColour();
+
         var model = dto.ToModel(bookId);
+        model.HighlightColour = colour;
 
         // Between the raw transcript and the stored note (issue #262 §7): a
         // non-verbatim mode rewrites Content from the raw capture, which is kept
@@ -337,7 +342,10 @@ public sealed class NoteService : INoteService
         if (existing is null)
             return NoteCommandResult<NoteDto>.Fail(NoteErrorCodes.NoteNotFound, "Note not found.");
 
-        existing.Apply(dto);
+        if (!TryNormalizeHighlightColour(dto.HighlightColour, out var colour))
+            return InvalidHighlightColour();
+
+        existing.Apply(dto with { HighlightColour = colour });
 
         // Re-process topics (the processor clears old links then re-adds).
         await _processor.ProcessNoteAsync(existing);
@@ -346,6 +354,23 @@ public sealed class NoteService : INoteService
 
         return NoteCommandResult<NoteDto>.Ok(existing.ToDto());
     }
+
+    /// <summary>
+    /// A pen is optional, but one that is sent must be a known name: storing an
+    /// unknown value would be drawn as amber and read as a saved choice.
+    /// </summary>
+    private static bool TryNormalizeHighlightColour(string? value, out string? colour)
+    {
+        colour = null;
+        if (string.IsNullOrWhiteSpace(value)) return true;
+        colour = NoteHighlightColours.Normalize(value);
+        return colour is not null;
+    }
+
+    private static NoteCommandResult<NoteDto> InvalidHighlightColour() =>
+        NoteCommandResult<NoteDto>.Fail(
+            NoteErrorCodes.InvalidHighlightColour,
+            $"Highlight colour must be one of: {string.Join(", ", NoteHighlightColours.All)}.");
 
     public async Task<NoteCommandResult<NoteDto>> SetImportedLocationAsync(
         Guid noteId,

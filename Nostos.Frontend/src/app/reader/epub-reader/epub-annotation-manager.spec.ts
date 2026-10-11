@@ -387,6 +387,8 @@ describe('EpubAnnotationManager mobile highlight mode (issue #16)', () => {
       content: '',
       cfiRange: CFI,
       selectedText: 'Save me',
+      // The default pen, stored with the highlight (#861).
+      highlightColour: 'amber',
     });
     expect(onNoteCreated).toHaveBeenCalledTimes(1);
     expect(manager.highlights()).toEqual([CFI]);
@@ -537,6 +539,77 @@ describe('EpubAnnotationManager mobile highlight mode (issue #16)', () => {
     } finally {
       computed.mockRestore();
     }
+  });
+
+  describe('a highlight keeps its own pen (issue #861)', () => {
+    let computed: { mockRestore: () => void };
+
+    beforeEach(() => {
+      // Each pen's token resolves to a value naming it, so a fill says which
+      // pen it was drawn with.
+      computed = vi.spyOn(window, 'getComputedStyle').mockReturnValue({
+        getPropertyValue: (name: string) => `fill:${name}`,
+      } as unknown as CSSStyleDeclaration);
+    });
+
+    afterEach(() => computed.mockRestore());
+
+    it('saves the pen in hand with the highlight and draws it in that pen', async () => {
+      manager.setHighlightColour('sage');
+      manager.setHighlightMode(true);
+      manager.registerContents(makeContents());
+      selectText('A sage passage');
+      document.dispatchEvent(new MouseEvent('mouseup'));
+      await flush();
+      await manager.commitHighlight();
+
+      expect(notesService.create).toHaveBeenCalledWith(
+        'book-1',
+        expect.objectContaining({ cfiRange: CFI, highlightColour: 'sage' }),
+      );
+      expect(annotations.add).toHaveBeenCalledWith('highlight', CFI, {}, undefined, undefined, {
+        fill: 'fill:--highlight-sage',
+      });
+    });
+
+    it('restores each highlight in its stored pen, not the pen now selected', () => {
+      // The book's current pen is rose; it must not repaint what was saved.
+      manager.setHighlightColour('rose');
+
+      manager.restoreHighlights([
+        { id: 'a', bookId: 'book-1', content: '', createdAt: '', cfiRange: 'epubcfi(/6/2)', highlightColour: 'sage' },
+        { id: 'b', bookId: 'book-1', content: '', createdAt: '', cfiRange: 'epubcfi(/6/4)', highlightColour: 'blue' },
+        // No recorded pen (made before the field, or imported): amber.
+        { id: 'c', bookId: 'book-1', content: '', createdAt: '', cfiRange: 'epubcfi(/6/6)' },
+      ]);
+
+      const fills = annotations.add.mock.calls.map((call) => [call[1], call[5]]);
+      expect(fills).toEqual([
+        ['epubcfi(/6/2)', { fill: 'fill:--highlight-sage' }],
+        ['epubcfi(/6/4)', { fill: 'fill:--highlight-blue' }],
+        ['epubcfi(/6/6)', { fill: 'fill:--highlight-amber' }],
+      ]);
+    });
+
+    it('redraws a recoloured highlight, and only one that is on the page', () => {
+      manager.restoreHighlights([
+        { id: 'a', bookId: 'book-1', content: '', createdAt: '', cfiRange: 'epubcfi(/6/2)', highlightColour: 'sage' },
+      ]);
+      annotations.add.mockClear();
+
+      manager.recolourHighlight('epubcfi(/6/2)', 'rose');
+
+      expect(annotations.remove).toHaveBeenCalledWith('epubcfi(/6/2)', 'highlight');
+      expect(annotations.add).toHaveBeenCalledWith(
+        'highlight', 'epubcfi(/6/2)', {}, undefined, undefined, { fill: 'fill:--highlight-rose' },
+      );
+
+      annotations.remove.mockClear();
+      annotations.add.mockClear();
+      manager.recolourHighlight('epubcfi(/6/99)', 'rose');
+      expect(annotations.remove).not.toHaveBeenCalled();
+      expect(annotations.add).not.toHaveBeenCalled();
+    });
   });
 });
 
@@ -717,6 +790,7 @@ describe('EpubAnnotationManager selection actions (#650)', () => {
       content: 'My thought about it',
       cfiRange: CFI,
       selectedText: 'The passage',
+      highlightColour: 'amber',
     });
     expect(annotations.add).toHaveBeenCalledTimes(1);
   });
