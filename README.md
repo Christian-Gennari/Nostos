@@ -323,6 +323,7 @@ Read the [Design Manifesto](docs/design-manifesto.md) for the product's visual a
 
 ## Documentation
 
+- **[Security Policy](SECURITY.md):** Supported versions, private vulnerability reporting, and safe testing guidance for SelfHosted and official Nostos Cloud.
 - **[Releases](https://github.com/Christian-Gennari/Nostos/releases):** Reader-facing changes to Nostos.
 - **[Releases](docs/releases.md):** CalVer tags and the release notes workflow.
 - **[Design Manifesto](docs/design-manifesto.md):** Product, visual, and interaction principles.
