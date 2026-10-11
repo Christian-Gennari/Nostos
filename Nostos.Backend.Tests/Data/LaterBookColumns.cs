@@ -20,5 +20,9 @@ internal static class LaterBookColumns
         // AddBookTracks (issue #835).
         await db.Database.ExecuteSqlRawAsync(
             "ALTER TABLE \"Books\" ADD COLUMN \"FileDetails_TracksJson\" TEXT NULL");
+        // AddNoteHighlightColour (issue #861). Not a Books column, but the same
+        // case: the current model writes it for every note these tests seed.
+        await db.Database.ExecuteSqlRawAsync(
+            "ALTER TABLE \"Notes\" ADD COLUMN \"HighlightColour\" TEXT NULL");
     }
 }
