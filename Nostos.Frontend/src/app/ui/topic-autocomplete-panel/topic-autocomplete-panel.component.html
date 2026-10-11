@@ -1,0 +1,123 @@
+<!-- The option rows, shared by both presentations so they cannot drift.
+     mousemove, not mouseenter: a row that merely appears under a resting pointer
+     must not take the highlight away from the first result. -->
+<ng-template #options>
+  @for (topic of auto.suggestions(); track topic.id; let i = $index) {
+  <button
+    type="button"
+    class="item"
+    role="option"
+    tabindex="-1"
+    [id]="auto.optionId(i)"
+    [class.active]="i === auto.activeIndex()"
+    [class.nostos-accent-rail]="i === auto.activeIndex()"
+    [attr.aria-selected]="i === auto.activeIndex()"
+    (mousemove)="auto.activeIndex.set(i)"
+    (click)="select(topic.name, $event)"
+  >
+    <span class="item-name">{{ topic.name }}</span>
+    <span class="item-count">{{ topic.usageCount }}</span>
+  </button>
+  }
+
+  @if (auto.createName(); as name) {
+  <button
+    type="button"
+    class="item create-item"
+    role="option"
+    tabindex="-1"
+    [id]="auto.optionId(auto.suggestions().length)"
+    [class.active]="auto.activeIndex() === auto.suggestions().length"
+    [class.nostos-accent-rail]="auto.activeIndex() === auto.suggestions().length"
+    [attr.aria-selected]="auto.activeIndex() === auto.suggestions().length"
+    (mousemove)="auto.activeIndex.set(auto.suggestions().length)"
+    (click)="select(name, $event)"
+  >
+    <nostos-icon name="plus" [size]="15"></nostos-icon>
+    <span class="item-name">Create “{{ name }}”</span>
+  </button>
+  }
+</ng-template>
+
+<!-- "Link a topic" button: a real dialog. A full-screen sheet on a phone, so the
+     search sits at the top and the results stay above the keyboard. -->
+<ng-template #dialogTpl>
+  <app-modal-shell
+    [isOpen]="true"
+    variant="sheet"
+    [maxWidth]="'460px'"
+    [maxHeight]="'min(560px, calc(100vh - 2.5rem))'"
+    [layer]="130"
+    [trapFocus]="true"
+    [ariaLabelledBy]="auto.uid + '-title'"
+    [style.--modal-head-padding]="'0.85rem 1rem 0.9rem'"
+    (closed)="cancel()"
+  >
+    <div shellHeader class="picker-head">
+      <div class="picker-title-row">
+        <h2 [id]="auto.uid + '-title'" class="picker-title">Link a topic</h2>
+        <button
+          appIconButton
+          type="button"
+          icon="x"
+          [glyphSize]="18"
+          class="picker-close"
+          title="Close"
+          aria-label="Close"
+          (click)="cancel($event)"
+        ></button>
+      </div>
+
+      <div class="picker-search">
+        <nostos-icon name="magnifying-glass" [size]="16" class="picker-search-icon"></nostos-icon>
+        <input
+          appInput
+          cdkFocusInitial
+          type="search"
+          class="picker-search-input"
+          role="combobox"
+          autocomplete="off"
+          spellcheck="false"
+          enterkeyhint="done"
+          placeholder="Find or create a topic"
+          aria-label="Find or create a topic"
+          aria-autocomplete="list"
+          aria-expanded="true"
+          [attr.aria-controls]="auto.listId"
+          [attr.aria-activedescendant]="auto.activeOptionId()"
+          [value]="auto.query()"
+          (input)="onSearchInput($event)"
+          (keydown)="onSearchKeydown($event)"
+        />
+      </div>
+    </div>
+
+    <div class="picker-list" role="listbox" aria-label="Topics" [id]="auto.listId">
+      <ng-container [ngTemplateOutlet]="options"></ng-container>
+
+      @if (auto.optionCount() === 0) {
+      <p class="picker-empty">No topics yet. Type a name to create your first one.</p>
+      }
+    </div>
+
+    <div shellActions class="picker-foot">
+      <span><kbd>↑</kbd><kbd>↓</kbd> navigate</span>
+      <span><kbd>↵</kbd> link</span>
+      <span><kbd>esc</kbd> close</span>
+    </div>
+  </app-modal-shell>
+</ng-template>
+
+<!-- Typing `[[`: the textarea is already the search field, so this is only the
+     list. mousedown is cancelled so choosing a row never takes the caret away. -->
+<ng-template #inlineTpl>
+  <div class="suggest-panel" (mousedown)="$event.preventDefault()">
+    <div class="picker-list" role="listbox" aria-label="Topics" [id]="auto.listId">
+      <ng-container [ngTemplateOutlet]="options"></ng-container>
+
+      @if (auto.optionCount() === 0) {
+      <p class="picker-empty">Type a topic name.</p>
+      }
+    </div>
+  </div>
+</ng-template>

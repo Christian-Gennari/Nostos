@@ -1,15 +1,19 @@
 <div class="topic-input-wrapper">
   <div class="topic-link-toolbar">
     <button
+      appButton
+      variant="ghost"
+      size="sm"
       type="button"
       class="topic-link-action"
+      aria-haspopup="dialog"
       [disabled]="isDisabled"
       (pointerdown)="rememberSelection()"
       (click)="openTopicPicker()"
     >
-      Link a topic
+      <nostos-icon name="link-simple" [size]="14"></nostos-icon>
+      <span>Link a topic</span>
     </button>
-    <span class="topic-link-hint">Find related notes across your reading.</span>
   </div>
 
   <textarea
@@ -23,13 +27,14 @@
     (input)="handleInput($event)"
     (blur)="onTouched()"
     noteAutocomplete
-    (insertTopic)="insertTopic($event)"
+    [attr.aria-controls]="inlineOpen() ? autocompleteService.listId : null"
+    [attr.aria-activedescendant]="inlineOpen() ? autocompleteService.activeOptionId() : null"
     (insertTopicName)="insertTopicName($event)"
     (keydown.control.enter)="submitTrigger.emit()"
   ></textarea>
 
   <topic-autocomplete-panel
-    (topicSelected)="insertTopic($event)"
+    [anchor]="textarea"
     (topicNameSelected)="insertTopicName($event)"
     (cancelled)="cancelTopicPicker()"
   ></topic-autocomplete-panel>
