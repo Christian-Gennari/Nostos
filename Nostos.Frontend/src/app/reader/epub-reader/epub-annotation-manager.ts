@@ -15,7 +15,11 @@ interface PendingEpubHighlight {
   selectedText: string;
   contents: Contents;
   temporaryAnnotation?: PendingHighlightAnnotation;
+  /** Offered from a live touch selection, which is still on the page. */
+  touch: boolean;
 }
+
+type SelectionInput = 'mouse' | 'touch';
 
 /**
  * Shape of the annotation object returned at runtime by epub.js
@@ -97,7 +101,6 @@ export class EpubAnnotationManager {
 
   private notesService: NotesService;
 
-  private highlightMode = false;
   /**
    * The book's chosen pen (issue #208): the colour of the NEXT highlight made
    * here. A saved highlight is drawn in its own stored pen (issue #861).
@@ -118,6 +121,18 @@ export class EpubAnnotationManager {
   private readonly mouseDragDocuments = new Set<Document>();
   private selectedHandler: ((cfiRange: string, contents: Contents) => void) | null = null;
   private onSelectionCaptured?: (text: string, anchor: SelectionAnchor | null) => void;
+  private onSelectionAbandoned?: () => void;
+  /**
+   * Whether the reader's last pointer was a finger or pen. A touch selection
+   * stays native (handles, OS menu) and is offered as it settles; a mouse one
+   * is taken over on release. Seeded from the device, then kept current per
+   * pointerdown so a touchscreen laptop follows whichever input is in use.
+   */
+  private touchInput =
+    typeof window !== 'undefined'
+    && typeof window.matchMedia === 'function'
+    && window.matchMedia('(pointer: coarse)').matches;
+  private committing = false;
 
   constructor(
     private rendition: Rendition,
@@ -137,21 +152,13 @@ export class EpubAnnotationManager {
     this.highlightColour = colour;
   }
 
-  setHighlightMode(enabled: boolean): void {
-    this.highlightMode = enabled;
-
-    const contents = this.rendition.getContents() as unknown as Contents[];
-    for (const item of contents) {
-      this.applyModeToContents(item);
-    }
-
-    if (!enabled) {
-      this.discardHighlight();
-    }
-  }
-
   setOnSelectionCaptured(callback: (text: string, anchor: SelectionAnchor | null) => void) {
     this.onSelectionCaptured = callback;
+  }
+
+  /** A tap on the page asked to drop the passage a touch selection offered. */
+  setOnSelectionAbandoned(callback: () => void) {
+    this.onSelectionAbandoned = callback;
   }
 
   public init() {
@@ -161,31 +168,24 @@ export class EpubAnnotationManager {
   }
 
   /**
-   * Wires one epub.js Contents document: injects styles, registers the
-   * mode-scoped callout suppression and selection-completion fallbacks, and
-   * applies the current highlight mode. Registered through
+   * Wires one epub.js Contents document: makes its text selectable and
+   * registers the selection-completion listeners. Registered through
    * `rendition.hooks.content` so every newly rendered document is covered.
    */
   public registerContents(contents: Contents): void {
-    this.injectHighlightStyles(contents);
-
     const document = contents.document;
     if (this.documentCleanups.has(document)) {
-      this.applyModeToContents(contents);
       return;
     }
+    this.injectSelectionStyles(contents);
 
     /**
-     * Captures the current selection. Touch completion (touchend) only
-     * captures while highlight mode is on; a desktop mouse selection (#657,
-     * on mouseup) and a desktop right-click (#650) capture regardless of the
-     * mode. Returns whether a selection was captured.
+     * Captures the current selection. A mouse capture takes the selection
+     * over and anchors the menu at the text (#650, #657); a touch capture
+     * leaves the native selection and its handles alone and follows it as it
+     * changes. Returns whether a selection is now pending.
      */
-    const captureSelection = (evenOutsideHighlightMode = false): boolean => {
-      if ((!this.highlightMode && !evenOutsideHighlightMode) || this.pendingHighlight) {
-        return false;
-      }
-
+    const captureSelection = (input: SelectionInput): boolean => {
       const selection = contents.window.getSelection();
       if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
         return false;
@@ -199,33 +199,32 @@ export class EpubAnnotationManager {
       }
 
       const cfiRange = contents.cfiFromRange(range.cloneRange());
-      this.capturePendingHighlight(cfiRange, selectedText, contents);
+      this.capturePendingHighlight(cfiRange, selectedText, contents, input);
       return this.pendingHighlight !== null;
     };
 
     const onContextMenu = (event: Event) => {
-      if (this.highlightMode) {
-        event.preventDefault();
-      }
-
-      // Right-click on a selection opens the selection menu at the text, with
-      // or without highlight mode (#650). Since #657 mouseup usually captures
-      // first; this remains the path for keyboard-extended selections. Mouse
-      // only: a touch long-press keeps the platform's own behaviour, and a
-      // right-click with nothing selected keeps the native menu.
+      // Right-click on a selection opens the selection menu at the text
+      // (#650). Since #657 mouseup usually captures first; this remains the
+      // path for keyboard-extended selections. Mouse only: a touch long-press
+      // keeps the platform's own behaviour (#16), and a right-click with
+      // nothing selected keeps the native menu.
       if (!isMouseContextMenu(event, contents.window)) {
         return;
       }
-      if (captureSelection(true)) {
+      if (captureSelection('mouse')) {
         event.preventDefault();
       }
+    };
+
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.pointerType) this.touchInput = event.pointerType !== 'mouse';
     };
 
     // selectionchange fires repeatedly while a desktop drag is still growing.
     // Treating its first non-collapsed range as complete clears the browser
     // selection and cuts the drag short (issue #304). Mouseup is the first
-    // reliable desktop completion signal; touch keeps its existing touchend
-    // fallback for browsers where epub.js never emits `selected`.
+    // reliable desktop completion signal.
     const onMouseDown = (event: MouseEvent) => {
       if (event.button === 0) this.mouseDragDocuments.add(document);
     };
@@ -241,48 +240,71 @@ export class EpubAnnotationManager {
     // selection and captures nothing, so links and page focus are unaffected.
     const onMouseUp = (event: MouseEvent) => {
       this.mouseDragDocuments.delete(document);
-      const desktop = isDesktopMouseSelection(event, contents.window);
-      requestAnimationFrame(() => captureSelection(desktop));
+      // A tap's emulated mouseup belongs to touchend below; a non-primary
+      // release belongs to the right-click path.
+      if (this.touchInput || (typeof event.button === 'number' && event.button !== 0)) return;
+      // A mouse on a touch-first device gets the docked, touch-style offer.
+      const input = isDesktopMouseSelection(event, contents.window) ? 'mouse' : 'touch';
+      requestAnimationFrame(() => captureSelection(input));
     };
 
+    // Lifting the finger after a long-press is the first touch completion
+    // signal; later handle drags fire no touch events and arrive through
+    // epub.js's debounced `selected` instead (handleSelected).
     const onTouchEnd = () => {
-      requestAnimationFrame(() => captureSelection());
+      this.touchInput = true;
+      requestAnimationFrame(() => captureSelection('touch'));
+    };
+
+    // A tap on the page collapses a touch selection. The docked bar has no
+    // scrim to tap away on, so that tap is the way out; deferred so the
+    // reader's own click handler still sees the passage as pending and does
+    // not also turn the page.
+    const onClick = () => {
+      const pending = this.pendingHighlight;
+      if (!pending?.touch || this.committing) return;
+      const selection = contents.window.getSelection();
+      if (selection && !selection.isCollapsed) return;
+      setTimeout(() => {
+        if (this.pendingHighlight === pending) this.onSelectionAbandoned?.();
+      }, 0);
     };
 
     document.addEventListener('contextmenu', onContextMenu, {
       capture: true,
     });
+    document.addEventListener('pointerdown', onPointerDown, { passive: true });
     document.addEventListener('mousedown', onMouseDown);
     document.addEventListener('mousemove', onMouseMove, { passive: true });
     document.addEventListener('mouseup', onMouseUp);
     document.addEventListener('touchend', onTouchEnd, {
       passive: true,
     });
+    document.addEventListener('click', onClick);
 
     this.documentCleanups.set(document, () => {
       document.removeEventListener('contextmenu', onContextMenu, true);
+      document.removeEventListener('pointerdown', onPointerDown);
       document.removeEventListener('mousedown', onMouseDown);
       document.removeEventListener('mousemove', onMouseMove);
       document.removeEventListener('mouseup', onMouseUp);
       document.removeEventListener('touchend', onTouchEnd);
+      document.removeEventListener('click', onClick);
       this.mouseDragDocuments.delete(document);
     });
-
-    this.applyModeToContents(contents);
   }
 
-  public injectHighlightStyles(contents: Contents) {
-    // Only the selection-mode rules belong here. The `.epubjs-hl*` fill rules
-    // that used to live in this block were DEAD CODE: epub.js builds the
-    // highlight marks in a pane SVG it appends to the view element in the
-    // PARENT document (`new Pane(this.iframe, this.element)`), never inside
-    // this contents document. The colour is therefore passed to epub.js as an
-    // explicit fill — see highlightFill() — instead of being styled here.
+  private injectSelectionStyles(contents: Contents) {
+    // A book stylesheet that disables selection would make its text
+    // impossible to highlight. No `.epubjs-hl*` fill rules belong here:
+    // epub.js builds the highlight marks in a pane SVG it appends to the view
+    // element in the PARENT document (`new Pane(this.iframe, this.element)`),
+    // never inside this contents document. The colour is therefore passed to
+    // epub.js as an explicit fill — see highlightFill().
     const style = contents.document.createElement('style');
     style.innerHTML = `
-      body.nostos-highlight-mode,
-      body.nostos-highlight-mode * {
-        -webkit-touch-callout: none !important;
+      body,
+      body * {
         -webkit-user-select: text !important;
         user-select: text !important;
       }
@@ -295,7 +317,7 @@ export class EpubAnnotationManager {
    * epub.js defaults the SVG fill to the raw keyword `yellow`, which could not
    * follow the theme and disagreed with the PDF reader's
    * `var(--color-highlight)`. The pane SVG is in the parent document (see
-   * injectHighlightStyles), where the token is readable, so it is resolved here
+   * injectSelectionStyles), where the token is readable, so it is resolved here
    * and handed to epub.js as an explicit fill.
    */
   private highlightFill(colour: HighlightColour = this.highlightColour): string {
@@ -342,16 +364,13 @@ export class EpubAnnotationManager {
   }
 
   /**
-   * Standard epub.js path: `rendition.on('selected')`. Routes into the same
-   * capture/deduplication pipeline as the iframe-level fallback.
+   * epub.js's `selected`: a debounced selectionchange. It is how a touch
+   * selection is followed while its handles are dragged, which fires no touch
+   * events. A mouse selection is completed by mouseup and a keyboard one by
+   * right-click, so only touch input is captured here.
    */
   private handleSelected(cfiRange: string, contents: Contents): void {
-    if (!this.highlightMode) {
-      return;
-    }
-
-    // Mid-drag: mouseup will capture the finished range.
-    if (this.mouseDragDocuments.has(contents.document)) {
+    if (!this.touchInput || this.mouseDragDocuments.has(contents.document)) {
       return;
     }
 
@@ -360,24 +379,27 @@ export class EpubAnnotationManager {
       return;
     }
 
-    this.capturePendingHighlight(cfiRange, text, contents);
+    this.capturePendingHighlight(cfiRange, text, contents, 'touch');
   }
 
-  /**
-   * Central capture: derives the temporary annotation, stores the pending
-   * highlight, clears the native selection and reports the capture.
-   * Deduplicated against `pendingHighlight` and the last captured key so the
-   * iframe fallback and epub.js `selected` never double-fire.
-   */
   private capturePendingHighlight(
     cfiRange: string,
     selectedText: string,
     contents: Contents,
+    input: SelectionInput,
   ): void {
     const key = `${cfiRange}\u0000${selectedText}`;
 
-    if (this.pendingHighlight || this.lastCapturedKey === key) {
+    if (this.committing || this.lastCapturedKey === key) {
       return;
+    }
+    if (this.pendingHighlight) {
+      // A touch selection is still live: adjusting its handles replaces the
+      // offered passage. A mouse capture already cleared its selection, so a
+      // second one can only be a stray event.
+      if (input !== 'touch' || !this.pendingHighlight.touch) return;
+      this.removePendingAnnotation();
+      this.pendingHighlight = null;
     }
 
     const temporaryAnnotation = this.rendition.annotations.highlight(
@@ -393,8 +415,16 @@ export class EpubAnnotationManager {
       selectedText,
       contents,
       temporaryAnnotation,
+      touch: input === 'touch',
     };
     this.lastCapturedKey = key;
+
+    if (input === 'touch') {
+      // The phone's handles and OS menu belong to the native selection (#16);
+      // the docked bar sits clear of both.
+      this.onSelectionCaptured?.(selectedText, null);
+      return;
+    }
 
     // Measured before the native selection is cleared, which empties it.
     const anchor = this.anchorForSelection(contents);
@@ -435,7 +465,7 @@ export class EpubAnnotationManager {
    * the confirmation bar open — the user never loses a difficult selection to
    * a transient request failure.
    */
-  commitHighlight(content = ''): Promise<boolean> {
+  commitHighlight(content = '', pen?: HighlightColour): Promise<boolean> {
     const pending = this.pendingHighlight;
     if (!pending) {
       return Promise.resolve(false);
@@ -446,11 +476,13 @@ export class EpubAnnotationManager {
       selectedText: pending.selectedText,
       contents: pending.contents,
       temporaryAnnotation: pending.temporaryAnnotation,
+      touch: pending.touch,
     };
     // The pen in hand when Save was pressed is the one stored and drawn, even
     // if the reader picks another while the request is in flight.
-    const colour = this.highlightColour;
+    const colour = pen ?? this.highlightColour;
 
+    this.committing = true;
     return new Promise<boolean>((resolve) => {
       this.notesService
         .create(this.bookId, {
@@ -464,8 +496,12 @@ export class EpubAnnotationManager {
           next: () => {
             // Persisted: swap the temporary annotation for the permanent one,
             // then report success so the shell closes the bar.
+            this.committing = false;
             this.addPersistedHighlight(snapshot.cfiRange, colour);
             this.removeAnnotation(snapshot.temporaryAnnotation);
+            // A touch selection is still live; left in place it would be
+            // offered again at the next touch.
+            snapshot.contents.window.getSelection()?.removeAllRanges();
             this.pendingHighlight = null;
             this.lastCapturedKey = null;
             this.highlights.update((current) => [...current, snapshot.cfiRange]);
@@ -473,6 +509,7 @@ export class EpubAnnotationManager {
             resolve(true);
           },
           error: () => {
+            this.committing = false;
             // Failed: keep the pending highlight and its visual feedback.
             if (this.pendingHighlight?.cfiRange !== snapshot.cfiRange) {
               this.pendingHighlight = null;
@@ -567,9 +604,5 @@ export class EpubAnnotationManager {
       cleanup();
     }
     this.documentCleanups.clear();
-  }
-
-  private applyModeToContents(contents: Contents): void {
-    contents.document.body?.classList.toggle('nostos-highlight-mode', this.highlightMode);
   }
 }

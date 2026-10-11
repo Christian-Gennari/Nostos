@@ -83,8 +83,13 @@ interface PendingPdfHighlight {
   pageNumber: number;
   rects: { left: number; top: number; width: number; height: number }[];
   selectedText: string;
-  colour: HighlightColour;
 }
+
+/**
+ * How long a touch selection must hold still before it is offered: long
+ * enough that a handle being dragged is not captured at every step.
+ */
+const TOUCH_SELECTION_SETTLE_MS = 300;
 
 @Component({
   selector: 'app-pdf-reader',
@@ -180,17 +185,16 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
   bookId = input.required<string>();
   initialLocation = input<string | undefined>();
   noteCreated = output<void>();
-  highlightMode = input<boolean>(false);
   /** The book's highlighter pen (issue #208), owned by the shell. */
   highlightColour = input<HighlightColour>(DEFAULT_HIGHLIGHT_COLOUR);
   selectionCaptured = output<string>();
   /**
    * Where a released mouse selection sits in the viewport, so the shell can
    * anchor its menu at the text like the EPUB reader (#650). Null when it could
-   * not be measured or the capture was not a mouse release.
+   * not be measured or the selection was made by touch, which docks the bar.
    */
   selectionAnchored = output<SelectionAnchor | null>();
-  /** A plain page click abandoned a selection captured outside highlight mode. */
+  /** A tap or click on the page asked to drop the passage that was offered. */
   selectionDismissed = output<void>();
   commitFailed = output<void>();
   /** Neutral PDF surface click asks the shared shell to reveal or hide chrome. */
@@ -314,6 +318,17 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
 
   private pendingHighlight: PendingPdfHighlight | null = null;
   private commitInFlight = false;
+  /**
+   * Whether the reader's last pointer was a finger or pen. A touch selection
+   * is offered as it settles and docks the bar; a mouse one is offered on
+   * release and anchors the menu. Seeded from the device, then kept current
+   * per pointerdown so a touchscreen laptop follows the input in use.
+   */
+  private touchInput =
+    typeof window !== 'undefined'
+    && typeof window.matchMedia === 'function'
+    && window.matchMedia('(pointer: coarse)').matches;
+  private touchSelectionTimer: ReturnType<typeof setTimeout> | undefined;
   highlightWarning = signal<string | null>(null);
 
   // --- IReader Implementation ---
@@ -840,21 +855,56 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
     const textLayerDiv = event.source.textLayer?.div;
     if (!textLayerDiv) return;
 
-    const pageHighlights = this.savedHighlights.filter((h) => h.pageNumber === event.pageNumber);
-    const validHighlights = pageHighlights.filter((h) => h.rects && h.rects.length > 0);
-    this.highlightService.paint(textLayerDiv, validHighlights, DEFAULT_HIGHLIGHT_COLOUR);
+    this.highlightService.paint(
+      textLayerDiv,
+      this.highlightsOnPage(event.pageNumber),
+      DEFAULT_HIGHLIGHT_COLOUR,
+    );
+  }
+
+  /**
+   * The marks to draw on a page: the saved ones plus the pending passage, so
+   * it stays visible once the native selection is gone (typing a note moves
+   * the selection into the note field).
+   */
+  private highlightsOnPage(pageNumber: number): PageHighlight[] {
+    const marks = this.savedHighlights.filter(
+      (h) => h.pageNumber === pageNumber && h.rects && h.rects.length > 0,
+    );
+    const pending = this.pendingHighlight;
+    // While a commit is in flight the pending mark is already among the saved.
+    if (pending?.pageNumber === pageNumber && !marks.some((h) => h.id === pending.tempId)) {
+      marks.push({
+        id: pending.tempId,
+        pageNumber,
+        rects: pending.rects,
+        colour: this.highlightColour(),
+      });
+    }
+    return marks;
   }
 
   // --- Selection Logic ---
 
   /**
-   * Keep Ask Nostos aligned with the browser's CURRENT PDF selection. This is
-   * independent of highlight mode and selectionchange also clears stale context
-   * when the browser selection collapses or leaves the PDF.
+   * Keep Ask Nostos aligned with the browser's CURRENT PDF selection;
+   * selectionchange also clears stale context when the browser selection
+   * collapses or leaves the PDF. It is also how a touch selection is followed
+   * while its handles are dragged, which fires no touch events.
    */
   @HostListener('document:selectionchange')
   onNativeSelectionChange(): void {
     this.assistantSelection.set(this.highlightService.captureSelectionText?.() ?? null);
+    if (!this.touchInput) return;
+    clearTimeout(this.touchSelectionTimer);
+    this.touchSelectionTimer = setTimeout(
+      () => this.captureSelection('touch'),
+      TOUCH_SELECTION_SETTLE_MS,
+    );
+  }
+
+  onSurfacePointerDown(event: PointerEvent): void {
+    if (event.pointerType) this.touchInput = event.pointerType !== 'mouse';
   }
 
   onSurfaceClick(event: MouseEvent): void {
@@ -874,8 +924,18 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
       this.surfaceClickSuppression = null;
     }
 
-    const selectedText =
-      this.highlightService.captureSelectionText?.() ?? this.assistantSelection();
+    const liveSelection = this.highlightService.captureSelectionText?.() ?? null;
+    // The docked bar has no scrim to tap away on, so a tap or click on the
+    // page with nothing selected is the way out. Deferred, and the pending
+    // passage still counts as selected below, so this tap cannot also turn
+    // the page.
+    const pending = this.pendingHighlight;
+    if (pending && !liveSelection) {
+      setTimeout(() => {
+        if (this.pendingHighlight === pending) this.selectionDismissed.emit();
+      }, 0);
+    }
+    const selectedText = liveSelection ?? this.assistantSelection() ?? pending?.selectedText;
     const target = event.currentTarget as HTMLElement | null;
     const width = target?.clientWidth ?? window.innerWidth;
     const coarsePointer =
@@ -918,7 +978,8 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
     // page gesture afterwards.
     const selectionBeforeCapture =
       this.highlightService.captureSelectionText?.() ?? this.assistantSelection();
-    this.onTextSelection();
+    this.touchInput = true;
+    this.captureSelection('touch');
 
     if (!start || event.changedTouches.length !== 1) return;
 
@@ -961,68 +1022,65 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
   }
 
   /**
-   * Captures the current selection as a pending highlight. Touch completion
-   * and the viewer's own selection event only capture while highlight mode is
-   * on; releasing a desktop mouse selection captures regardless of the mode,
-   * the same as the EPUB reader (#657).
+   * A mouse release completes a desktop selection and anchors the menu at the
+   * text (#657). Touch has its own completion signals: touchend and the
+   * settled selectionchange.
    */
-  onTextSelection(event?: MouseEvent) {
-    this.onNativeSelectionChange();
-    const mouseRelease = !!event && isDesktopMouseSelection(event, window);
-    const outsideMode = !this.highlightMode() && mouseRelease;
-    if (
-      this.commitInFlight
-      || (!this.highlightMode() && !outsideMode)
-      || this.textCapability() === 'unavailable'
-    ) return;
+  onSurfaceMouseUp(event: MouseEvent): void {
+    // A tap's emulated mouseup belongs to touchend; only the primary button
+    // completes a selection.
+    if (this.touchInput || (typeof event.button === 'number' && event.button !== 0)) return;
+    // A mouse on a touch-first device gets the docked, touch-style offer.
+    this.captureSelection(isDesktopMouseSelection(event, window) ? 'mouse' : 'touch');
+  }
+
+  /**
+   * Offers the current selection as a pending highlight. The native selection
+   * is always left in place: on a phone its handles and OS menu belong to it
+   * (#16), and adjusting them replaces the offered passage.
+   */
+  private captureSelection(input: 'mouse' | 'touch'): void {
+    if (this.commitInFlight || this.textCapability() === 'unavailable') return;
 
     const highlight = this.highlightService.captureHighlight(true);
     if (!highlight) {
-      // Outside highlight mode a docked bar (narrow window) has no scrim to
-      // click away on, so a plain click on the page abandons the mark.
-      if (outsideMode && this.pendingHighlight) {
-        this.pendingHighlight = null;
-        this.selectionDismissed.emit();
-      }
+      this.highlightWarning.set(null);
       return;
     }
 
     if (highlight.status === 'cross-page') {
-      // Outside highlight mode the reader may only be selecting to copy:
-      // leave the selection alone and say nothing.
-      if (outsideMode) return;
-      // Reject the new invalid selection without destroying an older pending
-      // one that the shell may still be offering to Save or Cancel.
+      // Say why nothing is offered, but leave the selection (it may be for
+      // copying) and any older pending mark the shell is still offering.
       this.highlightWarning.set(
         'Highlights can only cover one PDF page at a time. Select text on one page at a time.',
       );
-      this.clearNativeSelection();
       return;
     }
 
     this.highlightWarning.set(null);
 
-    if (this.pendingHighlight) {
-      const old = this.pendingHighlight;
-      this.savedHighlights = this.savedHighlights.filter((h) => h.id !== old.tempId);
-      this.repaintPage(old.pageNumber);
+    const old = this.pendingHighlight;
+    if (
+      old
+      && old.pageNumber === highlight.pageNumber
+      && old.selectedText === highlight.selectedText
+    ) {
+      // The same settled selection reported again by another signal.
+      return;
     }
 
-    const tempId = `temp-${Date.now()}`;
-
     this.pendingHighlight = {
-      tempId,
+      tempId: `temp-${Date.now()}`,
       pageNumber: highlight.pageNumber,
       rects: highlight.rects,
       selectedText: highlight.selectedText,
-      colour: this.highlightColour(),
     };
+    if (old) this.repaintPage(old.pageNumber);
+    this.repaintPage(highlight.pageNumber);
 
     this.selectionCaptured.emit(highlight.selectedText);
     this.assistantSelection.set(highlight.selectedText);
-    // Only a finished mouse selection anchors the menu: the viewer's own
-    // selection event also fires while a drag is still growing.
-    this.selectionAnchored.emit(mouseRelease ? this.anchorForSelection() : null);
+    this.selectionAnchored.emit(input === 'mouse' ? this.anchorForSelection() : null);
   }
 
   /** The live selection's box in the viewport; null when it cannot be measured. */
@@ -1079,7 +1137,7 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
     }
   }
 
-  commitHighlight(content = '') {
+  commitHighlight(content = '', pen?: HighlightColour) {
     if (!this.pendingHighlight) {
       // Never leave the shell in Saving... if its confirmation and the reader
       // somehow drift out of sync.
@@ -1089,11 +1147,13 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
 
     const p = this.pendingHighlight;
     this.commitInFlight = true;
+    // The pen in hand when Save was pressed is the one stored and drawn.
+    const colour = pen ?? this.highlightColour();
     const newHighlight: PageHighlight = {
       id: p.tempId,
       pageNumber: p.pageNumber,
       rects: p.rects,
-      colour: p.colour,
+      colour,
     };
     this.savedHighlights.push(newHighlight);
     this.repaintPage(p.pageNumber);
@@ -1113,7 +1173,7 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
         content,
         selectedText: p.selectedText,
         cfiRange: JSON.stringify(cfiPayload),
-        highlightColour: p.colour,
+        highlightColour: colour,
       })
       .subscribe({
         next: (createdNote) => {
@@ -1140,7 +1200,9 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
   discardHighlight() {
     if (this.commitInFlight) return;
     this.clearNativeSelection();
+    const old = this.pendingHighlight;
     this.pendingHighlight = null;
+    if (old) this.repaintPage(old.pageNumber);
     this.highlightWarning.set(null);
   }
 
@@ -1155,9 +1217,11 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
     const textLayer = document.querySelector(textLayerSelector) as HTMLElement;
 
     if (textLayer) {
-      const pageHighlights = this.savedHighlights.filter((h) => h.pageNumber === pageNumber);
-      const validHighlights = pageHighlights.filter((h) => h.rects && h.rects.length > 0);
-      this.highlightService.paint(textLayer, validHighlights, DEFAULT_HIGHLIGHT_COLOUR);
+      this.highlightService.paint(
+        textLayer,
+        this.highlightsOnPage(pageNumber),
+        DEFAULT_HIGHLIGHT_COLOUR,
+      );
     }
   }
 
@@ -1254,6 +1318,7 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
 
   ngOnDestroy() {
     ++this.sourceHighlightGeneration;
+    clearTimeout(this.touchSelectionTimer);
     this.clearSearch();
     this.pdfSearchReady.set(false);
     this.unregisterAssistantContext?.();

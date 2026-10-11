@@ -2,18 +2,19 @@
  * In-text selection actions for EPUB (#650) in a real engine, against the real
  * backend and a real epub.js rendition.
  *
- * Desktop (fine pointer): releasing a mouse selection opens the menu with
- * highlight mode OFF (#657); a real mouse drag-selection, right-click on it with
- * highlight mode OFF, the menu anchored at the text, Add note persisting a
- * note linked to the passage; highlight mode with a real multi-word drag
+ * Desktop (fine pointer): releasing a mouse selection opens the menu (#657); a
+ * real mouse drag-selection, right-click on it, the menu anchored at the text,
+ * Add note persisting a note linked to the passage; a real multi-word drag
  * (#304: the drag must not be cut short) and one-action Highlight; Escape and
  * outside-click dismiss without saving; exactly one note per save.
  *
- * Mobile emulation (390px, touch, coarse pointer): the capture path a phone
- * uses (touchend fallback), the docked bar staying inside the viewport with
- * Add note, no horizontal scroll, and a touch long-press `contextmenu` left to
- * the platform (#16). Emulation is not a real phone: native selection handles
- * and the OS selection menu cannot be driven here.
+ * Mobile emulation (390px, touch, coarse pointer): a settled selection docks
+ * the bar with nothing to switch on and follows the selection as it changes,
+ * the bar staying inside the viewport with Add note and the pen dots, no
+ * horizontal scroll, a tap on the page dropping the offer, and a touch
+ * long-press `contextmenu` left to the platform (#16). Emulation is not a real
+ * phone: native selection handles and the OS selection menu cannot be driven
+ * here, so the selection is set on the real document instead.
  */
 import { expect, test, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
@@ -79,13 +80,6 @@ async function revealEpubChrome(page: Page) {
     }));
   });
   await expect(chrome).not.toHaveAttribute('aria-hidden', 'true');
-}
-
-async function turnOnHighlightMode(page: Page) {
-  await revealEpubChrome(page);
-  await page.getByTitle('Notes & Highlights').click();
-  await page.locator('[data-testid="reader-highlight-toggle"]').click();
-  await expect(page.locator('.notes-panel.open')).toHaveCount(0);
 }
 
 /**
@@ -160,7 +154,7 @@ export function desktopSelectionSpecs() {
     await expect(chrome).toHaveAttribute('aria-hidden', 'true');
   });
 
-  test('right-click a selection → Add note at the text persists a linked note (highlight mode off)', async ({ page }) => {
+  test('right-click a selection → Add note at the text persists a linked note', async ({ page }) => {
     const { baseUrl } = loadFixture();
     const bookId = await seedEpub(baseUrl, `Selection A ${run}`);
     await openReader(page, baseUrl, bookId);
@@ -198,11 +192,10 @@ export function desktopSelectionSpecs() {
     await expect(page.locator('.notes-panel.open')).toContainText('Why this opening matters.');
   });
 
-  test('highlight mode: a pause mid-drag is not captured; the released range is, and Highlight saves once', async ({ page }) => {
+  test('a pause mid-drag is not captured; the released range is, and Highlight saves once', async ({ page }) => {
     const { baseUrl } = loadFixture();
     const bookId = await seedEpub(baseUrl, `Selection B ${run}`);
     await openReader(page, baseUrl, bookId);
-    await turnOnHighlightMode(page);
     const menu = page.locator('[data-testid="selection-menu"]');
 
     // Button held with a partial range for longer than epub.js's ~250 ms
@@ -217,7 +210,7 @@ export function desktopSelectionSpecs() {
     await dispatchInFrame(page, 'mouseup');
     await expect(menu).toBeVisible();
     await expect(menu.locator('.selected-text')).toContainText(full.trim().slice(0, 30));
-    await snap(page, 'desktop-highlight-mode');
+    await snap(page, 'desktop-mid-drag');
 
     // Escape dismisses without saving.
     await page.keyboard.press('Escape');
@@ -273,7 +266,7 @@ export function desktopSelectionSpecs() {
     await openReader(page, baseUrl, bookId);
     const menu = page.locator('[data-testid="selection-menu"]');
 
-    // Highlight mode stays OFF: a plain desktop drag is enough.
+    // A plain desktop drag is enough.
     await dispatchInFrame(page, 'mousedown');
     const selected = await selectChars(page, 140);
     await dispatchInFrame(page, 'mouseup');
@@ -308,48 +301,63 @@ export function mobileSelectionSpecs() {
   test.use({ serviceWorkers: 'block' });
   const run = newRunId();
 
-  /** Selects the paragraph's first words inside the iframe, as a phone's handles would. */
-  async function selectWords(page: Page) {
-    return page.frameLocator('#epub-viewer iframe').locator('p').first().evaluate((el) => {
+  /** Selects the paragraph's first `chars` characters inside the iframe, as a phone's handles would. */
+  async function selectWords(page: Page, chars = 30) {
+    return page.frameLocator('#epub-viewer iframe').locator('p').first().evaluate((el, n) => {
       const doc = el.ownerDocument;
       const text = el.firstChild!;
       const range = doc.createRange();
       range.setStart(text, 0);
-      range.setEnd(text, Math.min(30, text.textContent!.length));
+      range.setEnd(text, Math.min(n, text.textContent!.length));
       const selection = doc.getSelection()!;
       selection.removeAllRanges();
       selection.addRange(range);
       return selection.toString();
-    });
+    }, chars);
   }
 
-  test('phone: highlight mode capture docks the bar with Add note inside the viewport and saves a note', async ({ page }) => {
+  const iframeSelection = (page: Page) =>
+    page.frameLocator('#epub-viewer iframe').locator('body').evaluate(
+      (body) => body.ownerDocument.getSelection()?.toString() ?? '',
+    );
+
+  test('phone: a settled selection docks the bar with no mode to switch on, follows the handles, and saves a note', async ({ page }) => {
     const { baseUrl } = loadFixture();
     const bookId = await seedEpub(baseUrl, `Selection M ${run}`);
     await openReader(page, baseUrl, bookId);
-    await turnOnHighlightMode(page);
 
-    const selected = await selectWords(page);
-    await page.frameLocator('#epub-viewer iframe').locator('body').evaluate((body) =>
-      body.ownerDocument.dispatchEvent(new Event('touchend')),
-    );
-
+    // No touch events at all: handle drags fire none. The bar must come from
+    // the selection settling (epub.js's debounced `selected`).
+    const first = await selectWords(page, 12);
     const bar = page.locator('[data-testid="selection-bar"]');
     await expect(bar).toBeVisible();
+    await expect(bar.locator('.selected-text')).toContainText(first.trim());
     await expect(page.locator('[data-testid="selection-menu"]')).toHaveCount(0);
     await expect(page.locator('[data-testid="selection-scrim"]')).toHaveCount(0);
+    // The native selection is left to the phone's handles and OS menu (#16).
+    expect(await iframeSelection(page)).toBe(first);
+
+    // Dragging a handle further replaces the offered passage.
+    const selected = await selectWords(page, 30);
+    await expect(bar.locator('.selected-text')).toContainText(selected.trim());
+    expect(await iframeSelection(page)).toBe(selected);
+
     const viewport = page.viewportSize()!;
     for (const id of [
       'selection-copy',
       'selection-cancel',
       'selection-add-note',
       'selection-highlight',
+      'selection-pen-amber',
+      'selection-pen-rose',
     ]) {
       const b = (await page.locator(`[data-testid="${id}"]`).boundingBox())!;
       expect(b.x).toBeGreaterThanOrEqual(0);
       expect(b.x + b.width, `${id} inside the viewport`).toBeLessThanOrEqual(viewport.width);
       expect(b.y + b.height).toBeLessThanOrEqual(viewport.height);
-      expect(b.height, `${id} thumb-sized`).toBeGreaterThanOrEqual(40);
+      if (!id.startsWith('selection-pen')) {
+        expect(b.height, `${id} thumb-sized`).toBeGreaterThanOrEqual(40);
+      }
     }
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await snap(page, 'mobile-bar');
@@ -364,9 +372,44 @@ export function mobileSelectionSpecs() {
     expect(saved).toHaveLength(1);
     expect(saved[0].content).toBe('A note from the phone.');
     expect(saved[0].selectedText.trim()).toBe(selected.trim());
+    // Saved: the live selection is gone, so it is not offered a second time.
+    await page.waitForTimeout(600);
+    await expect(bar).toHaveCount(0);
+    expect(await iframeSelection(page)).toBe('');
   });
 
-  test('phone: a touch long-press contextmenu keeps the native selection and opens nothing (#16)', async ({ page }) => {
+  test('phone: a pen dot highlights in that colour; a tap on the page drops an offer without turning the page', async ({ page }) => {
+    const { baseUrl } = loadFixture();
+    const bookId = await seedEpub(baseUrl, `Selection P ${run}`);
+    await openReader(page, baseUrl, bookId);
+    const bar = page.locator('[data-testid="selection-bar"]');
+    const frame = page.frameLocator('#epub-viewer iframe');
+
+    await selectWords(page);
+    await expect(bar).toBeVisible();
+    const progress = await page.locator('.progress-display').first().textContent();
+    // A real tap on the right edge of the page, where a tap normally turns it.
+    // (Headless Chromium does not collapse a selection on tap the way a phone
+    // does, so the collapse is made explicit first.)
+    await frame.locator('body').evaluate((body) => body.ownerDocument.getSelection()!.removeAllRanges());
+    const view = (await page.locator('#epub-viewer').boundingBox())!;
+    await page.touchscreen.tap(view.x + view.width - 12, view.y + view.height / 2);
+    await expect(bar).toHaveCount(0);
+    expect(await page.locator('.progress-display').first().textContent()).toBe(progress);
+    expect(await notes(baseUrl, bookId)).toHaveLength(0);
+
+    const selected = await selectWords(page);
+    await expect(bar).toBeVisible();
+    await page.locator('[data-testid="selection-pen-sage"]').tap();
+    await expect(bar).toHaveCount(0);
+    const saved = await notes(baseUrl, bookId);
+    expect(saved).toHaveLength(1);
+    expect(saved[0].highlightColour).toBe('sage');
+    expect(saved[0].selectedText.trim()).toBe(selected.trim());
+    await snap(page, 'mobile-highlighted');
+  });
+
+  test('phone: a touch long-press contextmenu is left to the platform; the docked bar is offered beside it (#16)', async ({ page }) => {
     const { baseUrl } = loadFixture();
     const bookId = await seedEpub(baseUrl, `Selection N ${run}`);
     await openReader(page, baseUrl, bookId);
@@ -387,8 +430,9 @@ export function mobileSelectionSpecs() {
     expect(result.touchPrevented).toBe(false);
     expect(result.mousePrevented, 'a coarse-pointer device never takes over contextmenu').toBe(false);
     expect(result.stillSelected).toBe(selected);
-    await expect(page.locator('[data-testid="selection-bar"]')).toHaveCount(0);
+    await expect(page.locator('[data-testid="selection-bar"]')).toBeVisible();
     await expect(page.locator('[data-testid="selection-menu"]')).toHaveCount(0);
+    expect(await iframeSelection(page)).toBe(selected);
     expect(await notes(baseUrl, bookId)).toHaveLength(0);
   });
 }

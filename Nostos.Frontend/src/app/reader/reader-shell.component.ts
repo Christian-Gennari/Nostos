@@ -463,7 +463,6 @@ export class ReaderShell implements OnInit, OnDestroy {
   private bookLoadGeneration = 0;
   private overlayReturnFocus: HTMLElement | null = null;
   private saveFeedbackTimer: ReturnType<typeof setTimeout> | null = null;
-  highlightMode = signal(false);
   /**
    * The book's highlighter pen (issue #208). Remembered per BOOK, like the
    * reader's zoom: the pen you want depends on what you are marking up, and
@@ -538,7 +537,7 @@ export class ReaderShell implements OnInit, OnDestroy {
 
   /**
    * Remove focus from transient chrome before making it inert. Without this,
-   * Escape or the highlight-mode handoff could strand keyboard focus inside a
+   * Escape could strand keyboard focus inside a
    * hidden button even though the book had returned to its resting state.
    */
   private hideImmersiveChrome(): void {
@@ -914,36 +913,19 @@ export class ReaderShell implements OnInit, OnDestroy {
     if (bookId) writeHighlightColour(bookId, colour);
   }
 
-  toggleHighlightMode() {
-    const newMode = !this.highlightMode();
-    if (!newMode && this.pendingSelectionText()) {
-      this.activeReader()?.discardHighlight();
-      this.pendingSelectionText.set(null);
-    }
-    this.highlightMode.set(newMode);
-  }
-
   /**
-   * The header's highlight control merged into the notes panel, so the header
-   * carries one "my marks" control instead of two. Switching the mode ON closes
-   * the panel — the reader is then immediately ready for a selection, which keeps
-   * the old one-tap flow — while switching it OFF leaves the panel open, because
-   * the user is looking at the notes they just made.
+   * A pen dot in the docked selection bar: one tap picks the pen and marks the
+   * passage with it, so a phone needs no trip to the notes panel to change
+   * colour.
    */
-  toggleHighlightFromPanel(): void {
-    const turningOn = !this.highlightMode();
-    this.toggleHighlightMode();
-    if (turningOn) {
-      this.notesOpen.set(false);
-      if (this.immersiveReader()) {
-        // Reading/highlighting owns focus now; do not restore the Notes trigger
-        // immediately before making that trigger inert.
-        this.overlayReturnFocus = null;
-        this.hideImmersiveChrome();
-      } else {
-        this.restoreOverlayFocus();
-      }
-    }
+  highlightWith(colour: HighlightColour): void {
+    if (this.highlightSaving()) return;
+    this.setHighlightColour(colour);
+    this.committingNote = false;
+    this.highlightSaving.set(true);
+    // Handed over explicitly: the reader's pen input only catches up with the
+    // signal at the next change detection, after this save has started.
+    this.activeReader()?.commitHighlight('', colour);
   }
 
   commitHighlight() {
@@ -1025,8 +1007,23 @@ export class ReaderShell implements OnInit, OnDestroy {
   }
 
   handleSelectionCaptured(text: string) {
+    // A touch selection is offered again each time its handles settle; that
+    // must not throw away a note already being typed for it.
+    const replacing = this.pendingSelectionText() !== null;
     this.pendingSelectionText.set(text);
-    this.resetSelectionMenu();
+    if (replacing) this.selectionAnchor.set(null);
+    else this.resetSelectionMenu();
+  }
+
+  /**
+   * A tap on the page while the docked bar is open. It drops the offered
+   * passage, unless a note is being written or saved for it: a stray tap on
+   * the book must not cost the reader their text.
+   */
+  handleSelectionDismissed(): void {
+    if (this.noteDraftOpen() || this.highlightSaving()) return;
+    if (this.pendingSelectionText() === null) return;
+    this.discardHighlight();
   }
 
   /**

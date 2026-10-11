@@ -28,7 +28,7 @@ vi.mock('epubjs', () => ({ default: vi.fn() }));
  * specs" items 14-16: manager init before display, single propagation of mode
  * changes, and manager cleanup before book/rendition destruction.
  */
-describe('EpubReader highlight-mode lifecycle (issue #16)', () => {
+describe('EpubReader annotation manager lifecycle (issue #16)', () => {
   let fixture: ComponentFixture<EpubReader>;
   let log: string[];
   let lastRendition: any;
@@ -292,19 +292,6 @@ describe('EpubReader highlight-mode lifecycle (issue #16)', () => {
     expect(log.indexOf('manager-init')).toBeLessThan(log.indexOf('display'));
     // The content hook is registered before display so the opening section is wired.
     expect(log.indexOf('content-hook')).toBeLessThan(log.indexOf('display'));
-  });
-
-  it('propagates highlight mode input changes exactly once', async () => {
-    const modeSpy = vi.spyOn(EpubAnnotationManager.prototype, 'setHighlightMode');
-    await setupComponent();
-
-    modeSpy.mockClear();
-    fixture.componentRef.setInput('highlightMode', true);
-    fixture.detectChanges();
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
-    expect(modeSpy).toHaveBeenCalledTimes(1);
-    expect(modeSpy).toHaveBeenCalledWith(true);
   });
 
   it('destroys the annotation manager before the book/rendition', async () => {
@@ -694,7 +681,7 @@ describe('EpubReader theme-following normalization', () => {
     // contents head.
     expect(contents.document.getElementById('epubjs-inserted-css-nostos-light')).not.toBeNull();
     const annotationStyle = Array.from(contents.document.head.querySelectorAll('style')).find(
-      (s) => s.textContent?.includes('.nostos-highlight-mode'),
+      (s) => s.textContent?.includes('user-select: text'),
     );
     expect(annotationStyle).toBeDefined();
     expect(annotationStyle!.textContent).toContain('user-select: text');

@@ -134,9 +134,8 @@ export class PdfAnnotationManager {
   }
 
   /**
-   * Return the CURRENT native PDF selection for Ask Nostos. This deliberately
-   * does not depend on highlight mode: selection is reader context, not an
-   * annotation side effect.
+   * Return the CURRENT native PDF selection for Ask Nostos: selection is
+   * reader context, not an annotation side effect.
    */
   captureSelectionText(): string | null {
     const selection = window.getSelection();

@@ -1018,7 +1018,7 @@ const PRODUCT_RAW_BUTTON_CLASSES = new Map([
   ['src/app/book-detail/editions-modal/editions-modal.component.html',
     new Set(['manage-member-action', 'manage-link-candidate'])],
   ['src/app/reader/reader-shell.component.html',
-    new Set(['highlight-toggle', 'hl-pen', 'typo-opt', 'typo-step'])],
+    new Set(['hl-pen', 'typo-opt', 'typo-step'])],
   ['src/app/writing-studio/writing-studio.component.html', new Set(['tab-btn', 'toggle-opt', 'list-item'])],
   ['src/app/ui/confirm-modal/confirm-modal.component.html', new Set()],
 ]);

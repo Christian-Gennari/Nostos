@@ -46,7 +46,6 @@ class PdfReaderStub {
   bookId = input.required<string>();
   initialLocation = input<string | null>(null);
   sidebarVisible = input(false);
-  highlightMode = input(false);
   highlightColour = input<unknown>(null);
   sidebarVisibleChange = output<boolean>();
   noteCreated = output<void>();
