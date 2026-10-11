@@ -18,7 +18,13 @@ import {
 const ESTIMATED_RECOVERY_BYTES_PER_EXISTING_BOOK = 50_000_000;
 
 const SUPPORTED_FORMAT_VERSIONS = new Set([1]);
-const SUPPORTED_DATA_VERSIONS = new Set([1, 2, 3]);
+/**
+ * Portable data versions this build can import. Must track the product's
+ * `PortableArchiveFormat.DataVersion` and the server preflight: version 4
+ * (multi-track audiobooks) was written by the server while the browser still
+ * refused it, so no fresh export could be imported.
+ */
+export const SUPPORTED_PORTABLE_DATA_VERSIONS: ReadonlySet<number> = new Set([1, 2, 3, 4]);
 
 const OPERATIONAL_BACKUP_NAMES = new Set(['nostos-operational-backup', 'operational-backup']);
 
@@ -104,7 +110,7 @@ export function evaluatePreflight(
   if (!SUPPORTED_FORMAT_VERSIONS.has(request.declaredFormatVersion)) {
     errors.push(`Archive format version ${request.declaredFormatVersion} is not supported.`);
   }
-  if (!SUPPORTED_DATA_VERSIONS.has(request.declaredDataVersion)) {
+  if (!SUPPORTED_PORTABLE_DATA_VERSIONS.has(request.declaredDataVersion)) {
     errors.push(`Archive data version ${request.declaredDataVersion} is not supported.`);
   }
   if (request.declaredArchiveBytes < 0) {
