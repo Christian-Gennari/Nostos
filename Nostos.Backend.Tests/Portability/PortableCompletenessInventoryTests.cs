@@ -321,6 +321,9 @@ public sealed class PortableCompletenessInventoryTests
             ["ProviderPreferenceModel"] = ExcludedEntity(
                 "Local provider enablement choices about which free sources this installation searches; host configuration rather than portable library content."),
 
+            ["AlignmentAnchorModel"] = ExcludedEntity(
+                "Derived audiobook/ebook alignment anchors, bound to exact file revisions and rebuilt on demand by transcription; regeneratable state rather than portable library content."),
+
             ["BackupRecord"] = ExcludedEntity(
                 "Host-local operational backup record containing deployment-specific backup state and local file paths."),
 

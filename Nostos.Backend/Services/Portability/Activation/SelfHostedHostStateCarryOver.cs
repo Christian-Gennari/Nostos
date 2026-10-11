@@ -52,6 +52,10 @@ internal static class SelfHostedHostStateCarryOver
             HostStateCarryOverKind.Clear,
             "Undo batch-to-note links carry the old generation's note identity. A matching GUID is not provenance into the imported library, so all links are cleared with their batches."),
         new(
+            typeof(AlignmentAnchorModel),
+            HostStateCarryOverKind.Clear,
+            "Derived audiobook/ebook anchors hold foreign keys to the old generation's books and are bound to its file revisions. They are rebuilt on demand, so none are carried into the imported library."),
+        new(
             typeof(AiProviderSettingsModel),
             HostStateCarryOverKind.Carry,
             "Host credentials and provider configuration are deployment-local, contain no foreign key, and must never be imported from a portable archive."),
