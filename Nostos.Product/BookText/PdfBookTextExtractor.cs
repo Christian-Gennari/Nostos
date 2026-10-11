@@ -5,6 +5,29 @@ namespace Nostos.Product.BookText;
 
 public sealed class PdfBookTextExtractor : IBookTextExtractor
 {
+    private readonly bool wordSeparated;
+
+    /// <summary>The extraction the book-text index is built from.</summary>
+    public PdfBookTextExtractor() : this(wordSeparated: false)
+    {
+    }
+
+    /// <summary>
+    /// <paramref name="wordSeparated"/> rebuilds each page from its positioned
+    /// words, with a space between them. <c>page.Text</c> is the raw letter
+    /// stream: a PDF that carries no space glyph at a line end, and most
+    /// scanned PDFs with an OCR layer, come out with words run together
+    /// ("boyis", "indeed.There"), which is useless for matching speech.
+    ///
+    /// It is opt-in rather than the default because the index is versioned by
+    /// its extractor output: changing the default re-extracts and re-embeds
+    /// every PDF in every library.
+    /// </summary>
+    public PdfBookTextExtractor(bool wordSeparated)
+    {
+        this.wordSeparated = wordSeparated;
+    }
+
     public BookTextSourceFormat Format => BookTextSourceFormat.Pdf;
 
     public Task<BookTextExtractedDocument> ExtractAsync(Stream source, CancellationToken ct = default)
@@ -20,7 +43,10 @@ public sealed class PdfBookTextExtractor : IBookTextExtractor
         foreach (var page in document.GetPages())
         {
             ct.ThrowIfCancellationRequested();
-            var text = BookTextNormalization.Normalize(page.Text);
+            var text = BookTextNormalization.Normalize(
+                wordSeparated
+                    ? string.Join(' ', page.GetWords().Select(word => word.Text))
+                    : page.Text);
             if (text.Length == 0)
                 continue;
 

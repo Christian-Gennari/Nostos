@@ -127,6 +127,9 @@ public sealed class AlignmentService(
     IAlignmentAudioRevisionProvider audioRevisions,
     ILogger<AlignmentService> logger) : IAlignmentService
 {
+    private static readonly IBookTextExtractor AlignmentPdfExtractor =
+        new PdfBookTextExtractor(wordSeparated: true);
+
     private static readonly Regex Words = new(
         @"[\p{L}\p{N}]+",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
@@ -592,7 +595,11 @@ public sealed class AlignmentService(
                 "The text edition must be an EPUB or PDF with stored media.");
         }
 
-        var extractor = extractors.Single(x => x.Format == format);
+        // Matching speech needs real word boundaries, which the indexing
+        // extraction does not guarantee for PDFs (see PdfBookTextExtractor).
+        var extractor = format == BookTextSourceFormat.Pdf
+            ? AlignmentPdfExtractor
+            : extractors.Single(x => x.Format == format);
 
         return await cache.GetAsync(
             book.Id, storage, extractor, ct);
