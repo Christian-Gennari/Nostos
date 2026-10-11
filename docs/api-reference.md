@@ -299,11 +299,13 @@ Create a note. Topics wrapped in `[[double brackets]]` are auto-extracted and li
 {
   "content": "This is about [[Philosophy]] and [[Ethics]]",
   "cfiRange": "string? (epub CFI range)",
-  "selectedText": "string? (highlighted text)"
+  "selectedText": "string? (highlighted text)",
+  "highlightColour": "string? (amber | sage | blue | rose)"
 }
 ```
 
-**Response:** `201 Created` with `NoteDto`
+**Response:** `201 Created` with `NoteDto`. An unknown `highlightColour` is a
+`400`.
 
 ### `PUT /api/notes/{id}`
 
@@ -314,9 +316,14 @@ Update a note. Re-processes `[[topic]]` links.
 ```json
 {
   "content": "Updated content with [[NewTopic]]",
-  "selectedText": "string?"
+  "selectedText": "string?",
+  "highlightColour": "string? (amber | sage | blue | rose)"
 }
 ```
+
+`highlightColour` recolours a highlight. Omitted, it leaves the stored pen
+unchanged; a name that is not one of the four pens is a `400`. A note with no
+stored pen (`null`) is drawn in amber.
 
 ### `PUT /api/notes/{id}/location`
 

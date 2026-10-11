@@ -111,6 +111,7 @@ User annotations with wiki-link concept support.
 | `Content`      | `string`                        | **Required** — Note text (may contain `[[concepts]]`) |
 | `CfiRange`     | `string?`                       | Epub CFI range (for highlight positioning)            |
 | `SelectedText` | `string?`                       | Highlighted text from the book                        |
+| `HighlightColour` | `string?`                     | Highlighter pen by name (`amber`, `sage`, `blue`, `rose`); `null` = none recorded, drawn amber |
 | `CreatedAt`    | `DateTime`                      | UTC creation timestamp                                |
 | `BookId`       | `Guid`                          | FK to Book                                            |
 | `Book`         | `BookModel?`                    | Navigation property                                   |
