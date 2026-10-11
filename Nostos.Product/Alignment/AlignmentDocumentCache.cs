@@ -8,7 +8,7 @@ public sealed record AlignmentDocumentSnapshot(
     string? Revision);
 
 /// <summary>
-/// Supplies an extracted EPUB document and the storage revision
+/// Supplies an extracted EPUB or PDF document and the storage revision
 /// from the same read.
 /// </summary>
 public interface IAlignmentDocumentProvider
@@ -21,7 +21,7 @@ public interface IAlignmentDocumentProvider
 }
 
 /// <summary>
-/// Bounded, revision-aware, process-local EPUB extraction cache.
+/// Bounded, revision-aware, process-local text extraction cache.
 /// The storage read itself supplies the revision used for the cache key.
 /// </summary>
 public sealed class AlignmentDocumentCache(
@@ -52,7 +52,7 @@ public sealed class AlignmentDocumentCache(
             throw new AlignmentException(
                 "alignment_target_too_large",
                 413,
-                "The EPUB exceeds the alignment extraction size limit.");
+                "The text edition exceeds the alignment extraction size limit.");
         }
     }
 
@@ -87,7 +87,7 @@ public sealed class AlignmentDocumentCache(
                 throw new AlignmentException(
                     "alignment_target_media_missing",
                     422,
-                    "The target EPUB is not available in storage.");
+                    "The target text edition is not available in storage.");
             }
 
             ValidateEpubLength(
@@ -110,9 +110,19 @@ public sealed class AlignmentDocumentCache(
                     cached.Document, revision);
             }
 
+            var extension = extractor.Format switch
+            {
+                BookTextSourceFormat.Epub => ".epub",
+                BookTextSourceFormat.Pdf => ".pdf",
+                _ => throw new AlignmentException(
+                    "alignment_target_text_unavailable",
+                    422,
+                    "The text extractor format is unsupported."),
+            };
+
             var tempPath = Path.Combine(
                 Path.GetTempPath(),
-                $"nostos-alignment-{Guid.NewGuid():N}.epub");
+                $"nostos-alignment-{Guid.NewGuid():N}{extension}");
 
             BookTextExtractedDocument document;
 
@@ -155,7 +165,7 @@ public sealed class AlignmentDocumentCache(
                     throw new AlignmentException(
                         "alignment_target_text_unavailable",
                         422,
-                        "The stored EPUB length changed during extraction.");
+                        "The stored text file length changed during extraction.");
                 }
 
                 temp.Position = 0;
@@ -176,7 +186,7 @@ public sealed class AlignmentDocumentCache(
                     throw new AlignmentException(
                         "alignment_target_text_unavailable",
                         422,
-                        "The stored EPUB could not be extracted.");
+                        "The stored text file could not be extracted.");
                 }
             }
             finally
@@ -185,13 +195,13 @@ public sealed class AlignmentDocumentCache(
                     File.Delete(tempPath);
             }
 
-            if (document.Format != BookTextSourceFormat.Epub ||
+            if (document.Format != extractor.Format ||
                 document.Blocks.Count == 0)
             {
                 throw new AlignmentException(
                     "alignment_target_text_unavailable",
                     422,
-                    "The EPUB has no extractable text.");
+                    "The text edition has no extractable text.");
             }
 
             var characters = CountCharacters(document);

@@ -21,11 +21,26 @@ export interface AlignmentEpubLocator {
   cfi?: string | null;
 }
 
+/** Where a located passage ends in a PDF edition. */
+export interface AlignmentPdfLocator {
+  /** Zero-based physical page. */
+  pageIndex: number;
+  /** One-based physical page, as the reader navigates. */
+  pageNumber: number;
+  pageLabel?: string | null;
+  textOffset?: number | null;
+}
+
 export interface AlignmentLocatedResult {
   located: true;
   score: number;
   excerpt: string;
-  locator: AlignmentEpubLocator;
+  /** Present for an EPUB target. */
+  locator?: AlignmentEpubLocator | null;
+  /** Present for a PDF target. */
+  pdf?: AlignmentPdfLocator | null;
+  /** The book's own wording for the passage, for highlighting it. */
+  sourceText?: string | null;
   anchorStored?: boolean;
 }
 

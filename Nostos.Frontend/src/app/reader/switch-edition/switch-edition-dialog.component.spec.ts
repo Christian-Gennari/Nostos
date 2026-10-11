@@ -96,7 +96,7 @@ describe('SwitchEditionDialog', () => {
     open(audiobook([epub, pdf]), { audio: 180 });
 
     expect(rows()[0].textContent).toContain('Opens at the sentence you’re hearing');
-    expect(rows()[1].textContent).toContain('Opens at the beginning');
+    expect(rows()[1].textContent).toContain('Opens at the page you’re hearing');
   });
 
   it('continues an audiobook in the EPUB at the located sentence', async () => {
@@ -203,12 +203,64 @@ describe('SwitchEditionDialog', () => {
     expect(router.navigate).toHaveBeenCalledWith(['/read', 'epub-1'], undefined);
   });
 
-  it('opens a PDF where it was left, without asking for a sentence', () => {
+  it('continues an audiobook in the PDF at the located page, carrying the passage to mark', async () => {
     open(audiobook([pdf]), { audio: 180 });
+
+    expect(rows()[0].textContent).toContain('Opens at the page you’re hearing');
+    rows()[0].click();
+
+    expect(alignment.locateText).toHaveBeenCalledWith('audio-0', {
+      positionSeconds: 180,
+      targetBookId: 'pdf-1',
+    });
+
+    textResponse.next({
+      located: true,
+      score: 0.96,
+      excerpt: 'upon his own ramparts',
+      pdf: { pageIndex: 11, pageNumber: 12, pageLabel: '4', textOffset: 640 },
+      sourceText: 'in an easterly wind, upon his own ramparts',
+    });
+    await settle();
+
+    expect(router.navigate).toHaveBeenCalledWith(['/read', 'pdf-1'], {
+      queryParams: {
+        sourcePage: 12,
+        sourcePageLabel: '4',
+        sourceExcerpt: 'in an easterly wind, upon his own ramparts',
+      },
+    });
+  });
+
+  it('opens a PDF where it was left when nothing has been played', () => {
+    open(audiobook([pdf]), { audio: null });
 
     rows()[0].click();
 
     expect(alignment.locateText).not.toHaveBeenCalled();
+    expect(router.navigate).toHaveBeenCalledWith(['/read', 'pdf-1'], undefined);
+  });
+
+  it('continues a PDF in the audiobook from the top of its page', async () => {
+    const pdfBook = { id: 'pdf-0', type: 'ebook', fileName: 'own.pdf', title: 'A Christmas Carol', otherEditions: [audioA] } as unknown as Book;
+    open(pdfBook, { excerpt: 'Marley was dead: to begin with.' });
+
+    expect(rows()[0].textContent).toContain('Starts where this page begins');
+    rows()[0].click();
+
+    expect(alignment.locateAudio).toHaveBeenCalledWith('pdf-0', {
+      targetBookId: 'audio-1',
+      excerpt: 'Marley was dead: to begin with.',
+    });
+  });
+
+  it('opens another text edition where it was left: there is no position to carry between two texts', () => {
+    open(ebook([pdf]), { excerpt: 'Marley was dead.' });
+
+    rows()[0].click();
+
+    expect(alignment.locateText).not.toHaveBeenCalled();
+    expect(alignment.locateAudio).not.toHaveBeenCalled();
     expect(router.navigate).toHaveBeenCalledWith(['/read', 'pdf-1'], undefined);
   });
 

@@ -29,6 +29,8 @@ public sealed class AlignmentOptions
     public double LeadInSeconds { get; set; } = 1.0;
     public double MaximumLocalRateRatio { get; set; } = 5;
 
+    // Historical configuration name. Applies to both EPUB and PDF.
+    // Keep the existing Alignment:MaxEpubBytes binding.
     public long MaxEpubBytes { get; set; } =
         200L * 1024 * 1024;
 
@@ -55,13 +57,21 @@ public sealed record AlignmentLocator(
     string? Cfi,
     int? TextOffset);
 
+public sealed record AlignmentPdfLocator(
+    int PageIndex,
+    int PageNumber,
+    string? PageLabel,
+    int TextOffset);
+
 public sealed record AlignmentLocateResult(
     bool Located,
     string? Reason,
     double? Score,
     string? Excerpt,
     AlignmentLocator? Locator,
-    bool AnchorStored = false)
+    bool AnchorStored = false,
+    AlignmentPdfLocator? Pdf = null,
+    string? SourceText = null)
 {
     public static AlignmentLocateResult Declined(string reason) =>
         new(false, reason, null, null, null);
@@ -165,15 +175,35 @@ public sealed class AlignmentService(
         if (!match.Accepted)
             return AlignmentLocateResult.Declined(match.Reason);
 
-        if (match.End?.Locator is not EpubBookTextSourceLocator end)
+        if (match.Start is null ||
+            match.End?.Locator is not
+                (EpubBookTextSourceLocator or PdfBookTextSourceLocator))
         {
             throw new AlignmentException(
                 "alignment_locator_invalid",
                 422,
-                "The matched passage has no EPUB end locator.");
+                "The matched passage has no supported end locator.");
         }
 
-        var locator = ToLocator(end);
+        var end = match.End.Locator;
+        var locator = end is EpubBookTextSourceLocator epub
+            ? ToLocator(epub)
+            : null;
+
+        var pdf = end is PdfBookTextSourceLocator pdfEnd
+            ? new AlignmentPdfLocator(
+                pdfEnd.PageIndex,
+                checked(pdfEnd.PageIndex + 1),
+                pdfEnd.PageLabel,
+                pdfEnd.EndTextOffset ?? 0)
+            : null;
+
+        var sourceText = MatchedSourceText(
+            snapshot.Document,
+            match.Start.GlobalTextOffset,
+            match.End.GlobalTextOffset);
+
+        var anchorLocator = ToAnchorLocator(end);
         var anchorStored = false;
 
         if (snapshot.Revision is not null)
@@ -200,10 +230,10 @@ public sealed class AlignmentService(
                             snapshot.Revision,
                             positionMs,
                             match.End.GlobalTextOffset,
-                            locator.SpineIndex,
-                            locator.ResourceHref,
-                            locator.Cfi,
-                            locator.TextOffset,
+                            anchorLocator.SpineIndex,
+                            anchorLocator.ResourceHref,
+                            anchorLocator.Cfi,
+                            anchorLocator.TextOffset,
                             match.Score),
                         ct);
                 }
@@ -224,7 +254,9 @@ public sealed class AlignmentService(
             Score: match.Score,
             Excerpt: match.Passage,
             Locator: locator,
-            AnchorStored: anchorStored);
+            AnchorStored: anchorStored,
+            Pdf: pdf,
+            SourceText: sourceText);
     }
 
     public async Task<AlignmentLocateAudioResult> LocateAudioAsync(
@@ -416,14 +448,19 @@ public sealed class AlignmentService(
                 continue;
             }
 
-            if (match.Start?.Locator is not EpubBookTextSourceLocator start ||
-                match.End?.Locator is not EpubBookTextSourceLocator end)
+            if (match.Start?.Locator is not
+                    (EpubBookTextSourceLocator or PdfBookTextSourceLocator) ||
+                match.End?.Locator is not
+                    (EpubBookTextSourceLocator or PdfBookTextSourceLocator))
             {
                 throw new AlignmentException(
                     "alignment_locator_invalid",
                     422,
-                    "A probe has no EPUB source provenance.");
+                    "A probe has no supported text source provenance.");
             }
+
+            var start = match.Start.Locator;
+            var end = match.End.Locator;
 
             var observation = new AudioAlignmentSearch.Observation(
                 clipStart,
@@ -442,7 +479,7 @@ public sealed class AlignmentService(
             }
 
             // The neighbouring anchors belong to the exact audio and
-            // EPUB revisions. A probe that violates their ordering
+            // text-file revisions. A probe that violates their ordering
             // cannot establish a trustworthy timestamp.
             //
             // Check before saving the probe's derived anchors, so the
@@ -467,7 +504,7 @@ public sealed class AlignmentService(
             }
 
             // Persist the two approximate clip boundaries. Each is
-            // revision-bound and each uses its own EPUB locator.
+            // revision-bound and uses its own text-source locator.
             if (audioRevision is not null &&
                 snapshot.Revision is not null)
             {
@@ -478,7 +515,7 @@ public sealed class AlignmentService(
                     snapshot.Revision,
                     clipStart,
                     match.Start.GlobalTextOffset,
-                    ToLocator(start),
+                    ToAnchorLocator(start),
                     match.Score,
                     ct);
 
@@ -489,7 +526,7 @@ public sealed class AlignmentService(
                     snapshot.Revision,
                     clipEnd,
                     match.End.GlobalTextOffset,
-                    ToLocator(end),
+                    ToAnchorLocator(end),
                     match.Score,
                     ct);
             }
@@ -544,8 +581,18 @@ public sealed class AlignmentService(
         EBookModel book,
         CancellationToken ct)
     {
-        var extractor = extractors.Single(
-            x => x.Format == BookTextSourceFormat.Epub);
+        if (!BookTextFormatResolver.TryResolve(
+                book.FileDetails.FileName, out var format) ||
+            format is not
+                (BookTextSourceFormat.Epub or BookTextSourceFormat.Pdf))
+        {
+            throw new AlignmentException(
+                "alignment_target_not_epub",
+                422,
+                "The text edition must be an EPUB or PDF with stored media.");
+        }
+
+        var extractor = extractors.Single(x => x.Format == format);
 
         return await cache.GetAsync(
             book.Id, storage, extractor, ct);
@@ -664,6 +711,77 @@ public sealed class AlignmentService(
             epub.Cfi,
             epub.EndTextOffset);
 
+    private static AlignmentLocator ToAnchorLocator(
+        BookTextSourceLocator source) =>
+        source switch
+        {
+            EpubBookTextSourceLocator epub => ToLocator(epub),
+
+            // Anchor schema remains unchanged. For PDF:
+            // SpineIndex = zero-based physical page index,
+            // ResourceHref = fixed non-empty sentinel,
+            // Cfi = null, TextOffset = normalized page offset.
+            // Searches use only TextGlobalOffset and AudioPositionMs.
+            PdfBookTextSourceLocator pdf => new AlignmentLocator(
+                pdf.PageIndex,
+                "pdf-page",
+                null,
+                pdf.EndTextOffset),
+
+            _ => throw new AlignmentException(
+                "alignment_locator_invalid",
+                422,
+                "The text source locator is unsupported."),
+        };
+
+    private static string MatchedSourceText(
+        BookTextExtractedDocument document,
+        int start,
+        int end)
+    {
+        if (start < 0 || end <= start)
+            return string.Empty;
+
+        const int maximumCharacters = 300;
+
+        // Global offsets are measured in the same coordinate system as
+        // PassageMatcher: block text plus one virtual separator per block.
+        // Keep the final characters so the returned text ends at the
+        // matched passage end, even when a passage crosses blocks.
+        var pieces = new List<string>();
+        var global = 0;
+
+        foreach (var block in document.Blocks)
+        {
+            var blockStart = global;
+            var blockEnd = checked(global + block.Text.Length);
+
+            var from = Math.Max(start, blockStart);
+            var to = Math.Min(end, blockEnd);
+
+            if (to > from)
+            {
+                pieces.Add(block.Text.Substring(
+                    from - blockStart,
+                    to - from));
+            }
+
+            global = checked(blockEnd + 1);
+
+            if (global >= end)
+                break;
+        }
+
+        var text = Regex.Replace(
+            string.Join(" ", pieces),
+            @"\s+",
+            " ").Trim();
+
+        return text.Length <= maximumCharacters
+            ? text
+            : text[^maximumCharacters..];
+    }
+
     private static string FirstMatcherWindow(string excerpt)
     {
         // PassageMatcher uses TakeLast(MaximumTokens). Sending the whole
@@ -697,7 +815,7 @@ public sealed class AlignmentService(
             throw new AlignmentException(
                 "alignment_target_text_unavailable",
                 422,
-                "The EPUB text cannot be indexed for alignment.");
+                "The text edition cannot be indexed for alignment.");
         }
 
         return (int)length;
@@ -716,15 +834,16 @@ public sealed class AlignmentService(
         }
 
         if (!text.FileDetails.HasFile ||
-            !string.Equals(
-                Path.GetExtension(text.FileDetails.FileName),
-                ".epub",
-                StringComparison.OrdinalIgnoreCase))
+            !BookTextFormatResolver.TryResolve(
+                text.FileDetails.FileName, out var format) ||
+            format is not
+                (BookTextSourceFormat.Epub or BookTextSourceFormat.Pdf))
         {
+            // Retain the historical code for existing clients.
             throw new AlignmentException(
                 "alignment_target_not_epub",
                 422,
-                "The ebook must be an EPUB with stored media.");
+                "The ebook must be an EPUB or PDF with stored media.");
         }
 
         if (audio.WorkId == Guid.Empty ||

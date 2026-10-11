@@ -20,7 +20,7 @@ using Xunit;
 namespace Nostos.Backend.Tests.Endpoints;
 
 /// <summary>
-/// Full-host coverage for audiobook-to-EPUB alignment.
+/// Full-host coverage for audiobook-to-EPUB/PDF alignment.
 ///
 /// No real transcription, ffmpeg invocation or book-storage read occurs.
 /// Each test has its own SQLite database and isolated test storage root.
@@ -108,14 +108,14 @@ public sealed class AlignmentEndpointTests
     }
 
     [Fact]
-    public async Task Target_must_be_an_epub()
+    public async Task Target_must_be_a_supported_text_edition()
     {
         using var harness = new Harness();
         using var client = harness.Client();
 
         var (source, target) = await SeedPairAsync(client, harness);
 
-        await harness.SetTargetFileNameAsync(target, "book.pdf");
+        await harness.SetTargetFileNameAsync(target, "book.txt");
 
         var response = await PostAsync(client, source, target);
 
@@ -882,6 +882,165 @@ public sealed class AlignmentEndpointTests
         harness.Usage.CompleteCount.Should().Be(1);
     }
 
+    [Fact]
+    public async Task Pdf_target_returns_page_locator_source_text_and_anchor()
+    {
+        using var harness = new Harness();
+
+        harness.Documents.Format = BookTextSourceFormat.Pdf;
+        harness.Transcriber.Result = new SttResult(
+            Passage.ToUpperInvariant(), "en", 19.5);
+
+        using var client = harness.Client();
+
+        var (audio, pdf) = await SeedPairAsync(client, harness);
+
+        await harness.SetTargetFileNameAsync(pdf, "book.pdf");
+
+        var response = await PostAsync(
+            client, audio, pdf, position: 65);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var body = JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync());
+
+        var root = body.RootElement;
+
+        root.GetProperty("located").GetBoolean()
+            .Should().BeTrue();
+
+        root.GetProperty("score").GetDouble()
+            .Should().BeApproximately(1.0, 0.000001);
+
+        root.GetProperty("locator").ValueKind
+            .Should().Be(JsonValueKind.Null);
+
+        var location = root.GetProperty("pdf");
+
+        location.GetProperty("pageIndex").GetInt32()
+            .Should().Be(7);
+
+        location.GetProperty("pageNumber").GetInt32()
+            .Should().Be(8);
+
+        location.GetProperty("pageLabel").GetString()
+            .Should().Be("viii");
+
+        location.GetProperty("textOffset").GetInt32()
+            .Should().Be(100 + Passage.Length - 1);
+
+        // The source text is recovered from the extracted book,
+        // not copied from the upper-case transcription.
+        root.GetProperty("sourceText").GetString()
+            .Should().Be(Passage[..^1]);
+
+        root.GetProperty("anchorStored").GetBoolean()
+            .Should().BeTrue();
+
+        harness.Documents.LastExtractorFormat.Should()
+            .Be(BookTextSourceFormat.Pdf);
+
+        var anchors = await harness.GetAnchorsAsync();
+
+        anchors.Should().ContainSingle();
+
+        var anchor = anchors.Single();
+
+        anchor.AudioBookId.Should().Be(audio);
+        anchor.TextBookId.Should().Be(pdf);
+        anchor.SpineIndex.Should().Be(7);
+        anchor.ResourceHref.Should().Be("pdf-page");
+        anchor.Cfi.Should().BeNull();
+        anchor.TextOffset.Should().Be(100 + Passage.Length - 1);
+        anchor.AudioPositionMs.Should().Be(65_000);
+        anchor.TextRevision.Should().Be("test-pdf-revision-v1");
+
+        harness.Cutter.CallCount.Should().Be(1);
+        harness.Transcriber.CallCount.Should().Be(1);
+        harness.Usage.BeginCount.Should().Be(1);
+        harness.Usage.CompleteCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Pdf_reverse_alignment_accepts_source_and_runs_probes()
+    {
+        using var harness = new Harness();
+
+        harness.Documents.Format = BookTextSourceFormat.Pdf;
+        harness.Transcriber.Result = new SttResult(
+            Passage, "en", 19.5);
+
+        using var client = harness.Client();
+
+        var (audio, pdf) = await SeedPairAsync(client, harness);
+
+        await harness.SetTargetFileNameAsync(pdf, "book.pdf");
+        await harness.SetAudioDurationAsync(audio, "3:00:00", null);
+
+        var response = await PostAudioAsync(
+            client, pdf, audio, Passage);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var body = JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync());
+
+        var root = body.RootElement;
+
+        root.GetProperty("probes").GetInt32()
+            .Should().BeGreaterThan(0);
+
+        root.GetProperty("probes").GetInt32()
+            .Should().BeLessThanOrEqualTo(
+                harness.AlignmentSettings.MaxProbes);
+
+        harness.Documents.LastExtractorFormat.Should()
+            .Be(BookTextSourceFormat.Pdf);
+
+        harness.Cutter.CallCount.Should()
+            .Be(harness.Transcriber.CallCount);
+
+        harness.Usage.BeginCount.Should()
+            .Be(harness.Transcriber.CallCount);
+
+        harness.Usage.CompleteCount.Should()
+            .Be(harness.Usage.BeginCount);
+
+        var anchors = await harness.GetAnchorsAsync();
+
+        anchors.Should().OnlyContain(anchor =>
+            anchor.ResourceHref == "pdf-page" &&
+            anchor.SpineIndex == 7 &&
+            anchor.Cfi == null);
+    }
+
+    [Fact]
+    public async Task Reverse_alignment_rejects_unsupported_text_source()
+    {
+        using var harness = new Harness();
+        using var client = harness.Client();
+
+        var (audio, source) = await SeedPairAsync(client, harness);
+
+        await harness.SetTargetFileNameAsync(
+            source, "book.txt");
+
+        var response = await PostAudioAsync(
+            client, source, audio);
+
+        response.StatusCode.Should()
+            .Be(HttpStatusCode.UnprocessableEntity);
+
+        (await ProblemCodeAsync(response))
+            .Should().Be("alignment_source_not_epub");
+
+        harness.Documents.CallCount.Should().Be(0);
+        harness.Cutter.CallCount.Should().Be(0);
+        harness.Transcriber.CallCount.Should().Be(0);
+        harness.Usage.BeginCount.Should().Be(0);
+    }
+
     private static string Route(Guid source) =>
         $"/api/books/{source}/alignment/locate-text";
 
@@ -1290,6 +1449,11 @@ public sealed class AlignmentEndpointTests
     {
         public int CallCount { get; private set; }
 
+        public BookTextSourceFormat Format { get; set; } =
+            BookTextSourceFormat.Epub;
+
+        public BookTextSourceFormat? LastExtractorFormat { get; private set; }
+
         public Task<AlignmentDocumentSnapshot> GetAsync(
             Guid bookId,
             IBookAssetStorage storage,
@@ -1297,9 +1461,10 @@ public sealed class AlignmentEndpointTests
             CancellationToken ct = default)
         {
             CallCount++;
+            LastExtractorFormat = extractor.Format;
 
             var document = new BookTextExtractedDocument(
-                BookTextSourceFormat.Epub,
+                Format,
                 [
                     new BookTextArtifactBlock(
                         0,
@@ -1309,17 +1474,26 @@ public sealed class AlignmentEndpointTests
                             new BookTextSourceSegment(
                                 0,
                                 Passage.Length,
-                                new EpubBookTextSourceLocator(
-                                    SpineIndex: 2,
-                                    ResourceHref: "chapter-3.xhtml",
-                                    StartTextOffset: 100,
-                                    EndTextOffset: 100 + Passage.Length)),
+                                Format == BookTextSourceFormat.Pdf
+                                    ? new PdfBookTextSourceLocator(
+                                        PageIndex: 7,
+                                        PageLabel: "viii",
+                                        StartTextOffset: 100,
+                                        EndTextOffset: 100 + Passage.Length)
+                                    : new EpubBookTextSourceLocator(
+                                        SpineIndex: 2,
+                                        ResourceHref: "chapter-3.xhtml",
+                                        StartTextOffset: 100,
+                                        EndTextOffset: 100 + Passage.Length)),
                         ]),
                 ]);
 
             return Task.FromResult(
                 new AlignmentDocumentSnapshot(
-                    document, "test-epub-revision-v1"));
+                    document,
+                    Format == BookTextSourceFormat.Pdf
+                        ? "test-pdf-revision-v1"
+                        : "test-epub-revision-v1"));
         }
     }
 

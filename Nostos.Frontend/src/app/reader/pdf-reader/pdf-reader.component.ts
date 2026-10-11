@@ -528,6 +528,53 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
     }
   }
 
+  /**
+   * The first text on the current page, for finding the same place in another
+   * edition. Read from the document itself rather than the rendered layer, so
+   * it works before the page has painted. Null for a page with no text layer.
+   */
+  async visibleExcerpt(): Promise<string | null> {
+    const doc = this.pdfDocRef;
+    if (!doc || this.totalPages <= 0) return null;
+
+    try {
+      const page = await doc.getPage(this.currentPage);
+      const content = await page.getTextContent();
+      if (doc !== this.pdfDocRef) return null;
+
+      const text = (Array.isArray(content?.items) ? content.items : [])
+        .map((item: { str?: unknown }) => (typeof item?.str === 'string' ? item.str : ''))
+        .join(' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      return text ? text.slice(0, 280) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * After landing on a page from another edition, mark the passage with the
+   * reader's own search. A handful of the passage's last words is enough to
+   * find it and short enough to survive a line break in the page text. Not
+   * finding it is fine: the page is already the right one.
+   */
+  private highlightSourcePassage(excerpt: string | null | undefined): void {
+    const words = (excerpt ?? '').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
+    if (words.length < 3) return;
+
+    const phrase = words.slice(-6).join(' ');
+    const attempt = (remaining: number) => {
+      if (this.searchAvailable()) {
+        this.search(phrase);
+      } else if (remaining > 0) {
+        setTimeout(() => attempt(remaining - 1), 500);
+      }
+    };
+    attempt(20);
+  }
+
   goToSource(target: ReaderSourceTarget): void {
     if (target.type !== 'pdf' || target.pdfPage === undefined) return;
 
@@ -542,11 +589,13 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
     // the source link and silently staying on page 1.
     if (this.totalPages <= 0) {
       this.pendingGroundedSourcePage = target.pdfPage;
+      this.highlightSourcePassage(target.excerpt);
       return;
     }
 
     this.pendingGroundedSourcePage = null;
     this.goTo(target.pdfPage);
+    this.highlightSourcePassage(target.excerpt);
   }
 
   getCurrentLocation(): string {

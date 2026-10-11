@@ -86,7 +86,8 @@ export class SwitchEditionDialog {
     if (!book) return [];
 
     const fromAudio = isAudio(book.type);
-    const fromEpub = !fromAudio && kindOf(book) === 'epub';
+    const ownKind = kindOf(book);
+    const fromText = !fromAudio && (ownKind === 'epub' || ownKind === 'pdf');
     const canAlign = !this.unavailable();
 
     return (book.otherEditions ?? [])
@@ -95,8 +96,10 @@ export class SwitchEditionDialog {
         const kind = kindOf(edition);
         const sameSentence =
           canAlign &&
-          ((fromAudio && kind === 'epub' && (this.audioPositionSeconds() ?? 0) > 0) ||
-            (fromEpub && kind === 'audiobook' && !!this.visibleExcerpt()?.trim()));
+          ((fromAudio &&
+            (kind === 'epub' || kind === 'pdf') &&
+            (this.audioPositionSeconds() ?? 0) > 0) ||
+            (fromText && kind === 'audiobook' && !!this.visibleExcerpt()?.trim()));
 
         return {
           edition,
@@ -145,7 +148,7 @@ export class SwitchEditionDialog {
       }
     }, SwitchEditionDialog.SlowAfterMs);
 
-    if (target.kind === 'epub') {
+    if (target.kind !== 'audiobook') {
       this.request = this.alignment
         .locateText(book.id, {
           positionSeconds: this.audioPositionSeconds()!,
@@ -158,6 +161,17 @@ export class SwitchEditionDialog {
 
             if (!result.located) {
               this.decline(editionId, null);
+              return;
+            }
+
+            if (result.pdf && Number.isInteger(result.pdf.pageNumber) && result.pdf.pageNumber > 0) {
+              const pdfParams: Record<string, string | number> = {
+                sourcePage: result.pdf.pageNumber,
+              };
+              if (result.pdf.pageLabel) pdfParams['sourcePageLabel'] = result.pdf.pageLabel;
+              // The book's own wording, so the reader's search can mark it.
+              if (result.sourceText) pdfParams['sourceExcerpt'] = result.sourceText;
+              this.open(editionId, pdfParams);
               return;
             }
 

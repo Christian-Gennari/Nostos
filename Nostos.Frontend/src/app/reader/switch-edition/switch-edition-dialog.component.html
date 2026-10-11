@@ -55,6 +55,8 @@
                 Finding your place…
               } @else if (target.sameSentence && target.kind === 'audiobook') {
                 Starts where this page begins
+              } @else if (target.sameSentence && target.kind === 'pdf') {
+                Opens at the page you’re hearing
               } @else if (target.sameSentence) {
                 Opens at the sentence you’re hearing
               } @else if (target.edition.progressPercent) {

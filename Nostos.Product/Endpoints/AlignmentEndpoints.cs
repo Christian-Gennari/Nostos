@@ -5,6 +5,7 @@ using Nostos.Backend.Data.Models;
 using Nostos.Backend.Services.Ai;
 using Nostos.Backend.Services.Library;
 using Nostos.Product.Alignment;
+using Nostos.Product.BookText;
 using Nostos.Product.Composition;
 using Nostos.Product.Http;
 using Nostos.Product.Services.Ai;
@@ -85,16 +86,16 @@ public static class AlignmentEndpoints
                 "The source edition must be an audiobook.");
         }
 
-        if (pair.Target is not EBookModel epub ||
-            !IsEpub(epub))
+        if (pair.Target is not EBookModel text ||
+            !IsSupportedText(text))
         {
             return Failure(
                 "alignment_target_not_epub",
                 422,
-                "The target edition must be an EPUB.");
+                "The target edition must be an EPUB or PDF with stored media.");
         }
 
-        if (!SameWork(audio, epub))
+        if (!SameWork(audio, text))
         {
             return Failure(
                 "alignment_work_mismatch",
@@ -109,7 +110,7 @@ public static class AlignmentEndpoints
         {
             var result = await alignment.LocateAsync(
                 audio,
-                epub,
+                text,
                 request.PositionSeconds,
                 ct);
 
@@ -128,6 +129,8 @@ public static class AlignmentEndpoints
                 score = result.Score,
                 excerpt = result.Excerpt,
                 locator = result.Locator,
+                pdf = result.Pdf,
+                sourceText = result.SourceText,
                 anchorStored = result.AnchorStored,
             });
         }
@@ -154,7 +157,7 @@ public static class AlignmentEndpoints
             return Failure(
                 "alignment_invalid_request",
                 400,
-                "A valid EPUB, audiobook and excerpt are required.");
+                "A valid text edition, audiobook and excerpt are required.");
         }
 
         var pair = await LoadPairAsync(
@@ -167,13 +170,13 @@ public static class AlignmentEndpoints
         if (pair.Error is not null)
             return pair.Error;
 
-        if (pair.Source is not EBookModel epub ||
-            !IsEpub(epub))
+        if (pair.Source is not EBookModel text ||
+            !IsSupportedText(text))
         {
             return Failure(
                 "alignment_source_not_epub",
                 422,
-                "The source edition must be an EPUB with stored media.");
+                "The source edition must be an EPUB or PDF with stored media.");
         }
 
         if (pair.Target is not AudioBookModel audio)
@@ -184,7 +187,7 @@ public static class AlignmentEndpoints
                 "The target edition must be an audiobook.");
         }
 
-        if (!SameWork(audio, epub))
+        if (!SameWork(audio, text))
         {
             return Failure(
                 "alignment_work_mismatch",
@@ -198,7 +201,7 @@ public static class AlignmentEndpoints
         try
         {
             var result = await alignment.LocateAudioAsync(
-                epub,
+                text,
                 audio,
                 request.Excerpt,
                 ct);
@@ -283,11 +286,12 @@ public static class AlignmentEndpoints
         return (source, target, null);
     }
 
-    private static bool IsEpub(EBookModel book) =>
-        string.Equals(
-            Path.GetExtension(book.FileDetails.FileName),
-            ".epub",
-            StringComparison.OrdinalIgnoreCase);
+    private static bool IsSupportedText(EBookModel book) =>
+        book.FileDetails.HasFile &&
+        BookTextFormatResolver.TryResolve(
+            book.FileDetails.FileName, out var format) &&
+        format is
+            (BookTextSourceFormat.Epub or BookTextSourceFormat.Pdf);
 
     private static bool SameWork(
         AudioBookModel audio,
