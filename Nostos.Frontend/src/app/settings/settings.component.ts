@@ -1264,6 +1264,14 @@ export class SettingsComponent implements OnInit, OnDestroy {
 
     if (form.useVoiceTranscription !== form.savedUseVoiceTranscription) {
       update.useVoiceTranscription = form.useVoiceTranscription;
+      if (!form.useVoiceTranscription) {
+        // Until now the fields showed the inherited voice setup. Save what the
+        // user sees, or the dedicated setup would start out disabled and empty.
+        update.enabled = form.enabled;
+        update.baseUrl = form.baseUrl;
+        update.model = form.model;
+        update.apiStyle = form.apiStyle;
+      }
     }
     if (form.apiStyle !== form.savedApiStyle) {
       update.apiStyle = form.apiStyle;

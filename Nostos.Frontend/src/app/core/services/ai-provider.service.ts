@@ -3,6 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 
 import {
+  AiProviderKind,
   AiProviderModelsRequest,
   AiProviderModelsResponse,
   AiProviderSettings,
@@ -18,6 +19,11 @@ import {
  * it comes from, and `update` sends one only when the user typed it or cleared
  * it. There is no read path for the key, by design.
  */
+/** The server names the alignment section differently from the form key. */
+function wireKind(kind: AiProviderKind): string {
+  return kind === 'alignmentStt' ? 'alignment-transcription' : kind;
+}
+
 @Injectable({ providedIn: 'root' })
 export class AiProviderService {
   private readonly http = inject(HttpClient);
@@ -39,7 +45,7 @@ export class AiProviderService {
   loadModels(request: AiProviderModelsRequest): Observable<AiProviderModelsResponse> {
     return this.http.post<AiProviderModelsResponse>(
       '/api/settings/ai-provider/models',
-      request,
+      { ...request, kind: wireKind(request.kind) },
     );
   }
 
@@ -47,7 +53,7 @@ export class AiProviderService {
   test(request: AiProviderTestRequest): Observable<AiProviderTestResult> {
     return this.http.post<AiProviderTestResult>(
       '/api/settings/ai-provider/test',
-      request,
+      { ...request, kind: wireKind(request.kind) },
     );
   }
 }
