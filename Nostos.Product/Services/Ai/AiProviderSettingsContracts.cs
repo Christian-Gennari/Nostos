@@ -79,11 +79,18 @@ public sealed record AiProviderModelsRequest(
 
 public sealed record AiProviderModelsResponse(IReadOnlyList<string> Models);
 
+/// <summary>
+/// <paramref name="ApiStyle"/> and <paramref name="UseVoiceTranscription"/>
+/// apply to the alignment section only: they let the form test what the user
+/// has selected before it is saved. Omitted, the saved values are used.
+/// </summary>
 public sealed record AiProviderTestRequest(
     string Kind,
     string? BaseUrl,
     string? Model,
-    string? ApiKey);
+    string? ApiKey,
+    string? ApiStyle = null,
+    bool? UseVoiceTranscription = null);
 
 public sealed record AiProviderTestResult(
     bool Ok,

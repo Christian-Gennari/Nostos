@@ -486,9 +486,19 @@ public sealed class AiProviderSettingsService(
         AiProviderTestRequest request,
         CancellationToken ct)
     {
-        // No second configuration resolution after choosing the transport.
-        var alignment = await GetEffectiveAlignmentSttAsync(ct);
-        var effective = alignment.Provider;
+        // Resolve once. The form may test a selection it has not saved yet:
+        // an explicit voice-reuse or API-style choice in the request wins over
+        // the saved one, so "test" probes what "save" would then use.
+        var row = await LoadRowAsync(ct);
+        var saved = ResolveAlignmentStt(row);
+        var useVoice = request.UseVoiceTranscription ?? saved.UseVoiceTranscription;
+        var effective = useVoice ? ResolveStt(row) : ResolveStoredAlignment(row);
+        var apiStyle = useVoice
+            ? AlignmentTranscriptionApiStyles.OpenAiMultipart
+            : string.IsNullOrWhiteSpace(request.ApiStyle)
+                ? row?.AlignmentTranscriptionApiStyle
+                    ?? AlignmentTranscriptionApiStyles.OpenAiMultipart
+                : request.ApiStyle.Trim();
 
         var baseUrl = ResolveBaseUrl(request.BaseUrl, effective);
         ValidateResolvedBaseUrl(baseUrl, AiProviderKind.AlignmentTranscription);
@@ -508,6 +518,9 @@ public sealed class AiProviderSettingsService(
         // mode still controls the transport, client and validation.
         var probeConfig = effective with
         {
+            // A dedicated setup that is not saved (or not enabled) yet can
+            // still be probed; the test answers "would this connect".
+            Enabled = useVoice ? effective.Enabled : true,
             BaseUrl = baseUrl,
             Model = model,
             ApiKey = apiKey,
@@ -519,7 +532,7 @@ public sealed class AiProviderSettingsService(
         {
             SttResult result;
 
-            switch (alignment.ApiStyle)
+            switch (apiStyle)
             {
                 case AlignmentTranscriptionApiStyles.OpenAiMultipart:
                     // This is the same provider implementation used by the
