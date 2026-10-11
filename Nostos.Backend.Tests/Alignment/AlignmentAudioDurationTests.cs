@@ -27,9 +27,51 @@ public sealed class AlignmentAudioDurationTests
     [InlineData("1:90")]
     [InlineData("-1:00")]
     [InlineData("0:00")]
+    [InlineData("NaN:00")]
+    [InlineData("Infinity:00")]
+    [InlineData("999999999999999999999999999999999:00:00")]
     public void Invalid_duration_is_unknown(string? duration)
     {
         AlignmentAudioDuration.ParseSeconds(duration)
             .Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData(0, 0, 1, 5)]
+    [InlineData(-10, -20, 1, 5)]
+    [InlineData(1, 5, 1, 5)]
+    [InlineData(5, 20, 5, 20)]
+    [InlineData(8, 30, 8, 30)]
+    [InlineData(20, 100, 8, 30)]
+    [InlineData(int.MaxValue, double.PositiveInfinity, 8, 30)]
+    public void Reverse_probe_options_are_bounded(
+        int maxProbes,
+        double probeSeconds,
+        int expectedProbes,
+        double expectedSeconds)
+    {
+        var options = new AlignmentOptions
+        {
+            MaxProbes = maxProbes,
+            ProbeSeconds = probeSeconds,
+        };
+
+        options.NormalizeProbeSettings();
+
+        options.MaxProbes.Should().Be(expectedProbes);
+        options.ProbeSeconds.Should().Be(expectedSeconds);
+    }
+
+    [Fact]
+    public void Non_finite_probe_setting_uses_safe_default()
+    {
+        var options = new AlignmentOptions
+        {
+            ProbeSeconds = double.NaN,
+        };
+
+        options.NormalizeProbeSettings();
+
+        options.ProbeSeconds.Should().Be(20);
     }
 }

@@ -28,30 +28,38 @@ public sealed class AudioAlignmentSearch
     private readonly double averageRate;
     private readonly AlignmentOptions options;
 
-    private readonly List<Point> observations = [];
     private readonly List<Point> locatedCenters = [];
+    private readonly List<double> probedClipCenters = [];
 
     private Point? lower;
     private Point? upper;
 
     public double EstimateSeconds { get; private set; }
 
+    public bool HasNextProbe { get; private set; } = true;
+
     public double? ApproximatePositionSeconds
     {
         get
         {
             if (lower is not null && upper is not null)
-                return (lower.AudioSeconds + upper.AudioSeconds) / 2;
+                return Clamp(
+                    lower.AudioSeconds +
+                    (upper.AudioSeconds - lower.AudioSeconds) / 2);
 
             if (lower is not null)
                 return Clamp(
                     lower.AudioSeconds +
-                    (targetOffset - lower.TextOffset) / averageRate);
+                    SafeSeconds(
+                        targetOffset - lower.TextOffset,
+                        averageRate));
 
             if (upper is not null)
                 return Clamp(
                     upper.AudioSeconds -
-                    (upper.TextOffset - targetOffset) / averageRate);
+                    SafeSeconds(
+                        upper.TextOffset - targetOffset,
+                        averageRate));
 
             return Clamp(EstimateSeconds);
         }
@@ -80,7 +88,15 @@ public sealed class AudioAlignmentSearch
         this.targetOffset = targetOffset;
         this.durationSeconds = durationSeconds;
         this.options = options;
+
         averageRate = totalCharacters / durationSeconds;
+
+        if (!ValidRate(averageRate))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(durationSeconds),
+                "The document-to-duration rate must be finite and positive.");
+        }
 
         if (before is not null)
             CheckPoint(before);
@@ -114,19 +130,25 @@ public sealed class AudioAlignmentSearch
 
             estimate = span > 0
                 ? lower.AudioSeconds +
-                  (targetOffset - lower.TextOffset) *
-                  (upper.AudioSeconds - lower.AudioSeconds) / span
-                : (lower.AudioSeconds + upper.AudioSeconds) / 2;
+                  SafeSeconds(
+                      targetOffset - lower.TextOffset,
+                      span / (upper.AudioSeconds - lower.AudioSeconds))
+                : lower.AudioSeconds +
+                  (upper.AudioSeconds - lower.AudioSeconds) / 2;
         }
         else if (lower is not null)
         {
             estimate = lower.AudioSeconds +
-                (targetOffset - lower.TextOffset) / averageRate;
+                SafeSeconds(
+                    targetOffset - lower.TextOffset,
+                    averageRate);
         }
         else if (upper is not null)
         {
             estimate = upper.AudioSeconds -
-                (upper.TextOffset - targetOffset) / averageRate;
+                SafeSeconds(
+                    upper.TextOffset - targetOffset,
+                    averageRate);
         }
         else
         {
@@ -164,14 +186,18 @@ public sealed class AudioAlignmentSearch
                 "Invalid located probe.", nameof(probe));
         }
 
+        RecordProbe(
+            probe.ClipStartSeconds,
+            probe.ClipEndSeconds);
+
         // The start/end mappings are approximations. Use the
         // measured passage midpoint for search progression.
         var center = new Point(
-            (probe.ClipStartSeconds + probe.ClipEndSeconds) / 2,
-            (probe.TextStartOffset + (double)probe.TextEndOffset) / 2);
-
-        var measuredEnd = new Point(
-            probe.ClipEndSeconds, probe.TextEndOffset);
+            probe.ClipStartSeconds +
+                (probe.ClipEndSeconds - probe.ClipStartSeconds) / 2,
+            probe.TextStartOffset +
+                ((double)probe.TextEndOffset -
+                    probe.TextStartOffset) / 2);
 
         foreach (var previous in locatedCenters)
         {
@@ -191,27 +217,27 @@ public sealed class AudioAlignmentSearch
                 -options.ConsistencyToleranceCharacters *
                 Math.Abs(audioDifference))
             {
+                HasNextProbe = false;
                 return new Decision(false, true, null, null);
             }
         }
 
         locatedCenters.Add(center);
-        observations.Add(measuredEnd);
 
-        if (targetOffset >=
-                probe.TextStartOffset - options.MatchToleranceCharacters &&
-            targetOffset <=
-                probe.TextEndOffset + options.MatchToleranceCharacters)
+        // Tolerance helps guide the search, but cannot turn a passage
+        // that does not contain the target into a successful location.
+        if (targetOffset >= probe.TextStartOffset &&
+            targetOffset <= probe.TextEndOffset)
         {
-            var proportion = Math.Clamp(
+            var proportion =
                 (targetOffset - probe.TextStartOffset) /
-                (double)(probe.TextEndOffset - probe.TextStartOffset),
-                0,
-                1);
+                (double)(probe.TextEndOffset - probe.TextStartOffset);
 
             var position = probe.ClipStartSeconds +
                 proportion *
                 (probe.ClipEndSeconds - probe.ClipStartSeconds);
+
+            HasNextProbe = false;
 
             return new Decision(
                 true,
@@ -238,25 +264,36 @@ public sealed class AudioAlignmentSearch
              lower.TextOffset >
              upper.TextOffset + options.ConsistencyToleranceCharacters))
         {
+            HasNextProbe = false;
             return new Decision(false, true, null, null);
         }
 
         var rate = LocalRate();
-        var proposed = center.AudioSeconds +
-            (targetOffset - center.TextOffset) / rate;
 
-        EstimateSeconds = InsideBracket(proposed);
+        var proposed = center.AudioSeconds +
+            SafeSeconds(
+                targetOffset - center.TextOffset,
+                rate);
+
+        // A near miss may guide the next estimate, but is not located.
+        // Deduplication operates on actual clip centres.
+        Advance(proposed);
 
         return new Decision(
-            false, false, null, EstimateSeconds);
+            false,
+            false,
+            null,
+            HasNextProbe ? EstimateSeconds : null);
     }
 
     public double Decline()
     {
+        RecordProbe(ClipStartSeconds, ClipEndSeconds);
+
         var proposed = EstimateSeconds +
             options.ProbeSeconds * 1.5;
 
-        EstimateSeconds = InsideBracket(proposed);
+        Advance(proposed);
         return EstimateSeconds;
     }
 
@@ -280,13 +317,101 @@ public sealed class AudioAlignmentSearch
 
         var rate = textDelta / audioDelta;
 
-        if (!double.IsFinite(rate) ||
-            rate <= 0 ||
+        if (!ValidRate(rate) ||
             rate < averageRate / options.MaximumLocalRateRatio ||
             rate > averageRate * options.MaximumLocalRateRatio)
             return averageRate;
 
         return rate;
+    }
+
+    private void RecordProbe(double start, double end)
+    {
+        var center = start + (end - start) / 2;
+
+        if (double.IsFinite(center))
+            probedClipCenters.Add(center);
+    }
+
+    private void Advance(double proposed)
+    {
+        EstimateSeconds = InsideBracket(proposed);
+
+        var center = ClipCenter(EstimateSeconds);
+
+        if (!WasProbed(center))
+        {
+            HasNextProbe = true;
+            return;
+        }
+
+        // Outside an established bracket, preserve the usual
+        // progression. Repeated boundary clips cannot make progress.
+        if (lower is null || upper is null)
+        {
+            HasNextProbe = false;
+            return;
+        }
+
+        var low = lower.AudioSeconds;
+        var high = upper.AudioSeconds;
+
+        if (high <= low)
+        {
+            HasNextProbe = false;
+            return;
+        }
+
+        var halfProbe = options.ProbeSeconds / 2;
+
+        // Prefer the side containing more unexplored space.
+        // If necessary, try the opposite side before giving up.
+        var rightRoom = high - EstimateSeconds;
+        var leftRoom = EstimateSeconds - low;
+
+        var directions = rightRoom >= leftRoom
+            ? new[] { 1d, -1d }
+            : new[] { -1d, 1d };
+
+        foreach (var direction in directions)
+        {
+            var candidate = EstimateSeconds +
+                direction * halfProbe;
+
+            if (candidate <= low || candidate >= high)
+                continue;
+
+            var candidateCenter = ClipCenter(candidate);
+
+            if (WasProbed(candidateCenter))
+                continue;
+
+            EstimateSeconds = Clamp(candidate);
+            HasNextProbe = true;
+            return;
+        }
+
+        // Neither half-clip step fits in the remaining bracket.
+        // Do not request another paid transcription of the same area.
+        HasNextProbe = false;
+    }
+
+    private bool WasProbed(double center) =>
+        probedClipCenters.Any(
+            previous => Math.Abs(previous - center) <= 2);
+
+    private double ClipCenter(double estimate)
+    {
+        var end = Math.Clamp(
+            estimate + options.ProbeSeconds / 2,
+            Math.Min(durationSeconds, 0.001),
+            durationSeconds);
+
+        var start = Math.Max(
+            0,
+            end - options.ProbeSeconds);
+
+        return start + (end - start) / 2;
     }
 
     private double InsideBracket(double proposed)
@@ -300,16 +425,55 @@ public sealed class AudioAlignmentSearch
         var high = upper.AudioSeconds;
 
         if (high <= low)
-            return Clamp((low + high) / 2);
+            return Clamp(low + (high - low) / 2);
 
         if (proposed <= low || proposed >= high)
-            proposed = (low + high) / 2;
+            proposed = low + (high - low) / 2;
 
         return Clamp(proposed);
     }
 
-    private double Clamp(double position) =>
-        Math.Clamp(position, 0, durationSeconds);
+    private double SafeSeconds(double textDifference, double rate)
+    {
+        if (!double.IsFinite(textDifference))
+            return 0;
+
+        if (!ValidRate(rate))
+            rate = averageRate;
+
+        var seconds = textDifference / rate;
+
+        if (!double.IsFinite(seconds))
+        {
+            seconds = textDifference > 0
+                ? durationSeconds
+                : textDifference < 0
+                    ? -durationSeconds
+                    : 0;
+        }
+
+        return Math.Clamp(
+            seconds,
+            -durationSeconds,
+            durationSeconds);
+    }
+
+    private static bool ValidRate(double rate) =>
+        double.IsFinite(rate) && rate > 0;
+
+    private double Clamp(double position)
+    {
+        if (double.IsNaN(position))
+            return 0;
+
+        if (double.IsPositiveInfinity(position))
+            return durationSeconds;
+
+        if (double.IsNegativeInfinity(position))
+            return 0;
+
+        return Math.Clamp(position, 0, durationSeconds);
+    }
 
     private void CheckPoint(Point point)
     {

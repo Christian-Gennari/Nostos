@@ -190,15 +190,10 @@ public static class NostosProductComposition
             throw new InvalidOperationException(
                 "Alignment:MaxCachedCharacters must be positive.");
 
-        if (!double.IsFinite(alignment.ProbeSeconds) ||
-            alignment.ProbeSeconds <= 0 ||
-            alignment.ProbeSeconds > 60)
-            throw new InvalidOperationException(
-                "Alignment:ProbeSeconds must be between 0 and 60.");
-
-        if (alignment.MaxProbes is < 1 or > 20)
-            throw new InvalidOperationException(
-                "Alignment:MaxProbes must be between 1 and 20.");
+        // Normalize the reverse search's maximum per-request spend
+        // and the length of each probe before validating dependent
+        // settings or registering the singleton.
+        alignment.NormalizeProbeSettings();
 
         if (alignment.MatchToleranceCharacters < 0 ||
             alignment.MatchToleranceCharacters > 500)

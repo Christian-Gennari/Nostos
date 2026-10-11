@@ -214,11 +214,41 @@ public sealed class AudioAlignmentSearchTests
         second.Inconsistent.Should().BeTrue();
     }
 
-    [Fact]
-    public void Target_inside_tolerance_is_located_and_clamped()
+    [Theory]
+    [InlineData(90, 100, 300)]
+    [InlineData(310, 100, 300)]
+    public void Target_outside_passage_is_not_located_even_within_tolerance(
+        int target,
+        int start,
+        int end)
     {
         var search = new AudioAlignmentSearch(
-            targetOffset: 90,
+            targetOffset: target,
+            totalCharacters: 1000,
+            durationSeconds: 100,
+            Options);
+
+        var result = search.Observe(new(
+            ClipStartSeconds: 0,
+            ClipEndSeconds: 20,
+            TextStartOffset: start,
+            TextEndOffset: end,
+            Score: 0.95));
+
+        result.Located.Should().BeFalse();
+        result.PositionSeconds.Should().BeNull();
+        result.Inconsistent.Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData(100, 0)]
+    [InlineData(300, 19)]
+    public void Target_exactly_on_passage_boundary_is_located(
+        int target,
+        double expected)
+    {
+        var search = new AudioAlignmentSearch(
+            targetOffset: target,
             totalCharacters: 1000,
             durationSeconds: 100,
             Options);
@@ -231,7 +261,27 @@ public sealed class AudioAlignmentSearchTests
             Score: 0.95));
 
         result.Located.Should().BeTrue();
-        result.PositionSeconds.Should().Be(0);
+        result.PositionSeconds.Should().Be(expected);
+    }
+
+    [Fact]
+    public void Target_inside_passage_near_end_is_clamped_to_duration()
+    {
+        var search = new AudioAlignmentSearch(
+            targetOffset: 990,
+            totalCharacters: 1000,
+            durationSeconds: 100,
+            Options);
+
+        var result = search.Observe(new(
+            ClipStartSeconds: 90,
+            ClipEndSeconds: 100,
+            TextStartOffset: 900,
+            TextEndOffset: 1000,
+            Score: 1));
+
+        result.Located.Should().BeTrue();
+        result.PositionSeconds.Should().Be(98);
     }
 
     [Fact]
@@ -268,6 +318,182 @@ public sealed class AudioAlignmentSearchTests
 
         ending.ClipEndSeconds.Should().Be(100);
         ending.ClipStartSeconds.Should().Be(80);
+    }
+
+    [Fact]
+    public void Repeated_estimate_inside_bracket_moves_half_a_probe()
+    {
+        var search = new AudioAlignmentSearch(
+            targetOffset: 500,
+            totalCharacters: 1000,
+            durationSeconds: 100,
+            Options,
+            before: new(20, 200),
+            after: new(80, 800));
+
+        search.EstimateSeconds.Should().Be(50);
+
+        var first = search.Observe(new(
+            ClipStartSeconds: 40,
+            ClipEndSeconds: 60,
+            TextStartOffset: 475,
+            TextEndOffset: 495,
+            Score: 1));
+
+        first.Located.Should().BeFalse();
+        first.Inconsistent.Should().BeFalse();
+        search.HasNextProbe.Should().BeTrue();
+
+        var firstCenter = 50d;
+        var nextCenter =
+            (search.ClipStartSeconds + search.ClipEndSeconds) / 2;
+
+        Math.Abs(nextCenter - firstCenter)
+            .Should().BeGreaterThan(2);
+
+        Math.Abs(search.EstimateSeconds - 50)
+            .Should().BeGreaterThanOrEqualTo(10);
+    }
+
+    [Fact]
+    public void Exhausted_narrow_bracket_does_not_request_same_clip()
+    {
+        var search = new AudioAlignmentSearch(
+            targetOffset: 500,
+            totalCharacters: 1000,
+            durationSeconds: 100,
+            Options,
+            before: new(48, 480),
+            after: new(52, 520));
+
+        var result = search.Observe(new(
+            ClipStartSeconds: 40,
+            ClipEndSeconds: 60,
+            TextStartOffset: 450,
+            TextEndOffset: 490,
+            Score: 1));
+
+        result.Located.Should().BeFalse();
+        result.Inconsistent.Should().BeFalse();
+
+        search.HasNextProbe.Should().BeFalse();
+        result.NextEstimateSeconds.Should().BeNull();
+
+        search.ApproximatePositionSeconds.Should()
+            .BeInRange(0, 100);
+    }
+
+    [Fact]
+    public void Declined_probe_at_audio_boundary_stops_repeating()
+    {
+        var search = new AudioAlignmentSearch(
+            targetOffset: 1000,
+            totalCharacters: 1000,
+            durationSeconds: 100,
+            Options);
+
+        search.ClipEndSeconds.Should().Be(100);
+
+        search.Decline().Should().Be(100);
+        search.HasNextProbe.Should().BeFalse();
+
+        search.ApproximatePositionSeconds.Should().Be(100);
+    }
+
+    [Fact]
+    public void Extreme_local_rate_falls_back_to_book_average()
+    {
+        var search = new AudioAlignmentSearch(
+            targetOffset: 950,
+            totalCharacters: 1000,
+            durationSeconds: 100,
+            Options);
+
+        var first = search.Observe(new(
+            ClipStartSeconds: 0,
+            ClipEndSeconds: 20,
+            TextStartOffset: 100,
+            TextEndOffset: 200,
+            Score: 1));
+
+        first.Located.Should().BeFalse();
+
+        var second = search.Observe(new(
+            ClipStartSeconds: 40,
+            ClipEndSeconds: 60,
+            TextStartOffset: 200,
+            TextEndOffset: 300,
+            Score: 1));
+
+        second.Located.Should().BeFalse();
+        second.Inconsistent.Should().BeFalse();
+
+        double.IsFinite(search.EstimateSeconds)
+            .Should().BeTrue();
+
+        search.EstimateSeconds.Should().BeInRange(0, 100);
+        search.ApproximatePositionSeconds.Should().NotBeNull();
+    }
+
+    [Theory]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Invalid_duration_is_rejected_before_any_probe(
+        double duration)
+    {
+        Action construct = () => new AudioAlignmentSearch(
+            targetOffset: 500,
+            totalCharacters: 1000,
+            durationSeconds: duration,
+            Options);
+
+        construct.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public void Very_large_finite_duration_never_produces_infinite_time()
+    {
+        var search = new AudioAlignmentSearch(
+            targetOffset: 500,
+            totalCharacters: 1000,
+            durationSeconds: double.MaxValue,
+            Options);
+
+        double.IsFinite(search.EstimateSeconds).Should().BeTrue();
+
+        var result = search.Observe(new(
+            ClipStartSeconds: 0,
+            ClipEndSeconds: 20,
+            TextStartOffset: 100,
+            TextEndOffset: 200,
+            Score: 1));
+
+        result.Located.Should().BeFalse();
+
+        double.IsFinite(search.EstimateSeconds).Should().BeTrue();
+        search.EstimateSeconds.Should().BeInRange(
+            0, double.MaxValue);
+
+        search.ApproximatePositionSeconds.Should().NotBeNull();
+        double.IsFinite(
+            search.ApproximatePositionSeconds!.Value)
+            .Should().BeTrue();
+    }
+
+    [Fact]
+    public void Invalid_anchor_coordinates_are_rejected()
+    {
+        Action construct = () => new AudioAlignmentSearch(
+            targetOffset: 500,
+            totalCharacters: 1000,
+            durationSeconds: 100,
+            Options,
+            before: new(double.NaN, 300));
+
+        construct.Should().Throw<ArgumentException>();
     }
 
     private static AudioAlignmentSearch.Decision Probe(

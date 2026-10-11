@@ -34,6 +34,19 @@ public sealed class AlignmentOptions
 
     public long MaxCachedCharacters { get; set; } =
         20_000_000;
+
+    /// <summary>
+    /// Limits the cost and size of reverse-alignment probes, including
+    /// when options are constructed outside the normal DI registration.
+    /// </summary>
+    public void NormalizeProbeSettings()
+    {
+        MaxProbes = Math.Clamp(MaxProbes, 1, 8);
+
+        ProbeSeconds = double.IsNaN(ProbeSeconds)
+            ? 20
+            : Math.Clamp(ProbeSeconds, 5, 30);
+    }
 }
 
 public sealed record AlignmentLocator(
@@ -252,7 +265,9 @@ public sealed class AlignmentService(
 
         var duration = AlignmentAudioDuration.GetSeconds(target);
 
-        if (duration is null)
+        if (duration is null ||
+            !double.IsFinite(duration.Value) ||
+            duration.Value <= 0)
         {
             return AlignmentLocateAudioResult.Declined(
                 "duration_unknown");
@@ -310,28 +325,78 @@ public sealed class AlignmentService(
             }
         }
 
-        var search = new AudioAlignmentSearch(
-            targetOffset,
-            totalCharacters,
-            duration.Value,
-            options,
-            before,
-            after);
+        // The registered options are normalized during composition.
+        // Use a local bounded copy so independently constructed services
+        // cannot spend more than eight transcription calls.
+        var searchOptions = new AlignmentOptions
+        {
+            ClipSeconds = options.ClipSeconds,
+            ProbeSeconds = options.ProbeSeconds,
+            MaxProbes = options.MaxProbes,
+            MatchToleranceCharacters = options.MatchToleranceCharacters,
+            ConsistencyToleranceCharacters =
+                options.ConsistencyToleranceCharacters,
+            LeadInSeconds = options.LeadInSeconds,
+            MaximumLocalRateRatio = options.MaximumLocalRateRatio,
+            MaxEpubBytes = options.MaxEpubBytes,
+            MaxCachedCharacters = options.MaxCachedCharacters,
+        };
+
+        searchOptions.NormalizeProbeSettings();
+
+        if (!double.IsFinite(searchOptions.LeadInSeconds) ||
+            searchOptions.LeadInSeconds < 0)
+            searchOptions.LeadInSeconds = 0;
+
+        searchOptions.LeadInSeconds = Math.Min(
+            searchOptions.LeadInSeconds,
+            searchOptions.ProbeSeconds);
+
+        AudioAlignmentSearch search;
+
+        try
+        {
+            search = new AudioAlignmentSearch(
+                targetOffset,
+                totalCharacters,
+                duration.Value,
+                searchOptions,
+                before,
+                after);
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return AlignmentLocateAudioResult.Declined(
+                "duration_unknown");
+        }
 
         var probes = 0;
         var anyAnchorStored = false;
 
-        for (var attempt = 0; attempt < options.MaxProbes; attempt++)
+        for (var attempt = 0;
+             attempt < searchOptions.MaxProbes && search.HasNextProbe;
+             attempt++)
         {
             ct.ThrowIfCancellationRequested();
 
             var clipEnd = search.ClipEndSeconds;
             var clipStart = search.ClipStartSeconds;
 
+            if (!double.IsFinite(clipStart) ||
+                !double.IsFinite(clipEnd) ||
+                clipStart < 0 ||
+                clipEnd <= clipStart ||
+                clipEnd > duration.Value)
+            {
+                return AlignmentLocateAudioResult.Declined(
+                    "duration_unknown",
+                    probes);
+            }
+
             await using var clip = await cutter.CutAsync(
                 target,
                 clipEnd,
-                options.ProbeSeconds,
+                searchOptions.ProbeSeconds,
                 ct);
 
             // BeginSttAsync is invoked once per transcription, not once
@@ -374,6 +439,31 @@ public sealed class AlignmentService(
                 return AlignmentLocateAudioResult.Declined(
                     "inconsistent_probes",
                     probes);
+            }
+
+            // The neighbouring anchors belong to the exact audio and
+            // EPUB revisions. A probe that violates their ordering
+            // cannot establish a trustworthy timestamp.
+            //
+            // Check before saving the probe's derived anchors, so the
+            // current measurement cannot change its own guardrails.
+            if (decision.Located &&
+                decision.PositionSeconds is double locatedSeconds)
+            {
+                if (!double.IsFinite(locatedSeconds) ||
+                    locatedSeconds < 0 ||
+                    locatedSeconds > duration.Value ||
+                    !ConsistentWithAnchors(
+                        locatedSeconds,
+                        targetOffset,
+                        before,
+                        after,
+                        searchOptions.ProbeSeconds))
+                {
+                    return AlignmentLocateAudioResult.Declined(
+                        "inconsistent_probes",
+                        probes);
+                }
             }
 
             // Persist the two approximate clip boundaries. Each is
@@ -421,6 +511,33 @@ public sealed class AlignmentService(
             "probe_budget_exhausted",
             probes,
             search.ApproximatePositionSeconds);
+    }
+
+    private static bool ConsistentWithAnchors(
+        double positionSeconds,
+        int targetOffset,
+        AudioAlignmentSearch.Point? before,
+        AudioAlignmentSearch.Point? after,
+        double toleranceSeconds)
+    {
+        if (before is null || after is null ||
+            before.TextOffset > targetOffset ||
+            after.TextOffset < targetOffset)
+            return true;
+
+        if (!double.IsFinite(toleranceSeconds) ||
+            toleranceSeconds <= 0)
+            return false;
+
+        if (before.AudioSeconds > after.AudioSeconds)
+            return false;
+
+        var low = before.AudioSeconds - toleranceSeconds;
+        var high = after.AudioSeconds + toleranceSeconds;
+
+        return double.IsFinite(positionSeconds) &&
+            positionSeconds >= low &&
+            positionSeconds <= high;
     }
 
     private async Task<AlignmentDocumentSnapshot> ReadDocumentAsync(

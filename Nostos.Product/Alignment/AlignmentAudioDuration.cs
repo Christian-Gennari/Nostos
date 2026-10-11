@@ -14,18 +14,31 @@ public static class AlignmentAudioDuration
     {
         if (!string.IsNullOrWhiteSpace(book.FileDetails.TracksJson))
         {
-            var tracks = BookTrackList.Parse(
-                book.FileDetails.TracksJson);
-
-            if (BookTrackList.Validate(tracks) is not null)
-                return null;
-
             try
             {
+                var tracks = BookTrackList.Parse(
+                    book.FileDetails.TracksJson);
+
+                if (tracks is null ||
+                    !tracks.Any() ||
+                    BookTrackList.Validate(tracks) is not null)
+                    return null;
+
                 var totalMs = BookTrackList.TotalDurationMs(tracks);
-                return totalMs > 0 ? totalMs / 1000d : null;
+                var seconds = totalMs / 1000d;
+
+                return totalMs > 0 &&
+                    double.IsFinite(seconds) &&
+                    seconds > 0
+                        ? seconds
+                        : null;
             }
-            catch (OverflowException)
+            catch (Exception ex) when (
+                ex is ArgumentException or
+                    FormatException or
+                    OverflowException or
+                    System.Text.Json.JsonException or
+                    InvalidOperationException)
             {
                 return null;
             }
@@ -68,7 +81,8 @@ public static class AlignmentAudioDuration
             ? values[0] * 3600 + values[1] * 60 + values[2]
             : values[0] * 60 + values[1];
 
-        return double.IsFinite(seconds) && seconds > 0
+        // Anything beyond 1,000 hours is corrupt metadata, not an audiobook.
+        return double.IsFinite(seconds) && seconds > 0 && seconds <= 3_600_000
             ? seconds
             : null;
     }
