@@ -15,15 +15,24 @@ import { ControlValueAccessor, NG_VALUE_ACCESSOR, FormsModule } from '@angular/f
 import { CommonModule } from '@angular/common';
 import { Subscription } from 'rxjs';
 
+import { ButtonComponent } from '../button/button.component';
+import { NostosIconComponent } from '../icon/nostos-icon.component';
 import { TopicAutocompleteDirective } from '../../core/directives/topic-autocomplete.directive';
 import { TopicAutocompletePanel } from '../topic-autocomplete-panel/topic-autocomplete-panel.component';
-import { TopicDto, TopicsService } from '../../core/services/topics.service';
+import { TopicsService } from '../../core/services/topics.service';
 import { TopicAutocompleteService } from '../topic-autocomplete-panel/topic-autocomplete.service';
 
 @Component({
   selector: 'app-topic-input',
   standalone: true,
-  imports: [CommonModule, FormsModule, TopicAutocompleteDirective, TopicAutocompletePanel],
+  imports: [
+    CommonModule,
+    FormsModule,
+    ButtonComponent,
+    NostosIconComponent,
+    TopicAutocompleteDirective,
+    TopicAutocompletePanel,
+  ],
   templateUrl: './topic-input.component.html',
   styleUrls: ['./topic-input.component.css'],
   providers: [
@@ -41,9 +50,7 @@ export class TopicInputComponent implements ControlValueAccessor, OnInit, OnDest
   @Output() submitTrigger = new EventEmitter<void>();
 
   @ViewChild('textarea') textarea!: ElementRef<HTMLTextAreaElement>;
-  @ViewChild(TopicAutocompletePanel) private topicPanel!: TopicAutocompletePanel;
-
-  private readonly autocompleteService = inject(TopicAutocompleteService);
+  protected readonly autocompleteService = inject(TopicAutocompleteService);
   private readonly topicsService = inject(TopicsService);
   private readonly cdr = inject(ChangeDetectorRef);
   private sub?: Subscription;
@@ -54,6 +61,11 @@ export class TopicInputComponent implements ControlValueAccessor, OnInit, OnDest
 
   onChange = (_value: string) => {};
   onTouched = () => {};
+
+  /** True while the `[[` suggestion list is showing, for the textarea's ARIA wiring. */
+  protected inlineOpen(): boolean {
+    return this.autocompleteService.pickerOpen() && this.autocompleteService.mode() === 'inline';
+  }
 
   ngOnInit(): void {
     this.sub = this.topicsService.list().subscribe((list) => {
@@ -82,12 +94,10 @@ export class TopicInputComponent implements ControlValueAccessor, OnInit, OnDest
       : '';
 
     this.autocompleteService.openPicker(prefill);
-    this.topicPanel.focusSearch();
   }
 
   cancelTopicPicker(): void {
     const selection = this.pickerSelection;
-    this.autocompleteService.clear();
     this.pickerSelection = null;
 
     setTimeout(() => {
@@ -95,10 +105,6 @@ export class TopicInputComponent implements ControlValueAccessor, OnInit, OnDest
       textarea.focus();
       if (selection) textarea.setSelectionRange(selection.start, selection.end);
     }, 0);
-  }
-
-  insertTopic(topic: TopicDto): void {
-    this.insertTopicName(topic.name);
   }
 
   insertTopicName(rawName: string): void {
