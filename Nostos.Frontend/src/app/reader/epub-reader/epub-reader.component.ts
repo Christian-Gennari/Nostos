@@ -11,8 +11,15 @@ import {
   Injector,
   ElementRef,
   untracked,
+  DestroyRef,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
+import { Router } from '@angular/router';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { AlignmentService } from '../../core/services/alignment.service';
+import { isAlignmentUnavailableCode } from '../../core/dtos/alignment.dtos';
+import { visibleEpubExcerpt } from './epub-visible-excerpt';
 import { ButtonComponent } from '../../ui/button/button.component';
 import { LoadingIndicatorComponent } from '../../ui/loading-indicator/loading-indicator.component';
 import ePub, { Book, Rendition, Contents } from 'epubjs';
@@ -24,7 +31,7 @@ import { DEFAULT_HIGHLIGHT_COLOUR, HighlightColour } from '../highlight-colours'
 import { NotesService } from '../../core/services/notes.service';
 import { BooksService } from '../../core/services/books.service';
 import { ThemeService, Theme } from '../../core/services/theme.service';
-import { Book as BookDto } from '../../core/dtos/book.dtos';
+import { Book as BookDto, EditionSummaryDto } from '../../core/dtos/book.dtos';
 import {
   IReader,
   ReaderProgress,
@@ -469,6 +476,50 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
   private injector = inject(Injector);
   private elementRef = inject(ElementRef);
   private assistantContext = inject(AssistantContextService);
+  // Lazily resolved, as in AudioReader: ordinary EPUB reading does not
+  // require the alignment service or a Router testing provider.
+
+  // --- Continue listening ---
+  // Eligibility is only a UI hint. The backend verifies both editions,
+  // their visibility and their work membership.
+  readonly alignmentTarget = computed<EditionSummaryDto | null>(() => {
+    const book = this.book();
+    if (!book || book.type !== 'ebook') return null;
+
+    return book.otherEditions?.find(edition =>
+      edition.id !== book.id &&
+      edition.type.toLowerCase() === 'audiobook' &&
+      edition.hasFile
+    ) ?? null;
+  });
+
+  readonly alignmentBusy = signal(false);
+  readonly alignmentUnavailable = signal(false);
+  readonly alignmentMessage = signal<string | null>(null);
+  readonly alignmentDeclined = signal(false);
+  readonly alignmentApproximatePosition = signal<number | null>(null);
+
+  readonly canContinueListening = computed(
+    () => this.alignmentTarget() !== null && !this.alignmentUnavailable(),
+  );
+
+  private alignmentRequest: Subscription | null = null;
+  private alignmentRequestGeneration = 0;
+  private alignmentSourceBookId: string | null = null;
+  private declinedAudioBookId: string | null = null;
+
+  // The same reader instance may receive a different book ID. A response
+  // from the previous book must never navigate to its audiobook.
+  protected readonly alignmentBookEffect = effect(() => {
+    const id = this.bookId();
+
+    if (id !== this.alignmentSourceBookId) {
+      untracked(() => {
+        this.resetAlignmentState();
+        this.alignmentSourceBookId = id;
+      });
+    }
+  });
 
   /**
    * Reader signals published to the assistant context registry (issue #261):
@@ -1273,6 +1324,211 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     } catch {
       return [];
     }
+  }
+
+  /**
+   * Reads actual displayed text instead of assuming that the beginning of
+   * the current spine section is the beginning of the visible page.
+   */
+  protected alignmentVisibleExcerpt(): string | null {
+    if (!this.rendition || this.loading() || this.errorMessage()) {
+      return null;
+    }
+
+    return visibleEpubExcerpt(
+      this.renderedContents(),
+      this.readingViewRect(),
+    );
+  }
+
+  continueListening(): void {
+    if (this.alignmentBusy() || this.alignmentUnavailable()) return;
+
+    const target = this.alignmentTarget();
+    if (!target) return;
+
+    this.alignmentMessage.set(null);
+    this.alignmentDeclined.set(false);
+    this.alignmentApproximatePosition.set(null);
+    this.declinedAudioBookId = null;
+
+    const excerpt = this.alignmentVisibleExcerpt();
+
+    if (!excerpt) {
+      this.alignmentMessage.set(
+        'No readable text is visible on this page. Turn to a text page and try again.',
+      );
+      return;
+    }
+
+    // Claim the request synchronously. A second click cannot start another
+    // expensive transcription while the first one is pending.
+    this.alignmentBusy.set(true);
+
+    const sourceBookId = this.bookId();
+    const targetBookId = target.id;
+    const generation = ++this.alignmentRequestGeneration;
+
+    this.alignmentRequest = this.injector.get(AlignmentService)
+      .locateAudio(sourceBookId, {
+        targetBookId,
+        excerpt,
+      })
+      .pipe(takeUntilDestroyed(this.injector.get(
+        // DestroyRef is resolved through the existing component injector.
+        DestroyRef,
+      )))
+      .subscribe({
+        next: result => {
+          if (generation !== this.alignmentRequestGeneration ||
+              this.bookId() !== sourceBookId) {
+            return;
+          }
+
+          this.alignmentBusy.set(false);
+
+          if (!result.located) {
+            this.alignmentDeclined.set(true);
+            this.declinedAudioBookId = targetBookId;
+
+            const approximate = result.approximatePositionSeconds;
+
+            if (approximate != null &&
+                Number.isFinite(approximate) &&
+                approximate >= 0) {
+              this.alignmentApproximatePosition.set(approximate);
+              this.alignmentMessage.set(
+                'The exact sentence could not be found confidently in the audiobook. ' +
+                'You can jump to roughly the same place instead.',
+              );
+            } else {
+              this.alignmentMessage.set(
+                'The passage could not be matched confidently in this audiobook edition.',
+              );
+            }
+            return;
+          }
+
+          const position = result.positionSeconds;
+
+          if (!Number.isFinite(position) || position < 0) {
+            this.alignmentMessage.set(
+              'The passage was found, but its audio position is unavailable.',
+            );
+            return;
+          }
+
+          this.navigateToAlignedAudio(targetBookId, generation, position);
+        },
+        error: (error: unknown) => {
+          if (generation !== this.alignmentRequestGeneration ||
+              this.bookId() !== sourceBookId) {
+            return;
+          }
+
+          this.alignmentBusy.set(false);
+          this.alignmentDeclined.set(false);
+          this.alignmentApproximatePosition.set(null);
+          this.declinedAudioBookId = null;
+
+          const code = error instanceof HttpErrorResponse
+            ? error.error?.title
+            : null;
+
+          if (isAlignmentUnavailableCode(code)) {
+            this.alignmentUnavailable.set(true);
+            this.alignmentMessage.set(
+              'Continue listening needs transcription to be available. Check Settings.',
+            );
+          } else if (
+            code === 'ai_rate_limited' ||
+            code === 'stt_rate_limited' ||
+            code === 'ai_usage_limit_reached'
+          ) {
+            this.alignmentMessage.set(
+              'Transcription is temporarily limited. Try again later.',
+            );
+          } else {
+            this.alignmentMessage.set(
+              'Could not find your place in the audiobook. Please try again.',
+            );
+          }
+        },
+      });
+  }
+
+  /**
+   * An approximate position is deliberately not treated as an exact match.
+   * The reader only moves there after the user explicitly chooses it.
+   */
+  jumpToApproximateAudio(): void {
+    if (this.alignmentBusy() || !this.alignmentDeclined()) return;
+
+    const position = this.alignmentApproximatePosition();
+    const targetBookId = this.declinedAudioBookId;
+
+    if (position == null || !Number.isFinite(position) ||
+        position < 0 || !targetBookId) {
+      return;
+    }
+
+    this.navigateToAlignedAudio(
+      targetBookId,
+      this.alignmentRequestGeneration,
+      position,
+    );
+  }
+
+  /** Opens the audiobook at its own saved position, without sourceTime. */
+  openAudiobookAnyway(): void {
+    if (this.alignmentBusy() || !this.alignmentDeclined()) return;
+
+    const targetBookId = this.declinedAudioBookId;
+    if (!targetBookId) return;
+
+    this.navigateToAlignedAudio(
+      targetBookId,
+      this.alignmentRequestGeneration,
+    );
+  }
+
+  private navigateToAlignedAudio(
+    targetBookId: string,
+    generation: number,
+    positionSeconds?: number,
+  ): void {
+    const queryParams = positionSeconds === undefined
+      ? {}
+      : { sourceTime: positionSeconds };
+
+    void this.injector.get(Router).navigate(
+      ['/read', targetBookId],
+      { queryParams },
+    ).then(navigated => {
+      if (!navigated && generation === this.alignmentRequestGeneration) {
+        this.alignmentMessage.set(
+          'Could not open the audiobook. Please try again.',
+        );
+      }
+    }).catch(() => {
+      if (generation === this.alignmentRequestGeneration) {
+        this.alignmentMessage.set(
+          'Could not open the audiobook. Please try again.',
+        );
+      }
+    });
+  }
+
+  private resetAlignmentState(): void {
+    ++this.alignmentRequestGeneration;
+    this.alignmentRequest?.unsubscribe();
+    this.alignmentRequest = null;
+    this.alignmentBusy.set(false);
+    this.alignmentUnavailable.set(false);
+    this.alignmentMessage.set(null);
+    this.alignmentDeclined.set(false);
+    this.alignmentApproximatePosition.set(null);
+    this.declinedAudioBookId = null;
   }
 
   private contentMatchesHref(content: Contents, href: string | null): boolean {
