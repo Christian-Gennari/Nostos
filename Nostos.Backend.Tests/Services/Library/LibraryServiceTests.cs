@@ -912,6 +912,67 @@ public sealed class LibraryServiceTests : IClassFixture<SqliteTestFixture>
     }
 
     [Fact]
+    public async Task A_second_local_file_for_the_same_title_becomes_another_edition_of_the_work()
+    {
+        var h = Harness();
+        var first = ((LibraryCreateOrMatchResultDto)(await h.Service.CreateOrMatchBookAsync(
+            CreateRequest("ebook", "A Christmas Carol", Author: "Charles Dickens", FileUploadExpected: true),
+            strictConfirmation: false)).Data!).Book!;
+        await using (var db = await h.Factory.CreateDbContextAsync())
+        {
+            var stored = await db.Books.SingleAsync(b => b.Id == first.Id);
+            stored.FileDetails.HasFile = true;
+            stored.FileDetails.FileName = "book.epub";
+            stored.Status = BookStatus.Ready;
+            await db.SaveChangesAsync();
+        }
+
+        var second = (LibraryCreateOrMatchResultDto)(await h.Service.CreateOrMatchBookAsync(
+            CreateRequest("ebook", "A Christmas Carol", Author: "Charles Dickens", FileUploadExpected: true),
+            strictConfirmation: false)).Data!;
+
+        second.Outcome.Should().Be("created", "the first edition's file must never be the upload target");
+        second.BookId.Should().NotBe(first.Id);
+        second.Book!.WorkId.Should().Be(first.WorkId, "both files are editions of one work");
+        second.Book.Status.Should().Be(BookStatus.UploadPending);
+        second.Book.EditionCount.Should().Be(2, "the reply tells the caller it joined an existing work");
+        first.EditionCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task A_local_file_resumes_the_matching_edition_that_is_still_waiting_for_one()
+    {
+        var h = Harness();
+        var first = ((LibraryCreateOrMatchResultDto)(await h.Service.CreateOrMatchBookAsync(
+            CreateRequest("ebook", "Interrupted Add", Author: "Uploader", FileUploadExpected: true),
+            strictConfirmation: false)).Data!).Book!;
+
+        var again = (LibraryCreateOrMatchResultDto)(await h.Service.CreateOrMatchBookAsync(
+            CreateRequest("ebook", "Interrupted Add", Author: "Uploader", FileUploadExpected: true),
+            strictConfirmation: false)).Data!;
+
+        again.Outcome.Should().Be("matched");
+        again.BookId.Should().Be(first.Id);
+        (await CountBooksAsync(h)).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task A_metadata_only_add_still_matches_the_existing_edition()
+    {
+        var h = Harness();
+        var first = ((LibraryCreateOrMatchResultDto)(await h.Service.CreateOrMatchBookAsync(
+            CreateRequest("ebook", "Already Here", Author: "Someone"),
+            strictConfirmation: false)).Data!).Book!;
+
+        var again = (LibraryCreateOrMatchResultDto)(await h.Service.CreateOrMatchBookAsync(
+            CreateRequest("ebook", "Already Here", Author: "Someone"),
+            strictConfirmation: false)).Data!;
+
+        again.Outcome.Should().Be("matched");
+        again.BookId.Should().Be(first.Id);
+    }
+
+    [Fact]
     public async Task Upload_pending_is_explicit_and_excluded_without_hiding_valid_fileless_books()
     {
         var h = Harness();

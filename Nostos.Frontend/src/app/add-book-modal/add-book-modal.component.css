@@ -334,6 +334,33 @@
   border-radius: var(--radius-md);
   background: var(--danger-surface);
 }
+.existing-book {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--color-info-border);
+  border-radius: var(--radius-md);
+  background: var(--color-info-bg);
+}
+.existing-book__message {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  color: var(--color-info);
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+.existing-book__message nostos-icon {
+  flex: none;
+  margin-top: 0.15rem;
+}
+.existing-book__actions {
+  display: flex;
+  flex: none;
+  gap: 0.5rem;
+}
 .upload-failure__message {
   display: flex;
   align-items: center;
@@ -361,6 +388,13 @@
   .upload-failure {
     align-items: stretch;
     flex-direction: column;
+  }
+  .existing-book {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .existing-book__actions {
+    flex-wrap: wrap;
   }
 }
 

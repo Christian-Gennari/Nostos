@@ -113,6 +113,11 @@ export class AddBookModal {
   private pendingUploadBook = signal<BookModel | null>(null);
   readonly hasPendingUpload = computed(() => this.pendingUploadBook() !== null);
   readonly uploadError = signal<string | null>(null);
+  /**
+   * The library already holds this exact book and it has its own file. The new
+   * file is held back until the user chooses; it never replaces one silently.
+   */
+  readonly existingWithFile = signal<BookModel | null>(null);
 
   // Form State
   form = {
@@ -352,6 +357,7 @@ export class AddBookModal {
     this.uploadProgress.set(null);
     this.uploadError.set(null);
     this.pendingUploadBook.set(null);
+    this.existingWithFile.set(null);
     this.isFetching.set(false);
     this.isSubmitting.set(false);
     this.fileDragActive.set(false);
@@ -552,18 +558,27 @@ export class AddBookModal {
         },
       });
     } else {
-      this.booksService.create({
+      this.existingWithFile.set(null);
+      const wantsUpload = this.form.type !== 'physical' && this.selectedFile() !== null;
+      this.booksService.createOrMatch({
         ...payload,
         // A digital row created for a chosen local file is not a completed
         // library item until /file succeeds. Metadata-only digital books omit
         // this flag and remain legitimate Ready rows without a file.
-        fileUploadExpected: this.form.type !== 'physical' && this.selectedFile() !== null,
+        fileUploadExpected: wantsUpload,
       }).subscribe({
-        next: (createdBook) => {
-          if (this.form.type !== 'physical' && this.selectedFile()) {
-            this.handleFileUpload(createdBook);
+        next: ({ book, created }) => {
+          if (!created) {
+            this.handleExistingBook(book, wantsUpload);
+            return;
+          }
+          if ((book.editionCount ?? 1) > 1) {
+            this.toast.info(`Added as another edition of “${book.title}”.`);
+          }
+          if (wantsUpload) {
+            this.handleFileUpload(book);
           } else {
-            this.uploadCoverIfNeeded(createdBook.id);
+            this.uploadCoverIfNeeded(book.id);
           }
         },
         error: () => {
@@ -572,6 +587,44 @@ export class AddBookModal {
         },
       });
     }
+  }
+
+  /**
+   * The server answered with a book that was already in the library. Nothing
+   * of it is overwritten here: its cover is left alone, and a file is only
+   * sent when that book was still waiting for one.
+   */
+  private handleExistingBook(book: BookModel, wantsUpload: boolean): void {
+    if (!wantsUpload) {
+      this.toast.info(`“${book.title}” is already in your library.`);
+      this.finishAdd();
+      return;
+    }
+    if (book.hasFile) {
+      this.isSubmitting.set(false);
+      this.existingWithFile.set(book);
+      return;
+    }
+    this.handleFileUpload(book);
+  }
+
+  /** Says why the library's book counts as the same one, when an identifier decided it. */
+  existingNotice(book: BookModel): string {
+    const sameIsbn = !!book.isbn && this.sanitizeIsbn(this.form.isbn) === this.sanitizeIsbn(book.isbn);
+    const sameAsin = !!book.asin && (this.form.asin ?? '').trim().toUpperCase() === book.asin.toUpperCase();
+    const why = sameIsbn ? ' with the same ISBN' : sameAsin ? ' with the same ASIN' : '';
+    return `“${book.title}” is already in your library${why} and has its own file. Your new file was not added.`;
+  }
+
+  keepExistingFile(): void {
+    this.finishAdd();
+  }
+
+  replaceExistingFile(): void {
+    const book = this.existingWithFile();
+    if (!book || this.isSubmitting()) return;
+    this.existingWithFile.set(null);
+    this.handleFileUpload(book);
   }
 
   handleFileUpload(createdBook: BookModel): void {

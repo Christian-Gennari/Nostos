@@ -192,7 +192,7 @@ describe('AddBookModal', () => {
 
   it('keeps a provider-first manual draft intact when a cover is selected', () => {
     const books = TestBed.inject(BooksService);
-    const createSpy = vi.spyOn(books, 'create');
+    const createSpy = vi.spyOn(books, 'createOrMatch');
     const closeSpy = vi.fn();
     component.closeModal.subscribe(closeSpy);
 
@@ -293,7 +293,7 @@ describe('AddBookModal', () => {
 
   it('never uploads a stale file when creating a physical book', () => {
     const books = TestBed.inject(BooksService);
-    vi.spyOn(books, 'create').mockReturnValue(of({ id: 'physical-new' } as unknown as Book));
+    vi.spyOn(books, 'createOrMatch').mockReturnValue(of({ book: { id: 'physical-new' } as unknown as Book, created: true }));
     const uploadSpy = vi.spyOn(books, 'uploadFile');
 
     component.form.title = 'Physical Meditations';
@@ -306,8 +306,8 @@ describe('AddBookModal', () => {
 
   it('allows only one create while the first add request is still in flight', () => {
     const books = TestBed.inject(BooksService);
-    const createResult = new Subject<Book>();
-    const createSpy = vi.spyOn(books, 'create').mockReturnValue(createResult);
+    const createResult = new Subject<{ book: Book; created: boolean }>();
+    const createSpy = vi.spyOn(books, 'createOrMatch').mockReturnValue(createResult);
 
     component.form.title = 'The Magic Mountain';
     component.form.type = 'physical';
@@ -325,8 +325,8 @@ describe('AddBookModal', () => {
   it('keeps the add action locked after create returns while the file upload is running', () => {
     const books = TestBed.inject(BooksService);
     const createSpy = vi
-      .spyOn(books, 'create')
-      .mockReturnValue(of({ id: 'new-book' } as unknown as Book));
+      .spyOn(books, 'createOrMatch')
+      .mockReturnValue(of({ book: { id: 'new-book' } as unknown as Book, created: true }));
     const uploadResult = new Subject<any>();
     const uploadSpy = vi.spyOn(books, 'uploadFile').mockReturnValue(uploadResult);
 
@@ -356,10 +356,97 @@ describe('AddBookModal', () => {
     expect(uploadSpy).toHaveBeenCalledTimes(1);
   });
 
+  it('holds the new file back when the book already exists with its own file', () => {
+    const books = TestBed.inject(BooksService);
+    const existing = {
+      id: 'existing',
+      title: 'Meditations',
+      hasFile: true,
+      isbn: '9780140449334',
+    } as unknown as Book;
+    vi.spyOn(books, 'createOrMatch').mockReturnValue(of({ book: existing, created: false }));
+    const uploadResult = new Subject<any>();
+    const uploadSpy = vi.spyOn(books, 'uploadFile').mockReturnValue(uploadResult);
+
+    component.form.title = 'Meditations (scan)';
+    component.form.isbn = '978-0-14-044933-4';
+    component.form.type = 'ebook';
+    component.selectedFile.set(new File(['pdf'], 'meditations.pdf', { type: 'application/pdf' }));
+    fixture.detectChanges();
+    component.submit();
+    fixture.detectChanges();
+
+    expect(uploadSpy).not.toHaveBeenCalled();
+    expect(component.isSubmitting()).toBe(false);
+    const notice = fixture.nativeElement.querySelector('[data-testid="add-book-existing"]');
+    expect(notice?.textContent).toContain('“Meditations” is already in your library with the same ISBN');
+
+    (
+      fixture.nativeElement.querySelector(
+        '[data-testid="add-book-replace-existing"]',
+      ) as HTMLButtonElement
+    ).click();
+
+    expect(uploadSpy).toHaveBeenCalledTimes(1);
+    expect(uploadSpy.mock.calls[0][0]).toBe('existing');
+  });
+
+  it('closes without touching the existing file when the user keeps it', () => {
+    const books = TestBed.inject(BooksService);
+    const existing = { id: 'existing', title: 'Meditations', hasFile: true } as unknown as Book;
+    vi.spyOn(books, 'createOrMatch').mockReturnValue(of({ book: existing, created: false }));
+    const uploadSpy = vi.spyOn(books, 'uploadFile');
+    const closeSpy = vi.fn();
+    component.closeModal.subscribe(closeSpy);
+
+    component.form.title = 'Meditations';
+    component.form.type = 'ebook';
+    component.selectedFile.set(new File(['pdf'], 'meditations.pdf', { type: 'application/pdf' }));
+    component.submit();
+    component.keepExistingFile();
+
+    expect(uploadSpy).not.toHaveBeenCalled();
+    expect(closeSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends the file to an existing book that was still waiting for one', () => {
+    const books = TestBed.inject(BooksService);
+    const waiting = { id: 'waiting', title: 'Meditations', hasFile: false } as unknown as Book;
+    vi.spyOn(books, 'createOrMatch').mockReturnValue(of({ book: waiting, created: false }));
+    const uploadSpy = vi.spyOn(books, 'uploadFile').mockReturnValue(new Subject<any>());
+
+    component.form.title = 'Meditations';
+    component.form.type = 'ebook';
+    component.selectedFile.set(new File(['epub'], 'm.epub', { type: 'application/epub+zip' }));
+    component.submit();
+
+    expect(uploadSpy).toHaveBeenCalledTimes(1);
+    expect(component.existingWithFile()).toBeNull();
+  });
+
+  it('says so instead of pretending to add a book that is already there', () => {
+    const books = TestBed.inject(BooksService);
+    const existing = { id: 'existing', title: 'Meditations', hasFile: false } as unknown as Book;
+    vi.spyOn(books, 'createOrMatch').mockReturnValue(of({ book: existing, created: false }));
+    const coverSpy = vi.spyOn(books, 'uploadCover');
+    const infoSpy = vi.spyOn(TestBed.inject(ToastService), 'info');
+    const closeSpy = vi.fn();
+    component.closeModal.subscribe(closeSpy);
+
+    component.form.title = 'Meditations';
+    component.form.type = 'physical';
+    component.selectedCover.set(new File(['img'], 'cover.png', { type: 'image/png' }));
+    component.submit();
+
+    expect(infoSpy).toHaveBeenCalledWith('“Meditations” is already in your library.');
+    expect(coverSpy).not.toHaveBeenCalled();
+    expect(closeSpy).toHaveBeenCalledTimes(1);
+  });
+
   it('retries a failed upload against the created book instead of creating another row', () => {
     const books = TestBed.inject(BooksService);
     const createdBook = { id: 'existing-row' } as unknown as Book;
-    const createSpy = vi.spyOn(books, 'create').mockReturnValue(of(createdBook));
+    const createSpy = vi.spyOn(books, 'createOrMatch').mockReturnValue(of({ book: createdBook, created: true }));
     const firstUpload = new Subject<any>();
     const secondUpload = new Subject<any>();
     const uploadSpy = vi
@@ -464,8 +551,8 @@ describe('AddBookModal', () => {
   it('submits the membership set as the only collection field', async () => {
     const books = TestBed.inject(BooksService);
     const createSpy = vi
-      .spyOn(books, 'create')
-      .mockReturnValue(of({ id: 'new' } as unknown as Book));
+      .spyOn(books, 'createOrMatch')
+      .mockReturnValue(of({ book: { id: 'new' } as unknown as Book, created: true }));
     fixture.detectChanges();
 
     component.form.title = 'Meditations';
