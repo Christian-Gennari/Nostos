@@ -16,6 +16,9 @@ We also accept reports affecting the current official Nostos Cloud service.
 Please [report vulnerabilities privately through GitHub](https://github.com/Christian-Gennari/Nostos/security/advisories/new).
 A GitHub account is required to submit a report.
 
+If you cannot use GitHub private reporting, email
+[security@nostos.page](mailto:security@nostos.page).
+
 Do not publish vulnerability details in public issues, discussions, or pull
 requests. Ordinary bugs and feature requests can use
 [GitHub Issues](https://github.com/Christian-Gennari/Nostos/issues).
