@@ -90,6 +90,9 @@ export interface AiProviderTestRequest {
   baseUrl?: string;
   model?: string;
   apiKey?: string;
+  /** Alignment section only: test the unsaved selection. */
+  apiStyle?: string;
+  useVoiceTranscription?: boolean;
 }
 
 /**

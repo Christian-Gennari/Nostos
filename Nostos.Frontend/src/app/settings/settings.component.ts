@@ -1164,6 +1164,13 @@ export class SettingsComponent implements OnInit, OnDestroy {
       baseUrl: useVoice ? undefined : form.baseUrl,
       model: useVoice ? undefined : form.model,
       apiKey: useVoice ? undefined : form.key || undefined,
+      // Test what is selected now, not what was last saved.
+      ...(kind === 'alignmentStt'
+        ? {
+            useVoiceTranscription: useVoice,
+            apiStyle: useVoice ? undefined : this.aiAlignment().apiStyle,
+          }
+        : {}),
     };
 
     this.aiTestingKind.set(kind);

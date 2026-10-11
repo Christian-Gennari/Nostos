@@ -792,6 +792,34 @@ public sealed class AiProviderSettingsServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Alignment_connection_test_honours_the_unsaved_selection()
+    {
+        // Found live: the form selected a dedicated JSON provider, the user
+        // pressed "Test connection" before saving, and the probe still went
+        // to the saved (voice, multipart) transport.
+        var handler = new StubHttpMessageHandler();
+
+        handler.Register(
+            "/v4/ai/transcription-model",
+            _ => Json("""{"text":"","durationInSeconds":1}"""));
+
+        var service = CreateService(handler);
+
+        var result = await service.TestAsync(
+            new AiProviderTestRequest(
+                "alignment-transcription",
+                "https://transcription.example.test",
+                "alignment-model",
+                "alignment-key",
+                AlignmentTranscriptionApiStyles.JsonBase64,
+                UseVoiceTranscription: false));
+
+        result.Ok.Should().BeTrue(result.Error);
+        handler.RecordedRequestPaths.Should()
+            .Equal("/v4/ai/transcription-model");
+    }
+
+    [Fact]
     public async Task Alignment_using_voice_tests_voice_multipart_not_saved_json()
     {
         var handler = new StubHttpMessageHandler();

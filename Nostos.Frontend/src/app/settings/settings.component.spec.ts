@@ -2200,6 +2200,8 @@ describe('SettingsComponent backup-only surface', () => {
       baseUrl: undefined,
       model: undefined,
       apiKey: undefined,
+      useVoiceTranscription: true,
+      apiStyle: undefined,
     });
     expect(statusElement('ai-provider-alignment').textContent).toContain(
       'Reached the endpoint.',
@@ -2226,6 +2228,8 @@ describe('SettingsComponent backup-only surface', () => {
       baseUrl: 'https://alignment.example/v1',
       model: 'custom-model',
       apiKey: 'sk-unsaved',
+      useVoiceTranscription: false,
+      apiStyle: 'openai-multipart',
     });
 
     aiProviderServiceMock.loadModels.mockReturnValueOnce(
