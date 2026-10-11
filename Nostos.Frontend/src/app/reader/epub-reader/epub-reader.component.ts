@@ -491,7 +491,6 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
    */
   book = input<BookDto | null>(null);
   noteCreated = output<void>();
-  highlightMode = input<boolean>(false);
   /** The book's highlighter pen (issue #208), owned by the shell. */
   highlightColour = input<HighlightColour>(DEFAULT_HIGHLIGHT_COLOUR);
   selectionCaptured = output<string>();
@@ -501,6 +500,8 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
    * (#650). Null when it could not be measured.
    */
   selectionAnchored = output<SelectionAnchor | null>();
+  /** A tap on the page asked to drop the passage a touch selection offered. */
+  selectionDismissed = output<void>();
   commitFailed = output<void>();
   /** An imported highlight was found in the book and now has a location. */
   noteLocated = output<Note>();
@@ -634,17 +635,9 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
 
     effect(() => {
       if (this.bookId()) {
-        // loadBook reads highlightMode() to sync the manager before display;
-        // untracked keeps that read out of this effect's dependencies so a
-        // mode toggle never re-triggers a full book reload.
+        // untracked keeps loadBook's own signal reads out of this effect's
+        // dependencies, so only a new book id triggers a full reload.
         untracked(() => this.loadBook(this.bookId()));
-      }
-    });
-
-    effect(() => {
-      const mode = this.highlightMode();
-      if (this.annotationManager) {
-        this.annotationManager.setHighlightMode(mode);
       }
     });
 
@@ -1717,13 +1710,13 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
       () => this.noteCreated.emit(),
       () => this.commitFailed.emit(),
     );
-    this.annotationManager.setHighlightMode(this.highlightMode());
     this.annotationManager.setHighlightColour(this.highlightColour());
     this.annotationManager.setOnSelectionCaptured((text, anchor) => {
       this.assistantSelection.set(text);
       this.selectionCaptured.emit(text);
       this.selectionAnchored.emit(anchor);
     });
+    this.annotationManager.setOnSelectionAbandoned(() => this.selectionDismissed.emit());
     this.annotationManager.init();
 
     rendition.on('relocated', (location: any) => {
@@ -2281,8 +2274,8 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     if (note.cfiRange) this.annotationManager?.recolourHighlight(note.cfiRange, colour);
   }
 
-  commitHighlight(content = ''): void {
-    const committed = this.annotationManager?.commitHighlight(content);
+  commitHighlight(content = '', colour?: HighlightColour): void {
+    const committed = this.annotationManager?.commitHighlight(content, colour);
     void committed?.then((success) => {
       if (success) this.assistantSelection.set(null);
     });

@@ -68,8 +68,11 @@ export interface IReader {
   removeHighlight(identifier: string): void;
   /** Redraws a saved highlight after its pen was changed from the note's edit UI. */
   recolourHighlight?(note: Note, colour: HighlightColour): void;
-  /** Saves the pending mark; `content` is optional note text for EPUB/PDF. */
-  commitHighlight(content?: string): void;
+  /**
+   * Saves the pending mark; `content` is optional note text for EPUB/PDF, and
+   * `colour` a pen chosen in the same gesture (default: the book's pen).
+   */
+  commitHighlight(content?: string, colour?: HighlightColour): void;
   discardHighlight(): void;
 
   // Reactive State

@@ -885,7 +885,6 @@ describe('PdfReader highlight trust regressions (#478)', () => {
 
     fixture = TestBed.createComponent(PdfReader);
     fixture.componentRef.setInput('bookId', 'book-1');
-    fixture.componentRef.setInput('highlightMode', true);
     fixture.detectChanges();
   });
 
@@ -921,7 +920,7 @@ describe('PdfReader highlight trust regressions (#478)', () => {
   it('retries the exact same pending PDF highlight after a transient save failure', () => {
     const component = fixture.componentInstance;
 
-    component.onTextSelection();
+    component.onSurfaceMouseUp({ button: 0 } as MouseEvent);
     component.commitHighlight('A PDF note');
     expect(createNote).toHaveBeenCalledTimes(1);
 
@@ -938,78 +937,177 @@ describe('PdfReader highlight trust regressions (#478)', () => {
     expect(firstDto.highlightColour).toBe('amber');
   });
 
-  it('captures a desktop mouse selection without highlight mode, but not a touch one', () => {
-    const component = fixture.componentInstance;
-    fixture.componentRef.setInput('highlightMode', false);
-    fixture.detectChanges();
-    const captured = vi.fn();
-    component.selectionCaptured.subscribe(captured);
-
-    // Touch completion and the viewer's selection event carry no mouse event.
-    component.onTextSelection();
-    expect(captured).not.toHaveBeenCalled();
-
-    component.onTextSelection({ button: 2 } as MouseEvent);
-    expect(captured).not.toHaveBeenCalled();
-
-    component.onTextSelection({ button: 0 } as MouseEvent);
-    expect(captured).toHaveBeenCalledWith('same difficult selection');
-  });
-
-  it('anchors the menu at a released mouse selection, never at a mid-drag viewer event', () => {
-    const component = fixture.componentInstance;
-    const anchored = vi.fn();
-    component.selectionAnchored.subscribe(anchored);
+  const touchEnd = (component: PdfReader) =>
+    component.onSurfaceTouchEnd({ changedTouches: [] } as unknown as TouchEvent);
+  const fakeSelection = (removeAllRanges = vi.fn()) => {
     const rect = { top: 100, bottom: 120, left: 40, right: 260, width: 220, height: 20 };
     vi.spyOn(window, 'getSelection').mockReturnValue({
       rangeCount: 1,
       getRangeAt: () => ({ getBoundingClientRect: () => rect }),
-      removeAllRanges: vi.fn(),
+      removeAllRanges,
     } as unknown as Selection);
+  };
 
-    component.onTextSelection();
-    expect(anchored).toHaveBeenLastCalledWith(null);
+  it('offers a released mouse selection anchored at the text; a non-primary release offers nothing', () => {
+    const component = fixture.componentInstance;
+    const captured = vi.fn();
+    const anchored = vi.fn();
+    component.selectionCaptured.subscribe(captured);
+    component.selectionAnchored.subscribe(anchored);
+    fakeSelection();
 
-    component.onTextSelection({ button: 0 } as MouseEvent);
+    component.onSurfaceMouseUp({ button: 2 } as MouseEvent);
+    expect(captured).not.toHaveBeenCalled();
+
+    component.onSurfaceMouseUp({ button: 0 } as MouseEvent);
+    expect(captured).toHaveBeenCalledWith('same difficult selection');
     expect(anchored).toHaveBeenLastCalledWith({ top: 100, bottom: 120, left: 40, right: 260 });
   });
 
-  it('abandons a mark captured outside highlight mode on a plain page click', () => {
+  it('offers a touch selection docked, and ignores the emulated mouseup of a tap', () => {
     const component = fixture.componentInstance;
-    fixture.componentRef.setInput('highlightMode', false);
-    fixture.detectChanges();
-    const dismissed = vi.fn();
-    component.selectionDismissed.subscribe(dismissed);
-
-    component.onTextSelection({ button: 0 } as MouseEvent);
-    captureHighlight.mockReturnValue(null);
-    component.onTextSelection({ button: 0 } as MouseEvent);
-    expect(dismissed).toHaveBeenCalledTimes(1);
-
-    // Nothing pending any more: a second click has nothing to abandon.
-    component.onTextSelection({ button: 0 } as MouseEvent);
-    expect(dismissed).toHaveBeenCalledTimes(1);
-  });
-
-  it('leaves a cross-page selection alone outside highlight mode', () => {
-    const component = fixture.componentInstance;
-    fixture.componentRef.setInput('highlightMode', false);
-    fixture.detectChanges();
+    const captured = vi.fn();
+    const anchored = vi.fn();
+    component.selectionCaptured.subscribe(captured);
+    component.selectionAnchored.subscribe(anchored);
     const removeAllRanges = vi.fn();
-    vi.spyOn(window, 'getSelection').mockReturnValue({ removeAllRanges } as unknown as Selection);
-    captureHighlight.mockReturnValue({ status: 'cross-page', selectedText: 'two pages' });
+    fakeSelection(removeAllRanges);
 
-    component.onTextSelection({ button: 0 } as MouseEvent);
+    component.onSurfacePointerDown({ pointerType: 'touch' } as PointerEvent);
+    component.onSurfaceMouseUp({ button: 0 } as MouseEvent);
+    expect(captured).not.toHaveBeenCalled();
 
-    expect(component.highlightWarning()).toBeNull();
+    touchEnd(component);
+    expect(captured).toHaveBeenCalledWith('same difficult selection');
+    expect(anchored).toHaveBeenLastCalledWith(null);
+    // The handles and the OS menu belong to the native selection (#16).
     expect(removeAllRanges).not.toHaveBeenCalled();
   });
 
-  it('publishes current native PDF selection without highlight mode and clears it when stale', () => {
+  it('follows a touch selection once its handles settle, without repeating the same offer', () => {
+    vi.useFakeTimers();
+    try {
+      const component = fixture.componentInstance;
+      const captured = vi.fn();
+      component.selectionCaptured.subscribe(captured);
+      component.onSurfacePointerDown({ pointerType: 'touch' } as PointerEvent);
+
+      // Each step of a handle drag restarts the wait.
+      component.onNativeSelectionChange();
+      vi.advanceTimersByTime(200);
+      component.onNativeSelectionChange();
+      vi.advanceTimersByTime(200);
+      expect(captured).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(200);
+      expect(captured).toHaveBeenCalledTimes(1);
+
+      // Reported again by touchend: the same passage is not offered twice.
+      touchEnd(component);
+      expect(captured).toHaveBeenCalledTimes(1);
+
+      captureHighlight.mockReturnValue({
+        status: 'captured',
+        pageNumber: 3,
+        rects: [{ left: 0.1, top: 0.2, width: 0.5, height: 0.04 }],
+        selectedText: 'same difficult selection, extended',
+      });
+      component.onNativeSelectionChange();
+      vi.advanceTimersByTime(400);
+      expect(captured).toHaveBeenLastCalledWith('same difficult selection, extended');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a mouse selection is not captured from selectionchange while the drag is still growing', () => {
+    vi.useFakeTimers();
+    try {
+      const component = fixture.componentInstance;
+      const captured = vi.fn();
+      component.selectionCaptured.subscribe(captured);
+
+      component.onNativeSelectionChange();
+      vi.advanceTimersByTime(1000);
+
+      expect(captured).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a click on the page with nothing selected asks to drop the offered passage', () => {
+    vi.useFakeTimers();
+    try {
+      const component = fixture.componentInstance;
+      const dismissed = vi.fn();
+      component.selectionDismissed.subscribe(dismissed);
+      const next = vi.spyOn(component, 'next');
+      const click = { clientX: 5, clientY: 5, currentTarget: null, target: null } as unknown as MouseEvent;
+      component.setScrollMode(ScrollModeType.page);
+
+      component.onSurfaceMouseUp({ button: 0 } as MouseEvent);
+      // The click that ends the drag still has its selection.
+      selectionText = 'same difficult selection';
+      component.onSurfaceClick(click);
+      vi.runAllTimers();
+      expect(dismissed).not.toHaveBeenCalled();
+
+      selectionText = null;
+      component.onSurfaceClick(click);
+      vi.runAllTimers();
+      expect(dismissed).toHaveBeenCalledTimes(1);
+      // The tap that dismisses must not also turn the page.
+      expect(next).not.toHaveBeenCalled();
+
+      component.discardHighlight();
+      component.onSurfaceClick(click);
+      vi.runAllTimers();
+      expect(dismissed).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('explains a cross-page selection without clearing it, and withdraws the notice after', () => {
+    const component = fixture.componentInstance;
+    const removeAllRanges = vi.fn();
+    fakeSelection(removeAllRanges);
+    captureHighlight.mockReturnValue({ status: 'cross-page', selectedText: 'two pages' });
+
+    component.onSurfaceMouseUp({ button: 0 } as MouseEvent);
+    expect(component.highlightWarning()).toContain('one PDF page');
+    // It may be a selection to copy.
+    expect(removeAllRanges).not.toHaveBeenCalled();
+
+    captureHighlight.mockReturnValue(null);
+    component.onSurfaceMouseUp({ button: 0 } as MouseEvent);
+    expect(component.highlightWarning()).toBeNull();
+  });
+
+  it('draws the pending passage so it stays visible while a note is typed', () => {
+    const component = fixture.componentInstance;
+    const paint = TestBed.inject(PdfAnnotationManager).paint as ReturnType<typeof vi.fn>;
+    const page = document.createElement('div');
+    page.className = 'page';
+    page.setAttribute('data-page-number', '3');
+    page.innerHTML = '<div class="textLayer"></div>';
+    document.body.appendChild(page);
+    try {
+      component.onSurfaceMouseUp({ button: 0 } as MouseEvent);
+      expect(paint.mock.lastCall?.[1]).toEqual([
+        expect.objectContaining({ pageNumber: 3, colour: 'amber' }),
+      ]);
+
+      component.discardHighlight();
+      expect(paint.mock.lastCall?.[1]).toEqual([]);
+    } finally {
+      page.remove();
+    }
+  });
+
+  it('publishes the current native PDF selection and clears it when stale', () => {
     const component = fixture.componentInstance;
     const context = TestBed.inject(AssistantContextService);
-    fixture.componentRef.setInput('highlightMode', false);
-    fixture.detectChanges();
 
     selectionText = 'phrase A';
     component.onNativeSelectionChange();

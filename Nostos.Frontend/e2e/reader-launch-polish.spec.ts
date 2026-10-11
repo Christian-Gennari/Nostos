@@ -149,9 +149,6 @@ test('320px touch selection keeps Copy, Ask Nostos, Cancel, Note, and Highlight 
     await page.goto(`${loadFixture().baseUrl}/read/${bookId}`);
     const frame = page.frameLocator('#epub-viewer iframe');
     await frame.locator('p').first().waitFor({ timeout: 45_000 });
-    await page.locator('#epub-viewer').click({ position: { x: 160, y: 12 } });
-    await page.getByRole('button', { name: 'Notes & Highlights', exact: true }).click();
-    await page.getByTestId('reader-highlight-toggle').click();
     await frame.locator('p').first().evaluate((paragraph) => {
       const doc = paragraph.ownerDocument;
       const range = doc.createRange();

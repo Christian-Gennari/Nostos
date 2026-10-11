@@ -56,7 +56,7 @@
         title="Notes & Highlights"
         aria-label="Notes & Highlights"
         [attr.aria-expanded]="notesOpen()"
-        [class.active]="notesOpen() || highlightMode()"
+        [class.active]="notesOpen()"
       ></button>
       @if (fileType() === 'epub' || fileType() === 'pdf') {
       <button
@@ -216,17 +216,17 @@
         [bookId]="book()!.id"
         [initialLocation]="book()?.lastLocation"
         [sidebarVisible]="tocOpen()"
-        [highlightMode]="highlightMode()" [highlightColour]="highlightColour()"
+        [highlightColour]="highlightColour()"
         (sidebarVisibleChange)="tocOpen.set($event)"
         (noteCreated)="handleNoteCreated()"
         (selectionCaptured)="handleSelectionCaptured($event)"
         (selectionAnchored)="handleSelectionAnchored($event)"
-        (selectionDismissed)="discardHighlight()"
+        (selectionDismissed)="handleSelectionDismissed()"
         (commitFailed)="handleCommitFailed()"
         (surfaceInteracted)="handleSurfaceInteraction()"
       />
       } @case ('epub') {
-      <app-epub-reader #epubReader [bookId]="book()!.id" [book]="book()" [highlightMode]="highlightMode()" [highlightColour]="highlightColour()" (noteCreated)="handleNoteCreated()" (noteLocated)="handleNoteLocated($event)" (selectionCaptured)="handleSelectionCaptured($event)" (selectionAnchored)="handleSelectionAnchored($event)" (commitFailed)="handleCommitFailed()" (exitRequested)="goBack()" (searchRequested)="openSearch()" (surfaceInteracted)="handleSurfaceInteraction()" />
+      <app-epub-reader #epubReader [bookId]="book()!.id" [book]="book()" [highlightColour]="highlightColour()" (noteCreated)="handleNoteCreated()" (noteLocated)="handleNoteLocated($event)" (selectionCaptured)="handleSelectionCaptured($event)" (selectionAnchored)="handleSelectionAnchored($event)" (selectionDismissed)="handleSelectionDismissed()" (commitFailed)="handleCommitFailed()" (exitRequested)="goBack()" (searchRequested)="openSearch()" (surfaceInteracted)="handleSurfaceInteraction()" />
       } @case ('audio') {
       <app-audio-reader [bookId]="book()!.id" [book]="book()" />
       } @default {
@@ -373,6 +373,25 @@
       <div class="highlight-confirmation" [class.epub-actions]="fileType() === 'epub'" [class.has-note]="noteDraftOpen()" data-testid="selection-bar">
         <div class="confirmation-content">
           <p class="selected-text">"{{ selectionPreview() }}"</p>
+          <!-- The pens, where the mark is made: a dot highlights in that
+               colour and keeps it as the book's pen. -->
+          @if (!noteDraftOpen()) {
+          <div class="hl-pens selection-pens" role="group" aria-label="Highlight in a colour">
+            @for (pen of highlightColours; track pen.id) {
+              <button
+                type="button"
+                class="hl-pen"
+                [style.background]="'var(--highlight-' + pen.id + ')'"
+                [class.is-active]="highlightColour() === pen.id"
+                [attr.aria-label]="'Highlight in ' + pen.label.toLowerCase()"
+                [attr.title]="'Highlight in ' + pen.label.toLowerCase()"
+                [attr.data-testid]="'selection-pen-' + pen.id"
+                [disabled]="highlightSaving()"
+                (click)="highlightWith(pen.id)"
+              ></button>
+            }
+          </div>
+          }
           <ng-container [ngTemplateOutlet]="selectionActions"></ng-container>
         </div>
       </div>
@@ -427,28 +446,7 @@
         <button appIconButton icon="x" [glyphSize]="20" (click)="toggleNotes()" aria-label="Close notes"></button>
       </div>
 
-      <!-- Highlight mode lives with the marks it produces. Two header controls
-           ("Notes & Highlights" and "Highlight mode") became one: at 390px the
-           PDF header held five controls and left the book title 78px, so it read
-           "Being an…". Turning the mode ON closes the panel, so the reader is
-           immediately ready for a selection — the same one tap as before. -->
       @if (fileType() !== 'audio') {
-      <button
-        class="highlight-toggle"
-        type="button"
-        [class.on]="highlightMode()"
-        [attr.aria-pressed]="highlightMode()"
-        data-testid="reader-highlight-toggle"
-        [disabled]="fileType() === 'pdf' && pdfReader?.textCapability() === 'unavailable'"
-        (click)="toggleHighlightFromPanel()"
-      >
-        <nostos-icon name="highlighter" [size]="16"></nostos-icon>
-        <span class="highlight-toggle-label">{{
-          highlightMode() ? 'Highlighting is on' : 'Highlight text'
-        }}</span>
-        <span class="highlight-toggle-state">{{ highlightMode() ? 'On' : 'Off' }}</span>
-      </button>
-
       <!-- The highlighter pens (issue #208). Four fills, remembered per book;
            the swatch is the label, so this stays a row of dots rather than a row
            of words. `aria-pressed` carries the choice to assistive tech, and the

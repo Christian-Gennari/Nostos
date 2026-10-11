@@ -68,7 +68,6 @@ class PdfReaderStub {
   bookId = input.required<string>();
   initialLocation = input<string | null>(null);
   sidebarVisible = input(false);
-  highlightMode = input(false);
   highlightColour = input<HighlightColour>(DEFAULT_HIGHLIGHT_COLOUR);
   sidebarVisibleChange = output<boolean>();
   noteCreated = output<void>();
@@ -112,11 +111,11 @@ class EpubReaderStub {
   // The shell passes the loaded Book down so the reader can restore the saved
   // position without a second GET (issue #225 §1.2).
   book = input<unknown>(null);
-  highlightMode = input(false);
   highlightColour = input<HighlightColour>(DEFAULT_HIGHLIGHT_COLOUR);
   noteCreated = output<void>();
   selectionCaptured = output<unknown>();
   selectionAnchored = output<unknown>();
+  selectionDismissed = output<void>();
   commitFailed = output<unknown>();
   exitRequested = output<void>();
   searchRequested = output<void>();
@@ -1150,40 +1149,20 @@ describe('ReaderShell toolbar contract', () => {
     expect(center.query(By.css('.progress-display'))).not.toBeNull();
   });
 
-  it('merges the highlight control into the notes panel', async () => {
-    // One "my marks" control in the header instead of two. The tap that turns
-    // highlighting ON also closes the panel, so the reader is ready for a
-    // selection — the same single tap the header button used to take.
+  it('has no highlight-mode control: the notes panel carries the pens and nothing to switch on', async () => {
+    // Selecting text is the whole gesture on every device, so there is no mode
+    // to arm before reading.
     const epubBook = { ...audiobook, id: 'book-epub', fileName: 'iliad.epub' } as Book;
     booksGetSpy.mockReturnValue(of(epubBook));
 
     fixture = await configureReaderShell();
     render();
-    const component = fixture.componentInstance;
+    fixture.componentInstance.toggleNotes();
+    render();
 
-    component.toggleNotes();
-    render();
-    const toggle = fixture.debugElement.query(By.css('[data-testid="reader-highlight-toggle"]'));
-    expect(toggle).not.toBeNull();
-    expect(toggle.nativeElement.textContent).toContain('Highlight text');
-    expect(toggle.nativeElement.getAttribute('aria-pressed')).toBe('false');
-
-    toggle.nativeElement.click();
-    render();
-    expect(component.highlightMode()).toBe(true);
-    expect(component.notesOpen()).toBe(false);
-
-    // Reopening with the mode on: the row reports it, and switching it off leaves
-    // the panel open because the user is looking at their notes.
-    component.toggleNotes();
-    render();
-    const toggleAgain = fixture.debugElement.query(By.css('[data-testid="reader-highlight-toggle"]'));
-    expect(toggleAgain.nativeElement.textContent).toContain('Highlighting is on');
-    expect(toggleAgain.nativeElement.getAttribute('aria-pressed')).toBe('true');
-    toggleAgain.nativeElement.click();
-    render();
-    expect(component.highlightMode()).toBe(false);
-    expect(component.notesOpen()).toBe(true);
+    expect(fixture.debugElement.query(By.css('[data-testid="reader-highlight-toggle"]'))).toBeNull();
+    expect(fixture.debugElement.queryAll(By.css('.notes-sidebar .hl-pen, .hl-pens .hl-pen')).length)
+      .toBeGreaterThanOrEqual(4);
   });
 
   it('exposes selected state on every Reader view-setting option', () => {
@@ -1900,7 +1879,6 @@ describe('ReaderShell UI kit migration (#362)', () => {
 
     // These are intentionally Reader-owned interaction contracts, not ordinary
     // actions wearing local styling.
-    expect(fixture.nativeElement.querySelector('.highlight-toggle.nostos-button')).toBeNull();
     expect(fixture.nativeElement.querySelector('.typo-opt.nostos-button')).toBeNull();
     expect(fixture.nativeElement.querySelector('.typo-step.nostos-button')).toBeNull();
     expect(fixture.nativeElement.querySelector('.page-input.nostos-form-control')).toBeNull();
@@ -1935,7 +1913,6 @@ describe('ReaderShell UI kit migration (#362)', () => {
     const mobileEnd = css.indexOf('@media (max-width: 360px)');
     const mobile = css.slice(mobileStart, mobileEnd);
 
-    expect(mobile).toContain('.highlight-toggle,');
     expect(mobile).toContain('.typo-opt,');
     expect(mobile).toContain('.typo-step,');
     expect(mobile).toContain('.quick-actions button[appButton]');
@@ -2223,6 +2200,57 @@ describe('ReaderShell in-text selection actions (#650, EPUB)', () => {
     render();
     expect(bar.classList.contains('has-note')).toBe(true);
     expect(el('selection-note-input')).not.toBeNull();
+  });
+
+  it('docked bar: a pen dot highlights in that colour and keeps it as the pen', async () => {
+    const component = await openBook();
+    component.dockedLayout.set(true);
+    await capture(component);
+
+    (el('selection-pen-sage') as HTMLButtonElement).click();
+    render();
+
+    expect(component.highlightColour()).toBe('sage');
+    expect(stub().commitHighlight).toHaveBeenCalledTimes(1);
+    expect(stub().commitHighlight).toHaveBeenCalledWith('', 'sage');
+
+    // Writing a note is not the moment to pick a colour by committing.
+    component.highlightSaving.set(false);
+    component.openNoteDraft();
+    render();
+    expect(el('selection-pen-sage')).toBeNull();
+  });
+
+  it('a tap on the page drops the offered passage, but never a note being written', async () => {
+    const component = await openBook();
+    component.dockedLayout.set(true);
+    await capture(component, null);
+
+    component.openNoteDraft();
+    component.noteDraft.set('Half-written');
+    component.handleSelectionDismissed();
+    expect(stub().discardHighlight).not.toHaveBeenCalled();
+    expect(component.pendingSelectionText()).not.toBeNull();
+
+    component.noteDraftOpen.set(false);
+    component.handleSelectionDismissed();
+    expect(stub().discardHighlight).toHaveBeenCalledTimes(1);
+    expect(component.pendingSelectionText()).toBeNull();
+  });
+
+  it('a touch selection offered again as its handles move keeps the note being typed', async () => {
+    const component = await openBook();
+    component.dockedLayout.set(true);
+    await capture(component, null);
+    component.openNoteDraft();
+    component.noteDraft.set('Half-written');
+
+    component.handleSelectionCaptured('Sing, goddess, the anger of Achilles son of Peleus');
+    render();
+
+    expect(component.noteDraftOpen()).toBe(true);
+    expect(component.noteDraft()).toBe('Half-written');
+    expect(component.pendingSelectionText()).toContain('son of Peleus');
   });
 
   it('an unmeasurable selection docks the menu instead of guessing a position', async () => {

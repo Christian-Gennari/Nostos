@@ -1,7 +1,8 @@
 <div
   class="pdf-container"
   [class.inverted]="pageInverted()"
-  (mouseup)="onTextSelection($event)"
+  (pointerdown)="onSurfacePointerDown($event)"
+  (mouseup)="onSurfaceMouseUp($event)"
   (click)="onSurfaceClick($event)"
   (touchstart)="onSurfaceTouchStart($event)"
   (touchend)="onSurfaceTouchEnd($event)"
@@ -34,7 +35,6 @@
       (pagesLoaded)="onPagesLoaded($event)"
       (pageChange)="onPageChange($event)"
       (textLayerRendered)="onTextLayerRendered($event)"
-      (textSelection)="onTextSelection()"
       (pdfLoaded)="onPdfLoaded($event)"
       (updateFindMatchesCount)="onFindMatchesCount($event)"
       (updateFindState)="onFindState($event)"

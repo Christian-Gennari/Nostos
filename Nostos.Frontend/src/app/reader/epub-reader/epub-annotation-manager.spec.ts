@@ -9,8 +9,8 @@ import {
 } from './epub-annotation-manager';
 
 /**
- * Mobile native-callout suppression + completed selection capture (issues #16, #304).
- * Mirrors the "Minimal Section A specs" from the expert design: 13 specs.
+ * Completed selection capture (issues #16, #304): a mouse selection is taken
+ * over on release, a touch selection is followed while it stays native.
  */
 
 const CFI = 'epubcfi(/6/4!/4/2/1:0)';
@@ -89,13 +89,19 @@ function collapseSelection() {
 
 const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
-describe('EpubAnnotationManager mobile highlight mode (issue #16)', () => {
+/** The reader put a finger (or a mouse) down: what the next selection is treated as. */
+function pointerDown(pointerType: 'touch' | 'mouse') {
+  const event = new Event('pointerdown');
+  Object.defineProperty(event, 'pointerType', { value: pointerType });
+  document.dispatchEvent(event);
+}
+
+describe('EpubAnnotationManager selection capture (issues #16, #304)', () => {
   let manager: EpubAnnotationManager;
   let rendition: ReturnType<typeof createRendition>['rendition'];
   let annotations: ReturnType<typeof createRendition>['annotations'];
   let views: ReturnType<typeof createRendition>['views'];
   let viewsCollection: ReturnType<typeof createRendition>['viewsCollection'];
-  let registeredContents: ReturnType<typeof createRendition>['registeredContents'];
   let notesService: { create: Mock<() => unknown> };
   let onNoteCreated: Mock<() => void>;
   let onCommitFailed: Mock<() => void>;
@@ -112,7 +118,6 @@ describe('EpubAnnotationManager mobile highlight mode (issue #16)', () => {
     annotations = r.annotations;
     views = r.views;
     viewsCollection = r.viewsCollection;
-    registeredContents = r.registeredContents;
 
     notesService = { create: vi.fn(() => of({ id: 'n1' })) };
     onNoteCreated = vi.fn();
@@ -156,65 +161,7 @@ describe('EpubAnnotationManager mobile highlight mode (issue #16)', () => {
     vi.unstubAllGlobals();
   });
 
-  it('adds nostos-highlight-mode to every current iframe body when mode turns on', () => {
-    const docA = document.implementation.createHTMLDocument('doc-a');
-    const docB = document.implementation.createHTMLDocument('doc-b');
-    manager.registerContents(makeContents(docA));
-    manager.registerContents(makeContents(docB));
-    registeredContents.push(makeContents(docA), makeContents(docB));
-
-    expect(docA.body!.classList.contains('nostos-highlight-mode')).toBe(false);
-    expect(docB.body!.classList.contains('nostos-highlight-mode')).toBe(false);
-
-    manager.setHighlightMode(true);
-
-    expect(docA.body!.classList.contains('nostos-highlight-mode')).toBe(true);
-    expect(docB.body!.classList.contains('nostos-highlight-mode')).toBe(true);
-  });
-
-  it('applies the active mode to a newly rendered contents document', () => {
-    manager.setHighlightMode(true);
-
-    const doc = document.implementation.createHTMLDocument('doc-new');
-    manager.registerContents(makeContents(doc));
-
-    expect(doc.body!.classList.contains('nostos-highlight-mode')).toBe(true);
-  });
-
-  it('removes nostos-highlight-mode when mode turns off', () => {
-    const doc = document.implementation.createHTMLDocument('doc');
-    const contents = makeContents(doc);
-    manager.registerContents(contents);
-    registeredContents.push(contents);
-    manager.setHighlightMode(true);
-    expect(doc.body!.classList.contains('nostos-highlight-mode')).toBe(true);
-
-    manager.setHighlightMode(false);
-
-    expect(doc.body!.classList.contains('nostos-highlight-mode')).toBe(false);
-  });
-
-  it('prevents contextmenu only while highlight mode is on', () => {
-    const doc = document.implementation.createHTMLDocument('doc');
-    manager.registerContents(makeContents(doc));
-
-    const fire = () => {
-      const event = new Event('contextmenu', { cancelable: true });
-      doc.dispatchEvent(event);
-      return event;
-    };
-
-    expect(fire().defaultPrevented).toBe(false);
-
-    manager.setHighlightMode(true);
-    expect(fire().defaultPrevented).toBe(true);
-
-    manager.setHighlightMode(false);
-    expect(fire().defaultPrevented).toBe(false);
-  });
-
   it('waits for mouseup before capturing the final drag range (issue #304)', async () => {
-    manager.setHighlightMode(true);
     manager.registerContents(makeContents());
 
     const text = 'Some meaningful text across multiple words';
@@ -254,7 +201,6 @@ describe('EpubAnnotationManager mobile highlight mode (issue #16)', () => {
   });
 
   it('captures a non-collapsed iframe selection as one pending highlight', async () => {
-    manager.setHighlightMode(true);
     manager.registerContents(makeContents());
 
     selectText('Some meaningful text');
@@ -273,7 +219,6 @@ describe('EpubAnnotationManager mobile highlight mode (issue #16)', () => {
   });
 
   it('captures via touchend fallback when epub.js selected never fires', async () => {
-    manager.setHighlightMode(true);
     manager.registerContents(makeContents());
 
     selectText('Fallback text');
@@ -285,7 +230,6 @@ describe('EpubAnnotationManager mobile highlight mode (issue #16)', () => {
   });
 
   it('deduplicates fallback capture against a later epub.js selected event', async () => {
-    manager.setHighlightMode(true);
     manager.registerContents(makeContents());
     manager.init();
 
@@ -307,7 +251,6 @@ describe('EpubAnnotationManager mobile highlight mode (issue #16)', () => {
   });
 
   it('ignores collapsed and whitespace-only selections', async () => {
-    manager.setHighlightMode(true);
     manager.registerContents(makeContents());
 
     selectText('Word');
@@ -324,7 +267,6 @@ describe('EpubAnnotationManager mobile highlight mode (issue #16)', () => {
   });
 
   it('clears native ranges immediately after capturing', async () => {
-    manager.setHighlightMode(true);
     manager.registerContents(makeContents());
 
     selectText('Temp annotation text');
@@ -336,7 +278,6 @@ describe('EpubAnnotationManager mobile highlight mode (issue #16)', () => {
   });
 
   it('cancel removes only the temporary annotation', async () => {
-    manager.setHighlightMode(true);
     manager.registerContents(makeContents());
 
     selectText('Cancel me');
@@ -358,7 +299,6 @@ describe('EpubAnnotationManager mobile highlight mode (issue #16)', () => {
   });
 
   it('successful save adds one persisted annotation and removes the temporary one', async () => {
-    manager.setHighlightMode(true);
     manager.registerContents(makeContents());
 
     selectText('Save me');
@@ -396,7 +336,6 @@ describe('EpubAnnotationManager mobile highlight mode (issue #16)', () => {
 
   it('failed save retains the pending highlight and its visual feedback', async () => {
     notesService.create.mockReturnValue(throwError(() => new Error('api down')));
-    manager.setHighlightMode(true);
     manager.registerContents(makeContents());
 
     selectText('Keep me');
@@ -420,7 +359,6 @@ describe('EpubAnnotationManager mobile highlight mode (issue #16)', () => {
 
   it('destroy removes document listeners and the temporary annotation', async () => {
     const removeListenerSpy = vi.spyOn(document, 'removeEventListener');
-    manager.setHighlightMode(true);
     manager.registerContents(makeContents());
     manager.init();
 
@@ -432,10 +370,9 @@ describe('EpubAnnotationManager mobile highlight mode (issue #16)', () => {
     manager.destroy();
 
     expect(views[0].pane.removeMark).toHaveBeenCalledTimes(1);
-    // contextmenu + mouseup + touchend listeners are removed.
     // Every listener registerContents adds is removed, by name.
     expect(removeListenerSpy.mock.calls.map((call) => call[0]).sort()).toEqual(
-      ['contextmenu', 'mousedown', 'mousemove', 'mouseup', 'touchend'],
+      ['click', 'contextmenu', 'mousedown', 'mousemove', 'mouseup', 'pointerdown', 'touchend'],
     );
     expect(rendition.off).toHaveBeenCalledWith('selected', expect.any(Function));
   });
@@ -447,7 +384,6 @@ describe('EpubAnnotationManager mobile highlight mode (issue #16)', () => {
    * open, the notes panel went stale and the pending mark was never removed.
    */
   it('removes the pending mark through the Views collection, not by iterating it', async () => {
-    manager.setHighlightMode(true);
     manager.registerContents(makeContents());
 
     selectText('Persist me');
@@ -468,7 +404,6 @@ describe('EpubAnnotationManager mobile highlight mode (issue #16)', () => {
     // here is what left the confirmation bar stuck.
     (rendition as unknown as { views: () => unknown }).views = () => ({});
 
-    manager.setHighlightMode(true);
     manager.registerContents(makeContents());
 
     selectText('No accessor');
@@ -488,7 +423,6 @@ describe('EpubAnnotationManager mobile highlight mode (issue #16)', () => {
         getPropertyValue: () => ' #123456 ',
       } as unknown as CSSStyleDeclaration);
     try {
-      manager.setHighlightMode(true);
       manager.registerContents(makeContents());
       selectText('Token colour');
       document.dispatchEvent(new MouseEvent('mouseup'));
@@ -520,7 +454,6 @@ describe('EpubAnnotationManager mobile highlight mode (issue #16)', () => {
       .spyOn(window, 'getComputedStyle')
       .mockReturnValue({ getPropertyValue: () => '' } as unknown as CSSStyleDeclaration);
     try {
-      manager.setHighlightMode(true);
       manager.registerContents(makeContents());
       selectText('Fallback colour');
       document.dispatchEvent(new MouseEvent('mouseup'));
@@ -556,7 +489,6 @@ describe('EpubAnnotationManager mobile highlight mode (issue #16)', () => {
 
     it('saves the pen in hand with the highlight and draws it in that pen', async () => {
       manager.setHighlightColour('sage');
-      manager.setHighlightMode(true);
       manager.registerContents(makeContents());
       selectText('A sage passage');
       document.dispatchEvent(new MouseEvent('mouseup'));
@@ -570,6 +502,20 @@ describe('EpubAnnotationManager mobile highlight mode (issue #16)', () => {
       expect(annotations.add).toHaveBeenCalledWith('highlight', CFI, {}, undefined, undefined, {
         fill: 'fill:--highlight-sage',
       });
+    });
+
+    it('a pen chosen in the same gesture wins over the pen in hand', async () => {
+      manager.setHighlightColour('sage');
+      manager.registerContents(makeContents());
+      selectText('A rose passage');
+      document.dispatchEvent(new MouseEvent('mouseup'));
+      await flush();
+      await manager.commitHighlight('', 'rose');
+
+      expect(notesService.create).toHaveBeenCalledWith(
+        'book-1',
+        expect.objectContaining({ highlightColour: 'rose' }),
+      );
     });
 
     it('restores each highlight in its stored pen, not the pen now selected', () => {
@@ -615,14 +561,15 @@ describe('EpubAnnotationManager mobile highlight mode (issue #16)', () => {
 
 
 /**
- * In-text selection actions (#650): right-click on a selection opens the menu
- * regardless of highlight mode, mouse only; the note text is saved with the
+ * In-text selection actions (#650): right-click on a selection opens the menu,
+ * mouse only; a touch selection is offered docked; the note text is saved with the
  * mark; the anchor is measured in the page's viewport. Uses the same fakes as
  * the capture suite above so the pipeline under test is the production one.
  */
 describe('EpubAnnotationManager selection actions (#650)', () => {
   let manager: EpubAnnotationManager;
   let annotations: ReturnType<typeof createRendition>['annotations'];
+  let views: ReturnType<typeof createRendition>['views'];
   let notesService: { create: Mock<(...args: unknown[]) => unknown> };
   let onSelectionCaptured: Mock<(...args: unknown[]) => void>;
 
@@ -633,6 +580,7 @@ describe('EpubAnnotationManager selection actions (#650)', () => {
     });
     const r = createRendition();
     annotations = r.annotations;
+    views = r.views;
     notesService = { create: vi.fn(() => of({ id: 'n1' })) };
     onSelectionCaptured = vi.fn();
     manager = new EpubAnnotationManager(
@@ -661,7 +609,7 @@ describe('EpubAnnotationManager selection actions (#650)', () => {
     return event;
   }
 
-  it('a mouse right-click on a selection captures it without highlight mode and replaces the native menu', () => {
+  it('a mouse right-click on a selection captures it and replaces the native menu', () => {
     manager.registerContents(makeContents());
     selectText('A passage worth a note');
 
@@ -706,8 +654,7 @@ describe('EpubAnnotationManager selection actions (#650)', () => {
     expect(annotations.highlight).not.toHaveBeenCalled();
   });
 
-  it('does not double-capture when mouseup already captured in highlight mode', () => {
-    manager.setHighlightMode(true);
+  it('does not double-capture when mouseup already captured', () => {
     manager.registerContents(makeContents());
     selectText('Captured on mouseup first');
 
@@ -718,14 +665,69 @@ describe('EpubAnnotationManager selection actions (#650)', () => {
     expect(onSelectionCaptured).toHaveBeenCalledTimes(1);
   });
 
-  it('touchend still does nothing while highlight mode is off', () => {
+  it('offers a touch selection docked and leaves the native selection to its handles (#16)', () => {
     manager.registerContents(makeContents());
-    selectText('Just reading, not marking');
+    selectText('Selected with a long-press');
 
     document.dispatchEvent(new Event('touchend'));
 
-    expect(annotations.highlight).not.toHaveBeenCalled();
-    expect(window.getSelection()?.toString()).toBe('Just reading, not marking');
+    expect(annotations.highlight).toHaveBeenCalledTimes(1);
+    expect(onSelectionCaptured).toHaveBeenCalledWith('Selected with a long-press', null);
+    expect(window.getSelection()?.toString()).toBe('Selected with a long-press');
+  });
+
+  it('follows a touch selection as its handles move, replacing the offered passage', () => {
+    const contents = makeContents();
+    (contents.cfiFromRange as Mock)
+      .mockReturnValueOnce('epubcfi(/6/4!/4/2/1:0,/1:5)')
+      .mockReturnValueOnce('epubcfi(/6/4!/4/2/1:0,/1:9)');
+    manager.registerContents(contents);
+
+    selectText('First');
+    document.dispatchEvent(new Event('touchend'));
+    selectText('First more');
+    document.dispatchEvent(new Event('touchend'));
+
+    expect(annotations.highlight).toHaveBeenCalledTimes(2);
+    expect(onSelectionCaptured).toHaveBeenLastCalledWith('First more', null);
+    // The first temporary mark went with the passage it marked.
+    expect(views[0].pane.removeMark).toHaveBeenCalledTimes(1);
+  });
+
+  it('a tap on the page asks to abandon a touch offer, but never a mouse one', async () => {
+    const abandoned = vi.fn();
+    manager.setOnSelectionAbandoned(abandoned);
+    manager.registerContents(makeContents());
+
+    selectText('Offered by touch');
+    document.dispatchEvent(new Event('touchend'));
+    // Still selected: this click is not a tap away.
+    document.dispatchEvent(new Event('click'));
+    await flush();
+    expect(abandoned).not.toHaveBeenCalled();
+
+    collapseSelection();
+    document.dispatchEvent(new Event('click'));
+    await flush();
+    expect(abandoned).toHaveBeenCalledTimes(1);
+
+    manager.discardHighlight();
+    pointerDown('mouse');
+    selectText('Taken over by the mouse');
+    document.dispatchEvent(new MouseEvent('mouseup', { button: 0 }));
+    document.dispatchEvent(new Event('click'));
+    await flush();
+    expect(abandoned).toHaveBeenCalledTimes(1);
+  });
+
+  it('saving a touch offer clears the live selection so it is not offered again', async () => {
+    manager.registerContents(makeContents());
+    selectText('Saved from a phone');
+    document.dispatchEvent(new Event('touchend'));
+
+    await manager.commitHighlight();
+
+    expect(window.getSelection()?.rangeCount).toBe(0);
   });
 
   it('releasing a desktop mouse selection opens the menu without a right-click (#657)', () => {
@@ -759,9 +761,9 @@ describe('EpubAnnotationManager selection actions (#650)', () => {
     expect(window.getSelection()?.toString()).toBe('Right button released');
   });
 
-  it('a touch-first device does not open the menu on mouseup outside highlight mode (#16)', () => {
-    vi.stubGlobal('matchMedia', (query: string) => ({ matches: query === '(pointer: coarse)' }));
+  it("ignores a tap's emulated mouseup; touchend owns a touch selection (#16)", () => {
     manager.registerContents(makeContents());
+    pointerDown('touch');
     selectText('Emulated mouseup after a tap');
 
     document.dispatchEvent(new MouseEvent('mouseup', { button: 0 }));
@@ -796,7 +798,6 @@ describe('EpubAnnotationManager selection actions (#650)', () => {
   });
 
   it('a plain highlight still saves empty note content', async () => {
-    manager.setHighlightMode(true);
     manager.registerContents(makeContents());
     selectText('Only a mark');
     document.dispatchEvent(new Event('mouseup'));
@@ -853,7 +854,6 @@ describe('EpubAnnotationManager selection actions (#650)', () => {
   });
 
   it('ignores the debounced epub.js selected event mid-drag; mouseup captures the full range', () => {
-    manager.setHighlightMode(true);
     const contents = makeContents();
     manager.registerContents(contents);
     manager.init();
@@ -884,8 +884,7 @@ describe('EpubAnnotationManager selection actions (#650)', () => {
     expect(onSelectionCaptured.mock.calls[0][0]).toBe(text);
   });
 
-  it('a touch selection still captures through the epub.js selected event', () => {
-    manager.setHighlightMode(true);
+  it('a touch selection captures through the epub.js selected event; a mouse or keyboard one does not', () => {
     const contents = makeContents();
     manager.registerContents(contents);
     manager.init();
@@ -893,13 +892,17 @@ describe('EpubAnnotationManager selection actions (#650)', () => {
       .selectedHandler;
     selectText('Selected with the handles');
 
+    // Shift+arrows on a desktop: the right-click path owns this one.
     selectedHandler(CFI, contents);
+    expect(annotations.highlight).not.toHaveBeenCalled();
 
+    pointerDown('touch');
+    selectedHandler(CFI, contents);
     expect(annotations.highlight).toHaveBeenCalledTimes(1);
+    expect(window.getSelection()?.toString()).toBe('Selected with the handles');
   });
 
   it('a drag released outside the iframe cannot leave the drag state stuck', () => {
-    manager.setHighlightMode(true);
     const contents = makeContents();
     manager.registerContents(contents);
     manager.init();
@@ -909,6 +912,7 @@ describe('EpubAnnotationManager selection actions (#650)', () => {
 
     document.dispatchEvent(new MouseEvent('mousedown', { button: 0 }));
     document.dispatchEvent(new MouseEvent('mousemove', { buttons: 0 }));
+    pointerDown('touch');
     selectedHandler(CFI, contents);
 
     expect(annotations.highlight).toHaveBeenCalledTimes(1);
