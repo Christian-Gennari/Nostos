@@ -2096,7 +2096,13 @@ describe('SettingsComponent backup-only surface', () => {
 
     expect(aiProviderServiceMock.update).toHaveBeenCalledTimes(1);
     expect(aiProviderServiceMock.update.mock.calls[0][0]).toEqual({
-      alignmentTranscription: { useVoiceTranscription: false },
+      alignmentTranscription: {
+        useVoiceTranscription: false,
+        enabled: true,
+        baseUrl: 'https://transcription.example/v1',
+        model: 'alignment-whisper',
+        apiStyle: 'openai-multipart',
+      },
     });
     expect(
       Object.prototype.hasOwnProperty.call(
@@ -2154,6 +2160,10 @@ describe('SettingsComponent backup-only surface', () => {
     expect(aiProviderServiceMock.update.mock.calls[0][0]).toEqual({
       alignmentTranscription: {
         useVoiceTranscription: false,
+        enabled: true,
+        baseUrl: 'https://transcription.example/v1',
+        model: 'alignment-whisper',
+        apiStyle: 'openai-multipart',
         apiKey: 'sk-alignment',
       },
     });
@@ -2172,6 +2182,10 @@ describe('SettingsComponent backup-only surface', () => {
     expect(aiProviderServiceMock.update.mock.calls[1][0]).toEqual({
       alignmentTranscription: {
         useVoiceTranscription: false,
+        enabled: true,
+        baseUrl: 'https://transcription.example/v1',
+        model: 'alignment-whisper',
+        apiStyle: 'openai-multipart',
         apiKey: '',
       },
     });
