@@ -1408,6 +1408,39 @@ describe('SettingsComponent backup-only surface', () => {
     expect(headers[0]).toBe('Backup');
   });
 
+  it('keeps Backup History collapsed until the toggle is used', () => {
+    backupServiceMock.getHistory.mockReturnValueOnce(
+      of([
+        {
+          id: 'local-backup-1',
+          createdAt: '2026-10-07T00:30:00Z',
+          sizeBytes: 1_024,
+          provider: 'Local',
+          status: 'Completed',
+          includeBookFiles: true,
+        },
+      ]) as never,
+    );
+    openManageLibraryPage();
+    fixture.detectChanges();
+
+    const root = fixture.nativeElement as HTMLElement;
+    const toggle = root.querySelector(
+      '[data-testid="backup-history-toggle"]',
+    ) as HTMLButtonElement;
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(toggle.textContent).toContain('Show backups');
+    expect(root.querySelector('#backup-history-list')).toBeNull();
+
+    toggle.click();
+    fixture.detectChanges();
+
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(toggle.textContent).toContain('Hide backups');
+    expect(root.querySelectorAll('#backup-history-list .history-item')).toHaveLength(1);
+    expect(root.querySelector('#backup-history-list')?.textContent).toContain('Restore');
+  });
+
   it('exposes the automatic-backup toggle and manual backup action', () => {
     openManageLibraryPage();
     const toggles = fixture.debugElement.queryAll(By.css('input[type="checkbox"]'));

@@ -351,7 +351,28 @@
             No backups yet. Create your first backup to get started.
           </div>
         } @else {
-          <div class="history-list">
+          <div class="card-body">
+            <button
+              appButton
+              type="button"
+              variant="ghost"
+              size="sm"
+              data-testid="backup-history-toggle"
+              aria-controls="backup-history-list"
+              [attr.aria-expanded]="historyExpanded()"
+              (click)="historyExpanded.set(!historyExpanded())"
+            >
+              <nostos-icon
+                [name]="historyExpanded() ? 'caret-up' : 'caret-down'"
+                [size]="14"
+              ></nostos-icon>
+              {{ historyExpanded() ? 'Hide backups' : 'Show backups' }}
+            </button>
+          </div>
+        }
+
+        @if (history().length > 0 && historyExpanded()) {
+          <div class="history-list" id="backup-history-list">
             @for (item of history(); track item.id) {
               <div class="history-item">
                 <div class="history-info">

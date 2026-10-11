@@ -735,6 +735,8 @@ export class SettingsComponent implements OnInit, OnDestroy {
   });
 
   history = signal<BackupHistoryItem[]>([]);
+  /** The history list stays collapsed until asked for; it grows with every backup. */
+  historyExpanded = signal(false);
   backingUp = signal(false);
   restoring = signal(false);
   importing = signal(false);
