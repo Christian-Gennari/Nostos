@@ -462,6 +462,11 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
   private progressUpdater$ = new Subject<{ location: string; percentage: number }>();
 
   ngOnChanges(changes: SimpleChanges): void {
+    // An offered passage previews the pen it will be saved in.
+    if (changes['highlightColour'] && this.pendingHighlight && !this.commitInFlight) {
+      this.repaintPage(this.pendingHighlight.pageNumber);
+    }
+
     const bookChange = changes['bookId'];
     if (!bookChange || bookChange.firstChange) return;
 

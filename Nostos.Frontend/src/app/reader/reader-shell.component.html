@@ -4,6 +4,7 @@
   [class.immersive]="immersiveReader()"
   [class.audio-immersive]="fileType() === 'audio'"
   [class.chrome-visible]="chromeShown()"
+  [class.selection-docked]="immersiveReader() && chromeShown() && !pagerShown()"
   data-testid="reader-layout"
 >
   <!-- Surface header, in the app's own rhythm (see `.brain-header` in
@@ -373,21 +374,23 @@
       <div class="highlight-confirmation" [class.epub-actions]="fileType() === 'epub'" [class.has-note]="noteDraftOpen()" data-testid="selection-bar">
         <div class="confirmation-content">
           <p class="selected-text">"{{ selectionPreview() }}"</p>
-          <!-- The pens, where the mark is made: a dot highlights in that
-               colour and keeps it as the book's pen. -->
+          <!-- The pens, where the mark is made: a dot picks the colour the
+               offered passage is shown in and keeps it as the book's pen.
+               Nothing is saved until Highlight or Save note. -->
           @if (!noteDraftOpen()) {
-          <div class="hl-pens selection-pens" role="group" aria-label="Highlight in a colour">
+          <div class="hl-pens selection-pens" role="group" aria-label="Highlight colour">
             @for (pen of highlightColours; track pen.id) {
               <button
                 type="button"
                 class="hl-pen"
                 [style.background]="'var(--highlight-' + pen.id + ')'"
                 [class.is-active]="highlightColour() === pen.id"
-                [attr.aria-label]="'Highlight in ' + pen.label.toLowerCase()"
-                [attr.title]="'Highlight in ' + pen.label.toLowerCase()"
+                [attr.aria-pressed]="highlightColour() === pen.id"
+                [attr.aria-label]="pen.label + ' highlighter'"
+                [attr.title]="pen.label"
                 [attr.data-testid]="'selection-pen-' + pen.id"
                 [disabled]="highlightSaving()"
-                (click)="highlightWith(pen.id)"
+                (click)="setHighlightColour(pen.id)"
               ></button>
             }
           </div>
@@ -524,8 +527,8 @@
   @if (!loadError() && fileType() && fileType() !== 'audio') {
   <header
     class="reader-toolbar"
-    [attr.aria-hidden]="immersiveReader() && !chromeShown() ? 'true' : null"
-    [attr.inert]="immersiveReader() && !chromeShown() ? '' : null"
+    [attr.aria-hidden]="immersiveReader() && !pagerShown() ? 'true' : null"
+    [attr.inert]="immersiveReader() && !pagerShown() ? '' : null"
     data-testid="reader-chrome-bottom"
   >
     <div class="toolbar-center">
@@ -698,7 +701,7 @@
         >Right</button>
       </div>
     </div>
-    <div class="typo-row">
+    <div class="typo-row typo-row-stacked">
       <span class="typo-label" id="pdf-fit">Page fit</span>
       <div class="typo-opts" role="group" aria-labelledby="pdf-fit">
         @for (p of pdfZoomPresets(); track p.value) {
@@ -734,7 +737,7 @@
     </div>
     }
     } @if (epubReader) {
-    <div class="typo-row">
+    <div class="typo-row typo-row-stacked">
       <span class="typo-label" id="typo-typeface">Typeface</span>
       <div class="typo-opts" role="group" aria-labelledby="typo-typeface">
         @for (f of epubReader.fontOptions; track f.value) {

@@ -504,6 +504,27 @@ describe('EpubAnnotationManager selection capture (issues #16, #304)', () => {
       });
     });
 
+    it('redraws an offered passage in a newly picked pen without saving it', async () => {
+      manager.registerContents(makeContents());
+      selectText('A passage to recolour');
+      document.dispatchEvent(new MouseEvent('mouseup'));
+      await flush();
+      expect(annotations.highlight).toHaveBeenCalledTimes(1);
+
+      manager.setHighlightColour('sage');
+
+      expect(views[0].pane.removeMark).toHaveBeenCalledTimes(1);
+      expect(annotations.highlight).toHaveBeenCalledTimes(2);
+      expect(annotations.highlight.mock.calls[1]).toEqual([
+        CFI,
+        { nostosPending: true },
+        undefined,
+        'epubjs-hl-pending',
+        { fill: 'fill:--highlight-sage' },
+      ]);
+      expect(notesService.create).not.toHaveBeenCalled();
+    });
+
     it('a pen chosen in the same gesture wins over the pen in hand', async () => {
       manager.setHighlightColour('sage');
       manager.registerContents(makeContents());

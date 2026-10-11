@@ -35,13 +35,25 @@ async function selectChars(page: Page, chars: number): Promise<string> {
   }, chars);
 }
 
+/** Every docked action is the topmost element at its own centre: nothing is drawn over it. */
+async function expectBarUncovered(page: Page) {
+  for (const id of ['selection-pen-rose', 'selection-copy', 'selection-cancel', 'selection-add-note', 'selection-highlight']) {
+    const onTop = await page.getByTestId(id).evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return !!hit && el.contains(hit);
+    });
+    expect(onTop, `${id} is not covered`).toBe(true);
+  }
+}
+
 const notes = (baseUrl: string, bookId: string) => apiGet<any[]>(baseUrl, `/api/books/${bookId}/notes`);
 
 test.describe('phone PDF selection', () => {
   test.use({ serviceWorkers: 'block' });
   const run = newRunId();
 
-  test('a settled selection docks the bar, follows the handles, and a pen dot highlights', async ({ page }) => {
+  test('a settled selection docks the bar, follows the handles, and a pen dot picks the colour Highlight saves in', async ({ page }) => {
     const { baseUrl, bookId } = await openPdf(page, `PDF phone A ${run}`);
     const bar = page.getByTestId('selection-bar');
 
@@ -64,7 +76,18 @@ test.describe('phone PDF selection', () => {
     }
     await page.screenshot({ path: test.info().outputPath('pdf-phone-bar.png') });
 
+    // A pen dot only picks the colour; nothing is saved until Highlight.
     await page.getByTestId('selection-pen-blue').tap();
+    await expect(page.getByTestId('selection-pen-blue')).toHaveAttribute('aria-pressed', 'true');
+    // The offered passage is shown in the pen just picked.
+    await expect
+      .poll(() => page.locator('.custom-highlight-layer .highlight-box').first()
+        .evaluate((el) => (el as HTMLElement).style.getPropertyValue('--hl')))
+      .toContain('--highlight-blue');
+    await page.waitForTimeout(400);
+    await expect(bar).toBeVisible();
+    expect(await notes(baseUrl, bookId)).toHaveLength(0);
+    await page.getByTestId('selection-highlight').tap();
     await expect(bar).toHaveCount(0);
     await expect.poll(async () => (await notes(baseUrl, bookId)).length).toBe(1);
     const saved = await notes(baseUrl, bookId);
@@ -75,6 +98,24 @@ test.describe('phone PDF selection', () => {
     await page.waitForTimeout(600);
     await expect(bar).toHaveCount(0);
     await page.screenshot({ path: test.info().outputPath('pdf-phone-highlighted.png') });
+  });
+
+  test('with the reader chrome showing, the pager steps aside for the docked bar', async ({ page }) => {
+    await openPdf(page, `PDF phone C ${run}`);
+    const viewport = page.viewportSize()!;
+    await page.touchscreen.tap(viewport.width / 2, viewport.height / 2);
+    const pager = page.getByTestId('reader-chrome-bottom');
+    await expect(pager).toBeVisible();
+
+    await selectChars(page, 23);
+    await expect(page.getByTestId('selection-bar')).toBeVisible();
+    await expect(pager).toBeHidden();
+    await expect(page.getByTestId('reader-chrome-top')).toBeVisible();
+    await expectBarUncovered(page);
+    await page.screenshot({ path: test.info().outputPath('pdf-phone-bar-with-chrome.png') });
+
+    await page.getByTestId('selection-cancel').tap();
+    await expect(pager).toBeVisible();
   });
 
   test('a note keeps its passage marked while typing; a tap on the page drops an untouched offer', async ({ page }) => {
