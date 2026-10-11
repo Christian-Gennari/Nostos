@@ -44,6 +44,52 @@ export function noteNavigationTarget(note: Note): string | number | null {
   }
 }
 
+/**
+ * Where an imported highlight sits, in the terms its e-reader recorded. These
+ * are never verified reader locations, so they stay out of
+ * `noteNavigationTarget`: each needs the open reader to interpret it.
+ */
+export interface ImportedNoteLocation {
+  /** The highlighted text, which a text reader can look up in the book. */
+  text: string | null;
+  /** Spine item of a KOReader position, to settle a passage that repeats. */
+  spineIndex: number | null;
+  /** Where a KOReader highlight or page bookmark starts in a reflowable book. */
+  xpointer: string | null;
+  /** KOReader's page: the real page of a PDF. */
+  page: number | null;
+}
+
+export function importedNoteLocation(note: {
+  selectedText?: string | null;
+  sourceAnchorKind?: string;
+  sourceAnchorValue?: string | null;
+}): ImportedNoteLocation | null {
+  const text = note.selectedText?.trim() || null;
+  const kind = note.sourceAnchorKind?.toLowerCase();
+  const value = note.sourceAnchorValue?.trim() ?? '';
+
+  let spineIndex: number | null = null;
+  let xpointer: string | null = null;
+  let page: number | null = null;
+  if (kind === 'koreader_xpointer') {
+    // Stored as `start|end`. crengine numbers a book's spine items as
+    // DocFragment[1..n].
+    xpointer = value.split('|')[0] || null;
+    const fragment = /\/DocFragment\[(\d+)\]/.exec(xpointer ?? '');
+    if (fragment) spineIndex = Number(fragment[1]) - 1;
+  } else if (kind === 'koreader_page' && /^\d+$/.test(value) && Number(value) > 0) {
+    page = Number(value);
+  }
+
+  return text || xpointer || page !== null ? { text, spineIndex, xpointer, page } : null;
+}
+
+/** True for a note whose anchor is another reading app's own position. */
+export function isImportedAnchor(kind: string | undefined): boolean {
+  return /^(koreader|kobo)_/i.test(kind ?? '');
+}
+
 export interface CreateNoteDto {
   content: string;
   cfiRange?: string;

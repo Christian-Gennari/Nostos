@@ -863,6 +863,121 @@ describe('ReaderShell assistant note navigation (issue #324)', () => {
 
     expect(goTo).not.toHaveBeenCalled();
   });
+
+  it('finds an imported EPUB highlight by its text, hinted by the KOReader spine item', () => {
+    const goTo = vi.fn();
+    const goToPassage = vi.fn();
+    (fixture.componentInstance as any).activeReader = () => ({ goTo, goToPassage });
+    (fixture.componentInstance as any).fileType = () => 'epub';
+
+    fixture.componentInstance.onJumpToNote(
+      note({
+        selectedText: 'philosophy begins in wonder.',
+        captureSource: 'import',
+        sourceAnchorKind: 'koreader_xpointer',
+        sourceAnchorValue:
+          '/body/DocFragment[10]/body/section/p[31]/text()[1].186|/body/DocFragment[10]/body/section/p[31]/a/text().2',
+        anchorVerified: false,
+      }),
+    );
+
+    expect(goToPassage).toHaveBeenCalledOnce();
+    expect(goToPassage).toHaveBeenCalledWith({
+      text: 'philosophy begins in wonder.',
+      spineIndex: 9,
+      xpointer: '/body/DocFragment[10]/body/section/p[31]/text()[1].186',
+      page: null,
+    });
+    expect(goTo).not.toHaveBeenCalled();
+  });
+
+  it('opens the KOReader page of an imported PDF highlight and asks for the passage to be marked', () => {
+    const goTo = vi.fn();
+    const goToSource = vi.fn();
+    (fixture.componentInstance as any).activeReader = () => ({ goTo, goToSource });
+    (fixture.componentInstance as any).fileType = () => 'pdf';
+
+    fixture.componentInstance.onJumpToNote(
+      note({
+        selectedText: 'A PDF highlight.',
+        captureSource: 'import',
+        sourceAnchorKind: 'koreader_page',
+        sourceAnchorValue: '14',
+        anchorVerified: false,
+      }),
+    );
+
+    expect(goToSource).toHaveBeenCalledOnce();
+    expect(goToSource).toHaveBeenCalledWith({ type: 'pdf', pdfPage: 14, excerpt: 'A PDF highlight.' });
+    expect(goTo).not.toHaveBeenCalled();
+  });
+
+  it('opens an EPUB note through grounded navigation, which holds the passage through layout', () => {
+    const goTo = vi.fn();
+    const goToSource = vi.fn();
+    (fixture.componentInstance as any).activeReader = () => ({ goTo, goToSource });
+    (fixture.componentInstance as any).fileType = () => 'epub';
+    const cfi = 'epubcfi(/6/8!/4/8,/1:0,/1:28)';
+
+    fixture.componentInstance.onJumpToNote(note({ cfiRange: cfi }));
+
+    expect(goToSource).toHaveBeenCalledWith({ type: 'epub', epubCfi: cfi });
+    expect(goTo).not.toHaveBeenCalled();
+  });
+
+  it('opens a page bookmark by its KOReader position, having no text to look up', () => {
+    const goToPassage = vi.fn();
+    (fixture.componentInstance as any).activeReader = () => ({ goTo: vi.fn(), goToPassage });
+    (fixture.componentInstance as any).fileType = () => 'epub';
+
+    fixture.componentInstance.onJumpToNote(
+      note({
+        content: 'A thought on this page.',
+        sourceAnchorKind: 'koreader_xpointer',
+        sourceAnchorValue: '/body/DocFragment[13]/body/p[62]/text()[1].0|',
+      }),
+    );
+
+    expect(goToPassage).toHaveBeenCalledWith({
+      text: null,
+      spineIndex: 12,
+      xpointer: '/body/DocFragment[13]/body/p[62]/text()[1].0',
+      page: null,
+    });
+  });
+
+  it('keeps a located highlight in step so its next jump is an ordinary one', () => {
+    const goTo = vi.fn();
+    const goToPassage = vi.fn();
+    (fixture.componentInstance as any).activeReader = () => ({ goTo, goToPassage });
+    (fixture.componentInstance as any).fileType = () => 'epub';
+    const imported = note({
+      selectedText: 'philosophy begins in wonder.',
+      sourceAnchorKind: 'kobo_bookmark',
+      sourceAnchorValue: 'abc',
+    });
+    fixture.componentInstance.dbNotes.set([imported]);
+
+    fixture.componentInstance.handleNoteLocated({ ...imported, cfiRange: 'epubcfi(/6/8!/4/8,/1:0,/1:28)' });
+    fixture.componentInstance.onJumpToNote(fixture.componentInstance.dbNotes()[0]);
+
+    expect(goTo).toHaveBeenCalledWith('epubcfi(/6/8!/4/8,/1:0,/1:28)');
+    expect(goToPassage).not.toHaveBeenCalled();
+  });
+
+  it('never reads a KOReader screen-page count as an EPUB location', () => {
+    const goTo = vi.fn();
+    const goToPassage = vi.fn();
+    (fixture.componentInstance as any).activeReader = () => ({ goTo, goToPassage });
+    (fixture.componentInstance as any).fileType = () => 'epub';
+
+    fixture.componentInstance.onJumpToNote(
+      note({ sourceAnchorKind: 'koreader_page', sourceAnchorValue: '425', anchorVerified: false }),
+    );
+
+    expect(goTo).not.toHaveBeenCalled();
+    expect(goToPassage).not.toHaveBeenCalled();
+  });
 });
 
 describe('ReaderShell audiobook load (issue #7)', () => {

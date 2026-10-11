@@ -1,5 +1,5 @@
+using System.Globalization;
 using System.Text;
-using System.Text.RegularExpressions;
 
 namespace Nostos.Backend.Services.Notes.Imports;
 
@@ -7,184 +7,324 @@ namespace Nostos.Backend.Services.Notes.Imports;
 /// Reads the small, data-only subset of KOReader sidecar metadata that Nostos
 /// needs for annotation import. It deliberately does not execute Lua.
 /// </summary>
-internal static partial class KoreaderMetadataParser
+internal static class KoreaderMetadataParser
 {
     public static KoreaderMetadataDocument Parse(string source)
     {
         if (string.IsNullOrWhiteSpace(source))
             throw new FormatException("KOReader metadata file is empty.");
 
+        if (new LuaDataReader(source).ReadDocument() is not LuaTable root)
+            throw new FormatException("KOReader metadata must be a Lua table.");
+
         var title = default(string);
         var author = default(string);
         var isbn = default(string);
-        var checksum = default(string);
-        var annotations = new List<KoreaderAnnotation>();
-        var section = Section.None;
-        Dictionary<string, string?>? current = null;
 
-        using var reader = new StringReader(source);
-        string? line;
-        while ((line = reader.ReadLine()) is not null)
+        if (root.Get("doc_props") is LuaTable props)
         {
-            var trimmed = line.Trim();
-            if (trimmed.Length == 0 || trimmed.StartsWith("--", StringComparison.Ordinal))
-                continue;
-
-            if (section == Section.Annotations && AnnotationStart().IsMatch(trimmed))
-            {
-                current = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
-                section = Section.Annotation;
-                continue;
-            }
-
-            if (CloseTable().IsMatch(trimmed))
-            {
-                if (section == Section.Annotation && current is not null)
-                {
-                    annotations.Add(ToAnnotation(current));
-                    current = null;
-                    section = Section.Annotations;
-                }
-                else if (section is Section.DocProps or Section.Annotations)
-                {
-                    section = Section.None;
-                }
-                continue;
-            }
-
-            var match = Assignment().Match(line);
-            if (!match.Success)
-                continue;
-
-            var key = Unescape(match.Groups["key"].Value);
-            var rawValue = match.Groups["value"].Value.Trim();
-            if (rawValue == "{")
-            {
-                section = key switch
-                {
-                    "doc_props" => Section.DocProps,
-                    "annotations" => Section.Annotations,
-                    _ => section,
-                };
-                continue;
-            }
-
-            var value = ParseScalar(rawValue);
-            if (section == Section.None && key == "partial_md5_checksum")
-                checksum = value;
-
-            if (section == Section.DocProps)
+            foreach (var (key, value) in props.Entries)
             {
                 switch (key)
                 {
                     case "title":
-                        title = value;
+                        title = value as string;
                         break;
                     case "authors":
                     case "author":
-                        author ??= value;
+                        author ??= value as string;
                         break;
                     case "isbn":
                     case "isbn13":
                     case "isbn10":
-                        isbn ??= value;
+                        isbn ??= value as string;
                         break;
                 }
             }
-            else if (section == Section.Annotation && current is not null)
+        }
+
+        var annotations = new List<KoreaderAnnotation>();
+        if (root.Get("annotations") is LuaTable entries)
+        {
+            foreach (var (_, value) in entries.Entries)
             {
-                current[key] = value;
+                if (value is LuaTable annotation)
+                    annotations.Add(ToAnnotation(annotation));
             }
         }
 
-        if (section == Section.Annotation && current is not null)
-            annotations.Add(ToAnnotation(current));
+        // A PDF without embedded metadata has an empty doc_props. KOReader then
+        // shows the file name as the title, and so does this: it is what the
+        // owner sees on the device, and the import asks before filing under it.
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            var stats = root.Get("stats") as LuaTable;
+            title = Known(stats?.Get("title") as string)
+                ?? FileTitle(root.Get("doc_path") as string);
+            author ??= Known(stats?.Get("authors") as string);
+        }
 
         if (string.IsNullOrWhiteSpace(title) && string.IsNullOrWhiteSpace(isbn))
-            throw new FormatException("KOReader metadata must contain doc_props.title or an ISBN.");
+            throw new FormatException("KOReader metadata must name its book: a title, an ISBN or a file path.");
 
         return new KoreaderMetadataDocument(
             Clean(title),
             Clean(author),
             Clean(isbn),
             annotations,
-            Clean(checksum));
+            Clean(root.Get("partial_md5_checksum") as string));
     }
 
-    private static KoreaderAnnotation ToAnnotation(IReadOnlyDictionary<string, string?> values) =>
+    // A reflowable book stores pos0/pos1 as xpointer strings. A PDF stores
+    // them as tables of page coordinates, which `Scalar` drops: the page
+    // number is the only part of a PDF position Nostos can use.
+    private static KoreaderAnnotation ToAnnotation(LuaTable values) =>
         new(
-            Get(values, "text"),
-            Get(values, "note"),
-            Get(values, "chapter"),
-            Get(values, "datetime"),
-            Get(values, "page"),
-            Get(values, "pageno"),
-            Get(values, "pos0"),
-            Get(values, "pos1"));
+            Scalar(values, "text"),
+            Scalar(values, "note"),
+            Scalar(values, "chapter"),
+            Scalar(values, "datetime"),
+            Scalar(values, "page"),
+            Scalar(values, "pageno"),
+            Scalar(values, "pos0"),
+            Scalar(values, "pos1"));
 
-    private static string? Get(IReadOnlyDictionary<string, string?> values, string key) =>
-        values.TryGetValue(key, out var value) ? Clean(value) : null;
+    private static string? Scalar(LuaTable values, string key) =>
+        Clean(values.Get(key) as string);
 
-    private static string? ParseScalar(string raw)
+    // KOReader's statistics write "N/A" for a property the document lacks.
+    private static string? Known(string? value) =>
+        Clean(value) is { } known && known != "N/A" ? known : null;
+
+    private static string? FileTitle(string? path)
     {
-        raw = raw.TrimEnd(',').Trim();
-        if (raw.Length >= 2 && raw[0] == '"' && raw[^1] == '"')
-            return Unescape(raw[1..^1]);
-
-        if (raw.Length >= 2 && raw[0] == '\'' && raw[^1] == '\'')
-            return Unescape(raw[1..^1]);
-
-        if (string.Equals(raw, "nil", StringComparison.Ordinal))
+        var name = Clean(path)?.Split('/', '\\')[^1];
+        if (string.IsNullOrEmpty(name))
             return null;
 
-        return raw;
+        var extension = name.LastIndexOf('.');
+        return Clean(extension > 0 ? name[..extension] : name);
     }
 
     private static string? Clean(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
-    private static string Unescape(string value)
+    /// <summary>A Lua table in file order; a value is a string, a table or null.</summary>
+    private sealed class LuaTable
     {
-        var result = new StringBuilder(value.Length);
-        for (var i = 0; i < value.Length; i++)
+        public List<(string Key, object? Value)> Entries { get; } = [];
+
+        public object? Get(string key)
         {
-            var ch = value[i];
-            if (ch != '\\' || i + 1 >= value.Length)
+            foreach (var (candidate, value) in Entries)
             {
-                result.Append(ch);
-                continue;
+                if (string.Equals(candidate, key, StringComparison.Ordinal))
+                    return value;
             }
 
-            var next = value[++i];
-            result.Append(next switch
-            {
-                'n' => '\n',
-                'r' => '\r',
-                't' => '\t',
-                '\\' => '\\',
-                '"' => '"',
-                '\'' => '\'',
-                _ => next,
-            });
+            return null;
         }
-
-        return result.ToString();
     }
 
-    [GeneratedRegex("^\\s*\\[\\\"(?<key>(?:\\\\.|[^\\\"])*)\\\"\\]\\s*=\\s*(?<value>.+?)\\s*,?\\s*$")]
-    private static partial Regex Assignment();
-
-    [GeneratedRegex("^\\s*\\[\\d+\\]\\s*=\\s*\\{\\s*,?\\s*$")]
-    private static partial Regex AnnotationStart();
-
-    [GeneratedRegex("^\\s*}\\s*,?\\s*$")]
-    private static partial Regex CloseTable();
-
-    private enum Section
+    /// <summary>
+    /// Reads what KOReader's <c>dump.lua</c> writes: nested tables, <c>%q</c>
+    /// strings (a line break inside one is a backslash followed by a real
+    /// line break), numbers, booleans and nil. Numbers and booleans are kept
+    /// as their source text.
+    /// </summary>
+    private sealed class LuaDataReader(string source)
     {
-        None,
-        DocProps,
-        Annotations,
-        Annotation,
+        // Sidecars nest three or four levels; the cap keeps an upload of
+        // nothing but braces from exhausting the stack.
+        private const int MaxDepth = 32;
+        private const string Return = "return";
+        private int _position;
+
+        public object? ReadDocument()
+        {
+            SkipTrivia();
+            var afterReturn = _position + Return.Length;
+            if (Matches(Return) && (afterReturn >= source.Length || !IsNameChar(source[afterReturn])))
+                _position = afterReturn;
+
+            return ReadValue(0);
+        }
+
+        private object? ReadValue(int depth)
+        {
+            SkipTrivia();
+            if (_position >= source.Length)
+                throw Malformed();
+
+            var ch = source[_position];
+            if (ch == '{')
+                return ReadTable(depth + 1);
+            if (ch is '"' or '\'')
+                return ReadString();
+
+            var start = _position;
+            while (_position < source.Length && !IsValueEnd(source[_position]))
+                _position++;
+            if (_position == start)
+                throw Malformed();
+
+            var token = source[start.._position];
+            return token == "nil" ? null : token;
+        }
+
+        private LuaTable ReadTable(int depth)
+        {
+            if (depth > MaxDepth)
+                throw new FormatException("KOReader metadata is nested too deeply.");
+
+            _position++;
+            var table = new LuaTable();
+            var positional = 0;
+            while (true)
+            {
+                SkipTrivia();
+                if (_position >= source.Length)
+                    throw Malformed();
+
+                var ch = source[_position];
+                if (ch == '}')
+                {
+                    _position++;
+                    return table;
+                }
+
+                if (ch is ',' or ';')
+                {
+                    _position++;
+                    continue;
+                }
+
+                string key;
+                if (ch == '[')
+                {
+                    _position++;
+                    key = ReadValue(depth) as string ?? throw Malformed();
+                    Expect(']');
+                    Expect('=');
+                }
+                else if (TryReadNameKey(out var name))
+                {
+                    key = name;
+                }
+                else
+                {
+                    key = (++positional).ToString(CultureInfo.InvariantCulture);
+                }
+
+                table.Entries.Add((key, ReadValue(depth)));
+            }
+        }
+
+        private bool TryReadNameKey(out string name)
+        {
+            name = string.Empty;
+            var cursor = _position;
+            while (cursor < source.Length && IsNameChar(source[cursor]))
+                cursor++;
+            if (cursor == _position || char.IsAsciiDigit(source[_position]))
+                return false;
+
+            var end = cursor;
+            while (cursor < source.Length && char.IsWhiteSpace(source[cursor]))
+                cursor++;
+            if (cursor >= source.Length || source[cursor] != '='
+                || (cursor + 1 < source.Length && source[cursor + 1] == '='))
+                return false;
+
+            name = source[_position..end];
+            _position = cursor + 1;
+            return true;
+        }
+
+        private string ReadString()
+        {
+            var quote = source[_position++];
+            var result = new StringBuilder();
+            while (_position < source.Length)
+            {
+                var ch = source[_position++];
+                if (ch == quote)
+                    return result.ToString();
+
+                if (ch != '\\' || _position >= source.Length)
+                {
+                    result.Append(ch);
+                    continue;
+                }
+
+                var next = source[_position++];
+                if (char.IsAsciiDigit(next))
+                {
+                    var code = next - '0';
+                    for (var i = 0; i < 2 && _position < source.Length && char.IsAsciiDigit(source[_position]); i++)
+                        code = (code * 10) + (source[_position++] - '0');
+                    result.Append((char)code);
+                    continue;
+                }
+
+                // A file that crossed a Windows machine carries CRLF breaks.
+                if (next == '\r' && _position < source.Length && source[_position] == '\n')
+                    _position++;
+
+                result.Append(next switch
+                {
+                    'n' or '\r' => '\n',
+                    'r' => '\r',
+                    't' => '\t',
+                    _ => next,
+                });
+            }
+
+            throw Malformed();
+        }
+
+        private void Expect(char expected)
+        {
+            SkipTrivia();
+            if (_position >= source.Length || source[_position] != expected)
+                throw Malformed();
+            _position++;
+        }
+
+        private void SkipTrivia()
+        {
+            while (_position < source.Length)
+            {
+                if (char.IsWhiteSpace(source[_position]))
+                {
+                    _position++;
+                }
+                else if (Matches("--[["))
+                {
+                    var end = source.IndexOf("]]", _position + 4, StringComparison.Ordinal);
+                    _position = end < 0 ? source.Length : end + 2;
+                }
+                else if (Matches("--"))
+                {
+                    var end = source.IndexOf('\n', _position);
+                    _position = end < 0 ? source.Length : end + 1;
+                }
+                else
+                {
+                    return;
+                }
+            }
+        }
+
+        private bool Matches(string text) =>
+            string.CompareOrdinal(source, _position, text, 0, text.Length) == 0;
+
+        private static bool IsNameChar(char ch) => char.IsAsciiLetterOrDigit(ch) || ch == '_';
+
+        private static bool IsValueEnd(char ch) =>
+            char.IsWhiteSpace(ch) || ch is ',' or ';' or '}' or ']' or '{' or '"' or '\'';
+
+        private static FormatException Malformed() =>
+            new("KOReader metadata is not a readable Lua table.");
     }
 }

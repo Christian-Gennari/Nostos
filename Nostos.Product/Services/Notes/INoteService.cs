@@ -38,6 +38,14 @@ public interface INoteService
     Task<NoteCommandResult<NoteDto>> UpdateAsync(Guid noteId, UpdateNoteDto dto, CancellationToken ct = default);
     Task<NoteCommandResult<bool>> DeleteAsync(Guid noteId, CancellationToken ct = default);
 
+    /// <summary>
+    /// Records where the reader found an imported highlight in the book, so it
+    /// is drawn and opened like one made in Nostos. An import carries the
+    /// e-reader's position, which this reader cannot open; the first location
+    /// found is kept and a later call returns the note unchanged.
+    /// </summary>
+    Task<NoteCommandResult<NoteDto>> SetImportedLocationAsync(Guid noteId, string? cfiRange, CancellationToken ct = default);
+
     Task<NoteCommandResult<NoteDto>> LinkToExistingTopicAsync(Guid noteId, Guid topicId, CancellationToken ct = default);
     Task<NoteReviewDto?> GetForReviewAsync(Guid noteId, CancellationToken ct = default);
 

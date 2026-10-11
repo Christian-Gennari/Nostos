@@ -205,3 +205,140 @@ export function rangeForNormalizedResourceSpan(
   range.setEnd(endNode, endOffset + 1);
   return range;
 }
+
+export interface EpubPassageMatch {
+  /** Position of the matched section in the list that was searched. */
+  section: number;
+  offset: number;
+  length: number;
+}
+
+// Enough words to be a sentence opening rather than a common phrase.
+const PASSAGE_LEAD_WORDS = 8;
+
+function passageMatcher(normalizedPassage: string): RegExp {
+  const pattern = normalizedPassage
+    .split('\n')
+    .map((line) =>
+      line
+        .split(' ')
+        .map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+        .join('\\s+'),
+    )
+    // Another reading app marks every line break in what it copies, including
+    // a <br> that contributes no character at all to this text.
+    .join('\\s*');
+  return new RegExp(pattern, 'gu');
+}
+
+function passageMatches(
+  sections: readonly { text: string }[],
+  normalizedPassage: string,
+): EpubPassageMatch[] {
+  const matcher = passageMatcher(normalizedPassage);
+  const matches: EpubPassageMatch[] = [];
+  sections.forEach((section, index) => {
+    matcher.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = matcher.exec(section.text)) !== null) {
+      matches.push({ section: index, offset: match.index, length: match[0].length });
+      if (match[0].length === 0) matcher.lastIndex += 1;
+    }
+  });
+  return matches;
+}
+
+export interface EpubPassageCandidates {
+  /** Every place the whole passage occurs, in reading order. */
+  whole: EpubPassageMatch[];
+  /** Where its opening words occur, when the whole passage occurs nowhere. */
+  lead: EpubPassageMatch[];
+}
+
+/**
+ * Find a quoted passage in the normalized text of a book's sections. This is
+ * how a highlight made in another reading app is located: its text is known
+ * but its position is in that app's own terms.
+ *
+ * When a spine index is given and the passage occurs in that section, only
+ * those occurrences are returned. The opening words are tried only when the
+ * whole passage is not present, which happens when the other app extracted
+ * the text slightly differently.
+ */
+export function epubPassageCandidates(
+  sections: readonly { index: number; text: string }[],
+  passage: string,
+  preferredSpineIndex?: number | null,
+): EpubPassageCandidates {
+  const normalized = normalizeEpubSourceText(passage);
+  if (!normalized) return { whole: [], lead: [] };
+
+  const narrowed = (matches: EpubPassageMatch[]) => {
+    const preferred = matches.filter(
+      (match) => sections[match.section].index === preferredSpineIndex,
+    );
+    return preferred.length > 0 ? preferred : matches;
+  };
+
+  const whole = narrowed(passageMatches(sections, normalized));
+  if (whole.length > 0) return { whole, lead: [] };
+
+  const words = normalized.split(/\s+/);
+  if (words.length <= PASSAGE_LEAD_WORDS) return { whole, lead: [] };
+  return {
+    whole,
+    lead: narrowed(passageMatches(sections, words.slice(0, PASSAGE_LEAD_WORDS).join(' '))),
+  };
+}
+
+/**
+ * Resolve the start of a KOReader xpointer to a node of the section it names:
+ * `/body/DocFragment[13]/body/p[62]/text()[1].0` is the first text node of the
+ * 62nd `p` child of that section's body. crengine builds the same element tree
+ * as the XHTML, so element steps are exact. It drops whitespace-only text
+ * nodes, so those are not counted. Returns the deepest node the path reaches.
+ */
+export function nodeAtKoreaderXPointer(document: Document, xpointer: string): Node | null {
+  const path = /\/DocFragment(?:\[\d+\])?\/body((?:\/[^/]+)*)$/.exec(xpointer.trim());
+  if (!path || !document.body) return null;
+
+  let node: Node = document.body;
+  for (const rawStep of path[1].split('/').filter(Boolean)) {
+    // The character offset rides on the last step: `text()[2].141`, `h2[9].0`.
+    const step = /^([^.\[]+)(?:\[(\d+)\])?/.exec(rawStep);
+    if (!step) break;
+    const position = step[2] ? Number(step[2]) : 1;
+
+    const children = Array.from(node.childNodes).filter((child) =>
+      step[1] === 'text()'
+        ? child.nodeType === Node.TEXT_NODE && (child.textContent ?? '').trim().length > 0
+        : child.nodeType === Node.ELEMENT_NODE &&
+          (child as Element).localName.toLowerCase() === step[1].toLowerCase(),
+    );
+    const next = children[position - 1];
+    if (!next) break;
+    node = next;
+  }
+  return node === document.body ? null : node;
+}
+
+/**
+ * Where a node falls in the normalized resource text: the start of the text
+ * block that contains it, or of the first block after it.
+ */
+export function normalizedResourceOffsetOfNode(document: Document, node: Node): number | null {
+  let resourceOffset = 0;
+  for (const block of epubTextBlocks(document)) {
+    const normalized = normalizeEpubSourceText(block.textContent ?? '');
+    if (!normalized) continue;
+
+    const containsOrFollows =
+      block === node ||
+      block.contains(node) ||
+      node.contains(block) ||
+      (node.compareDocumentPosition(block) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+    if (containsOrFollows) return resourceOffset;
+    resourceOffset += normalized.length + 1;
+  }
+  return null;
+}

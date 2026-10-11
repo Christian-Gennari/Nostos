@@ -69,7 +69,12 @@ internal static class HighlightImportSourceReader
                 continue;
 
             var (kind, value) = KoreaderNoteImportService.Anchor(annotation);
-            annotations.Add(new ImportAnnotation(kind, value, text, note));
+            annotations.Add(new ImportAnnotation(
+                kind,
+                value,
+                text,
+                note,
+                KoreaderNoteImportService.EarlierShapes(annotation, text, note)));
         }
 
         return new ImportSourceBook(key, document.Title, document.Author, document.Isbn, annotations);

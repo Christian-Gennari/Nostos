@@ -75,7 +75,9 @@ internal sealed record ImportAnnotation(
     string AnchorKind,
     string? AnchorValue,
     string? Text,
-    string Note);
+    string Note,
+    // Shapes an earlier version of the import could have stored this in.
+    IReadOnlyList<ImportedNoteShape>? EarlierShapes = null);
 
 internal sealed record ImportLibraryBook(
     Guid Id,

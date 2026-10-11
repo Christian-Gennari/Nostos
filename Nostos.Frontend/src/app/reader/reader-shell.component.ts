@@ -10,7 +10,7 @@ import { TopicsService, TopicDto } from '../core/services/topics.service';
 import { TopicAutocompleteService } from '../ui/topic-autocomplete-panel/topic-autocomplete.service';
 
 // DTOs & Interfaces
-import { Note, noteNavigationTarget } from '../core/dtos/note.dtos';
+import { Note, importedNoteLocation, noteNavigationTarget } from '../core/dtos/note.dtos';
 import { IReader, ReaderSearchState, ReaderSourceTarget, TocItem } from './reader.interface';
 import { isInteractiveTarget, isTypingTarget, pageActionForKey } from './reader-keyboard';
 import {
@@ -454,6 +454,7 @@ export class ReaderShell implements OnInit, OnDestroy {
   tocOpen = signal(false);
   ready = signal(false);
   private pendingGroundedSourceTarget: ReaderSourceTarget | null = null;
+  private pendingSourceNoteId: string | null = null;
   private observedGroundedSourceKey: string | null | undefined;
   private sourceNavigationGeneration = 0;
   private sourceNavigationSubscription: { unsubscribe(): void } | null = null;
@@ -718,7 +719,8 @@ export class ReaderShell implements OnInit, OnDestroy {
 
   private onGroundedSourceParams(params: ParamMap | null | undefined): void {
     const target = this.parseGroundedSourceTarget(params);
-    const key = target ? JSON.stringify(target) : null;
+    const sourceNote = params?.get('sourceNote')?.trim().toLowerCase() || null;
+    const key = target ? JSON.stringify(target) : sourceNote ? `note:${sourceNote}` : null;
 
     // Query-param emissions can include unrelated reader state. Re-navigate only
     // when the grounded target itself changes. Clearing the source params resets
@@ -729,6 +731,8 @@ export class ReaderShell implements OnInit, OnDestroy {
     this.observedGroundedSourceKey = key;
     this.sourceNavigationGeneration++;
     this.pendingGroundedSourceTarget = target;
+    this.pendingSourceNoteId = target ? null : sourceNote;
+    if (this.pendingSourceNoteId) this.jumpToSourceNote(this.sourceNavigationGeneration);
 
     if (target && this.ready()) {
       const generation = this.sourceNavigationGeneration;
@@ -844,6 +848,34 @@ export class ReaderShell implements OnInit, OnDestroy {
     this.notesService.list(bookId).subscribe((notes) => {
       this.dbNotes.set(notes.reverse());
     });
+  }
+
+  /** The reader found an imported highlight in the book; keep the list in step. */
+  handleNoteLocated(located: Note) {
+    this.dbNotes.update((notes) =>
+      notes.map((note) => (note.id === located.id ? { ...note, cfiRange: located.cfiRange } : note)),
+    );
+  }
+
+  /**
+   * A link from outside the reader can name a note instead of a location: an
+   * imported highlight has none until this reader has found it, and only the
+   * open reader can. Waits for both the notes and the reader, then jumps.
+   */
+  private jumpToSourceNote(generation: number, attempt = 0): void {
+    if (generation !== this.sourceNavigationGeneration) return;
+    const noteId = this.pendingSourceNoteId;
+    if (!noteId) return;
+
+    const reader = this.isLoadedBookForCurrentRoute() ? this.activeReader() : null;
+    const note = this.dbNotes().find((candidate) => candidate.id.toLowerCase() === noteId);
+    if (!reader || !note) {
+      if (attempt < 60) setTimeout(() => this.jumpToSourceNote(generation, attempt + 1), 100);
+      return;
+    }
+
+    this.pendingSourceNoteId = null;
+    this.jumpToNote(reader, note);
   }
 
   handleNoteCreated() {
@@ -1129,15 +1161,51 @@ export class ReaderShell implements OnInit, OnDestroy {
 
   onJumpToNote(note: Note) {
     const reader = this.activeReader();
-    const target = noteNavigationTarget(note);
-    if (reader && target !== null) {
-      reader.goTo(target);
+    if (reader && this.jumpToNote(reader, note)) {
       // A full-width phone drawer must not keep hiding the passage the user
       // just asked to reveal. Closing on desktop is also the least surprising
       // destination-jump behavior.
       this.notesOpen.set(false);
       this.restoreOverlayFocus();
     }
+  }
+
+  private jumpToNote(reader: IReader, note: Note): boolean {
+    const target = noteNavigationTarget(note);
+    if (target !== null) {
+      if (this.fileType() === 'epub' && typeof target === 'string' && reader.goToSource) {
+        // The grounded path holds the target through epub.js's layout settle.
+        // A bare display of a CFI in a chapter that is not laid out yet can
+        // land a page or two away from the passage.
+        void reader.goToSource({ type: 'epub', epubCfi: target });
+      } else {
+        reader.goTo(target);
+      }
+      return true;
+    }
+
+    // An imported highlight has no location this reader wrote itself. Its
+    // text can still be found in an EPUB, and a KOReader page is a real page
+    // of a PDF.
+    const imported = importedNoteLocation(note);
+    if (
+      this.fileType() === 'epub' &&
+      (imported?.text || imported?.xpointer) &&
+      reader.goToPassage
+    ) {
+      void reader.goToPassage(imported);
+      return true;
+    }
+    if (this.fileType() === 'pdf' && imported?.page) {
+      // The page is certain; the passage on it is marked when it can be found.
+      if (reader.goToSource) {
+        void reader.goToSource({ type: 'pdf', pdfPage: imported.page, excerpt: imported.text });
+      } else {
+        reader.goTo(imported.page);
+      }
+      return true;
+    }
+    return false;
   }
 
   goBack() {

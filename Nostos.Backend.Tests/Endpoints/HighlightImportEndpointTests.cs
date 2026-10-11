@@ -297,6 +297,125 @@ public sealed class HighlightImportEndpointTests : IDisposable
     }
 
     [Fact]
+    public async Task Reimport_corrects_notes_an_earlier_import_stored_cut_short_instead_of_duplicating_them()
+    {
+        using var factory = new LibraryEndpointFactory();
+        var client = factory.CreateClient();
+        var book = await CreateBookAsync(client, "Synthetic Reader Book", "Ada Reader");
+        var sidecar = Path.Combine(AppContext.BaseDirectory, "Fixtures", "koreader", "metadata.multiline.lua");
+
+        // Exactly what the line-based reader stored for this sidecar: the first
+        // source line of the two-paragraph highlight, quote and backslash
+        // included, and the bookmark under its screen count.
+        Guid cutId, bookmarkId;
+        await using (var seed = CreateContext(factory.DatabasePath))
+        {
+            var cut = new Nostos.Backend.Data.Models.NoteModel
+            {
+                BookId = book.Id,
+                Content = "She said \"wait\" here.",
+                SelectedText = "\"The end of one paragraph.\\",
+                CaptureSource = "import",
+                SourceAnchorKind = "koreader_xpointer",
+                SourceAnchorValue = "/body/DocFragment[3]/body/p[4]/text().0|/body/DocFragment[3]/body/p[5]/text().21",
+            };
+            var bookmark = new Nostos.Backend.Data.Models.NoteModel
+            {
+                BookId = book.Id,
+                SelectedText = "in Chapter One",
+                CaptureSource = "import",
+                SourceAnchorKind = "koreader_page",
+                SourceAnchorValue = "14",
+            };
+            seed.Notes.AddRange(cut, bookmark);
+            await seed.SaveChangesAsync();
+            (cutId, bookmarkId) = (cut.Id, bookmark.Id);
+        }
+
+        var preview = await PreviewAsync(client, sidecar);
+        preview.Books.Single().NewCount.Should().Be(1, "only the later highlight was never imported");
+
+        var result = await CommitAsync(
+            client, sidecar, new HighlightImportDecision(preview.Books.Single().SourceKey, book.Id));
+        var imported = result.Books.Single();
+        imported.ImportedCount.Should().Be(1);
+        imported.DuplicateCount.Should().Be(2);
+        imported.Message.Should().Be("2 notes from an earlier import were corrected.");
+
+        await using (var verify = CreateContext(factory.DatabasePath))
+        {
+            var notes = await verify.Notes.AsNoTracking().Where(note => note.BookId == book.Id).ToListAsync();
+            notes.Should().HaveCount(3);
+            notes.Single(note => note.Id == cutId).SelectedText
+                .Should().Be("The end of one paragraph.\nThe start of the next.");
+            var bookmark = notes.Single(note => note.Id == bookmarkId);
+            bookmark.SourceAnchorKind.Should().Be("koreader_xpointer");
+            bookmark.SourceAnchorValue.Should().Be("/body/DocFragment[3]/body/p[12]/text().0|");
+        }
+
+        var again = await CommitAsync(
+            client, sidecar, new HighlightImportDecision(preview.Books.Single().SourceKey, book.Id));
+        again.Books.Single().ImportedCount.Should().Be(0);
+        again.Books.Single().DuplicateCount.Should().Be(3);
+        again.Books.Single().Message.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task An_imported_highlight_takes_the_first_reader_location_and_nothing_else_does()
+    {
+        using var factory = new LibraryEndpointFactory();
+        var client = factory.CreateClient();
+        var book = await CreateBookAsync(client, "Synthetic Reader Book", "Ada Reader");
+        var sidecar = Path.Combine(AppContext.BaseDirectory, "Fixtures", "koreader", "metadata.lua");
+        var preview = await PreviewAsync(client, sidecar);
+        await CommitAsync(client, sidecar, new HighlightImportDecision(preview.Books.Single().SourceKey, book.Id));
+
+        var notes = await client.GetFromJsonAsync<List<NoteDto>>($"/api/books/{book.Id}/notes");
+        var imported = notes!.First();
+        const string cfi = "epubcfi(/6/8!/4/8,/1:0,/1:33)";
+
+        var located = await client.PutAsJsonAsync($"/api/notes/{imported.Id}/location", new NoteLocationDto(cfi));
+        located.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await located.Content.ReadFromJsonAsync<NoteDto>())!.CfiRange.Should().Be(cfi);
+
+        var second = await client.PutAsJsonAsync(
+            $"/api/notes/{imported.Id}/location", new NoteLocationDto("epubcfi(/6/2!/4/2,/1:0,/1:5)"));
+        (await second.Content.ReadFromJsonAsync<NoteDto>())!.CfiRange.Should().Be(cfi, "the first location is kept");
+
+        (await client.PutAsJsonAsync($"/api/notes/{imported.Id}/location", new NoteLocationDto("page 12")))
+            .StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await client.PutAsJsonAsync($"/api/notes/{Guid.NewGuid()}/location", new NoteLocationDto(cfi)))
+            .StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        var typed = await client.PostAsJsonAsync($"/api/books/{book.Id}/notes", new { content = "A typed note." });
+        var typedNote = (await typed.Content.ReadFromJsonAsync<NoteDto>())!;
+        (await client.PutAsJsonAsync($"/api/notes/{typedNote.Id}/location", new NoteLocationDto(cfi)))
+            .StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task A_pdf_sidecar_named_only_by_its_file_is_offered_the_book_and_never_filed_unasked()
+    {
+        using var factory = new LibraryEndpointFactory();
+        var client = factory.CreateClient();
+        var book = await CreateBookAsync(client, "Synthetic Reader PDF", "Ada Reader");
+        var sidecar = Path.Combine(AppContext.BaseDirectory, "Fixtures", "koreader", "metadata.pdf-untitled.lua");
+
+        var preview = await PreviewAsync(client, sidecar);
+        var only = preview.Books.Should().ContainSingle().Subject;
+        only.AnnotationCount.Should().Be(2);
+        only.Match.Should().Be("suggested", "a file name is a resemblance, not an identity");
+        only.BookId.Should().BeNull();
+        only.Candidates.Should().ContainSingle().Which.BookId.Should().Be(book.Id);
+
+        var result = await CommitAsync(client, sidecar, new HighlightImportDecision(only.SourceKey, book.Id));
+        result.Books.Single().ImportedCount.Should().Be(2);
+
+        // The owner's answer is remembered by KOReader's file checksum.
+        (await PreviewAsync(client, sidecar)).Books.Single().Match.Should().Be("remembered");
+    }
+
+    [Fact]
     public async Task A_file_that_is_neither_source_is_rejected()
     {
         using var factory = new LibraryEndpointFactory();

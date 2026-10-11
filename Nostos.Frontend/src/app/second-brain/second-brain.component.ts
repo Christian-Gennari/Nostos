@@ -20,7 +20,12 @@ import { ToastService } from '../core/services/toast.service';
 import { CloudAuthService } from '../core/services/cloud-auth.service';
 import { DeploymentCapabilitiesService } from '../core/services/deployment-capabilities.service';
 import { NotesService } from '../core/services/notes.service';
-import { Note, NoteSearchHit } from '../core/dtos/note.dtos';
+import {
+  Note,
+  NoteSearchHit,
+  importedNoteLocation,
+  isImportedAnchor,
+} from '../core/dtos/note.dtos';
 import { ConfirmModal } from '../ui/confirm-modal/confirm-modal.component';
 import { NoteCardComponent, type NoteSourceNavigation } from '../ui/note-card.component/note-card.component';
 import { NoteCaptureDetailsComponent } from '../ui/note-capture-details/note-capture-details.component';
@@ -223,7 +228,12 @@ export class SecondBrain implements AfterViewChecked {
   });
   browseSourceParams(
     note: NoteSearchHit | NoteContextDto,
-  ): { sourcePage: number } | { sourceCfi: string } | { sourceTime: number } | null {
+  ):
+    | { sourcePage: number }
+    | { sourceCfi: string }
+    | { sourceTime: number }
+    | { sourceNote: string }
+    | null {
     const anchor = note.anchorVerified ? note.sourceAnchorValue?.trim() : null;
     const kind = note.sourceAnchorKind?.toLowerCase();
     if (kind === 'pdf_page' && anchor) {
@@ -236,7 +246,14 @@ export class SecondBrain implements AfterViewChecked {
       if (Number.isFinite(sourceTime) && sourceTime >= 0) return { sourceTime };
     }
     const cfi = note.cfiRange?.trim();
-    return cfi?.startsWith('epubcfi(') ? { sourceCfi: cfi } : null;
+    if (cfi?.startsWith('epubcfi(')) return { sourceCfi: cfi };
+
+    // An imported highlight has no location until the reader has found it in
+    // the book, so the link names the note and the reader looks it up.
+    if (isImportedAnchor(note.sourceAnchorKind) && importedNoteLocation(note)) {
+      return { sourceNote: 'noteId' in note ? note.noteId : note.id };
+    }
+    return null;
   }
 
   noteSourceNavigation(note: NoteSearchHit | NoteContextDto): NoteSourceNavigation {

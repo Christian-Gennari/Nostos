@@ -164,6 +164,21 @@ public static class NotesEndpoints
             }
         );
 
+        // LOCATE an imported highlight: the reader reports where it found the
+        // highlighted text in the book. Set once; see SetImportedLocationAsync.
+        group.MapPut(
+            "/notes/{id}/location",
+            async (Guid id, NoteLocationDto dto, INoteService notes, CancellationToken ct) =>
+            {
+                var result = await notes.SetImportedLocationAsync(id, dto.CfiRange, ct);
+                if (result.Success)
+                    return Results.Ok(result.Value);
+                return result.ErrorCode == NoteErrorCodes.NoteNotFound
+                    ? Results.NotFound()
+                    : Results.BadRequest(new { error = result.ErrorMessage });
+            }
+        );
+
         // DELETE note
         group.MapDelete(
             "/notes/{id}",

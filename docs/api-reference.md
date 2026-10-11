@@ -318,6 +318,24 @@ Update a note. Re-processes `[[topic]]` links.
 }
 ```
 
+### `PUT /api/notes/{id}/location`
+
+Record where the reader found an imported highlight in its EPUB, so it is drawn
+and opened like a highlight made in Nostos. Only notes with
+`captureSource: "import"` accept it. The first location is kept: a later call
+returns the note unchanged.
+
+**Body:**
+
+```json
+{
+  "cfiRange": "epubcfi(/6/14!/4/2/12,/1:0,/1:42)"
+}
+```
+
+**Response:** `200 OK` with `NoteDto`; `400` for a non-import note or a value
+that is not an EPUB CFI; `404` if the note does not exist.
+
 ### `DELETE /api/notes/{id}`
 
 Delete a note and its topic links.
@@ -354,7 +372,9 @@ whether it was created, and any message. An optional `batchId` form field joins
 later selected files to the first file's batch so one Undo covers the selection.
 An import that adds nothing creates no new batch.
 
-Re-import does not duplicate notes. Undo removes the batch's notes and their
+Re-import does not duplicate notes. A KOReader note that an earlier version of
+the import stored cut short at a line break, or a page bookmark it anchored to a
+screen count, is corrected in place and reported in the book's `message`. Undo removes the batch's notes and their
 import receipts, allowing them to be imported again; newly added books and
 remembered destinations stay in the library. Kobo dog-ears, stylus markup and
 deleted rows are ignored. The original `POST /api/notes/import/koreader` endpoint

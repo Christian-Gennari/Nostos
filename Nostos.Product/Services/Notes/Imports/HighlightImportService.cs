@@ -152,8 +152,23 @@ public sealed class HighlightImportService
 
             var imported = 0;
             var duplicates = 0;
+            var repaired = 0;
             foreach (var entry in await PlanAsync(source, sourceBook, book.Id, ct))
             {
+                if (entry.Repairs is { } earlierNoteId)
+                {
+                    await KoreaderNoteImportService.RepairAsync(
+                        _db,
+                        _notes,
+                        earlierNoteId,
+                        entry.Annotation.AnchorKind,
+                        entry.AnchorValue,
+                        entry.Annotation.Text,
+                        entry.Annotation.Note,
+                        ct);
+                    repaired++;
+                }
+
                 if (!entry.IsNew)
                 {
                     duplicates++;
@@ -197,7 +212,11 @@ public sealed class HighlightImportService
                 imported,
                 duplicates,
                 created,
-                null));
+                repaired == 0
+                    ? null
+                    : repaired == 1
+                        ? "1 note from an earlier import was corrected."
+                        : $"{repaired} notes from an earlier import were corrected."));
         }
 
         // A batch exists to be undone; one that added nothing has nothing to undo.
@@ -292,7 +311,7 @@ public sealed class HighlightImportService
             })
             .ToList();
 
-        var existing = isKobo
+        var koboExisting = isKobo
             ? (await _db.Notes
                     .AsNoTracking()
                     .Where(note => note.SourceAnchorKind == "kobo_bookmark")
@@ -300,16 +319,25 @@ public sealed class HighlightImportService
                     .ToListAsync(ct))
                 .Select(value => value ?? string.Empty)
                 .ToHashSet(StringComparer.Ordinal)
-            : (await _db.Notes
-                    .AsNoTracking()
-                    .Where(note => note.BookId == bookId && note.CaptureSource == "import")
-                    .Select(note => new { note.SourceAnchorKind, note.SourceAnchorValue, note.SelectedText, note.Content })
-                    .ToListAsync(ct))
-                .Select(note => Identity(note.SourceAnchorKind, note.SourceAnchorValue, note.SelectedText, note.Content))
-                .ToHashSet(StringComparer.Ordinal);
+            : [];
+        var existing = isKobo
+            ? []
+            : await KoreaderNoteImportService.ImportedNotesAsync(_db, bookId, ct);
 
-        // A receipt without a note is a note the owner deleted: it stays deleted.
-        var keys = planned.Select(entry => entry.Key).ToList();
+        // A receipt without a note is a note the owner deleted: it stays
+        // deleted, including one deleted in the shape an earlier import gave it.
+        var earlierKeys = planned.ToDictionary(
+            entry => entry.Key,
+            entry => (entry.Annotation.EarlierShapes ?? [])
+                .Select(shape => KoreaderNoteImportService.Fingerprint(
+                    bookId, shape.AnchorKind, shape.AnchorValue, shape.Text, shape.Content))
+                .ToList(),
+            StringComparer.Ordinal);
+        var keys = planned
+            .Select(entry => entry.Key)
+            .Concat(earlierKeys.Values.SelectMany(shapeKeys => shapeKeys))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
         var receipted = (await _db.NoteCommandReceipts
                 .AsNoTracking()
                 .Where(receipt => receipt.ClientId == clientId && keys.Contains(receipt.IdempotencyKey))
@@ -320,13 +348,39 @@ public sealed class HighlightImportService
         for (var i = 0; i < planned.Count; i++)
         {
             var entry = planned[i];
-            var identity = isKobo
-                ? entry.AnchorValue
-                : Identity(entry.Annotation.AnchorKind, entry.AnchorValue, entry.Annotation.Text, entry.Annotation.Note);
+            if (isKobo)
+            {
+                // `Add` also catches the same annotation twice in one file.
+                if (!koboExisting.Add(entry.AnchorValue) || receipted.Contains(entry.Key))
+                    planned[i] = entry with { IsNew = false };
+                continue;
+            }
 
-            // `Add` also catches the same annotation twice in one file.
-            if (!existing.Add(identity) || receipted.Contains(entry.Key))
+            var identity = KoreaderNoteImportService.Identity(
+                entry.Annotation.AnchorKind, entry.AnchorValue, entry.Annotation.Text, entry.Annotation.Note);
+            if (existing.ContainsKey(identity))
+            {
                 planned[i] = entry with { IsNew = false };
+                continue;
+            }
+
+            var earlier = (entry.Annotation.EarlierShapes ?? [])
+                .Select(shape => KoreaderNoteImportService.Identity(
+                    shape.AnchorKind, shape.AnchorValue, shape.Text, shape.Content))
+                .FirstOrDefault(existing.ContainsKey);
+            if (earlier is not null)
+            {
+                planned[i] = entry with { IsNew = false, Repairs = existing[earlier] };
+                existing.Remove(earlier);
+            }
+            else if (receipted.Contains(entry.Key) || earlierKeys[entry.Key].Any(receipted.Contains))
+            {
+                planned[i] = entry with { IsNew = false };
+            }
+
+            // Claims the identity so the same annotation twice in one file is
+            // imported once.
+            existing[identity] = Guid.Empty;
         }
 
         return planned;
@@ -379,9 +433,6 @@ public sealed class HighlightImportService
             false,
             message);
 
-    private static string Identity(string kind, string? value, string? text, string? content) =>
-        string.Join('\n', kind, value ?? string.Empty, text ?? string.Empty, content ?? string.Empty);
-
     private static string Hash(string canonical) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
 
@@ -393,5 +444,7 @@ public sealed class HighlightImportService
         string AnchorValue,
         string ClientId,
         string Key,
-        bool IsNew);
+        bool IsNew,
+        // The note an earlier import stored for this annotation in another shape.
+        Guid? Repairs = null);
 }
