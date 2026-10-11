@@ -44,6 +44,38 @@ export function noteNavigationTarget(note: Note): string | number | null {
   }
 }
 
+/**
+ * Where an imported highlight sits, in the terms its e-reader recorded. These
+ * are never verified reader locations, so they stay out of
+ * `noteNavigationTarget`: each needs the open reader to interpret it.
+ */
+export interface ImportedNoteLocation {
+  /** The highlighted text, which a text reader can look up in the book. */
+  text: string | null;
+  /** Spine item of a KOReader position, to settle a passage that repeats. */
+  spineIndex: number | null;
+  /** KOReader's page: the real page in a PDF, a screen count in an EPUB. */
+  page: number | null;
+}
+
+export function importedNoteLocation(note: Note): ImportedNoteLocation | null {
+  const text = note.selectedText?.trim() || null;
+  const kind = note.sourceAnchorKind?.toLowerCase();
+  const value = note.sourceAnchorValue?.trim() ?? '';
+
+  let spineIndex: number | null = null;
+  let page: number | null = null;
+  if (kind === 'koreader_xpointer') {
+    // crengine numbers a book's spine items as DocFragment[1..n].
+    const fragment = /\/DocFragment\[(\d+)\]/.exec(value);
+    if (fragment) spineIndex = Number(fragment[1]) - 1;
+  } else if (kind === 'koreader_page' && /^\d+$/.test(value) && Number(value) > 0) {
+    page = Number(value);
+  }
+
+  return text || page !== null ? { text, spineIndex, page } : null;
+}
+
 export interface CreateNoteDto {
   content: string;
   cfiRange?: string;

@@ -863,6 +863,61 @@ describe('ReaderShell assistant note navigation (issue #324)', () => {
 
     expect(goTo).not.toHaveBeenCalled();
   });
+
+  it('finds an imported EPUB highlight by its text, hinted by the KOReader spine item', () => {
+    const goTo = vi.fn();
+    const goToPassage = vi.fn();
+    (fixture.componentInstance as any).activeReader = () => ({ goTo, goToPassage });
+    (fixture.componentInstance as any).fileType = () => 'epub';
+
+    fixture.componentInstance.onJumpToNote(
+      note({
+        selectedText: 'philosophy begins in wonder.',
+        captureSource: 'import',
+        sourceAnchorKind: 'koreader_xpointer',
+        sourceAnchorValue:
+          '/body/DocFragment[10]/body/section/p[31]/text()[1].186|/body/DocFragment[10]/body/section/p[31]/a/text().2',
+        anchorVerified: false,
+      }),
+    );
+
+    expect(goToPassage).toHaveBeenCalledOnce();
+    expect(goToPassage).toHaveBeenCalledWith('philosophy begins in wonder.', 9);
+    expect(goTo).not.toHaveBeenCalled();
+  });
+
+  it('opens the KOReader page of an imported PDF highlight', () => {
+    const goTo = vi.fn();
+    (fixture.componentInstance as any).activeReader = () => ({ goTo });
+    (fixture.componentInstance as any).fileType = () => 'pdf';
+
+    fixture.componentInstance.onJumpToNote(
+      note({
+        selectedText: 'A PDF highlight.',
+        captureSource: 'import',
+        sourceAnchorKind: 'koreader_page',
+        sourceAnchorValue: '14',
+        anchorVerified: false,
+      }),
+    );
+
+    expect(goTo).toHaveBeenCalledOnce();
+    expect(goTo).toHaveBeenCalledWith(14);
+  });
+
+  it('never reads a KOReader screen-page count as an EPUB location', () => {
+    const goTo = vi.fn();
+    const goToPassage = vi.fn();
+    (fixture.componentInstance as any).activeReader = () => ({ goTo, goToPassage });
+    (fixture.componentInstance as any).fileType = () => 'epub';
+
+    fixture.componentInstance.onJumpToNote(
+      note({ sourceAnchorKind: 'koreader_page', sourceAnchorValue: '425', anchorVerified: false }),
+    );
+
+    expect(goTo).not.toHaveBeenCalled();
+    expect(goToPassage).not.toHaveBeenCalled();
+  });
 });
 
 describe('ReaderShell audiobook load (issue #7)', () => {

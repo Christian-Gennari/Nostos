@@ -10,7 +10,7 @@ import { TopicsService, TopicDto } from '../core/services/topics.service';
 import { TopicAutocompleteService } from '../ui/topic-autocomplete-panel/topic-autocomplete.service';
 
 // DTOs & Interfaces
-import { Note, noteNavigationTarget } from '../core/dtos/note.dtos';
+import { Note, importedNoteLocation, noteNavigationTarget } from '../core/dtos/note.dtos';
 import { IReader, ReaderSearchState, ReaderSourceTarget, TocItem } from './reader.interface';
 import { isInteractiveTarget, isTypingTarget, pageActionForKey } from './reader-keyboard';
 import {
@@ -1129,15 +1129,35 @@ export class ReaderShell implements OnInit, OnDestroy {
 
   onJumpToNote(note: Note) {
     const reader = this.activeReader();
-    const target = noteNavigationTarget(note);
-    if (reader && target !== null) {
-      reader.goTo(target);
+    if (reader && this.jumpToNote(reader, note)) {
       // A full-width phone drawer must not keep hiding the passage the user
       // just asked to reveal. Closing on desktop is also the least surprising
       // destination-jump behavior.
       this.notesOpen.set(false);
       this.restoreOverlayFocus();
     }
+  }
+
+  private jumpToNote(reader: IReader, note: Note): boolean {
+    const target = noteNavigationTarget(note);
+    if (target !== null) {
+      reader.goTo(target);
+      return true;
+    }
+
+    // An imported highlight has no location this reader wrote itself. Its
+    // text can still be found in an EPUB, and a KOReader page is a real page
+    // of a PDF.
+    const imported = importedNoteLocation(note);
+    if (this.fileType() === 'epub' && imported?.text && reader.goToPassage) {
+      void reader.goToPassage(imported.text, imported.spineIndex);
+      return true;
+    }
+    if (this.fileType() === 'pdf' && imported?.page) {
+      reader.goTo(imported.page);
+      return true;
+    }
+    return false;
   }
 
   goBack() {

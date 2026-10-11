@@ -205,3 +205,79 @@ export function rangeForNormalizedResourceSpan(
   range.setEnd(endNode, endOffset + 1);
   return range;
 }
+
+export interface EpubPassageMatch {
+  /** Position of the matched section in the list that was searched. */
+  section: number;
+  offset: number;
+  length: number;
+}
+
+// Enough words to be a sentence opening rather than a common phrase.
+const PASSAGE_LEAD_WORDS = 8;
+
+function passageMatcher(normalizedPassage: string): RegExp {
+  const pattern = normalizedPassage
+    .split('\n')
+    .map((line) =>
+      line
+        .split(' ')
+        .map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+        .join('\\s+'),
+    )
+    // Another reading app marks every line break in what it copies, including
+    // a <br> that contributes no character at all to this text.
+    .join('\\s*');
+  return new RegExp(pattern, 'gu');
+}
+
+function passageMatches(
+  sections: readonly { text: string }[],
+  normalizedPassage: string,
+): EpubPassageMatch[] {
+  const matcher = passageMatcher(normalizedPassage);
+  const matches: EpubPassageMatch[] = [];
+  sections.forEach((section, index) => {
+    matcher.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = matcher.exec(section.text)) !== null) {
+      matches.push({ section: index, offset: match.index, length: match[0].length });
+      if (match[0].length === 0) matcher.lastIndex += 1;
+    }
+  });
+  return matches;
+}
+
+/**
+ * Find a quoted passage in the normalized text of a book's sections. This is
+ * how a highlight made in another reading app is located: its text is known
+ * but its position is in that app's own terms.
+ *
+ * A passage that occurs more than once resolves to the section at the preferred
+ * spine index when one is given, otherwise to its first occurrence. When the whole passage is
+ * not present (the other app extracted the text slightly differently), its
+ * opening words are accepted only if they identify a single place; anything
+ * less certain returns null rather than opening the wrong page.
+ */
+export function findEpubPassage(
+  sections: readonly { index: number; text: string }[],
+  passage: string,
+  preferredSpineIndex?: number | null,
+): EpubPassageMatch | null {
+  const normalized = normalizeEpubSourceText(passage);
+  if (!normalized) return null;
+
+  const preferred = (matches: EpubPassageMatch[]) =>
+    matches.filter((match) => sections[match.section].index === preferredSpineIndex);
+
+  const whole = passageMatches(sections, normalized);
+  if (whole.length > 0) return preferred(whole)[0] ?? whole[0];
+
+  const words = normalized.split(/\s+/);
+  if (words.length <= PASSAGE_LEAD_WORDS) return null;
+
+  const lead = passageMatches(sections, words.slice(0, PASSAGE_LEAD_WORDS).join(' '));
+  const inPreferred = preferred(lead);
+  if (inPreferred.length === 1) return inPreferred[0];
+  return lead.length === 1 ? lead[0] : null;
+}

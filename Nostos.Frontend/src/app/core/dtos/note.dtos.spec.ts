@@ -1,4 +1,4 @@
-import { Note, noteNavigationTarget } from './note.dtos';
+import { Note, importedNoteLocation, noteNavigationTarget } from './note.dtos';
 
 const note = (overrides: Partial<Note> = {}): Note => ({
   id: 'note-1',
@@ -75,6 +75,45 @@ describe('noteNavigationTarget (issue #324)', () => {
           sourceAnchorValue: '-1',
           anchorVerified: true,
         }),
+      ),
+    ).toBeNull();
+  });
+});
+
+describe('importedNoteLocation', () => {
+  it('reads the highlighted text and spine item of a KOReader EPUB highlight', () => {
+    expect(
+      importedNoteLocation(
+        note({
+          selectedText: ' philosophy begins in wonder. ',
+          sourceAnchorKind: 'koreader_xpointer',
+          sourceAnchorValue:
+            '/body/DocFragment[10]/body/section/p[31]/text()[1].186|/body/DocFragment[10]/body/section/p[31]/a/text().2',
+        }),
+      ),
+    ).toEqual({ text: 'philosophy begins in wonder.', spineIndex: 9, page: null });
+  });
+
+  it('reads the page of a KOReader PDF highlight', () => {
+    expect(
+      importedNoteLocation(
+        note({ selectedText: 'A passage.', sourceAnchorKind: 'koreader_page', sourceAnchorValue: '14' }),
+      ),
+    ).toEqual({ text: 'A passage.', spineIndex: null, page: 14 });
+  });
+
+  it('keeps the text of a highlight whose anchor says nothing about position', () => {
+    expect(
+      importedNoteLocation(
+        note({ selectedText: 'A passage.', sourceAnchorKind: 'kobo_bookmark', sourceAnchorValue: 'abc' }),
+      ),
+    ).toEqual({ text: 'A passage.', spineIndex: null, page: null });
+  });
+
+  it('has nothing to offer for a note with neither text nor page', () => {
+    expect(
+      importedNoteLocation(
+        note({ sourceAnchorKind: 'koreader_unknown', sourceAnchorValue: 'annotation:abc' }),
       ),
     ).toBeNull();
   });

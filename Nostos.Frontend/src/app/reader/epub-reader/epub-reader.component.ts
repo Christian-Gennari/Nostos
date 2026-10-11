@@ -45,6 +45,7 @@ import {
 import { AssistantContextService } from '../../ui/assistant/assistant-context.service';
 
 import {
+  findEpubPassage,
   normalizeEpubHrefForComparison,
   normalizeEpubSourceText,
   normalizedEpubResourceText,
@@ -810,6 +811,47 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     const match = this.searchMatches[this.activeSearchIndex];
     if (!match || generation !== this.searchGeneration) return;
 
+    await this.revealTextSpan(match, generation);
+  }
+
+  /**
+   * Open the place a quoted passage occupies in this book. Used for notes
+   * that carry their highlighted text but no location this reader can read,
+   * such as highlights imported from another reading app.
+   */
+  async goToPassage(text: string, spineIndex?: number | null): Promise<void> {
+    // A passage jump replaces whatever search was showing, exactly as a new
+    // query would.
+    this.clearSearch();
+    const generation = this.searchGeneration;
+    this.sourceNavigationMessage.set(null);
+
+    let corpus: Array<{ href: string; index: number; text: string }>;
+    try {
+      corpus = await this.ensureSearchCorpus();
+    } catch (error) {
+      if (generation === this.searchGeneration) this.failGroundedSourceNavigation(error);
+      return;
+    }
+    if (generation !== this.searchGeneration) return;
+
+    const match = findEpubPassage(corpus, text, spineIndex);
+    if (!match) {
+      this.failGroundedSourceNavigation();
+      return;
+    }
+
+    const section = corpus[match.section];
+    await this.revealTextSpan(
+      { href: section.href, index: section.index, offset: match.offset, length: match.length },
+      generation,
+    );
+  }
+
+  private async revealTextSpan(
+    match: { href: string; index: number; offset: number; length: number },
+    generation: number,
+  ): Promise<void> {
     await this.goToSource({
       type: 'epub',
       epubResourceHref: match.href,
