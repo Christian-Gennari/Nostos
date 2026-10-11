@@ -26,6 +26,7 @@ import {
   MIGRATION_LIMITS,
 } from '../models/migration-http.dtos';
 import { readBlobRange } from './hash/blob-bytes';
+import { SUPPORTED_PORTABLE_DATA_VERSIONS } from './migration-preflight';
 
 const EOCD_SIGNATURE = 0x06054b50;
 const ZIP64_EOCD_LOCATOR_SIGNATURE = 0x07064b50;
@@ -371,7 +372,7 @@ export class PortableArchiveInspector {
         `Archive format version ${manifest['formatVersion']} is not supported.`,
       );
     }
-    if (dataVersion !== 1 && dataVersion !== 2 && dataVersion !== 3) {
+    if (!SUPPORTED_PORTABLE_DATA_VERSIONS.has(dataVersion)) {
       throw new InspectionFailure(
         'unsupported-data-version',
         `Archive data version ${manifest['dataVersion']} is not supported.`,

@@ -60,7 +60,7 @@ describe('PortableArchiveInspector', () => {
     });
   });
 
-  it.each([1, 2, 3])('accepts supported data version %i', async (dataVersion) => {
+  it.each([1, 2, 3, 4])('accepts supported data version %i', async (dataVersion) => {
     const archive = await portableArchiveFixture(portableManifest({ dataVersion }));
     const inspection = await inspector().inspect(createFile(archive));
     expect(inspection.kind).toBe('portable');
