@@ -88,6 +88,68 @@ namespace Nostos.Backend.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nostos.Backend.Data.Models.AlignmentAnchorModel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("AudioBookId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("AudioPositionMs")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("AudioRevision")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Cfi")
+                        .HasMaxLength(2048)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ResourceHref")
+                        .IsRequired()
+                        .HasMaxLength(2048)
+                        .HasColumnType("TEXT");
+
+                    b.Property<double>("Score")
+                        .HasColumnType("REAL");
+
+                    b.Property<int>("SpineIndex")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("TextBookId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("TextGlobalOffset")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("TextOffset")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("TextRevision")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TextBookId");
+
+                    b.HasIndex("AudioBookId", "TextBookId", "AudioRevision", "TextRevision", "AudioPositionMs")
+                        .HasDatabaseName("IX_AlignmentAnchors_Pair_AudioPosition");
+
+                    b.HasIndex("AudioBookId", "TextBookId", "AudioRevision", "TextRevision", "TextGlobalOffset")
+                        .HasDatabaseName("IX_AlignmentAnchors_Pair_TextOffset");
+
+                    b.ToTable("AlignmentAnchors");
+                });
+
             modelBuilder.Entity("Nostos.Backend.Data.Models.AssistantSettingsModel", b =>
                 {
                     b.Property<int>("Id")
@@ -1067,6 +1129,25 @@ namespace Nostos.Backend.Migrations
                         });
 
                     b.HasDiscriminator().HasValue("physical");
+                });
+
+            modelBuilder.Entity("Nostos.Backend.Data.Models.AlignmentAnchorModel", b =>
+                {
+                    b.HasOne("Nostos.Backend.Data.Models.BookModel", "AudioBook")
+                        .WithMany()
+                        .HasForeignKey("AudioBookId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Nostos.Backend.Data.Models.BookModel", "TextBook")
+                        .WithMany()
+                        .HasForeignKey("TextBookId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("AudioBook");
+
+                    b.Navigation("TextBook");
                 });
 
             modelBuilder.Entity("Nostos.Backend.Data.Models.BookAcquisitionModel", b =>

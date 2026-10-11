@@ -500,6 +500,8 @@ public class NostosDbContext : DbContext
             e.Property(a => a.Cfi)
                 .HasMaxLength(2048);
 
+            // Explicit index names: the generated ones exceed PostgreSQL's
+            // 63-character identifier limit and would collide once truncated.
             e.HasIndex(a => new
             {
                 a.AudioBookId,
@@ -507,7 +509,7 @@ public class NostosDbContext : DbContext
                 a.AudioRevision,
                 a.TextRevision,
                 a.AudioPositionMs,
-            });
+            }).HasDatabaseName("IX_AlignmentAnchors_Pair_AudioPosition");
 
             e.HasIndex(a => new
             {
@@ -516,7 +518,7 @@ public class NostosDbContext : DbContext
                 a.AudioRevision,
                 a.TextRevision,
                 a.TextGlobalOffset,
-            });
+            }).HasDatabaseName("IX_AlignmentAnchors_Pair_TextOffset");
         });
 
         // Normalized identity uniqueness (filtered: NULLs are unlimited).

@@ -29,7 +29,7 @@ public sealed class AlignmentDocumentCacheTests
         var second = await cache.GetAsync(
             BookId, storage, extractor);
 
-        ReferenceEquals(first, second).Should().BeTrue();
+        ReferenceEquals(first.Document, second.Document).Should().BeTrue();
 
         extractor.CallCount.Should().Be(1);
     }
