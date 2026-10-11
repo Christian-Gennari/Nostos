@@ -21,6 +21,7 @@ import {
   MigrationTransportError,
 } from '../services/library-transfer-transport';
 import { MockLibraryTransferTransport } from '../testing/mock-library-transfer-transport';
+import { IMPORT_COMPLETION_NOTICE_KEY } from '../services/import-completion-notice';
 import { FileDigestService } from '../services/file-digest.service';
 import { FileDigest, PersistedTransferResumeState, TransferFileIdentity, TransferFlowState } from '../models/library-transfer.models';
 import { HASH_WORKER_FACTORY } from '../services/hash/hash-worker';
@@ -1105,6 +1106,30 @@ describe('LibraryImportFlowComponent', () => {
     harness.fixture.detectChanges();
     expect(testId(harness, 'import-completed')).toBeNull();
     expect(testId(harness, 'import-idle')).toBeTruthy();
+  });
+
+  it('shows the completion carried across the post-import reload until Done', () => {
+    sessionStorage.setItem(
+      IMPORT_COMPLETION_NOTICE_KEY,
+      JSON.stringify({ jobId: 'job-reloaded', recoveryExpiresAtUtc: '2026-10-18T18:26:29Z' }),
+    );
+    try {
+      const harness = setup();
+      harness.fixture.detectChanges();
+
+      expect(harness.coordinator.state().kind).toBe('idle');
+      expect(testId(harness, 'import-completed')).toBeTruthy();
+      expect(testId(harness, 'import-recovery-note')?.textContent).toContain('recovery copy');
+      expect(testId(harness, 'import-idle')).toBeNull();
+
+      (testId(harness, 'import-done') as HTMLButtonElement).click();
+      harness.fixture.detectChanges();
+      expect(testId(harness, 'import-completed')).toBeNull();
+      expect(testId(harness, 'import-idle')).toBeTruthy();
+      expect(sessionStorage.getItem(IMPORT_COMPLETION_NOTICE_KEY)).toBeNull();
+    } finally {
+      sessionStorage.removeItem(IMPORT_COMPLETION_NOTICE_KEY);
+    }
   });
 
   it('separates the completed upload from live server processing progress', () => {

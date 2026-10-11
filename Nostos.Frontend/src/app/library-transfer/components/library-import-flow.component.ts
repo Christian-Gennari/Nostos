@@ -49,6 +49,10 @@ import {
   maintenanceRetryMessage,
   formatBytes,
 } from '../library-transfer.copy';
+import {
+  clearImportCompletionNotice,
+  loadImportCompletionNotice,
+} from '../services/import-completion-notice';
 import { LibraryTransferCoordinator } from '../services/library-transfer-coordinator.service';
 import { TransferResumeStore } from '../services/transfer-resume-store.service';
 import { TransferTabLease } from '../services/transfer-tab-lease.service';
@@ -185,6 +189,9 @@ export class LibraryImportFlowComponent implements OnInit, OnDestroy {
    */
   private readonly unacknowledgedCompletion = signal<{ jobId: string } | null>(null);
 
+  /** Recovery-copy expiry carried across the post-import reload. */
+  private readonly carriedRecoveryExpiresAtUtc = signal<string | null>(null);
+
   readonly completed = computed(
     () => this.reachedCompletion() ?? this.unacknowledgedCompletion(),
   );
@@ -194,7 +201,9 @@ export class LibraryImportFlowComponent implements OnInit, OnDestroy {
 
   /** Server-reported recovery-copy note after completion; null when unknown. */
   readonly activationRecoveryNote = computed(() =>
-    activationRecoveryNote(this.activationRecoveryExpiresAtUtc()),
+    activationRecoveryNote(
+      this.activationRecoveryExpiresAtUtc() ?? this.carriedRecoveryExpiresAtUtc(),
+    ),
   );
 
   /**
@@ -364,11 +373,23 @@ export class LibraryImportFlowComponent implements OnInit, OnDestroy {
 
     // Completion is reported once, whether it came from the server job or the
     // host's own activation call.
+    // A finished import reloads the page; pick its confirmation up again.
+    const carried = loadImportCompletionNotice(sessionStorageOrNull());
+    if (carried) {
+      this.unacknowledgedCompletion.set({ jobId: carried.jobId });
+      this.carriedRecoveryExpiresAtUtc.set(carried.recoveryExpiresAtUtc);
+    }
+
     // Hold the completed surface until Done; a new transfer supersedes it.
     effect(() => {
       const reached = this.reachedCompletion();
-      if (reached) this.unacknowledgedCompletion.set(reached);
-      else if (this.state().kind !== 'idle') this.unacknowledgedCompletion.set(null);
+      if (reached) {
+        this.unacknowledgedCompletion.set(reached);
+      } else if (this.state().kind !== 'idle') {
+        this.unacknowledgedCompletion.set(null);
+        this.carriedRecoveryExpiresAtUtc.set(null);
+        clearImportCompletionNotice(sessionStorageOrNull());
+      }
     });
 
     effect(() => {
@@ -466,6 +487,8 @@ export class LibraryImportFlowComponent implements OnInit, OnDestroy {
   /** Acknowledges a completed job: clears the record and returns to idle. */
   done(): void {
     this.unacknowledgedCompletion.set(null);
+    this.carriedRecoveryExpiresAtUtc.set(null);
+    clearImportCompletionNotice(sessionStorageOrNull());
     this.resumeStore.clear();
     this.coordinator.dismiss();
   }
@@ -607,5 +630,13 @@ function progressPhaseForJobState(jobState: MigrationJobState | undefined): Tran
       return 'preparing-library';
     default:
       return 'checking';
+  }
+}
+
+function sessionStorageOrNull(): Storage | null {
+  try {
+    return globalThis.sessionStorage ?? null;
+  } catch {
+    return null;
   }
 }
