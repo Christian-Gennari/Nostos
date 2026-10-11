@@ -23,6 +23,24 @@ namespace Nostos.Backend.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("AlignmentTranscriptionApiKeyEncrypted")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AlignmentTranscriptionApiStyle")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AlignmentTranscriptionBaseUrl")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool?>("AlignmentTranscriptionEnabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("AlignmentTranscriptionModel")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool?>("AlignmentTranscriptionUseVoiceTranscription")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("EmbeddingApiKeyEncrypted")
                         .HasColumnType("TEXT");
 

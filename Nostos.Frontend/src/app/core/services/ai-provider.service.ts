@@ -22,7 +22,7 @@ import {
 export class AiProviderService {
   private readonly http = inject(HttpClient);
 
-  /** Effective endpoint/model/enabled for both providers, plus key state. */
+  /** Effective settings for the available provider sections, plus key state. */
   get(): Observable<AiProviderSettings> {
     return this.http.get<AiProviderSettings>('/api/settings/ai-provider');
   }

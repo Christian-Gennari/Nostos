@@ -65,6 +65,9 @@ import {
   AiProviderSectionUpdate,
   AiProviderSettings,
   AiProviderUpdate,
+  AlignmentTranscriptionApiStyle,
+  AlignmentTranscriptionSection,
+  AlignmentTranscriptionSectionUpdate,
 } from '../core/dtos/ai-provider.dtos';
 
 const SLOW_STEP_THRESHOLD_MS = 30_000;
@@ -87,6 +90,17 @@ const AI_PROVIDER_COPY = {
   voiceTranscription: 'Voice transcription',
   voiceToggle: 'Enable voice transcription',
   voiceToggleHelp: 'Send voice recordings to the transcription endpoint.',
+  alignmentTranscription: 'Alignment transcription',
+  alignmentDescription:
+    'Find the same sentence in the ebook when jumping from an audiobook of the same work.',
+  alignmentToggle: 'Enable alignment transcription',
+  alignmentToggleHelp: 'Allow audiobook passages to be transcribed for ebook alignment.',
+  alignmentUseVoice: 'Use my voice transcription setup',
+  alignmentUseVoiceHelp: 'Alignment uses your voice transcription provider.',
+  alignmentApiStyle: 'API style',
+  alignmentApiStyleMultipart: 'OpenAI-compatible (multipart upload)',
+  alignmentApiStyleJson: 'JSON (base64 audio)',
+  alignmentApiStyleHelp: 'Most transcription providers use the multipart upload format.',
   embeddings: 'Embeddings',
   embeddingToggle: 'Enable passage embeddings',
   embeddingToggleHelp:
@@ -183,6 +197,23 @@ interface AiProviderForm {
   savedBaseUrl: string;
   savedModel: string;
   savedEnabled: boolean;
+}
+
+interface AlignmentAiProviderForm extends AiProviderForm {
+  useVoiceTranscription: boolean;
+  apiStyle: AlignmentTranscriptionApiStyle;
+  savedUseVoiceTranscription: boolean;
+  savedApiStyle: AlignmentTranscriptionApiStyle;
+}
+
+function emptyAlignmentAiProviderForm(): AlignmentAiProviderForm {
+  return {
+    ...emptyAiProviderForm(),
+    useVoiceTranscription: true,
+    apiStyle: 'openai-multipart',
+    savedUseVoiceTranscription: true,
+    savedApiStyle: 'openai-multipart',
+  };
 }
 
 function emptyAiProviderForm(): AiProviderForm {
@@ -600,19 +631,25 @@ export class SettingsComponent implements OnInit, OnDestroy {
   aiLlm = signal<AiProviderForm>(emptyAiProviderForm());
   aiStt = signal<AiProviderForm>(emptyAiProviderForm());
   aiEmbedding = signal<AiProviderForm>(emptyAiProviderForm());
+  aiAlignment = signal<AlignmentAiProviderForm>(emptyAlignmentAiProviderForm());
 
   /** False when the host reports no embedding section (it manages embeddings itself). */
   aiEmbeddingAvailable = signal(false);
+
+  /** False when the host does not report alignment transcription settings. */
+  aiAlignmentAvailable = signal(false);
 
   /** Model ids offered as suggestions for each sub-section (free text stays editable). */
   aiLlmModels = signal<string[]>([]);
   aiSttModels = signal<string[]>([]);
   aiEmbeddingModels = signal<string[]>([]);
+  aiAlignmentModels = signal<string[]>([]);
 
   /** Inline outcome lines: `Testing…` / test result / load result / clear notice. */
   aiLlmStatus = signal<AiProviderStatus | null>(null);
   aiSttStatus = signal<AiProviderStatus | null>(null);
   aiEmbeddingStatus = signal<AiProviderStatus | null>(null);
+  aiAlignmentStatus = signal<AiProviderStatus | null>(null);
   aiSaveStatus = signal<AiProviderStatus | null>(null);
 
   aiSaving = signal(false);
@@ -1047,6 +1084,25 @@ export class SettingsComponent implements OnInit, OnDestroy {
     this.patchAiForm('stt', { enabled: (event.target as HTMLInputElement).checked });
   }
 
+  setAiAlignmentEnabled(event: Event): void {
+    this.patchAiForm('alignmentStt', { enabled: (event.target as HTMLInputElement).checked });
+  }
+
+  setAiAlignmentUseVoice(event: Event): void {
+    const useVoiceTranscription = (event.target as HTMLInputElement).checked;
+    this.aiAlignment.update((form) => ({ ...form, useVoiceTranscription }));
+  }
+
+  readonly alignmentApiStyleOptions = [
+    { value: 'openai-multipart', label: AI_PROVIDER_COPY.alignmentApiStyleMultipart },
+    { value: 'json-base64', label: AI_PROVIDER_COPY.alignmentApiStyleJson },
+  ];
+
+  setAiAlignmentApiStyle(value: string): void {
+    if (value !== 'openai-multipart' && value !== 'json-base64') return;
+    this.aiAlignment.update((form) => ({ ...form, apiStyle: value }));
+  }
+
   setAiEmbeddingEnabled(event: Event): void {
     this.patchAiForm('embedding', { enabled: (event.target as HTMLInputElement).checked });
   }
@@ -1064,7 +1120,11 @@ export class SettingsComponent implements OnInit, OnDestroy {
   loadAiModels(kind: AiProviderKind): void {
     if (this.aiBusy()) return;
     const form = this.aiFormFor(kind);
-    const request = { kind, baseUrl: form.baseUrl, apiKey: form.key || undefined };
+    const useVoice =
+      kind === 'alignmentStt' && this.aiAlignment().useVoiceTranscription;
+    const request = useVoice
+      ? { kind, baseUrl: undefined, apiKey: undefined }
+      : { kind, baseUrl: form.baseUrl, apiKey: form.key || undefined };
 
     this.aiLoadingKind.set(kind);
     this.setAiStatus(kind, { text: AI_PROVIDER_COPY.loading, tone: 'neutral' });
@@ -1097,11 +1157,13 @@ export class SettingsComponent implements OnInit, OnDestroy {
   testAiConnection(kind: AiProviderKind): void {
     if (this.aiBusy()) return;
     const form = this.aiFormFor(kind);
+    const useVoice =
+      kind === 'alignmentStt' && this.aiAlignment().useVoiceTranscription;
     const request = {
       kind,
-      baseUrl: form.baseUrl,
-      model: form.model,
-      apiKey: form.key || undefined,
+      baseUrl: useVoice ? undefined : form.baseUrl,
+      model: useVoice ? undefined : form.model,
+      apiKey: useVoice ? undefined : form.key || undefined,
     };
 
     this.aiTestingKind.set(kind);
@@ -1138,6 +1200,10 @@ export class SettingsComponent implements OnInit, OnDestroy {
     if (this.aiEmbeddingAvailable()) {
       const embedding = this.buildAiSectionUpdate(this.aiEmbedding());
       if (embedding) update.embedding = embedding;
+    }
+    if (this.aiAlignmentAvailable()) {
+      const alignment = this.buildAiAlignmentUpdate(this.aiAlignment());
+      if (alignment) update.alignmentTranscription = alignment;
     }
 
     this.aiSaving.set(true);
@@ -1189,6 +1255,33 @@ export class SettingsComponent implements OnInit, OnDestroy {
     return changed ? update : null;
   }
 
+  private buildAiAlignmentUpdate(
+    form: AlignmentAiProviderForm,
+  ): AlignmentTranscriptionSectionUpdate | null {
+    const update: AlignmentTranscriptionSectionUpdate = {
+      ...this.buildAiSectionUpdate(form),
+    };
+
+    if (form.useVoiceTranscription !== form.savedUseVoiceTranscription) {
+      update.useVoiceTranscription = form.useVoiceTranscription;
+    }
+    if (form.apiStyle !== form.savedApiStyle) {
+      update.apiStyle = form.apiStyle;
+    }
+
+    return Object.keys(update).length > 0 ? update : null;
+  }
+
+  private toAlignmentAiForm(section: AlignmentTranscriptionSection): AlignmentAiProviderForm {
+    return {
+      ...this.toAiForm(section),
+      useVoiceTranscription: section.useVoiceTranscription ?? true,
+      apiStyle: section.apiStyle ?? 'openai-multipart',
+      savedUseVoiceTranscription: section.useVoiceTranscription ?? true,
+      savedApiStyle: section.apiStyle ?? 'openai-multipart',
+    };
+  }
+
   private toAiForm(section: AiProviderSection): AiProviderForm {
     return {
       enabled: section.enabled,
@@ -1213,9 +1306,15 @@ export class SettingsComponent implements OnInit, OnDestroy {
     this.aiEmbedding.set(
       settings.embedding ? this.toAiForm(settings.embedding) : emptyAiProviderForm(),
     );
+    this.aiAlignmentAvailable.set(!!settings.alignmentTranscription);
+    this.aiAlignment.set(
+      settings.alignmentTranscription
+        ? this.toAlignmentAiForm(settings.alignmentTranscription)
+        : emptyAlignmentAiProviderForm(),
+    );
   }
 
-  private aiFormSignal(kind: AiProviderKind) {
+  private aiFormSignal(kind: Exclude<AiProviderKind, 'alignmentStt'>) {
     switch (kind) {
       case 'llm':
         return this.aiLlm;
@@ -1227,31 +1326,49 @@ export class SettingsComponent implements OnInit, OnDestroy {
   }
 
   private aiFormFor(kind: AiProviderKind): AiProviderForm {
-    return this.aiFormSignal(kind)();
+    return kind === 'alignmentStt' ? this.aiAlignment() : this.aiFormSignal(kind)();
   }
 
   private patchAiForm(kind: AiProviderKind, patch: Partial<AiProviderForm>): void {
+    if (kind === 'alignmentStt') {
+      this.aiAlignment.update((form) => ({ ...form, ...patch }));
+      return;
+    }
     this.aiFormSignal(kind).update((form) => ({ ...form, ...patch }));
   }
 
   private setAiModels(kind: AiProviderKind, models: string[]): void {
-    const target =
-      kind === 'llm'
-        ? this.aiLlmModels
-        : kind === 'stt'
-          ? this.aiSttModels
-          : this.aiEmbeddingModels;
-    target.set(models);
+    switch (kind) {
+      case 'llm':
+        this.aiLlmModels.set(models);
+        break;
+      case 'stt':
+        this.aiSttModels.set(models);
+        break;
+      case 'embedding':
+        this.aiEmbeddingModels.set(models);
+        break;
+      case 'alignmentStt':
+        this.aiAlignmentModels.set(models);
+        break;
+    }
   }
 
   private setAiStatus(kind: AiProviderKind, status: AiProviderStatus | null): void {
-    const target =
-      kind === 'llm'
-        ? this.aiLlmStatus
-        : kind === 'stt'
-          ? this.aiSttStatus
-          : this.aiEmbeddingStatus;
-    target.set(status);
+    switch (kind) {
+      case 'llm':
+        this.aiLlmStatus.set(status);
+        break;
+      case 'stt':
+        this.aiSttStatus.set(status);
+        break;
+      case 'embedding':
+        this.aiEmbeddingStatus.set(status);
+        break;
+      case 'alignmentStt':
+        this.aiAlignmentStatus.set(status);
+        break;
+    }
   }
 
   /** The most useful message from an HttpErrorResponse, or a plain fallback. */

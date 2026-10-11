@@ -49,6 +49,29 @@ public sealed class NineRouterSttProvider(
         ArgumentNullException.ThrowIfNull(audio);
 
         var effective = await config.GetEffectiveSttAsync(ct);
+        return await TranscribeWithConfigAsync(
+            audio, fileName, contentType, languageHint, effective, ct);
+    }
+
+    /// <summary>
+    /// Sends one multipart transcription using a previously resolved configuration.
+    /// Alignment uses this without changing the voice provider's default settings.
+    /// </summary>
+    public async Task<SttResult> TranscribeWithConfigAsync(
+        Stream audio,
+        string fileName,
+        string? contentType,
+        string? languageHint,
+        EffectiveAiProviderConfig effective,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(audio);
+        ArgumentNullException.ThrowIfNull(effective);
+
+        if (!effective.Enabled)
+        {
+            throw SttException.Disabled();
+        }
 
         if (string.IsNullOrWhiteSpace(effective.ApiKey))
         {

@@ -277,6 +277,15 @@ const aiProviderSettings: AiProviderSettings = {
     hasKey: false,
     keyFromServerEnv: false,
   },
+  alignmentTranscription: {
+    enabled: true,
+    baseUrl: 'https://transcription.example/v1',
+    model: 'alignment-whisper',
+    hasKey: true,
+    keyFromServerEnv: false,
+    useVoiceTranscription: true,
+    apiStyle: 'openai-multipart',
+  },
 };
 
 const aiProviderServiceMock = {
@@ -1379,8 +1388,8 @@ describe('SettingsComponent backup-only surface', () => {
     const toggles = fixture.debugElement.queryAll(By.css('input[type="checkbox"]'));
     // Automatic Backup + Include Book Files + the Reading assistant toggle (W1)
     // + the AI provider card's voice transcription and embeddings toggles.
-    expect(toggles.length).toBe(5);
-    expect(fixture.debugElement.queryAll(By.css('label.nostos-switch')).length).toBe(5);
+    expect(toggles.length).toBe(7);
+    expect(fixture.debugElement.queryAll(By.css('label.nostos-switch')).length).toBe(7);
     const buttons = fixture.debugElement
       .queryAll(By.css('button'))
       .map((b) => b.nativeElement.textContent.trim());
@@ -2007,6 +2016,237 @@ describe('SettingsComponent backup-only surface', () => {
 
     clickSave();
     expect(aiProviderServiceMock.update.mock.calls[0][0]).toEqual({ stt: { enabled: true } });
+  });
+
+  it('renders alignment transcription from server defaults below voice transcription', () => {
+    const section = cardSection('ai-provider-alignment');
+    const voice = cardSection('ai-provider-stt');
+
+    expect(section).not.toBeNull();
+    expect(voice.compareDocumentPosition(section) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(section.textContent).toContain('Alignment transcription');
+    expect(section.textContent).toContain('same sentence');
+
+    const enabled = section.querySelector(
+      '[data-testid="alignment-transcription-toggle"]',
+    ) as HTMLInputElement;
+    const useVoice = section.querySelector(
+      '[data-testid="alignment-use-voice-toggle"]',
+    ) as HTMLInputElement;
+
+    expect(enabled.checked).toBe(true);
+    expect(useVoice.checked).toBe(true);
+    expect(section.textContent).toContain('Alignment uses your voice transcription provider.');
+    expect(section.querySelector('#ai-alignment-base-url')).toBeNull();
+    expect(section.querySelector('#ai-alignment-model')).toBeNull();
+    expect(section.querySelector('#ai-alignment-api-key')).toBeNull();
+    expect(section.querySelector('#ai-alignment-api-style')).toBeNull();
+    expect(buttonByText('ai-provider-alignment', 'Test connection')).toBeTruthy();
+  });
+
+  it('shows the alignment fields when voice inheritance is turned off', () => {
+    const useVoice = fixture.nativeElement.querySelector(
+      '[data-testid="alignment-use-voice-toggle"]',
+    ) as HTMLInputElement;
+
+    useVoice.checked = false;
+    useVoice.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+
+    expect(inputValue('#ai-alignment-base-url')).toBe(
+      aiProviderSettings.alignmentTranscription!.baseUrl,
+    );
+    expect(inputValue('#ai-alignment-model')).toBe(
+      aiProviderSettings.alignmentTranscription!.model,
+    );
+    expect(inputValue('#ai-alignment-api-key')).toBe('');
+    expect(input('#ai-alignment-api-key').type).toBe('password');
+
+    expect(fixture.nativeElement.querySelector('#ai-alignment-api-style')).not.toBeNull();
+    expect(fixture.componentInstance.aiAlignment().apiStyle).toBe('openai-multipart');
+    expect(fixture.componentInstance.alignmentApiStyleOptions).toEqual([
+      { value: 'openai-multipart', label: 'OpenAI-compatible (multipart upload)' },
+      { value: 'json-base64', label: 'JSON (base64 audio)' },
+    ]);
+    expect(cardSection('ai-provider-alignment').textContent).toContain(
+      'Most transcription providers use the multipart upload format.',
+    );
+    expect(buttonByText('ai-provider-alignment', 'Clear')).toBeTruthy();
+
+    useVoice.checked = true;
+    useVoice.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('#ai-alignment-base-url')).toBeNull();
+    expect(fixture.nativeElement.querySelector('#ai-alignment-api-style')).toBeNull();
+    expect(cardSection('ai-provider-alignment').textContent).toContain(
+      'Alignment uses your voice transcription provider.',
+    );
+  });
+
+  it('sends alignment inheritance changes without touching the key', () => {
+    const useVoice = fixture.nativeElement.querySelector(
+      '[data-testid="alignment-use-voice-toggle"]',
+    ) as HTMLInputElement;
+    useVoice.checked = false;
+    useVoice.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+
+    clickSave();
+
+    expect(aiProviderServiceMock.update).toHaveBeenCalledTimes(1);
+    expect(aiProviderServiceMock.update.mock.calls[0][0]).toEqual({
+      alignmentTranscription: { useVoiceTranscription: false },
+    });
+    expect(
+      Object.prototype.hasOwnProperty.call(
+        aiProviderServiceMock.update.mock.calls[0][0].alignmentTranscription,
+        'apiKey',
+      ),
+    ).toBe(false);
+  });
+
+  it('saves alignment endpoint, model, API style and enable switch without an untouched key', () => {
+    const useVoice = fixture.nativeElement.querySelector(
+      '[data-testid="alignment-use-voice-toggle"]',
+    ) as HTMLInputElement;
+    useVoice.checked = false;
+    useVoice.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+
+    setInputValue('#ai-alignment-base-url', 'https://alignment.example/v1');
+    setInputValue('#ai-alignment-model', 'custom-alignment-model');
+
+    fixture.componentInstance.setAiAlignmentApiStyle('json-base64');
+    fixture.detectChanges();
+
+    const enabled = fixture.nativeElement.querySelector(
+      '[data-testid="alignment-transcription-toggle"]',
+    ) as HTMLInputElement;
+    enabled.checked = false;
+    enabled.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+
+    clickSave();
+
+    expect(aiProviderServiceMock.update.mock.calls[0][0]).toEqual({
+      alignmentTranscription: {
+        enabled: false,
+        baseUrl: 'https://alignment.example/v1',
+        model: 'custom-alignment-model',
+        useVoiceTranscription: false,
+        apiStyle: 'json-base64',
+      },
+    });
+  });
+
+  it('uses alignment key replacement and explicit clear semantics', () => {
+    const useVoice = fixture.nativeElement.querySelector(
+      '[data-testid="alignment-use-voice-toggle"]',
+    ) as HTMLInputElement;
+    useVoice.checked = false;
+    useVoice.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+
+    setInputValue('#ai-alignment-api-key', 'sk-alignment');
+    clickSave();
+
+    expect(aiProviderServiceMock.update.mock.calls[0][0]).toEqual({
+      alignmentTranscription: {
+        useVoiceTranscription: false,
+        apiKey: 'sk-alignment',
+      },
+    });
+    // The successful save re-seeds server state, including voice inheritance,
+    // so the key field is hidden again until the toggle is turned off.
+    const toggleAgain = fixture.nativeElement.querySelector(
+      '[data-testid="alignment-use-voice-toggle"]',
+    ) as HTMLInputElement;
+    toggleAgain.checked = false;
+    toggleAgain.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+
+    clickButton('ai-provider-alignment', 'Clear');
+    clickSave();
+
+    expect(aiProviderServiceMock.update.mock.calls[1][0]).toEqual({
+      alignmentTranscription: {
+        useVoiceTranscription: false,
+        apiKey: '',
+      },
+    });
+  });
+
+  it('tests the alignment provider without hidden overrides while inheriting voice', () => {
+    clickButton('ai-provider-alignment', 'Test connection');
+
+    expect(aiProviderServiceMock.test).toHaveBeenCalledTimes(1);
+    expect(aiProviderServiceMock.test.mock.calls[0][0]).toEqual({
+      kind: 'alignmentStt',
+      baseUrl: undefined,
+      model: undefined,
+      apiKey: undefined,
+    });
+    expect(statusElement('ai-provider-alignment').textContent).toContain(
+      'Reached the endpoint.',
+    );
+    expect(statusElement('ai-provider-stt')).toBeNull();
+  });
+
+  it('tests and loads models using unsaved alignment provider fields', () => {
+    const useVoice = fixture.nativeElement.querySelector(
+      '[data-testid="alignment-use-voice-toggle"]',
+    ) as HTMLInputElement;
+    useVoice.checked = false;
+    useVoice.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+
+    setInputValue('#ai-alignment-base-url', 'https://alignment.example/v1');
+    setInputValue('#ai-alignment-model', 'custom-model');
+    setInputValue('#ai-alignment-api-key', 'sk-unsaved');
+
+    clickButton('ai-provider-alignment', 'Test connection');
+
+    expect(aiProviderServiceMock.test.mock.calls[0][0]).toEqual({
+      kind: 'alignmentStt',
+      baseUrl: 'https://alignment.example/v1',
+      model: 'custom-model',
+      apiKey: 'sk-unsaved',
+    });
+
+    aiProviderServiceMock.loadModels.mockReturnValueOnce(
+      of<AiProviderModelsResponse>({ models: ['custom-model', 'other-model'] }),
+    );
+    clickButton('ai-provider-alignment', 'Load models');
+
+    expect(aiProviderServiceMock.loadModels.mock.calls[0][0]).toEqual({
+      kind: 'alignmentStt',
+      baseUrl: 'https://alignment.example/v1',
+      apiKey: 'sk-unsaved',
+    });
+    expect(
+      fixture.nativeElement.querySelectorAll('#ai-alignment-model-options option').length,
+    ).toBe(2);
+  });
+
+  it('hides alignment settings when the server does not expose the section', () => {
+    aiProviderServiceMock.get.mockReturnValueOnce(
+      of<AiProviderSettings>({
+        llm: aiProviderSettings.llm,
+        stt: aiProviderSettings.stt,
+        embedding: aiProviderSettings.embedding,
+      }),
+    );
+    render();
+
+    expect(cardSection('ai-provider-alignment')).toBeNull();
+
+    setInputValue('#ai-llm-model', 'gpt-4o');
+    clickSave();
+
+    expect(aiProviderServiceMock.update.mock.calls[0][0]).toEqual({
+      llm: { model: 'gpt-4o' },
+    });
   });
 
   it('renders the embeddings section with its effective values and an empty key', () => {

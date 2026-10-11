@@ -1497,6 +1497,178 @@
               }
             </div>
 
+            @if (aiAlignmentAvailable()) {
+              <!-- Alignment transcription (audiobook to EPUB passage matching). -->
+              <div class="provider-section" data-testid="ai-provider-alignment">
+                <h3 class="provider-heading">{{ copy.alignmentTranscription }}</h3>
+                <p class="provider-help">{{ copy.alignmentDescription }}</p>
+
+                <div class="provider-toggle-row">
+                  <label appSwitch>
+                    <input
+                      type="checkbox"
+                      [checked]="aiAlignment().enabled"
+                      (change)="setAiAlignmentEnabled($event)"
+                      [attr.aria-label]="copy.alignmentToggle"
+                      data-testid="alignment-transcription-toggle"
+                    >
+                  </label>
+                  <span class="provider-toggle-label">{{ copy.alignmentToggle }}</span>
+                </div>
+                <p class="provider-help provider-toggle-help">{{ copy.alignmentToggleHelp }}</p>
+
+                <div class="provider-toggle-row">
+                  <label appSwitch>
+                    <input
+                      type="checkbox"
+                      [checked]="aiAlignment().useVoiceTranscription"
+                      (change)="setAiAlignmentUseVoice($event)"
+                      [attr.aria-label]="copy.alignmentUseVoice"
+                      data-testid="alignment-use-voice-toggle"
+                    >
+                  </label>
+                  <span class="provider-toggle-label">{{ copy.alignmentUseVoice }}</span>
+                </div>
+
+                @if (aiAlignment().useVoiceTranscription) {
+                  <p class="provider-help" data-testid="alignment-voice-note">
+                    {{ copy.alignmentUseVoiceHelp }}
+                  </p>
+                } @else {
+                  <div class="provider-field">
+                    <label class="provider-label" for="ai-alignment-base-url">{{ copy.endpoint }}</label>
+                    <input
+                      id="ai-alignment-base-url"
+                      appInput
+                      controlSize="compact"
+                      class="provider-input"
+                      type="text"
+                      autocomplete="off"
+                      spellcheck="false"
+                      [placeholder]="copy.endpointPlaceholder"
+                      [value]="aiAlignment().baseUrl"
+                      (input)="setAiBaseUrl('alignmentStt', $event)"
+                    />
+                    <p class="provider-help">{{ copy.endpointHelp }}</p>
+                  </div>
+
+                  <div class="provider-field">
+                    <label class="provider-label" for="ai-alignment-model">{{ copy.model }}</label>
+                    <div class="provider-input-row">
+                      <input
+                        id="ai-alignment-model"
+                        appInput
+                        controlSize="compact"
+                        class="provider-input"
+                        type="text"
+                        autocomplete="off"
+                        spellcheck="false"
+                        [placeholder]="copy.modelPlaceholderStt"
+                        list="ai-alignment-model-options"
+                        [value]="aiAlignment().model"
+                        (input)="setAiModel('alignmentStt', $event)"
+                      />
+                      <button
+                        type="button"
+                        appButton variant="secondary"
+                        (click)="loadAiModels('alignmentStt')"
+                        [disabled]="aiBusy()"
+                        [busy]="aiLoadingKind() === 'alignmentStt'"
+                      >
+                        @if (aiLoadingKind() === 'alignmentStt') {
+                          <nostos-icon name="circle-notch" [size]="15" class="spin"></nostos-icon>
+                          {{ copy.loading }}
+                        } @else {
+                          {{ copy.loadModels }}
+                        }
+                      </button>
+                    </div>
+                    <datalist id="ai-alignment-model-options">
+                      @for (model of aiAlignmentModels(); track model) {
+                        <option [value]="model"></option>
+                      }
+                    </datalist>
+                    <p class="provider-help">{{ copy.modelHelp }}</p>
+                  </div>
+
+                  <div class="provider-field">
+                    <label class="provider-label" for="ai-alignment-api-key">{{ copy.apiKey }}</label>
+                    <input
+                      id="ai-alignment-api-key"
+                      appInput
+                      controlSize="compact"
+                      class="provider-input"
+                      type="password"
+                      autocomplete="new-password"
+                      [placeholder]="
+                        aiAlignment().hasKey || aiAlignment().keyFromServerEnv
+                          ? copy.apiKeyPlaceholderSet
+                          : copy.apiKeyPlaceholderUnset
+                      "
+                      [value]="aiAlignment().key"
+                      (input)="setAiKey('alignmentStt', $event)"
+                    />
+                    @if (aiAlignment().hasKey || aiAlignment().key.length > 0) {
+                      <div class="provider-key-row">
+                        <span class="provider-key-state">
+                          <nostos-icon name="check" [size]="14"></nostos-icon>
+                          {{ aiAlignment().keyFromServerEnv ? copy.configuredFromEnv : copy.configured }}
+                        </span>
+                        <button
+                          type="button"
+                          appButton variant="secondary" size="sm"
+                          (click)="clearAiKey('alignmentStt')"
+                          [disabled]="aiBusy()"
+                        >
+                          {{ copy.clear }}
+                        </button>
+                      </div>
+                    }
+                    <p class="provider-help">{{ copy.apiKeyHelp }}</p>
+                  </div>
+
+                  <div class="provider-field">
+                    <span class="provider-label">{{ copy.alignmentApiStyle }}</span>
+                    <app-dropdown
+                      id="ai-alignment-api-style"
+                      controlSize="compact"
+                      [ariaLabel]="copy.alignmentApiStyle"
+                      [options]="alignmentApiStyleOptions"
+                      [value]="aiAlignment().apiStyle"
+                      (valueChange)="setAiAlignmentApiStyle($event)"
+                    />
+                    <p class="provider-help">{{ copy.alignmentApiStyleHelp }}</p>
+                  </div>
+                }
+
+                <div class="provider-actions">
+                  <button
+                    type="button"
+                    appButton variant="secondary"
+                    (click)="testAiConnection('alignmentStt')"
+                    [disabled]="aiBusy()"
+                    [busy]="aiTestingKind() === 'alignmentStt'"
+                  >
+                    @if (aiTestingKind() === 'alignmentStt') {
+                      <nostos-icon name="circle-notch" [size]="15" class="spin"></nostos-icon>
+                      {{ copy.testing }}
+                    } @else {
+                      {{ copy.testConnection }}
+                    }
+                  </button>
+                </div>
+
+                @if (aiAlignmentStatus(); as status) {
+                  <p
+                    class="provider-status"
+                    [class.is-ok]="status.tone === 'ok'"
+                    [class.is-error]="status.tone === 'error'"
+                    role="status"
+                  >{{ status.text }}</p>
+                }
+              </div>
+            }
+
             @if (aiEmbeddingAvailable()) {
               <!-- Embeddings (semantic passage index). Hidden when the host manages them. -->
               <div class="provider-section provider-section--wide" data-testid="ai-provider-embedding">
