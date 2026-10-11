@@ -48,6 +48,7 @@ import {
   isMaintenanceBusy,
   toTransferFailure,
 } from './library-transfer-transport';
+import { saveImportCompletionNotice } from './import-completion-notice';
 import { TransferResumeStore } from './transfer-resume-store.service';
 import { TransferTabLease } from './transfer-tab-lease.service';
 
@@ -437,6 +438,11 @@ export class LibraryActivationController implements OnDestroy {
         });
         // Cached entities, open readers and in-memory stores still hold ids
         // from the replaced generation; a hard reload is the safety boundary.
+        // The confirmation has to outlive that reload to be read at all.
+        saveImportCompletionNotice(this.sessionStorageOrNull(), {
+          jobId: status.jobId,
+          recoveryExpiresAtUtc: status.recoveryExpiresAtUtc ?? null,
+        });
         this.broadcastLibraryReplaced();
         this.scheduleReload(this.completionReloadDelayMs);
         return;
@@ -605,6 +611,14 @@ export class LibraryActivationController implements OnDestroy {
     const record = this.resumeStore.load();
     if (!record || record.jobId !== this.jobId) return;
     this.resumeStore.update({ activation: { accepted: true } });
+  }
+
+  private sessionStorageOrNull(): Storage | null {
+    try {
+      return this.window?.sessionStorage ?? null;
+    } catch {
+      return null;
+    }
   }
 
   private broadcastLibraryReplaced(): void {

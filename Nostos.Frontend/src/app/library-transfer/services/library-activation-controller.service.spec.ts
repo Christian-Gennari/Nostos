@@ -10,6 +10,7 @@ import {
   LIBRARY_REPLACED_STORAGE_KEY,
   LibraryActivationController,
 } from './library-activation-controller.service';
+import { IMPORT_COMPLETION_NOTICE_KEY } from './import-completion-notice';
 import { TransferResumeStore } from './transfer-resume-store.service';
 import { TransferTabLease, TRANSFER_TAB_LEASE_KEY } from './transfer-tab-lease.service';
 import {
@@ -149,6 +150,7 @@ class DropActivationTransport extends DelegatingTransport {
 interface FakeWindow {
   location: { reload: ReturnType<typeof vi.fn> };
   localStorage: Storage;
+  sessionStorage: Storage;
   addEventListener: (type: string, handler: EventListener) => void;
   removeEventListener: (type: string, handler: EventListener) => void;
 }
@@ -165,6 +167,7 @@ function createFakeDocument(): FakeDocumentHarness {
   const fakeWindow: FakeWindow = {
     location: { reload },
     localStorage: globalThis.localStorage,
+    sessionStorage: globalThis.sessionStorage,
     addEventListener: (type, handler) => {
       const set = listeners.get(type) ?? new Set<EventListener>();
       set.add(handler);
@@ -327,6 +330,13 @@ describe('LibraryActivationController', () => {
       expiresAtUtc: expiresAt,
       sizeBytes: 4096,
     });
+
+    // The page reloads next; the confirmation must be waiting after it.
+    expect(JSON.parse(sessionStorage.getItem(IMPORT_COMPLETION_NOTICE_KEY)!)).toEqual({
+      jobId,
+      recoveryExpiresAtUtc: expiresAt,
+    });
+    sessionStorage.removeItem(IMPORT_COMPLETION_NOTICE_KEY);
   });
 
   it('shows the server counts when an empty path hits a populated destination', async () => {
