@@ -765,7 +765,8 @@ export class ReaderShell implements OnInit, OnDestroy {
         type: 'pdf',
         pdfPage: sourcePage,
         pdfPageLabel: params.get('sourcePageLabel'),
-        excerpt: sourceExcerpt,
+        // Only a landing from another edition carries the passage to mark.
+        ...(sourceExcerpt ? { excerpt: sourceExcerpt } : {}),
       };
     }
 
