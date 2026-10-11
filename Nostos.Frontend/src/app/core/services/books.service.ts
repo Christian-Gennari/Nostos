@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
-import { catchError, Observable, throwError } from 'rxjs';
+import { catchError, map, Observable, throwError } from 'rxjs';
 import {
   Book,
   CreateBookDto,
@@ -75,6 +75,17 @@ export class BooksService {
 
   create(dto: CreateBookDto): Observable<Book> {
     return this.http.post<Book>('/api/books', dto);
+  }
+
+  /**
+   * Creates a book, or returns the one already in the library that the server
+   * recognised as the same edition. `created` is false for the latter, so the
+   * caller can tell "added" from "already here" before touching its file.
+   */
+  createOrMatch(dto: CreateBookDto): Observable<{ book: Book; created: boolean }> {
+    return this.http
+      .post<Book>('/api/books', dto, { observe: 'response' })
+      .pipe(map((response) => ({ book: response.body as Book, created: response.status === 201 })));
   }
 
   update(id: string, dto: UpdateBookDto): Observable<Book> {

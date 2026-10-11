@@ -367,7 +367,23 @@ public sealed class LibraryService : ILibraryService
                 if (sameTypeEdition != null)
                 {
                     var sameTypeCandidates = exact.Where(b => b.GetType() == sameTypeEdition.GetType()).ToList();
-                    if (sameTypeCandidates.Count > 1)
+                    if (request.FileUploadExpected)
+                    {
+                        // A local file is on its way. It may only land on an
+                        // edition that is still waiting for one (an interrupted
+                        // add being resumed). An edition that already has its
+                        // own file keeps it: the new file becomes another
+                        // edition of the same work, never a replacement.
+                        var awaitingFile = sameTypeCandidates.FirstOrDefault(b =>
+                            !b.FileDetails.HasFile &&
+                            b.Status is not (BookStatus.Downloading or BookStatus.Transcoding));
+                        if (awaitingFile != null)
+                            return NoChange(Result(
+                                LibraryReplyFormatter.BookMatched(awaitingFile.Title),
+                                new LibraryCreateOrMatchResultDto("matched", awaitingFile.Id, awaitingFile.ToDto()),
+                                state.StateVersion));
+                    }
+                    else if (sameTypeCandidates.Count > 1)
                     {
                         if (strictConfirmation)
                         {
@@ -545,9 +561,13 @@ public sealed class LibraryService : ILibraryService
                 .ToList();
         }
 
+        // The caller learns from the reply whether this joined a work that
+        // already had editions, without a second request.
+        var editionCount = await db.Books.CountAsync(b => b.WorkId == model.WorkId, ct);
+
         return Change(Result(
             LibraryReplyFormatter.BookCreated(model.Title),
-            new LibraryCreateOrMatchResultDto("created", model.Id, model.ToDto()),
+            new LibraryCreateOrMatchResultDto("created", model.Id, model.ToDto() with { EditionCount = editionCount }),
             state.StateVersion));
     }
 

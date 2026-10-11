@@ -180,6 +180,36 @@
                 </div>
               }
 
+              @if (existingWithFile(); as existing) {
+                <div class="existing-book" role="alert" data-testid="add-book-existing">
+                  <span class="existing-book__message">
+                    <nostos-icon name="info" [size]="14"></nostos-icon>
+                    {{ existingNotice(existing) }}
+                  </span>
+                  <span class="existing-book__actions">
+                    <button
+                      appButton
+                      type="button"
+                      variant="secondary"
+                      data-testid="add-book-keep-existing"
+                      (click)="keepExistingFile()"
+                    >
+                      Keep existing file
+                    </button>
+                    <button
+                      appButton
+                      type="button"
+                      variant="secondary"
+                      data-testid="add-book-replace-existing"
+                      [disabled]="isSubmitting()"
+                      (click)="replaceExistingFile()"
+                    >
+                      Replace it
+                    </button>
+                  </span>
+                </div>
+              }
+
               @if (!isEditMode() && flowIntent() === 'manual') {
                 <section
                   class="manual-file"
