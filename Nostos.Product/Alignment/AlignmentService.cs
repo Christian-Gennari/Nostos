@@ -104,9 +104,6 @@ public sealed class AlignmentService(
     IAlignmentAudioRevisionProvider audioRevisions,
     ILogger<AlignmentService> logger) : IAlignmentService
 {
-    private static readonly System.Text.RegularExpressions.Regex TranscriptWords =
-        new(@"[\p{L}\p{N}]+", System.Text.RegularExpressions.RegexOptions.Compiled);
-
     private static readonly Regex Words = new(
         @"[\p{L}\p{N}]+",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
@@ -363,46 +360,10 @@ public sealed class AlignmentService(
                     "A probe has no EPUB source provenance.");
             }
 
-            // The matcher locates only the last words of the transcript, which
-            // were spoken in the final seconds of the clip. Mapping that short
-            // passage onto the whole clip starts playback up to half a clip
-            // early (measured live). Locate the opening words too, so the
-            // observation spans the clip; failing that, shrink the time span
-            // to the share of the transcript the matched words cover.
-            var spokenWords = TranscriptWords.Matches(transcription.Text);
-            var settings = new MatcherSettings();
-            var observedStartSeconds = clipStart;
-            var observedStartOffset = match.Start.GlobalTextOffset;
-
-            if (spokenWords.Count > settings.MaximumTokens)
-            {
-                var opening = matcher.Locate(
-                    string.Join(
-                        ' ',
-                        spokenWords.Take(settings.MaximumTokens).Select(word => word.Value)),
-                    settings);
-
-                var widestPlausibleSpan = match.End.GlobalTextOffset
-                    - (int)(options.ProbeSeconds * 60);
-
-                if (opening.Accepted &&
-                    opening.Start is not null &&
-                    opening.Start.GlobalTextOffset < match.Start.GlobalTextOffset &&
-                    opening.Start.GlobalTextOffset >= widestPlausibleSpan)
-                {
-                    observedStartOffset = opening.Start.GlobalTextOffset;
-                }
-                else
-                {
-                    observedStartSeconds = clipEnd
-                        - (clipEnd - clipStart) * settings.MaximumTokens / spokenWords.Count;
-                }
-            }
-
             var observation = new AudioAlignmentSearch.Observation(
-                observedStartSeconds,
+                clipStart,
                 clipEnd,
-                observedStartOffset,
+                match.Start.GlobalTextOffset,
                 match.End.GlobalTextOffset,
                 match.Score);
 
