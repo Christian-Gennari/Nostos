@@ -167,7 +167,7 @@ export class LibraryImportFlowComponent implements OnInit, OnDestroy {
    * The completed surface: either the coordinator reached Completed, or the
    * host reported that the activation it owns finished.
    */
-  readonly completed = computed(() => {
+  private readonly reachedCompletion = computed(() => {
     const state = this.state();
     if (state.kind === 'completed') return { jobId: state.jobId };
     if (this.activationState() !== 'completed') return null;
@@ -175,6 +175,19 @@ export class LibraryImportFlowComponent implements OnInit, OnDestroy {
       asKind(state, 'ready-empty') ?? asKind(state, 'replacement-confirmation');
     return prepared ? { jobId: prepared.jobId } : null;
   });
+
+  /**
+   * The completion the customer has been shown but not yet acknowledged.
+   * After an activation the resume record is cleared and the next status
+   * check finds no job, which returns the coordinator to idle; without this
+   * the confirmation and its recovery-copy date vanished seconds after
+   * appearing.
+   */
+  private readonly unacknowledgedCompletion = signal<{ jobId: string } | null>(null);
+
+  readonly completed = computed(
+    () => this.reachedCompletion() ?? this.unacknowledgedCompletion(),
+  );
 
   /** Truthful phase sentence for the server-owned activation. */
   readonly activationPhaseMessage = computed(() => activationPhaseMessage(this.activationPhase()));
@@ -351,6 +364,13 @@ export class LibraryImportFlowComponent implements OnInit, OnDestroy {
 
     // Completion is reported once, whether it came from the server job or the
     // host's own activation call.
+    // Hold the completed surface until Done; a new transfer supersedes it.
+    effect(() => {
+      const reached = this.reachedCompletion();
+      if (reached) this.unacknowledgedCompletion.set(reached);
+      else if (this.state().kind !== 'idle') this.unacknowledgedCompletion.set(null);
+    });
+
     effect(() => {
       if (this.completed()) {
         if (!this.completedEmitted) {
@@ -445,6 +465,7 @@ export class LibraryImportFlowComponent implements OnInit, OnDestroy {
 
   /** Acknowledges a completed job: clears the record and returns to idle. */
   done(): void {
+    this.unacknowledgedCompletion.set(null);
     this.resumeStore.clear();
     this.coordinator.dismiss();
   }
