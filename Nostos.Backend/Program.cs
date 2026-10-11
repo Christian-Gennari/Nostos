@@ -202,6 +202,7 @@ builder.Services.AddHttpClient(
 
 builder.Services.AddSingleton<JsonBase64SttProvider>();
 builder.Services.AddSingleton<AlignmentSttProvider>();
+builder.Services.AddScoped<IAlignmentTranscriber, SettingsAlignmentTranscriber>();
 
 // --- ASSISTANT LLM BRIDGE (issue #261 §3, §7) ---
 builder.Services.AddHttpClient(NineRouterLlmProvider.HttpClientName, client =>
