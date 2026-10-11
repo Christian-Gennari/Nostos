@@ -33,38 +33,80 @@ internal static class PdfReadingOrder
         double pageRight)
     {
         var placed = words
-            .Where(word => !string.IsNullOrWhiteSpace(word.Text))
+            .Where(word =>
+                !string.IsNullOrWhiteSpace(word.Text) &&
+                double.IsFinite(word.Left) &&
+                double.IsFinite(word.Right) &&
+                double.IsFinite(word.Bottom))
             .ToList();
 
         if (placed.Count == 0)
             return string.Empty;
 
-        return string.Join(
-            '\n',
-            SplitColumns(placed, pageLeft, pageRight).Select(Lines));
+        var lines = Lines(placed);
+        var gutter = FindGutter(placed, pageLeft, pageRight);
+
+        if (gutter is not { } band)
+            return string.Join('\n', lines.Select(Text));
+
+        // Read down the page in bands. Lines that cross the gutter (a title,
+        // an abstract set across both columns) are read whole, where they
+        // stand. Each run of column lines between them is read left column
+        // first, then right.
+        var output = new List<string>();
+        var leftRun = new List<string>();
+        var rightRun = new List<string>();
+
+        void FlushColumns()
+        {
+            output.AddRange(leftRun);
+            output.AddRange(rightRun);
+            leftRun.Clear();
+            rightRun.Clear();
+        }
+
+        var middle = (band.From + band.To) / 2;
+
+        foreach (var line in lines)
+        {
+            if (line.Any(word => word.Left < band.To && word.Right > band.From))
+            {
+                FlushColumns();
+                output.Add(Text(line));
+                continue;
+            }
+
+            var left = line.Where(word => (word.Left + word.Right) / 2 < middle).ToList();
+            var right = line.Where(word => (word.Left + word.Right) / 2 >= middle).ToList();
+            if (left.Count > 0) leftRun.Add(Text(left));
+            if (right.Count > 0) rightRun.Add(Text(right));
+        }
+
+        FlushColumns();
+        return string.Join('\n', output);
     }
 
     /// <summary>
-    /// One group per column, left to right. A gutter is a vertical band near
-    /// the middle of the page that almost no word crosses, with a real share
-    /// of the words on each side. A heading set across both columns crosses
-    /// it with a few words, which the threshold allows.
+    /// The vertical band near the middle of the page that almost no word
+    /// crosses, when the page has one with a real share of the words on each
+    /// side. A heading set across both columns crosses it with a few words,
+    /// which the threshold allows.
     /// </summary>
-    private static IEnumerable<List<PlacedWord>> SplitColumns(
+    private static (double From, double To)? FindGutter(
         List<PlacedWord> words,
         double pageLeft,
         double pageRight)
     {
         var width = pageRight - pageLeft;
-        if (!(width > 0) || words.Count < 40)
-            return [words];
+        if (!double.IsFinite(width) || !(width > 0) || words.Count < 40)
+            return null;
 
         var crossing = new int[Buckets];
         foreach (var word in words)
         {
             var from = Bucket(word.Left, pageLeft, width);
             var to = Bucket(word.Right, pageLeft, width);
-            for (var bucket = from; bucket <= to; bucket++)
+            for (var bucket = Math.Min(from, to); bucket <= Math.Max(from, to); bucket++)
                 crossing[bucket]++;
         }
 
@@ -93,16 +135,18 @@ internal static class PdfReadingOrder
 
         // At least 1.5% of the page width, or it is just a space between words.
         if (bestLength < 3)
-            return [words];
+            return null;
 
-        var gutter = pageLeft + width * (bestStart + bestLength / 2.0) / Buckets;
-        var left = words.Where(word => (word.Left + word.Right) / 2 < gutter).ToList();
-        var right = words.Where(word => (word.Left + word.Right) / 2 >= gutter).ToList();
+        var from0 = pageLeft + width * bestStart / Buckets;
+        var to0 = pageLeft + width * (bestStart + bestLength) / Buckets;
+        var middle = (from0 + to0) / 2;
 
+        var leftCount = words.Count(word => (word.Left + word.Right) / 2 < middle);
         var smallest = words.Count * 0.15;
-        return left.Count < smallest || right.Count < smallest
-            ? [words]
-            : [left, right];
+
+        return leftCount < smallest || words.Count - leftCount < smallest
+            ? null
+            : (from0, to0);
     }
 
     private static int Bucket(double x, double pageLeft, double width) =>
@@ -110,17 +154,27 @@ internal static class PdfReadingOrder
 
     /// <summary>
     /// Top line first. A word joins the current line when its baseline is
-    /// within half a word height of the line's.
+    /// within half a typical word height of the line's. The page's median
+    /// height is used, not each word's own: a dash, a comma or an OCR
+    /// fragment can have a box a point tall and would otherwise start a line
+    /// of its own in the middle of a sentence.
     /// </summary>
-    private static string Lines(List<PlacedWord> words)
+    private static List<List<PlacedWord>> Lines(List<PlacedWord> words)
     {
+        var heights = words
+            .Select(word => word.Height)
+            .Where(height => double.IsFinite(height) && height > 0)
+            .OrderBy(height => height)
+            .ToList();
+
+        var tolerance = Math.Max(1, (heights.Count > 0 ? heights[heights.Count / 2] : 10) * 0.5);
+
         var lines = new List<List<PlacedWord>>();
         double baseline = 0;
 
         foreach (var word in words.OrderByDescending(word => word.Bottom))
         {
-            var height = Math.Max(1, word.Height);
-            if (lines.Count == 0 || Math.Abs(word.Bottom - baseline) > height * 0.5)
+            if (lines.Count == 0 || Math.Abs(word.Bottom - baseline) > tolerance)
             {
                 lines.Add([]);
                 baseline = word.Bottom;
@@ -129,10 +183,9 @@ internal static class PdfReadingOrder
             lines[^1].Add(word);
         }
 
-        return string.Join(
-            '\n',
-            lines.Select(line => string.Join(
-                ' ',
-                line.OrderBy(word => word.Left).Select(word => word.Text))));
+        return lines;
     }
+
+    private static string Text(IEnumerable<PlacedWord> line) =>
+        string.Join(' ', line.OrderBy(word => word.Left).Select(word => word.Text));
 }

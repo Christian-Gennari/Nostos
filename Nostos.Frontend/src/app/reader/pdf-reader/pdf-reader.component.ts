@@ -361,6 +361,7 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
   totalPages = 0;
   private pdfDocRef: any = null;
   private pendingGroundedSourcePage: number | null = null;
+  private sourceHighlightGeneration = 0;
   private pageLabels = signal<(string | null)[]>([]);
   private sourcePageLabels = new Map<number, string>();
 
@@ -561,11 +562,19 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
    * finding it is fine: the page is already the right one.
    */
   private highlightSourcePassage(excerpt: string | null | undefined): void {
+    // A newer landing, another document or a destroyed reader cancels a
+    // pending highlight: it must never search a page it was not meant for.
+    const generation = ++this.sourceHighlightGeneration;
+
     const words = (excerpt ?? '').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
     if (words.length < 3) return;
 
     const phrase = words.slice(-6).join(' ');
+    const doc = this.pdfDocRef;
     const attempt = (remaining: number) => {
+      if (generation !== this.sourceHighlightGeneration) return;
+      if (doc !== null && doc !== this.pdfDocRef) return;
+
       if (this.searchAvailable()) {
         this.search(phrase);
       } else if (remaining > 0) {
@@ -1189,6 +1198,7 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
   }
 
   ngOnDestroy() {
+    ++this.sourceHighlightGeneration;
     this.clearSearch();
     this.pdfSearchReady.set(false);
     this.unregisterAssistantContext?.();

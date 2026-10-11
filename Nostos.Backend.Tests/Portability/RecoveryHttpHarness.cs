@@ -5,6 +5,7 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Nostos.Backend.Services.Library;
 using Nostos.Backend.Services.Portability;
 using Nostos.Backend.Services.Portability.Activation;
@@ -93,6 +94,16 @@ internal sealed class RecoveryHttpHarness : IAsyncDisposable
             builder.UseSetting("Storage:DiskSafetyMarginBytes", "0");
             builder.UseSetting("Storage:DiskSafetyMarginPercent", "0");
             builder.UseSetting("Mcp:Enabled", "false");
+
+            // The bed creates the recovery copy on its own clock (a fixed day in
+            // October 2026) and the copy is kept for seven days. A host on the
+            // system clock therefore saw it as expired from 2026-10-11 12:00 UTC
+            // and every restore answered 410. The host shares the bed's clock.
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<TimeProvider>();
+                services.AddSingleton<TimeProvider>(harness.Bed.Clock);
+            });
         }
     }
 }

@@ -113,6 +113,50 @@ public sealed class PdfReadingOrderTests
     }
 
     [Fact]
+    public void A_heading_across_both_columns_is_read_whole_and_first()
+    {
+        var words = Line(40, 760, "A", "heading", "set", "across", "the", "whole", "width", "of", "the", "page", "above", "both", "columns").ToList();
+        for (var line = 0; line < 20; line++)
+        {
+            var baseline = 700 - line * 14;
+            words.AddRange(Line(40, baseline, $"left{line}a", $"left{line}b", $"left{line}c"));
+            words.AddRange(Line(330, baseline, $"right{line}a", $"right{line}b", $"right{line}c"));
+        }
+
+        PdfReadingOrder.Compose(words, PageLeft, PageRight).Split('\n')[0]
+            .Should().Be("A heading set across the whole width of the page above both columns");
+    }
+
+    [Fact]
+    public void A_fragment_with_a_tiny_box_does_not_break_its_line()
+    {
+        var words = new List<PlacedWord>
+        {
+            new("The", 50, 68, 700, 10),
+            new("patient", 72, 114, 699, 1),
+            new("traveller", 118, 172, 700, 10),
+            new("carried", 50, 92, 686, 10),
+        };
+
+        PdfReadingOrder.Compose(words, PageLeft, PageRight)
+            .Should().Be("The patient traveller\ncarried");
+    }
+
+    [Fact]
+    public void Unusable_coordinates_are_ignored_rather_than_thrown_on()
+    {
+        var words = new List<PlacedWord>
+        {
+            new("kept", 50, 74, 700, 10),
+            new("lost", double.NaN, 90, 700, 10),
+            new("gone", 100, double.PositiveInfinity, 700, 10),
+        };
+
+        PdfReadingOrder.Compose(words, PageLeft, PageRight).Should().Be("kept");
+        PdfReadingOrder.Compose(words, 0, 0).Should().Be("kept");
+    }
+
+    [Fact]
     public void An_empty_page_is_empty_text()
     {
         PdfReadingOrder.Compose([], PageLeft, PageRight).Should().BeEmpty();

@@ -41,11 +41,16 @@ public sealed class AudioAlignmentSearch
     public bool HasNextProbe { get; private set; } = true;
 
     /// <summary>
-    /// Where the target is, counted from the nearest exact pair a probe gave
-    /// (clip end, end of its matched words), when that pair lies within about
-    /// a clip and a half of the target. Null when no probe came that close.
-    /// It starts a little earlier than a contained match would, because it is
-    /// an extrapolation.
+    /// Where the target is, counted from the nearest probe's end pair (clip
+    /// end, end of its matched words), when that pair lies within about one
+    /// clip of the target. Null when no probe came that close.
+    ///
+    /// The pace between the pair and the target is not known, only the
+    /// book's average and what recent probes measured. So the count is biased
+    /// to land EARLY: forward from the pair it assumes fast narration (fewer
+    /// seconds), backward it assumes slow narration (more seconds). A reader
+    /// who starts a little before the sentence loses nothing; one who starts
+    /// after it has lost the sentence.
     /// </summary>
     public double? NearTargetPositionSeconds
     {
@@ -57,14 +62,18 @@ public sealed class AudioAlignmentSearch
             var nearest = exactEnds.MinBy(
                 point => Math.Abs(point.TextOffset - targetOffset))!;
 
-            var reach = averageRate * options.ProbeSeconds * 1.5;
-            if (Math.Abs(nearest.TextOffset - targetOffset) > reach)
+            var characters = targetOffset - nearest.TextOffset;
+            if (Math.Abs(characters) > averageRate * options.ProbeSeconds)
                 return null;
 
-            var seconds = nearest.AudioSeconds +
-                (targetOffset - nearest.TextOffset) / averageRate;
+            var measured = LocalRate();
+            var fast = Math.Max(averageRate, ValidRate(measured) ? measured : averageRate) * 1.25;
+            var slow = Math.Min(averageRate, ValidRate(measured) ? measured : averageRate) * 0.8;
 
-            return Clamp(seconds - options.LeadInSeconds - 2);
+            var seconds = nearest.AudioSeconds +
+                characters / (characters >= 0 ? fast : slow);
+
+            return Clamp(seconds - options.LeadInSeconds);
         }
     }
 
