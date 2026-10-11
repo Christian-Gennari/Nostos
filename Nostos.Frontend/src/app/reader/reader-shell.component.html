@@ -709,7 +709,7 @@
       <div class="typo-opts" role="group" aria-labelledby="epub-listening-label">
         <button
           type="button"
-          class="typo-opt"
+          appButton variant="secondary" size="sm"
           [disabled]="epubReader.alignmentBusy()"
           [attr.aria-busy]="epubReader.alignmentBusy()"
           [attr.aria-label]="epubReader.alignmentBusy() ? 'Finding your place in the audiobook' : 'Continue listening'"
@@ -737,7 +737,7 @@
                 @if (epubReader.alignmentApproximatePosition() !== null) {
                 <button
                   type="button"
-                  class="typo-opt"
+                  appButton variant="secondary" size="sm"
                   (click)="epubReader.jumpToApproximateAudio()"
                   data-testid="epub-jump-approximate"
                 >
@@ -746,7 +746,7 @@
                 } @else {
                 <button
                   type="button"
-                  class="typo-opt"
+                  appButton variant="secondary" size="sm"
                   (click)="epubReader.openAudiobookAnyway()"
                   data-testid="epub-open-audiobook-anyway"
                 >
