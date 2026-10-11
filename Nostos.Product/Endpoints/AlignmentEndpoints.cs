@@ -376,7 +376,8 @@ public static class AlignmentEndpoints
 
             case OperationCanceledException
                 when ct.IsCancellationRequested:
-                throw;
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw(ex);
+                throw new InvalidOperationException("Unreachable.");
 
             case OperationCanceledException:
                 return Failure(

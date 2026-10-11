@@ -267,8 +267,8 @@ public sealed class AlignmentService(
         }
 
         string? audioRevision = null;
-        AlignmentAudioSearch.Point? before = null;
-        AlignmentAudioSearch.Point? after = null;
+        AudioAlignmentSearch.Point? before = null;
+        AudioAlignmentSearch.Point? after = null;
 
         if (snapshot.Revision is not null)
         {
@@ -524,7 +524,7 @@ public sealed class AlignmentService(
         }
     }
 
-    private static AlignmentAudioSearch.Point? ToSearchPoint(
+    private static AudioAlignmentSearch.Point? ToSearchPoint(
         AlignmentAnchorModel? anchor,
         double duration)
     {
@@ -534,7 +534,7 @@ public sealed class AlignmentService(
         var seconds = anchor.AudioPositionMs / 1000d;
 
         return seconds >= 0 && seconds <= duration
-            ? new AlignmentAudioSearch.Point(
+            ? new AudioAlignmentSearch.Point(
                 seconds, anchor.TextGlobalOffset)
             : null;
     }
