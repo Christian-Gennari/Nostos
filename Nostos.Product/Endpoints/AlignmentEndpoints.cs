@@ -155,6 +155,7 @@ public static class AlignmentEndpoints
                 score = result.Score,
                 excerpt = result.Excerpt,
                 locator = result.Locator,
+                anchorStored = result.AnchorStored,
             });
         }
         catch (AudioClipException ex)

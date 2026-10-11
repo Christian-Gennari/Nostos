@@ -3,12 +3,17 @@ using Nostos.Product.BookText;
 
 namespace Nostos.Product.Alignment;
 
+public sealed record AlignmentDocumentSnapshot(
+    BookTextExtractedDocument Document,
+    string? Revision);
+
 /// <summary>
-/// Supplies an extracted EPUB document for alignment.
+/// Supplies an extracted EPUB document and the storage revision
+/// from the same read.
 /// </summary>
 public interface IAlignmentDocumentProvider
 {
-    Task<BookTextExtractedDocument> GetAsync(
+    Task<AlignmentDocumentSnapshot> GetAsync(
         Guid bookId,
         IBookAssetStorage storage,
         IBookTextExtractor extractor,
@@ -62,7 +67,7 @@ public sealed class AlignmentDocumentCache(
         return count;
     }
 
-    public async Task<BookTextExtractedDocument> GetAsync(
+    public async Task<AlignmentDocumentSnapshot> GetAsync(
         Guid bookId,
         IBookAssetStorage storage,
         IBookTextExtractor extractor,
@@ -89,14 +94,20 @@ public sealed class AlignmentDocumentCache(
                 asset.Info.Length,
                 options.MaxEpubBytes);
 
-            var key = CreateKey(bookId, asset.Info);
+            var revision = AlignmentRevisions.Text(
+                bookId, asset.Info);
 
-            if (entries.TryGetValue(key, out var cached))
+            // A missing stable identity must not create a cache hit.
+            // Extraction still works; only caching and anchor persistence
+            // are disabled.
+            if (revision is not null &&
+                entries.TryGetValue(revision, out var cached))
             {
                 order.Remove(cached.Node);
                 order.AddFirst(cached.Node);
 
-                return cached.Document;
+                return new AlignmentDocumentSnapshot(
+                    cached.Document, revision);
             }
 
             var tempPath = Path.Combine(
@@ -185,15 +196,17 @@ public sealed class AlignmentDocumentCache(
 
             var characters = CountCharacters(document);
 
-            // Do not cache documents larger than the entire budget.
-            // They may still be used for this one alignment request.
-            if (characters > options.MaxCachedCharacters)
-                return document;
+            if (revision is null ||
+                characters > options.MaxCachedCharacters)
+            {
+                return new AlignmentDocumentSnapshot(
+                    document, revision);
+            }
 
-            var node = order.AddFirst(key);
+            var node = order.AddFirst(revision);
 
             entries.Add(
-                key,
+                revision,
                 new CacheEntry(document, characters, node));
 
             totalCharacters = checked(totalCharacters + characters);
@@ -202,7 +215,6 @@ public sealed class AlignmentDocumentCache(
                    totalCharacters > options.MaxCachedCharacters)
             {
                 var oldest = order.Last!;
-
                 var removed = entries[oldest.Value];
 
                 totalCharacters -= removed.Characters;
@@ -210,24 +222,12 @@ public sealed class AlignmentDocumentCache(
                 order.RemoveLast();
             }
 
-            return document;
+            return new AlignmentDocumentSnapshot(
+                document, revision);
         }
         finally
         {
             gate.Release();
         }
     }
-
-    private static string CreateKey(
-        Guid bookId,
-        StoredAssetInfo info) =>
-        string.Join(
-            ":",
-            bookId.ToString("N"),
-            info.EntityTag,
-            info.Length.ToString(
-                System.Globalization.CultureInfo.InvariantCulture),
-            info.LastModified.UtcTicks.ToString(
-                System.Globalization.CultureInfo.InvariantCulture),
-            BookTextArtifactSchema.CurrentExtractorVersion);
 }

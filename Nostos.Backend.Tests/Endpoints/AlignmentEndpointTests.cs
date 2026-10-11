@@ -348,6 +348,117 @@ public sealed class AlignmentEndpointTests
     }
 
     [Fact]
+    public async Task Located_match_persists_exactly_one_anchor()
+    {
+        using var harness = new Harness();
+        harness.Transcriber.Result = new SttResult(Passage, "en", 19.5);
+
+        using var client = harness.Client();
+
+        var (source, target) = await SeedPairAsync(
+            client, harness);
+
+        var first = await PostAsync(
+            client, source, target, position: 65);
+
+        first.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using (var body = JsonDocument.Parse(
+            await first.Content.ReadAsStringAsync()))
+        {
+            body.RootElement.GetProperty("located")
+                .GetBoolean().Should().BeTrue();
+
+            body.RootElement.GetProperty("anchorStored")
+                .GetBoolean().Should().BeTrue();
+        }
+
+        var anchors = await harness.GetAnchorsAsync();
+
+        anchors.Should().ContainSingle();
+
+        var anchor = anchors.Single();
+
+        anchor.AudioBookId.Should().Be(source);
+        anchor.TextBookId.Should().Be(target);
+        anchor.AudioRevision.Should().Be(
+            "test-audio-revision-v1");
+        anchor.TextRevision.Should().Be(
+            "test-epub-revision-v1");
+        anchor.AudioPositionMs.Should().Be(65000);
+        anchor.TextGlobalOffset.Should().BeGreaterThan(0);
+        anchor.SpineIndex.Should().Be(2);
+        anchor.ResourceHref.Should().Be("chapter-3.xhtml");
+        anchor.Score.Should().BeApproximately(1, 0.000001);
+
+        // Repeating the same request updates the existing anchor.
+        var second = await PostAsync(
+            client, source, target, position: 65);
+
+        second.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        (await harness.GetAnchorsAsync())
+            .Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task Declined_match_does_not_persist_an_anchor()
+    {
+        using var harness = new Harness();
+
+        harness.Transcriber.Result = new SttResult(
+            "a chapter title", "en", 18);
+
+        using var client = harness.Client();
+
+        var (source, target) = await SeedPairAsync(
+            client, harness);
+
+        var response = await PostAsync(
+            client, source, target);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var body = JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync());
+
+        body.RootElement.GetProperty("located")
+            .GetBoolean().Should().BeFalse();
+
+        (await harness.GetAnchorsAsync())
+            .Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Missing_audio_revision_keeps_match_successful()
+    {
+        using var harness = new Harness();
+        harness.AudioRevisions.Revision = null;
+
+        using var client = harness.Client();
+
+        var (source, target) = await SeedPairAsync(
+            client, harness);
+
+        var response = await PostAsync(
+            client, source, target);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var body = JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync());
+
+        body.RootElement.GetProperty("located")
+            .GetBoolean().Should().BeTrue();
+
+        body.RootElement.GetProperty("anchorStored")
+            .GetBoolean().Should().BeFalse();
+
+        (await harness.GetAnchorsAsync())
+            .Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task Provider_failure_is_typed_and_is_never_retried()
     {
         using var harness = new Harness();
@@ -544,6 +655,7 @@ public sealed class AlignmentEndpointTests
         public FakeAlignmentTranscriber Transcriber { get; } = new();
         public FakeAudioClipCutter Cutter { get; } = new();
         public FakeAlignmentDocuments Documents { get; } = new();
+        public FakeAudioRevisionProvider AudioRevisions { get; } = new();
         public RecordingUsageAccounting Usage { get; } = new();
 
         public Harness()
@@ -564,6 +676,10 @@ public sealed class AlignmentEndpointTests
                     services.RemoveAll<IAiAccessPolicy>();
                     services.AddSingleton<IAiAccessPolicy>(
                         new ConfigurableAccessPolicy(() => Allowed));
+
+                    services.RemoveAll<IAlignmentAudioRevisionProvider>();
+                    services.AddSingleton<IAlignmentAudioRevisionProvider>(
+                        AudioRevisions);
 
                     services.RemoveAll<IAiUsageAccountingService>();
                     services.AddSingleton<IAiUsageAccountingService>(Usage);
@@ -628,6 +744,20 @@ public sealed class AlignmentEndpointTests
             book.FileDetails.FileName = fileName;
 
             await db.SaveChangesAsync();
+        }
+
+        public async Task<List<Nostos.Backend.Data.Models.AlignmentAnchorModel>>
+            GetAnchorsAsync()
+        {
+            var options = new DbContextOptionsBuilder<NostosDbContext>()
+                .UseSqlite($"Data Source={factory.DatabasePath}")
+                .Options;
+
+            await using var db = new NostosDbContext(options);
+
+            return await db.AlignmentAnchors
+                .AsNoTracking()
+                .ToListAsync();
         }
 
         public void Dispose()
@@ -713,11 +843,23 @@ public sealed class AlignmentEndpointTests
         }
     }
 
+    private sealed class FakeAudioRevisionProvider :
+        IAlignmentAudioRevisionProvider
+    {
+        public string? Revision { get; set; } =
+            "test-audio-revision-v1";
+
+        public Task<string?> GetAsync(
+            Nostos.Backend.Data.Models.AudioBookModel book,
+            CancellationToken ct = default) =>
+            Task.FromResult(Revision);
+    }
+
     private sealed class FakeAlignmentDocuments : IAlignmentDocumentProvider
     {
         public int CallCount { get; private set; }
 
-        public Task<BookTextExtractedDocument> GetAsync(
+        public Task<AlignmentDocumentSnapshot> GetAsync(
             Guid bookId,
             IBookAssetStorage storage,
             IBookTextExtractor extractor,
@@ -744,7 +886,9 @@ public sealed class AlignmentEndpointTests
                         ]),
                 ]);
 
-            return Task.FromResult(document);
+            return Task.FromResult(
+                new AlignmentDocumentSnapshot(
+                    document, "test-epub-revision-v1"));
         }
     }
 
