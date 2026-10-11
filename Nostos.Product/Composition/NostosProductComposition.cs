@@ -190,6 +190,38 @@ public static class NostosProductComposition
             throw new InvalidOperationException(
                 "Alignment:MaxCachedCharacters must be positive.");
 
+        if (!double.IsFinite(alignment.ProbeSeconds) ||
+            alignment.ProbeSeconds <= 0 ||
+            alignment.ProbeSeconds > 60)
+            throw new InvalidOperationException(
+                "Alignment:ProbeSeconds must be between 0 and 60.");
+
+        if (alignment.MaxProbes is < 1 or > 20)
+            throw new InvalidOperationException(
+                "Alignment:MaxProbes must be between 1 and 20.");
+
+        if (alignment.MatchToleranceCharacters < 0 ||
+            alignment.MatchToleranceCharacters > 500)
+            throw new InvalidOperationException(
+                "Alignment:MatchToleranceCharacters must be between 0 and 500.");
+
+        if (alignment.ConsistencyToleranceCharacters < 0 ||
+            alignment.ConsistencyToleranceCharacters > 500)
+            throw new InvalidOperationException(
+                "Alignment:ConsistencyToleranceCharacters must be between 0 and 500.");
+
+        if (!double.IsFinite(alignment.LeadInSeconds) ||
+            alignment.LeadInSeconds < 0 ||
+            alignment.LeadInSeconds > alignment.ProbeSeconds)
+            throw new InvalidOperationException(
+                "Alignment:LeadInSeconds must be nonnegative and no larger than ProbeSeconds.");
+
+        if (!double.IsFinite(alignment.MaximumLocalRateRatio) ||
+            alignment.MaximumLocalRateRatio < 1 ||
+            alignment.MaximumLocalRateRatio > 100)
+            throw new InvalidOperationException(
+                "Alignment:MaximumLocalRateRatio must be between 1 and 100.");
+
         services.AddSingleton(alignment);
         services.AddSingleton<AlignmentDocumentCache>();
         services.TryAddSingleton<IAlignmentDocumentProvider>(

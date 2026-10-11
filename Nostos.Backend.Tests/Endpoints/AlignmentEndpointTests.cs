@@ -581,8 +581,156 @@ public sealed class AlignmentEndpointTests
         harness.Usage.BeginCount.Should().Be(0);
     }
 
+    [Fact]
+    public async Task Reverse_alignment_rejects_missing_source()
+    {
+        using var harness = new Harness();
+        using var client = harness.Client();
+
+        var response = await PostAudioAsync(
+            client,
+            Guid.NewGuid(),
+            Guid.NewGuid());
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await ProblemCodeAsync(response))
+            .Should().Be("alignment_book_not_found");
+
+        harness.Cutter.CallCount.Should().Be(0);
+        harness.Transcriber.CallCount.Should().Be(0);
+        harness.Usage.BeginCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Reverse_alignment_rejects_different_works()
+    {
+        using var harness = new Harness();
+        using var client = harness.Client();
+
+        var (audio, epub) = await SeedPairAsync(
+            client, harness, sameWork: false);
+
+        var response = await PostAudioAsync(
+            client, epub, audio);
+
+        response.StatusCode.Should().Be(
+            HttpStatusCode.UnprocessableEntity);
+
+        (await ProblemCodeAsync(response))
+            .Should().Be("alignment_work_mismatch");
+
+        harness.Cutter.CallCount.Should().Be(0);
+        harness.Usage.BeginCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Reverse_alignment_rejects_invalid_excerpt()
+    {
+        using var harness = new Harness();
+        using var client = harness.Client();
+
+        var (audio, epub) = await SeedPairAsync(client, harness);
+
+        var response = await PostAudioAsync(
+            client, epub, audio, " ");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        harness.Cutter.CallCount.Should().Be(0);
+        harness.Usage.BeginCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Reverse_alignment_excerpt_not_found_uses_no_ai()
+    {
+        using var harness = new Harness();
+        using var client = harness.Client();
+
+        var (audio, epub) = await SeedPairAsync(client, harness);
+
+        var response = await PostAudioAsync(
+            client,
+            epub,
+            audio,
+            "The distant captain crossed the frozen northern sea " +
+            "while every passenger waited for the rising morning sun.");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var body = JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync());
+
+        body.RootElement.GetProperty("located")
+            .GetBoolean().Should().BeFalse();
+
+        body.RootElement.GetProperty("reason")
+            .GetString().Should().Be("excerpt_not_found");
+
+        harness.Documents.CallCount.Should().Be(1);
+        harness.Cutter.CallCount.Should().Be(0);
+        harness.Transcriber.CallCount.Should().Be(0);
+        harness.Usage.BeginCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Reverse_alignment_access_denial_uses_no_ai()
+    {
+        using var harness = new Harness { Allowed = false };
+        using var client = harness.Client();
+
+        var (audio, epub) = await SeedPairAsync(client, harness);
+
+        var response = await PostAudioAsync(
+            client, epub, audio);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        (await ProblemCodeAsync(response))
+            .Should().Be(SttErrorCodes.AccessDenied);
+
+        harness.Documents.CallCount.Should().Be(0);
+        harness.Cutter.CallCount.Should().Be(0);
+        harness.Transcriber.CallCount.Should().Be(0);
+        harness.Usage.BeginCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Reverse_alignment_rejects_wrong_direction()
+    {
+        using var harness = new Harness();
+        using var client = harness.Client();
+
+        var (audio, epub) = await SeedPairAsync(client, harness);
+
+        var response = await PostAudioAsync(
+            client, audio, epub);
+
+        response.StatusCode.Should().Be(
+            HttpStatusCode.UnprocessableEntity);
+
+        (await ProblemCodeAsync(response))
+            .Should().Be("alignment_source_not_epub");
+
+        harness.Cutter.CallCount.Should().Be(0);
+        harness.Usage.BeginCount.Should().Be(0);
+    }
+
     private static string Route(Guid source) =>
         $"/api/books/{source}/alignment/locate-text";
+
+    private static string AudioRoute(Guid textBookId) =>
+        $"/api/books/{textBookId}/alignment/locate-audio";
+
+    private static Task<HttpResponseMessage> PostAudioAsync(
+        HttpClient client,
+        Guid textBookId,
+        Guid audioBookId,
+        string excerpt = Passage) =>
+        client.PostAsJsonAsync(AudioRoute(textBookId), new
+        {
+            targetBookId = audioBookId,
+            excerpt,
+        });
 
     private static Task<HttpResponseMessage> PostAsync(
         HttpClient client,
