@@ -20,7 +20,20 @@ public sealed class PdfBookTextExtractor : IBookTextExtractor
         foreach (var page in document.GetPages())
         {
             ct.ThrowIfCancellationRequested();
-            var text = BookTextNormalization.Normalize(page.Text);
+            // Placed words, not `page.Text`: see PdfReadingOrder for why the raw
+            // glyph stream is not usable text.
+            var text = BookTextNormalization.Normalize(
+                PdfReadingOrder.Compose(
+                    page.GetWords()
+                        .Select(word => new PlacedWord(
+                            word.Text,
+                            word.BoundingBox.Left,
+                            word.BoundingBox.Right,
+                            word.BoundingBox.Bottom,
+                            word.BoundingBox.Height))
+                        .ToList(),
+                    page.CropBox.Bounds.Left,
+                    page.CropBox.Bounds.Right));
             if (text.Length == 0)
                 continue;
 

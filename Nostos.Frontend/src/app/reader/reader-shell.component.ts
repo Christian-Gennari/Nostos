@@ -290,7 +290,22 @@ export class ReaderShell implements OnInit, OnDestroy {
     );
 
     this.typoOpen.set(false);
-    this.switchEditionOpen.set(true);
+
+    if (this.fileType() !== 'pdf') {
+      this.switchEditionOpen.set(true);
+      return;
+    }
+
+    // A PDF page's text is read from the document, which is asynchronous. Open
+    // the dialog once it is known, so every row states the right promise.
+    const bookId = this.book()?.id;
+    void (this.pdfReader?.visibleExcerpt?.() ?? Promise.resolve(null))
+      .catch(() => null)
+      .then((excerpt) => {
+        if (this.book()?.id !== bookId) return;
+        this.switchVisibleExcerpt.set(excerpt);
+        this.switchEditionOpen.set(true);
+      });
   }
 
   /** View settings panel (EPUB and PDF) toggled by the Aa control. */
@@ -750,6 +765,8 @@ export class ReaderShell implements OnInit, OnDestroy {
         type: 'pdf',
         pdfPage: sourcePage,
         pdfPageLabel: params.get('sourcePageLabel'),
+        // Only a landing from another edition carries the passage to mark.
+        ...(sourceExcerpt ? { excerpt: sourceExcerpt } : {}),
       };
     }
 

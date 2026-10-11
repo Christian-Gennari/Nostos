@@ -29,6 +29,8 @@ public sealed class AudioAlignmentSearch
     private readonly AlignmentOptions options;
 
     private readonly List<Point> locatedCenters = [];
+    /// <summary>The exact pair of each located probe: clip end, end of its matched words.</summary>
+    private readonly List<Point> exactEnds = [];
     private readonly List<double> probedClipCenters = [];
 
     private Point? lower;
@@ -37,6 +39,43 @@ public sealed class AudioAlignmentSearch
     public double EstimateSeconds { get; private set; }
 
     public bool HasNextProbe { get; private set; } = true;
+
+    /// <summary>
+    /// Where the target is, counted from the nearest probe's end pair (clip
+    /// end, end of its matched words), when that pair lies within about one
+    /// clip of the target. Null when no probe came that close.
+    ///
+    /// The pace between the pair and the target is not known, only the
+    /// book's average and what recent probes measured. So the count is biased
+    /// to land EARLY: forward from the pair it assumes fast narration (fewer
+    /// seconds), backward it assumes slow narration (more seconds). A reader
+    /// who starts a little before the sentence loses nothing; one who starts
+    /// after it has lost the sentence.
+    /// </summary>
+    public double? NearTargetPositionSeconds
+    {
+        get
+        {
+            if (exactEnds.Count == 0 || !ValidRate(averageRate))
+                return null;
+
+            var nearest = exactEnds.MinBy(
+                point => Math.Abs(point.TextOffset - targetOffset))!;
+
+            var characters = targetOffset - nearest.TextOffset;
+            if (Math.Abs(characters) > averageRate * options.ProbeSeconds)
+                return null;
+
+            var measured = LocalRate();
+            var fast = Math.Max(averageRate, ValidRate(measured) ? measured : averageRate) * 1.25;
+            var slow = Math.Min(averageRate, ValidRate(measured) ? measured : averageRate) * 0.8;
+
+            var seconds = nearest.AudioSeconds +
+                characters / (characters >= 0 ? fast : slow);
+
+            return Clamp(seconds - options.LeadInSeconds);
+        }
+    }
 
     public double? ApproximatePositionSeconds
     {
@@ -223,6 +262,7 @@ public sealed class AudioAlignmentSearch
         }
 
         locatedCenters.Add(center);
+        exactEnds.Add(new Point(probe.ClipEndSeconds, probe.TextEndOffset));
 
         // Tolerance helps guide the search, but cannot turn a passage
         // that does not contain the target into a successful location.

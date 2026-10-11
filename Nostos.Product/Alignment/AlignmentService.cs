@@ -26,9 +26,14 @@ public sealed class AlignmentOptions
     public int MaxProbes { get; set; } = 5;
     public int MatchToleranceCharacters { get; set; } = 40;
     public int ConsistencyToleranceCharacters { get; set; } = 40;
-    public double LeadInSeconds { get; set; } = 1.0;
+    // Measured live: a located start can fall a few seconds after the sentence
+    // when the narrator is quicker than the clip maths assumes. Starting a little
+    // early costs nothing; starting late loses the sentence.
+    public double LeadInSeconds { get; set; } = 3.0;
     public double MaximumLocalRateRatio { get; set; } = 5;
 
+    // Historical configuration name. Applies to both EPUB and PDF.
+    // Keep the existing Alignment:MaxEpubBytes binding.
     public long MaxEpubBytes { get; set; } =
         200L * 1024 * 1024;
 
@@ -55,13 +60,21 @@ public sealed record AlignmentLocator(
     string? Cfi,
     int? TextOffset);
 
+public sealed record AlignmentPdfLocator(
+    int PageIndex,
+    int PageNumber,
+    string? PageLabel,
+    int TextOffset);
+
 public sealed record AlignmentLocateResult(
     bool Located,
     string? Reason,
     double? Score,
     string? Excerpt,
     AlignmentLocator? Locator,
-    bool AnchorStored = false)
+    bool AnchorStored = false,
+    AlignmentPdfLocator? Pdf = null,
+    string? SourceText = null)
 {
     public static AlignmentLocateResult Declined(string reason) =>
         new(false, reason, null, null, null);
@@ -165,15 +178,35 @@ public sealed class AlignmentService(
         if (!match.Accepted)
             return AlignmentLocateResult.Declined(match.Reason);
 
-        if (match.End?.Locator is not EpubBookTextSourceLocator end)
+        if (match.Start is null ||
+            match.End?.Locator is not
+                (EpubBookTextSourceLocator or PdfBookTextSourceLocator))
         {
             throw new AlignmentException(
                 "alignment_locator_invalid",
                 422,
-                "The matched passage has no EPUB end locator.");
+                "The matched passage has no supported end locator.");
         }
 
-        var locator = ToLocator(end);
+        var end = match.End.Locator;
+        var locator = end is EpubBookTextSourceLocator epub
+            ? ToLocator(epub)
+            : null;
+
+        var pdf = end is PdfBookTextSourceLocator pdfEnd
+            ? new AlignmentPdfLocator(
+                pdfEnd.PageIndex,
+                checked(pdfEnd.PageIndex + 1),
+                pdfEnd.PageLabel,
+                pdfEnd.EndTextOffset ?? 0)
+            : null;
+
+        var sourceText = MatchedSourceText(
+            snapshot.Document,
+            match.Start.GlobalTextOffset,
+            match.End.GlobalTextOffset);
+
+        var anchorLocator = ToAnchorLocator(end);
         var anchorStored = false;
 
         if (snapshot.Revision is not null)
@@ -200,10 +233,10 @@ public sealed class AlignmentService(
                             snapshot.Revision,
                             positionMs,
                             match.End.GlobalTextOffset,
-                            locator.SpineIndex,
-                            locator.ResourceHref,
-                            locator.Cfi,
-                            locator.TextOffset,
+                            anchorLocator.SpineIndex,
+                            anchorLocator.ResourceHref,
+                            anchorLocator.Cfi,
+                            anchorLocator.TextOffset,
                             match.Score),
                         ct);
                 }
@@ -224,7 +257,9 @@ public sealed class AlignmentService(
             Score: match.Score,
             Excerpt: match.Passage,
             Locator: locator,
-            AnchorStored: anchorStored);
+            AnchorStored: anchorStored,
+            Pdf: pdf,
+            SourceText: sourceText);
     }
 
     public async Task<AlignmentLocateAudioResult> LocateAudioAsync(
@@ -416,19 +451,57 @@ public sealed class AlignmentService(
                 continue;
             }
 
-            if (match.Start?.Locator is not EpubBookTextSourceLocator start ||
-                match.End?.Locator is not EpubBookTextSourceLocator end)
+            if (match.Start?.Locator is not
+                    (EpubBookTextSourceLocator or PdfBookTextSourceLocator) ||
+                match.End?.Locator is not
+                    (EpubBookTextSourceLocator or PdfBookTextSourceLocator))
             {
                 throw new AlignmentException(
                     "alignment_locator_invalid",
                     422,
-                    "A probe has no EPUB source provenance.");
+                    "A probe has no supported text source provenance.");
+            }
+
+            var start = match.Start.Locator;
+            var end = match.End.Locator;
+
+            // The matcher locates the transcript's LAST words, spoken in the
+            // final seconds of the clip. Locating its opening words as well
+            // gives the text the whole clip covers, so a target anywhere in the
+            // clip is found and its time is interpolated over the right span.
+            // When the opening cannot be placed, the closing words stand for
+            // the clip as before: that starts playback early, never late.
+            var observedStartOffset = match.Start.GlobalTextOffset;
+            PassageLocation? openingStart = null;
+            var spoken = Words.Matches(transcription.Text);
+            var settings = new MatcherSettings();
+
+            if (spoken.Count >= settings.MaximumTokens * 2)
+            {
+                var opening = matcher.Locate(
+                    string.Join(
+                        ' ',
+                        spoken.Take(settings.MaximumTokens).Select(word => word.Value)),
+                    settings);
+
+                // A clip cannot cover more text than fast speech allows.
+                var earliestPlausible = match.End.GlobalTextOffset
+                    - (int)Math.Ceiling(options.ProbeSeconds * 40);
+
+                if (opening.Accepted &&
+                    opening.Start is not null &&
+                    opening.Start.GlobalTextOffset < match.Start.GlobalTextOffset &&
+                    opening.Start.GlobalTextOffset >= earliestPlausible)
+                {
+                    observedStartOffset = opening.Start.GlobalTextOffset;
+                    openingStart = opening.Start;
+                }
             }
 
             var observation = new AudioAlignmentSearch.Observation(
                 clipStart,
                 clipEnd,
-                match.Start.GlobalTextOffset,
+                observedStartOffset,
                 match.End.GlobalTextOffset,
                 match.Score);
 
@@ -442,7 +515,7 @@ public sealed class AlignmentService(
             }
 
             // The neighbouring anchors belong to the exact audio and
-            // EPUB revisions. A probe that violates their ordering
+            // text-file revisions. A probe that violates their ordering
             // cannot establish a trustworthy timestamp.
             //
             // Check before saving the probe's derived anchors, so the
@@ -466,21 +539,27 @@ public sealed class AlignmentService(
                 }
             }
 
-            // Persist the two approximate clip boundaries. Each is
-            // revision-bound and each uses its own EPUB locator.
+            // Persist only pairs the transcript supports. The clip END and the
+            // end of the matched words are always one. The clip START is one
+            // only when the opening words were located too; pairing it with
+            // the start of the closing words would put an anchor some ten
+            // seconds out, and later searches interpolate between anchors.
             if (audioRevision is not null &&
                 snapshot.Revision is not null)
             {
-                anyAnchorStored |= await TryStoreAnchorAsync(
-                    target,
-                    source,
-                    audioRevision,
-                    snapshot.Revision,
-                    clipStart,
-                    match.Start.GlobalTextOffset,
-                    ToLocator(start),
-                    match.Score,
-                    ct);
+                if (openingStart is not null)
+                {
+                    anyAnchorStored |= await TryStoreAnchorAsync(
+                        target,
+                        source,
+                        audioRevision,
+                        snapshot.Revision,
+                        clipStart,
+                        openingStart.GlobalTextOffset,
+                        ToAnchorLocator(openingStart.Locator),
+                        match.Score,
+                        ct);
+                }
 
                 anyAnchorStored |= await TryStoreAnchorAsync(
                     target,
@@ -489,7 +568,7 @@ public sealed class AlignmentService(
                     snapshot.Revision,
                     clipEnd,
                     match.End.GlobalTextOffset,
-                    ToLocator(end),
+                    ToAnchorLocator(end),
                     match.Score,
                     ct);
             }
@@ -505,6 +584,28 @@ public sealed class AlignmentService(
                     Score: match.Score,
                     AnchorStored: anyAnchorStored);
             }
+        }
+
+        // The search stopped without the target inside a probed clip, but a
+        // probe ended within a clip or so of it. Counting on from that exact
+        // pair at the book's pace is a few seconds of extrapolation, which is
+        // a better answer than asking the reader to accept "roughly".
+        if (search.NearTargetPositionSeconds is { } near &&
+            ConsistentWithAnchors(
+                near,
+                targetOffset,
+                before,
+                after,
+                options.ProbeSeconds * 2))
+        {
+            return new AlignmentLocateAudioResult(
+                Located: true,
+                Reason: null,
+                PositionSeconds: near,
+                ApproximatePositionSeconds: null,
+                Probes: probes,
+                Score: 0,
+                AnchorStored: anyAnchorStored);
         }
 
         return AlignmentLocateAudioResult.Declined(
@@ -544,8 +645,18 @@ public sealed class AlignmentService(
         EBookModel book,
         CancellationToken ct)
     {
-        var extractor = extractors.Single(
-            x => x.Format == BookTextSourceFormat.Epub);
+        if (!BookTextFormatResolver.TryResolve(
+                book.FileDetails.FileName, out var format) ||
+            format is not
+                (BookTextSourceFormat.Epub or BookTextSourceFormat.Pdf))
+        {
+            throw new AlignmentException(
+                "alignment_target_not_epub",
+                422,
+                "The text edition must be an EPUB or PDF with stored media.");
+        }
+
+        var extractor = extractors.Single(x => x.Format == format);
 
         return await cache.GetAsync(
             book.Id, storage, extractor, ct);
@@ -664,6 +775,77 @@ public sealed class AlignmentService(
             epub.Cfi,
             epub.EndTextOffset);
 
+    private static AlignmentLocator ToAnchorLocator(
+        BookTextSourceLocator source) =>
+        source switch
+        {
+            EpubBookTextSourceLocator epub => ToLocator(epub),
+
+            // Anchor schema remains unchanged. For PDF:
+            // SpineIndex = zero-based physical page index,
+            // ResourceHref = fixed non-empty sentinel,
+            // Cfi = null, TextOffset = normalized page offset.
+            // Searches use only TextGlobalOffset and AudioPositionMs.
+            PdfBookTextSourceLocator pdf => new AlignmentLocator(
+                pdf.PageIndex,
+                "pdf-page",
+                null,
+                pdf.EndTextOffset),
+
+            _ => throw new AlignmentException(
+                "alignment_locator_invalid",
+                422,
+                "The text source locator is unsupported."),
+        };
+
+    private static string MatchedSourceText(
+        BookTextExtractedDocument document,
+        int start,
+        int end)
+    {
+        if (start < 0 || end <= start)
+            return string.Empty;
+
+        const int maximumCharacters = 300;
+
+        // Global offsets are measured in the same coordinate system as
+        // PassageMatcher: block text plus one virtual separator per block.
+        // Keep the final characters so the returned text ends at the
+        // matched passage end, even when a passage crosses blocks.
+        var pieces = new List<string>();
+        var global = 0;
+
+        foreach (var block in document.Blocks)
+        {
+            var blockStart = global;
+            var blockEnd = checked(global + block.Text.Length);
+
+            var from = Math.Max(start, blockStart);
+            var to = Math.Min(end, blockEnd);
+
+            if (to > from)
+            {
+                pieces.Add(block.Text.Substring(
+                    from - blockStart,
+                    to - from));
+            }
+
+            global = checked(blockEnd + 1);
+
+            if (global >= end)
+                break;
+        }
+
+        var text = Regex.Replace(
+            string.Join(" ", pieces),
+            @"\s+",
+            " ").Trim();
+
+        return text.Length <= maximumCharacters
+            ? text
+            : text[^maximumCharacters..];
+    }
+
     private static string FirstMatcherWindow(string excerpt)
     {
         // PassageMatcher uses TakeLast(MaximumTokens). Sending the whole
@@ -697,7 +879,7 @@ public sealed class AlignmentService(
             throw new AlignmentException(
                 "alignment_target_text_unavailable",
                 422,
-                "The EPUB text cannot be indexed for alignment.");
+                "The text edition cannot be indexed for alignment.");
         }
 
         return (int)length;
@@ -716,15 +898,16 @@ public sealed class AlignmentService(
         }
 
         if (!text.FileDetails.HasFile ||
-            !string.Equals(
-                Path.GetExtension(text.FileDetails.FileName),
-                ".epub",
-                StringComparison.OrdinalIgnoreCase))
+            !BookTextFormatResolver.TryResolve(
+                text.FileDetails.FileName, out var format) ||
+            format is not
+                (BookTextSourceFormat.Epub or BookTextSourceFormat.Pdf))
         {
+            // Retain the historical code for existing clients.
             throw new AlignmentException(
                 "alignment_target_not_epub",
                 422,
-                "The ebook must be an EPUB with stored media.");
+                "The ebook must be an EPUB or PDF with stored media.");
         }
 
         if (audio.WorkId == Guid.Empty ||
