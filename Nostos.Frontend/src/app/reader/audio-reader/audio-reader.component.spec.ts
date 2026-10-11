@@ -1,9 +1,13 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { of } from 'rxjs';
+import { HttpErrorResponse } from '@angular/common/http';
+import { Router } from '@angular/router';
+import { EMPTY, of, Subject } from 'rxjs';
 
 import { AudioReader, parseTimeString } from './audio-reader.component';
 import { BooksService } from '../../core/services/books.service';
-import { Book } from '../../core/dtos/book.dtos';
+import { AlignmentService } from '../../core/services/alignment.service';
+import { LocateTextResult } from '../../core/dtos/alignment.dtos';
+import { Book, EditionSummaryDto } from '../../core/dtos/book.dtos';
 
 // Mock Howl so specs can drive the Howl lifecycle (onload / onloaderror)
 // without real media loading.
@@ -789,6 +793,426 @@ describe('AudioReader sleep timer (issue #47)', () => {
     expect(
       fixture.nativeElement.querySelector('[data-testid="audio-sleep-chapter-end"]')
     ).not.toBeNull();
+  });
+});
+
+describe('AudioReader Continue in ebook', () => {
+  let fixture: ComponentFixture<AudioReader>;
+  let component: AudioReader;
+
+  let response: Subject<LocateTextResult>;
+
+  const booksServiceMock = {
+    updateProgress: vi.fn(() => of(null)),
+  };
+
+  const alignmentServiceMock = {
+    locateText: vi.fn(),
+  };
+
+  const routerMock = {
+    navigate: vi.fn(() => Promise.resolve(true)),
+    events: EMPTY,
+    url: '/read/audio-1',
+  };
+
+  const epubEdition: EditionSummaryDto = {
+    id: 'epub-1',
+    type: 'ebook',
+    format: 'epub',
+    progressPercent: 20,
+    hasFile: true,
+    fileName: 'iliad.epub',
+  };
+
+  beforeEach(async () => {
+    howlerState.instances.length = 0;
+    booksServiceMock.updateProgress.mockReset();
+    booksServiceMock.updateProgress.mockReturnValue(of(null));
+    alignmentServiceMock.locateText.mockReset();
+    routerMock.navigate.mockReset();
+    routerMock.navigate.mockResolvedValue(true);
+
+    response = new Subject<LocateTextResult>();
+    alignmentServiceMock.locateText.mockReturnValue(response.asObservable());
+
+    await TestBed.configureTestingModule({
+      imports: [AudioReader],
+      providers: [
+        { provide: BooksService, useValue: booksServiceMock },
+        { provide: AlignmentService, useValue: alignmentServiceMock },
+        { provide: Router, useValue: routerMock },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(AudioReader);
+    component = fixture.componentInstance;
+  });
+
+  afterEach(() => {
+    fixture.destroy();
+    response.complete();
+  });
+
+  function render(editions: EditionSummaryDto[] = [epubEdition]): any {
+    fixture.componentRef.setInput('bookId', 'audio-1');
+    fixture.componentRef.setInput(
+      'book',
+      makeBook({
+        id: 'audio-1',
+        type: 'audiobook',
+        otherEditions: editions,
+      }),
+    );
+
+    fixture.detectChanges();
+
+    const player = mockPlayer(component);
+    player.config.onload();
+    player.seek.mockReturnValue(3721.5);
+
+    fixture.detectChanges();
+    return player;
+  }
+
+  function continueButton(): HTMLButtonElement | null {
+    return fixture.nativeElement.querySelector(
+      '[data-testid="audio-continue-ebook"]',
+    );
+  }
+
+  function clickContinue(): void {
+    const button = continueButton();
+    expect(button).not.toBeNull();
+    button!.click();
+    fixture.detectChanges();
+  }
+
+  it('hides the action without another EPUB edition', () => {
+    render([]);
+
+    expect(component.alignmentTarget()).toBeNull();
+    expect(continueButton()).toBeNull();
+    expect(alignmentServiceMock.locateText).not.toHaveBeenCalled();
+  });
+
+  it('ignores ebooks without files and non-EPUB editions', () => {
+    render([
+      {
+        ...epubEdition,
+        id: 'missing-file',
+        hasFile: false,
+      },
+      {
+        ...epubEdition,
+        id: 'pdf-1',
+        format: 'pdf',
+        fileName: 'iliad.pdf',
+      },
+      {
+        ...epubEdition,
+        id: 'audio-2',
+        type: 'audiobook',
+      },
+    ]);
+
+    expect(continueButton()).toBeNull();
+  });
+
+  it('recognizes EPUB by filename when format is absent', () => {
+    render([
+      {
+        ...epubEdition,
+        format: undefined,
+        fileName: 'ILIAD.EPUB',
+      },
+    ]);
+
+    expect(component.alignmentTarget()?.id).toBe('epub-1');
+    expect(continueButton()).not.toBeNull();
+  });
+
+  it('uses the first eligible EPUB edition', () => {
+    render([
+      {
+        ...epubEdition,
+        id: 'pdf-1',
+        format: 'pdf',
+        fileName: 'iliad.pdf',
+      },
+      epubEdition,
+      {
+        ...epubEdition,
+        id: 'epub-2',
+        fileName: 'alternate.epub',
+      },
+    ]);
+
+    clickContinue();
+
+    expect(alignmentServiceMock.locateText).toHaveBeenCalledWith(
+      'audio-1',
+      {
+        positionSeconds: 3721.5,
+        targetBookId: 'epub-1',
+      },
+    );
+  });
+
+  it('pauses, saves progress, and displays a busy state', () => {
+    const player = render();
+
+    clickContinue();
+
+    expect(player.pause).toHaveBeenCalled();
+    expect(booksServiceMock.updateProgress).toHaveBeenCalledWith(
+      'audio-1',
+      '3721.5',
+      Math.floor(3721.5 / 7200 * 100),
+    );
+
+    expect(component.alignmentBusy()).toBe(true);
+    expect(continueButton()?.disabled).toBe(true);
+    expect(continueButton()?.getAttribute('aria-busy')).toBe('true');
+    expect(continueButton()?.textContent).toContain('Finding your place');
+
+    const status = fixture.nativeElement.querySelector(
+      '[data-testid="audio-alignment-status"]',
+    );
+
+    expect(status.getAttribute('aria-live')).toBe('polite');
+    expect(status.textContent).toContain('Finding your place');
+  });
+
+  it('navigates to a located passage with the existing source query params', () => {
+    render();
+    clickContinue();
+
+    response.next({
+      located: true,
+      score: 0.97,
+      excerpt: 'Sing, goddess, the anger of Achilles.',
+      locator: {
+        resourceHref: 'Text/chapter01.xhtml',
+        spineIndex: 3,
+        textOffset: 128,
+        cfi: 'epubcfi(/6/8!/4/2:128)',
+      },
+    });
+
+    expect(routerMock.navigate).toHaveBeenCalledExactlyOnceWith(
+      ['/read', 'epub-1'],
+      {
+        queryParams: {
+          sourceHref: 'Text/chapter01.xhtml',
+          sourceSpine: 3,
+          sourceOffset: 128,
+          sourceCfi: 'epubcfi(/6/8!/4/2:128)',
+          sourceExcerpt: 'Sing, goddess, the anger of Achilles.',
+        },
+      },
+    );
+
+    expect(component.alignmentBusy()).toBe(false);
+  });
+
+  it('omits absent optional locator parameters', () => {
+    render();
+    clickContinue();
+
+    response.next({
+      located: true,
+      score: 0.91,
+      excerpt: 'The first words of the chapter.',
+      locator: {
+        resourceHref: 'Text/chapter02.xhtml',
+        spineIndex: 0,
+        textOffset: 0,
+        cfi: null,
+      },
+    });
+
+    expect(routerMock.navigate).toHaveBeenCalledWith(
+      ['/read', 'epub-1'],
+      {
+        queryParams: {
+          sourceHref: 'Text/chapter02.xhtml',
+          sourceSpine: 0,
+          sourceOffset: 0,
+          sourceExcerpt: 'The first words of the chapter.',
+        },
+      },
+    );
+  });
+
+  it('does not navigate when the passage cannot be matched confidently', () => {
+    render();
+    clickContinue();
+
+    response.next({
+      located: false,
+      reason: 'ambiguous_match',
+    });
+
+    fixture.detectChanges();
+
+    expect(routerMock.navigate).not.toHaveBeenCalled();
+    expect(component.alignmentBusy()).toBe(false);
+    expect(component.alignmentDeclined()).toBe(true);
+
+    const status = fixture.nativeElement.querySelector(
+      '[data-testid="audio-alignment-status"]',
+    );
+
+    expect(status.textContent).toContain('could not be matched confidently');
+    expect(
+      fixture.nativeElement.querySelector(
+        '[data-testid="audio-open-ebook-anyway"]',
+      ),
+    ).not.toBeNull();
+  });
+
+  it('opens the ebook at its saved position after a decline', () => {
+    render();
+    clickContinue();
+
+    response.next({
+      located: false,
+      reason: 'no_confident_match',
+    });
+
+    fixture.detectChanges();
+
+    const open = fixture.nativeElement.querySelector(
+      '[data-testid="audio-open-ebook-anyway"]',
+    ) as HTMLButtonElement;
+
+    open.click();
+
+    expect(routerMock.navigate).toHaveBeenCalledExactlyOnceWith(
+      ['/read', 'epub-1'],
+    );
+  });
+
+  it('shows an error without navigating and permits another attempt', () => {
+    render();
+    clickContinue();
+
+    response.error(new HttpErrorResponse({
+      status: 500,
+      error: {
+        title: 'alignment_internal_error',
+        detail: 'Internal implementation detail',
+      },
+    }));
+
+    fixture.detectChanges();
+
+    expect(routerMock.navigate).not.toHaveBeenCalled();
+    expect(component.alignmentBusy()).toBe(false);
+    expect(component.alignmentMessage()).toContain('Please try again');
+    expect(component.alignmentMessage()).not.toContain(
+      'Internal implementation detail',
+    );
+    expect(continueButton()?.disabled).toBe(false);
+
+    alignmentServiceMock.locateText.mockReturnValue(
+      of({
+        located: false,
+        reason: 'no_match',
+      }),
+    );
+
+    clickContinue();
+
+    expect(alignmentServiceMock.locateText).toHaveBeenCalledTimes(2);
+  });
+
+  it('hides the action after a typed transcription configuration error', () => {
+    render();
+    clickContinue();
+
+    response.error(new HttpErrorResponse({
+      status: 503,
+      error: {
+        title: 'stt_not_configured',
+        detail: 'No transcription model configured.',
+      },
+    }));
+
+    fixture.detectChanges();
+
+    expect(component.alignmentUnavailable()).toBe(true);
+    expect(continueButton()).toBeNull();
+    expect(component.alignmentMessage()).toContain('Check Settings');
+    expect(routerMock.navigate).not.toHaveBeenCalled();
+
+    component.continueInEbook();
+
+    expect(alignmentServiceMock.locateText).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not permanently hide the action for a rate limit', () => {
+    render();
+    clickContinue();
+
+    response.error(new HttpErrorResponse({
+      status: 429,
+      error: {
+        title: 'ai_rate_limited',
+      },
+    }));
+
+    fixture.detectChanges();
+
+    expect(component.alignmentUnavailable()).toBe(false);
+    expect(continueButton()).not.toBeNull();
+    expect(continueButton()?.disabled).toBe(false);
+    expect(component.alignmentMessage()).toContain('Try again later');
+  });
+
+  it('does not send a second request on a double click', () => {
+    render();
+
+    const button = continueButton()!;
+    button.click();
+    button.click();
+
+    // Also guard direct calls, not only disabled-button browser behavior.
+    component.continueInEbook();
+
+    expect(alignmentServiceMock.locateText).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not navigate if a successful result lacks an EPUB anchor', () => {
+    render();
+    clickContinue();
+
+    response.next({
+      located: true,
+      score: 0.95,
+      excerpt: 'A passage',
+      locator: {},
+    });
+
+    fixture.detectChanges();
+
+    expect(routerMock.navigate).not.toHaveBeenCalled();
+    expect(component.alignmentMessage()).toContain(
+      'reading location is unavailable',
+    );
+  });
+
+  it('cancels an outstanding alignment request on destruction', () => {
+    render();
+    clickContinue();
+
+    expect(response.observed).toBe(true);
+
+    fixture.destroy();
+
+    expect(response.observed).toBe(false);
+    expect(routerMock.navigate).not.toHaveBeenCalled();
   });
 });
 
