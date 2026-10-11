@@ -4,7 +4,9 @@ using System.Text.Json;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Nostos.Backend.Services.Library;
 using Nostos.Backend.Services.Portability;
 using Nostos.Backend.Services.Portability.Activation;
@@ -93,6 +95,13 @@ internal sealed class RecoveryHttpHarness : IAsyncDisposable
             builder.UseSetting("Storage:DiskSafetyMarginBytes", "0");
             builder.UseSetting("Storage:DiskSafetyMarginPercent", "0");
             builder.UseSetting("Mcp:Enabled", "false");
+            builder.ConfigureTestServices(services =>
+            {
+                // Retained copies were created with the bed's clock. The HTTP
+                // host must use it too, or fixtures expire as real time passes.
+                services.RemoveAll<TimeProvider>();
+                services.AddSingleton<TimeProvider>(harness.Bed.Clock);
+            });
         }
     }
 }
