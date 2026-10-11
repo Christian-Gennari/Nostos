@@ -16,7 +16,7 @@ import { CommonModule } from '@angular/common';
 import { ButtonComponent } from '../../ui/button/button.component';
 import { LoadingIndicatorComponent } from '../../ui/loading-indicator/loading-indicator.component';
 import ePub, { Book, Rendition, Contents } from 'epubjs';
-import { Subject, Subscription } from 'rxjs';
+import { Subject, Subscription, firstValueFrom } from 'rxjs';
 import { debounceTime, distinctUntilChanged, filter } from 'rxjs/operators';
 
 import { EpubAnnotationManager, SelectionAnchor } from './epub-annotation-manager';
@@ -25,6 +25,12 @@ import { NotesService } from '../../core/services/notes.service';
 import { BooksService } from '../../core/services/books.service';
 import { ThemeService, Theme } from '../../core/services/theme.service';
 import { Book as BookDto } from '../../core/dtos/book.dtos';
+import {
+  ImportedNoteLocation,
+  Note,
+  importedNoteLocation,
+  isImportedAnchor,
+} from '../../core/dtos/note.dtos';
 import {
   IReader,
   ReaderProgress,
@@ -45,8 +51,10 @@ import {
 import { AssistantContextService } from '../../ui/assistant/assistant-context.service';
 
 import {
-  findEpubPassage,
+  epubPassageCandidates,
+  nodeAtKoreaderXPointer,
   normalizeEpubHrefForComparison,
+  normalizedResourceOffsetOfNode,
   normalizeEpubSourceText,
   normalizedEpubResourceText,
   rangeAtNormalizedResourceOffset,
@@ -431,6 +439,41 @@ const GROUNDED_SETTLE_QUIET_MS = 400;
  */
 const GROUNDED_SETTLE_MAX_MS = 2000;
 
+interface LocatedPassage {
+  cfi: string;
+  href: string;
+  spineIndex: number;
+  /** Start of the passage in the section's normalized text. */
+  offset: number;
+  /** False for a bare position, which can be opened but not drawn. */
+  isRange: boolean;
+  certain: boolean;
+}
+
+const UNLOCATED_NOTES_KEY = 'nostos.reader.unlocatedImportedNotes';
+
+function readUnlocatedNoteIds(): Set<string> {
+  try {
+    const stored: unknown = JSON.parse(localStorage.getItem(UNLOCATED_NOTES_KEY) ?? '[]');
+    return new Set(Array.isArray(stored) ? stored.filter((id) => typeof id === 'string') : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function rememberUnlocatedNoteId(noteId: string): void {
+  try {
+    const ids = readUnlocatedNoteIds().add(noteId);
+    // Bounded: this is a cache of misses, and forgetting one only costs a retry.
+    localStorage.setItem(UNLOCATED_NOTES_KEY, JSON.stringify([...ids].slice(-500)));
+  } catch {
+    // Storage can be unavailable; the lookup is then simply repeated.
+  }
+}
+
+// Longer than any paragraph, in normalized characters.
+const PASSAGE_POINTER_TOLERANCE = 5000;
+
 @Component({
   selector: 'app-epub-reader',
   standalone: true,
@@ -459,6 +502,8 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
    */
   selectionAnchored = output<SelectionAnchor | null>();
   commitFailed = output<void>();
+  /** An imported highlight was found in the book and now has a location. */
+  noteLocated = output<Note>();
   exitRequested = output<void>();
   /** Ctrl/Cmd+F pressed inside the epub.js iframe, whose events do not bubble to the shell. */
   searchRequested = output<void>();
@@ -815,37 +860,172 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
   }
 
   /**
-   * Open the place a quoted passage occupies in this book. Used for notes
-   * that carry their highlighted text but no location this reader can read,
-   * such as highlights imported from another reading app.
+   * Open where an imported highlight sits in this book. It carries its text
+   * and another reading app's position, but no location this reader wrote.
    */
-  async goToPassage(text: string, spineIndex?: number | null): Promise<void> {
+  async goToPassage(location: ImportedNoteLocation): Promise<void> {
     // A passage jump replaces whatever search was showing, exactly as a new
     // query would.
     this.clearSearch();
     const generation = this.searchGeneration;
     this.sourceNavigationMessage.set(null);
 
-    let corpus: Array<{ href: string; index: number; text: string }>;
+    let located: LocatedPassage | null = null;
     try {
-      corpus = await this.ensureSearchCorpus();
+      located = await this.locatePassage(location);
     } catch (error) {
-      if (generation === this.searchGeneration) this.failGroundedSourceNavigation(error);
-      return;
+      console.warn('Could not look up the imported passage:', error);
     }
     if (generation !== this.searchGeneration) return;
 
-    const match = findEpubPassage(corpus, text, spineIndex);
-    if (!match) {
+    if (!located) {
       this.failGroundedSourceNavigation();
       return;
     }
 
-    const section = corpus[match.section];
-    await this.revealTextSpan(
-      { href: section.href, index: section.index, offset: match.offset, length: match.length },
-      generation,
-    );
+    // Open the section first and resolve the position in the rendered page:
+    // displaying a CFI of a section that is not laid out yet can land pages off.
+    await this.goToSource({
+      type: 'epub',
+      epubResourceHref: located.href,
+      epubSpineIndex: located.spineIndex,
+      epubTextOffset: located.offset,
+    });
+    if (generation !== this.searchGeneration || !located.isRange) return;
+    try {
+      this.annotationManager?.showSearchHighlight(located.cfi);
+    } catch (error) {
+      console.warn('Could not mark the imported passage:', error);
+    }
+  }
+
+  /**
+   * Find an imported highlight in the book's own text. `certain` is true only
+   * when there is one place it can be: the passage occurs once, or its
+   * KOReader position picks one occurrence. Only a certain range is ever
+   * saved as the note's location; anything less is good for a jump at most.
+   */
+  private async locatePassage(location: ImportedNoteLocation): Promise<LocatedPassage | null> {
+    const { text, spineIndex, xpointer } = location;
+    const corpus = text ? await this.ensureSearchCorpus() : [];
+    const { whole, lead } = text
+      ? epubPassageCandidates(corpus, text, spineIndex)
+      : { whole: [], lead: [] };
+
+    let pick = whole[0] ?? (lead.length === 1 ? lead[0] : null);
+    let certain = whole.length === 1;
+    if (whole.length > 1 && xpointer && spineIndex !== null) {
+      const near = await this.withSectionDocument(spineIndex, (document) => {
+        const node = nodeAtKoreaderXPointer(document, xpointer);
+        return node ? normalizedResourceOffsetOfNode(document, node) : null;
+      });
+      const here = whole.filter((match) => corpus[match.section].index === spineIndex);
+      if (near !== null && here.length > 0) {
+        pick = here.reduce((best, match) =>
+          Math.abs(match.offset - near) < Math.abs(best.offset - near) ? match : best,
+        );
+        // The pointer names the block the highlight starts in, so the right
+        // occurrence starts within that block.
+        certain = Math.abs(pick.offset - near) <= PASSAGE_POINTER_TOLERANCE;
+      }
+    }
+
+    if (pick) {
+      const match = pick;
+      const { href, index } = corpus[match.section];
+      const cfi = await this.withSectionDocument(index, (document, section) => {
+        const range = rangeForNormalizedResourceSpan(document, match.offset, match.length);
+        return range ? section.cfiFromRange(range) : null;
+      });
+      if (cfi) {
+        return { cfi, href, spineIndex: index, offset: match.offset, isRange: true, certain };
+      }
+    }
+
+    // A page bookmark has no text of its own, and a highlight's text may not
+    // be found; the pointer still names a paragraph to open.
+    if (xpointer && spineIndex !== null) {
+      const href = this.epubSpineSources().find((item) => item.index === spineIndex)?.href;
+      const point = await this.withSectionDocument(spineIndex, (document, section) => {
+        const node = nodeAtKoreaderXPointer(document, xpointer);
+        const offset = node ? normalizedResourceOffsetOfNode(document, node) : null;
+        if (!node || offset === null) return null;
+        const range = document.createRange();
+        range.setStartBefore(node);
+        range.collapse(true);
+        return { cfi: section.cfiFromRange(range), offset };
+      });
+      if (point && href) {
+        return { ...point, href, spineIndex, isRange: false, certain: false };
+      }
+    }
+
+    return null;
+  }
+
+  /** Reads one spine item's document without rendering it. */
+  private async withSectionDocument<T>(
+    spineIndex: number,
+    read: (document: Document, section: { cfiFromRange(range: Range): string }) => T,
+  ): Promise<T | null> {
+    const book = this.epubBook;
+    const spine = book?.spine as unknown as
+      | {
+          spineItems?: Array<{
+            index?: unknown;
+            load?: (request: (path: string) => Promise<unknown>) => Promise<Element>;
+            unload?: () => void;
+            cfiFromRange?: (range: Range) => string;
+          }>;
+        }
+      | undefined;
+    const section = spine?.spineItems?.find((item) => item.index === spineIndex);
+    if (!book || !section || typeof section.load !== 'function') return null;
+    if (typeof section.cfiFromRange !== 'function') return null;
+
+    try {
+      const contents = await section.load(book.load.bind(book) as (path: string) => Promise<unknown>);
+      const document = contents?.ownerDocument;
+      if (!document || this.epubBook !== book) return null;
+      return read(document, { cfiFromRange: (range) => section.cfiFromRange!(range) });
+    } finally {
+      section.unload?.();
+    }
+  }
+
+  /**
+   * Give imported highlights a location of their own. Each one found with
+   * certainty is saved once, after which it is drawn and opened like a
+   * highlight made here. Runs after the book is showing and never blocks it.
+   */
+  private async locateImportedNotes(notes: Note[]): Promise<void> {
+    const book = this.epubBook;
+    const notFound = readUnlocatedNoteIds();
+    for (const note of notes) {
+      if (note.cfiRange?.trim() || !isImportedAnchor(note.sourceAnchorKind)) continue;
+      const location = importedNoteLocation(note);
+      // Looking a passage up reads the whole book. A note that was not found
+      // once (a page bookmark, a highlight from another edition) is not
+      // searched for on every opening; its own jump still looks.
+      if (!location?.text || notFound.has(note.id)) continue;
+
+      try {
+        const located = await this.locatePassage(location);
+        if (this.epubBook !== book) return;
+        if (!located?.certain || !located.isRange) {
+          rememberUnlocatedNoteId(note.id);
+          continue;
+        }
+
+        const saved = await firstValueFrom(this.notesService.setLocation(note.id, located.cfi));
+        if (this.epubBook !== book) return;
+        if (!saved.cfiRange) continue;
+        this.annotationManager?.restoreHighlights([saved]);
+        this.noteLocated.emit(saved);
+      } catch (error) {
+        console.warn('Could not locate an imported highlight:', error);
+      }
+    }
   }
 
   private async revealTextSpan(
@@ -1609,7 +1789,10 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
         this.applyFontSize();
 
         this.notesService.list(id).subscribe({
-          next: (notes) => this.annotationManager?.restoreHighlights(notes),
+          next: (notes) => {
+            this.annotationManager?.restoreHighlights(notes);
+            void this.locateImportedNotes(notes);
+          },
           error: (err) => console.error('Failed to load notes:', err),
         });
 

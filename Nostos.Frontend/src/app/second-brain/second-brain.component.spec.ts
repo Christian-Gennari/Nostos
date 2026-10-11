@@ -2100,6 +2100,23 @@ describe('SecondBrain', () => {
     })).toEqual({ sourceTime: 53.5 });
   });
 
+  it('links an imported highlight by note, and by location once the reader has found it', () => {
+    const imported = {
+      id: 'imported-note', bookId: 'book-1', bookTitle: 'EPUB', content: '',
+      selectedText: 'philosophy begins in wonder.', snippet: null, topicNames: [],
+      createdAt: '2026-10-01', sourceAnchorKind: 'koreader_xpointer',
+      sourceAnchorValue: '/body/DocFragment[10]/body/p[31]/text().0|/body/DocFragment[10]/body/p[31]/text().9',
+      anchorVerified: false,
+    };
+    expect(component.browseSourceParams(imported)).toEqual({ sourceNote: 'imported-note' });
+    expect(component.noteSourceNavigation(imported).label).toBe('Return to passage');
+    expect(component.browseSourceParams({ ...imported, cfiRange: 'epubcfi(/6/8!/4/8,/1:0,/1:28)' }))
+      .toEqual({ sourceCfi: 'epubcfi(/6/8!/4/8,/1:0,/1:28)' });
+    // A typed note that merely quotes something has nowhere to return to.
+    expect(component.browseSourceParams({ ...imported, sourceAnchorKind: 'unknown', sourceAnchorValue: null }))
+      .toBeNull();
+  });
+
   it('reuses the ordinary NoteCard presentation in optional review', () => {
       enterReview();
 

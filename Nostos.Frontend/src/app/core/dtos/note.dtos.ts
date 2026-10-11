@@ -54,26 +54,40 @@ export interface ImportedNoteLocation {
   text: string | null;
   /** Spine item of a KOReader position, to settle a passage that repeats. */
   spineIndex: number | null;
-  /** KOReader's page: the real page in a PDF, a screen count in an EPUB. */
+  /** Where a KOReader highlight or page bookmark starts in a reflowable book. */
+  xpointer: string | null;
+  /** KOReader's page: the real page of a PDF. */
   page: number | null;
 }
 
-export function importedNoteLocation(note: Note): ImportedNoteLocation | null {
+export function importedNoteLocation(note: {
+  selectedText?: string | null;
+  sourceAnchorKind?: string;
+  sourceAnchorValue?: string | null;
+}): ImportedNoteLocation | null {
   const text = note.selectedText?.trim() || null;
   const kind = note.sourceAnchorKind?.toLowerCase();
   const value = note.sourceAnchorValue?.trim() ?? '';
 
   let spineIndex: number | null = null;
+  let xpointer: string | null = null;
   let page: number | null = null;
   if (kind === 'koreader_xpointer') {
-    // crengine numbers a book's spine items as DocFragment[1..n].
-    const fragment = /\/DocFragment\[(\d+)\]/.exec(value);
+    // Stored as `start|end`. crengine numbers a book's spine items as
+    // DocFragment[1..n].
+    xpointer = value.split('|')[0] || null;
+    const fragment = /\/DocFragment\[(\d+)\]/.exec(xpointer ?? '');
     if (fragment) spineIndex = Number(fragment[1]) - 1;
   } else if (kind === 'koreader_page' && /^\d+$/.test(value) && Number(value) > 0) {
     page = Number(value);
   }
 
-  return text || page !== null ? { text, spineIndex, page } : null;
+  return text || xpointer || page !== null ? { text, spineIndex, xpointer, page } : null;
+}
+
+/** True for a note whose anchor is another reading app's own position. */
+export function isImportedAnchor(kind: string | undefined): boolean {
+  return /^(koreader|kobo)_/i.test(kind ?? '');
 }
 
 export interface CreateNoteDto {

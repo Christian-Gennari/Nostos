@@ -91,7 +91,12 @@ describe('importedNoteLocation', () => {
             '/body/DocFragment[10]/body/section/p[31]/text()[1].186|/body/DocFragment[10]/body/section/p[31]/a/text().2',
         }),
       ),
-    ).toEqual({ text: 'philosophy begins in wonder.', spineIndex: 9, page: null });
+    ).toEqual({
+      text: 'philosophy begins in wonder.',
+      spineIndex: 9,
+      xpointer: '/body/DocFragment[10]/body/section/p[31]/text()[1].186',
+      page: null,
+    });
   });
 
   it('reads the page of a KOReader PDF highlight', () => {
@@ -99,7 +104,7 @@ describe('importedNoteLocation', () => {
       importedNoteLocation(
         note({ selectedText: 'A passage.', sourceAnchorKind: 'koreader_page', sourceAnchorValue: '14' }),
       ),
-    ).toEqual({ text: 'A passage.', spineIndex: null, page: 14 });
+    ).toEqual({ text: 'A passage.', spineIndex: null, xpointer: null, page: 14 });
   });
 
   it('keeps the text of a highlight whose anchor says nothing about position', () => {
@@ -107,7 +112,23 @@ describe('importedNoteLocation', () => {
       importedNoteLocation(
         note({ selectedText: 'A passage.', sourceAnchorKind: 'kobo_bookmark', sourceAnchorValue: 'abc' }),
       ),
-    ).toEqual({ text: 'A passage.', spineIndex: null, page: null });
+    ).toEqual({ text: 'A passage.', spineIndex: null, xpointer: null, page: null });
+  });
+
+  it('keeps the xpointer of a page bookmark, which has no highlighted text', () => {
+    expect(
+      importedNoteLocation(
+        note({
+          sourceAnchorKind: 'koreader_xpointer',
+          sourceAnchorValue: '/body/DocFragment[13]/body/p[62]/text()[1].0|',
+        }),
+      ),
+    ).toEqual({
+      text: null,
+      spineIndex: 12,
+      xpointer: '/body/DocFragment[13]/body/p[62]/text()[1].0',
+      page: null,
+    });
   });
 
   it('has nothing to offer for a note with neither text nor page', () => {

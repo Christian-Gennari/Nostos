@@ -1,5 +1,6 @@
 // src/app/reader/reader.interface.ts
 import { Signal } from '@angular/core';
+import { ImportedNoteLocation } from '../core/dtos/note.dtos';
 
 export interface TocItem {
   label: string;
@@ -43,8 +44,8 @@ export interface IReader {
   previous(): void;
   goTo(target: string | number): void;
   goToSource?(target: ReaderSourceTarget): void | Promise<void>;
-  /** Opens where `text` occurs; `spineIndex` settles a passage that repeats. */
-  goToPassage?(text: string, spineIndex?: number | null): void | Promise<void>;
+  /** Opens an imported highlight by its text and its e-reader's position. */
+  goToPassage?(location: ImportedNoteLocation): void | Promise<void>;
 
   // Data Extraction
   getCurrentLocation(): string | null; // For saving notes
