@@ -9,7 +9,8 @@
  * job-level `/jobs/{id}/retry` endpoint while the job is still active.
  *
  * This spec uses the shared in-memory transport with queued maintenance
- * responses, so every async edge is under fake timers.
+ * responses, and replaces WebCrypto's chunk digest with the in-process
+ * SHA-256, so every async edge is a microtask or a fake timer.
  */
 
 import { TestBed } from '@angular/core/testing';
@@ -27,6 +28,7 @@ import {
   MAINTENANCE_MAX_WAIT_MS,
 } from './library-transfer-coordinator.service';
 import { HASH_WORKER_FACTORY } from './hash/hash-worker';
+import { Sha256 } from './hash/sha256';
 import { PortableArchiveInspector } from './portable-archive-inspector.service';
 import { TRANSFER_RESUME_STORAGE_KEY } from './transfer-resume-store.service';
 
@@ -114,6 +116,7 @@ async function settleUntil(predicate: () => boolean, attempts = 400): Promise<vo
   for (let attempt = 0; attempt < attempts && !predicate(); attempt += 1) {
     await vi.advanceTimersByTimeAsync(1);
   }
+  if (!predicate()) throw new Error(`Not settled after ${attempts} ms of fake time.`);
 }
 
 async function advanceUntil(
@@ -124,6 +127,9 @@ async function advanceUntil(
   for (let step = 0; step < maxSteps && !predicate(); step += 1) {
     await vi.advanceTimersByTimeAsync(stepMs);
   }
+  // Fail here rather than let the caller await a flow that only fake time
+  // can finish, which surfaces as an unexplained test timeout.
+  if (!predicate()) throw new Error(`Not reached after ${maxSteps} steps of ${stepMs} ms.`);
 }
 
 function isTerminal(kind: ReturnType<LibraryTransferCoordinator['state']>['kind']): boolean {
@@ -139,9 +145,17 @@ function isTerminal(kind: ReturnType<LibraryTransferCoordinator['state']>['kind'
 describe('LibraryTransferCoordinator — exclusive server maintenance', () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    // WebCrypto settles on the real event loop, which fake time cannot drive:
+    // under load the helpers above ran out of steps before a chunk digest
+    // resolved, and a flow then parked on a fake timer never finished (#873).
+    vi.spyOn(crypto.subtle, 'digest').mockImplementation(async (_algorithm, data) => {
+      const digest = new Sha256().update(data as Uint8Array).digest();
+      return digest.buffer as ArrayBuffer;
+    });
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.useRealTimers();
     TestBed.resetTestingModule();
     localStorage.removeItem(TRANSFER_RESUME_STORAGE_KEY);
@@ -304,8 +318,6 @@ describe('LibraryTransferCoordinator — exclusive server maintenance', () => {
     });
 
     const running = harness.coordinator.startImport(fileOfSize());
-    // Chunk hashing uses native WebCrypto, so reaching the first status read
-    // can take more timer turns when the full suite runs in parallel.
     await settleUntil(
       () => harness.coordinator.maintenanceWaiting()?.operation === 'getJob',
       2_000,
