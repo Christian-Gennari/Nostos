@@ -230,6 +230,10 @@ public sealed class AlignmentService(
                         ct);
                 }
             }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
             catch (Exception ex)
             {
                 // Include identifiers, but no transcription text,

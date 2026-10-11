@@ -99,20 +99,20 @@ public sealed class EfAlignmentAnchorStore(
             anchor.Score is < 0 or > 1)
             return false;
 
-        // A transaction keeps stale cleanup, upsert and retention atomic.
+        // A transaction keeps the upsert and retention atomic. Default
+        // isolation: a serialization failure would only cost one anchor, but a
+        // retry loop here is not worth holding up the reader's request.
         await using var transaction =
-            await db.Database.BeginTransactionAsync(
-                IsolationLevel.Serializable, ct);
+            await db.Database.BeginTransactionAsync(ct);
 
         var pair = db.AlignmentAnchors.Where(a =>
             a.AudioBookId == anchor.AudioBookId &&
             a.TextBookId == anchor.TextBookId);
 
-        // Remove revisions that cannot be used with the current files.
-        await pair.Where(a =>
-                a.AudioRevision != anchor.AudioRevision ||
-                a.TextRevision != anchor.TextRevision)
-            .ExecuteDeleteAsync(ct);
+        // Anchors of other revisions are left alone. Lookups never return
+        // them, and a request that was still running against a replaced file
+        // must not be able to delete the anchors of the new one. They age out
+        // through the per-pair cap below.
 
         var matching = pair.Where(a =>
             a.AudioRevision == anchor.AudioRevision &&
@@ -175,7 +175,7 @@ public sealed class EfAlignmentAnchorStore(
 
         // Retain the most recently measured anchors, not simply the
         // anchors with the largest audiobook positions.
-        var obsoleteIds = await matching
+        var obsoleteIds = await pair
             .OrderByDescending(a => a.CreatedAt)
             .ThenByDescending(a => a.Id)
             .Skip(MaximumPerPair)

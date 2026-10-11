@@ -140,7 +140,7 @@ public sealed class AlignmentAnchorTests
     }
 
     [Fact]
-    public async Task Save_removes_stale_revisions_for_same_pair_only()
+    public async Task Other_revisions_are_kept_but_never_returned()
     {
         await using var fixture = new DatabaseFixture();
         var (audio, text) = await fixture.SeedAsync();
@@ -164,8 +164,10 @@ public sealed class AlignmentAnchorTests
                 a.TextBookId == text)
             .ToListAsync();
 
-        oldRows.Should().ContainSingle();
-        oldRows[0].AudioRevision.Should().Be("audio-v2");
+        // A request still running against a replaced file must not be able to
+        // delete the new file's anchors, so saving never deletes by revision.
+        oldRows.Select(a => a.AudioRevision)
+            .Should().BeEquivalentTo("audio-v1", "audio-v2");
 
         (await fixture.Db.AlignmentAnchors.CountAsync(a =>
             a.AudioBookId == audio &&
@@ -173,9 +175,9 @@ public sealed class AlignmentAnchorTests
             .Should().Be(1);
 
         (await store.GetNearbyAsync(
-            audio, text, "audio-v1", "text-v1",
+            audio, text, "audio-v2", "text-v1",
             15000, 10000))
-            .Should().BeEmpty();
+            .Should().OnlyContain(a => a.AudioRevision == "audio-v2");
     }
 
     [Fact]
