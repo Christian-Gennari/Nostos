@@ -1628,20 +1628,15 @@
                   </div>
 
                   <div class="provider-field">
-                    <label class="provider-label" for="ai-alignment-api-style">
-                      {{ copy.alignmentApiStyle }}
-                    </label>
-                    <select
+                    <span class="provider-label">{{ copy.alignmentApiStyle }}</span>
+                    <app-dropdown
                       id="ai-alignment-api-style"
-                      appInput
                       controlSize="compact"
-                      class="provider-input"
+                      [ariaLabel]="copy.alignmentApiStyle"
+                      [options]="alignmentApiStyleOptions"
                       [value]="aiAlignment().apiStyle"
-                      (change)="setAiAlignmentApiStyle($event)"
-                    >
-                      <option value="openai-multipart">{{ copy.alignmentApiStyleMultipart }}</option>
-                      <option value="json-base64">{{ copy.alignmentApiStyleJson }}</option>
-                    </select>
+                      (valueChange)="setAiAlignmentApiStyle($event)"
+                    />
                     <p class="provider-help">{{ copy.alignmentApiStyleHelp }}</p>
                   </div>
                 }

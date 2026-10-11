@@ -2062,13 +2062,11 @@ describe('SettingsComponent backup-only surface', () => {
     expect(inputValue('#ai-alignment-api-key')).toBe('');
     expect(input('#ai-alignment-api-key').type).toBe('password');
 
-    const style = fixture.nativeElement.querySelector(
-      '#ai-alignment-api-style',
-    ) as HTMLSelectElement;
-    expect(style.value).toBe('openai-multipart');
-    expect(Array.from(style.options).map((option) => [option.value, option.textContent])).toEqual([
-      ['openai-multipart', 'OpenAI-compatible (multipart upload)'],
-      ['json-base64', 'JSON (base64 audio)'],
+    expect(fixture.nativeElement.querySelector('#ai-alignment-api-style')).not.toBeNull();
+    expect(fixture.componentInstance.aiAlignment().apiStyle).toBe('openai-multipart');
+    expect(fixture.componentInstance.alignmentApiStyleOptions).toEqual([
+      { value: 'openai-multipart', label: 'OpenAI-compatible (multipart upload)' },
+      { value: 'json-base64', label: 'JSON (base64 audio)' },
     ]);
     expect(cardSection('ai-provider-alignment').textContent).toContain(
       'Most transcription providers use the multipart upload format.',
@@ -2119,11 +2117,8 @@ describe('SettingsComponent backup-only surface', () => {
     setInputValue('#ai-alignment-base-url', 'https://alignment.example/v1');
     setInputValue('#ai-alignment-model', 'custom-alignment-model');
 
-    const style = fixture.nativeElement.querySelector(
-      '#ai-alignment-api-style',
-    ) as HTMLSelectElement;
-    style.value = 'json-base64';
-    style.dispatchEvent(new Event('change'));
+    fixture.componentInstance.setAiAlignmentApiStyle('json-base64');
+    fixture.detectChanges();
 
     const enabled = fixture.nativeElement.querySelector(
       '[data-testid="alignment-transcription-toggle"]',

@@ -1093,8 +1093,12 @@ export class SettingsComponent implements OnInit, OnDestroy {
     this.aiAlignment.update((form) => ({ ...form, useVoiceTranscription }));
   }
 
-  setAiAlignmentApiStyle(event: Event): void {
-    const value = (event.target as HTMLSelectElement).value;
+  readonly alignmentApiStyleOptions = [
+    { value: 'openai-multipart', label: AI_PROVIDER_COPY.alignmentApiStyleMultipart },
+    { value: 'json-base64', label: AI_PROVIDER_COPY.alignmentApiStyleJson },
+  ];
+
+  setAiAlignmentApiStyle(value: string): void {
     if (value !== 'openai-multipart' && value !== 'json-base64') return;
     this.aiAlignment.update((form) => ({ ...form, apiStyle: value }));
   }
