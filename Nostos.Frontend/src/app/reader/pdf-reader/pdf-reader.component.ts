@@ -30,11 +30,12 @@ import { debounceTime, distinctUntilChanged, filter } from 'rxjs/operators';
 
 import { PdfAnnotationManager, PageHighlight } from './pdf-annotation-manager';
 import {
-  asHighlightColour,
   DEFAULT_HIGHLIGHT_COLOUR,
   HighlightColour,
+  noteHighlightColour,
 } from '../highlight-colours';
 import { NotesService } from '../../core/services/notes.service';
+import { Note } from '../../core/dtos/note.dtos';
 import { BooksService } from '../../core/services/books.service';
 import { ThemeService } from '../../core/services/theme.service';
 import {
@@ -1004,7 +1005,7 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
                 id: n.id,
                 pageNumber: range.pageNumber,
                 rects: range.rects || [],
-                colour: asHighlightColour(range.colour),
+                colour: noteHighlightColour(n),
               } as PageHighlight;
             } catch {
               return null;
@@ -1016,6 +1017,14 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
         pagesToRepaint.forEach((pageNum) => this.repaintPage(pageNum));
       },
     });
+  }
+
+  /** Repaint one saved highlight in another pen. */
+  recolourHighlight(note: Note, colour: HighlightColour): void {
+    const highlight = this.savedHighlights.find((h) => h.id === note.id);
+    if (!highlight) return;
+    highlight.colour = colour;
+    this.repaintPage(highlight.pageNumber);
   }
 
   removeHighlight(id: string) {
@@ -1048,10 +1057,12 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
 
     this.clearNativeSelection();
 
+    // The pen travels in the note's own `highlightColour` (issue #861), no
+    // longer inside this location payload: one place to read it from, and one
+    // to change when the highlight is recoloured.
     const cfiPayload = {
       pageNumber: p.pageNumber,
       rects: p.rects,
-      colour: p.colour,
     };
 
     this.notesService
@@ -1059,6 +1070,7 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
         content,
         selectedText: p.selectedText,
         cfiRange: JSON.stringify(cfiPayload),
+        highlightColour: p.colour,
       })
       .subscribe({
         next: (createdNote) => {

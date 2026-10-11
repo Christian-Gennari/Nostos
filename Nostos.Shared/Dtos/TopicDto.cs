@@ -27,7 +27,9 @@ public record NoteContextDto(
     DateTime CreatedAt,
     string SourceAnchorKind = "unknown",
     string? SourceAnchorValue = null,
-    bool AnchorVerified = false
+    bool AnchorVerified = false,
+    // APPENDED (issue #861): the note's highlighter pen, by name.
+    string? HighlightColour = null
 );
 
 // For the whole-brain knowledge graph

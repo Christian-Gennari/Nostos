@@ -1,6 +1,7 @@
 // src/app/reader/reader.interface.ts
 import { Signal } from '@angular/core';
-import { ImportedNoteLocation } from '../core/dtos/note.dtos';
+import { ImportedNoteLocation, Note } from '../core/dtos/note.dtos';
+import { HighlightColour } from './highlight-colours';
 
 export interface TocItem {
   label: string;
@@ -65,6 +66,8 @@ export interface IReader {
 
   // Highlight Management
   removeHighlight(identifier: string): void;
+  /** Redraws a saved highlight after its pen was changed from the note's edit UI. */
+  recolourHighlight?(note: Note, colour: HighlightColour): void;
   /** Saves the pending mark; `content` is optional note text for EPUB/PDF. */
   commitHighlight(content?: string): void;
   discardHighlight(): void;

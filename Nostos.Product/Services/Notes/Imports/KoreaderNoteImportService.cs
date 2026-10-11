@@ -86,6 +86,9 @@ public sealed class KoreaderNoteImportService
                 SourceAnchorKind: anchorKind,
                 SourceAnchorValue: anchorValue,
                 AnchorVerified: false,
+                // The e-reader's own colour names do not map to the four pens, so an
+                // import arrives in the default one and is recoloured by hand (#861).
+                HighlightColour: NoteHighlightColours.Amber,
                 ClientId: ClientId,
                 IdempotencyKey: fingerprint),
                 ct);

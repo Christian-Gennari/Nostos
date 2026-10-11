@@ -37,12 +37,39 @@ export function highlightFillRef(colour: HighlightColour): string {
 
 /**
  * Falls back to the default rather than throwing: this reads a value out of
- * localStorage, which can be anything the user or an older build left there.
+ * localStorage or a saved note, which can be anything the user, an older build
+ * or an imported archive left there.
  */
 export function asHighlightColour(value: unknown): HighlightColour {
   return HIGHLIGHT_COLOURS.some((option) => option.id === value)
     ? (value as HighlightColour)
     : DEFAULT_HIGHLIGHT_COLOUR;
+}
+
+/**
+ * The pen a saved highlight is drawn in.
+ *
+ * The note's own `highlightColour` decides. A PDF highlight made before that
+ * field existed kept its pen inside the JSON location payload in `cfiRange`,
+ * so that is the fallback (it also covers a library restored from an archive
+ * older than the field). A highlight with neither is drawn in the default
+ * pen: an EPUB highlight never recorded one, and an import has none to bring.
+ */
+export function noteHighlightColour(note: {
+  highlightColour?: string | null;
+  cfiRange?: string | null;
+}): HighlightColour {
+  if (note.highlightColour) return asHighlightColour(note.highlightColour);
+
+  const location = note.cfiRange?.trim();
+  if (location?.startsWith('{')) {
+    try {
+      return asHighlightColour((JSON.parse(location) as { colour?: unknown }).colour);
+    } catch {
+      // Not a PDF location payload after all.
+    }
+  }
+  return DEFAULT_HIGHLIGHT_COLOUR;
 }
 
 /** localStorage key for a book's chosen pen. */

@@ -10,6 +10,25 @@
       rows="2"
     ></textarea>
     }
+    @if (note.selectedText) {
+    <!-- The highlight's pen (issue #861), the same four dots as the reader's
+         own pen row. Shown for any highlight, imported ones included. -->
+    <div class="edit-pens" role="group" aria-label="Highlight colour">
+      @for (pen of highlightColours; track pen.id) {
+      <button
+        type="button"
+        class="edit-pen"
+        [style.background]="'var(--highlight-' + pen.id + ')'"
+        [class.is-active]="editColour === pen.id"
+        [attr.aria-pressed]="editColour === pen.id"
+        [attr.aria-label]="pen.label + ' highlighter'"
+        [attr.title]="pen.label"
+        [attr.data-testid]="'note-edit-pen-' + pen.id"
+        (click)="editColour = pen.id"
+      ></button>
+      }
+    </div>
+    }
 
     <app-topic-input
       [(ngModel)]="editContent"
@@ -53,6 +72,18 @@
 
     <div class="note-footer" [class.note-footer-with-source]="showSource && !!note.bookTitle">
       <div class="note-metadata">
+        @if (penColour; as pen) {
+        <!-- The highlight's pen, as one small dot: enough to scan a list by
+             colour without restyling the card (issue #861). -->
+        <span
+          class="note-pen"
+          role="img"
+          [style.background]="'var(--highlight-' + pen.id + ')'"
+          [attr.aria-label]="pen.label + ' highlight'"
+          [attr.title]="pen.label + ' highlight'"
+          [attr.data-testid]="'note-pen-' + pen.id"
+        ></span>
+        }
         @if (showDate && note.createdAt) {
         <span class="note-date-group">
           <span class="note-date">{{ note.createdAt | date : 'short' }}</span>

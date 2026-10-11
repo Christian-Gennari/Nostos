@@ -932,10 +932,10 @@ describe('PdfReader highlight trust regressions (#478)', () => {
     expect(createNote.mock.calls[1][1]).toEqual(firstDto);
     expect(firstDto.content).toBe('A PDF note');
     expect(firstDto.selectedText).toBe('same difficult selection');
-    expect(JSON.parse(firstDto.cfiRange)).toMatchObject({
-      pageNumber: 3,
-      colour: 'amber',
-    });
+    expect(JSON.parse(firstDto.cfiRange)).toMatchObject({ pageNumber: 3 });
+    // The pen is the note's own field now, not part of the location (#861).
+    expect(JSON.parse(firstDto.cfiRange)).not.toHaveProperty('colour');
+    expect(firstDto.highlightColour).toBe('amber');
   });
 
   it('publishes current native PDF selection without highlight mode and clears it when stale', () => {

@@ -5,6 +5,7 @@ import { NotesService } from '../../core/services/notes.service';
 import {
   DEFAULT_HIGHLIGHT_COLOUR,
   HighlightColour,
+  noteHighlightColour,
   resolveHighlightFill,
 } from '../highlight-colours';
 import { Note } from '../../core/dtos/note.dtos';
@@ -97,7 +98,10 @@ export class EpubAnnotationManager {
   private notesService: NotesService;
 
   private highlightMode = false;
-  /** The book's chosen pen (issue #208), used for every highlight drawn here. */
+  /**
+   * The book's chosen pen (issue #208): the colour of the NEXT highlight made
+   * here. A saved highlight is drawn in its own stored pen (issue #861).
+   */
   private highlightColour: HighlightColour = DEFAULT_HIGHLIGHT_COLOUR;
   private pendingHighlight: PendingEpubHighlight | null = null;
   /** Ephemeral search underline; a distinct epub.js annotation type cannot collide with saved highlights. */
@@ -126,9 +130,8 @@ export class EpubAnnotationManager {
   }
 
   /**
-   * Set the book's pen. Highlights already on the page keep the colour they were
-   * drawn with until the book is re-rendered, because a fill is baked into the
-   * epub.js SVG at draw time; the choice applies to what is drawn next.
+   * Set the book's pen. It applies to the next highlight made; highlights
+   * already saved keep the pen stored with them.
    */
   setHighlightColour(colour: HighlightColour): void {
     this.highlightColour = colour;
@@ -295,17 +298,17 @@ export class EpubAnnotationManager {
    * injectHighlightStyles), where the token is readable, so it is resolved here
    * and handed to epub.js as an explicit fill.
    */
-  private highlightFill(): string {
+  private highlightFill(colour: HighlightColour = this.highlightColour): string {
     // The pen's own token, so a colour is defined in exactly one place. The
     // fallback is the themed default's light value, for unit tests and for a
     // document that is not yet styled.
-    return resolveHighlightFill(this.highlightColour, DEFAULT_HIGHLIGHT_FILL);
+    return resolveHighlightFill(colour, DEFAULT_HIGHLIGHT_FILL);
   }
 
-  /** Adds a persisted highlight with the reader's own colour. */
-  private addPersistedHighlight(cfiRange: string): void {
+  /** Adds a persisted highlight in the pen saved with it. */
+  private addPersistedHighlight(cfiRange: string, colour: HighlightColour): void {
     this.rendition.annotations.add('highlight', cfiRange, {}, undefined, undefined, {
-      fill: this.highlightFill(),
+      fill: this.highlightFill(colour),
     });
   }
 
@@ -444,6 +447,9 @@ export class EpubAnnotationManager {
       contents: pending.contents,
       temporaryAnnotation: pending.temporaryAnnotation,
     };
+    // The pen in hand when Save was pressed is the one stored and drawn, even
+    // if the reader picks another while the request is in flight.
+    const colour = this.highlightColour;
 
     return new Promise<boolean>((resolve) => {
       this.notesService
@@ -452,12 +458,13 @@ export class EpubAnnotationManager {
           content,
           cfiRange: snapshot.cfiRange,
           selectedText: snapshot.selectedText,
+          highlightColour: colour,
         })
         .subscribe({
           next: () => {
             // Persisted: swap the temporary annotation for the permanent one,
             // then report success so the shell closes the bar.
-            this.addPersistedHighlight(snapshot.cfiRange);
+            this.addPersistedHighlight(snapshot.cfiRange, colour);
             this.removeAnnotation(snapshot.temporaryAnnotation);
             this.pendingHighlight = null;
             this.lastCapturedKey = null;
@@ -521,10 +528,21 @@ export class EpubAnnotationManager {
   public restoreHighlights(notes: Note[]) {
     notes.forEach((note) => {
       if (note.cfiRange) {
-        this.addPersistedHighlight(note.cfiRange);
+        this.addPersistedHighlight(note.cfiRange, noteHighlightColour(note));
         this.highlights.update((current) => [...current, note.cfiRange!]);
       }
     });
+  }
+
+  /**
+   * Redraw one saved highlight in another pen. The fill is baked into the
+   * epub.js SVG when a mark is drawn, so a recolour is a remove and a re-add;
+   * a location that was never drawn here is left alone.
+   */
+  public recolourHighlight(cfiRange: string, colour: HighlightColour): void {
+    if (!this.highlights().includes(cfiRange)) return;
+    this.rendition.annotations.remove(cfiRange, 'highlight');
+    this.addPersistedHighlight(cfiRange, colour);
   }
 
   public removeHighlight(cfiRange: string) {

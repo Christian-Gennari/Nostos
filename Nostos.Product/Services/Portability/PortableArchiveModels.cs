@@ -168,7 +168,11 @@ internal sealed record PortableNote(
     string ProcessingMode,
     string SourceAnchorKind,
     string? SourceAnchorValue,
-    bool AnchorVerified);
+    bool AnchorVerified,
+    // The highlighter pen (issue #861). Appended and optional, with no data
+    // version bump: an archive written before it reads as "no pen recorded",
+    // which is drawn in the default pen exactly as it was before export.
+    string? HighlightColour = null);
 
 internal sealed record PortableTopic(
     Guid Id,

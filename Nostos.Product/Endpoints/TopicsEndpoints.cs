@@ -63,7 +63,8 @@ public static class TopicsEndpoints
                         nc.Note.CreatedAt,
                         nc.Note.SourceAnchorKind,
                         nc.Note.SourceAnchorValue,
-                        nc.Note.AnchorVerified
+                        nc.Note.AnchorVerified,
+                        nc.Note.HighlightColour
                     ))
                     .ToList();
 

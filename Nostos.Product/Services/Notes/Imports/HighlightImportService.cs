@@ -184,6 +184,9 @@ public sealed class HighlightImportService
                     SourceAnchorKind: entry.Annotation.AnchorKind,
                     SourceAnchorValue: entry.AnchorValue,
                     AnchorVerified: false,
+                    // The e-reader's own colour names do not map to the four pens, so an
+                    // import arrives in the default one and is recoloured by hand (#861).
+                    HighlightColour: NoteHighlightColours.Amber,
                     ClientId: entry.ClientId,
                     IdempotencyKey: entry.Key),
                     ct);

@@ -12,6 +12,13 @@ public class NoteModel
     public string? CfiRange { get; set; } // e.g. "epubcfi(/6/4...)"
     public string? SelectedText { get; set; }
 
+    // The highlighter pen this highlight was made with: amber | sage | blue | rose
+    // (see NoteHighlightColours). A NAME, never a hex. Null = no pen was ever
+    // recorded (a highlight older than this field, or a note that is not a
+    // highlight); readers draw that in the default pen, amber.
+    [MaxLength(16)]
+    public string? HighlightColour { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public Guid BookId { get; set; }

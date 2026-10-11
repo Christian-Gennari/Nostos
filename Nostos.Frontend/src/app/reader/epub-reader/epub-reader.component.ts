@@ -2277,6 +2277,10 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     this.deleteHighlight(identifier);
   }
 
+  recolourHighlight(note: Note, colour: HighlightColour): void {
+    if (note.cfiRange) this.annotationManager?.recolourHighlight(note.cfiRange, colour);
+  }
+
   commitHighlight(content = ''): void {
     const committed = this.annotationManager?.commitHighlight(content);
     void committed?.then((success) => {

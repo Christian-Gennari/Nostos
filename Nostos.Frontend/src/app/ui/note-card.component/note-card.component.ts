@@ -11,6 +11,12 @@ export interface NoteSourceNavigation {
 }
 
 import { Note } from '../../core/dtos/note.dtos';
+import {
+  HIGHLIGHT_COLOURS,
+  HighlightColour,
+  HighlightColourOption,
+  noteHighlightColour,
+} from '../../reader/highlight-colours';
 import { TopicDto } from '../../core/services/topics.service';
 import { TopicInputComponent } from '../topic-input.component/topic-input.component';
 import { IconButtonComponent } from '../icon-button/icon-button.component';
@@ -45,7 +51,13 @@ export class NoteCardComponent {
   @Input() actionsContext: Record<string, unknown> = {};
 
   // Updated Output signature to match UpdateNoteDto
-  @Output() update = new EventEmitter<{ id: string; content: string; selectedText?: string }>();
+  // `highlightColour` is present only when the pen was changed in this edit.
+  @Output() update = new EventEmitter<{
+    id: string;
+    content: string;
+    selectedText?: string;
+    highlightColour?: HighlightColour;
+  }>();
   @Output() delete = new EventEmitter<string>();
   @Output() topicClick = new EventEmitter<string>();
   @Output() quoteClick = new EventEmitter<void>();
@@ -54,6 +66,22 @@ export class NoteCardComponent {
   isEditing = false;
   editContent = '';
   editSelectedText = '';
+  /** The pen picked in the editor; a highlight's colour is changed here (#861). */
+  editColour: HighlightColour = noteHighlightColour({});
+  readonly highlightColours = HIGHLIGHT_COLOURS;
+
+  /**
+   * The pen to show on the card, or null when there is none to show: a note
+   * that is not a highlight, or one from a source that does not carry the
+   * field (search hits, Writing Studio sources). Guessing amber there would
+   * mislabel a recoloured highlight, so an unknown pen shows nothing. A
+   * highlight whose pen is known to be unrecorded (null) is amber.
+   */
+  get penColour(): HighlightColourOption | null {
+    if (!this.note.selectedText || this.note.highlightColour === undefined) return null;
+    const colour = noteHighlightColour(this.note);
+    return HIGHLIGHT_COLOURS.find((option) => option.id === colour) ?? null;
+  }
 
   // Collapse logic
   isExpanded = false;
@@ -94,6 +122,7 @@ export class NoteCardComponent {
     event?.stopPropagation();
     this.editContent = this.note.content;
     this.editSelectedText = this.note.selectedText || ''; // Initialize quote editor
+    this.editColour = noteHighlightColour(this.note);
     this.isEditing = true;
     this.isExpanded = true;
   }
@@ -115,11 +144,16 @@ export class NoteCardComponent {
     const contentChanged = cleanContent !== this.note.content;
     const quoteChanged = cleanQuote !== (this.note.selectedText || '');
 
-    if (contentChanged || quoteChanged) {
+    // Only a highlight has a pen to change; a plain note never sends one.
+    const colourChanged =
+      !!this.note.selectedText && this.editColour !== noteHighlightColour(this.note);
+
+    if (contentChanged || quoteChanged || colourChanged) {
       this.update.emit({
         id: this.note.id,
         content: cleanContent,
         selectedText: cleanQuote, // Emit the new quote
+        ...(colourChanged ? { highlightColour: this.editColour } : {}),
       });
     }
     this.isEditing = false;

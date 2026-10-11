@@ -59,6 +59,8 @@ export interface NoteContextDto {
   sourceAnchorKind?: string;
   sourceAnchorValue?: string | null;
   anchorVerified?: boolean;
+  /** The note's highlighter pen, by name; absent when none was recorded. */
+  highlightColour?: string | null;
 }
 
 export interface TopicDetailDto {

@@ -344,11 +344,11 @@ export class BookDetailStore {
     });
   }
 
-  updateNote(id: string, content: string, selectedText?: string) {
+  updateNote(id: string, content: string, selectedText?: string, highlightColour?: string) {
     const b = this.book();
     if (!b) return;
 
-    this.notesService.update(id, { content, selectedText }).subscribe({
+    this.notesService.update(id, { content, selectedText, highlightColour }).subscribe({
       next: () => {
         this.loadNotes(b.id);
         this.loadTopics();

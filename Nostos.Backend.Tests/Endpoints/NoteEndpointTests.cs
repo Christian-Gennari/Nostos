@@ -200,6 +200,45 @@ public sealed class NoteEndpointTests : IClassFixture<LibraryEndpointFactory>
     }
 
     [Fact]
+    public async Task Update_note_recolours_a_highlight_and_lists_it_in_that_pen()
+    {
+        var book = await CreateBookAsync();
+        var created = await Client.PostAsJsonAsync($"/api/books/{book.Id}/notes", new
+        {
+            content = "",
+            selectedText = "a passage",
+            cfiRange = "epubcfi(/6/4!/4/2,/1:0,/1:5)",
+            highlightColour = "sage",
+        });
+        var note = (await created.Content.ReadFromJsonAsync<NoteDto>())!;
+        note.HighlightColour.Should().Be("sage");
+
+        var response = await Client.PutAsJsonAsync(
+            $"/api/notes/{note.Id}",
+            new { content = "", selectedText = "a passage", highlightColour = "rose" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await response.Content.ReadFromJsonAsync<NoteDto>())!.HighlightColour.Should().Be("rose");
+
+        var listed = await Client.GetFromJsonAsync<List<NoteDto>>($"/api/books/{book.Id}/notes");
+        listed!.Single().HighlightColour.Should().Be("rose");
+    }
+
+    [Fact]
+    public async Task Update_note_with_an_unknown_colour_returns_400()
+    {
+        var book = await CreateBookAsync();
+        var note = await CreateNoteAsync(book.Id, "before");
+
+        var response = await Client.PutAsJsonAsync(
+            $"/api/notes/{note.Id}", new { content = "after", highlightColour = "gray" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync())
+            .Should().Contain("Highlight colour must be one of: amber, sage, blue, rose.");
+    }
+
+    [Fact]
     public async Task Update_unknown_note_returns_404_with_no_custom_body()
     {
         var response = await Client.PutAsJsonAsync(

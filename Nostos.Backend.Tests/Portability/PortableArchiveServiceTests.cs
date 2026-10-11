@@ -117,6 +117,7 @@ public sealed class PortableArchiveServiceTests
         note.ProcessingMode.Should().Be("light_polish");
         note.SourceAnchorKind.Should().Be("epub_cfi");
         note.AnchorVerified.Should().BeTrue();
+        note.HighlightColour.Should().Be("sage", "a highlight keeps its pen through export and import");
 
         var writing = await destination.Db.Writings
             .AsNoTracking()

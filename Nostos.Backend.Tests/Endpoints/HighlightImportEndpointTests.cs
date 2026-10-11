@@ -145,6 +145,7 @@ public sealed class HighlightImportEndpointTests : IDisposable
         notes.Should().HaveCount(3);
         notes.Should().OnlyContain(note =>
             note.CaptureSource == "import" && note.SourceAnchorKind == "kobo_bookmark");
+        notes.Should().OnlyContain(note => note.HighlightColour == "amber");
         notes.Should().Contain(note =>
             note.BookId == owned.Id
             && note.SelectedText == "A synthetic Kobo highlight."

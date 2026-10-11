@@ -179,6 +179,43 @@ public sealed class PortableMigrationFixtureAndCompatTests
         relationship.AddedAt.Should().NotBe(default);
     }
 
+    [Fact]
+    public async Task Archive_written_before_highlight_colours_imports_its_notes_with_no_pen()
+    {
+        // The pen (issue #861) was appended to the note record without a data
+        // version bump, so an archive of the current version may simply not
+        // have the key. It must still import, with "no pen recorded".
+        using var fixture = await CreateFixtureAsync(
+            "portable-format1-data2.nostos",
+            CurrentDataVersion);
+
+        var entries = ReadEntries(fixture.Bytes);
+
+        MutateJsonEntry(entries, DataPath, root =>
+        {
+            foreach (var note in root["notes"]!.AsArray())
+            {
+                note!.AsObject().Remove("highlightColour").Should().BeTrue(
+                    "the current writer carries the pen, so the fixture has it to remove");
+            }
+        });
+
+        RehashDataDescriptor(entries);
+
+        using var archive = new MemoryStream(BuildArchive(entries));
+        await using var destination = await LocalPortableTestLibrary.CreateAsync();
+
+        var imported = await destination.Portability().ImportAsync(archive);
+
+        imported.IntegrityVerified.Should().BeTrue();
+        destination.Db.ChangeTracker.Clear();
+
+        var importedNote = await destination.Db.Notes.AsNoTracking().SingleAsync();
+        importedNote.HighlightColour.Should().BeNull(
+            "a reader draws a highlight with no recorded pen in the default amber");
+        importedNote.CfiRange.Should().Be("epubcfi(/6/4!/4/2)");
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(999)]
