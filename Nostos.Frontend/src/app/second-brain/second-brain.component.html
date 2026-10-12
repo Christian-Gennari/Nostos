@@ -315,17 +315,17 @@
         <div class="letter-separator super-title" aria-hidden="true">{{ letterFor(c) }}</div>
         }
         <div class="index-row-shell" role="listitem">
-          @if (renameId() === c.id && renameSurface() === 'index') {
+          @if (topicActions.renameId() === c.id && topicActions.renameSurface() === 'index') {
           <div class="index-item index-item--renaming" (click)="$event.stopPropagation()">
             <app-brain-topic-rename
               variant="row"
               [name]="c.name"
-              [value]="renameValue()"
-              (valueChange)="renameValue.set($event)"
-              [error]="renameError()"
-              [busy]="renaming()"
-              (committed)="commitRename(c.id)"
-              (cancelled)="cancelRename()"
+              [value]="topicActions.renameValue()"
+              (valueChange)="topicActions.renameValue.set($event)"
+              [error]="topicActions.renameError()"
+              [busy]="topicActions.renaming()"
+              (committed)="topicActions.commitRename(c.id)"
+              (cancelled)="topicActions.cancelRename()"
             />
           </div>
           } @else {
@@ -373,7 +373,7 @@
           }
           <!-- The row's own actions step aside while its name is being edited:
                they sat on top of the field. -->
-          @if (!(renameId() === c.id && renameSurface() === 'index')) {
+          @if (!(topicActions.renameId() === c.id && topicActions.renameSurface() === 'index')) {
           <div class="row-actions" (click)="$event.stopPropagation()">
             <button
               type="button"
@@ -711,16 +711,16 @@
         <div class="topic-head-row">
           <div class="topic-head-copy">
             <div class="super-title">Topic</div>
-            @if (renameId() === detail.id && renameSurface() === 'header') {
+            @if (topicActions.renameId() === detail.id && topicActions.renameSurface() === 'header') {
             <app-brain-topic-rename
               variant="title"
               [name]="detail.name"
-              [value]="renameValue()"
-              (valueChange)="renameValue.set($event)"
-              [error]="renameError()"
-              [busy]="renaming()"
-              (committed)="commitRename(detail.id)"
-              (cancelled)="cancelRename()"
+              [value]="topicActions.renameValue()"
+              (valueChange)="topicActions.renameValue.set($event)"
+              [error]="topicActions.renameError()"
+              [busy]="topicActions.renaming()"
+              (committed)="topicActions.commitRename(detail.id)"
+              (cancelled)="topicActions.cancelRename()"
             />
             } @else {
             <h1 class="topic-title">{{ detail.name }}</h1>
@@ -972,8 +972,8 @@
           <button
             appButton variant="ghost" size="sm" type="button"
             class="topic-action"
-            [disabled]="renaming() || mergingTopic()"
-            (click)="startRename(detail.id, 'header')"
+            [disabled]="topicActions.renaming() || topicActions.mergingTopic()"
+            (click)="topicActions.startRename(detail.id, 'header')"
           >
             <nostos-icon name="pencil-simple" [size]="14"></nostos-icon>
             <span>Rename</span>
@@ -981,8 +981,8 @@
           <button
             appButton variant="ghost" size="sm" type="button"
             class="topic-action"
-            [disabled]="renaming() || mergingTopic()"
-            (click)="openMergePicker()"
+            [disabled]="topicActions.renaming() || topicActions.mergingTopic()"
+            (click)="topicActions.openMergePicker()"
           >
             <nostos-icon name="git-merge" [size]="14"></nostos-icon>
             <span>Merge into…</span>
@@ -990,15 +990,15 @@
           <button
             appButton variant="danger" size="sm" type="button"
             class="topic-action"
-            [disabled]="renaming() || mergingTopic()"
-            (click)="openDeleteTopic(detail.id)"
+            [disabled]="topicActions.renaming() || topicActions.mergingTopic()"
+            (click)="topicActions.openDeleteTopic(detail.id)"
           >
             <nostos-icon name="trash" [size]="14"></nostos-icon>
             <span>Delete</span>
           </button>
         </div>
 
-        @if (mergePickerOpen()) {
+        @if (topicActions.mergePickerOpen()) {
         <app-brain-topic-picker
           role="dialog"
           label="Choose a topic to merge into"
@@ -1007,14 +1007,14 @@
           searchLabel="Search merge targets"
           emptyText="No other topics match."
           confirmLabel="Continue"
-          [candidates]="mergeCandidates()"
-          [selectedId]="mergeTargetId()"
-          [confirmDisabled]="!mergeTarget()"
-          [query]="mergeSearchQuery()"
-          (queryChange)="mergeSearchQuery.set($event)"
-          (chosen)="chooseMergeTarget($event)"
-          (confirmed)="openMergeConfirmation()"
-          (closed)="closeMergePicker()"
+          [candidates]="topicActions.mergeCandidates()"
+          [selectedId]="topicActions.mergeTargetId()"
+          [confirmDisabled]="!topicActions.mergeTarget()"
+          [query]="topicActions.mergeSearchQuery()"
+          (queryChange)="topicActions.mergeSearchQuery.set($event)"
+          (chosen)="topicActions.chooseMergeTarget($event)"
+          (confirmed)="topicActions.openMergeConfirmation()"
+          (closed)="topicActions.closeMergePicker()"
         />
         }
       </details>
@@ -1188,26 +1188,26 @@
   ></app-confirm-modal>
 
   <app-confirm-modal
-    [isOpen]="!!mergeConfirmation()"
-    [heading]="mergeHeading()"
-    [description]="mergeDescription()"
+    [isOpen]="!!topicActions.mergeConfirmation()"
+    [heading]="topicActions.mergeHeading()"
+    [description]="topicActions.mergeDescription()"
     confirmLabel="Merge topics"
     busyLabel="Merging…"
-    [busy]="mergingTopic()"
+    [busy]="topicActions.mergingTopic()"
     tone="neutral"
-    (confirm)="confirmMerge()"
-    (cancel)="cancelMergeConfirmation()"
+    (confirm)="topicActions.confirmMerge()"
+    (cancel)="topicActions.cancelMergeConfirmation()"
   ></app-confirm-modal>
 
   <app-confirm-modal
-    [isOpen]="!!topicDeleteTarget()"
-    [heading]="topicDeleteHeading()"
-    [description]="topicDeleteDescription()"
+    [isOpen]="!!topicActions.topicDeleteTarget()"
+    [heading]="topicActions.topicDeleteHeading()"
+    [description]="topicActions.topicDeleteDescription()"
     confirmLabel="Delete topic"
     busyLabel="Deleting…"
-    [busy]="deletingTopic()"
+    [busy]="topicActions.deletingTopic()"
     tone="danger"
-    (confirm)="confirmDeleteTopic()"
-    (cancel)="cancelDeleteTopic()"
+    (confirm)="topicActions.confirmDeleteTopic()"
+    (cancel)="topicActions.cancelDeleteTopic()"
   ></app-confirm-modal>
 </main>
