@@ -51,6 +51,7 @@ import {
   type BrainWritingHandoffResult,
 } from './writing-handoff/brain-writing-handoff.component';
 import { TopicDataCache } from './topic-data-cache';
+import { BrainTopicPickerComponent } from './topic-picker/brain-topic-picker.component';
 
 import {
   ALL_SOURCES,
@@ -120,6 +121,7 @@ interface ReviewReturnState {
     TopicMapComponent,
     TopicInputComponent,
     BrainWritingHandoffComponent,
+    BrainTopicPickerComponent,
   ],
   templateUrl: './second-brain.component.html',
   styleUrls: ['./second-brain.component.css'],
