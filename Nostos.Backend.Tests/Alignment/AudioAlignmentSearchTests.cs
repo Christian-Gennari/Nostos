@@ -16,6 +16,90 @@ public sealed class AudioAlignmentSearchTests
         MaximumLocalRateRatio = 5,
     };
 
+    // Ten characters a second: one clip of twenty seconds is 200 characters.
+    private static AudioAlignmentSearch Anchored(
+        int target,
+        AudioAlignmentSearch.Point? before,
+        AudioAlignmentSearch.Point? after) =>
+        new(target, totalCharacters: 10_000, durationSeconds: 1000, Options, before, after);
+
+    [Fact]
+    public void A_target_between_two_anchors_a_clip_apart_is_placed_between_them()
+    {
+        var search = Anchored(4050, new(400, 4000), new(412, 4100));
+
+        search.AnchoredPositionSeconds.Should().BeApproximately(
+            406 - Options.LeadInSeconds, 0.001);
+    }
+
+    [Fact]
+    public void A_target_at_a_stored_anchor_is_that_anchors_second()
+    {
+        var search = Anchored(4000, new(400, 4000), new(400, 4000));
+
+        search.AnchoredPositionSeconds.Should().BeApproximately(
+            400 - Options.LeadInSeconds, 0.001);
+    }
+
+    [Fact]
+    public void A_target_just_after_one_anchor_is_counted_on_from_it_to_land_early()
+    {
+        var search = Anchored(4100, new(400, 4000), after: null);
+
+        // At the book's pace it is ten seconds on. Counted as fast narration
+        // it is eight, so playback starts before the sentence, not after it.
+        search.AnchoredPositionSeconds.Should().BeApproximately(
+            408 - Options.LeadInSeconds, 0.001);
+    }
+
+    [Fact]
+    public void A_target_just_before_one_anchor_is_counted_back_from_it_to_land_early()
+    {
+        var search = Anchored(3900, before: null, new(400, 4000));
+
+        search.AnchoredPositionSeconds.Should().BeApproximately(
+            387.5 - Options.LeadInSeconds, 0.001);
+    }
+
+    [Theory]
+    [InlineData(3000, 4700)] // both more than a clip away
+    [InlineData(3799, 4201)] // one character past a clip on either side
+    public void Anchors_further_than_a_clip_from_the_target_do_not_answer(int beforeText, int afterText)
+    {
+        var search = Anchored(
+            4000,
+            new(beforeText / 10d, beforeText),
+            new(afterText / 10d, afterText));
+
+        search.AnchoredPositionSeconds.Should().BeNull();
+        search.HasNextProbe.Should().BeTrue();
+    }
+
+    [Fact]
+    public void No_anchors_do_not_answer()
+    {
+        Anchored(4000, null, null).AnchoredPositionSeconds.Should().BeNull();
+    }
+
+    [Fact]
+    public void Anchors_that_contradict_each_other_do_not_answer()
+    {
+        // The earlier text is stored at the later second.
+        var search = Anchored(4050, new(500, 4000), new(412, 4100));
+
+        search.AnchoredPositionSeconds.Should().BeNull();
+    }
+
+    [Fact]
+    public void A_count_that_would_pass_the_anchor_on_the_other_side_does_not_answer()
+    {
+        // 150 characters on from 400 s is 412 s at fast narration, but the next
+        // stored anchor says the text 5000 characters later is spoken at 405 s.
+        var search = Anchored(4150, new(400, 4000), new(405, 9000));
+
+        search.AnchoredPositionSeconds.Should().BeNull();
+    }
+
     [Fact]
     public void Constant_narration_rate_locates_target_in_one_probe()
     {

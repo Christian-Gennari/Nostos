@@ -95,6 +95,60 @@ public sealed class AlignmentNarrationSimulationTests
     }
 
     [Fact]
+    public async Task A_second_switch_at_the_same_sentence_is_answered_from_its_anchors()
+    {
+        var narration = new Narration(2.6) { KeepAnchors = true };
+
+        var first = await narration.LocateAsync(150);
+        var again = await narration.LocateAsync(150);
+
+        first.Probes.Should().BeGreaterThan(0);
+        first.AnchorStored.Should().BeTrue();
+
+        again.Located.Should().BeTrue();
+        again.Probes.Should().Be(0);
+        narration.Transcriptions.Should().Be(first.Probes);
+
+        var early = narration.SentenceStartSeconds(150) - again.PositionSeconds!.Value;
+        early.Should().BeInRange(LeadIn - 2, LeadIn + 2);
+    }
+
+    [Theory]
+    [InlineData(149)]
+    [InlineData(151)]
+    public async Task The_sentence_next_to_a_located_one_is_answered_from_its_anchors(int neighbour)
+    {
+        var narration = new Narration(2.6) { KeepAnchors = true };
+
+        await narration.LocateAsync(150);
+        var heard = narration.Transcriptions;
+        var result = await narration.LocateAsync(neighbour);
+
+        result.Located.Should().BeTrue();
+        result.Probes.Should().Be(0);
+        narration.Transcriptions.Should().Be(heard);
+
+        // Never after the sentence; before it by the lead-in and the early bias.
+        var early = narration.SentenceStartSeconds(neighbour) - result.PositionSeconds!.Value;
+        early.Should().BeInRange(LeadIn - 2, LeadIn + 5);
+    }
+
+    [Fact]
+    public async Task A_sentence_pages_away_from_a_located_one_is_still_heard()
+    {
+        var narration = new Narration(2.6) { KeepAnchors = true };
+
+        await narration.LocateAsync(150);
+        var result = await narration.LocateAsync(230);
+
+        result.Located.Should().BeTrue();
+        result.Probes.Should().BeGreaterThan(0);
+
+        var early = narration.SentenceStartSeconds(230) - result.PositionSeconds!.Value;
+        early.Should().BeInRange(LeadIn - 2, LeadIn + 2);
+    }
+
+    [Fact]
     public async Task Speech_that_is_not_in_the_book_is_still_declined()
     {
         var narration = new Narration(2.6) { GarbleLastWords = 60 };
@@ -129,6 +183,13 @@ public sealed class AlignmentNarrationSimulationTests
         private readonly List<string> sentenceText = [];
         private readonly BookTextExtractedDocument document;
         private readonly Script script;
+
+        private readonly MemoryAnchors memory = new();
+
+        /// <summary>Stored anchors survive from one search to the next, as in the product.</summary>
+        public bool KeepAnchors { get; init; }
+
+        public int Transcriptions { get; private set; }
 
         public int GarbleLastWords { get; init; }
         public int GarbleAllButLastWords { get; init; }
@@ -256,8 +317,8 @@ public sealed class AlignmentNarrationSimulationTests
                 new Documents(document),
                 options,
                 NoOpAiUsageAccountingService.Instance,
-                new NoAnchors(),
-                new NoRevision(),
+                KeepAnchors ? memory : new NoAnchors(),
+                KeepAnchors ? new FixedRevision() : new NoRevision(),
                 NullLogger<AlignmentService>.Instance);
 
             return (service, audio, text);
@@ -364,6 +425,7 @@ public sealed class AlignmentNarrationSimulationTests
                 audio.ReadExactly(bytes);
                 var from = BitConverter.ToDouble(bytes, 0);
                 var to = BitConverter.ToDouble(bytes, 8);
+                narration.Transcriptions++;
 
                 return Task.FromResult(new SttResult(
                     narration.Heard(from, to), null, to - from));
@@ -384,6 +446,59 @@ public sealed class AlignmentNarrationSimulationTests
         {
             public Task<string?> GetAsync(AudioBookModel book, CancellationToken ct = default) =>
                 Task.FromResult<string?>(null);
+        }
+
+        private sealed class FixedRevision : IAlignmentAudioRevisionProvider
+        {
+            public Task<string?> GetAsync(AudioBookModel book, CancellationToken ct = default) =>
+                Task.FromResult<string?>("audio-revision");
+        }
+
+        private sealed class MemoryAnchors : IAlignmentAnchorStore
+        {
+            private readonly List<AlignmentAnchorModel> items = [];
+
+            public Task<bool> SaveAsync(AlignmentAnchorInput anchor, CancellationToken ct = default)
+            {
+                items.Add(new AlignmentAnchorModel
+                {
+                    AudioPositionMs = anchor.AudioPositionMs,
+                    TextGlobalOffset = anchor.TextGlobalOffset,
+                });
+
+                return Task.FromResult(true);
+            }
+
+            public Task<IReadOnlyList<AlignmentAnchorModel>> GetNearbyAsync(
+                Guid audioBookId, Guid textBookId, string audioRevision, string textRevision,
+                long audioPositionMs, long radiusMs, int limit = 100, CancellationToken ct = default) =>
+                Task.FromResult<IReadOnlyList<AlignmentAnchorModel>>([]);
+
+            public Task<AlignmentAnchorModel?> AtOrBeforeTextAsync(
+                Guid audioBookId, Guid textBookId, string audioRevision, string textRevision,
+                int textGlobalOffset, CancellationToken ct = default) =>
+                Task.FromResult(items
+                    .Where(item => item.TextGlobalOffset <= textGlobalOffset)
+                    .OrderByDescending(item => item.TextGlobalOffset)
+                    .FirstOrDefault());
+
+            public Task<AlignmentAnchorModel?> AtOrAfterTextAsync(
+                Guid audioBookId, Guid textBookId, string audioRevision, string textRevision,
+                int textGlobalOffset, CancellationToken ct = default) =>
+                Task.FromResult(items
+                    .Where(item => item.TextGlobalOffset >= textGlobalOffset)
+                    .OrderBy(item => item.TextGlobalOffset)
+                    .FirstOrDefault());
+
+            public Task<AlignmentAnchorModel?> AtOrBeforeAudioAsync(
+                Guid audioBookId, Guid textBookId, string audioRevision, string textRevision,
+                long audioPositionMs, CancellationToken ct = default) =>
+                Task.FromResult<AlignmentAnchorModel?>(null);
+
+            public Task<AlignmentAnchorModel?> AtOrAfterAudioAsync(
+                Guid audioBookId, Guid textBookId, string audioRevision, string textRevision,
+                long audioPositionMs, CancellationToken ct = default) =>
+                Task.FromResult<AlignmentAnchorModel?>(null);
         }
 
         private sealed class NoAnchors : IAlignmentAnchorStore

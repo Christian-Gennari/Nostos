@@ -7,6 +7,7 @@ import { SwitchEditionDialog } from './switch-edition-dialog.component';
 import { AlignmentService } from '../../core/services/alignment.service';
 import { LocateAudioResult, LocateTextResult } from '../../core/dtos/alignment.dtos';
 import { Book, EditionSummaryDto } from '../../core/dtos/book.dtos';
+import { hasSwitched } from './edition-place-keeper';
 
 describe('SwitchEditionDialog', () => {
   let fixture: ComponentFixture<SwitchEditionDialog>;
@@ -173,6 +174,29 @@ describe('SwitchEditionDialog', () => {
     expect(router.navigate).toHaveBeenCalledWith(['/read', 'audio-2'], {
       queryParams: { sourceTime: 2380.4 },
     });
+  });
+
+  it('remembers a pair once the reader has landed on the same sentence in it', async () => {
+    localStorage.clear();
+    open(ebook([audioA]), { excerpt: 'It was not an agreeable idea.' });
+    expect(hasSwitched('epub-0')).toBe(false);
+
+    rows()[0].click();
+    audioResponse.next({ located: true, positionSeconds: 2380.4, probes: 2, score: 1, anchorStored: true });
+    await settle();
+
+    expect(hasSwitched('epub-0')).toBe(true);
+    expect(hasSwitched('audio-1')).toBe(true);
+  });
+
+  it('does not remember a pair opened where it was left', () => {
+    localStorage.clear();
+    open(audiobook([epub]), { audio: null });
+
+    rows()[0].click();
+
+    expect(hasSwitched('audio-0')).toBe(false);
+    expect(hasSwitched('epub-1')).toBe(false);
   });
 
   it('offers an explicitly approximate jump when only an estimate is available', async () => {

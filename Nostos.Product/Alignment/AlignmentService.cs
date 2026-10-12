@@ -437,6 +437,21 @@ public sealed class AlignmentService(
                 "duration_unknown");
         }
 
+        // An anchor within a clip of the target already says where it is: a
+        // reader switching again at the place they switched before, or at a
+        // page located a moment ago, is answered without a transcription.
+        if (search.AnchoredPositionSeconds is { } anchored)
+        {
+            return new AlignmentLocateAudioResult(
+                Located: true,
+                Reason: null,
+                PositionSeconds: anchored,
+                ApproximatePositionSeconds: null,
+                Probes: 0,
+                Score: 0,
+                AnchorStored: false);
+        }
+
         var probes = 0;
         var anyAnchorStored = false;
 
