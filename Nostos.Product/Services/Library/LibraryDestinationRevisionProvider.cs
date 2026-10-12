@@ -36,19 +36,7 @@ public sealed class LibraryStateDestinationRevisionProvider(NostosDbContext db)
 {
     public async Task<string> GetCurrentAsync(CancellationToken ct)
     {
-        var counts = new MigrationExistingCounts(
-            Works: await db.Works.CountAsync(ct),
-            Books: await db.Books.CountAsync(ct),
-            Notes: await db.Notes.CountAsync(ct),
-            Topics: await db.Topics.CountAsync(ct),
-            NoteTopics: await db.NoteTopics.CountAsync(ct),
-            Writings: await db.Writings.CountAsync(ct),
-            WritingNotes: await db.WritingNotes.CountAsync(ct),
-            Collections: await db.Collections.CountAsync(ct),
-            BookCollections: await db.BookCollections.CountAsync(ct),
-            Acquisitions: await db.BookAcquisitions.CountAsync(ct),
-            NoteImportBookLinks: await db.NoteImportBookLinks.CountAsync(ct),
-            AssistantSettings: await db.AssistantSettings.CountAsync(ct));
+        var counts = await LibraryRowCounts.ReadAllAsync(db, ct);
 
         var stateVersion = await db.LibraryStates.AsNoTracking()
             .Where(s => s.Id == LibraryState.WellKnownId)
