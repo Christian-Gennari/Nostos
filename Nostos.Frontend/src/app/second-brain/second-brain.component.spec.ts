@@ -702,7 +702,7 @@ describe('SecondBrain', () => {
       expect(component.browseNotes()).toEqual([]);
       expect(component.browseTotal()).toBe(0);
       expect(component.panelNote()?.content).toContain('[[Alpha]]');
-      expect(component.proposalState()).toBe('idle');
+      expect(component.proposals.state()).toBe('idle');
     });
   });
 
@@ -2491,7 +2491,7 @@ describe('SecondBrain', () => {
 
       const assistant = TestBed.inject(AssistantService);
       expect(assistant.isOpen()).toBe(false);
-      expect(component.proposalState()).toBe('loading');
+      expect(component.proposals.state()).toBe('loading');
 
       const request = http.expectOne('/api/assistant/turn/stream');
       expect(request.request.body.message).toContain('explicitly propose only grounded links');
@@ -2507,7 +2507,7 @@ describe('SecondBrain', () => {
       });
       fixture.detectChanges();
 
-      expect(component.proposalState()).toBe('ready');
+      expect(component.proposals.state()).toBe('ready');
       const proposal = fixture.nativeElement.querySelector('[data-testid="brain-proposal"]');
       expect(proposal.textContent).toContain('Suggested topic');
       expect(proposal.textContent).toContain('Mountains');
@@ -2534,7 +2534,7 @@ describe('SecondBrain', () => {
         ? { ...row, topicNames: ['Alpha'] } : row));
       fixture.detectChanges();
 
-      component.askNostos();
+      component.proposals.ask();
       http.expectOne('/api/assistant/turn/stream').flush({
         reply: 'Some related topics.', acknowledgement: null, anchorPrompt: null, pendingPlan: null,
         suggestions: [
@@ -2544,7 +2544,7 @@ describe('SecondBrain', () => {
       });
       fixture.detectChanges();
 
-      expect(component.proposalState()).toBe('ready');
+      expect(component.proposals.state()).toBe('ready');
       const cards = fixture.nativeElement.querySelectorAll('[data-testid="brain-proposal"]');
       expect(cards.length).toBe(1);
       expect(cards[0].textContent).toContain('Beta');
@@ -2558,7 +2558,7 @@ describe('SecondBrain', () => {
         ? { ...row, topicNames: ['Alpha'] } : row));
       fixture.detectChanges();
 
-      component.askNostos();
+      component.proposals.ask();
       http.expectOne('/api/assistant/turn/stream').flush({
         reply: 'A topic.', acknowledgement: null, anchorPrompt: null, pendingPlan: null,
         suggestions: [
@@ -2567,7 +2567,7 @@ describe('SecondBrain', () => {
       });
       fixture.detectChanges();
 
-      expect(component.proposalState()).toBe('empty');
+      expect(component.proposals.state()).toBe('empty');
       expect(fixture.nativeElement.querySelector('[data-testid="brain-proposal"]')).toBeNull();
       expect(fixture.nativeElement.querySelector('[data-testid="brain-proposals"]')?.textContent)
         .toContain('No additional connections found');
@@ -2575,7 +2575,7 @@ describe('SecondBrain', () => {
 
     it('drops late proposals when review focus changes, without linking or showing old chips', () => {
       enterReview();
-      component.askNostos();
+      component.proposals.ask();
       const request = http.expectOne('/api/assistant/turn/stream');
       const turnId = request.request.body.turnId as string;
       component.focusReviewNote('hit-2');
@@ -2585,7 +2585,7 @@ describe('SecondBrain', () => {
         suggestions: [{ kind: 'topic', label: 'Alpha', reason: 'Related note.', value: 'c-alpha', noteId: 'hit-1' }],
       });
       fixture.detectChanges();
-      expect(component.proposalState()).toBe('idle');
+      expect(component.proposals.state()).toBe('idle');
       expect(fixture.nativeElement.querySelector('[data-testid="brain-proposal"]')).toBeNull();
       expect(TestBed.inject(AssistantService).entries()
         .filter((entry) => entry.turnId === turnId).some((entry) => entry.suggestions?.length)).toBe(false);
@@ -2593,38 +2593,38 @@ describe('SecondBrain', () => {
 
     it('shows an honest empty suggestion result and leaves manual linking available', () => {
       enterReview();
-      component.askNostos();
+      component.proposals.ask();
       http.expectOne('/api/assistant/turn/stream').flush({
         reply: 'No fit.', acknowledgement: null, anchorPrompt: null, pendingPlan: null, suggestions: [],
       });
       fixture.detectChanges();
-      expect(component.proposalState()).toBe('empty');
+      expect(component.proposals.state()).toBe('empty');
       expect(fixture.nativeElement.querySelector('[data-testid="brain-proposals"]')?.textContent).toContain('No additional connections found');
       expect(fixture.nativeElement.querySelector('.brain-note-action-row')?.textContent).toContain('Link to topic');
     });
 
     it('keeps manual linking usable when AI is unavailable, and ignores cancelled late results', () => {
       enterReview();
-      component.askNostos();
+      component.proposals.ask();
       http.expectOne('/api/assistant/turn/stream').flush({
         reply: '', acknowledgement: null, anchorPrompt: null, pendingPlan: null, suggestions: [],
         error: { code: 'assistant_unavailable', message: 'Ask Nostos is unavailable.' },
       });
       fixture.detectChanges();
-      expect(component.proposalState()).toBe('unavailable');
+      expect(component.proposals.state()).toBe('unavailable');
       expect(fixture.nativeElement.querySelector('.brain-note-action-row')?.textContent).toContain('Link to topic');
       expect(fixture.nativeElement.querySelector('[data-testid="brain-proposals"]')?.textContent)
         .toContain('Manual linking');
 
-      component.askNostos();
+      component.proposals.ask();
       const second = http.expectOne('/api/assistant/turn/stream');
-      component.cancelTopicProposals();
+      component.proposals.cancel();
       second.flush({
         reply: 'A match.', acknowledgement: null, anchorPrompt: null, pendingPlan: null,
         suggestions: [{ kind: 'topic', label: 'Alpha', reason: 'Same theme.', value: 'c-alpha', noteId: 'hit-1' }],
       });
       fixture.detectChanges();
-      expect(component.proposalState()).toBe('idle');
+      expect(component.proposals.state()).toBe('idle');
       const turnId = second.request.body.turnId as string;
       expect(TestBed.inject(AssistantService).entries()
         .filter((entry) => entry.turnId === turnId).some((entry) => entry.suggestions?.length)).toBe(false);
@@ -2632,17 +2632,17 @@ describe('SecondBrain', () => {
 
     it('invalidates visible proposals when the note text changes', () => {
       enterReview();
-      component.askNostos();
+      component.proposals.ask();
       http.expectOne('/api/assistant/turn/stream').flush({
         reply: 'A match.', acknowledgement: null, anchorPrompt: null, pendingPlan: null,
         suggestions: [{ kind: 'topic', label: 'Alpha', reason: 'Same theme.', value: 'c-alpha', noteId: 'hit-1' }],
       });
-      expect(component.proposalState()).toBe('ready');
+      expect(component.proposals.state()).toBe('ready');
 
       component.reviewQueue.update((rows) => rows.map((row) => row.id === 'hit-1'
         ? { ...row, content: 'The note has been edited.' } : row));
       fixture.detectChanges();
-      expect(component.proposalState()).toBe('idle');
+      expect(component.proposals.state()).toBe('idle');
       http.expectNone('/api/assistant/turn/stream');
     });
 

@@ -536,17 +536,17 @@
               <ng-container *ngTemplateOutlet="noteActionGroup; context: { $implicit: note, mode: 'browse' }"></ng-container>
             </section>
             <app-brain-topic-proposals
-              [state]="proposalState()"
-              [candidates]="proposalCandidates()"
-              [message]="proposalMessage()"
-              [detail]="proposalDetail()"
-              [inspectingId]="proposalInspectingId()"
-              [canRetryLink]="canRetryProposalLink()"
-              (dismissed)="cancelTopicProposals()"
-              (linkRetried)="retryProposalLink()"
-              (suggestionsRetried)="askNostos()"
-              (inspected)="inspectTopicProposal($event)"
-              (accepted)="acceptTopicProposal($event)"
+              [state]="proposals.state()"
+              [candidates]="proposals.candidates()"
+              [message]="proposals.message()"
+              [detail]="proposals.detail()"
+              [inspectingId]="proposals.inspectingId()"
+              [canRetryLink]="proposals.canRetryLink()"
+              (dismissed)="proposals.cancel()"
+              (linkRetried)="proposals.retryLink()"
+              (suggestionsRetried)="proposals.ask()"
+              (inspected)="proposals.inspect($event)"
+              (accepted)="proposals.accept($event)"
               (topicOpened)="openBrowseTopic($event)"
               (questionAsked)="openAskNostosForNote()"
             />
@@ -675,17 +675,17 @@
           </section>
 
           <app-brain-topic-proposals
-            [state]="proposalState()"
-            [candidates]="proposalCandidates()"
-            [message]="proposalMessage()"
-            [detail]="proposalDetail()"
-            [inspectingId]="proposalInspectingId()"
-            [canRetryLink]="canRetryProposalLink()"
-            (dismissed)="cancelTopicProposals()"
-            (linkRetried)="retryProposalLink()"
-            (suggestionsRetried)="askNostos()"
-            (inspected)="inspectTopicProposal($event)"
-            (accepted)="acceptTopicProposal($event)"
+            [state]="proposals.state()"
+            [candidates]="proposals.candidates()"
+            [message]="proposals.message()"
+            [detail]="proposals.detail()"
+            [inspectingId]="proposals.inspectingId()"
+            [canRetryLink]="proposals.canRetryLink()"
+            (dismissed)="proposals.cancel()"
+            (linkRetried)="proposals.retryLink()"
+            (suggestionsRetried)="proposals.ask()"
+            (inspected)="proposals.inspect($event)"
+            (accepted)="proposals.accept($event)"
             (topicOpened)="openBrowseTopic($event)"
             (questionAsked)="openAskNostosForNote()"
           />
@@ -1125,10 +1125,10 @@
         </button>
         @if (mode !== 'evidence') {
         <button appButton variant="ghost" size="sm" type="button"
-          [disabled]="proposalState() === 'loading' || proposalState() === 'linking'"
+          [disabled]="proposals.state() === 'loading' || proposals.state() === 'linking'"
           [attr.data-testid]="mode === 'review' ? 'review-suggest-topics' : 'browse-suggest-topics'"
           title="Optional — Nostos proposes topics, you decide"
-          (click)="askNostos()">
+          (click)="proposals.ask()">
           <nostos-icon name="sparkle" [size]="15"></nostos-icon>
           Suggest topics
         </button>
