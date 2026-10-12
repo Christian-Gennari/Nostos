@@ -127,6 +127,32 @@ Rules:
   Exercise it.
 - If something is genuinely unverified, label it as unverified in the PR body.
 
+### Show a UI change without deploying it
+
+Nobody should have to deploy an image to see what a PR looks like. For any
+change a person can see, the PR carries screenshots of it, taken from the
+production build:
+
+```bash
+# From Nostos.Frontend/, after `npm run build`
+npm run preview -- shots --out <dir> --paths /settings,/library            # SelfHosted
+npm run preview -- shots --out <dir> --paths /settings --cloud             # Cloud
+npm run preview -- serve --cloud --host <tailnet-ip>                       # a link to click
+```
+
+- Take **both deployments** when the change can differ between them, at desktop
+  and phone width, in light and dark. `shots` exits non-zero on a page error or
+  a page that scrolls sideways.
+- Commit the ones that show the change under
+  `Nostos.Frontend/e2e/visual-evidence/`, name them in the PR body, and show
+  them in your report. Look at them at 1:1 yourself first.
+- `serve` gives a link for a change that needs clicking through. It binds to
+  localhost unless `--host` says otherwise.
+- The preview is read-only: every non-GET is refused, and reads go to a running
+  Nostos server. `--cloud` is a **simulation** (the same bundle with a Cloud
+  host's answers faked), so say so. Sign-in, billing and managed storage are
+  only proven on the real Cloud app.
+
 ---
 
 ## 3. Open the PR
@@ -158,6 +184,18 @@ Keep it factual. `Closes #N` links the issue — include it when one exists.
 
 Open it and stop. The human reviews and merges. Do not merge, and do not
 enable auto-merge.
+
+### Cloud adopts `main` once a day, not once per PR
+
+Nostos Cloud pins a revision of this repository. One trip from a merged PR to
+the live Cloud app is about 45 minutes of pipeline and an image deploy, so it is
+made **once, in the evening**, for everything merged that day.
+
+- Do not open a Cloud pin bump, or ask for a deploy, because one PR merged.
+  Merged PRs wait on `main` for the evening release.
+- "Can I see it?" is answered with the preview and screenshots (§2), not with a
+  deploy.
+- A fix that cannot wait for the evening is the human's call. Ask.
 
 ---
 
@@ -218,7 +256,8 @@ read-only scheduled-audit contract, see `.agents/README.md`.
   `npm run check:theme` fails. Genuinely theme-invariant tokens belong in that
   script's `INVARIANT` list instead.
 - **Visual changes:** verify in a real browser and attach before/after
-  evidence. Downscaled screenshots hide defects — check at 1:1.
+  evidence. Downscaled screenshots hide defects — check at 1:1. `npm run
+  preview` (§2) produces them for both deployments.
 
 ---
 
