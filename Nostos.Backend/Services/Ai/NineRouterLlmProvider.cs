@@ -1,7 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
-using System.Text.Json;
 
 namespace Nostos.Backend.Services.Ai;
 
@@ -88,7 +87,7 @@ public sealed class NineRouterLlmProvider(
 
             if (!response.IsSuccessStatusCode)
             {
-                var detail = await ReadErrorDetailAsync(response, ct);
+                var detail = await ProviderErrorDetail.ReadAsync(response, ct);
                 throw LlmException.ProviderFailure(
                     $"HTTP {(int)response.StatusCode}{(detail is null ? string.Empty : $": {detail}")}");
             }
@@ -103,37 +102,6 @@ public sealed class NineRouterLlmProvider(
                 completion.ToolCalls.Count);
 
             return completion;
-        }
-    }
-
-    private static async Task<string?> ReadErrorDetailAsync(
-        HttpResponseMessage response,
-        CancellationToken ct)
-    {
-        try
-        {
-            var body = await response.Content.ReadAsStringAsync(ct);
-            if (string.IsNullOrWhiteSpace(body))
-                return null;
-
-            using var document = JsonDocument.Parse(body);
-            if (document.RootElement.TryGetProperty("error", out var error)
-                && error.ValueKind == JsonValueKind.Object
-                && error.TryGetProperty("message", out var message)
-                && message.ValueKind == JsonValueKind.String)
-            {
-                return message.GetString();
-            }
-
-            return body.Length <= 300 ? body : body[..300];
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception)
-        {
-            return null;
         }
     }
 }

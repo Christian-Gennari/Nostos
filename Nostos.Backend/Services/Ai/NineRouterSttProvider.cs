@@ -165,7 +165,7 @@ public sealed class NineRouterSttProvider(
 
             if (!response.IsSuccessStatusCode)
             {
-                var detail = await ReadErrorDetailAsync(response, ct);
+                var detail = await ProviderErrorDetail.ReadAsync(response, ct);
                 throw SttException.ProviderFailure(
                     $"HTTP {(int)response.StatusCode}{(detail is null ? string.Empty : $": {detail}")}");
             }
@@ -213,44 +213,6 @@ public sealed class NineRouterSttProvider(
             (transcript.Text ?? string.Empty).Trim(),
             transcript.Language,
             transcript.Duration);
-    }
-
-    /// <summary>
-    /// Best-effort extraction of the gateway's <c>{"error":{"message":…}}</c>
-    /// body. A body we cannot read is not itself an error; the status code is
-    /// the signal, and the detail is only there to make a log line useful.
-    /// </summary>
-    private static async Task<string?> ReadErrorDetailAsync(
-        HttpResponseMessage response,
-        CancellationToken ct)
-    {
-        try
-        {
-            var body = await response.Content.ReadAsStringAsync(ct);
-            if (string.IsNullOrWhiteSpace(body))
-            {
-                return null;
-            }
-
-            using var document = JsonDocument.Parse(body);
-            if (document.RootElement.TryGetProperty("error", out var error)
-                && error.ValueKind == JsonValueKind.Object
-                && error.TryGetProperty("message", out var message)
-                && message.ValueKind == JsonValueKind.String)
-            {
-                return message.GetString();
-            }
-
-            return body.Length <= 300 ? body : body[..300];
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception)
-        {
-            return null;
-        }
     }
 
     /// <summary>The subset of the verbose_json response this provider reads.</summary>
