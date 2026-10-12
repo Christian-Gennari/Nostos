@@ -50,6 +50,7 @@ import {
   BrainWritingHandoffComponent,
   type BrainWritingHandoffResult,
 } from './writing-handoff/brain-writing-handoff.component';
+import { BrainTopicActions } from './brain-topic-actions';
 import { TopicDataCache } from './topic-data-cache';
 import { BrainTopicPickerComponent } from './topic-picker/brain-topic-picker.component';
 import {
@@ -81,7 +82,6 @@ import {
   type NamePart,
   type NoteSort,
   type NoteSourceParams,
-  type RenameSurface,
   type SourceOption,
 } from './second-brain.helpers';
 
@@ -179,24 +179,6 @@ export class SecondBrain implements AfterViewChecked {
   // Phase 5 consumes these outputs to open the rename and confirmation flows.
   readonly renameRequested = output<string>();
   readonly deleteRequested = output<string>();
-
-  // Topic management state. Rename stays in the surface that initiated it;
-  // the confirmation state is separate from note deletion because the latter
-  // has a different consequence and tone.
-  renameId = signal<string | null>(null);
-  renameSurface = signal<RenameSurface>('index');
-  renameValue = signal('');
-  renameError = signal<string | null>(null);
-  renaming = signal(false);
-
-  mergePickerOpen = signal(false);
-  mergeSearchQuery = signal('');
-  mergeTargetId = signal<string | null>(null);
-  mergeConfirmation = signal<MergeRequest | null>(null);
-  mergingTopic = signal(false);
-
-  topicDeleteTarget = signal<TopicDto | null>(null);
-  deletingTopic = signal(false);
 
   // State
   topics = signal<TopicDto[]>([]);
@@ -318,6 +300,21 @@ export class SecondBrain implements AfterViewChecked {
   selectedId = signal<string | null>(null);
   selectedDetail = signal<TopicDetailDto | null>(null);
   loadingDetail = signal(false);
+
+  /**
+   * Rename, merge and delete: what is open, what was typed or picked, and the
+   * requests. The Brain keeps what a result does to the index, the selection
+   * and the detail cache.
+   */
+  readonly topicActions: BrainTopicActions = new BrainTopicActions(this.topicsService, this.toast, {
+    topics: this.topics,
+    selectedId: this.selectedId,
+    selectedDetail: this.selectedDetail,
+    indexSort: this.indexSort,
+    renamed: (requestedId, survivor) => this.applyRenameResult(requestedId, survivor),
+    merged: (request, survivor) => this.applyMergeResult(request, survivor),
+    deleted: (target) => this.applyDeleteResult(target),
+  });
 
   noteSearchQuery = signal('');
   sourceFilter = signal(ALL_SOURCES);
@@ -451,39 +448,6 @@ export class SecondBrain implements AfterViewChecked {
   });
 
   reviewPickerCandidates = computed(() => this.filterAndSortTopics(this.reviewPickerQuery(), null));
-
-  mergeCandidates = computed(() =>
-    this.filterAndSortTopics(this.mergeSearchQuery(), this.selectedId())
-  );
-
-  mergeTarget = computed(() => {
-    const targetId = this.mergeTargetId();
-    return targetId ? this.topics().find((topic) => topic.id === targetId) ?? null : null;
-  });
-
-  topicDeleteHeading = computed(() => {
-    const target = this.topicDeleteTarget();
-    return target ? `Delete “${target.name}”?` : 'Delete topic?';
-  });
-
-  topicDeleteDescription = computed(() => {
-    const target = this.topicDeleteTarget();
-    return target
-      ? `Deleting this topic removes its note links, but does not edit note text. The [[${target.name}]] reference stays in notes, and saving a note again will re-create the topic.`
-      : '';
-  });
-
-  mergeHeading = computed(() => {
-    const request = this.mergeConfirmation();
-    return request ? `Merge “${request.sourceName}” into “${request.targetName}”?` : 'Merge topics?';
-  });
-
-  mergeDescription = computed(() => {
-    const request = this.mergeConfirmation();
-    if (!request) return '';
-    const noteLabel = request.noteCount === 1 ? 'note' : 'notes';
-    return `This will move ${request.noteCount} ${noteLabel} into “${request.targetName}” and the source topic “${request.sourceName}” will disappear.`;
-  });
 
   showLetterSeparators = computed(
     () => this.indexSort() !== 'usage' && this.filteredTopics().length > 0
@@ -1850,58 +1814,6 @@ export class SecondBrain implements AfterViewChecked {
     return highlightNameParts(name, this.searchQuery());
   }
 
-  startRename(id: string, surface: RenameSurface = 'index'): void {
-    if (this.renaming()) return;
-    const topic = this.topics().find((candidate) => candidate.id === id);
-    const detail = this.selectedDetail();
-    const name = topic?.name ?? (detail?.id === id ? detail.name : null);
-    if (!name) return;
-
-    this.renameId.set(id);
-    this.renameSurface.set(surface);
-    this.renameValue.set(name);
-    this.renameError.set(null);
-  }
-
-  cancelRename(): void {
-    if (this.renaming()) return;
-    this.renameId.set(null);
-    this.renameValue.set('');
-    this.renameError.set(null);
-  }
-
-  commitRename(id: string): void {
-    if (this.renaming() || this.renameId() !== id) return;
-
-    const name = this.renameValue().trim();
-    if (!name) {
-      this.renameError.set('A topic name is required.');
-      return;
-    }
-
-    const original = this.topics().find((topic) => topic.id === id);
-    if (!original) {
-      this.cancelRename();
-      return;
-    }
-
-    this.renaming.set(true);
-    this.topicsService.rename(id, name).subscribe({
-      next: (survivor) => {
-        this.renaming.set(false);
-        this.renameId.set(null);
-        this.renameValue.set('');
-        this.renameError.set(null);
-        this.applyRenameResult(id, survivor);
-      },
-      error: () => {
-        this.renaming.set(false);
-        this.cancelRename();
-        this.toast.error('Could not rename topic — changes were not saved');
-      },
-    });
-  }
-
   private applyRenameResult(requestedId: string, survivor: TopicDto): void {
     const selectedBefore = this.selectedId();
     const detailBefore = this.selectedDetail();
@@ -1952,132 +1864,52 @@ export class SecondBrain implements AfterViewChecked {
     this.refreshIndexAndStats();
   }
 
-  openMergePicker(): void {
-    const sourceId = this.selectedId();
-    if (!sourceId || this.mergingTopic()) return;
-    this.mergeSearchQuery.set('');
-    this.mergeTargetId.set(null);
-    this.mergePickerOpen.set(true);
+  private applyMergeResult(request: MergeRequest, survivor: TopicDto): void {
+    const previousDetail = this.selectedDetail();
+
+    this.topics.update((items) =>
+      items
+        .filter((topic) => topic.id !== request.sourceId)
+        .map((topic) => (topic.id === survivor.id ? survivor : topic))
+    );
+    this.invalidateDetailEntries(request.sourceId, request.targetId);
+    this.invalidateRelatedData(false);
+
+    if (this.selectedId() === request.sourceId) {
+      if (previousDetail) {
+        this.selectedDetail.set({
+          ...previousDetail,
+          id: survivor.id,
+          name: survivor.name,
+        });
+      }
+      this.selectTopic(survivor.id);
+    }
+
+    this.toast.success(`Merged ${request.sourceName} into ${survivor.name}`);
+    this.refreshIndexAndStats();
   }
 
-  closeMergePicker(): void {
-    if (this.mergingTopic()) return;
-    this.mergePickerOpen.set(false);
-    this.mergeSearchQuery.set('');
-    this.mergeTargetId.set(null);
-  }
-
-  chooseMergeTarget(id: string): void {
-    if (id === this.selectedId()) return;
-    this.mergeTargetId.set(id);
-  }
-
-  openMergeConfirmation(): void {
-    const sourceId = this.selectedId();
-    const target = this.mergeTarget();
-    const source = sourceId ? this.topics().find((topic) => topic.id === sourceId) : null;
-    if (!source || !target || source.id === target.id) return;
-
-    this.mergeConfirmation.set({
-      sourceId: source.id,
-      targetId: target.id,
-      sourceName: this.selectedDetail()?.name ?? source.name,
-      targetName: target.name,
-      noteCount: this.selectedDetail()?.notes.length ?? source.usageCount,
-    });
-    this.mergePickerOpen.set(false);
-  }
-
-  cancelMergeConfirmation(): void {
-    if (!this.mergingTopic()) this.mergeConfirmation.set(null);
-  }
-
-  confirmMerge(): void {
-    const request = this.mergeConfirmation();
-    if (!request || this.mergingTopic()) return;
-
-    this.mergingTopic.set(true);
-    this.topicsService.merge(request.sourceId, request.targetId).subscribe({
-      next: (survivor) => {
-        this.mergingTopic.set(false);
-        this.mergeConfirmation.set(null);
-        const previousDetail = this.selectedDetail();
-
-        this.topics.update((items) =>
-          items
-            .filter((topic) => topic.id !== request.sourceId)
-            .map((topic) => (topic.id === survivor.id ? survivor : topic))
-        );
-        this.invalidateDetailEntries(request.sourceId, request.targetId);
-        this.invalidateRelatedData(false);
-
-        if (this.selectedId() === request.sourceId) {
-          if (previousDetail) {
-            this.selectedDetail.set({
-              ...previousDetail,
-              id: survivor.id,
-              name: survivor.name,
-            });
-          }
-          this.selectTopic(survivor.id);
-        }
-
-        this.toast.success(`Merged ${request.sourceName} into ${survivor.name}`);
-        this.refreshIndexAndStats();
-      },
-      error: () => {
-        this.mergingTopic.set(false);
-        this.mergeConfirmation.set(null);
-        this.toast.error('Could not merge topics — changes were not saved');
-      },
-    });
-  }
-
-  openDeleteTopic(id: string): void {
-    if (this.deletingTopic()) return;
-    const topic = this.topics().find((candidate) => candidate.id === id);
-    if (topic) this.topicDeleteTarget.set(topic);
-  }
-
-  cancelDeleteTopic(): void {
-    if (!this.deletingTopic()) this.topicDeleteTarget.set(null);
-  }
-
-  confirmDeleteTopic(): void {
-    const target = this.topicDeleteTarget();
-    if (!target || this.deletingTopic()) return;
-
-    this.deletingTopic.set(true);
-    this.topicsService.delete(target.id).subscribe({
-      next: () => {
-        this.deletingTopic.set(false);
-        this.topicDeleteTarget.set(null);
-        this.topics.update((items) => items.filter((topic) => topic.id !== target.id));
-        this.invalidateDetailEntries(target.id);
-        this.invalidateRelatedData(false);
-        if (this.selectedId() === target.id) {
-          this.clearSelection();
-        }
-        this.toast.success(`Deleted ${target.name}`);
-        this.refreshIndexAndStats();
-      },
-      error: () => {
-        this.deletingTopic.set(false);
-        this.topicDeleteTarget.set(null);
-        this.toast.error('Could not delete topic — it is still in your index');
-      },
-    });
+  private applyDeleteResult(target: TopicDto): void {
+    this.topics.update((items) => items.filter((topic) => topic.id !== target.id));
+    this.invalidateDetailEntries(target.id);
+    this.invalidateRelatedData(false);
+    if (this.selectedId() === target.id) {
+      this.clearSelection();
+    }
+    this.toast.success(`Deleted ${target.name}`);
+    this.refreshIndexAndStats();
   }
 
   requestRename(id: string, event: MouseEvent): void {
     event.stopPropagation();
-    this.startRename(id, 'index');
+    this.topicActions.startRename(id, 'index');
     this.renameRequested.emit(id);
   }
 
   requestDelete(id: string, event: MouseEvent): void {
     event.stopPropagation();
-    this.openDeleteTopic(id);
+    this.topicActions.openDeleteTopic(id);
     this.deleteRequested.emit(id);
   }
 

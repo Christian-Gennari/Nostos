@@ -1447,9 +1447,9 @@ describe('SecondBrain', () => {
 
     // The picker answers "which topic did I mean", so it must never offer a row
     // that only matched by content. It has its own query box, so search that.
-    component.mergeSearchQuery.set('sisyphus');
-    expect(component.mergeCandidates().map((c) => c.name)).toEqual([]);
-    component.mergeSearchQuery.set('');
+    component.topicActions.mergeSearchQuery.set('sisyphus');
+    expect(component.topicActions.mergeCandidates().map((c) => c.name)).toEqual([]);
+    component.topicActions.mergeSearchQuery.set('');
 
     (fixture.nativeElement.querySelector('.index-item') as HTMLButtonElement).click();
     http.expectOne('/api/topics/c-gamma').flush(detail('c-gamma', 'Absurdity'));
@@ -1552,13 +1552,13 @@ describe('SecondBrain', () => {
     flushDetail('c-alpha', detail('c-alpha', 'Alpha'));
     await fixture.whenStable();
 
-    component.startRename('c-alpha', 'header');
+    component.topicActions.startRename('c-alpha', 'header');
     fixture.detectChanges();
     const input = fixture.nativeElement.querySelector('.header-rename .inline-rename-input') as HTMLInputElement;
     expect(input.value).toBe('Alpha');
 
-    component.renameValue.set('Nietzsche');
-    component.commitRename('c-alpha');
+    component.topicActions.renameValue.set('Nietzsche');
+    component.topicActions.commitRename('c-alpha');
     const rename = http.expectOne('/api/topics/c-alpha');
     expect(rename.request.method).toBe('PUT');
     expect(rename.request.body).toEqual({ topic: 'Nietzsche' });
@@ -1572,43 +1572,43 @@ describe('SecondBrain', () => {
     ]);
     await fixture.whenStable();
 
-    expect(component.renameId()).toBeNull();
+    expect(component.topicActions.renameId()).toBeNull();
     expect(component.topics().find((topic) => topic.id === 'c-alpha')?.name).toBe('Nietzsche');
     expect(component.selectedDetail()?.name).toBe('Nietzsche');
     expect(TestBed.inject(ToastService).toasts().at(-1)?.message).toBe('Renamed to Nietzsche');
   });
 
   it('rejects an empty inline rename without a request and shows a quiet message', () => {
-    component.startRename('c-alpha');
+    component.topicActions.startRename('c-alpha');
     fixture.detectChanges();
     const input = fixture.nativeElement.querySelector('.inline-rename-input') as HTMLInputElement;
     expect(input.value).toBe('Alpha');
 
-    component.renameValue.set('   ');
-    component.commitRename('c-alpha');
+    component.topicActions.renameValue.set('   ');
+    component.topicActions.commitRename('c-alpha');
     fixture.detectChanges();
 
-    expect(component.renameError()).toBe('A topic name is required.');
+    expect(component.topicActions.renameError()).toBe('A topic name is required.');
     expect(http.match('/api/topics/c-alpha')).toHaveLength(0);
     expect(component.topics().find((topic) => topic.id === 'c-alpha')?.name).toBe('Alpha');
   });
 
   it('rolls back a failed rename and reports the failure', async () => {
-    component.startRename('c-alpha');
-    component.renameValue.set('Unavailable');
-    component.commitRename('c-alpha');
+    component.topicActions.startRename('c-alpha');
+    component.topicActions.renameValue.set('Unavailable');
+    component.topicActions.commitRename('c-alpha');
     http.expectOne('/api/topics/c-alpha').error(new ProgressEvent('network-error'));
     await fixture.whenStable();
 
-    expect(component.renameId()).toBeNull();
+    expect(component.topicActions.renameId()).toBeNull();
     expect(component.topics().find((topic) => topic.id === 'c-alpha')?.name).toBe('Alpha');
     expect(TestBed.inject(ToastService).toasts().at(-1)?.message).toContain('changes were not saved');
   });
 
   it('treats rename onto an existing name as a merge and refreshes the row count', () => {
-    component.startRename('c-alpha');
-    component.renameValue.set('Beta');
-    component.commitRename('c-alpha');
+    component.topicActions.startRename('c-alpha');
+    component.topicActions.renameValue.set('Beta');
+    component.topicActions.commitRename('c-alpha');
 
     const rename = http.expectOne('/api/topics/c-alpha');
     expect(rename.request.method).toBe('PUT');
@@ -1632,14 +1632,14 @@ describe('SecondBrain', () => {
     flushDetail('c-alpha', detail('c-alpha', 'Alpha'));
     await fixture.whenStable();
 
-    component.openMergePicker();
-    component.mergeSearchQuery.set('bet');
+    component.topicActions.openMergePicker();
+    component.topicActions.mergeSearchQuery.set('bet');
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelectorAll('.merge-target')).toHaveLength(1);
     expect(fixture.nativeElement.querySelector('.merge-target')?.textContent).toContain('Beta');
 
-    component.chooseMergeTarget('c-beta');
-    component.openMergeConfirmation();
+    component.topicActions.chooseMergeTarget('c-beta');
+    component.topicActions.openMergeConfirmation();
     fixture.detectChanges();
     const modal = fixture.nativeElement.querySelector('.confirm-modal-card') as HTMLElement;
     expect(modal.textContent).toContain('move 1 note');
@@ -1649,7 +1649,7 @@ describe('SecondBrain', () => {
     const merge = http.expectOne('/api/topics/c-alpha/merge');
     expect(merge.request.method).toBe('POST');
     expect(merge.request.body).toEqual({ targetId: 'c-beta' });
-    expect(component.mergingTopic()).toBe(true);
+    expect(component.topicActions.mergingTopic()).toBe(true);
 
     merge.flush({ id: 'c-beta', name: 'Beta', usageCount: 4 });
     http.expectOne('/api/topics/c-beta/related').flush([]);
@@ -1660,7 +1660,7 @@ describe('SecondBrain', () => {
     );
     await fixture.whenStable();
 
-    expect(component.mergingTopic()).toBe(false);
+    expect(component.topicActions.mergingTopic()).toBe(false);
     expect(component.selectedId()).toBe('c-beta');
     expect(component.topics().map((topic) => topic.id)).toEqual(['c-beta', 'c-gamma']);
     expect(component.selectedDetail()?.name).toBe('Beta');
@@ -1672,14 +1672,14 @@ describe('SecondBrain', () => {
     component.selectTopic('c-alpha');
     flushDetail('c-alpha', detail('c-alpha', 'Alpha'));
     await fixture.whenStable();
-    component.openMergePicker();
-    component.chooseMergeTarget('c-beta');
-    component.openMergeConfirmation();
-    component.confirmMerge();
+    component.topicActions.openMergePicker();
+    component.topicActions.chooseMergeTarget('c-beta');
+    component.topicActions.openMergeConfirmation();
+    component.topicActions.confirmMerge();
 
     http.expectOne('/api/topics/c-alpha/merge').error(new ProgressEvent('network-error'));
     await fixture.whenStable();
-    expect(component.mergingTopic()).toBe(false);
+    expect(component.topicActions.mergingTopic()).toBe(false);
     expect(component.topics().map((topic) => topic.id)).toEqual(['c-alpha', 'c-beta', 'c-gamma']);
     expect(component.selectedId()).toBe('c-alpha');
     expect(TestBed.inject(ToastService).toasts().at(-1)?.message).toContain('changes were not saved');
@@ -1690,7 +1690,7 @@ describe('SecondBrain', () => {
     flushDetail('c-alpha', detail('c-alpha', 'Alpha'));
     await fixture.whenStable();
 
-    component.openDeleteTopic('c-alpha');
+    component.topicActions.openDeleteTopic('c-alpha');
     fixture.detectChanges();
     const modal = fixture.nativeElement.querySelector('.confirm-modal-card') as HTMLElement;
     expect(modal.textContent).toContain('does not edit note text');
@@ -1700,7 +1700,7 @@ describe('SecondBrain', () => {
     (modal.querySelector('.btn-confirm') as HTMLButtonElement).click();
     const deletion = http.expectOne('/api/topics/c-alpha');
     expect(deletion.request.method).toBe('DELETE');
-    expect(component.deletingTopic()).toBe(true);
+    expect(component.topicActions.deletingTopic()).toBe(true);
     deletion.flush(null);
     flushMutationRefresh(
       [topics[1], topics[2]],
@@ -1708,7 +1708,7 @@ describe('SecondBrain', () => {
     );
     await fixture.whenStable();
 
-    expect(component.deletingTopic()).toBe(false);
+    expect(component.topicActions.deletingTopic()).toBe(false);
     expect(component.selectedId()).toBeNull();
     expect(component.selectedDetail()).toBeNull();
     expect(component.topics().map((topic) => topic.id)).toEqual(['c-beta', 'c-gamma']);
@@ -1717,13 +1717,13 @@ describe('SecondBrain', () => {
   });
 
   it('rolls back a failed topic deletion and leaves its row intact', async () => {
-    component.openDeleteTopic('c-alpha');
-    component.confirmDeleteTopic();
+    component.topicActions.openDeleteTopic('c-alpha');
+    component.topicActions.confirmDeleteTopic();
     http.expectOne('/api/topics/c-alpha').error(new ProgressEvent('network-error'));
     await fixture.whenStable();
 
-    expect(component.deletingTopic()).toBe(false);
-    expect(component.topicDeleteTarget()).toBeNull();
+    expect(component.topicActions.deletingTopic()).toBe(false);
+    expect(component.topicActions.topicDeleteTarget()).toBeNull();
     expect(component.topics().some((topic) => topic.id === 'c-alpha')).toBe(true);
     expect(TestBed.inject(ToastService).toasts().at(-1)?.message).toContain('still in your index');
   });
