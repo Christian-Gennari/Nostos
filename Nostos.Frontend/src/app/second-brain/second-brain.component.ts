@@ -50,6 +50,7 @@ import {
   BrainWritingHandoffComponent,
   type BrainWritingHandoffResult,
 } from './writing-handoff/brain-writing-handoff.component';
+import { BrainNoteReview } from './brain-note-review';
 import { BrainTopicActions } from './brain-topic-actions';
 import { BrainTopicProposals } from './brain-topic-proposals';
 import { TopicDataCache } from './topic-data-cache';
@@ -65,7 +66,6 @@ import {
   INDEX_SORT_STORAGE_KEY,
   NOTE_SEARCH_DEBOUNCE_MS,
   REVIEW_PAGE_SIZE,
-  declaresTopic,
   declaredTopicNames,
   highlightNameParts,
   newTopicNameFor,
@@ -166,11 +166,10 @@ export class SecondBrain implements AfterViewChecked {
   readonly proposals: BrainTopicProposals = new BrainTopicProposals(this.assistant, this.topicsService, {
     focusedNote: () => this.focusedNote(),
     focusedNoteKey: () => this.focusedNoteKey(),
-    isEditingNote: () => this.browseEditing() || this.reviewEditing(),
+    isEditingNote: () => this.browseEditing() || this.review.editing(),
     linked: (accepted) => this.applyProposalLink(accepted),
     restoreFocus: () => this.focusSuggestTopicsButton(),
   });
-
 
   // Phase 5 consumes these outputs to open the rename and confirmation flows.
   readonly renameRequested = output<string>();
@@ -250,38 +249,11 @@ export class SecondBrain implements AfterViewChecked {
   private browseTimer: ReturnType<typeof setTimeout> | null = null;
   isBrowsingNotes = computed(() => this.viewMode() === 'notes');
 
-  // --- Unlinked-note review (issue #256) -------------------------------------
-  //
-  // Deliberately empty until the user asks for it. Nothing here is loaded on a
-  // normal Brain visit: unlinked notes are a review task, not the rail's second
-  // content type, so opening the Brain must not fetch them at all.
-  /** Notes fetched so far and not yet resolved, in the server's order. */
-  reviewQueue = signal<NoteSearchHit[]>([]);
-  /** How many are still waiting, including rows not fetched yet. */
-  reviewTotal = signal(0);
-  reviewLoading = signal(false);
-  reviewLoaded = signal(false);
-  reviewError = signal(false);
-  /** The note under review, chosen explicitly. `null` focuses the first row. */
-  reviewId = signal<string | null>(null);
   noteMoreOpenKey = signal<string | null>(null);
   private noteMoreTrigger: HTMLButtonElement | null = null;
-  reviewSaving = signal(false);
-  reviewEditing = signal(false);
-  reviewEditContent = signal('');
-  reviewPickerOpen = signal(false);
-  reviewPickerQuery = signal('');
-  reviewPickerTopicId = signal<string | null>(null);
-  reviewNewTopicName = computed(() => newTopicNameFor(this.reviewPickerQuery(), this.topics()));
-  private reviewSeq = 0;
-  private reviewMutated = false;
   private reviewReturnState: ReviewReturnState | null = null;
   private reviewReturnNote: NoteSearchHit | null = null;
   private reviewStorageKey: string | null = null;
-  private restoringReviewFocusId = signal<string | null>(null);
-  private reviewBrowseQuery = '';
-  private reviewBookId: string | null = null;
-  private reviewOldestFirst = false;
   private noteSearchTimer: ReturnType<typeof setTimeout> | null = null;
   private noteSearchSeq = 0;
   indexSort = signal<IndexSort>(this.readStoredSort());
@@ -310,6 +282,18 @@ export class SecondBrain implements AfterViewChecked {
     renamed: (requestedId, survivor) => this.applyRenameResult(requestedId, survivor),
     merged: (request, survivor) => this.applyMergeResult(request, survivor),
     deleted: (target) => this.applyDeleteResult(target),
+  });
+
+  /**
+   * The unlinked-note review queue. Entering and leaving review, and what the
+   * Brain shows afterwards, stay here (openReview, closeReview).
+   */
+  readonly review: BrainNoteReview = new BrainNoteReview(this.notesService, this.toast, {
+    topics: this.topics,
+    indexSort: this.indexSort,
+    isReviewing: () => this.isReviewing(),
+    noteSaved: () => this.refreshIndexAndStats(),
+    focusChanged: () => this.persistReviewReturnState(),
   });
 
   noteSearchQuery = signal('');
@@ -402,48 +386,6 @@ export class SecondBrain implements AfterViewChecked {
   /** True while the rail is the review queue rather than the topic index. */
   isReviewing = computed(() => this.viewMode() === 'unlinked');
   reviewReturnMode: 'list' | 'notes' = 'list';
-
-  /** The note under review: the chosen one, or the head of the queue. */
-  reviewNote = computed<NoteSearchHit | null>(() => {
-    const queue = this.reviewQueue();
-    if (!queue.length) return null;
-
-    const restoringId = this.restoringReviewFocusId();
-    if (restoringId) {
-      return queue.find((row) => row.id === restoringId) ?? null;
-    }
-
-    const id = this.reviewId();
-    return (id ? queue.find((row) => row.id === id) : undefined) ?? queue[0];
-  });
-
-  reviewPosition = computed(() => {
-    const note = this.reviewNote();
-    if (!note) return null;
-    const index = this.reviewQueue().findIndex((row) => row.id === note.id);
-    return index < 0 ? null : index + 1;
-  });
-
-  /**
-   * Whether the queue still holds rows this browser has not fetched. The local
-   * queue is exactly the rows fetched so far that are still unresolved, so the
-   * gap to the total IS the unfetched remainder.
-   */
-  reviewHasMore = computed(() => this.reviewQueue().length < this.reviewTotal());
-  reviewCanGoBack = computed(() => this.reviewQueue().findIndex(
-    (row) => row.id === this.reviewNote()?.id) > 0);
-  reviewCanAdvance = computed(() => {
-    const index = this.reviewQueue().findIndex((row) => row.id === this.reviewNote()?.id);
-    return index >= 0 && (index < this.reviewQueue().length - 1 || this.reviewHasMore());
-  });
-
-  /** The topic the user picked to link the reviewed note to. */
-  reviewPickerTopic = computed(() => {
-    const id = this.reviewPickerTopicId();
-    return id ? this.topics().find((topic) => topic.id === id) ?? null : null;
-  });
-
-  reviewPickerCandidates = computed(() => this.filterAndSortTopics(this.reviewPickerQuery(), null));
 
   showLetterSeparators = computed(
     () => this.indexSort() !== 'usage' && this.filteredTopics().length > 0
@@ -549,11 +491,11 @@ export class SecondBrain implements AfterViewChecked {
     const assistantActionSubscription = this.assistant.actionExecuted.subscribe((event) => {
       if (event.capability !== 'notes_link_existing_topic') return;
       const noteId = event.context.brainReviewNoteId;
-      if (!noteId || !this.reviewQueue().some((note) => note.id === noteId)) return;
+      if (!noteId || !this.review.queue().some((note) => note.id === noteId)) return;
 
       this.refreshIndexAndStats();
-      this.reviewMutated = true;
-      this.removeFromReview(noteId);
+      this.review.mutated = true;
+      this.review.remove(noteId);
       this.toast.success('Note linked to a topic');
     });
     const assistantTurnSubscription = this.assistant.turnFinished.subscribe((event) =>
@@ -665,7 +607,7 @@ export class SecondBrain implements AfterViewChecked {
         this.reviewStorageKey,
         JSON.stringify({
           ...this.reviewReturnState,
-          reviewId: this.reviewId(),
+          reviewId: this.review.focusId(),
         }),
       );
     } catch {
@@ -675,7 +617,7 @@ export class SecondBrain implements AfterViewChecked {
 
   private clearReviewReturnState(): void {
     this.reviewReturnState = null;
-    this.restoringReviewFocusId.set(null);
+    this.review.restoringFocusId.set(null);
     if (!this.reviewStorageKey) return;
 
     try {
@@ -737,15 +679,12 @@ export class SecondBrain implements AfterViewChecked {
       }
 
       if (this.isReviewing()) {
-        ++this.reviewSeq;
-        this.reviewLoading.set(false);
-        this.reviewQueue.set([]);
-        this.reviewTotal.set(0);
+        this.review.abandon();
         this.viewMode.set('list');
       }
 
       this.reviewReturnState = null;
-      this.restoringReviewFocusId.set(null);
+      this.review.restoringFocusId.set(null);
     }
 
     if (!nextKey) return;
@@ -771,17 +710,16 @@ export class SecondBrain implements AfterViewChecked {
 
     this.reviewReturnState = saved;
     this.reviewReturnMode = saved.returnMode;
-    this.reviewBrowseQuery =
-      saved.returnMode === 'notes' ? saved.browseQuery : '';
-    this.reviewBookId =
-      saved.returnMode === 'notes' ? saved.browseBookId : null;
-    this.reviewOldestFirst =
-      saved.returnMode === 'notes' && saved.browseOldestFirst;
-
-    this.reviewId.set(saved.reviewId);
-    this.restoringReviewFocusId.set(saved.reviewId);
+    this.review.resume(
+      {
+        query: saved.returnMode === 'notes' ? saved.browseQuery : '',
+        bookId: saved.returnMode === 'notes' ? saved.browseBookId : null,
+        oldestFirst: saved.returnMode === 'notes' && saved.browseOldestFirst,
+      },
+      saved.reviewId,
+    );
     this.viewMode.set('unlinked');
-    this.loadReviewPage();
+    this.review.loadPage();
   }
 
   private unregisterAssistantContext(): void {
@@ -833,16 +771,6 @@ export class SecondBrain implements AfterViewChecked {
     if (!this.isBrowsingNotes()) return false;
     if (this.browseSaving() ||
       (this.browseEditing() && this.browseEditContent() !== this.panelNote()?.content)) {
-      this.toast.error('Save or cancel the note edit before leaving it');
-      return true;
-    }
-    return false;
-  }
-
-  private reviewHasUnsavedEdit(): boolean {
-    if (!this.isReviewing()) return false;
-    if (this.reviewSaving() ||
-      (this.reviewEditing() && this.reviewEditContent() !== this.reviewNote()?.content)) {
       this.toast.error('Save or cancel the note edit before leaving it');
       return true;
     }
@@ -953,7 +881,7 @@ export class SecondBrain implements AfterViewChecked {
   }
 
   private focusedNote(): NoteSearchHit | null {
-    return this.isReviewing() ? this.reviewNote() : this.isBrowsingNotes() ? this.panelNote() : null;
+    return this.isReviewing() ? this.review.note() : this.isBrowsingNotes() ? this.panelNote() : null;
   }
 
   private focusedNoteKey(): string | null {
@@ -1103,33 +1031,23 @@ export class SecondBrain implements AfterViewChecked {
       focusedNoteId: this.panelNote()?.id ?? null,
       reviewId: null,
     };
-    this.reviewMutated = false;
-    this.reviewBrowseQuery = this.reviewReturnMode === 'notes' ? this.browseQuery() : '';
-    this.reviewBookId = this.reviewReturnMode === 'notes' ? this.browseBookId() : null;
-    this.reviewOldestFirst = this.reviewReturnMode === 'notes' && this.browseOldestFirst();
-    // A previous request may still be in flight. Its response belongs to the
-    // previous review, including its previous filters.
-    this.reviewSeq++;
-    this.reviewLoading.set(false);
-    this.reviewLoaded.set(false);
-    this.reviewError.set(false);
-    this.reviewQueue.set([]);
-    this.reviewTotal.set(0);
+    this.review.begin({
+      query: this.reviewReturnMode === 'notes' ? this.browseQuery() : '',
+      bookId: this.reviewReturnMode === 'notes' ? this.browseBookId() : null,
+      oldestFirst: this.reviewReturnMode === 'notes' && this.browseOldestFirst(),
+    });
     this.clearSourceSelectionState();
     this.closeWritingHandoff();
     this.clearSearch();
     this.closeNotePanel();
-    this.reviewId.set(null);
-    this.reviewEditing.set(false);
-    this.closeReviewPicker();
     this.viewMode.set('unlinked');
     this.persistReviewReturnState();
-    this.loadReviewPage();
+    this.review.loadPage();
   }
 
   /** Return to the previous Brain area, preserving an unchanged Notes list. */
   closeReview(): void {
-    if (this.reviewHasUnsavedEdit()) return;
+    if (this.review.hasUnsavedEdit()) return;
 
     const state = this.reviewReturnState;
     const mode = state?.returnMode ?? this.reviewReturnMode;
@@ -1140,14 +1058,14 @@ export class SecondBrain implements AfterViewChecked {
       this.browseBookTitle.set(state.browseBookTitle);
       this.browseWithoutTopics.set(state.browseWithoutTopics);
       this.browseOldestFirst.set(state.browseOldestFirst);
-      if (this.reviewMutated) {
+      if (this.review.mutated) {
         this.browseLoaded.set(false);
         this.browseNotes.set([]);
         this.browseTotal.set(0);
       }
     }
 
-    if (this.reviewMutated) {
+    if (this.review.mutated) {
       this.setViewMode(mode);
       if (mode === 'notes') {
         this.reloadBrowse();
@@ -1209,254 +1127,6 @@ export class SecondBrain implements AfterViewChecked {
     this.reviewReturnNote = null;
   }
 
-  /**
-   * Fetch the next page of the queue.
-   *
-   * The offset is the number of rows still held, not the number fetched: a note
-   * that has been resolved is gone from the server's set too, so the rows this
-   * browser holds are exactly the first N of the server's current order.
-   */
-  loadReviewPage(advanceFromId: string | null = null): void {
-    if (this.reviewLoading()) return;
-    const seq = this.reviewSeq;
-    this.reviewLoading.set(true);
-    this.reviewError.set(false);
-    const pageRequest = this.reviewBrowseQuery || this.reviewBookId || this.reviewOldestFirst
-      ? this.notesService.browse({
-          query: this.reviewBrowseQuery,
-          bookId: this.reviewBookId ?? undefined,
-          withoutTopics: true,
-          oldestFirst: this.reviewOldestFirst,
-          limit: REVIEW_PAGE_SIZE,
-          offset: this.reviewQueue().length,
-        })
-      : this.notesService.unlinkedPage(REVIEW_PAGE_SIZE, this.reviewQueue().length);
-    pageRequest.subscribe({
-      next: (page) => {
-        if (seq !== this.reviewSeq) return;
-        const held = new Set(this.reviewQueue().map((row) => row.id));
-        const fresh = (page.items ?? []).filter((row) => !held.has(row.id));
-        this.reviewQueue.set([...this.reviewQueue(), ...fresh]);
-        this.reviewTotal.set(page.totalCount ?? this.reviewQueue().length);
-        if (advanceFromId && this.reviewNote()?.id === advanceFromId && fresh.length) {
-          this.reviewId.set(fresh[0].id);
-          this.persistReviewReturnState();
-        }
-        this.reviewLoading.set(false);
-        this.reviewLoaded.set(true);
-
-        const restoringId = this.restoringReviewFocusId();
-        if (restoringId) {
-          if (this.reviewQueue().some((note) => note.id === restoringId)) {
-            this.restoringReviewFocusId.set(null);
-          } else if (fresh.length > 0 && this.reviewHasMore()) {
-            this.loadReviewPage();
-          } else {
-            this.restoringReviewFocusId.set(null);
-            this.reviewId.set(null);
-            this.persistReviewReturnState();
-            this.toast.info('The previously selected note is no longer in this review queue');
-          }
-        }
-      },
-      error: () => {
-        if (seq !== this.reviewSeq) return;
-        this.reviewLoading.set(false);
-        this.reviewError.set(true);
-        this.toast.error('Notes with no topic could not be loaded');
-      },
-    });
-  }
-
-  /** Leave the focused note (mobile's way back to the queue). Focus decides nothing. */
-  clearReviewFocus(): void {
-    if (this.reviewHasUnsavedEdit()) return;
-    this.reviewEditing.set(false);
-    this.closeReviewPicker();
-    this.restoringReviewFocusId.set(null);
-    this.reviewId.set(null);
-    this.persistReviewReturnState();
-  }
-
-  /** Focus a queued note. Focusing decides nothing — it only moves the review on. */
-  focusReviewNote(id: string): void {
-    if (this.reviewHasUnsavedEdit()) return;
-    this.reviewEditing.set(false);
-    this.closeReviewPicker();
-    this.restoringReviewFocusId.set(null);
-    this.reviewId.set(id);
-    this.persistReviewReturnState();
-  }
-
-  /**
-   * Move to the next queued note without touching it.
-   *
-   * Skipping is not a decision: the note is neither linked nor edited, so it
-   * stays at the full count and the user can leave the mode and find it still
-   * waiting.
-   */
-  skipReviewNote(): void {
-    if (this.reviewHasUnsavedEdit()) return;
-    const queue = this.reviewQueue();
-    const current = this.reviewNote();
-    if (!current) return;
-    const index = current ? queue.findIndex((row) => row.id === current.id) : -1;
-    const next = queue[index + 1];
-    if (next) this.focusReviewNote(next.id);
-    else if (this.reviewHasMore()) this.loadReviewPage(current.id);
-  }
-
-  previousReviewNote(): void {
-    if (this.reviewHasUnsavedEdit()) return;
-    const index = this.reviewQueue().findIndex((row) => row.id === this.reviewNote()?.id);
-    if (index > 0) this.focusReviewNote(this.reviewQueue()[index - 1].id);
-  }
-
-  startReviewEdit(): void {
-    const note = this.reviewNote();
-    if (!note) return;
-    this.reviewEditContent.set(note.content);
-    this.closeReviewPicker();
-    this.reviewEditing.set(true);
-  }
-
-  cancelReviewEdit(): void {
-    this.reviewEditing.set(false);
-    this.reviewEditContent.set('');
-  }
-
-  /**
-   * Save the reviewed note's text.
-   *
-   * This is the canonical note edit path, unchanged: the server re-reads the
-   * `[[Topic]]` links from the body on save. What review mode adds is the
-   * consequence — a note that now declares a topic has been resolved, so it
-   * leaves the queue immediately instead of waiting for a reload.
-   */
-  saveReviewEdit(): void {
-    const note = this.reviewNote();
-    if (!note || this.reviewSaving()) return;
-
-    const content = this.reviewEditContent();
-    if (content === note.content) {
-      this.cancelReviewEdit();
-      return;
-    }
-
-    this.reviewSaving.set(true);
-    this.notesService.update(note.id, { content, selectedText: note.selectedText ?? undefined }).subscribe({
-      next: () => {
-        this.reviewSaving.set(false);
-        this.reviewEditing.set(false);
-        this.reviewMutated = true;
-        this.refreshIndexAndStats();
-
-        if (declaresTopic(content)) {
-          this.removeFromReview(note.id);
-          this.toast.success('Note linked to a topic');
-        } else {
-          // Still belongs to no topic. Keep it queued, showing what was just
-          // written, rather than pretending the edit resolved anything.
-          this.reviewQueue.update((rows) =>
-            rows.map((row) => (row.id === note.id ? { ...row, content } : row))
-          );
-          this.toast.success('Note saved');
-        }
-      },
-      error: () => {
-        this.reviewSaving.set(false);
-        this.toast.error('Failed to update note');
-      },
-    });
-  }
-
-  openReviewPicker(): void {
-    this.reviewEditing.set(false);
-    this.reviewPickerQuery.set('');
-    this.reviewPickerTopicId.set(null);
-    this.reviewPickerOpen.set(true);
-  }
-
-  closeReviewPicker(): void {
-    this.reviewPickerOpen.set(false);
-    this.reviewPickerQuery.set('');
-    this.reviewPickerTopicId.set(null);
-  }
-
-  chooseReviewTopic(id: string): void {
-    this.reviewPickerTopicId.set(id);
-  }
-
-  /**
-   * Link the reviewed note to an existing topic.
-   *
-   * The association written here is the canonical one this codebase has: the note
-   * body gains an explicit `[[Topic]]` reference and the server rebuilds the
-   * note's topic links from it. Nothing is invented — the topic must already
-   * exist, it is chosen by the user, and no prose is rewritten beyond appending
-   * the reference. Membership is never stored as a link the next note save would
-   * silently drop.
-   */
-  confirmLinkToTopic(): void {
-    const note = this.reviewNote();
-    const topic = this.reviewPickerTopic();
-    if (!note || !topic || this.reviewSaving()) return;
-
-    this.saveReviewLink(note, topic.name);
-  }
-
-  createReviewTopic(): void {
-    const note = this.reviewNote();
-    const name = this.reviewNewTopicName();
-    if (!note || !name || this.reviewSaving()) return;
-    this.saveReviewLink(note, name);
-  }
-
-  private saveReviewLink(note: NoteSearchHit, name: string): void {
-    const content = withTopicReference(note.content, name);
-    this.reviewSaving.set(true);
-    this.notesService.update(note.id, { content, selectedText: note.selectedText ?? undefined }).subscribe({
-      next: () => {
-        this.reviewSaving.set(false);
-        this.reviewMutated = true;
-        this.closeReviewPicker();
-        this.refreshIndexAndStats();
-        this.removeFromReview(note.id);
-        this.toast.success(`Linked to “${name}”`);
-      },
-      error: () => {
-        this.reviewSaving.set(false);
-        this.toast.error('Failed to link the note');
-      },
-    });
-  }
-
-  /**
-   * Take a resolved note out of the queue and off the count, in place.
-   *
-   * Resolving is a deliberate act that only ever shrinks the waiting set, so the
-   * row can go immediately — a refetch would make the user wait to see the effect
-   * of their own decision. Focus moves to the row that took its place so the
-   * queue keeps flowing.
-   */
-  private removeFromReview(noteId: string): void {
-    const queue = this.reviewQueue();
-    const index = queue.findIndex((row) => row.id === noteId);
-    if (index < 0) return;
-
-    const remaining = queue.filter((row) => row.id !== noteId);
-    this.reviewQueue.set(remaining);
-    this.reviewTotal.update((total) => Math.max(0, total - 1));
-    this.reviewEditing.set(false);
-
-    if (this.reviewId() === noteId) {
-      const following = remaining[index] ?? remaining[index - 1] ?? null;
-      this.reviewId.set(following ? following.id : null);
-      this.persistReviewReturnState();
-    }
-    if (remaining.length === 0 && this.reviewTotal() > 0) this.loadReviewPage();
-  }
-
   openNotePanel(hit: NoteSearchHit): void {
     if (this.browseHasUnsavedEdit()) return;
     this.clearSourceSelectionState();
@@ -1467,13 +1137,13 @@ export class SecondBrain implements AfterViewChecked {
   }
 
   captureRestored(saved: Note): void {
-    this.reviewMutated = true;
+    this.review.mutated = true;
     // Apply the committed text immediately, then read canonical topic links.
     if (this.panelNote()?.id === saved.id) {
       this.panelNote.update((note) => note ? { ...note, content: saved.content,
         processingMode: saved.processingMode } : note);
     }
-    this.reviewQueue.update((rows) => rows.map((note) => note.id === saved.id
+    this.review.queue.update((rows) => rows.map((note) => note.id === saved.id
       ? { ...note, content: saved.content, processingMode: saved.processingMode } : note));
     this.browseNotes.update((rows) => rows.map((note) => note.id === saved.id
       ? { ...note, content: saved.content, processingMode: saved.processingMode } : note));
@@ -1484,8 +1154,8 @@ export class SecondBrain implements AfterViewChecked {
     this.notesService.get(saved.id).subscribe({
       next: (note) => {
         if (this.panelNote()?.id === saved.id) this.panelNote.set(note);
-        this.reviewQueue.update((rows) => rows.map((row) => row.id === saved.id ? note : row));
-        if (note.topicNames.length) this.removeFromReview(saved.id);
+        this.review.queue.update((rows) => rows.map((row) => row.id === saved.id ? note : row));
+        if (note.topicNames.length) this.review.remove(saved.id);
         if (this.browseLoaded() && !this.browseEditing()) {
           // Reconcile filtering/counts without closing the inspector the user
           // just restored (or a different note they selected meanwhile).
@@ -1572,7 +1242,7 @@ export class SecondBrain implements AfterViewChecked {
     this.closeNoteMore(false);
 
     if (action === 'edit') {
-      if (mode === 'review') this.startReviewEdit();
+      if (mode === 'review') this.review.startEdit();
       else if (mode === 'browse') this.startBrowseEdit();
       else card?.startEdit(event);
       return;
@@ -1829,7 +1499,7 @@ export class SecondBrain implements AfterViewChecked {
   setViewMode(mode: string): void {
     if (!BRAIN_VIEW_MODES.includes(mode as BrainViewMode)) return;
     if (mode !== 'notes' && this.browseHasUnsavedEdit()) return;
-    if (this.reviewHasUnsavedEdit()) return;
+    if (this.review.hasUnsavedEdit()) return;
     if (mode === 'notes' && this.viewMode() !== 'notes') this.clearSearch();
     if (this.isBrowsingNotes() && mode !== 'notes') this.panelNote.set(null);
     if (mode !== 'list') {

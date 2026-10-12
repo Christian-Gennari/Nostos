@@ -337,9 +337,9 @@ describe('SecondBrain', () => {
       http.expectOne((request) => request.url === '/api/notes')
         .flush({ items: [unlinked], totalCount: 1 });
 
-      component.focusReviewNote(unlinked.id);
-      component.startReviewEdit();
-      component.reviewEditContent.set('Unsaved draft');
+      component.review.focusNote(unlinked.id);
+      component.review.startEdit();
+      component.review.editContent.set('Unsaved draft');
 
       const currentKey = sessionStorage.getItem('nostos.brain.reviewReturn.v1:selfhosted');
       expect(currentKey).toBeTruthy();
@@ -363,9 +363,9 @@ describe('SecondBrain', () => {
       await fixture.whenStable();
 
       expect(component.isReviewing()).toBe(true);
-      expect(component.reviewNote()?.id).toBe(unlinked.id);
-      expect(component.reviewEditing()).toBe(false);
-      expect(component.reviewEditContent()).toBe('');
+      expect(component.review.note()?.id).toBe(unlinked.id);
+      expect(component.review.editing()).toBe(false);
+      expect(component.review.editContent()).toBe('');
 
       component.closeReview();
 
@@ -2030,8 +2030,8 @@ describe('SecondBrain', () => {
       // The whole point of the issue: nothing here fetched them, so the mode has
       // to fetch them itself when it is opened.
       http.expectNone((req) => req.url === '/api/notes/unlinked');
-      expect(second.componentInstance.reviewQueue()).toEqual([]);
-      expect(second.componentInstance.reviewLoaded()).toBe(false);
+      expect(second.componentInstance.review.queue()).toEqual([]);
+      expect(second.componentInstance.review.loaded()).toBe(false);
     });
 
     it('shows note-text matches only while a search is active', async () => {
@@ -2161,11 +2161,11 @@ describe('SecondBrain', () => {
       (fixture.nativeElement.querySelectorAll('.index-list .note-row-item')[1] as HTMLButtonElement).click();
       fixture.detectChanges();
 
-      expect(component.reviewNote()!.id).toBe('hit-2');
+      expect(component.review.note()!.id).toBe('hit-2');
       const rows = fixture.nativeElement.querySelectorAll('.index-list .note-row-item');
       expect(rows[0].classList).not.toContain('active');
       expect(rows[1].classList).toContain('active');
-      expect(component.reviewQueue().length).toBe(2);
+      expect(component.review.queue().length).toBe(2);
     });
 
     it('traverses past the first page instead of silently ending at it', () => {
@@ -2187,30 +2187,30 @@ describe('SecondBrain', () => {
 
       expect(fixture.nativeElement.querySelectorAll('.index-list .note-row-item').length).toBe(3);
       expect(fixture.nativeElement.querySelector('.review-load-more')).toBeNull();
-      expect(component.reviewQueue().length).toBe(component.reviewTotal());
+      expect(component.review.queue().length).toBe(component.review.total());
     });
 
     it('loads the next page when advancing from its last visible note, and moves back without mutating', () => {
       enterReview([sampleHits[0]], 3);
-      component.skipReviewNote();
+      component.review.skip();
       const next = http.expectOne((request) => request.url === '/api/notes/unlinked');
       expect(next.request.params.get('offset')).toBe('1');
       next.flush({ items: [sampleHits[1], thirdHit], totalCount: 3, offset: 1, limit: 25 });
       fixture.detectChanges();
-      expect(component.reviewNote()?.id).toBe(sampleHits[1].id);
-      component.previousReviewNote();
-      expect(component.reviewNote()?.id).toBe(sampleHits[0].id);
+      expect(component.review.note()?.id).toBe(sampleHits[1].id);
+      component.review.previous();
+      expect(component.review.note()?.id).toBe(sampleHits[0].id);
       http.expectNone((request) => request.method === 'PUT' || request.method === 'POST' || request.method === 'DELETE');
     });
 
     it('links the reviewed note to an existing topic with an explicit reference, and drops it', () => {
       enterReview();
-      component.openReviewPicker();
+      component.review.openPicker();
       fixture.detectChanges();
 
       expect(fixture.nativeElement.querySelector('.merge-picker')).toBeTruthy();
 
-      component.chooseReviewTopic('c-alpha');
+      component.review.chooseTopic('c-alpha');
       fixture.detectChanges();
       (
         fixture.nativeElement.querySelector('.merge-picker-actions .merge-picker-confirm') as HTMLButtonElement
@@ -2227,50 +2227,50 @@ describe('SecondBrain', () => {
       settleReviewRefresh();
 
       expect(fixture.nativeElement.querySelector('.merge-picker')).toBeNull();
-      expect(component.reviewQueue().map((row) => row.id)).toEqual(['hit-2']);
-      expect(component.reviewTotal()).toBe(1);
+      expect(component.review.queue().map((row) => row.id)).toEqual(['hit-2']);
+      expect(component.review.total()).toBe(1);
       expect(fixture.nativeElement.querySelector('.review-position')?.textContent?.trim()).toBe(
         '1 of 1'
       );
       // Resolving moves the review on rather than emptying the pane.
       expect(component.viewMode()).toBe('unlinked');
-      expect(component.reviewNote()!.id).toBe('hit-2');
+      expect(component.review.note()!.id).toBe('hit-2');
     });
 
     it('does not write anything when a link fails', () => {
       enterReview();
-      component.openReviewPicker();
-      component.chooseReviewTopic('c-alpha');
+      component.review.openPicker();
+      component.review.chooseTopic('c-alpha');
       fixture.detectChanges();
 
-      component.confirmLinkToTopic();
+      component.review.confirmLink();
       fixture.detectChanges();
       http
         .expectOne((req) => req.method === 'PUT' && req.url === '/api/notes/hit-1')
         .error(new ProgressEvent('network-error'));
       fixture.detectChanges();
 
-      expect(component.reviewQueue().map((row) => row.id)).toEqual(['hit-1', 'hit-2']);
-      expect(component.reviewTotal()).toBe(2);
+      expect(component.review.queue().map((row) => row.id)).toEqual(['hit-1', 'hit-2']);
+      expect(component.review.total()).toBe(2);
       expect(TestBed.inject(ToastService).toasts().at(-1)?.message).toContain('Failed to link');
     });
 
     it('creates a topic from review through the canonical note update', () => {
       enterReview();
-      component.openReviewPicker();
-      component.reviewPickerQuery.set('New connection');
+      component.review.openPicker();
+      component.review.pickerQuery.set('New connection');
       fixture.detectChanges();
-      expect(component.reviewNewTopicName()).toBe('New connection');
+      expect(component.review.newTopicName()).toBe('New connection');
 
-      component.createReviewTopic();
+      component.review.createTopic();
       const save = http.expectOne((request) => request.method === 'PUT' && request.url === '/api/notes/hit-1');
       expect(save.request.body.content).toContain('[[New connection]]');
       expect(save.request.body.selectedText).toBe(sampleHits[0].selectedText);
       save.flush({});
       settleReviewRefresh();
 
-      expect(component.reviewQueue().map((row) => row.id)).toEqual(['hit-2']);
-      expect(component.reviewTotal()).toBe(1);
+      expect(component.review.queue().map((row) => row.id)).toEqual(['hit-2']);
+      expect(component.review.total()).toBe(1);
     });
 
     it('offers retry rather than an empty-queue claim when the review fetch fails', () => {
@@ -2286,11 +2286,11 @@ describe('SecondBrain', () => {
 
     it('resolves a note whose edit declares a topic', () => {
       enterReview();
-      component.startReviewEdit();
+      component.review.startEdit();
       fixture.detectChanges();
 
-      component.reviewEditContent.set('One must imagine Sisyphus happy, about [[Alpha]].');
-      component.saveReviewEdit();
+      component.review.editContent.set('One must imagine Sisyphus happy, about [[Alpha]].');
+      component.review.saveEdit();
       fixture.detectChanges();
 
       http
@@ -2298,18 +2298,18 @@ describe('SecondBrain', () => {
         .flush({});
       settleReviewRefresh();
 
-      expect(component.reviewQueue().map((row) => row.id)).toEqual(['hit-2']);
-      expect(component.reviewTotal()).toBe(1);
-      expect(component.reviewEditing()).toBe(false);
+      expect(component.review.queue().map((row) => row.id)).toEqual(['hit-2']);
+      expect(component.review.total()).toBe(1);
+      expect(component.review.editing()).toBe(false);
     });
 
     it('keeps a note queued when an edit still leaves it with no topic', () => {
       enterReview();
-      component.startReviewEdit();
+      component.review.startEdit();
       fixture.detectChanges();
 
-      component.reviewEditContent.set('Rewritten, and still connected to nothing.');
-      component.saveReviewEdit();
+      component.review.editContent.set('Rewritten, and still connected to nothing.');
+      component.review.saveEdit();
       fixture.detectChanges();
 
       http.expectOne((req) => req.method === 'PUT' && req.url === '/api/notes/hit-1').flush({});
@@ -2317,23 +2317,23 @@ describe('SecondBrain', () => {
 
       // The edit is real but the note is still unlinked, so the queue must not
       // pretend anything was resolved.
-      expect(component.reviewQueue().map((row) => row.id)).toEqual(['hit-1', 'hit-2']);
-      expect(component.reviewTotal()).toBe(2);
-      expect(component.reviewQueue()[0].content).toBe('Rewritten, and still connected to nothing.');
-      expect(component.reviewEditing()).toBe(false);
+      expect(component.review.queue().map((row) => row.id)).toEqual(['hit-1', 'hit-2']);
+      expect(component.review.total()).toBe(2);
+      expect(component.review.queue()[0].content).toBe('Rewritten, and still connected to nothing.');
+      expect(component.review.editing()).toBe(false);
       expect(TestBed.inject(ToastService).toasts().at(-1)?.message).toBe('Note saved');
     });
 
     it('skips without mutating the note', () => {
       enterReview();
-      const first = component.reviewNote()!.id;
+      const first = component.review.note()!.id;
 
-      component.skipReviewNote();
+      component.review.skip();
       fixture.detectChanges();
 
-      expect(component.reviewNote()!.id).not.toBe(first);
-      expect(component.reviewQueue().length).toBe(2);
-      expect(component.reviewTotal()).toBe(2);
+      expect(component.review.note()!.id).not.toBe(first);
+      expect(component.review.queue().length).toBe(2);
+      expect(component.review.total()).toBe(2);
       http.expectNone((req) => req.method === 'PUT' || req.method === 'POST' || req.method === 'DELETE');
     });
 
@@ -2356,7 +2356,7 @@ describe('SecondBrain', () => {
         'Topics'
       );
       expect(fixture.nativeElement.querySelectorAll('.index-list .note-row-item').length).toBe(0);
-      expect(component.reviewQueue().length).toBe(2);
+      expect(component.review.queue().length).toBe(2);
       expect(localStorage.getItem('nostos.brain.viewMode')).toBe('list');
     });
 
@@ -2469,7 +2469,7 @@ describe('SecondBrain', () => {
       expect(assistantContext.context().bookId).toBe('b-sisyphus');
 
       // Focusing the next note moves the context with it.
-      component.focusReviewNote('hit-2');
+      component.review.focusNote('hit-2');
       fixture.detectChanges();
       expect(assistantContext.context().brainReviewNoteId).toBe('hit-2');
 
@@ -2530,7 +2530,7 @@ describe('SecondBrain', () => {
 
     it('never renders pre-linked topics among inline suggestions', () => {
       enterReview();
-      component.reviewQueue.update((rows) => rows.map((row) => row.id === 'hit-1'
+      component.review.queue.update((rows) => rows.map((row) => row.id === 'hit-1'
         ? { ...row, topicNames: ['Alpha'] } : row));
       fixture.detectChanges();
 
@@ -2554,7 +2554,7 @@ describe('SecondBrain', () => {
 
     it('treats exclusively pre-linked proposals as no additional connections', () => {
       enterReview();
-      component.reviewQueue.update((rows) => rows.map((row) => row.id === 'hit-1'
+      component.review.queue.update((rows) => rows.map((row) => row.id === 'hit-1'
         ? { ...row, topicNames: ['Alpha'] } : row));
       fixture.detectChanges();
 
@@ -2578,7 +2578,7 @@ describe('SecondBrain', () => {
       component.proposals.ask();
       const request = http.expectOne('/api/assistant/turn/stream');
       const turnId = request.request.body.turnId as string;
-      component.focusReviewNote('hit-2');
+      component.review.focusNote('hit-2');
       fixture.detectChanges();
       request.flush({
         reply: 'A connection.', acknowledgement: null, anchorPrompt: null, pendingPlan: null,
@@ -2639,7 +2639,7 @@ describe('SecondBrain', () => {
       });
       expect(component.proposals.state()).toBe('ready');
 
-      component.reviewQueue.update((rows) => rows.map((row) => row.id === 'hit-1'
+      component.review.queue.update((rows) => rows.map((row) => row.id === 'hit-1'
         ? { ...row, content: 'The note has been edited.' } : row));
       fixture.detectChanges();
       expect(component.proposals.state()).toBe('idle');
@@ -2673,8 +2673,8 @@ describe('SecondBrain', () => {
       // exact note from that turn leaves the queue.
       settleReviewRefresh();
 
-      expect(component.reviewQueue().map((row) => row.id)).toEqual(['hit-2']);
-      expect(component.reviewTotal()).toBe(1);
+      expect(component.review.queue().map((row) => row.id)).toEqual(['hit-2']);
+      expect(component.review.total()).toBe(1);
     });
   });
 });
