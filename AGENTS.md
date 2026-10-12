@@ -185,18 +185,6 @@ Keep it factual. `Closes #N` links the issue — include it when one exists.
 Open it and stop. The human reviews and merges. Do not merge, and do not
 enable auto-merge.
 
-### Cloud adopts `main` once a day, not once per PR
-
-Nostos Cloud pins a revision of this repository. One trip from a merged PR to
-the live Cloud app is about 45 minutes of pipeline and an image deploy, so it is
-made **once, in the evening**, for everything merged that day.
-
-- Do not open a Cloud pin bump, or ask for a deploy, because one PR merged.
-  Merged PRs wait on `main` for the evening release.
-- "Can I see it?" is answered with the preview and screenshots (§2), not with a
-  deploy.
-- A fix that cannot wait for the evening is the human's call. Ask.
-
 ---
 
 ## 4. Working alongside other agents
