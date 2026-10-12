@@ -14,13 +14,23 @@ public sealed record MatcherSettings(double MinimumScore = 0.85, double MinimumM
     double RelaxedScore = 0.80, double RelaxedMargin = 0.20)
 {
     /// <summary>
-    /// The window for a piece of text. One character of an unspaced script
+    /// The settings for a piece of text. One character of an unspaced script
     /// says less than a word does, so such text is matched over twice as many
     /// tokens: about the same few seconds of speech either way.
+    ///
+    /// The same sentence of Japanese can be written with a word in characters
+    /// or spelled out in syllables, and a transcript rarely chooses as the book
+    /// did, so many characters differ in a passage that is nevertheless the
+    /// right one. Over forty-eight characters a lower score is still far from
+    /// chance, provided nothing else in the book comes anywhere near it.
     /// </summary>
     public static MatcherSettings For(IReadOnlyCollection<AlignmentToken> tokens) =>
         AlignmentTokens.MostlyUnspaced(tokens)
-            ? new MatcherSettings(MinimumTokens: 12, MaximumTokens: 48)
+            ? new MatcherSettings(
+                MinimumTokens: 12,
+                MaximumTokens: 48,
+                RelaxedScore: 0.68,
+                RelaxedMargin: 0.25)
             : new MatcherSettings();
 }
 

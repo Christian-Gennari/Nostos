@@ -58,7 +58,13 @@ public sealed class AlignmentTokensTests
         AlignmentTokens.MostlyUnspaced(AlignmentTokens.Split("Lu Xun wrote 阿Q in 1921")).Should().BeFalse();
         AlignmentTokens.MostlyUnspaced([]).Should().BeFalse();
 
-        MatcherSettings.For(AlignmentTokens.Split("我要给阿Q做正传")).MaximumTokens.Should().Be(48);
-        MatcherSettings.For(AlignmentTokens.Split("Marley was dead")).MaximumTokens.Should().Be(24);
+        MatcherSettings.For(AlignmentTokens.Split("我要给阿Q做正传"))
+            .Should().Be(new MatcherSettings(
+                MinimumTokens: 12,
+                MaximumTokens: 48,
+                RelaxedScore: 0.68,
+                RelaxedMargin: 0.25));
+        MatcherSettings.For(AlignmentTokens.Split("Marley was dead"))
+            .Should().Be(new MatcherSettings());
     }
 }

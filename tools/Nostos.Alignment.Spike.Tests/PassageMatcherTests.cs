@@ -305,6 +305,48 @@ public sealed class PassageMatcherTests
     }
 
     [Fact]
+    public void Japanese_written_differently_from_the_book_is_found_when_nothing_else_is_close()
+    {
+        // The book spells in characters what the transcript spells in
+        // syllables, and the other way round: 云って/言って, 革鞄/かばん, 手拭/手ぬぐい.
+        const string page =
+            "道具屋で買って来た歯磨と楊子と手拭をズックの革鞄に入れてくれた。そんな物は入らないと云ってもなかなか承知しない。" +
+            "車を並べて停車場へ着いて、プラットフォームの上へ出た時、車へ乗り込んだおれの顔をじっと見て";
+
+        const string spoken =
+            "道具屋で買ってきた歯磨きと用事と手ぬぐいをズックのかばんに入れてくれたそんなものはいらないと言ってもなかなか承知しない";
+
+        var alone = Matcher("親譲りの無鉄砲で小供の時から損ばかりしている。", page).Locate(spoken);
+
+        Assert.True(alone.Accepted);
+        Assert.InRange(alone.Score, 0.68, 0.85);
+        Assert.Equal(1, alone.Start!.BlockOrder);
+
+        // A second passage nearly as close leaves no way to tell which is meant.
+        var rival = page.Replace("歯磨", "石鹸").Replace("楊子", "手帳").Replace("革鞄", "風呂敷");
+        var contested = Matcher(page, rival).Locate(spoken);
+
+        Assert.False(contested.Accepted);
+    }
+
+    [Fact]
+    public void Words_are_not_matched_at_the_score_allowed_to_unspaced_text()
+    {
+        // Four words of thirteen differ: 0.69, which a run of forty-eight
+        // characters may be accepted at and twenty-four words may not.
+        var spoken = Passage
+            .Replace("patient", "weary")
+            .Replace("golden", "silver")
+            .Replace("quiet", "noisy")
+            .Replace("orchard", "garden");
+
+        var match = Matcher(Passage).Locate(spoken);
+
+        Assert.False(match.Accepted);
+        Assert.Equal("weak_match", match.Reason);
+    }
+
+    [Fact]
     public void Ruby_glosses_are_left_out_and_offsets_stay_true()
     {
         const string text =
