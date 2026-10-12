@@ -49,7 +49,7 @@ export const LANDSCAPE_VIEWPORT: Viewport = { width: 844, height: 390 };
 /**
  * Light-theme expectations for EPUB publisher-CSS normalization. These values
  * are scoped to the EPUB assertion, not the app's general light/dark theme.
- * They mirror epub-reader.component.ts NOSTOS_LIGHT_RULES and the :root tokens
+ * They mirror epub-reader-theme.ts NOSTOS_LIGHT_RULES and the :root tokens
  * in styles.css. If these values change, update the assertion and docs
  * (docs/visual-verification.md §Fixed rendering invariants) in the same PR.
  */
