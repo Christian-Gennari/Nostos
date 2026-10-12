@@ -116,7 +116,7 @@ public static class TranscriptionEndpoints
         }
         catch (AiUsageException ex)
         {
-            return UsageFailure(ex);
+            return Failure(ex.Code, ex.StatusCode, ex.Message);
         }
 
         SttResult result;
@@ -185,21 +185,6 @@ public static class TranscriptionEndpoints
             result.Language,
             result.DurationSeconds));
     }
-
-    private static IResult UsageFailure(AiUsageException exception) =>
-        exception.Reason switch
-        {
-            AiUsageBlockReason.AccessDenied =>
-                Failure("ai_access_denied", StatusCodes.Status403Forbidden, exception.Message),
-            AiUsageBlockReason.RateLimited =>
-                Failure("ai_rate_limited", StatusCodes.Status429TooManyRequests, exception.Message),
-            AiUsageBlockReason.LimitReached =>
-                Failure("ai_usage_limit_reached", StatusCodes.Status429TooManyRequests, exception.Message),
-            AiUsageBlockReason.Disabled =>
-                Failure("ai_disabled", StatusCodes.Status503ServiceUnavailable, exception.Message),
-            _ =>
-                Failure("ai_temporarily_unavailable", StatusCodes.Status503ServiceUnavailable, exception.Message),
-        };
 
     /// <summary>
     /// Code → HTTP status. Kept as data: a permission problem is a bad gateway

@@ -62,7 +62,7 @@ public static class AssistantEndpoints
         }
         catch (AiUsageException ex)
         {
-            return UsageFailure(ex);
+            return Failure(ex.Code, ex.StatusCode, ex.Message);
         }
         catch (LlmException ex)
         {
@@ -279,21 +279,6 @@ public static class AssistantEndpoints
                 StatusCodes.Status503ServiceUnavailable,
                 LlmException.Disabled().Message);
     }
-
-    private static IResult UsageFailure(AiUsageException exception) =>
-        exception.Reason switch
-        {
-            AiUsageBlockReason.AccessDenied =>
-                Failure("ai_access_denied", StatusCodes.Status403Forbidden, exception.Message),
-            AiUsageBlockReason.RateLimited =>
-                Failure("ai_rate_limited", StatusCodes.Status429TooManyRequests, exception.Message),
-            AiUsageBlockReason.LimitReached =>
-                Failure("ai_usage_limit_reached", StatusCodes.Status429TooManyRequests, exception.Message),
-            AiUsageBlockReason.Disabled =>
-                Failure("ai_disabled", StatusCodes.Status503ServiceUnavailable, exception.Message),
-            _ =>
-                Failure("ai_temporarily_unavailable", StatusCodes.Status503ServiceUnavailable, exception.Message),
-        };
 
     private static AssistantTurnFailureDto UsageEventFailure(AiUsageException exception) =>
         exception.Reason switch
