@@ -1,5 +1,4 @@
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using Nostos.Backend.Configuration;
 using Nostos.Backend.Services.Ai;
 using Nostos.Backend.Services.Library;
@@ -475,7 +474,7 @@ public sealed class AssistantOrchestrator(
                 }
                 else
                 {
-                    args = ParseArguments(call.ArgumentsJson);
+                    args = AssistantToolArguments.ParseElement(call.ArgumentsJson);
                     if (string.Equals(capability.Name, BookTextCapability, StringComparison.Ordinal)
                         || string.Equals(capability.Name, KnowledgeSearchCapability, StringComparison.Ordinal))
                     {
@@ -1266,26 +1265,6 @@ public sealed class AssistantOrchestrator(
                 .Select(step => new AssistantPlanStepDto(step.Capability, step.Summary, step.ArgumentsJson))
                 .ToList(),
             stored.ApprovalToken);
-
-    private static JsonObject ParseObject(string? json)
-    {
-        if (string.IsNullOrWhiteSpace(json))
-        {
-            return new JsonObject();
-        }
-
-        try
-        {
-            return JsonNode.Parse(json) as JsonObject ?? new JsonObject();
-        }
-        catch (JsonException)
-        {
-            return new JsonObject();
-        }
-    }
-
-    private static JsonElement ParseArguments(string? json) =>
-        JsonSerializer.SerializeToElement(ParseObject(json), JsonOptions);
 
     private static string? ReadString(JsonElement obj, string name) =>
         obj.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
