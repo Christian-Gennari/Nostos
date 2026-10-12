@@ -171,6 +171,33 @@ public sealed class AlignmentService(
 
         var match = matcher.Locate(transcription.Text);
 
+        // A transcript often ends in words nobody said: the model fills a
+        // pause, or the cut falls mid-word. The words just before them are
+        // still the listener's place, a second or two earlier.
+        var trimmed = false;
+
+        if (!match.Accepted &&
+            match.Reason is "weak_match" or "no_match")
+        {
+            var spoken = AlignmentTokens.Split(transcription.Text);
+            var settings = MatcherSettings.For(spoken);
+            var drop = settings.MaximumTokens / 4;
+
+            if (spoken.Count >= settings.MaximumTokens + drop)
+            {
+                var earlier = matcher.LocateTokens(
+                    spoken.Skip(spoken.Count - drop - settings.MaximumTokens)
+                        .Take(settings.MaximumTokens),
+                    settings);
+
+                if (earlier.Accepted)
+                {
+                    match = earlier;
+                    trimmed = true;
+                }
+            }
+        }
+
         if (!match.Accepted)
             return AlignmentLocateResult.Declined(match.Reason);
 
@@ -212,7 +239,11 @@ public sealed class AlignmentService(
                 var audioRevision = await audioRevisions.GetAsync(
                     source, ct);
 
+                // An anchor pairs this exact second with this exact text. A
+                // match found a few words back is the right place to open the
+                // book, but not that pair.
                 if (audioRevision is not null &&
+                    !trimmed &&
                     double.IsFinite(match.Score) &&
                     positionSeconds <= long.MaxValue / 1000d)
                 {

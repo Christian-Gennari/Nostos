@@ -76,6 +76,35 @@ public sealed class AlignmentNarrationSimulationTests
     }
 
     [Fact]
+    public async Task A_listener_is_placed_by_the_words_before_an_invented_ending()
+    {
+        // Six words nobody said close the transcript, as a model writes over a
+        // pause. The place is the last words that were really spoken.
+        var narration = new Narration(2.6) { GarbleLastWords = 6 };
+
+        var result = await narration.LocateTextAsync(600);
+
+        result.Located.Should().BeTrue();
+        result.SourceText.Should().EndWith(narration.LastWordHeardBefore(600, skip: 6));
+
+        // Without the invented words the same place is found to the last word.
+        var clean = await new Narration(2.6).LocateTextAsync(600);
+
+        clean.Located.Should().BeTrue();
+        clean.SourceText.Should().EndWith(narration.LastWordHeardBefore(600, skip: 0));
+    }
+
+    [Fact]
+    public async Task Speech_that_is_not_in_the_book_is_still_declined()
+    {
+        var narration = new Narration(2.6) { GarbleLastWords = 60 };
+
+        var result = await narration.LocateTextAsync(600);
+
+        result.Located.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task A_traditional_chinese_book_is_found_from_a_simplified_transcript()
     {
         var narration = new Narration(4.5, Narration.Script.Chinese);
@@ -177,7 +206,29 @@ public sealed class AlignmentNarrationSimulationTests
         public double SentenceStartSeconds(int sentence) =>
             words[sentenceFirstWord[sentence]].Start;
 
+        /// <summary>The printed word spoken last before a second, some words back.</summary>
+        public string LastWordHeardBefore(double seconds, int skip) =>
+            words.Where(word => word.Start < seconds).Reverse().Skip(skip).First().Printed;
+
+        public Task<AlignmentLocateResult> LocateTextAsync(double positionSeconds)
+        {
+            var (service, audio, text) = Build();
+            return service.LocateAsync(audio, text, positionSeconds);
+        }
+
         public Task<AlignmentLocateAudioResult> LocateAsync(int sentence)
+        {
+            var (service, audio, text) = Build();
+
+            // What the reader sends: the page from this sentence on.
+            var excerpt = string.Join(
+                script == Script.Chinese ? "" : " ",
+                sentenceText.Skip(sentence).Take(4));
+
+            return service.LocateAudioAsync(text, audio, excerpt[..Math.Min(280, excerpt.Length)]);
+        }
+
+        private (AlignmentService, AudioBookModel, EBookModel) Build()
         {
             var total = (int)Math.Floor(DurationSeconds);
 
@@ -209,12 +260,7 @@ public sealed class AlignmentNarrationSimulationTests
                 new NoRevision(),
                 NullLogger<AlignmentService>.Instance);
 
-            // What the reader sends: the page from this sentence on.
-            var excerpt = string.Join(
-                script == Script.Chinese ? "" : " ",
-                sentenceText.Skip(sentence).Take(4));
-
-            return service.LocateAudioAsync(text, audio, excerpt[..Math.Min(280, excerpt.Length)]);
+            return (service, audio, text);
         }
 
         /// <summary>What a transcriber hears between two seconds of the narration.</summary>
