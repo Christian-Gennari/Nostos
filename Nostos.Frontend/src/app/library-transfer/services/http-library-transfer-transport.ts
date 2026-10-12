@@ -61,6 +61,10 @@ import {
 import {
   MigrationActivationConflictError,
   MigrationTransportError,
+  abortedError,
+  parseRetryAfterMs,
+  readErrorBody,
+  type TransportErrorBody,
 } from './migration-transport-error';
 import type { LibraryTransferTransport } from './library-transfer-transport';
 
@@ -72,11 +76,6 @@ export const CHUNK_HASH_HEADER_NAME = 'X-Nostos-Chunk-SHA256';
 const SHA256_PATTERN = /^[0-9a-f]{64}$/i;
 
 const SERVER_CODES: ReadonlySet<string> = new Set(SERVER_MIGRATION_ERROR_CODES);
-
-interface TransportErrorBody {
-  error: string;
-  message: string;
-}
 
 export class HttpLibraryTransferTransport implements LibraryTransferTransport {
   /**
@@ -577,23 +576,6 @@ function areRangesValid(
   );
 }
 
-function readErrorBody(value: unknown): TransportErrorBody | null {
-  if (typeof value === 'string') {
-    try {
-      return readErrorBody(JSON.parse(value));
-    } catch {
-      return null;
-    }
-  }
-  if (typeof value !== 'object' || value === null) return null;
-  const record = value as Record<string, unknown>;
-  if (typeof record['error'] !== 'string') return null;
-  return {
-    error: record['error'],
-    message: typeof record['message'] === 'string' ? record['message'] : record['error'],
-  };
-}
-
 interface ActivationErrorBody extends TransportErrorBody {
   destinationRevision: string | null;
   destinationStatus: MigrationDestinationStatus | null;
@@ -633,19 +615,4 @@ function readExistingCounts(value: unknown): MigrationExistingCountsDto | null {
   const record = value as Record<string, unknown>;
   if (typeof record['totalRows'] !== 'number') return null;
   return value as MigrationExistingCountsDto;
-}
-
-/** `Retry-After` is either delay-seconds (the middleware's `5`) or an HTTP date. */
-function parseRetryAfterMs(value: string | null): number | undefined {
-  if (!value) return undefined;
-  const seconds = Number(value);
-  if (Number.isFinite(seconds) && seconds >= 0) return Math.round(seconds * 1000);
-
-  const date = Date.parse(value);
-  if (Number.isNaN(date)) return undefined;
-  return Math.max(0, date - Date.now());
-}
-
-function abortedError(): MigrationTransportError {
-  return new MigrationTransportError('request_aborted', 0, 'The request was aborted.');
 }
