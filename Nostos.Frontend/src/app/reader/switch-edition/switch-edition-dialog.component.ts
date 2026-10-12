@@ -182,6 +182,8 @@ export class SwitchEditionDialog {
             if (locator?.textOffset != null) queryParams['sourceOffset'] = locator.textOffset;
             if (locator?.cfi) queryParams['sourceCfi'] = locator.cfi;
             if (result.excerpt) queryParams['sourceExcerpt'] = result.excerpt;
+            // The reader underlines the sentence it lands in.
+            if (locator?.textOffset != null) queryParams['sourceMark'] = 'sentence';
 
             if (!queryParams['sourceHref'] && !queryParams['sourceCfi']) {
               this.decline(editionId, null);

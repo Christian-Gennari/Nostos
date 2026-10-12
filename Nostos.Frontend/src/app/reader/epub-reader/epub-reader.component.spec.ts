@@ -1541,6 +1541,43 @@ describe('EpubReader grounded-source settle protection (PR #582)', () => {
     expect(progressWritesWith(STALE_CFI)).toEqual([]);
   });
 
+  it('underlines the sentence of a landing from another edition, until the next page turn (#844)', async () => {
+    await openReader();
+    // Real ranges: the mark is a span of the page's own text.
+    vi.mocked(contents.document.createRange).mockRestore();
+    rendition.annotations.underline = vi.fn();
+
+    await fixture.componentInstance.goToSource(
+      groundedTarget({ epubCfi: null, epubTextOffset: 30, markSentence: true }),
+    );
+    emitRelocated(TARGET_CFI);
+    expect(rendition.annotations.underline).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(400);
+
+    expect(rendition.annotations.underline).toHaveBeenCalledTimes(1);
+    expect(rendition.annotations.underline.mock.calls[0][0]).toBe(TARGET_CFI);
+    const marked = contents.cfiFromRange.mock.calls.at(-1)[0] as Range;
+    expect(marked.toString()).toBe(
+      'The cited passage begins here and continues to the end of the paragraph.',
+    );
+
+    fixture.componentInstance.next();
+    expect(rendition.annotations.remove).toHaveBeenCalledWith(TARGET_CFI, 'underline');
+  });
+
+  it('does not underline an ordinary grounded source', async () => {
+    await openReader();
+    vi.mocked(contents.document.createRange).mockRestore();
+    rendition.annotations.underline = vi.fn();
+
+    await fixture.componentInstance.goToSource(groundedTarget({ epubCfi: null, epubTextOffset: 30 }));
+    emitRelocated(TARGET_CFI);
+    await vi.advanceTimersByTimeAsync(400);
+
+    expect(rendition.annotations.underline).not.toHaveBeenCalled();
+  });
+
   it('reasserts the target once when the reflow re-displays the stale section start', async () => {
     await openReader();
     rangeRect = onPage();

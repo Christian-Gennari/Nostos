@@ -60,6 +60,7 @@ import {
   rangeAtNormalizedResourceOffset,
   rangeForNormalizedResourceSpan,
   resolveGroundedEpubResourceHref,
+  sentenceSpanAt,
   type EpubSpineSource,
 } from './epub-grounded-source';
 import { visibleEpubExcerpt } from './epub-visible-excerpt';
@@ -563,11 +564,16 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     href: string | null;
     /** Normalized text offset of the cited passage, when the locator had one. */
     offset: number | null;
+    /** Underline the sentence at the offset once the landing is confirmed. */
+    markSentence: boolean;
     /** The single controlled retry has already been issued. */
     reasserted: boolean;
     /** Ends the in-flight settle wait (quiet timer + resize listeners). */
     cancelSettle: (() => void) | null;
   } | null = null;
+
+  /** The search underline currently marks a landing from another edition. */
+  private landingMarkShown = false;
 
   /** Keydown listeners registered inside each iframe's contents document. */
   private readonly keyboardDocuments = new Map<Document, () => void>();
@@ -1102,6 +1108,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
         target.epubCfi,
         target.epubResourceHref ?? null,
         target.epubTextOffset ?? null,
+        target.markSentence === true,
       );
       try {
         await this.rendition.display(target.epubCfi);
@@ -1185,7 +1192,13 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     }
     if (generation !== this.navigationGeneration) return;
 
-    this.protectGroundedTarget(generation, cfi, displayedHref, target.epubTextOffset);
+    this.protectGroundedTarget(
+      generation,
+      cfi,
+      displayedHref,
+      target.epubTextOffset,
+      target.markSentence === true,
+    );
     try {
       await this.rendition.display(cfi);
     } catch (error) {
@@ -1226,6 +1239,10 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
   private beginNavigation(): number {
     this.navigationGeneration++;
     this.cancelGroundedNavigation();
+    if (this.landingMarkShown) {
+      this.landingMarkShown = false;
+      this.annotationManager?.clearSearchHighlight();
+    }
     return this.navigationGeneration;
   }
 
@@ -1235,12 +1252,14 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     cfi: string,
     href: string | null,
     offset: number | null,
+    markSentence = false,
   ): void {
     this.groundedNavigation = {
       generation,
       cfi,
       href,
       offset,
+      markSentence,
       reasserted: false,
       cancelSettle: null,
     };
@@ -1368,6 +1387,37 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     this.groundedNavigation = null;
     target.cancelSettle?.();
     this.updateProgressState(target.cfi);
+    if (target.markSentence) this.markLandingSentence(target.href, target.offset);
+  }
+
+  /**
+   * After landing from another edition, underline the sentence the reader was
+   * in, so the eye finds it on the page. It is the reader's temporary search
+   * mark, and the next page turn or navigation clears it. Not being able to
+   * draw it is fine: the page is already the right one.
+   */
+  private markLandingSentence(href: string | null, offset: number | null): void {
+    if (offset === null) return;
+
+    try {
+      const rendered = this.renderedContents().filter((content) => !!content?.document);
+      const contents =
+        (href ? rendered.find((candidate) => this.contentMatchesHref(candidate, href)) : null) ??
+        rendered[0];
+      if (!contents?.document) return;
+
+      const span = sentenceSpanAt(normalizedEpubResourceText(contents.document), offset);
+      if (!span) return;
+
+      const range = rangeForNormalizedResourceSpan(contents.document, span.start, span.length);
+      const cfi = range ? contents.cfiFromRange(range) : null;
+      if (typeof cfi !== 'string' || cfi.length === 0) return;
+
+      this.annotationManager?.showSearchHighlight(cfi);
+      this.landingMarkShown = true;
+    } catch (error) {
+      console.warn('Could not mark the landing sentence:', error);
+    }
   }
 
   /** Failed closed: surface the existing message and resume persistence. */

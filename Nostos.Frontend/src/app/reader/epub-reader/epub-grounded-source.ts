@@ -342,3 +342,98 @@ export function normalizedResourceOffsetOfNode(document: Document, node: Node): 
   }
   return null;
 }
+
+/** Titles and initials whose full stop does not end a sentence. */
+const SENTENCE_ABBREVIATIONS = new Set([
+  'mr', 'mrs', 'ms', 'dr', 'st', 'sr', 'jr', 'prof', 'mme', 'mlle', 'hr', 'fr', 'vs', 'no',
+]);
+
+const SENTENCE_TERMINATORS = '.!?…。！？';
+const SENTENCE_CLOSERS = '"\'”’)»」』】';
+const SENTENCE_SPAN_MAX = 600;
+
+/** Is the terminator at `index` the end of a sentence in `text`? */
+function endsSentenceAt(text: string, index: number): number | null {
+  const char = text[index];
+  if (!SENTENCE_TERMINATORS.includes(char)) return null;
+
+  let after = index + 1;
+  while (after < text.length && SENTENCE_CLOSERS.includes(text[after])) after++;
+
+  // Scripts written without spaces end a sentence at the mark itself.
+  const unspaced = '。！？'.includes(char);
+  if (!unspaced && after < text.length && !/\s/.test(text[after])) return null;
+
+  // A mark inside a quotation that the sentence carries on from: “Bah!” said he.
+  let next = after;
+  while (next < text.length && /[^\S\n]/.test(text[next])) next++;
+  if (next < text.length && /\p{Ll}/u.test(text[next])) return null;
+
+  if (char === '.') {
+    const word = /([\p{L}]+)$/u.exec(text.slice(Math.max(0, index - 12), index))?.[1] ?? '';
+    if (word.length === 1 || SENTENCE_ABBREVIATIONS.has(word.toLowerCase())) return null;
+  }
+
+  return after;
+}
+
+/**
+ * The sentence around a position in one resource's normalized text, for
+ * marking where the reader landed. `offset` is the end of the last word that
+ * was matched, so the sentence is the one that word belongs to. A paragraph
+ * break always ends a sentence, and a sentence longer than a screenful is cut
+ * to the part around the position rather than marking a whole page.
+ */
+export function sentenceSpanAt(
+  text: string,
+  offset: number,
+): { start: number; length: number } | null {
+  if (!text || !Number.isFinite(offset)) return null;
+
+  const anchor = Math.max(0, Math.min(text.length - 1, Math.trunc(offset) - 1));
+  if (text[anchor] === '\n') return null;
+
+  let start = anchor;
+  const earliest = Math.max(0, anchor - SENTENCE_SPAN_MAX);
+  while (start > earliest && text[start - 1] !== '\n' && sentenceEndBefore(text, start) === null) {
+    start--;
+  }
+  // Cut off by the length limit rather than a boundary: do not split a word.
+  if (start === earliest && start > 0 && text[start - 1] !== '\n') {
+    const space = text.indexOf(' ', start);
+    if (space >= 0 && space < anchor) start = space + 1;
+  }
+
+  let end = anchor + 1;
+  const latest = Math.min(text.length, anchor + SENTENCE_SPAN_MAX);
+  let closed = false;
+  while (end < latest && text[end] !== '\n') {
+    const after = endsSentenceAt(text, end);
+    if (after !== null) {
+      end = after;
+      closed = true;
+      break;
+    }
+    end++;
+  }
+  if (!closed && end === latest && end < text.length && text[end] !== '\n') {
+    const space = text.lastIndexOf(' ', end);
+    if (space > anchor) end = space;
+  }
+
+  while (start < end && /\s/.test(text[start])) start++;
+  while (end > start && /\s/.test(text[end - 1])) end--;
+
+  return end - start >= 2 ? { start, length: end - start } : null;
+}
+
+/** Does a sentence end immediately before `start` (allowing closers and spaces)? */
+function sentenceEndBefore(text: string, start: number): number | null {
+  let index = start - 1;
+  while (index >= 0 && /[^\S\n]/.test(text[index])) index--;
+  while (index >= 0 && SENTENCE_CLOSERS.includes(text[index])) index--;
+  if (index < 0) return null;
+
+  const after = endsSentenceAt(text, index);
+  return after !== null && after <= start ? after : null;
+}

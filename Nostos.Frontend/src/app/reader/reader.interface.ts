@@ -29,6 +29,8 @@ export interface ReaderSourceTarget {
   epubSpineIndex?: number | null;
   epubTextOffset?: number | null;
   excerpt?: string | null;
+  /** Mark the sentence at the EPUB position once the reader has landed on it. */
+  markSentence?: boolean;
 }
 
 export type ReaderSearchStatus = 'idle' | 'searching' | 'ready' | 'not-found';

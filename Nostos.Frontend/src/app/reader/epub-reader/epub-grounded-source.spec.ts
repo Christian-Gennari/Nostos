@@ -4,6 +4,7 @@ import {
   normalizedResourceOffsetOfNode,
   normalizedEpubResourceText,
   rangeForNormalizedResourceSpan,
+  sentenceSpanAt,
 } from './epub-grounded-source';
 
 describe('EPUB normalized resource search text (#761)', () => {
@@ -141,5 +142,59 @@ describe('KOReader xpointer resolution', () => {
     expect(normalizedResourceOffsetOfNode(doc, node)).toBe(text.indexOf('Inside,'));
     const section = nodeAtKoreaderXPointer(doc, '/body/DocFragment[4]/body/section/p[9]')!;
     expect(normalizedResourceOffsetOfNode(doc, section)).toBe(text.indexOf('Inside,'));
+  });
+});
+
+describe('sentenceSpanAt (#844)', () => {
+  function sentence(text: string, endOfWord: string): string | null {
+    const span = sentenceSpanAt(text, text.indexOf(endOfWord) + endOfWord.length);
+    return span ? text.slice(span.start, span.start + span.length) : null;
+  }
+
+  const text =
+    'Chapter One\nMarley was dead: to begin with. There is no doubt whatever about that. ' +
+    '“Bah!” said Scrooge. “Humbug!”\nMr. Utterson the lawyer was a man of a rugged countenance.';
+
+  it('marks the whole sentence a position falls inside', () => {
+    expect(sentence(text, 'no doubt')).toBe('There is no doubt whatever about that.');
+  });
+
+  it('starts at the paragraph when the sentence opens it', () => {
+    expect(sentence(text, 'Marley was')).toBe('Marley was dead: to begin with.');
+  });
+
+  it('keeps closing quotation marks with their sentence', () => {
+    expect(sentence(text, 'said')).toBe('“Bah!” said Scrooge.');
+    expect(sentence(text, 'Humbug')).toBe('“Humbug!”');
+  });
+
+  it('does not end a sentence at a title or an initial', () => {
+    expect(sentence(text, 'lawyer')).toBe(
+      'Mr. Utterson the lawyer was a man of a rugged countenance.',
+    );
+    expect(sentence('He met J. K. Jerome there. Then left.', 'Jerome')).toBe(
+      'He met J. K. Jerome there.',
+    );
+  });
+
+  it('never crosses a paragraph break', () => {
+    expect(sentence(text, 'Chapter')).toBe('Chapter One');
+  });
+
+  it('ends a sentence at the mark in text written without spaces', () => {
+    expect(sentence('我是猫。还没有名字。在哪里出生的也不清楚。', '名字')).toBe('还没有名字。');
+  });
+
+  it('cuts an unbroken run to the part around the position', () => {
+    const run = 'word '.repeat(600).trim();
+    const span = sentenceSpanAt(run, 1500)!;
+    expect(span.length).toBeLessThanOrEqual(1201);
+    expect(span.start).toBeLessThan(1500);
+    expect(span.start + span.length).toBeGreaterThan(1500);
+  });
+
+  it('returns nothing for an empty text or a position on a break', () => {
+    expect(sentenceSpanAt('', 3)).toBeNull();
+    expect(sentenceSpanAt('One.\nTwo.', 5)).toBeNull();
   });
 });

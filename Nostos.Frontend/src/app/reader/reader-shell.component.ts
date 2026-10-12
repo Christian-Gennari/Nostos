@@ -794,6 +794,7 @@ export class ReaderShell implements OnInit, OnDestroy {
         epubSpineIndex: Number.isInteger(spine) ? spine : null,
         epubTextOffset: Number.isInteger(offset) && (offset ?? -1) >= 0 ? offset : null,
         excerpt: sourceExcerpt,
+        ...(params.get('sourceMark') === 'sentence' ? { markSentence: true } : {}),
       };
     }
 
