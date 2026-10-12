@@ -7,7 +7,12 @@ import { of, throwError } from 'rxjs';
 // runtime. Used only for static source guards (template/css/ts files).
 import { readFileSync } from 'node:fs';
 
-import { PdfReader, isSubstantialPageText, sourcePassagePhrase } from './pdf-reader.component';
+import {
+  PdfReader,
+  isSubstantialPageText,
+  sourcePassagePhrase,
+  sourcePassagePhrases,
+} from './pdf-reader.component';
 import {
   NgxExtendedPdfViewerModule,
   NgxExtendedPdfViewerService,
@@ -538,6 +543,43 @@ describe('PdfReader shared search adapter (#761)', () => {
     });
     expect(fixture.componentInstance.searchAvailable()).toBe(false);
     expect(fixture.componentInstance.textCapability()).toBe('unknown');
+  });
+
+  describe('marking the passage after a landing from another edition (#844)', () => {
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => {
+      vi.useRealTimers();
+      pdfSearch.find.mockReset();
+      pdfSearch.find.mockImplementation(() => [Promise.resolve(2), Promise.resolve(1)]);
+    });
+
+    it('tries the next phrase when the first is not on the page', async () => {
+      pdfSearch.find
+        .mockReturnValueOnce([Promise.resolve(0), Promise.resolve(0)])
+        .mockReturnValueOnce([Promise.resolve(0), Promise.resolve(1)]);
+
+      (fixture.componentInstance as any).highlightSourcePassage(
+        'from his brow. " That is no light part of my penance," pursued ghost',
+      );
+      await vi.advanceTimersByTimeAsync(600);
+
+      expect(pdfSearch.find.mock.calls.map(([query]: any[]) => query)).toEqual([
+        'part of my penance," pursued ghost',
+        'is no light part of my',
+      ]);
+      expect(fixture.componentInstance.searchState().status).toBe('ready');
+    });
+
+    it('leaves no search behind when no phrase is on the page', async () => {
+      pdfSearch.find.mockReturnValue([Promise.resolve(0)]);
+
+      (fixture.componentInstance as any).highlightSourcePassage(
+        'from his brow. " That is no light part of my penance," pursued ghost',
+      );
+      await vi.advanceTimersByTimeAsync(1500);
+
+      expect(fixture.componentInstance.searchState().status).toBe('idle');
+    });
   });
 
   describe('the excerpt sent to another edition (#844)', () => {
@@ -1186,6 +1228,25 @@ describe('PDF passage helpers for another edition (#844)', () => {
     expect(sourcePassagePhrase('two words')).toBeNull();
     expect(sourcePassagePhrase('一二')).toBeNull();
     expect(sourcePassagePhrase(null)).toBeNull();
+  });
+
+  it('offers plain runs of the passage after its last six words', () => {
+    // As measured on a 1911 scan: the server's text lost "the" before "ghost".
+    expect(
+      sourcePassagePhrases(
+        'and w4ped the perspiration from his brow. " That is no light part of my penance," pursued ghost',
+      ),
+    ).toEqual([
+      'part of my penance," pursued ghost',
+      'is no light part of my',
+      'and w4ped the perspiration from his',
+    ]);
+  });
+
+  it('offers one phrase when the passage is all plain words', () => {
+    expect(sourcePassagePhrases('upon his own ramparts than there would be')).toEqual([
+      'own ramparts than there would be',
+    ]);
   });
 
   it('tells a page of text from a caption or a chapter title', () => {
