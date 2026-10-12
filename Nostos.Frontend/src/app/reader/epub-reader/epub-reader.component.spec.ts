@@ -1520,6 +1520,34 @@ describe('EpubReader grounded-source settle protection (PR #582)', () => {
     });
   }
 
+  it('applies a source that arrives while the saved position is being restored (#844)', async () => {
+    // The opening display has passed the point where it takes a queued source
+    // and is restoring the saved position when the shell hands the landing over.
+    let finishRestore!: () => void;
+    rendition.display.mockImplementation((target?: string) =>
+      target === STALE_CFI
+        ? new Promise<void>((resolve) => (finishRestore = resolve))
+        : Promise.resolve(),
+    );
+
+    fixture = TestBed.createComponent(EpubReader);
+    fixture.componentRef.setInput('bookId', 'book-1');
+    fixture.componentRef.setInput('book', { id: 'book-1', lastLocation: STALE_CFI } as never);
+    fixture.detectChanges();
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(displayCallsFor(STALE_CFI)).toBe(1);
+
+    await fixture.componentInstance.goToSource(groundedTarget());
+    expect(displayCallsFor(TARGET_CFI)).toBe(0);
+
+    finishRestore();
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Not stranded: the reader goes on to the place it was asked for.
+    expect(displayCallsFor(TARGET_CFI)).toBe(1);
+  });
+
   it('confirms a grounded target that stays in the reading view and persists it', async () => {
     await openReader();
     rangeRect = onPage();

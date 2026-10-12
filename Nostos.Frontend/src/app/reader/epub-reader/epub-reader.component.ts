@@ -1853,7 +1853,19 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
         this.failOpen();
       })
       .finally(() => {
-        if (!this.errorMessage()) this.unlockProgress();
+        if (this.errorMessage()) return;
+        this.unlockProgress();
+
+        // The opening display consumes a queued source once, before the saved
+        // position is restored. A source that arrives during that restore was
+        // queued after the one point that would have applied it, and the
+        // reader stayed where it was left: a landing from another edition
+        // opened at the old place about every other time on a cached book.
+        const late = this.pendingGroundedSource;
+        if (late && rendition === this.rendition) {
+          this.pendingGroundedSource = null;
+          void this.applyGroundedSource(late);
+        }
       });
   }
 
