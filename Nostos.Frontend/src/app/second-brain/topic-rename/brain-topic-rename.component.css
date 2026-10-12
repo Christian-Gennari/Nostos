@@ -1,0 +1,132 @@
+:host {
+  display: block;
+  min-width: 0;
+  width: 100%;
+}
+
+.inline-rename {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.inline-rename-field {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+/* In the index the field stands exactly where the name stood: the row's own
+ * type, and a box no taller than the row, so the list does not shift. */
+.inline-rename .inline-rename-input {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  min-height: 30px;
+  padding: 0.15rem 0.5rem;
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 0.88rem;
+  font-weight: 500;
+}
+
+.inline-rename-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+}
+
+.inline-rename .inline-rename-action {
+  width: 28px;
+  height: 28px;
+}
+
+.inline-rename .inline-rename-save:not(:disabled) {
+  color: var(--color-brand-accent);
+}
+
+.is-busy .inline-rename-input {
+  opacity: 0.6;
+}
+
+/* Under the field, where it can wrap. Beside it, it pushed the field out of a
+ * narrow index column. */
+.inline-rename-error {
+  padding-inline: 0.5rem;
+  color: var(--color-danger);
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 0.72rem;
+  line-height: 1.3;
+}
+
+/* The open topic's heading: the title itself becomes editable. Same face,
+ * size and weight as `.topic-title`, with a rule under it in place of a box. */
+.header-rename {
+  align-items: stretch;
+  margin: 0 0 0.35rem;
+}
+
+.header-rename .inline-rename-field {
+  width: 100%;
+  gap: 0.35rem;
+}
+
+.header-rename .inline-rename-input {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-bottom: 2px solid var(--color-brand-accent);
+  margin-bottom: -2px;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--color-text-main);
+  font-family: 'Newsreader', serif;
+  font-size: 2.4rem;
+  font-weight: 500;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+  text-align: left;
+}
+
+.header-rename .inline-rename-input:focus-visible {
+  outline: none;
+  border-bottom-color: var(--border-focus);
+}
+
+.header-rename .inline-rename-input[aria-invalid='true'] {
+  border-bottom-color: var(--color-danger);
+}
+
+.header-rename .inline-rename-action {
+  width: 32px;
+  height: 32px;
+}
+
+.header-rename .inline-rename-error {
+  padding-inline: 0;
+  font-size: 0.8rem;
+}
+
+@media (max-width: 768px) {
+  .inline-rename .inline-rename-input {
+    min-height: 40px;
+  }
+
+  .inline-rename .inline-rename-action {
+    width: 40px;
+    height: 40px;
+  }
+
+  .header-rename .inline-rename-input {
+    min-height: 0;
+    font-size: 2rem;
+  }
+
+  /* Touch-sized buttons are taller than the title; let them overhang it
+   * rather than push the lines below down. */
+  .header-rename .inline-rename-actions {
+    margin-block: -4px;
+  }
+}

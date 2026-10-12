@@ -1,0 +1,54 @@
+<div
+  class="inline-rename"
+  [class.header-rename]="variant() === 'title'"
+  [class.is-busy]="busy()"
+>
+  <div class="inline-rename-field">
+    <input
+      appInput
+      controlSize="compact"
+      #field
+      type="text"
+      class="inline-rename-input"
+      autocomplete="off"
+      spellcheck="false"
+      [value]="value()"
+      (input)="value.set($any($event.target).value)"
+      (keydown.enter)="commit($event)"
+      (keydown.escape)="cancel($event)"
+      [attr.aria-label]="'Rename ' + name()"
+      [attr.aria-describedby]="error() ? errorId : null"
+      [invalid]="!!error()"
+      [disabled]="busy()"
+    />
+    <div class="inline-rename-actions">
+      <button
+        appIconButton
+        type="button"
+        class="inline-rename-action inline-rename-save"
+        icon="check"
+        size="xs"
+        [glyphSize]="16"
+        aria-label="Save name"
+        title="Save (Enter)"
+        [disabled]="busy()"
+        (click)="commit($event)"
+      ></button>
+      <button
+        appIconButton
+        type="button"
+        class="inline-rename-action inline-rename-cancel"
+        icon="x"
+        size="xs"
+        [glyphSize]="16"
+        aria-label="Cancel rename"
+        title="Cancel (Esc)"
+        [disabled]="busy()"
+        (click)="cancel($event)"
+      ></button>
+    </div>
+  </div>
+  @if (error(); as message) {
+  <span class="inline-rename-error" role="alert" [id]="errorId">{{ message }}</span>
+  }
+</div>

@@ -1195,38 +1195,12 @@
   flex-wrap: wrap;
 }
 
-.inline-rename {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  min-width: 0;
-}
-
-.inline-rename-input {
-  width: 100%;
-  min-width: 0;
-}
-
-.inline-rename-error {
-  flex: 0 0 auto;
-  color: var(--color-danger);
-  font-family: 'Hanken Grotesk', sans-serif;
-  font-size: 0.7rem;
-  white-space: nowrap;
-}
-
-.header-rename {
-  justify-content: center;
-  max-width: 620px;
-  margin: 0 auto 0.35rem;
-}
-
-.header-rename .inline-rename-input {
-  font-family: 'Newsreader', serif;
-  font-size: 2.2rem;
-  font-weight: 600;
-  line-height: 1.2;
-  text-align: center;
+/* The row keeps its place in the list while its name is being edited, but it
+ * is no longer a button: no pointer, and room for the error underneath. */
+.index-item--renaming {
+  height: auto;
+  padding: 2px 4px 2px 6px;
+  cursor: default;
 }
 
 /* Related topics are evidence-backed structural paths. Their names remain
@@ -1928,10 +1902,6 @@
   .topic-action {
     flex: 1 1 30%;
     min-height: 44px;
-  }
-
-  .header-rename .inline-rename-input {
-    font-size: 2rem;
   }
 
   .brain-proposal {
