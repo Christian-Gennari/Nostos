@@ -54,6 +54,7 @@ import { BrainNoteBrowse } from './brain-note-browse';
 import { BrainNoteReview } from './brain-note-review';
 import { BrainTopicActions } from './brain-topic-actions';
 import { BrainTopicProposals } from './brain-topic-proposals';
+import { ReviewReturnStore, type ReviewReturnState } from './review-return-store';
 import { TopicDataCache } from './topic-data-cache';
 import { BrainTopicPickerComponent } from './topic-picker/brain-topic-picker.component';
 import { BrainTopicProposalsComponent } from './topic-proposals/brain-topic-proposals.component';
@@ -81,24 +82,6 @@ import {
   type NoteSourceParams,
   type SourceOption,
 } from './second-brain.helpers';
-
-const REVIEW_STORAGE_PREFIX = 'nostos.brain.reviewReturn.v1';
-
-interface ReviewReturnState {
-  returnMode: 'list' | 'notes';
-  searchQuery: string;
-  selectedId: string | null;
-  noteSearchQuery: string;
-  sourceFilter: string;
-  noteSort: NoteSort;
-  browseQuery: string;
-  browseBookId: string | null;
-  browseBookTitle: string;
-  browseWithoutTopics: boolean;
-  browseOldestFirst: boolean;
-  focusedNoteId: string | null;
-  reviewId: string | null;
-}
 
 @Component({
   standalone: true,
@@ -230,7 +213,7 @@ export class SecondBrain implements AfterViewChecked {
   private noteMoreTrigger: HTMLButtonElement | null = null;
   private reviewReturnState: ReviewReturnState | null = null;
   private reviewReturnNote: NoteSearchHit | null = null;
-  private reviewStorageKey: string | null = null;
+  private readonly reviewReturn = new ReviewReturnStore();
   private noteSearchTimer: ReturnType<typeof setTimeout> | null = null;
   private noteSearchSeq = 0;
   indexSort = signal<IndexSort>(this.readStoredSort());
@@ -550,67 +533,15 @@ export class SecondBrain implements AfterViewChecked {
     // review mode.
   }
 
-  private readReviewReturnState(): ReviewReturnState | null {
-    if (!this.reviewStorageKey) return null;
-
-    try {
-      const raw = sessionStorage.getItem(this.reviewStorageKey);
-      if (!raw) return null;
-
-      const value: unknown = JSON.parse(raw);
-      if (!value || typeof value !== 'object') return null;
-
-      const state = value as Partial<ReviewReturnState>;
-      if (
-        (state.returnMode !== 'list' && state.returnMode !== 'notes') ||
-        typeof state.searchQuery !== 'string' ||
-        typeof state.noteSearchQuery !== 'string' ||
-        typeof state.sourceFilter !== 'string' ||
-        !['newest', 'oldest', 'source'].includes(state.noteSort ?? '') ||
-        typeof state.browseQuery !== 'string' ||
-        typeof state.browseBookTitle !== 'string' ||
-        typeof state.browseWithoutTopics !== 'boolean' ||
-        typeof state.browseOldestFirst !== 'boolean' ||
-        (state.selectedId != null && typeof state.selectedId !== 'string') ||
-        (state.browseBookId != null && typeof state.browseBookId !== 'string') ||
-        (state.focusedNoteId != null && typeof state.focusedNoteId !== 'string') ||
-        (state.reviewId != null && typeof state.reviewId !== 'string')
-      ) {
-        sessionStorage.removeItem(this.reviewStorageKey);
-        return null;
-      }
-
-      return state as ReviewReturnState;
-    } catch {
-      return null;
-    }
-  }
-
   private persistReviewReturnState(): void {
-    if (!this.reviewStorageKey || !this.reviewReturnState) return;
-    try {
-      sessionStorage.setItem(
-        this.reviewStorageKey,
-        JSON.stringify({
-          ...this.reviewReturnState,
-          reviewId: this.review.focusId(),
-        }),
-      );
-    } catch {
-      // Storage unavailable: review remains functional within this visit.
-    }
+    if (!this.reviewReturnState) return;
+    this.reviewReturn.write({ ...this.reviewReturnState, reviewId: this.review.focusId() });
   }
 
   private clearReviewReturnState(): void {
     this.reviewReturnState = null;
     this.review.restoringFocusId.set(null);
-    if (!this.reviewStorageKey) return;
-
-    try {
-      sessionStorage.removeItem(this.reviewStorageKey);
-    } catch {
-      // Storage unavailable.
-    }
+    this.reviewReturn.clear();
   }
 
   private initializeReviewSession(): void {
@@ -648,22 +579,10 @@ export class SecondBrain implements AfterViewChecked {
   }
 
   private setReviewIdentity(identity: string | null): void {
-    const nextKey = identity
-      ? `${REVIEW_STORAGE_PREFIX}:${encodeURIComponent(identity)}`
-      : null;
+    const identityChange = this.reviewReturn.setIdentity(identity);
+    if (!identityChange.changed) return;
 
-    if (nextKey === this.reviewStorageKey) return;
-
-    const previousKey = this.reviewStorageKey;
-    this.reviewStorageKey = nextKey;
-
-    if (previousKey) {
-      try {
-        sessionStorage.removeItem(previousKey);
-      } catch {
-        // Storage unavailable.
-      }
-
+    if (identityChange.hadPrevious) {
       if (this.isReviewing()) {
         this.review.abandon();
         this.viewMode.set('list');
@@ -673,11 +592,11 @@ export class SecondBrain implements AfterViewChecked {
       this.review.restoringFocusId.set(null);
     }
 
-    if (!nextKey) return;
+    if (!identityChange.hasCurrent) return;
 
     // Never carry the previous account's active UI into a new account.
     // A fresh instance may restore only the authenticated account's own key.
-    if (previousKey) return;
+    if (identityChange.hadPrevious) return;
 
     // Explicit route query params (noteId, topicId, conceptId) take precedence
     // over any asynchronous restoration of stored review state.
@@ -691,7 +610,7 @@ export class SecondBrain implements AfterViewChecked {
       return;
     }
 
-    const saved = this.readReviewReturnState();
+    const saved = this.reviewReturn.read();
     if (!saved) return;
 
     this.reviewReturnState = saved;
