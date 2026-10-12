@@ -109,6 +109,7 @@ export class EpubAnnotationManager {
   private pendingHighlight: PendingEpubHighlight | null = null;
   /** Ephemeral search underline; a distinct epub.js annotation type cannot collide with saved highlights. */
   private searchCfiRange: string | null = null;
+  private landingCfiRange: string | null = null;
   private lastCapturedKey: string | null = null;
   private readonly documentCleanups = new Map<Document, () => void>();
   /**
@@ -383,6 +384,30 @@ export class EpubAnnotationManager {
   }
 
   /**
+   * Underlines the sentence the reader landed on from another edition. It is
+   * a line under the words, not a pen: nothing is saved, and it is separate
+   * from the search mark so that neither clears the other.
+   */
+  public showLandingMark(cfiRange: string): void {
+    this.clearLandingMark();
+    this.landingCfiRange = cfiRange;
+    this.rendition.annotations.underline(
+      cfiRange,
+      { nostosLanding: true },
+      undefined,
+      // Drawn by the reader's stylesheet: epub.js gives the rule its own
+      // black stroke, which attributes passed here cannot replace.
+      'epubjs-landing-mark',
+    );
+  }
+
+  public clearLandingMark(): void {
+    if (!this.landingCfiRange) return;
+    this.rendition.annotations.remove(this.landingCfiRange, 'underline');
+    this.landingCfiRange = null;
+  }
+
+  /**
    * epub.js's `selected`: a debounced selectionchange. It is how a touch
    * selection is followed while its handles are dragged, which fires no touch
    * events. A mouse selection is completed by mouseup and a keyboard one by
@@ -607,6 +632,7 @@ export class EpubAnnotationManager {
   public destroy(): void {
     this.discardHighlight();
     this.clearSearchHighlight();
+    this.clearLandingMark();
 
     if (this.selectedHandler) {
       this.rendition.off('selected', this.selectedHandler);

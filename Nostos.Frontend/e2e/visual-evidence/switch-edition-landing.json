@@ -1,0 +1,92 @@
+[
+  {
+    "file": "switch-edition-landing-epub-before-desktop-light.png",
+    "theme": null,
+    "landingMarks": 0,
+    "landingLines": 0,
+    "boxedRects": 0,
+    "pdfMarked": null,
+    "message": null
+  },
+  {
+    "file": "switch-edition-landing-epub-before-mobile-light.png",
+    "theme": null,
+    "landingMarks": 0,
+    "landingLines": 0,
+    "boxedRects": 0,
+    "pdfMarked": null,
+    "message": null
+  },
+  {
+    "file": "switch-edition-landing-epub-desktop-light.png",
+    "theme": null,
+    "landingMarks": 1,
+    "landingLines": 8,
+    "boxedRects": 0,
+    "pdfMarked": null,
+    "message": null
+  },
+  {
+    "file": "switch-edition-landing-epub-desktop-dark.png",
+    "theme": "dark",
+    "landingMarks": 1,
+    "landingLines": 8,
+    "boxedRects": 0,
+    "pdfMarked": null,
+    "message": null
+  },
+  {
+    "file": "switch-edition-landing-epub-mobile-light.png",
+    "theme": null,
+    "landingMarks": 1,
+    "landingLines": 11,
+    "boxedRects": 0,
+    "pdfMarked": null,
+    "message": null
+  },
+  {
+    "file": "switch-edition-landing-epub-mobile-dark.png",
+    "theme": "dark",
+    "landingMarks": 1,
+    "landingLines": 11,
+    "boxedRects": 0,
+    "pdfMarked": null,
+    "message": null
+  },
+  {
+    "file": "switch-edition-landing-epub-zh-desktop-light.png",
+    "theme": null,
+    "landingMarks": 1,
+    "landingLines": 4,
+    "boxedRects": 0,
+    "pdfMarked": null,
+    "message": null
+  },
+  {
+    "file": "switch-edition-landing-epub-ja-desktop-light.png",
+    "theme": null,
+    "landingMarks": 1,
+    "landingLines": 5,
+    "boxedRects": 0,
+    "pdfMarked": null,
+    "message": null
+  },
+  {
+    "file": "switch-edition-landing-epub-ja-mobile-light.png",
+    "theme": null,
+    "landingMarks": 1,
+    "landingLines": 6,
+    "boxedRects": 0,
+    "pdfMarked": null,
+    "message": null
+  },
+  {
+    "file": "switch-edition-landing-pdf-scan-desktop-light.png",
+    "theme": null,
+    "landingMarks": 0,
+    "landingLines": 0,
+    "boxedRects": 0,
+    "pdfMarked": "is no light part of my",
+    "message": null
+  }
+]

@@ -1520,6 +1520,34 @@ describe('EpubReader grounded-source settle protection (PR #582)', () => {
     });
   }
 
+  it('applies a source that arrives while the saved position is being restored (#844)', async () => {
+    // The opening display has passed the point where it takes a queued source
+    // and is restoring the saved position when the shell hands the landing over.
+    let finishRestore!: () => void;
+    rendition.display.mockImplementation((target?: string) =>
+      target === STALE_CFI
+        ? new Promise<void>((resolve) => (finishRestore = resolve))
+        : Promise.resolve(),
+    );
+
+    fixture = TestBed.createComponent(EpubReader);
+    fixture.componentRef.setInput('bookId', 'book-1');
+    fixture.componentRef.setInput('book', { id: 'book-1', lastLocation: STALE_CFI } as never);
+    fixture.detectChanges();
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(displayCallsFor(STALE_CFI)).toBe(1);
+
+    await fixture.componentInstance.goToSource(groundedTarget());
+    expect(displayCallsFor(TARGET_CFI)).toBe(0);
+
+    finishRestore();
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Not stranded: the reader goes on to the place it was asked for.
+    expect(displayCallsFor(TARGET_CFI)).toBe(1);
+  });
+
   it('confirms a grounded target that stays in the reading view and persists it', async () => {
     await openReader();
     rangeRect = onPage();
@@ -1539,6 +1567,43 @@ describe('EpubReader grounded-source settle protection (PR #582)', () => {
       expect.any(Number),
     );
     expect(progressWritesWith(STALE_CFI)).toEqual([]);
+  });
+
+  it('underlines the sentence of a landing from another edition, until the next page turn (#844)', async () => {
+    await openReader();
+    // Real ranges: the mark is a span of the page's own text.
+    vi.mocked(contents.document.createRange).mockRestore();
+    rendition.annotations.underline = vi.fn();
+
+    await fixture.componentInstance.goToSource(
+      groundedTarget({ epubCfi: null, epubTextOffset: 30, markSentence: true }),
+    );
+    emitRelocated(TARGET_CFI);
+    expect(rendition.annotations.underline).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(400);
+
+    expect(rendition.annotations.underline).toHaveBeenCalledTimes(1);
+    expect(rendition.annotations.underline.mock.calls[0][0]).toBe(TARGET_CFI);
+    const marked = contents.cfiFromRange.mock.calls.at(-1)[0] as Range;
+    expect(marked.toString()).toBe(
+      'The cited passage begins here and continues to the end of the paragraph.',
+    );
+
+    fixture.componentInstance.next();
+    expect(rendition.annotations.remove).toHaveBeenCalledWith(TARGET_CFI, 'underline');
+  });
+
+  it('does not underline an ordinary grounded source', async () => {
+    await openReader();
+    vi.mocked(contents.document.createRange).mockRestore();
+    rendition.annotations.underline = vi.fn();
+
+    await fixture.componentInstance.goToSource(groundedTarget({ epubCfi: null, epubTextOffset: 30 }));
+    emitRelocated(TARGET_CFI);
+    await vi.advanceTimersByTimeAsync(400);
+
+    expect(rendition.annotations.underline).not.toHaveBeenCalled();
   });
 
   it('reasserts the target once when the reflow re-displays the stale section start', async () => {

@@ -129,6 +129,18 @@ describe('visibleEpubExcerpt', () => {
     expect(visibleEpubExcerpt([], viewport)).toBeNull();
   });
 
+  it('leaves ruby glosses out of the excerpt (#844)', () => {
+    const content = makeContent('placeholder');
+    content.document.body.querySelector('p')!.innerHTML =
+      '<ruby>親譲<rp>（</rp><rt>おやゆず</rt><rp>）</rp></ruby>りの' +
+      '<ruby>無鉄砲<rt>むてっぽう</rt></ruby>で小供の時から損ばかりしている。';
+
+    // The words as printed in the line, without the readings above them.
+    expect(visibleEpubExcerpt([content], viewport)?.replace(/ /g, '')).toBe(
+      '親譲りの無鉄砲で小供の時から損ばかりしている。',
+    );
+  });
+
   it('caps the submitted excerpt at 280 characters', () => {
     const content = makeContent(
       'A fairly long reading passage with multiple words. '.repeat(20),

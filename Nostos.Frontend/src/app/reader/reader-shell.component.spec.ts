@@ -664,6 +664,41 @@ describe('ReaderShell grounded book-text source navigation', () => {
     fixture.destroy();
   });
 
+
+  it('asks the EPUB reader to mark the sentence of a landing from another edition (#844)', async () => {
+    const epubBook = { ...audiobook, id: 'book-1', type: 'ebook', fileName: 'source.epub' } as Book;
+    booksGetSpy.mockReturnValue(of(epubBook));
+
+    const fixture = await configureReaderShell({
+      sourceCfi: 'epubcfi(/6/4!/4/2/6:0)',
+      sourceHref: 'chapter-2.xhtml',
+      sourceSpine: 2,
+      sourceOffset: 314,
+      sourceExcerpt: 'A uniquely grounded passage.',
+      sourceMark: 'sentence',
+    });
+    fixture.detectChanges();
+    fixture.detectChanges();
+
+    await new Promise((resolve) => setTimeout(resolve, 130));
+    fixture.detectChanges();
+
+    const stub = fixture.debugElement.query(By.directive(EpubReaderStub))
+      .componentInstance as EpubReaderStub;
+    expect(stub.goToSource).toHaveBeenCalledTimes(1);
+    expect(stub.goToSource).toHaveBeenCalledWith({
+      type: 'epub',
+      epubCfi: 'epubcfi(/6/4!/4/2/6:0)',
+      epubResourceHref: 'chapter-2.xhtml',
+      epubSpineIndex: 2,
+      epubTextOffset: 314,
+      excerpt: 'A uniquely grounded passage.',
+      markSentence: true,
+    });
+
+    fixture.destroy();
+  });
+
   it('re-consumes changed grounded EPUB params on an already-mounted reader', async () => {
     const epubBook = { ...audiobook, id: 'book-1', type: 'ebook', fileName: 'source.epub' } as Book;
     booksGetSpy.mockReturnValue(of(epubBook));

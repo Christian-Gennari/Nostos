@@ -125,6 +125,7 @@ describe('SwitchEditionDialog', () => {
         sourceSpine: 1,
         sourceOffset: 2938,
         sourceExcerpt: 'upon his own ramparts',
+        sourceMark: 'sentence',
       },
     });
   });

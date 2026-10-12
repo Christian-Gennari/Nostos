@@ -10,12 +10,19 @@ public sealed class AudioAlignmentSearch
         double AudioSeconds,
         double TextOffset);
 
+    /// <summary>
+    /// What one transcribed clip established: the text it covers. When
+    /// <paramref name="Knots"/> is given, it lists the (time, text) pairs the
+    /// transcript supports, in order; the text span then runs from the first
+    /// pair to the last. Without it the span is spread evenly over the clip.
+    /// </summary>
     public sealed record Observation(
         double ClipStartSeconds,
         double ClipEndSeconds,
         int TextStartOffset,
         int TextEndOffset,
-        double Score);
+        double Score,
+        IReadOnlyList<Point>? Knots = null);
 
     public sealed record Decision(
         bool Located,
@@ -29,9 +36,20 @@ public sealed class AudioAlignmentSearch
     private readonly AlignmentOptions options;
 
     private readonly List<Point> locatedCenters = [];
-    /// <summary>The exact pair of each located probe: clip end, end of its matched words.</summary>
+    /// <summary>The last pair of each located probe: normally the clip's end and the end of its matched words.</summary>
     private readonly List<Point> exactEnds = [];
     private readonly List<double> probedClipCenters = [];
+
+    /// <summary>Characters per second inside the clip of each entry of <see cref="exactEnds"/>.</summary>
+    private readonly List<double> exactEndRates = [];
+
+    /// <summary>
+    /// How much of the last located clip its transcript placed, and how far
+    /// before the clip's end that stretch stopped. A clean transcript places
+    /// the whole clip; a noisy one may place only its closing words.
+    /// </summary>
+    private double readableSeconds;
+    private double readableGapSeconds;
 
     private Point? lower;
     private Point? upper;
@@ -66,9 +84,23 @@ public sealed class AudioAlignmentSearch
             if (Math.Abs(characters) > averageRate * options.ProbeSeconds)
                 return null;
 
-            var measured = LocalRate();
-            var fast = Math.Max(averageRate, ValidRate(measured) ? measured : averageRate) * 1.25;
-            var slow = Math.Min(averageRate, ValidRate(measured) ? measured : averageRate) * 0.8;
+            // The pace inside the nearest clip is the best evidence of the pace
+            // just outside it, and narrows the allowance for being wrong.
+            var inClip = exactEndRates[exactEnds.IndexOf(nearest)];
+            double fast;
+            double slow;
+
+            if (ValidRate(inClip))
+            {
+                fast = inClip * 1.1;
+                slow = inClip * 0.9;
+            }
+            else
+            {
+                var measured = LocalRate();
+                fast = Math.Max(averageRate, ValidRate(measured) ? measured : averageRate) * 1.25;
+                slow = Math.Min(averageRate, ValidRate(measured) ? measured : averageRate) * 0.8;
+            }
 
             var seconds = nearest.AudioSeconds +
                 characters / (characters >= 0 ? fast : slow);
@@ -200,13 +232,23 @@ public sealed class AudioAlignmentSearch
 
     /// <summary>
     /// The requested cutter endpoint puts the current estimate halfway
-    /// through a full clip, except near audiobook boundaries.
+    /// through the part of a clip a transcript can be expected to place:
+    /// the whole clip at first, and after a clip that was placed only by its
+    /// closing words, those words. Clamped at the audiobook's boundaries.
     /// </summary>
     public double ClipEndSeconds =>
         Math.Clamp(
-            EstimateSeconds + options.ProbeSeconds / 2,
+            EstimateSeconds + AfterEstimateSeconds,
             Math.Min(durationSeconds, 0.001),
             durationSeconds);
+
+    private double AfterEstimateSeconds =>
+        readableSeconds > 0
+            ? Math.Clamp(
+                readableSeconds / 2 + readableGapSeconds,
+                Math.Min(2, options.ProbeSeconds / 2),
+                options.ProbeSeconds / 2)
+            : options.ProbeSeconds / 2;
 
     public double ClipStartSeconds =>
         Math.Max(0, ClipEndSeconds - options.ProbeSeconds);
@@ -229,11 +271,12 @@ public sealed class AudioAlignmentSearch
             probe.ClipStartSeconds,
             probe.ClipEndSeconds);
 
-        // The start/end mappings are approximations. Use the
-        // measured passage midpoint for search progression.
+        var knots = Knots(probe);
+
+        // Use the measured passage midpoint for search progression.
         var center = new Point(
-            probe.ClipStartSeconds +
-                (probe.ClipEndSeconds - probe.ClipStartSeconds) / 2,
+            knots[0].AudioSeconds +
+                (knots[^1].AudioSeconds - knots[0].AudioSeconds) / 2,
             probe.TextStartOffset +
                 ((double)probe.TextEndOffset -
                     probe.TextStartOffset) / 2);
@@ -262,20 +305,42 @@ public sealed class AudioAlignmentSearch
         }
 
         locatedCenters.Add(center);
-        exactEnds.Add(new Point(probe.ClipEndSeconds, probe.TextEndOffset));
+        exactEnds.Add(knots[^1]);
+
+        var placedSeconds = knots[^1].AudioSeconds - knots[0].AudioSeconds;
+        var placedRate = (knots[^1].TextOffset - knots[0].TextOffset) / placedSeconds;
+
+        exactEndRates.Add(
+            ValidRate(placedRate) &&
+            placedRate >= averageRate / options.MaximumLocalRateRatio &&
+            placedRate <= averageRate * options.MaximumLocalRateRatio
+                ? placedRate
+                : double.NaN);
+
+        readableSeconds = placedSeconds;
+        readableGapSeconds = probe.ClipEndSeconds - knots[^1].AudioSeconds;
 
         // Tolerance helps guide the search, but cannot turn a passage
         // that does not contain the target into a successful location.
         if (targetOffset >= probe.TextStartOffset &&
             targetOffset <= probe.TextEndOffset)
         {
-            var proportion =
-                (targetOffset - probe.TextStartOffset) /
-                (double)(probe.TextEndOffset - probe.TextStartOffset);
+            var position = knots[^1].AudioSeconds;
 
-            var position = probe.ClipStartSeconds +
-                proportion *
-                (probe.ClipEndSeconds - probe.ClipStartSeconds);
+            for (var i = 1; i < knots.Count; i++)
+            {
+                if (targetOffset > knots[i].TextOffset)
+                    continue;
+
+                var from = knots[i - 1];
+                var to = knots[i];
+
+                position = from.AudioSeconds +
+                    (targetOffset - from.TextOffset) /
+                    (to.TextOffset - from.TextOffset) *
+                    (to.AudioSeconds - from.AudioSeconds);
+                break;
+            }
 
             HasNextProbe = false;
 
@@ -324,6 +389,43 @@ public sealed class AudioAlignmentSearch
             false,
             null,
             HasNextProbe ? EstimateSeconds : null);
+    }
+
+    /// <summary>
+    /// The (time, text) pairs a probe supports, with strictly increasing times
+    /// and text offsets. Speech is taken as even between two pairs. Pairs that
+    /// do not fit the clip or the span fall back to the clip's two ends.
+    /// </summary>
+    private static IReadOnlyList<Point> Knots(Observation probe)
+    {
+        var given = probe.Knots;
+
+        if (given is { Count: >= 2 } &&
+            given[0].TextOffset == probe.TextStartOffset &&
+            given[^1].TextOffset == probe.TextEndOffset)
+        {
+            var ordered = true;
+
+            for (var i = 0; i < given.Count && ordered; i++)
+            {
+                ordered =
+                    double.IsFinite(given[i].AudioSeconds) &&
+                    given[i].AudioSeconds >= probe.ClipStartSeconds &&
+                    given[i].AudioSeconds <= probe.ClipEndSeconds &&
+                    (i == 0 ||
+                     (given[i].AudioSeconds > given[i - 1].AudioSeconds &&
+                      given[i].TextOffset > given[i - 1].TextOffset));
+            }
+
+            if (ordered)
+                return given;
+        }
+
+        return
+        [
+            new Point(probe.ClipStartSeconds, probe.TextStartOffset),
+            new Point(probe.ClipEndSeconds, probe.TextEndOffset),
+        ];
     }
 
     public double Decline()
@@ -443,7 +545,7 @@ public sealed class AudioAlignmentSearch
     private double ClipCenter(double estimate)
     {
         var end = Math.Clamp(
-            estimate + options.ProbeSeconds / 2,
+            estimate + AfterEstimateSeconds,
             Math.Min(durationSeconds, 0.001),
             durationSeconds);
 

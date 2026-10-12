@@ -1,19 +1,55 @@
-using System.Text.RegularExpressions;
 using Nostos.Product.BookText;
 
 namespace Nostos.Product.Alignment;
 
+/// <summary>
+/// A match is accepted at <paramref name="MinimumScore"/> when it beats every
+/// other place in the book by <paramref name="MinimumMargin"/>. A match a
+/// little below that, down to <paramref name="RelaxedScore"/>, is accepted only
+/// when nothing else in the book comes within <paramref name="RelaxedMargin"/>:
+/// a few misheard or differently spelled words in a passage that occurs once.
+/// </summary>
 public sealed record MatcherSettings(double MinimumScore = 0.85, double MinimumMargin = 0.12,
-    int MinimumTokens = 8, int MaximumTokens = 24);
+    int MinimumTokens = 8, int MaximumTokens = 24,
+    double RelaxedScore = 0.80, double RelaxedMargin = 0.20)
+{
+    /// <summary>
+    /// The settings for a piece of text. One character of an unspaced script
+    /// says less than a word does, so such text is matched over twice as many
+    /// tokens: about the same few seconds of speech either way.
+    ///
+    /// The same sentence of Japanese can be written with a word in characters
+    /// or spelled out in syllables, and a transcript rarely chooses as the book
+    /// did, so many characters differ in a passage that is nevertheless the
+    /// right one. Over forty-eight characters a lower score is still far from
+    /// chance, provided nothing else in the book comes anywhere near it.
+    /// </summary>
+    public static MatcherSettings For(IReadOnlyCollection<AlignmentToken> tokens) =>
+        AlignmentTokens.MostlyUnspaced(tokens)
+            ? new MatcherSettings(
+                MinimumTokens: 12,
+                MaximumTokens: 48,
+                RelaxedScore: 0.68,
+                RelaxedMargin: 0.25)
+            : new MatcherSettings();
+}
 
 public sealed record PassageLocation(int BlockOrder, int GlobalTextOffset, BookTextSourceLocator Locator);
+/// <param name="StartSpoken">
+/// The passage's ends counted in spoken characters: the letters and digits of
+/// the book's words before that point, and nothing else. Page furniture,
+/// reading aids, punctuation and spacing take no time to read aloud, so this,
+/// not the text offset, is what a narrator's seconds are proportional to.
+/// </param>
 public sealed record PassageMatch(bool Accepted, string Reason, double Score, double RunnerUpScore,
-    PassageLocation? Start, PassageLocation? End, string? Passage);
+    PassageLocation? Start, PassageLocation? End, string? Passage,
+    int StartSpoken = 0, int EndSpoken = 0);
 
 /// <summary>Lexical locator. It never receives expected locations or chapter hints.</summary>
 public sealed class PassageMatcher
 {
-    private static readonly Regex Words = new(@"[\p{L}\p{N}]+", RegexOptions.Compiled);
+    /// <summary>A running head or page number is at most this many tokens.</summary>
+    private const int MaximumFurnitureTokens = 6;
 
     private sealed record Token(
         string Value,
@@ -31,9 +67,49 @@ public sealed class PassageMatcher
     private readonly List<Token> tokens = [];
     private readonly Dictionary<string, List<int>> positions = new(StringComparer.Ordinal);
 
-    public PassageMatcher(BookTextExtractedDocument document)
+    /// <summary>Spoken characters before each token; one extra entry holds the total.</summary>
+    private readonly List<int> spokenBefore = [0];
+
+    /// <summary>
+    /// Running heads found at the top of this PDF's pages, as token keys with
+    /// every number written "#". Empty for an EPUB.
+    /// </summary>
+    private readonly HashSet<string> furnitureHeads = new(StringComparer.Ordinal);
+
+    /// <param name="readingAids">
+    /// Per block order, the parts of the block's text that are not read aloud.
+    /// Their tokens are left out; every other token keeps its true position.
+    /// </param>
+    public PassageMatcher(
+        BookTextExtractedDocument document,
+        IReadOnlyDictionary<int, IReadOnlyList<BookTextRange>>? readingAids = null)
     {
         this.document = document;
+
+        var perBlock = new List<List<AlignmentToken>>(document.Blocks.Count);
+
+        foreach (var block in document.Blocks)
+        {
+            var words = AlignmentTokens.Split(block.Text);
+
+            if (readingAids is not null &&
+                readingAids.TryGetValue(block.Order, out var aids) &&
+                aids.Count > 0)
+            {
+                words.RemoveAll(word => aids.Any(aid =>
+                    word.Index >= aid.Start &&
+                    word.Index < aid.Start + aid.Length));
+            }
+
+            perBlock.Add(words);
+        }
+
+        // A PDF block is one page, and a page repeats what the book does not
+        // say: its running head and its number. Left in, they sit in the middle
+        // of every sentence that crosses a page.
+        var furniture = document.Format == BookTextSourceFormat.Pdf
+            ? FindPageFurniture(perBlock)
+            : null;
 
         var rawTokens = new List<Token>();
         var global = 0;
@@ -41,11 +117,16 @@ public sealed class PassageMatcher
         for (var blockIndex = 0; blockIndex < document.Blocks.Count; blockIndex++)
         {
             var block = document.Blocks[blockIndex];
+            var words = perBlock[blockIndex];
+            var from = furniture?[blockIndex].Head ?? 0;
+            var to = words.Count - (furniture?[blockIndex].Foot ?? 0);
 
-            foreach (Match word in Words.Matches(block.Text))
+            for (var index = from; index < to; index++)
             {
+                var word = words[index];
+
                 rawTokens.Add(new Token(
-                    word.Value.ToLowerInvariant(),
+                    word.Value,
                     blockIndex,
                     word.Index,
                     word.Length,
@@ -86,7 +167,33 @@ public sealed class PassageMatcher
 
             indexes.Add(tokens.Count);
             tokens.Add(token);
+            spokenBefore.Add(spokenBefore[^1] + token.Value.Length);
         }
+    }
+
+    /// <summary>Every spoken character of the book. See <see cref="PassageMatch"/>.</summary>
+    public int TotalSpoken => spokenBefore[^1];
+
+    /// <summary>
+    /// The spoken characters before a global text offset: the words that
+    /// start at or after the offset are not counted.
+    /// </summary>
+    public int SpokenOffset(int globalTextOffset)
+    {
+        var low = 0;
+        var high = tokens.Count;
+
+        while (low < high)
+        {
+            var middle = low + (high - low) / 2;
+
+            if (tokens[middle].GlobalOffset < globalTextOffset)
+                low = middle + 1;
+            else
+                high = middle;
+        }
+
+        return spokenBefore[low];
     }
 
     private bool CanJoinHyphenation(Token first, Token second)
@@ -150,17 +257,194 @@ public sealed class PassageMatcher
         });
     }
 
-    public PassageMatch Locate(string transcript, MatcherSettings settings)
+    private static bool IsNumber(string token) => char.IsDigit(token[0]);
+
+    private static string FurnitureKey(IEnumerable<AlignmentToken> tokens) =>
+        string.Join(' ', tokens.Select(token => IsNumber(token.Value) ? "#" : token.Value));
+
+    /// <summary>
+    /// How many leading and trailing tokens of each page are page furniture.
+    /// A head is the longest opening run that many pages share once numbers are
+    /// set aside; a foot is a closing page number where pages usually end in one.
+    /// A single shared opening word is ordinary prose, not a head.
+    /// </summary>
+    private (int Head, int Foot)[] FindPageFurniture(List<List<AlignmentToken>> pages)
+    {
+        var result = new (int Head, int Foot)[pages.Count];
+        var threshold = Math.Max(3, (int)Math.Ceiling(pages.Count * 0.025));
+
+        if (pages.Count < threshold * 2)
+            return result;
+
+        var counts = new Dictionary<string, int>(StringComparer.Ordinal);
+
+        foreach (var page in pages)
+        {
+            for (var length = 1;
+                 length <= Math.Min(MaximumFurnitureTokens, page.Count);
+                 length++)
+            {
+                var key = FurnitureKey(page.Take(length));
+                counts[key] = counts.GetValueOrDefault(key) + 1;
+            }
+        }
+
+        var numberedFeet = pages.Count(page =>
+            page.Count > 0 && IsNumber(page[^1].Value)) >= pages.Count / 2;
+
+        for (var index = 0; index < pages.Count; index++)
+        {
+            var page = pages[index];
+
+            for (var length = Math.Min(MaximumFurnitureTokens, page.Count);
+                 length >= 1;
+                 length--)
+            {
+                var key = FurnitureKey(page.Take(length));
+
+                if (counts[key] < threshold ||
+                    (length == 1 && key != "#"))
+                    continue;
+
+                // A page that is nothing but its head has no text to protect.
+                if (length < page.Count)
+                {
+                    result[index].Head = length;
+                    furnitureHeads.Add(key);
+                }
+
+                break;
+            }
+
+            if (numberedFeet &&
+                page.Count > result[index].Head + 1 &&
+                IsNumber(page[^1].Value))
+                result[index].Foot = 1;
+        }
+
+        return result;
+    }
+
+    /// <summary>Locates the LAST words of a transcript.</summary>
+    public PassageMatch Locate(string transcript) =>
+        Locate(transcript, null);
+
+    public PassageMatch Locate(string transcript, MatcherSettings? settings)
+    {
+        var spoken = AlignmentTokens.Split(transcript);
+        settings ??= MatcherSettings.For(spoken);
+        Validate(settings);
+
+        return Locate(
+            spoken.Select(token => token.Value)
+                .TakeLast(settings.MaximumTokens)
+                .ToArray(),
+            settings);
+    }
+
+    /// <summary>
+    /// Locates the FIRST words of an excerpt read off a page. A PDF page opens
+    /// with its running head, which the matcher has set aside, so the same head
+    /// is dropped from the excerpt before it is matched.
+    /// </summary>
+    public PassageMatch LocateOpening(string excerpt, MatcherSettings? settings = null)
+    {
+        var words = AlignmentTokens.Split(excerpt);
+        settings ??= MatcherSettings.For(words);
+        Validate(settings);
+
+        for (var length = Math.Min(MaximumFurnitureTokens, words.Count - 1);
+             length >= 1 && furnitureHeads.Count > 0;
+             length--)
+        {
+            if (!furnitureHeads.Contains(FurnitureKey(words.Take(length))))
+                continue;
+
+            words.RemoveRange(0, length);
+            break;
+        }
+
+        return Locate(
+            words.Select(token => token.Value)
+                .Take(settings.MaximumTokens)
+                .ToArray(),
+            settings);
+    }
+
+    /// <summary>Locates a run of tokens exactly as given.</summary>
+    public PassageMatch LocateTokens(
+        IEnumerable<AlignmentToken> window,
+        MatcherSettings settings)
+    {
+        Validate(settings);
+
+        return Locate(
+            window.Select(token => token.Value)
+                .Take(settings.MaximumTokens)
+                .ToArray(),
+            settings);
+    }
+
+    private static void Validate(MatcherSettings settings)
     {
         if (settings.MinimumScore is < 0 or > 1 || settings.MinimumMargin is < 0 or > 1
+            || settings.RelaxedScore is < 0 or > 1 || settings.RelaxedMargin is < 0 or > 1
+            || settings.RelaxedScore > settings.MinimumScore
+            || settings.RelaxedMargin < settings.MinimumMargin
             || settings.MinimumTokens < 2 || settings.MaximumTokens < settings.MinimumTokens)
             throw new ArgumentException("Invalid matcher settings.");
+    }
 
-        var query = Words.Matches(transcript)
-            .Select(x => x.Value.ToLowerInvariant())
-            .TakeLast(settings.MaximumTokens)
-            .ToArray();
+    /// <summary>
+    /// Two different tokens that are probably one word: a scanned page's
+    /// misread letter, or a spelling the narrator's edition does not share.
+    /// Short words are left alone; "then" and "than" are different words.
+    /// </summary>
+    private static bool Near(string first, string second)
+    {
+        if (first.Length < 5 || second.Length < 5 ||
+            IsNumber(first) || IsNumber(second))
+            return false;
 
+        var longer = Math.Max(first.Length, second.Length);
+        var allowed = longer <= 6 ? 1 : longer <= 10 ? 2 : 3;
+
+        if (Math.Abs(first.Length - second.Length) > allowed)
+            return false;
+
+        Span<int> row = stackalloc int[second.Length + 1];
+        Span<int> next = stackalloc int[second.Length + 1];
+
+        for (var j = 0; j <= second.Length; j++)
+            row[j] = j;
+
+        for (var i = 1; i <= first.Length; i++)
+        {
+            next[0] = i;
+            var best = next[0];
+
+            for (var j = 1; j <= second.Length; j++)
+            {
+                next[j] = Math.Min(
+                    Math.Min(row[j] + 1, next[j - 1] + 1),
+                    row[j - 1] + (first[i - 1] == second[j - 1] ? 0 : 1));
+
+                best = Math.Min(best, next[j]);
+            }
+
+            if (best > allowed)
+                return false;
+
+            var swap = row;
+            row = next;
+            next = swap;
+        }
+
+        return row[second.Length] <= allowed;
+    }
+
+    private PassageMatch Locate(string[] query, MatcherSettings settings)
+    {
         if (query.Length < settings.MinimumTokens)
             return Rejected("insufficient_speech");
 
@@ -185,7 +469,7 @@ public sealed class PassageMatcher
         // Enumerate likely starts from matching tokens. The ±edit allowance
         // admits insertions/deletions.
         var edits = (int)Math.Ceiling(
-            query.Length * (1 - settings.MinimumScore)) + 1;
+            query.Length * (1 - settings.RelaxedScore)) + 1;
 
         var candidateStarts = new HashSet<int>();
 
@@ -212,6 +496,23 @@ public sealed class PassageMatcher
 
         var candidates = new List<Candidate>(exact);
 
+        // Costs are in half-edits: a different word costs 2, a near miss 1.
+        var near = new Dictionary<(int, string), bool>();
+
+        int Substitution(int queryIndex, string token)
+        {
+            if (query[queryIndex] == token)
+                return 0;
+
+            if (token.Length > 64 || query[queryIndex].Length > 64)
+                return 2;
+
+            if (!near.TryGetValue((queryIndex, token), out var close))
+                near[(queryIndex, token)] = close = Near(query[queryIndex], token);
+
+            return close ? 1 : 2;
+        }
+
         foreach (var start in candidateStarts)
         {
             var maximumLength = Math.Min(
@@ -221,22 +522,22 @@ public sealed class PassageMatcher
             if (maximumLength < query.Length - edits)
                 continue;
 
-            var row = Enumerable.Range(
-                0, maximumLength + 1).ToArray();
+            var row = new int[maximumLength + 1];
+
+            for (var j = 0; j <= maximumLength; j++)
+                row[j] = j * 2;
 
             for (var i = 1; i <= query.Length; i++)
             {
                 var next = new int[maximumLength + 1];
-                next[0] = i;
+                next[0] = i * 2;
 
                 for (var j = 1; j <= maximumLength; j++)
                 {
                     next[j] = Math.Min(
-                        Math.Min(row[j] + 1, next[j - 1] + 1),
+                        Math.Min(row[j] + 2, next[j - 1] + 2),
                         row[j - 1] +
-                        (query[i - 1] == tokens[start + j - 1].Value
-                            ? 0
-                            : 1));
+                        Substitution(i - 1, tokens[start + j - 1].Value));
                 }
 
                 row = next;
@@ -249,9 +550,9 @@ public sealed class PassageMatcher
                  length++)
             {
                 var score = 1 - row[length] /
-                    (double)Math.Max(query.Length, length);
+                    (2d * Math.Max(query.Length, length));
 
-                if (score >= settings.MinimumScore - settings.MinimumMargin)
+                if (score >= settings.RelaxedScore - settings.RelaxedMargin)
                     candidates.Add(new Candidate(start, length, score));
             }
         }
@@ -274,11 +575,20 @@ public sealed class PassageMatcher
 
         var runnerScore = runner?.Score ?? 0;
 
-        if (best.Score < settings.MinimumScore)
+        if (best.Score < settings.RelaxedScore)
             return Rejected("weak_match", best.Score, runnerScore);
 
-        if (best.Score - runnerScore < settings.MinimumMargin)
+        var margin = best.Score - runnerScore;
+
+        if (best.Score < settings.MinimumScore)
+        {
+            if (margin < settings.RelaxedMargin)
+                return Rejected("weak_match", best.Score, runnerScore);
+        }
+        else if (margin < settings.MinimumMargin)
+        {
             return Rejected("ambiguous", best.Score, runnerScore);
+        }
 
         var first = tokens[best.Start];
         var last = tokens[best.Start + best.Length - 1];
@@ -296,7 +606,9 @@ public sealed class PassageMatcher
             runnerScore,
             Location(first, false),
             Location(last, true),
-            passage);
+            passage,
+            spokenBefore[best.Start],
+            spokenBefore[best.Start + best.Length]);
     }
 
     private PassageLocation Location(Token token, bool end)

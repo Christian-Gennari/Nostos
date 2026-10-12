@@ -342,3 +342,121 @@ export function normalizedResourceOffsetOfNode(document: Document, node: Node): 
   }
   return null;
 }
+
+/** Titles and initials whose full stop does not end a sentence. */
+const SENTENCE_ABBREVIATIONS = new Set([
+  'mr', 'mrs', 'ms', 'dr', 'st', 'sr', 'jr', 'prof', 'mme', 'mlle', 'hr', 'fr', 'vs', 'no',
+]);
+
+const SENTENCE_TERMINATORS = '.!?…。！？';
+const SENTENCE_CLOSERS = '"\'”’)»」』】';
+const SENTENCE_SPAN_MAX = 600;
+
+/** Where the sentence ending with the terminator at `index` stops, or null when it does not end one. */
+function endsSentenceAt(text: string, index: number): number | null {
+  const char = text[index];
+  if (!SENTENCE_TERMINATORS.includes(char)) return null;
+
+  let after = index + 1;
+  while (after < text.length && SENTENCE_CLOSERS.includes(text[after])) after++;
+
+  // Scripts written without spaces end a sentence at the mark itself.
+  const unspaced = '。！？'.includes(char);
+  if (!unspaced && after < text.length && !/\s/.test(text[after])) return null;
+
+  // A mark inside a quotation that the sentence carries on from: “Bah!” said he.
+  let next = after;
+  while (next < text.length && /\s/.test(text[next])) next++;
+  if (next < text.length && /\p{Ll}/u.test(text[next])) return null;
+
+  if (char === '.') {
+    const word = /([\p{L}]+)$/u.exec(text.slice(Math.max(0, index - 12), index))?.[1] ?? '';
+    if (word.length === 1 || SENTENCE_ABBREVIATIONS.has(word.toLowerCase())) return null;
+  }
+
+  return after;
+}
+
+/** Does a sentence end immediately before `start` (allowing closers and spaces)? */
+function sentenceEndBefore(text: string, start: number): boolean {
+  let index = start - 1;
+  while (index >= 0 && /\s/.test(text[index])) index--;
+  while (index >= 0 && SENTENCE_CLOSERS.includes(text[index])) index--;
+  if (index < 0) return false;
+
+  const after = endsSentenceAt(text, index);
+  return after !== null && after <= start;
+}
+
+/**
+ * The sentence around a position in one block's normalized text. `offset` is
+ * the end of a word, so the sentence is the one that word belongs to. A line
+ * break inside the block is a space: publishers wrap their source lines. A
+ * sentence longer than a screenful is cut to the part around the position
+ * rather than marking a whole page.
+ */
+export function sentenceSpanAt(
+  text: string,
+  offset: number,
+): { start: number; length: number } | null {
+  if (!text || !Number.isFinite(offset)) return null;
+
+  let anchor = Math.max(0, Math.min(text.length - 1, Math.trunc(offset) - 1));
+  while (anchor > 0 && /\s/.test(text[anchor])) anchor--;
+  if (/\s/.test(text[anchor])) return null;
+
+  let start = anchor;
+  const earliest = Math.max(0, anchor - SENTENCE_SPAN_MAX);
+  while (start > earliest && !sentenceEndBefore(text, start)) start--;
+  // Cut off by the length limit rather than a boundary: do not split a word.
+  if (start === earliest && start > 0 && !sentenceEndBefore(text, start)) {
+    const space = text.slice(start, anchor).search(/\s/);
+    if (space >= 0) start += space + 1;
+  }
+
+  let end = anchor + 1;
+  const latest = Math.min(text.length, anchor + SENTENCE_SPAN_MAX);
+  let closed = false;
+  while (end < latest) {
+    const after = endsSentenceAt(text, end);
+    if (after !== null) {
+      end = after;
+      closed = true;
+      break;
+    }
+    end++;
+  }
+  if (!closed && end < text.length) {
+    const space = text.slice(anchor + 1, end).search(/\s(?=\S*$)/);
+    if (space >= 0) end = anchor + 1 + space;
+  }
+
+  while (start < end && /\s/.test(text[start])) start++;
+  while (end > start && /\s/.test(text[end - 1])) end--;
+
+  return end - start >= 2 ? { start, length: end - start } : null;
+}
+
+/**
+ * The sentence around a normalized resource offset, as a span of the
+ * resource's normalized text. It never leaves the block the offset is in: a
+ * heading has no full stop, and must not run on into the paragraph below it.
+ */
+export function sentenceSpanInResource(
+  document: Document,
+  offset: number,
+): { start: number; length: number } | null {
+  let resourceOffset = 0;
+  for (const block of epubTextBlocks(document)) {
+    const normalized = normalizeEpubSourceText(block.textContent ?? '');
+    if (!normalized) continue;
+
+    const end = resourceOffset + normalized.length;
+    if (offset <= end) {
+      const span = sentenceSpanAt(normalized, Math.max(1, offset - resourceOffset));
+      return span ? { start: resourceOffset + span.start, length: span.length } : null;
+    }
+    resourceOffset = end + 1;
+  }
+  return null;
+}

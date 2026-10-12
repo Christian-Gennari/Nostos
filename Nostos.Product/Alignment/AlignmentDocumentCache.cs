@@ -3,9 +3,14 @@ using Nostos.Product.BookText;
 
 namespace Nostos.Product.Alignment;
 
+/// <param name="ReadingAids">
+/// Per block order, the parts of the block's text nobody reads aloud (ruby
+/// glosses). Null when the format has none or the extractor does not report them.
+/// </param>
 public sealed record AlignmentDocumentSnapshot(
     BookTextExtractedDocument Document,
-    string? Revision);
+    string? Revision,
+    IReadOnlyDictionary<int, IReadOnlyList<BookTextRange>>? ReadingAids = null);
 
 /// <summary>
 /// Supplies an extracted EPUB or PDF document and the storage revision
@@ -37,6 +42,7 @@ public sealed class AlignmentDocumentCache(
 
     private sealed record CacheEntry(
         BookTextExtractedDocument Document,
+        IReadOnlyDictionary<int, IReadOnlyList<BookTextRange>>? ReadingAids,
         long Characters,
         LinkedListNode<string> Node);
 
@@ -107,7 +113,7 @@ public sealed class AlignmentDocumentCache(
                 order.AddFirst(cached.Node);
 
                 return new AlignmentDocumentSnapshot(
-                    cached.Document, revision);
+                    cached.Document, revision, cached.ReadingAids);
             }
 
             var extension = extractor.Format switch
@@ -125,6 +131,7 @@ public sealed class AlignmentDocumentCache(
                 $"nostos-alignment-{Guid.NewGuid():N}{extension}");
 
             BookTextExtractedDocument document;
+            IReadOnlyDictionary<int, IReadOnlyList<BookTextRange>>? readingAids = null;
 
             try
             {
@@ -172,7 +179,18 @@ public sealed class AlignmentDocumentCache(
 
                 try
                 {
-                    document = await extractor.ExtractAsync(temp, ct);
+                    if (extractor is IBookTextReadingAidSource annotated)
+                    {
+                        var extracted = await annotated.ExtractAnnotatedAsync(temp, ct);
+                        document = extracted.Document;
+                        readingAids = extracted.ReadingAids.Count > 0
+                            ? extracted.ReadingAids
+                            : null;
+                    }
+                    else
+                    {
+                        document = await extractor.ExtractAsync(temp, ct);
+                    }
                 }
                 catch (OperationCanceledException)
                 {
@@ -210,14 +228,14 @@ public sealed class AlignmentDocumentCache(
                 characters > options.MaxCachedCharacters)
             {
                 return new AlignmentDocumentSnapshot(
-                    document, revision);
+                    document, revision, readingAids);
             }
 
             var node = order.AddFirst(revision);
 
             entries.Add(
                 revision,
-                new CacheEntry(document, characters, node));
+                new CacheEntry(document, readingAids, characters, node));
 
             totalCharacters = checked(totalCharacters + characters);
 
@@ -233,7 +251,7 @@ public sealed class AlignmentDocumentCache(
             }
 
             return new AlignmentDocumentSnapshot(
-                document, revision);
+                document, revision, readingAids);
         }
         finally
         {

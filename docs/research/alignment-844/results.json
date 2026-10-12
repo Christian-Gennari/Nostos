@@ -1,0 +1,532 @@
+{
+ "pairs": {
+  "carol-epub": {
+   "audioToText": {
+    "located": 30,
+    "of": 30,
+    "declined": []
+   },
+   "textToAudio": {
+    "located": 29,
+    "of": 30,
+    "timed": 28,
+    "sentenceStartsAfterLandingSeconds": [
+     0.8,
+     1.0,
+     2.2,
+     2.3,
+     2.4,
+     2.4,
+     2.6,
+     2.6,
+     2.6,
+     2.9,
+     2.9,
+     3.0,
+     3.0,
+     3.0,
+     3.2,
+     3.3,
+     3.3,
+     3.5,
+     3.6,
+     3.6,
+     3.7,
+     3.9,
+     4.0,
+     4.1,
+     4.2,
+     4.3,
+     4.8,
+     6.2
+    ],
+    "probes": [
+     2,
+     3,
+     2,
+     3,
+     3,
+     2,
+     2,
+     1,
+     2,
+     2,
+     2,
+     2,
+     2,
+     4,
+     3,
+     2,
+     3,
+     3,
+     3,
+     3,
+     3,
+     3,
+     3,
+     3,
+     4,
+     3,
+     3,
+     4,
+     2
+    ],
+    "declined": [
+     {
+      "reason": "probe_budget_exhausted",
+      "probes": 5,
+      "excerpt": "“Are there no prisons?” said the Spirit, turning on him for the last time with h"
+     }
+    ],
+    "untimed": [
+     "It shrunk, collapsed, and dwindled down into a bedpost. STAVE FIVE. THE END OF I"
+    ]
+   }
+  },
+  "carol-scan": {
+   "audioToText": {
+    "located": 30,
+    "of": 30,
+    "declined": []
+   },
+   "textToAudio": {
+    "located": 30,
+    "of": 30,
+    "timed": 30,
+    "sentenceStartsAfterLandingSeconds": [
+     -0.2,
+     0.7,
+     0.7,
+     1.0,
+     1.3,
+     1.7,
+     1.8,
+     1.9,
+     2.0,
+     2,
+     2.1,
+     2.1,
+     2.1,
+     2.5,
+     2.5,
+     2.6,
+     2.8,
+     2.9,
+     3,
+     3.2,
+     3.2,
+     3.3,
+     3.3,
+     3.4,
+     4.1,
+     4.4,
+     4.7,
+     5.2,
+     5.5,
+     25.7
+    ],
+    "probes": [
+     2,
+     3,
+     4,
+     2,
+     2,
+     2,
+     2,
+     3,
+     2,
+     1,
+     3,
+     2,
+     2,
+     2,
+     2,
+     2,
+     3,
+     3,
+     4,
+     4,
+     3,
+     4,
+     4,
+     4,
+     3,
+     5,
+     3,
+     4,
+     3,
+     4
+    ],
+    "declined": [],
+    "untimed": []
+   }
+  },
+  "jekyll-se": {
+   "audioToText": {
+    "located": 30,
+    "of": 30,
+    "declined": []
+   },
+   "textToAudio": {
+    "located": 30,
+    "of": 30,
+    "timed": 30,
+    "sentenceStartsAfterLandingSeconds": [
+     0.3,
+     0.8,
+     1.2,
+     1.8,
+     2.0,
+     2.1,
+     2.1,
+     2.3,
+     2.3,
+     2.4,
+     2.5,
+     2.6,
+     2.7,
+     2.8,
+     2.9,
+     3.1,
+     3.1,
+     3.1,
+     3.3,
+     3.7,
+     3.8,
+     3.8,
+     3.9,
+     3.9,
+     3.9,
+     4.0,
+     4.4,
+     4.5,
+     4.5,
+     5
+    ],
+    "probes": [
+     2,
+     3,
+     2,
+     3,
+     2,
+     2,
+     2,
+     2,
+     3,
+     2,
+     3,
+     2,
+     2,
+     1,
+     1,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     3,
+     2
+    ],
+    "declined": [],
+    "untimed": []
+   }
+  },
+  "verwandlung": {
+   "audioToText": {
+    "located": 30,
+    "of": 30,
+    "declined": []
+   },
+   "textToAudio": {
+    "located": 30,
+    "of": 30,
+    "timed": 30,
+    "sentenceStartsAfterLandingSeconds": [
+     2.1,
+     2.1,
+     2.2,
+     2.3,
+     2.5,
+     2.6,
+     2.7,
+     2.7,
+     2.7,
+     2.8,
+     2.9,
+     3.0,
+     3.1,
+     3.2,
+     3.2,
+     3.2,
+     3.2,
+     3.2,
+     3.3,
+     3.3,
+     3.3,
+     3.3,
+     3.3,
+     3.4,
+     3.5,
+     3.6,
+     3.7,
+     4.0,
+     4,
+     4.2
+    ],
+    "probes": [
+     1,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     3,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2
+    ],
+    "declined": [],
+    "untimed": []
+   }
+  },
+  "ahq-zh": {
+   "audioToText": {
+    "located": 30,
+    "of": 30,
+    "declined": []
+   },
+   "textToAudio": {
+    "located": 23,
+    "of": 30,
+    "timed": 23,
+    "sentenceStartsAfterLandingSeconds": [
+     1.5,
+     1.6,
+     2.1,
+     2.4,
+     2.7,
+     2.8,
+     3.0,
+     3.1,
+     3.2,
+     3.2,
+     3.2,
+     3.2,
+     3.4,
+     3.7,
+     3.8,
+     3.9,
+     4.0,
+     4.0,
+     4.3,
+     4.4,
+     5.0,
+     5.0,
+     5.9
+    ],
+    "probes": [
+     1,
+     3,
+     3,
+     4,
+     3,
+     3,
+     4,
+     3,
+     4,
+     3,
+     4,
+     4,
+     4,
+     5,
+     4,
+     3,
+     4,
+     3,
+     4,
+     4,
+     4,
+     4,
+     3
+    ],
+    "declined": [
+     {
+      "reason": "probe_budget_exhausted",
+      "probes": 5,
+      "excerpt": "第三章 續優勝記略 然而阿Ｑ雖然常優勝﹐卻直待蒙趙太爺打他嘴巴之後﹐這才出了名。 他付過地保二百文酒錢﹐憤憤的躺下了﹐後來想﹕“現在的世界太不成話﹐兒子打老子…"
+     },
+     {
+      "reason": "probe_budget_exhausted",
+      "probes": 3,
+      "excerpt": "作者在一九二五年曾為這篇小說的俄文譯本寫過一篇短序﹐後收在《集外集》中﹔ 一九二六年又寫過《阿Ｑ正傳的成因》一文﹐收在《華蓋集續編》中﹐都可參看。 〔２〕 「立"
+     },
+     {
+      "reason": "probe_budget_exhausted",
+      "probes": 3,
+      "excerpt": "「小說家者流﹐ 蓋出於稗官。街談巷語﹐道聽途說者之所造也。……是以君子弗為也。」 〔１０〕 《書法正傳》 一部關於書法的書﹐清代馮武著﹐共十卷。這裡的「正傳」是"
+     },
+     {
+      "reason": "probe_budget_exhausted",
+      "probes": 2,
+      "excerpt": "其父曰﹕此何遽不能為禍乎﹖家富馬良﹐其子好騎﹐墮而折髀﹐人皆吊之。其父曰﹕此何遽不能為福乎﹖居一年﹐胡人大入塞﹐丁壯者控弦而戰﹐塞上之人死者十九﹐此獨以跛之故﹐"
+     },
+     {
+      "reason": "probe_budget_exhausted",
+      "probes": 2,
+      "excerpt": "〔３４〕 小Ｄｏｎ 即小同。作者在《且介亭雜文‧寄〈戲〉週刊編者信》中說﹕「他叫『小同』﹐大起來﹐和阿Ｑ一樣。」 〔３５〕 「我手執鋼鞭將你打﹗」 這一句及下文"
+     },
+     {
+      "reason": "probe_budget_exhausted",
+      "probes": 2,
+      "excerpt": "〔４６〕 把總 清代最下一級的武官。 〔４７〕 「黃傘格」 一種寫信格式。在八行豎寫的信紙上﹐每行都有頌揚或表示敬意的語句﹐這些語句都抬頭寫﹐但不寫到底﹐近中央"
+     },
+     {
+      "reason": "probe_budget_exhausted",
+      "probes": 2,
+      "excerpt": "gutenberg.org. If you are not located in the United States, you will have to che"
+     }
+    ],
+    "untimed": []
+   }
+  },
+  "botchan-ja": {
+   "audioToText": {
+    "located": 29,
+    "of": 30,
+    "declined": [
+     {
+      "positionSeconds": 13572,
+      "reason": "no_match",
+      "heard": "のへんじゅうをまってるやまわらしはそうですかとげんかんまででていったがやがてかえってきてきみせいとがしゅくしょうかいのゆきょうをみにいかないかってさそいにきたん"
+     }
+    ]
+   },
+   "textToAudio": {
+    "located": 30,
+    "of": 30,
+    "timed": 27,
+    "sentenceStartsAfterLandingSeconds": [
+     2.0,
+     2.2,
+     2.4,
+     2.5,
+     2.6,
+     2.7,
+     3.3,
+     3.3,
+     3.3,
+     3.4,
+     3.5,
+     3.7,
+     3.7,
+     3.8,
+     3.9,
+     4.0,
+     4.1,
+     4.2,
+     4.3,
+     4.5,
+     4.7,
+     4.8,
+     4.9,
+     4.9,
+     5.0,
+     5.3,
+     5.9
+    ],
+    "probes": [
+     2,
+     3,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     3,
+     2,
+     2,
+     2,
+     3,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     2,
+     1,
+     1,
+     1,
+     2,
+     2,
+     2,
+     2
+    ],
+    "declined": [],
+    "untimed": [
+     "今日様どころか明日様にも明後日様にも、いつまで行ったって済みっこありませんね」 「それで古賀さんにお気の毒じゃてて、お友達の堀田さんが教頭の所へ意見をしにお行き",
+     "よくない仕打だ。まるで欺撃ですね。それでおれの月給を上げるなんて、不都合な事があるものか。上げてやるったって、誰が上がってやるものか」 「先生は月給がお上りるの",
+     "山嵐は委細構わず、ステッキを持って来て、踏破千山万岳烟と真中へ出て独りで隠し芸を演じている。ところへ野だがすでに紀伊の国を済まして、かっぽれを済まして、棚の達磨"
+    ]
+   }
+  }
+ },
+ "differentBookAudio": {
+  "ahq-vs-zhaohua": {
+   "clips": 60,
+   "accepted": 0
+  },
+  "botchan-vs-kokoro": {
+   "clips": 60,
+   "accepted": 0
+  },
+  "carol-vs-jekyll": {
+   "clips": 40,
+   "accepted": 0
+  },
+  "jekyll-vs-carol": {
+   "clips": 40,
+   "accepted": 0
+  },
+  "jekyll-vs-carolscan": {
+   "clips": 40,
+   "accepted": 0
+  },
+  "verwandlung-vs-jekyll": {
+   "clips": 40,
+   "accepted": 0
+  }
+ }
+}

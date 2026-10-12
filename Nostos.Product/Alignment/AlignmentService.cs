@@ -130,10 +130,6 @@ public sealed class AlignmentService(
     IAlignmentAudioRevisionProvider audioRevisions,
     ILogger<AlignmentService> logger) : IAlignmentService
 {
-    private static readonly Regex Words = new(
-        @"[\p{L}\p{N}]+",
-        RegexOptions.Compiled | RegexOptions.CultureInvariant);
-
     public async Task<AlignmentLocateResult> LocateAsync(
         AudioBookModel source,
         EBookModel target,
@@ -160,7 +156,9 @@ public sealed class AlignmentService(
         }
 
         var snapshot = await ReadDocumentAsync(target, ct);
-        var matcher = new PassageMatcher(snapshot.Document);
+        var matcher = new PassageMatcher(
+            snapshot.Document,
+            snapshot.ReadingAids);
 
         await using var clip = await cutter.CutAsync(
             source,
@@ -171,9 +169,34 @@ public sealed class AlignmentService(
         var transcription = await TranscribeAsync(
             source, clip, ct);
 
-        var match = matcher.Locate(
-            transcription.Text,
-            new MatcherSettings());
+        var match = matcher.Locate(transcription.Text);
+
+        // A transcript often ends in words nobody said: the model fills a
+        // pause, or the cut falls mid-word. The words just before them are
+        // still the listener's place, a second or two earlier.
+        var trimmed = false;
+
+        if (!match.Accepted &&
+            match.Reason is "weak_match" or "no_match")
+        {
+            var spoken = AlignmentTokens.Split(transcription.Text);
+            var settings = MatcherSettings.For(spoken);
+            var drop = settings.MaximumTokens / 4;
+
+            if (spoken.Count >= settings.MaximumTokens + drop)
+            {
+                var earlier = matcher.LocateTokens(
+                    spoken.Skip(spoken.Count - drop - settings.MaximumTokens)
+                        .Take(settings.MaximumTokens),
+                    settings);
+
+                if (earlier.Accepted)
+                {
+                    match = earlier;
+                    trimmed = true;
+                }
+            }
+        }
 
         if (!match.Accepted)
             return AlignmentLocateResult.Declined(match.Reason);
@@ -216,7 +239,11 @@ public sealed class AlignmentService(
                 var audioRevision = await audioRevisions.GetAsync(
                     source, ct);
 
+                // An anchor pairs this exact second with this exact text. A
+                // match found a few words back is the right place to open the
+                // book, but not that pair.
                 if (audioRevision is not null &&
+                    !trimmed &&
                     double.IsFinite(match.Score) &&
                     positionSeconds <= long.MaxValue / 1000d)
                 {
@@ -281,11 +308,11 @@ public sealed class AlignmentService(
 
         // Resolve the text before spending any transcription allowance.
         var snapshot = await ReadDocumentAsync(source, ct);
-        var matcher = new PassageMatcher(snapshot.Document);
+        var matcher = new PassageMatcher(
+            snapshot.Document,
+            snapshot.ReadingAids);
 
-        var excerptMatch = matcher.Locate(
-            FirstMatcherWindow(excerpt),
-            new MatcherSettings());
+        var excerptMatch = matcher.LocateOpening(excerpt);
 
         if (!excerptMatch.Accepted)
         {
@@ -295,8 +322,13 @@ public sealed class AlignmentService(
                     : "excerpt_not_found");
         }
 
+        // Anchors are stored and looked up by text offset. The search itself
+        // counts spoken characters: a narrator's seconds are proportional to
+        // the words read aloud, not to the running heads, glosses, punctuation
+        // and spacing between them.
         var targetOffset = excerptMatch.Start!.GlobalTextOffset;
-        var totalCharacters = GlobalTextLength(snapshot.Document);
+        var targetSpoken = excerptMatch.StartSpoken;
+        var totalSpoken = matcher.TotalSpoken;
 
         var duration = AlignmentAudioDuration.GetSeconds(target);
 
@@ -345,8 +377,8 @@ public sealed class AlignmentService(
                         targetOffset,
                         ct);
 
-                    before = ToSearchPoint(atOrBefore, duration.Value);
-                    after = ToSearchPoint(atOrAfter, duration.Value);
+                    before = ToSearchPoint(atOrBefore, duration.Value, matcher);
+                    after = ToSearchPoint(atOrAfter, duration.Value, matcher);
                 }
             }
             catch (Exception ex) when (
@@ -392,8 +424,8 @@ public sealed class AlignmentService(
         try
         {
             search = new AudioAlignmentSearch(
-                targetOffset,
-                totalCharacters,
+                targetSpoken,
+                totalSpoken,
                 duration.Value,
                 searchOptions,
                 before,
@@ -441,69 +473,25 @@ public sealed class AlignmentService(
 
             probes++;
 
-            var match = matcher.Locate(
+            var reading = ReadProbe(
+                matcher,
                 transcription.Text,
-                new MatcherSettings());
+                clipStart,
+                clipEnd);
 
-            if (!match.Accepted)
+            if (reading is null)
             {
                 search.Decline();
                 continue;
             }
 
-            if (match.Start?.Locator is not
-                    (EpubBookTextSourceLocator or PdfBookTextSourceLocator) ||
-                match.End?.Locator is not
-                    (EpubBookTextSourceLocator or PdfBookTextSourceLocator))
-            {
-                throw new AlignmentException(
-                    "alignment_locator_invalid",
-                    422,
-                    "A probe has no supported text source provenance.");
-            }
-
-            var start = match.Start.Locator;
-            var end = match.End.Locator;
-
-            // The matcher locates the transcript's LAST words, spoken in the
-            // final seconds of the clip. Locating its opening words as well
-            // gives the text the whole clip covers, so a target anywhere in the
-            // clip is found and its time is interpolated over the right span.
-            // When the opening cannot be placed, the closing words stand for
-            // the clip as before: that starts playback early, never late.
-            var observedStartOffset = match.Start.GlobalTextOffset;
-            PassageLocation? openingStart = null;
-            var spoken = Words.Matches(transcription.Text);
-            var settings = new MatcherSettings();
-
-            if (spoken.Count >= settings.MaximumTokens * 2)
-            {
-                var opening = matcher.Locate(
-                    string.Join(
-                        ' ',
-                        spoken.Take(settings.MaximumTokens).Select(word => word.Value)),
-                    settings);
-
-                // A clip cannot cover more text than fast speech allows.
-                var earliestPlausible = match.End.GlobalTextOffset
-                    - (int)Math.Ceiling(options.ProbeSeconds * 40);
-
-                if (opening.Accepted &&
-                    opening.Start is not null &&
-                    opening.Start.GlobalTextOffset < match.Start.GlobalTextOffset &&
-                    opening.Start.GlobalTextOffset >= earliestPlausible)
-                {
-                    observedStartOffset = opening.Start.GlobalTextOffset;
-                    openingStart = opening.Start;
-                }
-            }
-
             var observation = new AudioAlignmentSearch.Observation(
                 clipStart,
                 clipEnd,
-                observedStartOffset,
-                match.End.GlobalTextOffset,
-                match.Score);
+                (int)reading.Knots[0].TextOffset,
+                (int)reading.Knots[^1].TextOffset,
+                reading.Score,
+                reading.Knots);
 
             var decision = search.Observe(observation);
 
@@ -528,7 +516,7 @@ public sealed class AlignmentService(
                     locatedSeconds > duration.Value ||
                     !ConsistentWithAnchors(
                         locatedSeconds,
-                        targetOffset,
+                        targetSpoken,
                         before,
                         after,
                         searchOptions.ProbeSeconds))
@@ -539,15 +527,14 @@ public sealed class AlignmentService(
                 }
             }
 
-            // Persist only pairs the transcript supports. The clip END and the
-            // end of the matched words are always one. The clip START is one
-            // only when the opening words were located too; pairing it with
-            // the start of the closing words would put an anchor some ten
-            // seconds out, and later searches interpolate between anchors.
+            // Persist only the pairs the transcript pins to the clip's own
+            // ends: the first words it placed at the clip's start, the last at
+            // its end. Later searches interpolate between anchors, so a pair
+            // read off the middle of a clip is not kept.
             if (audioRevision is not null &&
                 snapshot.Revision is not null)
             {
-                if (openingStart is not null)
+                if (reading.OpeningStart is not null)
                 {
                     anyAnchorStored |= await TryStoreAnchorAsync(
                         target,
@@ -555,22 +542,25 @@ public sealed class AlignmentService(
                         audioRevision,
                         snapshot.Revision,
                         clipStart,
-                        openingStart.GlobalTextOffset,
-                        ToAnchorLocator(openingStart.Locator),
-                        match.Score,
+                        reading.OpeningStart.GlobalTextOffset,
+                        ToAnchorLocator(reading.OpeningStart.Locator),
+                        reading.Score,
                         ct);
                 }
 
-                anyAnchorStored |= await TryStoreAnchorAsync(
-                    target,
-                    source,
-                    audioRevision,
-                    snapshot.Revision,
-                    clipEnd,
-                    match.End.GlobalTextOffset,
-                    ToAnchorLocator(end),
-                    match.Score,
-                    ct);
+                if (reading.ClosingEnd is not null)
+                {
+                    anyAnchorStored |= await TryStoreAnchorAsync(
+                        target,
+                        source,
+                        audioRevision,
+                        snapshot.Revision,
+                        clipEnd,
+                        reading.ClosingEnd.GlobalTextOffset,
+                        ToAnchorLocator(reading.ClosingEnd.Locator),
+                        reading.Score,
+                        ct);
+                }
             }
 
             if (decision.Located)
@@ -581,7 +571,7 @@ public sealed class AlignmentService(
                     PositionSeconds: decision.PositionSeconds,
                     ApproximatePositionSeconds: null,
                     Probes: probes,
-                    Score: match.Score,
+                    Score: reading.Score,
                     AnchorStored: anyAnchorStored);
             }
         }
@@ -593,7 +583,7 @@ public sealed class AlignmentService(
         if (search.NearTargetPositionSeconds is { } near &&
             ConsistentWithAnchors(
                 near,
-                targetOffset,
+                targetSpoken,
                 before,
                 after,
                 options.ProbeSeconds * 2))
@@ -612,6 +602,158 @@ public sealed class AlignmentService(
             "probe_budget_exhausted",
             probes,
             search.ApproximatePositionSeconds);
+    }
+
+    /// <summary>What one probe's transcript says about where the clip is in the book.</summary>
+    private sealed record ProbeReading(
+        IReadOnlyList<AudioAlignmentSearch.Point> Knots,
+        double Score,
+        PassageLocation? OpeningStart,
+        PassageLocation? ClosingEnd);
+
+    /// <summary>
+    /// Places a probe's transcript in the book. The closing words are spoken
+    /// at the clip's end and the opening words at its start; between them a
+    /// word's time is its share of the transcript, because the transcript is
+    /// the speech of exactly this clip. When one of the two cannot be placed,
+    /// a window from the middle is tried, so a clip with a misheard ending is
+    /// still read. Null when nothing in the transcript is found in the book.
+    /// </summary>
+    private ProbeReading? ReadProbe(
+        PassageMatcher matcher,
+        string transcript,
+        double clipStart,
+        double clipEnd)
+    {
+        var spoken = AlignmentTokens.Split(transcript);
+        var settings = MatcherSettings.For(spoken);
+
+        if (spoken.Count < settings.MinimumTokens)
+            return null;
+
+        var size = Math.Min(settings.MaximumTokens, spoken.Count);
+        var first = spoken[0].Index;
+        var last = spoken[^1].Index + spoken[^1].Length;
+
+        double TimeAt(int token) =>
+            token >= spoken.Count
+                ? clipEnd
+                : clipStart + (clipEnd - clipStart) *
+                    (spoken[token].Index - first) / (double)(last - first);
+
+        var windows = new List<(int From, int To, PassageMatch Match)>();
+
+        void Place(int from)
+        {
+            if (windows.Any(window => window.From == from))
+                return;
+
+            var match = matcher.LocateTokens(
+                spoken.Skip(from).Take(size),
+                settings);
+
+            if (!match.Accepted)
+                return;
+
+            if (match.Start?.Locator is not
+                    (EpubBookTextSourceLocator or PdfBookTextSourceLocator) ||
+                match.End?.Locator is not
+                    (EpubBookTextSourceLocator or PdfBookTextSourceLocator))
+            {
+                throw new AlignmentException(
+                    "alignment_locator_invalid",
+                    422,
+                    "A probe has no supported text source provenance.");
+            }
+
+            windows.Add((from, from + size, match));
+        }
+
+        var closing = spoken.Count - size;
+
+        Place(closing);
+
+        if (closing > 0)
+            Place(0);
+
+        if (closing > 1 && windows.Count < 2)
+            Place(closing / 2);
+
+        if (windows.Count == 0)
+            return null;
+
+        // The closing window is tried first, so it wins a tie.
+        var best = windows.MaxBy(window => window.Match.Score);
+
+        // The pairs are (second, spoken characters). A clip cannot cover more
+        // text than fast speech allows, and what it covers runs forward. Windows that disagree did not all find the same
+        // place; the best one then stands alone.
+        var points = new List<AudioAlignmentSearch.Point>();
+        var agree = true;
+
+        foreach (var window in windows.OrderBy(window => window.From))
+        {
+            foreach (var point in new[]
+            {
+                new AudioAlignmentSearch.Point(
+                    TimeAt(window.From),
+                    window.Match.StartSpoken),
+                new AudioAlignmentSearch.Point(
+                    TimeAt(window.To),
+                    window.Match.EndSpoken),
+            })
+            {
+                if (points.Count == 0)
+                {
+                    points.Add(point);
+                    continue;
+                }
+
+                var previous = points[^1];
+
+                if (point.AudioSeconds > previous.AudioSeconds &&
+                    point.TextOffset > previous.TextOffset)
+                {
+                    points.Add(point);
+                }
+                else if (point.AudioSeconds > previous.AudioSeconds + 1 &&
+                         point.TextOffset <= previous.TextOffset)
+                {
+                    agree = false;
+                }
+            }
+        }
+
+        var plausible = Math.Ceiling(options.ProbeSeconds * 40);
+
+        if (!agree ||
+            points.Count < 2 ||
+            points[^1].TextOffset - points[0].TextOffset > plausible)
+        {
+            windows = [best];
+            points =
+            [
+                new AudioAlignmentSearch.Point(
+                    TimeAt(best.From),
+                    best.Match.StartSpoken),
+                new AudioAlignmentSearch.Point(
+                    TimeAt(best.To),
+                    best.Match.EndSpoken),
+            ];
+
+            if (points[1].TextOffset <= points[0].TextOffset ||
+                points[1].AudioSeconds <= points[0].AudioSeconds)
+                return null;
+        }
+
+        var opening = windows.FirstOrDefault(window => window.From == 0);
+        var ending = windows.FirstOrDefault(window => window.To == spoken.Count);
+
+        return new ProbeReading(
+            points,
+            best.Match.Score,
+            opening.Match?.Start,
+            ending.Match?.End);
     }
 
     private static bool ConsistentWithAnchors(
@@ -754,7 +896,8 @@ public sealed class AlignmentService(
 
     private static AudioAlignmentSearch.Point? ToSearchPoint(
         AlignmentAnchorModel? anchor,
-        double duration)
+        double duration,
+        PassageMatcher matcher)
     {
         if (anchor is null)
             return null;
@@ -763,7 +906,8 @@ public sealed class AlignmentService(
 
         return seconds >= 0 && seconds <= duration
             ? new AudioAlignmentSearch.Point(
-                seconds, anchor.TextGlobalOffset)
+                seconds,
+                matcher.SpokenOffset(anchor.TextGlobalOffset))
             : null;
     }
 
@@ -844,45 +988,6 @@ public sealed class AlignmentService(
         return text.Length <= maximumCharacters
             ? text
             : text[^maximumCharacters..];
-    }
-
-    private static string FirstMatcherWindow(string excerpt)
-    {
-        // PassageMatcher uses TakeLast(MaximumTokens). Sending the whole
-        // excerpt would match its end, rather than the first visible words.
-        var words = Words.Matches(excerpt);
-
-        const int maximumTokens = 24;
-
-        if (words.Count <= maximumTokens)
-            return excerpt.Trim();
-
-        var last = words[maximumTokens - 1];
-
-        return excerpt[..(last.Index + last.Length)].Trim();
-    }
-
-    private static int GlobalTextLength(
-        BookTextExtractedDocument document)
-    {
-        long length = 0;
-
-        foreach (var block in document.Blocks)
-            length = checked(length + block.Text.Length + 1L);
-
-        // PassageMatcher inserts one separator after each block.
-        // There is no need for a final trailing separator.
-        length = Math.Max(0, length - 1);
-
-        if (length <= 0 || length > int.MaxValue)
-        {
-            throw new AlignmentException(
-                "alignment_target_text_unavailable",
-                422,
-                "The text edition cannot be indexed for alignment.");
-        }
-
-        return (int)length;
     }
 
     private static void ValidatePair(

@@ -91,6 +91,61 @@ interface PendingPdfHighlight {
  */
 const TOUCH_SELECTION_SETTLE_MS = 300;
 
+/** How far past a page with almost no text the excerpt for another edition may look. */
+const PDF_EXCERPT_LOOKAHEAD_PAGES = 2;
+
+/** Enough text to be one place in a book: more than a caption or a chapter title. */
+export function isSubstantialPageText(text: string): boolean {
+  return text.trim().length >= 100;
+}
+
+const UNSPACED_SCRIPT = /[\u3040-\u30ff\u3400-\u9fff\u0e00-\u0eff\u1000-\u109f\u1780-\u17ff]/g;
+
+/**
+ * The phrase the reader's search marks after a landing from another edition:
+ * the passage's last six words, or, in a script written without spaces between
+ * words, its last dozen characters. Null when the passage is too short to find.
+ */
+export function sourcePassagePhrase(excerpt: string | null | undefined): string | null {
+  return sourcePassagePhrases(excerpt)[0] ?? null;
+}
+
+/**
+ * The phrases to try, best first. After the passage's last six words come its
+ * last runs of five or six words that carry no punctuation: a scan's text
+ * layer most often differs from the book's text at a quotation mark, a hyphen
+ * or a line end, and a run of plain words is still long enough to be one place.
+ */
+export function sourcePassagePhrases(excerpt: string | null | undefined): string[] {
+  const flat = (excerpt ?? '').replace(/\s+/g, ' ').trim();
+  if (!flat) return [];
+
+  const unspaced = (flat.match(UNSPACED_SCRIPT)?.length ?? 0) * 2 > flat.length;
+  if (unspaced) {
+    // A line break in the page text is a space here; the search cannot cross it.
+    const tail = flat.split(' ').filter(Boolean).at(-1) ?? '';
+    return tail.length >= 4 ? [tail.slice(-12)] : [];
+  }
+
+  const words = flat.split(' ').filter(Boolean);
+  if (words.length < 3) return [];
+
+  const phrases = [words.slice(-6).join(' ')];
+  let run: string[] = [];
+  const close = () => {
+    if (run.length >= 5) phrases.push(run.slice(-6).join(' '));
+    run = [];
+  };
+
+  for (let index = words.length - 1; index >= 0 && phrases.length < 3; index--) {
+    if (/^[\p{L}\p{N}]+$/u.test(words[index])) run.unshift(words[index]);
+    else close();
+  }
+  if (phrases.length < 3) close();
+
+  return [...new Set(phrases)];
+}
+
 @Component({
   selector: 'app-pdf-reader',
   standalone: true,
@@ -571,8 +626,24 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
     const doc = this.pdfDocRef;
     if (!doc || this.totalPages <= 0) return null;
 
+    // A plate or a chapter title page says too little to be found in another
+    // edition, and a caption often repeats a line of the text. Reading resumes
+    // on the next page with text, so that page speaks for this one.
+    let sparse: string | null = null;
+    const lastPage = Math.min(this.totalPages, this.currentPage + PDF_EXCERPT_LOOKAHEAD_PAGES);
+    for (let pageNumber = this.currentPage; pageNumber <= lastPage; pageNumber++) {
+      const text = await this.pageExcerptText(doc, pageNumber);
+      if (doc !== this.pdfDocRef) return null;
+      if (text && isSubstantialPageText(text)) return text.slice(0, 280);
+      if (pageNumber === this.currentPage) sparse = text;
+    }
+
+    return sparse ? sparse.slice(0, 280) : null;
+  }
+
+  private async pageExcerptText(doc: any, pageNumber: number): Promise<string | null> {
     try {
-      const page = await doc.getPage(this.currentPage);
+      const page = await doc.getPage(pageNumber);
       const content = await page.getTextContent();
       if (doc !== this.pdfDocRef) return null;
 
@@ -582,7 +653,7 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
         .replace(/\s+/g, ' ')
         .trim();
 
-      return text ? text.slice(0, 280) : null;
+      return text || null;
     } catch {
       return null;
     }
@@ -599,22 +670,41 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
     // pending highlight: it must never search a page it was not meant for.
     const generation = ++this.sourceHighlightGeneration;
 
-    const words = (excerpt ?? '').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
-    if (words.length < 3) return;
+    const phrases = sourcePassagePhrases(excerpt);
+    if (phrases.length === 0) return;
 
-    const phrase = words.slice(-6).join(' ');
     const doc = this.pdfDocRef;
-    const attempt = (remaining: number) => {
-      if (generation !== this.sourceHighlightGeneration) return;
-      if (doc !== null && doc !== this.pdfDocRef) return;
+    const current = () =>
+      generation === this.sourceHighlightGeneration && (doc === null || doc === this.pdfDocRef);
 
-      if (this.searchAvailable()) {
-        this.search(phrase);
-      } else if (remaining > 0) {
-        setTimeout(() => attempt(remaining - 1), 500);
+    // The passage is the book's text as the server read it; the page's own
+    // text layer can differ by a word. When a phrase is not on the page, the
+    // next one from the same passage is tried.
+    const attempt = (index: number, remaining: number) => {
+      if (!current()) return;
+
+      if (!this.searchAvailable()) {
+        if (remaining > 0) setTimeout(() => attempt(index, remaining - 1), 500);
+        return;
       }
+
+      const phrase = phrases[index];
+      this.search(phrase);
+
+      const settle = (polls: number) => {
+        if (!current() || this.activeSearchQuery !== phrase) return;
+
+        const status = this.searchState().status;
+        if (status === 'searching' && polls > 0) {
+          setTimeout(() => settle(polls - 1), 250);
+        } else if (status === 'not-found') {
+          if (index + 1 < phrases.length) attempt(index + 1, remaining);
+          else this.clearSearch();
+        }
+      };
+      settle(40);
     };
-    attempt(20);
+    attempt(0, 20);
   }
 
   goToSource(target: ReaderSourceTarget): void {
