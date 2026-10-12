@@ -20,7 +20,8 @@
     "probe:selection": "node scripts/probe-selection.mjs",
     "probe:editions-parity": "node scripts/probe-editions-parity.mjs",
     "check:pixels": "node scripts/check-pixels.mjs",
-    "probe:iconbutton": "node scripts/probe-iconbutton.mjs"
+    "probe:iconbutton": "node scripts/probe-iconbutton.mjs",
+    "preview": "node scripts/preview.mjs"
   },
   "prettier": {
     "printWidth": 100,
