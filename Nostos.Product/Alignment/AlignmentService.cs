@@ -322,8 +322,13 @@ public sealed class AlignmentService(
                     : "excerpt_not_found");
         }
 
+        // Anchors are stored and looked up by text offset. The search itself
+        // counts spoken characters: a narrator's seconds are proportional to
+        // the words read aloud, not to the running heads, glosses, punctuation
+        // and spacing between them.
         var targetOffset = excerptMatch.Start!.GlobalTextOffset;
-        var totalCharacters = GlobalTextLength(snapshot.Document);
+        var targetSpoken = excerptMatch.StartSpoken;
+        var totalSpoken = matcher.TotalSpoken;
 
         var duration = AlignmentAudioDuration.GetSeconds(target);
 
@@ -372,8 +377,8 @@ public sealed class AlignmentService(
                         targetOffset,
                         ct);
 
-                    before = ToSearchPoint(atOrBefore, duration.Value);
-                    after = ToSearchPoint(atOrAfter, duration.Value);
+                    before = ToSearchPoint(atOrBefore, duration.Value, matcher);
+                    after = ToSearchPoint(atOrAfter, duration.Value, matcher);
                 }
             }
             catch (Exception ex) when (
@@ -419,8 +424,8 @@ public sealed class AlignmentService(
         try
         {
             search = new AudioAlignmentSearch(
-                targetOffset,
-                totalCharacters,
+                targetSpoken,
+                totalSpoken,
                 duration.Value,
                 searchOptions,
                 before,
@@ -511,7 +516,7 @@ public sealed class AlignmentService(
                     locatedSeconds > duration.Value ||
                     !ConsistentWithAnchors(
                         locatedSeconds,
-                        targetOffset,
+                        targetSpoken,
                         before,
                         after,
                         searchOptions.ProbeSeconds))
@@ -578,7 +583,7 @@ public sealed class AlignmentService(
         if (search.NearTargetPositionSeconds is { } near &&
             ConsistentWithAnchors(
                 near,
-                targetOffset,
+                targetSpoken,
                 before,
                 after,
                 options.ProbeSeconds * 2))
@@ -680,8 +685,8 @@ public sealed class AlignmentService(
         // The closing window is tried first, so it wins a tie.
         var best = windows.MaxBy(window => window.Match.Score);
 
-        // A clip cannot cover more text than fast speech allows, and what it
-        // covers runs forward. Windows that disagree did not all find the same
+        // The pairs are (second, spoken characters). A clip cannot cover more
+        // text than fast speech allows, and what it covers runs forward. Windows that disagree did not all find the same
         // place; the best one then stands alone.
         var points = new List<AudioAlignmentSearch.Point>();
         var agree = true;
@@ -692,10 +697,10 @@ public sealed class AlignmentService(
             {
                 new AudioAlignmentSearch.Point(
                     TimeAt(window.From),
-                    window.Match.Start!.GlobalTextOffset),
+                    window.Match.StartSpoken),
                 new AudioAlignmentSearch.Point(
                     TimeAt(window.To),
-                    window.Match.End!.GlobalTextOffset),
+                    window.Match.EndSpoken),
             })
             {
                 if (points.Count == 0)
@@ -730,10 +735,10 @@ public sealed class AlignmentService(
             [
                 new AudioAlignmentSearch.Point(
                     TimeAt(best.From),
-                    best.Match.Start!.GlobalTextOffset),
+                    best.Match.StartSpoken),
                 new AudioAlignmentSearch.Point(
                     TimeAt(best.To),
-                    best.Match.End!.GlobalTextOffset),
+                    best.Match.EndSpoken),
             ];
 
             if (points[1].TextOffset <= points[0].TextOffset ||
@@ -891,7 +896,8 @@ public sealed class AlignmentService(
 
     private static AudioAlignmentSearch.Point? ToSearchPoint(
         AlignmentAnchorModel? anchor,
-        double duration)
+        double duration,
+        PassageMatcher matcher)
     {
         if (anchor is null)
             return null;
@@ -900,7 +906,8 @@ public sealed class AlignmentService(
 
         return seconds >= 0 && seconds <= duration
             ? new AudioAlignmentSearch.Point(
-                seconds, anchor.TextGlobalOffset)
+                seconds,
+                matcher.SpokenOffset(anchor.TextGlobalOffset))
             : null;
     }
 
@@ -981,29 +988,6 @@ public sealed class AlignmentService(
         return text.Length <= maximumCharacters
             ? text
             : text[^maximumCharacters..];
-    }
-
-    private static int GlobalTextLength(
-        BookTextExtractedDocument document)
-    {
-        long length = 0;
-
-        foreach (var block in document.Blocks)
-            length = checked(length + block.Text.Length + 1L);
-
-        // PassageMatcher inserts one separator after each block.
-        // There is no need for a final trailing separator.
-        length = Math.Max(0, length - 1);
-
-        if (length <= 0 || length > int.MaxValue)
-        {
-            throw new AlignmentException(
-                "alignment_target_text_unavailable",
-                422,
-                "The text edition cannot be indexed for alignment.");
-        }
-
-        return (int)length;
     }
 
     private static void ValidatePair(

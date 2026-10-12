@@ -25,8 +25,15 @@ public sealed record MatcherSettings(double MinimumScore = 0.85, double MinimumM
 }
 
 public sealed record PassageLocation(int BlockOrder, int GlobalTextOffset, BookTextSourceLocator Locator);
+/// <param name="StartSpoken">
+/// The passage's ends counted in spoken characters: the letters and digits of
+/// the book's words before that point, and nothing else. Page furniture,
+/// reading aids, punctuation and spacing take no time to read aloud, so this,
+/// not the text offset, is what a narrator's seconds are proportional to.
+/// </param>
 public sealed record PassageMatch(bool Accepted, string Reason, double Score, double RunnerUpScore,
-    PassageLocation? Start, PassageLocation? End, string? Passage);
+    PassageLocation? Start, PassageLocation? End, string? Passage,
+    int StartSpoken = 0, int EndSpoken = 0);
 
 /// <summary>Lexical locator. It never receives expected locations or chapter hints.</summary>
 public sealed class PassageMatcher
@@ -49,6 +56,9 @@ public sealed class PassageMatcher
     private readonly BookTextExtractedDocument document;
     private readonly List<Token> tokens = [];
     private readonly Dictionary<string, List<int>> positions = new(StringComparer.Ordinal);
+
+    /// <summary>Spoken characters before each token; one extra entry holds the total.</summary>
+    private readonly List<int> spokenBefore = [0];
 
     /// <summary>
     /// Running heads found at the top of this PDF's pages, as token keys with
@@ -147,7 +157,33 @@ public sealed class PassageMatcher
 
             indexes.Add(tokens.Count);
             tokens.Add(token);
+            spokenBefore.Add(spokenBefore[^1] + token.Value.Length);
         }
+    }
+
+    /// <summary>Every spoken character of the book. See <see cref="PassageMatch"/>.</summary>
+    public int TotalSpoken => spokenBefore[^1];
+
+    /// <summary>
+    /// The spoken characters before a global text offset: the words that
+    /// start at or after the offset are not counted.
+    /// </summary>
+    public int SpokenOffset(int globalTextOffset)
+    {
+        var low = 0;
+        var high = tokens.Count;
+
+        while (low < high)
+        {
+            var middle = low + (high - low) / 2;
+
+            if (tokens[middle].GlobalOffset < globalTextOffset)
+                low = middle + 1;
+            else
+                high = middle;
+        }
+
+        return spokenBefore[low];
     }
 
     private bool CanJoinHyphenation(Token first, Token second)
@@ -560,7 +596,9 @@ public sealed class PassageMatcher
             runnerScore,
             Location(first, false),
             Location(last, true),
-            passage);
+            passage,
+            spokenBefore[best.Start],
+            spokenBefore[best.Start + best.Length]);
     }
 
     private PassageLocation Location(Token token, bool end)

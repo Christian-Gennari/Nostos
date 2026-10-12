@@ -226,6 +226,42 @@ public sealed class PassageMatcherTests
     }
 
     [Fact]
+    public void Spoken_offsets_count_the_words_read_aloud_and_nothing_else()
+    {
+        var pages = new[]
+        {
+            "A CHRISTMAS CAROL 10 Scrooge never painted out old Marley's name above the warehouse door and there",
+            "11 MARLEY'S GHOST it stood years afterwards the firm was known as Scrooge and Marley sometimes people",
+            "A CHRISTMAS CAROL 12 new to the business called Scrooge Scrooge and sometimes Marley but he answered",
+            "13 MARLEY'S GHOST to both names it was all the same to him oh but he was a tight fisted hand",
+            "A CHRISTMAS CAROL 14 at the grindstone Scrooge a squeezing wrenching grasping scraping clutching",
+            "15 MARLEY'S GHOST covetous old sinner hard and sharp as flint from which no steel had ever struck",
+            "A CHRISTMAS CAROL 16 out generous fire secret and self contained and solitary as an oyster",
+            "17 MARLEY'S GHOST the cold within him froze his old features nipped his pointed nose",
+        };
+
+        // The letters of a page's own words: no head, no number, no spaces.
+        static int Letters(string body) => body.Count(char.IsLetterOrDigit);
+
+        var first = Letters("Scrooge never painted out old Marley's name above the warehouse door and there");
+        var second = Letters("it stood years afterwards the firm was known as Scrooge and Marley sometimes people");
+        var third = Letters("new to the business called Scrooge Scrooge and sometimes Marley but he answered");
+
+        var matcher = PdfMatcher(pages);
+        var opening = matcher.LocateOpening(pages[2]);
+
+        // The top of the third page is two pages of speech in, not two pages
+        // of speech plus three running heads and page numbers.
+        Assert.Equal(first + second, opening.StartSpoken);
+        Assert.Equal(first + second + third, opening.EndSpoken);
+        Assert.Equal(opening.StartSpoken, matcher.SpokenOffset(opening.Start!.GlobalTextOffset));
+        Assert.Equal(opening.EndSpoken, matcher.SpokenOffset(opening.End!.GlobalTextOffset));
+
+        Assert.Equal(0, matcher.SpokenOffset(0));
+        Assert.Equal(matcher.TotalSpoken, matcher.SpokenOffset(int.MaxValue));
+    }
+
+    [Fact]
     public void Pdf_pages_that_open_with_the_same_ordinary_word_keep_it()
     {
         var openings = new[]
