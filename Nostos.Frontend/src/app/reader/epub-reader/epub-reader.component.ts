@@ -60,7 +60,7 @@ import {
   rangeAtNormalizedResourceOffset,
   rangeForNormalizedResourceSpan,
   resolveGroundedEpubResourceHref,
-  sentenceSpanAt,
+  sentenceSpanInResource,
   type EpubSpineSource,
 } from './epub-grounded-source';
 import { visibleEpubExcerpt } from './epub-visible-excerpt';
@@ -571,9 +571,6 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     /** Ends the in-flight settle wait (quiet timer + resize listeners). */
     cancelSettle: (() => void) | null;
   } | null = null;
-
-  /** The search underline currently marks a landing from another edition. */
-  private landingMarkShown = false;
 
   /** Keydown listeners registered inside each iframe's contents document. */
   private readonly keyboardDocuments = new Map<Document, () => void>();
@@ -1239,10 +1236,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
   private beginNavigation(): number {
     this.navigationGeneration++;
     this.cancelGroundedNavigation();
-    if (this.landingMarkShown) {
-      this.landingMarkShown = false;
-      this.annotationManager?.clearSearchHighlight();
-    }
+    this.annotationManager?.clearLandingMark();
     return this.navigationGeneration;
   }
 
@@ -1392,9 +1386,9 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
 
   /**
    * After landing from another edition, underline the sentence the reader was
-   * in, so the eye finds it on the page. It is the reader's temporary search
-   * mark, and the next page turn or navigation clears it. Not being able to
-   * draw it is fine: the page is already the right one.
+   * in, so the eye finds it on the page. The next page turn or navigation
+   * clears it. Not being able to draw it is fine: the page is already the
+   * right one.
    */
   private markLandingSentence(href: string | null, offset: number | null): void {
     if (offset === null) return;
@@ -1406,15 +1400,14 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
         rendered[0];
       if (!contents?.document) return;
 
-      const span = sentenceSpanAt(normalizedEpubResourceText(contents.document), offset);
+      const span = sentenceSpanInResource(contents.document, offset);
       if (!span) return;
 
       const range = rangeForNormalizedResourceSpan(contents.document, span.start, span.length);
       const cfi = range ? contents.cfiFromRange(range) : null;
       if (typeof cfi !== 'string' || cfi.length === 0) return;
 
-      this.annotationManager?.showSearchHighlight(cfi);
-      this.landingMarkShown = true;
+      this.annotationManager?.showLandingMark(cfi);
     } catch (error) {
       console.warn('Could not mark the landing sentence:', error);
     }

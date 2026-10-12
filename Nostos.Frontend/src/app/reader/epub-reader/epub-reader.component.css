@@ -166,3 +166,11 @@
   line-height: 1.45;
   text-align: center;
 }
+
+/* The sentence a reader landed on from another edition is underlined, not
+   boxed. epub.js draws an underline as a rectangle around the line plus a
+   rule beneath it, in a pane it adds to this component at run time, and both
+   inherit the stroke. */
+:host ::ng-deep .epubjs-landing-mark rect {
+  stroke: none;
+}
