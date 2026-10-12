@@ -316,26 +316,17 @@
         }
         <div class="index-row-shell" role="listitem">
           @if (renameId() === c.id && renameSurface() === 'index') {
-          <div class="index-item inline-rename" (click)="$event.stopPropagation()">
-            <input
-              appInput
-              controlSize="compact"
-              #renameInput
-              type="text"
-              class="inline-rename-input"
+          <div class="index-item index-item--renaming" (click)="$event.stopPropagation()">
+            <app-brain-topic-rename
+              variant="row"
+              [name]="c.name"
               [value]="renameValue()"
-              (input)="renameValue.set($any($event.target).value)"
-              (keydown.enter)="$event.stopPropagation(); commitRename(c.id)"
-              (keydown.escape)="$event.stopPropagation(); cancelRename()"
-              (focus)="selectRenameInput($event)"
-              [attr.aria-label]="'Rename ' + c.name"
-              [invalid]="!!renameError()"
-              [disabled]="renaming()"
-              autofocus
+              (valueChange)="renameValue.set($event)"
+              [error]="renameError()"
+              [busy]="renaming()"
+              (committed)="commitRename(c.id)"
+              (cancelled)="cancelRename()"
             />
-            @if (renameError(); as error) {
-            <span class="inline-rename-error" role="alert">{{ error }}</span>
-            }
           </div>
           } @else {
           <button
@@ -380,6 +371,9 @@
             </span>
           </button>
           }
+          <!-- The row's own actions step aside while its name is being edited:
+               they sat on top of the field. -->
+          @if (!(renameId() === c.id && renameSurface() === 'index')) {
           <div class="row-actions" (click)="$event.stopPropagation()">
             <button
               type="button"
@@ -398,6 +392,7 @@
               <nostos-icon name="trash" [size]="13"></nostos-icon>
             </button>
           </div>
+          }
         </div>
         }
         }
@@ -689,27 +684,16 @@
           <div class="topic-head-copy">
             <div class="super-title">Topic</div>
             @if (renameId() === detail.id && renameSurface() === 'header') {
-            <div class="inline-rename header-rename">
-              <input
-                appInput
-                controlSize="compact"
-                #renameInput
-                type="text"
-                class="inline-rename-input"
-                [value]="renameValue()"
-                (input)="renameValue.set($any($event.target).value)"
-                (keydown.enter)="commitRename(detail.id)"
-                (keydown.escape)="cancelRename()"
-                (focus)="selectRenameInput($event)"
-                [attr.aria-label]="'Rename ' + detail.name"
-                [invalid]="!!renameError()"
-                [disabled]="renaming()"
-                autofocus
-              />
-              @if (renameError(); as error) {
-              <span class="inline-rename-error" role="alert">{{ error }}</span>
-              }
-            </div>
+            <app-brain-topic-rename
+              variant="title"
+              [name]="detail.name"
+              [value]="renameValue()"
+              (valueChange)="renameValue.set($event)"
+              [error]="renameError()"
+              [busy]="renaming()"
+              (committed)="commitRename(detail.id)"
+              (cancelled)="cancelRename()"
+            />
             } @else {
             <h1 class="topic-title">{{ detail.name }}</h1>
             }

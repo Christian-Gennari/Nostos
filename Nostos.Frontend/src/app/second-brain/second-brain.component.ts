@@ -52,6 +52,7 @@ import {
 } from './writing-handoff/brain-writing-handoff.component';
 import { TopicDataCache } from './topic-data-cache';
 import { BrainTopicPickerComponent } from './topic-picker/brain-topic-picker.component';
+import { BrainTopicRenameComponent } from './topic-rename/brain-topic-rename.component';
 
 import {
   ALL_SOURCES,
@@ -122,6 +123,7 @@ interface ReviewReturnState {
     TopicInputComponent,
     BrainWritingHandoffComponent,
     BrainTopicPickerComponent,
+    BrainTopicRenameComponent,
   ],
   templateUrl: './second-brain.component.html',
   styleUrls: ['./second-brain.component.css'],
@@ -1861,10 +1863,6 @@ export class SecondBrain implements AfterViewChecked {
     this.renameId.set(null);
     this.renameValue.set('');
     this.renameError.set(null);
-  }
-
-  selectRenameInput(event: FocusEvent): void {
-    (event.target as HTMLInputElement).select();
   }
 
   commitRename(id: string): void {
