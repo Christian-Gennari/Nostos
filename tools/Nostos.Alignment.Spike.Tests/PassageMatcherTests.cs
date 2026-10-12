@@ -112,6 +112,211 @@ public sealed class PassageMatcherTests
     }
 
     [Fact]
+    public void A_misread_word_costs_half_of_a_different_word()
+    {
+        // Three words as a scan's text layer gives them: l for i, m for rn.
+        var scanned = Matcher(
+            "The patlent traveller carrled a golden lantem through the quiet orchard before sunrise.");
+
+        var match = scanned.Locate(Passage, new());
+
+        Assert.True(match.Accepted);
+        Assert.Equal(1 - 1.5 / 13, match.Score, 3);
+
+        // Three different words in the same places are three whole errors.
+        var different = Matcher(
+            "The patient sailor dropped a golden anchor through the quiet orchard before sunrise.")
+            .Locate(Passage, new());
+
+        Assert.Equal(1 - 3d / 13, different.Score, 3);
+    }
+
+    [Fact]
+    public void Short_words_are_never_near_misses()
+    {
+        // "then" and "than", "form" and "from" are different words.
+        var match = Matcher(
+            "He said then that the form was more than he could bear to sign that day.")
+            .Locate(
+                "He said than that the from was more then he could bear to sign that day.",
+                new());
+
+        Assert.Equal(1 - 3d / 16, match.Score, 3);
+    }
+
+    [Fact]
+    public void A_unique_passage_is_accepted_a_little_below_the_usual_score()
+    {
+        // As measured: a British spelling, an interjection heard differently
+        // and a dropped title leave the only place it can be at 0.84.
+        var match = Matcher(
+            "Mr. Utterson the lawyer was a man of a rugged countenance that was never lighted by a smile.",
+            "Not a bit of it. The cheque was genuine. Tut-tut, said Mr. Utterson. " +
+            "I see you feel as I do, said Mr. Enfield.",
+            "It was a fine dry night; frost in the air; the streets as clean as a ballroom floor.")
+            .Locate(
+                "not a bit of it the check was genuine tot tot said utterson " +
+                "i see you feel as i do said mr",
+                new());
+
+        Assert.True(match.Accepted);
+        Assert.InRange(match.Score, 0.80, 0.85);
+        Assert.Equal(1, match.Start!.BlockOrder);
+    }
+
+    [Fact]
+    public void A_passage_below_the_usual_score_with_a_rival_is_declined()
+    {
+        var spoken = Passage
+            .Replace("golden", "silver")
+            .Replace("quiet", "noisy");
+
+        // Alone, the passage is the only candidate.
+        Assert.True(Matcher(Passage).Locate(spoken, new()).Accepted);
+
+        // A second place that is nearly as close takes the certainty away.
+        var rival = Passage
+            .Replace("golden", "silver")
+            .Replace("patient", "weary")
+            .Replace("traveller", "pilgrim");
+
+        var match = Matcher(Passage, rival).Locate(spoken, new());
+
+        Assert.False(match.Accepted);
+        Assert.Equal("weak_match", match.Reason);
+    }
+
+    [Fact]
+    public void Pdf_running_heads_and_page_numbers_are_not_part_of_the_text()
+    {
+        var pages = new[]
+        {
+            "A CHRISTMAS CAROL 10 Scrooge never painted out old Marley's name above the warehouse door and there",
+            "11 MARLEY'S GHOST it stood years afterwards the firm was known as Scrooge and Marley sometimes people",
+            "A CHRISTMAS CAROL 12 new to the business called Scrooge Scrooge and sometimes Marley but he answered",
+            "13 MARLEY'S GHOST to both names it was all the same to him oh but he was a tight fisted hand",
+            "A CHRISTMAS CAROL 14 at the grindstone Scrooge a squeezing wrenching grasping scraping clutching",
+            "15 MARLEY'S GHOST covetous old sinner hard and sharp as flint from which no steel had ever struck",
+            "A CHRISTMAS CAROL 16 out generous fire secret and self contained and solitary as an oyster",
+            "17 MARLEY'S GHOST the cold within him froze his old features nipped his pointed nose",
+        };
+
+        var matcher = PdfMatcher(pages);
+
+        // A sentence that runs over a page turn is unbroken.
+        var across = matcher.Locate(
+            "old marley's name above the warehouse door and there it stood years afterwards " +
+            "the firm was known as scrooge and marley",
+            new());
+
+        Assert.True(across.Accepted);
+        Assert.Equal(1, across.Score);
+        Assert.Equal(0, across.Start!.BlockOrder);
+        Assert.Equal(1, across.End!.BlockOrder);
+
+        // The reader sends the top of a page, head and number included.
+        var opening = matcher.LocateOpening(pages[2]);
+
+        Assert.True(opening.Accepted);
+        Assert.Equal(1, opening.Score);
+        Assert.Equal(2, opening.Start!.BlockOrder);
+        Assert.Equal(
+            pages[2].IndexOf("new to", StringComparison.Ordinal),
+            Assert.IsType<PdfBookTextSourceLocator>(opening.Start.Locator).StartTextOffset);
+    }
+
+    [Fact]
+    public void Pdf_pages_that_open_with_the_same_ordinary_word_keep_it()
+    {
+        var openings = new[]
+        {
+            "The clerk in the tank involuntarily applauded and poked the fire at once",
+            "The owner of one scant young nose gnawed and mumbled by the hungry cold",
+            "The fog and darkness thickened so that people ran about with flaring links",
+            "The ancient tower of a church whose gruff old bell was always peeping slily",
+            "The water plug being left in solitude its overflowings sullenly congealed",
+            "The brightness of the shops where holly sprigs and berries crackled in the lamp heat",
+            "The Lord Mayor in the stronghold of the mighty Mansion House gave orders",
+            "The cold became intense in the main street at the corner of the court",
+        };
+
+        var match = PdfMatcher(openings).LocateOpening(openings[2]);
+
+        Assert.True(match.Accepted);
+        Assert.Equal(1, match.Score);
+        Assert.Equal(2, match.Start!.BlockOrder);
+        Assert.Equal(0, Assert.IsType<PdfBookTextSourceLocator>(match.Start.Locator).StartTextOffset);
+    }
+
+    [Fact]
+    public void Chinese_is_matched_by_character_across_character_sets()
+    {
+        const string page =
+            "我要給阿Q做正傳，已經不止一兩年了。但一面要做，一面又往回想，這足見我不是一個“立言”的人，" +
+            "因為從來不朽之筆，須傳不朽之人，於是人以文傳，文以人傳——究竟誰靠誰傳，漸漸的不甚了然起來。";
+
+        var matcher = Matcher("第一章 序", page, "第二章 優勝記略");
+
+        // Simplified, unpunctuated, with two characters heard as homophones.
+        var match = matcher.Locate(
+            "但一面要做一面又往回想这足见我不是一个利言的人因为从来不朽之笔虚传不朽之人于是人以文传文以人传");
+
+        Assert.True(match.Accepted);
+        Assert.Equal(1, match.Start!.BlockOrder);
+        Assert.Equal(page.IndexOf("但一面", StringComparison.Ordinal), match.Start.GlobalTextOffset - "第一章 序".Length - 1);
+
+        Assert.Equal("insufficient_speech", matcher.Locate("我要给阿Q做正传").Reason);
+    }
+
+    [Fact]
+    public void Ruby_glosses_are_left_out_and_offsets_stay_true()
+    {
+        const string text =
+            "親譲（おやゆず）りの無鉄砲（むてっぽう）で小供の時から損ばかりしている。" +
+            "小学校に居る時分学校の二階から飛び降りて一週間ほど腰（こし）を抜（ぬ）かした事がある。";
+
+        var aids = new List<BookTextRange>();
+
+        foreach (var gloss in new[] { "（", "おやゆず", "）", "（", "むてっぽう", "）", "（", "こし", "）", "（", "ぬ", "）" })
+        {
+            var from = aids.Count == 0 ? 0 : aids[^1].Start + aids[^1].Length;
+            aids.Add(new BookTextRange(text.IndexOf(gloss, from, StringComparison.Ordinal), gloss.Length));
+        }
+
+        var document = new BookTextExtractedDocument(
+            BookTextSourceFormat.Epub,
+            [
+                new BookTextArtifactBlock(
+                    0,
+                    text,
+                    [],
+                    [
+                        new BookTextSourceSegment(
+                            0,
+                            text.Length,
+                            new EpubBookTextSourceLocator(0, "c.xhtml", StartTextOffset: 0, EndTextOffset: text.Length)),
+                    ]),
+            ]);
+
+        const string spoken =
+            "親譲りの無鉄砲で小供の時から損ばかりしている小学校に居る時分学校の二階から飛び降りて一週間ほど腰を抜かした事がある";
+
+        // With the glosses in the way the narration does not fit the page exactly.
+        Assert.True(new PassageMatcher(document).Locate(spoken).Score < 1);
+
+        var match = new PassageMatcher(
+            document,
+            new Dictionary<int, IReadOnlyList<BookTextRange>> { [0] = aids })
+            .Locate(spoken);
+
+        Assert.True(match.Accepted);
+        Assert.Equal(1, match.Score);
+
+        // The end is where the last spoken character really is in the page text.
+        Assert.Equal(text.Length - 1, match.End!.GlobalTextOffset);
+    }
+
+    [Fact]
     public void Tolerates_a_transcription_substitution() =>
         Assert.True(Matcher(Passage)
             .Locate(Passage.Replace("golden", "silver"), new())

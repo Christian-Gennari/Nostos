@@ -4,7 +4,29 @@ using HtmlAgilityPack;
 
 namespace Nostos.Product.BookText;
 
-public sealed class EpubBookTextExtractor : IBookTextExtractor
+/// <summary>A run of characters inside one extracted block's text.</summary>
+public sealed record BookTextRange(int Start, int Length);
+
+/// <summary>
+/// An extracted document and, per block order, the parts of the block's text
+/// that are reading aids printed beside the words rather than the words
+/// themselves: the pronunciation glosses (ruby) of Japanese and Chinese books.
+/// The document is exactly what <see cref="IBookTextExtractor.ExtractAsync"/>
+/// returns; the ranges only say which characters nobody reads aloud.
+/// </summary>
+public sealed record BookTextAnnotatedDocument(
+    BookTextExtractedDocument Document,
+    IReadOnlyDictionary<int, IReadOnlyList<BookTextRange>> ReadingAids);
+
+/// <summary>An extractor that can also report reading aids.</summary>
+public interface IBookTextReadingAidSource
+{
+    Task<BookTextAnnotatedDocument> ExtractAnnotatedAsync(
+        Stream source,
+        CancellationToken ct = default);
+}
+
+public sealed class EpubBookTextExtractor : IBookTextExtractor, IBookTextReadingAidSource
 {
     private static readonly HashSet<string> BlockTags = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -19,7 +41,22 @@ public sealed class EpubBookTextExtractor : IBookTextExtractor
 
     public BookTextSourceFormat Format => BookTextSourceFormat.Epub;
 
-    public Task<BookTextExtractedDocument> ExtractAsync(Stream source, CancellationToken ct = default)
+    public Task<BookTextExtractedDocument> ExtractAsync(Stream source, CancellationToken ct = default) =>
+        Task.FromResult(Extract(source, null, ct));
+
+    public Task<BookTextAnnotatedDocument> ExtractAnnotatedAsync(
+        Stream source,
+        CancellationToken ct = default)
+    {
+        var readingAids = new Dictionary<int, IReadOnlyList<BookTextRange>>();
+        var document = Extract(source, readingAids, ct);
+        return Task.FromResult(new BookTextAnnotatedDocument(document, readingAids));
+    }
+
+    private BookTextExtractedDocument Extract(
+        Stream source,
+        Dictionary<int, IReadOnlyList<BookTextRange>>? readingAids,
+        CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
         if (source.CanSeek) source.Position = 0;
@@ -88,6 +125,12 @@ public sealed class EpubBookTextExtractor : IBookTextExtractor
                     for (var i = level; i < headingPath.Length; i++) headingPath[i] = null;
                 }
 
+                if (readingAids is not null)
+                {
+                    var aids = ReadingAidRanges(node, text);
+                    if (aids.Count > 0) readingAids[order] = aids;
+                }
+
                 var headings = headingPath.Where(value => !string.IsNullOrWhiteSpace(value)).Cast<string>().ToArray();
                 blocks.Add(new BookTextArtifactBlock(
                     Order: order++,
@@ -110,7 +153,54 @@ public sealed class EpubBookTextExtractor : IBookTextExtractor
             }
         }
 
-        return Task.FromResult(new BookTextExtractedDocument(Format, blocks));
+        return new BookTextExtractedDocument(Format, blocks);
+    }
+
+    /// <summary>
+    /// Where a block's ruby glosses sit in its extracted text. Each ruby is
+    /// found in order by its own text, then its gloss and fallback brackets
+    /// (rt, rp) inside it. A ruby that cannot be found is left unmarked: the
+    /// text is then matched with the gloss in it, as before.
+    /// </summary>
+    private static List<BookTextRange> ReadingAidRanges(HtmlNode block, string text)
+    {
+        var ranges = new List<BookTextRange>();
+        var cursor = 0;
+
+        foreach (var ruby in block.Descendants("ruby"))
+        {
+            // A nested ruby is covered by the one that contains it.
+            if (ruby.Ancestors("ruby").Any())
+                continue;
+
+            var whole = BookTextNormalization.Normalize(HtmlEntity.DeEntitize(ruby.InnerText));
+            if (whole.Length == 0) continue;
+
+            var at = text.IndexOf(whole, cursor, StringComparison.Ordinal);
+            if (at < 0) continue;
+
+            var inner = at;
+            foreach (var aid in ruby.Descendants()
+                .Where(node => node.Name is "rt" or "rp" or "rtc"))
+            {
+                if (aid.Ancestors().TakeWhile(node => !ReferenceEquals(node, ruby))
+                    .Any(node => node.Name is "rt" or "rp" or "rtc"))
+                    continue;
+
+                var gloss = BookTextNormalization.Normalize(HtmlEntity.DeEntitize(aid.InnerText));
+                if (gloss.Length == 0) continue;
+
+                var found = text.IndexOf(gloss, inner, StringComparison.Ordinal);
+                if (found < 0 || found + gloss.Length > at + whole.Length) continue;
+
+                ranges.Add(new BookTextRange(found, gloss.Length));
+                inner = found + gloss.Length;
+            }
+
+            cursor = at + whole.Length;
+        }
+
+        return ranges;
     }
 
     private static bool HasIgnoredAncestor(HtmlNode node) =>

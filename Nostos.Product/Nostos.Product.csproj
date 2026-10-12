@@ -21,6 +21,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Character fold for comparing Chinese text across character sets. -->
+    <EmbeddedResource Include="Alignment\Data\han-traditional-to-simplified.txt"
+                      LogicalName="Nostos.Product.Alignment.han-traditional-to-simplified.txt" />
+  </ItemGroup>
+
+  <ItemGroup>
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
       <_Parameter1>Nostos.Backend.Tests</_Parameter1>
     </AssemblyAttribute>

@@ -34,6 +34,83 @@ public sealed class AudioAlignmentSearchTests
     }
 
     [Fact]
+    public void A_span_of_closing_words_is_timed_from_when_they_begin()
+    {
+        // The last eight seconds of a twenty-second clip hold the located text.
+        var search = new AudioAlignmentSearch(
+            targetOffset: 950,
+            totalCharacters: 10_000,
+            durationSeconds: 1000,
+            Options);
+
+        var result = search.Observe(new AudioAlignmentSearch.Observation(
+            ClipStartSeconds: 80,
+            ClipEndSeconds: 100,
+            TextStartOffset: 900,
+            TextEndOffset: 1000,
+            Score: 1,
+            Knots: [new(92, 900), new(100, 1000)]));
+
+        // Halfway through the closing words is 96 s; spread over the whole
+        // clip it would have been 90 s, six seconds before the sentence.
+        result.Located.Should().BeTrue();
+        result.PositionSeconds.Should().BeApproximately(
+            96 - Options.LeadInSeconds, 0.001);
+    }
+
+    [Fact]
+    public void A_target_between_two_placed_windows_is_timed_on_its_own_stretch()
+    {
+        var search = new AudioAlignmentSearch(
+            targetOffset: 820,
+            totalCharacters: 10_000,
+            durationSeconds: 1000,
+            Options);
+
+        var result = search.Observe(new AudioAlignmentSearch.Observation(
+            80,
+            100,
+            800,
+            1000,
+            1,
+            [new(80, 800), new(88, 840), new(92, 900), new(100, 1000)]));
+
+        result.Located.Should().BeTrue();
+        result.PositionSeconds.Should().BeApproximately(
+            84 - Options.LeadInSeconds, 0.001);
+    }
+
+    [Theory]
+    [InlineData(92, 900, 91, 1000)]   // time runs backwards
+    [InlineData(92, 950, 100, 940)]   // text runs backwards
+    [InlineData(70, 900, 100, 1000)]  // before the clip
+    [InlineData(92, 905, 100, 1000)]  // does not start at the span
+    public void Pairs_that_do_not_fit_the_clip_fall_back_to_its_two_ends(
+        double firstSeconds,
+        double firstOffset,
+        double secondSeconds,
+        double secondOffset)
+    {
+        var search = new AudioAlignmentSearch(
+            targetOffset: 950,
+            totalCharacters: 10_000,
+            durationSeconds: 1000,
+            Options);
+
+        var result = search.Observe(new AudioAlignmentSearch.Observation(
+            80,
+            100,
+            900,
+            1000,
+            1,
+            [new(firstSeconds, firstOffset), new(secondSeconds, secondOffset)]));
+
+        result.Located.Should().BeTrue();
+        result.PositionSeconds.Should().BeApproximately(
+            90 - Options.LeadInSeconds, 0.001);
+    }
+
+    [Fact]
     public void Nearby_anchor_initializes_search_at_correct_position()
     {
         var search = new AudioAlignmentSearch(
