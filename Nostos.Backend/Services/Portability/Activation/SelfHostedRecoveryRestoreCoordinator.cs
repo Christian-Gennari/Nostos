@@ -7,6 +7,7 @@ using Nostos.Backend.Configuration;
 using Nostos.Backend.Data;
 using Nostos.Backend.Services.Library;
 using Nostos.Backend.Services.Portability;
+using Nostos.Backend.Services.Portability.Migration;
 using Nostos.Backend.Services.Portability.Transfers;
 
 namespace Nostos.Backend.Services.Portability.Activation;
@@ -1131,20 +1132,7 @@ internal sealed class SelfHostedRecoveryRestoreCoordinator
             throw Failed("The live library revision is missing.");
         }
 
-        var counts = new MigrationExistingCounts(
-            Works: await db.Works.CountAsync(ct),
-            Books: await db.Books.CountAsync(ct),
-            Notes: await db.Notes.CountAsync(ct),
-            Topics: await db.Topics.CountAsync(ct),
-            NoteTopics: await db.NoteTopics.CountAsync(ct),
-            Writings: await db.Writings.CountAsync(ct),
-            WritingNotes: await db.WritingNotes.CountAsync(ct),
-            Collections: await db.Collections.CountAsync(ct),
-            BookCollections: await db.BookCollections.CountAsync(ct),
-            Acquisitions: await db.BookAcquisitions.CountAsync(ct),
-            NoteImportBookLinks: await db.NoteImportBookLinks.CountAsync(ct),
-            AssistantSettings: await db.AssistantSettings
-                .CountAsync(settings => settings.CaptureProcessingMode != null, ct));
+        var counts = await LibraryRowCounts.ReadUserDataAsync(db, ct);
         return (revision, counts);
     }
 

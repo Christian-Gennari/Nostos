@@ -972,20 +972,7 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
                 "The live library revision is missing.");
         }
 
-        var counts = new MigrationExistingCounts(
-            Works: await db.Works.CountAsync(ct),
-            Books: await db.Books.CountAsync(ct),
-            Notes: await db.Notes.CountAsync(ct),
-            Topics: await db.Topics.CountAsync(ct),
-            NoteTopics: await db.NoteTopics.CountAsync(ct),
-            Writings: await db.Writings.CountAsync(ct),
-            WritingNotes: await db.WritingNotes.CountAsync(ct),
-            Collections: await db.Collections.CountAsync(ct),
-            BookCollections: await db.BookCollections.CountAsync(ct),
-            Acquisitions: await db.BookAcquisitions.CountAsync(ct),
-            NoteImportBookLinks: await db.NoteImportBookLinks.CountAsync(ct),
-            AssistantSettings: await db.AssistantSettings
-                .CountAsync(settings => settings.CaptureProcessingMode != null, ct));
+        var counts = await LibraryRowCounts.ReadUserDataAsync(db, ct);
         // An empty destination is proven on disk too: any file in the live media
         // root is conservatively user-owned data, so it must be replaced through
         // the confirmation + retained-recovery path, never discarded as empty.
