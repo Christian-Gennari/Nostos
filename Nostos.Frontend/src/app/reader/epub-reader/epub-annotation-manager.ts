@@ -395,12 +395,9 @@ export class EpubAnnotationManager {
       cfiRange,
       { nostosLanding: true },
       undefined,
+      // Drawn by the reader's stylesheet: epub.js gives the rule its own
+      // black stroke, which attributes passed here cannot replace.
       'epubjs-landing-mark',
-      {
-        stroke: 'var(--color-accent)',
-        'stroke-opacity': '0.9',
-        'stroke-width': '2',
-      },
     );
   }
 
