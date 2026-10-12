@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { availableParallelism } from 'node:os';
 import path from 'node:path';
 
 import { defineConfig } from 'vitest/config';
@@ -40,9 +41,22 @@ function backendSourcePlugin() {
   };
 }
 
+// One worker per core is vitest's default. With `isolate: true` every worker
+// loads Angular afresh, about 280 MB each, and the machine these suites run on
+// also serves production: twelve workers beside a backend suite filled its
+// swap and pushed the load average past 400. Four workers finish the suite in
+// about a minute, which was faster than twelve on that machine.
+// VITEST_MAX_WORKERS overrides the cap in either direction.
+const requestedWorkers = Number(process.env['VITEST_MAX_WORKERS']);
+const maxWorkers =
+  Number.isInteger(requestedWorkers) && requestedWorkers > 0
+    ? requestedWorkers
+    : Math.min(4, availableParallelism());
+
 export default defineConfig({
   plugins: [backendSourcePlugin()],
   test: {
     isolate: true,
+    maxWorkers,
   },
 });
