@@ -2423,17 +2423,20 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
     [Fact]
     public async Task Wall_clock_ceiling_cancels_an_in_flight_upstream_call()
     {
-        var h = CreateHarness(configure: options => options.MaxTurnElapsedMilliseconds = 100);
+        // The ceiling has to leave the orchestrator time to reach the provider:
+        // at 100 ms a busy runner spent the whole budget before the first call,
+        // and the turn ended without the in-flight call this test is about.
+        var h = CreateHarness(configure: options => options.MaxTurnElapsedMilliseconds = 1_000);
         h.Llm.AsyncResponder = async (_, cancellationToken) =>
         {
-            await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
+            await Task.Delay(TimeSpan.FromSeconds(30), cancellationToken);
             return new LlmCompletion("Too late.", "stop", []);
         };
 
         var turn = h.Orchestrator.HandleTurnAsync(
             Turn("Hello.", Context(surface: "library", route: "/library")));
 
-        var finished = await Task.WhenAny(turn, Task.Delay(TimeSpan.FromSeconds(2)));
+        var finished = await Task.WhenAny(turn, Task.Delay(TimeSpan.FromSeconds(10)));
         finished.Should().BeSameAs(turn, "the turn deadline must cancel the in-flight provider call");
 
         var response = await turn;
