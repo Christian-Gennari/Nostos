@@ -1353,6 +1353,8 @@ describe('EpubReader grounded-source settle protection (PR #582)', () => {
   let liveCfi: string;
   /** Where the re-derived target range would sit; null = no measurable layout. */
   let rangeRect: DOMRect | null;
+  /** Width of the rendered section's frame; a paginated section is one wide frame. */
+  let sectionWidth = 800;
 
   const rect = (left: number, top: number, right: number, bottom: number) =>
     ({ left, top, right, bottom, width: right - left, height: bottom - top }) as DOMRect;
@@ -1422,7 +1424,8 @@ describe('EpubReader grounded-source settle protection (PR #582)', () => {
       '<p>A following paragraph stays put.</p>';
     vi.spyOn(doc, 'createRange').mockImplementation(() => makeRange());
 
-    const frame = { getBoundingClientRect: () => pageRect() };
+    sectionWidth = 800;
+    const frame = { getBoundingClientRect: () => rect(0, 0, sectionWidth, 600) };
     contents = {
       document: doc,
       window: { frameElement: frame },
@@ -1782,6 +1785,51 @@ describe('EpubReader grounded-source settle protection (PR #582)', () => {
     expect(fixture.componentInstance.sourceNavigationMessage()).toBe(
       "Couldn't locate this passage in the EPUB.",
     );
+  });
+
+  it('retries once more when the section was laid out again after the target was displayed', async () => {
+    await openReader();
+    // A first open at phone width: fonts arrive, the section is paginated
+    // again, and the display and its retry were both computed too early.
+    sectionWidth = 42120;
+    rangeRect = offPage();
+    await fixture.componentInstance.goToSource(groundedTarget());
+
+    await vi.advanceTimersByTimeAsync(400); // verdict → reassert
+    expect(displayCallsFor(TARGET_CFI)).toBe(2);
+
+    sectionWidth = 67492; // the layout the reader will keep
+    await vi.advanceTimersByTimeAsync(400); // verdict → not there, but laid out again
+    expect(displayCallsFor(TARGET_CFI)).toBe(3);
+    expect(fixture.componentInstance.sourceNavigationMessage()).toBeNull();
+
+    rangeRect = onPage();
+    await vi.advanceTimersByTimeAsync(400); // verdict → confirmed
+    expect(fixture.componentInstance.sourceNavigationMessage()).toBeNull();
+
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(displayCallsFor(TARGET_CFI)).toBe(3);
+  });
+
+  it('fails closed when the retry after a new layout does not establish the target either', async () => {
+    await openReader();
+    sectionWidth = 42120;
+    rangeRect = offPage();
+    await fixture.componentInstance.goToSource(groundedTarget());
+
+    await vi.advanceTimersByTimeAsync(400);
+    sectionWidth = 67492;
+    await vi.advanceTimersByTimeAsync(400);
+    expect(displayCallsFor(TARGET_CFI)).toBe(3);
+
+    sectionWidth = 70000; // even another layout earns no fourth display
+    await vi.advanceTimersByTimeAsync(400);
+
+    expect(fixture.componentInstance.sourceNavigationMessage()).toBe(
+      "Couldn't locate this passage in the EPUB.",
+    );
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(displayCallsFor(TARGET_CFI)).toBe(3);
   });
 
   it('fails closed with the existing message after exactly one controlled retry', async () => {

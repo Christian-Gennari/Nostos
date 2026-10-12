@@ -568,6 +568,10 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     markSentence: boolean;
     /** The single controlled retry has already been issued. */
     reasserted: boolean;
+    /** Width of the laid-out section when the target was displayed; null when unmeasurable. */
+    layoutWidth: number | null;
+    /** The one further retry granted because the section was laid out again. */
+    reassertedAfterReflow: boolean;
     /** Ends the in-flight settle wait (quiet timer + resize listeners). */
     cancelSettle: (() => void) | null;
   } | null = null;
@@ -1255,6 +1259,8 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
       offset,
       markSentence,
       reasserted: false,
+      layoutWidth: this.groundedLayoutWidth(href),
+      reassertedAfterReflow: false,
       cancelSettle: null,
     };
   }
@@ -1339,6 +1345,13 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
    * Once the settle is quiet: confirm the grounded target is where the reader
    * ended up, reassert it exactly once when it is not, and fail closed when
    * even the controlled retry cannot establish it.
+   *
+   * One exception, measured on a first open at phone width: the book's fonts
+   * arrive after the target was displayed, the whole section is laid out
+   * again (its width went 42 120 px, 359 px, 67 492 px inside a second) and
+   * both the display and its retry were computed against a layout that no
+   * longer exists. When the section's width is not what it was when the
+   * target was displayed, the retry is granted once more.
    */
   private async verifyGroundedNavigation(generation: number): Promise<void> {
     const target = this.groundedNavigation;
@@ -1352,8 +1365,16 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     }
 
     if (target.reasserted) {
-      this.failGroundedNavigation(generation);
-      return;
+      const width = this.groundedLayoutWidth(target.href);
+      const laidOutAgain =
+        width !== null && target.layoutWidth !== null && width !== target.layoutWidth;
+
+      if (target.reassertedAfterReflow || !laidOutAgain) {
+        this.failGroundedNavigation(generation);
+        return;
+      }
+      target.reassertedAfterReflow = true;
+      target.layoutWidth = width;
     }
     target.reasserted = true;
 
@@ -1371,6 +1392,27 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     }
     if (generation !== this.navigationGeneration) return;
     this.watchGroundedSettle(generation);
+  }
+
+  /**
+   * Width of the rendered section a grounded target is in. A paginated section
+   * is one wide frame, so its width changes whenever its pages are laid out
+   * again. Null when nothing is rendered or there is no geometry to read.
+   */
+  private groundedLayoutWidth(href: string | null): number | null {
+    try {
+      const rendered = this.renderedContents().filter((content) => !!content?.document);
+      const content =
+        (href ? rendered.find((candidate) => this.contentMatchesHref(candidate, href)) : null) ??
+        rendered[0];
+      const frame = content?.window?.frameElement;
+      if (!frame || typeof frame.getBoundingClientRect !== 'function') return null;
+
+      const width = Math.round(frame.getBoundingClientRect().width);
+      return width > 0 ? width : null;
+    } catch {
+      return null;
+    }
   }
 
   /** Confirmed: resume progress persistence with the verified target. */
