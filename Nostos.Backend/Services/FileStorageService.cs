@@ -321,7 +321,7 @@ public class FileStorageService : IFileStorageService, IBookAssetStorage, IBookT
         if (File.Exists(thumbnailPath))
             return thumbnailPath;
 
-        using var image = await Image.LoadAsync(coverPath, ct);
+        using var image = await Image.LoadAsync(CoverImageDecoding.Options, coverPath, ct);
         image.Mutate(context => context.Resize(new ResizeOptions
         {
             Size = new Size(safeWidth, 0),
