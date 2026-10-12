@@ -29,9 +29,11 @@ import {
   AssistantContextService,
 } from './assistant-context.service';
 import {
+  evidenceHandleKey,
   projectContextualModelHistory,
   projectPlainModelHistory,
   projectVisibleTranscript,
+  uniqueBy,
   type AssistantConversationEvent,
   type AssistantEventDelivery,
 } from './assistant-history';
@@ -1987,28 +1989,6 @@ function artifactKey(artifact: AssistantTurnArtifact): string {
 
 function dedupeArtifacts(artifacts: readonly AssistantTurnArtifact[]): AssistantTurnArtifact[] {
   return uniqueBy(artifacts, artifactKey);
-}
-
-function evidenceHandleKey(handle: AssistantEvidenceHandleDto): string {
-  return [
-    handle.kind,
-    handle.noteId ?? '',
-    handle.topicId ?? '',
-    handle.bookId ?? '',
-    handle.sourceSha256 ?? '',
-    handle.extractorVersion ?? '',
-    handle.ordinal ?? '',
-  ].join('|');
-}
-
-function uniqueBy<T>(values: readonly T[], key: (value: T) => string): T[] {
-  const seen = new Set<string>();
-  return values.filter((value) => {
-    const id = key(value);
-    if (seen.has(id)) return false;
-    seen.add(id);
-    return true;
-  });
 }
 
 function isAssistantTurnArtifact(value: unknown): value is AssistantTurnArtifact {
