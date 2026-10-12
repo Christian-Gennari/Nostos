@@ -228,6 +228,70 @@ public sealed class AudioAlignmentSearch
         }
 
         EstimateSeconds = Clamp(estimate);
+        AnchoredPositionSeconds = FromStoredAnchors();
+    }
+
+    /// <summary>
+    /// Where the target is, read off the stored anchors alone, when one of
+    /// them lies within about one clip of it. Null when none does: then the
+    /// place has to be heard.
+    ///
+    /// An anchor is a pair a transcript established earlier, for these exact
+    /// files. With one on each side the target is placed between them, as it
+    /// would be inside a located clip. With one on one side the count is biased
+    /// to land early, as <see cref="NearTargetPositionSeconds"/> is.
+    /// </summary>
+    public double? AnchoredPositionSeconds { get; }
+
+    private double? FromStoredAnchors()
+    {
+        // Two anchors that contradict each other say nothing about the target.
+        if (lower is not null && upper is not null &&
+            (lower.AudioSeconds > upper.AudioSeconds ||
+             lower.TextOffset > upper.TextOffset))
+            return null;
+
+        var reach = averageRate * options.ProbeSeconds;
+
+        var below = lower is not null &&
+            targetOffset - lower.TextOffset <= reach ? lower : null;
+
+        var above = upper is not null &&
+            upper.TextOffset - targetOffset <= reach ? upper : null;
+
+        if (below is null && above is null)
+            return null;
+
+        double seconds;
+
+        if (below is not null && above is not null)
+        {
+            seconds = above.TextOffset > below.TextOffset
+                ? below.AudioSeconds +
+                  (targetOffset - below.TextOffset) /
+                  (above.TextOffset - below.TextOffset) *
+                  (above.AudioSeconds - below.AudioSeconds)
+                : below.AudioSeconds;
+        }
+        else if (below is not null)
+        {
+            seconds = below.AudioSeconds +
+                (targetOffset - below.TextOffset) / (averageRate * 1.25);
+
+            // The far anchor still bounds the answer.
+            if (upper is not null && seconds > upper.AudioSeconds)
+                return null;
+        }
+        else
+        {
+            seconds = above!.AudioSeconds -
+                (above.TextOffset - targetOffset) / (averageRate * 0.8);
+
+            if (lower is not null && seconds < lower.AudioSeconds)
+                return null;
+        }
+
+        return Clamp(seconds - options.LeadInSeconds);
     }
 
     /// <summary>
