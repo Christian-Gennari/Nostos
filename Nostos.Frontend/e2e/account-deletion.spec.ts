@@ -127,7 +127,7 @@ test('Cloud settings confirms, enters pending state, and cancellation returns to
   await waitForConfirmationDialog(page);
   const confirmation = page.getByTestId('cloud-account-deletion-confirmation');
   const confirm = dialog.getByRole('button', { name: 'Request deletion' });
-  const exportLink = dialog.getByRole('link', { name: 'Manage library' });
+  const exportLink = dialog.getByRole('link', { name: 'Backups & data' });
   await expect(exportLink).toBeFocused();
   await expect(confirm).toBeDisabled();
   await expect(dialog).toContainText(

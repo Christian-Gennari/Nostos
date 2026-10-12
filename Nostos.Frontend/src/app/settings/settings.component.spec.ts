@@ -572,9 +572,14 @@ describe('SettingsComponent backup-only surface', () => {
       nav.map((item) =>
         item.query(By.css('.settings-nav-copy')).nativeElement.textContent.trim(),
       ),
-    ).toEqual(['Library & data', 'Book providers', 'Assistant', 'Appearance']);
-    expect(fixture.componentInstance.activeSettingsSection()).toBe('library');
-    expect(fixture.nativeElement.querySelector('#library-data').hidden).toBe(false);
+    ).toEqual(['General', 'Library', 'Assistant', 'AI connections', 'Backups & data']);
+    expect(
+      Array.from(fixture.nativeElement.querySelectorAll('.settings-nav-label')).map((label) =>
+        ((label as HTMLElement).textContent ?? '').trim(),
+      ),
+    ).toEqual(['Preferences', 'This server']);
+    expect(fixture.componentInstance.activeSettingsSection()).toBe('general');
+    expect(fixture.nativeElement.querySelector('#general').hidden).toBe(false);
     expect(fixture.nativeElement.querySelector('#assistant').hidden).toBe(true);
     expect(fixture.nativeElement.querySelectorAll('.settings-nav a').length).toBe(0);
 
@@ -583,21 +588,46 @@ describe('SettingsComponent backup-only surface', () => {
     fixture.detectChanges();
 
     expect(fixture.componentInstance.activeSettingsSection()).toBe('assistant');
-    expect(fixture.nativeElement.querySelector('#library-data').hidden).toBe(true);
+    expect(fixture.nativeElement.querySelector('#general').hidden).toBe(true);
     expect(fixture.nativeElement.querySelector('#assistant').hidden).toBe(false);
     expect(window.location.hash).toBe(hashBefore);
+  });
+
+  it('mirrors the open section to ?section= so it survives a reload', () => {
+    routerMock.navigate.mockClear();
+    navItem('Assistant').click();
+
+    expect(routerMock.navigate).toHaveBeenCalledWith(
+      [],
+      expect.objectContaining({ queryParams: { section: 'assistant' }, replaceUrl: true }),
+    );
+  });
+
+  it('opens the section a ?section= link names', () => {
+    routeParamMap.next(convertToParamMap({ section: 'assistant' }));
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.activeSettingsSection()).toBe('assistant');
+    expect(fixture.nativeElement.querySelector('#assistant').hidden).toBe(false);
+  });
+
+  it('ignores a ?section= link to a section this deployment does not have', () => {
+    routeParamMap.next(convertToParamMap({ section: 'account' }));
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.activeSettingsSection()).toBe('general');
   });
 
   it('loads book providers when the tab opens and lists enabled and disabled sources', () => {
     expect(providerSettingsServiceMock.list).not.toHaveBeenCalled();
 
-    const tab = navItem('Book providers');
+    const tab = navItem('Library');
     tab.click();
     fixture.detectChanges();
 
     expect(providerSettingsServiceMock.list).toHaveBeenCalledTimes(1);
-    expect(fixture.componentInstance.activeSettingsSection()).toBe('providers');
-    expect((fixture.nativeElement.querySelector('#providers') as HTMLElement).hidden).toBe(
+    expect(fixture.componentInstance.activeSettingsSection()).toBe('library');
+    expect((fixture.nativeElement.querySelector('#library') as HTMLElement).hidden).toBe(
       false,
     );
 
@@ -674,9 +704,9 @@ describe('SettingsComponent backup-only surface', () => {
     expect(providerSettingsServiceMock.list).toHaveBeenCalledTimes(1);
 
     // Leaving and reopening retries rather than leaving the tab stuck.
-    navItem('Library & data').click();
+    navItem('General').click();
     fixture.detectChanges();
-    navItem('Book providers').click();
+    navItem('Library').click();
     fixture.detectChanges();
 
     expect(providerSettingsServiceMock.list).toHaveBeenCalledTimes(2);
@@ -686,7 +716,7 @@ describe('SettingsComponent backup-only surface', () => {
     const items = Array.from(
       fixture.nativeElement.querySelectorAll('.settings-nav-item'),
     ) as HTMLButtonElement[];
-    return items.find((item) => (item.textContent ?? '').includes(label))!;
+    return items.find((item) => (item.textContent ?? '').trim() === label)!;
   }
 
   function providerToggle(id: string): HTMLInputElement {
@@ -696,7 +726,7 @@ describe('SettingsComponent backup-only surface', () => {
   }
 
   function openProviders(): void {
-    navItem('Book providers').click();
+    navItem('Library').click();
     fixture.detectChanges();
   }
 
@@ -708,14 +738,14 @@ describe('SettingsComponent backup-only surface', () => {
     expect(pageText).not.toContain('Shape the quiet systems behind your reading space.');
     expect(pageText).not.toContain('Keep your library safe and reachable.');
 
-    expect(
-      fixture.nativeElement.querySelector('#library-data-heading')?.textContent.trim(),
-    ).toBe('Library & data');
+    expect(fixture.nativeElement.querySelector('#general-heading')?.textContent.trim()).toBe(
+      'General',
+    );
 
     const activeNav = fixture.nativeElement.querySelector(
       '.settings-nav-item.is-active',
     ) as HTMLElement;
-    expect(activeNav.textContent?.replace(/\s+/g, ' ').trim()).toBe('Library & data');
+    expect(activeNav.textContent?.replace(/\s+/g, ' ').trim()).toBe('General');
     expect(activeNav.querySelector('small')).toBeNull();
   });
 
@@ -1018,8 +1048,8 @@ describe('SettingsComponent backup-only surface', () => {
     expect(cloudAuthServiceMock.logout).toHaveBeenCalledTimes(1);
   });
 
-  it('renders the Appearance surface with a working Light/Dark choice', () => {
-    fixture.componentInstance.setSettingsSection('appearance');
+  it('renders the General surface with a working Light/Dark choice', () => {
+    fixture.componentInstance.setSettingsSection('general');
     fixture.detectChanges();
 
     const headers = fixture.debugElement
@@ -1072,7 +1102,7 @@ describe('SettingsComponent backup-only surface', () => {
       fixture.nativeElement.querySelector('[data-testid="settings-capabilities-loading"]'),
     ).toBeTruthy();
     expect(fixture.nativeElement.querySelector('[data-testid="ai-provider-settings-card"]')).toBeNull();
-    expect(fixture.nativeElement.querySelector('#library-data')).toBeNull();
+    expect(fixture.nativeElement.querySelector('#library')).toBeNull();
     expect(backupServiceMock.getStatus).not.toHaveBeenCalled();
     expect(backupServiceMock.getSettings).not.toHaveBeenCalled();
     expect(backupServiceMock.getHistory).not.toHaveBeenCalled();
@@ -1096,7 +1126,7 @@ describe('SettingsComponent backup-only surface', () => {
       fixture.nativeElement.querySelector('[data-testid="settings-capabilities-error"]'),
     ).toBeTruthy();
     expect(fixture.nativeElement.querySelector('[data-testid="ai-provider-settings-card"]')).toBeNull();
-    expect(fixture.nativeElement.querySelector('#library-data')).toBeNull();
+    expect(fixture.nativeElement.querySelector('#library')).toBeNull();
     expect(backupServiceMock.getStatus).not.toHaveBeenCalled();
     expect(backupServiceMock.getSettings).not.toHaveBeenCalled();
     expect(backupServiceMock.getHistory).not.toHaveBeenCalled();
@@ -1116,14 +1146,19 @@ describe('SettingsComponent backup-only surface', () => {
     render();
 
     expect(fixture.componentInstance.deploymentCapabilities()?.deploymentMode).toBe('Cloud');
-    expect(fixture.componentInstance.activeSettingsSection()).toBe('library');
+    expect(fixture.componentInstance.activeSettingsSection()).toBe('general');
     expect(
       fixture.debugElement
         .queryAll(By.css('.settings-nav-copy'))
         .map((item) => item.nativeElement.textContent.trim()),
-    ).toEqual(['Library & data', 'Book providers', 'Assistant', 'Account', 'Appearance']);
+    ).toEqual(['General', 'Library', 'Assistant', 'Backups & data', 'Account']);
+    expect(
+      fixture.nativeElement
+        .querySelector('[data-testid="settings-nav-infrastructure-label"]')
+        ?.textContent.trim(),
+    ).toBe('Your account');
 
-    expect(fixture.nativeElement.querySelector('#library-data')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('#connections')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="ereader-access-card"]')).toBeTruthy();
     expect(fixture.nativeElement.querySelector('[data-testid="ai-provider-settings-card"]')).toBeNull();
     expect(fixture.nativeElement.querySelector('#ai-llm-base-url')).toBeNull();
@@ -1136,7 +1171,7 @@ describe('SettingsComponent backup-only surface', () => {
     const pageText = (fixture.nativeElement.textContent ?? '').replace(/\s+/g, ' ');
     expect(pageText).toContain('E-reader access');
     expect(pageText).toContain('never your Nostos account password');
-    expect(pageText).not.toContain('Import from Disk');
+    expect(pageText).not.toContain('Import from disk');
     expect(pageText).not.toContain('Tailscale');
     expect(pageText).not.toContain('Opds:Enabled');
     expect(pageText).not.toContain(aiProviderSettings.llm.baseUrl);
@@ -1187,7 +1222,7 @@ describe('SettingsComponent backup-only surface', () => {
     expect(cloudAiRefillServiceMock.getUsage).not.toHaveBeenCalled();
   });
 
-  it('keeps Cloud Library & data available for portable export without e-reader access', () => {
+  it('keeps Cloud Backups & data available for portable export without e-reader access', () => {
     capabilitiesServiceMock.get.mockReturnValueOnce(
       of({ ...cloudCapabilities, supportsEreaderAccess: false }),
     );
@@ -1196,14 +1231,13 @@ describe('SettingsComponent backup-only surface', () => {
 
     render();
 
-    expect(fixture.componentInstance.activeSettingsSection()).toBe('library');
+    expect(fixture.componentInstance.activeSettingsSection()).toBe('general');
     expect(
       fixture.debugElement
         .queryAll(By.css('.settings-nav-copy'))
         .map((item) => item.nativeElement.textContent.trim()),
-    ).toEqual(['Library & data', 'Book providers', 'Assistant', 'Account', 'Appearance']);
-    expect(fixture.nativeElement.querySelector('#library-data')).not.toBeNull();
-    expect(fixture.nativeElement.querySelector('[data-testid="manage-library-summary-card"]')).toBeTruthy();
+    ).toEqual(['General', 'Library', 'Assistant', 'Backups & data', 'Account']);
+    expect(fixture.nativeElement.querySelector('[data-testid="manage-library-open"]')).toBeTruthy();
     expect(fixture.nativeElement.querySelector('.manage-library-groups')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="ereader-access-card"]')).toBeNull();
     expect(opdsServiceMock.getInfo).not.toHaveBeenCalled();
@@ -1333,22 +1367,37 @@ describe('SettingsComponent backup-only surface', () => {
     expect(aiProviderServiceMock.update).not.toHaveBeenCalled();
   });
 
-  it('shows one capability-aware Manage library entry in Library & data', () => {
-    const summary = fixture.nativeElement.querySelector(
-      '[data-testid="manage-library-summary-card"]',
-    ) as HTMLElement;
-    expect(summary).toBeTruthy();
-    expect(summary.textContent).toContain('Backups help you recover this SelfHosted installation.');
-    expect(summary.querySelectorAll('button')).toHaveLength(1);
-    expect(summary.querySelector('[data-testid="manage-library-open"]')?.textContent).toContain(
-      'Manage library',
-    );
+  it('offers Backups & data as one nav entry and keeps its cards off the other sections', () => {
+    const entries = fixture.nativeElement.querySelectorAll('[data-testid="manage-library-open"]');
+    expect(entries).toHaveLength(1);
+    expect((entries[0] as HTMLElement).textContent).toContain('Backups & data');
     expect(fixture.nativeElement.querySelector('.manage-library-groups')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="ereader-access-card"]')).toBeTruthy();
     expect(fixture.nativeElement.querySelector('[data-testid="highlight-import-card"]')).toBeTruthy();
   });
 
-  it('opens the dedicated Manage library route from the summary button', () => {
+  it('describes Backups & data for this deployment and marks it as the open section', () => {
+    openManageLibraryPage();
+
+    expect(
+      fixture.nativeElement.querySelector('[data-testid="manage-library-summary"]')?.textContent,
+    ).toContain('Backups help you recover this SelfHosted installation.');
+    expect(
+      fixture.nativeElement.querySelector('.settings-nav-item.is-active')?.textContent.trim(),
+    ).toBe('Backups & data');
+  });
+
+  it('returns from Backups & data to another section by route', () => {
+    openManageLibraryPage();
+    routerMock.navigate.mockClear();
+    navItem('Assistant').click();
+
+    expect(routerMock.navigate).toHaveBeenCalledWith(['/settings'], {
+      queryParams: { section: 'assistant' },
+    });
+  });
+
+  it('opens the dedicated Backups & data route from its nav entry', () => {
     routerMock.navigate.mockClear();
     fixture.nativeElement
       .querySelector('[data-testid="manage-library-open"]')
@@ -1397,18 +1446,18 @@ describe('SettingsComponent backup-only surface', () => {
     await vi.waitFor(() => expect(document.activeElement).toBe(importSection));
   });
 
-  it('renders the existing Backup and Backup History cards on Manage library', () => {
+  it('renders the existing Backup and Backup history cards on Backups & data', () => {
     openManageLibraryPage();
     const headers = fixture.debugElement
-      .queryAll(By.css('.card-header h2'))
+      .queryAll(By.css('#data .card-header h2'))
       .map((h) => h.nativeElement.textContent.trim());
     expect(headers).toContain('Backup');
-    expect(headers).toContain('Backup History');
+    expect(headers).toContain('Backup history');
     // The dedicated page starts with its first capability-gated task group.
     expect(headers[0]).toBe('Backup');
   });
 
-  it('keeps Backup History collapsed until the toggle is used', () => {
+  it('keeps Backup history collapsed until the toggle is used', () => {
     backupServiceMock.getHistory.mockReturnValueOnce(
       of([
         {
@@ -1510,7 +1559,7 @@ describe('SettingsComponent backup-only surface', () => {
     const headers = cardHeaders();
     expect(headers).toContain('E-reader access');
     expect(
-      fixture.nativeElement.querySelector('#library-data')?.contains(erCard()),
+      fixture.nativeElement.querySelector('#library')?.contains(erCard()),
     ).toBe(true);
 
     expect(catalogUrlText()).toBe(remoteInfo.catalogUrl);

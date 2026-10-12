@@ -23,7 +23,7 @@ const ACTIONS: PaletteEntry[] = [
   { kind: 'action', id: 'go-library', label: 'Go to Library', sub: 'Browse your books', route: '/library' },
   { kind: 'action', id: 'go-brain', label: 'Go to Second Brain', sub: 'Topics and notes', route: '/second-brain' },
   { kind: 'action', id: 'go-studio', label: 'Go to Writing Studio', sub: 'Your drafts', route: '/studio' },
-  { kind: 'action', id: 'go-settings', label: 'Go to Settings', sub: 'Backup and appearance', route: '/settings' },
+  { kind: 'action', id: 'go-settings', label: 'Go to Settings', sub: 'Library, assistant, backups and appearance', route: '/settings' },
   { kind: 'action', id: 'import-highlights', label: 'Import e-reader highlights', sub: 'Kobo and KOReader notes' },
 ];
 
