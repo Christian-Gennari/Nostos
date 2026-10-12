@@ -22,8 +22,8 @@
           @if (isReviewing()) {
           <span class="index-stats">{{ review.total() }} {{ review.total() === 1 ? 'note' : 'notes' }} without topics</span>
           } @else if (isBrowsingNotes()) {
-            @if (browseLoaded()) {
-            <span class="index-stats">{{ browseTotal() }} {{ browseTotal() === 1 ? 'note' : 'notes' }}</span>
+            @if (browse.loaded()) {
+            <span class="index-stats">{{ browse.total() }} {{ browse.total() === 1 ? 'note' : 'notes' }}</span>
             }
           } @else if (topicStats(); as stats) {
           <span class="index-stats">
@@ -64,10 +64,10 @@
             type="search"
             placeholder="Search notes, quotes, books…"
             aria-label="Search saved notes"
-            [ngModel]="browseQuery()"
-            (ngModelChange)="setBrowseQuery($event)"
+            [ngModel]="browse.query()"
+            (ngModelChange)="browse.setQuery($event)"
           />
-          @if (browseQuery()) {
+          @if (browse.query()) {
           <button
             appIconButton
             type="button"
@@ -76,7 +76,7 @@
             size="xs"
             [glyphSize]="15"
             aria-label="Clear note search"
-            (click)="setBrowseQuery('')"
+            (click)="browse.setQuery('')"
           ></button>
           }
         </div>
@@ -134,8 +134,8 @@
       <div class="brain-note-filters">
         <div class="brain-note-filter-row" aria-label="Note filters">
           <button appChip type="button"
-            [attr.aria-pressed]="browseWithoutTopics()"
-            (click)="setBrowseWithoutTopics(!browseWithoutTopics())">
+            [attr.aria-pressed]="browse.withoutTopics()"
+            (click)="browse.setWithoutTopics(!browse.withoutTopics())">
             Without topics
           </button>
           <app-dropdown
@@ -143,25 +143,25 @@
             controlSize="compact"
             ariaLabel="Order saved notes"
             [options]="browseOrderOptions"
-            [value]="browseOldestFirst() ? 'oldest' : 'newest'"
-            (valueChange)="setBrowseOldestFirst($event === 'oldest')"
+            [value]="browse.oldestFirst() ? 'oldest' : 'newest'"
+            (valueChange)="browse.setOldestFirst($event === 'oldest')"
           />
         </div>
-        @if (browseBookId()) {
+        @if (browse.bookId()) {
           <button appChip type="button" class="brain-book-filter"
-            [attr.aria-label]="'Clear book filter: ' + browseBookTitle()" (click)="setBrowseBook(null)">
-            Book: {{ browseBookTitle() }} <nostos-icon name="x" [size]="14" />
+            [attr.aria-label]="'Clear book filter: ' + browse.bookTitle()" (click)="browse.setBook(null)">
+            Book: {{ browse.bookTitle() }} <nostos-icon name="x" [size]="14" />
           </button>
         }
       </div>
       <div class="brain-section-header browse-section-header">
         <div class="brain-section-heading">
-          <h2 class="brain-section-title">{{ browseWithoutTopics() ? 'Without topics' : 'All notes' }}</h2>
-          @if (browseLoaded()) {
-          <span class="brain-section-count">{{ browseTotal() }} {{ browseTotal() === 1 ? 'note' : 'notes' }}</span>
+          <h2 class="brain-section-title">{{ browse.withoutTopics() ? 'Without topics' : 'All notes' }}</h2>
+          @if (browse.loaded()) {
+          <span class="brain-section-count">{{ browse.total() }} {{ browse.total() === 1 ? 'note' : 'notes' }}</span>
           }
         </div>
-        @if (browseWithoutTopics() && browseLoaded() && browseTotal() > 0) {
+        @if (browse.withoutTopics() && browse.loaded() && browse.total() > 0) {
         <div class="review-entry">
           <button appButton variant="secondary" size="sm" type="button" (click)="openReview()">
             Review one by one
@@ -170,16 +170,16 @@
         </div>
         }
       </div>
-      <div class="index-list" role="list" aria-label="Saved notes" [attr.aria-busy]="browseLoading()">
-        @if (browseLoading() && !browseLoaded()) {
+      <div class="index-list" role="list" aria-label="Saved notes" [attr.aria-busy]="browse.loading()">
+        @if (browse.loading() && !browse.loaded()) {
           <nostos-loading-indicator class="index-loading" label="Loading notes" />
-        } @else if (browseError() && !browseLoaded()) {
+        } @else if (browse.error() && !browse.loaded()) {
           <div class="empty-index-state" role="alert"><p>Notes could not be loaded.</p>
-            <button appButton variant="secondary" size="sm" type="button" (click)="loadBrowsePage()">Retry</button></div>
-        } @else if (browseLoaded() && browseTotal() === 0) {
-          <div class="empty-index-state" role="status"><p>{{ browseQuery() ? 'No notes match this search.' : browseWithoutTopics() ? 'No notes without topics.' : 'Your notes will appear here as you read.' }}</p></div>
+            <button appButton variant="secondary" size="sm" type="button" (click)="browse.loadPage()">Retry</button></div>
+        } @else if (browse.loaded() && browse.total() === 0) {
+          <div class="empty-index-state" role="status"><p>{{ browse.query() ? 'No notes match this search.' : browse.withoutTopics() ? 'No notes without topics.' : 'Your notes will appear here as you read.' }}</p></div>
         } @else {
-          @for (row of browseNotes(); track row.id) {
+          @for (row of browse.notes(); track row.id) {
           <div class="note-row-shell" role="listitem"><button type="button" class="note-row-item"
             [class.active]="panelNote()?.id === row.id"
             [attr.aria-pressed]="panelNote()?.id === row.id"
@@ -188,11 +188,11 @@
               <span class="note-row-book">{{ row.bookTitle || 'Unknown source' }}</span></span>
           </button></div>
           }
-          @if (browseNotes().length < browseTotal()) {
-            <button appButton variant="ghost" size="sm" type="button" class="review-load-more" [disabled]="browseLoading()"
-              (click)="loadBrowsePage()">{{ browseLoading() ? 'Loading…' : 'Load more' }}</button>
+          @if (browse.notes().length < browse.total()) {
+            <button appButton variant="ghost" size="sm" type="button" class="review-load-more" [disabled]="browse.loading()"
+              (click)="browse.loadPage()">{{ browse.loading() ? 'Loading…' : 'Load more' }}</button>
           }
-          @if (browseError()) { <button appButton variant="ghost" size="sm" type="button" class="review-load-more" (click)="loadBrowsePage()">Retry loading notes</button> }
+          @if (browse.error()) { <button appButton variant="ghost" size="sm" type="button" class="review-load-more" (click)="browse.loadPage()">Retry loading notes</button> }
         }
       </div>
       } @else if (isReviewing()) {
@@ -461,18 +461,18 @@
           </header>
 
           <div class="note-inspector-content">
-            @if (browseEditing()) {
+            @if (browse.editing()) {
             <section class="note-inspector-edit" aria-labelledby="browse-edit-label">
               <div id="browse-edit-label" class="super-title">Edit note</div>
               <label class="visually-hidden" for="brain-browse-edit">Edit note</label>
-              <app-topic-input id="brain-browse-edit" [ngModel]="browseEditContent()"
-                (ngModelChange)="browseEditContent.set($event)" [rows]="6"
+              <app-topic-input id="brain-browse-edit" [ngModel]="browse.editContent()"
+                (ngModelChange)="browse.editContent.set($event)" [rows]="6"
                 placeholder="Write your thought or link a [[Topic]]"></app-topic-input>
               <div class="note-inspector-inline-actions">
-                <button appButton variant="primary" size="sm" type="button" [disabled]="browseSaving()"
-                  (click)="saveBrowseEdit()">{{ browseSaving() ? 'Saving…' : 'Save note' }}</button>
-                <button appButton variant="ghost" size="sm" type="button" [disabled]="browseSaving()"
-                  (click)="cancelBrowseEdit()">Cancel</button>
+                <button appButton variant="primary" size="sm" type="button" [disabled]="browse.saving()"
+                  (click)="browse.saveEdit()">{{ browse.saving() ? 'Saving…' : 'Save note' }}</button>
+                <button appButton variant="ghost" size="sm" type="button" [disabled]="browse.saving()"
+                  (click)="browse.cancelEdit()">Cancel</button>
               </div>
             </section>
             } @else {
@@ -505,7 +505,7 @@
               </div>
             </section>
 
-            @if (browsePickerOpen()) {
+            @if (browse.pickerOpen()) {
             <app-brain-topic-picker
               variant="inspector"
               label="Choose a topic to link"
@@ -515,23 +515,23 @@
               emptyText="No matching topics. You can create one deliberately below."
               confirmLabel="Link note"
               [linkHint]="true"
-              [candidates]="browsePickerCandidates()"
-              [selectedId]="browsePickerId()"
-              [confirmDisabled]="!browsePickerId() || browseSaving()"
-              [query]="browsePickerQuery()"
-              (queryChange)="browsePickerQuery.set($event)"
-              (chosen)="browsePickerId.set($event)"
-              (confirmed)="linkBrowseTopic()"
-              (closed)="browsePickerOpen.set(false)"
+              [candidates]="browse.pickerCandidates()"
+              [selectedId]="browse.pickerId()"
+              [confirmDisabled]="!browse.pickerId() || browse.saving()"
+              [query]="browse.pickerQuery()"
+              (queryChange)="browse.pickerQuery.set($event)"
+              (chosen)="browse.pickerId.set($event)"
+              (confirmed)="browse.linkTopic()"
+              (closed)="browse.pickerOpen.set(false)"
             >
-              @if (browseNewTopicName(); as name) {
-                <button appButton variant="ghost" size="sm" type="button" [disabled]="browseSaving()"
-                  (click)="createBrowseTopic()">Create and link “{{ name }}”</button>
+              @if (browse.newTopicName(); as name) {
+                <button appButton variant="ghost" size="sm" type="button" [disabled]="browse.saving()"
+                  (click)="browse.createTopic()">Create and link “{{ name }}”</button>
               }
             </app-brain-topic-picker>
             }
 
-            @if (!browseEditing()) {
+            @if (!browse.editing()) {
             <section class="note-inspector-actions" aria-label="Note actions">
               <ng-container *ngTemplateOutlet="noteActionGroup; context: { $implicit: note, mode: 'browse' }"></ng-container>
             </section>
@@ -1116,7 +1116,7 @@
       <div class="note-inspector-inline-actions brain-note-action-row" data-testid="brain-note-action-row" aria-label="Note actions">
         @if (mode !== 'evidence') {
         <button appButton variant="primary" size="sm" type="button"
-          (click)="mode === 'review' ? review.openPicker() : openBrowsePicker()">Link to topic</button>
+          (click)="mode === 'review' ? review.openPicker() : browse.openPicker()">Link to topic</button>
         }
         <button appButton variant="secondary" size="sm" type="button"
           (click)="openWritingHandoff([note.id])">
@@ -1150,7 +1150,7 @@
                 <button appButton variant="ghost" size="sm" type="button" class="brain-note-more-item"
                   data-note-more-item (click)="performNoteMoreAction('edit', mode, note, card, $event)">Edit note</button>
               }
-              @if (mode === 'browse' && note.bookId !== browseBookId()) {
+              @if (mode === 'browse' && note.bookId !== browse.bookId()) {
                 <button appButton variant="ghost" size="sm" type="button" class="brain-note-more-item"
                   data-note-more-item
                   (click)="performNoteMoreAction('show-book', mode, note, card, $event)">Show notes from this book</button>

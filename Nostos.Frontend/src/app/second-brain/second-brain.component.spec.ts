@@ -321,14 +321,14 @@ describe('SecondBrain', () => {
       component.setViewMode('notes');
       browse([unlinked]);
 
-      component.setBrowseQuery('thought');
+      component.browse.setQuery('thought');
       await new Promise((resolve) => setTimeout(resolve, NOTE_SEARCH_DEBOUNCE_MS + 10));
       browse([unlinked]);
 
-      component.setBrowseWithoutTopics(true);
+      component.browse.setWithoutTopics(true);
       browse([unlinked]);
 
-      component.setBrowseBook('book-b', 'Another Book');
+      component.browse.setBook('book-b', 'Another Book');
       browse([unlinked]);
 
       component.openNotePanel(unlinked);
@@ -370,9 +370,9 @@ describe('SecondBrain', () => {
       component.closeReview();
 
       expect(component.isBrowsingNotes()).toBe(true);
-      expect(component.browseQuery()).toBe('thought');
-      expect(component.browseBookId()).toBe('book-b');
-      expect(component.browseWithoutTopics()).toBe(true);
+      expect(component.browse.query()).toBe('thought');
+      expect(component.browse.bookId()).toBe('book-b');
+      expect(component.browse.withoutTopics()).toBe(true);
 
       const notesReq = http.match((request) =>
         request.url === '/api/notes' &&
@@ -409,7 +409,7 @@ describe('SecondBrain', () => {
       http.expectOne(`/api/notes/${captured.id}`).flush(canonical);
       browse([canonical]);
       expect(component.panelNote()).toEqual(canonical);
-      expect(component.browseNotes()[0].processingMode).toBe('verbatim');
+      expect(component.browse.notes()[0].processingMode).toBe('verbatim');
       expect(fixture.nativeElement.querySelector('[data-testid="brain-note-inspector"]')).not.toBeNull();
     });
 
@@ -471,7 +471,7 @@ describe('SecondBrain', () => {
       component.setViewMode('notes');
       browse([linked, unlinked]);
 
-      expect(component.browseTotal()).toBe(2);
+      expect(component.browse.total()).toBe(2);
       expect(fixture.nativeElement.querySelectorAll('.index-list .note-row-item').length).toBe(2);
       (fixture.nativeElement.querySelectorAll('.index-list .note-row-item')[1] as HTMLButtonElement).click();
       fixture.detectChanges();
@@ -544,7 +544,7 @@ describe('SecondBrain', () => {
     it('filters without topics, then enters focused review and returns to the filtered Notes view', () => {
       component.setViewMode('notes');
       browse([linked, unlinked]);
-      component.setBrowseWithoutTopics(true);
+      component.browse.setWithoutTopics(true);
       const request = http.expectOne((req) => req.url === '/api/notes');
       expect(request.request.params.get('withoutTopics')).toBe('true');
       request.flush({ items: [unlinked], totalCount: 1, offset: 0, limit: 25 });
@@ -564,14 +564,14 @@ describe('SecondBrain', () => {
       http.expectNone((req) => req.url === '/api/notes');
       fixture.detectChanges();
       expect(component.viewMode()).toBe('notes');
-      expect(component.browseWithoutTopics()).toBe(true);
+      expect(component.browse.withoutTopics()).toBe(true);
     });
 
     it('returns to the same selected note and loaded page when review changes nothing', () => {
       component.setViewMode('notes');
       browse([linked, unlinked]);
       component.openNotePanel(unlinked);
-      component.setBrowseWithoutTopics(true);
+      component.browse.setWithoutTopics(true);
       browse([unlinked]);
       component.openNotePanel(unlinked);
 
@@ -582,7 +582,7 @@ describe('SecondBrain', () => {
 
       expect(component.viewMode()).toBe('notes');
       expect(component.panelNote()?.id).toBe(unlinked.id);
-      expect(component.browseNotes().map((note) => note.id)).toEqual([unlinked.id]);
+      expect(component.browse.notes().map((note) => note.id)).toEqual([unlinked.id]);
       http.expectNone((request) => request.url === '/api/notes');
     });
 
@@ -624,9 +624,9 @@ describe('SecondBrain', () => {
       review.flush({ items: [unlinked], totalCount: 1, offset: 0, limit: 25 });
       component.closeReview();
       http.expectNone((request) => request.url === '/api/notes');
-      expect(component.browseBookId()).toBe('book-b');
+      expect(component.browse.bookId()).toBe('book-b');
 
-      component.setBrowseBook(null);
+      component.browse.setBook(null);
       const cleared = http.expectOne((request) => request.url === '/api/notes');
       expect(cleared.request.params.has('bookId')).toBe(false);
       cleared.flush({ items: [linked, unlinked], totalCount: 2, offset: 0, limit: 25 });
@@ -636,44 +636,44 @@ describe('SecondBrain', () => {
       component.setViewMode('notes');
       browse([unlinked]);
       component.openNotePanel(unlinked);
-      component.startBrowseEdit();
-      component.browseEditContent.set('An edited thought');
+      component.browse.startEdit();
+      component.browse.editContent.set('An edited thought');
       component.closeNotePanel();
       expect(component.panelNote()?.id).toBe(unlinked.id);
 
-      component.saveBrowseEdit();
+      component.browse.saveEdit();
       http.expectOne((req) => req.method === 'PUT' && req.url === `/api/notes/${unlinked.id}`)
         .error(new ProgressEvent('network-error'));
-      expect(component.browseEditing()).toBe(true);
-      expect(component.browseNotes().map((note) => note.id)).toEqual([unlinked.id]);
+      expect(component.browse.editing()).toBe(true);
+      expect(component.browse.notes().map((note) => note.id)).toEqual([unlinked.id]);
     });
 
     it('creates a topic through a canonical note link and removes only the filtered row', () => {
       component.setViewMode('notes');
       browse([unlinked]);
-      component.setBrowseWithoutTopics(true);
+      component.browse.setWithoutTopics(true);
       browse([unlinked]);
       component.openNotePanel(unlinked);
-      component.openBrowsePicker();
-      component.browsePickerQuery.set('New idea');
-      expect(component.browseNewTopicName()).toBe('New idea');
+      component.browse.openPicker();
+      component.browse.pickerQuery.set('New idea');
+      expect(component.browse.newTopicName()).toBe('New idea');
 
-      component.createBrowseTopic();
+      component.browse.createTopic();
       const save = http.expectOne((req) => req.method === 'PUT' && req.url === `/api/notes/${unlinked.id}`);
       expect(save.request.body.content).toBe('A separate thought\n\n[[New idea]]');
       save.flush({ ...unlinked, content: save.request.body.content });
       http.expectOne('/api/topics').flush(topics);
       http.expectOne('/api/topics/stats').flush(stats);
 
-      expect(component.browseTotal()).toBe(0);
-      expect(component.browseNotes()).toEqual([]);
+      expect(component.browse.total()).toBe(0);
+      expect(component.browse.notes()).toEqual([]);
       expect(component.panelNote()?.topicNames).toEqual(['New idea']);
     });
 
     it('links an inline proposal through the assistant Act receipt without losing the note inspector', () => {
       component.setViewMode('notes');
       browse([unlinked]);
-      component.setBrowseWithoutTopics(true);
+      component.browse.setWithoutTopics(true);
       browse([unlinked]);
       component.openNotePanel(unlinked);
       fixture.detectChanges();
@@ -699,8 +699,8 @@ describe('SecondBrain', () => {
       http.expectOne('/api/topics/stats').flush(stats);
       fixture.detectChanges();
 
-      expect(component.browseNotes()).toEqual([]);
-      expect(component.browseTotal()).toBe(0);
+      expect(component.browse.notes()).toEqual([]);
+      expect(component.browse.total()).toBe(0);
       expect(component.panelNote()?.content).toContain('[[Alpha]]');
       expect(component.proposals.state()).toBe('idle');
     });
@@ -2060,7 +2060,7 @@ describe('SecondBrain', () => {
       fixture.detectChanges();
       expect(fixture.nativeElement.querySelector('.review-entry')).toBeNull();
 
-      component.setBrowseWithoutTopics(true);
+      component.browse.setWithoutTopics(true);
       http.expectOne((req) => req.url === '/api/notes' && req.params.get('withoutTopics') === 'true')
         .flush(page(sampleHits, sampleHits.length));
       fixture.detectChanges();

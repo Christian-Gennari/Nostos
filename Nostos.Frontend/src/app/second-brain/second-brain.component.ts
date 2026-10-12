@@ -50,6 +50,7 @@ import {
   BrainWritingHandoffComponent,
   type BrainWritingHandoffResult,
 } from './writing-handoff/brain-writing-handoff.component';
+import { BrainNoteBrowse } from './brain-note-browse';
 import { BrainNoteReview } from './brain-note-review';
 import { BrainTopicActions } from './brain-topic-actions';
 import { BrainTopicProposals } from './brain-topic-proposals';
@@ -65,10 +66,8 @@ import {
   INDEX_SORTS,
   INDEX_SORT_STORAGE_KEY,
   NOTE_SEARCH_DEBOUNCE_MS,
-  REVIEW_PAGE_SIZE,
   declaredTopicNames,
   highlightNameParts,
-  newTopicNameFor,
   normalizeSearchText,
   noteSourceParams,
   rankTopics,
@@ -166,7 +165,7 @@ export class SecondBrain implements AfterViewChecked {
   readonly proposals: BrainTopicProposals = new BrainTopicProposals(this.assistant, this.topicsService, {
     focusedNote: () => this.focusedNote(),
     focusedNoteKey: () => this.focusedNoteKey(),
-    isEditingNote: () => this.browseEditing() || this.review.editing(),
+    isEditingNote: () => this.browse.editing() || this.review.editing(),
     linked: (accepted) => this.applyProposalLink(accepted),
     restoreFocus: () => this.focusSuggestTopicsButton(),
   });
@@ -187,26 +186,6 @@ export class SecondBrain implements AfterViewChecked {
   noteHits = signal<NoteSearchHit[]>([]);
   panelNote = signal<NoteSearchHit | null>(null);
 
-  // Notes are a first-class way into Brain. The server returns bounded pages;
-  // review remains a deliberate, non-persisted subtask of this view.
-  browseNotes = signal<NoteSearchHit[]>([]);
-  browseTotal = signal(0);
-  browseQuery = signal('');
-  browseBookId = signal<string | null>(null);
-  browseBookTitle = signal('');
-  browseWithoutTopics = signal(false);
-  browseOldestFirst = signal(false);
-  browseLoading = signal(false);
-  browseLoaded = signal(false);
-  browseError = signal(false);
-  browseEditing = signal(false);
-  browseEditContent = signal('');
-  browsePickerOpen = signal(false);
-  browsePickerQuery = signal('');
-  browsePickerId = signal<string | null>(null);
-  browseSaving = signal(false);
-  browsePickerCandidates = computed(() => this.filterAndSortTopics(this.browsePickerQuery(), null));
-  browseNewTopicName = computed(() => newTopicNameFor(this.browsePickerQuery(), this.topics()));
   browseSourceParams(note: NoteSearchHit | NoteContextDto): NoteSourceParams | null {
     return noteSourceParams(note);
   }
@@ -245,8 +224,6 @@ export class SecondBrain implements AfterViewChecked {
     });
   }
 
-  private browseSeq = 0;
-  private browseTimer: ReturnType<typeof setTimeout> | null = null;
   isBrowsingNotes = computed(() => this.viewMode() === 'notes');
 
   noteMoreOpenKey = signal<string | null>(null);
@@ -294,6 +271,15 @@ export class SecondBrain implements AfterViewChecked {
     isReviewing: () => this.isReviewing(),
     noteSaved: () => this.refreshIndexAndStats(),
     focusChanged: () => this.persistReviewReturnState(),
+  });
+
+  /** Notes browsing: the filtered list, and editing or linking the open note. */
+  readonly browse: BrainNoteBrowse = new BrainNoteBrowse(this.notesService, this.toast, {
+    topics: this.topics,
+    indexSort: this.indexSort,
+    panelNote: this.panelNote,
+    isBrowsingNotes: () => this.isBrowsingNotes(),
+    noteSaved: () => this.refreshIndexAndStats(),
   });
 
   noteSearchQuery = signal('');
@@ -504,7 +490,7 @@ export class SecondBrain implements AfterViewChecked {
     // A pending debounce and assistant receipt subscription must not outlive the surface.
     this.destroyRef.onDestroy(() => {
       if (this.noteSearchTimer !== null) clearTimeout(this.noteSearchTimer);
-      if (this.browseTimer !== null) clearTimeout(this.browseTimer);
+      this.browse.dispose();
       this.unregisterAssistantContext();
       routeSubscription.unsubscribe();
       navigationSubscription.unsubscribe();
@@ -556,7 +542,7 @@ export class SecondBrain implements AfterViewChecked {
     });
 
     this.initializeReviewSession();
-    if (this.viewMode() === 'notes' && !this.reviewReturnState) this.loadBrowsePage();
+    if (this.viewMode() === 'notes' && !this.reviewReturnState) this.browse.loadPage();
 
     // Deliberately nothing else. The rail used to fetch the unlinked notes here,
     // on every visit, purely so it could render them as a second section under
@@ -728,158 +714,6 @@ export class SecondBrain implements AfterViewChecked {
     this.assistantContextUnregister = null;
   }
 
-  setBrowseQuery(value: string): void {
-    if (this.browseHasUnsavedEdit()) return;
-    this.browseQuery.set(value);
-    if (this.browseTimer !== null) clearTimeout(this.browseTimer);
-    this.browseSeq++;
-    this.browseTimer = setTimeout(() => {
-      this.browseTimer = null;
-      this.reloadBrowse();
-    }, NOTE_SEARCH_DEBOUNCE_MS);
-  }
-
-  setBrowseWithoutTopics(value: boolean): void {
-    if (this.browseHasUnsavedEdit()) return;
-    this.browseWithoutTopics.set(value);
-    this.reloadBrowse();
-  }
-
-  setBrowseBook(bookId: string | null, title = ''): void {
-    if (this.browseHasUnsavedEdit()) return;
-    this.browseBookId.set(bookId);
-    this.browseBookTitle.set(bookId ? title : '');
-    this.reloadBrowse();
-  }
-
-  setBrowseOldestFirst(value: boolean): void {
-    if (this.browseHasUnsavedEdit()) return;
-    this.browseOldestFirst.set(value);
-    this.reloadBrowse();
-  }
-
-  private reloadBrowse(): void {
-    this.browseSeq++;
-    this.browseNotes.set([]);
-    this.browseTotal.set(0);
-    this.browseLoaded.set(false);
-    this.panelNote.set(null);
-    this.loadBrowsePage();
-  }
-
-  private browseHasUnsavedEdit(): boolean {
-    if (!this.isBrowsingNotes()) return false;
-    if (this.browseSaving() ||
-      (this.browseEditing() && this.browseEditContent() !== this.panelNote()?.content)) {
-      this.toast.error('Save or cancel the note edit before leaving it');
-      return true;
-    }
-    return false;
-  }
-
-  startBrowseEdit(): void {
-    const note = this.panelNote();
-    if (!note) return;
-    this.browsePickerOpen.set(false);
-    this.browseEditContent.set(note.content);
-    this.browseEditing.set(true);
-  }
-
-  cancelBrowseEdit(): void {
-    if (this.browseSaving()) return;
-    this.browseEditing.set(false);
-  }
-
-  saveBrowseEdit(): void {
-    const note = this.panelNote();
-    if (!note || this.browseSaving()) return;
-    const content = this.browseEditContent();
-    if (content === note.content) { this.cancelBrowseEdit(); return; }
-    this.saveBrowseNote(note, content);
-  }
-
-  openBrowsePicker(): void {
-    this.browsePickerQuery.set('');
-    this.browsePickerId.set(null);
-    this.browsePickerOpen.set(true);
-  }
-
-  linkBrowseTopic(): void {
-    const note = this.panelNote();
-    const topic = this.topics().find((item) => item.id === this.browsePickerId());
-    if (!note || !topic || this.browseSaving()) return;
-    const content = withTopicReference(note.content, topic.name);
-    if (content === note.content) { this.browsePickerOpen.set(false); return; }
-    this.saveBrowseNote(note, content);
-  }
-
-  createBrowseTopic(): void {
-    const note = this.panelNote();
-    const name = this.browseNewTopicName();
-    if (!note || !name || this.browseSaving()) return;
-    // The existing processor creates the topic from this same canonical link.
-    this.saveBrowseNote(note, withTopicReference(note.content, name));
-  }
-
-  private saveBrowseNote(note: NoteSearchHit, content: string): void {
-    this.browseSaving.set(true);
-    this.notesService.update(note.id, { content, selectedText: note.selectedText ?? undefined }).subscribe({
-      next: () => {
-        const saved: NoteSearchHit = { ...note, content, topicNames: declaredTopicNames(content),
-          snippet: note.selectedText || content.slice(0, 160) };
-        this.browseNotes.update((items) => this.browseWithoutTopics() && saved.topicNames.length
-          ? items.filter((item) => item.id !== note.id)
-          : items.map((item) => item.id === note.id ? saved : item));
-        if (this.browseWithoutTopics() && saved.topicNames.length) {
-          this.browseTotal.update((total) => Math.max(0, total - 1));
-        }
-        if (this.panelNote()?.id === note.id) this.panelNote.set(saved);
-        this.browseSaving.set(false);
-        this.browseEditing.set(false);
-        this.browsePickerOpen.set(false);
-        this.refreshIndexAndStats();
-        this.toast.success('Note saved');
-      },
-      error: () => {
-        this.browseSaving.set(false);
-        this.toast.error('Could not save the note');
-      },
-    });
-  }
-
-  loadBrowsePage(): void {
-    if (this.browseLoading() && this.browseLoaded()) return;
-    const seq = ++this.browseSeq;
-    const offset = this.browseNotes().length;
-    this.browseLoading.set(true);
-    this.browseError.set(false);
-    this.notesService.browse({
-      query: this.browseQuery(),
-      bookId: this.browseBookId() ?? undefined,
-      withoutTopics: this.browseWithoutTopics(),
-      oldestFirst: this.browseOldestFirst(),
-      limit: REVIEW_PAGE_SIZE,
-      offset,
-    }).subscribe({
-      next: (page) => {
-        if (seq !== this.browseSeq) return;
-        const held = new Set(this.browseNotes().map((note) => note.id));
-        this.browseNotes.update((notes) => [
-          ...notes,
-          ...(page.items ?? []).filter((note) => !held.has(note.id)),
-        ]);
-        this.browseTotal.set(page.totalCount);
-        this.browseLoading.set(false);
-        this.browseLoaded.set(true);
-      },
-      error: () => {
-        if (seq !== this.browseSeq) return;
-        this.browseLoading.set(false);
-        this.browseError.set(true);
-      },
-    });
-  }
-
   private focusedNote(): NoteSearchHit | null {
     return this.isReviewing() ? this.review.note() : this.isBrowsingNotes() ? this.panelNote() : null;
   }
@@ -902,10 +736,10 @@ export class SecondBrain implements AfterViewChecked {
     const content = withTopicReference(note.content, accepted.label);
     const saved = { ...note, content, topicNames: declaredTopicNames(content) };
     this.panelNote.set(saved);
-    this.browseNotes.update((rows) => this.browseWithoutTopics()
+    this.browse.notes.update((rows) => this.browse.withoutTopics()
       ? rows.filter((row) => row.id !== saved.id)
       : rows.map((row) => row.id === saved.id ? saved : row));
-    if (this.browseWithoutTopics()) this.browseTotal.update((total) => Math.max(0, total - 1));
+    if (this.browse.withoutTopics()) this.browse.total.update((total) => Math.max(0, total - 1));
     this.refreshIndexAndStats();
     this.toast.success('Note linked to a topic');
   }
@@ -1013,7 +847,7 @@ export class SecondBrain implements AfterViewChecked {
    * different jobs either way, so a query must never appear to filter the queue.
    */
   openReview(): void {
-    if (this.browseHasUnsavedEdit()) return;
+    if (this.browse.hasUnsavedEdit()) return;
     this.reviewReturnMode = this.isBrowsingNotes() ? 'notes' : 'list';
     this.reviewReturnNote = this.reviewReturnMode === 'notes' ? this.panelNote() : null;
     this.reviewReturnState = {
@@ -1023,18 +857,18 @@ export class SecondBrain implements AfterViewChecked {
       noteSearchQuery: this.noteSearchQuery(),
       sourceFilter: this.sourceFilter(),
       noteSort: this.noteSort(),
-      browseQuery: this.browseQuery(),
-      browseBookId: this.browseBookId(),
-      browseBookTitle: this.browseBookTitle(),
-      browseWithoutTopics: this.browseWithoutTopics(),
-      browseOldestFirst: this.browseOldestFirst(),
+      browseQuery: this.browse.query(),
+      browseBookId: this.browse.bookId(),
+      browseBookTitle: this.browse.bookTitle(),
+      browseWithoutTopics: this.browse.withoutTopics(),
+      browseOldestFirst: this.browse.oldestFirst(),
       focusedNoteId: this.panelNote()?.id ?? null,
       reviewId: null,
     };
     this.review.begin({
-      query: this.reviewReturnMode === 'notes' ? this.browseQuery() : '',
-      bookId: this.reviewReturnMode === 'notes' ? this.browseBookId() : null,
-      oldestFirst: this.reviewReturnMode === 'notes' && this.browseOldestFirst(),
+      query: this.reviewReturnMode === 'notes' ? this.browse.query() : '',
+      bookId: this.reviewReturnMode === 'notes' ? this.browse.bookId() : null,
+      oldestFirst: this.reviewReturnMode === 'notes' && this.browse.oldestFirst(),
     });
     this.clearSourceSelectionState();
     this.closeWritingHandoff();
@@ -1053,22 +887,22 @@ export class SecondBrain implements AfterViewChecked {
     const mode = state?.returnMode ?? this.reviewReturnMode;
 
     if (state && mode === 'notes') {
-      this.browseQuery.set(state.browseQuery);
-      this.browseBookId.set(state.browseBookId);
-      this.browseBookTitle.set(state.browseBookTitle);
-      this.browseWithoutTopics.set(state.browseWithoutTopics);
-      this.browseOldestFirst.set(state.browseOldestFirst);
+      this.browse.query.set(state.browseQuery);
+      this.browse.bookId.set(state.browseBookId);
+      this.browse.bookTitle.set(state.browseBookTitle);
+      this.browse.withoutTopics.set(state.browseWithoutTopics);
+      this.browse.oldestFirst.set(state.browseOldestFirst);
       if (this.review.mutated) {
-        this.browseLoaded.set(false);
-        this.browseNotes.set([]);
-        this.browseTotal.set(0);
+        this.browse.loaded.set(false);
+        this.browse.notes.set([]);
+        this.browse.total.set(0);
       }
     }
 
     if (this.review.mutated) {
       this.setViewMode(mode);
       if (mode === 'notes') {
-        this.reloadBrowse();
+        this.browse.reload();
       }
     } else {
       // Unchanged review: preserve current loaded Notes page and selected note without refetch
@@ -1086,7 +920,7 @@ export class SecondBrain implements AfterViewChecked {
         // but the previous Notes page is no longer in memory. Re-fetch it so
         // returning from review does not show an empty list beside the restored
         // inspector.
-        if (!this.browseLoaded() && !this.browseLoading()) this.loadBrowsePage();
+        if (!this.browse.loaded() && !this.browse.loading()) this.browse.loadPage();
       }
       this.clearReviewReturnState();
     }
@@ -1128,12 +962,12 @@ export class SecondBrain implements AfterViewChecked {
   }
 
   openNotePanel(hit: NoteSearchHit): void {
-    if (this.browseHasUnsavedEdit()) return;
+    if (this.browse.hasUnsavedEdit()) return;
     this.clearSourceSelectionState();
     this.closeWritingHandoff();
     this.panelNote.set(hit);
-    this.browseEditing.set(false);
-    this.browsePickerOpen.set(false);
+    this.browse.editing.set(false);
+    this.browse.pickerOpen.set(false);
   }
 
   captureRestored(saved: Note): void {
@@ -1145,7 +979,7 @@ export class SecondBrain implements AfterViewChecked {
     }
     this.review.queue.update((rows) => rows.map((note) => note.id === saved.id
       ? { ...note, content: saved.content, processingMode: saved.processingMode } : note));
-    this.browseNotes.update((rows) => rows.map((note) => note.id === saved.id
+    this.browse.notes.update((rows) => rows.map((note) => note.id === saved.id
       ? { ...note, content: saved.content, processingMode: saved.processingMode } : note));
     this.invalidateAllDetailEntries();
     if (this.selectedId()) this.selectTopic(this.selectedId()!);
@@ -1156,11 +990,11 @@ export class SecondBrain implements AfterViewChecked {
         if (this.panelNote()?.id === saved.id) this.panelNote.set(note);
         this.review.queue.update((rows) => rows.map((row) => row.id === saved.id ? note : row));
         if (note.topicNames.length) this.review.remove(saved.id);
-        if (this.browseLoaded() && !this.browseEditing()) {
+        if (this.browse.loaded() && !this.browse.editing()) {
           // Reconcile filtering/counts without closing the inspector the user
           // just restored (or a different note they selected meanwhile).
           const focused = this.panelNote();
-          this.reloadBrowse();
+          this.browse.reload();
           this.panelNote.set(focused);
         }
       },
@@ -1173,17 +1007,17 @@ export class SecondBrain implements AfterViewChecked {
     const hit = this.panelNote();
     if (!hit || this.isBrowsingNotes()) return;
     const term = this.searchQuery();
-    this.browseQuery.set(term);
-    this.browseBookId.set(null);
-    this.browseBookTitle.set('');
-    const hadBrowsePage = this.browseLoaded();
+    this.browse.query.set(term);
+    this.browse.bookId.set(null);
+    this.browse.bookTitle.set('');
+    const hadBrowsePage = this.browse.loaded();
     this.setViewMode('notes');
-    if (hadBrowsePage) this.reloadBrowse();
+    if (hadBrowsePage) this.browse.reload();
     this.panelNote.set(hit);
   }
 
   closeNotePanel(): void {
-    if (this.browseHasUnsavedEdit()) return;
+    if (this.browse.hasUnsavedEdit()) return;
     this.panelNote.set(null);
   }
 
@@ -1243,13 +1077,13 @@ export class SecondBrain implements AfterViewChecked {
 
     if (action === 'edit') {
       if (mode === 'review') this.review.startEdit();
-      else if (mode === 'browse') this.startBrowseEdit();
+      else if (mode === 'browse') this.browse.startEdit();
       else card?.startEdit(event);
       return;
     }
 
     if (action === 'show-book' && mode === 'browse') {
-      this.setBrowseBook(note.bookId, note.bookTitle || 'Unknown source');
+      this.browse.setBook(note.bookId, note.bookTitle || 'Unknown source');
       return;
     }
 
@@ -1498,7 +1332,7 @@ export class SecondBrain implements AfterViewChecked {
 
   setViewMode(mode: string): void {
     if (!BRAIN_VIEW_MODES.includes(mode as BrainViewMode)) return;
-    if (mode !== 'notes' && this.browseHasUnsavedEdit()) return;
+    if (mode !== 'notes' && this.browse.hasUnsavedEdit()) return;
     if (this.review.hasUnsavedEdit()) return;
     if (mode === 'notes' && this.viewMode() !== 'notes') this.clearSearch();
     if (this.isBrowsingNotes() && mode !== 'notes') this.panelNote.set(null);
@@ -1518,7 +1352,7 @@ export class SecondBrain implements AfterViewChecked {
     if (mode !== 'unlinked') {
       this.clearReviewReturnState();
     }
-    if (mode === 'notes' && !this.browseLoaded() && !this.browseLoading()) this.loadBrowsePage();
+    if (mode === 'notes' && !this.browse.loaded() && !this.browse.loading()) this.browse.loadPage();
     try {
       localStorage.setItem(BRAIN_VIEW_MODE_STORAGE_KEY, mode);
     } catch {
