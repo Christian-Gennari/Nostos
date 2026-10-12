@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
+using Microsoft.Extensions.Logging;
 using Nostos.Backend.Data.Models;
 using Nostos.Backend.Services;
 
@@ -92,9 +93,11 @@ public sealed class FfmpegAudioClipCutter(
 
         deadline.CancelAfter(Timeout);
 
+        var started = Stopwatch.GetTimestamp();
+
         try
         {
-            return tracks.Count > 0
+            var clip = tracks.Count > 0
                 ? await CutTracksAsync(
                     book.Id,
                     tracks,
@@ -103,9 +106,24 @@ public sealed class FfmpegAudioClipCutter(
                     deadline.Token)
                 : await CutSingleAsync(
                     book.Id,
+                    TryParseDurationSeconds(book.Duration, out var bookSeconds)
+                        ? bookSeconds
+                        : null,
                     positionSeconds,
                     clipSeconds,
                     deadline.Token);
+
+            // Where a switch between editions spends its time is otherwise
+            // invisible: only the transcription call is logged by its client.
+            (services.GetService(typeof(ILogger<FfmpegAudioClipCutter>))
+                as ILogger)?.LogInformation(
+                "Alignment clip for audio book {AudioBookId} ending at " +
+                "{PositionSeconds} s was cut in {ElapsedMs} ms.",
+                book.Id,
+                Math.Round(positionSeconds),
+                (long)Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+
+            return clip;
         }
         catch (OperationCanceledException)
             when (!ct.IsCancellationRequested)
@@ -222,13 +240,27 @@ public sealed class FfmpegAudioClipCutter(
                     "The requested audiobook track is unavailable.");
             }
 
-            await using var server = await LoopbackRangeServer.StartAsync(
-                info.Length,
-                (range, token) => storage.OpenTrackAsync(
+            Task<StoredAssetRead?> Open(
+                StorageByteRange range, CancellationToken token) =>
+                storage.OpenTrackAsync(
                     bookId,
                     segment.TrackNumber,
                     range,
-                    token),
+                    token);
+
+            var track = tracks.FirstOrDefault(
+                candidate => candidate.Number == segment.TrackNumber);
+
+            var fastSeek = await CanSeekFastAsync(
+                info,
+                track is null ? null : track.DurationMs / 1000d,
+                segment.StartSeconds,
+                Open,
+                ct);
+
+            await using var server = await LoopbackRangeServer.StartAsync(
+                info.Length,
+                Open,
                 ct);
 
             await DecodeAsync(
@@ -236,6 +268,7 @@ public sealed class FfmpegAudioClipCutter(
                 pcm,
                 segment.StartSeconds,
                 segment.DurationSeconds,
+                fastSeek,
                 ct);
         }
 
@@ -244,6 +277,7 @@ public sealed class FfmpegAudioClipCutter(
 
     private async Task<AudioClip> CutSingleAsync(
         Guid bookId,
+        double? bookSeconds,
         double positionSeconds,
         double clipSeconds,
         CancellationToken ct)
@@ -260,10 +294,16 @@ public sealed class FfmpegAudioClipCutter(
                 "The audiobook media is missing.");
         }
 
+        Task<StoredAssetRead?> Open(
+            StorageByteRange range, CancellationToken token) =>
+            assets.OpenBookFileAsync(bookId, range, token);
+
+        var fastSeek = await CanSeekFastAsync(
+            info, bookSeconds, start, Open, ct);
+
         await using var server = await LoopbackRangeServer.StartAsync(
             info.Length,
-            (range, token) =>
-                assets.OpenBookFileAsync(bookId, range, token),
+            Open,
             ct);
 
         using var pcm = new MemoryStream();
@@ -273,6 +313,7 @@ public sealed class FfmpegAudioClipCutter(
             pcm,
             start,
             duration,
+            fastSeek,
             ct);
 
         return CreateWav(pcm);
@@ -341,30 +382,40 @@ public sealed class FfmpegAudioClipCutter(
             pcm.Length / (double)BytesPerSecond);
     }
 
-    private static async Task DecodeAsync(
+    /// <summary>
+    /// ffmpeg reaches a time in an MP3 by reading every frame before it. A
+    /// constant-bitrate file needs none of that: the time is a byte offset.
+    /// Anything else, and any MP3 not proven constant, keeps the exact seek.
+    /// </summary>
+    private static async Task<bool> CanSeekFastAsync(
+        StoredAssetInfo info,
+        double? durationSeconds,
+        double offsetSeconds,
+        Func<StorageByteRange, CancellationToken, Task<StoredAssetRead?>> open,
+        CancellationToken ct) =>
+        offsetSeconds > 0 &&
+        Mp3ConstantBitrate.IsMp3(info.FileName) &&
+        await Mp3ConstantBitrate.IsConstantAsync(
+            info, durationSeconds, open, ct);
+
+    public static string[] DecodeArguments(
         Uri input,
-        MemoryStream output,
         double offsetSeconds,
         double durationSeconds,
-        CancellationToken ct)
+        bool fastSeek)
     {
-        var startInfo = new ProcessStartInfo("ffmpeg")
-        {
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            CreateNoWindow = true,
-        };
-
         static string Seconds(double value) =>
             value.ToString("0.######", CultureInfo.InvariantCulture);
 
-        string[] arguments =
+        string[] seek = fastSeek ? ["-fflags", "+fastseek"] : [];
+
+        return
         [
             "-hide_banner",
             "-loglevel", "error",
             "-nostdin",
             "-protocol_whitelist", "file,http,tcp",
+            .. seek,
             "-ss", Seconds(offsetSeconds),
             "-i", input.AbsoluteUri,
             "-t", Seconds(durationSeconds),
@@ -375,8 +426,26 @@ public sealed class FfmpegAudioClipCutter(
             "-acodec", "pcm_s16le",
             "pipe:1",
         ];
+    }
 
-        foreach (var argument in arguments)
+    private static async Task DecodeAsync(
+        Uri input,
+        MemoryStream output,
+        double offsetSeconds,
+        double durationSeconds,
+        bool fastSeek,
+        CancellationToken ct)
+    {
+        var startInfo = new ProcessStartInfo("ffmpeg")
+        {
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true,
+        };
+
+        foreach (var argument in DecodeArguments(
+                     input, offsetSeconds, durationSeconds, fastSeek))
             startInfo.ArgumentList.Add(argument);
 
         using var process = new Process { StartInfo = startInfo };
