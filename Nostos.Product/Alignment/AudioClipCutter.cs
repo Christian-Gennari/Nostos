@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
+using Microsoft.Extensions.Logging;
 using Nostos.Backend.Data.Models;
 using Nostos.Backend.Services;
 
@@ -92,9 +93,11 @@ public sealed class FfmpegAudioClipCutter(
 
         deadline.CancelAfter(Timeout);
 
+        var started = Stopwatch.GetTimestamp();
+
         try
         {
-            return tracks.Count > 0
+            var clip = tracks.Count > 0
                 ? await CutTracksAsync(
                     book.Id,
                     tracks,
@@ -109,6 +112,18 @@ public sealed class FfmpegAudioClipCutter(
                     positionSeconds,
                     clipSeconds,
                     deadline.Token);
+
+            // Where a switch between editions spends its time is otherwise
+            // invisible: only the transcription call is logged by its client.
+            (services.GetService(typeof(ILogger<FfmpegAudioClipCutter>))
+                as ILogger)?.LogInformation(
+                "Alignment clip for audio book {AudioBookId} ending at " +
+                "{PositionSeconds} s was cut in {ElapsedMs} ms.",
+                book.Id,
+                Math.Round(positionSeconds),
+                (long)Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+
+            return clip;
         }
         catch (OperationCanceledException)
             when (!ct.IsCancellationRequested)
