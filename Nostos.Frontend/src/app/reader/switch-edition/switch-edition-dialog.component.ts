@@ -9,6 +9,7 @@ import {
   isAlignmentUnavailableCode,
 } from '../../core/dtos/alignment.dtos';
 import { AlignmentService } from '../../core/services/alignment.service';
+import { rememberSwitched } from './edition-place-keeper';
 import { ModalShell } from '../../ui/modal-shell/modal-shell.component';
 import { NostosIconComponent } from '../../ui/icon/nostos-icon.component';
 import { IconButtonComponent } from '../../ui/icon-button/icon-button.component';
@@ -300,6 +301,10 @@ export class SwitchEditionDialog {
 
   private open(editionId: string, queryParams?: Record<string, string | number>): void {
     const generation = this.generation;
+    const bookId = this.book()?.id;
+    // A landing on the same sentence: from now on the reader keeps this
+    // pair's place known as the text edition is read.
+    if (queryParams && bookId) rememberSwitched(bookId, editionId);
     void this.router
       .navigate(['/read', editionId], queryParams ? { queryParams } : undefined)
       .then((navigated) => {

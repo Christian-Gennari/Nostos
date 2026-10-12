@@ -1,4 +1,4 @@
-import { Component, inject, OnInit, OnDestroy, signal, computed, effect, untracked, ViewChild, HostListener, ElementRef } from '@angular/core';
+import { Component, inject, Injector, OnInit, OnDestroy, signal, computed, effect, untracked, ViewChild, HostListener, ElementRef } from '@angular/core';
 import { ActivatedRoute, ParamMap, Router } from '@angular/router';
 import { CommonModule, Location } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -31,6 +31,8 @@ import type { SelectionAnchor } from './epub-reader/epub-annotation-manager';
 import { AudioReader } from './audio-reader/audio-reader.component';
 import { EditionSummaryDto } from '../core/dtos/book.dtos';
 import { SwitchEditionDialog } from './switch-edition/switch-edition-dialog.component';
+import { EditionPlaceKeeper, KeeperPlace } from './switch-edition/edition-place-keeper';
+import { AlignmentService } from '../core/services/alignment.service';
 import { TopicInputComponent } from '../ui/topic-input.component/topic-input.component';
 import { NoteCardComponent } from '../ui/note-card.component/note-card.component';
 import { ConfirmModal } from '../ui/confirm-modal/confirm-modal.component';
@@ -98,6 +100,17 @@ export class ReaderShell implements OnInit, OnDestroy {
       this.progressState()?.label;
       untracked(() => {
         if (this.selectionAnchor()) this.selectionAnchor.set(null);
+      });
+    });
+
+    // Each page turn restarts the place keeper's wait for a settled page.
+    effect(() => {
+      this.progressState()?.label;
+      this.book()?.id;
+      const type = this.fileType();
+      untracked(() => {
+        if (type === 'epub' || type === 'pdf') this.placeKeeper.moved();
+        else this.placeKeeper.stop();
       });
     });
 
@@ -196,6 +209,7 @@ export class ReaderShell implements OnInit, OnDestroy {
   @ViewChild(AudioReader) audioReader?: IReader;
 
   private host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly injector = inject(Injector);
   private route = inject(ActivatedRoute);
   private router = inject(Router);
   private location = inject(Location);
@@ -267,6 +281,40 @@ export class ReaderShell implements OnInit, OnDestroy {
   );
   readonly showPanelSwitch = computed(
     () => this.canSwitchEdition() && this.veryNarrow() && this.hasViewSettingsPanel(),
+  );
+
+  /**
+   * Where the place keeper would look: a text edition being read, with an
+   * audiobook edition to continue in. Null while the dialog has the floor.
+   */
+  private async keeperPlace(): Promise<KeeperPlace | null> {
+    const book = this.book();
+    const type = this.fileType();
+    if (!book?.id || this.loadError() || this.switchEditionOpen()) return null;
+    if (type !== 'epub' && type !== 'pdf') return null;
+
+    const audio = this.switchableEditions().find(
+      (edition) => edition.type?.toLowerCase() === 'audiobook',
+    );
+    if (!audio) return null;
+
+    const excerpt =
+      type === 'epub'
+        ? (this.epubReader?.visibleExcerpt?.() ?? null)
+        : await (this.pdfReader?.visibleExcerpt?.() ?? Promise.resolve(null));
+
+    return excerpt && this.book()?.id === book.id
+      ? { bookId: book.id, audioEditionId: audio.id, excerpt }
+      : null;
+  }
+
+  // The alignment service is resolved only if the keeper ever has work to do.
+  private readonly placeKeeper = new EditionPlaceKeeper(
+    {
+      locateAudio: (textBookId, request) =>
+        this.injector.get(AlignmentService).locateAudio(textBookId, request),
+    } as AlignmentService,
+    () => this.keeperPlace(),
   );
 
   readonly switchEditionOpen = signal(false);
@@ -624,6 +672,7 @@ export class ReaderShell implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.placeKeeper.stop();
     if (this.searchDebounce) clearTimeout(this.searchDebounce);
     this.activeReader()?.clearSearch?.();
     this.bookNavigationSubscription?.unsubscribe();

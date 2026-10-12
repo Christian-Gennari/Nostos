@@ -1,6 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
-import { Component, forwardRef, input, output, signal } from '@angular/core';
+import { Component, forwardRef, Injector, input, output, signal } from '@angular/core';
 import { ControlValueAccessor, NG_VALUE_ACCESSOR } from '@angular/forms';
 import {
   ActivatedRoute,
@@ -30,6 +30,8 @@ import { PdfReader } from './pdf-reader/pdf-reader.component';
 import { EpubReader } from './epub-reader/epub-reader.component';
 import { TopicInputComponent } from '../ui/topic-input.component/topic-input.component';
 import { NoteCardComponent } from '../ui/note-card.component/note-card.component';
+import { AlignmentService } from '../core/services/alignment.service';
+import { EditionPlaceKeeper, rememberSwitched } from './switch-edition/edition-place-keeper';
 import { BooksService } from '../core/services/books.service';
 import { NotesService } from '../core/services/notes.service';
 import { TopicsService } from '../core/services/topics.service';
@@ -664,6 +666,55 @@ describe('ReaderShell grounded book-text source navigation', () => {
     fixture.destroy();
   });
 
+
+  it('quietly locates the settled page of an ebook the reader has switched editions on (#844)', async () => {
+    const settleMs = EditionPlaceKeeper.SettleMs;
+    (EditionPlaceKeeper as { SettleMs: number }).SettleMs = 20;
+    localStorage.removeItem('nostos.switch-edition.used');
+
+    const epubBook = {
+      ...audiobook,
+      id: 'book-1',
+      type: 'ebook',
+      fileName: 'source.epub',
+      otherEditions: [{ id: 'audio-9', type: 'audiobook', hasFile: true, progressPercent: 0 }],
+    } as Book;
+    booksGetSpy.mockReturnValue(of(epubBook));
+
+    const fixture = await configureReaderShell();
+    fixture.detectChanges();
+    fixture.detectChanges();
+
+    const locateAudio = vi.fn(() => new Subject());
+    const injector = (fixture.componentInstance as unknown as { injector: Injector }).injector;
+    const get = injector.get.bind(injector);
+    vi.spyOn(injector, 'get').mockImplementation(((token: unknown, ...rest: unknown[]) =>
+      token === AlignmentService ? { locateAudio } : (get as (...a: unknown[]) => unknown)(token, ...rest)) as never);
+
+    const stub = fixture.debugElement.query(By.directive(EpubReaderStub))
+      .componentInstance as EpubReaderStub & { visibleExcerpt?: () => string };
+    stub.visibleExcerpt = () => 'Marley was dead: to begin with.';
+
+    // Never switched on this book: a settled page is left alone.
+    stub.progress.set({ label: 'Page 2', percentage: 1 });
+    fixture.detectChanges();
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(locateAudio).not.toHaveBeenCalled();
+
+    rememberSwitched('book-1', 'audio-9');
+    stub.progress.set({ label: 'Page 3', percentage: 2 });
+    fixture.detectChanges();
+    await new Promise((resolve) => setTimeout(resolve, 60));
+
+    expect(locateAudio).toHaveBeenCalledExactlyOnceWith('book-1', {
+      targetBookId: 'audio-9',
+      excerpt: 'Marley was dead: to begin with.',
+    });
+
+    fixture.destroy();
+    (EditionPlaceKeeper as { SettleMs: number }).SettleMs = settleMs;
+    localStorage.removeItem('nostos.switch-edition.used');
+  });
 
   it('asks the EPUB reader to mark the sentence of a landing from another edition (#844)', async () => {
     const epubBook = { ...audiobook, id: 'book-1', type: 'ebook', fileName: 'source.epub' } as Book;
