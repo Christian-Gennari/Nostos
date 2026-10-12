@@ -1,0 +1,63 @@
+<div
+  class="merge-picker"
+  [class.note-inspector-picker]="variant() === 'inspector'"
+  [attr.role]="role()"
+  [attr.aria-label]="label()"
+>
+  <div class="merge-picker-head">
+    <span class="detail-tool-label">{{ heading() }}</span>
+    <button
+      appIconButton
+      type="button"
+      class="merge-picker-close"
+      icon="x"
+      size="md"
+      [glyphSize]="15"
+      [attr.aria-label]="closeLabel()"
+      (click)="closed.emit()"
+    ></button>
+  </div>
+  @if (linkHint()) {
+  <p class="merge-picker-hint">
+    Linking adds an explicit <code>[[Topic]]</code> reference to the note.
+  </p>
+  }
+  <input appInput controlSize="compact" class="merge-search-input"
+    type="search"
+    placeholder="Search topics..."
+    [attr.aria-label]="searchLabel()"
+    [ngModel]="query()"
+    (ngModelChange)="query.set($event)"
+    (keydown.escape)="closed.emit()"
+  />
+  <div class="merge-target-list">
+    @if (candidates().length === 0) {
+    <span class="merge-picker-empty">{{ emptyText() }}</span>
+    } @else {
+    @for (candidate of candidates(); track candidate.id) {
+    <button
+      type="button"
+      class="merge-target"
+      [class.selected]="selectedId() === candidate.id"
+      (click)="chosen.emit(candidate.id)"
+    >
+      <span>{{ candidate.name }}</span>
+      <span class="merge-target-count">{{ candidate.usageCount }}</span>
+    </button>
+    }
+    }
+  </div>
+  <ng-content />
+  <div class="merge-picker-actions">
+    <button appButton variant="ghost" size="sm" type="button" class="merge-picker-cancel"
+      (click)="closed.emit()">Cancel</button>
+    <button
+      appButton variant="primary" size="sm" type="button"
+      class="merge-picker-confirm"
+      [disabled]="confirmDisabled()"
+      (click)="confirmed.emit()"
+    >
+      {{ confirmLabel() }}
+    </button>
+  </div>
+</div>

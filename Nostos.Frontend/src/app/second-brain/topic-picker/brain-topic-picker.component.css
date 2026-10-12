@@ -1,0 +1,125 @@
+/* One picker for the Brain's three "choose an existing topic" jobs. The
+ * host adds no box of its own, so the picker lays out exactly where its
+ * markup used to sit in the Brain template. */
+:host {
+  display: contents;
+}
+
+.merge-picker {
+  width: min(100%, 520px);
+  margin: 1rem auto 0 0;
+  padding: 0.85rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-sm);
+  text-align: left;
+}
+
+.merge-picker-head,
+.merge-picker-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.merge-picker-head {
+  margin-bottom: 0.6rem;
+}
+
+.merge-search-input { width: 100%; }
+
+.merge-target-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  max-height: 220px;
+  margin: 0.65rem 0;
+  overflow-y: auto;
+}
+
+.merge-target {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-height: 40px;
+  padding: 0 0.65rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text-muted);
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 0.82rem;
+  text-align: left;
+}
+
+.merge-target:hover,
+.merge-target.selected {
+  border-color: var(--color-primary-dim);
+  background: var(--bg-hover);
+  color: var(--color-text-main);
+}
+
+.merge-target-count {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--bg-body);
+  color: var(--color-text-muted);
+  font-size: 0.72rem;
+  text-align: center;
+}
+
+/* Says what linking will actually do before it does it: the association this
+ * codebase has is an explicit [[reference]] in the note, and a user should not
+ * discover that by reading the diff. */
+.merge-picker-empty,
+.merge-picker-hint {
+  padding: 0.8rem 0.65rem;
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+  font-style: italic;
+}
+
+.merge-picker-actions {
+  justify-content: flex-end;
+  padding-top: 0.65rem;
+  border-top: 1px solid var(--border-light);
+}
+
+.merge-picker-cancel,
+.merge-picker-confirm { min-height: 36px; }
+
+/* Inside a note there is no card: the picker is a ruled section of the note. */
+.merge-picker.note-inspector-picker {
+  width: 100%;
+  margin: 1.4rem 0 0;
+  padding: 1rem 0;
+  border: 0;
+  border-top: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.merge-target:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+@media (max-width: 768px) {
+  .merge-picker-cancel,
+  .merge-picker-confirm,
+  .merge-target {
+    min-height: 44px;
+  }
+
+  .merge-picker-close {
+    width: 44px;
+    height: 44px;
+  }
+}

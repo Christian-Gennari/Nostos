@@ -511,39 +511,29 @@
             </section>
 
             @if (browsePickerOpen()) {
-            <div class="merge-picker note-inspector-picker" role="group" aria-label="Choose a topic to link">
-              <div class="merge-picker-head">
-                <span class="detail-tool-label">Link to topic</span>
-                <button appIconButton type="button" icon="x" size="md" [glyphSize]="15"
-                  aria-label="Close topic picker" (click)="browsePickerOpen.set(false)"></button>
-              </div>
-              <p class="merge-picker-hint">Linking adds an explicit <code>[[Topic]]</code> reference to the note.</p>
-              <input appInput controlSize="compact" id="brain-browse-topic" type="search"
-                placeholder="Search topics" [ngModel]="browsePickerQuery()"
-                (ngModelChange)="browsePickerQuery.set($event)" />
-              <div class="merge-target-list">
-                @for (candidate of browsePickerCandidates(); track candidate.id) {
-                  <button type="button" class="merge-target" [class.selected]="browsePickerId() === candidate.id"
-                    (click)="browsePickerId.set(candidate.id)">
-                    <span>{{ candidate.name }}</span>
-                    <span class="merge-target-count">{{ candidate.usageCount }}</span>
-                  </button>
-                }
-                @if (browsePickerCandidates().length === 0) {
-                  <p class="merge-picker-empty">No matching topics. You can create one deliberately below.</p>
-                }
-              </div>
+            <app-brain-topic-picker
+              variant="inspector"
+              label="Choose a topic to link"
+              heading="Link to topic"
+              closeLabel="Close topic picker"
+              searchLabel="Search topics to link"
+              emptyText="No matching topics. You can create one deliberately below."
+              confirmLabel="Link note"
+              [linkHint]="true"
+              [candidates]="browsePickerCandidates()"
+              [selectedId]="browsePickerId()"
+              [confirmDisabled]="!browsePickerId() || browseSaving()"
+              [query]="browsePickerQuery()"
+              (queryChange)="browsePickerQuery.set($event)"
+              (chosen)="browsePickerId.set($event)"
+              (confirmed)="linkBrowseTopic()"
+              (closed)="browsePickerOpen.set(false)"
+            >
               @if (browseNewTopicName(); as name) {
                 <button appButton variant="ghost" size="sm" type="button" [disabled]="browseSaving()"
                   (click)="createBrowseTopic()">Create and link “{{ name }}”</button>
               }
-              <div class="merge-picker-actions">
-                <button appButton variant="ghost" size="sm" type="button"
-                  (click)="browsePickerOpen.set(false)">Cancel</button>
-                <button appButton variant="primary" size="sm" type="button"
-                  [disabled]="!browsePickerId() || browseSaving()" (click)="linkBrowseTopic()">Link note</button>
-              </div>
-            </div>
+            </app-brain-topic-picker>
             }
 
             @if (!browseEditing()) {
@@ -647,66 +637,29 @@
 
 
           @if (reviewPickerOpen()) {
-          <div class="merge-picker note-inspector-picker" role="group" aria-label="Link this note to a topic">
-            <div class="merge-picker-head">
-              <span class="detail-tool-label">Link to topic</span>
-              <button
-                appIconButton
-                type="button"
-                class="merge-picker-close"
-                icon="x"
-                size="md"
-                [glyphSize]="15"
-                aria-label="Close topic picker"
-                (click)="closeReviewPicker()"
-              ></button>
-            </div>
-            <p class="merge-picker-hint">
-              Linking adds an explicit <code>[[Topic]]</code> reference to the note.
-            </p>
-            <input appInput controlSize="compact" class="merge-search-input"
-              type="search"
-              placeholder="Search topics..."
-              aria-label="Search topics to link"
-              [ngModel]="reviewPickerQuery()"
-              (ngModelChange)="reviewPickerQuery.set($event)"
-              (keydown.escape)="closeReviewPicker()"
-            />
-            <div class="merge-target-list">
-              @if (reviewPickerCandidates().length === 0) {
-              <span class="merge-picker-empty">No topics match.</span>
-              } @else {
-              @for (candidate of reviewPickerCandidates(); track candidate.id) {
-              <button
-                type="button"
-                class="merge-target"
-                [class.selected]="reviewPickerTopicId() === candidate.id"
-                (click)="chooseReviewTopic(candidate.id)"
-              >
-                <span>{{ candidate.name }}</span>
-                <span class="merge-target-count">{{ candidate.usageCount }}</span>
-              </button>
-              }
-              }
-            </div>
+          <app-brain-topic-picker
+            variant="inspector"
+            label="Link this note to a topic"
+            heading="Link to topic"
+            closeLabel="Close topic picker"
+            searchLabel="Search topics to link"
+            emptyText="No topics match."
+            [confirmLabel]="reviewSaving() ? 'Linking…' : 'Link note'"
+            [linkHint]="true"
+            [candidates]="reviewPickerCandidates()"
+            [selectedId]="reviewPickerTopicId()"
+            [confirmDisabled]="!reviewPickerTopic() || reviewSaving()"
+            [query]="reviewPickerQuery()"
+            (queryChange)="reviewPickerQuery.set($event)"
+            (chosen)="chooseReviewTopic($event)"
+            (confirmed)="confirmLinkToTopic()"
+            (closed)="closeReviewPicker()"
+          >
             @if (reviewNewTopicName(); as name) {
               <button appButton variant="ghost" size="sm" type="button" [disabled]="reviewSaving()"
                 (click)="createReviewTopic()">Create and link “{{ name }}”</button>
             }
-            <div class="merge-picker-actions">
-              <button appButton variant="ghost" size="sm" type="button" class="merge-picker-cancel" (click)="closeReviewPicker()">
-                Cancel
-              </button>
-              <button
-                appButton variant="primary" size="sm" type="button"
-                class="merge-picker-confirm"
-                [disabled]="!reviewPickerTopic() || reviewSaving()"
-                (click)="confirmLinkToTopic()"
-              >
-                {{ reviewSaving() ? 'Linking…' : 'Link note' }}
-              </button>
-            </div>
-          </div>
+          </app-brain-topic-picker>
           } @else {
           <section class="note-inspector-actions" aria-label="Note actions">
             <ng-container *ngTemplateOutlet="noteActionGroup; context: { $implicit: note, mode: 'review' }"></ng-container>
@@ -1034,58 +987,23 @@
         </div>
 
         @if (mergePickerOpen()) {
-        <div class="merge-picker" role="dialog" aria-label="Choose a topic to merge into">
-          <div class="merge-picker-head">
-            <span class="detail-tool-label">Merge into…</span>
-            <button
-              appIconButton
-              type="button"
-              class="merge-picker-close"
-              icon="x"
-              size="md"
-              [glyphSize]="15"
-              aria-label="Close merge picker"
-              (click)="closeMergePicker()"
-            ></button>
-          </div>
-          <input appInput controlSize="compact" class="merge-search-input"
-            type="search"
-            placeholder="Search topics..."
-            aria-label="Search merge targets"
-            [ngModel]="mergeSearchQuery()"
-            (ngModelChange)="mergeSearchQuery.set($event)"
-            (keydown.escape)="closeMergePicker()"
-          />
-          <div class="merge-target-list">
-            @if (mergeCandidates().length === 0) {
-            <span class="merge-picker-empty">No other topics match.</span>
-            } @else {
-            @for (candidate of mergeCandidates(); track candidate.id) {
-            <button
-              type="button"
-              class="merge-target"
-              [class.selected]="mergeTargetId() === candidate.id"
-              (click)="chooseMergeTarget(candidate.id)"
-            >
-              <span>{{ candidate.name }}</span>
-              <span class="merge-target-count">{{ candidate.usageCount }}</span>
-            </button>
-            }
-            }
-          </div>
-          <div class="merge-picker-actions">
-            <button appButton variant="ghost" size="sm" type="button" class="merge-picker-cancel"
-              (click)="closeMergePicker()">Cancel</button>
-            <button
-              appButton variant="primary" size="sm" type="button"
-              class="merge-picker-confirm"
-              [disabled]="!mergeTarget()"
-              (click)="openMergeConfirmation()"
-            >
-              Continue
-            </button>
-          </div>
-        </div>
+        <app-brain-topic-picker
+          role="dialog"
+          label="Choose a topic to merge into"
+          heading="Merge into…"
+          closeLabel="Close merge picker"
+          searchLabel="Search merge targets"
+          emptyText="No other topics match."
+          confirmLabel="Continue"
+          [candidates]="mergeCandidates()"
+          [selectedId]="mergeTargetId()"
+          [confirmDisabled]="!mergeTarget()"
+          [query]="mergeSearchQuery()"
+          (queryChange)="mergeSearchQuery.set($event)"
+          (chosen)="chooseMergeTarget($event)"
+          (confirmed)="openMergeConfirmation()"
+          (closed)="closeMergePicker()"
+        />
         }
       </details>
       } @else {
