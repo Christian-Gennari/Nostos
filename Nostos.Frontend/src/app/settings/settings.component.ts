@@ -7,6 +7,7 @@ import {
   OnDestroy,
   OnInit,
   signal,
+  untracked,
   ViewChild,
 } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
@@ -172,7 +173,16 @@ const BOOK_PROVIDER_COPY = {
 } as const;
 
 /** How a section's inline status line is coloured. */
-type SettingsSection = 'library' | 'account' | 'assistant' | 'appearance' | 'providers';
+type SettingsSection = 'general' | 'library' | 'assistant' | 'connections' | 'data' | 'account';
+
+/** Sections a `?section=` link may open. `data` is its own route, `/settings/library`. */
+const LINKABLE_SECTIONS: readonly SettingsSection[] = [
+  'general',
+  'library',
+  'assistant',
+  'connections',
+  'account',
+];
 
 type AiProviderStatusTone = 'neutral' | 'ok' | 'error';
 
@@ -261,6 +271,7 @@ const defaultProgress: BackupProgress = {
   styleUrls: ['./settings.component.css'],
 })
 export class SettingsComponent implements OnInit, OnDestroy {
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly route = inject(ActivatedRoute, { optional: true });
   private readonly router = inject(Router, { optional: true });
   private readonly queryParamMap = toSignal(
@@ -294,14 +305,39 @@ export class SettingsComponent implements OnInit, OnDestroy {
     this.firstRunCloudImportElement.set(section ?? null);
   }
 
-  /** Which settings surface is visible. This is local UI state, not a route. */
-  readonly activeSettingsSection = signal<SettingsSection>('library');
-  /** The dedicated whole-library surface reuses these existing settings cards. */
+  /** `/settings/library`: the Backups & data section, kept as its own route. */
   readonly isManageLibraryPage = this.route?.snapshot.data['manageLibraryPage'] === true;
+  /**
+   * Which settings section is visible. Mirrored to `?section=` so a section
+   * survives a reload and can be linked to.
+   */
+  readonly activeSettingsSection = signal<SettingsSection>(
+    this.isManageLibraryPage ? 'data' : 'general',
+  );
   readonly isImportSelected = computed(() => this.queryParamMap().get('action') === 'import');
   readonly isFirstRunImport = computed(() => this.queryParamMap().get('source') === 'first-run');
 
   constructor() {
+    effect(() => {
+      const requested = this.queryParamMap().get('section') as SettingsSection | null;
+      if (this.isManageLibraryPage || !requested || !LINKABLE_SECTIONS.includes(requested)) return;
+      // A link to a section this deployment does not have leaves the default open.
+      if (requested === 'connections' && !this.canConfigureAiProvider()) return;
+      if (requested === 'account' && !this.isCloud()) return;
+      untracked(() => this.showSection(requested));
+    });
+
+    effect(() => {
+      this.deploymentCapabilities();
+      this.activeSettingsSection();
+      // The narrow layout scrolls its sections sideways; keep the open one in view.
+      setTimeout(() =>
+        this.host.nativeElement
+          .querySelector('.settings-nav-item.is-active')
+          ?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' }),
+      );
+    });
+
     effect(() => {
       const section = this.firstRunCloudImportElement();
       if (!section || !this.isImportSelected() || !this.isFirstRunImport()) return;
@@ -402,6 +438,9 @@ export class SettingsComponent implements OnInit, OnDestroy {
     if (hasMigration) {
       return 'Move your library to another Nostos installation.';
     }
+    if (this.supportsManagedBackups()) {
+      return 'Nostos backs up your library every night. You can also download a portable archive of it.';
+    }
     if (this.supportsCloudPortableExport()) {
       return 'Download a portable archive of your Nostos library.';
     }
@@ -429,12 +468,14 @@ export class SettingsComponent implements OnInit, OnDestroy {
       this.deploymentCapabilities()?.managedAi === true &&
       this.deploymentCapabilities()?.usageMeteringAvailable === true,
   );
-  /** Highlight import exists on every deployment, so the section always has content. */
-  readonly hasLibrarySettings = computed(() => this.deploymentCapabilities() !== null);
-
-  openManageLibrary(): void {
-    void this.router?.navigate(['/settings/library']);
-  }
+  /** Backups & data is offered when this deployment has anything to put in it. */
+  readonly hasDataSection = computed(
+    () => this.isManageLibraryPage || this.hasManageLibraryActions(),
+  );
+  /** Whether the nav's second group ("This server" / "Your account") has entries. */
+  readonly hasInfrastructureSections = computed(
+    () => this.canConfigureAiProvider() || this.hasDataSection() || this.isCloud(),
+  );
 
   openFirstRunImportPicker(): void {
     this.firstRunImportInput?.nativeElement.click();
@@ -447,10 +488,6 @@ export class SettingsComponent implements OnInit, OnDestroy {
 
     await this.cloudEntry.importPortableArchive(file);
     input.value = '';
-  }
-
-  returnToLibrarySettings(): void {
-    void this.router?.navigate(['/settings']);
   }
 
   /** The AI provider card's copy, exposed so the template reads one source. */
@@ -514,8 +551,27 @@ export class SettingsComponent implements OnInit, OnDestroy {
   }
 
   setSettingsSection(section: SettingsSection): void {
+    if (section === 'data') {
+      if (!this.isManageLibraryPage) void this.router?.navigate(['/settings/library']);
+      return;
+    }
+    if (this.isManageLibraryPage) {
+      void this.router?.navigate(['/settings'], { queryParams: { section } });
+      return;
+    }
+
+    this.showSection(section);
+    void this.router?.navigate([], {
+      relativeTo: this.route,
+      queryParams: { section },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
+  }
+
+  private showSection(section: SettingsSection): void {
     this.activeSettingsSection.set(section);
-    if (section === 'providers') this.loadProviderSettings();
+    if (section === 'library') this.loadProviderSettings();
   }
 
   setAssistantEnabled(event: Event): void {

@@ -21,7 +21,7 @@
  *     and that CSS cannot reach into.
  *   - `core@2.1.1` is the SVG asset catalog (505 B per regular glyph, 453 B per
  *     variant). This registry imports exactly the files the app renders, so the
- *     bundle carries exactly those: **98 files / 68 glyphs**, no runtime dependency
+ *     bundle carries exactly those: **99 files / 69 glyphs**, no runtime dependency
  *     and no shadow DOM. The cost of that choice is one line of build wiring —
  *     `"loader": { ".svg": "text" }` in `angular.json` — and the module declaration
  *     in `phosphor-svg.d.ts`.
@@ -162,6 +162,7 @@ import textT from '@phosphor-icons/core/regular/text-t.svg';
 import trash from '@phosphor-icons/core/regular/trash.svg';
 import tray from '@phosphor-icons/core/regular/tray.svg';
 import uploadSimple from '@phosphor-icons/core/regular/upload-simple.svg';
+import userCircle from '@phosphor-icons/core/regular/user-circle.svg';
 import warningCircle from '@phosphor-icons/core/regular/warning-circle.svg';
 import warning from '@phosphor-icons/core/regular/warning.svg';
 import waveform from '@phosphor-icons/core/regular/waveform.svg';
@@ -278,6 +279,7 @@ export const NOSTOS_ICONS = {
   'trash': { regular: trash, },
   'tray': { regular: tray, light: trayLight, },
   'upload-simple': { regular: uploadSimple, light: uploadSimpleLight, },
+  'user-circle': { regular: userCircle, },
   'warning': { regular: warning, },
   'warning-circle': { regular: warningCircle, },
   'waveform': { regular: waveform, },

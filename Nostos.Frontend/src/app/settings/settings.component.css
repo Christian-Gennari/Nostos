@@ -6,19 +6,24 @@
   padding: 28px 32px 9.5rem;
 }
 
+.settings-page-header {
+  margin-bottom: 26px;
+}
 
-
-
+.settings-page-title {
+  margin: 0;
+  font-size: 1.6rem;
+  font-weight: var(--fw-semibold);
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  color: var(--color-text-main);
+}
 
 .settings-shell {
   display: grid;
   grid-template-columns: var(--settings-nav-width) minmax(0, 1fr);
   gap: var(--settings-shell-gap);
   align-items: start;
-}
-
-.settings-shell--manage-library {
-  grid-template-columns: minmax(0, 1fr);
 }
 
 .settings-nav {
@@ -31,6 +36,21 @@
   background: transparent;
   border: 0;
   border-radius: 0;
+}
+
+/* The nav is two groups: what you prefer, then what this server or account holds. */
+.settings-nav-label {
+  padding: 18px 10px 6px;
+  font-size: 0.68rem;
+  font-weight: var(--fw-semibold);
+  line-height: 1.3;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.settings-nav-label:first-child {
+  padding-top: 0;
 }
 
 .settings-nav-item {
@@ -91,8 +111,6 @@
   color: inherit;
 }
 
-
-
 .settings-content {
   min-width: 0;
   max-width: 800px;
@@ -106,48 +124,41 @@
   display: none;
 }
 
-
-
-
-
-
-
-
-
-.overview-item strong,
-
-
+.settings-section-header {
+  margin-bottom: 20px;
+}
 
 .settings-section-title {
-  margin: 0 0 16px;
-  font-size: 0.96rem;
+  margin: 0 0 4px;
+  font-size: 1.2rem;
   font-weight: var(--fw-semibold);
-  line-height: 1.35;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
   color: var(--color-text-main);
 }
 
-.manage-library-header {
-  margin-bottom: 26px;
-}
-
-.manage-library-header .settings-section-title {
-  margin-bottom: 6px;
-}
-
-.manage-library-header .label-desc {
+.settings-section-desc {
+  max-width: 610px;
   margin: 0;
-}
-
-.manage-library-back {
-  margin: 0 0 12px;
+  font-size: 0.84rem;
+  line-height: 1.5;
+  color: var(--color-text-light);
 }
 
 .manage-library-group {
-  margin-bottom: 32px;
+  margin-bottom: 28px;
 }
 
+/* A label over a run of cards inside Backups & data, not another page heading. */
 .manage-library-group-title {
-  margin-bottom: 0;
+  margin: 0 0 10px;
+  font-family: inherit;
+  font-size: 0.68rem;
+  font-weight: var(--fw-semibold);
+  line-height: 1.3;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
 }
 
 .first-run-cloud-import.is-selected {
@@ -158,13 +169,21 @@
 
 /* --- Settings Card --- */
 .settings-card {
-  margin-bottom: 30px;
+  margin-bottom: 18px;
+  padding: 0 20px;
   overflow: visible;
-  background: transparent;
-  border: 0;
-  border-top: 1px solid var(--border-color);
-  border-radius: 0;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
   box-shadow: none;
+}
+
+.settings-card--danger {
+  border-color: color-mix(in srgb, var(--color-danger) 38%, var(--border-color));
+}
+
+.settings-card--danger .card-header h2 {
+  color: var(--color-danger);
 }
 
 .settings-section > .settings-card:last-child {
@@ -176,9 +195,9 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 16px 0 11px;
+  padding: 15px 0 13px;
   background: transparent;
-  border-bottom: 0;
+  border-bottom: 1px solid var(--border-light);
 }
 
 .card-header-copy {
@@ -186,8 +205,6 @@
   display: flex;
   align-items: center;
 }
-
-
 
 .card-header h2 {
   margin: 0;
@@ -265,7 +282,7 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
-  padding: 4px 0 0;
+  padding: 16px 0;
 }
 
 .theme-card {
@@ -350,7 +367,13 @@
 
 .card-purpose {
   margin: 0;
-  padding-top: 14px;
+  padding: 14px 0 12px;
+}
+
+/* The "show the list" disclosure under a backup card: its label lines up with
+   the rows above it, and it keeps clear of the card's bottom edge. */
+.settings-card [aria-expanded][aria-controls] {
+  margin: 8px 0 10px -10px;
 }
 
 /* --- Last Backup Info --- */
@@ -581,7 +604,7 @@
    column with the "Load models" button dropped below its field. */
 .provider-intro {
   margin: 0;
-  padding: 0 0 15px;
+  padding: 14px 0 15px;
   font-size: 0.78rem;
   line-height: 1.5;
   color: var(--color-text-light);
@@ -729,7 +752,7 @@
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
-  padding: 15px 0 0;
+  padding: 15px 0 18px;
   border-top: 0;
 }
 
@@ -749,13 +772,37 @@
     display: block;
   }
 
+  /* Up to six sections: one row that scrolls, so nothing wraps under a tile grid. */
   .settings-nav {
     position: static;
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    flex-direction: row;
     gap: 6px;
-    margin-bottom: 22px;
-    padding: 0;
+    margin: 0 -32px 22px;
+    padding: 2px 32px;
+    scroll-padding-inline: 32px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .settings-nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .settings-nav-label {
+    display: none;
+  }
+
+  .settings-nav-item {
+    width: auto;
+    flex: 0 0 auto;
+    padding: 7px 13px 7px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-pill);
+    white-space: nowrap;
+  }
+
+  .settings-nav-item.is-active {
+    border-color: var(--border-focus);
   }
 
   .settings-content {
@@ -768,15 +815,13 @@
     padding: 20px 18px 9.5rem;
   }
 
-  .settings-nav-item {
-    grid-template-columns: 18px minmax(0, 1fr);
-    gap: 8px;
-    padding: 8px;
+  .settings-nav {
+    margin: 0 -18px 20px;
+    padding: 2px 18px;
   }
 
-  .settings-nav-icon {
-    width: 18px;
-    height: 18px;
+  .settings-card {
+    padding: 0 16px;
   }
 
   .provider-grid,
@@ -797,9 +842,6 @@
     align-items: flex-start;
   }
 
-  .theme-grid {
-    padding: 4px 0 0;
-  }
 }
 
 @media (max-width: 600px) {
@@ -808,22 +850,16 @@
   }
 
   .settings-nav {
-    gap: 3px;
-    margin-bottom: 20px;
+    margin: 0 -14px 20px;
+    padding: 2px 14px;
   }
 
-  .settings-nav-item {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    gap: 5px;
-    min-width: 0;
-    padding: 8px 4px;
-    text-align: center;
+  .settings-page-header {
+    margin-bottom: 18px;
   }
 
-  .settings-nav-copy {
-    font-size: 0.7rem;
+  .settings-page-title {
+    font-size: 1.4rem;
   }
 
   .card-header {
@@ -893,9 +929,5 @@
 
   .provider-key-row {
     flex-wrap: wrap;
-  }
-
-  .theme-grid {
-    padding: 4px 0 0;
   }
 }

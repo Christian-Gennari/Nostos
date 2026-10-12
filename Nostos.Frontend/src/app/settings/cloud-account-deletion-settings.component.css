@@ -33,11 +33,7 @@
 }
 
 .account-deletion-row {
-  margin-top: 0.2rem;
-}
-
-.account-deletion-trigger {
-  color: var(--color-text-muted);
+  border-bottom: 0;
 }
 
 .account-deletion-confirmation {

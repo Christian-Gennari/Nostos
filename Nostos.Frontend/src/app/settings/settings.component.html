@@ -1,15 +1,10 @@
     <div class="settings-page">
-      <div class="settings-shell" [class.settings-shell--manage-library]="isManageLibraryPage">
+      <header class="settings-page-header">
+        <h1 class="settings-page-title">Settings</h1>
+      </header>
+      <div class="settings-shell">
         @if (capabilitiesLoading()) {
           <main class="settings-content" data-testid="settings-capabilities-loading">
-            @if (isManageLibraryPage) {
-              <header class="manage-library-header">
-                <button appButton type="button" variant="ghost" (click)="returnToLibrarySettings()">
-                  Back to settings
-                </button>
-                <h1 class="settings-section-title">Manage library</h1>
-              </header>
-            }
             <section class="settings-card">
               <div class="card-body">
                 <div class="setting-row">
@@ -23,14 +18,6 @@
           </main>
         } @else if (capabilitiesFailed()) {
           <main class="settings-content" data-testid="settings-capabilities-error">
-            @if (isManageLibraryPage) {
-              <header class="manage-library-header">
-                <button appButton type="button" variant="ghost" (click)="returnToLibrarySettings()">
-                  Back to settings
-                </button>
-                <h1 class="settings-section-title">Manage library</h1>
-              </header>
-            }
             <section class="settings-card">
               <div class="card-body">
                 <div class="setting-row">
@@ -43,37 +30,37 @@
             </section>
           </main>
         } @else {
-        @if (!isManageLibraryPage) {
         <nav class="settings-nav" role="tablist" aria-label="Settings sections">
-          @if (hasLibrarySettings()) {
+          <span class="settings-nav-label" role="presentation">Preferences</span>
+          <button
+            type="button"
+            class="settings-nav-item"
+            role="tab"
+            [class.is-active]="activeSettingsSection() === 'general'"
+            [attr.aria-selected]="activeSettingsSection() === 'general'"
+            aria-controls="general"
+            data-testid="settings-nav-general"
+            (click)="setSettingsSection('general')"
+          >
+            <span class="settings-nav-icon">
+              <nostos-icon name="sliders-horizontal" [size]="17"></nostos-icon>
+            </span>
+            <span class="settings-nav-copy">General</span>
+          </button>
           <button
             type="button"
             class="settings-nav-item"
             role="tab"
             [class.is-active]="activeSettingsSection() === 'library'"
             [attr.aria-selected]="activeSettingsSection() === 'library'"
-            aria-controls="library-data"
+            aria-controls="library"
+            data-testid="settings-nav-library"
             (click)="setSettingsSection('library')"
-          >
-            <span class="settings-nav-icon">
-              <nostos-icon name="book-open" [size]="17"></nostos-icon>
-            </span>
-            <span class="settings-nav-copy">Library &amp; data</span>
-          </button>
-          }
-          <button
-            type="button"
-            class="settings-nav-item"
-            role="tab"
-            [class.is-active]="activeSettingsSection() === 'providers'"
-            [attr.aria-selected]="activeSettingsSection() === 'providers'"
-            aria-controls="providers"
-            (click)="setSettingsSection('providers')"
           >
             <span class="settings-nav-icon">
               <nostos-icon name="books" [size]="17"></nostos-icon>
             </span>
-            <span class="settings-nav-copy">Book providers</span>
+            <span class="settings-nav-copy">Library</span>
           </button>
           <button
             type="button"
@@ -82,6 +69,7 @@
             [class.is-active]="activeSettingsSection() === 'assistant'"
             [attr.aria-selected]="activeSettingsSection() === 'assistant'"
             aria-controls="assistant"
+            data-testid="settings-nav-assistant"
             (click)="setSettingsSection('assistant')"
           >
             <span class="settings-nav-icon">
@@ -89,6 +77,45 @@
             </span>
             <span class="settings-nav-copy">Assistant</span>
           </button>
+          @if (hasInfrastructureSections()) {
+          <span class="settings-nav-label" role="presentation" data-testid="settings-nav-infrastructure-label">
+            {{ isCloud() ? 'Your account' : 'This server' }}
+          </span>
+          }
+          @if (canConfigureAiProvider()) {
+          <button
+            type="button"
+            class="settings-nav-item"
+            role="tab"
+            [class.is-active]="activeSettingsSection() === 'connections'"
+            [attr.aria-selected]="activeSettingsSection() === 'connections'"
+            aria-controls="connections"
+            data-testid="settings-nav-connections"
+            (click)="setSettingsSection('connections')"
+          >
+            <span class="settings-nav-icon">
+              <nostos-icon name="link-simple" [size]="17"></nostos-icon>
+            </span>
+            <span class="settings-nav-copy">AI connections</span>
+          </button>
+          }
+          @if (hasDataSection()) {
+          <button
+            type="button"
+            class="settings-nav-item"
+            role="tab"
+            [class.is-active]="activeSettingsSection() === 'data'"
+            [attr.aria-selected]="activeSettingsSection() === 'data'"
+            aria-controls="data"
+            data-testid="manage-library-open"
+            (click)="setSettingsSection('data')"
+          >
+            <span class="settings-nav-icon">
+              <nostos-icon name="archive" [size]="17"></nostos-icon>
+            </span>
+            <span class="settings-nav-copy">Backups &amp; data</span>
+          </button>
+          }
           @if (isCloud()) {
           <button
             type="button"
@@ -97,613 +124,159 @@
             [class.is-active]="activeSettingsSection() === 'account'"
             [attr.aria-selected]="activeSettingsSection() === 'account'"
             aria-controls="account"
+            data-testid="settings-nav-account"
             (click)="setSettingsSection('account')"
           >
             <span class="settings-nav-icon">
-              <nostos-icon name="gear-six" [size]="17"></nostos-icon>
+              <nostos-icon name="user-circle" [size]="17"></nostos-icon>
             </span>
             <span class="settings-nav-copy">Account</span>
           </button>
           }
-          <button
-            type="button"
-            class="settings-nav-item"
-            role="tab"
-            [class.is-active]="activeSettingsSection() === 'appearance'"
-            [attr.aria-selected]="activeSettingsSection() === 'appearance'"
-            aria-controls="appearance"
-            (click)="setSettingsSection('appearance')"
-          >
-            <span class="settings-nav-icon">
-              <nostos-icon name="palette" [size]="17"></nostos-icon>
-            </span>
-            <span class="settings-nav-copy">Appearance</span>
-          </button>
         </nav>
-        }
 
         <main class="settings-content">
-          @if (hasLibrarySettings()) {
           <section
             class="settings-section"
-            id="library-data"
-            [attr.role]="isManageLibraryPage ? null : 'tabpanel'"
-            [attr.aria-labelledby]="
-              isManageLibraryPage ? 'manage-library-page-heading' : 'library-data-heading'
-            "
-            [hidden]="!isManageLibraryPage && activeSettingsSection() !== 'library'"
+            id="general"
+            role="tabpanel"
+            aria-labelledby="general-heading"
+            [hidden]="activeSettingsSection() !== 'general'"
           >
-            @if (isManageLibraryPage) {
-              <header class="manage-library-header" data-testid="manage-library-page">
-                <button
-                  appButton
-                  type="button"
-                  variant="ghost"
-                  class="manage-library-back"
-                  data-testid="manage-library-back"
-                  (click)="returnToLibrarySettings()"
-                >
-                  Back to settings
-                </button>
-                <h1 class="settings-section-title" id="manage-library-page-heading">Manage library</h1>
-                <p class="label-desc">
-                  Move your library or protect this installation with the actions available here.
-                </p>
-              </header>
-            } @else {
-              <h2 class="settings-section-title" id="library-data-heading">Library &amp; data</h2>
-              @if (hasManageLibraryActions()) {
-              <section
-                class="settings-card manage-library-summary"
-                data-testid="manage-library-summary-card"
-              >
-                <div class="card-header">
-                  <div class="card-header-copy">
-                    <h2>Manage library</h2>
-                  </div>
-                  <button
-                    appButton
-                    type="button"
-                    variant="primary"
-                    data-testid="manage-library-open"
-                    (click)="openManageLibrary()"
-                  >
-                    Manage library
-                  </button>
-                </div>
-                <div class="card-body">
-                  <p class="label-desc" data-testid="manage-library-summary">{{ manageLibrarySummary() }}</p>
-                </div>
-              </section>
-              }
-            }
+            <header class="settings-section-header">
+              <h2 class="settings-section-title" id="general-heading">General</h2>
+              <p class="settings-section-desc">How Nostos looks on this device.</p>
+            </header>
 
-            @if (isManageLibraryPage) {
-            <div class="manage-library-groups">
-            @if (supportsLocalBackupConfiguration()) {
-            <section class="manage-library-group" aria-labelledby="manage-library-protect-heading">
-            <h2
-              class="settings-section-title manage-library-group-title"
-              id="manage-library-protect-heading"
-            >
-              Protect this installation
-            </h2>
-            <section class="settings-card">
-        <div class="card-header">
-          <div class="card-header-copy">
-            <h2>Backup</h2>
-          </div>
-          <button
-            appButton variant="primary"
-            [disabled]="backingUp()"
-            [busy]="backingUp()"
-            (click)="triggerBackup()"
-          >
-            @if (backingUp()) {
-              <nostos-icon name="circle-notch" [size]="16" class="spin"></nostos-icon>
-              Backing up...
-            } @else {
-              <nostos-icon name="arrows-clockwise" [size]="16"></nostos-icon>
-              Back up now
-            }
-          </button>
-        </div>
-
-        <div class="card-body">
-          @if (supportsLibraryMigration()) {
-            <p class="label-desc card-purpose" data-testid="backup-purpose">
-              Backups are for recovering this SelfHosted installation. They are not portable
-              library exports.
-            </p>
-          }
-          <!-- Enable Toggle -->
-          <div class="setting-row">
-            <div class="setting-label">
-              <span class="label-text">Automatic Backup</span>
-              @if (settings().isEnabled) {
-                <span class="label-desc">Backups are created automatically every {{ formatInterval(settings().intervalHours) }}.</span>
-              } @else {
-                <span class="label-desc">When turned on, the first backup will run within 5 minutes, then every {{ formatInterval(settings().intervalHours) }} thereafter.</span>
-              }
-            </div>
-            <label appSwitch>
-              <input
-                type="checkbox"
-                [checked]="settings().isEnabled"
-                (change)="toggleEnabled($event)"
-                aria-label="Automatic backup"
-              >
-            </label>
-          </div>
-
-          <!-- Include Book Files -->
-          <div class="setting-row">
-            <div class="setting-label">
-              <span class="label-text">Include Book Files</span>
-              <span class="label-desc">Include EPUB, PDF, and audio files in backups. Makes archives much larger but ensures full recovery.</span>
-            </div>
-            <label appSwitch>
-              <input
-                type="checkbox"
-                [checked]="settings().includeBookFiles"
-                (change)="toggleBookFiles($event)"
-                aria-label="Include book files"
-              >
-            </label>
-          </div>
-
-          <!-- Schedule -->
-          <div class="setting-row">
-            <div class="setting-label">
-              <span class="label-text">Backup Frequency</span>
-              <span class="label-desc">How often to create automatic backups.</span>
-            </div>
-            <app-dropdown
-              class="select-sm"
-              controlSize="compact"
-              ariaLabel="Backup frequency"
-              [options]="backupIntervalOptions"
-              [value]="settings().intervalHours.toString()"
-              (valueChange)="changeInterval($event)"
-            />
-          </div>
-
-          <!-- Max Backups -->
-          <div class="setting-row">
-            <div class="setting-label">
-              <span class="label-text">Max Backups</span>
-              <span class="label-desc">Oldest backups will be automatically deleted when this limit is reached.</span>
-            </div>
-            <app-dropdown
-              class="select-sm"
-              controlSize="compact"
-              ariaLabel="Max backups"
-              [options]="maxBackupOptions"
-              [value]="settings().maxBackups.toString()"
-              (valueChange)="changeMaxBackups($event)"
-            />
-          </div>
-
-          @if (backingUp() && progress().isRunning) {
-            <div class="progress-bar-container">
-              <div class="progress-step-label">
-                Step {{ progress().stepNumber }} of {{ progress().totalSteps }} &mdash; {{ progress().currentStep }}
-              </div>
-              <div class="progress-bar">
-                <div class="progress-bar-fill" [style.width.%]="progress().percentComplete"></div>
-              </div>
-              @if (showSlowNotice()) {
-                <div class="slow-notice">
-                  This step may take a few minutes for large libraries.
-                </div>
-              }
-            </div>
-          }
-
-          <!-- Import from Disk -->
-          <div class="setting-row">
-            <div class="setting-label">
-              <span class="label-text">Import from Disk</span>
-              <span class="label-desc">Copy .nostos files to the Storage/backups/ folder on the server, then scan to add them to your history.</span>
-            </div>
-            <button
-              appButton variant="secondary"
-              [disabled]="importing()"
-              [busy]="importing()"
-              (click)="scanForBackups()"
-            >
-              @if (importing()) {
-                <nostos-icon name="circle-notch" [size]="16" class="spin"></nostos-icon>
-                Scanning...
-              } @else {
-                <nostos-icon name="folder-simple" [size]="16"></nostos-icon>
-                Scan for Backups
-              }
-            </button>
-          </div>
-
-          <!-- Last Backup Info -->
-          @if (status().lastBackupAt) {
-            <div class="last-backup-info">
-              Last backup: {{ status().lastBackupAt | date:'medium' }}
-              <span
-                appBadge
-                [tone]="status().lastBackupStatus === 'Completed' ? 'success' : 'danger'"
-              >
-                {{ status().lastBackupStatus }}
-              </span>
-            </div>
-          }
-        </div>
-      </section>
-
-      <!-- Backup History -->
       <section class="settings-card">
         <div class="card-header">
           <div class="card-header-copy">
-            <h2>Backup History</h2>
+            <h2>Colour theme</h2>
           </div>
-          <span appBadge>{{ history().length }}</span>
         </div>
 
-        @if (history().length === 0) {
-          <div class="empty-state">
-            No backups yet. Create your first backup to get started.
-          </div>
-        } @else {
-          <div class="card-body">
-            <button
-              appButton
-              type="button"
-              variant="ghost"
-              size="sm"
-              data-testid="backup-history-toggle"
-              aria-controls="backup-history-list"
-              [attr.aria-expanded]="historyExpanded()"
-              (click)="historyExpanded.set(!historyExpanded())"
-            >
-              <nostos-icon
-                [name]="historyExpanded() ? 'caret-up' : 'caret-down'"
-                [size]="14"
-              ></nostos-icon>
-              {{ historyExpanded() ? 'Hide backups' : 'Show backups' }}
-            </button>
-          </div>
-        }
-
-        @if (history().length > 0 && historyExpanded()) {
-          <div class="history-list" id="backup-history-list">
-            @for (item of history(); track item.id) {
-              <div class="history-item">
-                <div class="history-info">
-                  <span class="history-date">{{ item.createdAt | date:'medium' }}</span>
-                  <span class="history-meta">
-                    {{ formatSize(item.sizeBytes) }}
-                    @if (item.includeBookFiles) {
-                      &middot; with files
-                    } @else {
-                      &middot; metadata only
-                    }
-                    @if (item.errorMessage) {
-                      &middot; <span class="history-error">{{ item.errorMessage }}</span>
-                    }
-                  </span>
-                </div>
-                <div class="history-actions">
-                  <span
-                    appBadge
-                    [tone]="item.status === 'Completed' ? 'success' : item.status === 'Failed' ? 'danger' : 'neutral'"
-                  >
-                    {{ item.status }}
-                  </span>
-                  @if (item.status === 'Completed') {
-                    <button
-                      appIconButton
-                      icon="download-simple"
-                      size="xs"
-                      [glyphSize]="14"
-                      (click)="downloadBackup(item.id)"
-                      aria-label="Download archive"
-                      title="Download archive"
-                    ></button>
-                    <button appButton variant="secondary" size="sm" (click)="restoreBackup(item.id)" [disabled]="restoring()" title="Restore from this backup">
-                      <nostos-icon name="arrows-clockwise" [size]="14"></nostos-icon>
-                      Restore
-                    </button>
-                  }
-                  <button
-                    appIconButton
-                    icon="trash"
-                    size="xs"
-                    tone="danger"
-                    [glyphSize]="14"
-                    (click)="deleteBackup(item.id)"
-                    aria-label="Delete backup"
-                    title="Delete backup"
-                  ></button>
-                </div>
-              </div>
+        <div class="theme-grid" role="radiogroup" aria-label="Colour theme">
+          <button
+            type="button"
+            class="theme-card"
+            role="radio"
+            [attr.aria-checked]="theme() === 'light'"
+            [class.is-active]="theme() === 'light'"
+            (click)="setTheme('light')"
+          >
+            <span class="theme-card-icon"><nostos-icon name="sun" [size]="21"></nostos-icon></span>
+            <span class="theme-card-copy">
+              <strong>Light</strong>
+            </span>
+            @if (theme() === 'light') {
+              <span class="theme-card-check"><nostos-icon name="check" [size]="15"></nostos-icon></span>
             }
-          </div>
-        }
-
-        @if (restoring() && progress().isRunning) {
-          <div class="progress-bar-container">
-            <div class="progress-step-label">
-              Step {{ progress().stepNumber }} of {{ progress().totalSteps }} &mdash; {{ progress().currentStep }}
-            </div>
-            <div class="progress-bar">
-              <div class="progress-bar-fill" [style.width.%]="progress().percentComplete"></div>
-            </div>
-            @if (showSlowNotice()) {
-              <div class="slow-notice">
-                This step may take a few minutes for large libraries.
-              </div>
+          </button>
+          <button
+            type="button"
+            class="theme-card"
+            role="radio"
+            [attr.aria-checked]="theme() === 'dark'"
+            [class.is-active]="theme() === 'dark'"
+            (click)="setTheme('dark')"
+          >
+            <span class="theme-card-icon"><nostos-icon name="moon" [size]="21"></nostos-icon></span>
+            <span class="theme-card-copy">
+              <strong>Dark</strong>
+            </span>
+            @if (theme() === 'dark') {
+              <span class="theme-card-check"><nostos-icon name="check" [size]="15"></nostos-icon></span>
             }
-          </div>
-        }
+          </button>
+        </div>
       </section>
-            </section>
-      }
+          </section>
 
-      @if (supportsManagedBackups()) {
-      <section class="manage-library-group" aria-labelledby="managed-backups-heading">
-        <h2
-          class="settings-section-title manage-library-group-title"
-          id="managed-backups-heading"
-        >
-          Backups
-        </h2>
-        <section class="settings-card" data-testid="managed-backups-card">
-          <div class="card-header">
-            <div class="card-header-copy">
-              <h2>Nightly backups</h2>
-            </div>
-          </div>
+          <section
+            class="settings-section"
+            id="library"
+            role="tabpanel"
+            aria-labelledby="library-heading"
+            [hidden]="activeSettingsSection() !== 'library'"
+          >
+            <header class="settings-section-header">
+              <h2 class="settings-section-title" id="library-heading">Library</h2>
+              <p class="settings-section-desc">Where new books come from, and how your e-reader connects to this library.</p>
+            </header>
 
-          <div class="card-body">
-            @if (managedBackupsLoading()) {
-              <p class="label-desc" role="status" aria-live="polite" data-testid="managed-backups-loading">
-                Loading backups…
-              </p>
-            } @else if (managedBackupsFailed()) {
-              <p class="label-desc" role="alert" data-testid="managed-backups-error">
-                Backups could not be loaded. Reload Settings to try again.
-              </p>
-            } @else if (managedBackups(); as listing) {
-              <p class="label-desc card-purpose" data-testid="managed-backups-retention">
-                Nostos backs up your library every night and keeps each backup for up to
-                {{ listing.retentionDays }} days.
-              </p>
+            <section class="settings-card" data-testid="book-providers-card">
+              <div class="card-header">
+                <div class="card-header-copy">
+                  <h2>Book sources</h2>
+                </div>
+              </div>
 
-              @if (latestManagedBackup(); as latest) {
-                <p class="last-backup-info" data-testid="managed-backups-latest">
-                  Last backup {{ latest.createdAtUtc | date:'medium' }}
+              <div class="card-body">
+                <p class="label-desc card-purpose" data-testid="book-providers-purpose">
+                  {{ copyProviders.intro }}
                 </p>
 
-                @if (supportsManagedRestore()) {
-                  <button
-                    appButton
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    data-testid="managed-backups-toggle"
-                    aria-controls="managed-backups-list"
-                    [attr.aria-expanded]="managedBackupsExpanded()"
-                    (click)="managedBackupsExpanded.set(!managedBackupsExpanded())"
-                  >
-                    <nostos-icon
-                      [name]="managedBackupsExpanded() ? 'caret-up' : 'caret-down'"
-                      [size]="14"
-                    ></nostos-icon>
-                    Restore from a backup
-                  </button>
+                @if (providerSettingsLoading()) {
+                  <div class="setting-row" data-testid="book-providers-loading">
+                    <div class="setting-label">
+                      <span class="label-text">{{ copyProviders.loading }}</span>
+                    </div>
+                  </div>
+                } @else if (providerSettingsError()) {
+                  <div class="setting-row" data-testid="book-providers-load-failed">
+                    <div class="setting-label">
+                      <span class="label-text">{{ copyProviders.loadFailed }}</span>
+                      <span class="label-desc">{{ copyProviders.loadFailedHelp }}</span>
+                    </div>
+                  </div>
+                } @else if (providerSettings().length === 0) {
+                  <div class="setting-row" data-testid="book-providers-empty">
+                    <div class="setting-label">
+                      <span class="label-text">{{ copyProviders.empty }}</span>
+                    </div>
+                  </div>
+                } @else {
+                  @for (provider of providerSettings(); track provider.id) {
+                    <div class="setting-row" [attr.data-testid]="'provider-row-' + provider.id">
+                      <div class="setting-label">
+                        <span class="label-text">{{ provider.displayName }}</span>
+                        @if (provider.description) {
+                          <span class="label-desc">{{ provider.description }}</span>
+                        }
+                        <span class="provider-capabilities">
+                          @for (capability of provider.capabilities; track capability) {
+                            <span appBadge>{{ capability }}</span>
+                          }
+                        </span>
+                        @if (provider.rightsNotice) {
+                          <span class="label-desc provider-rights">{{ provider.rightsNotice }}</span>
+                        }
+                      </div>
 
-                  @if (managedBackupsExpanded()) {
-                    <div
-                      class="history-list"
-                      id="managed-backups-list"
-                      role="list"
-                      aria-label="Nightly managed backups"
-                    >
-                      @for (backup of listing.backups; track backup.id) {
-                        <div class="history-item" role="listitem" data-testid="managed-backup">
-                          <div class="history-info">
-                            <span class="history-date">{{ backup.createdAtUtc | date:'medium' }}</span>
-                          </div>
-                          <div class="history-actions">
-                            <button
-                              appButton
-                              type="button"
-                              variant="secondary"
-                              size="sm"
-                              data-testid="managed-backup-restore"
-                              [disabled]="managedRestoreBusy() || managedRestoreUncertain() || managedBackupsLoading()"
-                              (click)="requestManagedRestore(backup.id)"
-                            >
-                              Restore
-                            </button>
-                          </div>
-                        </div>
-                      }
+                      <label appSwitch>
+                        <input
+                          type="checkbox"
+                          [checked]="provider.enabled"
+                          [disabled]="providerSavingIds().has(provider.id)"
+                          (change)="setProviderEnabled(provider, $event)"
+                          [attr.aria-label]="(provider.enabled ? 'Disable ' : 'Enable ') + provider.displayName"
+                          [attr.data-testid]="'provider-toggle-' + provider.id"
+                        >
+                      </label>
                     </div>
                   }
                 }
-              } @else {
-                <p class="empty-state" data-testid="managed-backups-empty">
-                  No nightly backups are available yet.
-                </p>
-              }
-            }
 
-            @if (managedRestoreError(); as error) {
-              <p
-                class="label-desc"
-                role="alert"
-                data-testid="managed-restore-error"
-              >
-                {{ error }}
-              </p>
-            }
-
-            @if (managedRestoreBusy()) {
-              <p
-                class="label-desc"
-                role="status"
-                aria-live="polite"
-                data-testid="managed-restore-progress"
-              >
-                Restoring your library… Nostos is preparing and verifying
-                the backup before activation. This may take several minutes.
-                No percentage is available.
-              </p>
-            }
-          </div>
-        </section>
-      </section>
-      }
-
-      @if (supportsLibraryMigration()) {
-      <section class="manage-library-group" aria-labelledby="manage-library-move-heading">
-      <h2
-        class="settings-section-title manage-library-group-title"
-        id="manage-library-move-heading"
-      >
-        Move to another Nostos
-      </h2>
-      <!-- Portable library transfer is deliberately separate from the local
-           operational Backup above: these archives move a library between
-           Nostos installations, they do not recover this installation. -->
-      <section
-        class="settings-card"
-        data-testid="library-transfer-card"
-        aria-labelledby="library-transfer-heading"
-      >
-        <div class="card-header">
-          <div class="card-header-copy">
-            <h2 id="library-transfer-heading">Move your library</h2>
-          </div>
-        </div>
-
-        <div class="card-body">
-          <p class="label-desc card-purpose" data-testid="library-transfer-purpose">
-            Portable library archives are for moving your library between Nostos installations.
-          </p>
-          <app-library-transfer-host
-            [supportsSafeActivation]="supportsSafeActivation()"
-            [focusImport]="isImportSelected()"
-            (importCompleted)="onLibraryTransferCompleted()"
-          />
-        </div>
-      </section>
-      </section>
-      } @else if (supportsCloudPortableExport()) {
-      <section class="manage-library-group" aria-labelledby="manage-library-export-heading">
-      <h2
-        class="settings-section-title manage-library-group-title"
-        id="manage-library-export-heading"
-      >
-        Move to another Nostos
-      </h2>
-      <section class="settings-card" data-testid="cloud-portable-export-card">
-        <div class="card-header">
-          <div class="card-header-copy">
-            <h2>Data export</h2>
-          </div>
-        </div>
-
-        <div class="card-body">
-          @if (showFirstRunCloudImport()) {
-            <section
-              #firstRunCloudImport
-              class="first-run-cloud-import"
-              [class.is-selected]="isImportSelected()"
-              id="manage-library-import-entry"
-              data-testid="first-run-cloud-import"
-              tabindex="-1"
-              aria-label="Import an existing Nostos library"
-            >
-              <div class="setting-row">
-                <div class="setting-label">
-                  <span class="label-text">Import an existing Nostos library</span>
-                  <span class="label-desc">Choose the portable .nostos archive you want to bring into this new library.</span>
-                  @if (cloudEntry.actionError(); as importError) {
-                    <span class="label-desc portable-export-status is-error" role="alert">{{ importError }}</span>
-                  }
-                </div>
-                <input
-                  #firstRunImportInput
-                  type="file"
-                  accept=".nostos,application/vnd.nostos.portable+zip"
-                  (change)="importFirstRunArchive($event)"
-                  data-testid="first-run-cloud-import-file"
-                  hidden
-                >
-                <button
-                  appButton
-                  variant="secondary"
-                  type="button"
-                  data-testid="first-run-cloud-import-open"
-                  [disabled]="cloudEntry.actionPending()"
-                  [busy]="cloudEntry.actionPending()"
-                  (click)="openFirstRunImportPicker()"
-                >
-                  @if (cloudEntry.actionPending()) {
-                    <nostos-icon name="circle-notch" [size]="16" class="spin"></nostos-icon>
-                    Importing…
-                  } @else {
-                    <nostos-icon name="upload-simple" [size]="16"></nostos-icon>
-                    Choose archive
-                  }
-                </button>
+                @if (providerSettingsSaveFailed()) {
+                  <div class="setting-row" data-testid="book-providers-save-failed" role="alert">
+                    <div class="setting-label">
+                      <span class="label-desc">{{ copyProviders.saveFailed }}</span>
+                    </div>
+                  </div>
+                }
               </div>
             </section>
-          }
 
-          <div class="setting-row">
-            <div class="setting-label">
-              <span class="label-text">Your complete Nostos archive</span>
-              <span class="label-desc">Download one portable .nostos file containing your library, notes, Writing Studio content, covers, and stored EPUB, PDF, and audiobook files. You can import it into a fresh Nostos installation.</span>
-              @if (portableExportBusy()) {
-                <span class="label-desc portable-export-status" aria-live="polite">
-                  @if (portableExportProgress() !== null) {
-                    Downloading your archive — {{ portableExportProgress() }}%
-                  } @else {
-                    Preparing your archive. Larger libraries can take a little longer.
-                  }
-                </span>
-              }
-              @if (portableExportError(); as exportError) {
-                <span class="label-desc portable-export-status is-error" role="alert">{{ exportError }}</span>
-              }
-            </div>
-
-            <button
-              appButton
-              variant="secondary"
-              class="portable-export-action"
-              data-testid="cloud-portable-export-action"
-              [disabled]="portableExportBusy()"
-              [busy]="portableExportBusy()"
-              (click)="exportAllNostosData()"
-            >
-              @if (portableExportBusy()) {
-                <nostos-icon name="circle-notch" [size]="16" class="spin"></nostos-icon>
-                Exporting…
-              } @else {
-                <nostos-icon name="download-simple" [size]="16"></nostos-icon>
-                Export all my Nostos data
-              }
-            </button>
-          </div>
-        </div>
-      </section>
-      </section>
-            }
-            </div>
-            }
-
-            @if (!isManageLibraryPage) {
       @if (supportsEreaderAccess()) {
       <!-- E-reader access is one product capability with deployment-specific
            connection models: private-network SelfHosted or managed Cloud credentials. -->
@@ -915,161 +488,7 @@
           </div>
         </div>
       </section>
-            }
-
           </section>
-          }
-
-          <section
-            class="settings-section"
-            id="providers"
-            role="tabpanel"
-            aria-labelledby="providers-heading"
-            [hidden]="activeSettingsSection() !== 'providers'"
-          >
-            <h2 class="settings-section-title" id="providers-heading">Book providers</h2>
-
-            <section class="settings-card" data-testid="book-providers-card">
-              <div class="card-header">
-                <div class="card-header-copy">
-                  <h2>Sources</h2>
-                </div>
-              </div>
-
-              <div class="card-body">
-                <p class="label-desc card-purpose" data-testid="book-providers-purpose">
-                  {{ copyProviders.intro }}
-                </p>
-
-                @if (providerSettingsLoading()) {
-                  <div class="setting-row" data-testid="book-providers-loading">
-                    <div class="setting-label">
-                      <span class="label-text">{{ copyProviders.loading }}</span>
-                    </div>
-                  </div>
-                } @else if (providerSettingsError()) {
-                  <div class="setting-row" data-testid="book-providers-load-failed">
-                    <div class="setting-label">
-                      <span class="label-text">{{ copyProviders.loadFailed }}</span>
-                      <span class="label-desc">{{ copyProviders.loadFailedHelp }}</span>
-                    </div>
-                  </div>
-                } @else if (providerSettings().length === 0) {
-                  <div class="setting-row" data-testid="book-providers-empty">
-                    <div class="setting-label">
-                      <span class="label-text">{{ copyProviders.empty }}</span>
-                    </div>
-                  </div>
-                } @else {
-                  @for (provider of providerSettings(); track provider.id) {
-                    <div class="setting-row" [attr.data-testid]="'provider-row-' + provider.id">
-                      <div class="setting-label">
-                        <span class="label-text">{{ provider.displayName }}</span>
-                        @if (provider.description) {
-                          <span class="label-desc">{{ provider.description }}</span>
-                        }
-                        <span class="provider-capabilities">
-                          @for (capability of provider.capabilities; track capability) {
-                            <span appBadge>{{ capability }}</span>
-                          }
-                        </span>
-                        @if (provider.rightsNotice) {
-                          <span class="label-desc provider-rights">{{ provider.rightsNotice }}</span>
-                        }
-                      </div>
-
-                      <label appSwitch>
-                        <input
-                          type="checkbox"
-                          [checked]="provider.enabled"
-                          [disabled]="providerSavingIds().has(provider.id)"
-                          (change)="setProviderEnabled(provider, $event)"
-                          [attr.aria-label]="(provider.enabled ? 'Disable ' : 'Enable ') + provider.displayName"
-                          [attr.data-testid]="'provider-toggle-' + provider.id"
-                        >
-                      </label>
-                    </div>
-                  }
-                }
-
-                @if (providerSettingsSaveFailed()) {
-                  <div class="setting-row" data-testid="book-providers-save-failed" role="alert">
-                    <div class="setting-label">
-                      <span class="label-desc">{{ copyProviders.saveFailed }}</span>
-                    </div>
-                  </div>
-                }
-              </div>
-            </section>
-          </section>
-
-          @if (isCloud()) {
-          <section
-            class="settings-section"
-            id="account"
-            role="tabpanel"
-            aria-labelledby="account-heading"
-            [hidden]="activeSettingsSection() !== 'account'"
-          >
-            <h2 class="settings-section-title" id="account-heading">Account</h2>
-            <section class="settings-card" data-testid="cloud-account-settings">
-              <div class="card-header">
-                <div class="card-header-copy">
-                  <h2>Cloud account</h2>
-                </div>
-              </div>
-              <div class="card-body">
-                <div class="setting-row">
-                  <div class="setting-label">
-                    <span class="label-text">
-                      {{ cloudSession()?.account?.displayName || cloudSession()?.account?.email || 'Signed in' }}
-                    </span>
-                    @if (cloudSession()?.account?.email) {
-                      <span class="label-desc">{{ cloudSession()?.account?.email }}</span>
-                    } @else {
-                      <span class="label-desc">Authenticated with your Nostos Cloud account.</span>
-                    }
-                  </div>
-                </div>
-
-                @if (cloudAccountManagementUrl(); as accountUrl) {
-                  <div class="setting-row" data-testid="cloud-account-management">
-                    <div class="setting-label">
-                      <span class="label-text">Account & billing</span>
-                      <span class="label-desc">Manage your hosted account, subscription, and purchases on nostos.page.</span>
-                    </div>
-                    <a
-                      appButton
-                      variant="secondary"
-                      [href]="accountUrl"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      data-testid="cloud-account-management-link"
-                    >
-                      Manage account & billing ↗
-                    </a>
-                  </div>
-                }
-
-                <div class="setting-row">
-                  <div class="setting-label">
-                    <span class="label-text">Session</span>
-                    <span class="label-desc">Sign out of this Nostos app session.</span>
-                  </div>
-                  <button appButton variant="secondary" type="button" (click)="signOut()">
-                    Sign out
-                  </button>
-                </div>
-
-                @if (supportsAccountDeletion()) {
-                  <app-cloud-account-deletion-settings
-                    (pending)="showAccountDeletionPending($event)"
-                  />
-                }
-              </div>
-            </section>
-          </section>
-          }
 
           <section
             class="settings-section"
@@ -1078,7 +497,10 @@
             aria-labelledby="assistant-heading"
             [hidden]="activeSettingsSection() !== 'assistant'"
           >
-            <h2 class="settings-section-title" id="assistant-heading">Assistant</h2>
+            <header class="settings-section-header">
+              <h2 class="settings-section-title" id="assistant-heading">Assistant</h2>
+              <p class="settings-section-desc">How Ask Nostos appears while you read and how it saves your thoughts.</p>
+            </header>
 
       <!-- Reading assistant (W1). Availability is the server's to decide; this
            toggle is user intent only. When unavailable it renders off and
@@ -1089,13 +511,6 @@
           <div class="card-header-copy">
             <h2>Reading assistant</h2>
           </div>
-          <span
-            appBadge
-            [dot]="true"
-            [tone]="assistantAvailable() && assistantEnabled() ? 'success' : 'neutral'"
-          >
-            {{ assistantAvailable() ? (assistantEnabled() ? 'On' : 'Off') : 'Unavailable' }}
-          </span>
         </div>
 
         <div class="card-body">
@@ -1251,8 +666,21 @@
         </div>
       </section>
       }
+          </section>
 
-      @if (canConfigureAiProvider()) {
+          @if (canConfigureAiProvider()) {
+          <section
+            class="settings-section"
+            id="connections"
+            role="tabpanel"
+            aria-labelledby="connections-heading"
+            [hidden]="activeSettingsSection() !== 'connections'"
+          >
+            <header class="settings-section-header">
+              <h2 class="settings-section-title" id="connections-heading">AI connections</h2>
+              <p class="settings-section-desc">The endpoints this server calls for the assistant, transcription and search.</p>
+            </header>
+
       <!-- AI provider: the LLM and voice-STT endpoints, moved out of
            appsettings.json. Both sub-sections share one Save; the API key is
            write-only, so the password field is never seeded from the server and
@@ -1879,62 +1307,627 @@
           </div>
         }
       </section>
-      }
-
           </section>
+          }
 
+          @if (isManageLibraryPage) {
           <section
             class="settings-section"
-            id="appearance"
+            id="data"
             role="tabpanel"
-            aria-labelledby="appearance-heading"
-            [hidden]="activeSettingsSection() !== 'appearance'"
+            aria-labelledby="manage-library-page-heading"
+            data-testid="manage-library-page"
           >
-            <h2 class="settings-section-title" id="appearance-heading">Appearance</h2>
+            <header class="settings-section-header">
+              <h2 class="settings-section-title" id="manage-library-page-heading">Backups &amp; data</h2>
+              <p class="settings-section-desc" data-testid="manage-library-summary">{{ manageLibrarySummary() }}</p>
+            </header>
 
+            <div class="manage-library-groups">
+            @if (supportsLocalBackupConfiguration()) {
+            <section class="manage-library-group" aria-labelledby="manage-library-protect-heading">
+            <h2
+              class="settings-section-title manage-library-group-title"
+              id="manage-library-protect-heading"
+            >
+              Protect this installation
+            </h2>
+            <section class="settings-card">
+        <div class="card-header">
+          <div class="card-header-copy">
+            <h2>Backup</h2>
+          </div>
+          <button
+            appButton variant="primary"
+            [disabled]="backingUp()"
+            [busy]="backingUp()"
+            (click)="triggerBackup()"
+          >
+            @if (backingUp()) {
+              <nostos-icon name="circle-notch" [size]="16" class="spin"></nostos-icon>
+              Backing up...
+            } @else {
+              <nostos-icon name="arrows-clockwise" [size]="16"></nostos-icon>
+              Back up now
+            }
+          </button>
+        </div>
+
+        <div class="card-body">
+          @if (supportsLibraryMigration()) {
+            <p class="label-desc card-purpose" data-testid="backup-purpose">
+              Backups are for recovering this SelfHosted installation. They are not portable
+              library exports.
+            </p>
+          }
+          <!-- Enable Toggle -->
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="label-text">Automatic backup</span>
+              @if (settings().isEnabled) {
+                <span class="label-desc">Backups are created automatically every {{ formatInterval(settings().intervalHours) }}.</span>
+              } @else {
+                <span class="label-desc">When turned on, the first backup will run within 5 minutes, then every {{ formatInterval(settings().intervalHours) }} thereafter.</span>
+              }
+            </div>
+            <label appSwitch>
+              <input
+                type="checkbox"
+                [checked]="settings().isEnabled"
+                (change)="toggleEnabled($event)"
+                aria-label="Automatic backup"
+              >
+            </label>
+          </div>
+
+          <!-- Include Book Files -->
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="label-text">Include book files</span>
+              <span class="label-desc">Include EPUB, PDF, and audio files in backups. Makes archives much larger but ensures full recovery.</span>
+            </div>
+            <label appSwitch>
+              <input
+                type="checkbox"
+                [checked]="settings().includeBookFiles"
+                (change)="toggleBookFiles($event)"
+                aria-label="Include book files"
+              >
+            </label>
+          </div>
+
+          <!-- Schedule -->
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="label-text">Backup frequency</span>
+              <span class="label-desc">How often to create automatic backups.</span>
+            </div>
+            <app-dropdown
+              class="select-sm"
+              controlSize="compact"
+              ariaLabel="Backup frequency"
+              [options]="backupIntervalOptions"
+              [value]="settings().intervalHours.toString()"
+              (valueChange)="changeInterval($event)"
+            />
+          </div>
+
+          <!-- Max Backups -->
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="label-text">Backups to keep</span>
+              <span class="label-desc">Oldest backups will be automatically deleted when this limit is reached.</span>
+            </div>
+            <app-dropdown
+              class="select-sm"
+              controlSize="compact"
+              ariaLabel="Max backups"
+              [options]="maxBackupOptions"
+              [value]="settings().maxBackups.toString()"
+              (valueChange)="changeMaxBackups($event)"
+            />
+          </div>
+
+          @if (backingUp() && progress().isRunning) {
+            <div class="progress-bar-container">
+              <div class="progress-step-label">
+                Step {{ progress().stepNumber }} of {{ progress().totalSteps }} &mdash; {{ progress().currentStep }}
+              </div>
+              <div class="progress-bar">
+                <div class="progress-bar-fill" [style.width.%]="progress().percentComplete"></div>
+              </div>
+              @if (showSlowNotice()) {
+                <div class="slow-notice">
+                  This step may take a few minutes for large libraries.
+                </div>
+              }
+            </div>
+          }
+
+          <!-- Import from Disk -->
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="label-text">Import from disk</span>
+              <span class="label-desc">Copy .nostos files to the Storage/backups/ folder on the server, then scan to add them to your history.</span>
+            </div>
+            <button
+              appButton variant="secondary"
+              [disabled]="importing()"
+              [busy]="importing()"
+              (click)="scanForBackups()"
+            >
+              @if (importing()) {
+                <nostos-icon name="circle-notch" [size]="16" class="spin"></nostos-icon>
+                Scanning...
+              } @else {
+                <nostos-icon name="folder-simple" [size]="16"></nostos-icon>
+                Scan for Backups
+              }
+            </button>
+          </div>
+
+          <!-- Last Backup Info -->
+          @if (status().lastBackupAt) {
+            <div class="last-backup-info">
+              Last backup: {{ status().lastBackupAt | date:'medium' }}
+              <span
+                appBadge
+                [tone]="status().lastBackupStatus === 'Completed' ? 'success' : 'danger'"
+              >
+                {{ status().lastBackupStatus }}
+              </span>
+            </div>
+          }
+        </div>
+      </section>
+
+      <!-- Backup History -->
       <section class="settings-card">
         <div class="card-header">
           <div class="card-header-copy">
-            <h2>Colour theme</h2>
+            <h2>Backup history</h2>
+          </div>
+          <span appBadge>{{ history().length }}</span>
+        </div>
+
+        @if (history().length === 0) {
+          <div class="empty-state">
+            No backups yet. Create your first backup to get started.
+          </div>
+        } @else {
+          <div class="card-body">
+            <button
+              appButton
+              type="button"
+              variant="ghost"
+              size="sm"
+              data-testid="backup-history-toggle"
+              aria-controls="backup-history-list"
+              [attr.aria-expanded]="historyExpanded()"
+              (click)="historyExpanded.set(!historyExpanded())"
+            >
+              <nostos-icon
+                [name]="historyExpanded() ? 'caret-up' : 'caret-down'"
+                [size]="14"
+              ></nostos-icon>
+              {{ historyExpanded() ? 'Hide backups' : 'Show backups' }}
+            </button>
+          </div>
+        }
+
+        @if (history().length > 0 && historyExpanded()) {
+          <div class="history-list" id="backup-history-list">
+            @for (item of history(); track item.id) {
+              <div class="history-item">
+                <div class="history-info">
+                  <span class="history-date">{{ item.createdAt | date:'medium' }}</span>
+                  <span class="history-meta">
+                    {{ formatSize(item.sizeBytes) }}
+                    @if (item.includeBookFiles) {
+                      &middot; with files
+                    } @else {
+                      &middot; metadata only
+                    }
+                    @if (item.errorMessage) {
+                      &middot; <span class="history-error">{{ item.errorMessage }}</span>
+                    }
+                  </span>
+                </div>
+                <div class="history-actions">
+                  <span
+                    appBadge
+                    [tone]="item.status === 'Completed' ? 'success' : item.status === 'Failed' ? 'danger' : 'neutral'"
+                  >
+                    {{ item.status }}
+                  </span>
+                  @if (item.status === 'Completed') {
+                    <button
+                      appIconButton
+                      icon="download-simple"
+                      size="xs"
+                      [glyphSize]="14"
+                      (click)="downloadBackup(item.id)"
+                      aria-label="Download archive"
+                      title="Download archive"
+                    ></button>
+                    <button appButton variant="secondary" size="sm" (click)="restoreBackup(item.id)" [disabled]="restoring()" title="Restore from this backup">
+                      <nostos-icon name="arrows-clockwise" [size]="14"></nostos-icon>
+                      Restore
+                    </button>
+                  }
+                  <button
+                    appIconButton
+                    icon="trash"
+                    size="xs"
+                    tone="danger"
+                    [glyphSize]="14"
+                    (click)="deleteBackup(item.id)"
+                    aria-label="Delete backup"
+                    title="Delete backup"
+                  ></button>
+                </div>
+              </div>
+            }
+          </div>
+        }
+
+        @if (restoring() && progress().isRunning) {
+          <div class="progress-bar-container">
+            <div class="progress-step-label">
+              Step {{ progress().stepNumber }} of {{ progress().totalSteps }} &mdash; {{ progress().currentStep }}
+            </div>
+            <div class="progress-bar">
+              <div class="progress-bar-fill" [style.width.%]="progress().percentComplete"></div>
+            </div>
+            @if (showSlowNotice()) {
+              <div class="slow-notice">
+                This step may take a few minutes for large libraries.
+              </div>
+            }
+          </div>
+        }
+      </section>
+            </section>
+      }
+
+      @if (supportsManagedBackups()) {
+      <section class="manage-library-group" aria-labelledby="managed-backups-heading">
+        <h2
+          class="settings-section-title manage-library-group-title"
+          id="managed-backups-heading"
+        >
+          Backups
+        </h2>
+        <section class="settings-card" data-testid="managed-backups-card">
+          <div class="card-header">
+            <div class="card-header-copy">
+              <h2>Nightly backups</h2>
+            </div>
+          </div>
+
+          <div class="card-body">
+            @if (managedBackupsLoading()) {
+              <p class="label-desc" role="status" aria-live="polite" data-testid="managed-backups-loading">
+                Loading backups…
+              </p>
+            } @else if (managedBackupsFailed()) {
+              <p class="label-desc" role="alert" data-testid="managed-backups-error">
+                Backups could not be loaded. Reload Settings to try again.
+              </p>
+            } @else if (managedBackups(); as listing) {
+              <p class="label-desc card-purpose" data-testid="managed-backups-retention">
+                Nostos backs up your library every night and keeps each backup for up to
+                {{ listing.retentionDays }} days.
+              </p>
+
+              @if (latestManagedBackup(); as latest) {
+                <p class="last-backup-info" data-testid="managed-backups-latest">
+                  Last backup {{ latest.createdAtUtc | date:'medium' }}
+                </p>
+
+                @if (supportsManagedRestore()) {
+                  <button
+                    appButton
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    data-testid="managed-backups-toggle"
+                    aria-controls="managed-backups-list"
+                    [attr.aria-expanded]="managedBackupsExpanded()"
+                    (click)="managedBackupsExpanded.set(!managedBackupsExpanded())"
+                  >
+                    <nostos-icon
+                      [name]="managedBackupsExpanded() ? 'caret-up' : 'caret-down'"
+                      [size]="14"
+                    ></nostos-icon>
+                    Restore from a backup
+                  </button>
+
+                  @if (managedBackupsExpanded()) {
+                    <div
+                      class="history-list"
+                      id="managed-backups-list"
+                      role="list"
+                      aria-label="Nightly managed backups"
+                    >
+                      @for (backup of listing.backups; track backup.id) {
+                        <div class="history-item" role="listitem" data-testid="managed-backup">
+                          <div class="history-info">
+                            <span class="history-date">{{ backup.createdAtUtc | date:'medium' }}</span>
+                          </div>
+                          <div class="history-actions">
+                            <button
+                              appButton
+                              type="button"
+                              variant="secondary"
+                              size="sm"
+                              data-testid="managed-backup-restore"
+                              [disabled]="managedRestoreBusy() || managedRestoreUncertain() || managedBackupsLoading()"
+                              (click)="requestManagedRestore(backup.id)"
+                            >
+                              Restore
+                            </button>
+                          </div>
+                        </div>
+                      }
+                    </div>
+                  }
+                }
+              } @else {
+                <p class="empty-state" data-testid="managed-backups-empty">
+                  No nightly backups are available yet.
+                </p>
+              }
+            }
+
+            @if (managedRestoreError(); as error) {
+              <p
+                class="label-desc"
+                role="alert"
+                data-testid="managed-restore-error"
+              >
+                {{ error }}
+              </p>
+            }
+
+            @if (managedRestoreBusy()) {
+              <p
+                class="label-desc"
+                role="status"
+                aria-live="polite"
+                data-testid="managed-restore-progress"
+              >
+                Restoring your library… Nostos is preparing and verifying
+                the backup before activation. This may take several minutes.
+                No percentage is available.
+              </p>
+            }
+          </div>
+        </section>
+      </section>
+      }
+
+      @if (supportsLibraryMigration()) {
+      <section class="manage-library-group" aria-labelledby="manage-library-move-heading">
+      <h2
+        class="settings-section-title manage-library-group-title"
+        id="manage-library-move-heading"
+      >
+        Move to another Nostos
+      </h2>
+      <!-- Portable library transfer is deliberately separate from the local
+           operational Backup above: these archives move a library between
+           Nostos installations, they do not recover this installation. -->
+      <section
+        class="settings-card"
+        data-testid="library-transfer-card"
+        aria-labelledby="library-transfer-heading"
+      >
+        <div class="card-header">
+          <div class="card-header-copy">
+            <h2 id="library-transfer-heading">Move your library</h2>
           </div>
         </div>
 
-        <div class="theme-grid" role="radiogroup" aria-label="Colour theme">
-          <button
-            type="button"
-            class="theme-card"
-            role="radio"
-            [attr.aria-checked]="theme() === 'light'"
-            [class.is-active]="theme() === 'light'"
-            (click)="setTheme('light')"
-          >
-            <span class="theme-card-icon"><nostos-icon name="sun" [size]="21"></nostos-icon></span>
-            <span class="theme-card-copy">
-              <strong>Light</strong>
-            </span>
-            @if (theme() === 'light') {
-              <span class="theme-card-check"><nostos-icon name="check" [size]="15"></nostos-icon></span>
-            }
-          </button>
-          <button
-            type="button"
-            class="theme-card"
-            role="radio"
-            [attr.aria-checked]="theme() === 'dark'"
-            [class.is-active]="theme() === 'dark'"
-            (click)="setTheme('dark')"
-          >
-            <span class="theme-card-icon"><nostos-icon name="moon" [size]="21"></nostos-icon></span>
-            <span class="theme-card-copy">
-              <strong>Dark</strong>
-            </span>
-            @if (theme() === 'dark') {
-              <span class="theme-card-check"><nostos-icon name="check" [size]="15"></nostos-icon></span>
-            }
-          </button>
+        <div class="card-body">
+          <p class="label-desc card-purpose" data-testid="library-transfer-purpose">
+            Portable library archives are for moving your library between Nostos installations.
+          </p>
+          <app-library-transfer-host
+            [supportsSafeActivation]="supportsSafeActivation()"
+            [focusImport]="isImportSelected()"
+            (importCompleted)="onLibraryTransferCompleted()"
+          />
         </div>
       </section>
+      </section>
+      } @else if (supportsCloudPortableExport()) {
+      <section class="manage-library-group" aria-labelledby="manage-library-export-heading">
+      <h2
+        class="settings-section-title manage-library-group-title"
+        id="manage-library-export-heading"
+      >
+        Move to another Nostos
+      </h2>
+      <section class="settings-card" data-testid="cloud-portable-export-card">
+        <div class="card-header">
+          <div class="card-header-copy">
+            <h2>Data export</h2>
+          </div>
+        </div>
+
+        <div class="card-body">
+          @if (showFirstRunCloudImport()) {
+            <section
+              #firstRunCloudImport
+              class="first-run-cloud-import"
+              [class.is-selected]="isImportSelected()"
+              id="manage-library-import-entry"
+              data-testid="first-run-cloud-import"
+              tabindex="-1"
+              aria-label="Import an existing Nostos library"
+            >
+              <div class="setting-row">
+                <div class="setting-label">
+                  <span class="label-text">Import an existing Nostos library</span>
+                  <span class="label-desc">Choose the portable .nostos archive you want to bring into this new library.</span>
+                  @if (cloudEntry.actionError(); as importError) {
+                    <span class="label-desc portable-export-status is-error" role="alert">{{ importError }}</span>
+                  }
+                </div>
+                <input
+                  #firstRunImportInput
+                  type="file"
+                  accept=".nostos,application/vnd.nostos.portable+zip"
+                  (change)="importFirstRunArchive($event)"
+                  data-testid="first-run-cloud-import-file"
+                  hidden
+                >
+                <button
+                  appButton
+                  variant="secondary"
+                  type="button"
+                  data-testid="first-run-cloud-import-open"
+                  [disabled]="cloudEntry.actionPending()"
+                  [busy]="cloudEntry.actionPending()"
+                  (click)="openFirstRunImportPicker()"
+                >
+                  @if (cloudEntry.actionPending()) {
+                    <nostos-icon name="circle-notch" [size]="16" class="spin"></nostos-icon>
+                    Importing…
+                  } @else {
+                    <nostos-icon name="upload-simple" [size]="16"></nostos-icon>
+                    Choose archive
+                  }
+                </button>
+              </div>
+            </section>
+          }
+
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="label-text">Your complete Nostos archive</span>
+              <span class="label-desc">Download one portable .nostos file containing your library, notes, Writing Studio content, covers, and stored EPUB, PDF, and audiobook files. You can import it into a fresh Nostos installation.</span>
+              @if (portableExportBusy()) {
+                <span class="label-desc portable-export-status" aria-live="polite">
+                  @if (portableExportProgress() !== null) {
+                    Downloading your archive — {{ portableExportProgress() }}%
+                  } @else {
+                    Preparing your archive. Larger libraries can take a little longer.
+                  }
+                </span>
+              }
+              @if (portableExportError(); as exportError) {
+                <span class="label-desc portable-export-status is-error" role="alert">{{ exportError }}</span>
+              }
+            </div>
+
+            <button
+              appButton
+              variant="secondary"
+              class="portable-export-action"
+              data-testid="cloud-portable-export-action"
+              [disabled]="portableExportBusy()"
+              [busy]="portableExportBusy()"
+              (click)="exportAllNostosData()"
+            >
+              @if (portableExportBusy()) {
+                <nostos-icon name="circle-notch" [size]="16" class="spin"></nostos-icon>
+                Exporting…
+              } @else {
+                <nostos-icon name="download-simple" [size]="16"></nostos-icon>
+                Export all my Nostos data
+              }
+            </button>
+          </div>
+        </div>
+      </section>
+      </section>
+            }
+            </div>
           </section>
+          }
+
+          @if (isCloud()) {
+          <section
+            class="settings-section"
+            id="account"
+            role="tabpanel"
+            aria-labelledby="account-heading"
+            [hidden]="activeSettingsSection() !== 'account'"
+          >
+            <header class="settings-section-header">
+              <h2 class="settings-section-title" id="account-heading">Account</h2>
+              <p class="settings-section-desc">Your Nostos Cloud sign-in, plan and billing.</p>
+            </header>
+
+            <section class="settings-card" data-testid="cloud-account-settings">
+              <div class="card-header">
+                <div class="card-header-copy">
+                  <h2>Cloud account</h2>
+                </div>
+              </div>
+              <div class="card-body">
+                <div class="setting-row">
+                  <div class="setting-label">
+                    <span class="label-text">
+                      {{ cloudSession()?.account?.displayName || cloudSession()?.account?.email || 'Signed in' }}
+                    </span>
+                    @if (cloudSession()?.account?.email) {
+                      <span class="label-desc">{{ cloudSession()?.account?.email }}</span>
+                    } @else {
+                      <span class="label-desc">Authenticated with your Nostos Cloud account.</span>
+                    }
+                  </div>
+                </div>
+
+                @if (cloudAccountManagementUrl(); as accountUrl) {
+                  <div class="setting-row" data-testid="cloud-account-management">
+                    <div class="setting-label">
+                      <span class="label-text">Account & billing</span>
+                      <span class="label-desc">Manage your hosted account, subscription, and purchases on nostos.page.</span>
+                    </div>
+                    <a
+                      appButton
+                      variant="secondary"
+                      [href]="accountUrl"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      data-testid="cloud-account-management-link"
+                    >
+                      Manage account & billing ↗
+                    </a>
+                  </div>
+                }
+
+                <div class="setting-row">
+                  <div class="setting-label">
+                    <span class="label-text">Session</span>
+                    <span class="label-desc">Sign out of this Nostos app session.</span>
+                  </div>
+                  <button appButton variant="secondary" type="button" (click)="signOut()">
+                    Sign out
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            @if (supportsAccountDeletion()) {
+            <section class="settings-card settings-card--danger" data-testid="cloud-account-danger-zone">
+              <div class="card-header">
+                <div class="card-header-copy">
+                  <h2>Danger zone</h2>
+                </div>
+              </div>
+              <div class="card-body">
+                <app-cloud-account-deletion-settings
+                  (pending)="showAccountDeletionPending($event)"
+                />
+              </div>
+            </section>
+            }
+          </section>
+          }
         </main>
         }
       </div>

@@ -259,7 +259,7 @@ test('Cloud More is compact, anchored to its trigger, and closes accessibly', as
   await expect(menu).toBeVisible();
   await page.getByTestId('utility-sheet-settings').click();
   await expect(page).toHaveURL(`${fixture.baseUrl}/settings`);
-  await expect(page.getByRole('tab', { name: 'Library & data' })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'General' })).toBeVisible();
   await expect(menu).toHaveCount(0);
 });
 
