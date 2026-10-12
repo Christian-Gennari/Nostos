@@ -64,7 +64,12 @@ import {
   HttpLibraryTransferTransport,
   MIGRATION_BASE_PATH,
 } from './http-library-transfer-transport';
-import { MigrationTransportError } from './migration-transport-error';
+import {
+  MigrationTransportError,
+  abortedError,
+  parseRetryAfterMs,
+  readErrorBody,
+} from './migration-transport-error';
 
 /** How many upcoming parts one ticket window asks for (the server caps at 16). */
 export const DEFAULT_TICKET_WINDOW_PARTS = 8;
@@ -84,11 +89,6 @@ export const DEFAULT_MODE_RESOLUTION_ATTEMPTS = 4;
 
 const SHA256_PATTERN = /^[0-9a-f]{64}$/i;
 const SERVER_CODES: ReadonlySet<string> = new Set(SERVER_MIGRATION_ERROR_CODES);
-
-interface TicketErrorBody {
-  error: string;
-  message: string;
-}
 
 /** The host returned an upload target the security policy forbids. */
 export class DirectUploadTargetError extends MigrationTransportError {
@@ -319,7 +319,7 @@ export class DirectUploadLibraryTransferTransport extends HttpLibraryTransferTra
   private async loadModeWithRetry(signal?: AbortSignal): Promise<LibraryTransferMode> {
     let lastError: unknown;
     for (let attempt = 1; attempt <= this.maxModeResolutionAttempts; attempt += 1) {
-      if (signal?.aborted) throw abortedDirectError();
+      if (signal?.aborted) throw abortedError();
       try {
         const direct = await this.loadDirectUploadCapability();
         return direct ? 'direct' : 'application-server';
@@ -354,7 +354,7 @@ export class DirectUploadLibraryTransferTransport extends HttpLibraryTransferTra
     onProgress: (loaded: number, total: number) => void,
     signal: AbortSignal,
   ): Promise<MigrationChunkUploadResultDto> {
-    if (signal.aborted) throw abortedDirectError();
+    if (signal.aborted) throw abortedError();
 
     const mode =
       this.sessionModes.get(sessionId) ??
@@ -540,7 +540,7 @@ export class DirectUploadLibraryTransferTransport extends HttpLibraryTransferTra
       signal,
     };
     return this.uploadClient.upload(upload).catch((error: unknown) => {
-      if (error instanceof DirectUploadAbortedError) throw abortedDirectError();
+      if (error instanceof DirectUploadAbortedError) throw abortedError();
       if (error instanceof DirectUploadNetworkError) {
         throw new MigrationTransportError('network_error', 0, error.message, { cause: error });
       }
@@ -602,7 +602,7 @@ export class DirectUploadLibraryTransferTransport extends HttpLibraryTransferTra
       }, ms);
       const onAbort = () => {
         clearTimeout(timer);
-        reject(abortedDirectError());
+        reject(abortedError());
       };
       signal?.addEventListener('abort', onAbort, { once: true });
       if (signal?.aborted) onAbort();
@@ -621,7 +621,7 @@ export class DirectUploadLibraryTransferTransport extends HttpLibraryTransferTra
     });
     return new Promise<T>((resolve, reject) => {
       if (signal?.aborted) {
-        reject(abortedDirectError());
+        reject(abortedError());
         return;
       }
 
@@ -635,7 +635,7 @@ export class DirectUploadLibraryTransferTransport extends HttpLibraryTransferTra
         if (settled) return;
         finish();
         subscription?.unsubscribe();
-        reject(abortedDirectError());
+        reject(abortedError());
       };
 
       subscription = observable.subscribe({
@@ -752,35 +752,4 @@ function isDirectChunkValid(
 function clampWindowParts(value: number): number {
   if (!Number.isFinite(value)) return DEFAULT_TICKET_WINDOW_PARTS;
   return Math.min(MAX_TICKET_WINDOW_PARTS, Math.max(1, Math.floor(value)));
-}
-
-function readErrorBody(value: unknown): TicketErrorBody | null {
-  if (typeof value === 'string') {
-    try {
-      return readErrorBody(JSON.parse(value));
-    } catch {
-      return null;
-    }
-  }
-  if (typeof value !== 'object' || value === null) return null;
-  const record = value as Record<string, unknown>;
-  if (typeof record['error'] !== 'string') return null;
-  return {
-    error: record['error'],
-    message: typeof record['message'] === 'string' ? record['message'] : record['error'],
-  };
-}
-
-function parseRetryAfterMs(value: string | null): number | undefined {
-  if (!value) return undefined;
-  const seconds = Number(value);
-  if (Number.isFinite(seconds) && seconds >= 0) return Math.round(seconds * 1000);
-
-  const date = Date.parse(value);
-  if (Number.isNaN(date)) return undefined;
-  return Math.max(0, date - Date.now());
-}
-
-function abortedDirectError(): MigrationTransportError {
-  return new MigrationTransportError('request_aborted', 0, 'The request was aborted.');
 }

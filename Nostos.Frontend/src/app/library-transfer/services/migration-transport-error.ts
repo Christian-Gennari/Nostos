@@ -97,3 +97,42 @@ export function toTransferFailure(error: unknown): LibraryTransferFailure {
     retryable: false,
   };
 }
+
+/** The `{ error, message }` body every migration endpoint answers a failure with. */
+export interface TransportErrorBody {
+  error: string;
+  message: string;
+}
+
+/** Reads a failure body, whether Angular handed it over parsed or as text. */
+export function readErrorBody(value: unknown): TransportErrorBody | null {
+  if (typeof value === 'string') {
+    try {
+      return readErrorBody(JSON.parse(value));
+    } catch {
+      return null;
+    }
+  }
+  if (typeof value !== 'object' || value === null) return null;
+  const record = value as Record<string, unknown>;
+  if (typeof record['error'] !== 'string') return null;
+  return {
+    error: record['error'],
+    message: typeof record['message'] === 'string' ? record['message'] : record['error'],
+  };
+}
+
+/** `Retry-After` is either delay-seconds (the middleware's `5`) or an HTTP date. */
+export function parseRetryAfterMs(value: string | null): number | undefined {
+  if (!value) return undefined;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.round(seconds * 1000);
+
+  const date = Date.parse(value);
+  if (Number.isNaN(date)) return undefined;
+  return Math.max(0, date - Date.now());
+}
+
+export function abortedError(): MigrationTransportError {
+  return new MigrationTransportError('request_aborted', 0, 'The request was aborted.');
+}
