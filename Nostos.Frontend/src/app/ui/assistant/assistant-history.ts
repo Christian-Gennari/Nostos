@@ -124,7 +124,7 @@ function historyFactsFromArtifacts(artifacts: readonly AssistantTurnArtifact[]):
   };
 }
 
-function evidenceHandleKey(handle: AssistantEvidenceHandleDto): string {
+export function evidenceHandleKey(handle: AssistantEvidenceHandleDto): string {
   return [
     handle.kind,
     handle.noteId ?? '',
@@ -136,7 +136,7 @@ function evidenceHandleKey(handle: AssistantEvidenceHandleDto): string {
   ].join('|');
 }
 
-function uniqueBy<T>(values: readonly T[], key: (value: T) => string): T[] {
+export function uniqueBy<T>(values: readonly T[], key: (value: T) => string): T[] {
   const seen = new Set<string>();
   return values.filter((value) => {
     const id = key(value);

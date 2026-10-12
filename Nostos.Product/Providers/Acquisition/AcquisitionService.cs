@@ -535,7 +535,7 @@ public sealed class AcquisitionService(
             // back an HTML error page must not get stored as one: that would
             // poison the thumbnail cache and every later list render.
             using var probe = new MemoryStream(bytes);
-            var info = await Image.IdentifyAsync(probe, ct);
+            var info = await Image.IdentifyAsync(CoverImageDecoding.Options, probe, ct);
             if (info is null)
             {
                 logger.LogWarning("Cover art for {ExternalId} was not a recognisable image; skipping it.", plan.ExternalId);

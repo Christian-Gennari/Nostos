@@ -1,5 +1,3 @@
-using System.Text.Json;
-using System.Text.Json.Nodes;
 using Nostos.Shared.Dtos;
 
 namespace Nostos.Backend.Integrations.Assistant;
@@ -13,8 +11,6 @@ internal sealed class AssistantPlanExecutor(
     AssistantCapabilityRegistry registry,
     AssistantPlanStore plans)
 {
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
-
     public async Task<AssistantPlanApproveResponse> ApproveAsync(
         string? planId,
         string? approvalToken,
@@ -55,7 +51,7 @@ internal sealed class AssistantPlanExecutor(
                 PlanId: plan.PlanId,
                 Approval: new AssistantPlanApproval(plan.PlanId, plan.ApprovalToken));
 
-            var args = ParseArguments(step.ArgumentsJson);
+            var args = AssistantToolArguments.ParseElement(step.ArgumentsJson);
             var result = await registry.InvokeAsync(step.Capability, args, context, ct);
 
             results.Add(new AssistantPlanStepOutcomeDto(
@@ -87,23 +83,4 @@ internal sealed class AssistantPlanExecutor(
         plans.RecordTerminal(plan, response);
         return response;
     }
-
-
-    private static JsonObject ParseObject(string? json)
-    {
-        if (string.IsNullOrWhiteSpace(json))
-            return new JsonObject();
-
-        try
-        {
-            return JsonNode.Parse(json) as JsonObject ?? new JsonObject();
-        }
-        catch (JsonException)
-        {
-            return new JsonObject();
-        }
-    }
-
-    private static JsonElement ParseArguments(string? json) =>
-        JsonSerializer.SerializeToElement(ParseObject(json), JsonOptions);
 }

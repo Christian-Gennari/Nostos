@@ -442,6 +442,52 @@ public sealed class FileStorageServiceTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task GetBookCoverThumbnailPathAsync_RefusesACoverThatIsNotACoverFormat()
+    {
+        // The decoder is chosen from the bytes, not the name, so a file in a
+        // format no cover uses is refused even when it is named cover.jpg.
+        var bookId = Guid.NewGuid();
+        using var tiff = new MemoryStream();
+        using (var image = new Image<Rgba32>(10, 10))
+        {
+            image.SaveAsTiff(tiff);
+        }
+
+        tiff.Position = 0;
+        await _sut.SaveBookCoverAsync(bookId, tiff, "cover.jpg");
+
+        var act = () => _sut.GetBookCoverThumbnailPathAsync(bookId, 200);
+
+        await act.Should().ThrowAsync<UnknownImageFormatException>();
+        Directory.EnumerateFiles(Path.Combine(_tempDirectory, bookId.ToString()), "cover-thumb-*")
+            .Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData("webp")]
+    [InlineData("gif")]
+    [InlineData("bmp")]
+    public async Task GetBookCoverThumbnailPathAsync_StillDecodesOtherCoverFormatsUnderAJpgName(string format)
+    {
+        // Providers sometimes label one web image format as another.
+        var bookId = Guid.NewGuid();
+        using var bytes = new MemoryStream();
+        using (var image = new Image<Rgba32>(10, 10))
+        {
+            if (format == "webp") image.SaveAsWebp(bytes);
+            else if (format == "gif") image.SaveAsGif(bytes);
+            else image.SaveAsBmp(bytes);
+        }
+
+        bytes.Position = 0;
+        await _sut.SaveBookCoverAsync(bookId, bytes, "cover.jpg");
+
+        var thumbPath = await _sut.GetBookCoverThumbnailPathAsync(bookId, 200);
+
+        File.Exists(thumbPath!).Should().BeTrue();
+    }
+
     private static byte[] CreatePngBytes()
     {
         using var image = new Image<Rgba32>(10, 10);

@@ -341,23 +341,7 @@ public static class AlignmentEndpoints
                     alignment.Message);
 
             case AiUsageException usage:
-            {
-                var (code, status) = usage.Reason switch
-                {
-                    AiUsageBlockReason.AccessDenied =>
-                        ("ai_access_denied", 403),
-                    AiUsageBlockReason.RateLimited =>
-                        ("ai_rate_limited", 429),
-                    AiUsageBlockReason.LimitReached =>
-                        ("ai_usage_limit_reached", 429),
-                    AiUsageBlockReason.Disabled =>
-                        ("ai_disabled", 503),
-                    _ =>
-                        ("ai_temporarily_unavailable", 503),
-                };
-
-                return Failure(code, status, usage.Message);
-            }
+                return Failure(usage.Code, usage.StatusCode, usage.Message);
 
             case SttException stt:
             {

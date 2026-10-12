@@ -20,6 +20,24 @@ public enum AiUsageBlockReason
 public sealed class AiUsageException(AiUsageBlockReason reason, string message) : Exception(message)
 {
     public AiUsageBlockReason Reason { get; } = reason;
+
+    /// <summary>The stable error code every endpoint reports this block under.</summary>
+    public string Code => Reason switch
+    {
+        AiUsageBlockReason.AccessDenied => "ai_access_denied",
+        AiUsageBlockReason.RateLimited => "ai_rate_limited",
+        AiUsageBlockReason.LimitReached => "ai_usage_limit_reached",
+        AiUsageBlockReason.Disabled => "ai_disabled",
+        _ => "ai_temporarily_unavailable",
+    };
+
+    /// <summary>The HTTP status every endpoint answers this block with.</summary>
+    public int StatusCode => Reason switch
+    {
+        AiUsageBlockReason.AccessDenied => 403,
+        AiUsageBlockReason.RateLimited or AiUsageBlockReason.LimitReached => 429,
+        _ => 503,
+    };
 }
 
 public sealed record AiUsageLease(Guid ReservationId, AiUsageKind Kind);

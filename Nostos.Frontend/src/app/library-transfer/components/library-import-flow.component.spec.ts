@@ -381,6 +381,12 @@ class GatedStatusTransport extends DelegatingTransport {
   }
 }
 
+// Each `waitForKind` allows the coordinator five seconds, and several tests
+// wait more than once while really hashing and uploading a file. The default
+// five-second test timeout is shorter than the waits it contains, so a slow
+// runner failed the test before any wait could.
+vi.setConfig({ testTimeout: 30_000 });
+
 describe('LibraryImportFlowComponent', () => {
   afterEach(() => {
     TestBed.resetTestingModule();
