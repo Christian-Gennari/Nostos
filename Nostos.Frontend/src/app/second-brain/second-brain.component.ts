@@ -20,12 +20,7 @@ import { ToastService } from '../core/services/toast.service';
 import { CloudAuthService } from '../core/services/cloud-auth.service';
 import { DeploymentCapabilitiesService } from '../core/services/deployment-capabilities.service';
 import { NotesService } from '../core/services/notes.service';
-import {
-  Note,
-  NoteSearchHit,
-  importedNoteLocation,
-  isImportedAnchor,
-} from '../core/dtos/note.dtos';
+import { Note, NoteSearchHit } from '../core/dtos/note.dtos';
 import { ConfirmModal } from '../ui/confirm-modal/confirm-modal.component';
 import { NoteCardComponent, type NoteSourceNavigation } from '../ui/note-card.component/note-card.component';
 import { NoteCaptureDetailsComponent } from '../ui/note-capture-details/note-capture-details.component';
@@ -67,14 +62,19 @@ import {
   REVIEW_PAGE_SIZE,
   declaresTopic,
   declaredTopicNames,
+  highlightNameParts,
+  newTopicNameFor,
   normalizeSearchText,
-  searchRank,
+  noteSourceParams,
+  rankTopics,
+  withTopicReference,
   type BrainPaneMode,
   type BrainViewMode,
   type IndexSort,
   type MergeRequest,
   type NamePart,
   type NoteSort,
+  type NoteSourceParams,
   type RenameSurface,
   type SourceOption,
 } from './second-brain.helpers';
@@ -220,40 +220,9 @@ export class SecondBrain implements AfterViewChecked {
   browsePickerId = signal<string | null>(null);
   browseSaving = signal(false);
   browsePickerCandidates = computed(() => this.filterAndSortTopics(this.browsePickerQuery(), null));
-  browseNewTopicName = computed(() => {
-    const name = this.browsePickerQuery().trim();
-    if (!name || name.length > 100 || /[\[\]\r\n]/.test(name)) return null;
-    return this.topics().some((item) => item.name.toLowerCase() === name.toLowerCase())
-      ? null : name;
-  });
-  browseSourceParams(
-    note: NoteSearchHit | NoteContextDto,
-  ):
-    | { sourcePage: number }
-    | { sourceCfi: string }
-    | { sourceTime: number }
-    | { sourceNote: string }
-    | null {
-    const anchor = note.anchorVerified ? note.sourceAnchorValue?.trim() : null;
-    const kind = note.sourceAnchorKind?.toLowerCase();
-    if (kind === 'pdf_page' && anchor) {
-      const page = Number(anchor);
-      if (Number.isInteger(page) && page > 0) return { sourcePage: page };
-    }
-    if (kind === 'epub_cfi' && anchor) return { sourceCfi: anchor };
-    if (kind === 'audio_timestamp' && anchor) {
-      const sourceTime = Number(anchor);
-      if (Number.isFinite(sourceTime) && sourceTime >= 0) return { sourceTime };
-    }
-    const cfi = note.cfiRange?.trim();
-    if (cfi?.startsWith('epubcfi(')) return { sourceCfi: cfi };
-
-    // An imported highlight has no location until the reader has found it in
-    // the book, so the link names the note and the reader looks it up.
-    if (isImportedAnchor(note.sourceAnchorKind) && importedNoteLocation(note)) {
-      return { sourceNote: 'noteId' in note ? note.noteId : note.id };
-    }
-    return null;
+  browseNewTopicName = computed(() => newTopicNameFor(this.browsePickerQuery(), this.topics()));
+  browseSourceParams(note: NoteSearchHit | NoteContextDto): NoteSourceParams | null {
+    return noteSourceParams(note);
   }
 
   noteSourceNavigation(note: NoteSearchHit | NoteContextDto): NoteSourceNavigation {
@@ -316,12 +285,7 @@ export class SecondBrain implements AfterViewChecked {
   reviewPickerOpen = signal(false);
   reviewPickerQuery = signal('');
   reviewPickerTopicId = signal<string | null>(null);
-  reviewNewTopicName = computed(() => {
-    const name = this.reviewPickerQuery().trim();
-    if (!name || name.length > 100 || /[\[\]\r\n]/.test(name)) return null;
-    return this.topics().some((topic) => topic.name.toLowerCase() === name.toLowerCase())
-      ? null : name;
-  });
+  reviewNewTopicName = computed(() => newTopicNameFor(this.reviewPickerQuery(), this.topics()));
   private reviewSeq = 0;
   private reviewMutated = false;
   private reviewReturnState: ReviewReturnState | null = null;
@@ -653,7 +617,7 @@ export class SecondBrain implements AfterViewChecked {
           if (this.isBrowsingNotes() && this.proposalAccepted) {
             const note = this.panelNote();
             if (note && note.id === this.proposalAccepted.noteId) {
-              const content = this.withTopicReference(note.content, this.proposalAccepted.label);
+              const content = withTopicReference(note.content, this.proposalAccepted.label);
               const saved = { ...note, content, topicNames: declaredTopicNames(content) };
               this.panelNote.set(saved);
               this.browseNotes.update((rows) => this.browseWithoutTopics()
@@ -994,7 +958,7 @@ export class SecondBrain implements AfterViewChecked {
     const note = this.panelNote();
     const topic = this.topics().find((item) => item.id === this.browsePickerId());
     if (!note || !topic || this.browseSaving()) return;
-    const content = this.withTopicReference(note.content, topic.name);
+    const content = withTopicReference(note.content, topic.name);
     if (content === note.content) { this.browsePickerOpen.set(false); return; }
     this.saveBrowseNote(note, content);
   }
@@ -1004,7 +968,7 @@ export class SecondBrain implements AfterViewChecked {
     const name = this.browseNewTopicName();
     if (!note || !name || this.browseSaving()) return;
     // The existing processor creates the topic from this same canonical link.
-    this.saveBrowseNote(note, this.withTopicReference(note.content, name));
+    this.saveBrowseNote(note, withTopicReference(note.content, name));
   }
 
   private saveBrowseNote(note: NoteSearchHit, content: string): void {
@@ -1209,30 +1173,8 @@ export class SecondBrain implements AfterViewChecked {
     }
   }
 
-  private compareForSort(a: TopicDto, b: TopicDto): number {
-    switch (this.indexSort()) {
-      case 'az':
-        return a.name.localeCompare(b.name);
-      case 'za':
-        return b.name.localeCompare(a.name);
-      default:
-        return b.usageCount - a.usageCount || a.name.localeCompare(b.name);
-    }
-  }
-
   private filterAndSortTopics(queryText: string, excludedId: string | null): TopicDto[] {
-    const query = normalizeSearchText(queryText.trim());
-    const rows = this.topics().filter(
-      (topic) => topic.id !== excludedId && (!query || normalizeSearchText(topic.name).includes(query))
-    );
-
-    return rows.sort((a, b) => {
-      if (query) {
-        const rankDifference = searchRank(a.name, query) - searchRank(b.name, query);
-        if (rankDifference !== 0) return rankDifference;
-      }
-      return this.compareForSort(a, b);
-    });
+    return rankTopics(this.topics(), queryText, excludedId, this.indexSort());
   }
 
   setSearchQuery(query: string): void {
@@ -1621,7 +1563,7 @@ export class SecondBrain implements AfterViewChecked {
   }
 
   private saveReviewLink(note: NoteSearchHit, name: string): void {
-    const content = this.withTopicReference(note.content, name);
+    const content = withTopicReference(note.content, name);
     this.reviewSaving.set(true);
     this.notesService.update(note.id, { content, selectedText: note.selectedText ?? undefined }).subscribe({
       next: () => {
@@ -1637,18 +1579,6 @@ export class SecondBrain implements AfterViewChecked {
         this.toast.error('Failed to link the note');
       },
     });
-  }
-
-  /** `content` with an explicit `[[name]]` reference, appended unless already there. */
-  private withTopicReference(content: string, name: string): string {
-    const trimmedName = name.trim();
-    const declared = declaredTopicNames(content).some(
-      (existing) => existing.toLowerCase() === trimmedName.toLowerCase()
-    );
-    if (declared) return content;
-
-    const body = content.trimEnd();
-    return body.length ? `${body}\n\n[[${trimmedName}]]` : `[[${trimmedName}]]`;
   }
 
   /**
@@ -1908,37 +1838,7 @@ export class SecondBrain implements AfterViewChecked {
   }
 
   highlightName(name: string): NamePart[] {
-    const query = normalizeSearchText(this.searchQuery().trim());
-    if (!query) return [{ text: name, highlight: false }];
-
-    const normalizedChars: string[] = [];
-    const sourceStarts: number[] = [];
-    const sourceEnds: number[] = [];
-
-    for (let index = 0; index < name.length; ) {
-      const codePoint = name.codePointAt(index);
-      if (codePoint === undefined) break;
-      const sourceChar = String.fromCodePoint(codePoint);
-      const normalizedChar = normalizeSearchText(sourceChar);
-      for (const character of normalizedChar) {
-        normalizedChars.push(character);
-        sourceStarts.push(index);
-        sourceEnds.push(index + sourceChar.length);
-      }
-      index += sourceChar.length;
-    }
-
-    const matchStart = normalizedChars.join('').indexOf(query);
-    if (matchStart < 0) return [{ text: name, highlight: false }];
-
-    const matchEnd = matchStart + query.length - 1;
-    const sourceStart = sourceStarts[matchStart];
-    const sourceEnd = sourceEnds[matchEnd];
-    return [
-      { text: name.slice(0, sourceStart), highlight: false },
-      { text: name.slice(sourceStart, sourceEnd), highlight: true },
-      { text: name.slice(sourceEnd), highlight: false },
-    ].filter((part) => part.text.length > 0);
+    return highlightNameParts(name, this.searchQuery());
   }
 
   startRename(id: string, surface: RenameSurface = 'index'): void {
