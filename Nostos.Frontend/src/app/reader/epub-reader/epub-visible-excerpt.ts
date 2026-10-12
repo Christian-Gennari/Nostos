@@ -27,8 +27,10 @@ function isReadingText(node: Text): boolean {
 
   if (!parent || !node.textContent?.trim()) return false;
 
+  // rt and rp are a ruby's pronunciation gloss and its fallback brackets:
+  // printed beside the words, never read aloud, and not part of the sentence.
   if (parent.closest(
-    'script, style, noscript, svg, math, nav, head, ' +
+    'script, style, noscript, svg, math, nav, head, rt, rp, ' +
     '[hidden], [aria-hidden="true"]',
   )) {
     return false;

@@ -91,6 +91,36 @@ interface PendingPdfHighlight {
  */
 const TOUCH_SELECTION_SETTLE_MS = 300;
 
+/** How far past a page with almost no text the excerpt for another edition may look. */
+const PDF_EXCERPT_LOOKAHEAD_PAGES = 2;
+
+/** Enough text to be one place in a book: more than a caption or a chapter title. */
+export function isSubstantialPageText(text: string): boolean {
+  return text.trim().length >= 100;
+}
+
+const UNSPACED_SCRIPT = /[\u3040-\u30ff\u3400-\u9fff\u0e00-\u0eff\u1000-\u109f\u1780-\u17ff]/g;
+
+/**
+ * The phrase the reader's search marks after a landing from another edition:
+ * the passage's last six words, or, in a script written without spaces between
+ * words, its last dozen characters. Null when the passage is too short to find.
+ */
+export function sourcePassagePhrase(excerpt: string | null | undefined): string | null {
+  const flat = (excerpt ?? '').replace(/\s+/g, ' ').trim();
+  if (!flat) return null;
+
+  const unspaced = (flat.match(UNSPACED_SCRIPT)?.length ?? 0) * 2 > flat.length;
+  if (unspaced) {
+    // A line break in the page text is a space here; the search cannot cross it.
+    const tail = flat.split(' ').filter(Boolean).at(-1) ?? '';
+    return tail.length >= 4 ? tail.slice(-12) : null;
+  }
+
+  const words = flat.split(' ').filter(Boolean);
+  return words.length >= 3 ? words.slice(-6).join(' ') : null;
+}
+
 @Component({
   selector: 'app-pdf-reader',
   standalone: true,
@@ -571,8 +601,24 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
     const doc = this.pdfDocRef;
     if (!doc || this.totalPages <= 0) return null;
 
+    // A plate or a chapter title page says too little to be found in another
+    // edition, and a caption often repeats a line of the text. Reading resumes
+    // on the next page with text, so that page speaks for this one.
+    let sparse: string | null = null;
+    const lastPage = Math.min(this.totalPages, this.currentPage + PDF_EXCERPT_LOOKAHEAD_PAGES);
+    for (let pageNumber = this.currentPage; pageNumber <= lastPage; pageNumber++) {
+      const text = await this.pageExcerptText(doc, pageNumber);
+      if (doc !== this.pdfDocRef) return null;
+      if (text && isSubstantialPageText(text)) return text.slice(0, 280);
+      if (pageNumber === this.currentPage) sparse = text;
+    }
+
+    return sparse ? sparse.slice(0, 280) : null;
+  }
+
+  private async pageExcerptText(doc: any, pageNumber: number): Promise<string | null> {
     try {
-      const page = await doc.getPage(this.currentPage);
+      const page = await doc.getPage(pageNumber);
       const content = await page.getTextContent();
       if (doc !== this.pdfDocRef) return null;
 
@@ -582,7 +628,7 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
         .replace(/\s+/g, ' ')
         .trim();
 
-      return text ? text.slice(0, 280) : null;
+      return text || null;
     } catch {
       return null;
     }
@@ -599,10 +645,9 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
     // pending highlight: it must never search a page it was not meant for.
     const generation = ++this.sourceHighlightGeneration;
 
-    const words = (excerpt ?? '').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
-    if (words.length < 3) return;
+    const phrase = sourcePassagePhrase(excerpt);
+    if (!phrase) return;
 
-    const phrase = words.slice(-6).join(' ');
     const doc = this.pdfDocRef;
     const attempt = (remaining: number) => {
       if (generation !== this.sourceHighlightGeneration) return;

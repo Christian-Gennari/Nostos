@@ -7,7 +7,7 @@ import { of, throwError } from 'rxjs';
 // runtime. Used only for static source guards (template/css/ts files).
 import { readFileSync } from 'node:fs';
 
-import { PdfReader } from './pdf-reader.component';
+import { PdfReader, isSubstantialPageText, sourcePassagePhrase } from './pdf-reader.component';
 import {
   NgxExtendedPdfViewerModule,
   NgxExtendedPdfViewerService,
@@ -538,6 +538,48 @@ describe('PdfReader shared search adapter (#761)', () => {
     });
     expect(fixture.componentInstance.searchAvailable()).toBe(false);
     expect(fixture.componentInstance.textCapability()).toBe('unknown');
+  });
+
+  describe('the excerpt sent to another edition (#844)', () => {
+    const body =
+      'The Spirit touched him on the arm, and pointed to his younger self, intent upon his reading. ' +
+      'Suddenly a man, in foreign garments, stood outside the window.';
+
+    function loadPages(pages: string[], currentPage: number): void {
+      const component = fixture.componentInstance as any;
+      component.pdfDocRef = {
+        getPage: (number: number) =>
+          Promise.resolve({
+            getTextContent: () => Promise.resolve({ items: [{ str: pages[number - 1] }] }),
+          }),
+      };
+      component.totalPages = pages.length;
+      component.currentPage = currentPage;
+    }
+
+    it('is the opening text of the page being read', async () => {
+      loadPages([body, 'next page'], 1);
+
+      expect(await fixture.componentInstance.visibleExcerpt()).toBe(body.slice(0, 280));
+    });
+
+    it('looks past a plate to the next page with text', async () => {
+      loadPages(['All the Cratchit family drew round the hearth.', '', body], 1);
+
+      expect(await fixture.componentInstance.visibleExcerpt()).toBe(body.slice(0, 280));
+    });
+
+    it('keeps a sparse page when nothing fuller follows nearby', async () => {
+      loadPages(['THE END', '', '', body], 1);
+
+      expect(await fixture.componentInstance.visibleExcerpt()).toBe('THE END');
+    });
+
+    it('is nothing for a page without a text layer and no text after it', async () => {
+      loadPages(['', ''], 1);
+
+      expect(await fixture.componentInstance.visibleExcerpt()).toBeNull();
+    });
   });
 
   it('does not start a PDF search before the viewer find engine is ready', () => {
@@ -1124,5 +1166,34 @@ describe('PdfReader highlight trust regressions (#478)', () => {
     component.currentPage = 1;
     component.onPageChange(2);
     expect(context.context().selectedText).toBeNull();
+  });
+});
+
+describe('PDF passage helpers for another edition (#844)', () => {
+  it('marks the last six words of a passage', () => {
+    expect(sourcePassagePhrase('in an easterly wind, upon  his own ramparts')).toBe(
+      'easterly wind, upon his own ramparts',
+    );
+  });
+
+  it('marks the last characters of a passage written without spaces', () => {
+    expect(sourcePassagePhrase('我要给阿Q做正传，已经不止一两年了。')).toBe('正传，已经不止一两年了。');
+    // A line break in the page text ends what the search can find.
+    expect(sourcePassagePhrase('我要给阿Q做正传， 已经不止一两年了')).toBe('已经不止一两年了');
+  });
+
+  it('marks nothing for a passage too short to find', () => {
+    expect(sourcePassagePhrase('two words')).toBeNull();
+    expect(sourcePassagePhrase('一二')).toBeNull();
+    expect(sourcePassagePhrase(null)).toBeNull();
+  });
+
+  it('tells a page of text from a caption or a chapter title', () => {
+    expect(isSubstantialPageText('All the Cratchit family drew round the hearth.')).toBe(false);
+    expect(
+      isSubstantialPageText(
+        'A CHRISTMAS CAROL he poked the fire, and extinguished the last frail spark for ever. Let me hear another sound',
+      ),
+    ).toBe(true);
   });
 });
