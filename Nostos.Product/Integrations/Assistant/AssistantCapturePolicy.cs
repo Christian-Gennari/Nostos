@@ -250,7 +250,7 @@ internal sealed class AssistantCapturePolicy(ILibraryService library)
     {
         quoteFidelity = false;
 
-        var obj = ParseObject(argumentsJson);
+        var obj = AssistantToolArguments.ParseObject(argumentsJson);
 
         // The book is the APP's, exactly like the anchor, and it is now the ONLY
         // source: the open book, or the book the user named when the capture
@@ -479,22 +479,6 @@ internal sealed class AssistantCapturePolicy(ILibraryService library)
         }
 
         return seconds.ToString(CultureInfo.InvariantCulture);
-    }
-
-
-    private static JsonObject ParseObject(string? json)
-    {
-        if (string.IsNullOrWhiteSpace(json))
-            return new JsonObject();
-
-        try
-        {
-            return JsonNode.Parse(json) as JsonObject ?? new JsonObject();
-        }
-        catch (JsonException)
-        {
-            return new JsonObject();
-        }
     }
 
     private static string? ReadString(JsonObject obj, string name)
