@@ -51,12 +51,10 @@ import {
   type BrainWritingHandoffResult,
 } from './writing-handoff/brain-writing-handoff.component';
 import { BrainTopicActions } from './brain-topic-actions';
+import { BrainTopicProposals } from './brain-topic-proposals';
 import { TopicDataCache } from './topic-data-cache';
 import { BrainTopicPickerComponent } from './topic-picker/brain-topic-picker.component';
-import {
-  BrainTopicProposalsComponent,
-  type BrainTopicProposalState,
-} from './topic-proposals/brain-topic-proposals.component';
+import { BrainTopicProposalsComponent } from './topic-proposals/brain-topic-proposals.component';
 import { BrainTopicRenameComponent } from './topic-rename/brain-topic-rename.component';
 
 import {
@@ -164,17 +162,15 @@ export class SecondBrain implements AfterViewChecked {
   /** The focused note context provider for browsing or optional review. */
   private assistantContextUnregister: (() => void) | null = null;
 
-  proposalState = signal<BrainTopicProposalState>('idle');
-  proposalCandidates = signal<AssistantSuggestionDto[]>([]);
-  proposalMessage = signal<string | null>(null);
-  proposalDetail = signal<TopicDetailDto | null>(null);
-  proposalInspectingId = signal<string | null>(null);
-  private proposalNoteKey: string | null = null;
-  private proposalNoteId: string | null = null;
-  private proposalTurnId: string | null = null;
-  private proposalLinkTurnId: string | null = null;
-  private proposalAccepted: AssistantSuggestionDto | null = null;
-  private ignoredProposalTurns = new Set<string>();
+  /** The assistant's suggested topics for the note in focus. */
+  readonly proposals: BrainTopicProposals = new BrainTopicProposals(this.assistant, this.topicsService, {
+    focusedNote: () => this.focusedNote(),
+    focusedNoteKey: () => this.focusedNoteKey(),
+    isEditingNote: () => this.browseEditing() || this.reviewEditing(),
+    linked: (accepted) => this.applyProposalLink(accepted),
+    restoreFocus: () => this.focusSuggestTopicsButton(),
+  });
+
 
   // Phase 5 consumes these outputs to open the rename and confirmation flows.
   readonly renameRequested = output<string>();
@@ -560,54 +556,8 @@ export class SecondBrain implements AfterViewChecked {
       this.removeFromReview(noteId);
       this.toast.success('Note linked to a topic');
     });
-    const assistantTurnSubscription = this.assistant.turnFinished.subscribe((event) => {
-      if (this.ignoredProposalTurns.delete(event.turnId)) {
-        this.assistant.dismissSuggestions(event.turnId);
-        return;
-      }
-      if (event.turnId === this.proposalTurnId) {
-        this.proposalTurnId = null;
-        if (!this.proposalNoteKey || this.proposalNoteKey !== this.focusedNoteKey()) return;
-        if (event.error) {
-          this.proposalState.set(/offline|allowance|disabled|unavailable|configured/i.test(event.error)
-            ? 'unavailable' : 'error');
-          this.proposalMessage.set(event.error);
-          return;
-        }
-        const note = this.focusedNote();
-        const linkedNames = new Set((note?.topicNames ?? []).map((name) => name.trim().toLocaleLowerCase()));
-        const candidates = (event.response?.suggestions ?? []).filter((item) =>
-          item.kind === 'topic' && item.noteId === note?.id && item.value && item.reason?.trim()
-          && !linkedNames.has(item.label.trim().toLocaleLowerCase())).slice(0, 3);
-        this.proposalCandidates.set(candidates);
-        this.proposalState.set(candidates.length ? 'ready' : 'empty');
-        return;
-      }
-      if (event.turnId === this.proposalLinkTurnId) {
-        this.proposalLinkTurnId = null;
-        if (this.proposalNoteKey !== this.focusedNoteKey()) return;
-        if (event.response?.executedCapabilities?.includes('notes_link_existing_topic')) {
-          if (this.isBrowsingNotes() && this.proposalAccepted) {
-            const note = this.panelNote();
-            if (note && note.id === this.proposalAccepted.noteId) {
-              const content = withTopicReference(note.content, this.proposalAccepted.label);
-              const saved = { ...note, content, topicNames: declaredTopicNames(content) };
-              this.panelNote.set(saved);
-              this.browseNotes.update((rows) => this.browseWithoutTopics()
-                ? rows.filter((row) => row.id !== saved.id)
-                : rows.map((row) => row.id === saved.id ? saved : row));
-              if (this.browseWithoutTopics()) this.browseTotal.update((total) => Math.max(0, total - 1));
-              this.refreshIndexAndStats();
-              this.toast.success('Note linked to a topic');
-            }
-          }
-          this.clearTopicProposals();
-        } else {
-          this.proposalState.set('error');
-          this.proposalMessage.set(event.error ?? 'No link was made. You can retry or link manually.');
-        }
-      }
-    });
+    const assistantTurnSubscription = this.assistant.turnFinished.subscribe((event) =>
+      this.proposals.handleTurnFinished(event));
 
     // A pending debounce and assistant receipt subscription must not outlive the surface.
     this.destroyRef.onDestroy(() => {
@@ -642,8 +592,7 @@ export class SecondBrain implements AfterViewChecked {
     });
 
     effect(() => {
-      const key = this.focusedNoteKey();
-      if (this.proposalNoteKey && this.proposalNoteKey !== key) this.clearTopicProposals();
+      this.proposals.noteFocusChanged(this.focusedNoteKey());
     });
 
     this.topicsService.list().subscribe({
@@ -1012,103 +961,31 @@ export class SecondBrain implements AfterViewChecked {
     return note ? JSON.stringify([note.id, note.content, note.selectedText, note.topicNames]) : null;
   }
 
-  /** Explicitly request the assistant's validated proposal artifact beside this note. */
-  askNostos(): void {
-    const note = this.focusedNote();
-    if (!note || this.browseEditing() || this.reviewEditing()) return;
-    this.clearTopicProposals();
-    this.proposalNoteKey = this.focusedNoteKey();
-    this.proposalNoteId = note.id;
-    const turnId = this.assistant.requestTopicProposals(note.id);
-    if (!turnId) {
-      this.proposalState.set('unavailable');
-      this.proposalMessage.set('Ask Nostos is busy or unavailable. You can still link a topic manually.');
-      return;
-    }
-    this.proposalTurnId = turnId;
-    this.proposalState.set('loading');
+  /**
+   * The assistant linked the note in the browse inspector: show the link at
+   * once instead of waiting for a reload. Review removes its own note when the
+   * assistant reports the action.
+   */
+  private applyProposalLink(accepted: AssistantSuggestionDto): void {
+    if (!this.isBrowsingNotes()) return;
+    const note = this.panelNote();
+    if (!note || note.id !== accepted.noteId) return;
+
+    const content = withTopicReference(note.content, accepted.label);
+    const saved = { ...note, content, topicNames: declaredTopicNames(content) };
+    this.panelNote.set(saved);
+    this.browseNotes.update((rows) => this.browseWithoutTopics()
+      ? rows.filter((row) => row.id !== saved.id)
+      : rows.map((row) => row.id === saved.id ? saved : row));
+    if (this.browseWithoutTopics()) this.browseTotal.update((total) => Math.max(0, total - 1));
+    this.refreshIndexAndStats();
+    this.toast.success('Note linked to a topic');
   }
 
-  cancelTopicProposals(): void {
-    this.clearTopicProposals();
+  private focusSuggestTopicsButton(): void {
     queueMicrotask(() => (this.host.nativeElement as HTMLElement).querySelector<HTMLButtonElement>(
       this.isReviewing() ? '[data-testid="review-suggest-topics"]' : '[data-testid="browse-suggest-topics"]',
     )?.focus());
-  }
-
-  private clearTopicProposals(): void {
-    if (this.proposalTurnId) {
-      this.ignoredProposalTurns.add(this.proposalTurnId);
-      if (this.assistant.activeTurnId() === this.proposalTurnId) this.assistant.stopActiveTurn();
-    }
-    this.proposalTurnId = null;
-    this.proposalLinkTurnId = null;
-    this.proposalAccepted = null;
-    if (this.proposalNoteId) this.assistant.dismissSuggestionsForNote(this.proposalNoteId);
-    this.proposalNoteId = null;
-    this.proposalNoteKey = null;
-    this.proposalCandidates.set([]);
-    this.proposalDetail.set(null);
-    this.proposalInspectingId.set(null);
-    this.proposalMessage.set(null);
-    this.proposalState.set('idle');
-  }
-
-  inspectTopicProposal(candidate: AssistantSuggestionDto): void {
-    if (!candidate.value || this.proposalNoteKey !== this.focusedNoteKey()) return;
-    if (this.proposalInspectingId() === candidate.value) {
-      this.proposalInspectingId.set(null);
-      this.proposalDetail.set(null);
-      return;
-    }
-    this.proposalMessage.set(null);
-    this.proposalDetail.set(null);
-    this.proposalInspectingId.set(candidate.value);
-    this.topicsService.get(candidate.value).subscribe({
-      next: (detail) => {
-        if (this.proposalInspectingId() === detail.id && this.proposalNoteKey === this.focusedNoteKey())
-          this.proposalDetail.set(detail);
-      },
-      error: () => {
-        if (this.proposalInspectingId() === candidate.value) {
-          this.proposalInspectingId.set(null);
-          this.proposalMessage.set('Could not load this topic. Try again or choose another.');
-        }
-      },
-    });
-  }
-
-  acceptTopicProposal(candidate: AssistantSuggestionDto): void {
-    const note = this.focusedNote();
-    if (!note || this.proposalState() !== 'ready' || this.proposalNoteKey !== this.focusedNoteKey()
-      || candidate.noteId !== note.id || !candidate.value || this.assistant.sending()) return;
-    // The server validates canonical IDs; also reject any link that became visible
-    // locally while the user was considering this proposal.
-    if (note.topicNames.some((name) => name.trim().toLocaleLowerCase() === candidate.label.trim().toLocaleLowerCase())) {
-      this.proposalCandidates.update((items) => items.filter((item) => item.value !== candidate.value));
-      if (!this.proposalCandidates().length) this.proposalState.set('empty');
-      return;
-    }
-    this.proposalAccepted = candidate;
-    const turnId = this.assistant.applySuggestion(candidate, true);
-    if (!turnId) {
-      this.proposalAccepted = null;
-      this.proposalState.set('error');
-      this.proposalMessage.set('Could not start the link. You can link manually or try again.');
-      return;
-    }
-    this.proposalLinkTurnId = turnId;
-    this.proposalState.set('linking');
-  }
-
-  canRetryProposalLink(): boolean {
-    return !!this.proposalAccepted && this.proposalNoteKey === this.focusedNoteKey();
-  }
-
-  retryProposalLink(): void {
-    if (!this.proposalAccepted || !this.canRetryProposalLink()) return;
-    this.proposalState.set('ready');
-    this.acceptTopicProposal(this.proposalAccepted);
   }
 
   openAskNostosForNote(): void {
