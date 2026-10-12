@@ -535,7 +535,21 @@
             <section class="note-inspector-actions" aria-label="Note actions">
               <ng-container *ngTemplateOutlet="noteActionGroup; context: { $implicit: note, mode: 'browse' }"></ng-container>
             </section>
-            <ng-container *ngTemplateOutlet="topicProposals"></ng-container>
+            <app-brain-topic-proposals
+              [state]="proposalState()"
+              [candidates]="proposalCandidates()"
+              [message]="proposalMessage()"
+              [detail]="proposalDetail()"
+              [inspectingId]="proposalInspectingId()"
+              [canRetryLink]="canRetryProposalLink()"
+              (dismissed)="cancelTopicProposals()"
+              (linkRetried)="retryProposalLink()"
+              (suggestionsRetried)="askNostos()"
+              (inspected)="inspectTopicProposal($event)"
+              (accepted)="acceptTopicProposal($event)"
+              (topicOpened)="openBrowseTopic($event)"
+              (questionAsked)="openAskNostosForNote()"
+            />
             }
           </div>
         </div>
@@ -660,7 +674,21 @@
             <ng-container *ngTemplateOutlet="noteActionGroup; context: { $implicit: note, mode: 'review' }"></ng-container>
           </section>
 
-          <ng-container *ngTemplateOutlet="topicProposals"></ng-container>
+          <app-brain-topic-proposals
+            [state]="proposalState()"
+            [candidates]="proposalCandidates()"
+            [message]="proposalMessage()"
+            [detail]="proposalDetail()"
+            [inspectingId]="proposalInspectingId()"
+            [canRetryLink]="canRetryProposalLink()"
+            (dismissed)="cancelTopicProposals()"
+            (linkRetried)="retryProposalLink()"
+            (suggestionsRetried)="askNostos()"
+            (inspected)="inspectTopicProposal($event)"
+            (accepted)="acceptTopicProposal($event)"
+            (topicOpened)="openBrowseTopic($event)"
+            (questionAsked)="openAskNostosForNote()"
+          />
 
           <nav class="review-pagination" aria-label="Review navigation">
             <button appButton variant="ghost" size="sm" type="button" [disabled]="!reviewCanGoBack()"
@@ -1138,83 +1166,6 @@
       </div>
       }
     </div>
-  </ng-template>
-
-  <ng-template #topicProposals>
-    @if (proposalState() !== 'idle') {
-    <section class="brain-proposals" aria-label="Suggested topics" data-testid="brain-proposals">
-      <div class="brain-proposals-heading">
-        <div>
-          <div class="super-title">Optional assistance</div>
-          <h2>Possible connections</h2>
-          <p>Existing topics that may fit this note. Nothing is linked until you choose it.</p>
-        </div>
-        <button appButton variant="ghost" size="sm" type="button" [disabled]="proposalState() === 'linking'" (click)="cancelTopicProposals()">
-          {{ proposalState() === 'loading' ? 'Cancel' : 'Dismiss' }}
-        </button>
-      </div>
-
-      @if (proposalState() === 'loading') {
-        <p class="brain-proposals-state" role="status">Looking at this note and your existing topics…</p>
-      } @else if (proposalState() === 'linking') {
-        <p class="brain-proposals-state" role="status">Confirming the link…</p>
-      } @else if (proposalState() === 'empty') {
-        <div class="brain-proposals-state" role="status">
-          <strong>No additional connections found.</strong>
-          <span>This note can keep its existing connections. You can still link a topic manually above.</span>
-        </div>
-      } @else if (proposalState() === 'unavailable' || proposalState() === 'error') {
-        <div class="brain-proposals-state" role="alert">
-          <strong>Suggestions are unavailable.</strong>
-          <span>{{ proposalMessage() || 'Suggestions could not be loaded.' }}</span>
-          <span>Manual linking still works above.</span>
-        </div>
-        <div class="brain-proposal-actions">
-          @if (canRetryProposalLink()) {
-            <button appButton variant="secondary" size="sm" type="button" (click)="retryProposalLink()">Try linking again</button>
-          }
-          <button appButton variant="ghost" size="sm" type="button" (click)="askNostos()">Try suggestions again</button>
-        </div>
-      } @else {
-        @if (proposalMessage()) { <p class="brain-proposals-state" role="alert">{{ proposalMessage() }}</p> }
-        <div class="brain-proposal-list">
-          @for (candidate of proposalCandidates(); track candidate.value) {
-            <article class="brain-proposal" data-testid="brain-proposal">
-              <div class="brain-proposal-copy">
-                <span appBadge>Suggested topic</span>
-                <h3>{{ candidate.label }}</h3>
-                <p>{{ candidate.reason }}</p>
-              </div>
-              <div class="brain-proposal-actions">
-                <button appButton variant="ghost" size="sm" type="button" (click)="inspectTopicProposal(candidate)">
-                  {{ proposalInspectingId() === candidate.value ? 'Hide evidence' : 'Inspect evidence' }}
-                </button>
-                <button appButton variant="primary" size="sm" type="button" (click)="acceptTopicProposal(candidate)">Link note</button>
-              </div>
-              @if (proposalInspectingId() === candidate.value) {
-                @if (proposalDetail(); as detail) {
-                  <div class="brain-proposal-evidence">
-                    <div class="brain-proposal-evidence-heading">
-                      <span appBadge [dot]="true">Existing evidence</span>
-                      <span>{{ detail.notes.length }} linked {{ detail.notes.length === 1 ? 'note' : 'notes' }} in “{{ detail.name }}”</span>
-                    </div>
-                    @for (evidence of detail.notes.slice(0, 2); track evidence.noteId) {
-                      <div class="brain-proposal-evidence-item">
-                        <strong>{{ evidence.bookTitle }}</strong>
-                        <p>{{ evidence.selectedText || evidence.content }}</p>
-                      </div>
-                    }
-                    <button appButton variant="ghost" size="sm" type="button" (click)="openBrowseTopic(detail.name)">Open topic</button>
-                  </div>
-                } @else { <p class="brain-proposals-state" role="status">Loading existing evidence…</p> }
-              }
-            </article>
-          }
-        </div>
-      }
-      <button appButton variant="ghost" size="sm" type="button" class="brain-proposals-question" (click)="openAskNostosForNote()">Ask Nostos a question about this note</button>
-    </section>
-    }
   </ng-template>
 
   @if (handoffNoteIds().length > 0) {

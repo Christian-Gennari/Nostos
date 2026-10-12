@@ -52,6 +52,10 @@ import {
 } from './writing-handoff/brain-writing-handoff.component';
 import { TopicDataCache } from './topic-data-cache';
 import { BrainTopicPickerComponent } from './topic-picker/brain-topic-picker.component';
+import {
+  BrainTopicProposalsComponent,
+  type BrainTopicProposalState,
+} from './topic-proposals/brain-topic-proposals.component';
 import { BrainTopicRenameComponent } from './topic-rename/brain-topic-rename.component';
 
 import {
@@ -124,6 +128,7 @@ interface ReviewReturnState {
     BrainWritingHandoffComponent,
     BrainTopicPickerComponent,
     BrainTopicRenameComponent,
+    BrainTopicProposalsComponent,
   ],
   templateUrl: './second-brain.component.html',
   styleUrls: ['./second-brain.component.css'],
@@ -159,7 +164,7 @@ export class SecondBrain implements AfterViewChecked {
   /** The focused note context provider for browsing or optional review. */
   private assistantContextUnregister: (() => void) | null = null;
 
-  proposalState = signal<'idle' | 'loading' | 'ready' | 'empty' | 'unavailable' | 'error' | 'linking'>('idle');
+  proposalState = signal<BrainTopicProposalState>('idle');
   proposalCandidates = signal<AssistantSuggestionDto[]>([]);
   proposalMessage = signal<string | null>(null);
   proposalDetail = signal<TopicDetailDto | null>(null);
