@@ -20,7 +20,7 @@
         <div class="brain-header-heading">
           <h1>Brain</h1>
           @if (isReviewing()) {
-          <span class="index-stats">{{ reviewTotal() }} {{ reviewTotal() === 1 ? 'note' : 'notes' }} without topics</span>
+          <span class="index-stats">{{ review.total() }} {{ review.total() === 1 ? 'note' : 'notes' }} without topics</span>
           } @else if (isBrowsingNotes()) {
             @if (browseLoaded()) {
             <span class="index-stats">{{ browseTotal() }} {{ browseTotal() === 1 ? 'note' : 'notes' }}</span>
@@ -127,7 +127,7 @@
 
     <aside
       class="index-col"
-      [class.mobile-hidden]="(isBrowsingNotes() && panelNote()) || (!isBrowsingNotes() && selectedId()) || (isReviewing() && reviewId())"
+      [class.mobile-hidden]="(isBrowsingNotes() && panelNote()) || (!isBrowsingNotes() && selectedId()) || (isReviewing() && review.focusId())"
       [class.map-hidden]="viewMode() === 'map'"
     >
       @if (isBrowsingNotes()) {
@@ -208,40 +208,40 @@
       <div class="brain-section-header review-section-header">
         <div class="review-section-heading">
           <h2 class="brain-section-title">Reviewing one by one</h2>
-          @if (reviewPosition(); as position) {
+          @if (review.position(); as position) {
           <span class="review-position" role="status" aria-live="polite" aria-atomic="true">
-            {{ position }} of {{ reviewTotal() }}
+            {{ position }} of {{ review.total() }}
           </span>
           }
         </div>
-        @if (!reviewId()) {
+        @if (!review.focusId()) {
         <button appButton variant="ghost" size="sm" type="button" class="review-return"
           (click)="closeReview()">Back to notes without topics</button>
         }
       </div>
 
-      <div class="index-list" role="list" aria-label="Notes with no topic" [attr.aria-busy]="reviewLoading()">
-        @if (reviewLoading() && reviewQueue().length === 0) {
+      <div class="index-list" role="list" aria-label="Notes with no topic" [attr.aria-busy]="review.loading()">
+        @if (review.loading() && review.queue().length === 0) {
         <nostos-loading-indicator class="index-loading" label="Loading notes" />
-        } @else if (reviewError() && reviewQueue().length === 0) {
+        } @else if (review.error() && review.queue().length === 0) {
         <div class="empty-index-state" role="alert">
           <p>Notes could not be loaded.</p>
-          <button appButton variant="secondary" size="sm" type="button" (click)="loadReviewPage()">Retry</button>
+          <button appButton variant="secondary" size="sm" type="button" (click)="review.loadPage()">Retry</button>
         </div>
-        } @else if (reviewQueue().length === 0) {
+        } @else if (review.queue().length === 0) {
         <div class="empty-index-state" role="status">
           <div class="empty-eyebrow">No notes here</div>
           <p>You can still browse all your saved notes.</p>
         </div>
         } @else {
-        @for (row of reviewQueue(); track row.id) {
+        @for (row of review.queue(); track row.id) {
         <div class="note-row-shell" role="listitem">
           <button
             type="button"
             class="note-row-item"
-            [class.active]="reviewNote()?.id === row.id"
+            [class.active]="review.note()?.id === row.id"
             [attr.aria-label]="'Review note from ' + (row.bookTitle || 'an unknown source')"
-            (click)="focusReviewNote(row.id)"
+            (click)="review.focusNote(row.id)"
           >
             <span class="note-row-main">
               <span class="note-row-snippet">“{{ row.snippet ? row.snippet : row.content }}”</span>
@@ -252,18 +252,18 @@
           </button>
         </div>
         }
-        @if (reviewHasMore() && !reviewError()) {
+        @if (review.hasMore() && !review.error()) {
         <button
           type="button"
           class="review-load-more"
-          [disabled]="reviewLoading()"
-          (click)="loadReviewPage()"
+          [disabled]="review.loading()"
+          (click)="review.loadPage()"
         >
-          {{ reviewLoading() ? 'Loading…' : 'Load more (' + (reviewTotal() - reviewQueue().length) + ' not shown)' }}
+          {{ review.loading() ? 'Loading…' : 'Load more (' + (review.total() - review.queue().length) + ' not shown)' }}
         </button>
         }
-        @if (reviewError()) {
-          <button appButton variant="ghost" size="sm" type="button" class="review-load-more" (click)="loadReviewPage()">Retry loading notes</button>
+        @if (review.error()) {
+          <button appButton variant="ghost" size="sm" type="button" class="review-load-more" (click)="review.loadPage()">Retry loading notes</button>
         }
         }
       </div>
@@ -444,7 +444,7 @@
 
     <section
       class="content-col"
-      [class.mobile-visible]="(isBrowsingNotes() && panelNote()) || (!isBrowsingNotes() && selectedId()) || viewMode() === 'map' || (isReviewing() && reviewId())"
+      [class.mobile-visible]="(isBrowsingNotes() && panelNote()) || (!isBrowsingNotes() && selectedId()) || viewMode() === 'map' || (isReviewing() && review.focusId())"
     >
       @if (isBrowsingNotes()) {
         @if (panelNote(); as note) {
@@ -588,8 +588,8 @@
         resolve it. Nothing here mutates the note except the two explicit actions,
         and both write only what the user confirmed.
       -->
-      @if (reviewNote(); as note) {
-      <button type="button" class="mobile-nav-header" (click)="clearReviewFocus()">
+      @if (review.note(); as note) {
+      <button type="button" class="mobile-nav-header" (click)="review.clearFocus()">
         <nostos-icon name="arrow-left" [size]="18"></nostos-icon>
         <span>Back to review list</span>
       </button>
@@ -599,12 +599,12 @@
           <div>
             <div class="review-inspector-heading">
               <span class="super-title">Reviewing one by one</span>
-              @if (reviewPosition(); as position) {
-              <span class="review-position">{{ position }} of {{ reviewTotal() }}</span>
+              @if (review.position(); as position) {
+              <span class="review-position">{{ position }} of {{ review.total() }}</span>
               }
             </div>
             <button appButton variant="ghost" size="sm" type="button" class="review-return"
-              [class.is-review-deep-link]="!!reviewId()"
+              [class.is-review-deep-link]="!!review.focusId()"
               (click)="closeReview()">Back to notes without topics</button>
             <h1 class="note-inspector-title">{{ note.bookTitle || 'An unknown source' }}</h1>
             <p class="note-inspector-context">Review is optional. Moving on does not change this note.</p>
@@ -612,22 +612,22 @@
         </header>
 
         <div class="note-inspector-content">
-          @if (reviewEditing()) {
+          @if (review.editing()) {
           <section class="note-inspector-edit" aria-labelledby="review-edit-label">
             <div id="review-edit-label" class="super-title">Edit note</div>
             <label class="visually-hidden" for="review-note-text">Note text</label>
             <app-topic-input
               id="review-note-text"
-              [ngModel]="reviewEditContent()"
-              (ngModelChange)="reviewEditContent.set($event)"
+              [ngModel]="review.editContent()"
+              (ngModelChange)="review.editContent.set($event)"
               [rows]="5"
               placeholder="Add [[Topic]] to connect this note"
             ></app-topic-input>
             <div class="note-inspector-inline-actions">
-              <button appButton variant="primary" size="sm" type="button" [disabled]="reviewSaving()"
-                (click)="saveReviewEdit()">{{ reviewSaving() ? 'Saving…' : 'Save note' }}</button>
-              <button appButton variant="ghost" size="sm" type="button" [disabled]="reviewSaving()"
-                (click)="cancelReviewEdit()">Cancel</button>
+              <button appButton variant="primary" size="sm" type="button" [disabled]="review.saving()"
+                (click)="review.saveEdit()">{{ review.saving() ? 'Saving…' : 'Save note' }}</button>
+              <button appButton variant="ghost" size="sm" type="button" [disabled]="review.saving()"
+                (click)="review.cancelEdit()">Cancel</button>
             </div>
           </section>
           } @else {
@@ -645,7 +645,7 @@
           <app-note-capture-details [note]="note" (restored)="captureRestored($event)" />
 
 
-          @if (reviewPickerOpen()) {
+          @if (review.pickerOpen()) {
           <app-brain-topic-picker
             variant="inspector"
             label="Link this note to a topic"
@@ -653,20 +653,20 @@
             closeLabel="Close topic picker"
             searchLabel="Search topics to link"
             emptyText="No topics match."
-            [confirmLabel]="reviewSaving() ? 'Linking…' : 'Link note'"
+            [confirmLabel]="review.saving() ? 'Linking…' : 'Link note'"
             [linkHint]="true"
-            [candidates]="reviewPickerCandidates()"
-            [selectedId]="reviewPickerTopicId()"
-            [confirmDisabled]="!reviewPickerTopic() || reviewSaving()"
-            [query]="reviewPickerQuery()"
-            (queryChange)="reviewPickerQuery.set($event)"
-            (chosen)="chooseReviewTopic($event)"
-            (confirmed)="confirmLinkToTopic()"
-            (closed)="closeReviewPicker()"
+            [candidates]="review.pickerCandidates()"
+            [selectedId]="review.pickerTopicId()"
+            [confirmDisabled]="!review.pickerTopic() || review.saving()"
+            [query]="review.pickerQuery()"
+            (queryChange)="review.pickerQuery.set($event)"
+            (chosen)="review.chooseTopic($event)"
+            (confirmed)="review.confirmLink()"
+            (closed)="review.closePicker()"
           >
-            @if (reviewNewTopicName(); as name) {
-              <button appButton variant="ghost" size="sm" type="button" [disabled]="reviewSaving()"
-                (click)="createReviewTopic()">Create and link “{{ name }}”</button>
+            @if (review.newTopicName(); as name) {
+              <button appButton variant="ghost" size="sm" type="button" [disabled]="review.saving()"
+                (click)="review.createTopic()">Create and link “{{ name }}”</button>
             }
           </app-brain-topic-picker>
           } @else {
@@ -691,10 +691,10 @@
           />
 
           <nav class="review-pagination" aria-label="Review navigation">
-            <button appButton variant="ghost" size="sm" type="button" [disabled]="!reviewCanGoBack()"
-              (click)="previousReviewNote()">Previous note</button>
-            <button appButton variant="ghost" size="sm" type="button" [disabled]="!reviewCanAdvance() || reviewLoading()"
-              (click)="skipReviewNote()">{{ reviewLoading() ? 'Loading…' : 'Next note' }}</button>
+            <button appButton variant="ghost" size="sm" type="button" [disabled]="!review.canGoBack()"
+              (click)="review.previous()">Previous note</button>
+            <button appButton variant="ghost" size="sm" type="button" [disabled]="!review.canAdvance() || review.loading()"
+              (click)="review.skip()">{{ review.loading() ? 'Loading…' : 'Next note' }}</button>
           </nav>
           }
           }
@@ -1116,7 +1116,7 @@
       <div class="note-inspector-inline-actions brain-note-action-row" data-testid="brain-note-action-row" aria-label="Note actions">
         @if (mode !== 'evidence') {
         <button appButton variant="primary" size="sm" type="button"
-          (click)="mode === 'review' ? openReviewPicker() : openBrowsePicker()">Link to topic</button>
+          (click)="mode === 'review' ? review.openPicker() : openBrowsePicker()">Link to topic</button>
         }
         <button appButton variant="secondary" size="sm" type="button"
           (click)="openWritingHandoff([note.id])">
