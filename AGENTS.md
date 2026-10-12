@@ -296,6 +296,15 @@ preferences.
 - `npm test` is the runner (`ng test`) — run it bare. `npx vitest run <file>`
   fails with `describe is not defined`, and `ng test --include` breaks the
   `.html` loader.
+- **This machine also serves production. Run one heavy job at a time.** A
+  frontend suite, a backend suite, a production build and a model on the GPU
+  each fit; two or three side by side have filled the swap and stalled the
+  host. Check `free -m` and `uptime` first. `npm test` is capped at four
+  workers in `vitest-base.config.ts`; do not raise it here.
+- When several suites run on the host, backend tests can fail with "The
+  configured user limit (128) on the number of inotify instances has been
+  reached". That is the host, not the change: rerun with
+  `DOTNET_hostBuilder__reloadConfigOnChange=false`.
 - **Never `npx prettier --write`** — prettier is not a dependency and this
   codebase is not formatted to it.
 
