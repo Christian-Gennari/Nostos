@@ -60,6 +60,11 @@ async function installSpeechStandIn(page: Page, theme: 'light' | 'dark'): Promis
     const synth = {
       current: null as any,
       speak(utterance: any) {
+        // The silent request that unlocks speech inside the starting tap.
+        if (!utterance.text) {
+          utterance.onend?.();
+          return;
+        }
         scope.__spoken.push({ text: utterance.text, lang: utterance.lang, rate: utterance.rate });
         this.current = utterance;
         utterance.__timer = setTimeout(() => {

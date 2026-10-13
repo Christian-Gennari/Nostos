@@ -29,7 +29,8 @@ import { Subject } from 'rxjs';
 import { debounceTime, distinctUntilChanged, filter } from 'rxjs/operators';
 
 import { PdfAnnotationManager, PageHighlight } from './pdf-annotation-manager';
-import { PdfReadAloud, languageTagFromCatalogue } from './pdf-read-aloud';
+import { PdfReadAloud } from './pdf-read-aloud';
+import { languageTagFromCatalogue } from '../read-aloud/read-aloud-language';
 import type { PageRect } from './pdf-read-aloud-text';
 import {
   isDesktopMouseSelection,

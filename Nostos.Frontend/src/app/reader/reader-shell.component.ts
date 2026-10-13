@@ -410,6 +410,7 @@ export class ReaderShell implements OnInit, OnDestroy {
     // Inside the tap: a phone only lets audio start from one, and asking the
     // server which voices it has would come too late.
     this.serverVoice.prime();
+    this.browserVoice?.prime();
     this.applyReadAloudVoices(await this.loadReadAloudServer());
     await this.readAloud.start();
   }

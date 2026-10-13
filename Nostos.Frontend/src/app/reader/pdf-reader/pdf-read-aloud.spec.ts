@@ -1,4 +1,4 @@
-import { PdfPageContent, PdfReadAloud, PdfReadAloudHost, languageTagFromCatalogue } from './pdf-read-aloud';
+import { PdfPageContent, PdfReadAloud, PdfReadAloudHost } from './pdf-read-aloud';
 import { PdfPageGeometry, PdfTextItem } from './pdf-read-aloud-text';
 
 const GEOMETRY: PdfPageGeometry = { width: 600, height: 800, transform: [1, 0, 0, -1, 0, 800] };
@@ -139,17 +139,5 @@ describe('PdfReadAloud', () => {
     readAloud.end();
     expect(calls.cleared).toBe(1);
     expect(readAloud.active).toBe(false);
-  });
-});
-
-describe('languageTagFromCatalogue', () => {
-  it('accepts a tag and a language name, and refuses to guess', () => {
-    expect(languageTagFromCatalogue('en')).toBe('en');
-    expect(languageTagFromCatalogue('pt_BR')).toBe('pt-BR');
-    expect(languageTagFromCatalogue('English')).toBe('en');
-    expect(languageTagFromCatalogue(' Italiano ')).toBe('it');
-    expect(languageTagFromCatalogue('Klingon')).toBeNull();
-    expect(languageTagFromCatalogue('')).toBeNull();
-    expect(languageTagFromCatalogue(null)).toBeNull();
   });
 });
