@@ -76,7 +76,7 @@
         </button>
 
         @if (slow() && busyEditionId() === target.edition.id) {
-        <div class="switch-outcome" role="status" data-testid="switch-edition-slow">
+        <div appNotice class="switch-outcome" role="status" data-testid="switch-edition-slow">
           <p class="switch-outcome-text">Still looking. This is taking longer than usual.</p>
           <div class="switch-outcome-actions">
             <button
@@ -94,7 +94,7 @@
 
         @if (declined(); as outcome) {
           @if (outcome.editionId === target.edition.id) {
-          <div class="switch-outcome" role="status" data-testid="switch-edition-declined">
+          <div appNotice class="switch-outcome" role="status" data-testid="switch-edition-declined">
             <p class="switch-outcome-text">{{ outcome.message }}</p>
             <div class="switch-outcome-actions">
               @if (outcome.approximateSeconds !== null) {
@@ -126,7 +126,7 @@
 
         @if (error(); as problem) {
           @if (problem.editionId === target.edition.id) {
-          <div class="switch-outcome" role="alert" data-testid="switch-edition-error">
+          <div appNotice tone="danger" class="switch-outcome" role="alert" data-testid="switch-edition-error">
             <p class="switch-outcome-text">{{ problem.message }}</p>
             <div class="switch-outcome-actions">
               <button

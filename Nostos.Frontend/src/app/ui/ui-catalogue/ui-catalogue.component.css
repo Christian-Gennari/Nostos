@@ -218,3 +218,16 @@
 .catalogue-dropdown-narrow {
   width: 9rem;
 }
+
+.catalogue-notices {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-width: 32rem;
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.catalogue-notices p {
+  margin: 0;
+}

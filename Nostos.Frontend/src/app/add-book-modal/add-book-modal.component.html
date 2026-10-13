@@ -159,11 +159,11 @@
               </section>
 
               @if (uploadProgress() !== null) {
-                <div class="upload-status" role="status">Uploading... {{ uploadProgress() }}%</div>
+                <div appNotice tone="info" class="upload-status" role="status">Uploading... {{ uploadProgress() }}%</div>
               }
 
               @if (uploadError(); as err) {
-                <div class="upload-failure" role="alert">
+                <div appNotice tone="danger" class="upload-failure" role="alert">
                   <span class="upload-failure__message">
                     <nostos-icon name="warning-circle" [size]="14"></nostos-icon>
                     {{ err }}
@@ -181,7 +181,7 @@
               }
 
               @if (existingWithFile(); as existing) {
-                <div class="existing-book" role="alert" data-testid="add-book-existing">
+                <div appNotice tone="info" class="existing-book" role="alert" data-testid="add-book-existing">
                   <span class="existing-book__message">
                     <nostos-icon name="info" [size]="14"></nostos-icon>
                     {{ existingNotice(existing) }}

@@ -20,6 +20,7 @@ import {
 } from '../library-transfer.copy';
 import { LibraryTransferProgressComponent } from './library-transfer-progress.component';
 import { ButtonComponent } from '../../ui/button/button.component';
+import { NoticeComponent } from '../../ui/notice/notice.component';
 
 const EXPIRY_FORMAT = new Intl.DateTimeFormat(undefined, {
   dateStyle: 'medium',
@@ -51,7 +52,7 @@ export function isSafeDownloadUrl(url: string | null | undefined): boolean {
   selector: 'app-library-export-flow',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ButtonComponent, LibraryTransferProgressComponent],
+  imports: [NoticeComponent, ButtonComponent, LibraryTransferProgressComponent],
   templateUrl: './library-export-flow.component.html',
   styleUrls: ['./library-transfer.shared.css', './library-export-flow.component.css'],
 })

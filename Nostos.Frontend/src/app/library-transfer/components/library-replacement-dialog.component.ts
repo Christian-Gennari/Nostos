@@ -42,12 +42,13 @@ import { ModalShell } from '../../ui/modal-shell/modal-shell.component';
 import { NostosIconComponent } from '../../ui/icon/nostos-icon.component';
 import { ButtonComponent } from '../../ui/button/button.component';
 import { DialogActionsComponent } from '../../ui/dialog-actions/dialog-actions.component';
+import { NoticeComponent } from '../../ui/notice/notice.component';
 
 @Component({
   selector: 'app-library-replacement-dialog',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [A11yModule, ModalShell, NostosIconComponent, ButtonComponent, DialogActionsComponent],
+  imports: [NoticeComponent, A11yModule, ModalShell, NostosIconComponent, ButtonComponent, DialogActionsComponent],
   templateUrl: './library-replacement-dialog.component.html',
   styleUrl: './library-replacement-dialog.component.css',
 })

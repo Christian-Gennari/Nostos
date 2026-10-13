@@ -45,13 +45,6 @@
   color: var(--color-danger);
 }
 
-.transfer-state--failed {
-  padding: 0.75rem 0.85rem;
-  border: 1px solid var(--danger-hairline);
-  border-radius: var(--radius-surface);
-  background: var(--danger-surface);
-}
-
 .transfer-state--failed .transfer-headline {
   color: var(--color-danger);
 }
@@ -66,11 +59,6 @@
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  padding: 0.7rem 0.8rem;
-  border: 1px solid var(--color-info-border);
-  border-radius: var(--radius-surface);
-  background: var(--color-info-bg);
-  color: var(--color-info);
 }
 
 .transfer-other-tab-title {
@@ -90,11 +78,6 @@
 /* Exclusive-maintenance wait: the operation is still alive and retrying. */
 .transfer-maintenance {
   margin: 0;
-  padding: 0.7rem 0.8rem;
-  border: 1px solid var(--color-info-border);
-  border-radius: var(--radius-surface);
-  background: var(--color-info-bg);
-  color: var(--color-info);
   font-size: 0.82rem;
   line-height: 1.5;
 }

@@ -101,10 +101,6 @@
 
 .replacement-error {
   margin: 0 0 0.75rem;
-  padding: 0.6rem 0.7rem;
-  border: 1px solid var(--danger-hairline);
-  border-radius: var(--radius-surface);
-  background: var(--danger-surface);
   font-size: 0.82rem;
   line-height: 1.55;
   color: var(--color-text-main);

@@ -32,6 +32,7 @@ import { LoadingIndicatorComponent } from '../ui/loading-indicator/loading-indic
 import { FormFieldComponent } from '../ui/form-field/form-field.component';
 import { InputDirective, TextareaDirective } from '../ui/form-control/form-control.directive';
 import { DropdownComponent, type DropdownOption } from '../ui/dropdown/dropdown.component';
+import { NoticeComponent } from '../ui/notice/notice.component';
 
 type AddBookIntentKind = 'upload' | 'source' | 'physical' | 'manual';
 
@@ -47,6 +48,7 @@ export interface AddBookPrefill {
   selector: 'app-add-book-modal',
   standalone: true,
   imports: [
+    NoticeComponent,
     CommonModule,
     FormsModule,
     NostosIconComponent,
