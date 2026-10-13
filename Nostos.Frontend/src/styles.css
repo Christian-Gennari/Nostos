@@ -346,6 +346,17 @@
   --radius-segment: var(--radius-action);
   --radius-segment-option: calc(var(--radius-segment) - 3px);
 
+  /* ── Popover role ──
+     Anything that floats over the page and lists choices: a dropdown's popup, a
+     menu, the command palette's results, a picker's option list, the topic
+     suggestions. The panel is a step rounder than the control that opened it,
+     and a row inside it is inset by the panel's 4px padding, so it takes the
+     concentric corner. The dropdown and the menu already drew 10px / 6px by
+     arithmetic on two unrelated tokens; the pickers and the palette drew 4px
+     and 12px. One role now owns both numbers. */
+  --radius-popover: 10px;
+  --radius-popover-item: calc(var(--radius-popover) - 4px);
+
   /* ── Dock role ──
      The floating dock is neither a card nor a control: it is a bar that floats
      over page content, so it gets its own corner rather than a step in the
