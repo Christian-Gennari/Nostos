@@ -81,7 +81,7 @@ public sealed class DeploymentConfigurationTests
     }
 
     [Fact]
-    public void External_media_is_offered_only_by_a_self_hosted_server_with_a_folder_configured()
+    public void External_media_is_offered_by_a_self_hosted_server_that_has_the_feature_and_never_by_cloud()
     {
         var selfHosted = DeploymentDescriptor.For(DeploymentMode.SelfHosted);
         var cloud = DeploymentDescriptor.For(DeploymentMode.Cloud);
@@ -90,8 +90,10 @@ public sealed class DeploymentConfigurationTests
 
         DeploymentCapabilitiesEndpoints.ToResponse(selfHosted, externalMedia: configured)
             .SupportsExternalMediaLibraries.Should().BeTrue();
+        // No folder yet: still offered, so Settings can say how to set one up.
         DeploymentCapabilitiesEndpoints.ToResponse(selfHosted, externalMedia: unconfigured)
-            .SupportsExternalMediaLibraries.Should().BeFalse();
+            .SupportsExternalMediaLibraries.Should().BeTrue();
+        // A host that does not register the feature does not offer it.
         DeploymentCapabilitiesEndpoints.ToResponse(selfHosted)
             .SupportsExternalMediaLibraries.Should().BeFalse();
         // A Cloud host never offers it, even if the feature were registered.

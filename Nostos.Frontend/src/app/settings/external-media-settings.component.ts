@@ -36,6 +36,9 @@ const POLL_MS = 1000;
 export const EXTERNAL_MEDIA_PROMISE =
   'Your original files stay where they are and are never modified or deleted by Nostos.';
 
+export const EXTERNAL_MEDIA_GUIDE_URL =
+  'https://github.com/Christian-Gennari/Nostos/blob/main/docs/external-media.md';
+
 /**
  * Settings → This server → External media (issue #843, SelfHosted only).
  *
@@ -63,6 +66,7 @@ export class ExternalMediaSettingsComponent implements OnInit {
   private readonly destroyRef = inject(DestroyRef);
 
   readonly promise = EXTERNAL_MEDIA_PROMISE;
+  readonly guideUrl = EXTERNAL_MEDIA_GUIDE_URL;
 
   readonly status = signal<ExternalMediaStatus | null>(null);
   readonly summary = signal<ExternalMediaScanSummary | null>(null);
@@ -115,12 +119,16 @@ export class ExternalMediaSettingsComponent implements OnInit {
   /** Reads everything the card shows, and keeps reading while work is running. */
   async refresh(): Promise<void> {
     try {
-      const [status, scan, importState] = await Promise.all([
-        firstValueFrom(this.api.status()),
+      const status = await firstValueFrom(this.api.status());
+      this.status.set(status);
+      // Until a folder is set up there is nothing to scan or import, and
+      // the server answers those routes with 404.
+      if (!status.configured) return;
+
+      const [scan, importState] = await Promise.all([
         firstValueFrom(this.api.scan(undefined, 0, 1)),
         firstValueFrom(this.api.importState()),
       ]);
-      this.status.set(status);
       this.summary.set(scan.summary);
       this.importState.set(importState);
       // Only a failed scan is reported from here; a message from an action

@@ -12,15 +12,16 @@ Nostos Cloud does not have this feature.
 ## Set it up
 
 The web interface cannot choose a folder. Whoever runs the server makes one
-folder visible to Nostos and names it in the configuration. It takes three
-steps, and step 1 depends on how you run Nostos.
+folder visible to Nostos, once. **Settings → This server → External media** is
+always there on a SelfHosted server and shows these steps until a folder is
+available.
 
 ### Step 1: give Nostos the folder
 
 #### Docker Compose
 
-Add the two marked lines to the `nostos` service in your `compose.yml`. The
-[Compose file in this repository](../compose.yml) has them ready to uncomment.
+Add one line under `volumes` for the `nostos` service. The
+[Compose file in this repository](../compose.yml) has it ready to uncomment.
 
 ```yaml
 services:
@@ -30,23 +31,19 @@ services:
       - "5099:8080"
     volumes:
       - nostos-data:/data
-      - /mnt/audiobooks:/external/media:ro      # add: your folder, read-only
-    environment:
-      ExternalMedia__Root: /external/media      # add: where Nostos finds it
+      - /mnt/audiobooks:/external/media:ro      # add this line
     restart: unless-stopped
 
 volumes:
   nostos-data:
 ```
 
-- Replace `/mnt/audiobooks` with the folder on your machine. Leave
-  `/external/media` as it is: that is the folder's name inside the container,
-  and the two lines must agree on it.
+- Replace `/mnt/audiobooks` with the folder on your machine. Keep
+  `/external/media` exactly as written: that is where the Nostos image looks.
 - `:ro` mounts the folder read-only. Nostos never writes to it, and with `:ro`
   the operating system would refuse even if it tried.
 - Keep the `nostos-data:/data` line. Nostos stores its database, notes, covers
   and backups there and needs to write to it.
-- `ExternalMedia__Root` has two underscores.
 
 Apply it:
 
@@ -56,7 +53,7 @@ docker compose up -d
 
 #### docker run
 
-Add one `-v` and one `-e` to the command you already use:
+Add one `-v` to the command you already use:
 
 ```bash
 docker run -d \
@@ -64,7 +61,6 @@ docker run -d \
   -p 5099:8080 \
   -v nostos-data:/data \
   -v /mnt/audiobooks:/external/media:ro \
-  -e ExternalMedia__Root=/external/media \
   --restart unless-stopped \
   ghcr.io/christian-gennari/nostos:latest
 ```
@@ -75,7 +71,8 @@ A running container cannot be given a new folder. Remove it
 
 #### Without Docker
 
-Set the environment variable `ExternalMedia__Root` to the absolute path of the
+There is no default folder outside the Docker image. Set the environment
+variable `ExternalMedia__Root` (two underscores) to the absolute path of the
 folder, or add this to `appsettings.json`, and restart Nostos:
 
 ```json
@@ -83,6 +80,9 @@ folder, or add this to `appsettings.json`, and restart Nostos:
   "ExternalMedia": { "Root": "/mnt/audiobooks" }
 }
 ```
+
+In Docker the same setting changes where the image looks, if you would rather
+mount the folder somewhere other than `/external/media`.
 
 ### Step 2: let Nostos read the files (Linux)
 
@@ -102,11 +102,12 @@ Open Nostos and go to **Settings → This server → External media**. It should
 
 | What you see | What it means | What to do |
 | --- | --- | --- |
-| No **External media** entry in Settings | `ExternalMedia__Root` is not set in the running server | Check the spelling (two underscores) and that the container was recreated, not only restarted |
-| **Not available** | The setting is there, but nothing is mounted at that path | Make the path after the colon in the volume line and the `ExternalMedia__Root` value the same |
+| **Not set up yet**, with the setup steps | Nothing is mounted where Nostos looks | Docker: check the volume line ends in `:/external/media:ro` and that you ran `docker compose up -d`, not only a restart. Without Docker: set `ExternalMedia__Root` |
+| **Not available** | The folder was there before and has gone away | Mount it again. Linked books keep their notes and progress meanwhile |
 | The server does not start | `ExternalMedia__Root` is not an absolute path | Use a path that starts with `/`. The log says `ExternalMedia:Root must be an absolute path` |
 | The scan finds 0 books and says folders could not be read | The server's user is not allowed to read the folder | Run the `chmod` command in step 2 |
 | The scan finds 0 books and no folders were skipped | There is nothing Nostos can link in the folder | Check the mounted folder is the right one and see [How the folder is read](#how-the-folder-is-read) |
+| No **External media** entry in Settings | The server is older than this feature, or it is Nostos Cloud | Update the image: `docker compose pull && docker compose up -d` |
 
 To see the folder the way Nostos sees it:
 
@@ -116,15 +117,13 @@ docker exec nostos ls /external/media
 
 ### One folder
 
-This release links one folder. To link several, mount them side by side under
-one parent and point `ExternalMedia__Root` at the parent:
+This release links one folder. To link several, mount them side by side below
+it:
 
 ```yaml
     volumes:
       - /mnt/audiobooks:/external/media/audiobooks:ro
       - /mnt/ebooks:/external/media/ebooks:ro
-    environment:
-      ExternalMedia__Root: /external/media
 ```
 
 If you later mount the same folder at a different path, linked books keep

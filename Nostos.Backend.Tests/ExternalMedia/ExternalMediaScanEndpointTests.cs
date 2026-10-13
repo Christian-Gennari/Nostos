@@ -183,10 +183,11 @@ public sealed class ExternalMediaScanEndpointTests : IDisposable
     }
 
     [Theory]
-    [InlineData("GET", "")]
     [InlineData("GET", "/scan")]
     [InlineData("POST", "/scan")]
-    public async Task Every_route_answers_not_found_on_a_server_with_no_folder_configured(string method, string path)
+    [InlineData("GET", "/import")]
+    [InlineData("POST", "/import")]
+    public async Task Scanning_and_importing_answer_not_found_on_a_server_with_no_folder_configured(string method, string path)
     {
         await using var factory = new LibraryEndpointFactory();
         var client = factory.CreateClient();

@@ -306,14 +306,12 @@ Compose keeps the existing named volume across image replacement. Use Nostos' po
 
 Nostos can read audiobooks and ebooks from a folder you already have, without copying them. It never modifies or deletes those files.
 
-1. In `compose.yml`, uncomment the folder line and the two `environment` lines, and replace `/mnt/audiobooks` with your folder:
+1. In `compose.yml`, uncomment the folder line and replace `/mnt/audiobooks` with your folder:
 
    ```yaml
        volumes:
          - nostos-data:/data
          - /mnt/audiobooks:/external/media:ro
-       environment:
-         ExternalMedia__Root: /external/media
    ```
 
 2. Let the container's user read the files, then apply the change:
@@ -324,6 +322,8 @@ Nostos can read audiobooks and ebooks from a folder you already have, without co
    ```
 
 3. Open **Settings → This server → External media**, press **Scan folder**, review what was found, and import.
+
+The image looks in `/external/media`, so no other setting is needed. Until a folder is mounted there, that Settings page shows these steps.
 
 The [External media guide](docs/external-media.md) covers `docker run`, installs without Docker, the folder layout Nostos expects, and what to check when the folder does not show up.
 

@@ -1,10 +1,10 @@
 namespace Nostos.Backend.Services.ExternalMedia;
 
 /// <summary>
-/// Whether this host can read media in place from an administrator-mounted
-/// folder. Registered only by a host that implements external media; a host
-/// that does not register it has no such feature, and the capability the
-/// frontend reads is false.
+/// Registered only by a host that can read media in place from an
+/// administrator-mounted folder. Its presence is what turns the capability
+/// the frontend reads on; a host that does not register it has no such
+/// feature.
 /// </summary>
 public interface IExternalMediaAvailability
 {

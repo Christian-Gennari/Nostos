@@ -72,6 +72,9 @@ export interface ExternalMediaScanResponse {
 }
 
 export interface ExternalMediaStatus {
+  /** False until the server has been told which folder to read. */
+  configured: boolean;
+  /** False when the configured folder is not visible to the server right now. */
   mounted: boolean;
   linkedBooks: number;
   scan: ExternalMediaScanProgress;
@@ -111,7 +114,9 @@ export interface ExternalMediaBookStatus {
 /**
  * Linking books from a folder the server administrator mounted (SelfHosted
  * only). Callers check `supportsExternalMediaLibraries` first: a server
- * without the feature answers these routes with 404.
+ * without the feature answers these routes with 404. `status()` and `book()`
+ * answer on every server that has the feature; scanning and importing need a
+ * configured folder.
  */
 @Injectable({ providedIn: 'root' })
 export class ExternalMediaService {

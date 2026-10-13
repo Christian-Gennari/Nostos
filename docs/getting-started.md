@@ -90,7 +90,7 @@ cd publish
 | Setting                    | Default       | Description       |
 | -------------------------- | ------------- | ----------------- |
 | `Logging:LogLevel:Default` | `Information` | Minimum log level |
-| `ExternalMedia:Root`       | not set       | Absolute path of a folder of existing books to read in place. See [External media](external-media.md) |
+| `ExternalMedia:Root`       | not set (`/external/media` in the Docker image) | Absolute path of a folder of existing books to read in place. See [External media](external-media.md) |
 
 The SQLite database file path is resolved in `Program.cs` using `Path.Combine(builder.Environment.ContentRootPath, "nostos.db")` to ensure an absolute path is used regardless of the working directory.
 

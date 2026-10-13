@@ -115,7 +115,7 @@ describe('ExternalMediaSettingsComponent', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
-    status = { mounted: true, linkedBooks: 0, scan: idle };
+    status = { configured: true, mounted: true, linkedBooks: 0, scan: idle };
     scanned = null;
     importState = noImport;
 
@@ -237,16 +237,45 @@ describe('ExternalMediaSettingsComponent', () => {
     expect(scan.disabled).toBe(true);
   });
 
-  it('explains an unmounted folder and does not offer a scan', async () => {
-    status = { mounted: false, linkedBooks: 3, scan: idle };
+  it('explains a folder that went away and does not offer a scan', async () => {
+    status = { configured: true, mounted: false, linkedBooks: 3, scan: idle };
     await component.refresh();
     fixture.detectChanges();
 
     expect(text('external-media-mounted')).toBe('Not available');
-    expect(text('external-media-unmounted')).toContain('Linked books keep their notes and progress');
+    expect(text('external-media-setup')).toContain('Linked books keep their notes and progress');
     expect(text('external-media-scan-row')).toContain('3 linked books');
     const scan = fixture.nativeElement.querySelector('[data-testid="external-media-scan"]') as HTMLButtonElement;
     expect(scan.disabled).toBe(true);
+  });
+
+  it('shows how to set the folder up on a server that has none, and asks for nothing else', async () => {
+    status = { configured: false, mounted: false, linkedBooks: 0, scan: idle };
+    api.scan.mockClear();
+    api.importState.mockClear();
+    await component.refresh();
+    fixture.detectChanges();
+
+    expect(text('external-media-mounted')).toBe('Not set up yet');
+    expect(text('external-media-setup')).toContain('has not been given a folder yet');
+    expect(text('external-media-setup')).toContain('- /your/books:/external/media:ro');
+    expect(text('external-media-setup')).toContain('ExternalMedia__Root');
+    expect(fixture.nativeElement.querySelector('[data-testid="external-media-setup"] a').href).toContain(
+      'docs/external-media.md',
+    );
+    expect(fixture.nativeElement.querySelector('[data-testid="external-media-scan-row"]')).toBeNull();
+    expect(api.scan).not.toHaveBeenCalled();
+    expect(api.importState).not.toHaveBeenCalled();
+  });
+
+  it('shows the same steps when the folder is configured but nothing is mounted there yet', async () => {
+    status = { configured: true, mounted: false, linkedBooks: 0, scan: idle };
+    await component.refresh();
+    fixture.detectChanges();
+
+    expect(text('external-media-mounted')).toBe('Not set up yet');
+    expect(text('external-media-setup')).toContain('mount your folder at /external/media');
+    expect(fixture.nativeElement.querySelector('[data-testid="external-media-scan-row"]')).toBeNull();
   });
 
   it('says that books with missing files were kept', async () => {
