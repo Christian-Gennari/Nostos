@@ -365,7 +365,7 @@
 .edition-section {
   background: var(--bg-surface);
   border: 1px solid var(--border-color);
-  border-radius: 12px;
+  border-radius: var(--radius-surface);
   padding: 1.25rem;
   margin-bottom: 1.5rem;
 }
@@ -706,7 +706,7 @@
   gap: 0.7rem;
   padding: 0.6rem 0.7rem;
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-surface);
   background: var(--bg-surface);
   color: var(--color-text-main);
   text-align: left;
@@ -756,7 +756,7 @@ button.edition-select-card:focus-visible {
   justify-content: center;
   width: 32px;
   height: 32px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-lg);
   background: var(--bg-hover);
   color: var(--color-text-muted);
   flex-shrink: 0;
@@ -816,7 +816,7 @@ button.edition-select-card:focus-visible {
 .card-status-pill.finished {
   font-size: 0.65rem;
   padding: 0 4px;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--color-success) 15%, transparent);
   color: var(--color-success-dark);
   font-weight: var(--fw-medium);
@@ -839,7 +839,7 @@ button.edition-select-card:focus-visible {
 .card-status-pill.current {
   font-size: 0.65rem;
   padding: 0 4px;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   background: var(--selection-badge-bg);
   color: var(--selection-ink);
   font-weight: var(--fw-medium);
@@ -968,7 +968,7 @@ button.edition-select-card:focus-visible {
   gap: 2px;
   background: var(--bg-surface);
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-md, 10px);
+  border-radius: var(--radius-popover);
   /* Follows the same recipe as the status dropdown in this file: the token with
      no literal fallback, so no colour outside the token graph is introduced. */
   box-shadow: var(--shadow-glass-lg);
@@ -983,7 +983,7 @@ button.edition-select-card:focus-visible {
   min-height: var(--control-h-touch);
   padding: 0.45rem 0.6rem;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-popover-item);
   background: transparent;
   color: var(--color-text-main);
   font-family: inherit;
@@ -1050,7 +1050,7 @@ button.edition-select-card:focus-visible {
   min-width: 145px;
   background: var(--bg-surface);
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-md, 10px);
+  border-radius: var(--radius-popover);
   box-shadow: var(--shadow-glass-lg, 0 10px 25px -5px rgba(0, 0, 0, 0.1));
   padding: 4px;
   display: flex;
@@ -1067,7 +1067,7 @@ button.edition-select-card:focus-visible {
   width: 100%;
   padding: 6px 10px;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-popover-item);
   background: transparent;
   color: var(--color-text-main);
   font-family: inherit;
@@ -1179,7 +1179,7 @@ button.edition-select-card:focus-visible {
 .synopsis-metadata-block {
   background: var(--bg-surface);
   border: 1px solid var(--border-color);
-  border-radius: 12px;
+  border-radius: var(--radius-surface);
   padding: 1.5rem;
   margin-bottom: 2rem;
   position: relative;
@@ -1449,7 +1449,7 @@ button.edition-select-card:focus-visible {
   position: relative;
   background: var(--bg-surface);
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-surface);
   padding: 0.5rem;
   margin-bottom: 2rem;
   transition: box-shadow 0.2s;
@@ -1484,7 +1484,7 @@ button.edition-select-card:focus-visible {
   background: var(--bg-surface);
   padding: 1rem;
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-surface);
 }
 .row-actions {
   margin-top: 0.5rem;
@@ -1635,7 +1635,7 @@ button.edition-select-card:focus-visible {
   gap: 0.55rem;
   padding: 0.75rem 0.9rem;
   border: 1px solid var(--border-color);
-  border-radius: 12px;
+  border-radius: var(--radius-surface);
   background: var(--bg-surface);
   text-align: left;
 }
