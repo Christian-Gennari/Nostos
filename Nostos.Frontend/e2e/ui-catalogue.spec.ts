@@ -42,7 +42,8 @@ test.describe('Nostos UI v1 catalogue', () => {
         }
 
         await expect(page.locator('button.nostos-button--primary').first()).toBeVisible();
-        await expect(page.locator('button.icon-btn')).toHaveCount(6);
+        // 7 since the action menu example added its trigger (317c71ca).
+        await expect(page.locator('button.icon-btn')).toHaveCount(7);
         // 6, not 7: `feat(ui): add canonical dropdown primitive` replaced a native
         // `<select class="nostos-form-control">` with `<app-dropdown>`, so the
         // catalogue renders one fewer form control. The count was stale on main
@@ -145,10 +146,13 @@ test.describe('Nostos UI v1 catalogue', () => {
 
         await page.getByRole('button', { name: 'Show stacked toasts', exact: true }).click();
         await expect(page.locator('.toast')).toHaveCount(3);
-        await expect(page.getByRole('status')).toHaveCount(2);
-        await expect(page.getByRole('alert')).toHaveCount(1);
-        await expect(page.getByRole('alert')).toHaveAttribute('aria-live', 'assertive');
-        expect(await page.getByRole('alert').getByRole('button').count()).toBe(0);
+        // Scoped to the toast container: the page also shows a form field in
+        // its error state, which is an alert of its own.
+        const toasts = page.locator('app-toast-container');
+        await expect(toasts.getByRole('status')).toHaveCount(2);
+        await expect(toasts.getByRole('alert')).toHaveCount(1);
+        await expect(toasts.getByRole('alert')).toHaveAttribute('aria-live', 'assertive');
+        expect(await toasts.getByRole('alert').getByRole('button').count()).toBe(0);
         await expect(page.locator('.toast-dismiss').first()).toHaveAttribute(
           'title',
           'Dismiss notification',

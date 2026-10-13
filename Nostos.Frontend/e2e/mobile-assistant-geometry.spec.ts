@@ -21,6 +21,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { apiPost, loadFixture, newRunId } from './support/fixture';
+import { enableAssistant } from './support/assistant';
 
 test.describe.configure({ mode: 'serial' });
 test.use({ serviceWorkers: 'block' });
@@ -79,6 +80,7 @@ test('the collapsed trigger stays 44px+ and clear of the toolbar and epub text',
     });
   });
 
+  await enableAssistant(page);
   await page.goto(`${fixture.baseUrl}/read/${bookId}`, { waitUntil: 'domcontentloaded' });
   await page.locator('#epub-viewer iframe').waitFor({ state: 'attached', timeout: 45_000 });
   // Let the reader place its page and settle before measuring.
@@ -92,7 +94,15 @@ test('the collapsed trigger stays 44px+ and clear of the toolbar and epub text',
   const controls = await page
     .locator('.reader-toolbar button, .reader-toolbar a, .reader-toolbar [role="button"]')
     .evaluateAll((nodes) =>
-      nodes.map((node) => {
+      // Only controls that are on screen. The reader opens in immersive mode
+      // with its toolbars faded out (#768); the trigger is then the only thing
+      // in that corner, and a hidden "Next page" under it is not an overlap.
+      nodes
+        .filter((node) => {
+          const bar = node.closest('.reader-toolbar');
+          return !bar || getComputedStyle(bar).opacity !== '0';
+        })
+        .map((node) => {
         const r = node.getBoundingClientRect();
         return {
           x: r.x,
@@ -115,6 +125,26 @@ test('the collapsed trigger stays 44px+ and clear of the toolbar and epub text',
   }
   console.log(`[geometry] toolbar controls: ${controls.length}; worst overlap ${Math.round(worstControl)}px2 (${worstControlLabel || 'none'})`);
   expect(worstControl, `trigger overlaps toolbar control "${worstControlLabel}"`).toBe(0);
+
+  // When the reader's toolbars ARE shown they sit over that corner, and the
+  // page controls must be what a tap reaches, not the trigger underneath.
+  const viewport = page.viewportSize();
+  if (!viewport) throw new Error('no viewport');
+  await page.touchscreen.tap(Math.round(viewport.width / 2), Math.round(viewport.height / 2));
+  await expect(page.locator('.reader-layout.chrome-visible')).toBeVisible();
+  await page.waitForTimeout(400);
+  const topAtNextPage = await page.evaluate(() => {
+    const next = [...document.querySelectorAll('.reader-toolbar button')].find((button) =>
+      (button.getAttribute('aria-label') ?? '').includes('Next page'),
+    );
+    if (!next) return 'no Next page control';
+    const r = next.getBoundingClientRect();
+    const top = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+    return top?.closest('[data-testid="assistant-trigger"]') ? 'assistant-trigger' : 'reader';
+  });
+  expect(topAtNextPage, 'a tap on "Next page" must reach the reader').toBe('reader');
+  await page.touchscreen.tap(Math.round(viewport.width / 2), Math.round(viewport.height / 2));
+  await expect(page.locator('.reader-layout.chrome-visible')).toHaveCount(0);
 
   const iframe = await page.locator('#epub-viewer iframe').boundingBox();
   if (!iframe) throw new Error('the epub iframe has no box');
@@ -154,6 +184,7 @@ test('the open assistant fills the visible viewport and stays stable when the co
     });
   });
 
+  await enableAssistant(page);
   await page.goto(`${fixture.baseUrl}/library/${bookId}`, { waitUntil: 'domcontentloaded' });
   const trigger = page.locator('[data-testid="assistant-trigger"]');
   await expect(trigger).toBeVisible();

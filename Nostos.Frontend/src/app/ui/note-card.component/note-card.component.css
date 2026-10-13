@@ -136,9 +136,16 @@
 
 /* The footer lines up with the text, not with the rule. */
 .is-passage .note-text,
-.is-passage .note-footer,
 .is-passage .expand-btn {
   padding-left: calc(1.35rem + 3px);
+}
+
+/* A margin, not padding: the footer's own box is then exactly the line its
+   metadata and actions share, which is what a full-width action row on a
+   phone is measured against. */
+.is-passage .note-footer {
+  max-width: calc(39rem - (1.35rem + 3px));
+  margin-left: calc(1.35rem + 3px);
 }
 
 @container (min-width: 52rem) {
