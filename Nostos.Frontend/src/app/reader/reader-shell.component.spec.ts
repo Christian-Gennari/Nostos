@@ -69,6 +69,7 @@ vi.mock('howler', () => ({
 class PdfReaderStub {
   bookId = input.required<string>();
   initialLocation = input<string | null>(null);
+  language = input<string | null>(null);
   sidebarVisible = input(false);
   highlightColour = input<HighlightColour>(DEFAULT_HIGHLIGHT_COLOUR);
   sidebarVisibleChange = output<boolean>();
