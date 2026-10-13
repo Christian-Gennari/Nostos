@@ -13,7 +13,7 @@
 
 @if (status(); as current) {
   @if (!current.mounted) {
-    <div class="external-notice" role="status" data-testid="external-media-setup">
+    <div appNotice class="external-notice" role="status" data-testid="external-media-setup">
       @if (current.configured && current.linkedBooks > 0) {
         <p>
           Nostos cannot see the folder right now. Linked books keep their notes and progress while it
@@ -96,18 +96,18 @@
 
   @if (summary(); as found) {
     @if (found.unreadableFolders > 0 && !scanning()) {
-      <p class="external-notice is-warning" role="status" data-testid="external-media-unreadable-notice">
+      <p appNotice class="external-notice is-warning" role="status" data-testid="external-media-unreadable-notice">
         Nostos was not allowed to read {{ count(found.unreadableFolders, 'folder') }}, so anything inside
         was not found. The server's user needs permission to read the files and open the folders.
       </p>
     } @else if (found.discovered === 0 && !scanning()) {
-      <p class="external-notice" role="status" data-testid="external-media-empty-notice">
+      <p appNotice class="external-notice" role="status" data-testid="external-media-empty-notice">
         No audiobooks, EPUB or PDF files were found. Check that the folder mounted into the server is
         the one that holds your books.
       </p>
     }
     @if (found.missingBooks > 0 && !scanning()) {
-      <p class="external-notice is-warning" role="status" data-testid="external-media-missing-notice">
+      <p appNotice class="external-notice is-warning" role="status" data-testid="external-media-missing-notice">
         {{ count(found.missingBooks, 'linked book') }}
         {{ found.missingBooks === 1 ? 'has' : 'have' }} files that are no longer in the folder.
         Nothing was removed from Nostos: notes and progress are kept, and the books play again when
@@ -144,7 +144,7 @@
 }
 
 @if (error(); as message) {
-  <p class="external-notice is-error" role="alert" data-testid="external-media-error">{{ message }}</p>
+  <p appNotice tone="danger" class="external-notice is-error" role="alert" data-testid="external-media-error">{{ message }}</p>
 }
 
 @if (reviewOpen()) {
@@ -193,7 +193,7 @@
               <li><strong>{{ found.unusable }}</strong> cannot be imported</li>
             </ul>
             @if (found.truncated) {
-              <p class="external-notice is-warning">
+              <p appNotice class="external-notice is-warning">
                 The folder holds more files than one scan reads. Import these, then scan again.
               </p>
             }

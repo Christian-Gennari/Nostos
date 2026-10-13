@@ -7,6 +7,7 @@ import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/cor
 import { Theme, ThemeService } from '../../core/services/theme.service';
 import { ToastService, type ToastType } from '../../core/services/toast.service';
 import { BadgeComponent } from '../badge/badge.component';
+import { NoticeComponent } from '../notice/notice.component';
 import { ButtonComponent } from '../button/button.component';
 import { ChipComponent } from '../chip/chip.component';
 import { DialogActionsComponent } from '../dialog-actions/dialog-actions.component';
@@ -32,6 +33,7 @@ import { ViewToggleComponent, type ViewToggleOption } from '../view-toggle/view-
   standalone: true,
   imports: [
     BadgeComponent,
+    NoticeComponent,
     ButtonComponent,
     ChipComponent,
     DialogActionsComponent,

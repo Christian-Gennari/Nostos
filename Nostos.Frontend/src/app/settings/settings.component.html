@@ -344,7 +344,7 @@
                             <span class="ereader-credential-label">Password</span>
                             <code class="catalog-url managed-opds-password">{{ access.password }}</code>
                           </div>
-                          <p class="catalog-note catalog-note--warning" data-testid="managed-opds-one-time-secret">
+                          <p appNotice tone="caution" class="catalog-note catalog-note--warning" data-testid="managed-opds-one-time-secret">
                             <nostos-icon name="warning" [size]="14"></nostos-icon>
                             <span>Save this password now. Nostos does not store the plaintext password and cannot show it again.</span>
                           </p>
@@ -454,7 +454,7 @@
                   </div>
 
                   @if (info.localOnly) {
-                    <p class="catalog-note catalog-note--warning">
+                    <p appNotice tone="caution" class="catalog-note catalog-note--warning">
                       <nostos-icon name="warning" [size]="14"></nostos-icon>
                       <span>This address only works on this computer. Open Nostos from the address your reader will use &mdash; your machine's address on your home network or Tailscale &mdash; and the catalog address will match it.</span>
                     </p>
@@ -1454,7 +1454,7 @@
                 <div class="progress-bar-fill" [style.width.%]="progress().percentComplete"></div>
               </div>
               @if (showSlowNotice()) {
-                <div class="slow-notice">
+                <div appNotice tone="caution" class="slow-notice">
                   This step may take a few minutes for large libraries.
                 </div>
               }
@@ -1597,7 +1597,7 @@
               <div class="progress-bar-fill" [style.width.%]="progress().percentComplete"></div>
             </div>
             @if (showSlowNotice()) {
-              <div class="slow-notice">
+              <div appNotice tone="caution" class="slow-notice">
                 This step may take a few minutes for large libraries.
               </div>
             }

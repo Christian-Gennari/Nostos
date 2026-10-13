@@ -60,6 +60,7 @@ import { LibraryTransferProgressComponent } from './library-transfer-progress.co
 import { LibraryReplacementDialogComponent } from './library-replacement-dialog.component';
 import { ButtonComponent } from '../../ui/button/button.component';
 import { NostosIconComponent } from '../../ui/icon/nostos-icon.component';
+import { NoticeComponent } from '../../ui/notice/notice.component';
 
 export type { HostActivationState } from '../models/library-transfer.models';
 
@@ -68,6 +69,7 @@ export type { HostActivationState } from '../models/library-transfer.models';
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
+    NoticeComponent,
     ButtonComponent,
     NostosIconComponent,
     LibraryTransferProgressComponent,

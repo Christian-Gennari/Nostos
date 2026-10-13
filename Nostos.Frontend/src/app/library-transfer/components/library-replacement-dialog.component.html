@@ -83,7 +83,7 @@
       }
 
       @if (errorMessage(); as error) {
-        <p class="replacement-error" role="alert" data-testid="replacement-error">{{ error }}</p>
+        <p appNotice tone="danger" class="replacement-error" role="alert" data-testid="replacement-error">{{ error }}</p>
       }
 
       @if (busy()) {

@@ -1,6 +1,6 @@
 <div class="transfer-flow" data-testid="library-export-flow">
   @if (maintenanceWaiting()) {
-    <p class="transfer-maintenance" role="status" data-testid="transfer-maintenance-status">
+    <p appNotice tone="info" class="transfer-maintenance" role="status" data-testid="transfer-maintenance-status">
       {{ maintenanceMessage }}
     </p>
   }
@@ -102,7 +102,7 @@
     </div>
   } @else if (failed()) {
     @if (failureCopy(); as copy) {
-      <div class="transfer-state transfer-state--failed" role="alert" data-testid="export-failed">
+      <div appNotice tone="danger" class="transfer-state transfer-state--failed" role="alert" data-testid="export-failed">
         <p class="transfer-headline">{{ copy.title }}</p>
         <p class="transfer-copy">{{ copy.message }}</p>
         <div class="transfer-actions">

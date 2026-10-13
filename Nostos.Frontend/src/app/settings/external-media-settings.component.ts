@@ -18,6 +18,7 @@ import { DialogActionsComponent } from '../ui/dialog-actions/dialog-actions.comp
 import { IconButtonComponent } from '../ui/icon-button/icon-button.component';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
 import { ModalShell } from '../ui/modal-shell/modal-shell.component';
+import { NoticeComponent } from '../ui/notice/notice.component';
 
 type ReviewStage = 'review' | 'importing' | 'result';
 
@@ -51,6 +52,7 @@ export const EXTERNAL_MEDIA_GUIDE_URL =
   selector: 'app-external-media-settings',
   standalone: true,
   imports: [
+    NoticeComponent,
     NgTemplateOutlet,
     ButtonComponent,
     DialogActionsComponent,
