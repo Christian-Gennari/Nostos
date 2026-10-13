@@ -61,7 +61,7 @@
   gap: 9px;
   padding: 9px 10px;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-row);
   background: transparent;
   color: var(--color-text-light);
   text-align: left;
@@ -162,7 +162,7 @@
 }
 
 .first-run-cloud-import.is-selected {
-  border-radius: 6px;
+  border-radius: var(--radius-row);
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: 4px;
 }
@@ -174,7 +174,7 @@
   overflow: visible;
   background: var(--bg-surface);
   border: 1px solid var(--border-color);
-  border-radius: 12px;
+  border-radius: var(--radius-surface);
   box-shadow: none;
 }
 
@@ -294,7 +294,7 @@
   min-height: 56px;
   padding: 10px 12px;
   border: 1px solid var(--border-color);
-  border-radius: 10px;
+  border-radius: var(--radius-surface);
   background: transparent;
   color: var(--color-text-main);
   text-align: left;
@@ -504,7 +504,7 @@
   color: var(--color-text-light);
   background: color-mix(in srgb, var(--color-accent) 8%, transparent);
   border: 1px solid color-mix(in srgb, var(--color-accent) 20%, transparent);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-surface);
   padding: 6px 10px;
 }
 
@@ -564,7 +564,7 @@
   color: var(--color-text-main);
   background: color-mix(in srgb, var(--color-accent) 8%, transparent);
   border: 1px solid color-mix(in srgb, var(--color-accent) 20%, transparent);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-surface);
   padding: 8px 10px;
 }
 
