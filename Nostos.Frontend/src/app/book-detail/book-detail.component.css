@@ -1180,6 +1180,17 @@
   display: flex;
   flex-direction: column;
 }
+
+/* The book's notes are set as a reading column, like a topic's notes in the
+   Brain: the note card's `passage` layout (upright quotation at a reading
+   measure, no box). A hairline and space separate one passage from the next. */
+.notes-feed app-note-card {
+  padding: 1.5rem 0;
+}
+
+.notes-feed app-note-card + app-note-card {
+  border-top: 1px solid var(--border-color);
+}
 .notes-empty {
   margin: 0;
   padding: 1rem 0;

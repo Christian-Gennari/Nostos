@@ -130,6 +130,11 @@
   max-width: 39rem;
 }
 
+/* While editing, the editor keeps to the reading measure too. */
+.is-passage .edit-box {
+  max-width: 39rem;
+}
+
 .is-passage .collapsible-body.collapsed {
   max-height: 26rem;
 }

@@ -376,6 +376,7 @@
             <div class="notes-feed">
               @for (note of store.notes(); track note.id) {
               <app-note-card
+                layout="passage"
                 [note]="note"
                 [topicMap]="store.topicMap()"
                 (update)="onUpdateNote($event)"
