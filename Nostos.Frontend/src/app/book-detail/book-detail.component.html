@@ -135,57 +135,17 @@
               (ratingChange)="onRate($event)"
             ></app-star-rating>
 
-            <div class="status-dropdown-container">
-              <button
-                type="button"
-                class="status-chip status-chip-btn"
-                [class.finished]="readingStatus().modifier === 'finished'"
-                [class.reading]="readingStatus().modifier === 'reading'"
-                [class.open]="statusDropdownOpen()"
-                (click)="toggleStatusDropdown($event)"
-                title="Change reading status"
-                aria-haspopup="listbox"
-                [attr.aria-expanded]="statusDropdownOpen()"
-              >
-                <span class="status-dot"></span>
-                <span>{{ readingStatus().label }}</span>
-                <nostos-icon name="caret-down" [size]="12" class="status-chevron"></nostos-icon>
-              </button>
-
-              @if (statusDropdownOpen()) {
-              <div class="status-dropdown-menu" role="listbox" (click)="$event.stopPropagation()">
-                <button
-                  type="button"
-                  class="status-dropdown-item status-not-started"
-                  [class.selected]="readingStatus().modifier === 'not-started'"
-                  (click)="selectStatusOption('notstarted')"
-                >
-                  <nostos-icon name="circle-dashed" [size]="14"></nostos-icon>
-                  <span>Not Started</span>
-                </button>
-
-                <button
-                  type="button"
-                  class="status-dropdown-item status-reading"
-                  [class.selected]="readingStatus().modifier === 'reading'"
-                  (click)="selectStatusOption('reading')"
-                >
-                  <nostos-icon name="book-open" [size]="14"></nostos-icon>
-                  <span>In Progress</span>
-                </button>
-
-                <button
-                  type="button"
-                  class="status-dropdown-item status-finished"
-                  [class.selected]="readingStatus().modifier === 'finished'"
-                  (click)="selectStatusOption('finished')"
-                >
-                  <nostos-icon name="check-circle" [size]="14"></nostos-icon>
-                  <span>Finished</span>
-                </button>
-              </div>
-              }
-            </div>
+            <app-dropdown
+              class="status-dropdown"
+              [class.finished]="readingStatus().modifier === 'finished'"
+              [class.reading]="readingStatus().modifier === 'reading'"
+              appearance="pill"
+              ariaLabel="Reading status"
+              title="Change reading status"
+              [options]="statusOptions"
+              [value]="statusValue()"
+              (valueChange)="selectStatusOption($event)"
+            ></app-dropdown>
 
             @if (store.book()?.progressPercent) {
             <span class="strip-progress">{{ store.book()?.progressPercent }}%</span>

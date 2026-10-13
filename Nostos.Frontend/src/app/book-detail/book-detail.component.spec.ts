@@ -76,15 +76,20 @@ describe('BookDetail reset progress', () => {
     fixture.detectChanges();
   }
 
+  /** The reading status is the shared dropdown; its trigger is the status pill. */
   function statusChipButton(): HTMLButtonElement | null {
-    return fixture.nativeElement.querySelector('.status-chip-btn');
+    return fixture.nativeElement.querySelector('.status-dropdown .nostos-dropdown__trigger');
+  }
+
+  function statusOptions(): HTMLElement[] {
+    return Array.from(fixture.nativeElement.querySelectorAll('.status-dropdown .nostos-dropdown__option'));
   }
 
   function openResetViaDropdown(): void {
     const chip = statusChipButton();
     chip?.click();
     fixture.detectChanges();
-    const items = Array.from(fixture.nativeElement.querySelectorAll('.status-dropdown-item')) as HTMLButtonElement[];
+    const items = statusOptions();
     const notStartedItem = items.find((el) => el.textContent?.includes('Not Started'));
     notStartedItem?.click();
     fixture.detectChanges();
@@ -273,20 +278,18 @@ describe('BookDetail reset progress', () => {
   it('toggles the status dropdown menu open and closed on chip click', async () => {
     await setup(readableBook());
 
-    expect(fixture.nativeElement.querySelector('.status-dropdown-menu')).toBeNull();
+    expect(statusChipButton()!.getAttribute('aria-expanded')).toBe('false');
 
     statusChipButton()!.click();
     fixture.detectChanges();
 
-    const menu = fixture.nativeElement.querySelector('.status-dropdown-menu');
-    expect(menu).toBeTruthy();
-    const items = menu.querySelectorAll('.status-dropdown-item');
-    expect(items.length).toBe(3);
+    expect(statusChipButton()!.getAttribute('aria-expanded')).toBe('true');
+    expect(statusOptions().length).toBe(3);
 
     // Clicking again closes it
     statusChipButton()!.click();
     fixture.detectChanges();
-    expect(fixture.nativeElement.querySelector('.status-dropdown-menu')).toBeNull();
+    expect(statusChipButton()!.getAttribute('aria-expanded')).toBe('false');
   });
 
   it('opens confirmation modal when selecting Not Started from status dropdown', async () => {

@@ -1,4 +1,4 @@
-import { afterNextRender, Component, effect, inject, Injector, OnDestroy, OnInit, signal, model, computed, ViewChild, ElementRef, HostListener } from '@angular/core';
+import { afterNextRender, Component, effect, inject, Injector, OnDestroy, OnInit, signal, model, computed, ViewChild, ElementRef } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -62,6 +62,7 @@ import { DialogActionsComponent } from '../ui/dialog-actions/dialog-actions.comp
 import { NOSTOS_MENU } from '../ui/menu/menu.component';
 import { IconTileComponent } from '../ui/icon-tile/icon-tile.component';
 import { ChoiceRowComponent } from '../ui/choice-row/choice-row.component';
+import { DropdownComponent, type DropdownOption } from '../ui/dropdown/dropdown.component';
 
 @Component({
   standalone: true,
@@ -85,6 +86,7 @@ import { ChoiceRowComponent } from '../ui/choice-row/choice-row.component';
     BadgeComponent,
     DialogActionsComponent,
     ...NOSTOS_MENU,
+    DropdownComponent,
   ],
   providers: [BookDetailStore],
   templateUrl: './book-detail.component.html',
@@ -118,7 +120,6 @@ export class BookDetail implements OnInit, OnDestroy {
   isDescriptionExpanded = signal(false);
   showMetadataModal = signal(false);
   showDeleteConfirm = signal(false);
-  statusDropdownOpen = signal(false);
   pendingStatus = signal<'notstarted' | 'reading' | 'finished' | null>(null);
   deleting = signal(false);
 
@@ -337,13 +338,6 @@ export class BookDetail implements OnInit, OnDestroy {
     this.stopObservingReview();
   }
 
-  @HostListener('document:click')
-  onDocumentClick(): void {
-    if (this.statusDropdownOpen()) {
-      this.statusDropdownOpen.set(false);
-    }
-  }
-
   readonly externalMediaLookup = effect((onCleanup) => {
     const supported = this.cloudEntry.supportsExternalMediaLibraries();
     const book = this.store.book();
@@ -381,16 +375,22 @@ export class BookDetail implements OnInit, OnDestroy {
     this.store.rate(rating);
   }
 
-  toggleStatusDropdown(event: Event): void {
-    event.stopPropagation();
-    this.statusDropdownOpen.update((open) => !open);
-  }
+  /** The reading status choices, in the order a book moves through them. */
+  readonly statusOptions: readonly DropdownOption[] = [
+    { value: 'notstarted', label: 'Not Started', icon: 'circle-dashed' },
+    { value: 'reading', label: 'Reading', icon: 'book-open' },
+    { value: 'finished', label: 'Finished', icon: 'check-circle' },
+  ];
 
-  selectStatusOption(target: 'notstarted' | 'reading' | 'finished'): void {
-    this.statusDropdownOpen.set(false);
-    const current = this.readingStatus().modifier;
-    const currentCanonical = current === 'not-started' ? 'notstarted' : current;
-    if (target === currentCanonical) return;
+  /** The current status as a dropdown value. */
+  readonly statusValue = computed(() => {
+    const modifier = this.readingStatus().modifier;
+    return modifier === 'not-started' ? 'notstarted' : modifier;
+  });
+
+  selectStatusOption(target: string): void {
+    if (target !== 'notstarted' && target !== 'reading' && target !== 'finished') return;
+    if (target === this.statusValue()) return;
     this.pendingStatus.set(target);
   }
 
