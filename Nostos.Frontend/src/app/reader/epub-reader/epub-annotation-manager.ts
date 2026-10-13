@@ -110,6 +110,7 @@ export class EpubAnnotationManager {
   /** Ephemeral search underline; a distinct epub.js annotation type cannot collide with saved highlights. */
   private searchCfiRange: string | null = null;
   private landingCfiRange: string | null = null;
+  private readAloudCfiRange: string | null = null;
   private lastCapturedKey: string | null = null;
   private readonly documentCleanups = new Map<Document, () => void>();
   /**
@@ -408,6 +409,30 @@ export class EpubAnnotationManager {
   }
 
   /**
+   * Marks the sentence being read aloud. Like the landing mark it is drawn,
+   * not saved. Both are epub.js underlines keyed by their range, so the
+   * landing mark is cleared first: the two could otherwise share a key.
+   */
+  public showReadAloudMark(cfiRange: string): void {
+    this.clearLandingMark();
+    if (this.readAloudCfiRange === cfiRange) return;
+    this.clearReadAloudMark();
+    this.readAloudCfiRange = cfiRange;
+    this.rendition.annotations.underline(
+      cfiRange,
+      { nostosReadAloud: true },
+      undefined,
+      'epubjs-read-aloud-mark',
+    );
+  }
+
+  public clearReadAloudMark(): void {
+    if (!this.readAloudCfiRange) return;
+    this.rendition.annotations.remove(this.readAloudCfiRange, 'underline');
+    this.readAloudCfiRange = null;
+  }
+
+  /**
    * epub.js's `selected`: a debounced selectionchange. It is how a touch
    * selection is followed while its handles are dragged, which fires no touch
    * events. A mouse selection is completed by mouseup and a keyboard one by
@@ -633,6 +658,7 @@ export class EpubAnnotationManager {
     this.discardHighlight();
     this.clearSearchHighlight();
     this.clearLandingMark();
+    this.clearReadAloudMark();
 
     if (this.selectedHandler) {
       this.rendition.off('selected', this.selectedHandler);

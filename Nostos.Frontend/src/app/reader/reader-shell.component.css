@@ -407,6 +407,24 @@
   font-size: 0.8rem;
   pointer-events: none;
 }
+/* Read aloud floats over the page like the save notice. Where the chrome is an
+   overlay (immersive), it clears the safe area, and the pager when that shows. */
+.reader-layout.immersive app-read-aloud-bar {
+  bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+}
+.reader-layout.immersive.chrome-visible app-read-aloud-bar {
+  bottom: calc(64px + 0.75rem + env(safe-area-inset-bottom, 0px));
+}
+/* On a wide screen the pager leaves room beside it, so the transport sits in
+   the same strip instead of over the last lines of the page. */
+@media (min-width: 1100px) {
+  .reader-layout.immersive.chrome-visible app-read-aloud-bar {
+    left: auto;
+    right: 1.5rem;
+    bottom: 5px;
+    transform: none;
+  }
+}
 .info-tooltip {
   position: relative;
   display: flex;

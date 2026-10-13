@@ -70,6 +70,10 @@ export function selectionPreview(text: string | null, max = SELECTION_PREVIEW_MA
   return `${(space > max * 0.6 ? cut.slice(0, space) : cut).trimEnd()}…`;
 }
 
+import { BrowserVoice } from './read-aloud/browser-voice';
+import { ReadAloudBarComponent } from './read-aloud/read-aloud-bar.component';
+import { ReadAloudController } from './read-aloud/read-aloud-controller';
+
 @Component({
   selector: 'app-reader-shell',
   standalone: true,
@@ -88,12 +92,23 @@ export function selectionPreview(text: string | null, max = SELECTION_PREVIEW_MA
     ConfirmModal,
     InputDirective,
     TextareaDirective,
+    ReadAloudBarComponent,
   ],
+  providers: [ReadAloudController],
   templateUrl: './reader-shell.component.html',
   styleUrl: './reader-shell.component.css',
 })
 export class ReaderShell implements OnInit, OnDestroy {
   constructor() {
+    // Read aloud follows whichever text reader is mounted.
+    effect(() => {
+      const source = this.activeReader()?.readAloud ?? null;
+      untracked(() => {
+        this.readAloud.setVoices(this.browserVoice);
+        this.readAloud.attach(source);
+      });
+    });
+
     effect(() => {
     const bookId = this.book()?.id;
     if (!bookId) return;
@@ -255,7 +270,7 @@ export class ReaderShell implements OnInit, OnDestroy {
   readonly showPanelFeedback = computed(
     () =>
       this.hasViewSettingsPanel() &&
-      (this.veryNarrow() || (this.phone() && this.canSwitchEdition())),
+      (this.veryNarrow() || (this.phone() && (this.canSwitchEdition() || this.readAloudOffered()))),
   );
 
   // --- Continue in another edition ---
@@ -282,13 +297,36 @@ export class ReaderShell implements OnInit, OnDestroy {
     return audio === 0 ? 'book-open' : 'stack';
   });
 
-  /** At 320px an EPUB/PDF header holds four tools, so this one joins the panel. */
-  readonly showHeaderSwitch = computed(
-    () => this.canSwitchEdition() && !(this.veryNarrow() && this.hasViewSettingsPanel()),
-  );
+  /**
+   * At 320px an EPUB/PDF header holds four tools, so this one joins the panel.
+   * On a phone it also yields to Read aloud, which is used far more often while
+   * reading: five tools is what a 390px header holds before the title goes.
+   */
   readonly showPanelSwitch = computed(
-    () => this.canSwitchEdition() && this.veryNarrow() && this.hasViewSettingsPanel(),
+    () =>
+      this.canSwitchEdition() &&
+      this.hasViewSettingsPanel() &&
+      (this.veryNarrow() || (this.phone() && this.readAloudOffered())),
   );
+  readonly showHeaderSwitch = computed(() => this.canSwitchEdition() && !this.showPanelSwitch());
+
+  // --- Read aloud ---
+
+  readonly readAloud = inject(ReadAloudController);
+  private readonly browserVoice = BrowserVoice.isSupported() ? new BrowserVoice() : null;
+
+  /** The open book's text can be read and this device has a voice for it. */
+  readonly readAloudOffered = computed(
+    () => !this.loadError() && this.readAloud.available() && this.browserVoice !== null,
+  );
+  /** At 320px the header has no room for it, so it joins the View settings panel. */
+  readonly showPanelReadAloud = computed(() => this.readAloudOffered() && this.veryNarrow());
+  readonly showHeaderReadAloud = computed(() => this.readAloudOffered() && !this.veryNarrow());
+
+  toggleReadAloud(): void {
+    if (this.readAloud.active()) this.readAloud.stop();
+    else void this.readAloud.start();
+  }
 
   /**
    * Where the place keeper would look: a text edition being read, with an

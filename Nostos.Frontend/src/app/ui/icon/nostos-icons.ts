@@ -151,6 +151,9 @@ import quotes from '@phosphor-icons/core/regular/quotes.svg';
 import scan from '@phosphor-icons/core/regular/scan.svg';
 import sidebarSimple from '@phosphor-icons/core/regular/sidebar-simple.svg';
 import slidersHorizontal from '@phosphor-icons/core/regular/sliders-horizontal.svg';
+import skipBack from '@phosphor-icons/core/regular/skip-back.svg';
+import skipForward from '@phosphor-icons/core/regular/skip-forward.svg';
+import speakerHigh from '@phosphor-icons/core/regular/speaker-high.svg';
 import sparkle from '@phosphor-icons/core/regular/sparkle.svg';
 import squaresFour from '@phosphor-icons/core/regular/squares-four.svg';
 import stack from '@phosphor-icons/core/regular/stack.svg';
@@ -268,6 +271,9 @@ export const NOSTOS_ICONS = {
   'scan': { regular: scan, },
   'sidebar-simple': { regular: sidebarSimple, },
   'sliders-horizontal': { regular: slidersHorizontal, },
+  'skip-back': { regular: skipBack, },
+  'skip-forward': { regular: skipForward, },
+  'speaker-high': { regular: speakerHigh, },
   'sparkle': { regular: sparkle, light: sparkleLight, },
   'squares-four': { regular: squaresFour, light: squaresFourLight, },
   'stack': { regular: stack, },

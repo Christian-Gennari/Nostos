@@ -179,19 +179,70 @@ function normalizeExcerpt(
   return (lastSpace >= 200 ? cut.slice(0, lastSpace) : cut).trimEnd();
 }
 
+/** Where the visible reading text starts: a text node and an offset into it. */
+export interface VisibleEpubTextStart {
+  content: VisibleEpubContent;
+  node: Text;
+  offset: number;
+}
+
 /**
- * Returns null for covers, image-only pages, unloaded renditions and pages
- * where the actual visible text cannot be established.
+ * The first character of reading text shown on the current page, in READING
+ * order. Null for covers, image-only pages and unloaded renditions.
  *
- * `contents` must be rendition.getContents() from the active rendition.
- * The iframe is obtained from the epub.js Contents object.
+ * Reading order is not the same as top-to-bottom: on a two-page spread the
+ * right-hand page's first line sits higher than a chapter heading on the left,
+ * and reading aloud must still start with the heading.
  */
-export function visibleEpubExcerpt(
+export function firstVisibleEpubText(
   contents: VisibleEpubContent[],
   viewport: DOMRect | null,
-): string | null {
+): VisibleEpubTextStart | null {
+  // Candidates are collected content by content and, within one, in document
+  // order, so the first one of the earliest section is where reading starts.
+  const ordered = contents
+    .map((content, position) => ({ content, position }))
+    .sort(
+      (a, b) =>
+        sectionOrder(a.content, a.position) - sectionOrder(b.content, b.position) ||
+        a.position - b.position,
+    );
+
+  for (const { content } of ordered) {
+    const first = visibleCandidates([content], viewport)[0];
+    if (first) return { content: first.content, node: first.node, offset: first.offset };
+  }
+  return null;
+}
+
+function sectionOrder(content: VisibleEpubContent, fallback: number): number {
+  const index = (content as { sectionIndex?: unknown }).sectionIndex;
+  return typeof index === 'number' ? index : fallback;
+}
+
+function firstVisibleCandidate(
+  contents: VisibleEpubContent[],
+  viewport: DOMRect | null,
+): TextCandidate | null {
+  const candidates = visibleCandidates(contents, viewport);
+  if (!candidates.length) return null;
+
+  // A spread may have multiple rendered contents. Use visual page order,
+  // not the order in which epub.js returned its section objects.
+  candidates.sort((a, b) =>
+    a.top - b.top || a.left - b.left,
+  );
+
+  return candidates[0];
+}
+
+/** Every text node with a visible character, in document order per content. */
+function visibleCandidates(
+  contents: VisibleEpubContent[],
+  viewport: DOMRect | null,
+): TextCandidate[] {
   if (!viewport || viewport.width <= 0 || viewport.height <= 0) {
-    return null;
+    return [];
   }
 
   const candidates: TextCandidate[] = [];
@@ -229,15 +280,23 @@ export function visibleEpubExcerpt(
     }
   }
 
-  if (!candidates.length) return null;
+  return candidates;
+}
 
-  // A spread may have multiple rendered contents. Use visual page order,
-  // not the order in which epub.js returned its section objects.
-  candidates.sort((a, b) =>
-    a.top - b.top || a.left - b.left,
-  );
+/**
+ * Returns null for covers, image-only pages, unloaded renditions and pages
+ * where the actual visible text cannot be established.
+ *
+ * `contents` must be rendition.getContents() from the active rendition.
+ * The iframe is obtained from the epub.js Contents object.
+ */
+export function visibleEpubExcerpt(
+  contents: VisibleEpubContent[],
+  viewport: DOMRect | null,
+): string | null {
+  const first = firstVisibleCandidate(contents, viewport);
+  if (!first) return null;
 
-  const first = candidates[0];
   const prefix = first.node.textContent?.slice(0, first.offset) ?? '';
 
   const startsMidSentence =

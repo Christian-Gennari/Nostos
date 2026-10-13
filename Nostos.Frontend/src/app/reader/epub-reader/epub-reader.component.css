@@ -181,3 +181,17 @@
   stroke-opacity: 0.9;
   stroke-width: 2px;
 }
+
+/* The sentence being read aloud: a soft wash behind the words plus the same
+   rule as the landing mark, so the eye can follow the voice down the page. */
+:host ::ng-deep .epubjs-read-aloud-mark rect {
+  stroke: none;
+  fill: var(--color-accent);
+  fill-opacity: 0.14;
+}
+
+:host ::ng-deep .epubjs-read-aloud-mark line {
+  stroke: var(--color-accent);
+  stroke-opacity: 0.9;
+  stroke-width: 2px;
+}
