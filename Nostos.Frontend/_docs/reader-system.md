@@ -175,7 +175,7 @@ Non-injectable class, manually instantiated. Manages:
 - Playback settings include speed and sleep timers, including stopping at the chapter end
 - Progress bar: current time / total duration
 - Saves playback progress and resumes from the last saved position; updates MediaSession metadata and controls (with chapters: chapter as `title`, book as `album`, rewritten only when the chapter changes)
-- **Add timestamp:** Inserts the current playback time (`m:ss` or `h:mm:ss`) into the quick-note textarea
+- **Note time:** A quick note is saved at the playback time it was started at, not the time Save was pressed. The time is pinned on the first keystroke, shown beside Save while drafting (`at 12:34`), and stored both as `cfiRange` (seconds) and as a verified `audio_timestamp` anchor. Saved notes show it on their card (`m:ss` or `h:mm:ss`); activating it jumps there
 
 ## Notes Sidebar
 
@@ -183,7 +183,7 @@ Common across all reader types. Displays all `Note[]` for the book.
 
 Features:
 
-- **Jump to note:** Clicking a note with a `cfiRange` navigates the epub; clicking one with a page number navigates the PDF
+- **Jump to note:** Clicking a note with a `cfiRange` navigates the epub; clicking one with a page number navigates the PDF; an audiobook note jumps to its time, from the arrow or from the time shown on the card
 - **Edit inline:** Uses `NoteCardComponent` with topic tag support
 - **Delete:** With confirmation
 - **Topic tags:** `[[Topic]]` links rendered via `NoteFormatPipe`, clickable to navigate to Second Brain

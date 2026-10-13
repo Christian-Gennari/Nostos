@@ -84,6 +84,19 @@
           [attr.data-testid]="'note-pen-' + pen.id"
         ></span>
         }
+        @if (audioTimeLabel; as time) {
+        <button
+          type="button"
+          class="note-time"
+          data-testid="note-audio-time"
+          [attr.aria-label]="'Jump to ' + time"
+          title="Jump to this time"
+          (click)="onCardClick($event)"
+        >{{ time }}</button>
+        @if (showDate && note.createdAt) {
+        <span class="meta-separator" aria-hidden="true">·</span>
+        }
+        }
         @if (showDate && note.createdAt) {
         <span class="note-date-group">
           <span class="note-date">{{ note.createdAt | date : 'short' }}</span>
