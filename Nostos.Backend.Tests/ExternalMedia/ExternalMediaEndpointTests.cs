@@ -69,18 +69,25 @@ public sealed class ExternalMediaEndpointTests : IDisposable
     }
 
     [Fact]
-    public async Task The_capability_follows_the_server_s_configuration()
+    public async Task A_self_hosted_server_offers_the_feature_and_says_whether_a_folder_is_configured()
     {
         await using var configured = new Factory(_externalRoot);
         await using var unconfigured = new LibraryEndpointFactory();
 
-        var on = await configured.CreateClient()
-            .GetFromJsonAsync<DeploymentCapabilitiesResponse>(DeploymentCapabilitiesEndpoints.Route);
-        var off = await unconfigured.CreateClient()
-            .GetFromJsonAsync<DeploymentCapabilitiesResponse>(DeploymentCapabilitiesEndpoints.Route);
+        foreach (var factory in new LibraryEndpointFactory[] { configured, unconfigured })
+        {
+            var capabilities = await factory.CreateClient()
+                .GetFromJsonAsync<DeploymentCapabilitiesResponse>(DeploymentCapabilitiesEndpoints.Route);
+            capabilities!.SupportsExternalMediaLibraries.Should().BeTrue();
+        }
 
-        on!.SupportsExternalMediaLibraries.Should().BeTrue();
-        off!.SupportsExternalMediaLibraries.Should().BeFalse();
+        var on = await configured.CreateClient()
+            .GetFromJsonAsync<ExternalMediaStatusResponse>(ExternalMediaEndpoints.Route);
+        var off = await unconfigured.CreateClient()
+            .GetFromJsonAsync<ExternalMediaStatusResponse>(ExternalMediaEndpoints.Route);
+
+        on.Should().BeEquivalentTo(new { Configured = true, Mounted = true });
+        off.Should().BeEquivalentTo(new { Configured = false, Mounted = false, LinkedBooks = 0 });
     }
 
     private static async Task<Guid> AddLinkedBookAsync(Factory factory, string relativePath)

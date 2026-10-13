@@ -73,6 +73,30 @@
   line-height: 1.5;
 }
 
+.external-notice p {
+  margin: 0;
+}
+
+.external-notice ul {
+  margin: 0.5rem 0;
+  padding-left: 1.1rem;
+}
+
+.external-notice li + li {
+  margin-top: 0.35rem;
+}
+
+.external-notice code {
+  font-size: 0.76rem;
+  overflow-wrap: anywhere;
+}
+
+.external-notice a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 .setting-row + .external-notice {
   margin-top: 12px;
 }

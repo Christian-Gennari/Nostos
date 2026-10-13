@@ -7,9 +7,11 @@ namespace Nostos.Backend.Endpoints;
 /// <summary>
 /// Linking media from the administrator-mounted folder (issue #843).
 ///
-/// Mapped by the SelfHosted host only, and every route answers 404 until a
-/// folder is configured on the server. No route accepts a server path: a
-/// request can name a scanned candidate by its key and nothing else.
+/// Mapped by the SelfHosted host only. The status route always answers, so
+/// Settings can explain how to turn the feature on; scanning and importing
+/// answer 404 until a folder is configured on the server. No route accepts a
+/// server path: a request can name a scanned candidate by its key and nothing
+/// else.
 /// </summary>
 public static class ExternalMediaEndpoints
 {
@@ -20,6 +22,7 @@ public static class ExternalMediaEndpoints
 
     public static IEndpointRouteBuilder MapExternalMediaEndpoints(this IEndpointRouteBuilder routes)
     {
+        var status = routes.MapGroup(Route);
         var group = routes.MapGroup(Route).AddEndpointFilter(async (context, next) =>
         {
             var root = context.HttpContext.RequestServices.GetRequiredService<ExternalMediaRoot>();
@@ -32,7 +35,7 @@ public static class ExternalMediaEndpoints
                 });
         });
 
-        group.MapGet("/", async (
+        status.MapGet("/", async (
             ExternalMediaRoot root,
             ExternalMediaScanService scans,
             IDbContextFactory<NostosDbContext> contexts,
@@ -46,6 +49,7 @@ public static class ExternalMediaEndpoints
                 .CountAsync(ct);
 
             return Results.Ok(new ExternalMediaStatusResponse(
+                Configured: root.IsConfigured,
                 Mounted: root.IsMounted,
                 LinkedBooks: linkedBooks,
                 Scan: ToProgress(scans.State)));
@@ -141,7 +145,7 @@ public static class ExternalMediaEndpoints
         // file it references can be read right now. This is what lets the
         // book page say "your original files stay where they are" before a
         // removal, and "external file unavailable" when the folder is gone.
-        group.MapGet("/books/{bookId:guid}", async (
+        status.MapGet("/books/{bookId:guid}", async (
             Guid bookId,
             ExternalMediaRoot root,
             IDbContextFactory<NostosDbContext> contexts,
@@ -176,7 +180,11 @@ public sealed record ExternalMediaImportRequest(
 
 public sealed record ExternalMediaBookResponse(bool Linked, int Files, int UnavailableFiles);
 
-public sealed record ExternalMediaStatusResponse(bool Mounted, int LinkedBooks, ExternalMediaScanProgress Scan);
+public sealed record ExternalMediaStatusResponse(
+    bool Configured,
+    bool Mounted,
+    int LinkedBooks,
+    ExternalMediaScanProgress Scan);
 
 public sealed record ExternalMediaScanProgress(
     string Status,

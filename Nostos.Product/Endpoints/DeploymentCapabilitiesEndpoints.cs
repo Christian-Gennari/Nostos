@@ -70,9 +70,11 @@ public static class DeploymentCapabilitiesEndpoints
                 && deployment.Capabilities.SupportsManagedBackups
                 && deployment.Capabilities.SupportsManagedBackupRestore,
             // Fails closed twice over: only a SelfHosted host, and only one
-            // that registers the feature and has a folder configured for it.
+            // that registers the feature. Whether a folder is configured yet
+            // is the feature's own status, so Settings can show how to set
+            // one up instead of hiding that the feature exists.
             SupportsExternalMediaLibraries: deployment.Mode == DeploymentMode.SelfHosted
-                && externalMedia is { IsConfigured: true });
+                && externalMedia is not null);
 }
 
 public sealed record DeploymentCapabilitiesResponse(

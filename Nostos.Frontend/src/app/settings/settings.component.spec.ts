@@ -402,6 +402,7 @@ const assistantSettingsMock = {
 const externalMediaServiceMock = {
   status: vi.fn(() =>
     of({
+      configured: true,
       mounted: true,
       linkedBooks: 0,
       scan: { status: 'idle', startedAt: null, finishedAt: null, examined: 0, total: 0, error: null },

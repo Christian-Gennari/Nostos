@@ -153,6 +153,7 @@ In the public SelfHosted application, AI provider configuration remains under th
 ### Portability, Backup & Integrations
 
 - **Portable library archives:** Export and import `.nostos` files to move library data between Nostos installations. See [Library portability and migration](docs/cloud/portability.md) for the exact steps, contents, limits, recovery behavior, and verification status.
+- **External media (SelfHosted):** Link a folder of audiobooks and ebooks that is already on your server. Nostos reads the files in place and never copies, modifies or deletes them. See the [External media guide](docs/external-media.md).
 - **Local backup and restore:** SelfHosted installations include local backup and restore workflows with integrity checks and restore safeguards.
 - **OPDS export:** A configurable OPDS catalogue can expose a self-hosted library to compatible readers on networks you control.
 - **MCP:** An optional bearer-protected Model Context Protocol endpoint lets compatible tools work with Nostos through the documented library contracts.
@@ -301,7 +302,30 @@ The `selfhosted-sha-*` prefix is intentional. Historical `sha-*` tags in the sam
 
 Compose keeps the existing named volume across image replacement. Use Nostos' portable `.nostos` export/backup features as your user-owned backup and migration path; a Docker volume is persistent storage, not a substitute for backups.
 
-To use audiobooks and ebooks that are already on the server without copying them, mount their folder read-only and set `ExternalMedia__Root`. Nostos never modifies or deletes those files. See [External media](docs/external-media.md).
+#### Use books that are already on your server
+
+Nostos can read audiobooks and ebooks from a folder you already have, without copying them. It never modifies or deletes those files.
+
+1. In `compose.yml`, uncomment the folder line and replace `/mnt/audiobooks` with your folder:
+
+   ```yaml
+       volumes:
+         - nostos-data:/data
+         - /mnt/audiobooks:/external/media:ro
+   ```
+
+2. Let the container's user read the files, then apply the change:
+
+   ```bash
+   chmod -R o+rX /mnt/audiobooks
+   docker compose up -d
+   ```
+
+3. Open **Settings → This server → External media**, press **Scan folder**, review what was found, and import.
+
+The image looks in `/external/media`, so no other setting is needed. Until a folder is mounted there, that Settings page shows these steps.
+
+The [External media guide](docs/external-media.md) covers `docker run`, installs without Docker, the folder layout Nostos expects, and what to check when the folder does not show up.
 
 If you prefer to build from the source you cloned instead of pulling GHCR:
 
@@ -331,6 +355,7 @@ Read the [Design Manifesto](docs/design-manifesto.md) for the product's visual a
 - **[Releases](https://github.com/Christian-Gennari/Nostos/releases):** Reader-facing changes to Nostos.
 - **[Releases](docs/releases.md):** CalVer tags and the release notes workflow.
 - **[Design Manifesto](docs/design-manifesto.md):** Product, visual, and interaction principles.
+- **[External media](docs/external-media.md):** Setting up and using a folder of books that is already on a SelfHosted server.
 - **[Content Providers & Acquisition](docs/content-providers.md):** Provider architecture and import behavior for external catalogues.
 - **[MCP Library Contracts](docs/library-mcp-contracts.md):** Stable Model Context Protocol contracts for agents and tools.
 - **[Backend Endpoints](Nostos.Backend/_docs/endpoints.md):** REST API reference.

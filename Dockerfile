@@ -38,6 +38,7 @@ ENV ASPNETCORE_ENVIRONMENT=Production \
     DataProtection__KeysPath=/data/keys \
     Storage__BooksRoot=/data/books \
     Storage__BackupsRoot=/data/backups \
+    ExternalMedia__Root=/external/media \
     TMPDIR=/tmp/nostos
 EXPOSE 8080
 VOLUME ["/data"]
