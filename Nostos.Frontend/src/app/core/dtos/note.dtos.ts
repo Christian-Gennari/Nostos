@@ -44,9 +44,42 @@ export function noteNavigationTarget(note: Note): string | number | null {
       const page = Number(value);
       return Number.isInteger(page) && page > 0 ? page : null;
     }
+    case 'audio_timestamp':
+      // Assistant audio captures store the time only in the typed anchor.
+      return parseAudioSeconds(value) === null ? null : value;
     default:
       return null;
   }
+}
+
+function parseAudioSeconds(value: string | null | undefined): number | null {
+  const text = value?.trim() ?? '';
+  if (!/^\d+(\.\d+)?$/.test(text)) return null;
+  const seconds = Number(text);
+  return Number.isFinite(seconds) ? seconds : null;
+}
+
+/**
+ * The playback time an audiobook note was taken at, in seconds across the
+ * whole book, or null when it has none. Only meaningful for a note in an
+ * audiobook: a PDF note's `cfiRange` can be a bare number too, so the caller
+ * decides the format.
+ */
+export function noteAudioSeconds(note: Note): number | null {
+  if (note.anchorVerified && note.sourceAnchorKind?.toLowerCase() === 'audio_timestamp') {
+    const anchored = parseAudioSeconds(note.sourceAnchorValue);
+    if (anchored !== null) return anchored;
+  }
+  return parseAudioSeconds(note.cfiRange);
+}
+
+/** Seconds to `m:ss`, or `h:mm:ss` from one hour on. */
+export function formatAudioTime(seconds: number): string {
+  const whole = Number.isFinite(seconds) ? Math.max(0, Math.floor(seconds)) : 0;
+  const h = Math.floor(whole / 3600);
+  const m = Math.floor((whole % 3600) / 60);
+  const s = (whole % 60).toString().padStart(2, '0');
+  return h > 0 ? `${h}:${m.toString().padStart(2, '0')}:${s}` : `${m}:${s}`;
 }
 
 /**
@@ -101,6 +134,10 @@ export interface CreateNoteDto {
   selectedText?: string;
   /** The pen a highlight is made with, by name. */
   highlightColour?: string;
+  /** Typed source anchor; omitted leaves the server default (`unknown`). */
+  sourceAnchorKind?: string;
+  sourceAnchorValue?: string;
+  anchorVerified?: boolean;
 }
 
 export interface UpdateNoteDto {

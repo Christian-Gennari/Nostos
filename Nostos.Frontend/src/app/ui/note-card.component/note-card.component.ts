@@ -10,7 +10,7 @@ export interface NoteSourceNavigation {
   label: 'Return to passage' | 'Open book';
 }
 
-import { Note } from '../../core/dtos/note.dtos';
+import { Note, formatAudioTime } from '../../core/dtos/note.dtos';
 import {
   HIGHLIGHT_COLOURS,
   HighlightColour,
@@ -47,6 +47,11 @@ export class NoteCardComponent {
   /** Optional context-specific source destination; null preserves the legacy Library link. */
   @Input() sourceNavigation: NoteSourceNavigation | null = null;
   @Input() showDate = true;
+  /**
+   * The playback time an audiobook note was taken at, in seconds (issue #906).
+   * Set by the audio reader only; null shows nothing.
+   */
+  @Input() audioTime: number | null = null;
   @Input() actionsTemplate: TemplateRef<unknown> | null = null;
   @Input() actionsContext: Record<string, unknown> = {};
 
@@ -81,6 +86,10 @@ export class NoteCardComponent {
     if (!this.note.selectedText || this.note.highlightColour === undefined) return null;
     const colour = noteHighlightColour(this.note);
     return HIGHLIGHT_COLOURS.find((option) => option.id === colour) ?? null;
+  }
+
+  get audioTimeLabel(): string | null {
+    return this.audioTime === null ? null : formatAudioTime(this.audioTime);
   }
 
   // Collapse logic

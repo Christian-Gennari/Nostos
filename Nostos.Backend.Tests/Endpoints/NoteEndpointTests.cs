@@ -155,6 +155,38 @@ public sealed class NoteEndpointTests : IClassFixture<LibraryEndpointFactory>
         response.Headers.Location!.OriginalString.Should().EndWith($"/api/notes/{note.Id}");
     }
 
+    // A note typed in the audio reader (issue #906) arrives over this route
+    // with the reader's own time as a verified anchor. Second Brain only links
+    // back to the moment when all three fields survive the round trip.
+    [Fact]
+    public async Task Create_note_keeps_a_verified_audio_timestamp_anchor()
+    {
+        var book = await CreateBookAsync();
+
+        var response = await Client.PostAsJsonAsync(
+            $"/api/books/{book.Id}/notes",
+            new
+            {
+                content = "worth hearing again",
+                cfiRange = "754.5",
+                sourceAnchorKind = "audio_timestamp",
+                sourceAnchorValue = "754.5",
+                anchorVerified = true,
+            });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        var note = await response.Content.ReadFromJsonAsync<NoteDto>();
+        note!.CfiRange.Should().Be("754.5");
+        note.SourceAnchorKind.Should().Be("audio_timestamp");
+        note.SourceAnchorValue.Should().Be("754.5");
+        note.AnchorVerified.Should().BeTrue();
+        note.CaptureSource.Should().Be("text");
+
+        var listed = await Client.GetFromJsonAsync<NoteDto[]>($"/api/books/{book.Id}/notes");
+        listed!.Should().ContainSingle()
+            .Which.SourceAnchorKind.Should().Be("audio_timestamp");
+    }
+
     [Fact]
     public async Task Create_note_for_unknown_book_returns_404_with_exact_body()
     {

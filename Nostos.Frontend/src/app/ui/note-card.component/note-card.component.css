@@ -161,6 +161,26 @@
   margin-top: 4px;
 }
 
+/* An audiobook note's time: the same jump as the arrow, read as metadata. */
+.note-time {
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-main);
+  cursor: pointer;
+}
+.note-time:hover {
+  text-decoration: underline;
+}
+.note-time:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
 .note-date-group {
   display: inline-flex;
   flex: 0 0 auto;

@@ -10,7 +10,14 @@ import { TopicsService, TopicDto } from '../core/services/topics.service';
 import { TopicAutocompleteService } from '../ui/topic-autocomplete-panel/topic-autocomplete.service';
 
 // DTOs & Interfaces
-import { Note, importedNoteLocation, noteNavigationTarget } from '../core/dtos/note.dtos';
+import {
+  CreateNoteDto,
+  Note,
+  formatAudioTime,
+  importedNoteLocation,
+  noteAudioSeconds,
+  noteNavigationTarget,
+} from '../core/dtos/note.dtos';
 import { IReader, ReaderSearchState, ReaderSourceTarget, TocItem } from './reader.interface';
 import { isInteractiveTarget, isTypingTarget, pageActionForKey } from './reader-keyboard';
 import {
@@ -525,6 +532,16 @@ export class ReaderShell implements OnInit, OnDestroy {
   dbNotes = signal<Note[]>([]);
   quickNoteContent = signal('');
   quickNoteSaving = signal(false);
+  /**
+   * The audio position the quick-note draft was started at, as the reader
+   * reports it (issue #906). Playback keeps running while the user types, so
+   * the moment is pinned at the first keystroke instead of read on Save.
+   */
+  quickNotePinnedLocation = signal<string | null>(null);
+  readonly quickNotePinnedTime = computed(() => {
+    const pinned = this.quickNotePinnedLocation();
+    return pinned === null ? null : formatAudioTime(Number(pinned));
+  });
   saveFeedback = signal<string | null>(null);
 
   /** Note id awaiting delete confirmation (asked through ConfirmModal). */
@@ -721,6 +738,7 @@ export class ReaderShell implements OnInit, OnDestroy {
     this.pendingSelectionText.set(null);
     this.highlightSaving.set(false);
     this.quickNoteSaving.set(false);
+    this.quickNotePinnedLocation.set(null);
     this.tocOpen.set(false);
     this.notesOpen.set(false);
     this.typoOpen.set(false);
@@ -1125,16 +1143,22 @@ export class ReaderShell implements OnInit, OnDestroy {
 
   // --- NOTES LOGIC ---
 
-  addAudioTimestamp() {
-    if (this.fileType() !== 'audio' || !this.activeReader()) return;
-    const label = this.activeReader()?.progress().label;
-    if (label) {
-      const currentTime = label.split(' / ')[0];
-      this.quickNoteContent.update((current) => {
-        const prefix = current.length > 0 ? ' ' : '';
-        return current + prefix + `[${currentTime}] `;
-      });
+  onQuickNoteInput(value: string) {
+    this.quickNoteContent.set(value);
+    if (!value) {
+      this.quickNotePinnedLocation.set(null);
+      return;
     }
+    // Seeking while drafting keeps the pinned moment: only a draft with no pin
+    // takes one.
+    if (this.fileType() === 'audio' && this.quickNotePinnedLocation() === null) {
+      this.quickNotePinnedLocation.set(this.activeReader()?.getCurrentLocation() ?? null);
+    }
+  }
+
+  /** The time to show on a note's card: audiobooks only. */
+  noteAudioTime(note: Note): number | null {
+    return this.fileType() === 'audio' ? noteAudioSeconds(note) : null;
   }
 
   saveQuickNote() {
@@ -1144,13 +1168,29 @@ export class ReaderShell implements OnInit, OnDestroy {
     const bookId = this.book()?.id;
     if (!bookId) return;
 
-    const currentCfi = this.activeReader()?.getCurrentLocation() || undefined;
+    const isAudio = this.fileType() === 'audio';
+    const location =
+      (isAudio ? this.quickNotePinnedLocation() : null) ||
+      this.activeReader()?.getCurrentLocation() ||
+      undefined;
+    const dto: CreateNoteDto = { content, cfiRange: location };
+    if (isAudio && location && Number.isFinite(Number(location))) {
+      // The reader itself reported this time, so the anchor is verified and
+      // Second Brain can link back to the moment. cfiRange stays for the
+      // reader's own navigation.
+      dto.sourceAnchorKind = 'audio_timestamp';
+      dto.sourceAnchorValue = location;
+      dto.anchorVerified = true;
+    }
     this.quickNoteSaving.set(true);
 
-    this.notesService.create(bookId, { content, cfiRange: currentCfi }).subscribe({
+    this.notesService.create(bookId, dto).subscribe({
       next: () => {
         // Do not erase text typed while the request was in flight.
-        if (this.quickNoteContent().trim() === content) this.quickNoteContent.set('');
+        if (this.quickNoteContent().trim() === content) {
+          this.quickNoteContent.set('');
+          this.quickNotePinnedLocation.set(null);
+        }
         this.quickNoteSaving.set(false);
         this.loadNotes(bookId);
         this.loadTopics();
