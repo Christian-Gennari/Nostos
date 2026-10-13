@@ -1126,11 +1126,14 @@ test('source insertion stays unavailable through editor startup failure, then in
   await retryInsert.click();
   const insertedQuote = editorBody.locator('blockquote').last();
   await expect(insertedQuote).toContainText(longQuote);
+  // Wait for the autosave of THIS insertion. The writing is shared with the
+  // tests above, which already inserted the same quotation, so "contains the
+  // quote" is true before this save lands and cannot be the thing waited on.
   await expect
     .poll(async () => (await apiGet<WritingContentDto>(baseUrl, '/api/writings/' + writingId)).content)
-    .toContain(longQuote);
+    .not.toBe(initialContent);
   const persisted = await apiGet<WritingContentDto>(baseUrl, '/api/writings/' + writingId);
-  expect(persisted.content).not.toBe(initialContent);
+  expect(persisted.content).toContain(longQuote);
   await page.screenshot({ path: '/tmp/809-studio-insert-recovered-1440x900-light.png', animations: 'disabled' });
   await page.addInitScript(() => localStorage.setItem('nostos.theme', 'dark'));
   await page.reload({ waitUntil: 'domcontentloaded' });
