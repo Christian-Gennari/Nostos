@@ -42,7 +42,7 @@
           (click)="choose(target)"
           [attr.data-testid]="'switch-edition-' + target.kind"
         >
-          <span class="switch-icon">
+          <span appIconTile tone="quiet" class="switch-icon">
             <nostos-icon [name]="iconFor(target.kind)" [size]="16"></nostos-icon>
           </span>
           <span class="switch-content">

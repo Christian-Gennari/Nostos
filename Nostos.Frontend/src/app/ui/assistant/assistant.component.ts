@@ -26,6 +26,7 @@ import { AssistantVoiceService } from './assistant-voice.service';
 import { AssistantStatusService } from './assistant-status.service';
 import { AssistantMarkdownPipe } from './assistant-markdown.pipe';
 import { LibraryPreferencesService } from '../../core/services/library-preferences.service';
+import { IconTileComponent } from '../icon-tile/icon-tile.component';
 
 /**
  * How close to the end of the transcript still counts as "reading the newest
@@ -229,7 +230,7 @@ export function buildEntrySourceView(entry: AssistantEntry): EntrySourceView {
 @Component({
   selector: 'app-assistant',
   standalone: true,
-  imports: [NostosIconComponent, AssistantMarkdownPipe, ButtonComponent, IconButtonComponent],
+  imports: [IconTileComponent, NostosIconComponent, AssistantMarkdownPipe, ButtonComponent, IconButtonComponent],
   templateUrl: './assistant.component.html',
   styleUrl: './assistant.component.css',
   host: {

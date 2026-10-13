@@ -41,17 +41,6 @@
   gap: 0.8rem 0.9rem;
   align-items: start;
 }
-.acquisition-start__icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 42px;
-  height: 42px;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-lg);
-  background: var(--color-accent-bg);
-  color: var(--color-text-main);
-}
 .acquisition-start__copy h3,
 .section-heading h3 {
   margin: 0;

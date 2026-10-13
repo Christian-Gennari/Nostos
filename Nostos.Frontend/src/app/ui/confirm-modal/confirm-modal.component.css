@@ -19,19 +19,6 @@
   margin-bottom: 0.6rem;
 }
 
-.confirm-mark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  flex-shrink: 0;
-  border-radius: var(--radius-lg);
-  background: var(--danger-surface);
-  border: 1px solid var(--danger-hairline);
-  color: var(--danger-ink);
-}
-
 .confirm-title {
   margin: 0;
   font-family: 'Newsreader', serif;

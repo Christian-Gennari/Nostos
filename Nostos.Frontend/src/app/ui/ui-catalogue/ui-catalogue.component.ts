@@ -8,6 +8,8 @@ import { Theme, ThemeService } from '../../core/services/theme.service';
 import { ToastService, type ToastType } from '../../core/services/toast.service';
 import { BadgeComponent } from '../badge/badge.component';
 import { NoticeComponent } from '../notice/notice.component';
+import { IconTileComponent } from '../icon-tile/icon-tile.component';
+import { NostosIconComponent } from '../icon/nostos-icon.component';
 import { ButtonComponent } from '../button/button.component';
 import { ChipComponent } from '../chip/chip.component';
 import { DialogActionsComponent } from '../dialog-actions/dialog-actions.component';
@@ -34,6 +36,8 @@ import { ViewToggleComponent, type ViewToggleOption } from '../view-toggle/view-
   imports: [
     BadgeComponent,
     NoticeComponent,
+    IconTileComponent,
+    NostosIconComponent,
     ButtonComponent,
     ChipComponent,
     DialogActionsComponent,
