@@ -10,7 +10,7 @@
   </header>
 
   <form class="quick-add" (submit)="add($event)" aria-labelledby="quick-add-label">
-    <span id="quick-add-label" class="quick-add__label">Add a book</span>
+    <h2 id="quick-add-label" class="quick-add__label">Add a book</h2>
     <div class="quick-add__row">
       <input
         #titleInput
@@ -43,7 +43,8 @@
         class="quick-add__submit"
         [disabled]="adding() || !draftTitle.trim()"
       >
-        Add to list
+        <nostos-icon name="plus" [size]="16"></nostos-icon>
+        <span>Add to list</span>
       </button>
     </div>
     <p class="quick-add__hint">Press Enter and keep typing. Your reasons can come later.</p>
@@ -77,101 +78,114 @@
         } @else {
           <ol class="shelf">
             @for (entry of next(); track entry.id; let first = $first; let last = $last) {
-              <li class="shelf-card" [class.is-busy]="isBusy(entry)">
-                <div class="cover" aria-hidden="true">{{ entry.title }}</div>
-                <div class="shelf-card__body">
-                  <span class="shelf-card__rank">{{ first ? 'Reading next' : 'Then' }}</span>
-                  <h3 class="entry-title">{{ entry.title }}</h3>
-                  @if (entry.author) {
-                    <p class="entry-author">{{ entry.author }}</p>
-                  }
-                  @if (entry.why) {
-                    <p class="entry-why">{{ entry.why }}</p>
-                  }
-                  @if (entry.recommendedBy) {
-                    <p class="entry-meta">Recommended by {{ entry.recommendedBy }}</p>
-                  }
-                  @if (entry.ownedBookId) {
-                    <p class="entry-owned">
-                      <a [routerLink]="['/library', entry.ownedBookId]">It's in your library</a>
-                    </p>
-                  }
-
-                  <div class="entry-actions">
-                    @if (entry.ownedBookId) {
-                      <button
-                        appButton
-                        variant="primary"
-                        size="sm"
-                        type="button"
-                        [disabled]="isBusy(entry)"
-                        (click)="finishOwned(entry)"
-                      >
-                        Take off the list
-                      </button>
-                    } @else {
-                      <button
-                        appButton
-                        variant="primary"
-                        size="sm"
-                        type="button"
-                        [disabled]="isBusy(entry)"
-                        (click)="gotIt(entry)"
-                      >
-                        I got it
-                      </button>
+              <li class="shelf-card" [class.is-first]="first" [class.is-busy]="isBusy(entry)">
+                <div class="shelf-card__main">
+                  <div class="cover" aria-hidden="true">{{ entry.title }}</div>
+                  <div class="shelf-card__body">
+                    <div class="shelf-card__top">
+                      <span class="shelf-card__rank">{{ first ? 'Reading next' : 'Then' }}</span>
+                      <!-- Order lives beside the rank it changes. -->
+                      <span class="entry-icons">
+                        <button
+                          type="button"
+                          appIconButton
+                          icon="caret-up"
+                          size="xs"
+                          [glyphSize]="14"
+                          [disabled]="first || isBusy(entry)"
+                          [attr.aria-label]="'Read “' + entry.title + '” earlier'"
+                          title="Earlier"
+                          (click)="move(entry, -1)"
+                        ></button>
+                        <button
+                          type="button"
+                          appIconButton
+                          icon="caret-down"
+                          size="xs"
+                          [glyphSize]="14"
+                          [disabled]="last || isBusy(entry)"
+                          [attr.aria-label]="'Read “' + entry.title + '” later'"
+                          title="Later"
+                          (click)="move(entry, 1)"
+                        ></button>
+                      </span>
+                    </div>
+                    <h3 class="entry-title">{{ entry.title }}</h3>
+                    @if (entry.author) {
+                      <p class="entry-author">{{ entry.author }}</p>
                     }
+                    @if (entry.why) {
+                      <p class="entry-why">{{ entry.why }}</p>
+                    }
+                    @if (entry.recommendedBy) {
+                      <p class="entry-meta">Recommended by {{ entry.recommendedBy }}</p>
+                    }
+                    @if (entry.ownedBookId) {
+                      <p class="entry-owned">
+                        <a [routerLink]="['/library', entry.ownedBookId]">It's in your library</a>
+                      </p>
+                    }
+                  </div>
+                </div>
+
+                <!-- One solid action on the whole shelf: the book being read next. -->
+                <div class="shelf-card__foot entry-actions">
+                  @if (entry.ownedBookId) {
                     <button
                       appButton
-                      variant="secondary"
+                      [variant]="first ? 'primary' : 'secondary'"
                       size="sm"
                       type="button"
                       [disabled]="isBusy(entry)"
-                      (click)="demote(entry)"
+                      (click)="finishOwned(entry)"
                     >
-                      Someday
+                      Take off the list
                     </button>
-                    <span class="entry-actions__icons">
-                      <button
-                        type="button"
-                        appIconButton
-                        icon="caret-up"
-                        size="xs"
-                        [disabled]="first || isBusy(entry)"
-                        [attr.aria-label]="'Read “' + entry.title + '” earlier'"
-                        title="Earlier"
-                        (click)="move(entry, -1)"
-                      ></button>
-                      <button
-                        type="button"
-                        appIconButton
-                        icon="caret-down"
-                        size="xs"
-                        [disabled]="last || isBusy(entry)"
-                        [attr.aria-label]="'Read “' + entry.title + '” later'"
-                        title="Later"
-                        (click)="move(entry, 1)"
-                      ></button>
-                      <button
-                        type="button"
-                        appIconButton
-                        icon="pencil-simple"
-                        size="xs"
-                        [attr.aria-label]="'Edit “' + entry.title + '”'"
-                        title="Edit"
-                        (click)="openEdit(entry)"
-                      ></button>
-                      <button
-                        type="button"
-                        appIconButton
-                        icon="x"
-                        size="xs"
-                        [attr.aria-label]="'Remove “' + entry.title + '” from the list'"
-                        title="Remove"
-                        (click)="removeTarget.set(entry)"
-                      ></button>
-                    </span>
-                  </div>
+                  } @else {
+                    <button
+                      appButton
+                      [variant]="first ? 'primary' : 'secondary'"
+                      size="sm"
+                      type="button"
+                      [disabled]="isBusy(entry)"
+                      (click)="gotIt(entry)"
+                    >
+                      I got it
+                    </button>
+                  }
+                  <button
+                    appButton
+                    variant="ghost"
+                    size="sm"
+                    type="button"
+                    [disabled]="isBusy(entry)"
+                    (click)="demote(entry)"
+                  >
+                    Someday
+                  </button>
+                  <span class="entry-icons entry-icons--end">
+                    <button
+                      type="button"
+                      appIconButton
+                      icon="pencil-simple"
+                      size="xs"
+                      [glyphSize]="15"
+                      [attr.aria-label]="'Edit “' + entry.title + '”'"
+                      title="Edit"
+                      (click)="openEdit(entry)"
+                    ></button>
+                    <button
+                      type="button"
+                      appIconButton
+                      icon="x"
+                      size="xs"
+                      [glyphSize]="15"
+                      class="entry-remove"
+                      [attr.aria-label]="'Remove “' + entry.title + '” from the list'"
+                      title="Remove"
+                      (click)="removeTarget.set(entry)"
+                    ></button>
+                  </span>
                 </div>
               </li>
             }
@@ -207,7 +221,8 @@
                     <p class="entry-why">{{ entry.why }}</p>
                   } @else {
                     <button type="button" class="entry-add-why" (click)="openEdit(entry)">
-                      Add why you want to read it
+                      <nostos-icon name="plus" [size]="12"></nostos-icon>
+                      <span>Add a reason</span>
                     </button>
                   }
                   <p class="entry-meta">
@@ -236,7 +251,7 @@
                   @if (entry.ownedBookId) {
                     <button
                       appButton
-                      variant="secondary"
+                      variant="ghost"
                       size="sm"
                       type="button"
                       [disabled]="isBusy(entry)"
@@ -247,7 +262,7 @@
                   } @else {
                     <button
                       appButton
-                      variant="secondary"
+                      variant="ghost"
                       size="sm"
                       type="button"
                       [disabled]="isBusy(entry)"
@@ -256,12 +271,13 @@
                       I got it
                     </button>
                   }
-                  <span class="entry-actions__icons">
+                  <span class="entry-icons entry-icons--end">
                     <button
                       type="button"
                       appIconButton
                       icon="pencil-simple"
                       size="xs"
+                      [glyphSize]="15"
                       [attr.aria-label]="'Edit “' + entry.title + '”'"
                       title="Edit"
                       (click)="openEdit(entry)"
@@ -271,6 +287,8 @@
                       appIconButton
                       icon="x"
                       size="xs"
+                      [glyphSize]="15"
+                      class="entry-remove"
                       [attr.aria-label]="'Remove “' + entry.title + '” from the list'"
                       title="Remove"
                       (click)="removeTarget.set(entry)"
