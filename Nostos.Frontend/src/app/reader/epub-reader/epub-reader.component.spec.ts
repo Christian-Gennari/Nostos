@@ -514,7 +514,7 @@ describe('EpubReader theme-following normalization', () => {
     expect(rules.body.background).toBe('#ffffff !important');
     expect(rules.body.color).toBe('#1a1a1a !important');
     expect(rules['body *'].color).toBe('inherit !important');
-    expect(rules.a.color).toBe('#60a5fa !important');
+    expect(rules['a:any-link'].color).toBe('#60a5fa !important');
     // The dark rules mirror the dark tokens (slate ground, silver ink).
     const dark = themes.rules['nostos-dark'];
     expect(dark.body.background).toBe('#121318 !important');
