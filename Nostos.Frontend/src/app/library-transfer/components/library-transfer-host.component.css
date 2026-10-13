@@ -19,7 +19,7 @@
 }
 
 .transfer-host__entry--selected {
-  border-radius: 6px;
+  border-radius: var(--radius-row);
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: 4px;
 }
