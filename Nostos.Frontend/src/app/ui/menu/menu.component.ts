@@ -30,6 +30,8 @@ export type MenuItemTone = 'default' | 'danger';
  *   <ng-template #more>
  *     <nostos-menu>
  *       <button nostosMenuItem icon="pencil-simple" (triggered)="edit()">Edit</button>
+ *       <button nostosMenuItem icon="stack" hint="Group or split editions"
+ *               (triggered)="editions()">Editions</button>
  *       <hr nostosMenuSeparator />
  *       <button nostosMenuItem icon="trash" tone="danger" (triggered)="remove()">Remove</button>
  *     </nostos-menu>
@@ -66,17 +68,26 @@ export class MenuComponent {}
     class: 'nostos-menu-item',
     type: 'button',
     '[class.nostos-menu-item--danger]': "tone() === 'danger'",
+    '[class.nostos-menu-item--with-hint]': '!!hint()',
   },
   template: `
     @if (icon(); as name) {
       <nostos-icon [name]="name" [size]="16" />
     }
     <span class="nostos-menu-item__label"><ng-content /></span>
+    @if (hint(); as text) {
+      <span class="nostos-menu-item__hint">{{ text }}</span>
+    }
   `,
 })
 export class MenuItemComponent {
   readonly icon = input<NostosIconName | null>(null);
   readonly tone = input<MenuItemTone>('default');
+  /**
+   * A second, quieter line under the label, for a menu whose labels alone do
+   * not say what each choice is for ("Editions": group or split editions).
+   */
+  readonly hint = input<string | null>(null);
 }
 
 @Directive({

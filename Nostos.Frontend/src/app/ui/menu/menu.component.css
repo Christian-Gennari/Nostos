@@ -50,6 +50,38 @@
   text-overflow: ellipsis;
 }
 
+/* An item with a hint is two lines: the icon sits beside the label, and the
+   hint wraps under it. */
+.nostos-menu-item--with-hint {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  column-gap: 0.6rem;
+  row-gap: 1px;
+  padding-block: 0.45rem;
+  white-space: normal;
+}
+
+.nostos-menu-item--with-hint nostos-icon {
+  grid-row: 1 / span 2;
+  margin-top: 1px;
+}
+
+.nostos-menu-item--with-hint .nostos-menu-item__label,
+.nostos-menu-item__hint {
+  grid-column: 2;
+}
+
+.nostos-menu-item--with-hint .nostos-menu-item__label {
+  font-weight: var(--fw-medium);
+}
+
+.nostos-menu-item__hint {
+  color: var(--color-text-muted);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
 /* The CDK moves real focus through the items, so one rule covers the pointer
    and the keyboard. */
 .nostos-menu-item:hover,

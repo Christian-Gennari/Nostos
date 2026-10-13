@@ -186,11 +186,13 @@ describe('BookDetail reset progress', () => {
     (actions.querySelector('.edit-metadata-btn') as HTMLButtonElement).click();
     fixture.detectChanges();
 
+    // The menu is the shared nostos-menu, which renders in the CDK overlay
+    // outside the component's own element.
     const editions = Array.from(
-      fixture.nativeElement.querySelectorAll('.edit-menu-item') as NodeListOf<HTMLElement>,
-    ).find((item) => item.querySelector('.edit-menu-item-label')?.textContent?.trim() === 'Editions');
+      document.querySelectorAll('.nostos-menu-item') as NodeListOf<HTMLElement>,
+    ).find((item) => item.querySelector('.nostos-menu-item__label')?.textContent?.trim() === 'Editions');
 
-    expect(editions?.querySelector('.edit-menu-item-hint')?.textContent).toContain(
+    expect(editions?.querySelector('.nostos-menu-item__hint')?.textContent).toContain(
       'separately added digital editions',
     );
   });
@@ -461,9 +463,10 @@ describe('BookDetail reset progress', () => {
 
   function editMenuItem(label: string): HTMLButtonElement | null {
     return (
+      // nostos-menu renders in the CDK overlay, outside the fixture's element.
       Array.from(
-        fixture.nativeElement.querySelectorAll('.edit-menu-item') as NodeListOf<HTMLButtonElement>,
-      ).find((item) => item.querySelector('.edit-menu-item-label')?.textContent?.trim() === label) ??
+        document.querySelectorAll('.nostos-menu-item') as NodeListOf<HTMLButtonElement>,
+      ).find((item) => item.querySelector('.nostos-menu-item__label')?.textContent?.trim() === label) ??
       null
     );
   }
