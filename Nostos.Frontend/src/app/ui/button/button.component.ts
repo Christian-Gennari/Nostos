@@ -125,14 +125,25 @@ export type ButtonSize = 'sm' | 'md' | 'lg';
         transform: scale(0.98);
       }
 
-      :host(.nostos-button--sm) {
+      /* The height rungs sit inside :where(), so they weigh no more than the
+         base rule above. A screen's own "min-height: 44px on touch" rule is a
+         single class, and it has to keep winning: written as plain
+         :host(.nostos-button--sm) the rung out-weighed it, and every small
+         button on a phone stayed 28px tall. */
+      :host(:where(.nostos-button--sm)) {
         min-height: var(--control-h-xs);
+      }
+
+      :host(:where(.nostos-button--lg)) {
+        min-height: 36px;
+      }
+
+      :host(.nostos-button--sm) {
         padding: 0 10px;
         font-size: var(--text-xs);
       }
 
       :host(.nostos-button--lg) {
-        min-height: 36px;
         padding: 0 14px;
         font-size: 0.875rem;
       }

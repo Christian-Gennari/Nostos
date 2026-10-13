@@ -449,8 +449,13 @@ test('content can be scrolled clear of the dock on the reading view', async ({ p
     if (!col || !dock) return null;
     col.scrollTop = col.scrollHeight;
     await new Promise((r) => requestAnimationFrame(() => r(null)));
-    const cards = col.querySelectorAll('.reading-column .note-card');
-    const last = cards.length ? cards[cards.length - 1] : null;
+    // The last BLOCK in the column, not the last note: since the detail leads
+    // with its notes, "Related through shared notes" and "Manage topic" sit
+    // below them, and measuring the last note reported their height as a gap.
+    const blocks = col.querySelectorAll(
+      '.reading-column .note-card, .related-section, .topic-management',
+    );
+    const last = blocks.length ? blocks[blocks.length - 1] : null;
     if (!last) return null;
     return {
       gap: Math.round(dock.getBoundingClientRect().top - last.getBoundingClientRect().bottom),
@@ -459,7 +464,7 @@ test('content can be scrolled clear of the dock on the reading view', async ({ p
   });
 
   expect(result, 'the reading view must render cards and the dock').not.toBeNull();
-  expect(result!.gap, 'last card must not hide behind the dock').toBeGreaterThanOrEqual(0);
+  expect(result!.gap, 'the last block must not hide behind the dock').toBeGreaterThanOrEqual(0);
   // And the leftover margin must be a normal margin, not another dock's worth of gap.
   expect(result!.gap, 'no dead band: the trailing gap must be smaller than the dock').toBeLessThan(result!.dockHeight);
   } finally {
