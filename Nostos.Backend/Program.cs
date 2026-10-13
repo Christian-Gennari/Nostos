@@ -293,6 +293,7 @@ builder.Services.AddSingleton(sp => new ExternalMediaBookStorage(
     sp.GetRequiredService<ExternalMediaLinkStore>()));
 builder.Services.AddSingleton<IExternalMediaDescriber, ExternalMediaDescriber>();
 builder.Services.AddSingleton<ExternalMediaScanService>();
+builder.Services.AddSingleton<ExternalMediaImportService>();
 builder.Services.AddSingleton<IBookAssetStorage>(
     sp => sp.GetRequiredService<ExternalMediaBookStorage>());
 builder.Services.AddSingleton<IBookTrackStorage>(

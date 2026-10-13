@@ -11,10 +11,17 @@ public sealed record ExternalMediaDescription(
     string? Author = null,
     string? Narrator = null,
     string? Language = null,
-    long DurationMs = 0)
+    long DurationMs = 0,
+    IReadOnlyList<ExternalMediaChapter>? Chapters = null,
+    ExternalMediaCover? Cover = null)
 {
     public static readonly ExternalMediaDescription Unreadable = new(false);
 }
+
+public sealed record ExternalMediaChapter(string Title, double StartSeconds);
+
+/// <summary>Artwork embedded in a source file. Stored as a Nostos-owned cover on import.</summary>
+public sealed record ExternalMediaCover(byte[] Bytes, string Extension);
 
 /// <summary>
 /// Reads the embedded metadata of a file in the external root. A seam so
@@ -32,6 +39,7 @@ public interface IExternalMediaDescriber
 public sealed class ExternalMediaDescriber(ExternalMediaRoot root) : IExternalMediaDescriber
 {
     private const int MaxPackageBytes = 4 * 1024 * 1024;
+    private const int MaxCoverBytes = 20 * 1024 * 1024;
 
     public ExternalMediaDescription Describe(string rootId, string relativePath)
     {
@@ -69,7 +77,26 @@ public sealed class ExternalMediaDescriber(ExternalMediaRoot root) : IExternalMe
             // Audiobook taggers conventionally put the narrator in "composer".
             Narrator: Clean(track.Composer),
             Language: Clean(track.Language),
-            DurationMs: (long)track.DurationMs);
+            DurationMs: (long)track.DurationMs,
+            Chapters: track.Chapters?
+                .Select(chapter => new ExternalMediaChapter(chapter.Title ?? string.Empty, chapter.StartTime / 1000.0))
+                .ToList(),
+            Cover: CoverOf(track));
+    }
+
+    private static ExternalMediaCover? CoverOf(ATL.Track track)
+    {
+        var picture = track.EmbeddedPictures?.FirstOrDefault(p => p.PictureData is { Length: > 0 and <= MaxCoverBytes });
+        if (picture is null)
+            return null;
+
+        var extension = picture.NativeFormat switch
+        {
+            Commons.ImageFormat.Jpeg => ".jpg",
+            Commons.ImageFormat.Png => ".png",
+            _ => null,
+        };
+        return extension is null ? null : new ExternalMediaCover(picture.PictureData, extension);
     }
 
     private static ExternalMediaDescription DescribeEpub(Stream stream)

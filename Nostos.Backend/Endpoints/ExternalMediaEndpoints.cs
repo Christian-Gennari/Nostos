@@ -81,12 +81,92 @@ public static class ExternalMediaEndpoints
                 result.Missing));
         });
 
+        // Imports the named candidates of the last scan, or every candidate
+        // that is ready. A candidate that needs review is imported only when
+        // it is named: "everything" never includes it.
+        group.MapPost("/import", (
+            ExternalMediaImportRequest request,
+            ExternalMediaImportService imports,
+            IHostApplicationLifetime lifetime) =>
+        {
+            if (request.AllReady == (request.Keys is { Count: > 0 }))
+            {
+                return Results.BadRequest(new
+                {
+                    code = "external_media_invalid_selection",
+                    message = "Choose either every ready book or a list of books.",
+                });
+            }
+
+            if (request.Keys is { Count: > MaxImportKeys })
+            {
+                return Results.BadRequest(new
+                {
+                    code = "external_media_invalid_selection",
+                    message = $"At most {MaxImportKeys} books can be chosen by hand at once.",
+                });
+            }
+
+            var keys = request.AllReady ? null : request.Keys!.ToHashSet(StringComparer.Ordinal);
+            return imports.TryStart(keys, lifetime.ApplicationStopping) switch
+            {
+                ExternalMediaImportService.StartResult.Started =>
+                    Results.Accepted(Route + "/import", imports.State),
+                ExternalMediaImportService.StartResult.AlreadyRunning => Results.Conflict(new
+                {
+                    code = "external_media_import_running",
+                    message = "An import is already running.",
+                }),
+                ExternalMediaImportService.StartResult.NoScan => Results.Conflict(new
+                {
+                    code = "external_media_scan_required",
+                    message = "Scan the folder before importing.",
+                }),
+                _ => Results.Conflict(new
+                {
+                    code = "external_media_nothing_to_import",
+                    message = "None of the chosen books are in the last scan.",
+                }),
+            };
+        });
+
+        group.MapGet("/import", (ExternalMediaImportService imports) => Results.Ok(imports.State));
+
+        // Whether a book's media is read from the folder, and whether every
+        // file it references can be read right now. This is what lets the
+        // book page say "your original files stay where they are" before a
+        // removal, and "external file unavailable" when the folder is gone.
+        group.MapGet("/books/{bookId:guid}", async (
+            Guid bookId,
+            ExternalMediaRoot root,
+            IDbContextFactory<NostosDbContext> contexts,
+            CancellationToken ct) =>
+        {
+            await using var db = await contexts.CreateDbContextAsync(ct);
+            var links = await db.ExternalMediaLinks.AsNoTracking()
+                .Where(link => link.BookId == bookId)
+                .Select(link => new { link.RootId, link.RelativePath })
+                .ToListAsync(ct);
+
+            var unavailable = links.Count(link => root.Find(link.RootId, link.RelativePath) is null);
+            return Results.Ok(new ExternalMediaBookResponse(
+                Linked: links.Count > 0,
+                Files: links.Count,
+                UnavailableFiles: unavailable));
+        });
+
         return routes;
     }
+
+    private const int MaxImportKeys = 5000;
 
     private static ExternalMediaScanProgress ToProgress(ExternalMediaScanState state) =>
         new(state.Status, state.StartedAt, state.Result?.FinishedAt, state.Examined, state.Total, state.Error);
 }
+
+public sealed record ExternalMediaImportRequest(bool AllReady = false, IReadOnlyList<string>? Keys = null);
+
+public sealed record ExternalMediaBookResponse(bool Linked, int Files, int UnavailableFiles);
 
 public sealed record ExternalMediaStatusResponse(bool Mounted, int LinkedBooks, ExternalMediaScanProgress Scan);
 
