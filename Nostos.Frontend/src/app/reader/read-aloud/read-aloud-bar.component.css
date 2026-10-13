@@ -73,3 +73,21 @@
   font-size: 0.8rem;
   line-height: 1.35;
 }
+
+/* The next sentence is being fetched: the button breathes until sound starts. */
+.read-aloud-toggle.is-buffering {
+  animation: read-aloud-buffering 1.1s ease-in-out infinite;
+}
+
+@keyframes read-aloud-buffering {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .read-aloud-toggle.is-buffering {
+    animation: none;
+    opacity: 0.6;
+  }
+}

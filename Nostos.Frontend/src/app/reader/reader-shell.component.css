@@ -407,6 +407,13 @@
   font-size: 0.8rem;
   pointer-events: none;
 }
+/* A language can have more voices than fit on one line, so this row runs to
+   as many lines as it needs where the panel otherwise keeps options on one. */
+.reader-layout.immersive .typo-opts.typo-opts--wrap {
+  grid-auto-flow: row;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 /* Read aloud floats over the page like the save notice. Where the chrome is an
    overlay (immersive), it clears the safe area, and the pager when that shows. */
 .reader-layout.immersive app-read-aloud-bar {
@@ -423,6 +430,7 @@
     right: 1.5rem;
     bottom: 5px;
     transform: none;
+    align-items: flex-end;
   }
 }
 .info-tooltip {

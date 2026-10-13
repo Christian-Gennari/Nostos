@@ -11,6 +11,8 @@
   <button
     appIconButton
     class="read-aloud-toggle"
+    [class.is-buffering]="controller.buffering()"
+    [attr.aria-busy]="controller.buffering()"
     [icon]="controller.playing() ? 'pause' : 'play'"
     weight="fill"
     [glyphSize]="20"

@@ -39,6 +39,8 @@ export interface ReadAloudSpeakOptions {
   language: string | null;
   /** Playback speed, 1 = normal. */
   rate: number;
+  /** Called once sound is actually coming out, for a voice that has to fetch it first. */
+  onStart?: () => void;
 }
 
 /**
@@ -51,6 +53,11 @@ export interface ReadAloudVoice {
   speak(text: string, options: ReadAloudSpeakOptions): Promise<ReadAloudOutcome>;
   /** Stops speaking now. The pending `speak` resolves 'cancelled'. */
   cancel(): void;
+  /**
+   * Called synchronously from the tap that starts or resumes reading, for a
+   * voice that has to unlock audio playback inside a user gesture.
+   */
+  prime?(): void;
   /** Lets a voice that fetches audio get ahead of playback. */
   prepare?(texts: string[], options: ReadAloudSpeakOptions): void;
   /** Why the last `speak` failed, as a stable code, for choosing a fallback. */

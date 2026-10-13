@@ -59,6 +59,7 @@ import { ManagedBackupListing } from '../core/dtos/managed-backups.dtos';
 import { CloudAccountDeletionStatus } from '../core/dtos/cloud-account-deletion.dtos';
 import { CloudAccountDeletionSettingsComponent } from './cloud-account-deletion-settings.component';
 import { ExternalMediaSettingsComponent } from './external-media-settings.component';
+import { ReadAloudSettingsComponent } from './read-aloud-settings.component';
 import { LibraryTransferHostComponent } from '../library-transfer/components/library-transfer-host.component';
 import { CloudManagedAiUsage } from '../core/dtos/cloud-ai-refill.dtos';
 import {
@@ -277,6 +278,7 @@ const defaultProgress: BackupProgress = {
     ConfirmModal,
     CloudAccountDeletionSettingsComponent,
     ExternalMediaSettingsComponent,
+    ReadAloudSettingsComponent,
     LibraryTransferHostComponent,
   ],
   templateUrl: './settings.component.html',

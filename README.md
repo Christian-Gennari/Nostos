@@ -154,6 +154,7 @@ In the public SelfHosted application, AI provider configuration remains under th
 
 - **Portable library archives:** Export and import `.nostos` files to move library data between Nostos installations. See [Library portability and migration](docs/cloud/portability.md) for the exact steps, contents, limits, recovery behavior, and verification status.
 - **External media (SelfHosted):** Link a folder of audiobooks and ebooks that is already on your server. Nostos reads the files in place and never copies, modifies or deletes them. See the [External media guide](docs/external-media.md).
+- **Read aloud:** Listen to an EPUB from the page it is open on. Nostos marks the sentence being spoken and turns the pages. It uses the device's own voice, or a natural voice from a speech server you connect. See the [Read aloud guide](docs/read-aloud.md).
 - **Local backup and restore:** SelfHosted installations include local backup and restore workflows with integrity checks and restore safeguards.
 - **OPDS export:** A configurable OPDS catalogue can expose a self-hosted library to compatible readers on networks you control.
 - **MCP:** An optional bearer-protected Model Context Protocol endpoint lets compatible tools work with Nostos through the documented library contracts.
@@ -356,6 +357,7 @@ Read the [Design Manifesto](docs/design-manifesto.md) for the product's visual a
 - **[Releases](docs/releases.md):** CalVer tags and the release notes workflow.
 - **[Design Manifesto](docs/design-manifesto.md):** Product, visual, and interaction principles.
 - **[External media](docs/external-media.md):** Setting up and using a folder of books that is already on a SelfHosted server.
+- **[Read aloud](docs/read-aloud.md):** Listening to a book, and connecting a natural voice on a SelfHosted server.
 - **[Content Providers & Acquisition](docs/content-providers.md):** Provider architecture and import behavior for external catalogues.
 - **[MCP Library Contracts](docs/library-mcp-contracts.md):** Stable Model Context Protocol contracts for agents and tools.
 - **[Backend Endpoints](Nostos.Backend/_docs/endpoints.md):** REST API reference.

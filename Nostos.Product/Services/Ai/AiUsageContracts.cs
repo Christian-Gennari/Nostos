@@ -5,6 +5,7 @@ public enum AiUsageKind
 {
     Llm,
     Stt,
+    Tts,
 }
 
 /// <summary>Generic host policy outcomes for AI usage.</summary>
@@ -57,6 +58,12 @@ public sealed record TranscriptionUsage(
     double? DurationSeconds,
     string ResultCategory);
 
+/// <summary>Read-aloud usage. Speech is priced by the characters spoken.</summary>
+public sealed record SpeechSynthesisUsage(
+    int UpstreamRequestCount,
+    int Characters,
+    string ResultCategory);
+
 /// <summary>
 /// Optional host policy for assistant and transcription access. The product
 /// never derives identity or subscription state; a host supplies this decision.
@@ -85,6 +92,21 @@ public interface IAiUsageAccountingService
         TranscriptionUsage usage,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Reserves read-aloud usage for <paramref name="characters"/> characters.
+    /// Default-implemented so a host that predates read-aloud keeps compiling;
+    /// such a host registers no <see cref="IReadAloudProvider"/> either, so
+    /// nothing reaches this unmetered.
+    /// </summary>
+    Task<AiUsageLease?> BeginTtsAsync(
+        int characters,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult<AiUsageLease?>(null);
+
+    Task CompleteTtsAsync(
+        AiUsageLease? lease,
+        SpeechSynthesisUsage usage,
+        CancellationToken cancellationToken = default) => Task.CompletedTask;
 }
 
 /// <summary>Permissive access policy used by a local SelfHosted installation.</summary>
