@@ -232,7 +232,7 @@ let nextDropdownId = 0;
         border: 1px solid var(--border-color);
         /* The options keep 4px of padding inside, so the popup's corner is the
            field's plus a little, and the two curves stay concentric. */
-        border-radius: calc(var(--radius-field) + 2px);
+        border-radius: var(--radius-popover);
         background: var(--bg-surface);
         color: var(--color-text-main);
         box-shadow: var(--shadow-md);
@@ -253,7 +253,7 @@ let nextDropdownId = 0;
         width: 100%;
         min-height: 34px;
         padding: 0.4rem 0.65rem;
-        border-radius: var(--radius-lg);
+        border-radius: var(--radius-popover-item);
         color: var(--color-text-main);
         font-size: 0.88rem;
         line-height: 1.3;
