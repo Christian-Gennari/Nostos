@@ -133,14 +133,14 @@ let nextDropdownId = 0;
         gap: 0.75rem;
         width: 100%;
         min-width: 7.5rem;
-        min-height: var(--control-h-touch);
-        padding: 0.75rem 0.85rem;
+        min-height: var(--control-h-field);
+        padding: 0.5rem 0.8rem;
         border: 1px solid var(--dropdown-border, var(--control-border));
-        border-radius: var(--radius-md);
+        border-radius: var(--radius-field);
         background: var(--dropdown-bg, var(--bg-input));
         color: inherit;
         font: inherit;
-        font-size: 0.95rem;
+        font-size: 0.92rem;
         line-height: 1.35;
         text-align: left;
         cursor: pointer;
@@ -149,17 +149,18 @@ let nextDropdownId = 0;
         touch-action: manipulation;
         transition:
           border-color var(--motion-fast) var(--ease-plain),
-          outline-color var(--motion-fast) var(--ease-plain),
+          box-shadow var(--motion-fast) var(--ease-plain),
           background-color var(--motion-fast) var(--ease-plain);
       }
 
       :host(.nostos-dropdown--compact) .nostos-dropdown__trigger {
-        min-height: var(--dropdown-compact-height, 40px);
-        padding: var(--dropdown-compact-padding, 0.65rem 0.8rem);
-        font-size: 0.9rem;
+        min-height: var(--dropdown-compact-height, var(--control-h-field-compact));
+        padding: var(--dropdown-compact-padding, 0.4rem 0.7rem);
+        font-size: 0.875rem;
       }
 
       @media (pointer: coarse), (hover: none) {
+        .nostos-dropdown__trigger,
         :host(.nostos-dropdown--compact) .nostos-dropdown__trigger {
           min-height: var(--control-h-touch);
         }
@@ -171,8 +172,8 @@ let nextDropdownId = 0;
       :host(.nostos-dropdown--subtle) {
         --dropdown-border: var(--border-color);
         --dropdown-bg: transparent;
-        --dropdown-compact-height: 36px;
-        --dropdown-compact-padding: 0.5rem 0.7rem;
+        --dropdown-compact-height: var(--control-h-field-compact);
+        --dropdown-compact-padding: 0.4rem 0.7rem;
       }
 
       .nostos-dropdown__trigger:hover:not(:disabled) {
@@ -181,7 +182,7 @@ let nextDropdownId = 0;
 
       .nostos-dropdown__trigger:focus-visible {
         border-color: var(--border-focus);
-        outline-color: var(--focus-ring);
+        box-shadow: var(--focus-halo);
       }
 
       .nostos-dropdown__trigger[aria-invalid='true'] {
@@ -189,7 +190,8 @@ let nextDropdownId = 0;
       }
 
       .nostos-dropdown__trigger[aria-invalid='true']:focus-visible {
-        outline-color: var(--color-danger);
+        border-color: var(--color-danger);
+        box-shadow: var(--focus-halo-danger);
       }
 
       .nostos-dropdown__trigger:disabled {
@@ -228,7 +230,9 @@ let nextDropdownId = 0;
         padding: 4px;
         overflow: auto;
         border: 1px solid var(--border-color);
-        border-radius: var(--radius-md);
+        /* The options keep 4px of padding inside, so the popup's corner is the
+           field's plus a little, and the two curves stay concentric. */
+        border-radius: calc(var(--radius-field) + 2px);
         background: var(--bg-surface);
         color: var(--color-text-main);
         box-shadow: var(--shadow-md);
@@ -247,9 +251,9 @@ let nextDropdownId = 0;
         align-items: center;
         gap: 0.55rem;
         width: 100%;
-        min-height: 36px;
-        padding: 0.48rem 0.65rem;
-        border-radius: var(--radius-sm);
+        min-height: 34px;
+        padding: 0.4rem 0.65rem;
+        border-radius: var(--radius-lg);
         color: var(--color-text-main);
         font-size: 0.88rem;
         line-height: 1.3;
