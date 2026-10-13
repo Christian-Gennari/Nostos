@@ -35,18 +35,25 @@ export type ButtonSize = 'sm' | 'md' | 'lg';
   },
   styles: [
     `
+      /* A quiet, compact control: a softly rounded rectangle whose height is a
+         fixed rung, not a by-product of padding, so a row of mixed variants
+         shares one baseline and one edge. Every variant carries a 1px border
+         (transparent where it has none) for the same reason. */
       :host {
+        box-sizing: border-box;
         display: inline-flex;
         align-items: center;
         justify-content: center;
         gap: 6px;
-        padding: 8px 14px;
-        border: 0;
+        min-height: var(--control-h-md);
+        padding: 0 12px;
+        border: 1px solid transparent;
         border-radius: var(--radius-action);
         font-family: inherit;
-        font-size: 0.82rem;
+        font-size: 0.84rem;
         font-weight: var(--fw-medium);
-        line-height: normal;
+        line-height: 1.2;
+        letter-spacing: -0.005em;
         text-decoration: none;
         white-space: nowrap;
         cursor: pointer;
@@ -54,9 +61,10 @@ export type ButtonSize = 'sm' | 'md' | 'lg';
         transition:
           background-color 0.15s ease,
           border-color 0.15s ease,
+          box-shadow 0.15s ease,
           color 0.15s ease,
           opacity 0.15s ease,
-          transform 0.15s ease;
+          transform 0.1s ease;
       }
 
       :host(:focus-visible) {
@@ -67,22 +75,26 @@ export type ButtonSize = 'sm' | 'md' | 'lg';
       :host(:disabled) {
         opacity: 0.5;
         cursor: not-allowed;
+        box-shadow: none;
       }
 
       :host(.nostos-button--primary) {
         background: var(--cta-surface);
         color: var(--cta-ink);
+        box-shadow: var(--button-shadow-primary);
       }
 
+      /* Hover changes the fill only. The button used to rise a pixel, which
+         made a row of actions shift under the pointer. */
       :host(.nostos-button--primary:hover:not(:disabled)) {
         background: var(--cta-surface-hover);
-        transform: translateY(-1px);
       }
 
       :host(.nostos-button--secondary) {
-        background: var(--bg-surface-alt);
+        background: var(--bg-surface);
         color: var(--color-text-main);
-        border: 1px solid var(--border-color);
+        border-color: var(--control-border);
+        box-shadow: var(--button-shadow);
       }
 
       :host(.nostos-button--secondary:hover:not(:disabled)) {
@@ -102,7 +114,7 @@ export type ButtonSize = 'sm' | 'md' | 'lg';
       :host(.nostos-button--danger) {
         background: transparent;
         color: var(--color-danger);
-        border: 1px solid var(--color-danger);
+        border-color: var(--color-danger);
       }
 
       :host(.nostos-button--danger:hover:not(:disabled)) {
@@ -113,21 +125,16 @@ export type ButtonSize = 'sm' | 'md' | 'lg';
         transform: scale(0.98);
       }
 
-      /* Primary hover lifts by one pixel, so match its selector specificity here:
-         pressing must win over hover and feel like the control settles under the
-         finger rather than staying raised until click release. */
-      :host(.nostos-button--primary:active:not(:disabled)) {
-        transform: scale(0.98);
-      }
-
       :host(.nostos-button--sm) {
-        padding: 5px 10px;
+        min-height: var(--control-h-xs);
+        padding: 0 10px;
         font-size: var(--text-xs);
       }
 
       :host(.nostos-button--lg) {
-        padding: 10px 18px;
-        font-size: 0.88rem;
+        min-height: 36px;
+        padding: 0 14px;
+        font-size: 0.875rem;
       }
 
       @media (prefers-reduced-motion: reduce) {

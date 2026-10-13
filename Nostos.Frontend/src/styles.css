@@ -106,6 +106,11 @@
   /* Cover art in a grid frame. The hairline alone cannot read against a dark
      page, so it also carries a shadow. */
   --cover-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+
+  /* Buttons sit a hair above the page: a contact shadow, and on a filled
+     button a top highlight so the fill reads as a surface, not a flat block. */
+  --button-shadow: 0 1px 2px rgba(18, 19, 22, 0.05);
+  --button-shadow-primary: 0 1px 2px rgba(18, 19, 22, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.12);
   /* The same frame under the pointer: cast + a halo (the "soft lamp"). The
      halo was clay and warm; the cool palette has no warm accent, so it is now
      the same slate as the accent. Still replaced wholesale on dark. */
@@ -315,7 +320,9 @@
      both, so the pill shape on a dialog action and on a hero CTA is a single
      decision rather than two sets of co-incidentally equal literals. */
   --radius-dialog: 14px;
-  --radius-action: 999px;
+  /* Was 999px: every action was a capsule, which read as heavy at any size.
+     The role still owns the shape of every labelled action in one place. */
+  --radius-action: 8px;
 
   /* ── Dock role ──
      The floating dock is neither a card nor a control: it is a bar that floats
@@ -743,6 +750,9 @@
      ink, and the marker beside it is the accent — one state colour, not two. */
   --dock-item-active-ink: var(--color-text-main);
   --cover-shadow: 0 2px 12px rgba(0, 0, 0, 0.50);
+  /* The dark primary is a light fill, so a top highlight would not show. */
+  --button-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --button-shadow-primary: 0 1px 2px rgba(0, 0, 0, 0.4);
   /* Both layers neutral black, and that is now doubly right: the palette is
      cool-neutral end to end, so a tinted layer would be the only chromatic
      thing in the effect. Contact term + cast, so the card keeps a defined lip. */
