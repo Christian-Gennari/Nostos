@@ -1013,8 +1013,9 @@ const PRODUCT_RAW_BUTTON_CLASSES = new Map([
       'rail-foot-action', 'mobile-nav-header', 'topic-action', 'merge-picker-close',
       'merge-target', 'merge-picker-cancel', 'merge-picker-confirm', 'related-chip', 'related-more'])],
   ['src/app/book-detail/book-detail.component.html',
+    // 'edit-menu-item' is gone from this ledger: the Edit menu is `nostos-menu`.
     new Set(['btn-back', 'cover-overlay-btn', 'status-chip', 'status-dropdown-item',
-      'edit-menu-item', 'expand-btn', 'edition-select-card', 'edition-section-action'])],
+      'expand-btn', 'edition-select-card', 'edition-section-action'])],
   ['src/app/book-detail/editions-modal/editions-modal.component.html',
     new Set(['manage-member-action', 'manage-link-candidate'])],
   ['src/app/reader/reader-shell.component.html',
@@ -1034,6 +1035,9 @@ function rawButtonWithoutPrimitive(html, relativePath) {
   for (const tag of clean.matchAll(/<button\b[^>]*>/gs)) {
     const raw = tag[0];
     if (/\bapp(?:Button|IconButton|Chip)\b/.test(raw)) continue;
+    // An item of the shared `nostos-menu` is a canonical primitive too: the
+    // component owns its chrome and the CDK owns its behaviour.
+    if (/\bnostosMenuItem\b/.test(raw)) continue;
     const classMatch = raw.match(/\bclass\s*=\s*(["'])(.*?)\1/s);
     const classes = classMatch ? classMatch[2].split(/\s+/).filter(Boolean) : [];
     if (classes.some((name) => allowed.has(name))) continue;

@@ -278,10 +278,8 @@
                 appButton
                 variant="secondary"
                 class="edit-metadata-btn"
-                (click)="toggleEditMenu($event)"
                 title="Edit"
-                aria-haspopup="menu"
-                [attr.aria-expanded]="editMenuOpen()"
+                [nostosMenuTriggerFor]="editMenu"
               >
                 <nostos-icon name="pencil-simple" [size]="16"></nostos-icon>
                 <span>Edit</span>
@@ -292,29 +290,26 @@
                    a lone book gets: a book alone in its work has no editions card
                    to host a management action, and that book is exactly the one
                    that needs linking. -->
-              @if (editMenuOpen()) {
-              <div class="edit-menu" role="menu" (click)="$event.stopPropagation()">
-                <button type="button" class="edit-menu-item" role="menuitem" (click)="openMetadataModal()">
-                  <nostos-icon name="pencil-simple" [size]="14"></nostos-icon>
-                  <span class="edit-menu-item-text">
-                    <span class="edit-menu-item-label">Book details</span>
-                    <span class="edit-menu-item-hint">Title, author, cover, collections</span>
-                  </span>
-                </button>
-
-                <button type="button" class="edit-menu-item" role="menuitem" (click)="openEditions()">
-                  <nostos-icon name="stack" [size]="14"></nostos-icon>
-                  <span class="edit-menu-item-text">
-                    <span class="edit-menu-item-label">Editions</span>
-                    <span class="edit-menu-item-hint">{{
+              <ng-template #editMenu>
+                <nostos-menu>
+                  <button
+                    nostosMenuItem
+                    icon="pencil-simple"
+                    hint="Title, author, cover, collections"
+                    (triggered)="openMetadataModal()"
+                  >Book details</button>
+                  <button
+                    nostosMenuItem
+                    icon="stack"
+                    [hint]="
                       store.book()?.type === 'physical'
                         ? 'Link separately added digital editions'
-                        : "Group or split this book's editions"
-                    }}</span>
-                  </span>
-                </button>
-              </div>
-              }
+                        : 'Group or split this book\'s editions'
+                    "
+                    (triggered)="openEditions()"
+                  >Editions</button>
+                </nostos-menu>
+              </ng-template>
             </div>
 
             @if (store.book()?.type !== 'physical') {

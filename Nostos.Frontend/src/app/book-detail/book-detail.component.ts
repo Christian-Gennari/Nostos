@@ -59,6 +59,7 @@ import { ButtonComponent } from '../ui/button/button.component';
 import { IconButtonComponent } from '../ui/icon-button/icon-button.component';
 import { BadgeComponent } from '../ui/badge/badge.component';
 import { DialogActionsComponent } from '../ui/dialog-actions/dialog-actions.component';
+import { NOSTOS_MENU } from '../ui/menu/menu.component';
 
 @Component({
   standalone: true,
@@ -79,6 +80,7 @@ import { DialogActionsComponent } from '../ui/dialog-actions/dialog-actions.comp
     IconButtonComponent,
     BadgeComponent,
     DialogActionsComponent,
+    ...NOSTOS_MENU,
   ],
   providers: [BookDetailStore],
   templateUrl: './book-detail.component.html',
@@ -336,15 +338,6 @@ export class BookDetail implements OnInit, OnDestroy {
     if (this.statusDropdownOpen()) {
       this.statusDropdownOpen.set(false);
     }
-    if (this.editMenuOpen()) {
-      this.editMenuOpen.set(false);
-    }
-  }
-
-  /** The Edit chooser: it holds every Book Details action that is not reading. */
-  toggleEditMenu(event: Event): void {
-    event.stopPropagation();
-    this.editMenuOpen.update((open) => !open);
   }
 
   readonly externalMediaLookup = effect((onCleanup) => {
@@ -465,7 +458,6 @@ export class BookDetail implements OnInit, OnDestroy {
   readonly showEditionsModal = signal(false);
 
   /** Whether the hero Edit chooser is open. */
-  readonly editMenuOpen = signal(false);
 
   /**
    * A name for an edition that arrived without one. Defensive only: every server
@@ -508,7 +500,6 @@ export class BookDetail implements OnInit, OnDestroy {
 
   /** Open the membership modal, loading candidates for the picker. */
   openEditions(): void {
-    this.editMenuOpen.set(false);
     this.showEditionsModal.set(true);
     // Candidates are fetched on open, so a book-detail visit never costs a
     // library query it does not need.
@@ -760,8 +751,6 @@ export class BookDetail implements OnInit, OnDestroy {
     this.isDescriptionExpanded.update((v) => !v);
   }
   openMetadataModal() {
-    // Opened from the chooser, so the chooser closes behind it.
-    this.editMenuOpen.set(false);
     if (this.store.book()) this.showMetadataModal.set(true);
   }
   closeMetadataModal() {
