@@ -114,7 +114,7 @@
   min-height: 44px;
   padding: 0.5rem 0.75rem;
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-action);
   background: none;
   color: var(--color-text-muted);
   font-family: 'Hanken Grotesk', sans-serif;
@@ -241,7 +241,7 @@
 .time-label-btn {
   background: none;
   color: var(--color-text-muted);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-action);
   cursor: pointer;
   transition:
     background-color var(--motion-fast) var(--ease-standard),
@@ -491,7 +491,7 @@
   padding: 1rem;
   background: var(--bg-surface);
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-popover);
   box-shadow: var(--shadow-md);
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -521,7 +521,7 @@
 .playback-menu-header .icon-btn {
   width: 44px;
   height: 44px;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   color: var(--color-text-muted);
   border-color: transparent;
 }
@@ -554,7 +554,7 @@
   align-items: center;
   justify-content: center;
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-action);
   background: transparent;
   color: var(--color-text-main);
   font-size: 1rem;

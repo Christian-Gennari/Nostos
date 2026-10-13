@@ -93,7 +93,7 @@
   gap: 0.625rem;
   background: var(--bg-surface);
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-popover);
   box-shadow: var(--shadow-md);
 }
 
@@ -132,7 +132,7 @@
 }
 
 .reader-search-panel .icon-btn {
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
 }
 
 .reader-body {
@@ -209,7 +209,7 @@
 .quick-note .input-wrapper {
   background: var(--bg-surface);
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-field);
   padding: 0.5rem;
   transition:
     border-color 0.2s,
@@ -282,7 +282,7 @@
   white-space: normal;
   background: transparent;
   color: var(--color-text-main);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-row);
   transition:
     background-color 0.2s,
     color 0.2s;
@@ -336,7 +336,7 @@
   border: 1px solid var(--border-color);
   gap: 6px;
   padding: 0.3rem 0.5rem;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-action);
   font-size: 0.85rem;
   font-weight: var(--fw-medium);
   min-width: 140px;
@@ -400,7 +400,7 @@
   transform: translateX(-50%);
   padding: 0.45rem 0.75rem;
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-action);
   background: var(--bg-surface);
   color: var(--color-text-main);
   box-shadow: var(--shadow-sm);
@@ -543,10 +543,10 @@
   gap: 12px;
   padding: 12px;
   /* The floating-panel recipe the Dropdown primitive uses: surface, hairline,
-     4px radius, shadow-md. */
+     the popover corner, shadow-md. */
   background: var(--bg-surface);
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-popover);
   box-shadow: var(--shadow-md);
   animation: selection-menu-in var(--motion-fast) var(--ease-out);
 }
@@ -653,7 +653,7 @@
   padding: 0 8px;
   background: var(--bg-surface);
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-action);
 }
 
 .page-input {
@@ -673,7 +673,7 @@
   color: var(--color-text-main);
   background: transparent;
   border: 0;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-field);
 }
 
 .page-input:hover {
@@ -726,7 +726,7 @@
   gap: 0.625rem;
   background: var(--bg-surface);
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-popover);
   box-shadow: var(--shadow-md);
 }
 
@@ -772,7 +772,7 @@
 .typo-opt {
   padding: 0.375rem 0.625rem;
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-action);
   background: transparent;
   color: var(--color-text-muted);
   font-size: 0.8125rem;
@@ -802,7 +802,7 @@
   min-height: 32px;
   padding: 0.25rem 0.5rem;
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-action);
   background: transparent;
   color: var(--color-text-main);
   font-size: 0.8125rem;
@@ -853,7 +853,7 @@
   min-height: 44px;
   margin: 0.125rem -0.25rem -0.25rem;
   padding: 0 0.25rem;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-action);
   color: var(--color-text-muted);
   font-size: 0.8125rem;
   text-decoration: none;
@@ -1463,7 +1463,7 @@
     right: max(0.75rem, env(safe-area-inset-right, 0px));
     width: auto;
     border: 1px solid var(--border-color);
-    border-radius: var(--radius-lg);
+    border-radius: var(--radius-popover);
   }
 }
 
