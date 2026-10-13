@@ -1531,7 +1531,9 @@ button {
 }
 
 
-@media (max-width: 768px) {
+/* A finger needs 44px whatever the window's width: a touch tablet in portrait
+   is wider than 768px and was getting the 40px desktop field. */
+@media (max-width: 768px), (pointer: coarse) {
   .nostos-form-control,
   .nostos-form-control--compact {
     min-height: var(--control-h-touch);

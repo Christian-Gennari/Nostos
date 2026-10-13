@@ -1510,6 +1510,20 @@
   gap: 0.5rem;
 }
 
+/* On a phone the actions take their own row across the footer, as they did on
+   the card: beside the date they would wrap unpredictably and overhang. */
+@media (max-width: 768px) {
+  :host ::ng-deep .reading-column .note-metadata,
+  :host ::ng-deep .reading-column .note-actions.custom-actions {
+    flex: 1 1 100%;
+  }
+
+  :host ::ng-deep .reading-column .note-actions.custom-actions {
+    justify-content: flex-end;
+    margin-left: 0;
+  }
+}
+
 :host ::ng-deep app-note-card .content-row {
   display: flex;
   flex-direction: column;

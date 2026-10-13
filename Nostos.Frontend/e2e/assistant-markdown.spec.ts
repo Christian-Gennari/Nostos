@@ -8,6 +8,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
 import { loadFixture } from './support/fixture';
+import { enableAssistant } from './support/assistant';
 
 test.use({ serviceWorkers: 'block' });
 
@@ -49,7 +50,7 @@ async function mockAssistant(page: Page): Promise<void> {
     }),
   );
 
-  await page.route('**/api/assistant/turn', (route) =>
+  await page.route('**/api/assistant/turn/stream', (route) =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -67,6 +68,7 @@ async function mockAssistant(page: Page): Promise<void> {
 
 test('renders structured replies without executable/media HTML or panel overflow', async ({ page }) => {
   await mockAssistant(page);
+  await enableAssistant(page);
   await page.goto(`${fixture.baseUrl}/library`);
 
   await page.locator('[data-testid="assistant-trigger"]').click();

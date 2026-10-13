@@ -37,7 +37,10 @@ test('Library Collections opener takes no desktop toolbar space, but remains usa
   }
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(opener).toHaveCSS('display', 'inline-flex');
+  // Shown, as a flex box centring its glyph. Whether that is `flex` or
+  // `inline-flex` is the icon button's business and makes no difference to a
+  // flex item; the old exact match broke when the button's own rule won.
+  await expect(opener).toHaveCSS('display', /^(inline-)?flex$/);
   await expect(opener).toBeVisible();
   await expect(opener).toHaveAttribute('aria-label', 'Open collections sidebar');
   await opener.click();
