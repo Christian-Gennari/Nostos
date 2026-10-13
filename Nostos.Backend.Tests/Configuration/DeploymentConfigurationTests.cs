@@ -81,6 +81,31 @@ public sealed class DeploymentConfigurationTests
     }
 
     [Fact]
+    public void External_media_is_offered_only_by_a_self_hosted_server_with_a_folder_configured()
+    {
+        var selfHosted = DeploymentDescriptor.For(DeploymentMode.SelfHosted);
+        var cloud = DeploymentDescriptor.For(DeploymentMode.Cloud);
+        var configured = new StubExternalMedia(isConfigured: true);
+        var unconfigured = new StubExternalMedia(isConfigured: false);
+
+        DeploymentCapabilitiesEndpoints.ToResponse(selfHosted, externalMedia: configured)
+            .SupportsExternalMediaLibraries.Should().BeTrue();
+        DeploymentCapabilitiesEndpoints.ToResponse(selfHosted, externalMedia: unconfigured)
+            .SupportsExternalMediaLibraries.Should().BeFalse();
+        DeploymentCapabilitiesEndpoints.ToResponse(selfHosted)
+            .SupportsExternalMediaLibraries.Should().BeFalse();
+        // A Cloud host never offers it, even if the feature were registered.
+        DeploymentCapabilitiesEndpoints.ToResponse(cloud, externalMedia: configured)
+            .SupportsExternalMediaLibraries.Should().BeFalse();
+    }
+
+    private sealed class StubExternalMedia(bool isConfigured)
+        : Nostos.Backend.Services.ExternalMedia.IExternalMediaAvailability
+    {
+        public bool IsConfigured { get; } = isConfigured;
+    }
+
+    [Fact]
     public void Capability_response_contains_only_product_runtime_contract()
     {
         var deployment = DeploymentDescriptor.For(DeploymentMode.Cloud);
