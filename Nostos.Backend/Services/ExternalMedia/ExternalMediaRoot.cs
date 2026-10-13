@@ -94,6 +94,96 @@ public sealed class ExternalMediaRoot : IExternalMediaAvailability
         }
     }
 
+    /// <summary>
+    /// Lists every regular file below the root, depth first, as paths that
+    /// <see cref="OpenRead"/> would accept. Symbolic links and hidden entries
+    /// are skipped rather than followed, a folder that cannot be read is
+    /// skipped rather than fatal, and the walk stops at
+    /// <paramref name="maxFiles"/> so a mistaken mount cannot run unbounded.
+    /// </summary>
+    public ExternalMediaListing List(int maxFiles, CancellationToken ct)
+    {
+        var files = new List<ExternalMediaFile>();
+        var listing = new ExternalMediaListing(files);
+        if (_root is null || !Directory.Exists(_root))
+            return listing;
+
+        var pending = new Stack<(string Path, string Relative, int Depth)>();
+        pending.Push((_root, string.Empty, 0));
+
+        while (pending.Count > 0)
+        {
+            ct.ThrowIfCancellationRequested();
+            var (directory, relative, depth) = pending.Pop();
+
+            FileSystemInfo[] entries;
+            try
+            {
+                entries = new DirectoryInfo(directory).GetFileSystemInfos();
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                listing.UnreadableFolders++;
+                continue;
+            }
+
+            Array.Sort(entries, (a, b) => string.CompareOrdinal(a.Name, b.Name));
+            // Reversed onto the stack so folders are visited in name order.
+            for (var i = entries.Length - 1; i >= 0; i--)
+            {
+                var entry = entries[i];
+                if (entry.Name.StartsWith('.'))
+                    continue;
+
+                if (IsLink(entry))
+                {
+                    listing.SkippedLinks++;
+                    continue;
+                }
+
+                var entryRelative = relative.Length == 0 ? entry.Name : relative + "/" + entry.Name;
+                if (!ExternalMediaRelativePath.IsValid(entryRelative))
+                {
+                    listing.UnusableNames++;
+                    continue;
+                }
+
+                if (entry is DirectoryInfo)
+                {
+                    if (depth + 1 >= MaxDepth)
+                        listing.UnreadableFolders++;
+                    else
+                        pending.Push((entry.FullName, entryRelative, depth + 1));
+                }
+            }
+
+            foreach (var entry in entries)
+            {
+                if (entry is not FileInfo file || entry.Name.StartsWith('.') || IsLink(entry))
+                    continue;
+
+                var entryRelative = relative.Length == 0 ? entry.Name : relative + "/" + entry.Name;
+                if (!ExternalMediaRelativePath.IsValid(entryRelative))
+                    continue;
+
+                if (files.Count >= maxFiles)
+                {
+                    listing.Truncated = true;
+                    return listing;
+                }
+
+                files.Add(new ExternalMediaFile(
+                    entryRelative,
+                    file.Length,
+                    new DateTimeOffset(file.LastWriteTimeUtc, TimeSpan.Zero)));
+            }
+        }
+
+        return listing;
+    }
+
+    private const int MaxDepth = 32;
+
     private string? Resolve(string rootId, string relativePath)
     {
         if (_root is null
@@ -129,3 +219,21 @@ public sealed class ExternalMediaRoot : IExternalMediaAvailability
 
 /// <summary>A file below the external root, as it is right now.</summary>
 public sealed record ExternalMediaFile(string RelativePath, long Length, DateTimeOffset LastModified);
+
+/// <summary>The files found by one walk of the root, and what the walk passed over.</summary>
+public sealed class ExternalMediaListing(IReadOnlyList<ExternalMediaFile> files)
+{
+    public IReadOnlyList<ExternalMediaFile> Files { get; } = files;
+
+    /// <summary>Symbolic links that were not followed.</summary>
+    public int SkippedLinks { get; set; }
+
+    /// <summary>Folders that could not be read or were nested too deeply.</summary>
+    public int UnreadableFolders { get; set; }
+
+    /// <summary>Entries whose name cannot be stored as a reference.</summary>
+    public int UnusableNames { get; set; }
+
+    /// <summary>True when the walk stopped at its file limit.</summary>
+    public bool Truncated { get; set; }
+}

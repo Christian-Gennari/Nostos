@@ -291,6 +291,8 @@ builder.Services.AddSingleton(sp => new ExternalMediaBookStorage(
     sp.GetRequiredService<FileStorageService>(),
     sp.GetRequiredService<ExternalMediaRoot>(),
     sp.GetRequiredService<ExternalMediaLinkStore>()));
+builder.Services.AddSingleton<IExternalMediaDescriber, ExternalMediaDescriber>();
+builder.Services.AddSingleton<ExternalMediaScanService>();
 builder.Services.AddSingleton<IBookAssetStorage>(
     sp => sp.GetRequiredService<ExternalMediaBookStorage>());
 builder.Services.AddSingleton<IBookTrackStorage>(
@@ -517,6 +519,7 @@ app.UseStaticFiles(Nostos.Product.Http.NostosFrontendStaticFiles.CreateOptions()
 // Map the public product API with the SelfHosted host's provider-neutral policy.
 app.MapNostosProductEndpoints(opdsOptions, NostosProductEndpointPolicies.None);
 app.MapBackupEndpoints();
+app.MapExternalMediaEndpoints();
 
 // --- MCP STREAMABLE HTTP ENDPOINT ---
 if (mcpOptions.Enabled)
