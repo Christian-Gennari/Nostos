@@ -20,7 +20,7 @@
   width: 26px;
   height: 26px;
   flex-shrink: 0;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-lg);
   background: var(--danger-surface);
   border: 1px solid var(--danger-hairline);
   color: var(--danger-ink);
@@ -55,7 +55,7 @@
   min-width: 0;
   padding: 0.75rem 0.85rem;
   border: 1px solid var(--border-light);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-surface);
   background: var(--bg-surface-alt);
 }
 
@@ -94,7 +94,7 @@
 .replacement-blocked {
   padding: 0.6rem 0.7rem;
   border: 1px solid var(--color-info-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-surface);
   background: var(--color-info-bg);
   color: var(--color-text-main);
 }
@@ -103,7 +103,7 @@
   margin: 0 0 0.75rem;
   padding: 0.6rem 0.7rem;
   border: 1px solid var(--danger-hairline);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-surface);
   background: var(--danger-surface);
   font-size: 0.82rem;
   line-height: 1.55;

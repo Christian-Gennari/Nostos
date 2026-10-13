@@ -328,7 +328,7 @@ app-sidebar-collections.no-transition {
   visibility: hidden;
   background: var(--bg-surface);
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-action);
 }
 
 .table-row:hover .actions-cell,
@@ -343,9 +343,9 @@ app-sidebar-collections.no-transition {
   position: relative;
   /* Size moved to appIconButton (`size="xs"`), which owns the rungs. Leaving it
      here would tie with the component's `:host(.icon-btn--xs)` rule at (0,2,0)
-     and let stylesheet order decide the painted size. Radius stays: it is 4px
-     here versus the global 3px, a deliberate per-surface choice. */
-  border-radius: 4px;
+     and let stylesheet order decide the painted size. The radius is the
+     global icon button's (6px); it was a 4px per-surface literal. */
+  border-radius: var(--radius-lg);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -436,7 +436,7 @@ app-sidebar-collections.no-transition {
 .list-cover-frame {
   width: 32px;
   height: 46px;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   overflow: hidden;
   flex-shrink: 0;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
@@ -538,7 +538,7 @@ app-sidebar-collections.no-transition {
   padding: 0;
   width: 26px;
   height: 26px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-lg);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -1419,7 +1419,7 @@ app-sidebar-collections.no-transition {
     margin: 0;
     appearance: none;
     border: 1px solid var(--border-color);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-action);
     background: var(--bg-surface);
     color: var(--color-text-main);
     cursor: pointer;
@@ -1463,7 +1463,7 @@ app-sidebar-collections.no-transition {
     width: 38px;
     min-width: 38px;
     padding: 0;
-    border-radius: var(--radius-sm, 3px);
+    border-radius: var(--radius-action);
     display: flex;
     align-items: center;
     justify-content: center;

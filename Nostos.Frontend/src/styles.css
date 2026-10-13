@@ -363,9 +363,12 @@
      than the 8px buttons inside it, so a button never out-curves its own
      container (the cards were 6px, the buttons 8px). A row is one line in a
      list that highlights on hover or selection: a topic in the index, a note in
-     the Notes list. Rows were already 6px, as two literals and two tokens. */
+     the Notes list, a collection in the sidebar. A row takes the action's
+     corner: the Library sidebar drew its nav items at 8px and the collection
+     tree directly under them at 6px, and the Brain's index at 6px. A row
+     inside a popover is a popover item, not this. */
   --radius-surface: 10px;
-  --radius-row: 6px;
+  --radius-row: var(--radius-action);
 
   /* ── Dock role ──
      The floating dock is neither a card nor a control: it is a bar that floats
