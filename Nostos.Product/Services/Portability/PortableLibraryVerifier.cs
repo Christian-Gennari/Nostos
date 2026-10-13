@@ -77,6 +77,7 @@ public sealed class PortableLibraryVerifier : IPortableLibraryVerifier
         nameof(PortableBookAcquisition),
         nameof(PortableAssistantSettings),
         nameof(PortableNoteImportBookLink),
+        nameof(PortableReadingListEntry),
         nameof(PortableArchiveMediaEntry),
     ];
 
@@ -108,6 +109,7 @@ public sealed class PortableLibraryVerifier : IPortableLibraryVerifier
             [nameof(PortableLibraryData.AssistantSettings)] = "Singleton; presence and both fields are compared by CompareAssistantSettings and the PortableAssistantSettings comparison table.",
             [nameof(PortableLibraryData.WritingNotes)] = "Container; every PortableWritingNote element is compared by the PortableWritingNote comparison table.",
             [nameof(PortableLibraryData.NoteImportBookLinks)] = "Container; every PortableNoteImportBookLink element is compared by the PortableNoteImportBookLink comparison table.",
+            [nameof(PortableLibraryData.ReadingListEntries)] = "Container; every PortableReadingListEntry element is compared by the PortableReadingListEntry comparison table.",
         };
 
     private static readonly IReadOnlyDictionary<string, string> ManifestExclusions =
@@ -436,6 +438,7 @@ public sealed class PortableLibraryVerifier : IPortableLibraryVerifier
         var writingNotes = await candidateDatabase.WritingNotes.AsNoTracking().ToListAsync(ct).ConfigureAwait(false);
         var acquisitions = await candidateDatabase.BookAcquisitions.AsNoTracking().ToListAsync(ct).ConfigureAwait(false);
         var importLinks = await candidateDatabase.NoteImportBookLinks.AsNoTracking().ToListAsync(ct).ConfigureAwait(false);
+        var readingList = await candidateDatabase.ReadingListEntries.AsNoTracking().ToListAsync(ct).ConfigureAwait(false);
         var assistantSettings = await candidateDatabase.AssistantSettings.AsNoTracking().ToListAsync(ct).ConfigureAwait(false);
 
         CompareWorks(data, works, failures);
@@ -449,12 +452,13 @@ public sealed class PortableLibraryVerifier : IPortableLibraryVerifier
         CompareWritingNotes(data, writingNotes, failures);
         CompareAcquisitions(data, acquisitions, failures);
         CompareNoteImportBookLinks(data, importLinks, failures);
+        CompareReadingListEntries(data, readingList, failures);
         CompareAssistantSettings(data, assistantSettings, failures);
 
         var rowsVerified =
             works.Count + books.Count + collections.Count + memberships.Count + notes.Count + topics.Count
             + noteTopics.Count + writings.Count + writingNotes.Count + acquisitions.Count + importLinks.Count
-            + assistantSettings.Count;
+            + readingList.Count + assistantSettings.Count;
 
         return new CandidateDatabaseComparison(
             failures,
@@ -470,7 +474,8 @@ public sealed class PortableLibraryVerifier : IPortableLibraryVerifier
                 writingNotes.Count,
                 acquisitions.Count,
                 importLinks.Count,
-                assistantSettings.Count),
+                assistantSettings.Count,
+                readingList.Count),
             rowsVerified);
     }
 
@@ -1167,6 +1172,23 @@ public sealed class PortableLibraryVerifier : IPortableLibraryVerifier
         }
     }
 
+    private static void CompareReadingListEntries(
+        PortableLibraryData data,
+        List<ReadingListEntryModel> readingList,
+        FailureList failures)
+    {
+        var expected = (data.ReadingListEntries ?? []).ToDictionary(item => item.Id);
+        var actual = readingList.ToDictionary(item => item.Id);
+        CompareIdSets("readingListEntry", expected.Keys, actual.Keys, failures);
+        foreach (var (id, item) in expected)
+        {
+            if (actual.TryGetValue(id, out var row))
+            {
+                Run(ReadingListComparisons, new ReadingListContext(row, item), failures);
+            }
+        }
+    }
+
     private static void CompareAssistantSettings(
         PortableLibraryData data,
         List<AssistantSettingsModel> assistantSettings,
@@ -1436,6 +1458,7 @@ public sealed class PortableLibraryVerifier : IPortableLibraryVerifier
             [nameof(MigrationArchiveCounts.Acquisitions)] = counts.Acquisitions,
             [nameof(MigrationArchiveCounts.AssistantSettings)] = counts.AssistantSettings,
             [nameof(MigrationArchiveCounts.NoteImportBookLinks)] = counts.ImportLinks,
+            [nameof(MigrationArchiveCounts.ReadingListEntries)] = counts.ReadingListEntries,
         };
 
         if (mediaFiles is { } verifiedMediaFiles)
@@ -1801,7 +1824,8 @@ public sealed class PortableLibraryVerifier : IPortableLibraryVerifier
         long WritingNotes,
         long Acquisitions,
         long ImportLinks,
-        long AssistantSettings);
+        long AssistantSettings,
+        long ReadingListEntries);
 
     private sealed record CandidateDatabaseComparison(
         FailureList Failures,
@@ -1830,6 +1854,8 @@ public sealed class PortableLibraryVerifier : IPortableLibraryVerifier
     private sealed record AcquisitionContext(BookAcquisitionModel Row, PortableBookAcquisition Expected);
 
     private sealed record ImportLinkContext(NoteImportBookLink Row, PortableNoteImportBookLink Expected);
+
+    private sealed record ReadingListContext(ReadingListEntryModel Row, PortableReadingListEntry Expected);
 
     private sealed record AssistantContext(AssistantSettingsModel Row, PortableAssistantSettings Expected);
 
@@ -2300,6 +2326,46 @@ public sealed class PortableLibraryVerifier : IPortableLibraryVerifier
             (context, failures) => CompareField(failures, "assistantSettings", context.Row.Id.ToString(System.Globalization.CultureInfo.InvariantCulture), nameof(AssistantSettingsModel.UpdatedAtUtc), context.Row.UpdatedAtUtc, context.Expected.UpdatedAtUtc)),
     ];
 
+    private static readonly IReadOnlyList<ComparisonEntry<ReadingListContext>> ReadingListComparisons =
+    [
+        Entry<ReadingListContext>(
+            nameof(PortableReadingListEntry.Id),
+            Ef(("ReadingListEntryModel", nameof(ReadingListEntryModel.Id))),
+            (context, failures) => CompareField(failures, "readingListEntry", context.Row.Id, nameof(PortableReadingListEntry.Id), context.Row.Id, context.Expected.Id)),
+        Entry<ReadingListContext>(
+            nameof(PortableReadingListEntry.Title),
+            Ef(("ReadingListEntryModel", nameof(ReadingListEntryModel.Title))),
+            (context, failures) => CompareField(failures, "readingListEntry", context.Row.Id, nameof(PortableReadingListEntry.Title), context.Row.Title, context.Expected.Title)),
+        Entry<ReadingListContext>(
+            nameof(PortableReadingListEntry.Author),
+            Ef(("ReadingListEntryModel", nameof(ReadingListEntryModel.Author))),
+            (context, failures) => CompareField(failures, "readingListEntry", context.Row.Id, nameof(PortableReadingListEntry.Author), context.Row.Author, context.Expected.Author)),
+        Entry<ReadingListContext>(
+            nameof(PortableReadingListEntry.Isbn),
+            Ef(("ReadingListEntryModel", nameof(ReadingListEntryModel.Isbn))),
+            (context, failures) => CompareField(failures, "readingListEntry", context.Row.Id, nameof(PortableReadingListEntry.Isbn), context.Row.Isbn, context.Expected.Isbn)),
+        Entry<ReadingListContext>(
+            nameof(PortableReadingListEntry.PublishedDate),
+            Ef(("ReadingListEntryModel", nameof(ReadingListEntryModel.PublishedDate))),
+            (context, failures) => CompareField(failures, "readingListEntry", context.Row.Id, nameof(PortableReadingListEntry.PublishedDate), context.Row.PublishedDate, context.Expected.PublishedDate)),
+        Entry<ReadingListContext>(
+            nameof(PortableReadingListEntry.Why),
+            Ef(("ReadingListEntryModel", nameof(ReadingListEntryModel.Why))),
+            (context, failures) => CompareField(failures, "readingListEntry", context.Row.Id, nameof(PortableReadingListEntry.Why), context.Row.Why, context.Expected.Why)),
+        Entry<ReadingListContext>(
+            nameof(PortableReadingListEntry.RecommendedBy),
+            Ef(("ReadingListEntryModel", nameof(ReadingListEntryModel.RecommendedBy))),
+            (context, failures) => CompareField(failures, "readingListEntry", context.Row.Id, nameof(PortableReadingListEntry.RecommendedBy), context.Row.RecommendedBy, context.Expected.RecommendedBy)),
+        Entry<ReadingListContext>(
+            nameof(PortableReadingListEntry.NextPosition),
+            Ef(("ReadingListEntryModel", nameof(ReadingListEntryModel.NextPosition))),
+            (context, failures) => CompareField(failures, "readingListEntry", context.Row.Id, nameof(PortableReadingListEntry.NextPosition), context.Row.NextPosition, context.Expected.NextPosition)),
+        Entry<ReadingListContext>(
+            nameof(PortableReadingListEntry.CreatedAt),
+            Ef(("ReadingListEntryModel", nameof(ReadingListEntryModel.CreatedAt))),
+            (context, failures) => CompareField(failures, "readingListEntry", context.Row.Id, nameof(PortableReadingListEntry.CreatedAt), context.Row.CreatedAt, context.Expected.CreatedAt)),
+    ];
+
     private static readonly IReadOnlyList<ComparisonEntry<ImportLinkContext>> ImportLinkComparisons =
     [
         Entry<ImportLinkContext>(
@@ -2449,6 +2515,7 @@ public sealed class PortableLibraryVerifier : IPortableLibraryVerifier
             [nameof(PortableBookAcquisition)] = Spec(AcquisitionComparisons),
             [nameof(PortableAssistantSettings)] = Spec(AssistantComparisons),
             [nameof(PortableNoteImportBookLink)] = Spec(ImportLinkComparisons),
+            [nameof(PortableReadingListEntry)] = Spec(ReadingListComparisons),
             [nameof(PortableArchiveManifest)] = new(
                 [
                     nameof(PortableArchiveManifest.Format),

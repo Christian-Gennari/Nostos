@@ -732,6 +732,22 @@ public sealed class PortableArchiveService(
                 x.CreatedAtUtc))
             .ToList();
 
+        var readingListEntries = (await _db.ReadingListEntries
+            .AsNoTracking()
+            .OrderBy(x => x.Id)
+            .ToListAsync(ct))
+            .Select(x => new PortableReadingListEntry(
+                x.Id,
+                x.Title,
+                x.Author,
+                x.Isbn,
+                x.PublishedDate,
+                x.Why,
+                x.RecommendedBy,
+                x.NextPosition,
+                x.CreatedAt))
+            .ToList();
+
         var assistant = await _db.AssistantSettings
             .AsNoTracking()
             .SingleOrDefaultAsync(ct);
@@ -753,7 +769,8 @@ public sealed class PortableArchiveService(
                     assistant.CaptureProcessingMode,
                     assistant.UpdatedAtUtc),
             writingNotes,
-            noteImportBookLinks);
+            noteImportBookLinks,
+            readingListEntries);
 
         var media = new List<PortableSourceMedia>();
         foreach (var book in books)
@@ -1062,6 +1079,7 @@ public sealed class PortableArchiveService(
             || await _db.WritingNotes.AnyAsync(ct)
             || await _db.BookAcquisitions.AnyAsync(ct)
             || await _db.NoteImportBookLinks.AnyAsync(ct)
+            || await _db.ReadingListEntries.AnyAsync(ct)
             || await _db.AssistantSettings.AnyAsync(
                 x => x.CaptureProcessingMode != null,
                 ct);
@@ -1180,6 +1198,19 @@ public sealed class PortableArchiveService(
             expectedImportLinks,
             actualImportLinks,
             "Imported note import book links do not match the archive.");
+
+        var expectedReadingList = (source.ReadingListEntries ?? [])
+            .Select(x => (x.Id, x.Title, x.Author, x.Isbn, x.PublishedDate, x.Why, x.RecommendedBy, x.NextPosition, x.CreatedAt))
+            .ToHashSet();
+        var actualReadingList = (await _db.ReadingListEntries
+            .AsNoTracking()
+            .ToListAsync(ct))
+            .Select(x => (x.Id, x.Title, x.Author, x.Isbn, x.PublishedDate, x.Why, x.RecommendedBy, x.NextPosition, x.CreatedAt))
+            .ToHashSet();
+        PortableArchiveValidation.ValidateImportedRelationshipSet(
+            expectedReadingList,
+            actualReadingList,
+            "Imported reading list entries do not match the archive.");
 
         var sourceBooks = source.Books.ToDictionary(x => x.Id);
         foreach (var book in bookRows)

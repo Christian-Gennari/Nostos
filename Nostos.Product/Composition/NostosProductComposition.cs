@@ -22,6 +22,7 @@ using Nostos.Backend.Services.Library;
 using Nostos.Backend.Services.Knowledge;
 using Nostos.Backend.Services.Notes;
 using Nostos.Backend.Services.Notes.Imports;
+using Nostos.Backend.Services.ReadingList;
 using Nostos.Backend.Services.Portability;
 using Nostos.Backend.Services.Portability.Migration;
 using Nostos.Backend.Services.Recovery;
@@ -255,6 +256,7 @@ public static class NostosProductComposition
         services.AddScoped<AudiobookPackageService>();
         services.AddScoped<NoteProcessorService>();
         services.AddScoped<INoteService, NoteService>();
+        services.AddScoped<IReadingListService, ReadingListService>();
         services.AddScoped<KoreaderNoteImportService>();
         services.AddScoped<HighlightImportService>();
         services.AddScoped<IKnowledgeRetrievalService, KnowledgeRetrievalService>();
@@ -457,6 +459,7 @@ public static class NostosProductComposition
         routes.MapNotesEndpoints();
         routes.MapNoteProcessingEndpoints();
         routes.MapCollectionsEndpoints();
+        routes.MapReadingListEndpoints();
         routes.MapTopicsEndpoints();
         routes.MapWritingsEndpoints();
         routes.MapTranscriptionEndpoints();

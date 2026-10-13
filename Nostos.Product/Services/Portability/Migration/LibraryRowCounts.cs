@@ -49,5 +49,6 @@ public static class LibraryRowCounts
             AssistantSettings: onlyChosenAssistantSettings
                 ? await db.AssistantSettings.CountAsync(
                     settings => settings.CaptureProcessingMode != null, ct)
-                : await db.AssistantSettings.CountAsync(ct));
+                : await db.AssistantSettings.CountAsync(ct),
+            ReadingListEntries: await db.ReadingListEntries.CountAsync(ct));
 }

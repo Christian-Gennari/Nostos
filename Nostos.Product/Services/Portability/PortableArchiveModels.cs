@@ -15,8 +15,11 @@ internal static class PortableArchiveFormat
     // Bumped from 3 to 4 with multi-track audiobooks (issue #835): a book may
     // carry a track list and "track" media. An older build must refuse such
     // an archive rather than import the book without its audio.
-    // Archives with DataVersion 1, 2 and 3 remain supported.
-    public const int DataVersion = 4;
+    // Bumped from 4 to 5 with the reading list: books the user wants to read
+    // and does not have yet. An older build must refuse such an archive rather
+    // than import the library without the list.
+    // Archives with DataVersion 1, 2, 3 and 4 remain supported.
+    public const int DataVersion = 5;
     public const string ManifestPath = "manifest.json";
     public const string DataPath = "data/library.json";
     public const string BookMediaKind = "book";
@@ -90,7 +93,8 @@ internal sealed record PortableLibraryData(
     List<PortableBookAcquisition> BookAcquisitions,
     PortableAssistantSettings? AssistantSettings,
     List<PortableWritingNote>? WritingNotes = null,
-    List<PortableNoteImportBookLink>? NoteImportBookLinks = null);
+    List<PortableNoteImportBookLink>? NoteImportBookLinks = null,
+    List<PortableReadingListEntry>? ReadingListEntries = null);
 
 internal sealed record PortableWork(
     Guid Id,
@@ -202,6 +206,17 @@ internal sealed record PortableNoteImportBookLink(
     string SourceKey,
     Guid BookId,
     DateTime CreatedAtUtc);
+
+internal sealed record PortableReadingListEntry(
+    Guid Id,
+    string Title,
+    string? Author,
+    string? Isbn,
+    string? PublishedDate,
+    string? Why,
+    string? RecommendedBy,
+    int? NextPosition,
+    DateTime CreatedAt);
 
 internal sealed record PortableBookAcquisition(
     Guid Id,

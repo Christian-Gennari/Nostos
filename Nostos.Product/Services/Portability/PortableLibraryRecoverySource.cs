@@ -176,6 +176,12 @@ public static class PortableLibraryRecoverySource
             .Select(x => new PortableNoteImportBookLink(x.Id, x.Source, x.SourceKey, x.BookId, x.CreatedAtUtc))
             .ToList();
 
+        var readingListEntries = (await db.ReadingListEntries.AsNoTracking()
+                .OrderBy(x => x.Id).ToListAsync(ct).ConfigureAwait(false))
+            .Select(x => new PortableReadingListEntry(
+                x.Id, x.Title, x.Author, x.Isbn, x.PublishedDate, x.Why, x.RecommendedBy, x.NextPosition, x.CreatedAt))
+            .ToList();
+
         var assistant = await db.AssistantSettings.AsNoTracking().SingleOrDefaultAsync(ct).ConfigureAwait(false);
 
         return new PortableLibraryData(
@@ -193,7 +199,8 @@ public static class PortableLibraryRecoverySource
                 ? null
                 : new PortableAssistantSettings(assistant.CaptureProcessingMode, assistant.UpdatedAtUtc),
             writingNotes,
-            noteImportBookLinks);
+            noteImportBookLinks,
+            readingListEntries);
     }
 
     private static List<PortableArchiveMediaEntry> BuildPrimaryMedia(

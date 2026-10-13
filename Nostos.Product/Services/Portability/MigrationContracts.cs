@@ -270,7 +270,9 @@ public sealed record MigrationArchiveCounts(
     long Acquisitions = 0,
     long AssistantSettings = 0,
     long NoteImportBookLinks = 0,
-    long MediaEntries = 0)
+    long MediaEntries = 0,
+    // APPENDED after MediaEntries so no positional caller is renumbered.
+    long ReadingListEntries = 0)
 {
     public static MigrationArchiveCounts Empty { get; } = new();
 
@@ -286,7 +288,8 @@ public sealed record MigrationArchiveCounts(
         CollectionMemberships +
         Acquisitions +
         AssistantSettings +
-        NoteImportBookLinks;
+        NoteImportBookLinks +
+        ReadingListEntries;
 }
 
 public sealed record MigrationExistingCounts(
@@ -301,7 +304,8 @@ public sealed record MigrationExistingCounts(
     long BookCollections = 0,
     long Acquisitions = 0,
     long NoteImportBookLinks = 0,
-    long AssistantSettings = 0)
+    long AssistantSettings = 0,
+    long ReadingListEntries = 0)
 {
     public long TotalRows =>
         Works +
@@ -315,7 +319,8 @@ public sealed record MigrationExistingCounts(
         BookCollections +
         Acquisitions +
         NoteImportBookLinks +
-        AssistantSettings;
+        AssistantSettings +
+        ReadingListEntries;
 }
 
 public sealed record MigrationPreflightRequest(
@@ -376,7 +381,7 @@ public static class MigrationPreflightEvaluator
             input.SupportedFormatVersions ?? new HashSet<int> { 1 };
 
         var supportedDataVersions =
-            input.SupportedDataVersions ?? new HashSet<int> { 1, 2, 3, 4 };
+            input.SupportedDataVersions ?? new HashSet<int> { 1, 2, 3, 4, 5 };
 
         if (request.IsOperationalBackup
             || (!string.IsNullOrWhiteSpace(request.DeclaredFormatName)

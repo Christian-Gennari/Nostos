@@ -292,6 +292,25 @@ internal static class PortableLibraryDatabaseMaterializer
             }
         }
 
+        if (data.ReadingListEntries is not null)
+        {
+            foreach (var source in data.ReadingListEntries)
+            {
+                db.ReadingListEntries.Add(new ReadingListEntryModel
+                {
+                    Id = source.Id,
+                    Title = source.Title,
+                    Author = source.Author,
+                    Isbn = source.Isbn,
+                    PublishedDate = source.PublishedDate,
+                    Why = source.Why,
+                    RecommendedBy = source.RecommendedBy,
+                    NextPosition = source.NextPosition,
+                    CreatedAt = source.CreatedAt,
+                });
+            }
+        }
+
         if (data.NoteImportBookLinks is not null)
         {
             foreach (var source in data.NoteImportBookLinks)

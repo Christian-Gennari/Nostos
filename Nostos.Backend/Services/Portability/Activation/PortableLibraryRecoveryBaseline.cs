@@ -157,6 +157,7 @@ public static class PortableLibraryRecoveryBaseline
         Equal(expected.BookCollections, actual.CollectionMemberships);
         Equal(expected.Acquisitions, actual.Acquisitions);
         Equal(expected.NoteImportBookLinks, actual.NoteImportBookLinks);
+        Equal(expected.ReadingListEntries, actual.ReadingListEntries);
         if (expected.AssistantSettings > 0 && actual.AssistantSettings != 1)
         {
             throw Mismatch();
