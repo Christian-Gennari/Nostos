@@ -99,6 +99,23 @@
             <span class="settings-nav-copy">AI connections</span>
           </button>
           }
+          @if (supportsExternalMediaLibraries()) {
+          <button
+            type="button"
+            class="settings-nav-item"
+            role="tab"
+            [class.is-active]="activeSettingsSection() === 'external'"
+            [attr.aria-selected]="activeSettingsSection() === 'external'"
+            aria-controls="external"
+            data-testid="settings-nav-external"
+            (click)="setSettingsSection('external')"
+          >
+            <span class="settings-nav-icon">
+              <nostos-icon name="folder-open" [size]="17"></nostos-icon>
+            </span>
+            <span class="settings-nav-copy">External media</span>
+          </button>
+          }
           @if (hasDataSection()) {
           <button
             type="button"
@@ -1845,6 +1862,34 @@
       </section>
             }
             </div>
+          </section>
+          }
+
+          @if (supportsExternalMediaLibraries()) {
+          <section
+            class="settings-section"
+            id="external"
+            role="tabpanel"
+            aria-labelledby="external-heading"
+            [hidden]="activeSettingsSection() !== 'external'"
+          >
+            <header class="settings-section-header">
+              <h2 class="settings-section-title" id="external-heading">External media</h2>
+              <p class="settings-section-desc">
+                Read audiobooks and ebooks from a folder already on this server, without copying them.
+              </p>
+            </header>
+
+            <section class="settings-card" data-testid="external-media-card">
+              <div class="card-header">
+                <div class="card-header-copy">
+                  <h2>Link external media folder</h2>
+                </div>
+              </div>
+              <div class="card-body">
+                <app-external-media-settings />
+              </div>
+            </section>
           </section>
           }
 

@@ -392,6 +392,58 @@ public sealed class BackupServiceTests
         }
     }
 
+    [Fact]
+    public async Task LinkedBook_SurvivesBackupAndRestore_AsAReference_WithoutItsMediaInTheArchive()
+    {
+        // A book read in place from the mounted folder (#843) has no file in
+        // the books directory. A routine backup must still bring the book and
+        // its reference back, and must not pretend to contain the media.
+        using var h = BackupHarness.Create(includeBookFiles: true);
+
+        Guid bookId;
+        await using (var db = h.NewDbContext())
+        {
+            var book = new AudioBookModel { Title = "Linked Recording", Author = "Jane Author" };
+            book.FileDetails.HasFile = true;
+            book.FileDetails.FileName = "book.m4b";
+            db.Books.Add(book);
+            db.ExternalMediaLinks.Add(new ExternalMediaLinkModel
+            {
+                BookId = book.Id,
+                TrackNumber = ExternalMediaLinkModel.PrimaryFile,
+                RootId = "external",
+                RelativePath = "Jane Author/Linked Recording.m4b",
+                Length = 1234,
+            });
+            await db.SaveChangesAsync();
+            bookId = book.Id;
+        }
+
+        var created = await h.Service.CreateBackupAsync();
+        created.Status.Should().Be(BackupStatus.Completed);
+
+        using (var zip = ZipFile.OpenRead(h.Service.GetLocalArchivePath(created.Id)!))
+        {
+            zip.Entries.Should().NotContain(entry => entry.FullName.StartsWith($"books/{bookId}/"));
+        }
+
+        await using (var db = h.NewDbContext())
+        {
+            await db.ExternalMediaLinks.ExecuteDeleteAsync();
+            await db.Books.Where(b => b.Id == bookId).ExecuteDeleteAsync();
+        }
+
+        var restored = await h.Service.RestoreBackupAsync(created.Id);
+        restored.Success.Should().BeTrue(restored.Message);
+
+        await using (var db = h.NewDbContext())
+        {
+            var link = await db.ExternalMediaLinks.SingleAsync(l => l.BookId == bookId);
+            link.RelativePath.Should().Be("Jane Author/Linked Recording.m4b");
+            (await db.Books.SingleAsync(b => b.Id == bookId)).FileDetails.HasFile.Should().BeTrue();
+        }
+    }
+
     // --- Where the archives live (#172) ------------------------------------
     //
     // The backup directory used to be built from the content root while the book

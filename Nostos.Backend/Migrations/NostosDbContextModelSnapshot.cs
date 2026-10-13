@@ -355,6 +355,47 @@ namespace Nostos.Backend.Migrations
                     b.ToTable("Collections");
                 });
 
+            modelBuilder.Entity("Nostos.Backend.Data.Models.ExternalMediaLinkModel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("BookId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("LastModifiedUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("Length")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("LinkedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RelativePath")
+                        .IsRequired()
+                        .HasMaxLength(1024)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RootId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("TrackNumber")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BookId", "TrackNumber")
+                        .IsUnique();
+
+                    b.HasIndex("RootId", "RelativePath")
+                        .IsUnique();
+
+                    b.ToTable("ExternalMediaLinks");
+                });
+
             modelBuilder.Entity("Nostos.Backend.Data.Models.LibraryCommandReceipt", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1372,6 +1413,17 @@ namespace Nostos.Backend.Migrations
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("Parent");
+                });
+
+            modelBuilder.Entity("Nostos.Backend.Data.Models.ExternalMediaLinkModel", b =>
+                {
+                    b.HasOne("Nostos.Backend.Data.Models.BookModel", "Book")
+                        .WithMany()
+                        .HasForeignKey("BookId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Book");
                 });
 
             modelBuilder.Entity("Nostos.Backend.Data.Models.MigrationChunkReceiptRecord", b =>

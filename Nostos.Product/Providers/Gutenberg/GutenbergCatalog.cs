@@ -54,6 +54,12 @@ internal static class GutenbergCatalog
     public const string BaseUrl = "https://www.gutenberg.org";
 
     /// <summary>
+    /// Project Gutenberg's own mirror of the generated files, run by the Project
+    /// Gutenberg Literary Archive Foundation. Used only for downloads.
+    /// </summary>
+    public const string MirrorHost = "gutenberg.pglaf.org";
+
+    /// <summary>
     /// The daily machine-readable catalogue: a zipped tar of one RDF file per
     /// ebook, published for bulk loading rather than crawling. 177 MB with a
     /// Last-Modified header, regenerated once a day.

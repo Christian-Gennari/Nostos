@@ -23,6 +23,7 @@ using Nostos.Backend.Providers.LibriVox;
 using Nostos.Backend.Serialization;
 using Nostos.Backend.Services;
 using Nostos.Backend.Services.Ai;
+using Nostos.Backend.Services.ExternalMedia;
 using Nostos.Backend.Services.Library;
 using Nostos.Backend.Services.Notes;
 using Nostos.Backend.Services.Portability;
@@ -273,10 +274,30 @@ builder.Services.AddProblemDetails();
 builder.Services.AddSingleton<FileStorageService>();
 builder.Services.AddSingleton<IFileStorageService>(
     sp => sp.GetRequiredService<FileStorageService>());
+
+// External media (issue #843): book storage is wrapped so a file Nostos does
+// not own is read in place from the one administrator-mounted folder. The
+// wrapper is registered even when no folder is configured, so replacing or
+// removing a book's media always forgets a reference left by an earlier
+// configuration.
+builder.Services.AddOptions<ExternalMediaOptions>()
+    .BindConfiguration(ExternalMediaOptions.SectionName);
+builder.Services.AddSingleton<ExternalMediaRoot>();
+builder.Services.AddSingleton<IExternalMediaAvailability>(
+    sp => sp.GetRequiredService<ExternalMediaRoot>());
+builder.Services.AddSingleton<ExternalMediaLinkStore>();
+builder.Services.AddSingleton(sp => new ExternalMediaBookStorage(
+    sp.GetRequiredService<FileStorageService>(),
+    sp.GetRequiredService<FileStorageService>(),
+    sp.GetRequiredService<ExternalMediaRoot>(),
+    sp.GetRequiredService<ExternalMediaLinkStore>()));
+builder.Services.AddSingleton<IExternalMediaDescriber, ExternalMediaDescriber>();
+builder.Services.AddSingleton<ExternalMediaScanService>();
+builder.Services.AddSingleton<ExternalMediaImportService>();
 builder.Services.AddSingleton<IBookAssetStorage>(
-    sp => sp.GetRequiredService<FileStorageService>());
+    sp => sp.GetRequiredService<ExternalMediaBookStorage>());
 builder.Services.AddSingleton<IBookTrackStorage>(
-    sp => sp.GetRequiredService<FileStorageService>());
+    sp => sp.GetRequiredService<ExternalMediaBookStorage>());
 builder.Services.AddNostosSelfHostedHealthChecks();
 
 builder.Services.AddSingleton<BackupSettingsProvider>();
@@ -368,6 +389,10 @@ builder.Services.AddHostedService<LibraryReceiptRetentionWorker>();
 builder.Services.AddHostedService<BookTextIngestionWorker>();
 
 var app = builder.Build();
+
+// A mistyped ExternalMedia:Root must stop the server with its own message,
+// not surface later as a failed capability request.
+app.Services.GetRequiredService<ExternalMediaRoot>();
 
 // Repair the matched DB/media generation before bootstrap, workers, or traffic.
 // Corrupt/unsupported/inconsistent journals refuse host startup with a safe error.
@@ -499,6 +524,7 @@ app.UseStaticFiles(Nostos.Product.Http.NostosFrontendStaticFiles.CreateOptions()
 // Map the public product API with the SelfHosted host's provider-neutral policy.
 app.MapNostosProductEndpoints(opdsOptions, NostosProductEndpointPolicies.None);
 app.MapBackupEndpoints();
+app.MapExternalMediaEndpoints();
 
 // --- MCP STREAMABLE HTTP ENDPOINT ---
 if (mcpOptions.Enabled)

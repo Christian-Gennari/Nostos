@@ -1,0 +1,390 @@
+<div class="setting-row" data-testid="external-media-folder-row">
+  <div class="setting-label">
+    <span class="label-text">Linked folder</span>
+    <span class="label-desc">{{ promise }}</span>
+  </div>
+  @if (status(); as current) {
+    <span class="external-state" [class.is-warning]="!current.mounted" data-testid="external-media-mounted">
+      <nostos-icon [name]="current.mounted ? 'check-circle' : 'warning'" [size]="15"></nostos-icon>
+      {{ current.mounted ? 'Available' : 'Not available' }}
+    </span>
+  }
+</div>
+
+@if (status(); as current) {
+  @if (!current.mounted) {
+    <p class="external-notice is-warning" role="status" data-testid="external-media-unmounted">
+      Nostos cannot see the folder right now. Check that it is still mounted into the server, then
+      scan again. Linked books keep their notes and progress while it is away.
+    </p>
+  }
+
+  <div class="setting-row" data-testid="external-media-scan-row">
+    <div class="setting-label">
+      <span class="label-text">
+        {{ current.linkedBooks > 0 ? count(current.linkedBooks, 'linked book') : 'No linked books yet' }}
+      </span>
+      <span class="label-desc" aria-live="polite" data-testid="external-media-scan-summary">
+        @if (scanning()) {
+          @if (current.scan.total > 0) {
+            Scanning… {{ current.scan.examined }} of {{ current.scan.total }} books read.
+          } @else {
+            Scanning… listing files.
+          }
+        } @else if (summary(); as found) {
+          Last scan found {{ count(found.discovered, 'book') }}: {{ found.ready }} ready,
+          {{ found.needsReview }} to check, {{ found.alreadyLinked }} already in Nostos.
+        } @else {
+          Looks for audiobooks, EPUB and PDF files in the folder. Nothing is added until you have
+          reviewed it.
+        }
+      </span>
+    </div>
+    <div class="external-actions">
+      @if (canReview()) {
+        <button
+          appButton
+          type="button"
+          variant="primary"
+          data-testid="external-media-review"
+          (click)="openReview()"
+        >
+          Review and import
+        </button>
+      }
+      <button
+        appButton
+        type="button"
+        [variant]="canReview() ? 'secondary' : 'primary'"
+        data-testid="external-media-scan"
+        [disabled]="scanning() || starting() || importing() || !current.mounted"
+        [busy]="scanning()"
+        (click)="startScan()"
+      >
+        @if (scanning()) {
+          <nostos-icon name="circle-notch" [size]="16" class="spin"></nostos-icon>
+          Scanning…
+        } @else {
+          <nostos-icon name="scan" [size]="16"></nostos-icon>
+          {{ summary() ? 'Scan again' : 'Scan folder' }}
+        }
+      </button>
+    </div>
+  </div>
+
+  @if (summary(); as found) {
+    @if (found.missingBooks > 0 && !scanning()) {
+      <p class="external-notice is-warning" role="status" data-testid="external-media-missing-notice">
+        {{ count(found.missingBooks, 'linked book') }}
+        {{ found.missingBooks === 1 ? 'has' : 'have' }} files that are no longer in the folder.
+        Nothing was removed from Nostos: notes and progress are kept, and the books play again when
+        the files return.
+      </p>
+    }
+  }
+
+  @if (importState(); as progress) {
+    @if (progress.status !== 'idle') {
+      <div class="setting-row" data-testid="external-media-import-row">
+        <div class="setting-label">
+          <span class="label-text">
+            @switch (progress.status) {
+              @case ('importing') { Importing {{ progress.completed }} of {{ progress.total }} }
+              @case ('interrupted') { Import interrupted }
+              @default { Last import }
+            }
+          </span>
+          <span class="label-desc" aria-live="polite">
+            @if (progress.status === 'importing') {
+              {{ progress.current || 'Starting…' }}
+            } @else {
+              {{ count(importCounts().imported, 'book') }} added@if (importCounts().notImported > 0) {, {{ importCounts().notImported }} not imported}.
+              @if (progress.status === 'interrupted') {
+                The server stopped before it finished. Scan again and import the rest.
+              }
+            }
+          </span>
+        </div>
+      </div>
+    }
+  }
+}
+
+@if (error(); as message) {
+  <p class="external-notice is-error" role="alert" data-testid="external-media-error">{{ message }}</p>
+}
+
+@if (reviewOpen()) {
+  <app-modal-shell
+    [isOpen]="true"
+    variant="sheet"
+    cardClass="external-review-card"
+    [maxWidth]="'640px'"
+    [maxHeight]="'min(780px, calc(100vh - 2.5rem))'"
+    [layer]="110"
+    [trapFocus]="true"
+    [dismissOnBackdrop]="stage() !== 'review'"
+    ariaLabelledBy="external-review-title"
+    [style.--modal-head-padding]="'1.15rem 1.25rem 0.9rem'"
+    (closed)="closeReview()"
+  >
+    <header class="external-review-head" shellHeader>
+      <h2 id="external-review-title" class="external-review-title">
+        @switch (stage()) {
+          @case ('importing') { Importing }
+          @case ('result') { Import finished }
+          @default { Review before importing }
+        }
+      </h2>
+      <button
+        appIconButton
+        icon="x"
+        [glyphSize]="20"
+        class="external-review-close"
+        title="Close"
+        aria-label="Close"
+        (click)="closeReview()"
+      ></button>
+    </header>
+
+    <div class="external-review-body">
+      @switch (stage()) {
+        @case ('review') {
+          <p class="external-hint">Nothing has been added yet. {{ promise }}</p>
+
+          @if (summary(); as found) {
+            <ul class="external-tally" data-testid="external-media-tally">
+              <li><strong>{{ found.ready }}</strong> ready</li>
+              <li><strong>{{ found.needsReview }}</strong> to check</li>
+              <li><strong>{{ found.alreadyLinked }}</strong> already in Nostos</li>
+              <li><strong>{{ found.unusable }}</strong> cannot be imported</li>
+            </ul>
+            @if (found.truncated) {
+              <p class="external-notice is-warning">
+                The folder holds more files than one scan reads. Import these, then scan again.
+              </p>
+            }
+          }
+
+          @if (review().total > 0) {
+            <section class="external-section" aria-labelledby="external-check-title">
+              <div class="external-section-header">
+                <h3 class="external-section-title" id="external-check-title">Check these</h3>
+                <span class="external-count">{{ review().total }}</span>
+              </div>
+              <p class="external-hint is-inline">Left out unless you tick them.</p>
+              <ul class="external-rows">
+                @for (item of review().items; track item.key) {
+                  <li class="external-row is-question" data-testid="external-media-review-row">
+                    <label class="external-row-main">
+                      <input type="checkbox" [checked]="isSelected(item)" (change)="toggle(item)" />
+                      <span class="external-row-text">
+                        <span class="external-row-title">{{ item.title }}</span>
+                        <span class="external-row-sub">{{ describeItem(item) }}</span>
+                      </span>
+                    </label>
+                    <span class="external-row-path">{{ item.location }}</span>
+                    @for (concern of item.concerns; track $index) {
+                      <span class="external-row-concern">{{ concern }}</span>
+                    }
+                  </li>
+                }
+              </ul>
+              <ng-container
+                *ngTemplateOutlet="more; context: { $implicit: review(), status: 'review' }"
+              ></ng-container>
+            </section>
+          }
+
+          @if (ready().total > 0) {
+            <section class="external-section" aria-labelledby="external-ready-title">
+              <div class="external-section-header">
+                <h3 class="external-section-title" id="external-ready-title">Ready to import</h3>
+                <span class="external-count">{{ ready().total }}</span>
+              </div>
+              <ul class="external-rows">
+                @for (item of ready().items; track item.key) {
+                  <li class="external-row" data-testid="external-media-ready-row">
+                    <label class="external-row-main">
+                      <input type="checkbox" [checked]="isSelected(item)" (change)="toggle(item)" />
+                      <nostos-icon
+                        [name]="item.kind === 'audiobook' ? 'headphones' : 'book-open'"
+                        [size]="15"
+                      ></nostos-icon>
+                      <span class="external-row-text">
+                        <span class="external-row-title">{{ item.title }}</span>
+                        <span class="external-row-sub">{{ describeItem(item) }}</span>
+                      </span>
+                    </label>
+                  </li>
+                }
+              </ul>
+              <ng-container
+                *ngTemplateOutlet="more; context: { $implicit: ready(), status: 'ready' }"
+              ></ng-container>
+            </section>
+          }
+
+          @if (unusable().total > 0) {
+            <section class="external-section" aria-labelledby="external-unusable-title">
+              <div class="external-section-header">
+                <h3 class="external-section-title" id="external-unusable-title">Cannot be imported</h3>
+                <span class="external-count">{{ unusable().total }}</span>
+              </div>
+              <ul class="external-rows">
+                @for (item of unusable().items; track item.key) {
+                  <li class="external-row is-problem" data-testid="external-media-unusable-row">
+                    <span class="external-row-text">
+                      <span class="external-row-title">{{ item.title }}</span>
+                      <span class="external-row-path">{{ item.location }}</span>
+                    </span>
+                    @for (concern of item.concerns; track $index) {
+                      <span class="external-row-concern">{{ concern }}</span>
+                    }
+                  </li>
+                }
+              </ul>
+              <ng-container
+                *ngTemplateOutlet="more; context: { $implicit: unusable(), status: 'unusable' }"
+              ></ng-container>
+            </section>
+          }
+
+          @if (missing().length > 0) {
+            <section class="external-section" aria-labelledby="external-missing-title">
+              <div class="external-section-header">
+                <h3 class="external-section-title" id="external-missing-title">Files no longer in the folder</h3>
+                <span class="external-count">{{ missing().length }}</span>
+              </div>
+              <p class="external-hint is-inline">
+                These books stay in Nostos with their notes and progress.
+              </p>
+              <ul class="external-rows">
+                @for (book of missing(); track book.bookId) {
+                  <li class="external-row is-problem" data-testid="external-media-missing-row">
+                    <span class="external-row-text">
+                      <span class="external-row-title">{{ book.title }}</span>
+                      <span class="external-row-sub">{{ count(book.missingFiles, 'file') }} missing</span>
+                    </span>
+                  </li>
+                }
+              </ul>
+            </section>
+          }
+
+          @if (summary(); as found) {
+            @if (found.unsupportedFiles > 0) {
+              <section class="external-section" aria-labelledby="external-unsupported-title">
+                <div class="external-section-header">
+                  <h3 class="external-section-title" id="external-unsupported-title">Formats not supported yet</h3>
+                  <span class="external-count">{{ found.unsupportedFiles }}</span>
+                </div>
+                <p class="external-hint is-inline">
+                  Nostos links M4B, M4A, MP3, EPUB and PDF. These files were left alone, for example:
+                </p>
+                <ul class="external-paths">
+                  @for (path of unsupportedSamples(); track path) {
+                    <li>{{ path }}</li>
+                  }
+                </ul>
+              </section>
+            }
+            @if (found.skippedLinks + found.unreadableFolders + found.unusableNames > 0) {
+              <p class="external-hint external-skipped" data-testid="external-media-skipped">
+                Passed over:
+                @if (found.skippedLinks > 0) { {{ count(found.skippedLinks, 'symbolic link') }} (never followed). }
+                @if (found.unreadableFolders > 0) { {{ count(found.unreadableFolders, 'folder') }} Nostos is not allowed to read. }
+                @if (found.unusableNames > 0) { {{ count(found.unusableNames, 'file') }} with a name Nostos cannot store. }
+              </p>
+            }
+          }
+        }
+
+        @case ('importing') {
+          @if (importState(); as progress) {
+            <div class="external-progress" role="status" aria-live="polite" data-testid="external-media-progress">
+              <nostos-icon name="circle-notch" [size]="22" class="spin"></nostos-icon>
+              <p class="external-progress-title">
+                Importing {{ progress.completed }} of {{ progress.total }}
+              </p>
+              <p class="external-progress-file">{{ progress.current }}</p>
+              <p class="external-progress-note">
+                You can close this window. The import keeps running on the server, and no file is
+                copied or changed.
+              </p>
+            </div>
+          }
+        }
+
+        @case ('result') {
+          <div class="external-progress" role="status" data-testid="external-media-result">
+            <nostos-icon name="check-circle" [size]="24" weight="light"></nostos-icon>
+            <p class="external-progress-title">
+              {{ count(importCounts().imported, 'book') }} added to your library
+            </p>
+            @if (importCounts().alreadyLinked > 0) {
+              <p class="external-progress-file">
+                {{ importCounts().alreadyLinked }} were already in Nostos and were left as they are.
+              </p>
+            }
+          </div>
+          @if (importProblems().length > 0) {
+            <section class="external-section" aria-labelledby="external-failed-title">
+              <div class="external-section-header">
+                <h3 class="external-section-title" id="external-failed-title">Not imported</h3>
+                <span class="external-count">{{ importProblems().length }}</span>
+              </div>
+              <ul class="external-rows">
+                @for (problem of importProblems(); track problem.key) {
+                  <li class="external-row is-problem">
+                    <span class="external-row-text">
+                      <span class="external-row-title">{{ problem.title }}</span>
+                    </span>
+                    <span class="external-row-concern">{{ problem.message || 'This book could not be imported.' }}</span>
+                  </li>
+                }
+              </ul>
+            </section>
+          }
+        }
+      }
+    </div>
+
+    <app-dialog-actions shellActions>
+      @if (stage() === 'review') {
+        <button appButton type="button" variant="secondary" (click)="closeReview()">Cancel</button>
+        <button
+          appButton
+          type="button"
+          variant="primary"
+          data-testid="external-media-import"
+          [disabled]="selectedCount() === 0 || starting()"
+          [busy]="starting()"
+          (click)="importSelected()"
+        >
+          Import {{ count(selectedCount(), 'book') }}
+        </button>
+      } @else {
+        <button appButton type="button" variant="primary" data-testid="external-media-close" (click)="closeReview()">
+          {{ stage() === 'importing' ? 'Close' : 'Done' }}
+        </button>
+      }
+    </app-dialog-actions>
+  </app-modal-shell>
+}
+
+<ng-template #more let-page let-status="status">
+  @if (page.items.length < page.total) {
+    <button
+      appButton
+      type="button"
+      variant="ghost"
+      size="sm"
+      class="external-more"
+      [disabled]="page.loading"
+      (click)="showMore(status)"
+    >
+      Show more ({{ page.total - page.items.length }} left)
+    </button>
+  }
+</ng-template>

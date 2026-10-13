@@ -7,6 +7,7 @@ using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 using System.Xml;
 using System.Xml.Linq;
+using Nostos.Backend.Providers.Acquisition;
 using Nostos.Backend.Providers.Contracts;
 
 namespace Nostos.Backend.Providers.Gutenberg;
@@ -106,10 +107,28 @@ public sealed partial class GutenbergProvider : IContentProvider,
 
     // --- IProviderDownloadPolicy ----------------------------------------
     // Suffix-matched (see ProviderHostPolicy), so www.gutenberg.org and any
-    // mirror on the same domain are covered by one entry. A single ebook is at
-    // most a couple of dozen megabytes, even illustrated; the headroom is there
-    // so a genuinely large volume is not rejected, not because we expect it.
-    public IReadOnlyList<string> AllowedHosts => ["gutenberg.org"];
+    // mirror on the same domain are covered by one entry. The second entry is
+    // Project Gutenberg's own mirror (see MirrorFor), named in full so nothing
+    // else on pglaf.org is reachable. A single ebook is at most a couple of
+    // dozen megabytes, even illustrated; the headroom is there so a genuinely
+    // large volume is not rejected, not because we expect it.
+    public IReadOnlyList<string> AllowedHosts => ["gutenberg.org", GutenbergCatalog.MirrorHost];
+
+    /// <summary>
+    /// gutenberg.org goes down for hours at a time while its mirror keeps
+    /// serving the same generated files under the same path. Only
+    /// <c>/cache/epub/</c> is mirrored that way — the catalogue pages are not.
+    /// </summary>
+    public Uri? MirrorFor(Uri url)
+    {
+        if (!ProviderHostPolicy.IsAllowed(url.Host, ["gutenberg.org"])
+            || !url.AbsolutePath.StartsWith("/cache/epub/", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        return new UriBuilder(url) { Host = GutenbergCatalog.MirrorHost, Port = -1 }.Uri;
+    }
 
     public long MaxBytesPerPart => MaxEbookBytes;
 

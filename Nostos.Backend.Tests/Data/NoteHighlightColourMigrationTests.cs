@@ -51,7 +51,7 @@ public sealed class NoteHighlightColourMigrationTests : IDisposable
         await using (var db = new NostosDbContext(options))
         {
             await db.GetService<IMigrator>().MigrateAsync(PreviousMigration);
-            // Later migrations are pending too; this one must be the next to run.
+            // Later migrations are pending too; this one must be the next.
             (await db.Database.GetPendingMigrationsAsync()).First().Should().Be(migrationId);
         }
 

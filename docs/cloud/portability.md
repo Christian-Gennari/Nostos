@@ -71,6 +71,8 @@ A `.nostos` archive contains a manifest with format/version and checksum informa
 
 It does not contain local backup history or backup paths, absolute media paths, host/runtime settings, AI provider configuration or credentials, migration jobs or idempotency receipts, or derived caches such as search indexes, EPUB locations, and generated thumbnails. A portable archive is not a same-installation operational backup. The inventory is defined by [PortableArchiveModels](../../Nostos.Product/Services/Portability/PortableArchiveModels.cs) and [PortableArchiveService](../../Nostos.Product/Services/Portability/PortableArchiveService.cs).
 
+On a SelfHosted server that links an [external media folder](../external-media.md), a linked book's media is read from that folder into the archive like any stored file, and the reference to the folder is left out. The library the archive is imported into stores the media itself. If a linked file cannot be read, the export fails with `source_media_missing` instead of producing an archive without it.
+
 The click labels and activation handoff are in [Settings](../../Nostos.Frontend/src/app/settings/settings.component.html), the [transfer host](../../Nostos.Frontend/src/app/library-transfer/components/library-transfer-host.component.html), the [import flow](../../Nostos.Frontend/src/app/library-transfer/components/library-import-flow.component.html), and the [activation controller](../../Nostos.Frontend/src/app/library-transfer/services/library-activation-controller.service.ts). The browser resume record is defined by [TransferResumeStore](../../Nostos.Frontend/src/app/library-transfer/services/transfer-resume-store.service.ts). Numeric ceilings come from [MigrationContractLimits](../../Nostos.Product/Services/Portability/MigrationContracts.cs) and [PortableArchiveLimits](../../Nostos.Product/Services/Portability/PortableArchiveLimits.cs).
 
 ### What has and has not been verified
@@ -426,7 +428,7 @@ Before writing imported library data, the reader rejects malformed manifests, un
 
 ## Relationship to local operational backup
 
-SelfHosted local backup remains useful for same-installation recovery because it can snapshot and restore SQLite directly. It is not an interchange format. Use `IPortableArchiveService` to migrate between Nostos installations; do not copy database files, storage paths, or provider backup artifacts as a portable archive.
+SelfHosted local backup remains useful for same-installation recovery because it can snapshot and restore SQLite directly. It is not an interchange format. For a book linked from an [external media folder](../external-media.md) it holds the reference, not the media: a restored book plays once the same folder is mounted again. Use `IPortableArchiveService` to migrate between Nostos installations; do not copy database files, storage paths, or provider backup artifacts as a portable archive.
 
 ## Archive versions
 
