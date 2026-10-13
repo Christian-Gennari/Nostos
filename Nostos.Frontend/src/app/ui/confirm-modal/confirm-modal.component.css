@@ -26,7 +26,7 @@
   width: 26px;
   height: 26px;
   flex-shrink: 0;
-  border-radius: var(--radius-sm, 3px);
+  border-radius: var(--radius-lg);
   background: var(--danger-surface);
   border: 1px solid var(--danger-hairline);
   color: var(--danger-ink);
