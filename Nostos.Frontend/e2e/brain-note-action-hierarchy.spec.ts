@@ -69,7 +69,8 @@ test('Notes, review and topic evidence share one calm action hierarchy', async (
     await page.keyboard.press('Enter');
     await expect(more).toHaveAttribute('aria-expanded', 'true');
     const desktopTrigger = await more.boundingBox();
-    const desktopMenu = await page.locator('.brain-browse-detail .brain-note-more-disclosure').boundingBox();
+    // The menu is the shared nostos-menu, rendered in an overlay outside the pane.
+    const desktopMenu = await page.locator('.nostos-menu').boundingBox();
     expect(desktopTrigger).not.toBeNull();
     expect(desktopMenu).not.toBeNull();
     if (desktopTrigger && desktopMenu) {
@@ -77,23 +78,23 @@ test('Notes, review and topic evidence share one calm action hierarchy', async (
       expect(desktopMenu.y - desktopTrigger.y - desktopTrigger.height).toBeGreaterThanOrEqual(0);
       expect(desktopMenu.y - desktopTrigger.y - desktopTrigger.height).toBeLessThan(12);
     }
-    await page.keyboard.press('Tab');
-    const editItem = page.locator('.brain-browse-detail [data-note-more-item]').first();
+    // Opened from the keyboard, the menu takes focus on its first item itself.
+    const editItem = page.locator('.nostos-menu [data-note-more-item]').first();
     await expect(editItem).toBeFocused();
     await page.keyboard.press('Escape');
-    await expect(page.locator('.brain-note-more-disclosure')).toHaveCount(0);
+    await expect(page.locator('.nostos-menu')).toHaveCount(0);
     await expect(more).toBeFocused();
 
     // The same popup stays inside a phone viewport after actions wrap.
     await page.setViewportSize({ width: 390, height: 844 });
     await more.click();
-    const mobileMenu = await page.locator('.brain-browse-detail .brain-note-more-disclosure').boundingBox();
+    const mobileMenu = await page.locator('.nostos-menu').boundingBox();
     expect(mobileMenu).not.toBeNull();
     if (mobileMenu) {
       expect(mobileMenu.x).toBeGreaterThanOrEqual(-1);
       expect(mobileMenu.x + mobileMenu.width).toBeLessThanOrEqual(391);
     }
-    await more.click();
+    await page.keyboard.press('Escape');
     await page.setViewportSize(DESKTOP_VIEWPORT);
 
     await page.locator('.review-entry').getByRole('button', { name: 'Review one by one' }).click();
@@ -136,7 +137,7 @@ test('Notes, review and topic evidence share one calm action hierarchy', async (
     await expect(sourceLink).toContainText('Open book');
     await expect(sourceLink).toHaveAttribute('title', bookTitle);
     await evidenceMore.click();
-    const moreItems = evidence.first().locator('[data-note-more-item]');
+    const moreItems = page.locator('.nostos-menu [data-note-more-item]');
     await expect(moreItems).toHaveText(['Edit note', 'Delete note']);
     await expect(moreItems.last()).toHaveClass(/danger/);
     await moreItems.last().click();

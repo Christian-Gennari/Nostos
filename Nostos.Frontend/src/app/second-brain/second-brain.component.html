@@ -1144,36 +1144,27 @@
           Suggest topics
         </button>
         }
-        <div class="brain-note-more-anchor">
-          <button appButton variant="ghost" size="sm" type="button" class="brain-note-more-trigger"
-            data-testid="brain-note-more-trigger"
-            [attr.aria-expanded]="noteMoreOpenKey() === noteMoreKey(mode, note.id)"
-            [attr.aria-controls]="'brain-note-more-' + mode + '-' + note.id"
-            aria-haspopup="true"
-            (click)="toggleNoteMore(noteMoreKey(mode, note.id), $event)">
-            More
-          </button>
-          @if (noteMoreOpenKey() === noteMoreKey(mode, note.id)) {
-            <div class="brain-note-more-disclosure" role="group" aria-label="More note actions"
-              [id]="'brain-note-more-' + mode + '-' + note.id"
-              (keydown)="handleNoteMoreKeydown($event)">
-              @if (mode !== 'search') {
-                <button appButton variant="ghost" size="sm" type="button" class="brain-note-more-item"
-                  data-note-more-item (click)="performNoteMoreAction('edit', mode, note, card, $event)">Edit note</button>
-              }
-              @if (mode === 'browse' && note.bookId !== browse.bookId()) {
-                <button appButton variant="ghost" size="sm" type="button" class="brain-note-more-item"
-                  data-note-more-item
-                  (click)="performNoteMoreAction('show-book', mode, note, card, $event)">Show notes from this book</button>
-              }
-              @if (mode === 'evidence') {
-                <button appButton variant="ghost" size="sm" type="button" class="brain-note-more-item danger"
-                  data-note-more-item
-                  (click)="performNoteMoreAction('delete', mode, note, card, $event)">Delete note</button>
-              }
-            </div>
-          }
-        </div>
+        <button appButton variant="ghost" size="sm" type="button" class="brain-note-more-trigger"
+          data-testid="brain-note-more-trigger"
+          [nostosMenuTriggerFor]="noteMore">
+          More
+        </button>
+        <ng-template #noteMore>
+          <nostos-menu aria-label="More note actions">
+            @if (mode !== 'search') {
+              <button nostosMenuItem icon="pencil-simple" data-note-more-item
+                (triggered)="performNoteMoreAction('edit', mode, note, card)">Edit note</button>
+            }
+            @if (mode === 'browse' && note.bookId !== browse.bookId()) {
+              <button nostosMenuItem icon="books" data-note-more-item
+                (triggered)="performNoteMoreAction('show-book', mode, note, card)">Show notes from this book</button>
+            }
+            @if (mode === 'evidence') {
+              <button nostosMenuItem icon="trash" tone="danger" data-note-more-item
+                (triggered)="performNoteMoreAction('delete', mode, note, card)">Delete note</button>
+            }
+          </nostos-menu>
+        </ng-template>
       </div>
       }
     </div>
