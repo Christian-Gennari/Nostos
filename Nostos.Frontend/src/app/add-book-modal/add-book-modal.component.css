@@ -48,7 +48,7 @@
   width: 42px;
   height: 42px;
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   background: var(--color-accent-bg);
   color: var(--color-text-main);
 }
@@ -77,7 +77,7 @@
   gap: 0.85rem;
   padding: 0.8rem;
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-surface);
   background: var(--bg-surface-alt);
 }
 .review-summary__visual {
@@ -132,7 +132,7 @@
   min-height: 36px;
   padding: 0.4rem 0.65rem;
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-action);
   background: var(--bg-surface);
   color: var(--color-text-main);
   font-size: 0.78rem;
@@ -155,7 +155,7 @@
 .review-core {
   padding: 1rem;
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-surface);
   background: var(--bg-surface);
 }
 .section-heading {
@@ -165,7 +165,7 @@
 .metadata-disclosure {
   overflow: hidden;
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-surface);
   background: var(--bg-surface);
 }
 .metadata-disclosure__summary {
@@ -241,7 +241,7 @@
   justify-content: center;
   gap: 0.25rem;
   border: 1.5px dashed var(--border-color);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-surface);
   background: var(--bg-hover);
   padding: 1.5rem;
   text-align: center;
@@ -318,7 +318,7 @@
   gap: 0.5rem;
   padding: 0.75rem 1rem;
   border: 1px solid var(--color-info-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-surface);
   background: var(--color-info-bg);
   color: var(--color-info);
   font-size: 0.9rem;
@@ -331,7 +331,7 @@
   gap: 0.75rem;
   padding: 0.75rem 1rem;
   border: 1px solid var(--danger-hairline);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-surface);
   background: var(--danger-surface);
 }
 .existing-book {
@@ -341,7 +341,7 @@
   gap: 0.75rem;
   padding: 0.75rem 1rem;
   border: 1px solid var(--color-info-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-surface);
   background: var(--color-info-bg);
 }
 .existing-book__message {
@@ -477,7 +477,7 @@
 }
 .source-results-pane {
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-surface);
 }
 .source-results-pane > .source-hint,
 .source-results-pane > .source-error,
@@ -521,7 +521,7 @@
   min-height: 8rem;
   padding: 16px;
   border: 1px dashed var(--border-color);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-surface);
   color: var(--color-text-light);
   text-align: center;
 }
@@ -608,7 +608,7 @@
   height: 52px;
   object-fit: cover;
   border: 1px solid var(--border-color);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   background: var(--bg-surface-alt);
 }
 .source-cover-empty {

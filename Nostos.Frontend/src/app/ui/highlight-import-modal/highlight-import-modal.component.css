@@ -63,7 +63,7 @@
   min-height: 150px;
   padding: 2rem 1.5rem;
   border: 1.5px dashed var(--border-color);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-surface);
   background: var(--bg-hover);
   color: var(--color-text-light);
   text-align: center;
@@ -290,7 +290,7 @@ summary.highlight-section-header:focus-visible {
   width: 100%;
   padding: 0.6rem 0.7rem;
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-surface);
   background: var(--bg-surface);
   color: var(--color-text-main);
   text-align: left;
@@ -375,7 +375,7 @@ summary.highlight-section-header:focus-visible {
   gap: 0.45rem;
   padding: 0.65rem 0.7rem;
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-surface);
   background: var(--bg-surface);
   color: var(--color-text-main);
 }
@@ -491,7 +491,7 @@ summary.highlight-section-header:focus-visible {
   width: 100%;
   padding: 0.4rem 0.5rem;
   border: 0;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-row);
   background: none;
   color: var(--color-text-main);
   font: inherit;
