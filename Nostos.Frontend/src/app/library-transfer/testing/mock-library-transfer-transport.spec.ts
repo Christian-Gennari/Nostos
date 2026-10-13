@@ -31,6 +31,7 @@ function emptyCounts(): MigrationArchiveCountsDto {
     acquisitions: 0,
     assistantSettings: 0,
     noteImportBookLinks: 0,
+    readingListEntries: 0,
     mediaEntries: 0,
     totalRows: 0,
   };

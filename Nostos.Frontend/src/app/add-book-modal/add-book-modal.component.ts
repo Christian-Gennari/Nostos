@@ -35,6 +35,14 @@ import { DropdownComponent, type DropdownOption } from '../ui/dropdown/dropdown.
 
 type AddBookIntentKind = 'upload' | 'source' | 'physical' | 'manual';
 
+/** See `AddBookModal.prefill`. */
+export interface AddBookPrefill {
+  title: string;
+  author?: string | null;
+  isbn?: string | null;
+  publishedDate?: string | null;
+}
+
 @Component({
   selector: 'app-add-book-modal',
   standalone: true,
@@ -85,8 +93,26 @@ export class AddBookModal {
   initialIntent = input<AddBookIntentKind | null>(null);
   collections = input.required<Collection[]>();
   book = input<BookModel | null>(null);
+  /**
+   * What is already known about the book being added, for a caller that
+   * arrives with a title in hand (the reading list's "I got it"). It fills the
+   * form and the source search once, when the sheet opens; nothing is saved
+   * until the user says so.
+   */
+  prefill = input<AddBookPrefill | null>(null);
   closeModal = output<void>();
   bookAdded = output<void>();
+  /**
+   * The id of the library book this sheet just produced: created, matched to
+   * one already there, or queued as an import whose row exists. Separate from
+   * `bookAdded`, which only says the library should be read again.
+   */
+  bookCreated = output<string>();
+  /**
+   * A source import was queued and its book row does not exist yet; carries
+   * the job id so the caller can follow it to the book.
+   */
+  importQueued = output<string>();
   bookUpdated = output<BookModel>();
   deleteBook = output<void>();
 
@@ -215,6 +241,8 @@ export class AddBookModal {
         this.resetForm();
         const intent: AddBookIntentKind = sourceFirst ? 'source' : (initialIntent ?? 'manual');
         this.startIntent(intent);
+        const prefill = this.prefill();
+        if (prefill) this.applyPrefill(prefill);
       });
     });
   }
@@ -244,6 +272,18 @@ export class AddBookModal {
     }
 
     setTimeout(() => this.titleInput()?.nativeElement?.focus(), 0);
+  }
+
+  private applyPrefill(prefill: AddBookPrefill): void {
+    this.form.title = prefill.title;
+    this.form.author = prefill.author ?? null;
+    this.form.isbn = prefill.isbn ?? null;
+    this.form.publishedDate = prefill.publishedDate ?? null;
+
+    // The same words open the catalogue search, so a book that is free
+    // somewhere is already on screen.
+    this.sourceQuery.set([prefill.title, prefill.author].filter(Boolean).join(' '));
+    if (this.sourceMode()) this.searchSource();
   }
 
   /** Switch the same Add Book sheet back to unified provider discovery. */
@@ -568,6 +608,7 @@ export class AddBookModal {
         fileUploadExpected: wantsUpload,
       }).subscribe({
         next: ({ book, created }) => {
+          this.bookCreated.emit(book.id);
           if (!created) {
             this.handleExistingBook(book, wantsUpload);
             return;
@@ -1173,7 +1214,9 @@ export class AddBookModal {
         metadataOverrides: this.buildOverrides(),
       })
       .subscribe({
-        next: () => {
+        next: (job) => {
+          if (job?.bookId) this.bookCreated.emit(job.bookId);
+          else if (job?.jobId) this.importQueued.emit(job.jobId);
           this.toast.success(
             'Import started — it will appear in your library when it finishes.',
           );

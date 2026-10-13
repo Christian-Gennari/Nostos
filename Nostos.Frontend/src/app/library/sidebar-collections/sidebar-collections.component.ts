@@ -25,11 +25,20 @@ import { LibraryPreferencesService } from '../../core/services/library-preferenc
 import { FlatTreeComponent } from '../../ui/flat-tree/flat-tree.component';
 import { ToastService } from '../../core/services/toast.service';
 import { NostosIconComponent } from '../../ui/icon/nostos-icon.component';
+import { ReadingListService } from '../../core/services/reading-list.service';
+import { RouterLink } from '@angular/router';
 
 @Component({
   standalone: true,
   selector: 'app-sidebar-collections',
-  imports: [CommonModule, FormsModule, NostosIconComponent, FlatTreeComponent, ConfirmModal],
+  imports: [
+    CommonModule,
+    FormsModule,
+    RouterLink,
+    NostosIconComponent,
+    FlatTreeComponent,
+    ConfirmModal,
+  ],
   templateUrl: './sidebar-collections.component.html',
   styleUrls: ['./sidebar-collections.component.css'],
 })
@@ -40,6 +49,8 @@ export class SidebarCollections implements OnInit {
   readonly filters = inject(LibraryFilterService);
   private elementRef = inject(ElementRef);
   private toast = inject(ToastService);
+  /** Only its count is shown here; the list itself lives on its own page. */
+  readonly readingList = inject(ReadingListService);
 
   // State
   collections = signal<Collection[]>([]);
@@ -107,6 +118,8 @@ export class SidebarCollections implements OnInit {
     this.load();
     this.loadCounts();
     this.loadStatusCounts();
+    // The badge is a convenience: a failed load leaves it out, nothing more.
+    if (!this.readingList.loaded()) this.readingList.load().subscribe({ error: () => undefined });
     if (window.innerWidth < 768) {
       this.setExpanded(false);
     }

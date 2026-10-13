@@ -1,0 +1,486 @@
+:host {
+  display: block;
+}
+
+.reading-list {
+  width: 100%;
+  max-width: 1040px;
+  margin: 0 auto;
+  /* The bottom padding clears the floating dock, as the library grid does. */
+  padding: 2rem 2rem 7.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.reading-list__back {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: var(--control-h-md);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  text-decoration: none;
+}
+
+.reading-list__back:hover {
+  color: var(--color-text-main);
+}
+
+.reading-list__header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  /* The back link already separates the header from the top of the page. */
+  margin-top: -1rem;
+}
+
+.reading-list__header h1 {
+  margin: 0;
+  font-size: 2rem;
+  font-weight: var(--fw-regular);
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+
+.reading-list__summary {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+/* ------------------------------------------------------------ quick add */
+
+/* The page's one tool, so it gets the page's one raised surface. */
+.quick-add {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 1rem 1.1rem 0.9rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+}
+
+.quick-add__label {
+  margin: 0;
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: var(--text-sm);
+  font-weight: var(--fw-semibold);
+  line-height: 1.4;
+  color: var(--color-text-main);
+}
+
+.quick-add__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.quick-add__title {
+  flex: 2 1 16rem;
+  min-width: 0;
+}
+
+.quick-add__author {
+  flex: 1 1 11rem;
+  min-width: 0;
+}
+
+.quick-add__submit {
+  flex: 0 0 auto;
+  /* As tall as the fields it sits beside. */
+  min-height: var(--control-h-touch);
+  gap: 0.4rem;
+}
+
+.quick-add__hint {
+  margin: 0;
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--color-text-light);
+}
+
+/* ------------------------------------------------------------ tiers */
+
+.tier {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.tier__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.75rem;
+}
+
+.tier__head h2 {
+  margin: 0;
+  font-size: 1.4rem;
+  font-weight: var(--fw-medium);
+  line-height: 1.3;
+  letter-spacing: -0.005em;
+}
+
+.tier__note {
+  font-size: var(--text-sm);
+  color: var(--color-text-light);
+}
+
+.tier__empty,
+.reading-list__empty {
+  margin: 0;
+  padding: 1.75rem 1.25rem;
+  border: 1px dashed var(--control-border);
+  border-radius: var(--radius-lg);
+  font-family: 'Newsreader', serif;
+  font-style: italic;
+  font-size: 1rem;
+  text-align: center;
+  color: var(--color-text-muted);
+}
+
+.reading-list__notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1rem;
+}
+
+.reading-list__notice p {
+  margin: 0;
+}
+
+/* ------------------------------------------------------------ shared entry parts */
+
+.entry-title {
+  margin: 0;
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: 0.95rem;
+  font-weight: var(--fw-semibold);
+  line-height: 1.3;
+  color: var(--color-text-main);
+  overflow-wrap: anywhere;
+}
+
+.entry-author {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: 1.4;
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
+}
+
+/* The reader's own words, in the serif Nostos keeps for them. */
+.entry-why {
+  margin: 0;
+  font-family: 'Newsreader', serif;
+  font-style: italic;
+  font-size: 0.98rem;
+  line-height: 1.4;
+  color: var(--color-text-main);
+  overflow-wrap: anywhere;
+}
+
+.entry-meta {
+  margin: 0;
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--color-text-light);
+}
+
+.entry-owned {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.entry-owned a {
+  color: var(--color-brand-accent);
+  font-weight: var(--fw-medium);
+}
+
+/* An invitation, not a task: quiet until it is pointed at. */
+.entry-add-why {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--color-text-light);
+  cursor: pointer;
+}
+
+.entry-add-why:hover,
+.entry-add-why:focus-visible {
+  color: var(--color-text-main);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* Three ranks of action, loudest first: a solid or outlined pill, a ghost
+   pill, then bare glyphs. Nothing below the first rank carries a ground. */
+.entry-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.entry-icons {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.1rem;
+}
+
+.entry-icons--end {
+  margin-left: auto;
+}
+
+.entry-icons .icon-btn {
+  background: transparent;
+  border-radius: var(--radius-md);
+  color: var(--color-text-light);
+}
+
+.entry-icons .icon-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--color-text-main);
+}
+
+/* The "more" button stays lit while its menu is open. */
+.entry-icons .icon-btn[aria-expanded='true'] {
+  background: var(--bg-hover);
+  color: var(--color-text-main);
+}
+
+.entry-icons .icon-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+/* A finger needs more than the 28px a pointer is given. */
+@media (pointer: coarse) {
+  .entry-icons .icon-btn {
+    width: 36px;
+    height: 36px;
+  }
+
+  .entry-actions button[appButton] {
+    min-height: 36px;
+    padding-inline: 0.85rem;
+  }
+}
+
+.is-busy {
+  opacity: 0.6;
+}
+
+/* A wish has no artwork, so its cover is the title set on paper. */
+.cover {
+  flex: 0 0 5.25rem;
+  height: 7.875rem;
+  box-sizing: border-box;
+  padding: 0.6rem 0.4rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-image-ground);
+  box-shadow: var(--cover-shadow);
+  font-family: 'Newsreader', serif;
+  font-size: 0.68rem;
+  line-height: 1.2;
+  color: var(--color-text-muted);
+  overflow: hidden;
+  /* A long single word hyphenates; it only breaks bare when it must. */
+  hyphens: auto;
+  overflow-wrap: break-word;
+}
+
+.cover--small {
+  flex-basis: 2.25rem;
+  /* Also a width: in the Someday grid there is no flex basis to size it. */
+  width: 2.25rem;
+  height: 3.375rem;
+  padding: 0;
+}
+
+/* ------------------------------------------------------------ next up */
+
+.shelf {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 19rem), 1fr));
+  gap: 1rem;
+}
+
+.shelf-card {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+}
+
+.shelf-card__main {
+  flex: 1 1 auto;
+  display: flex;
+  gap: 1rem;
+  padding: 1rem 1rem 0.9rem;
+}
+
+.shelf-card__body {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.shelf-card__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  /* The arrows are taller than the label; keep the label on the cover's top edge. */
+  margin: -0.3rem -0.35rem 0 0;
+}
+
+.shelf-card__rank {
+  font-size: var(--text-xs);
+  font-weight: var(--fw-medium);
+  color: var(--color-text-light);
+}
+
+.shelf-card.is-first .shelf-card__rank {
+  color: var(--color-brand-accent);
+}
+
+.shelf-card .entry-title {
+  font-size: 1.05rem;
+}
+
+.shelf-card__foot {
+  padding: 0.6rem 0.65rem 0.6rem 1rem;
+  border-top: 1px solid var(--border-light);
+}
+
+/* ------------------------------------------------------------ someday */
+
+/* One grid for the whole list, shared by every row, so the reason column
+   starts on the same line whatever a row's buttons happen to say. */
+.someday {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(0, 1.6fr) auto;
+  column-gap: 0.9rem;
+}
+
+.someday-row {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: subgrid;
+  align-items: center;
+  padding: 0.8rem 0.25rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.someday-row__book {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.someday-row__why {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.someday-row .entry-actions {
+  justify-content: flex-end;
+  flex-wrap: nowrap;
+}
+
+/* Too narrow for four columns: each row stacks its parts instead. */
+@media (max-width: 860px) {
+  .someday {
+    display: block;
+  }
+
+  .someday-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem 0.9rem;
+  }
+
+  .someday-row__book {
+    flex: 1 1 14rem;
+  }
+
+  .someday-row__why {
+    flex: 1 1 100%;
+  }
+
+  .someday-row .entry-actions {
+    flex: 1 1 100%;
+    justify-content: flex-start;
+  }
+
+  .someday-row .entry-icons {
+    margin-left: auto;
+  }
+}
+
+/* ------------------------------------------------------------ edit dialog */
+
+.edit-head h2 {
+  margin: 0;
+  font-size: 1.4rem;
+  font-weight: var(--fw-semibold);
+}
+
+.edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  /* The shell's scroll area has no padding of its own; match Add Book's body. */
+  padding: 1.35rem 1.5rem 1.5rem;
+}
+
+.edit-form input,
+.edit-form textarea {
+  width: 100%;
+}
+
+@media (max-width: 640px) {
+  .reading-list {
+    padding: 1.25rem 1rem 7.5rem;
+    gap: 1.5rem;
+  }
+
+  .reading-list__header h1 {
+    font-size: 1.75rem;
+  }
+
+  .quick-add__submit {
+    flex: 1 1 100%;
+  }
+
+  /* The small cover adds nothing beside a two-line title on a phone. */
+  .someday-row .cover--small {
+    display: none;
+  }
+}

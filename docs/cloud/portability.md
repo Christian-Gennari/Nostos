@@ -340,6 +340,7 @@ This is an explicit provider-independent representation, not an EF entity graph.
 - Writing Studio documents and folder hierarchy;
 - writing/note links (`WritingNotes`, introduced in DataVersion 2);
 - remembered e-reader book mappings (`NoteImportBookLinks`, introduced in DataVersion 3);
+- the reading list of books the user wants and does not have yet (`ReadingListEntries`, introduced in DataVersion 5);
 - generic acquisition provenance and assistant capture-processing preference.
 
 ## Data classification
@@ -434,8 +435,10 @@ SelfHosted local backup remains useful for same-installation recovery because it
 - Format version 1 / DataVersion 1: Base portable archive.
 - Format version 1 / DataVersion 2: Adds `WritingNotes` membership relationships.
 - Format version 1 / DataVersion 3: Adds `NoteImportBookLink` remembered book mappings.
+- Format version 1 / DataVersion 4: Adds multi-track audiobooks (a track list and `track` media).
+- Format version 1 / DataVersion 5: Adds `ReadingListEntries`, the books the user wants and does not have yet.
 
-Payload and manifest versions must strictly agree (`data_version_mismatch`). A payload declaring version < 3 carrying `NoteImportBookLinks` or declaring version < 2 carrying `WritingNotes` is rejected with `unexpected_version_data`. Older versions default omitted collections to empty.
+Payload and manifest versions must strictly agree (`data_version_mismatch`). A payload declaring version < 5 carrying `ReadingListEntries`, declaring version < 3 carrying `NoteImportBookLinks` or declaring version < 2 carrying `WritingNotes` is rejected with `unexpected_version_data`. Older versions default omitted collections to empty.
 
 ---
 
@@ -599,10 +602,10 @@ To reliably transfer large libraries without giant HTTP requests, the contract e
 Preflight (`MigrationPreflightEvaluator.Evaluate`) evaluates declared archive metadata against destination state.
 
 ### Incoming counts (`MigrationArchiveCounts`)
-Must report: `Works`, `Books`, `Notes`, `Topics`, `NoteTopics`, `Writings`, `WritingNotes`, `Collections`, `CollectionMemberships`, `Acquisitions`, `AssistantSettings`, `NoteImportBookLinks`, `MediaEntries`, and `TotalRows`.
+Must report: `Works`, `Books`, `Notes`, `Topics`, `NoteTopics`, `Writings`, `WritingNotes`, `Collections`, `CollectionMemberships`, `Acquisitions`, `AssistantSettings`, `NoteImportBookLinks`, `MediaEntries`, `ReadingListEntries`, and `TotalRows`.
 
 ### Destination counts (`MigrationExistingCounts`)
-Derived from the completeness inventory: `Works`, `Books`, `Notes`, `Topics`, `NoteTopics`, `Writings`, `WritingNotes`, `Collections`, `BookCollections`, `Acquisitions`, `NoteImportBookLinks`, `AssistantSettings`, and `TotalRows`.
+Derived from the completeness inventory: `Works`, `Books`, `Notes`, `Topics`, `NoteTopics`, `Writings`, `WritingNotes`, `Collections`, `BookCollections`, `Acquisitions`, `NoteImportBookLinks`, `AssistantSettings`, `ReadingListEntries`, and `TotalRows`.
 
 ### Staging capacity formula
 

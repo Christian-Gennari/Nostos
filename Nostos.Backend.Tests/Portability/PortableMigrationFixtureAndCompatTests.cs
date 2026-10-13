@@ -236,6 +236,7 @@ public sealed class PortableMigrationFixtureAndCompatTests
         MutateJsonEntry(entries, DataPath, root =>
         {
             root["version"] = dataVersion;
+            if (dataVersion < 5) root.Remove("readingListEntries");
         });
 
         RehashDataDescriptor(entries);
@@ -989,6 +990,7 @@ public sealed class PortableMigrationFixtureAndCompatTests
             MutateJsonEntry(entries, DataPath, root =>
             {
                 root["version"] = LegacyDataVersion;
+                if (LegacyDataVersion < 5) root.Remove("readingListEntries");
                 root.Remove("writingNotes");
                 root.Remove("noteImportBookLinks");
             });
@@ -1006,6 +1008,7 @@ public sealed class PortableMigrationFixtureAndCompatTests
             MutateJsonEntry(entries, DataPath, root =>
             {
                 root["version"] = IntermediateDataVersion;
+                if (IntermediateDataVersion < 5) root.Remove("readingListEntries");
                 root.Remove("noteImportBookLinks");
             });
 
@@ -1022,6 +1025,7 @@ public sealed class PortableMigrationFixtureAndCompatTests
             MutateJsonEntry(entries, DataPath, root =>
             {
                 root["version"] = CurrentDataVersion;
+                if (CurrentDataVersion < 5) root.Remove("readingListEntries");
             });
 
             RehashDataDescriptor(entries);

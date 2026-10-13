@@ -298,6 +298,20 @@ public sealed class PortableCompletenessInventoryTests
                         "Singleton primary-key identity is local persistence plumbing rather than portable library state."),
                 ]),
 
+            ["ReadingListEntryModel"] = PortableEntity(
+                portable:
+                [
+                    "Id",
+                    "Title",
+                    "Author",
+                    "Isbn",
+                    "PublishedDate",
+                    "Why",
+                    "RecommendedBy",
+                    "NextPosition",
+                    "CreatedAt",
+                ]),
+
             ["NoteImportBookLink"] = PortableEntity(
                 portable:
                 [
@@ -470,7 +484,8 @@ public sealed class PortableCompletenessInventoryTests
                     ("BookAcquisitions", "Top-level archive collection containing PortableBookAcquisition records."),
                     ("AssistantSettings", "Optional top-level singleton containing PortableAssistantSettings."),
                     ("WritingNotes", "Version 2 optional top-level collection containing PortableWritingNote records."),
-                    ("NoteImportBookLinks", "Version 3 optional top-level collection containing PortableNoteImportBookLink records.")),
+                    ("NoteImportBookLinks", "Version 3 optional top-level collection containing PortableNoteImportBookLink records."),
+                    ("ReadingListEntries", "Version 5 optional top-level collection containing PortableReadingListEntry records.")),
 
                 [typeof(PortableArchiveManifest)] = StructuralRecord(
                     ("Format", "Archive format identifier in the manifest JSON root."),
@@ -594,6 +609,11 @@ public sealed class PortableCompletenessInventoryTests
                     ["NoteImportBookLink"],
                     incomingCountKind: "NoteImportBookLinks",
                     destinationCountKind: "NoteImportBookLinks"),
+
+                [typeof(PortableReadingListEntry)] = EntityRecord(
+                    ["ReadingListEntryModel"],
+                    incomingCountKind: "ReadingListEntries",
+                    destinationCountKind: "ReadingListEntries"),
             };
 
     private static readonly IReadOnlyDictionary<string, string> AdditionalIncomingCountKinds =

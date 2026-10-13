@@ -709,7 +709,7 @@ internal sealed class ActivationCoordinatorTestBed : IAsyncDisposable
             typeof(WorkModel), typeof(BookModel), typeof(CollectionModel), typeof(BookCollectionModel),
             typeof(NoteModel), typeof(TopicModel), typeof(NoteTopicModel), typeof(WritingModel),
             typeof(WritingNoteModel), typeof(BookAcquisitionModel), typeof(NoteImportBookLink),
-            typeof(AssistantSettingsModel),
+            typeof(AssistantSettingsModel), typeof(ReadingListEntryModel),
         };
         return types.Select(type => db.Model.FindEntityType(type)!.GetTableName()!).ToArray();
     }
@@ -1203,7 +1203,8 @@ internal sealed class ActivationCoordinatorTestBed : IAsyncDisposable
             BookCollections: Count("BookCollections"),
             Acquisitions: Count("BookAcquisitions"),
             NoteImportBookLinks: Count("NoteImportBookLinks"),
-            AssistantSettings: Count("AssistantSettings", "\"CaptureProcessingMode\" IS NOT NULL"));
+            AssistantSettings: Count("AssistantSettings", "\"CaptureProcessingMode\" IS NOT NULL"),
+            ReadingListEntries: Count("ReadingListEntries"));
     }
 
     public async ValueTask DisposeAsync()

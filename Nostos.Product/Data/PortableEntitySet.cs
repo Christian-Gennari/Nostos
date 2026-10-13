@@ -42,6 +42,7 @@ public static class PortableEntitySet
         typeof(BookAcquisitionModel),
         typeof(AssistantSettingsModel),
         typeof(NoteImportBookLink),
+        typeof(ReadingListEntryModel),
     };
 
     /// <summary>Inventory-style names for parity assertions (one per entity type).</summary>

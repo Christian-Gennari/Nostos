@@ -505,6 +505,9 @@ public class BackupService : IBackupService
 
                 var writings = await db.Writings.ToListAsync(ct);
                 await WriteJsonAsync(Path.Combine(metadataDir, "writings.json"), writings, ct);
+
+                var readingList = await db.ReadingListEntries.ToListAsync(ct);
+                await WriteJsonAsync(Path.Combine(metadataDir, "reading-list.json"), readingList, ct);
             }
 
             var dbFileSize = new FileInfo(backupDbPath).Length;

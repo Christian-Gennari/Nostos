@@ -30,6 +30,7 @@ public class NostosDbContext : DbContext
     public DbSet<NoteModel> Notes => Set<NoteModel>();
     public DbSet<CollectionModel> Collections => Set<CollectionModel>();
     public DbSet<BookCollectionModel> BookCollections => Set<BookCollectionModel>();
+    public DbSet<ReadingListEntryModel> ReadingListEntries => Set<ReadingListEntryModel>();
     public DbSet<TopicModel> Topics => Set<TopicModel>();
     public DbSet<NoteTopicModel> NoteTopics => Set<NoteTopicModel>();
     public DbSet<BackupRecord> BackupRecords => Set<BackupRecord>();
@@ -704,6 +705,16 @@ public class NostosDbContext : DbContext
         });
 
         modelBuilder.Entity<NoteImportBatch>().HasIndex(x => x.CreatedAtUtc);
+
+        // --- READING LIST ---
+        // Wishes for books the user does not have. No FK to Books on purpose:
+        // an entry is not a book, and it is removed when it becomes one.
+        modelBuilder.Entity<ReadingListEntryModel>(e =>
+        {
+            e.ToTable("ReadingListEntries");
+            e.HasIndex(x => x.NextPosition);
+            e.HasIndex(x => x.CreatedAt);
+        });
 
         modelBuilder.Entity<NoteImportBatchNote>(e =>
         {

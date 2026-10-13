@@ -396,7 +396,7 @@ internal static class PortableArchiveValidation
                 + $"This build supports version {PortableArchiveFormat.Version}.");
         }
 
-        if (manifest.DataVersion is not (1 or 2 or 3 or 4))
+        if (manifest.DataVersion is not (1 or 2 or 3 or 4 or 5))
         {
             throw new PortableArchiveException(
                 "unsupported_data_version",
@@ -604,7 +604,7 @@ internal static class PortableArchiveValidation
 
     internal static void ValidatePortableData(PortableLibraryData data)
     {
-        if (data.Version is not (1 or 2 or 3 or 4))
+        if (data.Version is not (1 or 2 or 3 or 4 or 5))
         {
             throw new PortableArchiveException(
                 "unsupported_data_version",
@@ -621,7 +621,8 @@ internal static class PortableArchiveValidation
             || data.Writings is null
             || data.BookAcquisitions is null
             || (data.Version >= 2 && data.WritingNotes is null)
-            || (data.Version >= 3 && data.NoteImportBookLinks is null))
+            || (data.Version >= 3 && data.NoteImportBookLinks is null)
+            || (data.Version >= 5 && data.ReadingListEntries is null))
         {
             throw new PortableArchiveException(
                 "malformed_data",
@@ -642,6 +643,13 @@ internal static class PortableArchiveValidation
                 $"Portable relational data version {data.Version} must not carry note import book links.");
         }
 
+        if (data.Version < 5 && data.ReadingListEntries is not null)
+        {
+            throw new PortableArchiveException(
+                "unexpected_version_data",
+                $"Portable relational data version {data.Version} must not carry reading list entries.");
+        }
+
         RequireUniqueGuids(data.Works.Select(x => x.Id), "work");
         RequireUniqueGuids(data.Books.Select(x => x.Id), "book");
         RequireUniqueGuids(data.Collections.Select(x => x.Id), "collection");
@@ -652,6 +660,20 @@ internal static class PortableArchiveValidation
         if (data.NoteImportBookLinks is not null)
         {
             RequireUniqueGuids(data.NoteImportBookLinks.Select(x => x.Id), "note import book link");
+        }
+
+        if (data.ReadingListEntries is not null)
+        {
+            RequireUniqueGuids(data.ReadingListEntries.Select(x => x.Id), "reading list entry");
+            foreach (var entry in data.ReadingListEntries)
+            {
+                if (string.IsNullOrWhiteSpace(entry.Title) || entry.NextPosition is < 0)
+                {
+                    throw new PortableArchiveException(
+                        "malformed_data",
+                        $"Reading list entry {entry.Id} is malformed.");
+                }
+            }
         }
 
         var workIds = data.Works.Select(x => x.Id).ToHashSet();

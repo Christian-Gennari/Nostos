@@ -454,7 +454,8 @@ internal static class PortableLibraryCounts
             Acquisitions: data.BookAcquisitions.Count,
             AssistantSettings: data.AssistantSettings is null ? 0 : 1,
             NoteImportBookLinks: data.NoteImportBookLinks?.Count ?? 0,
-            MediaEntries: mediaEntries);
+            MediaEntries: mediaEntries,
+            ReadingListEntries: data.ReadingListEntries?.Count ?? 0);
     }
 }
 

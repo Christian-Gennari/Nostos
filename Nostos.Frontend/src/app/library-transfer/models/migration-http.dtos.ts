@@ -168,6 +168,7 @@ export interface MigrationArchiveCountsDto {
   acquisitions: number;
   assistantSettings: number;
   noteImportBookLinks: number;
+  readingListEntries: number;
   mediaEntries: number;
   totalRows: number;
 }
@@ -184,6 +185,7 @@ export interface MigrationExistingCountsDto {
   bookCollections: number;
   acquisitions: number;
   noteImportBookLinks: number;
+  readingListEntries: number;
   assistantSettings: number;
   totalRows: number;
 }

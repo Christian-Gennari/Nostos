@@ -2,6 +2,7 @@
  * Copyright (C) 2026 Christian Gennari
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
+import { NOSTOS_MENU } from '../menu/menu.component';
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { Theme, ThemeService } from '../../core/services/theme.service';
 import { ToastService, type ToastType } from '../../core/services/toast.service';
@@ -40,6 +41,7 @@ import { ViewToggleComponent, type ViewToggleOption } from '../view-toggle/view-
     ModalShell,
     LoadingIndicatorComponent,
     DropdownComponent,
+    ...NOSTOS_MENU,
     SwitchComponent,
     ViewToggleComponent,
     TextareaDirective,
