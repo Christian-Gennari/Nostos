@@ -221,6 +221,8 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
     ).toBeNull();
 
     const back = fixture.nativeElement.querySelector('.goto-btn') as HTMLButtonElement;
+    // The header names the topic the notes belong to, not only the way back.
+    expect(fixture.nativeElement.querySelector('.reference-detail-title')).toBeTruthy();
     expect(back.tagName).toBe('BUTTON');
     expect(back.classList.contains('nostos-button--ghost')).toBe(true);
     expect(back.classList.contains('nostos-button--sm')).toBe(true);

@@ -527,6 +527,7 @@
                 <nostos-icon name="arrow-left" [size]="16"></nostos-icon>
                 Back to Topics
               </button>
+              <h3 class="reference-detail-title">{{ inspectionReturnLabel() }}</h3>
             </div>
 
             @if (topicNotesState() === 'loading') {
@@ -635,6 +636,7 @@
                 <nostos-icon name="arrow-left" [size]="16"></nostos-icon>
                 Back to Books
               </button>
+              <h3 class="reference-detail-title">{{ inspectionReturnLabel() }}</h3>
             </div>
 
             @if (bookNotesState() === 'loading') {

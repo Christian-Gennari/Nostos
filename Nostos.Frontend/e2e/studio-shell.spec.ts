@@ -359,8 +359,10 @@ test('Writing Studio shell stays editor-first across desktop and compact viewpor
             tabHeights: buttons.map((button) => button.getBoundingClientRect().height),
           };
         });
+        // Topics/Books is a filter under the Reference switch, not a second
+        // tab bar: no tray behind it and no underline, only a filled selection.
         expect(libraryTabsChrome.trackBottomBorder).toBe('0px');
-        expect(libraryTabsChrome.trackBackground).not.toBe('rgba(0, 0, 0, 0)');
+        expect(libraryTabsChrome.trackBackground).toBe('rgba(0, 0, 0, 0)');
         expect(libraryTabsChrome.activeBackground).not.toBe('rgba(0, 0, 0, 0)');
         expect(libraryTabsChrome.tabHeights[0]).toBe(libraryTabsChrome.tabHeights[1]);
         await page.getByRole('tab', { name: 'Books', exact: true }).click();
