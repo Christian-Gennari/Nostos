@@ -56,8 +56,8 @@ export type NoticeTone = 'neutral' | 'info' | 'caution' | 'danger';
       }
 
       :host(.nostos-notice--danger) {
-        border-color: var(--danger-hairline);
-        background: var(--danger-surface);
+        border-color: var(--danger-field-edge);
+        background: var(--danger-field);
       }
     `,
   ],

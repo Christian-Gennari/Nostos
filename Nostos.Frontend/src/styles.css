@@ -231,6 +231,14 @@
   --danger-ink: color-mix(in srgb, var(--color-danger) 55%, var(--color-text-main));
   --danger-hairline: color-mix(in srgb, var(--color-danger) 22%, var(--border-color));
   --danger-surface: color-mix(in srgb, var(--color-danger) 7%, var(--bg-surface-alt));
+  /* A danger FIELD: an area of text, such as a failure notice or a hovered
+     "Delete" row. On light it is the mark's own pale surface. On dark the mark
+     is a deep-red chip with silver ink (see the dark block), which is right at
+     26px and a wall of alarm red at the width of a notice, so the field has
+     its own quiet tint there. */
+  --danger-field: var(--danger-surface);
+  --danger-field-edge: var(--danger-hairline);
+  --danger-field-ink: var(--danger-ink);
   /* NOTE: mixing toward --color-text-main was the bug. That token is a DARK ink
      in light mode (red deepens, correct) but a LIGHT ink in dark mode, so the
      same formula bleached the fill to #F9C7C2 and porcelain text fell to 1.34:1.
@@ -877,6 +885,11 @@
      non-text floor against the #93000a field it actually sits on (measured
      3.32:1, against 1.79:1 for the value it replaces — a real improvement). */
   --danger-hairline: #c98a86;
+  /* The field, not the mark: a tint of the dark theme's own danger ink on the
+     panel surface, with that ink for its text. */
+  --danger-field: color-mix(in srgb, var(--color-danger) 12%, var(--bg-surface-alt));
+  --danger-field-edge: color-mix(in srgb, var(--color-danger) 34%, var(--border-color));
+  --danger-field-ink: var(--color-danger);
   /* Success keeps its value, and its DISTINCTION is now carried by saturation
      rather than by hue family. The old note here argued that reusing one mint
      for both brand and "success" makes the Finished tick read as a brand mark.
