@@ -5,6 +5,13 @@ services:
       - "5099:8080"
     volumes:
       - nostos-data:/data
+      # Optional: read audiobooks and ebooks you already have, without copying
+      # them. Uncomment this line and the two "environment" lines below, and
+      # replace /mnt/audiobooks with your folder. ":ro" keeps it read-only.
+      # Full steps: docs/external-media.md
+      # - /mnt/audiobooks:/external/media:ro
+    # environment:
+    #   ExternalMedia__Root: /external/media
     restart: unless-stopped
 
 volumes:

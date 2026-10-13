@@ -73,6 +73,17 @@
   </div>
 
   @if (summary(); as found) {
+    @if (found.unreadableFolders > 0 && !scanning()) {
+      <p class="external-notice is-warning" role="status" data-testid="external-media-unreadable-notice">
+        Nostos was not allowed to read {{ count(found.unreadableFolders, 'folder') }}, so anything inside
+        was not found. The server's user needs permission to read the files and open the folders.
+      </p>
+    } @else if (found.discovered === 0 && !scanning()) {
+      <p class="external-notice" role="status" data-testid="external-media-empty-notice">
+        No audiobooks, EPUB or PDF files were found. Check that the folder mounted into the server is
+        the one that holds your books.
+      </p>
+    }
     @if (found.missingBooks > 0 && !scanning()) {
       <p class="external-notice is-warning" role="status" data-testid="external-media-missing-notice">
         {{ count(found.missingBooks, 'linked book') }}

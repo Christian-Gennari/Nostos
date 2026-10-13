@@ -259,6 +259,27 @@ describe('ExternalMediaSettingsComponent', () => {
     expect(text('external-media-missing-notice')).toContain('Nothing was removed from Nostos');
   });
 
+  it('explains a scan that found nothing because folders could not be read', async () => {
+    scanned = { ...summary, discovered: 0, ready: 0, needsReview: 0, unusable: 0, unreadableFolders: 3 };
+    status = { ...status, scan: done };
+    await component.refresh();
+    fixture.detectChanges();
+
+    expect(text('external-media-unreadable-notice')).toContain('not allowed to read 3 folders');
+    expect(text('external-media-unreadable-notice')).toContain('needs permission to read the files');
+    expect(fixture.nativeElement.querySelector('[data-testid="external-media-empty-notice"]')).toBeNull();
+  });
+
+  it('explains a scan that found nothing in a readable folder', async () => {
+    scanned = { ...summary, discovered: 0, ready: 0, needsReview: 0, unusable: 0 };
+    status = { ...status, scan: done };
+    await component.refresh();
+    fixture.detectChanges();
+
+    expect(text('external-media-empty-notice')).toContain('No audiobooks, EPUB or PDF files were found');
+    expect(fixture.nativeElement.querySelector('[data-testid="external-media-unreadable-notice"]')).toBeNull();
+  });
+
   it("shows the server's reason when a scan cannot start", async () => {
     api.startScan.mockReturnValueOnce(
       throwError(
