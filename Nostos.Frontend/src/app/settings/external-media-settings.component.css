@@ -1,0 +1,346 @@
+/* The card, its header and the section around it belong to the Settings page.
+   The rows repeat the page's `.setting-row` recipe (a child component cannot
+   inherit it), and the dialog repeats the highlight import dialog's section,
+   count badge and row recipes so the two review screens read as one family. */
+
+:host {
+  display: contents;
+}
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 22px;
+  padding: 15px 0;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.setting-row:last-of-type {
+  border-bottom: none;
+}
+
+.setting-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.label-text {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--color-text-main);
+  font-size: 0.88rem;
+  font-weight: var(--fw-medium);
+}
+
+.label-desc {
+  display: block;
+  max-width: 610px;
+  color: var(--color-text-light);
+  font-size: 0.78rem;
+  line-height: 1.48;
+}
+
+.external-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  font-weight: var(--fw-medium);
+}
+
+.external-state.is-warning {
+  color: var(--color-text-main);
+}
+
+.external-actions {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.external-notice {
+  margin: 0 0 12px;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--color-text-main);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.setting-row + .external-notice {
+  margin-top: 12px;
+}
+
+.external-notice.is-error {
+  border-color: var(--danger-hairline);
+  color: var(--color-danger);
+}
+
+.spin {
+  animation: external-media-spin 0.9s linear infinite;
+}
+
+@keyframes external-media-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin {
+    animation-duration: 2.4s;
+  }
+}
+
+/* --- Review dialog ------------------------------------------------------- */
+
+.external-review-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.external-review-title {
+  margin: 0;
+  font-family: 'Newsreader', serif;
+  font-size: 1.15rem;
+  font-weight: 500;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  color: var(--color-text-main);
+}
+
+.external-review-close {
+  flex-shrink: 0;
+  margin: -0.15rem -0.25rem 0 0;
+}
+
+.external-review-body {
+  padding: 0.95rem 1.25rem 1.25rem;
+}
+
+.external-hint {
+  margin: 0 0 1rem;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--color-text-muted);
+}
+
+.external-hint.is-inline {
+  margin-bottom: 0.6rem;
+}
+
+.external-skipped {
+  margin: 1.15rem 0 0;
+}
+
+.external-tally {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 1.1rem;
+  margin: 0 0 1.15rem;
+  padding: 0;
+  list-style: none;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.external-tally strong {
+  font-weight: var(--fw-semibold);
+  color: var(--color-text-main);
+}
+
+.external-section + .external-section {
+  margin-top: 1.15rem;
+}
+
+.external-section-header {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.55rem;
+  font-size: 0.72rem;
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-light);
+}
+
+.external-section-title {
+  margin: 0;
+  font: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+}
+
+.external-count {
+  margin-left: auto;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--bg-hover);
+  color: var(--color-text-light);
+  font-size: 0.72rem;
+  font-weight: var(--fw-medium);
+  letter-spacing: 0;
+  line-height: 1;
+}
+
+.external-rows,
+.external-paths {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.external-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  color: var(--color-text-main);
+}
+
+/* A book that needs a decision is the one thing here that needs the owner. */
+.external-row.is-question {
+  border-color: var(--border-focus);
+}
+
+.external-row.is-problem {
+  border-color: var(--danger-hairline);
+}
+
+.external-row-main {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.external-row-main input {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--color-primary);
+}
+
+.external-row-main nostos-icon {
+  flex-shrink: 0;
+  color: var(--color-text-light);
+}
+
+.external-row-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.external-row-title {
+  font-size: 0.88rem;
+  font-weight: var(--fw-semibold);
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.external-row-sub {
+  margin-top: 2px;
+  font-size: 0.74rem;
+  line-height: 1.3;
+  color: var(--color-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A path and a reason must be readable in full; only titles truncate. */
+.external-row-path,
+.external-paths li {
+  font-size: 0.74rem;
+  line-height: 1.35;
+  color: var(--color-text-light);
+  overflow-wrap: anywhere;
+}
+
+.external-row-concern {
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--color-text-muted);
+}
+
+.external-row.is-problem .external-row-concern {
+  color: var(--color-danger);
+}
+
+.external-more {
+  margin-top: 0.5rem;
+}
+
+.external-progress {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 2.5rem 1rem;
+  text-align: center;
+  color: var(--color-text-light);
+}
+
+.external-progress p {
+  margin: 0;
+}
+
+.external-progress-title {
+  margin-top: 0.5rem;
+  font-size: 0.92rem;
+  font-weight: var(--fw-medium);
+  color: var(--color-text-main);
+}
+
+.external-progress-file,
+.external-progress-note {
+  max-width: 100%;
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.external-progress-note {
+  margin-top: 0.6rem;
+}
+
+@media (max-width: 640px) {
+  .setting-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .external-actions {
+    justify-content: flex-start;
+  }
+
+  .external-actions .nostos-button {
+    flex: 1 1 auto;
+  }
+}

@@ -301,6 +301,8 @@ The `selfhosted-sha-*` prefix is intentional. Historical `sha-*` tags in the sam
 
 Compose keeps the existing named volume across image replacement. Use Nostos' portable `.nostos` export/backup features as your user-owned backup and migration path; a Docker volume is persistent storage, not a substitute for backups.
 
+To use audiobooks and ebooks that are already on the server without copying them, mount their folder read-only and set `ExternalMedia__Root`. Nostos never modifies or deletes those files. See [External media](docs/external-media.md).
+
 If you prefer to build from the source you cloned instead of pulling GHCR:
 
 ```bash

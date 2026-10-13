@@ -27,6 +27,7 @@ import { AiProviderService } from '../core/services/ai-provider.service';
 import { ProviderSettingsService } from '../core/services/provider-settings.service';
 import { ProviderSettingsItem, ProviderSettingsResponse } from '../core/dtos/provider.dtos';
 import { DeploymentCapabilitiesService } from '../core/services/deployment-capabilities.service';
+import { ExternalMediaService } from '../core/services/external-media.service';
 import { DeploymentCapabilities } from '../core/dtos/deployment-capabilities.dtos';
 import { CloudAiRefillService } from '../core/services/cloud-ai-refill.service';
 import { CloudAuthService } from '../core/services/cloud-auth.service';
@@ -398,6 +399,29 @@ const assistantSettingsMock = {
   }),
 };
 
+const externalMediaServiceMock = {
+  status: vi.fn(() =>
+    of({
+      mounted: true,
+      linkedBooks: 0,
+      scan: { status: 'idle', startedAt: null, finishedAt: null, examined: 0, total: 0, error: null },
+    }),
+  ),
+  scan: vi.fn(() =>
+    of({
+      scan: { status: 'idle', startedAt: null, finishedAt: null, examined: 0, total: 0, error: null },
+      summary: null,
+      items: [],
+      matchingItems: 0,
+      unsupportedSamples: [],
+      missing: [],
+    }),
+  ),
+  importState: vi.fn(() =>
+    of({ status: 'idle', startedAt: null, finishedAt: null, total: 0, completed: 0, current: null, outcomes: [] }),
+  ),
+};
+
 describe('SettingsComponent backup-only surface', () => {
   let fixture: ComponentFixture<SettingsComponent>;
   const routeQuery = new Map<string, string>();
@@ -432,6 +456,7 @@ describe('SettingsComponent backup-only surface', () => {
         { provide: CloudAccountDeletionService, useValue: cloudAccountDeletionServiceMock },
         { provide: PortableLibraryService, useValue: portableLibraryServiceMock },
         { provide: ManagedBackupsService, useValue: managedBackupsServiceMock },
+        { provide: ExternalMediaService, useValue: externalMediaServiceMock },
       ],
     }).compileComponents();
 
@@ -1220,6 +1245,38 @@ describe('SettingsComponent backup-only surface', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="managed-ai-usage-card"]')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="managed-ai-refill-link"]')).toBeNull();
     expect(cloudAiRefillServiceMock.getUsage).not.toHaveBeenCalled();
+  });
+
+  it('offers External media only when the server reports the capability', () => {
+    externalMediaServiceMock.status.mockClear();
+    capabilitiesServiceMock.get.mockReturnValueOnce(
+      of({ ...selfHostedCapabilities, supportsExternalMediaLibraries: true }),
+    );
+
+    render();
+
+    const nav = fixture.nativeElement.querySelector('[data-testid="settings-nav-external"]') as HTMLButtonElement;
+    expect(nav.textContent).toContain('External media');
+    nav.click();
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.activeSettingsSection()).toBe('external');
+    expect(fixture.nativeElement.querySelector('[data-testid="external-media-card"]')).toBeTruthy();
+    expect(externalMediaServiceMock.status).toHaveBeenCalled();
+  });
+
+  it('shows no External media entry and asks the server nothing without the capability', () => {
+    externalMediaServiceMock.status.mockClear();
+
+    for (const capabilities of [selfHostedCapabilities, cloudCapabilities]) {
+      capabilitiesServiceMock.get.mockReturnValueOnce(of(capabilities));
+      render();
+
+      expect(fixture.nativeElement.querySelector('[data-testid="settings-nav-external"]')).toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="external-media-card"]')).toBeNull();
+      fixture.destroy();
+    }
+    expect(externalMediaServiceMock.status).not.toHaveBeenCalled();
   });
 
   it('keeps Cloud Backups & data available for portable export without e-reader access', () => {

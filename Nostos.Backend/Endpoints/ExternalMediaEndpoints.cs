@@ -81,34 +81,39 @@ public static class ExternalMediaEndpoints
                 result.Missing));
         });
 
-        // Imports the named candidates of the last scan, or every candidate
-        // that is ready. A candidate that needs review is imported only when
-        // it is named: "everything" never includes it.
+        // Imports every candidate that is ready (minus the ones left out),
+        // plus any candidate named by key. A candidate that needs review is
+        // imported only when it is named: "everything ready" never includes it.
         group.MapPost("/import", (
             ExternalMediaImportRequest request,
             ExternalMediaImportService imports,
             IHostApplicationLifetime lifetime) =>
         {
-            if (request.AllReady == (request.Keys is { Count: > 0 }))
+            var named = request.Keys?.Count ?? 0;
+            var leftOut = request.Except?.Count ?? 0;
+            if ((!request.AllReady && named == 0) || (!request.AllReady && leftOut > 0))
             {
                 return Results.BadRequest(new
                 {
                     code = "external_media_invalid_selection",
-                    message = "Choose either every ready book or a list of books.",
+                    message = "Choose every ready book, a list of books, or both.",
                 });
             }
 
-            if (request.Keys is { Count: > MaxImportKeys })
+            if (named > MaxImportKeys || leftOut > MaxImportKeys)
             {
                 return Results.BadRequest(new
                 {
                     code = "external_media_invalid_selection",
-                    message = $"At most {MaxImportKeys} books can be chosen by hand at once.",
+                    message = $"At most {MaxImportKeys} books can be chosen or left out by hand at once.",
                 });
             }
 
-            var keys = request.AllReady ? null : request.Keys!.ToHashSet(StringComparer.Ordinal);
-            return imports.TryStart(keys, lifetime.ApplicationStopping) switch
+            var selection = new ExternalMediaImportSelection(
+                request.AllReady,
+                (request.Except ?? []).ToHashSet(StringComparer.Ordinal),
+                (request.Keys ?? []).ToHashSet(StringComparer.Ordinal));
+            return imports.TryStart(selection, lifetime.ApplicationStopping) switch
             {
                 ExternalMediaImportService.StartResult.Started =>
                     Results.Accepted(Route + "/import", imports.State),
@@ -164,7 +169,10 @@ public static class ExternalMediaEndpoints
         new(state.Status, state.StartedAt, state.Result?.FinishedAt, state.Examined, state.Total, state.Error);
 }
 
-public sealed record ExternalMediaImportRequest(bool AllReady = false, IReadOnlyList<string>? Keys = null);
+public sealed record ExternalMediaImportRequest(
+    bool AllReady = false,
+    IReadOnlyList<string>? Keys = null,
+    IReadOnlyList<string>? Except = null);
 
 public sealed record ExternalMediaBookResponse(bool Linked, int Files, int UnavailableFiles);
 

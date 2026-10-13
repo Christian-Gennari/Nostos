@@ -51,6 +51,8 @@ import { StarRatingComponent } from '../ui/star-rating/star-rating.component';
 import { LibraryPreferencesService } from '../core/services/library-preferences.service';
 import { BooksService } from '../core/services/books.service';
 import { ToastService } from '../core/services/toast.service';
+import { CloudEntryService } from '../core/services/cloud-entry.service';
+import { ExternalMediaBookStatus, ExternalMediaService } from '../core/services/external-media.service';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
 import { LoadingIndicatorComponent } from '../ui/loading-indicator/loading-indicator.component';
 import { ButtonComponent } from '../ui/button/button.component';
@@ -92,6 +94,20 @@ export class BookDetail implements OnInit, OnDestroy {
   private preferences = inject(LibraryPreferencesService);
   private booksService = inject(BooksService);
   private toast = inject(ToastService);
+  private cloudEntry = inject(CloudEntryService);
+  private externalMediaApi = inject(ExternalMediaService);
+
+  /**
+   * Set when this book's media is read from the server's linked folder (#843)
+   * rather than stored by Nostos. Only asked for on a server that reports the
+   * feature, so every other deployment makes no request.
+   */
+  readonly externalMedia = signal<ExternalMediaBookStatus | null>(null);
+  readonly isLinkedExternally = computed(() => this.externalMedia()?.linked === true);
+  readonly externalFileUnavailable = computed(() => {
+    const state = this.externalMedia();
+    return !!state && state.linked && state.unavailableFiles > 0;
+  });
   // Local UI State
   isDescriptionExpanded = signal(false);
   showMetadataModal = signal(false);
@@ -162,8 +178,22 @@ export class BookDetail implements OnInit, OnDestroy {
   /** The confirmation question, composed here so the modal stays generic. */
   deleteHeading = computed(() => {
     const title = this.store.book()?.title;
+    if (this.isLinkedExternally()) {
+      return title ? `Remove “${title}” from Nostos?` : 'Remove book from Nostos?';
+    }
     return title ? `Delete “${title}”?` : 'Delete book?';
   });
+
+  /** A linked book's files are not Nostos's to delete, and the dialog says so. */
+  deleteDescription = computed(() =>
+    this.isLinkedExternally()
+      ? 'This cannot be undone. The book, its notes and its reading progress are removed from Nostos. ' +
+        'Your original files stay where they are and are never modified or deleted by Nostos.'
+      : 'This action cannot be undone. The book file, annotations, and all reading progress will be permanently deleted from your library.',
+  );
+  deleteConfirmLabel = computed(() =>
+    this.isLinkedExternally() ? 'Remove from Nostos' : 'Delete Permanently',
+  );
 
   /** True when the hero's decorative cover art failed to load — the band falls back to flat colour. */
   heroArtFailed = signal(false);
@@ -316,6 +346,22 @@ export class BookDetail implements OnInit, OnDestroy {
     event.stopPropagation();
     this.editMenuOpen.update((open) => !open);
   }
+
+  readonly externalMediaLookup = effect((onCleanup) => {
+    const supported = this.cloudEntry.supportsExternalMediaLibraries();
+    const book = this.store.book();
+    if (!supported || !book?.hasFile) {
+      this.externalMedia.set(null);
+      return;
+    }
+
+    const lookup = this.externalMediaApi.book(book.id).subscribe({
+      next: (state) => this.externalMedia.set(state),
+      // The page works without this: it only loses the linked-file wording.
+      error: () => this.externalMedia.set(null),
+    });
+    onCleanup(() => lookup.unsubscribe());
+  });
 
   ngOnInit(): void {
     this.route.paramMap.subscribe((params) => {
