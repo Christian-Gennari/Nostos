@@ -182,7 +182,7 @@
 }
 
 .actions .icon-btn {
-  border-radius: 6px;
+  border-radius: var(--radius-lg);
   color: var(--color-text-muted);
 }
 
@@ -240,7 +240,7 @@
   margin-bottom: 2px;
   background: transparent;
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-row);
   cursor: pointer;
   text-align: left;
   transition:
@@ -303,7 +303,7 @@
 
 .inspectable-note {
   display: block;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-row);
   cursor: pointer;
 }
 
@@ -374,7 +374,7 @@
   overflow: hidden;
   background: var(--bg-surface);
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-surface);
 }
 
 .source-insertion-actions {
@@ -860,7 +860,7 @@
   color: var(--color-text-light);
   background: var(--bg-surface);
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-action);
   padding: 6px;
   opacity: 0.85;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
@@ -1278,7 +1278,7 @@
   padding: 0.1rem 0.35rem 0.1rem 0.1rem;
   overflow: hidden;
   border: 0;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-row);
   background: transparent;
   color: var(--color-text-main);
   cursor: pointer;
@@ -1335,7 +1335,7 @@
   color: var(--color-text-muted);
   background: transparent;
   border: 0;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-lg);
 }
 
 .reference-row-action.icon-btn:hover,
