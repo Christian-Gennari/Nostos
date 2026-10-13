@@ -76,10 +76,10 @@ export class NoteCardComponent {
   readonly highlightColours = HIGHLIGHT_COLOURS;
 
   /**
-   * The pen to show on the card, or null when there is none to show: a note
+   * The pen the quote rule is drawn in, or null when there is none to show: a note
    * that is not a highlight, or one from a source that does not carry the
    * field (search hits, Writing Studio sources). Guessing amber there would
-   * mislabel a recoloured highlight, so an unknown pen shows nothing. A
+   * mislabel a recoloured highlight, so an unknown pen keeps the accent rule. A
    * highlight whose pen is known to be unrecorded (null) is amber.
    */
   get penColour(): HighlightColourOption | null {

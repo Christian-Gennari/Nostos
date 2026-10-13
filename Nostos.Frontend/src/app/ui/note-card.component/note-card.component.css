@@ -62,7 +62,9 @@
    not a small tinted box competing with chrome for attention. Matches the
    original Second Brain presentation: an accent rule on the left, generous
    italic serif at a larger size than the commentary, and no box, icon, or fill
-   around it — those read as decoration and made the card look busy. */
+   around it — those read as decoration and made the card look busy.
+   The rule takes the highlight's pen colour when it is known (issue #861,
+   set inline); the accent here is the rule for a quote with no known pen. */
 .note-quote {
   position: relative;
   margin: 0 0 0.9rem 0;
@@ -143,22 +145,6 @@
   flex-wrap: wrap;
   flex: 1 1 auto;
   min-width: 0;
-}
-
-/* The highlight's pen (issue #861): a 9px dot, the reader's pen swatch at
-   card scale. The hairline keeps amber and sage visible on the light card. */
-.note-pen {
-  flex: 0 0 auto;
-  width: 9px;
-  height: 9px;
-  border: 1px solid var(--border-color);
-  border-radius: 50%;
-}
-
-/* With a source line the row is top-aligned and may wrap; sit the dot on the
-   first line of 12px text instead of at the row's top edge. */
-.note-footer-with-source .note-pen {
-  margin-top: 4px;
 }
 
 /* An audiobook note's time: the same jump as the arrow, read as metadata. */
