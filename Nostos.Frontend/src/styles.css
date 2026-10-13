@@ -106,6 +106,17 @@
   /* Cover art in a grid frame. The hairline alone cannot read against a dark
      page, so it also carries a shadow. */
   --cover-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+
+  /* Buttons sit a hair above the page: a contact shadow, and on a filled
+     button a top highlight so the fill reads as a surface, not a flat block. */
+  --button-shadow: 0 1px 2px rgba(18, 19, 22, 0.05);
+  --button-shadow-primary: 0 1px 2px rgba(18, 19, 22, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+
+  /* Fields: the border a pointer finds, and the halo focus draws around it.
+     Both derive from tokens that already differ per theme. */
+  --control-border-hover: color-mix(in srgb, var(--control-border) 50%, var(--color-text-light));
+  --focus-halo: 0 0 0 3px color-mix(in srgb, var(--focus-ring) 28%, transparent);
+  --focus-halo-danger: 0 0 0 3px color-mix(in srgb, var(--color-danger) 24%, transparent);
   /* The same frame under the pointer: cast + a halo (the "soft lamp"). The
      halo was clay and warm; the cool palette has no warm accent, so it is now
      the same slate as the accent. Still replaced wholesale on dark. */
@@ -315,7 +326,15 @@
      both, so the pill shape on a dialog action and on a hero CTA is a single
      decision rather than two sets of co-incidentally equal literals. */
   --radius-dialog: 14px;
-  --radius-action: 999px;
+  /* Was 999px: every action was a capsule, which read as heavy at any size.
+     The role still owns the shape of every labelled action in one place. */
+  --radius-action: 8px;
+
+  /* ── Field role ──
+     A text field or a dropdown sits beside a button more often than beside a
+     card, so it takes the action's corner rather than a step of the generic
+     scale. Separate from `--radius-action` so the two can still part ways. */
+  --radius-field: 8px;
 
   /* ── Dock role ──
      The floating dock is neither a card nor a control: it is a bar that floats
@@ -338,6 +357,11 @@
   --control-h-sm: 30px;
   --control-h-md: 32px;
   --control-h-touch: 44px;
+  /* Fields: a compact field is as tall as a large button (36px) so the two
+     share a row; an ordinary form field is one rung up. Both grow to the touch
+     floor where a finger is the pointer. */
+  --control-h-field: 40px;
+  --control-h-field-compact: 36px;
 
   /* ── Focus ring ──
      `--focus-ring` is the colour. This is the width. Measured, the ring is
@@ -743,6 +767,9 @@
      ink, and the marker beside it is the accent — one state colour, not two. */
   --dock-item-active-ink: var(--color-text-main);
   --cover-shadow: 0 2px 12px rgba(0, 0, 0, 0.50);
+  /* The dark primary is a light fill, so a top highlight would not show. */
+  --button-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --button-shadow-primary: 0 1px 2px rgba(0, 0, 0, 0.4);
   /* Both layers neutral black, and that is now doubly right: the palette is
      cool-neutral end to end, so a tinted layer would be the only chromatic
      thing in the effect. Contact term + cast, so the card keeps a defined lip. */
@@ -1373,14 +1400,22 @@ button {
   all: unset;
 
   cursor: pointer;
-  background: var(--bg-surface);
+  /* No ground of its own. It used to paint the surface colour, which showed as
+     a white box wherever the button sat on anything but a white card. */
+  background: transparent;
   width: var(--control-h-md);
   height: var(--control-h-md);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   transition: background-color 0.2s ease, color 0.2s ease, opacity 0.2s ease; 
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-lg);
+}
+
+/* `all: unset` above also removes the browser's focus ring. */
+.icon-btn:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: 1px;
 }
 
 .icon-btn:hover {
@@ -1401,21 +1436,26 @@ button {
 .nostos-form-control {
   box-sizing: border-box;
   width: 100%;
-  min-height: var(--control-h-touch);
-  padding: 0.75rem 1rem;
+  min-height: var(--control-h-field);
+  padding: 0.5rem 0.8rem;
   border: 1px solid var(--control-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-field);
   background-color: var(--bg-input);
   color: var(--color-text-main);
   font-family: inherit;
-  font-size: 0.95rem;
+  font-size: 0.92rem;
   line-height: 1.35;
+  /* Kept, transparent: forced-colours modes draw it, where a shadow is dropped. */
   outline: var(--focus-ring-width) solid transparent;
   outline-offset: 1px;
   transition:
     border-color var(--motion-fast) var(--ease-plain),
-    outline-color var(--motion-fast) var(--ease-plain),
+    box-shadow var(--motion-fast) var(--ease-plain),
     background-color var(--motion-fast) var(--ease-plain);
+}
+
+.nostos-form-control:hover:not(:disabled):not([readonly]):not(:focus-visible) {
+  border-color: var(--control-border-hover);
 }
 
 .nostos-form-control::placeholder {
@@ -1423,14 +1463,16 @@ button {
 }
 
 .nostos-form-control--compact {
-  min-height: 40px;
-  padding: 0.65rem 0.85rem;
-  font-size: 0.9rem;
+  min-height: var(--control-h-field-compact);
+  padding: 0.4rem 0.7rem;
+  font-size: 0.875rem;
 }
 
+/* Focus is the border turning to ink plus a soft halo, not a second hard line
+   a pixel outside the first. */
 .nostos-form-control:focus-visible {
   border-color: var(--border-focus);
-  outline-color: var(--focus-ring);
+  box-shadow: var(--focus-halo);
 }
 
 .nostos-form-control:disabled,
@@ -1445,7 +1487,8 @@ button {
 }
 
 .nostos-form-control[aria-invalid='true']:focus-visible {
-  outline-color: var(--color-danger);
+  border-color: var(--color-danger);
+  box-shadow: var(--focus-halo-danger);
 }
 
 .nostos-form-control--textarea {
@@ -1455,6 +1498,7 @@ button {
 
 
 @media (max-width: 768px) {
+  .nostos-form-control,
   .nostos-form-control--compact {
     min-height: var(--control-h-touch);
   }

@@ -52,7 +52,9 @@ const INVARIANT = /^--(radius|motion|ease|text-(xs|sm|base|lg|xl|2xl)|space|cont
  * Tokens whose value is a `color-mix()` of another token. They re-derive
  * themselves per theme, so an explicit dark value is not required.
  */
-const DERIVED = /^--danger-/;
+// `--control-border-hover` and `--focus-halo*` are mixes of `--control-border`,
+// `--focus-ring` and `--color-danger`, each of which already has a dark value.
+const DERIVED = /^--(danger-|control-border-hover$|focus-halo)/;
 
 /**
  * Extract custom properties from every light `:root { ... }` block.
