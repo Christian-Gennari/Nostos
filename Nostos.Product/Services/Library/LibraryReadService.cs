@@ -42,13 +42,6 @@ internal sealed class LibraryReadService(
         // Ready row with no file remains valid (metadata-only digital/physical).
         var query = CountableBooks(db);
 
-        if (!string.IsNullOrWhiteSpace(search))
-        {
-            var term = $"%{search}%";
-            query = query.Where(b =>
-                EF.Functions.Like(b.Title, term) || EF.Functions.Like(b.Author, term));
-        }
-
         if (!string.IsNullOrWhiteSpace(format))
         {
             switch (format.Trim().ToLowerInvariant())
@@ -95,6 +88,21 @@ internal sealed class LibraryReadService(
             // A book matches when ANY of its memberships is in the subtree.
             query = query.Where(b =>
                 db.BookCollections.Any(bc => bc.BookId == b.Id && subtreeIds.Contains(bc.CollectionId)));
+        }
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            // Matched in memory, after the other filters have narrowed the set:
+            // SQL LIKE is case-sensitive on PostgreSQL and folds only ASCII on
+            // SQLite, and neither forgives a typo. Only id/title/author are read.
+            var searchable = await query
+                .Select(b => new { b.Id, b.Title, b.Author })
+                .ToListAsync(ct);
+            var matchedIds = LibrarySearchMatcher
+                .Match(search, searchable, b => b.Title, b => b.Author)
+                .Select(b => b.Id)
+                .ToList();
+            query = query.Where(b => matchedIds.Contains(b.Id));
         }
 
         // The book row is deliberately the only in-progress import surface.

@@ -1283,6 +1283,19 @@ public sealed class LibraryServiceTests : IClassFixture<SqliteTestFixture>
         search.TotalCount.Should().Be(1);
         search.Items.Single().Title.Should().Be("Fictions");
 
+        // Case, accents and a typo must not hide a book; grouped and flat paths agree.
+        foreach (var term in new[] { "BORGES", "fictións", "gadamr method" })
+        foreach (var grouped in new[] { false, true })
+        {
+            var hit = (PaginatedResponse<BookDto>)(await h.Service.ListBooksAsync(
+                BookFilter.All, BookSort.Recent, term, 1, 20, null, grouped)).Data!;
+            hit.TotalCount.Should().Be(1, $"'{term}' (grouped: {grouped}) names one book");
+        }
+
+        var favoriteSearch = (PaginatedResponse<BookDto>)(await h.Service.ListBooksAsync(
+            BookFilter.Favorites, BookSort.Recent, "borges", 1, 20, null)).Data!;
+        favoriteSearch.TotalCount.Should().Be(0);
+
         var favorites = (PaginatedResponse<BookDto>)(await h.Service.ListBooksAsync(
             BookFilter.Favorites, BookSort.Recent, null, 1, 20, null)).Data!;
         favorites.TotalCount.Should().Be(1);
