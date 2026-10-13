@@ -1184,16 +1184,45 @@
 }
 
 /* --- S2 Reference sidebar content: compact rows and explicit action hierarchy --- */
-/* The Library sub-tabs use the same borderless track and raised selection as
-   the main Reference tabs, not a competing partial underline treatment. */
+/* The Library's Topics/Books choice is a FILTER on the Library surface, not a
+   second tab bar. It used to be drawn as the same full-width tray as the
+   "For this writing / Library" switch directly above it, so the panel opened
+   with two identical tab bars stacked. It keeps its tab semantics and the
+   shared `.toggle-opt` class, and drops the tray: two compact options on the
+   left, the selected one a flat fill. No underline either, which would compete
+   with the switch above in a different way. */
 .sidebar-tabs.library-tabs {
-  margin: 0.15rem 0 0.65rem;
+  justify-content: flex-start;
+  gap: 4px;
+  margin: 0.2rem 0 0.75rem;
+  padding: 0;
+  background: transparent;
 }
 
 .sidebar-tabs.library-tabs .tab-btn.toggle-opt {
-  min-height: 36px;
-  padding: 0.4rem 0.5rem;
-  font-size: 0.78rem;
+  flex: 0 0 auto;
+  min-height: 30px;
+  padding: 0.25rem 0.7rem;
+  border-radius: var(--radius-action);
+  font-size: 0.8rem;
+}
+
+.sidebar-tabs.library-tabs .tab-btn.toggle-opt:hover {
+  color: var(--color-text-main);
+}
+
+.sidebar-tabs.library-tabs .tab-btn.toggle-opt.active {
+  /* The switch's own selected fill, without its shadow and ring. --bg-hover is
+     within a shade of the sidebar on light and the selection vanished. */
+  background: var(--control-active-fill);
+  color: var(--color-text-main);
+  box-shadow: none;
+  outline: 0;
+}
+
+.sidebar-tabs.library-tabs .tab-btn.toggle-opt:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: -2px;
 }
 
 @media (pointer: coarse), (hover: none) {
@@ -1258,13 +1287,24 @@
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 0.3rem;
-  padding: 0.55rem 0.25rem 0.55rem 0.4rem;
-  border-bottom: 1px solid var(--border-color);
+  padding: 0.4rem 0.3rem 0.4rem 0.55rem;
+  border-radius: var(--radius-row);
   white-space: normal;
+  transition: background-color var(--motion-fast);
 }
 
-.reference-source-row:last-child {
-  border-bottom: 0;
+/* The ROW is the hover surface. The highlight used to sit on the text button
+   alone, between two hairlines and short of the bookmark, so it read as a
+   stray blob inside the row rather than as the row being picked. */
+.reference-source-row + .reference-source-row {
+  margin-top: 2px;
+}
+
+.reference-source-row:hover,
+.reference-source-row:has(.reference-source-row-main:focus-visible) {
+  /* A mix of the ink, not --bg-hover, which is nearly the sidebar's own grey
+     on light. */
+  background: color-mix(in srgb, var(--color-text-main) 6%, transparent);
 }
 
 .reference-source-row-main {
@@ -1286,8 +1326,12 @@
   white-space: normal;
 }
 
-.reference-source-row-main:hover {
-  background: var(--bg-hover);
+/* Out-specifies the ghost button's own hover fill, which would draw a second,
+   smaller box inside the highlighted row. */
+.reference-source-row .reference-source-row-main.nostos-button,
+.reference-source-row .reference-source-row-main.nostos-button:hover:not(:disabled) {
+  background: transparent;
+  box-shadow: none;
 }
 
 .reference-source-row-main:focus-visible,
@@ -1340,7 +1384,8 @@
 
 .reference-row-action.icon-btn:hover,
 .reference-row-action.icon-btn:focus-visible {
-  background: var(--bg-hover);
+  /* A step past the row's own hover fill. */
+  background: color-mix(in srgb, var(--color-text-main) 12%, transparent);
   color: var(--color-text-main);
 }
 
@@ -1353,10 +1398,30 @@
   position: sticky;
   top: 0;
   z-index: 1;
+  flex-direction: column;
+  align-items: flex-start;
   justify-content: flex-start;
-  padding: 0.15rem 0 0.35rem;
-  margin: 0 0 0.45rem;
+  gap: 0.1rem;
+  padding: 0.15rem 0 0.5rem;
+  margin: 0 0 0.35rem;
+  border-bottom: 0;
   background: var(--bg-sidebar);
+}
+
+/* Names what the list below belongs to; the back button alone said only where
+   you came from. */
+.reference-detail-title {
+  margin: 0;
+  padding: 0 0.55rem;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--color-text-main);
+  font-family: 'Newsreader', serif;
+  font-size: 1.1rem;
+  font-weight: 600;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .brain-detail-header .goto-btn {
