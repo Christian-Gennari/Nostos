@@ -260,6 +260,14 @@
             </button>
             }
 
+            @if (externalFileUnavailable()) {
+              <div class="detail-import-failed" role="status" data-testid="external-file-unavailable">
+                <span>
+                  External file unavailable. Nostos cannot see this book's file in the linked folder.
+                  Your notes and progress are kept; check that the folder is still mounted on the server.
+                </span>
+              </div>
+            }
             @if (store.book()?.status === 3) {
               <div class="detail-import-failed" role="status">
                 <span>Import failed{{ store.book()?.statusMessage ? ': ' + store.book()?.statusMessage : '.' }}</span>
@@ -723,8 +731,8 @@
   <app-confirm-modal
     [isOpen]="showDeleteConfirm()"
     [heading]="deleteHeading()"
-    description="This action cannot be undone. The book file, annotations, and all reading progress will be permanently deleted from your library."
-    confirmLabel="Delete Permanently"
+    [description]="deleteDescription()"
+    [confirmLabel]="deleteConfirmLabel()"
     busyLabel="Deleting…"
     [busy]="deleting()"
     (confirm)="confirmDeleteBook()"

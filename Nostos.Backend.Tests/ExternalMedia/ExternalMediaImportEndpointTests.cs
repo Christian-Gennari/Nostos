@@ -258,9 +258,10 @@ public sealed class ExternalMediaImportEndpointTests : IDisposable
 
     [Theory]
     [InlineData("{}")]
-    [InlineData("{\"allReady\":true,\"keys\":[\"file:a.epub\"]}")]
     [InlineData("{\"keys\":[]}")]
-    public async Task A_selection_must_be_everything_ready_or_a_list_never_both_or_neither(string body)
+    [InlineData("{\"except\":[\"file:a.epub\"]}")]
+    [InlineData("{\"keys\":[\"file:a.epub\"],\"except\":[\"file:b.epub\"]}")]
+    public async Task A_selection_must_choose_something_and_can_only_leave_out_from_everything_ready(string body)
     {
         await using var factory = new Factory(_root);
 
@@ -269,6 +270,32 @@ public sealed class ExternalMediaImportEndpointTests : IDisposable
             new StringContent(body, System.Text.Encoding.UTF8, "application/json"));
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task Everything_ready_can_leave_books_out_and_add_a_reviewed_one()
+    {
+        Write("Ebooks/Keep.pdf", SyntheticMedia.Pdf());
+        Write("Ebooks/Leave Out.pdf", SyntheticMedia.Pdf());
+        Write("Ebooks/Essay.epub", SyntheticMedia.Epub("An Essay", "Sam Writer"));
+        await using var factory = new Factory(_root);
+        var client = factory.CreateClient();
+        (await client.PostAsJsonAsync("/api/books", new { type = "ebook", title = "An Essay", author = "Sam Writer" }))
+            .EnsureSuccessStatusCode();
+        await ScanAsync(factory, client);
+
+        var import = await ImportAsync(factory, client, new
+        {
+            allReady = true,
+            except = new[] { "file:Ebooks/Leave Out.pdf" },
+            keys = new[] { "file:Ebooks/Essay.epub" },
+        });
+
+        import.Outcomes.Select(o => (o.Key, o.Outcome)).Should().BeEquivalentTo(
+        [
+            ("file:Ebooks/Keep.pdf", "imported"),
+            ("file:Ebooks/Essay.epub", "imported"),
+        ]);
     }
 
     [Fact]

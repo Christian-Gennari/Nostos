@@ -81,6 +81,10 @@ export class CloudEntryService {
   readonly supportsLibraryMigration = computed(
     () => this.deploymentCapabilities()?.supportsLibraryMigration === true,
   );
+  /** A SelfHosted server with an external media folder configured (#843). */
+  readonly supportsExternalMediaLibraries = computed(
+    () => this.deploymentCapabilities()?.supportsExternalMediaLibraries === true,
+  );
 
   /**
    * Server-authoritative safe activation (#681). The shared import flow only

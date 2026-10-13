@@ -58,6 +58,7 @@ import { ManagedBackupsService } from '../core/services/managed-backups.service'
 import { ManagedBackupListing } from '../core/dtos/managed-backups.dtos';
 import { CloudAccountDeletionStatus } from '../core/dtos/cloud-account-deletion.dtos';
 import { CloudAccountDeletionSettingsComponent } from './cloud-account-deletion-settings.component';
+import { ExternalMediaSettingsComponent } from './external-media-settings.component';
 import { LibraryTransferHostComponent } from '../library-transfer/components/library-transfer-host.component';
 import { CloudManagedAiUsage } from '../core/dtos/cloud-ai-refill.dtos';
 import {
@@ -173,7 +174,14 @@ const BOOK_PROVIDER_COPY = {
 } as const;
 
 /** How a section's inline status line is coloured. */
-type SettingsSection = 'general' | 'library' | 'assistant' | 'connections' | 'data' | 'account';
+type SettingsSection =
+  | 'general'
+  | 'library'
+  | 'assistant'
+  | 'connections'
+  | 'external'
+  | 'data'
+  | 'account';
 
 /** Sections a `?section=` link may open. `data` is its own route, `/settings/library`. */
 const LINKABLE_SECTIONS: readonly SettingsSection[] = [
@@ -181,6 +189,7 @@ const LINKABLE_SECTIONS: readonly SettingsSection[] = [
   'library',
   'assistant',
   'connections',
+  'external',
   'account',
 ];
 
@@ -265,6 +274,7 @@ const defaultProgress: BackupProgress = {
     DropdownComponent,
     ConfirmModal,
     CloudAccountDeletionSettingsComponent,
+    ExternalMediaSettingsComponent,
     LibraryTransferHostComponent,
   ],
   templateUrl: './settings.component.html',
@@ -323,6 +333,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
       if (this.isManageLibraryPage || !requested || !LINKABLE_SECTIONS.includes(requested)) return;
       // A link to a section this deployment does not have leaves the default open.
       if (requested === 'connections' && !this.canConfigureAiProvider()) return;
+      if (requested === 'external' && !this.supportsExternalMediaLibraries()) return;
       if (requested === 'account' && !this.isCloud()) return;
       untracked(() => this.showSection(requested));
     });
@@ -419,6 +430,13 @@ export class SettingsComponent implements OnInit, OnDestroy {
   readonly supportsSafeActivation = computed(
     () => this.deploymentCapabilities()?.supportsSafeActivation === true,
   );
+  /**
+   * A SelfHosted server with an external media folder configured (#843).
+   * Server-authoritative: never inferred from `deploymentMode`.
+   */
+  readonly supportsExternalMediaLibraries = computed(
+    () => this.deploymentCapabilities()?.supportsExternalMediaLibraries === true,
+  );
   readonly hasManageLibraryActions = computed(
     () =>
       this.supportsLocalBackupConfiguration() ||
@@ -474,7 +492,11 @@ export class SettingsComponent implements OnInit, OnDestroy {
   );
   /** Whether the nav's second group ("This server" / "Your account") has entries. */
   readonly hasInfrastructureSections = computed(
-    () => this.canConfigureAiProvider() || this.hasDataSection() || this.isCloud(),
+    () =>
+      this.canConfigureAiProvider() ||
+      this.supportsExternalMediaLibraries() ||
+      this.hasDataSection() ||
+      this.isCloud(),
   );
 
   openFirstRunImportPicker(): void {

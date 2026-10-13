@@ -390,6 +390,10 @@ builder.Services.AddHostedService<BookTextIngestionWorker>();
 
 var app = builder.Build();
 
+// A mistyped ExternalMedia:Root must stop the server with its own message,
+// not surface later as a failed capability request.
+app.Services.GetRequiredService<ExternalMediaRoot>();
+
 // Repair the matched DB/media generation before bootstrap, workers, or traffic.
 // Corrupt/unsupported/inconsistent journals refuse host startup with a safe error.
 await app.Services.GetRequiredService<SelfHostedActivationRecoveryStartupService>().ReconcileIncompleteAsync();

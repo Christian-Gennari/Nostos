@@ -38,4 +38,10 @@ export interface DeploymentCapabilities {
   supportsManagedBackupRestore?: boolean;
   /** Hosted account deletion lifecycle; absent/false keeps the controls hidden. */
   supportsAccountDeletion?: boolean;
+  /**
+   * A SelfHosted server with an external media folder configured (#843).
+   * Absent/false keeps the Settings section and the book page's linked-file
+   * states hidden; never inferred from `deploymentMode`.
+   */
+  supportsExternalMediaLibraries?: boolean;
 }

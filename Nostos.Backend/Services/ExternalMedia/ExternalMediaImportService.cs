@@ -9,6 +9,21 @@ using Nostos.Shared.Enums;
 
 namespace Nostos.Backend.Services.ExternalMedia;
 
+/// <summary>
+/// Which candidates to import: every ready one except those left out, plus
+/// any named by key. Naming is the only way a candidate that needs review
+/// gets imported.
+/// </summary>
+public sealed record ExternalMediaImportSelection(
+    bool AllReady,
+    IReadOnlySet<string> Except,
+    IReadOnlySet<string> Keys)
+{
+    public bool Includes(ExternalMediaScanItem item) =>
+        Keys.Contains(item.Key)
+        || (AllReady && item.Status == ExternalMediaScanItem.Ready && !Except.Contains(item.Key));
+}
+
 /// <summary>What happened to one candidate of an import.</summary>
 public sealed record ExternalMediaImportOutcome(
     string Key,
@@ -56,7 +71,8 @@ public sealed class ExternalMediaImportService(
     IBookAssetStorage storage,
     IDbContextFactory<NostosDbContext> contexts,
     IServiceScopeFactory scopes,
-    ILogger<ExternalMediaImportService> logger)
+    ILogger<ExternalMediaImportService> logger,
+    ILibraryMaintenanceCoordinator? maintenance = null)
 {
     private static readonly string[] SidecarCovers = ["cover.jpg", "cover.jpeg", "cover.png", "folder.jpg", "folder.png"];
     private const long MaxSidecarCoverBytes = 20 * 1024 * 1024;
@@ -92,10 +108,9 @@ public sealed class ExternalMediaImportService(
     }
 
     /// <summary>
-    /// Starts importing the named candidates of the last scan, or every
-    /// candidate that is ready when <paramref name="keys"/> is null.
+    /// Starts importing the chosen candidates of the last scan.
     /// </summary>
-    public StartResult TryStart(IReadOnlyCollection<string>? keys, CancellationToken stopping)
+    public StartResult TryStart(ExternalMediaImportSelection selection, CancellationToken stopping)
     {
         lock (_gate)
         {
@@ -106,9 +121,7 @@ public sealed class ExternalMediaImportService(
             if (scan.Status != ExternalMediaScanState.Done || scan.Result is not { } result)
                 return StartResult.NoScan;
 
-            var selected = keys is null
-                ? result.Items.Where(item => item.Status == ExternalMediaScanItem.Ready).ToList()
-                : result.Items.Where(item => keys.Contains(item.Key)).ToList();
+            var selected = result.Items.Where(selection.Includes).ToList();
             if (selected.Count == 0)
                 return StartResult.NothingSelected;
 
@@ -139,6 +152,10 @@ public sealed class ExternalMediaImportService(
             ExternalMediaImportOutcome outcome;
             try
             {
+                // Held per book, not for the whole import: a restore or a
+                // library switch waits for the book in hand, never for hours.
+                await using var operation =
+                    maintenance is null ? null : await maintenance.EnterOperationAsync(ct);
                 outcome = await ImportAsync(item, scan.Candidates[item.Key], ct);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
