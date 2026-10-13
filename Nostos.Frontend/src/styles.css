@@ -336,6 +336,16 @@
      scale. Separate from `--radius-action` so the two can still part ways. */
   --radius-field: 8px;
 
+  /* ── Segmented role ──
+     A segmented switch (view toggle, Notes/Topics, the Studio's tabs) sits in
+     the same toolbars as buttons and fields, so its tray takes the action's
+     corner. The selected option is inset by the tray's 3px padding and takes
+     the concentric corner, which keeps the gap between the two curves even.
+     The tray was `--radius-md` (4px) and the option `--radius-sm` (3px): square
+     beside 8px buttons once the capsule went. */
+  --radius-segment: var(--radius-action);
+  --radius-segment-option: calc(var(--radius-segment) - 3px);
+
   /* ── Dock role ──
      The floating dock is neither a card nor a control: it is a bar that floats
      over page content, so it gets its own corner rather than a step in the
@@ -1143,7 +1153,7 @@
   background: 0 0;
   border: none;
   padding: 4px 6px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-segment-option);
   cursor: pointer;
   color: var(--color-text-light);
   display: flex;

@@ -151,7 +151,7 @@ const GLYPH_SIZE = 18;
         gap: var(--vt-gap);
         padding: var(--vt-pad);
         background: var(--bg-hover);
-        border-radius: var(--radius-md);
+        border-radius: var(--radius-segment);
         /* A hairline ring, not a border: it defines the track on dark, where
            --bg-hover sits ~1.5:1 from the page and the fill alone reads as a
            smudge. A border would change the box and shift both surfaces. */
@@ -174,7 +174,7 @@ const GLYPH_SIZE = 18;
         left: var(--vt-pad);
         width: var(--vt-w);
         height: var(--vt-h);
-        border-radius: var(--radius-sm);
+        border-radius: var(--radius-segment-option);
         background: var(--control-active-fill);
         outline: 1px solid var(--border-color);
         outline-offset: -1px;
@@ -199,7 +199,7 @@ const GLYPH_SIZE = 18;
         padding: 0;
         border: none;
         background: none;
-        border-radius: var(--radius-sm);
+        border-radius: var(--radius-segment-option);
         color: var(--color-text-light);
         cursor: pointer;
         transition:
