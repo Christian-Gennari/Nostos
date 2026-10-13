@@ -47,7 +47,16 @@
   <div class="content-row">
     <div class="collapsible-body" [class.collapsed]="shouldShowExpandBtn && !isExpanded">
       @if (note.selectedText) {
-      <div class="note-quote">
+      <!-- The quote rule is drawn in the highlight's pen (issue #861), so a
+           list can be scanned by colour. An unknown pen keeps the accent rule. -->
+      <div
+        class="note-quote"
+        [style.border-left-color]="penColour ? 'var(--highlight-' + penColour.id + ')' : null"
+        [attr.data-testid]="penColour ? 'note-pen-' + penColour.id : null"
+      >
+        @if (penColour; as pen) {
+        <span class="visually-hidden">{{ pen.label }} highlight</span>
+        }
         <p class="quote-text">&ldquo;{{ note.selectedText }}&rdquo;</p>
       </div>
       } @if (note.content) {
@@ -72,18 +81,6 @@
 
     <div class="note-footer" [class.note-footer-with-source]="showSource && !!note.bookTitle">
       <div class="note-metadata">
-        @if (penColour; as pen) {
-        <!-- The highlight's pen, as one small dot: enough to scan a list by
-             colour without restyling the card (issue #861). -->
-        <span
-          class="note-pen"
-          role="img"
-          [style.background]="'var(--highlight-' + pen.id + ')'"
-          [attr.aria-label]="pen.label + ' highlight'"
-          [attr.title]="pen.label + ' highlight'"
-          [attr.data-testid]="'note-pen-' + pen.id"
-        ></span>
-        }
         @if (audioTimeLabel; as time) {
         <button
           type="button"

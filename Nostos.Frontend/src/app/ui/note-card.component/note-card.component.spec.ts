@@ -142,31 +142,36 @@ describe('NoteCard highlight pen (issue #861)', () => {
       fixture = TestBed.createComponent(NoteCardComponent);
       fixture.componentInstance.note = note;
       fixture.detectChanges();
-      return fixture.nativeElement.querySelector('.note-pen') as HTMLElement | null;
+      return fixture.nativeElement.querySelector('.note-quote') as HTMLElement | null;
     }
 
-    it('marks a highlight with one small dot in its pen', async () => {
-      const dot = await show(highlight);
+    it('draws the quote rule in the highlight\'s pen', async () => {
+      const quote = await show(highlight);
 
-      expect(dot?.getAttribute('data-testid')).toBe('note-pen-sage');
-      expect(dot?.style.background).toBe('var(--highlight-sage)');
-      expect(dot?.getAttribute('aria-label')).toBe('Sage highlight');
+      expect(quote?.getAttribute('data-testid')).toBe('note-pen-sage');
+      expect(quote?.style.borderLeftColor).toBe('var(--highlight-sage)');
+      expect(quote?.querySelector('.visually-hidden')?.textContent).toBe('Sage highlight');
     });
 
-    it('shows amber for a highlight known to have no recorded pen', async () => {
-      const dot = await show({ ...highlight, highlightColour: null });
+    it('uses amber for a highlight known to have no recorded pen', async () => {
+      const quote = await show({ ...highlight, highlightColour: null });
 
-      expect(dot?.getAttribute('data-testid')).toBe('note-pen-amber');
+      expect(quote?.getAttribute('data-testid')).toBe('note-pen-amber');
     });
 
-    it('shows nothing when the source does not say which pen (search hits)', async () => {
+    it('keeps the accent rule when the source does not say which pen (search hits)', async () => {
       const { highlightColour: _unknown, ...hit } = highlight;
+      const quote = await show(hit);
 
-      expect(await show(hit)).toBeNull();
+      expect(quote?.style.borderLeftColor).toBe('');
+      expect(quote?.hasAttribute('data-testid')).toBe(false);
+      expect(quote?.querySelector('.visually-hidden')).toBeNull();
     });
 
-    it('shows nothing for a note that is not a highlight', async () => {
-      expect(await show({ ...highlight, selectedText: undefined, content: 'A thought.' })).toBeNull();
+    it('shows no dot in the footer', async () => {
+      await show(highlight);
+
+      expect(fixture.nativeElement.querySelector('.note-pen')).toBeNull();
     });
   });
 
