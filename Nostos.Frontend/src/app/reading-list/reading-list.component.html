@@ -1,0 +1,392 @@
+<div class="reading-list">
+  <a class="reading-list__back" routerLink="/library">
+    <nostos-icon name="arrow-left" [size]="14"></nostos-icon>
+    <span>Library</span>
+  </a>
+
+  <header class="reading-list__header">
+    <h1 id="reading-list-title">To read</h1>
+    <p class="reading-list__summary">{{ summary() }}</p>
+  </header>
+
+  <form class="quick-add" (submit)="add($event)" aria-labelledby="quick-add-label">
+    <span id="quick-add-label" class="quick-add__label">Add a book</span>
+    <div class="quick-add__row">
+      <input
+        #titleInput
+        appInput
+        class="quick-add__title"
+        type="text"
+        name="title"
+        aria-label="Title or ISBN"
+        placeholder="Title, or an ISBN"
+        autocomplete="off"
+        maxlength="500"
+        [(ngModel)]="draftTitle"
+      />
+      <input
+        appInput
+        class="quick-add__author"
+        type="text"
+        name="author"
+        aria-label="Author, optional"
+        placeholder="Author (optional)"
+        autocomplete="off"
+        maxlength="500"
+        [(ngModel)]="draftAuthor"
+      />
+      <button
+        appButton
+        variant="primary"
+        size="lg"
+        type="submit"
+        class="quick-add__submit"
+        [disabled]="adding() || !draftTitle.trim()"
+      >
+        Add to list
+      </button>
+    </div>
+    <p class="quick-add__hint">Press Enter and keep typing. Your reasons can come later.</p>
+  </form>
+
+  @if (loadFailed()) {
+    <div class="reading-list__notice" role="alert">
+      <p>The reading list could not be loaded.</p>
+      <button appButton variant="secondary" type="button" (click)="reload()">Try again</button>
+    </div>
+  } @else if (loaded()) {
+    @if (count() === 0) {
+      <p class="reading-list__empty">
+        Nothing here yet. Add the first book you want to read.
+      </p>
+    } @else {
+      <section class="tier" aria-labelledby="next-up-heading">
+        <div class="tier__head">
+          <h2 id="next-up-heading">Next up</h2>
+          <span class="tier__note">
+            @if (next().length > 0) {
+              {{ next().length }} lined up, in the order you'll read them
+            }
+          </span>
+        </div>
+
+        @if (next().length === 0) {
+          <p class="tier__empty">
+            Nothing lined up. Move a book here from Someday when you know it's coming soon.
+          </p>
+        } @else {
+          <ol class="shelf">
+            @for (entry of next(); track entry.id; let first = $first; let last = $last) {
+              <li class="shelf-card" [class.is-busy]="isBusy(entry)">
+                <div class="cover" aria-hidden="true">{{ entry.title }}</div>
+                <div class="shelf-card__body">
+                  <span class="shelf-card__rank">{{ first ? 'Reading next' : 'Then' }}</span>
+                  <h3 class="entry-title">{{ entry.title }}</h3>
+                  @if (entry.author) {
+                    <p class="entry-author">{{ entry.author }}</p>
+                  }
+                  @if (entry.why) {
+                    <p class="entry-why">{{ entry.why }}</p>
+                  }
+                  @if (entry.recommendedBy) {
+                    <p class="entry-meta">Recommended by {{ entry.recommendedBy }}</p>
+                  }
+                  @if (entry.ownedBookId) {
+                    <p class="entry-owned">
+                      <a [routerLink]="['/library', entry.ownedBookId]">It's in your library</a>
+                    </p>
+                  }
+
+                  <div class="entry-actions">
+                    @if (entry.ownedBookId) {
+                      <button
+                        appButton
+                        variant="primary"
+                        size="sm"
+                        type="button"
+                        [disabled]="isBusy(entry)"
+                        (click)="finishOwned(entry)"
+                      >
+                        Take off the list
+                      </button>
+                    } @else {
+                      <button
+                        appButton
+                        variant="primary"
+                        size="sm"
+                        type="button"
+                        [disabled]="isBusy(entry)"
+                        (click)="gotIt(entry)"
+                      >
+                        I got it
+                      </button>
+                    }
+                    <button
+                      appButton
+                      variant="secondary"
+                      size="sm"
+                      type="button"
+                      [disabled]="isBusy(entry)"
+                      (click)="demote(entry)"
+                    >
+                      Someday
+                    </button>
+                    <span class="entry-actions__icons">
+                      <button
+                        type="button"
+                        appIconButton
+                        icon="caret-up"
+                        size="xs"
+                        [disabled]="first || isBusy(entry)"
+                        [attr.aria-label]="'Read “' + entry.title + '” earlier'"
+                        title="Earlier"
+                        (click)="move(entry, -1)"
+                      ></button>
+                      <button
+                        type="button"
+                        appIconButton
+                        icon="caret-down"
+                        size="xs"
+                        [disabled]="last || isBusy(entry)"
+                        [attr.aria-label]="'Read “' + entry.title + '” later'"
+                        title="Later"
+                        (click)="move(entry, 1)"
+                      ></button>
+                      <button
+                        type="button"
+                        appIconButton
+                        icon="pencil-simple"
+                        size="xs"
+                        [attr.aria-label]="'Edit “' + entry.title + '”'"
+                        title="Edit"
+                        (click)="openEdit(entry)"
+                      ></button>
+                      <button
+                        type="button"
+                        appIconButton
+                        icon="x"
+                        size="xs"
+                        [attr.aria-label]="'Remove “' + entry.title + '” from the list'"
+                        title="Remove"
+                        (click)="removeTarget.set(entry)"
+                      ></button>
+                    </span>
+                  </div>
+                </div>
+              </li>
+            }
+          </ol>
+        }
+      </section>
+
+      <section class="tier" aria-labelledby="someday-heading">
+        <div class="tier__head">
+          <h2 id="someday-heading">Someday</h2>
+          <span class="tier__note">
+            @if (someday().length > 0) {
+              {{ someday().length }} waiting, newest first
+            }
+          </span>
+        </div>
+
+        @if (someday().length === 0) {
+          <p class="tier__empty">Everything you want to read is lined up.</p>
+        } @else {
+          <ul class="someday">
+            @for (entry of someday(); track entry.id) {
+              <li class="someday-row" [class.is-busy]="isBusy(entry)">
+                <div class="cover cover--small" aria-hidden="true"></div>
+                <div class="someday-row__book">
+                  <h3 class="entry-title">{{ entry.title }}</h3>
+                  @if (entry.author) {
+                    <p class="entry-author">{{ entry.author }}</p>
+                  }
+                </div>
+                <div class="someday-row__why">
+                  @if (entry.why) {
+                    <p class="entry-why">{{ entry.why }}</p>
+                  } @else {
+                    <button type="button" class="entry-add-why" (click)="openEdit(entry)">
+                      Add why you want to read it
+                    </button>
+                  }
+                  <p class="entry-meta">
+                    @if (entry.recommendedBy) {
+                      Recommended by {{ entry.recommendedBy }} ·
+                    }
+                    Added {{ entry.createdAt | date: 'mediumDate' }}
+                  </p>
+                  @if (entry.ownedBookId) {
+                    <p class="entry-owned">
+                      <a [routerLink]="['/library', entry.ownedBookId]">It's in your library</a>
+                    </p>
+                  }
+                </div>
+                <div class="entry-actions">
+                  <button
+                    appButton
+                    variant="secondary"
+                    size="sm"
+                    type="button"
+                    [disabled]="isBusy(entry)"
+                    (click)="promote(entry)"
+                  >
+                    Next up
+                  </button>
+                  @if (entry.ownedBookId) {
+                    <button
+                      appButton
+                      variant="secondary"
+                      size="sm"
+                      type="button"
+                      [disabled]="isBusy(entry)"
+                      (click)="finishOwned(entry)"
+                    >
+                      Take off the list
+                    </button>
+                  } @else {
+                    <button
+                      appButton
+                      variant="secondary"
+                      size="sm"
+                      type="button"
+                      [disabled]="isBusy(entry)"
+                      (click)="gotIt(entry)"
+                    >
+                      I got it
+                    </button>
+                  }
+                  <span class="entry-actions__icons">
+                    <button
+                      type="button"
+                      appIconButton
+                      icon="pencil-simple"
+                      size="xs"
+                      [attr.aria-label]="'Edit “' + entry.title + '”'"
+                      title="Edit"
+                      (click)="openEdit(entry)"
+                    ></button>
+                    <button
+                      type="button"
+                      appIconButton
+                      icon="x"
+                      size="xs"
+                      [attr.aria-label]="'Remove “' + entry.title + '” from the list'"
+                      title="Remove"
+                      (click)="removeTarget.set(entry)"
+                    ></button>
+                  </span>
+                </div>
+              </li>
+            }
+          </ul>
+        }
+      </section>
+    }
+  }
+</div>
+
+<!-- Edit: the one place a reason and a recommender are written. -->
+@if (editTarget()) {
+  <app-modal-shell
+    [isOpen]="true"
+    variant="dialog"
+    [maxWidth]="'520px'"
+    [busy]="saving()"
+    [trapFocus]="true"
+    ariaLabelledBy="reading-list-edit-title"
+    (closed)="closeEdit()"
+  >
+    <header class="edit-head" shellHeader>
+      <h2 id="reading-list-edit-title">Edit book</h2>
+    </header>
+
+    <form id="reading-list-edit-form" class="edit-form" (submit)="saveEdit($event)">
+      <app-form-field label="Title" forId="rl-edit-title" [required]="true">
+        <input
+          appInput
+          id="rl-edit-title"
+          name="title"
+          type="text"
+          maxlength="500"
+          required
+          [(ngModel)]="editForm.title"
+        />
+      </app-form-field>
+      <app-form-field label="Author" forId="rl-edit-author">
+        <input
+          appInput
+          id="rl-edit-author"
+          name="author"
+          type="text"
+          maxlength="500"
+          [(ngModel)]="editForm.author"
+        />
+      </app-form-field>
+      <app-form-field
+        label="Why do you want to read it?"
+        forId="rl-edit-why"
+        hint="It moves onto the book as a note when you get it."
+      >
+        <textarea
+          appTextarea
+          id="rl-edit-why"
+          name="why"
+          rows="3"
+          maxlength="2000"
+          [(ngModel)]="editForm.why"
+        ></textarea>
+      </app-form-field>
+      <app-form-field label="Who or what recommended it?" forId="rl-edit-from">
+        <input
+          appInput
+          id="rl-edit-from"
+          name="recommendedBy"
+          type="text"
+          maxlength="300"
+          placeholder="A friend, a podcast, another book"
+          [(ngModel)]="editForm.recommendedBy"
+        />
+      </app-form-field>
+    </form>
+
+    <app-dialog-actions shellActions>
+      <button appButton type="button" variant="secondary" [disabled]="saving()" (click)="closeEdit()">
+        Cancel
+      </button>
+      <button
+        appButton
+        type="submit"
+        form="reading-list-edit-form"
+        variant="primary"
+        [disabled]="saving() || !editForm.title.trim()"
+      >
+        Save
+      </button>
+    </app-dialog-actions>
+  </app-modal-shell>
+}
+
+<app-confirm-modal
+  [isOpen]="!!removeTarget()"
+  [heading]="removeHeading()"
+  description="It only leaves this list. Nothing in your library changes."
+  confirmLabel="Remove"
+  busyLabel="Removing…"
+  [busy]="removing()"
+  (confirm)="confirmRemove()"
+  (cancel)="removeTarget.set(null)"
+>
+</app-confirm-modal>
+
+<!-- "I got it" is the ordinary Add Book sheet, opened knowing which book. -->
+<app-add-book-modal
+  [isOpen]="!!acquireTarget()"
+  [collections]="collections()"
+  [sourceFirst]="true"
+  [prefill]="acquirePrefill()"
+  (closeModal)="closeAcquire()"
+  (bookCreated)="onBookCreated($event)"
+  (importQueued)="onImportQueued($event)"
+>
+</app-add-book-modal>

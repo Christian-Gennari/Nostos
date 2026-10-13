@@ -103,6 +103,18 @@
       </button>
     </div>
 
+    <!-- Not a filter: these are books the reader does not have yet, so the
+         entry leaves the library for a page of its own. -->
+    <div class="nav-group">
+      <a class="nav-item" routerLink="/library/to-read" title="To Read">
+        <nostos-icon name="bookmark-simple" [size]="16" weight="light"></nostos-icon>
+        <span class="label">To Read</span>
+        @if (readingList.loaded()) {
+          <span class="count-badge">{{ readingList.count() }}</span>
+        }
+      </a>
+    </div>
+
     <div class="nav-group">
       <div class="collapsible">
         <div class="section-label">MEDIA</div>
