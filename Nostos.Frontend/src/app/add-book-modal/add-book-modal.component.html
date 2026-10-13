@@ -99,8 +99,9 @@
                   </p>
                 </div>
                 <label
+                  appDropZone
                   class="file-drop-zone file-drop-zone--primary"
-                  [class.drag-active]="fileDragActive()"
+                  [active]="fileDragActive()"
                   (dragover)="onDragOver($event, 'file')"
                   (dragleave)="onDragLeave($event, 'file')"
                   (drop)="onDragLeave($event, 'file')"
@@ -113,8 +114,8 @@
                     accept=".epub,.pdf,.txt,.mobi,.mp3,.m4a,.m4b"
                   />
                   <nostos-icon name="upload-simple" [size]="22" weight="light"></nostos-icon>
-                  <span class="drop-zone-title">Choose a book file or drop it here</span>
-                  <span class="drop-zone-hint">EPUB, PDF, TXT, MOBI, MP3, M4A, M4B</span>
+                  <span class="nostos-drop-zone__title">Choose a book file or drop it here</span>
+                  <span class="nostos-drop-zone__hint">EPUB, PDF, TXT, MOBI, MP3, M4A, M4B</span>
                 </label>
               </section>
             } @else {
@@ -222,8 +223,9 @@
                     </div>
                   </div>
                   <label
+                    appDropZone density="compact"
                     class="file-drop-zone file-drop-zone--manual"
-                    [class.drag-active]="fileDragActive()"
+                    [active]="fileDragActive()"
                     (dragover)="onDragOver($event, 'file')"
                     (dragleave)="onDragLeave($event, 'file')"
                     (drop)="onDragLeave($event, 'file')"
@@ -236,11 +238,11 @@
                     />
                     <nostos-icon name="upload-simple" [size]="20" weight="light"></nostos-icon>
                     @if (fileSummary(); as summary) {
-                      <span class="drop-zone-title">{{ summary }}</span>
-                      <span class="drop-zone-hint">Choose another file to replace it</span>
+                      <span class="nostos-drop-zone__title">{{ summary }}</span>
+                      <span class="nostos-drop-zone__hint">Choose another file to replace it</span>
                     } @else {
-                      <span class="drop-zone-title">Choose a book file or drop it here</span>
-                      <span class="drop-zone-hint">EPUB, PDF, TXT, MOBI, MP3, M4A, M4B</span>
+                      <span class="nostos-drop-zone__title">Choose a book file or drop it here</span>
+                      <span class="nostos-drop-zone__hint">EPUB, PDF, TXT, MOBI, MP3, M4A, M4B</span>
                     }
                   </label>
                 </section>
@@ -642,8 +644,9 @@
                       <div class="asset-field">
                         <span class="asset-field__label">Cover Image</span>
                         <label
+                          appDropZone density="compact"
                           class="file-drop-zone file-drop-zone--cover"
-                          [class.drag-active]="coverDragActive()"
+                          [active]="coverDragActive()"
                           (dragover)="onDragOver($event, 'cover')"
                           (dragleave)="onDragLeave($event, 'cover')"
                           (drop)="onDragLeave($event, 'cover')"
@@ -656,11 +659,11 @@
                           />
                           @if (coverPreview(); as preview) {
                             <img class="cover-preview" [src]="preview" alt="" />
-                            <span class="drop-zone-hint">{{ selectedCover()?.name }}</span>
+                            <span class="nostos-drop-zone__hint">{{ selectedCover()?.name }}</span>
                           } @else {
                             <nostos-icon name="upload-simple" [size]="22" weight="light"></nostos-icon>
-                            <span class="drop-zone-title">Choose a cover image or drop it here</span>
-                            <span class="drop-zone-hint">PNG, JPG, WEBP</span>
+                            <span class="nostos-drop-zone__title">Choose a cover image or drop it here</span>
+                            <span class="nostos-drop-zone__hint">PNG, JPG, WEBP</span>
                           }
                         </label>
                       </div>
