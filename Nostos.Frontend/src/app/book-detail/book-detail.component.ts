@@ -60,11 +60,13 @@ import { IconButtonComponent } from '../ui/icon-button/icon-button.component';
 import { BadgeComponent } from '../ui/badge/badge.component';
 import { DialogActionsComponent } from '../ui/dialog-actions/dialog-actions.component';
 import { NOSTOS_MENU } from '../ui/menu/menu.component';
+import { IconTileComponent } from '../ui/icon-tile/icon-tile.component';
 
 @Component({
   standalone: true,
   selector: 'app-book-detail',
   imports: [
+    IconTileComponent,
     CommonModule,
     FormsModule,
     RouterLink,

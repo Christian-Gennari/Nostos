@@ -13,19 +13,6 @@
   margin-bottom: 0.6rem;
 }
 
-.replacement-mark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  flex-shrink: 0;
-  border-radius: var(--radius-lg);
-  background: var(--danger-surface);
-  border: 1px solid var(--danger-hairline);
-  color: var(--danger-ink);
-}
-
 .replacement-title {
   margin: 0;
   font-family: 'Newsreader', serif;

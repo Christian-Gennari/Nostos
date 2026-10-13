@@ -88,7 +88,7 @@
           <div class="review-flow">
             @if (awaitingLocalFile()) {
               <section class="acquisition-start" aria-labelledby="local-upload-heading">
-                <span class="acquisition-start__icon" aria-hidden="true">
+                <span appIconTile [size]="42" class="acquisition-start__icon" aria-hidden="true">
                   <nostos-icon name="upload-simple" [size]="24"></nostos-icon>
                 </span>
                 <div class="acquisition-start__copy">

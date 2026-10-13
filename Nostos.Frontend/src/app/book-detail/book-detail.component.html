@@ -578,7 +578,7 @@
                   aria-current="true"
                   [title]="getEditionLabel(store.book()!)"
                 >
-                  <span class="card-icon-frame">
+                  <span appIconTile tone="quiet" class="card-icon-frame">
                     <nostos-icon
                       [name]="isAudioBook(store.book()) ? 'headphones' : 'book-open'"
                       [size]="16"></nostos-icon>
@@ -611,7 +611,7 @@
                   (click)="switchEdition(edition.id)"
                   [title]="'Switch to ' + getSummaryEditionLabel(edition)"
                 >
-                  <span class="card-icon-frame">
+                  <span appIconTile tone="quiet" class="card-icon-frame">
                     <nostos-icon
                       [name]="edition.type === 'audiobook' ? 'headphones' : 'book-open'"
                       [size]="16"></nostos-icon>

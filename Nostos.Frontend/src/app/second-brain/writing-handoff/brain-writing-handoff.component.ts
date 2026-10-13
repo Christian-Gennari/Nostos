@@ -25,6 +25,7 @@ import { InputDirective } from '../../ui/form-control/form-control.directive';
 import { IconButtonComponent } from '../../ui/icon-button/icon-button.component';
 import { NostosIconComponent } from '../../ui/icon/nostos-icon.component';
 import { ModalShell } from '../../ui/modal-shell/modal-shell.component';
+import { IconTileComponent } from '../../ui/icon-tile/icon-tile.component';
 
 export interface BrainWritingHandoffResult {
   succeededNoteIds: string[];
@@ -35,6 +36,7 @@ export interface BrainWritingHandoffResult {
   standalone: true,
   selector: 'app-brain-writing-handoff',
   imports: [
+    IconTileComponent,
     CommonModule,
     ModalShell,
     DialogActionsComponent,
