@@ -402,6 +402,22 @@ export class SecondBrain implements AfterViewChecked {
     return notes.sort((a, b) => this.compareNotes(a, b));
   });
 
+  /**
+   * The topic's notes as a reading column: one group per book, so the source is
+   * named once above its passages instead of on every note. Groups follow the
+   * chosen sort (a book appears where its first note falls) and notes keep that
+   * order within their book.
+   */
+  evidenceGroups = computed(() => {
+    const groups = new Map<string, { bookId: string; title: string; notes: NoteContextDto[] }>();
+    for (const note of this.filteredNotes()) {
+      const group = groups.get(note.bookId);
+      if (group) group.notes.push(note);
+      else groups.set(note.bookId, { bookId: note.bookId, title: this.sourceName(note), notes: [note] });
+    }
+    return [...groups.values()];
+  });
+
   noteFiltersActive = computed(
     () => this.sourceFilter() !== ALL_SOURCES || this.noteSearchQuery().trim().length > 0
   );

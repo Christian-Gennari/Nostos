@@ -839,10 +839,18 @@
         </button>
       </div>
       } @else {
-      <div class="cards-grid" data-testid="topic-evidence">
-        @for (note of filteredNotes(); track note.noteId) {
+      <div class="reading-column" data-testid="topic-evidence">
+        @for (group of evidenceGroups(); track group.bookId) {
+        <section class="passage-group" [attr.aria-label]="'Notes from ' + group.title">
+          <header class="passage-group-head">
+            <h2 class="passage-group-title">
+              <a [routerLink]="['/library', group.bookId]">{{ group.title }}</a>
+            </h2>
+            <span class="passage-group-count">{{ group.notes.length }} {{ group.notes.length === 1 ? 'note' : 'notes' }}</span>
+          </header>
+        @for (note of group.notes; track note.noteId) {
         <div
-          class="note-card"
+          class="note-card passage"
           [class.source-selection-card]="sourceSelectionMode()"
           [class.source-selected]="isSourceSelected(note.noteId)"
         >
@@ -859,6 +867,7 @@
           }
           <app-note-card
             #noteCardHost
+            layout="passage"
             [note]="noteForCard(note)"
             [topicMap]="topicMap()"
             [showNavigation]="false"
@@ -874,6 +883,8 @@
             (click)="handleContentClick($event)"
           ></app-note-card>
         </div>
+        }
+        </section>
         }
       </div>
       }

@@ -440,7 +440,7 @@ test('content can be scrolled clear of the dock on the reading view', async ({ p
 
   // Wait for the detail pane to actually render its cards before measuring:
   // reading the DOM straight after the click catches the empty state mid-transition.
-  await expect(page.locator('.content-col .cards-grid > *').first()).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('.content-col .reading-column .note-card').first()).toBeVisible({ timeout: 15_000 });
 
   // Scroll the reading column to its end and confirm the last card is above the dock.
   const result = await page.evaluate(async () => {
@@ -449,7 +449,7 @@ test('content can be scrolled clear of the dock on the reading view', async ({ p
     if (!col || !dock) return null;
     col.scrollTop = col.scrollHeight;
     await new Promise((r) => requestAnimationFrame(() => r(null)));
-    const cards = col.querySelectorAll('.cards-grid > *');
+    const cards = col.querySelectorAll('.reading-column .note-card');
     const last = cards.length ? cards[cards.length - 1] : null;
     if (!last) return null;
     return {
