@@ -1,4 +1,10 @@
-import { Note, importedNoteLocation, noteNavigationTarget } from './note.dtos';
+import {
+  Note,
+  formatAudioTime,
+  importedNoteLocation,
+  noteAudioSeconds,
+  noteNavigationTarget,
+} from './note.dtos';
 
 const note = (overrides: Partial<Note> = {}): Note => ({
   id: 'note-1',
@@ -137,5 +143,41 @@ describe('importedNoteLocation', () => {
         note({ sourceAnchorKind: 'koreader_unknown', sourceAnchorValue: 'annotation:abc' }),
       ),
     ).toBeNull();
+  });
+});
+
+describe('audio note time (issue #906)', () => {
+  it('reads the time of a manual audio note from cfiRange', () => {
+    expect(noteAudioSeconds(note({ cfiRange: '754.5' }))).toBe(754.5);
+  });
+
+  it('prefers a verified audio anchor, and reads it when cfiRange is absent', () => {
+    const anchored = {
+      sourceAnchorKind: 'audio_timestamp',
+      sourceAnchorValue: '90',
+      anchorVerified: true,
+    };
+    expect(noteAudioSeconds(note({ cfiRange: '754.5', ...anchored }))).toBe(90);
+    expect(noteAudioSeconds(note(anchored))).toBe(90);
+    expect(noteNavigationTarget(note(anchored))).toBe('90');
+  });
+
+  it('has no time for a note without a location, or with a non-numeric one', () => {
+    expect(noteAudioSeconds(note())).toBeNull();
+    expect(noteAudioSeconds(note({ cfiRange: '' }))).toBeNull();
+    expect(noteAudioSeconds(note({ cfiRange: 'epubcfi(/6/2)' }))).toBeNull();
+    expect(
+      noteAudioSeconds(
+        note({ sourceAnchorKind: 'audio_timestamp', sourceAnchorValue: '90', anchorVerified: false }),
+      ),
+    ).toBeNull();
+  });
+
+  it('formats like the scrubber: m:ss, and h:mm:ss from one hour on', () => {
+    expect(formatAudioTime(0)).toBe('0:00');
+    expect(formatAudioTime(754.9)).toBe('12:34');
+    expect(formatAudioTime(3599)).toBe('59:59');
+    expect(formatAudioTime(3600)).toBe('1:00:00');
+    expect(formatAudioTime(57_540)).toBe('15:59:00');
   });
 });

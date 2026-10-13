@@ -185,6 +185,7 @@ class NoteCardStub {
   note = input<unknown>(null);
   topicMap = input<unknown>(null);
   showNavigation = input(false);
+  audioTime = input<number | null>(null);
   update = output<unknown>();
   delete = output<unknown>();
   cardClick = output<unknown>();
@@ -846,6 +847,100 @@ describe('ReaderShell shared save and load ownership (#479)', () => {
 
     expect(component.quickNoteSaving()).toBe(false);
     expect(component.quickNoteContent()).toBe('');
+    fixture.destroy();
+  });
+
+  it('saves an audio quick note at the moment it was started, not the moment it was saved (#906)', async () => {
+    booksGetSpy.mockReturnValue(of(audiobook));
+    const fixture = await configureReaderShell();
+    fixture.detectChanges();
+    fixture.detectChanges();
+
+    const notes = TestBed.inject(NotesService) as unknown as {
+      create: ReturnType<typeof vi.fn>;
+    };
+    const saved = new Subject<Note>();
+    notes.create.mockReturnValueOnce(saved.asObservable());
+
+    // The shell only exposes its reader once the book has mounted.
+    await new Promise((resolve) => setTimeout(resolve, 130));
+    fixture.detectChanges();
+    const component = fixture.componentInstance;
+    const reader = fixture.debugElement.query(By.directive(AudioReader))
+      .componentInstance as AudioReader;
+    const pinnedTime = () =>
+      (fixture.nativeElement.querySelector('[data-testid="quick-note-time"]') as HTMLElement | null)
+        ?.textContent?.trim() ?? null;
+
+    expect(fixture.nativeElement.querySelector('.quick-actions').textContent).not.toContain('Timestamp');
+    expect(fixture.nativeElement.querySelectorAll('.quick-actions button').length).toBe(1);
+    expect(pinnedTime()).toBeNull();
+
+    // Started at 12:34; playback (and a seek) carry on while the user types.
+    reader.currentTime.set(754);
+    component.onQuickNoteInput('W');
+    reader.currentTime.set(790);
+    component.onQuickNoteInput('Worth hearing again');
+    fixture.detectChanges();
+    expect(component.quickNotePinnedLocation()).toBe('754');
+    expect(pinnedTime()).toBe('at 12:34');
+
+    component.saveQuickNote();
+    expect(notes.create).toHaveBeenCalledWith('book-1', {
+      content: 'Worth hearing again',
+      cfiRange: '754',
+      sourceAnchorKind: 'audio_timestamp',
+      sourceAnchorValue: '754',
+      anchorVerified: true,
+    });
+
+    saved.next({ id: 'n', bookId: 'book-1', content: 'x', createdAt: '2026-10-13T12:00:00Z' } as Note);
+    saved.complete();
+    fixture.detectChanges();
+    expect(component.quickNoteContent()).toBe('');
+    expect(component.quickNotePinnedLocation()).toBeNull();
+    expect(pinnedTime()).toBeNull();
+
+    // An emptied draft drops its pin; the next one starts from the new moment.
+    component.onQuickNoteInput('Second');
+    expect(component.quickNotePinnedLocation()).toBe('790');
+    component.onQuickNoteInput('');
+    expect(component.quickNotePinnedLocation()).toBeNull();
+
+    // A new book never inherits the previous book's moment.
+    component.onQuickNoteInput('Third');
+    routeParamMap$.next(convertToParamMap({ id: 'book-2' }));
+    expect(component.quickNotePinnedLocation()).toBeNull();
+    fixture.destroy();
+  });
+
+  it('keeps the pinned moment when more text was typed during the save (#906)', async () => {
+    booksGetSpy.mockReturnValue(of(audiobook));
+    const fixture = await configureReaderShell();
+    fixture.detectChanges();
+    fixture.detectChanges();
+
+    const notes = TestBed.inject(NotesService) as unknown as {
+      create: ReturnType<typeof vi.fn>;
+    };
+    const saved = new Subject<Note>();
+    notes.create.mockReturnValueOnce(saved.asObservable());
+
+    // The shell only exposes its reader once the book has mounted.
+    await new Promise((resolve) => setTimeout(resolve, 130));
+    fixture.detectChanges();
+    const component = fixture.componentInstance;
+    const reader = fixture.debugElement.query(By.directive(AudioReader))
+      .componentInstance as AudioReader;
+    reader.currentTime.set(100);
+    component.onQuickNoteInput('First thought');
+    component.saveQuickNote();
+    component.onQuickNoteInput('First thought, and more');
+    saved.next({ id: 'n', bookId: 'book-1', content: 'x', createdAt: '2026-10-13T12:00:00Z' } as Note);
+    saved.complete();
+
+    expect(component.quickNoteContent()).toBe('First thought, and more');
+    expect(component.quickNotePinnedLocation()).toBe('100');
     fixture.destroy();
   });
 

@@ -176,3 +176,56 @@ describe('NoteCard highlight pen (issue #861)', () => {
     expect(pens()).toEqual([]);
   });
 });
+
+describe('NoteCard audio time (issue #906)', () => {
+  let fixture: ComponentFixture<NoteCardComponent>;
+
+  const time = () =>
+    fixture.nativeElement.querySelector('[data-testid="note-audio-time"]') as HTMLButtonElement | null;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [NoteCardComponent],
+      providers: [provideRouter([])],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(NoteCardComponent);
+    fixture.componentInstance.note = {
+      id: 'note-1',
+      bookId: 'book-1',
+      content: 'Worth hearing again.',
+      createdAt: '2026-10-01T00:00:00Z',
+      cfiRange: '754.5',
+    } satisfies Note;
+    fixture.componentInstance.showNavigation = true;
+  });
+
+  it('shows the time in the metadata row and jumps when it is activated', () => {
+    fixture.componentInstance.audioTime = 754.5;
+    const jumps = vi.fn();
+    fixture.componentInstance.cardClick.subscribe(jumps);
+    fixture.detectChanges();
+
+    const button = time()!;
+    expect(button.closest('.note-metadata')).not.toBeNull();
+    expect(button.textContent?.trim()).toBe('12:34');
+    expect(button.getAttribute('aria-label')).toBe('Jump to 12:34');
+
+    button.click();
+    expect(jumps).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses h:mm:ss past the first hour', () => {
+    fixture.componentInstance.audioTime = 3725;
+    fixture.detectChanges();
+
+    expect(time()!.textContent?.trim()).toBe('1:02:05');
+  });
+
+  it('shows nothing extra when the reader supplies no time', () => {
+    fixture.detectChanges();
+
+    expect(time()).toBeNull();
+    expect(fixture.nativeElement.querySelector('.note-metadata .meta-separator')).toBeNull();
+  });
+});

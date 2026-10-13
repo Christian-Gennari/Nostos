@@ -474,18 +474,18 @@
       <div class="quick-note">
         <div class="input-wrapper">
           <app-topic-input
-            [(ngModel)]="quickNoteContent"
+            [ngModel]="quickNoteContent()"
+            (ngModelChange)="onQuickNoteInput($event)"
             placeholder="Add a quick note..."
             [rows]="2"
             (submitTrigger)="saveQuickNote()"
           ></app-topic-input>
         </div>
         <div class="quick-actions">
-          @if (fileType() === 'audio') {
-          <button appButton type="button" variant="secondary" (click)="addAudioTimestamp()">
-            <nostos-icon id="add-timestamp-icon" name="clock" [size]="14"></nostos-icon>
-            Timestamp
-          </button>
+          @if (quickNotePinnedTime(); as time) {
+          <!-- The audio moment this draft will be saved at (issue #906). The
+               row's height comes from Save, so showing it moves nothing. -->
+          <span class="quick-note-time" data-testid="quick-note-time">at {{ time }}</span>
           }
           <button
             appButton
@@ -506,6 +506,7 @@
           [note]="note"
           [topicMap]="topicMap()"
           [showNavigation]="true"
+          [audioTime]="noteAudioTime(note)"
           (update)="onUpdateNote($event)"
           (delete)="onDeleteNote($event)"
           (cardClick)="onJumpToNote(note)"
