@@ -1127,9 +1127,14 @@ export class ReaderShell implements OnInit, OnDestroy {
     this.typoOpen.set(false);
     this.tocOpen.set(true);
     this.focusOverlay('.toc-panel.open .panel-header button');
-    if (this.fileType() === 'epub') {
+    if (this.fileType() === 'epub' || this.fileType() === 'audio') {
       setTimeout(() => this.scrollActiveTocItemIntoView(), 0);
     }
+  }
+
+  /** The audio player's chapter line opens Contents; it never closes it. */
+  openContents() {
+    if (!this.tocOpen()) this.toggleToc();
   }
 
   private scrollActiveTocItemIntoView(): void {

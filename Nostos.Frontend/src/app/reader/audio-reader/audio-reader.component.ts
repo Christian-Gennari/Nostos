@@ -6,6 +6,7 @@ import {
   afterNextRender,
   inject,
   input,
+  output,
   effect,
   signal,
   computed,
@@ -49,6 +50,10 @@ export class AudioReader implements OnDestroy, IReader {
   // never issues a second GET /api/books/{id} (issue #7).
   book = input<Book | null>(null);
 
+  // The chapter line asks the shell for its Contents panel instead of carrying
+  // a second chapter list inside the player (issue #904).
+  contentsRequested = output<void>();
+
   private booksService = inject(BooksService);
   private assistantContext = inject(AssistantContextService);
 
@@ -77,8 +82,12 @@ export class AudioReader implements OnDestroy, IReader {
     return activeTarget;
   });
 
-  /** The chapter label the current position falls in, for the assistant context. */
-  private assistantChapterLabel(): string | null {
+  /**
+   * The title of the chapter the current position falls in, or null before the
+   * first chapter start and for a book without chapters. The one source for the
+   * player's chapter line, the assistant context and Media Session (issue #904).
+   */
+  currentChapter = computed<string | null>(() => {
     const target = this.currentLocationTarget();
     if (target === null) return null;
     const find = (items: TocItem[]): string | null => {
@@ -92,7 +101,7 @@ export class AudioReader implements OnDestroy, IReader {
       return null;
     };
     return find(this.toc());
-  }
+  });
 
   // Player State
   // A single-file book plays through Howler; a multi-track one through the
@@ -175,7 +184,7 @@ export class AudioReader implements OnDestroy, IReader {
       () => ({
         readerType: 'audio',
         audioTimestamp: this.currentTime(),
-        audioChapter: this.assistantChapterLabel(),
+        audioChapter: this.currentChapter(),
       }),
       { explicit: true },
     );
@@ -218,6 +227,15 @@ export class AudioReader implements OnDestroy, IReader {
           })),
         );
       }
+    });
+
+    // The lock screen follows the chapter (issue #904). `currentChapter` is
+    // re-evaluated on every tick but only notifies when the title changes, so
+    // this writes once per chapter, not once per second.
+    effect(() => {
+      const chapter = this.currentChapter();
+      if (!this.mediaSessionActive || chapter === this.mediaSessionChapter) return;
+      untracked(() => this.writeMediaSessionMetadata(chapter));
     });
   }
 
@@ -747,17 +765,34 @@ export class AudioReader implements OnDestroy, IReader {
   }
 
   // --- Media Session API: Sync with Android notification controls ---
-  private updateMediaSessionMetadata() {
+  // False until the audio has loaded; the chapter last written to the lock screen.
+  private mediaSessionActive = false;
+  private mediaSessionChapter: string | null = null;
+
+  /**
+   * With a chapter, the lock screen reads chapter / author / book; without one it
+   * keeps the book / author / series it always had.
+   */
+  private writeMediaSessionMetadata(chapter: string | null) {
     if (!('mediaSession' in navigator)) return;
     const book = this.book();
     if (!book) return;
 
+    this.mediaSessionChapter = chapter;
     navigator.mediaSession.metadata = new MediaMetadata({
-      title: book.title,
+      title: chapter ?? book.title,
       artist: book.author || book.narrator || undefined,
-      album: book.series || undefined,
+      album: chapter ? book.title : book.series || undefined,
       artwork: book.coverUrl ? [{ src: book.coverUrl, sizes: '512x512', type: 'image/jpeg' }] : [],
     });
+  }
+
+  private updateMediaSessionMetadata() {
+    if (!('mediaSession' in navigator)) return;
+    if (!this.book()) return;
+
+    this.writeMediaSessionMetadata(this.currentChapter());
+    this.mediaSessionActive = true;
 
     // Register action handlers so notification controls sync back to our component
     navigator.mediaSession.setActionHandler('play', () => {

@@ -1,0 +1,75 @@
+PASS desktop-light unchaptered: no chapter line
+PASS desktop-light unchaptered: pixel-identical with the .controls rule reverted
+PASS desktop-light chapter shown at 0:00
+PASS desktop-light same geometry as the unchaptered book — cover 552.5,121.25,335,502.5 scrubber 364,687.75,712,3 play 605.02,774.75,72,72
+PASS desktop-light no vertical scroll — overflow 0px
+PASS desktop-light line sits between cover and scrubber rows — line y 639.75..683.75, cover bottom 623.75, scrubber y 687.75
+PASS desktop-light long title: one line, ellipsis, full title in title attr — button 712x44 in controls 712 wide
+PASS desktop-light long title: inside the controls, no sideways scroll — docW 1440 winW 1440
+PASS desktop-light no layout shift when the label changes
+PASS desktop-light line opens Contents with the active chapter in view — {"text":"Book II: The Dream of Agamemnon","inView":true}
+PASS desktop-light Contents jump updates the line
+PASS desktop-light no layout shift after the Contents jump
+PASS desktop-dark unchaptered: no chapter line
+PASS desktop-dark unchaptered: pixel-identical with the .controls rule reverted
+PASS desktop-dark chapter shown at 0:00
+PASS desktop-dark same geometry as the unchaptered book — cover 552.5,121.25,335,502.5 scrubber 364,687.75,712,3 play 605.02,774.75,72,72
+PASS desktop-dark no vertical scroll — overflow 0px
+PASS desktop-dark line sits between cover and scrubber rows — line y 639.75..683.75, cover bottom 623.75, scrubber y 687.75
+PASS desktop-dark long title: one line, ellipsis, full title in title attr — button 712x44 in controls 712 wide
+PASS desktop-dark long title: inside the controls, no sideways scroll — docW 1440 winW 1440
+PASS desktop-dark no layout shift when the label changes
+PASS desktop-dark line opens Contents with the active chapter in view — {"text":"Book II: The Dream of Agamemnon","inView":true}
+PASS desktop-dark Contents jump updates the line
+PASS desktop-dark no layout shift after the Contents jump
+PASS phone-light unchaptered: no chapter line
+PASS phone-light unchaptered: pixel-identical with the .controls rule reverted
+PASS phone-light chapter shown at 0:00
+PASS phone-light same geometry as the unchaptered book — cover 113.09,188.27,163.8,245.69 scrubber 16,529.95,358,3 play 163,596.95,64,64
+PASS phone-light no vertical scroll — overflow 0px
+PASS phone-light line sits between cover and scrubber rows — line y 481.95..525.95, cover bottom 433.96000000000004, scrubber y 529.95
+PASS phone-light long title: one line, ellipsis, full title in title attr — button 358x44 in controls 358 wide
+PASS phone-light long title: inside the controls, no sideways scroll — docW 390 winW 390
+PASS phone-light no layout shift when the label changes
+PASS phone-light line opens Contents with the active chapter in view — {"text":"Book II: The Dream of Agamemnon","inView":true}
+PASS phone-light Contents jump updates the line
+PASS phone-light no layout shift after the Contents jump
+PASS phone-dark unchaptered: no chapter line
+PASS phone-dark unchaptered: pixel-identical with the .controls rule reverted
+PASS phone-dark chapter shown at 0:00
+PASS phone-dark same geometry as the unchaptered book — cover 113.09,188.27,163.8,245.69 scrubber 16,529.95,358,3 play 163,596.95,64,64
+PASS phone-dark no vertical scroll — overflow 0px
+PASS phone-dark line sits between cover and scrubber rows — line y 481.95..525.95, cover bottom 433.96000000000004, scrubber y 529.95
+PASS phone-dark long title: one line, ellipsis, full title in title attr — button 358x44 in controls 358 wide
+PASS phone-dark long title: inside the controls, no sideways scroll — docW 390 winW 390
+PASS phone-dark no layout shift when the label changes
+PASS phone-dark line opens Contents with the active chapter in view — {"text":"Book II: The Dream of Agamemnon","inView":true}
+PASS phone-dark Contents jump updates the line
+PASS phone-dark no layout shift after the Contents jump
+PASS landscape-light unchaptered: no chapter line
+PASS landscape-light unchaptered: pixel-identical with the .controls rule reverted
+PASS landscape-light chapter shown at 0:00
+PASS landscape-light same geometry as the unchaptered book — cover 58,141.25,117,175.5 scrubber 195,163.5,591,3 play 379.52,230.5,64,64
+PASS landscape-light no vertical scroll — overflow 0px
+PASS landscape-light line sits between cover and scrubber rows — line y 115.5..159.5, cover bottom 316.75, scrubber y 163.5
+PASS landscape-light long title: one line, ellipsis, full title in title attr — button 591x44 in controls 591 wide
+PASS landscape-light long title: inside the controls, no sideways scroll — docW 844 winW 844
+PASS landscape-light no layout shift when the label changes
+PASS landscape-dark unchaptered: no chapter line
+PASS landscape-dark unchaptered: pixel-identical with the .controls rule reverted
+PASS landscape-dark chapter shown at 0:00
+PASS landscape-dark same geometry as the unchaptered book — cover 58,141.25,117,175.5 scrubber 195,163.5,591,3 play 379.52,230.5,64,64
+PASS landscape-dark no vertical scroll — overflow 0px
+PASS landscape-dark line sits between cover and scrubber rows — line y 115.5..159.5, cover bottom 316.75, scrubber y 163.5
+PASS landscape-dark long title: one line, ellipsis, full title in title attr — button 591x44 in controls 591 wide
+PASS landscape-dark long title: inside the controls, no sideways scroll — docW 844 winW 844
+PASS landscape-dark no layout shift when the label changes
+PASS keyboard: the line takes focus and is a button named after the chapter
+PASS not a live region
+PASS keyboard: Enter opens Contents
+PASS closing Contents returns focus to the line
+PASS Media Session at load: chapter / author / book — {"title":"Book I: The Quarrel","artist":"Homer","album":"The Iliad"}
+PASS playback crosses a chapter start: line and lock screen follow, one write per chapter — clock 10:03; writes ["Book II: The Dream","Book III: The Duel"]
+PASS Media Session after the boundary
+PASS resume from saved progress shows the saved chapter — lastLocation 603.931449
+PASS unchaptered Media Session keeps the book metadata — {"title":"The Odyssey","artist":"Homer","album":""}
