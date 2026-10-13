@@ -41,8 +41,9 @@
         </p>
 
         <label
+          appDropZone
           class="highlight-drop-zone"
-          [class.drag-active]="dragActive()"
+          [active]="dragActive()"
           (dragover)="onDragOver($event)"
           (dragleave)="onDragLeave()"
           (drop)="onDrop($event)"
@@ -55,8 +56,8 @@
             (change)="onFilesSelected($event)"
           />
           <nostos-icon name="upload-simple" [size]="22" weight="light"></nostos-icon>
-          <span class="highlight-drop-title">Choose files or drop them here</span>
-          <span class="highlight-drop-hint">KoboReader.sqlite or KOReader metadata.lua</span>
+          <span class="nostos-drop-zone__title">Choose files or drop them here</span>
+          <span class="nostos-drop-zone__hint">KoboReader.sqlite or KOReader metadata.lua</span>
         </label>
 
         <dl class="highlight-sources">

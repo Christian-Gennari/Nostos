@@ -1,0 +1,54 @@
+.nostos-drop-zone {
+  position: relative;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  min-height: 150px;
+  padding: 2rem 1.5rem;
+  border: 1.5px dashed var(--border-color);
+  border-radius: var(--radius-surface);
+  background: var(--bg-hover);
+  color: var(--color-text-light);
+  text-align: center;
+  cursor: pointer;
+  transition:
+    border-color var(--motion-fast),
+    background-color var(--motion-fast);
+}
+
+.nostos-drop-zone--compact {
+  min-height: 112px;
+  padding: 1.25rem;
+}
+
+.nostos-drop-zone:hover,
+.nostos-drop-zone:focus-within,
+.nostos-drop-zone:active,
+.nostos-drop-zone--active {
+  border-color: var(--border-focus);
+  background: var(--color-accent-bg);
+}
+
+/* The real input covers the box, invisibly: it takes the click and the drop. */
+.nostos-drop-zone > input[type='file'] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.nostos-drop-zone__title {
+  color: var(--color-text-main);
+  font-size: 0.88rem;
+  font-weight: var(--fw-medium);
+}
+
+.nostos-drop-zone__hint {
+  color: var(--color-text-light);
+  font-size: 0.75rem;
+}

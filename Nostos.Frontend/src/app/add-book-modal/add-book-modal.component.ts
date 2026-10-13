@@ -34,6 +34,7 @@ import { InputDirective, TextareaDirective } from '../ui/form-control/form-contr
 import { DropdownComponent, type DropdownOption } from '../ui/dropdown/dropdown.component';
 import { NoticeComponent } from '../ui/notice/notice.component';
 import { IconTileComponent } from '../ui/icon-tile/icon-tile.component';
+import { DropZoneComponent } from '../ui/drop-zone/drop-zone.component';
 
 type AddBookIntentKind = 'upload' | 'source' | 'physical' | 'manual';
 
@@ -49,6 +50,7 @@ export interface AddBookPrefill {
   selector: 'app-add-book-modal',
   standalone: true,
   imports: [
+    DropZoneComponent,
     IconTileComponent,
     NoticeComponent,
     CommonModule,

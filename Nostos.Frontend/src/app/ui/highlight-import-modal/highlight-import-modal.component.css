@@ -1,8 +1,8 @@
 /* The backdrop, card, scrim and entrance animation belong to `app-modal-shell`;
    this file styles the header and the working area inside it. Header, section
    header, count badge and row recipes are the editions modal's
-   (`book-detail/editions-modal`), and the drop zone is the Add Book form's
-   `.file-drop-zone`, so the three dialogs read as one family. */
+   (`book-detail/editions-modal`), so the dialogs read as one family. The drop
+   zone is the shared `appDropZone`. */
 
 :host {
   display: contents;
@@ -52,50 +52,6 @@
 }
 
 /* --- Pick --------------------------------------------------------------- */
-
-.highlight-drop-zone {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0.25rem;
-  min-height: 150px;
-  padding: 2rem 1.5rem;
-  border: 1.5px dashed var(--border-color);
-  border-radius: var(--radius-surface);
-  background: var(--bg-hover);
-  color: var(--color-text-light);
-  text-align: center;
-  cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
-}
-
-.highlight-drop-zone:hover,
-.highlight-drop-zone:focus-within,
-.highlight-drop-zone.drag-active {
-  border-color: var(--border-focus);
-  background: var(--color-accent-bg);
-}
-
-.highlight-file-input {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  opacity: 0;
-  cursor: pointer;
-}
-
-.highlight-drop-title {
-  color: var(--color-text-main);
-  font-size: 0.88rem;
-  font-weight: var(--fw-medium);
-}
-
-.highlight-drop-hint {
-  font-size: 0.75rem;
-}
 
 .highlight-sources {
   display: flex;
