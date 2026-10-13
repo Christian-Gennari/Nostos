@@ -1045,6 +1045,36 @@ describe('SecondBrain', () => {
     expect(fixture.nativeElement.querySelector('.topic-title')?.textContent).toContain('Beta');
   });
 
+  it('sets a topic\'s notes as a reading column grouped by book', async () => {
+    component.selectTopic('c-alpha');
+    flushDetail('c-alpha', detailWithNotes('c-alpha', 'Alpha'));
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const column = fixture.nativeElement.querySelector('.reading-column') as HTMLElement;
+    const groups = [...column.querySelectorAll('.passage-group')] as HTMLElement[];
+
+    // Newest first puts Ideas in Motion (10 Sep) ahead of Meditations (1 Sep);
+    // its 5 Sep note joins it rather than being interleaved after Meditations.
+    expect(groups.map((group) => group.querySelector('.passage-group-title')?.textContent?.trim())).toEqual([
+      'Ideas in Motion',
+      'Meditations',
+    ]);
+    expect(groups.map((group) => group.querySelector('.passage-group-count')?.textContent?.trim())).toEqual([
+      '2 notes',
+      '1 note',
+    ]);
+    expect(
+      [...groups[0].querySelectorAll('.note-text')].map((text) => text.textContent?.trim()),
+    ).toEqual(['Newest thought about Alpha', 'A middle thought about Alpha']);
+
+    // Each note is a passage: no card box title, since the group names the book.
+    expect(column.querySelectorAll('.note-card-container.is-passage').length).toBe(3);
+    expect(column.querySelector('.source-book-title')).toBeNull();
+    expect(column.querySelector('.source-nav-label')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('.cards-grid')).toBeNull();
+  });
+
   it('puts captured evidence before secondary topic management in the detail DOM', async () => {
     component.selectTopic('c-alpha');
     flushDetail('c-alpha', detail('c-alpha', 'Alpha'));

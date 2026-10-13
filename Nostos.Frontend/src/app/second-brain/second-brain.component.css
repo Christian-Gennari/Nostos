@@ -901,7 +901,7 @@
    Every topic is rendered against exactly the same background, so an
    entrance effect here animates between two states that are visually identical
    and only ever reads as a flash. The previous implementation stacked a
-   `pane-in` blur on `.topic-header`/`.cards-grid` on top of a `slideUpFade`
+   `pane-in` blur on `.topic-header`/the notes grid on top of a `slideUpFade`
    on every `.note-card` (with `forwards` fill pinning the final opacity), so
    each index click replayed a blur-and-rise across the whole pane. The pane now
    simply swaps its content in place. */
@@ -1327,33 +1327,96 @@
   white-space: nowrap;
 }
 
-/* GRID */
-/* An adaptive board: notes sit BESIDE each other and wrap, rather than forming a
-   single column of full-width rows.
+/* READING COLUMN */
+/* A topic's notes are set as one column of running text, grouped by book, not
+   as a board of cards.
  *
- * `auto-fit` (not `auto-fill`) is what makes the board adapt to how many notes a
- * topic actually has: an unused track collapses to zero, so the remaining
- * tracks take the whole pane. Measured on live data at 1440px: 1 note -> one
- * 704px column; 2 notes -> 500px each side by side; 3 notes -> 496px with the
- * third wrapping under the first, exactly the "notes pinned to a board" feel.
- * With `auto-fill` the empty tracks would be reserved, stranding one card at
- * 340px in the corner of a mostly-empty pane. */
-.cards-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
-  align-items: start;
-  gap: 1.25rem 1.5rem;
+ * The board (an auto-fit grid of boxed cards) was built for scanning and it
+ * worked against reading: two columns of boxes make the eye zig-zag, every card
+ * repeats its own border, source line and buttons around the passage, and the
+ * box needs a size limit, which is the only reason long quotations collapsed.
+ * In a single column a long passage is just a long paragraph.
+ *
+ * The column shares the header's 1100px lane and left edge. The text inside it
+ * is held to a reading measure by the note card's `passage` layout, which also
+ * puts the commentary in the space to the right when there is room. */
+.reading-column {
   max-width: 1100px;
   margin: 0 auto;
 }
 
-/* A single note has no peers to sit beside, so the board would be a board of
-   one: a 340px card adrift in an 1100px field. Contract the GRID to the reading
-   measure instead and let the card fill it — the note then reads as a deliberate
-   page rather than a failed multi-column layout. This is the common case: 47 of
-   the 53 topics in the live library hold exactly one note. */
-.cards-grid:has(> :only-child) {
-  max-width: 44rem;
+.passage-group + .passage-group {
+  margin-top: 3rem;
+}
+
+.passage-group-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.85rem;
+  padding-bottom: 0.85rem;
+}
+
+.passage-group-title {
+  margin: 0;
+  font-family: 'Newsreader', serif;
+  font-size: 1.35rem;
+  font-weight: 500;
+  line-height: 1.25;
+  color: var(--color-text-main);
+}
+
+.passage-group-title a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.passage-group-title a:hover {
+  text-decoration: underline;
+}
+
+.passage-group-title a:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.passage-group-count {
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+/* A passage is separated from the next by a hairline and space, not a box. */
+.note-card.passage {
+  min-height: 0;
+  padding: 1.75rem 0;
+  border-top: 1px solid var(--border-color);
+  border-radius: 0;
+}
+
+.note-card.passage:hover {
+  transform: none;
+}
+
+:host ::ng-deep .reading-column app-note-card {
+  height: auto;
+}
+
+:host ::ng-deep .reading-column app-note-card .note-card-container,
+:host ::ng-deep .reading-column app-note-card .note-card-container:hover {
+  display: block;
+  height: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* While editing, the editor keeps to the reading measure. */
+:host ::ng-deep .reading-column app-note-card .edit-box {
+  max-width: 39rem;
 }
 
 /* CARDS */
@@ -1429,20 +1492,21 @@
   box-shadow: var(--shadow-sm);
 }
 
-:host ::ng-deep .cards-grid .note-footer {
+:host ::ng-deep .reading-column .note-footer {
   flex-wrap: wrap;
-  row-gap: 0.5rem;
+  gap: 0.5rem 1rem;
   height: auto;
   min-height: 32px;
+  margin-top: 0.35rem;
 }
 
-:host ::ng-deep .cards-grid .note-metadata,
-:host ::ng-deep .cards-grid .note-actions.custom-actions {
-  flex: 1 1 100%;
+:host ::ng-deep .reading-column .note-metadata {
+  flex: 1 1 12rem;
 }
 
-:host ::ng-deep .cards-grid .note-actions.custom-actions {
-  justify-content: flex-end;
+:host ::ng-deep .reading-column .note-actions.custom-actions {
+  flex: 0 0 auto;
+  margin-left: auto;
   gap: 0.5rem;
 }
 
@@ -1802,10 +1866,6 @@
   .topic-action {
     flex: 1 1 30%;
     min-height: 44px;
-  }
-
-  .cards-grid {
-    grid-template-columns: 1fr; /* Single column cards */
   }
 
   .related-list {
@@ -2390,4 +2450,17 @@
   .topic-action {
     min-height: 44px;
   }
+}
+
+/* In the reading column the "Select source" control gets its own line above the
+   passage: there is no card corner to tuck it into, and at the top right it
+   would sit on the marginal commentary. */
+.note-card.passage.source-selection-card {
+  padding-top: 3.25rem;
+}
+
+.note-card.passage .source-select-control {
+  top: 0.9rem;
+  right: auto;
+  left: 0;
 }
