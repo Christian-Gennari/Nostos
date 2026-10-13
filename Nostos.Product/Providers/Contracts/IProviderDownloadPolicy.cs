@@ -26,4 +26,13 @@ public interface IProviderDownloadPolicy
 
     /// <summary>Hard cap on the number of parts one acquisition may fetch.</summary>
     int MaxParts { get; }
+
+    /// <summary>
+    /// A second address serving the same file as <paramref name="url"/>, tried
+    /// when the first is briefly unavailable (a 5xx, a 429). Null — the default
+    /// — when the source has no mirror for it. The mirror's host must itself be
+    /// in <see cref="AllowedHosts"/>: it goes through the same checks as any
+    /// other URL.
+    /// </summary>
+    Uri? MirrorFor(Uri url) => null;
 }
