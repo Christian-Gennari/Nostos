@@ -139,7 +139,7 @@
 /* Tabs — the app's shared segmented control.
    Ported to the same track recipe as Library `.control-group`, Brain
    `.view-mode-control` and Settings `.theme-choice`, all four of which are now
-   `--bg-hover` / 3px / `--radius-md` / 2px gap with NO border. This one had drifted
+   `--bg-hover` / 3px / `--radius-segment` / 2px gap with NO border. This one had drifted
    by adding a border, which made the group read as a boxed widget rather than a
    raised track. All four are the same control; they should not differ. */
 .sidebar-tabs {
@@ -147,7 +147,7 @@
   gap: 2px;
   padding: 3px;
   background: var(--bg-hover);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-segment);
   margin-bottom: 0.85rem;
 }
 
