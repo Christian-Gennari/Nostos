@@ -8,6 +8,7 @@ import { CollectionsService } from '../../core/services/collections.service';
 import { LibraryPreferencesService } from '../../core/services/library-preferences.service';
 import { ToastService } from '../../core/services/toast.service';
 import { Collection } from '../../core/dtos/collection.dtos';
+import { ReadingListService } from '../../core/services/reading-list.service';
 
 describe('SidebarCollections', () => {
   let component: SidebarCollections;
@@ -21,6 +22,11 @@ describe('SidebarCollections', () => {
     delete: ReturnType<typeof vi.fn>;
   };
   let toast: { error: ReturnType<typeof vi.fn>; info: ReturnType<typeof vi.fn>; success: ReturnType<typeof vi.fn> };
+  let readingList: {
+    loaded: ReturnType<typeof signal<boolean>>;
+    count: ReturnType<typeof signal<number>>;
+    load: ReturnType<typeof vi.fn>;
+  };
 
   const sampleCollections: Collection[] = [{ id: 'c1', name: 'Philosophy', parentId: null }];
   const rootCollection: Collection = { id: 'root-1', name: 'Root', parentId: null };
@@ -37,11 +43,21 @@ describe('SidebarCollections', () => {
       delete: vi.fn(() => of(null)),
     };
     toast = { error: vi.fn(), info: vi.fn(), success: vi.fn() };
+    readingList = {
+      loaded: signal(false),
+      count: signal(0),
+      load: vi.fn(() => {
+        readingList.count.set(7);
+        readingList.loaded.set(true);
+        return of([]);
+      }),
+    };
 
     await TestBed.configureTestingModule({
       imports: [SidebarCollections],
       providers: [
         provideRouter([]),
+        { provide: ReadingListService, useValue: readingList },
         { provide: CollectionsService, useValue: collectionsService },
         { provide: ToastService, useValue: toast },
       ],
@@ -57,6 +73,17 @@ describe('SidebarCollections', () => {
   it('does not own selection state on the HTTP service', () => {
     const service = collectionsService as unknown as Record<string, unknown>;
     expect(service['activeCollectionId']).toBeUndefined();
+  });
+
+  it('links to the reading list with its count, outside the filters', () => {
+    fixture.detectChanges();
+
+    const link = fixture.nativeElement.querySelector('a.nav-item[title="To Read"]') as HTMLAnchorElement;
+    expect(link.getAttribute('href')).toBe('/library/to-read');
+    expect(link.querySelector('.count-badge')?.textContent?.trim()).toBe('7');
+    expect(readingList.load).toHaveBeenCalledTimes(1);
+    // Opening the list is navigation, so no library filter is touched.
+    expect(component.filters.status()).toBe('all');
   });
 
   it('renders count badges from the counts fetch', () => {
@@ -290,9 +317,10 @@ describe('SidebarCollections', () => {
     }
 
     function formatButtons(): HTMLButtonElement[] {
-      // The second .nav-group holds the MEDIA format filters.
+      // The third .nav-group holds the MEDIA format filters; the second is the
+      // link to the reading list, which is not a filter.
       return Array.from(
-        navGroups()[1].querySelectorAll('.nav-item') as NodeListOf<HTMLButtonElement>,
+        navGroups()[2].querySelectorAll('.nav-item') as NodeListOf<HTMLButtonElement>,
       );
     }
 

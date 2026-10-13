@@ -566,4 +566,49 @@ describe('AddBookModal', () => {
     );
     expect(createSpy.mock.calls[0][0]).not.toHaveProperty('collectionId');
   });
+  it('opens already knowing the book it was handed, and nothing is saved by that alone', async () => {
+    const books = TestBed.inject(BooksService);
+    const createSpy = vi.spyOn(books, 'createOrMatch');
+
+    fixture.componentRef.setInput('isOpen', false);
+    await fixture.whenStable();
+    fixture.componentRef.setInput('prefill', {
+      title: 'The Rings of Saturn',
+      author: 'W. G. Sebald',
+      isbn: '9780811214131',
+      publishedDate: '1995',
+    });
+    fixture.componentRef.setInput('isOpen', true);
+    await fixture.whenStable();
+
+    expect(component.form.title).toBe('The Rings of Saturn');
+    expect(component.form.author).toBe('W. G. Sebald');
+    expect(component.form.isbn).toBe('9780811214131');
+    expect(component.form.publishedDate).toBe('1995');
+    // The same words are ready for the catalogue search.
+    expect(component.sourceQuery()).toBe('The Rings of Saturn W. G. Sebald');
+    expect(createSpy).not.toHaveBeenCalled();
+  });
+
+  it('reports the library book it produced, whether new or already there', () => {
+    const books = TestBed.inject(BooksService);
+    const created = vi.fn();
+    component.bookCreated.subscribe(created);
+
+    vi.spyOn(books, 'createOrMatch').mockReturnValue(
+      of({ book: { id: 'new-book' } as unknown as Book, created: true }),
+    );
+    component.form.title = 'Middlemarch';
+    component.form.type = 'physical';
+    component.submit();
+    expect(created).toHaveBeenLastCalledWith('new-book');
+
+    vi.spyOn(books, 'createOrMatch').mockReturnValue(
+      of({ book: { id: 'old-book', title: 'Middlemarch' } as unknown as Book, created: false }),
+    );
+    component.form.title = 'Middlemarch';
+    component.form.type = 'physical';
+    component.submit();
+    expect(created).toHaveBeenLastCalledWith('old-book');
+  });
 });
