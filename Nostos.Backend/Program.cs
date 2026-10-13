@@ -23,6 +23,7 @@ using Nostos.Backend.Providers.LibriVox;
 using Nostos.Backend.Serialization;
 using Nostos.Backend.Services;
 using Nostos.Backend.Services.Ai;
+using Nostos.Backend.Services.ExternalMedia;
 using Nostos.Backend.Services.Library;
 using Nostos.Backend.Services.Notes;
 using Nostos.Backend.Services.Portability;
@@ -273,10 +274,27 @@ builder.Services.AddProblemDetails();
 builder.Services.AddSingleton<FileStorageService>();
 builder.Services.AddSingleton<IFileStorageService>(
     sp => sp.GetRequiredService<FileStorageService>());
+
+// External media (issue #843): book storage is wrapped so a file Nostos does
+// not own is read in place from the one administrator-mounted folder. The
+// wrapper is registered even when no folder is configured, so replacing or
+// removing a book's media always forgets a reference left by an earlier
+// configuration.
+builder.Services.AddOptions<ExternalMediaOptions>()
+    .BindConfiguration(ExternalMediaOptions.SectionName);
+builder.Services.AddSingleton<ExternalMediaRoot>();
+builder.Services.AddSingleton<IExternalMediaAvailability>(
+    sp => sp.GetRequiredService<ExternalMediaRoot>());
+builder.Services.AddSingleton<ExternalMediaLinkStore>();
+builder.Services.AddSingleton(sp => new ExternalMediaBookStorage(
+    sp.GetRequiredService<FileStorageService>(),
+    sp.GetRequiredService<FileStorageService>(),
+    sp.GetRequiredService<ExternalMediaRoot>(),
+    sp.GetRequiredService<ExternalMediaLinkStore>()));
 builder.Services.AddSingleton<IBookAssetStorage>(
-    sp => sp.GetRequiredService<FileStorageService>());
+    sp => sp.GetRequiredService<ExternalMediaBookStorage>());
 builder.Services.AddSingleton<IBookTrackStorage>(
-    sp => sp.GetRequiredService<FileStorageService>());
+    sp => sp.GetRequiredService<ExternalMediaBookStorage>());
 builder.Services.AddNostosSelfHostedHealthChecks();
 
 builder.Services.AddSingleton<BackupSettingsProvider>();

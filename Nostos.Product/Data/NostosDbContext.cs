@@ -38,6 +38,10 @@ public class NostosDbContext : DbContext
     // only — see BookAcquisitionModel.
     public DbSet<BookAcquisitionModel> BookAcquisitions => Set<BookAcquisitionModel>();
 
+    // Media read in place from an administrator-mounted folder (issue #843).
+    // Host-local references, not portable library content.
+    public DbSet<ExternalMediaLinkModel> ExternalMediaLinks => Set<ExternalMediaLinkModel>();
+
     // Register Library domain (issue #34)
     public DbSet<LibraryCommandReceipt> LibraryCommandReceipts => Set<LibraryCommandReceipt>();
     public DbSet<LibraryState> LibraryStates => Set<LibraryState>();
@@ -623,6 +627,24 @@ public class NostosDbContext : DbContext
             // (provider, item, asset). This index is what lets acquisition
             // recognise an item it has already imported and skip it entirely.
             e.HasIndex(a => new { a.ProviderId, a.ExternalId, a.AssetId }).IsUnique();
+        });
+
+        // --- EXTERNAL MEDIA REFERENCES (issue #843) ---
+        // Deleting a book deletes its references and nothing else: the files
+        // they point at are not Nostos's to remove.
+        modelBuilder.Entity<ExternalMediaLinkModel>(e =>
+        {
+            e.HasKey(l => l.Id);
+            e.HasOne(l => l.Book)
+                .WithMany()
+                .HasForeignKey(l => l.BookId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.Property(l => l.RelativePath).HasMaxLength(ExternalMediaLinkModel.MaxRelativePathLength);
+
+            // One reference per file slot of a book, and one book per file:
+            // the second index is what makes a repeated import idempotent.
+            e.HasIndex(l => new { l.BookId, l.TrackNumber }).IsUnique();
+            e.HasIndex(l => new { l.RootId, l.RelativePath }).IsUnique();
         });
 
         modelBuilder.Entity<TopicModel>().HasIndex(c => c.Topic).IsUnique();

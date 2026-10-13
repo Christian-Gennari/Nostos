@@ -56,6 +56,10 @@ internal static class SelfHostedHostStateCarryOver
             HostStateCarryOverKind.Clear,
             "Derived audiobook/ebook anchors hold foreign keys to the old generation's books and are bound to its file revisions. They are rebuilt on demand, so none are carried into the imported library."),
         new(
+            typeof(ExternalMediaLinkModel),
+            HostStateCarryOverKind.Clear,
+            "References to files in the mounted folder hold foreign keys to the old generation's books. An imported library arrives with its media as stored files, so no reference describes it and none is carried."),
+        new(
             typeof(AiProviderSettingsModel),
             HostStateCarryOverKind.Carry,
             "Host credentials and provider configuration are deployment-local, contain no foreign key, and must never be imported from a portable archive."),

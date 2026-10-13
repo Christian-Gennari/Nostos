@@ -1,4 +1,5 @@
 using Nostos.Backend.Configuration;
+using Nostos.Backend.Services.ExternalMedia;
 using Nostos.Backend.Services.Portability;
 using Nostos.Backend.Services.Portability.Migration;
 
@@ -20,14 +21,18 @@ public static class DeploymentCapabilitiesEndpoints
         this IEndpointRouteBuilder routes)
     {
         routes.MapGet(Route, (DeploymentDescriptor deployment, IServiceProvider services) =>
-            Results.Ok(ToResponse(deployment, services.GetService<IMigrationPhaseAvailability>())))
+            Results.Ok(ToResponse(
+                deployment,
+                services.GetService<IMigrationPhaseAvailability>(),
+                services.GetService<IExternalMediaAvailability>())))
             .AllowAnonymous();
         return routes;
     }
 
     public static DeploymentCapabilitiesResponse ToResponse(
         DeploymentDescriptor deployment,
-        IMigrationPhaseAvailability? migrationAvailability = null) =>
+        IMigrationPhaseAvailability? migrationAvailability = null,
+        IExternalMediaAvailability? externalMedia = null) =>
         new(
             DeploymentMode: deployment.Mode.ToString(),
             RequiresAuthentication: deployment.Capabilities.RequiresAuthentication,
@@ -63,7 +68,11 @@ public static class DeploymentCapabilitiesEndpoints
             // supplies a restore adapter; listing alone never shows the button.
             SupportsManagedBackupRestore: deployment.Mode == DeploymentMode.Cloud
                 && deployment.Capabilities.SupportsManagedBackups
-                && deployment.Capabilities.SupportsManagedBackupRestore);
+                && deployment.Capabilities.SupportsManagedBackupRestore,
+            // Fails closed twice over: only a SelfHosted host, and only one
+            // that registers the feature and has a folder configured for it.
+            SupportsExternalMediaLibraries: deployment.Mode == DeploymentMode.SelfHosted
+                && externalMedia is { IsConfigured: true });
 }
 
 public sealed record DeploymentCapabilitiesResponse(
@@ -84,4 +93,5 @@ public sealed record DeploymentCapabilitiesResponse(
     bool HostedBrowserIntegrationEnabled = false,
     bool SupportsManagedBackups = false,
     bool SupportsAccountDeletion = false,
-    bool SupportsManagedBackupRestore = false);
+    bool SupportsManagedBackupRestore = false,
+    bool SupportsExternalMediaLibraries = false);
