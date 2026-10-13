@@ -2,7 +2,6 @@ using Microsoft.EntityFrameworkCore;
 using Nostos.Backend.Data;
 using Nostos.Backend.Data.Models;
 using Nostos.Backend.Services.Library;
-using Nostos.Shared.Dtos;
 
 namespace Nostos.Backend.Services.ExternalMedia;
 
@@ -90,8 +89,8 @@ public sealed class ExternalMediaScanService(
     ExternalMediaRoot root,
     IExternalMediaDescriber describer,
     IDbContextFactory<NostosDbContext> contexts,
-    IServiceScopeFactory scopes,
-    ILogger<ExternalMediaScanService> logger)
+    ILogger<ExternalMediaScanService> logger,
+    ILibraryMaintenanceCoordinator? maintenance = null)
 {
     /// <summary>Upper bound on files examined in one scan.</summary>
     public const int MaxFiles = 250_000;
@@ -142,6 +141,9 @@ public sealed class ExternalMediaScanService(
     {
         try
         {
+            // A restore or a library switch replaces the database; like every
+            // other background job, a scan stays out while one is running.
+            await using var operation = maintenance is null ? null : await maintenance.EnterOperationAsync(ct);
             var result = await ScanAsync(ct);
             lock (_gate)
                 _state = _state with { Status = ExternalMediaScanState.Done, Error = null, Result = result };
@@ -170,6 +172,7 @@ public sealed class ExternalMediaScanService(
 
         Dictionary<string, Guid> linkedPaths;
         List<ExternalMediaMissingBook> missing;
+        ILookup<string, ExternalMediaLibraryMatch> libraryByTitle;
         await using (var db = await contexts.CreateDbContextAsync(ct))
         {
             var links = await db.ExternalMediaLinks
@@ -186,16 +189,21 @@ public sealed class ExternalMediaScanService(
                 .Select(group => new ExternalMediaMissingBook(group.Key.BookId, group.Key.Title, group.Count()))
                 .OrderBy(book => book.Title, StringComparer.OrdinalIgnoreCase)
                 .ToList();
+
+            // The library is read once and compared in memory: asking it about
+            // every candidate separately would reload it for each one.
+            libraryByTitle = (await db.Books.AsNoTracking()
+                    .Select(book => new { book.Id, book.Title, book.Author })
+                    .ToListAsync(ct))
+                .Select(book => new ExternalMediaLibraryMatch(book.Id, book.Title, book.Author))
+                .ToLookup(book => BookIdentityNormalizer.NormalizeTitle(book.Title) ?? string.Empty, StringComparer.Ordinal);
         }
 
         var items = new List<ExternalMediaScanItem>(grouping.Candidates.Count);
-        using var scope = scopes.CreateScope();
-        var library = scope.ServiceProvider.GetRequiredService<ILibraryService>();
-
         foreach (var candidate in grouping.Candidates)
         {
             ct.ThrowIfCancellationRequested();
-            items.Add(await DescribeAsync(candidate, linkedPaths, library, ct));
+            items.Add(Describe(candidate, linkedPaths, libraryByTitle));
             Report(items.Count, grouping.Candidates.Count);
         }
 
@@ -221,11 +229,10 @@ public sealed class ExternalMediaScanService(
             grouping.Candidates.ToDictionary(candidate => candidate.Key, StringComparer.Ordinal));
     }
 
-    private async Task<ExternalMediaScanItem> DescribeAsync(
+    private ExternalMediaScanItem Describe(
         ExternalMediaCandidate candidate,
         Dictionary<string, Guid> linkedPaths,
-        ILibraryService library,
-        CancellationToken ct)
+        ILookup<string, ExternalMediaLibraryMatch> libraryByTitle)
     {
         var concerns = candidate.Concerns.ToList();
         var first = candidate.Files[0];
@@ -266,7 +273,7 @@ public sealed class ExternalMediaScanService(
         }
         else
         {
-            matches = await FindLibraryMatchesAsync(library, names.Title, names.Author, ct);
+            matches = FindLibraryMatches(libraryByTitle, names.Title, names.Author);
             if (matches.Count > 0)
                 concerns.Add("A book with this title is already in your library. Importing adds this one as a separate book.");
             status = concerns.Count > 0 ? ExternalMediaScanItem.Review : ExternalMediaScanItem.Ready;
@@ -289,23 +296,31 @@ public sealed class ExternalMediaScanService(
             matches);
     }
 
-    private static async Task<IReadOnlyList<ExternalMediaLibraryMatch>> FindLibraryMatchesAsync(
-        ILibraryService library,
+    /// <summary>
+    /// Books already in the library that this candidate may duplicate: the
+    /// same title, and the same author unless one side names none. Compared
+    /// with the library's own normalisation, so case, accents and punctuation
+    /// do not hide a match.
+    /// </summary>
+    private static IReadOnlyList<ExternalMediaLibraryMatch> FindLibraryMatches(
+        ILookup<string, ExternalMediaLibraryMatch> libraryByTitle,
         string title,
-        string? author,
-        CancellationToken ct)
+        string? author)
     {
-        var resolved = await library.ResolveBookAsync(
-            new LibraryResolveBookRequest(Title: title, Author: author, IncludeExternalMetadata: false), ct);
+        var normalizedTitle = BookIdentityNormalizer.NormalizeTitle(title);
+        if (string.IsNullOrEmpty(normalizedTitle))
+            return [];
 
-        return resolved.Resolution switch
-        {
-            LibraryResolution.ExactMatch when resolved.MatchedBook is { } book =>
-                [new ExternalMediaLibraryMatch(book.Id, book.Title, book.Author)],
-            LibraryResolution.Candidates when resolved.Candidates is { } candidates =>
-                candidates.Select(c => new ExternalMediaLibraryMatch(c.BookId, c.Title, c.Author)).ToList(),
-            _ => [],
-        };
+        var normalizedAuthor = BookIdentityNormalizer.NormalizeAuthor(author);
+        return libraryByTitle[normalizedTitle]
+            .Where(book =>
+            {
+                var bookAuthor = BookIdentityNormalizer.NormalizeAuthor(book.Author);
+                return string.IsNullOrEmpty(normalizedAuthor)
+                    || string.IsNullOrEmpty(bookAuthor)
+                    || string.Equals(bookAuthor, normalizedAuthor, StringComparison.Ordinal);
+            })
+            .ToList();
     }
 
     private void Report(int examined, int total)

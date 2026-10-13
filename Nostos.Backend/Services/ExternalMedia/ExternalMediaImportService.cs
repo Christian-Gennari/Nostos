@@ -71,7 +71,8 @@ public sealed class ExternalMediaImportService(
     IBookAssetStorage storage,
     IDbContextFactory<NostosDbContext> contexts,
     IServiceScopeFactory scopes,
-    ILogger<ExternalMediaImportService> logger)
+    ILogger<ExternalMediaImportService> logger,
+    ILibraryMaintenanceCoordinator? maintenance = null)
 {
     private static readonly string[] SidecarCovers = ["cover.jpg", "cover.jpeg", "cover.png", "folder.jpg", "folder.png"];
     private const long MaxSidecarCoverBytes = 20 * 1024 * 1024;
@@ -151,6 +152,10 @@ public sealed class ExternalMediaImportService(
             ExternalMediaImportOutcome outcome;
             try
             {
+                // Held per book, not for the whole import: a restore or a
+                // library switch waits for the book in hand, never for hours.
+                await using var operation =
+                    maintenance is null ? null : await maintenance.EnterOperationAsync(ct);
                 outcome = await ImportAsync(item, scan.Candidates[item.Key], ct);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)

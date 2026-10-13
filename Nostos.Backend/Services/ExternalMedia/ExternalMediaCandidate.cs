@@ -97,13 +97,25 @@ public static class ExternalMediaGrouper
             }
         }
 
+        // Every folder that has audio somewhere below it, found by walking up
+        // from each audio folder once.
+        var foldersAboveAudio = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var folder in foldersWithAudio)
+        {
+            for (var parent = folder; parent.Length > 0;)
+            {
+                parent = FolderOf(parent);
+                if (!foldersAboveAudio.Add(parent))
+                    break;
+            }
+        }
+
         foreach (var (folder, audio) in looseAudio)
         {
             var concerns = new List<string>();
             if (foldersWithM4b.Contains(folder))
                 concerns.Add("This folder also holds an M4B file, so these files may belong to that book.");
-            if (foldersWithAudio.Any(other => other.StartsWith(folder.Length == 0 ? "" : folder + "/", StringComparison.Ordinal)
-                    && other != folder))
+            if (foldersAboveAudio.Contains(folder))
                 concerns.Add("This folder holds audio files and also subfolders with audio.");
             if (LooksLikeDisc(folder))
                 concerns.Add("This folder looks like one disc of a longer book. Each disc folder is proposed as its own book.");
