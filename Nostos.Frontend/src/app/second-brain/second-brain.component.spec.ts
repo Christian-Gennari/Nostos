@@ -531,12 +531,16 @@ describe('SecondBrain', () => {
       more.click();
       fixture.detectChanges();
       expect(more.getAttribute('aria-expanded')).toBe('true');
-      expect(actions.querySelector('[data-note-more-item]')?.textContent).toContain('Edit note');
-      const disclosure = actions.querySelector('.brain-note-more-disclosure') as HTMLElement;
-      disclosure.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      // The menu is the shared nostos-menu: it renders in the CDK overlay,
+      // outside the fixture, and the CDK owns Escape and focus return.
+      const menu = document.querySelector('.nostos-menu') as HTMLElement;
+      expect(menu.getAttribute('role')).toBe('menu');
+      expect(menu.querySelector('[data-note-more-item]')?.textContent).toContain('Edit note');
+      // The CDK reads the legacy keyCode, which a synthetic event has to carry.
+      menu.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true }));
       await Promise.resolve();
       fixture.detectChanges();
-      expect(actions.querySelector('.brain-note-more-disclosure')).toBeNull();
+      expect(document.querySelector('.nostos-menu')).toBeNull();
       expect(more.getAttribute('aria-expanded')).toBe('false');
       expect(document.activeElement).toBe(more);
     });
@@ -608,8 +612,8 @@ describe('SecondBrain', () => {
       const more = fixture.nativeElement.querySelector('.brain-browse-detail .brain-note-more-trigger') as HTMLButtonElement;
       more.click();
       fixture.detectChanges();
-      const sourceFilter = [...fixture.nativeElement.querySelectorAll('.brain-browse-detail button')]
-        .find((button: HTMLButtonElement) => button.textContent?.includes('Show notes from this book')) as HTMLButtonElement;
+      const sourceFilter = [...document.querySelectorAll<HTMLButtonElement>('.nostos-menu [data-note-more-item]')]
+        .find((button) => button.textContent?.includes('Show notes from this book')) as HTMLButtonElement;
       sourceFilter.click();
       const filtered = http.expectOne((request) => request.url === '/api/notes');
       expect(filtered.request.params.get('bookId')).toBe('book-b');
@@ -1101,7 +1105,7 @@ describe('SecondBrain', () => {
     const more = fixture.nativeElement.querySelector('.note-actions .brain-note-more-trigger') as HTMLButtonElement;
     more.click();
     fixture.detectChanges();
-    (fixture.nativeElement.querySelector('.note-actions .brain-note-more-item') as HTMLButtonElement).click();
+    (document.querySelector('.nostos-menu [data-note-more-item]') as HTMLButtonElement).click();
     fixture.detectChanges();
     const editor = fixture.nativeElement.querySelector('.note-input') as HTMLTextAreaElement;
     editor.value = 'Updated note about [[Alpha]]';
@@ -2166,7 +2170,7 @@ describe('SecondBrain', () => {
       const more = fixture.nativeElement.querySelector('.review-pane .brain-note-more-trigger') as HTMLButtonElement;
       more.click();
       fixture.detectChanges();
-      expect(fixture.nativeElement.querySelector('.review-pane .brain-note-more-item')?.textContent)
+      expect(document.querySelector('.nostos-menu [data-note-more-item]')?.textContent)
         .toContain('Edit note');
     });
 
