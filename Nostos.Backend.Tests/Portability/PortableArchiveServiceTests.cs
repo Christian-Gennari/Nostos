@@ -80,6 +80,13 @@ public sealed class PortableArchiveServiceTests
         (await destination.Db.NoteTopics.CountAsync()).Should().Be(1);
         (await destination.Db.Writings.CountAsync()).Should().Be(2);
         (await destination.Db.WritingNotes.CountAsync()).Should().Be(1);
+
+        var wanted = await destination.Db.ReadingListEntries.OrderBy(x => x.Title).ToListAsync();
+        var sourceWanted = await source.Db.ReadingListEntries.AsNoTracking().OrderBy(x => x.Title).ToListAsync();
+        wanted.Should().HaveCount(2);
+        wanted.Should().BeEquivalentTo(sourceWanted);
+        wanted[0].NextPosition.Should().Be(0);
+        wanted[1].NextPosition.Should().BeNull();
         (await destination.Db.BookAcquisitions.CountAsync()).Should().Be(1);
 
         var destinationKeptNote = await destination.Db.WritingNotes.AsNoTracking().SingleAsync();
@@ -365,6 +372,7 @@ public sealed class PortableArchiveServiceTests
     [InlineData(1)]
     [InlineData(2)]
     [InlineData(3)]
+    [InlineData(4)]
     public async Task Import_round_trips_v1_v2_v3_fixtures_with_media_hashes(
         int dataVersion)
     {
@@ -374,6 +382,7 @@ public sealed class PortableArchiveServiceTests
         MutateJsonEntry(entries, "data/library.json", root =>
         {
             root["version"] = dataVersion;
+            if (dataVersion < 5) root.Remove("readingListEntries");
             if (dataVersion < 2)
             {
                 root.Remove("writingNotes");
@@ -405,6 +414,9 @@ public sealed class PortableArchiveServiceTests
         (await destination.Db.Notes.CountAsync()).Should().Be(1);
         (await destination.Db.WritingNotes.CountAsync())
             .Should().Be(dataVersion >= 2 ? 1 : 0);
+        // The reading list arrived with data version 5: an older archive
+        // imports cleanly and simply has none.
+        (await destination.Db.ReadingListEntries.CountAsync()).Should().Be(0);
 
         foreach (var descriptor in media)
         {

@@ -262,6 +262,7 @@ export async function validateArchiveOnServer(
       acquisitions: counts.bookAcquisitions ?? 0,
       assistantSettings: counts.assistantSettings ?? 0,
       noteImportBookLinks: counts.noteImportBookLinks ?? 0,
+      readingListEntries: counts.readingListEntries ?? 0,
       mediaEntries: media.length,
       totalRows: 0,
     },

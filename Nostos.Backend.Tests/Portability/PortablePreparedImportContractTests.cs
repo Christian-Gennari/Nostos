@@ -219,7 +219,8 @@ public sealed class PortablePreparedImportContractTests
         counts.AssistantSettings.Should().Be(1);
         counts.NoteImportBookLinks.Should().Be(11);
         counts.MediaEntries.Should().Be(12);
-        counts.TotalRows.Should().Be(67);
+        counts.ReadingListEntries.Should().Be(13);
+        counts.TotalRows.Should().Be(80);
 
         foreach (var property in typeof(MigrationArchiveCounts)
             .GetProperties(BindingFlags.Public | BindingFlags.Instance))
@@ -249,6 +250,7 @@ public sealed class PortablePreparedImportContractTests
             nameof(PortableLibraryData.NoteImportBookLinks),
             nameof(PortableLibraryData.NoteTopics),
             nameof(PortableLibraryData.Notes),
+            nameof(PortableLibraryData.ReadingListEntries),
             nameof(PortableLibraryData.Topics),
             nameof(PortableLibraryData.Version),
             nameof(PortableLibraryData.Works),
@@ -327,7 +329,7 @@ public sealed class PortablePreparedImportContractTests
 
     private static PortableLibraryData FullyPopulatedLibraryData() =>
         new(
-            Version: 3,
+            Version: 5,
             Works: Enumerable.Range(0, 1)
                 .Select(_ => new PortableWork(Guid.NewGuid(), "Work", null, FixedUtc))
                 .ToList(),
@@ -370,6 +372,10 @@ public sealed class PortablePreparedImportContractTests
             NoteImportBookLinks: Enumerable.Range(0, 11)
                 .Select(_ => new PortableNoteImportBookLink(
                     Guid.NewGuid(), "kobo", "source-key", Guid.NewGuid(), FixedUtc))
+                .ToList(),
+            ReadingListEntries: Enumerable.Range(0, 13)
+                .Select(_ => new PortableReadingListEntry(
+                    Guid.NewGuid(), "Wanted", null, null, null, null, null, null, FixedUtc))
                 .ToList());
 
     private static PortableBook Book() =>

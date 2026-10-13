@@ -174,6 +174,7 @@ const DEFAULT_EXISTING_COUNTS: MigrationExistingCountsDto = {
   bookCollections: 0,
   acquisitions: 0,
   noteImportBookLinks: 0,
+  readingListEntries: 0,
   assistantSettings: 0,
   totalRows: 0,
 };
@@ -1236,6 +1237,7 @@ function existingCountsTotal(counts: MigrationExistingCountsDto): number {
     counts.bookCollections +
     counts.acquisitions +
     counts.noteImportBookLinks +
+    counts.readingListEntries +
     counts.assistantSettings
   );
 }

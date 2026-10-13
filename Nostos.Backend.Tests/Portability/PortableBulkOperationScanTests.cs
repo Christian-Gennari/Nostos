@@ -30,7 +30,7 @@ public sealed class PortableBulkOperationScanTests
                 // DbSet properties whose entity names differ from the CLR type.
                 "Books", "Works", "Writings", "WritingNotes", "Notes", "Collections",
                 "BookCollections", "Topics", "NoteTopics", "BookAcquisitions",
-                "AssistantSettings", "NoteImportBookLinks",
+                "AssistantSettings", "NoteImportBookLinks", "ReadingListEntries",
             ])
             .Distinct(StringComparer.Ordinal)
             .ToArray();

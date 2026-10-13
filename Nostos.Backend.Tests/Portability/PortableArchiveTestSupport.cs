@@ -363,6 +363,28 @@ internal static class PortableArchiveTestSupport
             UpdatedAtUtc = now,
         });
 
+        // Two wishes, one on the ordered shelf and one in the long tail, so
+        // every round trip carries the reading list in both of its states.
+        db.ReadingListEntries.AddRange(
+            new ReadingListEntryModel
+            {
+                Id = Guid.NewGuid(),
+                Title = "Wanted Next",
+                Author = "Wished Author",
+                Isbn = "9781590171998",
+                PublishedDate = "1965",
+                Why = "A reason worth keeping.",
+                RecommendedBy = "A friend",
+                NextPosition = 0,
+                CreatedAt = now.AddDays(1),
+            },
+            new ReadingListEntryModel
+            {
+                Id = Guid.NewGuid(),
+                Title = "Wanted Someday",
+                CreatedAt = now.AddDays(2),
+            });
+
         await db.SaveChangesAsync();
 
         await SaveAsync(storage, epub.Id, "source.epub", "EPUB-CONTENT-PORTABLE");

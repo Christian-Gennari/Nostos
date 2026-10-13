@@ -505,8 +505,23 @@ public sealed class PortableArchiveValidationTests
         PortableArchiveValidation.ValidatePortableData(EmptyData(version: 1));
         PortableArchiveValidation.ValidatePortableData(EmptyData(version: 2));
         PortableArchiveValidation.ValidatePortableData(EmptyData(version: 3));
+        PortableArchiveValidation.ValidatePortableData(EmptyData(version: 4));
+        PortableArchiveValidation.ValidatePortableData(EmptyData(version: 5));
 
-        RejectData(EmptyData(version: 5), "unsupported_data_version");
+        RejectData(EmptyData(version: 6), "unsupported_data_version");
+        RejectData(
+            EmptyData(version: 4) with { ReadingListEntries = [] },
+            "unexpected_version_data");
+        RejectData(
+            EmptyData(version: 5) with { ReadingListEntries = null },
+            "malformed_data");
+        RejectData(
+            EmptyData(version: 5) with
+            {
+                ReadingListEntries = [new PortableReadingListEntry(
+                    Guid.NewGuid(), " ", null, null, null, null, null, null, DateTime.UtcNow)],
+            },
+            "malformed_data");
         RejectData(
             EmptyData(version: 1) with { WritingNotes = [] },
             "unexpected_version_data");
@@ -901,7 +916,8 @@ public sealed class PortableArchiveValidationTests
             [],
             null,
             version >= 2 ? [] : null,
-            version >= 3 ? [] : null);
+            version >= 3 ? [] : null,
+            version >= 5 ? [] : null);
 
     private static PortableLibraryData DataWithBook(
         bool hasBookFile = false,
