@@ -112,6 +112,28 @@ describe('EPUB reader theme switching with real epub.js', () => {
     expect(doc.body.classList.contains('nostos-dark')).toBe(false);
   });
 
+  it.each(['light', 'dark'] as const)(
+    'colors only anchors with an href as links in the %s theme',
+    (theme) => {
+      const { doc, contents, themes } = renderedSection();
+      // What the HTML parser makes of `<p><a id="page_8"/>Text</p><p>More</p>`:
+      // the page anchor is never closed, so the text ends up inside it.
+      doc.body.innerHTML =
+        '<p><a id="page_8">Text</a></p><p><a id="note" href="notes.xhtml#n1">1</a></p>';
+
+      selectNostosReaderTheme(themes, [contents], theme);
+
+      const sheet = (doc.getElementById(`epubjs-inserted-css-nostos-${theme}`) as HTMLStyleElement)
+        .sheet!;
+      const linkSelectors = Array.from(sheet.cssRules)
+        .map((rule) => (rule as CSSStyleRule).selectorText)
+        .filter((selector) => /^a\b/.test(selector ?? ''));
+      expect(linkSelectors.length).toBe(1);
+      const linked = Array.from(doc.querySelectorAll(linkSelectors[0])).map((a) => a.id);
+      expect(linked).toEqual(['note']);
+    },
+  );
+
   it('many switches never accumulate stylesheets', () => {
     const { doc, contents, themes } = renderedSection();
 

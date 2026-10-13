@@ -9,6 +9,8 @@ import type { Theme } from '../../core/services/theme.service';
  */
 const NOSTOS_LIGHT_THEME = 'nostos-light';
 const NOSTOS_DARK_THEME = 'nostos-dark';
+/** Anchors that are links. See the note in NOSTOS_LIGHT_RULES. */
+const LINK_SELECTOR = 'a:any-link';
 /**
  * Color-only rules for the epub.js iframe, mirroring the Nostos light tokens
  * from styles.css (the iframe is a separate document and cannot read the
@@ -21,10 +23,14 @@ const NOSTOS_LIGHT_RULES: Record<string, Record<string, string>> = {
   body: { background: '#ffffff !important', color: '#1a1a1a !important' },
   // Publisher CSS often sets explicit text colors (e.g. h1 { color: #000 });
   // normalize every element to inherit the theme text color so headings and
-  // body text stay readable. `a` comes AFTER `body *` so the link color wins
-  // for links (and their descendants).
+  // body text stay readable. The link rule comes AFTER `body *` so the link
+  // color wins for links (and their descendants).
   'body *': { color: 'inherit !important' },
-  a: { color: '#60a5fa !important' },
+  // `:any-link`, not `a`: only anchors with an href are links. Books mark page
+  // breaks with `<a id="page_8"/>`, and epub.js hands the XHTML to the HTML
+  // parser (iframe.srcdoc), where that anchor is never closed and swallows
+  // the rest of the chapter. A bare `a` rule then colored all of it as a link.
+  [LINK_SELECTOR]: { color: '#60a5fa !important' },
   '::selection': { background: 'rgba(96, 165, 250, 0.3) !important' },
 };
 
@@ -37,7 +43,7 @@ const NOSTOS_DARK_RULES: Record<string, Record<string, string>> = {
   html: { background: '#121318 !important', color: '#f0f1f4 !important' },
   body: { background: '#121318 !important', color: '#f0f1f4 !important' },
   'body *': { color: 'inherit !important' },
-  a: { color: '#8fbfae !important' },
+  [LINK_SELECTOR]: { color: '#8fbfae !important' },
   '::selection': { background: 'rgba(143, 191, 174, 0.35) !important' },
 };
 
