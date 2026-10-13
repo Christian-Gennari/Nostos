@@ -357,6 +357,16 @@
   --radius-popover: 10px;
   --radius-popover-item: calc(var(--radius-popover) - 4px);
 
+  /* ── Surface and row roles ──
+     A surface is a bordered box that holds content and, usually, controls: a
+     note card, an inline picker, a choice in a dialog. It is a step rounder
+     than the 8px buttons inside it, so a button never out-curves its own
+     container (the cards were 6px, the buttons 8px). A row is one line in a
+     list that highlights on hover or selection: a topic in the index, a note in
+     the Notes list. Rows were already 6px, as two literals and two tokens. */
+  --radius-surface: 10px;
+  --radius-row: 6px;
+
   /* ── Dock role ──
      The floating dock is neither a card nor a control: it is a bar that floats
      over page content, so it gets its own corner rather than a step in the

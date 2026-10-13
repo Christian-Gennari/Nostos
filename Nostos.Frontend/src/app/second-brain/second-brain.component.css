@@ -371,7 +371,7 @@
   padding: 0 8px 0 12px;
   border: none;
   background: transparent;
-  border-radius: 6px;
+  border-radius: var(--radius-row);
   cursor: pointer;
   text-align: left;
   font-family: 'Hanken Grotesk', sans-serif;
@@ -662,7 +662,7 @@
   height: 28px;
   padding: 0;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--color-text-muted);
   cursor: pointer;
@@ -1167,7 +1167,7 @@
   min-height: 32px;
   padding: 0 0.25rem;
   border: 0;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-action);
   background: transparent;
   cursor: pointer;
   font-family: 'Hanken Grotesk', sans-serif;
@@ -1428,7 +1428,7 @@
      items to the tallest card in the row, so rows stay uniform while a short
      excerpt no longer leaves a hollow middle. */
   min-height: 150px;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-surface);
   transition: transform var(--motion-fast) var(--ease-out);
 }
 
@@ -1475,7 +1475,7 @@
      a border drew a dark 1px box around every card, which is what made the grid
      look heavy and boxy next to the Library's quiet surfaces. */
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-surface);
   background: var(--bg-surface);
   /* No resting shadow: the Library relies on border + spacing, and a shadow on
      every card plus a border reads as a floating dashboard widget. Depth is
@@ -2078,7 +2078,7 @@
   align-items: center;
   padding: 0.4rem 8px 0.4rem 12px;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-row);
   background: transparent;
   color: var(--color-text-muted);
   text-align: left;
@@ -2308,7 +2308,7 @@
 
 .source-selection-card app-note-card {
   display: block;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-surface);
   transition: outline-color 0.15s ease;
 }
 
@@ -2379,7 +2379,7 @@
   gap: 0.15rem;
   padding: 0.35rem;
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-popover);
   background: var(--bg-surface);
   box-shadow: var(--shadow-md);
 }
