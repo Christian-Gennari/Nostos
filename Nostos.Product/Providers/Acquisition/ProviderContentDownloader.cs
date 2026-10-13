@@ -85,9 +85,10 @@ public sealed class ProviderContentDownloader(
         CancellationToken ct) =>
         WithRetriesAsync(
             url,
-            async token =>
+            policy,
+            async (candidate, token) =>
             {
-                using var response = await OpenAsync(url, policy, token);
+                using var response = await OpenAsync(candidate, policy, token);
                 return await StreamToFileAsync(response, destinationPath, policy, totalBudgetBytes, progress, token);
             },
             ct);
@@ -99,9 +100,10 @@ public sealed class ProviderContentDownloader(
         CancellationToken ct) =>
         WithRetriesAsync(
             url,
-            async token =>
+            policy,
+            async (candidate, token) =>
             {
-                using var response = await OpenAsync(url, policy, token);
+                using var response = await OpenAsync(candidate, policy, token);
 
                 var declared = response.Content.Headers.ContentLength;
                 if (declared is > 0 && declared.Value > maxBytes)
@@ -139,25 +141,49 @@ public sealed class ProviderContentDownloader(
             },
             ct);
 
-    private async Task<T> WithRetriesAsync<T>(Uri url, Func<CancellationToken, Task<T>> attempt, CancellationToken ct)
+    private async Task<T> WithRetriesAsync<T>(
+        Uri url,
+        IProviderDownloadPolicy policy,
+        Func<Uri, CancellationToken, Task<T>> attempt,
+        CancellationToken ct)
     {
         var attempts = _options.ClampDownloadAttempts();
         var delay = TimeSpan.FromSeconds(2);
 
+        // A source with a mirror alternates between the two, starting with its
+        // own address: when the source is down, the second attempt already
+        // lands somewhere else instead of asking the same dead host again. The
+        // mirror always gets a turn, even when configuration allows one attempt.
+        var mirror = policy.MirrorFor(url);
+        if (mirror is not null)
+            attempts = Math.Max(attempts, 2);
+
         for (var number = 1; ; number++)
         {
+            var candidate = mirror is not null && number % 2 == 0 ? mirror : url;
+
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
             deadline.CancelAfter(TimeSpan.FromSeconds(_options.DownloadTimeoutSeconds));
 
             try
             {
-                return await attempt(deadline.Token);
+                return await attempt(candidate, deadline.Token);
             }
             catch (ProviderDownloadException ex) when (ex.Retryable && number < attempts)
             {
+                // Moving on to the mirror is not asking the same host again,
+                // so there is nothing to back off from.
+                if (mirror is not null && number % 2 == 1)
+                {
+                    logger.LogWarning(
+                        "Download attempt {Attempt}/{Attempts} for {Url} failed ({Code}); trying the mirror {Mirror}",
+                        number, attempts, candidate, ex.Code, mirror);
+                    continue;
+                }
+
                 logger.LogWarning(
                     "Download attempt {Attempt}/{Attempts} for {Url} failed ({Code}); retrying in {Delay}s",
-                    number, attempts, url, ex.Code, delay.TotalSeconds);
+                    number, attempts, candidate, ex.Code, delay.TotalSeconds);
 
                 await Task.Delay(delay, ct);
                 delay = TimeSpan.FromSeconds(Math.Min(delay.TotalSeconds * 2, 30));
