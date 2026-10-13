@@ -574,6 +574,8 @@
                    the state, so it is never read from the fill colour alone. -->
               <li>
                 <div
+                  appChoiceRow
+                  [selected]="true"
                   class="edition-select-card active"
                   aria-current="true"
                   [title]="getEditionLabel(store.book()!)"
@@ -583,12 +585,12 @@
                       [name]="isAudioBook(store.book()) ? 'headphones' : 'book-open'"
                       [size]="16"></nostos-icon>
                   </span>
-                  <span class="card-content">
-                    <span class="card-format-title">{{ getEditionFormat(store.book()!) }}</span>
+                  <span class="card-content nostos-choice-row__text">
+                    <span class="card-format-title nostos-choice-row__title">{{ getEditionFormat(store.book()!) }}</span>
                     @if (getEditionSubtitle(store.book()!)) {
-                    <span class="card-format-sub">{{ getEditionSubtitle(store.book()!) }}</span>
+                    <span class="card-format-sub nostos-choice-row__sub">{{ getEditionSubtitle(store.book()!) }}</span>
                     }
-                    <span class="card-meta-line">
+                    <span class="card-meta-line nostos-choice-row__meta">
                       @if (store.book()?.progressPercent) {
                       <span class="card-progress">{{ store.book()?.progressPercent }}% read</span>
                       } @else {
@@ -607,6 +609,7 @@
               <li>
                 <button
                   type="button"
+                  appChoiceRow
                   class="edition-select-card"
                   (click)="switchEdition(edition.id)"
                   [title]="'Switch to ' + getSummaryEditionLabel(edition)"
@@ -616,12 +619,12 @@
                       [name]="edition.type === 'audiobook' ? 'headphones' : 'book-open'"
                       [size]="16"></nostos-icon>
                   </span>
-                  <span class="card-content">
-                    <span class="card-format-title">{{ getEditionFormat(edition) }}</span>
+                  <span class="card-content nostos-choice-row__text">
+                    <span class="card-format-title nostos-choice-row__title">{{ getEditionFormat(edition) }}</span>
                     @if (getEditionSubtitle(edition)) {
-                    <span class="card-format-sub">{{ getEditionSubtitle(edition) }}</span>
+                    <span class="card-format-sub nostos-choice-row__sub">{{ getEditionSubtitle(edition) }}</span>
                     }
-                    <span class="card-meta-line">
+                    <span class="card-meta-line nostos-choice-row__meta">
                       @if (edition.progressPercent) {
                       <span class="card-progress">{{ edition.progressPercent }}% read</span>
                       } @else {

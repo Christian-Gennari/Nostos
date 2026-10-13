@@ -36,6 +36,7 @@
              promises and the reader should know which one they are getting. -->
         <button
           type="button"
+          appChoiceRow
           class="switch-row"
           [disabled]="!!busyEditionId()"
           [attr.aria-busy]="busyEditionId() === target.edition.id"
@@ -45,12 +46,12 @@
           <span appIconTile tone="quiet" class="switch-icon">
             <nostos-icon [name]="iconFor(target.kind)" [size]="16"></nostos-icon>
           </span>
-          <span class="switch-content">
-            <span class="switch-format">{{ target.format }}</span>
+          <span class="switch-content nostos-choice-row__text">
+            <span class="switch-format nostos-choice-row__title">{{ target.format }}</span>
             @if (target.subtitle) {
-            <span class="switch-sub">{{ target.subtitle }}</span>
+            <span class="switch-sub nostos-choice-row__sub">{{ target.subtitle }}</span>
             }
-            <span class="switch-meta">
+            <span class="switch-meta nostos-choice-row__meta">
               @if (busyEditionId() === target.edition.id) {
                 Finding your place…
               } @else if (target.sameSentence && target.kind === 'audiobook') {

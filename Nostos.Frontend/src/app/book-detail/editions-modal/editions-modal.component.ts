@@ -6,6 +6,7 @@ import { ModalShell } from '../../ui/modal-shell/modal-shell.component';
 import { NostosIconComponent } from '../../ui/icon/nostos-icon.component';
 import { IconButtonComponent } from '../../ui/icon-button/icon-button.component';
 import { InputDirective } from '../../ui/form-control/form-control.directive';
+import { ChoiceRowComponent } from '../../ui/choice-row/choice-row.component';
 
 /** One book in the current work, as the membership list needs it. */
 export interface WorkMember {
@@ -35,7 +36,7 @@ export interface WorkMember {
 @Component({
   selector: 'app-editions-modal',
   standalone: true,
-  imports: [CommonModule, FormsModule, NostosIconComponent, IconButtonComponent, InputDirective, ModalShell],
+  imports: [ChoiceRowComponent, CommonModule, FormsModule, NostosIconComponent, IconButtonComponent, InputDirective, ModalShell],
   templateUrl: './editions-modal.component.html',
   styleUrl: './editions-modal.component.css',
 })
