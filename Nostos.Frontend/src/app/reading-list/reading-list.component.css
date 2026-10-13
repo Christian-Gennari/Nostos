@@ -256,8 +256,10 @@
   color: var(--color-text-main);
 }
 
-.entry-icons .entry-remove:hover:not(:disabled) {
-  color: var(--color-danger);
+/* The "more" button stays lit while its menu is open. */
+.entry-icons .icon-btn[aria-expanded='true'] {
+  background: var(--bg-hover);
+  color: var(--color-text-main);
 }
 
 .entry-icons .icon-btn:disabled {
@@ -412,10 +414,6 @@
   flex-wrap: nowrap;
 }
 
-.someday-row .entry-icons--end {
-  margin-left: 0.35rem;
-}
-
 /* Too narrow for four columns: each row stacks its parts instead. */
 @media (max-width: 860px) {
   .someday {
@@ -441,7 +439,7 @@
     justify-content: flex-start;
   }
 
-  .someday-row .entry-icons--end {
+  .someday-row .entry-icons {
     margin-left: auto;
   }
 }

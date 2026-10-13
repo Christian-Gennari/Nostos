@@ -167,25 +167,30 @@
                     <button
                       type="button"
                       appIconButton
-                      icon="pencil-simple"
+                      icon="dots-three"
                       size="xs"
-                      [glyphSize]="15"
-                      [attr.aria-label]="'Edit “' + entry.title + '”'"
-                      title="Edit"
-                      (click)="openEdit(entry)"
-                    ></button>
-                    <button
-                      type="button"
-                      appIconButton
-                      icon="x"
-                      size="xs"
-                      [glyphSize]="15"
-                      class="entry-remove"
-                      [attr.aria-label]="'Remove “' + entry.title + '” from the list'"
-                      title="Remove"
-                      (click)="removeTarget.set(entry)"
+                      [glyphSize]="18"
+                      [attr.aria-label]="'More for “' + entry.title + '”'"
+                      title="More"
+                      [nostosMenuTriggerFor]="shelfMore"
                     ></button>
                   </span>
+                  <ng-template #shelfMore>
+                    <nostos-menu>
+                      <button nostosMenuItem icon="pencil-simple" (triggered)="openEdit(entry)">
+                        Edit
+                      </button>
+                      <hr nostosMenuSeparator />
+                      <button
+                        nostosMenuItem
+                        icon="trash"
+                        tone="danger"
+                        (triggered)="removeTarget.set(entry)"
+                      >
+                        Remove from list
+                      </button>
+                    </nostos-menu>
+                  </ng-template>
                 </div>
               </li>
             }
@@ -237,17 +242,8 @@
                     </p>
                   }
                 </div>
+                <!-- One visible action per row; the rest are a click away. -->
                 <div class="entry-actions">
-                  <button
-                    appButton
-                    variant="secondary"
-                    size="sm"
-                    type="button"
-                    [disabled]="isBusy(entry)"
-                    (click)="promote(entry)"
-                  >
-                    Next up
-                  </button>
                   @if (entry.ownedBookId) {
                     <button
                       appButton
@@ -259,41 +255,55 @@
                     >
                       Take off the list
                     </button>
-                  } @else {
-                    <button
-                      appButton
-                      variant="ghost"
-                      size="sm"
-                      type="button"
-                      [disabled]="isBusy(entry)"
-                      (click)="gotIt(entry)"
-                    >
-                      I got it
-                    </button>
                   }
-                  <span class="entry-icons entry-icons--end">
+                  <button
+                    appButton
+                    variant="secondary"
+                    size="sm"
+                    type="button"
+                    [disabled]="isBusy(entry)"
+                    (click)="promote(entry)"
+                  >
+                    Next up
+                  </button>
+                  <span class="entry-icons">
                     <button
                       type="button"
                       appIconButton
-                      icon="pencil-simple"
+                      icon="dots-three"
                       size="xs"
-                      [glyphSize]="15"
-                      [attr.aria-label]="'Edit “' + entry.title + '”'"
-                      title="Edit"
-                      (click)="openEdit(entry)"
-                    ></button>
-                    <button
-                      type="button"
-                      appIconButton
-                      icon="x"
-                      size="xs"
-                      [glyphSize]="15"
-                      class="entry-remove"
-                      [attr.aria-label]="'Remove “' + entry.title + '” from the list'"
-                      title="Remove"
-                      (click)="removeTarget.set(entry)"
+                      [glyphSize]="18"
+                      [attr.aria-label]="'More for “' + entry.title + '”'"
+                      title="More"
+                      [nostosMenuTriggerFor]="somedayMore"
                     ></button>
                   </span>
+                  <ng-template #somedayMore>
+                    <nostos-menu>
+                      @if (!entry.ownedBookId) {
+                        <button
+                          nostosMenuItem
+                          icon="check"
+                          [disabled]="isBusy(entry)"
+                          (triggered)="gotIt(entry)"
+                        >
+                          I got it
+                        </button>
+                      }
+                      <button nostosMenuItem icon="pencil-simple" (triggered)="openEdit(entry)">
+                        Edit
+                      </button>
+                      <hr nostosMenuSeparator />
+                      <button
+                        nostosMenuItem
+                        icon="trash"
+                        tone="danger"
+                        (triggered)="removeTarget.set(entry)"
+                      >
+                        Remove from list
+                      </button>
+                    </nostos-menu>
+                  </ng-template>
                 </div>
               </li>
             }

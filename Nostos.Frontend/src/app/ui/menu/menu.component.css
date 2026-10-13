@@ -1,0 +1,93 @@
+.nostos-menu {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  min-width: 11rem;
+  max-width: min(20rem, calc(100vw - 16px));
+  padding: 4px;
+  border: 1px solid var(--border-color);
+  /* Items keep 4px of padding inside, so the corner is theirs plus that. */
+  border-radius: calc(var(--radius-lg) + 4px);
+  background: var(--bg-surface);
+  color: var(--color-text-main);
+  box-shadow: var(--shadow-md);
+  font-family: 'Hanken Grotesk', sans-serif;
+  transform-origin: top right;
+  animation: nostos-menu-in var(--motion-fast) var(--ease-out);
+}
+
+@keyframes nostos-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px) scale(0.98);
+  }
+}
+
+.nostos-menu-item {
+  all: unset;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 34px;
+  padding: 0 0.65rem;
+  border-radius: var(--radius-lg);
+  color: var(--color-text-main);
+  font-size: 0.88rem;
+  line-height: 1.3;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.nostos-menu-item nostos-icon {
+  flex: 0 0 auto;
+  color: var(--color-text-light);
+}
+
+.nostos-menu-item__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The CDK moves real focus through the items, so one rule covers the pointer
+   and the keyboard. */
+.nostos-menu-item:hover,
+.nostos-menu-item:focus-visible {
+  background: var(--bg-hover);
+}
+
+.nostos-menu-item[aria-disabled='true'] {
+  opacity: 0.45;
+  cursor: default;
+  background: none;
+}
+
+.nostos-menu-item--danger,
+.nostos-menu-item--danger nostos-icon {
+  color: var(--danger-ink);
+}
+
+.nostos-menu-item--danger:hover,
+.nostos-menu-item--danger:focus-visible {
+  background: var(--danger-surface);
+}
+
+.nostos-menu-separator {
+  height: 1px;
+  margin: 4px 0;
+  border: 0;
+  background: var(--border-color);
+}
+
+@media (pointer: coarse) {
+  .nostos-menu-item {
+    min-height: var(--control-h-touch);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nostos-menu {
+    animation: none;
+  }
+}

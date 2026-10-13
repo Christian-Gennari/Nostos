@@ -111,6 +111,15 @@ describe('ReadingList', () => {
       (candidate) => candidate.textContent?.trim() === label,
     ) as HTMLButtonElement;
 
+  /** Opens the row's "More" menu and returns the item with that label. */
+  function menuItem(root: Element, label: string): HTMLButtonElement {
+    (root.querySelector('button[title="More"]') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    return Array.from(document.querySelectorAll<HTMLButtonElement>('.nostos-menu-item')).find(
+      (item) => item.textContent?.trim() === label,
+    ) as HTMLButtonElement;
+  }
+
   async function create(seed: ReadingListEntry[] = []): Promise<void> {
     list.seed = seed;
     fixture = TestBed.createComponent(ReadingList);
@@ -150,6 +159,8 @@ describe('ReadingList', () => {
       })
       .compileComponents();
   });
+
+  afterEach(() => document.querySelectorAll('.cdk-overlay-container').forEach((el) => el.remove()));
 
   it('says what the page is for when the list is empty', async () => {
     await create();
@@ -275,7 +286,7 @@ describe('ReadingList', () => {
   it('asks before removing, and removes only on confirm', async () => {
     await create([entry({ id: 'a', title: 'Pedro Páramo' })]);
 
-    (host().querySelector('button[title="Remove"]') as HTMLButtonElement).click();
+    menuItem(host().querySelector('.someday-row')!, 'Remove from list').click();
     fixture.detectChanges();
 
     expect(list.remove).not.toHaveBeenCalled();
@@ -312,7 +323,9 @@ describe('ReadingList', () => {
   it('opens Add Book knowing the book, and the entry leaves once a library book exists', async () => {
     await create([entry({ id: 'a', title: 'Middlemarch', author: 'George Eliot' })]);
 
-    button(host().querySelector('.someday-row')!, 'I got it').click();
+    // In Someday the row shows one action; "I got it" is in its menu.
+    expect(button(host().querySelector('.someday-row')!, 'I got it')).toBeUndefined();
+    menuItem(host().querySelector('.someday-row')!, 'I got it').click();
     fixture.detectChanges();
 
     expect(component.acquirePrefill()).toEqual({
@@ -343,12 +356,24 @@ describe('ReadingList', () => {
     expect(list.entries().length).toBe(1);
   });
 
+  it('keeps a shelf card to its two actions and puts edit and remove in its menu', async () => {
+    await create([entry({ id: 'a', title: 'Middlemarch', nextPosition: 0 })]);
+
+    const card = host().querySelector('.shelf-card')!;
+    const footer = Array.from(card.querySelectorAll('.shelf-card__foot button[appButton]'));
+    expect(footer.map((b) => b.textContent?.trim())).toEqual(['I got it', 'Someday']);
+
+    menuItem(card, 'Edit').click();
+    fixture.detectChanges();
+    expect(component.editTarget()?.id).toBe('a');
+  });
+
   it('offers to take a book off the list when the library already has it', async () => {
     await create([entry({ id: 'a', title: 'Middlemarch', ownedBookId: 'book-9' })]);
 
     const row = host().querySelector('.someday-row')!;
     expect(row.textContent).toContain("It's in your library");
-    expect(button(row, 'I got it')).toBeUndefined();
+    expect(menuItem(row, 'I got it')).toBeUndefined();
 
     button(row, 'Take off the list').click();
     await fixture.whenStable();

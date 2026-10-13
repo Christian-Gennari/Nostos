@@ -30,6 +30,7 @@ import { InputDirective, TextareaDirective } from '../ui/form-control/form-contr
 import { FormFieldComponent } from '../ui/form-field/form-field.component';
 import { IconButtonComponent } from '../ui/icon-button/icon-button.component';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
+import { NOSTOS_MENU } from '../ui/menu/menu.component';
 import { ModalShell } from '../ui/modal-shell/modal-shell.component';
 
 /** Digits (and a trailing X) only, 10 or 13 long: what an ISBN looks like once its dashes are gone. */
@@ -60,6 +61,7 @@ const ISBN_SHAPE = /^(?:\d{9}[\dXx]|\d{13})$/;
     InputDirective,
     ModalShell,
     NostosIconComponent,
+    ...NOSTOS_MENU,
     TextareaDirective,
   ],
   templateUrl: './reading-list.component.html',

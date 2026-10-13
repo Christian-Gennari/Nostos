@@ -155,6 +155,41 @@
     </div>
   </section>
 
+  <section class="catalogue-section" aria-labelledby="catalogue-menu">
+    <div class="catalogue-section-heading">
+      <div>
+        <p class="catalogue-kicker">Primitive</p>
+        <h2 id="catalogue-menu">Menu</h2>
+      </div>
+      <p>A row's secondary actions, so the row itself can show one. Open it to inspect hover, focus and the destructive item.</p>
+    </div>
+
+    <div class="catalogue-grid">
+      <div class="catalogue-example">
+        <span class="catalogue-label">Action menu</span>
+        <div class="catalogue-row">
+          <button
+            appIconButton
+            class="catalogue-icon-button"
+            icon="dots-three"
+            [glyphSize]="18"
+            aria-label="More actions"
+            [nostosMenuTriggerFor]="catalogueMenu"
+          ></button>
+          <ng-template #catalogueMenu>
+            <nostos-menu>
+              <button nostosMenuItem icon="pencil-simple">Edit</button>
+              <button nostosMenuItem icon="copy">Duplicate</button>
+              <button nostosMenuItem icon="archive" [disabled]="true">Archive</button>
+              <hr nostosMenuSeparator />
+              <button nostosMenuItem icon="trash" tone="danger">Delete</button>
+            </nostos-menu>
+          </ng-template>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <section class="catalogue-section" aria-labelledby="catalogue-dropdown">
     <div class="catalogue-section-heading">
       <div>
