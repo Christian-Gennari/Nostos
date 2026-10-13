@@ -67,7 +67,7 @@
   min-height: 2.6rem;
   padding: 0.55rem 0.7rem;
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm, 3px);
+  border-radius: var(--radius-field);
   background: var(--bg-surface);
   color: var(--color-text-main);
   font: inherit;
