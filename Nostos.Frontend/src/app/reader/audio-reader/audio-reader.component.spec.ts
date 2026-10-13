@@ -909,3 +909,180 @@ describe('AudioReader with a multi-track audiobook (issue #835)', () => {
   });
 });
 
+
+describe('AudioReader current chapter (issue #904)', () => {
+  let fixture: ComponentFixture<AudioReader>;
+  let component: AudioReader;
+  // The test environment has no Media Session; the stand-in records every
+  // metadata object the component writes.
+  let written: MediaMetadataInit[];
+
+  const chapters = [
+    { title: 'Book I: The Quarrel', startTime: 0 },
+    { title: 'Book II: The Dream', startTime: 600 },
+    { title: 'Book III: The Duel', startTime: 1200 },
+  ];
+
+  beforeEach(async () => {
+    howlerState.instances.length = 0;
+    written = [];
+    vi.stubGlobal(
+      'MediaMetadata',
+      class {
+        constructor(init: MediaMetadataInit) {
+          written.push(init);
+        }
+      },
+    );
+    Object.defineProperty(navigator, 'mediaSession', {
+      configurable: true,
+      value: {
+        metadata: null,
+        playbackState: 'none',
+        setActionHandler: vi.fn(),
+        setPositionState: vi.fn(),
+      },
+    });
+
+    await TestBed.configureTestingModule({
+      imports: [AudioReader],
+      providers: [
+        { provide: BooksService, useValue: { updateProgress: vi.fn(() => of(null)) } },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(AudioReader);
+    component = fixture.componentInstance;
+  });
+
+  afterEach(() => {
+    fixture.destroy();
+    delete (navigator as unknown as { mediaSession?: unknown }).mediaSession;
+    vi.unstubAllGlobals();
+  });
+
+  function render(book: Book) {
+    fixture.componentRef.setInput('bookId', book.id);
+    fixture.componentRef.setInput('book', book);
+    fixture.detectChanges();
+    mockPlayer(component).config.onload();
+    fixture.detectChanges();
+  }
+
+  function chapterButton(): HTMLButtonElement | null {
+    return fixture.nativeElement.querySelector('[data-testid="audio-current-chapter"]');
+  }
+
+  /** One second of playback: the tick reads the position from the player. */
+  function tickAt(seconds: number) {
+    component.currentTime.set(seconds);
+    fixture.detectChanges();
+  }
+
+  it('shows the chapter the position falls in and follows it across a boundary', () => {
+    render(makeBook({ chapters }));
+
+    expect(chapterButton()!.textContent!.trim()).toBe('Book I: The Quarrel');
+
+    tickAt(599);
+    expect(chapterButton()!.textContent!.trim()).toBe('Book I: The Quarrel');
+
+    tickAt(600);
+    expect(chapterButton()!.textContent!.trim()).toBe('Book II: The Dream');
+  });
+
+  it('follows a seek, whichever control made it', () => {
+    render(makeBook({ chapters }));
+
+    component.seek({ target: { value: '1250' } });
+    fixture.detectChanges();
+    expect(chapterButton()!.textContent!.trim()).toBe('Book III: The Duel');
+
+    component.goTo(600);
+    fixture.detectChanges();
+    expect(chapterButton()!.textContent!.trim()).toBe('Book II: The Dream');
+
+    component.startEditingTime();
+    component.commitTimeEdit('0:30');
+    fixture.detectChanges();
+    expect(chapterButton()!.textContent!.trim()).toBe('Book I: The Quarrel');
+  });
+
+  it('opens on the saved chapter when resuming', () => {
+    render(makeBook({ chapters, lastLocation: '1300' }));
+
+    expect(chapterButton()!.textContent!.trim()).toBe('Book III: The Duel');
+  });
+
+  it('names the chapter for assistive tech, offers the full title, and is not a live region', () => {
+    render(makeBook({ chapters }));
+
+    const button = chapterButton()!;
+    expect(button.getAttribute('aria-label')).toBe(
+      'Current chapter: Book I: The Quarrel. Open contents',
+    );
+    expect(button.title).toBe('Book I: The Quarrel');
+    const line = fixture.nativeElement.querySelector('.chapter-line') as HTMLElement;
+    expect(line.hasAttribute('aria-live')).toBe(false);
+    expect(line.getAttribute('role')).toBeNull();
+  });
+
+  it('asks the shell for Contents when activated', () => {
+    render(makeBook({ chapters }));
+    const requested = vi.fn();
+    component.contentsRequested.subscribe(requested);
+
+    chapterButton()!.click();
+
+    expect(requested).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders no chapter line for a book without chapters', () => {
+    render(makeBook({ chapters: [] }));
+
+    expect(fixture.nativeElement.querySelector('.chapter-line')).toBeNull();
+    expect(chapterButton()).toBeNull();
+    expect(component.currentChapter()).toBeNull();
+  });
+
+  it('keeps the line, empty, before the first chapter start', () => {
+    render(makeBook({ chapters: [{ title: 'Chapter 1', startTime: 30 }] }));
+
+    expect(fixture.nativeElement.querySelector('.chapter-line')).not.toBeNull();
+    expect(chapterButton()).toBeNull();
+
+    tickAt(30);
+    expect(chapterButton()!.textContent!.trim()).toBe('Chapter 1');
+  });
+
+  it('puts the chapter on the lock screen and rewrites it once per chapter change', () => {
+    render(makeBook({ chapters, series: 'Epic Cycle', narrator: 'A. Reader' }));
+
+    expect(written).toEqual([
+      { title: 'Book I: The Quarrel', artist: 'Homer', album: 'The Iliad', artwork: [] },
+    ]);
+
+    // Ticks inside the chapter write nothing.
+    for (const second of [1, 2, 3, 599]) tickAt(second);
+    expect(written.length).toBe(1);
+
+    tickAt(600);
+    for (const second of [601, 602]) tickAt(second);
+    expect(written.length).toBe(2);
+    expect(written[1]).toEqual({
+      title: 'Book II: The Dream',
+      artist: 'Homer',
+      album: 'The Iliad',
+      artwork: [],
+    });
+  });
+
+  it('keeps the book metadata on the lock screen for a book without chapters', () => {
+    render(makeBook({ chapters: [], series: 'Epic Cycle' }));
+    for (const second of [1, 600, 1200]) tickAt(second);
+
+    expect(written).toEqual([
+      { title: 'The Iliad', artist: 'Homer', album: 'Epic Cycle', artwork: [] },
+    ]);
+  });
+});

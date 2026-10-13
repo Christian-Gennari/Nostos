@@ -171,9 +171,10 @@ Non-injectable class, manually instantiated. Manages:
 - Builds chapter navigation from `Book.chapters` when the file has chapter metadata
 - **Play/Pause**, **Skip ±15s**, **Playback speed** (0.5×–3×, with presets and ±0.05× fine steps)
 - TOC shows chapter titles; clicking jumps to `startTime`
+- **Current chapter:** `currentChapter` (a computed over `currentTime` and `toc`) is the one source for the chapter line on the player, the assistant's `audioChapter` and Media Session. The line is a button between the cover and the scrubber that emits `contentsRequested`; the shell opens Contents with the active row in view. It is rendered only when the book has chapters and is positioned out of flow in the cover/scrubber gap, so the player has the same geometry with and without it
 - Playback settings include speed and sleep timers, including stopping at the chapter end
 - Progress bar: current time / total duration
-- Saves playback progress and resumes from the last saved position; updates MediaSession metadata and controls
+- Saves playback progress and resumes from the last saved position; updates MediaSession metadata and controls (with chapters: chapter as `title`, book as `album`, rewritten only when the chapter changes)
 - **Add timestamp:** Inserts the current playback time (`m:ss` or `h:mm:ss`) into the quick-note textarea
 
 ## Notes Sidebar

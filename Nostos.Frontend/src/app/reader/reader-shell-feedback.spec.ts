@@ -60,6 +60,7 @@ class PdfReaderStub {
 class AudioReaderStub {
   bookId = input.required<string>();
   book = input<unknown>(null);
+  contentsRequested = output<void>();
 }
 
 const pdfBook = {

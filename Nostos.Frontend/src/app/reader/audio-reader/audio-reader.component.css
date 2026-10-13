@@ -88,6 +88,58 @@
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
+  /* Containing block for the chapter line. */
+  position: relative;
+}
+
+/* Current chapter (issue #904). Absolute, in the gap above the scrubber: the
+   column's height and centring are the same with and without chapters, so the
+   line can appear, change or be empty without moving the cover or the transport.
+   The gap it lives in is 4rem (6rem on a phone, the free half of the column in
+   phone landscape); the button is 44px tall. */
+.chapter-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 0.25rem);
+  display: flex;
+  justify-content: center;
+}
+
+.chapter-btn {
+  display: block;
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 44px;
+  padding: 0.5rem 0.75rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-text-muted);
+  font-family: 'Hanken Grotesk', sans-serif;
+  font-size: var(--text-sm);
+  line-height: 1.3;
+  /* One line, whatever the title: a LibriVox chapter can run to a sentence. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  transition:
+    background-color var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard);
+}
+
+.chapter-btn:hover {
+  background: var(--bg-hover);
+  color: var(--color-text-main);
+}
+
+.chapter-btn:focus-visible {
+  background: var(--bg-hover);
+  color: var(--color-text-main);
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: 2px;
 }
 
 /* Loading / error state — ON the cover, never in the column's flow.

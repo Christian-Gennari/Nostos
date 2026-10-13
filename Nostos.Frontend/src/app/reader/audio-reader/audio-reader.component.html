@@ -28,6 +28,27 @@
   </div>
 
   <div class="controls">
+    <!-- The chapter being played (issue #904). It sits in the gap the cover and
+         the scrubber already keep between them, out of the column's flow, so a
+         chaptered book has the same geometry as one without and nothing moves
+         when the title changes. Not a live region: it changes during playback. -->
+    @if (hasChapters()) {
+    <div class="chapter-line">
+      @if (currentChapter(); as chapter) {
+      <button
+        type="button"
+        class="chapter-btn"
+        (click)="contentsRequested.emit()"
+        [title]="chapter"
+        [attr.aria-label]="'Current chapter: ' + chapter + '. Open contents'"
+        data-testid="audio-current-chapter"
+      >
+        {{ chapter }}
+      </button>
+      }
+    </div>
+    }
+
     <div class="scrubber">
       <input
         type="range"

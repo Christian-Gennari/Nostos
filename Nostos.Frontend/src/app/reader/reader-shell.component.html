@@ -229,7 +229,7 @@
       } @case ('epub') {
       <app-epub-reader #epubReader [bookId]="book()!.id" [book]="book()" [highlightColour]="highlightColour()" (noteCreated)="handleNoteCreated()" (noteLocated)="handleNoteLocated($event)" (selectionCaptured)="handleSelectionCaptured($event)" (selectionAnchored)="handleSelectionAnchored($event)" (selectionDismissed)="handleSelectionDismissed()" (commitFailed)="handleCommitFailed()" (exitRequested)="goBack()" (searchRequested)="openSearch()" (surfaceInteracted)="handleSurfaceInteraction()" />
       } @case ('audio') {
-      <app-audio-reader [bookId]="book()!.id" [book]="book()" />
+      <app-audio-reader [bookId]="book()!.id" [book]="book()" (contentsRequested)="openContents()" />
       } @default {
       <div class="reader-load-error" role="alert">
         <nostos-icon name="warning" [size]="28"></nostos-icon>
