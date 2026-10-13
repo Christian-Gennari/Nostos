@@ -51,10 +51,10 @@
 
         <ul class="manage-members">
           @for (member of members(); track member.id) {
-          <li class="manage-member" [class.is-current]="member.id === currentBookId()">
-            <span class="manage-member-text">
-              <span class="manage-member-title">{{ member.title }}</span>
-              <span class="manage-member-author">{{ member.author || 'Unknown author' }}</span>
+          <li appChoiceRow class="manage-member" [selected]="member.id === currentBookId()" [class.is-current]="member.id === currentBookId()">
+            <span class="manage-member-text nostos-choice-row__text">
+              <span class="manage-member-title nostos-choice-row__title">{{ member.title }}</span>
+              <span class="manage-member-author nostos-choice-row__sub">{{ member.author || 'Unknown author' }}</span>
             </span>
             <!-- The book you are viewing takes the row's action slot, as a pill. It
                  is state, not an action, so it wears the page's own "you are here"
@@ -126,14 +126,15 @@
           <li>
             <button
               type="button"
+              appChoiceRow
               class="manage-link-candidate"
               [disabled]="busy()"
               (click)="linkRequest.emit(candidate)"
             >
-              <span class="manage-link-candidate-text">
-                <span class="manage-member-title">{{ candidate.title }}</span>
+              <span class="manage-link-candidate-text nostos-choice-row__text">
+                <span class="manage-member-title nostos-choice-row__title">{{ candidate.title }}</span>
                 @if (candidate.author) {
-                <span class="manage-member-author">{{ candidate.author }}</span>
+                <span class="manage-member-author nostos-choice-row__sub">{{ candidate.author }}</span>
                 }
               </span>
               @if ((candidate.editionCount || 1) > 1) {

@@ -17,6 +17,7 @@ import { ButtonComponent } from '../../ui/button/button.component';
 import { LoadingIndicatorComponent } from '../../ui/loading-indicator/loading-indicator.component';
 import { NoticeComponent } from '../../ui/notice/notice.component';
 import { IconTileComponent } from '../../ui/icon-tile/icon-tile.component';
+import { ChoiceRowComponent } from '../../ui/choice-row/choice-row.component';
 
 /** How an edition can be reached from the one being read. */
 export type SwitchKind = 'audiobook' | 'epub' | 'pdf' | 'ebook';
@@ -47,6 +48,7 @@ interface DeclinedState {
   selector: 'app-switch-edition-dialog',
   standalone: true,
   imports: [
+    ChoiceRowComponent,
     IconTileComponent,
     NoticeComponent,
     ModalShell,

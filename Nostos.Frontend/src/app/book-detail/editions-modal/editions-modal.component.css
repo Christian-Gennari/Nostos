@@ -154,98 +154,27 @@
   list-style: none;
 }
 
-/* `.edition-select-card`, verbatim: same radius, border, surface, padding and ink
-   as the edition rows on the page. Because both shapes now carry the same padding
-   and the same two text lines, the member row and the candidate row sit on the same
-   height — measured 56 vs 57px, where the old pair was 62 vs 57 and had to be
-   levelled with a `min-height` on one of them. */
-.manage-member,
-.manage-link-candidate {
-  display: flex;
-  align-items: center;
-  gap: 0.7rem;
-  width: 100%;
-  padding: 0.6rem 0.7rem;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-surface);
-  background: var(--bg-surface);
-  color: var(--color-text-main);
-  text-align: left;
-  font: inherit;
-}
-
-/* "You are here", as `.edition-select-card.active`: the selection fill and ink the
-   page already uses. State that is only a fill colour is unreadable to someone who
-   cannot separate the two fills, which is why the row ALSO carries the Current
-   badge — same as the page. */
-.manage-member.is-current {
-  background: var(--selection-surface);
-  border-color: var(--selection-surface);
-  color: var(--selection-ink);
-}
-
-.manage-link-candidate {
-  cursor: pointer;
-  transition:
-    background 0.15s ease,
-    border-color 0.15s ease,
-    color 0.15s ease;
-}
-
-/* The hover edge the Brain's merge targets use, as on the page's rows. */
-.manage-link-candidate:hover:not(:disabled) {
-  background: var(--bg-hover);
-  border-color: var(--color-primary-dim);
-  color: var(--color-text-main);
-}
-
-.manage-link-candidate:focus-visible,
+/* Member and candidate rows are the shared `appChoiceRow`, the same row as the
+   edition rows on the book page: box, text tiers, hover, focus and the
+   "you are here" fill. State that is only a fill colour is unreadable to
+   someone who cannot separate the two fills, which is why the current row ALSO
+   carries the Current badge. What stays here is what only these rows have. */
 .manage-member-action:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: -2px;
 }
 
-.manage-link-candidate:disabled,
 .manage-member-action:disabled {
   opacity: 0.5;
   cursor: default;
 }
 
-.manage-member-text,
-.manage-link-candidate-text {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  flex: 1;
-}
-
-/* `.card-format-title`: the title line of an edition row. Rows here carried
-   12.8px/500, which is neither the page's row title (0.88rem/600) nor the
-   library's (0.88rem/600) — it was the third value for the same job. */
-.manage-member-title {
-  font-size: 0.88rem;
-  font-weight: var(--fw-semibold);
-  line-height: 1.25;
-  color: inherit;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* `.card-format-sub`. */
+/* A long title or author is cut, not wrapped: the row's action must stay put. */
+.manage-member-title,
 .manage-member-author {
-  font-size: 0.74rem;
-  line-height: 1.3;
-  margin-top: 2px;
-  color: var(--color-text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-/* `.edition-select-card.active .card-format-sub`. */
-.manage-member.is-current .manage-member-author {
-  color: color-mix(in srgb, var(--selection-ink) 78%, transparent);
 }
 
 /* `.card-status-pill.current`, verbatim — the page's own words for this state, in

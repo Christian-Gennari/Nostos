@@ -700,105 +700,16 @@
   list-style: none;
 }
 
-.edition-select-card {
-  display: flex;
-  align-items: center;
-  gap: 0.7rem;
-  padding: 0.6rem 0.7rem;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-surface);
-  background: var(--bg-surface);
-  color: var(--color-text-main);
-  text-align: left;
-  font: inherit;
-  /* The current row is a plain <div>, so the box has to be shared by both
-     elements rather than living on `button` alone. */
-  width: 100%;
-}
-
-button.edition-select-card {
-  cursor: pointer;
-  transition:
-    background 0.15s ease,
-    border-color 0.15s ease,
-    color 0.15s ease;
-}
-
-/* `--color-primary-dim`, the hover edge the Brain's merge targets use, not
-   `--border-focus`: that token is an ink colour doing border duty and it made
-   the border read as a second, competing selection state. The old rule also
-   translated the row 1px up and added a shadow, which is exactly the "card"
-   language the section is moving away from. */
-button.edition-select-card:hover {
-  background: var(--bg-hover);
-  border-color: var(--color-primary-dim);
-}
-
-button.edition-select-card:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: -2px;
-}
-
-/* The current edition. Uses the app's SELECTION role (`--selection-surface` /
-   `--selection-ink`), the same pair the Library sidebar and the Brain's index
-   row fill with: forest with porcelain ink in light, raised slate in dark. It
-   is the only treatment on the page that says "this one", and unlike the old
-   accent-tinted card + glow it needs no theme-specific override. */
-.edition-select-card.active {
-  background: var(--selection-surface);
-  border-color: var(--selection-surface);
-  color: var(--selection-ink);
-}
-
-/* On the filled row the icon tile and every text tier must derive from the row's
-   foreground: the fixed greys would otherwise sit on the dark fill unreadably. */
-.edition-select-card.active .card-icon-frame {
-  background: color-mix(in srgb, var(--selection-ink) 18%, transparent);
-  color: var(--selection-ink);
-}
-
-.card-content {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  flex: 1;
-}
-
-.card-format-title {
-  font-size: 0.88rem;
-  font-weight: var(--fw-semibold);
-  line-height: 1.25;
-}
-
+/* The row itself (box, text tiers, hover, focus, the selected fill) is the
+   shared `appChoiceRow`. What stays here is what only this page's rows have. */
 .card-format-sub {
-  font-size: 0.74rem;
-  color: var(--color-text-muted);
-  line-height: 1.3;
-  margin-top: 2px;
   white-space: normal;
-  word-break: break-word;
-}
-
-.edition-select-card.active .card-format-sub {
-  color: color-mix(in srgb, var(--selection-ink) 78%, transparent);
 }
 
 .card-meta-line {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  margin-top: 2px;
-  font-size: 0.72rem;
-  /* `--color-text-muted`, not `--color-text-light`. Measured on the inactive
-     row, `--light` put the progress line at 3.62:1 against the white card —
-     below AA for 11.5px text, and this is the line that carries whether the
-     other edition has been read. The sub line already used `--muted` (6.89:1),
-     so the two now match and the hierarchy is carried by size and position. */
-  color: var(--color-text-muted);
-}
-
-.edition-select-card.active .card-meta-line {
-  color: color-mix(in srgb, var(--selection-ink) 70%, transparent);
 }
 
 .card-status-pill.finished {
