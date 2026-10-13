@@ -257,7 +257,7 @@
   background: var(--bg-surface);
   color: var(--color-text-main);
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-surface);
   box-shadow: var(--shadow-md);
   font-size: 0.8125rem;
   line-height: 1.35;
