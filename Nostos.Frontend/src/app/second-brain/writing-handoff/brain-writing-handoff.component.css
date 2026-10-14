@@ -245,13 +245,6 @@
   cursor: pointer;
 }
 
-.open-after input {
-  width: 1.15rem;
-  height: 1.15rem;
-  flex: 0 0 1.15rem;
-  margin: 0;
-  accent-color: var(--selection-surface);
-}
 
 .handoff-loading {
   display: grid;

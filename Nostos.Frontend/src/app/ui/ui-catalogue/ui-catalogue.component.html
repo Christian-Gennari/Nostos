@@ -361,7 +361,7 @@
     <div class="catalogue-section-heading">
       <div>
         <p class="catalogue-kicker">Primitives</p>
-        <h2 id="catalogue-switch">Switch, Chip and Badge</h2>
+        <h2 id="catalogue-switch">Switch, Checkbox, Chip and Badge</h2>
       </div>
       <p>Interactive capsules and passive status remain separate semantic roles.</p>
     </div>
@@ -379,6 +379,22 @@
           <label appSwitch>
             <input type="checkbox" aria-label="Disabled switch example" disabled />
           </label>
+        </div>
+      </div>
+
+      <div class="catalogue-example">
+        <span class="catalogue-label">Checkbox and radio</span>
+        <div class="catalogue-stack">
+        <div class="catalogue-row">
+          <label class="catalogue-check"><input type="checkbox" appCheckbox /> Off</label>
+          <label class="catalogue-check"><input type="checkbox" appCheckbox checked /> On</label>
+          <label class="catalogue-check"><input type="checkbox" appCheckbox disabled /> Disabled</label>
+        </div>
+        <div class="catalogue-row">
+          <label class="catalogue-check"><input type="radio" appRadio name="catalogue-radio" checked /> EPUB</label>
+          <label class="catalogue-check"><input type="radio" appRadio name="catalogue-radio" /> PDF</label>
+          <label class="catalogue-check"><input type="radio" appRadio name="catalogue-radio" disabled /> Disabled</label>
+        </div>
         </div>
       </div>
 

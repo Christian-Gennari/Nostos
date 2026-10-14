@@ -86,9 +86,7 @@
 }
 
 .changeset__step-control input {
-  flex: none;
-  margin: 3px 0 0;
-  accent-color: var(--color-primary);
+  margin-top: 2px;
 }
 
 .changeset__step-control input:disabled {

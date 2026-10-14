@@ -36,6 +36,7 @@ import { NoticeComponent } from '../ui/notice/notice.component';
 import { IconTileComponent } from '../ui/icon-tile/icon-tile.component';
 import { DropZoneComponent } from '../ui/drop-zone/drop-zone.component';
 import { SegmentedComponent } from '../ui/segmented/segmented.component';
+import { RadioDirective } from '../ui/check/check.directive';
 
 type AddBookIntentKind = 'upload' | 'source' | 'physical' | 'manual';
 
@@ -51,6 +52,7 @@ export interface AddBookPrefill {
   selector: 'app-add-book-modal',
   standalone: true,
   imports: [
+    RadioDirective,
     DropZoneComponent,
     IconTileComponent,
     NoticeComponent,
