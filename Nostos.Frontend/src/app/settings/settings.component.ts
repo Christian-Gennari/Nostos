@@ -139,7 +139,7 @@ const AI_PROVIDER_COPY = {
   modelsError: (message: string) => `Could not load models: ${message}`,
   connectionError: (message: string) => `Connection failed: ${message}`,
   keyCleared: 'Key removed. Falling back to environment variable if present.',
-  oldCardEmptyState: 'Set up an AI provider in Settings to enable this.',
+  oldCardEmptyState: 'Connect an AI provider in Settings to turn this on.',
   // The reviewed set covers the four card actions but not a failed GET/PUT or
   // the configured-key signals, so these keep their earlier wording.
   configured: 'Configured',

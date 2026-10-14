@@ -457,6 +457,7 @@ public static class NostosProductComposition
         routes.MapProviderEndpoints(policies);
         routes.MapProviderSettingsEndpoints();
         routes.MapImportEndpoints();
+        routes.MapLibraryChangesEndpoints();
         routes.MapNotesEndpoints();
         routes.MapNoteProcessingEndpoints();
         routes.MapCollectionsEndpoints();

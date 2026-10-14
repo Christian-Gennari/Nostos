@@ -1,7 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { signal } from '@angular/core';
 import { provideRouter } from '@angular/router';
-import { of, throwError } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 
 import { SidebarCollections } from './sidebar-collections.component';
 import { CollectionsService } from '../../core/services/collections.service';
@@ -9,6 +9,7 @@ import { LibraryPreferencesService } from '../../core/services/library-preferenc
 import { ToastService } from '../../core/services/toast.service';
 import { Collection } from '../../core/dtos/collection.dtos';
 import { ReadingListService } from '../../core/services/reading-list.service';
+import { LibraryChangesService } from '../../core/services/library-changes.service';
 
 describe('SidebarCollections', () => {
   let component: SidebarCollections;
@@ -32,7 +33,11 @@ describe('SidebarCollections', () => {
   const rootCollection: Collection = { id: 'root-1', name: 'Root', parentId: null };
   const nestedCollection: Collection = { id: 'nested-1', name: 'Nested', parentId: 'root-1' };
 
+  /** "The library changed elsewhere", driven per test. */
+  let libraryChanged: Subject<void>;
+
   beforeEach(async () => {
+    libraryChanged = new Subject<void>();
     localStorage.clear();
     collectionsService = {
       sidebarExpanded: signal(true),
@@ -60,6 +65,7 @@ describe('SidebarCollections', () => {
         { provide: ReadingListService, useValue: readingList },
         { provide: CollectionsService, useValue: collectionsService },
         { provide: ToastService, useValue: toast },
+        { provide: LibraryChangesService, useValue: { watch: () => libraryChanged } },
       ],
     }).compileComponents();
 
@@ -68,6 +74,32 @@ describe('SidebarCollections', () => {
     fixture = TestBed.createComponent(SidebarCollections);
     component = fixture.componentInstance;
     await fixture.whenStable();
+  });
+
+  it('re-reads collections and counts when the library changes elsewhere', () => {
+    fixture.detectChanges();
+    collectionsService.list.mockClear();
+    collectionsService.getCounts.mockClear();
+
+    libraryChanged.next();
+    TestBed.flushEffects();
+
+    expect(collectionsService.list).toHaveBeenCalledTimes(1);
+    expect(collectionsService.getCounts).toHaveBeenCalledTimes(1);
+  });
+
+  it('holds the re-read while a collection is being renamed inline', () => {
+    fixture.detectChanges();
+    collectionsService.list.mockClear();
+    component.editingId.set('c1');
+
+    libraryChanged.next();
+    TestBed.flushEffects();
+    expect(collectionsService.list).not.toHaveBeenCalled();
+
+    component.editingId.set(null);
+    TestBed.flushEffects();
+    expect(collectionsService.list).toHaveBeenCalledTimes(1);
   });
 
   it('does not own selection state on the HTTP service', () => {
