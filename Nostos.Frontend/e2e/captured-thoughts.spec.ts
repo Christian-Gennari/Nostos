@@ -17,7 +17,6 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
       const { baseUrl } = loadFixture();
       const beforeTopicIds = await snapshotTopicIds(baseUrl);
       const previousProvider = await apiGet<AiProviderSettings>(baseUrl, '/api/settings/ai-provider');
-      const previousMode = await apiGet(baseUrl, '/api/settings/assistant');
       expect(previousProvider.llm.hasKey, 'fixture must have no real provider credential').toBe(false);
       let providerCalls = 0;
       const server = createServer((request, response) => {
@@ -81,10 +80,6 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
           await before.goto(`${providerUrl}/second-brain?noteId=${note.id}`);
           await expect(before.getByTestId('brain-note-inspector')).toBeVisible();
           await capturePng(before, `captured-thoughts-note-${size}-${theme}-before`);
-          await before.goto(`${providerUrl}/settings`);
-          await before.getByRole('tab', { name: 'Assistant', exact: true }).click();
-          await before.getByTestId('capture-processing-mode').scrollIntoViewIfNeeded();
-          await capturePng(before, `captured-thoughts-settings-${size}-${theme}-before`);
           await before.close();
         }
 
@@ -147,17 +142,12 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
         await closeOriginal.click();
         await page.unroute(`**/api/notes/${note.id}/raw`);
 
+        // Ask Nostos no longer offers to rephrase captures: there is no wording
+        // setting to choose, and notes polished before keep their original above.
         await page.goto(`${baseUrl}/settings`);
         await page.getByRole('tab', { name: 'Assistant', exact: true }).click();
-        const dropdown = page.getByTestId('capture-processing-mode');
-        await dropdown.getByRole('combobox').click();
-        await dropdown.getByRole('option', { name: 'Clarify', exact: true }).click();
-        await expect.poll(async () => (await apiGet(baseUrl, '/api/settings/assistant')).captureProcessingMode)
-          .toBe('clarify');
-        await dropdown.scrollIntoViewIfNeeded();
-        await expect(page.getByText('Saved thought wording', { exact: true })).toBeVisible();
-        await capturePng(page, `captured-thoughts-settings-${size}-${theme}-after`);
-        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+        await expect(page.getByTestId('capture-processing-mode')).toHaveCount(0);
+        await expect(page.getByText('Saved thought wording', { exact: true })).toHaveCount(0);
         const manual = await apiPost<Note>(baseUrl, `/api/books/${book.id}/notes`, { content: 'My manual words.' });
         expect(manual.processingMode).toBe('verbatim');
         expect(providerCalls).toBe(1);
@@ -167,7 +157,6 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
       } finally {
         try {
           await put('/api/settings/ai-provider', { llm: { ...previousProvider.llm, apiKey: '' } });
-          await put('/api/settings/assistant', previousMode);
           if (bookId) await cleanupBrain(baseUrl, { bookId, topicNames: [], beforeTopicIds });
         } finally {
           server.closeAllConnections();

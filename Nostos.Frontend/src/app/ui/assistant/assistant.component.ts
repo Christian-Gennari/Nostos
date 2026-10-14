@@ -353,9 +353,9 @@ export class AssistantComponent {
     // Following the newest turn is a DOM measurement, so it belongs after
     // render, and it must run for every block that can add height under the
     // transcript: the reply, a capture acknowledgement, the topic
-    // suggestions, a proposed plan, a follow-up question, or the original-text
-    // panel opening. The scroll container is read and written in one go, which
-    // is what the mixed phase is for.
+    // suggestions, a proposed plan, or a follow-up question. The scroll
+    // container is read and written in one go, which is what the mixed phase
+    // is for.
     afterRenderEffect({
       mixedReadWrite: () => {
         this.assistant.entries();
@@ -363,7 +363,6 @@ export class AssistantComponent {
         this.assistant.suggestions();
         this.assistant.pendingPlan();
         this.assistant.pendingAnchor();
-        this.assistant.rawOpen();
         this.expandedSourceGroups();
         this.observeScrollGeometry(
           this.body()?.nativeElement ?? null,

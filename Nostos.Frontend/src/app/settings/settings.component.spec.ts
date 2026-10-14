@@ -21,8 +21,6 @@ import {
   LibraryPreferencesService,
 } from '../core/services/library-preferences.service';
 import { AssistantStatusService } from '../ui/assistant/assistant-status.service';
-import { AssistantSettingsService } from '../ui/assistant/assistant-settings.service';
-import { ProcessingMode } from '../ui/assistant/assistant-settings.service';
 import { AiProviderService } from '../core/services/ai-provider.service';
 import { ProviderSettingsService } from '../core/services/provider-settings.service';
 import { ProviderSettingsItem, ProviderSettingsResponse } from '../core/dtos/provider.dtos';
@@ -383,22 +381,6 @@ const assistantStatusMock = {
   refresh: vi.fn(),
 };
 
-/**
- * The stored capture-processing choice, driven by the test. The real GET/PUT
- * round-tripped by `AssistantSettingsService`'s own spec; here the card only
- * needs the stored value and its failure flags to change.
- */
-const assistantSettingsMock = {
-  captureProcessingMode: signal<ProcessingMode>('verbatim'),
-  loadFailed: signal(false),
-  saveFailed: signal(false),
-  ensureLoaded: vi.fn(),
-  refresh: vi.fn(),
-  setCaptureProcessingMode: vi.fn((mode: ProcessingMode) => {
-    assistantSettingsMock.captureProcessingMode.set(mode);
-  }),
-};
-
 const externalMediaServiceMock = {
   status: vi.fn(() =>
     of({
@@ -447,7 +429,6 @@ describe('SettingsComponent backup-only surface', () => {
         { provide: OpdsService, useValue: opdsServiceMock },
         { provide: ToastService, useValue: toastMock },
         { provide: AssistantStatusService, useValue: assistantStatusMock },
-        { provide: AssistantSettingsService, useValue: assistantSettingsMock },
         { provide: AiProviderService, useValue: aiProviderServiceMock },
         { provide: ProviderSettingsService, useValue: providerSettingsServiceMock },
         { provide: DeploymentCapabilitiesService, useValue: capabilitiesServiceMock },
@@ -557,11 +538,6 @@ describe('SettingsComponent backup-only surface', () => {
     toastMock.success.mockClear();
     assistantStatusMock.available.set(true);
     assistantStatusMock.refresh.mockClear();
-    assistantSettingsMock.captureProcessingMode.set('verbatim');
-    assistantSettingsMock.loadFailed.set(false);
-    assistantSettingsMock.saveFailed.set(false);
-    assistantSettingsMock.refresh.mockClear();
-    assistantSettingsMock.setCaptureProcessingMode.mockClear();
     aiProviderServiceMock.get.mockClear();
     aiProviderServiceMock.get.mockReturnValue(of(aiProviderSettings));
     aiProviderServiceMock.update.mockClear();
@@ -1961,44 +1937,11 @@ describe('SettingsComponent backup-only surface', () => {
     expect(preferences.assistantEnabled()).toBe(false);
   });
 
-  it('renders the stored capture-processing value with its description', () => {
-    assistantSettingsMock.captureProcessingMode.set('light_polish');
+  it('offers no capture-wording setting: Ask Nostos saves your words as you gave them', () => {
     render();
 
-    const dropdown = captureModeDropdown();
-    const trigger = dropdown!.querySelector('.nostos-dropdown__trigger') as HTMLButtonElement;
-    expect(trigger.textContent).toContain('Light polish');
-    expect(trigger.getAttribute('aria-label')).toBe('Saved thought wording');
-
-    const card = assistantCard();
-    expect(card!.textContent).toContain('Ask AI to tidy grammar and filler');
-    expect(card!.textContent).toContain(
-      'For thoughts saved through Ask Nostos, typed or spoken. Quotes stay exact.',
-    );
-  });
-
-  it('stores a changed capture-processing value through the settings service', () => {
-    render();
-
-    const dropdown = captureModeDropdown()!;
-    (dropdown.querySelector('.nostos-dropdown__trigger') as HTMLButtonElement).click();
-    fixture.detectChanges();
-    const clarify = Array.from(dropdown.querySelectorAll('[role="option"]')).find((option) =>
-      option.textContent?.includes('Clarify'),
-    ) as HTMLElement;
-    clarify.click();
-    fixture.detectChanges();
-
-    expect(assistantSettingsMock.setCaptureProcessingMode).toHaveBeenCalledWith('clarify');
-  });
-
-  it('says plainly when the capture-processing setting could not be read', () => {
-    assistantSettingsMock.loadFailed.set(true);
-    render();
-
-    const card = assistantCard();
-    expect(card!.textContent).toContain('Could not read this setting');
-    expect(captureModeDropdown()).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="capture-processing-mode"]')).toBeNull();
+    expect(assistantCard()!.textContent).not.toContain('Saved thought wording');
   });
 
   // ------------------------------------------------------------------
@@ -2652,12 +2595,6 @@ describe('SettingsComponent backup-only surface', () => {
     ) as HTMLInputElement;
   }
 
-  function captureModeDropdown(): HTMLElement | null {
-    return fixture.nativeElement.querySelector(
-      '[data-testid="capture-processing-mode"]',
-    ) as HTMLElement | null;
-  }
-
   function erCard(): HTMLElement | null {
     const cards = Array.from(
       fixture.nativeElement.querySelectorAll('.settings-card'),
@@ -2747,7 +2684,6 @@ describe('SettingsComponent shared library transfer host', () => {
         { provide: OpdsService, useValue: opdsServiceMock },
         { provide: ToastService, useValue: toastMock },
         { provide: AssistantStatusService, useValue: assistantStatusMock },
-        { provide: AssistantSettingsService, useValue: assistantSettingsMock },
         { provide: AiProviderService, useValue: aiProviderServiceMock },
         { provide: ProviderSettingsService, useValue: providerSettingsServiceMock },
         { provide: DeploymentCapabilitiesService, useValue: capabilitiesServiceMock },

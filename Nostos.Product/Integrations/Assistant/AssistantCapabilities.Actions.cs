@@ -68,8 +68,8 @@ public static partial class AssistantCapabilities
             {
               "type": "object",
               "properties": {
-                "content": { "type": "string", "description": "The user's own words for the note, exactly as they said or wrote them, with only any instruction removed. Never paraphrase, shorten, translate, correct or add to them. A separate setting decides how the words are rendered." },
-                "selectedText": { "type": "string", "description": "A passage quoted from the book itself. When the reader has a passage selected it is already in the current context — capture it here rather than asking for it. It is stored as the quotation and is never rewritten by any processing setting." },
+                "content": { "type": "string", "description": "The user's own words for the note, exactly as they said or wrote them, with only any instruction removed. Never paraphrase, shorten, translate, correct or add to them." },
+                "selectedText": { "type": "string", "description": "A passage quoted from the book itself. When the reader has a passage selected it is already in the current context — capture it here rather than asking for it. It is stored as the quotation exactly as given." },
                 "captureSource": { "type": "string", "description": "Where the words came from. Defaults to 'text'." }
               },
               "required": [],

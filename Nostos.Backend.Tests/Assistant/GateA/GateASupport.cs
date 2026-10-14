@@ -32,7 +32,6 @@ internal sealed class GateAHost : IDisposable
     public FakeLlmProvider Llm { get; }
     public AssistantPlanStore Plans { get; }
     public AssistantContinuationStore Continuations { get; }
-    public AssistantSettingsService Settings { get; }
     public AssistantOrchestrator Orchestrator { get; }
 
     private GateAHost(
@@ -42,7 +41,6 @@ internal sealed class GateAHost : IDisposable
         FakeLlmProvider llm,
         AssistantPlanStore plans,
         AssistantContinuationStore continuations,
-        AssistantSettingsService settings,
         AssistantOrchestrator orchestrator)
     {
         Db = db;
@@ -51,7 +49,6 @@ internal sealed class GateAHost : IDisposable
         Llm = llm;
         Plans = plans;
         Continuations = continuations;
-        Settings = settings;
         Orchestrator = orchestrator;
     }
 
@@ -106,19 +103,17 @@ internal sealed class GateAHost : IDisposable
         configure?.Invoke(assistantOptions);
         var plans = new AssistantPlanStore();
         var continuations = new AssistantContinuationStore();
-        var settings = new AssistantSettingsService(factory);
 
         var orchestrator = new AssistantOrchestrator(
             registry,
             llm,
             plans,
             continuations,
-            settings,
             libraryService,
             assistantOptions,
             NullLogger<AssistantOrchestrator>.Instance);
 
-        return new GateAHost(db, factory, registry, llm, plans, continuations, settings, orchestrator);
+        return new GateAHost(db, factory, registry, llm, plans, continuations, orchestrator);
     }
 
     public void Dispose() => Db.Dispose();

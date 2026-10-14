@@ -38,11 +38,6 @@ import { InputDirective } from '../ui/form-control/form-control.directive';
 import { DropdownComponent, type DropdownOption } from '../ui/dropdown/dropdown.component';
 import { LibraryPreferencesService } from '../core/services/library-preferences.service';
 import { AssistantStatusService } from '../ui/assistant/assistant-status.service';
-import {
-  AssistantSettingsService,
-  PROCESSING_MODES,
-  ProcessingMode,
-} from '../ui/assistant/assistant-settings.service';
 import { AiProviderService } from '../core/services/ai-provider.service';
 import { ProviderSettingsService } from '../core/services/provider-settings.service';
 import { ProviderSettingsItem } from '../core/dtos/provider.dtos';
@@ -145,23 +140,6 @@ const AI_PROVIDER_COPY = {
   connectionError: (message: string) => `Connection failed: ${message}`,
   keyCleared: 'Key removed. Falling back to environment variable if present.',
   oldCardEmptyState: 'Connect an AI provider in Settings to turn this on.',
-  // Capture processing (issue #262): the stored, global choice that used to be a
-  // per-capture select in the widget. The description shown is the one belonging
-  // to the currently selected option, followed by `captureScope`.
-  //
-  // This global preference applies only to Ask Nostos captures. It never
-  // silently processes direct note creation, imports, edits or existing notes.
-  captureLabel: 'Saved thought wording',
-  captureScope: 'For thoughts saved through Ask Nostos, typed or spoken. Quotes stay exact. Manual notes, imports, edits and existing notes are unchanged. The original wording is kept when AI rephrases a thought.',
-  captureDescriptions: {
-    verbatim: 'Save your exact wording, without AI rephrasing.',
-    light_polish: 'Ask AI to tidy grammar and filler while preserving your meaning and voice.',
-    clarify: 'Ask AI to reorganize and rephrase your thought for clarity, without adding ideas.',
-  } as Record<ProcessingMode, string>,
-  captureLoadFailed: 'Could not read this setting',
-  captureLoadFailedHelp:
-    'The server did not answer the request for how your captures are saved. Reload the page to try again.',
-  captureSaveFailed: 'Could not save this setting. Your previous choice is still in effect.',
   // The reviewed set covers the four card actions but not a failed GET/PUT or
   // the configured-key signals, so these keep their earlier wording.
   configured: 'Configured',
@@ -306,7 +284,6 @@ export class SettingsComponent implements OnInit, OnDestroy {
   private toast = inject(ToastService);
   private themeService = inject(ThemeService);
   private assistantStatus = inject(AssistantStatusService);
-  private assistantSettings = inject(AssistantSettingsService);
   private preferences = inject(LibraryPreferencesService);
   private aiProvider = inject(AiProviderService);
   private providerSettingsService = inject(ProviderSettingsService);
@@ -550,12 +527,6 @@ export class SettingsComponent implements OnInit, OnDestroy {
       : this.copy.oldCardEmptyState,
   );
 
-  /** The stored capture-processing choice, exposed to the Reading assistant card. */
-  readonly captureProcessingMode = this.assistantSettings.captureProcessingMode;
-
-  /** The three modes in presentation order, with the labels the dropdown shows. */
-  readonly processingModes = PROCESSING_MODES;
-
   readonly backupIntervalOptions = [
     { value: '6', label: 'Every 6 hours' },
     { value: '12', label: 'Every 12 hours' },
@@ -569,17 +540,6 @@ export class SettingsComponent implements OnInit, OnDestroy {
     { value: '10', label: '10' },
     { value: '20', label: '20' },
   ] satisfies readonly DropdownOption[];
-
-  /** True when the server did not answer the capture setting GET. */
-  readonly assistantSettingsFailed = this.assistantSettings.loadFailed;
-
-  /** True when the capture setting PUT failed; the previous choice stays in force. */
-  readonly assistantSettingsSaveFailed = this.assistantSettings.saveFailed;
-
-  /** The description of the selected option; the card appends the fixed scope note. */
-  readonly captureModeDescription = computed(
-    () => this.copy.captureDescriptions[this.captureProcessingMode()],
-  );
 
   openHighlightImport(): void {
     this.highlightImport.open();
@@ -620,10 +580,6 @@ export class SettingsComponent implements OnInit, OnDestroy {
   setAssistantVoiceEnabled(event: Event): void {
     const checked = (event.target as HTMLInputElement).checked;
     this.preferences.setAssistantVoiceEnabled(checked);
-  }
-
-  changeCaptureProcessingMode(mode: string): void {
-    this.assistantSettings.setCaptureProcessingMode(mode as ProcessingMode);
   }
 
   // --- Book providers card (issue #774) --------------------------------
@@ -881,7 +837,6 @@ export class SettingsComponent implements OnInit, OnDestroy {
         }
 
         this.assistantStatus.refresh();
-        this.assistantSettings.refresh();
       },
       error: () => {
         this.deploymentCapabilities.set(null);

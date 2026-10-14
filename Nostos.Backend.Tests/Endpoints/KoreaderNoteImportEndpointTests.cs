@@ -17,9 +17,6 @@ public sealed class KoreaderNoteImportEndpointTests
     {
         using var factory = new LibraryEndpointFactory();
         var client = factory.CreateClient();
-        var setting = await client.PutAsJsonAsync("/api/settings/assistant",
-            new AssistantSettingsUpdateRequest("clarify"));
-        setting.StatusCode.Should().Be(HttpStatusCode.OK);
         var book = await CreateBookAsync(client, "Synthetic Reader Book", "Ada Reader");
         var fixture = FixturePath("metadata.lua");
 
