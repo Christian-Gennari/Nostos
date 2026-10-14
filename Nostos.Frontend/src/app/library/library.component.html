@@ -187,12 +187,12 @@
               @if (bookProgress(book); as failure) {
               <div class="item-failure-actions">
                 @if (failure.canRetry) {
-                <button type="button" class="item-action is-primary" (click)="retryImport(failure, $event)">
+                <button type="button" appButton variant="primary" size="sm" class="item-action" (click)="retryImport(failure, $event)">
                   <nostos-icon name="arrow-counter-clockwise" [size]="13"></nostos-icon>
                   <span>Retry</span>
                 </button>
                 }
-                <button type="button" class="item-action" (click)="dismissImport(failure, $event)">
+                <button type="button" appButton variant="secondary" size="sm" class="item-action" (click)="dismissImport(failure, $event)">
                   <nostos-icon name="x" [size]="13"></nostos-icon>
                   <span>Dismiss</span>
                 </button>
@@ -472,12 +472,12 @@
           @if (bookProgress(book); as failure) {
           <div class="item-failure-actions">
             @if (failure.canRetry) {
-            <button type="button" class="item-action is-primary" (click)="retryImport(failure, $event)">
+            <button type="button" appButton variant="primary" size="sm" class="item-action" (click)="retryImport(failure, $event)">
               <nostos-icon name="arrow-counter-clockwise" [size]="13"></nostos-icon>
               <span>Retry</span>
             </button>
             }
-            <button type="button" class="item-action" (click)="dismissImport(failure, $event)">
+            <button type="button" appButton variant="secondary" size="sm" class="item-action" (click)="dismissImport(failure, $event)">
               <nostos-icon name="x" [size]="13"></nostos-icon>
               <span>Dismiss</span>
             </button>

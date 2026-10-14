@@ -206,25 +206,9 @@
 /* An invitation, not a task: quiet until it is pointed at. */
 .entry-add-why {
   align-self: flex-start;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  padding: 0;
-  border: 0;
-  background: none;
-  font: inherit;
-  font-size: var(--text-sm);
-  line-height: 1.5;
-  color: var(--color-text-light);
-  cursor: pointer;
 }
 
 .entry-add-why:hover,
-.entry-add-why:focus-visible {
-  color: var(--color-text-main);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
 
 /* Three ranks of action, loudest first: a solid or outlined pill, a ghost
    pill, then bare glyphs. Nothing below the first rank carries a ground. */

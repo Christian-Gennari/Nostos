@@ -65,6 +65,8 @@
             } @else {
             <button
               type="button"
+              appButton
+              size="sm"
               class="manage-member-action"
               [disabled]="busy()"
               (click)="unlinkRequest.emit(member)"

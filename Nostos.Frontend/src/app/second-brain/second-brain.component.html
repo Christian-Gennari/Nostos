@@ -255,6 +255,9 @@
         @if (review.hasMore() && !review.error()) {
         <button
           type="button"
+          appButton
+          variant="ghost"
+          size="sm"
           class="review-load-more"
           [disabled]="review.loading()"
           (click)="review.loadPage()"
@@ -377,20 +380,25 @@
           <div class="row-actions" (click)="$event.stopPropagation()">
             <button
               type="button"
+              appIconButton
+              size="xs"
+              icon="pencil-simple"
+              [glyphSize]="13"
               class="row-action"
               [attr.aria-label]="'Rename ' + c.name"
               (click)="requestRename(c.id, $event)"
-            >
-              <nostos-icon name="pencil-simple" [size]="13"></nostos-icon>
-            </button>
+            ></button>
             <button
               type="button"
+              appIconButton
+              size="xs"
+              tone="danger"
+              icon="trash"
+              [glyphSize]="13"
               class="row-action danger"
               [attr.aria-label]="'Delete ' + c.name"
               (click)="requestDelete(c.id, $event)"
-            >
-              <nostos-icon name="trash" [size]="13"></nostos-icon>
-            </button>
+            ></button>
           </div>
           }
         </div>

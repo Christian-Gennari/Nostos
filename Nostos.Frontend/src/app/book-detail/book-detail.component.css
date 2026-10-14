@@ -729,36 +729,17 @@
    A footer action BELOW the rows, behind a divider, and centred so it cannot be
    mistaken for another edition row (as the first item in the stack it shared the
    rows' surface, border and radius and read as item #1). */
-.edition-section-action {
+/* appButton variant="link", laid out as a full-width footer behind a divider.
+   `button.` lifts these over the variant's own box rules. */
+button.edition-section-action {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.35rem;
   width: 100%;
   min-height: var(--control-h-touch);
   margin-top: 0.85rem;
   padding-top: 0.85rem;
-  /* The divider is a border on a transparent control, so it reads as a separator
-     between the rows and the action rather than as another bordered card. */
-  border: none;
   border-top: 1px solid var(--border-color);
-  background: none;
-  color: var(--color-text-muted);
-  font-family: 'Hanken Grotesk', sans-serif;
+  border-radius: 0;
   font-size: 0.78rem;
-  font-weight: var(--fw-medium);
-  cursor: pointer;
-  transition: color 0.12s ease;
-}
-
-.edition-section-action:hover {
-  color: var(--color-text-main);
-}
-
-.edition-section-action:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: 2px;
-  border-radius: var(--radius-sm);
 }
 
 /* The Edit chooser. It exists because 'metadata' is no longer the whole story —
@@ -1054,31 +1035,9 @@
    inside one reading surface turned the card into an action list. This also
    matches the idiom the Notes section below already uses (see `note-card`), so
    the page ships ONE disclosure affordance instead of two competing ones. */
+/* The toggles are appButton variant="link"; the section owns the gap above. */
 .expand-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
   margin: 0.875rem 0 0;
-  padding: 0;
-  width: auto;
-  background: none;
-  border: none;
-  border-radius: 0;
-  color: var(--color-text-muted);
-  font-size: 0.8rem;
-  font-weight: var(--fw-medium);
-  letter-spacing: 0.01em;
-  cursor: pointer;
-  transition: color 0.2s ease;
-}
-/* Scoped to devices that actually hover. On touch a tap latches :hover, which
-   would leave the control stuck in its hover colour. This replaces the old
-   `@media (max-width: 480px)` hover reset, which only existed to undo the
-   pill's fill on touch — there is no fill left to undo. */
-@media (hover: hover) {
-  .expand-btn:hover {
-    color: var(--color-text-main);
-  }
 }
 /* The chevron is a constant glyph that ROTATES, not a ↓/↑ swap: one control
    turning over reads as a state change, where two different glyphs read as two
@@ -1091,14 +1050,6 @@
 }
 .expand-btn .icon.rotated {
   transform: rotate(180deg);
-}
-/* `styles.css` resets the global `button { outline: 0 }`, so without this the
-   control is focusable and operable but invisible while focused. Applied to the
-   shared class, so BOTH toggles get a ring — the pre-existing synopsis button
-   previously had none. */
-.expand-btn:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: 2px;
 }
 .synopsis-metadata-block.expanded .description-text {
   line-clamp: unset;

@@ -31,31 +31,14 @@
   -webkit-mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
 }
 
-.expand-btn {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  border: none;
-  background: none;
-  padding: 4px 0;
+/* appButton variant="link"; `button.` keeps this padding over the variant's. */
+button.expand-btn {
   margin-top: 4px;
-  color: var(--color-primary);
+  padding: 4px 0;
   font-size: 0.75rem;
-  font-weight: var(--fw-medium);
-  cursor: pointer;
-  opacity: 0.8;
-  transition: opacity 0.2s;
 }
 
-.expand-btn:hover {
-  opacity: 1;
-  text-decoration: underline;
-}
 
-.expand-btn:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: -2px;
-}
 
 /* --- Quote Block -----------------------------------------------------------
    The quote is the reason a quote-note exists, so it is the hero of the card,

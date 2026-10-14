@@ -159,16 +159,6 @@
    "you are here" fill. State that is only a fill colour is unreadable to
    someone who cannot separate the two fills, which is why the current row ALSO
    carries the Current badge. What stays here is what only these rows have. */
-.manage-member-action:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: -2px;
-}
-
-.manage-member-action:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
 /* A long title or author is cut, not wrapped: the row's action must stay put. */
 .manage-member-title,
 .manage-member-author {
@@ -206,40 +196,23 @@
 
 /* --- Actions ----------------------------------------------------------- */
 
-/* The app's action recipe (`.primary-actions .pill-btn` in book-detail, and
-   confirm-modal's footer): stadium-shaped, 0.86rem/500, `0.5rem 0.9rem` — the
-   padding, not a fixed height, is what lands the box on the 36px rung. These two
-   controls were 3px-radius 44px buttons at weight 400: the only text actions in the
-   app that were neither a pill nor a filled bar. */
-.manage-member-action,
+/* Unlink is appButton sm. The candidate row's "Link" label is a span inside the
+   row's own button (a button cannot nest one), drawn to match it. */
 .manage-link-candidate-action {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.4rem;
+  gap: 6px;
   flex-shrink: 0;
-  padding: 0.5rem 0.9rem;
-  border: 1px solid var(--border-color);
+  min-height: var(--control-h-xs);
+  padding: 0 10px;
+  border: 1px solid var(--control-border);
   border-radius: var(--radius-action);
   background: var(--bg-surface);
   color: var(--color-text-main);
-  font-family: 'Hanken Grotesk', sans-serif;
-  font-size: 0.86rem;
+  font-size: var(--text-xs);
   font-weight: var(--fw-medium);
   white-space: nowrap;
-}
-
-.manage-member-action {
-  cursor: pointer;
-  transition:
-    background-color 0.15s ease,
-    border-color 0.15s ease,
-    color 0.15s ease;
-}
-
-.manage-member-action:hover:not(:disabled) {
-  background: var(--bg-hover);
-  border-color: var(--color-primary-dim);
 }
 
 /* --- Link picker ------------------------------------------------------- */

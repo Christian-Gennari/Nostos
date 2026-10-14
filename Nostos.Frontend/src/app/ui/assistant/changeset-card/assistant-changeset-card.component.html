@@ -50,6 +50,8 @@
   @if (hasDetails()) {
   <button
     type="button"
+    appButton
+    variant="link"
     class="changeset__details-toggle"
     [attr.aria-expanded]="detailsOpen()"
     (click)="toggleDetails()"

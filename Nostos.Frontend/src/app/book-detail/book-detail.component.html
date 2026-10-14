@@ -314,6 +314,8 @@
               @if (isReviewCollapsible()) {
               <button
                 type="button"
+                appButton
+                variant="link"
                 class="expand-btn review-toggle"
                 [attr.aria-expanded]="isReviewExpanded()"
                 aria-controls="personal-review-text"
@@ -345,6 +347,8 @@
                  no state at all to assistive tech. -->
             <button
               type="button"
+              appButton
+              variant="link"
               class="expand-btn"
               [attr.aria-expanded]="isDescriptionExpanded()"
               aria-controls="synopsis-text"
@@ -611,7 +615,7 @@
                  surface, border and radius as an edition row and read as item
                  #1, which also made the "2" count look wrong against three
                  bordered boxes (both defects caught in vision review). -->
-            <button type="button" class="edition-section-action" (click)="openEditions()">
+            <button type="button" appButton variant="link" class="edition-section-action" (click)="openEditions()">
               <nostos-icon name="stack" [size]="13"></nostos-icon>
               <span>Manage editions</span>
             </button>

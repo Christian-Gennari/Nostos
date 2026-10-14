@@ -340,15 +340,7 @@
 }
 
 .action-mini {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  background: transparent;
-  border: none;
-  padding: 0;
-  cursor: pointer;
+  /* appIconButton xxs owns the box; the tree owns the radius and the inks. */
   border-radius: var(--radius-md);
   color: var(--color-text-muted);
   flex-shrink: 0;
@@ -567,7 +559,8 @@
     padding-left: 10px;
   }
 
-  .action-mini {
+  /* `button.` out-weighs appIconButton's own xxs rung. */
+  button.action-mini {
     width: 44px;
     height: 44px;
   }

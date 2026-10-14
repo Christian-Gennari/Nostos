@@ -19,23 +19,7 @@
 }
 
 .picker-clear {
-  border: none;
-  background: none;
-  padding: 0;
-  cursor: pointer;
   font-size: 0.75rem;
-  color: var(--color-text-muted);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
-.picker-clear:hover {
-  color: var(--color-text-main);
-}
-
-.picker-clear:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: 2px;
 }
 
 /* ── Chips: current membership, removable one at a time ─────────────────── */

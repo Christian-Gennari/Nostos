@@ -75,7 +75,7 @@
     </div>
 
     @if (shouldShowExpandBtn) {
-    <button class="expand-btn" (click)="toggleExpand($event)">
+    <button type="button" appButton variant="link" class="expand-btn" (click)="toggleExpand($event)">
       <span>{{ isExpanded ? 'Show less' : 'Show more' }}</span>
       <nostos-icon
         [name]="isExpanded ? 'caret-up' : 'caret-down'"
