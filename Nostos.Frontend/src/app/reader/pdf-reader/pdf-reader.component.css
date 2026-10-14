@@ -108,6 +108,39 @@
   background-color: var(--hl-hover);
 }
 
+/* --- Read-aloud mark ---------------------------------------------------------
+   The sentence being spoken: a wash behind the words and a rule under each
+   line, the same idea as the EPUB reader's. A PDF page keeps its own paper
+   colour in both themes, so the wash is multiplied onto it like a highlight. */
+::ng-deep .read-aloud-mark-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 11;
+  mix-blend-mode: multiply;
+}
+
+::ng-deep .read-aloud-mark-box {
+  position: absolute;
+  background-color: color-mix(in srgb, var(--color-brand-accent) 20%, transparent);
+  box-shadow: 0 2px 0 0 var(--color-brand-accent);
+}
+
+/* An inverted page inverts its text layer, this mark included, so the mark is
+   drawn in the dark page colour and comes out light: a pale wash and rule on
+   the dark page. Multiplying onto a black page would show nothing. */
+.pdf-container.inverted ::ng-deep .read-aloud-mark-layer {
+  mix-blend-mode: normal;
+}
+
+.pdf-container.inverted ::ng-deep .read-aloud-mark-box {
+  background-color: color-mix(in srgb, var(--bg-body) 24%, transparent);
+  box-shadow: 0 2px 0 0 color-mix(in srgb, var(--bg-body) 80%, transparent);
+}
+
 /* --- UI Tweaks --- */
 
 /* Hidden internal pdf.js toolbar: the emitted DOM is

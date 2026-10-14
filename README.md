@@ -154,7 +154,7 @@ In the public SelfHosted application, AI provider configuration remains under th
 
 - **Portable library archives:** Export and import `.nostos` files to move library data between Nostos installations. See [Library portability and migration](docs/cloud/portability.md) for the exact steps, contents, limits, recovery behavior, and verification status.
 - **External media (SelfHosted):** Link a folder of audiobooks and ebooks that is already on your server. Nostos reads the files in place and never copies, modifies or deletes them. See the [External media guide](docs/external-media.md).
-- **Read aloud:** Listen to an EPUB from the page it is open on. Nostos marks the sentence being spoken and turns the pages. It uses the device's own voice, or a natural voice from a speech server you connect. See the [Read aloud guide](docs/read-aloud.md).
+- **Read aloud:** Listen to an EPUB or a PDF from the page it is open on. Nostos marks the sentence being spoken and turns the pages. It uses the device's own voice, or a natural voice from a speech server you connect. See the [Read aloud guide](docs/read-aloud.md).
 - **Local backup and restore:** SelfHosted installations include local backup and restore workflows with integrity checks and restore safeguards.
 - **OPDS export:** A configurable OPDS catalogue can expose a self-hosted library to compatible readers on networks you control.
 - **MCP:** An optional bearer-protected Model Context Protocol endpoint lets compatible tools work with Nostos through the documented library contracts.

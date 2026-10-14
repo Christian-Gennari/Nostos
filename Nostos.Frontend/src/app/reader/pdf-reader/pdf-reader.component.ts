@@ -29,6 +29,9 @@ import { Subject } from 'rxjs';
 import { debounceTime, distinctUntilChanged, filter } from 'rxjs/operators';
 
 import { PdfAnnotationManager, PageHighlight } from './pdf-annotation-manager';
+import { PdfReadAloud } from './pdf-read-aloud';
+import { languageTagFromCatalogue } from '../read-aloud/read-aloud-language';
+import type { PageRect } from './pdf-read-aloud-text';
 import {
   isDesktopMouseSelection,
   type SelectionAnchor,
@@ -255,6 +258,9 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
   /** Neutral PDF surface click asks the shared shell to reveal or hide chrome. */
   surfaceInteracted = output<void>();
 
+  /** The book's catalogue language, for choosing a voice. A PDF rarely says its own. */
+  language = input<string | null>(null);
+
   sidebarVisible = input<boolean>(false);
   sidebarVisibleChange = output<boolean>();
 
@@ -443,6 +449,94 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
   currentPage = 1;
   totalPages = 0;
   private pdfDocRef: any = null;
+
+  /**
+   * Read aloud. The cursor lives in {@link PdfReadAloud}; this is the reader's
+   * side of it: a page's text runs, turning to a page, and drawing the mark.
+   */
+  readonly readAloud = new PdfReadAloud({
+    language: () => languageTagFromCatalogue(this.language()),
+    pageCount: () => this.totalPages,
+    currentPage: () => this.currentPage,
+    loadPage: (pageNumber) => this.readAloudPage(pageNumber),
+    goToPage: (pageNumber) => this.readAloudGoTo(pageNumber),
+    showMark: (pageNumber, rects) => this.showReadAloudMark(pageNumber, rects),
+    clearMark: () => this.showReadAloudMark(0, []),
+  });
+  private readAloudMark: { pageNumber: number; rects: PageRect[] } | null = null;
+  /** Counts page turns read-aloud asked for, so `pageChange` can tell them from the person's. */
+  private readAloudMoves = 0;
+
+  private async readAloudPage(pageNumber: number) {
+    const doc = this.pdfDocRef;
+    if (!doc) return null;
+    try {
+      const page = await doc.getPage(pageNumber);
+      const content = await page.getTextContent();
+      if (doc !== this.pdfDocRef) return null;
+      const viewport = page.getViewport({ scale: 1 });
+      return {
+        items: Array.isArray(content?.items) ? content.items : [],
+        geometry: { width: viewport.width, height: viewport.height, transform: viewport.transform },
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  private readAloudGoTo(pageNumber: number): void {
+    this.readAloudMoves++;
+    this.goTo(pageNumber);
+    setTimeout(() => {
+      this.readAloudMoves = Math.max(0, this.readAloudMoves - 1);
+    }, 400);
+  }
+
+  private showReadAloudMark(pageNumber: number, rects: PageRect[]): void {
+    const previous = this.readAloudMark;
+    this.readAloudMark = rects.length > 0 ? { pageNumber, rects } : null;
+    if (previous && previous.pageNumber !== pageNumber) this.paintReadAloudMark(previous.pageNumber, []);
+    if (pageNumber > 0) this.paintReadAloudMark(pageNumber, rects);
+  }
+
+  private paintReadAloudMark(pageNumber: number, rects: PageRect[]): void {
+    const layer = document.querySelector(
+      `.page[data-page-number="${pageNumber}"] .textLayer`,
+    ) as HTMLElement | null;
+    // A page that has not drawn its text yet is painted when it does.
+    if (!layer) return;
+    this.highlightService.paintReadAloudMark(layer, rects);
+    this.keepReadAloudMarkInView(layer);
+  }
+
+  /**
+   * A page is often taller than the window (and wider, zoomed in), so the
+   * sentence being read can be off screen on the right page. Scrolling can make
+   * the viewer report another page as current; that is read-aloud's doing, not
+   * the person's.
+   */
+  private keepReadAloudMarkInView(layer: HTMLElement): void {
+    const box = layer.querySelector('.read-aloud-mark-box') as HTMLElement | null;
+    const container = document.getElementById('viewerContainer');
+    if (!box || !container || typeof box.scrollIntoView !== 'function') return;
+
+    const mark = box.getBoundingClientRect();
+    const view = container.getBoundingClientRect();
+    if (mark.height === 0 || view.height === 0) return;
+    // The transport floats over the bottom of the page, hence the larger margin there.
+    const visible =
+      mark.top >= view.top + 8 &&
+      mark.bottom <= view.bottom - 96 &&
+      mark.left >= view.left &&
+      mark.left <= view.right - 40;
+    if (visible) return;
+
+    this.readAloudMoves++;
+    box.scrollIntoView({ block: 'center', inline: 'nearest' });
+    setTimeout(() => {
+      this.readAloudMoves = Math.max(0, this.readAloudMoves - 1);
+    }, 400);
+  }
   private pendingGroundedSourcePage: number | null = null;
   private sourceHighlightGeneration = 0;
   private pageLabels = signal<(string | null)[]>([]);
@@ -609,6 +703,11 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
     if (targetPage > 0 && targetPage <= this.totalPages) {
       this.clearNativeSelection();
       this.highlightWarning.set(null);
+      // The pager and the contents list come through here, and set the page
+      // before the viewer reports it, so `pageChange` would see no change.
+      if (targetPage !== this.currentPage && this.readAloudMoves === 0) {
+        this.readAloud.notifyUserMoved();
+      }
       this.currentPage = targetPage;
       this.updateProgressState(targetPage);
       if (targetYPercent !== null) {
@@ -941,6 +1040,7 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
     if (newPage !== this.currentPage) {
       this.clearNativeSelection();
       this.highlightWarning.set(null);
+      if (this.readAloudMoves === 0) this.readAloud.notifyUserMoved();
     }
     this.currentPage = newPage;
     this.updateProgressState(newPage);
@@ -955,6 +1055,12 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
       this.highlightsOnPage(event.pageNumber),
       DEFAULT_HIGHLIGHT_COLOUR,
     );
+
+    // A page redraws its text layer on zoom and when it scrolls back in.
+    if (this.readAloudMark?.pageNumber === event.pageNumber) {
+      this.highlightService.paintReadAloudMark(textLayerDiv, this.readAloudMark.rects);
+      this.keepReadAloudMarkInView(textLayerDiv);
+    }
   }
 
   /**
@@ -1412,6 +1518,7 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
   }
 
   ngOnDestroy() {
+    this.readAloud.end();
     ++this.sourceHighlightGeneration;
     clearTimeout(this.touchSelectionTimer);
     this.clearSearch();

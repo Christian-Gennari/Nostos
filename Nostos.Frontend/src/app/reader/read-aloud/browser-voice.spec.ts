@@ -102,6 +102,16 @@ describe('BrowserVoice', () => {
     }
   });
 
+  it('unlocks speech with a silent request inside the starting tap', () => {
+    const { voice, synth, utterances } = setup();
+
+    voice.prime();
+
+    expect(synth.spoken).toHaveLength(1);
+    expect(utterances[0].text).toBe('');
+    expect(utterances[0].volume).toBe(0);
+  });
+
   it('fails cleanly where the device has no speech engine', async () => {
     const voice = new BrowserVoice(null);
     await expect(voice.speak('One.', { language: null, rate: 1 })).resolves.toBe('failed');

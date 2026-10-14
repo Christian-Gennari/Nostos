@@ -231,6 +231,7 @@
         [initialLocation]="book()?.lastLocation"
         [sidebarVisible]="tocOpen()"
         [highlightColour]="highlightColour()"
+        [language]="book()?.language ?? null"
         (sidebarVisibleChange)="tocOpen.set($event)"
         (noteCreated)="handleNoteCreated()"
         (selectionCaptured)="handleSelectionCaptured($event)"
