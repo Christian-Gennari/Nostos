@@ -192,6 +192,19 @@ test.describe('read aloud (EPUB)', () => {
     });
   }
 
+  test('every control in the bar hovers as a circle', async ({ page }) => {
+    await openBook(page, 'dark', `${run}-hover`);
+    await setSpeechDelay(page, 60_000);
+    await startReading(page);
+    const stop = page.getByTestId('read-aloud-stop');
+    await stop.hover();
+    for (const name of ['Previous sentence', 'Next sentence', 'Stop reading']) {
+      const button = page.getByTestId('read-aloud-bar').getByRole('button', { name });
+      expect(await button.evaluate((el) => getComputedStyle(el).borderRadius)).toBe('50%');
+    }
+    await capture(page, 'read-aloud-stop-hover-1280-dark');
+  });
+
   test('pause, skip, speed and stop', async ({ page }) => {
     await openBook(page, 'light', `${run}-controls`);
     await setSpeechDelay(page, 60_000);

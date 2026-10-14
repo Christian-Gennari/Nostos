@@ -49,6 +49,12 @@
   min-height: 44px;
 }
 
+/* Inside a pill every hover is a circle, like the play button; the shared
+   icon button's rounded square reads as a stray tile here. */
+.read-aloud-bar .icon-btn {
+  border-radius: var(--radius-round);
+}
+
 .read-aloud-toggle {
   all: unset;
   box-sizing: border-box;
