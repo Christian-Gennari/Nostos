@@ -360,7 +360,7 @@ export function mobileSelectionSpecs() {
       'selection-cancel',
       'selection-add-note',
       'selection-highlight',
-      'selection-pen-amber',
+      'selection-pen-sage',
       'selection-pen-rose',
     ]) {
       const b = (await page.locator(`[data-testid="${id}"]`).boundingBox())!;
@@ -434,10 +434,10 @@ export function mobileSelectionSpecs() {
     // A pen dot only picks the colour; nothing is saved until Highlight.
     const pendingFill = () =>
       page.locator('.epubjs-hl-pending').first().evaluate((el) => getComputedStyle(el).fill);
-    const amberFill = await pendingFill();
-    await page.locator('[data-testid="selection-pen-sage"]').tap();
+    const defaultFill = await pendingFill();
+    await page.locator('[data-testid="selection-pen-rose"]').tap();
     // The offered passage is redrawn in the pen just picked.
-    await expect.poll(pendingFill).not.toBe(amberFill);
+    await expect.poll(pendingFill).not.toBe(defaultFill);
     await expect(page.locator('.epubjs-hl-pending')).toHaveCount(1);
     await page.waitForTimeout(400);
     await expect(bar).toBeVisible();
@@ -446,7 +446,7 @@ export function mobileSelectionSpecs() {
     await expect(bar).toHaveCount(0);
     const saved = await notes(baseUrl, bookId);
     expect(saved).toHaveLength(1);
-    expect(saved[0].highlightColour).toBe('sage');
+    expect(saved[0].highlightColour).toBe('rose');
     expect(saved[0].selectedText.trim()).toBe(selected.trim());
     await snap(page, 'mobile-highlighted');
   });
