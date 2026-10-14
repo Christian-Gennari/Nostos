@@ -83,23 +83,6 @@ public sealed class AssistantToolSchemaTests : IClassFixture<SqliteTestFixture>
                 ["forceCreate"] = "boolean",
             },
             Required: ["type", "title"]),
-        ["library_update_book"] = new(
-            Properties: new()
-            {
-                ["bookId"] = "string",
-                ["title"] = "string",
-                ["author"] = "string",
-                ["description"] = "string",
-                ["collectionIds"] = "array",
-                ["rating"] = "integer",
-                ["isFavorite"] = "boolean",
-                ["personalReview"] = "string",
-                ["isFinished"] = "boolean",
-            },
-            Required: ["bookId"]),
-        ["library_set_book_collections_bulk"] = new(
-            Properties: new() { ["updates"] = "array" },
-            Required: ["updates"]),
         ["knowledge_search"] = new(
             Properties: new()
             {
@@ -157,20 +140,39 @@ public sealed class AssistantToolSchemaTests : IClassFixture<SqliteTestFixture>
             Properties: new() { ["noteId"] = "string", ["topicId"] = "string" },
             Required: ["noteId", "topicId"]),
         ["library_create_collection"] = new(
-            Properties: new() { ["name"] = "string", ["parentId"] = "string" },
+            Properties: new() { ["name"] = "string", ["parent"] = "string" },
             Required: ["name"]),
         ["library_rename_collection"] = new(
-            Properties: new() { ["collectionId"] = "string", ["name"] = "string" },
-            Required: ["collectionId", "name"]),
+            Properties: new() { ["collection"] = "string", ["name"] = "string" },
+            Required: ["collection", "name"]),
         ["library_move_collection"] = new(
-            Properties: new() { ["collectionId"] = "string", ["newParentId"] = "string" },
-            Required: ["collectionId"]),
-        ["library_delete_empty_collection"] = new(
-            Properties: new() { ["collectionId"] = "string" },
-            Required: ["collectionId"]),
+            Properties: new() { ["collection"] = "string", ["newParent"] = "string" },
+            Required: ["collection"]),
         ["library_delete_collection"] = new(
-            Properties: new() { ["collectionId"] = "string" },
-            Required: ["collectionId"]),
+            Properties: new() { ["collection"] = "string" },
+            Required: ["collection"]),
+        ["library_add_books_to_collection"] = new(
+            Properties: new() { ["collection"] = "string", ["bookIds"] = "array" },
+            Required: ["collection", "bookIds"]),
+        ["library_remove_books_from_collection"] = new(
+            Properties: new() { ["collection"] = "string", ["bookIds"] = "array" },
+            Required: ["collection", "bookIds"]),
+        ["library_set_book_collections"] = new(
+            Properties: new() { ["updates"] = "array" },
+            Required: ["updates"]),
+        ["library_update_book"] = new(
+            Properties: new()
+            {
+                ["bookId"] = "string",
+                ["title"] = "string",
+                ["author"] = "string",
+                ["description"] = "string",
+                ["rating"] = "integer",
+                ["isFavorite"] = "boolean",
+                ["personalReview"] = "string",
+                ["isFinished"] = "boolean",
+            },
+            Required: ["bookId"]),
     };
 
     [Fact]
@@ -314,8 +316,8 @@ public sealed class AssistantToolSchemaTests : IClassFixture<SqliteTestFixture>
                 [AssistantCapabilityCategory.SourceNavigation] = 1,
                 [AssistantCapabilityCategory.LibraryRead] = 4,
                 [AssistantCapabilityCategory.Capture] = 1,
-                [AssistantCapabilityCategory.Organization] = 10,
-                [AssistantCapabilityCategory.OrdinaryAction] = 2,
+                [AssistantCapabilityCategory.Organization] = 12,
+                [AssistantCapabilityCategory.OrdinaryAction] = 1,
             });
 
         capabilities
@@ -326,7 +328,7 @@ public sealed class AssistantToolSchemaTests : IClassFixture<SqliteTestFixture>
             {
                 AssistantTrustClass.Suggest,
                 AssistantTrustClass.Act,
-                AssistantTrustClass.PlanAndAct,
+                AssistantTrustClass.Stage,
             });
     }
 
@@ -335,7 +337,7 @@ public sealed class AssistantToolSchemaTests : IClassFixture<SqliteTestFixture>
     {
         var measurement = AssistantCapabilityCatalogueMetrics.Measure(CreateHarness().Registry.All);
 
-        measurement.CapabilityCount.Should().Be(26);
+        measurement.CapabilityCount.Should().Be(27);
         measurement.SerializedToolSchemaUtf8Bytes.Should().BeGreaterThan(0);
         measurement.ToolDescriptionUtf8Bytes.Should().BeGreaterThan(0);
         measurement.LegacyDuplicateAbilitiesPromptUtf8Bytes.Should().BeGreaterThan(
@@ -457,7 +459,8 @@ public sealed class AssistantToolSchemaTests : IClassFixture<SqliteTestFixture>
         var orchestrator = new AssistantOrchestrator(
             registry,
             llm,
-            new AssistantPlanStore(),
+            new AssistantChangesetCoordinator(new AssistantChangesetStore(), libraryService, new AssistantOptions { Enabled = true }),
+            libraryService,
             new AssistantContinuationStore(),
             libraryService,
             new AssistantOptions { Enabled = true },

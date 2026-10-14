@@ -1,10 +1,9 @@
 namespace Nostos.Backend.Integrations.Assistant;
 
 /// <summary>
-/// How dangerous an assistant capability is, and therefore what it takes to run
-/// it (issue #260, decision D7). Every registered capability declares exactly
-/// one class; <see cref="AssistantCapabilityRegistry"/> is the only thing that
-/// enforces them.
+/// How an assistant capability runs (issue #260, decision D7). Every registered
+/// capability declares exactly one class. Risk is not judged per tool: library
+/// changes are staged and the change policy judges what they would actually do.
 /// </summary>
 public enum AssistantTrustClass
 {
@@ -30,9 +29,11 @@ public enum AssistantTrustClass
     Act,
 
     /// <summary>
-    /// Destructive or high-impact state changes that must carry an approval
-    /// whose plan id matches the plan the call was built against. Without that
-    /// match the registry refuses before the capability's delegate is reached.
+    /// Library organisation: collections, memberships and book fields. A call
+    /// never writes. It stages an operation into the turn's changeset, which
+    /// is previewed through the canonical library code as it grows. When the
+    /// turn ends, the change policy reads the resulting diff and either applies
+    /// the whole changeset atomically, with undo, or holds it for review.
     /// </summary>
-    PlanAndAct,
+    Stage,
 }

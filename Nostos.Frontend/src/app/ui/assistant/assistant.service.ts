@@ -4,14 +4,15 @@
  * The backend bridge (`POST /api/assistant/turn/stream`) owns the LLM and the tool
  * loop; this service owns the surface's state: the editorial transcript, the
  * deterministic source-location follow-up, the non-mutating suggestions, and
- * destructive confirmations. Ordinary safe actions execute inline.
+ * library changes, which are applied with undo or held for review.
  *
  * Trust is structural, not cosmetic:
  *   - Suggestions never mutate merely by being shown.
  *   - Choosing a normal reversible action (for example an existing topic link)
  *     is sufficient authorization for the backend's immediate Act path.
- *   - Only destructive/high-impact pending plans use `approvePlan` with the
- *     exact plan id and approval token.
+ *   - Library changes arrive as one changeset per turn. Everyday changes are
+ *     already applied and carry Undo; larger ones wait as a review that only
+ *     `applyChangeset` (with the changeset's own token) can apply.
  *
  * `TRANSCRIPT_SEND_POLICY` is unchanged: a voice transcript enters the composer
  * and is dispatched after the grace window, with a pre-dispatch Undo.
@@ -116,13 +117,7 @@ export type AssistantTurnArtifact =
   | { kind: 'action'; capability: string; state: 'completed' }
   | { kind: 'failure'; code: string; message: string; retryable: boolean; state: 'failed' | 'cancelled' | 'incomplete' }
   | { kind: 'proposal'; proposal: AssistantSuggestionDto }
-  | {
-      kind: 'destructive-result';
-      planId: string;
-      summary: string;
-      outcome: 'applied' | 'refused' | 'failed' | 'superseded';
-      capabilities: string[];
-    };
+  | { kind: 'changeset'; changeset: AssistantChangesetDto; conflicts?: string[] };
 
 /** Compact application snapshot from when an older user turn occurred. */
 export interface AssistantHistoricalContextDto {
@@ -185,28 +180,89 @@ export interface AssistantPlanStepDto {
   argumentsJson: string;
 }
 
-/** A plan the assistant will not run without an explicit approval. */
-export interface AssistantPendingPlanDto {
-  planId: string;
+/** Totals of what a changeset does (mirrors `LibraryChangesetCountsDto`). */
+export interface LibraryChangesetCountsDto {
+  collectionsCreated: number;
+  collectionsDeleted: number;
+  collectionsUpdated: number;
+  booksTouched: number;
+  membershipsAdded: number;
+  membershipsRemoved: number;
+  booksLosingMembership: number;
+  bookEdits: number;
+}
+
+export interface LibraryCollectionChangeDto {
+  id: string;
+  kind: 'created' | 'deleted' | 'updated' | string;
+  name: string;
+  previousName: string | null;
+  parentName: string | null;
+  previousParentName: string | null;
+  parentChanged: boolean;
+  bookCount: number;
+}
+
+export interface LibraryMembershipChangeDto {
+  bookId: string;
+  title: string;
+  author: string | null;
+  added: string[];
+  removed: string[];
+}
+
+export interface LibraryFieldChangeDto {
+  field: string;
+  before: string | null;
+  after: string | null;
+}
+
+export interface LibraryBookEditDto {
+  bookId: string;
+  title: string;
+  fields: LibraryFieldChangeDto[];
+}
+
+/** Exactly what a changeset does, as the server previewed or applied it. */
+export interface LibraryChangesetDiffDto {
+  collections: LibraryCollectionChangeDto[];
+  memberships: LibraryMembershipChangeDto[];
+  bookEdits: LibraryBookEditDto[];
+  counts: LibraryChangesetCountsDto;
+}
+
+/** One step of a changeset, which the user can leave out while it is in review. */
+export interface AssistantChangeStepDto {
+  index: number;
   summary: string;
-  steps: AssistantPlanStepDto[];
-  approvalToken: string;
+  included: boolean;
+  dependsOn: number[];
 }
 
-export interface AssistantPlanStepOutcomeDto {
-  capability: string;
+export type AssistantChangesetStatus = 'review' | 'applied' | 'undone' | 'discarded';
+
+/**
+ * A turn's library changes. `review` changes nothing until applied; `applied`
+ * can be undone while `canUndo`. `actionToken` is required by every action on it.
+ */
+export interface AssistantChangesetDto {
+  changesetId: string;
+  status: AssistantChangesetStatus | string;
+  steps: AssistantChangeStepDto[];
+  diff: LibraryChangesetDiffDto;
+  diffHash: string;
+  actionToken: string;
+  reviewReasons: string[];
+  canUndo: boolean;
+}
+
+/** The outcome of a changeset action. Failures are data. */
+export interface AssistantChangesetActionResponse {
   success: boolean;
   errorCode: string | null;
   errorMessage: string | null;
-  data: unknown;
-}
-
-/** The result of executing an approved plan. Failures are data. */
-export interface AssistantPlanApproveResponse {
-  success: boolean;
-  errorCode: string | null;
-  errorMessage: string | null;
-  steps: AssistantPlanStepOutcomeDto[];
+  changeset: AssistantChangesetDto | null;
+  conflicts: string[];
 }
 
 export interface AssistantAnchorPromptDto {
@@ -248,7 +304,8 @@ export interface AssistantTurnResponse {
   acknowledgement: string | null;
   anchorPrompt: AssistantAnchorPromptDto | null;
   suggestions: AssistantSuggestionDto[];
-  pendingPlan: AssistantPendingPlanDto | null;
+  /** The turn's library changes: applied with undo, or waiting for review. */
+  changeset?: AssistantChangesetDto | null;
   /** The note a capture created this turn; null when nothing was captured. */
   capturedNoteId?: string | null;
   /** Immediate Act capabilities that actually completed successfully. */
@@ -339,7 +396,7 @@ export interface NostosAssistantDiagnostics {
   conversationId: string;
   lastTurn: AssistantTurnResponse | null;
   suggestions: AssistantSuggestionDto[];
-  pendingPlan: AssistantPendingPlanDto | null;
+  pendingReview: AssistantChangesetDto | null;
   /** Complete ephemeral session history; the server owns model-context packing. */
   history: AssistantHistoryMessage[];
   capturedNoteId: string | null;
@@ -377,9 +434,6 @@ interface PersistedAssistantSession {
   draft: string;
   pendingAnchor: AssistantAnchorPrompt | null;
   pendingContinuationContext: AssistantContext | null;
-  pendingPlan: AssistantPendingPlanDto | null;
-  /** Turn that proposed the currently active destructive plan. */
-  pendingPlanTurnId: string | null;
   suggestions: AssistantSuggestionDto[];
   capturedNoteId: string | null;
   /**
@@ -430,17 +484,33 @@ export class AssistantService {
   readonly lastTurn = signal<AssistantTurnResponse | null>(null);
   /** Non-mutating topic suggestions for the current turn. */
   readonly suggestions = signal<AssistantSuggestionDto[]>([]);
-  /** The destructive plan (if any) waiting for explicit approval. */
-  readonly pendingPlan = signal<AssistantPendingPlanDto | null>(null);
-  /** Exact TurnId that produced the active server-held destructive proposal. */
-  readonly pendingPlanTurnId = signal<string | null>(null);
   /**
-   * Natural "yes / go ahead" is accepted only on the immediate confirmation
-   * turn. Any intervening ordinary message disarms this shortcut so a later,
-   * unrelated "yes" cannot approve stale destructive work. The explicit
-   * confirmation button remains available while the plan itself is pending.
+   * The changeset waiting for review, if any: the latest one in the
+   * conversation. The server keeps at most one review per conversation and
+   * sets older ones aside, so the client mirrors exactly that.
    */
-  private readonly directPlanApprovalArmed = signal(false);
+  readonly pendingReview = computed<{ turnId: string; changeset: AssistantChangesetDto } | null>(() => {
+    const events = this.eventLedger();
+    for (let index = events.length - 1; index >= 0; index--) {
+      for (const artifact of events[index].artifacts ?? []) {
+        if (artifact.kind === 'changeset' && artifact.changeset.status === 'review') {
+          return { turnId: events[index].turnId, changeset: artifact.changeset };
+        }
+      }
+    }
+    return null;
+  });
+  /** The changeset an action is running on, so its card can show progress. */
+  readonly changesetBusy = signal<string | null>(null);
+  /** The last action failure per changeset, shown on its card. */
+  readonly changesetErrors = signal<Partial<Record<string, string>>>({});
+  /**
+   * Natural "yes / go ahead" applies a review only on the turn right after it
+   * appeared. Any intervening ordinary message disarms this shortcut so a
+   * later, unrelated "yes" cannot apply stale changes. The card's own Apply
+   * button stays available while the review is open.
+   */
+  private readonly directReviewApprovalArmed = signal(false);
   /**
    * Emits only from backend-reported successful immediate Act calls. Consumers
    * can update their local surface state from execution truth without parsing
@@ -514,7 +584,7 @@ export class AssistantService {
         conversationId: this.conversationId(),
         lastTurn: this.lastTurn(),
         suggestions: this.suggestions(),
-        pendingPlan: this.pendingPlan(),
+        pendingReview: this.pendingReview()?.changeset ?? null,
         history: this.history(),
         capturedNoteId: this.capturedNoteId(),
       };
@@ -564,12 +634,6 @@ export class AssistantService {
           ? parsed.pendingContinuationContext
           : null,
       );
-      this.pendingPlan.set(isPendingPlan(parsed.pendingPlan) ? parsed.pendingPlan : null);
-      this.pendingPlanTurnId.set(
-        this.pendingPlan() && typeof parsed.pendingPlanTurnId === 'string'
-          ? parsed.pendingPlanTurnId
-          : null,
-      );
       this.suggestions.set([]);
       this.capturedNoteId.set(
         typeof parsed.capturedNoteId === 'string' ? parsed.capturedNoteId : null,
@@ -601,10 +665,10 @@ export class AssistantService {
         this.draft.set(typeof parsed.draft === 'string' ? parsed.draft : '');
       }
 
-      // Natural-language destructive approval is intentionally NOT restored as
-      // armed. The explicit confirmation button can still submit the exact
-      // server-bound plan/token, while a generic "yes" after refresh cannot.
-      this.directPlanApprovalArmed.set(false);
+      // Natural-language approval is intentionally NOT restored as armed. The
+      // card's Apply button still applies the exact server-held changeset,
+      // while a generic "yes" after refresh cannot.
+      this.directReviewApprovalArmed.set(false);
     } catch {
       storage.removeItem(ASSISTANT_SESSION_STORAGE_KEY);
     }
@@ -621,8 +685,6 @@ export class AssistantService {
       draft: this.draft(),
       pendingAnchor: this.pendingAnchor(),
       pendingContinuationContext: this.pendingContinuationContext(),
-      pendingPlan: this.pendingPlan(),
-      pendingPlanTurnId: this.pendingPlanTurnId(),
       // Proposal artifacts persist; executable chips do not.
       suggestions: [],
       capturedNoteId: this.capturedNoteId(),
@@ -687,9 +749,9 @@ export class AssistantService {
     this.retryableTurn.set(null);
     this.pendingAnchor.set(null);
     this.pendingContinuationContext.set(null);
-    this.pendingPlan.set(null);
-    this.pendingPlanTurnId.set(null);
-    this.directPlanApprovalArmed.set(false);
+    this.directReviewApprovalArmed.set(false);
+    this.changesetBusy.set(null);
+    this.changesetErrors.set({});
     this.suggestions.set([]);
     this.lastTurn.set(null);
     this.lastError.set(null);
@@ -771,14 +833,20 @@ export class AssistantService {
       return;
     }
 
-    const plan = this.pendingPlan();
-    if (plan && isExplicitPlanRejection(text)) {
-      // A clear rejection is terminal in the client: discard the token and plan
-      // so nothing in a later conversation can accidentally approve it.
+    const review = this.pendingReview();
+    const reviewAnswer = review
+      ? isExplicitPlanRejection(text)
+        ? 'discard'
+        : this.directReviewApprovalArmed() && isExplicitPlanApproval(text)
+          ? 'apply'
+          : null
+      : null;
+    if (review && reviewAnswer) {
+      // A short, unambiguous answer to the review right after it appeared acts
+      // on exactly that server-held changeset. Anything else is a new turn.
       this.draft.set('');
-      const turnId = createId();
       this.pushEntry(
-        turnId,
+        createId(),
         'user',
         text,
         null,
@@ -788,50 +856,21 @@ export class AssistantService {
         'complete',
         toHistoricalContext(this.context()),
       );
-      const planTurnId = this.pendingPlanTurnId() ?? turnId;
-      this.pendingPlan.set(null);
-      this.pendingPlanTurnId.set(null);
-      this.directPlanApprovalArmed.set(false);
-      const reply = 'Okay. I won\'t make that change.';
-      this.pushEntry(planTurnId, 'assistant', reply, null, 'Cancelled');
-      this.upsertTurnArtifact(planTurnId, {
-        kind: 'destructive-result',
-        planId: plan.planId,
-        summary: plan.summary,
-        outcome: 'refused',
-        capabilities: plan.steps.map((step) => step.capability),
-      });
+      this.directReviewApprovalArmed.set(false);
       this.persistSession();
+      // A spoken or typed answer gets a spoken answer back once it landed;
+      // the card itself shows exactly what changed.
+      const replyTurnId = review.turnId;
+      const answered = (reply: string) => this.pushEntry(replyTurnId, 'assistant', reply, null, null);
+      if (reviewAnswer === 'apply') {
+        this.applyChangeset(review.changeset.changesetId, () => answered('Done.'));
+      } else {
+        this.discardChangeset(review.changeset.changesetId, () => answered('Okay. Nothing was changed.'));
+      }
       return;
     }
 
-    if (plan && this.directPlanApprovalArmed() && isExplicitPlanApproval(text)) {
-      // A short, unambiguous confirmation on the immediate confirmation turn
-      // executes only the exact server-held plan id + token.
-      this.draft.set('');
-      const turnId = createId();
-      this.pushEntry(
-        turnId,
-        'user',
-        text,
-        null,
-        null,
-        [],
-        true,
-        'complete',
-        toHistoricalContext(this.context()),
-      );
-      this.directPlanApprovalArmed.set(false);
-      this.persistSession();
-      this.approvePlan(
-        plan.planId,
-        plan.approvalToken,
-        this.pendingPlanTurnId() ?? turnId,
-      );
-      return;
-    }
-
-    if (plan) this.directPlanApprovalArmed.set(false);
+    if (review) this.directReviewApprovalArmed.set(false);
 
     const context = this.context();
     const anchor = this.effectiveAnchor(context);
@@ -939,89 +978,116 @@ export class AssistantService {
   }
 
   /**
-   * Execute exactly one pending destructive plan. The server keeps a bounded
-   * terminal receipt, so retrying the exact plan id + token after a lost HTTP
-   * response reports the original result without executing it twice.
+   * Apply the changes in review, leaving out the steps the user unticked. The
+   * server applies only its own stored steps, and only if they still do what
+   * the card shows; otherwise the card is refreshed with what they would do now.
    */
-  approvePlan(
-    planId: string,
-    approvalToken: string,
-    turnId = this.pendingPlanTurnId() ?? createId(),
-  ): void {
-    if (!planId || !approvalToken || this.sending()) return;
+  applyChangeset(changesetId: string, onDone?: () => void): void {
+    const found = this.findChangeset(changesetId);
+    if (!found || found.changeset.status !== 'review') return;
+    const { changeset } = found;
+    this.directReviewApprovalArmed.set(false);
+    this.runChangesetAction(changesetId, 'apply', {
+      actionToken: changeset.actionToken,
+      excluded: excludedSteps(changeset),
+      diffHash: changeset.diffHash,
+    }, onDone);
+  }
 
-    const plan = this.pendingPlan();
-    this.directPlanApprovalArmed.set(false);
-    this.sending.set(true);
+  /** Set the changes in review aside. Nothing was applied, so nothing changes. */
+  discardChangeset(changesetId: string, onDone?: () => void): void {
+    const found = this.findChangeset(changesetId);
+    if (!found || found.changeset.status !== 'review') return;
+    this.directReviewApprovalArmed.set(false);
+    this.runChangesetAction(changesetId, 'discard', { actionToken: found.changeset.actionToken }, onDone);
+  }
+
+  /** Take back applied changes. Anything edited since is kept and listed. */
+  undoChangeset(changesetId: string): void {
+    const found = this.findChangeset(changesetId);
+    if (!found || found.changeset.status !== 'applied' || !found.changeset.canUndo) return;
+    this.runChangesetAction(changesetId, 'undo', { actionToken: found.changeset.actionToken });
+  }
+
+  /**
+   * Include or leave out one step of a review. Leaving out a step also leaves
+   * out the steps that depend on it; the server recomputes exactly what the
+   * remaining steps would do.
+   */
+  setChangesetStepIncluded(changesetId: string, index: number, included: boolean): void {
+    const found = this.findChangeset(changesetId);
+    if (!found || found.changeset.status !== 'review') return;
+    const excluded = new Set(excludedSteps(found.changeset));
+    if (included) excluded.delete(index);
+    else excluded.add(index);
+    this.runChangesetAction(changesetId, 'preview', {
+      actionToken: found.changeset.actionToken,
+      excluded: [...excluded].sort((a, b) => a - b),
+    });
+  }
+
+  private runChangesetAction(
+    changesetId: string,
+    action: 'preview' | 'apply' | 'discard' | 'undo',
+    body: Record<string, unknown>,
+    onDone?: () => void,
+  ): void {
+    if (this.changesetBusy()) return;
+    this.changesetBusy.set(changesetId);
+    this.setChangesetError(changesetId, null);
+
+    const settle = (response: AssistantChangesetActionResponse | null) => {
+      this.changesetBusy.set(null);
+      if (response?.changeset) this.replaceChangeset(response.changeset, response.conflicts);
+      if (!response) {
+        this.setChangesetError(changesetId, 'Nostos could not be reached. Nothing changed; try again.');
+      } else if (!response.success) {
+        this.setChangesetError(changesetId, response.errorMessage ?? 'The changes could not be made.');
+      } else {
+        onDone?.();
+      }
+      this.persistSession();
+    };
+
     this.http
-      .post<AssistantPlanApproveResponse>('/api/assistant/plan/approve', { planId, approvalToken })
+      .post<AssistantChangesetActionResponse>(
+        `/api/assistant/changesets/${encodeURIComponent(changesetId)}/${action}`,
+        body,
+      )
       .subscribe({
-        next: (response) => {
-          this.sending.set(false);
-          this.lastError.set(null);
-          const capabilities = (plan?.steps ?? response.steps).map((step) => step.capability);
-          if (response.success) {
-            this.pendingPlan.set(null);
-            this.pendingPlanTurnId.set(null);
-            const replies = response.steps
-              .map((step) => {
-                if (!step.data || typeof step.data !== 'object') return null;
-                const reply = (step.data as { reply?: unknown }).reply;
-                return typeof reply === 'string' && reply.trim() ? reply.trim() : null;
-              })
-              .filter((reply): reply is string => reply !== null);
-            const executionReply =
-              replies.length > 0 ? replies.join(' ') : (plan?.summary ?? 'Plan applied.');
-            this.pushEntry(turnId, 'assistant', executionReply, null, 'Applied');
-            this.upsertTurnArtifact(turnId, {
-              kind: 'destructive-result',
-              planId,
-              summary: plan?.summary ?? executionReply,
-              outcome: 'applied',
-              capabilities,
-            });
-          } else {
-            const failureReply =
-              response.errorMessage ?? plan?.summary ?? 'The plan could not be applied.';
-            this.lastError.set(failureReply);
-            this.pushEntry(
-              turnId,
-              'error',
-              failureReply,
-              null,
-              response.errorCode ?? 'Refused',
-            );
-            this.upsertTurnArtifact(turnId, {
-              kind: 'destructive-result',
-              planId,
-              summary: plan?.summary ?? failureReply,
-              outcome: 'failed',
-              capabilities,
-            });
-            this.upsertTurnArtifact(turnId, {
-              kind: 'failure',
-              code: response.errorCode ?? 'assistant_plan_refused',
-              message: failureReply,
-              retryable: false,
-              state: 'failed',
-            });
-          }
-          this.persistSession();
-        },
-        error: () => {
-          this.sending.set(false);
-          const message = 'The plan could not be applied. It is still waiting for approval.';
-          this.lastError.set(message);
-          this.upsertTurnArtifact(turnId, {
-            kind: 'failure',
-            code: 'assistant_network_error',
-            message,
-            retryable: true,
-            state: 'failed',
-          });
-          this.persistSession();
-        },
+        next: (response) => settle(response),
+        error: (error: unknown) => settle(changesetActionFromError(error)),
       });
+  }
+
+  private findChangeset(changesetId: string): { turnId: string; changeset: AssistantChangesetDto } | null {
+    for (const event of this.eventLedger()) {
+      for (const artifact of event.artifacts ?? []) {
+        if (artifact.kind === 'changeset' && artifact.changeset.changesetId === changesetId) {
+          return { turnId: event.turnId, changeset: artifact.changeset };
+        }
+      }
+    }
+    return null;
+  }
+
+  private replaceChangeset(changeset: AssistantChangesetDto, conflicts?: string[]): void {
+    const found = this.findChangeset(changeset.changesetId);
+    if (!found) return;
+    this.upsertTurnArtifact(found.turnId, {
+      kind: 'changeset',
+      changeset,
+      ...(conflicts?.length ? { conflicts: [...conflicts] } : {}),
+    });
+  }
+
+  private setChangesetError(changesetId: string, message: string | null): void {
+    this.changesetErrors.update((errors) => {
+      const next = { ...errors };
+      if (message) next[changesetId] = message;
+      else delete next[changesetId];
+      return next;
+    });
   }
 
   private dispatchTurn(
@@ -1474,21 +1540,13 @@ export class AssistantService {
       this.promoteResolvedBookContext(turn.userEntryId, response.resolvedBook);
     }
 
-    if (response.pendingPlan) {
-      const previous = this.pendingPlan();
-      const previousTurnId = this.pendingPlanTurnId();
-      if (previous && previous.planId !== response.pendingPlan.planId && previousTurnId) {
-        this.upsertTurnArtifact(previousTurnId, {
-          kind: 'destructive-result',
-          planId: previous.planId,
-          summary: previous.summary,
-          outcome: 'superseded',
-          capabilities: previous.steps.map((step) => step.capability),
-        });
+    if (response.changeset?.status === 'review') {
+      // The server set any older review in this conversation aside.
+      const previous = this.pendingReview();
+      if (previous && previous.changeset.changesetId !== response.changeset.changesetId) {
+        this.replaceChangeset({ ...previous.changeset, status: 'discarded' });
       }
-      this.pendingPlan.set(response.pendingPlan);
-      this.pendingPlanTurnId.set(turn.turnId);
-      this.directPlanApprovalArmed.set(true);
+      this.directReviewApprovalArmed.set(true);
     }
 
     for (const capability of response.executedCapabilities ?? []) {
@@ -1702,9 +1760,9 @@ export class AssistantService {
 }
 
 /**
- * True only for a complete, short approval utterance while one destructive
- * plan is visibly pending. Deliberately exact rather than fuzzy: "yes, but
- * explain first" is discussion, not permission to delete anything.
+ * True only for a complete, short approval utterance while a review of
+ * library changes is visibly pending. Deliberately exact rather than fuzzy:
+ * "yes, but explain first" is discussion, not permission to change anything.
  *
  * Voice transcripts use the same submit path, so "go ahead" spoken aloud has
  * the same semantics as typing it.
@@ -1730,7 +1788,7 @@ export function isExplicitPlanApproval(value: string): boolean {
   ]).has(normalized);
 }
 
-/** Exact rejection vocabulary for the visible pending destructive change. */
+/** Exact rejection vocabulary for the visible review of library changes. */
 export function isExplicitPlanRejection(value: string): boolean {
   const normalized = value
     .trim()
@@ -1856,6 +1914,10 @@ function artifactsFromTurnResponse(
     artifacts.push({ kind: 'action', capability, state: 'completed' });
   }
 
+  if (response?.changeset) {
+    artifacts.push({ kind: 'changeset', changeset: response.changeset });
+  }
+
   for (const proposal of response?.suggestions ?? []) {
     artifacts.push({ kind: 'proposal', proposal: { ...proposal } });
   }
@@ -1900,8 +1962,8 @@ function artifactKey(artifact: AssistantTurnArtifact): string {
       return `failure:${artifact.code}:${artifact.message}`;
     case 'proposal':
       return `proposal:${artifact.proposal.noteId ?? ''}:${artifact.proposal.value ?? artifact.proposal.label}`;
-    case 'destructive-result':
-      return `destructive:${artifact.planId}`;
+    case 'changeset':
+      return `changeset:${artifact.changeset.changesetId}`;
   }
 }
 
@@ -1924,8 +1986,14 @@ function isAssistantTurnArtifact(value: unknown): value is AssistantTurnArtifact
         && typeof (artifact as { message?: unknown }).message === 'string';
     case 'proposal':
       return !!(artifact as { proposal?: unknown }).proposal;
-    case 'destructive-result':
-      return typeof (artifact as { planId?: unknown }).planId === 'string';
+    case 'changeset': {
+      const changeset = (artifact as { changeset?: Partial<AssistantChangesetDto> }).changeset;
+      return !!changeset
+        && typeof changeset.changesetId === 'string'
+        && typeof changeset.status === 'string'
+        && Array.isArray(changeset.steps)
+        && !!changeset.diff;
+    }
     default:
       return false;
   }
@@ -1960,15 +2028,28 @@ function isAssistantContext(value: unknown): value is AssistantContext {
   return typeof context.surface === 'string' && typeof context.route === 'string';
 }
 
-function isPendingPlan(value: unknown): value is AssistantPendingPlanDto {
-  if (!value || typeof value !== 'object') return false;
-  const plan = value as Partial<AssistantPendingPlanDto>;
-  return (
-    typeof plan.planId === 'string' &&
-    typeof plan.summary === 'string' &&
-    typeof plan.approvalToken === 'string' &&
-    Array.isArray(plan.steps)
-  );
+/** The steps of a changeset the user has left out. */
+function excludedSteps(changeset: AssistantChangesetDto): number[] {
+  return changeset.steps.filter((step) => !step.included).map((step) => step.index);
+}
+
+/**
+ * A changeset route answers 404/403 with the same body as a refusal, so the
+ * card can say what happened instead of a generic network failure.
+ */
+function changesetActionFromError(error: unknown): AssistantChangesetActionResponse | null {
+  const body = (error as { error?: unknown } | null)?.error;
+  if (body && typeof body === 'object' && typeof (body as { errorCode?: unknown }).errorCode === 'string') {
+    const refusal = body as Partial<AssistantChangesetActionResponse>;
+    return {
+      success: false,
+      errorCode: refusal.errorCode ?? null,
+      errorMessage: refusal.errorMessage ?? null,
+      changeset: refusal.changeset ?? null,
+      conflicts: refusal.conflicts ?? [],
+    };
+  }
+  return null;
 }
 
 function isPreparedTurn(value: unknown): value is PreparedAssistantTurn {
@@ -2024,7 +2105,6 @@ function isAssistantTurnResponse(value: unknown): value is AssistantTurnResponse
   return (
     typeof response.reply === 'string'
     && Array.isArray(response.suggestions)
-    && ('pendingPlan' in response)
     && ('anchorPrompt' in response)
   );
 }

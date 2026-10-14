@@ -289,7 +289,8 @@ public static class NostosProductComposition
         services.AddScoped<IWritingRepository, WritingRepository>();
 
         services.AddSingleton<IThoughtProcessor, ThoughtProcessor>();
-        services.AddSingleton<AssistantPlanStore>();
+        services.AddSingleton<AssistantChangesetStore>();
+        services.AddScoped<AssistantChangesetCoordinator>();
         services.AddSingleton<AssistantContinuationStore>();
         services.AddSingleton<AssistantTurnExecutionRegistry>();
         services.AddScoped<AssistantOrchestrator>();

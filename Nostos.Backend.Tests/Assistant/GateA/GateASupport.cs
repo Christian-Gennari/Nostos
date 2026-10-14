@@ -30,7 +30,8 @@ internal sealed class GateAHost : IDisposable
     public IDbContextFactory<NostosDbContext> Factory { get; }
     public AssistantCapabilityRegistry Registry { get; }
     public FakeLlmProvider Llm { get; }
-    public AssistantPlanStore Plans { get; }
+    public AssistantChangesetStore Changesets { get; }
+    public AssistantChangesetCoordinator Coordinator { get; }
     public AssistantContinuationStore Continuations { get; }
     public AssistantOrchestrator Orchestrator { get; }
 
@@ -39,7 +40,8 @@ internal sealed class GateAHost : IDisposable
         IDbContextFactory<NostosDbContext> factory,
         AssistantCapabilityRegistry registry,
         FakeLlmProvider llm,
-        AssistantPlanStore plans,
+        AssistantChangesetStore changesets,
+        AssistantChangesetCoordinator coordinator,
         AssistantContinuationStore continuations,
         AssistantOrchestrator orchestrator)
     {
@@ -47,7 +49,8 @@ internal sealed class GateAHost : IDisposable
         Factory = factory;
         Registry = registry;
         Llm = llm;
-        Plans = plans;
+        Changesets = changesets;
+        Coordinator = coordinator;
         Continuations = continuations;
         Orchestrator = orchestrator;
     }
@@ -101,19 +104,21 @@ internal sealed class GateAHost : IDisposable
             MaxToolIterations = maxToolIterations,
         };
         configure?.Invoke(assistantOptions);
-        var plans = new AssistantPlanStore();
+        var changesets = new AssistantChangesetStore();
+        var coordinator = new AssistantChangesetCoordinator(changesets, libraryService, assistantOptions);
         var continuations = new AssistantContinuationStore();
 
         var orchestrator = new AssistantOrchestrator(
             registry,
             llm,
-            plans,
+            coordinator,
+            libraryService,
             continuations,
             libraryService,
             assistantOptions,
             NullLogger<AssistantOrchestrator>.Instance);
 
-        return new GateAHost(db, factory, registry, llm, plans, continuations, orchestrator);
+        return new GateAHost(db, factory, registry, llm, changesets, coordinator, continuations, orchestrator);
     }
 
     public void Dispose() => Db.Dispose();

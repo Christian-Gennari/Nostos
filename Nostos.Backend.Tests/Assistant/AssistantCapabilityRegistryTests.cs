@@ -36,8 +36,6 @@ public sealed class AssistantCapabilityRegistryTests : IClassFixture<SqliteTestF
         "library_get_book",
         "library_overview",
         "library_create_or_match_book",
-        "library_update_book",
-        "library_set_book_collections_bulk",
         "knowledge_search",
         "knowledge_overview",
         "knowledge_read_evidence",
@@ -55,8 +53,11 @@ public sealed class AssistantCapabilityRegistryTests : IClassFixture<SqliteTestF
         "library_create_collection",
         "library_rename_collection",
         "library_move_collection",
-        "library_delete_empty_collection",
         "library_delete_collection",
+        "library_add_books_to_collection",
+        "library_remove_books_from_collection",
+        "library_set_book_collections",
+        "library_update_book",
     ];
 
     private readonly SqliteTestFixture _fixture;
@@ -78,20 +79,22 @@ public sealed class AssistantCapabilityRegistryTests : IClassFixture<SqliteTestF
             AssistantTrustClass.Capture,
             AssistantTrustClass.Suggest,
             AssistantTrustClass.Act,
-            AssistantTrustClass.PlanAndAct,
+            AssistantTrustClass.Stage,
         ]);
     }
 
     [Fact]
-    public void Destructive_surface_distinguishes_empty_cleanup_from_membership_destructive_delete()
+    public void Every_library_organisation_capability_is_staged_and_none_deletes_a_book()
     {
         var h = CreateHarness();
 
-        h.Registry.All.Single(c => c.Name == "library_delete_empty_collection")
-            .Trust.Should().Be(AssistantTrustClass.Act);
-        h.Registry.All.Single(c => c.Name == "library_delete_collection")
-            .Trust.Should().Be(AssistantTrustClass.PlanAndAct);
-        h.Registry.All.Select(c => c.Name).Should().NotContain("library_delete_book");
+        h.Registry.All
+            .Where(c => c.Name is "library_create_collection" or "library_rename_collection"
+                or "library_move_collection" or "library_delete_collection"
+                or "library_add_books_to_collection" or "library_remove_books_from_collection"
+                or "library_set_book_collections" or "library_update_book")
+            .Should().HaveCount(8).And.OnlyContain(c => c.Trust == AssistantTrustClass.Stage);
+        h.Registry.All.Select(c => c.Name).Should().NotContain(["library_delete_book", "notes_delete"]);
     }
 
     [Fact]
@@ -108,143 +111,44 @@ public sealed class AssistantCapabilityRegistryTests : IClassFixture<SqliteTestF
     }
 
     // ------------------------------------------------------------------
-    // The approval guard
+    // Staging
     // ------------------------------------------------------------------
 
     [Fact]
-    public async Task Every_PlanAndAct_capability_is_refused_without_an_approval()
+    public async Task A_staged_capability_is_refused_outside_a_turn_and_writes_nothing()
     {
         var h = CreateHarness();
-        var planAndAct = h.Registry.All
-            .Where(c => c.Trust == AssistantTrustClass.PlanAndAct)
-            .ToList();
-        planAndAct.Should().NotBeEmpty();
-
         var before = await StoreSnapshotAsync(h);
 
-        foreach (var capability in planAndAct)
+        foreach (var capability in h.Registry.All.Where(c => c.Trust == AssistantTrustClass.Stage))
         {
             var result = await h.Registry.InvokeAsync(
-                capability.Name,
-                Args("{}"),
-                new AssistantToolContext("client", $"no-approval-{capability.Name}", PlanId: "plan-1"));
+                capability.Name, Args("""{"name":"X","collection":"X"}"""), new AssistantToolContext("client", "key"));
 
             result.Success.Should().BeFalse(capability.Name);
-            result.ErrorCode.Should().Be(AssistantErrorCodes.ApprovalRequired, capability.Name);
+            result.ErrorCode.Should().Be(AssistantErrorCodes.ChangesetUnavailable, capability.Name);
         }
 
         (await StoreSnapshotAsync(h)).Should().BeEquivalentTo(before);
     }
 
     [Fact]
-    public async Task Every_PlanAndAct_capability_is_refused_when_the_approval_is_for_a_different_plan()
-    {
-        var h = CreateHarness();
-        var planAndAct = h.Registry.All
-            .Where(c => c.Trust == AssistantTrustClass.PlanAndAct)
-            .ToList();
-        planAndAct.Should().NotBeEmpty();
-
-        var before = await StoreSnapshotAsync(h);
-
-        foreach (var capability in planAndAct)
-        {
-            var result = await h.Registry.InvokeAsync(
-                capability.Name,
-                Args("{}"),
-                new AssistantToolContext(
-                    "client",
-                    $"mismatch-{capability.Name}",
-                    PlanId: "plan-1",
-                    Approval: new AssistantPlanApproval("plan-2", "token")));
-
-            result.Success.Should().BeFalse(capability.Name);
-            result.ErrorCode.Should().Be(AssistantErrorCodes.ApprovalPlanMismatch, capability.Name);
-        }
-
-        (await StoreSnapshotAsync(h)).Should().BeEquivalentTo(before);
-    }
-
-    [Fact]
-    public async Task PlanAndAct_executes_when_the_approval_matches_the_plan()
-    {
-        var h = CreateHarness();
-        var collection = await SeedCollectionAsync(h, "Delete me");
-        var before = await CollectionCountAsync(h);
-
-        var result = await h.Registry.InvokeAsync(
-            "library_delete_collection",
-            Args($$"""{"collectionId":"{{collection.Id}}"}"""),
-            new AssistantToolContext(
-                "client",
-                "approved-key",
-                PlanId: "plan-1",
-                Approval: new AssistantPlanApproval("plan-1", "token")));
-
-        result.Success.Should().BeTrue();
-        (await CollectionCountAsync(h)).Should().Be(before - 1);
-    }
-
-    [Fact]
-    public async Task Act_executes_immediately_without_a_plan_approval()
+    public async Task A_staged_capability_previews_and_never_writes()
     {
         var h = CreateHarness();
         var before = await CollectionCountAsync(h);
+        var draft = new AssistantChangesetDraft(h.Library, h.Library);
 
         var result = await h.Registry.InvokeAsync(
             "library_create_collection",
-            Args("""{"name":"Immediate Collection"}"""),
-            new AssistantToolContext("client", "act-key"));
+            Args("""{"name":"Staged Collection"}"""),
+            new AssistantToolContext("client", "stage-key", draft));
 
-        result.Success.Should().BeTrue();
-        (await CollectionCountAsync(h)).Should().Be(before + 1);
+        result.Success.Should().BeTrue(result.ErrorMessage);
+        draft.Steps.Should().ContainSingle().Which.Summary.Should().Be("Create collection “Staged Collection”");
+        draft.Diff!.Counts.CollectionsCreated.Should().Be(1);
+        (await CollectionCountAsync(h)).Should().Be(before);
     }
-
-    [Fact]
-    public async Task Empty_collection_cleanup_executes_immediately()
-    {
-        var h = CreateHarness();
-        var collection = await SeedCollectionAsync(h, "Obsolete");
-
-        var result = await h.Registry.InvokeAsync(
-            "library_delete_empty_collection",
-            Args(JsonSerializer.Serialize(new { collectionId = collection.Id })),
-            new AssistantToolContext("client", "empty-delete"));
-
-        result.Success.Should().BeTrue();
-        (await CollectionCountAsync(h)).Should().Be(0);
-    }
-
-    [Fact]
-    public async Task Empty_collection_cleanup_refuses_when_books_would_be_unlinked()
-    {
-        var h = CreateHarness();
-        var collection = await SeedCollectionAsync(h, "Still used");
-        var book = await SeedBookAsync(h, "Still here");
-
-        var assign = await h.Registry.InvokeAsync(
-            "library_update_book",
-            Args(JsonSerializer.Serialize(new
-            {
-                bookId = book.Id,
-                collectionIds = new[] { collection.Id },
-            })),
-            new AssistantToolContext("client", "assign-book"));
-        assign.Success.Should().BeTrue();
-
-        var result = await h.Registry.InvokeAsync(
-            "library_delete_empty_collection",
-            Args(JsonSerializer.Serialize(new { collectionId = collection.Id })),
-            new AssistantToolContext("client", "empty-delete-refused"));
-
-        result.Success.Should().BeFalse();
-        result.ErrorCode.Should().Be("collection_not_empty_requires_approval");
-        (await CollectionCountAsync(h)).Should().Be(1);
-    }
-
-    // ------------------------------------------------------------------
-    // Capture
-    // ------------------------------------------------------------------
 
     [Fact]
     public async Task Capture_executes_immediately_and_the_note_exists()
@@ -355,12 +259,11 @@ public sealed class AssistantCapabilityRegistryTests : IClassFixture<SqliteTestF
             .ToListAsync();
         membership.Should().Equal(collection.Id);
 
-        var updated = await h.Registry.InvokeAsync(
-            "library_update_book",
-            Args($$"""{"bookId":"{{book.Id}}","collectionIds":[]}"""),
-            new AssistantToolContext("client", "book-update"));
+        var updated = await StageAndApplyAsync(h,
+            "library_set_book_collections",
+            $$"""{"updates":[{"bookId":"{{book.Id}}","collections":[]}]}""");
 
-        updated.Success.Should().BeTrue();
+        updated.Success.Should().BeTrue(updated.ErrorMessage);
 
         var after = await db.BookCollections.AsNoTracking()
             .Where(link => link.BookId == book.Id)
@@ -406,11 +309,8 @@ public sealed class AssistantCapabilityRegistryTests : IClassFixture<SqliteTestF
 
         async Task<string?> UpdateAndReadAsync(object args, string key)
         {
-            var result = await h.Registry.InvokeAsync(
-                "library_update_book",
-                Args(JsonSerializer.Serialize(args)),
-                new AssistantToolContext("client", key));
-            result.Success.Should().BeTrue();
+            var result = await StageAndApplyAsync(h, "library_update_book", JsonSerializer.Serialize(args));
+            result.Success.Should().BeTrue(result.ErrorMessage);
             await using var db = await h.Factory.CreateDbContextAsync();
             return (await db.Books.AsNoTracking().SingleAsync(b => b.Id == book.Id)).Metadata.Description;
         }
@@ -426,25 +326,18 @@ public sealed class AssistantCapabilityRegistryTests : IClassFixture<SqliteTestF
     }
 
     [Fact]
-    public async Task Update_book_description_preserves_other_metadata_and_memberships_and_is_exactly_once()
+    public async Task Update_book_description_preserves_other_metadata_and_memberships()
     {
         var h = CreateHarness();
         var collection = await SeedCollectionAsync(h, "Philosophy");
         var book = await SeedBookAsync(h, "Essays and Aphorisms", "Schopenhauer");
-        var context = new AssistantToolContext("client", "describe-once");
 
-        var assign = await h.Registry.InvokeAsync(
-            "library_update_book",
-            Args(JsonSerializer.Serialize(new { bookId = book.Id, collectionIds = new[] { collection.Id }, rating = 5 })),
-            new AssistantToolContext("client", "assign"));
-        assign.Success.Should().BeTrue();
-
-        var args = Args(JsonSerializer.Serialize(new { bookId = book.Id, description = "Short essays." }));
-        var first = await h.Registry.InvokeAsync("library_update_book", args, context);
-        var replay = await h.Registry.InvokeAsync("library_update_book", args, context);
-
-        first.Success.Should().BeTrue();
-        replay.Success.Should().BeTrue();
+        (await StageAndApplyAsync(h, "library_add_books_to_collection",
+            JsonSerializer.Serialize(new { collection = collection.Id, bookIds = new[] { book.Id } }))).Success.Should().BeTrue();
+        (await StageAndApplyAsync(h, "library_update_book",
+            JsonSerializer.Serialize(new { bookId = book.Id, rating = 5 }))).Success.Should().BeTrue();
+        (await StageAndApplyAsync(h, "library_update_book",
+            JsonSerializer.Serialize(new { bookId = book.Id, description = "Short essays." }))).Success.Should().BeTrue();
 
         await using var db = await h.Factory.CreateDbContextAsync();
         var stored = await db.Books.AsNoTracking().SingleAsync(b => b.Id == book.Id);
@@ -455,8 +348,6 @@ public sealed class AssistantCapabilityRegistryTests : IClassFixture<SqliteTestF
         (await db.BookCollections.AsNoTracking().Where(link => link.BookId == book.Id)
             .Select(link => link.CollectionId).ToListAsync())
             .Should().Equal(collection.Id);
-        (await db.LibraryCommandReceipts.CountAsync(r => r.IdempotencyKey == "describe-once"))
-            .Should().Be(1, "a replay with the same mutation identity does not execute twice");
     }
 
     [Fact]
@@ -467,19 +358,18 @@ public sealed class AssistantCapabilityRegistryTests : IClassFixture<SqliteTestF
         var first = await SeedBookAsync(h, "The Devils");
         var second = await SeedBookAsync(h, "The Brothers Karamazov");
 
-        var result = await h.Registry.InvokeAsync(
-            "library_set_book_collections_bulk",
-            Args(JsonSerializer.Serialize(new
+        var result = await StageAndApplyAsync(h,
+            "library_set_book_collections",
+            JsonSerializer.Serialize(new
             {
                 updates = new[]
                 {
-                    new { bookId = first.Id, collectionIds = new[] { collection.Id } },
-                    new { bookId = second.Id, collectionIds = new[] { collection.Id } },
+                    new { bookId = first.Id, collections = new[] { collection.Id } },
+                    new { bookId = second.Id, collections = new[] { collection.Id } },
                 },
-            })),
-            new AssistantToolContext("client", "bulk-membership"));
+            }));
 
-        result.Success.Should().BeTrue();
+        result.Success.Should().BeTrue(result.ErrorMessage);
 
         await using var db = await h.Factory.CreateDbContextAsync();
         var memberships = await db.BookCollections.AsNoTracking()
@@ -489,6 +379,16 @@ public sealed class AssistantCapabilityRegistryTests : IClassFixture<SqliteTestF
             .ToListAsync();
 
         memberships.Should().BeEquivalentTo([first.Id, second.Id]);
+    }
+
+    /// <summary>Stages one capability call into a fresh draft and applies what it staged.</summary>
+    private static async Task<LibraryChangesetResult> StageAndApplyAsync(Harness h, string capability, string argsJson)
+    {
+        var draft = new AssistantChangesetDraft(h.Library, h.Library);
+        var staged = await h.Registry.InvokeAsync(capability, Args(argsJson), new AssistantToolContext("client", "stage", draft));
+        if (!staged.Success)
+            return LibraryChangesetResult.Fail(staged.ErrorCode ?? "not_staged", staged.ErrorMessage ?? string.Empty, "0");
+        return await h.Library.ApplyAsync(draft.Steps.Select(step => step.Op).ToList(), draft.DiffHash);
     }
 
     [Fact]
@@ -614,7 +514,7 @@ public sealed class AssistantCapabilityRegistryTests : IClassFixture<SqliteTestF
         var registry = new AssistantCapabilityRegistry(
             AssistantCapabilities.Build(noteService, libraryService, topics, knowledge));
 
-        return new Harness(db, factory, registry);
+        return new Harness(db, factory, registry, libraryService);
     }
 
     private static JsonElement Args(string json) =>
@@ -697,11 +597,13 @@ public sealed class AssistantCapabilityRegistryTests : IClassFixture<SqliteTestF
     private sealed class Harness(
         NostosDbContext db,
         IDbContextFactory<NostosDbContext> factory,
-        AssistantCapabilityRegistry registry) : IDisposable
+        AssistantCapabilityRegistry registry,
+        LibraryService library) : IDisposable
     {
         public NostosDbContext Db { get; } = db;
         public IDbContextFactory<NostosDbContext> Factory { get; } = factory;
         public AssistantCapabilityRegistry Registry { get; } = registry;
+        public LibraryService Library { get; } = library;
 
         public void Dispose() => Db.Dispose();
     }

@@ -5,6 +5,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 
 import {
   ASSISTANT_SESSION_STORAGE_KEY,
+  AssistantChangesetDto,
   AssistantHistoryMessage,
   AssistantService,
   AssistantTurnResponse,
@@ -58,10 +59,44 @@ function turn(overrides: Partial<AssistantTurnResponse> = {}): AssistantTurnResp
     acknowledgement: null,
     anchorPrompt: null,
     suggestions: [],
-    pendingPlan: null,
+    changeset: null,
     capturedNoteId: null,
     ...overrides,
   };
+}
+
+/** A changeset as the server returns it; a review unless overridden. */
+function changeset(overrides: Partial<AssistantChangesetDto> = {}): AssistantChangesetDto {
+  return {
+    changesetId: 'cs-1',
+    status: 'review',
+    steps: [
+      { index: 0, summary: 'Delete collection “Obsolete”', included: true, dependsOn: [] },
+      { index: 1, summary: 'Create collection “Fresh”', included: true, dependsOn: [] },
+      { index: 2, summary: 'Add 3 books to “Fresh”', included: true, dependsOn: [1] },
+    ],
+    diff: {
+      collections: [],
+      memberships: [],
+      bookEdits: [],
+      counts: {
+        collectionsCreated: 1, collectionsDeleted: 1, collectionsUpdated: 0, booksTouched: 3,
+        membershipsAdded: 3, membershipsRemoved: 3, booksLosingMembership: 3, bookEdits: 0,
+      },
+    },
+    diffHash: 'hash-1',
+    actionToken: 'token-1',
+    reviewReasons: ['Deletes “Obsolete”, which holds 3 books.'],
+    canUndo: false,
+    ...overrides,
+  };
+}
+
+function changesetArtifact(service: AssistantService, id = 'cs-1'): AssistantChangesetDto | undefined {
+  return service.entries()
+    .flatMap((entry) => entry.artifacts ?? [])
+    .map((artifact) => (artifact.kind === 'changeset' ? artifact.changeset : null))
+    .find((item): item is AssistantChangesetDto => item?.changesetId === id);
 }
 
 describe('AssistantService voice transcript alignment', () => {
@@ -484,57 +519,30 @@ describe('AssistantService voice transcript alignment', () => {
         suggestions: [
           { kind: 'topic', label: 'Mountains', reason: 'The note discusses the same climb.', value: 'c-alpha', noteId: 'note-1' },
         ],
-        pendingPlan: {
-          planId: 'plan-1',
-          summary: 'Link the note to Mountains',
-          steps: [
-            {
-              capability: 'notes_link_existing_topic',
-              summary: 'Link the note to Mountains',
-              argumentsJson: '{}',
-            },
-          ],
-          approvalToken: 'token-1',
-        },
       }),
     );
 
     expect(service.suggestions().map((suggestion) => suggestion.label)).toEqual(['Mountains']);
     expect(service.entries().at(-1)?.suggestions?.[0].noteId).toBe('note-1');
-    expect(service.pendingPlan()?.planId).toBe('plan-1');
+    expect(service.pendingReview()).toBeNull();
     expect(service.lastTurn()?.reply).toBe('Mountains looks right.');
   });
 
-  it('keeps a destructive pending plan across an ordinary follow-up turn', () => {
+  it('keeps a review open across an ordinary follow-up turn', () => {
     service.open();
     service.updateDraft('Delete the obsolete collection');
     service.submit();
 
-    http.expectOne('/api/assistant/turn/stream').flush(
-      turn({
-        pendingPlan: {
-          planId: 'plan-delete',
-          summary: 'Delete Obsolete',
-          steps: [
-            {
-              capability: 'library_delete_collection',
-              summary: 'Delete Obsolete',
-              argumentsJson: '{}',
-            },
-          ],
-          approvalToken: 'token-delete',
-        },
-      }),
-    );
-    expect(service.pendingPlan()?.planId).toBe('plan-delete');
+    http.expectOne('/api/assistant/turn/stream').flush(turn({ changeset: changeset() }));
+    expect(service.pendingReview()?.changeset.changesetId).toBe('cs-1');
 
     service.updateDraft('What books are in it?');
     service.submit();
     http.expectOne('/api/assistant/turn/stream').flush(turn({ reply: 'Three books.' }));
 
-    // The backend still holds the destructive plan; a normal answer must not
-    // make the confirmation disappear only on the client.
-    expect(service.pendingPlan()?.planId).toBe('plan-delete');
+    // The server still holds the review; an ordinary answer must not make it
+    // disappear only on the client.
+    expect(service.pendingReview()?.changeset.changesetId).toBe('cs-1');
   });
 
   it('reuses ConversationId and TurnId when an uncertain delivery is retried', () => {
@@ -781,7 +789,7 @@ describe('AssistantService voice transcript alignment', () => {
     expect(service.entries()).toEqual([]);
     expect(service.history()).toEqual([]);
     expect(service.pendingAnchor()).toBeNull();
-    expect(service.pendingPlan()).toBeNull();
+    expect(service.pendingReview()).toBeNull();
   });
 
   it('sends no per-turn processing mode', () => {
@@ -1295,151 +1303,188 @@ describe('AssistantService voice transcript alignment', () => {
     http.expectNone('/api/assistant/turn/stream');
   });
 
-  it('approves exactly one destructive plan and reports the canonical execution result', () => {
-    service.pendingPlan.set({
-      planId: 'plan-1',
-      summary: 'Delete the obsolete collection',
-      steps: [],
-      approvalToken: 'token-1',
-    });
+  it('applies the review it was given, with its token, left-out steps and reviewed diff', () => {
+    service.updateDraft('Reorganise.');
+    service.submit();
+    http.expectOne('/api/assistant/turn/stream').flush(turn({ changeset: changeset() }));
 
-    service.approvePlan('plan-1', 'token-1');
+    service.applyChangeset('cs-1');
 
-    const request = http.expectOne('/api/assistant/plan/approve');
+    const request = http.expectOne('/api/assistant/changesets/cs-1/apply');
     expect(request.request.method).toBe('POST');
-    expect(request.request.body).toEqual({ planId: 'plan-1', approvalToken: 'token-1' });
+    expect(request.request.body).toEqual({ actionToken: 'token-1', excluded: [], diffHash: 'hash-1' });
+    expect(service.changesetBusy()).toBe('cs-1');
     request.flush({
-      success: true,
-      errorCode: null,
-      errorMessage: null,
-      steps: [
-        {
-          capability: 'library_delete_collection',
-          success: true,
-          errorCode: null,
-          errorMessage: null,
-          data: { reply: 'Deleted the obsolete collection.' },
-        },
-      ],
+      success: true, errorCode: null, errorMessage: null, conflicts: [],
+      changeset: changeset({ status: 'applied', canUndo: true }),
     });
 
-    expect(service.pendingPlan()).toBeNull();
-    expect(service.entries().at(-1)?.text).toBe('Deleted the obsolete collection.');
-    expect(service.entries().at(-1)?.meta).toBe('Applied');
+    expect(service.changesetBusy()).toBeNull();
+    expect(changesetArtifact(service)?.status).toBe('applied');
+    expect(service.pendingReview()).toBeNull();
+    const persisted = sessionStorage.getItem(ASSISTANT_SESSION_STORAGE_KEY) ?? '';
+    expect(persisted).toContain('"status":"applied"');
   });
 
-  it('treats an immediate conversational yes as approval of the pending destructive plan', () => {
-    const plan = {
-      planId: 'plan-1',
-      summary: 'Delete the obsolete collection',
-      steps: [],
-      approvalToken: 'token-1',
-    };
-
-    // The destructive plan arrived from the immediately preceding assistant
-    // turn, which is what arms natural-language confirmation.
+  it('applies an immediate conversational yes and answers it', () => {
     service.updateDraft('Remove the obsolete collection.');
     service.submit();
-    const planRequest = http.expectOne('/api/assistant/turn/stream');
-    const planTurnId = planRequest.request.body.turnId as string;
-    planRequest.flush(turn({ pendingPlan: plan }));
-    expect(service.pendingPlanTurnId()).toBe(planTurnId);
+    const proposal = http.expectOne('/api/assistant/turn/stream');
+    const reviewTurnId = proposal.request.body.turnId as string;
+    proposal.flush(turn({ changeset: changeset() }));
 
     service.updateDraft('Go ahead.');
     service.submit();
 
     http.expectNone('/api/assistant/turn/stream');
-    const request = http.expectOne('/api/assistant/plan/approve');
-    expect(request.request.body).toEqual({ planId: 'plan-1', approvalToken: 'token-1' });
-    expect(service.entries().at(-1)?.kind).toBe('user');
+    const request = http.expectOne('/api/assistant/changesets/cs-1/apply');
+    expect(request.request.body.actionToken).toBe('token-1');
     expect(service.entries().at(-1)?.text).toBe('Go ahead.');
-
     request.flush({
-      success: true,
-      errorCode: null,
-      errorMessage: null,
-      steps: [
-        {
-          capability: 'library_delete_collection',
-          success: true,
-          errorCode: null,
-          errorMessage: null,
-          data: { reply: 'Deleted the obsolete collection.' },
-        },
-      ],
+      success: true, errorCode: null, errorMessage: null, conflicts: [],
+      changeset: changeset({ status: 'applied', canUndo: true }),
     });
 
-    expect(service.pendingPlan()).toBeNull();
-    expect(service.entries().at(-1)?.text).toBe('Deleted the obsolete collection.');
-    expect(service.history().slice(-2).map((entry) => entry.text)).toEqual([
-      'Go ahead.',
-      'Deleted the obsolete collection.',
-    ]);
-    const resultArtifacts = service.entries()
-      .filter((entry) => entry.turnId === planTurnId)
-      .flatMap((entry) => entry.artifacts ?? []);
-    expect(resultArtifacts).toContainEqual({
-      kind: 'destructive-result',
-      planId: 'plan-1',
-      summary: 'Delete the obsolete collection',
-      outcome: 'applied',
-      capabilities: [],
-    });
-    const persisted = sessionStorage.getItem(ASSISTANT_SESSION_STORAGE_KEY) ?? '';
-    expect(persisted).not.toContain('argumentsJson');
-    expect(persisted).not.toContain('\"data\"');
+    expect(service.entries().at(-1)?.text).toBe('Done.');
+    expect(service.entries().at(-1)?.turnId).toBe(reviewTurnId);
+    expect(service.history().slice(-2).map((entry) => entry.text)).toEqual(['Go ahead.', 'Done.']);
   });
 
-  it('does not mistake a qualified yes for destructive approval and disarms later generic yes', () => {
-    const plan = {
-      planId: 'plan-1',
-      summary: 'Delete the obsolete collection',
-      steps: [],
-      approvalToken: 'token-1',
-    };
-
+  it('does not mistake a qualified yes for approval and disarms a later generic yes', () => {
     service.updateDraft('Remove the obsolete collection.');
     service.submit();
-    http.expectOne('/api/assistant/turn/stream').flush(turn({ pendingPlan: plan }));
+    http.expectOne('/api/assistant/turn/stream').flush(turn({ changeset: changeset() }));
 
     service.updateDraft('Yes, but explain what will happen first.');
     service.submit();
 
-    http.expectNone('/api/assistant/plan/approve');
-    const discussion = http.expectOne('/api/assistant/turn/stream');
-    discussion.flush(turn({ reply: 'The collection will be deleted; its books remain.' }));
+    http.expectNone('/api/assistant/changesets/cs-1/apply');
+    http.expectOne('/api/assistant/turn/stream')
+      .flush(turn({ reply: 'The collection will be deleted; its books remain.' }));
+    expect(service.pendingReview()?.changeset.changesetId).toBe('cs-1');
 
-    expect(service.pendingPlan()?.planId).toBe('plan-1');
-
-    // The plan remains visible, but a generic yes after an intervening turn is
-    // no longer enough to execute stale destructive work.
+    // The card stays, but a generic yes after an intervening turn is no longer
+    // enough to apply stale changes.
     service.updateDraft('yes');
     service.submit();
-    http.expectNone('/api/assistant/plan/approve');
-    const later = http.expectOne('/api/assistant/turn/stream');
-    later.flush(turn());
+    http.expectNone('/api/assistant/changesets/cs-1/apply');
+    http.expectOne('/api/assistant/turn/stream').flush(turn());
   });
 
-  it('cancels a fresh destructive confirmation on an explicit no', () => {
-    const plan = {
-      planId: 'plan-cancel',
-      summary: 'Delete the obsolete collection',
-      steps: [],
-      approvalToken: 'token-cancel',
-    };
-
+  it('sets a fresh review aside on an explicit no', () => {
     service.updateDraft('Remove the obsolete collection.');
     service.submit();
-    http.expectOne('/api/assistant/turn/stream').flush(turn({ pendingPlan: plan }));
+    http.expectOne('/api/assistant/turn/stream').flush(turn({ changeset: changeset() }));
 
     service.updateDraft('No thanks.');
     service.submit();
 
     http.expectNone('/api/assistant/turn/stream');
-    http.expectNone('/api/assistant/plan/approve');
-    expect(service.pendingPlan()).toBeNull();
-    expect(service.entries().at(-1)?.text).toBe("Okay. I won't make that change.");
-    expect(service.entries().at(-1)?.meta).toBe('Cancelled');
+    const request = http.expectOne('/api/assistant/changesets/cs-1/discard');
+    expect(request.request.body).toEqual({ actionToken: 'token-1' });
+    request.flush({
+      success: true, errorCode: null, errorMessage: null, conflicts: [],
+      changeset: changeset({ status: 'discarded' }),
+    });
+
+    expect(service.pendingReview()).toBeNull();
+    expect(changesetArtifact(service)?.status).toBe('discarded');
+    expect(service.entries().at(-1)?.text).toBe('Okay. Nothing was changed.');
+  });
+
+  it('leaves a step out and shows what the rest would do', () => {
+    service.updateDraft('Reorganise.');
+    service.submit();
+    http.expectOne('/api/assistant/turn/stream').flush(turn({ changeset: changeset() }));
+
+    service.setChangesetStepIncluded('cs-1', 1, false);
+
+    const request = http.expectOne('/api/assistant/changesets/cs-1/preview');
+    expect(request.request.body).toEqual({ actionToken: 'token-1', excluded: [1] });
+    const steps = changeset().steps.map((step) => ({ ...step, included: step.index === 0 }));
+    request.flush({
+      success: true, errorCode: null, errorMessage: null, conflicts: [],
+      changeset: changeset({ steps, diffHash: 'hash-2' }),
+    });
+
+    expect(changesetArtifact(service)?.diffHash).toBe('hash-2');
+    service.applyChangeset('cs-1');
+    expect(http.expectOne('/api/assistant/changesets/cs-1/apply').request.body)
+      .toEqual({ actionToken: 'token-1', excluded: [1, 2], diffHash: 'hash-2' });
+  });
+
+  it('undoes applied changes and lists what it left alone', () => {
+    service.updateDraft('Rename Fiction.');
+    service.submit();
+    http.expectOne('/api/assistant/turn/stream')
+      .flush(turn({ changeset: changeset({ status: 'applied', canUndo: true, reviewReasons: [] }) }));
+    expect(service.pendingReview()).toBeNull();
+
+    service.undoChangeset('cs-1');
+
+    const request = http.expectOne('/api/assistant/changesets/cs-1/undo');
+    request.flush({
+      success: true, errorCode: null, errorMessage: null,
+      conflicts: ['Kept the collections of “Dune”: they were changed after this was applied.'],
+      changeset: changeset({ status: 'undone' }),
+    });
+
+    const artifact = service.entries()
+      .flatMap((entry) => entry.artifacts ?? [])
+      .find((item) => item.kind === 'changeset');
+    expect(artifact).toMatchObject({
+      kind: 'changeset',
+      changeset: { status: 'undone' },
+      conflicts: ['Kept the collections of “Dune”: they were changed after this was applied.'],
+    });
+  });
+
+  it('shows a refusal on the card and keeps the review when the library moved on', () => {
+    service.updateDraft('Reorganise.');
+    service.submit();
+    http.expectOne('/api/assistant/turn/stream').flush(turn({ changeset: changeset() }));
+
+    service.applyChangeset('cs-1');
+    http.expectOne('/api/assistant/changesets/cs-1/apply').flush({
+      success: false,
+      errorCode: 'changeset_diff_changed',
+      errorMessage: 'The library changed since this was reviewed.',
+      conflicts: [],
+      changeset: changeset({ diffHash: 'hash-new', reviewReasons: ['The library changed while I was working.'] }),
+    });
+
+    expect(service.changesetErrors()['cs-1']).toBe('The library changed since this was reviewed.');
+    expect(service.pendingReview()?.changeset.diffHash).toBe('hash-new');
+  });
+
+  it('reads a 404 refusal body instead of reporting a network failure', () => {
+    service.updateDraft('Reorganise.');
+    service.submit();
+    http.expectOne('/api/assistant/turn/stream').flush(turn({ changeset: changeset() }));
+
+    service.applyChangeset('cs-1');
+    http.expectOne('/api/assistant/changesets/cs-1/apply').flush(
+      {
+        success: false, errorCode: 'assistant_changeset_not_found', changeset: null, conflicts: [],
+        errorMessage: 'These changes are no longer available. Ask again to prepare them afresh.',
+      },
+      { status: 404, statusText: 'Not Found' },
+    );
+
+    expect(service.changesetErrors()['cs-1']).toContain('no longer available');
+  });
+
+  it('marks an older review as set aside when a newer one arrives', () => {
+    service.updateDraft('Delete A.');
+    service.submit();
+    http.expectOne('/api/assistant/turn/stream').flush(turn({ changeset: changeset() }));
+    service.updateDraft('Actually delete B.');
+    service.submit();
+    http.expectOne('/api/assistant/turn/stream')
+      .flush(turn({ changeset: changeset({ changesetId: 'cs-2', actionToken: 'token-2' }) }));
+
+    expect(changesetArtifact(service, 'cs-1')?.status).toBe('discarded');
+    expect(service.pendingReview()?.changeset.changesetId).toBe('cs-2');
   });
 
   it('keeps the natural approval vocabulary deliberately narrow', () => {

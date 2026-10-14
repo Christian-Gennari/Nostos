@@ -134,15 +134,15 @@ public sealed record AssistantAnchorDto(
 
 /// <summary>
 /// A normal turn result. <c>Suggestions</c> is always present (empty when the
-/// model proposed none); <c>PendingPlan</c> is non-null only when a
-/// PlanAndAct tool was requested and is waiting for explicit approval.
+/// model proposed none); <c>Changeset</c> is non-null when the turn changed the
+/// library (applied, with undo) or prepared changes that wait for review.
 /// </summary>
 public sealed record AssistantTurnResponse(
     string Reply,
     string? Acknowledgement,
     AssistantAnchorPromptDto? AnchorPrompt,
     IReadOnlyList<AssistantSuggestionDto> Suggestions,
-    AssistantPendingPlanDto? PendingPlan,
+    AssistantChangesetDto? Changeset,
     // APPENDED (positional record): the id of the note a capture created this
     // turn, so the surface can show its raw transcript and offer restore
     // (issue #262 §8). Null when the turn captured nothing.
@@ -314,42 +314,59 @@ public sealed record AssistantSuggestionDto(
     string? NoteId = null);
 
 /// <summary>
-/// A plan the assistant will not run inline. <c>ApprovalToken</c> is bound to
-/// this <c>PlanId</c> and is required by
-/// <c>POST /api/assistant/plan/approve</c>; a missing or mismatched pair is
-/// refused and mutates nothing.
+/// Library changes one turn made or proposes, as one unit. <c>Status</c> is
+/// <c>review</c> (nothing applied yet), <c>applied</c>, <c>undone</c> or
+/// <c>discarded</c>. <c>ActionToken</c> is required by every changeset action
+/// route; it is issued with the changeset and binds those actions to it.
+/// <c>ReviewReasons</c> say in plain words why the changes wait for review.
 /// </summary>
-public sealed record AssistantPendingPlanDto(
-    string PlanId,
-    string Summary,
-    IReadOnlyList<AssistantPlanStepDto> Steps,
-    string ApprovalToken);
-
-/// <summary>One ordered step of a pending plan; executed exactly as stored.</summary>
-public sealed record AssistantPlanStepDto(
-    string Capability,
-    string Summary,
-    string ArgumentsJson);
-
-/// <summary>Approve exactly one pending plan.</summary>
-public sealed record AssistantPlanApproveRequest(
-    string PlanId,
-    string? ApprovalToken);
+public sealed record AssistantChangesetDto(
+    string ChangesetId,
+    string Status,
+    IReadOnlyList<AssistantChangeStepDto> Steps,
+    LibraryChangesetDiffDto Diff,
+    string DiffHash,
+    string ActionToken,
+    IReadOnlyList<string> ReviewReasons,
+    bool CanUndo);
 
 /// <summary>
-/// The result of executing an approved plan. Failures are data
-/// (<c>ErrorCode</c>), never hidden behind a 200-shaped success.
+/// One step of a changeset as the user can include or leave out.
+/// <c>DependsOn</c> names earlier steps it needs, such as the step that
+/// creates the collection it fills; leaving one out leaves out its dependants.
 /// </summary>
-public sealed record AssistantPlanApproveResponse(
-    bool Success,
-    string? ErrorCode,
-    string? ErrorMessage,
-    IReadOnlyList<AssistantPlanStepOutcomeDto> Steps);
+public sealed record AssistantChangeStepDto(
+    int Index,
+    string Summary,
+    bool Included,
+    IReadOnlyList<int> DependsOn);
 
-/// <summary>Outcome of one executed plan step, in plan order.</summary>
-public sealed record AssistantPlanStepOutcomeDto(
-    string Capability,
+/// <summary>Recompute a review with some steps left out.</summary>
+public sealed record AssistantChangesetPreviewRequest(
+    string? ActionToken,
+    IReadOnlyList<int>? Excluded);
+
+/// <summary>
+/// Apply a reviewed changeset. <c>DiffHash</c> is the diff the user saw; when
+/// the same steps would now do something else, nothing is applied and the new
+/// review comes back instead.
+/// </summary>
+public sealed record AssistantChangesetApplyRequest(
+    string? ActionToken,
+    IReadOnlyList<int>? Excluded,
+    string? DiffHash);
+
+/// <summary>Discard a review, or undo an applied changeset.</summary>
+public sealed record AssistantChangesetTokenRequest(string? ActionToken);
+
+/// <summary>
+/// The outcome of a changeset action. Failures are data; <c>Changeset</c> is
+/// the changeset as it now stands whenever it is known. <c>Conflicts</c> lists
+/// what an undo left alone because it changed after the apply.
+/// </summary>
+public sealed record AssistantChangesetActionResponse(
     bool Success,
     string? ErrorCode,
     string? ErrorMessage,
-    object? Data);
+    AssistantChangesetDto? Changeset,
+    IReadOnlyList<string> Conflicts);

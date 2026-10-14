@@ -554,11 +554,11 @@ public sealed class AssistantEndpointTests : IDisposable
     }
 
     // ------------------------------------------------------------------
-    // Approve
+    // Changesets
     // ------------------------------------------------------------------
 
     [Fact]
-    public async Task Approving_an_unknown_plan_is_refused_with_a_typed_error()
+    public async Task An_unknown_changeset_is_refused_with_a_typed_error()
     {
         var provider = new FakeLlmProvider();
 
@@ -567,28 +567,29 @@ public sealed class AssistantEndpointTests : IDisposable
         using var client = host.CreateClient();
 
         var response = await client.PostAsJsonAsync(
-            AssistantEndpoints.ApproveRoute,
-            new AssistantPlanApproveRequest("does-not-exist", "some-token"));
+            "/api/assistant/changesets/does-not-exist/apply",
+            new AssistantChangesetApplyRequest("some-token", null, null));
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        (await ProblemTitleAsync(response)).Should().Be(AssistantErrorCodes.NotFound);
+        var body = await response.Content.ReadFromJsonAsync<AssistantChangesetActionResponse>();
+        body!.ErrorCode.Should().Be(AssistantErrorCodes.ChangesetNotFound);
+        body.Success.Should().BeFalse();
     }
 
     [Fact]
-    public async Task Approving_with_a_missing_token_is_refused()
+    public async Task Changeset_actions_stay_available_without_an_ai_provider()
     {
-        var provider = new FakeLlmProvider();
-
+        // Applying, discarding and undoing touch only the library; a review
+        // must never be stranded because the model became unavailable.
         using var factory = new LibraryEndpointFactory();
-        using var host = CreateHost(factory, provider);
-        using var client = host.CreateClient();
+        using var client = factory.CreateClient();
 
         var response = await client.PostAsJsonAsync(
-            AssistantEndpoints.ApproveRoute,
-            new AssistantPlanApproveRequest("some-plan", null));
+            "/api/assistant/changesets/does-not-exist/undo",
+            new AssistantChangesetTokenRequest("some-token"));
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await ProblemTitleAsync(response)).Should().Be(AssistantErrorCodes.ApprovalRequired);
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound,
+            "the route answers with the changeset's state, not an AI availability error");
     }
 
     // ------------------------------------------------------------------

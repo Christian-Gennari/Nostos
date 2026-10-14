@@ -3,25 +3,14 @@ using System.Text.Json;
 namespace Nostos.Backend.Integrations.Assistant;
 
 /// <summary>
-/// A user approval bound to exactly one plan id (issue #260, decision D7). The
-/// token authorises the <see cref="AssistantTrustClass.PlanAndAct"/>
-/// capabilities of that plan and nothing else: presenting it for a call built
-/// against a different plan is refused by the registry before any store is
-/// touched.
-/// </summary>
-public sealed record AssistantPlanApproval(string PlanId, string ApprovalToken);
-
-/// <summary>
-/// Per-invocation context assembled by the caller (the 261-S2 orchestrator).
-/// <see cref="PlanId"/> identifies the plan this call was built against;
-/// <see cref="Approval"/> carries the user's approval of that plan, when one
-/// exists. Capture uses the client/idempotency pair for exactly-once retries.
+/// Per-invocation context assembled by the orchestrator. Capture and Act use
+/// the client/idempotency pair for exactly-once retries; Stage capabilities add
+/// their operations to <see cref="Changeset"/>, the turn's draft.
 /// </summary>
 public sealed record AssistantToolContext(
     string? ClientId = null,
     string? IdempotencyKey = null,
-    string? PlanId = null,
-    AssistantPlanApproval? Approval = null);
+    AssistantChangesetDraft? Changeset = null);
 
 /// <summary>
 /// Outcome of an assistant capability. Failures are data, never exceptions, so
@@ -52,8 +41,13 @@ public sealed record AssistantToolResult(
 public static class AssistantErrorCodes
 {
     public const string UnknownCapability = "assistant_unknown_capability";
-    public const string ApprovalRequired = "assistant_approval_required";
-    public const string ApprovalPlanMismatch = "assistant_approval_plan_mismatch";
+    public const string ChangesetUnavailable = "assistant_changeset_unavailable";
+    public const string ChangesetNotFound = "assistant_changeset_not_found";
+    public const string ChangesetTokenMismatch = "assistant_changeset_token_mismatch";
+    public const string ChangesetNotReviewable = "assistant_changeset_not_reviewable";
+    public const string ChangesetNotUndoable = "assistant_changeset_not_undoable";
+    public const string ChangesetBusy = "assistant_changeset_busy";
+    public const string NotPermitted = "assistant_not_permitted";
     public const string InvalidArguments = "assistant_invalid_arguments";
     public const string NotFound = "assistant_not_found";
     public const string ContinuationNotFound = "assistant_continuation_not_found";
@@ -77,7 +71,7 @@ public static class AssistantErrorCodes
 /// <see cref="AssistantCapabilities.Build"/>; there is no dynamic discovery.
 /// </summary>
 /// <param name="Name">The wire name the model calls.</param>
-/// <param name="Trust">The enforcement class; the registry refuses a PlanAndAct call without a matching approval.</param>
+/// <param name="Trust">How the capability runs; see <see cref="AssistantTrustClass"/>.</param>
 /// <param name="Category">Product-domain metadata for measurement and possible deterministic grouping. This never grants authority.</param>
 /// <param name="Summary">The tool description the model reads.</param>
 /// <param name="ParametersJsonSchema">

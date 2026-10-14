@@ -167,11 +167,23 @@ describe('assistant history projections', () => {
         { kind: 'action', capability: 'library_update_book', state: 'completed' },
         { kind: 'action', capability: 'library_update_book', state: 'completed' },
         {
-          kind: 'destructive-result',
-          planId: 'plan-1',
-          summary: 'Apply changes',
-          outcome: 'applied',
-          capabilities: ['library_update_book', 'library_delete_collection'],
+          kind: 'changeset',
+          changeset: {
+            changesetId: 'cs-1',
+            status: 'applied',
+            steps: [
+              { index: 0, summary: 'Delete collection “Old”', included: true, dependsOn: [] },
+              { index: 1, summary: 'Create collection “New”', included: false, dependsOn: [] },
+            ],
+            diff: {
+              collections: [], memberships: [], bookEdits: [],
+              counts: {
+                collectionsCreated: 0, collectionsDeleted: 1, collectionsUpdated: 0, booksTouched: 0,
+                membershipsAdded: 0, membershipsRemoved: 0, booksLosingMembership: 0, bookEdits: 0,
+              },
+            },
+            diffHash: 'h', actionToken: 't', reviewReasons: [], canUndo: true,
+          },
         },
         { kind: 'capture', noteId: 'note-42', acknowledgement: 'Saved.', state: 'saved' },
       ],
@@ -184,7 +196,7 @@ describe('assistant history projections', () => {
         context: user.historyContext,
         evidence: user.historyEvidence,
         evidenceHandles: [handle],
-        actions: ['library_update_book', 'library_delete_collection'],
+        actions: ['library_update_book', 'Applied: Delete collection “Old”'],
         capturedNoteId: 'note-42',
       },
       {

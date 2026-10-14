@@ -82,7 +82,7 @@ internal static class QualityArgs
         new JsonObject { ["kind"] = "note", ["noteId"] = noteId.ToString() }.ToJsonString();
 
     public static string DeleteCollection(Guid collectionId) =>
-        new JsonObject { ["collectionId"] = collectionId.ToString() }.ToJsonString();
+        new JsonObject { ["collection"] = collectionId.ToString() }.ToJsonString();
 
     public static string GetCollection(Guid collectionId) =>
         new JsonObject { ["collectionId"] = collectionId.ToString() }.ToJsonString();
@@ -109,8 +109,8 @@ internal static class QualityVerify
             : $"expected nothing executed, observed [{string.Join(",", executed)}]";
     }
 
-    public static string? NoPendingPlan(QualityTurnRecord turn) =>
-        turn.Response?.PendingPlan is null ? null : "expected no pending plan, observed one";
+    public static string? NoReview(QualityTurnRecord turn) =>
+        turn.Response?.Changeset?.Status != "review" ? null : "expected no changes waiting for review, observed some";
 
     public static async Task<string?> NoteAnchor(
         IServiceProvider services, Guid noteId, string kind, string? value, bool verified)

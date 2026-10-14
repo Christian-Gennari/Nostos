@@ -92,9 +92,11 @@ public sealed class AssistantExecutionBudgetTests
 
         // The measurement notes and limit rationale live in
         // docs/assistant-execution-budgets.md.
-        options.MaxToolIterations.Should().Be(6);
-        options.MaxTurnTokens.Should().Be(50_000);
-        options.MaxTurnElapsedMilliseconds.Should().Be(60_000);
+        options.MaxToolIterations.Should().Be(12);
+        options.MaxTurnTokens.Should().Be(120_000);
+        options.MaxTurnElapsedMilliseconds.Should().Be(90_000);
+        options.MaxTurnElapsedMilliseconds.Should().BeLessThan(options.RequestTimeoutSeconds * 1000,
+            "a stalled call is stopped by the turn budget, not by a transport error");
     }
 
     [Fact]
@@ -102,10 +104,11 @@ public sealed class AssistantExecutionBudgetTests
     {
         var options = new AssistantOptions();
 
-        // 51,000 reported tokens: no measured legitimate turn came close (worst of 900
-        // was 31,875), so this is the runaway class the ceiling exists for.
+        // 121,000 reported tokens: past what even a whole-library reorganisation
+        // re-sending its overview spends, so this is the runaway class the ceiling
+        // exists for.
         AssistantExecutionBudget.ExceededCeiling(
-            Usage(promptTokens: 45_000, outputTokens: 6_000), options).Should().Be("cumulative-token");
+            Usage(promptTokens: 115_000, outputTokens: 6_000), options).Should().Be("cumulative-token");
 
         // Two minutes of wall clock with or without a cheap token bill: the measured
         // stalls (141-145 s) ran on low call counts, which is why latency needs its own

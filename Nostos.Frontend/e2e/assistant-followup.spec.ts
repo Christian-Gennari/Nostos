@@ -81,7 +81,7 @@ test('a typed follow-up continues the conversation and names book and page', asy
               // The app only shows an anchor prompt that carries a continuation id.
               anchorPrompt: { kind: 'physical_page', question: 'What page are you on?', continuationId: 'continuation-1' },
               suggestions: [],
-              pendingPlan: null,
+              changeset: null,
               capturedNoteId: null,
             }
           : {
@@ -89,7 +89,7 @@ test('a typed follow-up continues the conversation and names book and page', asy
               acknowledgement: `Saved to ${BOOK_TITLE}.`,
               anchorPrompt: null,
               suggestions: [],
-              pendingPlan: null,
+              changeset: null,
               capturedNoteId: 'note-e2e',
             },
       ),

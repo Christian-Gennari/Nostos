@@ -1,6 +1,8 @@
 using System.Text.Json;
 using FluentAssertions;
+using Nostos.Backend.Data.Models;
 using Nostos.Backend.Integrations.Assistant;
+using Nostos.Shared.Dtos;
 using Nostos.Backend.Tests.Support;
 using Nostos.Product.BookText;
 using Xunit;
@@ -86,26 +88,39 @@ public sealed class AssistantGateAFailureContractTests : IClassFixture<SqliteTes
     }
 
     [Fact]
-    public async Task Approval_refusals_keep_their_typed_codes()
+    public async Task Changeset_refusals_keep_their_typed_codes()
     {
         using var h = GateAHost.Create(_fixture);
         var collection = await SeedCollectionAsync(h, "Contract collection");
+        await using (var db = await h.Factory.CreateDbContextAsync())
+        {
+            var book = new PhysicalBookModel { Id = Guid.NewGuid(), Title = "Kept" };
+            db.Books.Add(book);
+            db.BookCollections.Add(new BookCollectionModel { BookId = book.Id, CollectionId = collection.Id });
+            await db.SaveChangesAsync();
+        }
 
         h.Llm.CallsTool(
             "library_delete_collection",
-            JsonSerializer.Serialize(new { collectionId = collection.Id }));
+            JsonSerializer.Serialize(new { collection = collection.Id }));
 
-        var plan = (await h.Orchestrator.HandleTurnAsync(Turn(
+        var review = (await h.Orchestrator.HandleTurnAsync(Turn(
             "Delete the contract collection.",
-            Context(surface: "library", route: "/library")))).PendingPlan;
-        plan.Should().NotBeNull();
+            Context(surface: "library", route: "/library")))).Changeset;
+        review!.Status.Should().Be("review");
 
-        (await h.Orchestrator.ApproveAsync("not-this-plan", plan!.ApprovalToken))
-            .ErrorCode.Should().Be(AssistantErrorCodes.NotFound);
-        (await h.Orchestrator.ApproveAsync(plan.PlanId, "garbage-token"))
-            .ErrorCode.Should().Be(AssistantErrorCodes.ApprovalPlanMismatch);
-        (await h.Orchestrator.ApproveAsync(plan.PlanId, null))
-            .ErrorCode.Should().Be(AssistantErrorCodes.ApprovalRequired);
+        (await h.Coordinator.ApplyAsync("not-this-changeset",
+                new AssistantChangesetApplyRequest(review.ActionToken, null, null), default))
+            .ErrorCode.Should().Be(AssistantErrorCodes.ChangesetNotFound);
+        (await h.Coordinator.ApplyAsync(review.ChangesetId,
+                new AssistantChangesetApplyRequest("garbage-token", null, null), default))
+            .ErrorCode.Should().Be(AssistantErrorCodes.ChangesetTokenMismatch);
+        (await h.Coordinator.ApplyAsync(review.ChangesetId,
+                new AssistantChangesetApplyRequest(null, null, null), default))
+            .ErrorCode.Should().Be(AssistantErrorCodes.ChangesetTokenMismatch);
+        (await h.Coordinator.UndoAsync(review.ChangesetId,
+                new AssistantChangesetTokenRequest(review.ActionToken), default))
+            .ErrorCode.Should().Be(AssistantErrorCodes.ChangesetNotUndoable);
 
         (await CollectionCountAsync(h)).Should().Be(1, "every refusal precedes any store access");
     }

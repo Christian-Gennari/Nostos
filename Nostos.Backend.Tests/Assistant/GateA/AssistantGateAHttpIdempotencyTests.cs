@@ -111,24 +111,24 @@ public sealed class AssistantGateAHttpIdempotencyTests : IDisposable
         var retry = await client.PostAsJsonAsync(AssistantEndpoints.TurnRoute, Act("delivery-b"));
         retry.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        // Gate A case 3: one logical Act turn is one mutation, however many
-        // deliveries arrive.
+        // Gate A case 3: one logical turn applies its changes once, however
+        // many deliveries arrive, and the retry reports the same changeset.
+        var firstBody = (await first.Content.ReadFromJsonAsync<AssistantTurnResponse>())!;
         var retryBody = (await retry.Content.ReadFromJsonAsync<AssistantTurnResponse>())!;
-        retryBody.ExecutedCapabilities.Should().Contain("library_create_collection");
+        firstBody.Changeset!.Status.Should().Be("applied");
+        retryBody.Changeset!.ChangesetId.Should().Be(firstBody.Changeset.ChangesetId);
         (await CollectionCountAsync(factory, "Gate A shelf")).Should().Be(1);
     }
 
     [Fact]
-    public async Task Lost_approval_response_replays_the_destructive_result_without_double_execution()
+    public async Task Lost_apply_response_reports_the_applied_changeset_without_applying_twice()
     {
         var target = Guid.NewGuid();
         var provider = new FakeLlmProvider()
-            .CallsTool(
-                "library_delete_collection",
-                JsonSerializer.Serialize(new { collectionId = target }));
+            .CallsTool("library_delete_collection", JsonSerializer.Serialize(new { collection = target }));
 
         using var factory = new LibraryEndpointFactory();
-        await SeedCollectionAsync(factory, target, "Gate A doomed");
+        await SeedCollectionAsync(factory, target, "Gate A doomed", withBook: true);
         using var host = CreateHost(factory, provider);
         using var client = host.CreateClient();
 
@@ -145,51 +145,53 @@ public sealed class AssistantGateAHttpIdempotencyTests : IDisposable
                 TurnId: "gate-a-turn-plan"));
 
         turn.StatusCode.Should().Be(HttpStatusCode.OK);
-        var plan = (await turn.Content.ReadFromJsonAsync<AssistantTurnResponse>())!.PendingPlan;
-        plan.Should().NotBeNull();
+        var review = (await turn.Content.ReadFromJsonAsync<AssistantTurnResponse>())!.Changeset;
+        review!.Status.Should().Be("review");
+        (await CollectionCountAsync(factory, "Gate A doomed")).Should().Be(1, "a review applies nothing");
 
-        var approved = await client.PostAsJsonAsync(
-            AssistantEndpoints.ApproveRoute,
-            new AssistantPlanApproveRequest(plan!.PlanId, plan.ApprovalToken));
-        approved.StatusCode.Should().Be(HttpStatusCode.OK);
-        (await approved.Content.ReadFromJsonAsync<AssistantPlanApproveResponse>())!.Success
-            .Should().BeTrue();
+        var apply = new AssistantChangesetApplyRequest(review.ActionToken, null, review.DiffHash);
+        var applied = await client.PostAsJsonAsync(ChangesetRoute(review, "apply"), apply);
+        applied.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await applied.Content.ReadFromJsonAsync<AssistantChangesetActionResponse>())!.Success.Should().BeTrue();
 
-        // Gate A case 4: the approval response is lost, so the client presents
-        // the exact plan id + token again. The terminal receipt replays
-        // execution truth; the plan never becomes executable a second time.
-        var replay = await client.PostAsJsonAsync(
-            AssistantEndpoints.ApproveRoute,
-            new AssistantPlanApproveRequest(plan.PlanId, plan.ApprovalToken));
+        // Gate A case 4: the apply response is lost and the client presents
+        // the same changeset and token again. It reports the applied
+        // changeset; the changes never run a second time.
+        var replay = await client.PostAsJsonAsync(ChangesetRoute(review, "apply"), apply);
         replay.StatusCode.Should().Be(HttpStatusCode.OK);
-        var replayBody = (await replay.Content.ReadFromJsonAsync<AssistantPlanApproveResponse>())!;
+        var replayBody = (await replay.Content.ReadFromJsonAsync<AssistantChangesetActionResponse>())!;
         replayBody.Success.Should().BeTrue();
-
+        replayBody.Changeset!.Status.Should().Be("applied");
         (await CollectionCountAsync(factory, "Gate A doomed")).Should().Be(0);
+
+        var undone = await client.PostAsJsonAsync(
+            ChangesetRoute(review, "undo"), new AssistantChangesetTokenRequest(review.ActionToken));
+        undone.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await undone.Content.ReadFromJsonAsync<AssistantChangesetActionResponse>())!.Changeset!.Status
+            .Should().Be("undone");
+        (await CollectionCountAsync(factory, "Gate A doomed")).Should().Be(1);
     }
 
     [Fact]
-    public async Task Stale_superseded_approval_is_refused_over_http_and_mutates_nothing()
+    public async Task A_superseded_review_is_refused_over_http_and_changes_nothing()
     {
         var firstTarget = Guid.NewGuid();
         var secondTarget = Guid.NewGuid();
         var provider = new FakeLlmProvider()
-            .CallsTool(
-                "library_delete_collection",
-                JsonSerializer.Serialize(new { collectionId = firstTarget }))
-            .CallsTool(
-                "library_delete_collection",
-                JsonSerializer.Serialize(new { collectionId = secondTarget }));
+            .CallsTool("library_delete_collection", JsonSerializer.Serialize(new { collection = firstTarget }))
+            .Returns("Prepared.")
+            .CallsTool("library_delete_collection", JsonSerializer.Serialize(new { collection = secondTarget }))
+            .Returns("Prepared.");
 
         using var factory = new LibraryEndpointFactory();
-        await SeedCollectionAsync(factory, firstTarget, "Gate A first");
-        await SeedCollectionAsync(factory, secondTarget, "Gate A second");
+        await SeedCollectionAsync(factory, firstTarget, "Gate A first", withBook: true);
+        await SeedCollectionAsync(factory, secondTarget, "Gate A second", withBook: true);
         using var host = CreateHost(factory, provider);
         using var client = host.CreateClient();
 
         using var _ = KeepToken();
 
-        async Task<AssistantPendingPlanDto> ProposeAsync(string message, string turnId)
+        async Task<AssistantChangesetDto> ProposeAsync(string message, string turnId)
         {
             var response = await client.PostAsJsonAsync(
                 AssistantEndpoints.TurnRoute,
@@ -201,34 +203,38 @@ public sealed class AssistantGateAHttpIdempotencyTests : IDisposable
                     ConversationId: "gate-a-conversation-15",
                     TurnId: turnId));
             response.StatusCode.Should().Be(HttpStatusCode.OK);
-            return (await response.Content.ReadFromJsonAsync<AssistantTurnResponse>())!.PendingPlan!;
+            return (await response.Content.ReadFromJsonAsync<AssistantTurnResponse>())!.Changeset!;
         }
 
         var stale = await ProposeAsync("Delete the first collection.", "gate-a-turn-stale-a");
         var current = await ProposeAsync("Actually delete the second instead.", "gate-a-turn-stale-b");
-        stale.PlanId.Should().NotBe(current.PlanId);
+        stale.ChangesetId.Should().NotBe(current.ChangesetId);
 
-        // Gate A case 15: the superseded approval is non-executable. The
-        // refusal is typed (409 conflict or 404 gone) and nothing is deleted.
-        var refused = await client.PostAsJsonAsync(
-            AssistantEndpoints.ApproveRoute,
-            new AssistantPlanApproveRequest(stale.PlanId, stale.ApprovalToken));
-        refused.StatusCode.Should().BeOneOf(HttpStatusCode.Conflict, HttpStatusCode.NotFound);
-        (await ProblemTitleAsync(refused)).Should().BeOneOf(
-            AssistantErrorCodes.ApprovalPlanMismatch,
-            AssistantErrorCodes.NotFound);
+        // Gate A case 15: the superseded review is not applicable. The refusal
+        // is typed and nothing is deleted.
+        var refused = await client.PostAsJsonAsync(ChangesetRoute(stale, "apply"),
+            new AssistantChangesetApplyRequest(stale.ActionToken, null, stale.DiffHash));
+        refused.StatusCode.Should().Be(HttpStatusCode.OK);
+        var refusedBody = (await refused.Content.ReadFromJsonAsync<AssistantChangesetActionResponse>())!;
+        refusedBody.Success.Should().BeFalse();
+        refusedBody.ErrorCode.Should().Be(AssistantErrorCodes.ChangesetNotReviewable);
         (await CollectionCountAsync(factory, "Gate A first")).Should().Be(1);
         (await CollectionCountAsync(factory, "Gate A second")).Should().Be(1);
 
-        var executed = await client.PostAsJsonAsync(
-            AssistantEndpoints.ApproveRoute,
-            new AssistantPlanApproveRequest(current.PlanId, current.ApprovalToken));
+        var wrongToken = await client.PostAsJsonAsync(ChangesetRoute(current, "apply"),
+            new AssistantChangesetApplyRequest(stale.ActionToken, null, null));
+        wrongToken.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        var executed = await client.PostAsJsonAsync(ChangesetRoute(current, "apply"),
+            new AssistantChangesetApplyRequest(current.ActionToken, null, current.DiffHash));
         executed.StatusCode.Should().Be(HttpStatusCode.OK);
-        (await executed.Content.ReadFromJsonAsync<AssistantPlanApproveResponse>())!.Success
-            .Should().BeTrue();
+        (await executed.Content.ReadFromJsonAsync<AssistantChangesetActionResponse>())!.Success.Should().BeTrue();
         (await CollectionCountAsync(factory, "Gate A first")).Should().Be(1);
         (await CollectionCountAsync(factory, "Gate A second")).Should().Be(0);
     }
+
+    private static string ChangesetRoute(AssistantChangesetDto changeset, string action) =>
+        $"/api/assistant/changesets/{changeset.ChangesetId}/{action}";
 
     // ------------------------------------------------------------------
     // Helpers
@@ -276,7 +282,8 @@ public sealed class AssistantGateAHttpIdempotencyTests : IDisposable
     private static async Task SeedCollectionAsync(
         LibraryEndpointFactory factory,
         Guid id,
-        string name)
+        string name,
+        bool withBook = false)
     {
         var options = new DbContextOptionsBuilder<NostosDbContext>()
             .UseSqlite(
@@ -285,6 +292,12 @@ public sealed class AssistantGateAHttpIdempotencyTests : IDisposable
             .Options;
         await using var db = new NostosDbContext(options);
         db.Collections.Add(new CollectionModel { Id = id, Name = name });
+        if (withBook)
+        {
+            var book = new PhysicalBookModel { Id = Guid.NewGuid(), Title = $"Held by {name}" };
+            db.Books.Add(book);
+            db.BookCollections.Add(new BookCollectionModel { BookId = book.Id, CollectionId = id });
+        }
         await db.SaveChangesAsync();
     }
 
