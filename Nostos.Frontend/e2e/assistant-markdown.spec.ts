@@ -59,7 +59,7 @@ async function mockAssistant(page: Page): Promise<void> {
         acknowledgement: null,
         anchorPrompt: null,
         suggestions: [],
-        pendingPlan: null,
+        changeset: null,
         capturedNoteId: null,
       }),
     }),

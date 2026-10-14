@@ -38,7 +38,7 @@ internal sealed record QualityTurnExpect(
     string? ExpectedErrorCode = null,
     string? ExpectedErrorMessageContains = null,
     string? ExpectedAnchorPromptKind = null,
-    bool ExpectPendingPlan = false,
+    bool ExpectReview = false,
     bool ExpectCapturedNote = false,
     Guid? ExpectFirstEvidenceNoteId = null,
     int ExpectedNoteDelta = 0,
@@ -60,7 +60,7 @@ internal sealed record QualityTurnExpect(
     int? LiveMinEvidence = null,
     // LIVE ONLY: requesting these tool names records an advisory instead of
     // failing. Keep them out of ForbiddenTools; deterministic mode relies on
-    // the scenario's Verify hooks plus ExpectedExecuted/NoPendingPlan checks.
+    // the scenario's Verify hooks plus ExpectedExecuted/NoReview checks.
     string[]? AdvisoryTools = null,
     // LIVE ONLY: a Verify hook failure becomes an advisory instead of a
     // failure. The re-read requirement it guards stays hard via

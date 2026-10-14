@@ -18,10 +18,10 @@ namespace Nostos.Backend.Integrations.Assistant;
 ///
 /// Trust classes: read-only capabilities are <see cref="AssistantTrustClass.Suggest"/>
 /// and never call a write method; capture is <see cref="AssistantTrustClass.Capture"/>;
-/// ordinary user-requested mutations are <see cref="AssistantTrustClass.Act"/> and
-/// run immediately inside the tool loop; destructive/high-impact operations stay
-/// <see cref="AssistantTrustClass.PlanAndAct"/> behind explicit approval. Every
-/// mutation still delegates to the canonical domain service.
+/// adding a book and linking a note are <see cref="AssistantTrustClass.Act"/> and
+/// run immediately; library organisation is <see cref="AssistantTrustClass.Stage"/>
+/// and only ever reaches the library as a whole changeset the change policy
+/// has judged. Every write still goes through the canonical domain service.
 /// </summary>
 public static partial class AssistantCapabilities
 {
@@ -64,6 +64,7 @@ public static partial class AssistantCapabilities
         var capabilities = BuildLibraryBookCapabilities(library)
             .Concat(BuildKnowledgeCapabilities(notes, topics, knowledge))
             .Concat(BuildCollectionAndCaptureCapabilities(notes, library))
+            .Concat(BuildChangeCapabilities())
             .ToList();
 
         if (bookText is not null)

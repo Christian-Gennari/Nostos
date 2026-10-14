@@ -54,7 +54,7 @@ public static class AssistantCapabilityCatalogueMetrics
                 AssistantTrustClass.Suggest => "read-only",
                 AssistantTrustClass.Capture => "immediate capture",
                 AssistantTrustClass.Act => "immediate action",
-                AssistantTrustClass.PlanAndAct => "requires approval",
+                AssistantTrustClass.Stage => "staged into a changeset",
                 _ => "unknown",
             };
 

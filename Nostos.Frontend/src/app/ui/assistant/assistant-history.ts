@@ -96,6 +96,13 @@ export function projectContextualModelHistory(
     });
 }
 
+const CHANGESET_HISTORY_STATE: Record<string, string> = {
+  review: 'Waiting for the user to apply',
+  applied: 'Applied',
+  undone: 'Undone by the user',
+  discarded: 'Set aside by the user',
+};
+
 function historyFactsFromArtifacts(artifacts: readonly AssistantTurnArtifact[]): {
   evidenceHandles: AssistantEvidenceHandleDto[];
   actions: string[];
@@ -108,8 +115,14 @@ function historyFactsFromArtifacts(artifacts: readonly AssistantTurnArtifact[]):
   const actions = artifacts
     .flatMap((artifact) => {
       if (artifact.kind === 'action') return [artifact.capability];
-      if (artifact.kind === 'destructive-result' && artifact.outcome === 'applied')
-        return artifact.capabilities;
+      if (artifact.kind === 'changeset') {
+        // The model learns what happened to its proposal, step by step, so a
+        // later turn never assumes a review was applied or an undo kept.
+        const state = CHANGESET_HISTORY_STATE[artifact.changeset.status] ?? 'Set aside';
+        return artifact.changeset.steps
+          .filter((step) => step.included)
+          .map((step) => `${state}: ${step.summary}`);
+      }
       return [];
     });
   const capturedNoteId = artifacts.find(

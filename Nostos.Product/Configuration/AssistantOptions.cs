@@ -55,34 +55,52 @@ public sealed class AssistantOptions
 
     /// <summary>
     /// Absolute runaway ceiling on upstream LLM calls in one turn, not the normal
-    /// UX budget. Revalidated by the external measurement of 2026-09-22 (900 real
-    /// turns): the largest turn used five upstream calls, 0.0% reached six, and the
-    /// changing-tool pathological case still stops here. Approval/input boundaries
-    /// and repeated-tool detection stop legitimate work earlier.
+    /// UX budget. The external measurement of 2026-09-22 (900 real turns) saw at
+    /// most five calls, but those turns could not reorganise a library: a whole
+    /// regrouping reads the library, stages deletes, creates and filings, and
+    /// corrects a refused step, which takes six to ten calls. Repeated-tool
+    /// detection still stops a looping turn early.
     /// </summary>
-    public int MaxToolIterations { get; set; } = 6;
+    public int MaxToolIterations { get; set; } = 12;
 
     /// <summary>
     /// Cumulative provider-reported token ceiling for one turn (prompt + output;
     /// thinking is already inside output). Zero or below disables the ceiling.
-    /// The 50,000-token value leaves headroom above measured Ask Nostos work while
-    /// bounding a runaway turn rather than a provider context window. Provider
-    /// pricing varies by BYOK configuration and is handled by the provider account.
+    /// The measured maximum was 31,875 tokens; a library reorganisation re-sends
+    /// the library overview on every call, so 120,000 leaves room for a few
+    /// hundred books while still bounding a runaway turn. Provider pricing varies
+    /// by BYOK configuration and is handled by the provider account.
     /// </summary>
-    public int MaxTurnTokens { get; set; } = 50_000;
+    public int MaxTurnTokens { get; set; } = 120_000;
 
     /// <summary>
     /// Wall-clock ceiling for one turn in milliseconds. Zero or below disables the
     /// ceiling. Selected from the same measurement: 99% of turns finished inside
     /// 14.6 s, while 8 of 900 stalled for 141-145 s waiting on a single slow upstream
-    /// call. The value sits below the per-request transport timeout on purpose, so a
+    /// call. The value stays below the per-request transport timeout on purpose, so a
     /// stalled turn is stopped by this budget rather than by a transport error.
     /// </summary>
-    public int MaxTurnElapsedMilliseconds { get; set; } = 60_000;
+    public int MaxTurnElapsedMilliseconds { get; set; } = 90_000;
 
     /// <summary>
     /// Per-LLM-call ceiling. The pool spends reasoning tokens even on trivial
     /// answers, so this is generous on purpose.
     /// </summary>
-    public int RequestTimeoutSeconds { get; set; } = 90;
+    public int RequestTimeoutSeconds { get; set; } = 95;
+
+    /// <summary>
+    /// The change policy's limits (<see cref="Integrations.Assistant.AssistantChangePolicy"/>):
+    /// a turn's library changes apply at once, with undo, only while they stay
+    /// within all of these; anything larger waits for the user's review.
+    /// </summary>
+    public int AutoApplyMaxBooksTouched { get; set; } = 25;
+
+    /// <summary>Most books a changeset may take out of a collection without review.</summary>
+    public int AutoApplyMaxBooksLosingMembership { get; set; } = 3;
+
+    /// <summary>Most books whose own details a changeset may edit without review.</summary>
+    public int AutoApplyMaxBookEdits { get; set; } = 10;
+
+    /// <summary>Most empty collections a changeset may delete without review.</summary>
+    public int AutoApplyMaxEmptyCollectionDeletes { get; set; } = 3;
 }

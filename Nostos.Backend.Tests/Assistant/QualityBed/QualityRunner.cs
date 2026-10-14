@@ -781,8 +781,8 @@ internal static class QualityRunner
 
                     if (response.ExecutedCapabilities is { Count: > 0 })
                         output.AppendLine($"Executed: {string.Join(", ", response.ExecutedCapabilities)}");
-                    if (response.PendingPlan is not null)
-                        output.AppendLine($"Pending plan: {response.PendingPlan.PlanId} ({response.PendingPlan.Summary})");
+                    if (response.Changeset is not null)
+                        output.AppendLine($"Changeset [{response.Changeset.Status}]: {string.Join("; ", response.Changeset.Steps.Select(s => s.Summary))}");
                     if (response.AnchorPrompt is not null)
                         output.AppendLine($"Anchor prompt [{response.AnchorPrompt.Kind}]: {response.AnchorPrompt.Question}");
                     if (response.Error is not null)

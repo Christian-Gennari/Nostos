@@ -291,11 +291,24 @@
               artifact.kind === 'capture'
               || artifact.kind === 'action'
               || (artifact.kind === 'failure' && artifact.state !== 'cancelled')
-              || artifact.kind === 'destructive-result'
             ) {
             <footer class="entry-meta">
               <span class="entry-status">{{ artifactLabel(artifact) }}</span>
             </footer>
+            }
+            @if (artifact.kind === 'changeset') {
+            <app-assistant-changeset-card
+              [changeset]="artifact.changeset"
+              [conflicts]="artifact.conflicts ?? []"
+              [busy]="assistant.changesetBusy() === artifact.changeset.changesetId"
+              [locked]="!!assistant.changesetBusy() && assistant.changesetBusy() !== artifact.changeset.changesetId"
+              [error]="assistant.changesetErrors()[artifact.changeset.changesetId] ?? null"
+              [answerable]="assistant.pendingReview()?.changeset?.changesetId === artifact.changeset.changesetId"
+              (apply)="assistant.applyChangeset(artifact.changeset.changesetId)"
+              (discard)="assistant.discardChangeset(artifact.changeset.changesetId)"
+              (undo)="assistant.undoChangeset(artifact.changeset.changesetId)"
+              (stepToggled)="assistant.setChangesetStepIncluded(artifact.changeset.changesetId, $event.index, $event.included)"
+            />
             }
           }
         </div>
@@ -346,36 +359,6 @@
         </div>
       </article>
       }
-    </div>
-    }
-
-    @if (assistant.pendingPlan(); as plan) {
-    <div class="assistant-plan" data-testid="assistant-plan">
-      <div class="plan-heading">
-        <span class="plan-title">Confirmation required</span>
-        <span class="plan-count">{{ plan.steps.length }} {{ plan.steps.length === 1 ? 'change' : 'changes' }}</span>
-      </div>
-      <p class="plan-summary">{{ plan.summary }}</p>
-      <ol class="plan-steps">
-        @for (step of plan.steps; track $index) {
-        <li class="plan-step">{{ step.summary }}</li>
-        }
-      </ol>
-      <div class="plan-actions">
-        <button
-          appButton
-          variant="primary"
-          size="sm"
-          type="button"
-          [disabled]="assistant.sending()"
-          [busy]="assistant.sending()"
-          (click)="assistant.approvePlan(plan.planId, plan.approvalToken)"
-          data-testid="assistant-plan-approve"
-        >
-          {{ assistant.sending() ? 'Applying…' : 'Confirm change' }}
-        </button>
-      </div>
-      <p class="plan-hint">Or reply “yes” or “go ahead”.</p>
     </div>
     }
 

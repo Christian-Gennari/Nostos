@@ -209,8 +209,8 @@ internal static class QualityExpectationEvaluator
             if (ContainsCompletionClaim(response.Reply, forbidden))
                 failures.Add($"reply must not contain '{forbidden}'");
 
-        if (expect.ExpectPendingPlan && response.PendingPlan is null)
-            failures.Add("expected a pending plan, observed none");
+        if (expect.ExpectReview && response.Changeset?.Status != "review")
+            failures.Add("expected changes waiting for review, observed none");
         if (expect.ExpectCapturedNote && string.IsNullOrWhiteSpace(response.CapturedNoteId))
             failures.Add("expected a captured note id, observed none");
 

@@ -687,7 +687,7 @@ describe('SecondBrain', () => {
       const proposal = http.expectOne('/api/assistant/turn/stream');
       expect(proposal.request.body.context.brainReviewNoteId).toBe(unlinked.id);
       proposal.flush({
-        reply: 'A connection.', acknowledgement: null, anchorPrompt: null, pendingPlan: null,
+        reply: 'A connection.', acknowledgement: null, anchorPrompt: null, changeset: null,
         suggestions: [{ kind: 'topic', label: 'Alpha', reason: 'Both describe this idea.', value: 'c-alpha', noteId: unlinked.id }],
       });
       fixture.detectChanges();
@@ -696,7 +696,7 @@ describe('SecondBrain', () => {
       const link = http.expectOne('/api/assistant/turn/stream');
       expect(link.request.body.message).toContain('c-alpha');
       link.flush({
-        reply: 'Linked.', acknowledgement: null, anchorPrompt: null, pendingPlan: null,
+        reply: 'Linked.', acknowledgement: null, anchorPrompt: null, changeset: null,
         suggestions: [], executedCapabilities: ['notes_link_existing_topic'],
       });
       http.expectOne('/api/topics').flush(topics);
@@ -2537,7 +2537,7 @@ describe('SecondBrain', () => {
         suggestions: [
           { kind: 'topic', label: 'Mountains', reason: 'The note describes the same climb.', value: 'c-alpha', noteId: 'hit-1' },
         ],
-        pendingPlan: null,
+        changeset: null,
       });
       fixture.detectChanges();
 
@@ -2570,7 +2570,7 @@ describe('SecondBrain', () => {
 
       component.proposals.ask();
       http.expectOne('/api/assistant/turn/stream').flush({
-        reply: 'Some related topics.', acknowledgement: null, anchorPrompt: null, pendingPlan: null,
+        reply: 'Some related topics.', acknowledgement: null, anchorPrompt: null, changeset: null,
         suggestions: [
           { kind: 'topic', label: 'Alpha', reason: 'Already connected.', value: 'c-alpha', noteId: 'hit-1' },
           { kind: 'topic', label: 'Beta', reason: 'Another grounded connection.', value: 'c-beta', noteId: 'hit-1' },
@@ -2594,7 +2594,7 @@ describe('SecondBrain', () => {
 
       component.proposals.ask();
       http.expectOne('/api/assistant/turn/stream').flush({
-        reply: 'A topic.', acknowledgement: null, anchorPrompt: null, pendingPlan: null,
+        reply: 'A topic.', acknowledgement: null, anchorPrompt: null, changeset: null,
         suggestions: [
           { kind: 'topic', label: 'Alpha', reason: 'Already connected.', value: 'c-alpha', noteId: 'hit-1' },
         ],
@@ -2615,7 +2615,7 @@ describe('SecondBrain', () => {
       component.review.focusNote('hit-2');
       fixture.detectChanges();
       request.flush({
-        reply: 'A connection.', acknowledgement: null, anchorPrompt: null, pendingPlan: null,
+        reply: 'A connection.', acknowledgement: null, anchorPrompt: null, changeset: null,
         suggestions: [{ kind: 'topic', label: 'Alpha', reason: 'Related note.', value: 'c-alpha', noteId: 'hit-1' }],
       });
       fixture.detectChanges();
@@ -2629,7 +2629,7 @@ describe('SecondBrain', () => {
       enterReview();
       component.proposals.ask();
       http.expectOne('/api/assistant/turn/stream').flush({
-        reply: 'No fit.', acknowledgement: null, anchorPrompt: null, pendingPlan: null, suggestions: [],
+        reply: 'No fit.', acknowledgement: null, anchorPrompt: null, changeset: null, suggestions: [],
       });
       fixture.detectChanges();
       expect(component.proposals.state()).toBe('empty');
@@ -2641,7 +2641,7 @@ describe('SecondBrain', () => {
       enterReview();
       component.proposals.ask();
       http.expectOne('/api/assistant/turn/stream').flush({
-        reply: '', acknowledgement: null, anchorPrompt: null, pendingPlan: null, suggestions: [],
+        reply: '', acknowledgement: null, anchorPrompt: null, changeset: null, suggestions: [],
         error: { code: 'assistant_unavailable', message: 'Ask Nostos is unavailable.' },
       });
       fixture.detectChanges();
@@ -2654,7 +2654,7 @@ describe('SecondBrain', () => {
       const second = http.expectOne('/api/assistant/turn/stream');
       component.proposals.cancel();
       second.flush({
-        reply: 'A match.', acknowledgement: null, anchorPrompt: null, pendingPlan: null,
+        reply: 'A match.', acknowledgement: null, anchorPrompt: null, changeset: null,
         suggestions: [{ kind: 'topic', label: 'Alpha', reason: 'Same theme.', value: 'c-alpha', noteId: 'hit-1' }],
       });
       fixture.detectChanges();
@@ -2668,7 +2668,7 @@ describe('SecondBrain', () => {
       enterReview();
       component.proposals.ask();
       http.expectOne('/api/assistant/turn/stream').flush({
-        reply: 'A match.', acknowledgement: null, anchorPrompt: null, pendingPlan: null,
+        reply: 'A match.', acknowledgement: null, anchorPrompt: null, changeset: null,
         suggestions: [{ kind: 'topic', label: 'Alpha', reason: 'Same theme.', value: 'c-alpha', noteId: 'hit-1' }],
       });
       expect(component.proposals.state()).toBe('ready');
@@ -2699,7 +2699,7 @@ describe('SecondBrain', () => {
         acknowledgement: null,
         anchorPrompt: null,
         suggestions: [],
-        pendingPlan: null,
+        changeset: null,
         executedCapabilities: ['notes_link_existing_topic'],
       });
 

@@ -5,11 +5,9 @@ namespace Nostos.Backend.Integrations.Assistant;
 /// <summary>
 /// The only way an assistant capability runs. Reads, capture and ordinary
 /// <see cref="AssistantTrustClass.Act"/> work reach their canonical service
-/// immediately; only <see cref="AssistantTrustClass.PlanAndAct"/> is gated by
-/// an approval bound to the plan that proposed it.
-///
-/// The destructive guard runs before <c>Execute</c>, so a refused approval
-/// cannot have touched a store.
+/// immediately. <see cref="AssistantTrustClass.Stage"/> work only stages into
+/// the turn's changeset, and is refused when the caller supplied none, so a
+/// library change can never bypass the change policy.
 /// </summary>
 public sealed class AssistantCapabilityRegistry
 {
@@ -32,8 +30,7 @@ public sealed class AssistantCapabilityRegistry
 
     /// <summary>
     /// Invokes one capability by name. Returns a typed failure for an unknown
-    /// name, a missing PlanAndAct approval, or an approval for a different
-    /// plan; never throws for those cases.
+    /// name or a Stage call without a changeset; never throws for those cases.
     /// </summary>
     public async Task<AssistantToolResult> InvokeAsync(
         string name,
@@ -48,42 +45,13 @@ public sealed class AssistantCapabilityRegistry
                 $"No assistant capability named '{name}' is registered.");
         }
 
-        // The guard runs BEFORE Execute. A refused call therefore cannot have
-        // reached the canonical service, and cannot have written anything.
-        if (capability.Trust == AssistantTrustClass.PlanAndAct)
+        if (capability.Trust == AssistantTrustClass.Stage && context.Changeset is null)
         {
-            var refusal = CheckApproval(capability, context);
-            if (refusal is not null)
-            {
-                return refusal;
-            }
+            return AssistantToolResult.Fail(
+                AssistantErrorCodes.ChangesetUnavailable,
+                $"Capability '{capability.Name}' changes the library and can only run inside an assistant turn.");
         }
 
         return await capability.Execute(context, argsJson, ct);
-    }
-
-    private static AssistantToolResult? CheckApproval(
-        AssistantCapability capability,
-        AssistantToolContext context)
-    {
-        if (context.Approval is null)
-        {
-            return AssistantToolResult.Fail(
-                AssistantErrorCodes.ApprovalRequired,
-                $"Capability '{capability.Name}' changes state and requires an approval " +
-                $"for plan '{context.PlanId ?? "(none)"}'.");
-        }
-
-        if (string.IsNullOrWhiteSpace(context.PlanId)
-            || !string.Equals(context.PlanId, context.Approval.PlanId, StringComparison.Ordinal))
-        {
-            return AssistantToolResult.Fail(
-                AssistantErrorCodes.ApprovalPlanMismatch,
-                $"Capability '{capability.Name}' was built against plan " +
-                $"'{context.PlanId ?? "(none)"}' but the approval is for plan " +
-                $"'{context.Approval.PlanId}'.");
-        }
-
-        return null;
     }
 }

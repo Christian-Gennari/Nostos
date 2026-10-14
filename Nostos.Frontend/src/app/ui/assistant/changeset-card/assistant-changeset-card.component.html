@@ -1,0 +1,172 @@
+<section
+  class="changeset"
+  [class.changeset--review]="inReview()"
+  [attr.data-status]="status()"
+  [attr.aria-label]="label()"
+  [attr.aria-busy]="busy()"
+  data-testid="assistant-changeset"
+>
+  <header class="changeset__head">
+    <span class="changeset__label">{{ label() }}</span>
+    @if (inReview() && changeset().steps.length > 1) {
+    <span class="changeset__count">{{ includedCount() }} of {{ changeset().steps.length }} steps</span>
+    }
+  </header>
+
+  <p class="changeset__headline" data-testid="assistant-changeset-headline">{{ headline() }}</p>
+
+  @if (inReview() && changeset().reviewReasons.length) {
+  <ul class="changeset__reasons" data-testid="assistant-changeset-reasons">
+    @for (reason of changeset().reviewReasons; track reason) {
+    <li>{{ reason }}</li>
+    }
+  </ul>
+  }
+
+  @if (inReview()) {
+  <ol class="changeset__steps" data-testid="assistant-changeset-steps">
+    @for (step of changeset().steps; track step.index) {
+    <li class="changeset__step" [class.changeset__step--off]="!step.included">
+      @if (changeset().steps.length > 1) {
+      <label class="changeset__step-control">
+        <input
+          type="checkbox"
+          [checked]="step.included"
+          [disabled]="disabled() || (!step.included && stepBlocked(step.index))"
+          (change)="toggleStep(step.index, $event)"
+          data-testid="assistant-changeset-step-toggle"
+        />
+        <span>{{ step.summary }}</span>
+      </label>
+      } @else {
+      <span>{{ step.summary }}</span>
+      }
+    </li>
+    }
+  </ol>
+  }
+
+  @if (hasDetails()) {
+  <button
+    type="button"
+    class="changeset__details-toggle"
+    [attr.aria-expanded]="detailsOpen()"
+    (click)="toggleDetails()"
+    data-testid="assistant-changeset-details-toggle"
+  >
+    {{ detailsOpen() ? 'Hide details' : 'Show every change' }}
+  </button>
+  }
+
+  @if (detailsOpen()) {
+  <div class="changeset__details" data-testid="assistant-changeset-details">
+    @if (collectionLines().length) {
+    <section class="changeset__group">
+      <h4>Collections</h4>
+      <ul>
+        @for (line of collectionLines(); track line.key) {
+        <li>{{ line.text }}@if (line.note) {<span class="changeset__note"> · {{ line.note }}</span>}</li>
+        }
+      </ul>
+    </section>
+    }
+    @if (bookLines().length) {
+    <section class="changeset__group">
+      <h4>Books</h4>
+      <ul>
+        @for (book of bookLines(); track book.id) {
+        <li>
+          <span class="changeset__book">{{ book.title }}</span>
+          @for (name of book.added; track name) {<span class="changeset__added">+ {{ name }}</span>}
+          @for (name of book.removed; track name) {<span class="changeset__removed">− {{ name }}</span>}
+        </li>
+        }
+      </ul>
+      @if (hiddenBooks()) {
+      <p class="changeset__note">and {{ hiddenBooks() }} more {{ hiddenBooks() === 1 ? 'book' : 'books' }}</p>
+      }
+    </section>
+    }
+    @if (edits().length) {
+    <section class="changeset__group">
+      <h4>Book details</h4>
+      <ul>
+        @for (edit of edits(); track edit.bookId) {
+        <li>
+          <span class="changeset__book">{{ edit.title }}</span>
+          @for (field of edit.fields; track field.field) {
+          <span class="changeset__field">{{ field.field }}: {{ field.before || '—' }} → {{ field.after || '—' }}</span>
+          }
+        </li>
+        }
+      </ul>
+    </section>
+    }
+  </div>
+  }
+
+  @if (conflicts().length) {
+  <div class="changeset__conflicts" data-testid="assistant-changeset-conflicts">
+    <span class="changeset__label">Left as it is</span>
+    <ul>
+      @for (conflict of conflicts(); track conflict) {
+      <li>{{ conflict }}</li>
+      }
+    </ul>
+  </div>
+  }
+
+  @if (error(); as message) {
+  <p class="changeset__error" role="alert" data-testid="assistant-changeset-error">{{ message }}</p>
+  }
+
+  @if (inReview()) {
+  <div class="changeset__actions">
+    <button
+      appButton
+      variant="ghost"
+      size="sm"
+      type="button"
+      [disabled]="disabled()"
+      (click)="discard.emit()"
+      data-testid="assistant-changeset-discard"
+    >
+      Discard
+    </button>
+    <button
+      appButton
+      variant="primary"
+      size="sm"
+      type="button"
+      [disabled]="!canApply()"
+      [busy]="busy()"
+      (click)="apply.emit()"
+      data-testid="assistant-changeset-apply"
+    >
+      {{ busy() ? 'Applying…' : 'Apply changes' }}
+    </button>
+  </div>
+  @if (answerable()) {
+  <p class="changeset__hint">Or reply “yes” or “no”.</p>
+  }
+  } @else if (status() === 'applied') {
+  <div class="changeset__actions">
+    @if (changeset().canUndo) {
+    <button
+      appButton
+      variant="ghost"
+      size="sm"
+      type="button"
+      [disabled]="disabled()"
+      [busy]="busy()"
+      (click)="undo.emit()"
+      data-testid="assistant-changeset-undo"
+    >
+      {{ busy() ? 'Undoing…' : 'Undo' }}
+    </button>
+    } @else {
+    <span class="changeset__note">Undo is no longer available.</span>
+    }
+  </div>
+  }
+</section>

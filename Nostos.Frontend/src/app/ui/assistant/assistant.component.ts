@@ -27,6 +27,7 @@ import { AssistantStatusService } from './assistant-status.service';
 import { AssistantMarkdownPipe } from './assistant-markdown.pipe';
 import { LibraryPreferencesService } from '../../core/services/library-preferences.service';
 import { IconTileComponent } from '../icon-tile/icon-tile.component';
+import { AssistantChangesetCardComponent } from './changeset-card/assistant-changeset-card.component';
 
 /**
  * How close to the end of the transcript still counts as "reading the newest
@@ -230,7 +231,7 @@ export function buildEntrySourceView(entry: AssistantEntry): EntrySourceView {
 @Component({
   selector: 'app-assistant',
   standalone: true,
-  imports: [IconTileComponent, NostosIconComponent, AssistantMarkdownPipe, ButtonComponent, IconButtonComponent],
+  imports: [IconTileComponent, NostosIconComponent, AssistantMarkdownPipe, ButtonComponent, IconButtonComponent, AssistantChangesetCardComponent],
   templateUrl: './assistant.component.html',
   styleUrl: './assistant.component.css',
   host: {
@@ -353,7 +354,7 @@ export class AssistantComponent {
     // Following the newest turn is a DOM measurement, so it belongs after
     // render, and it must run for every block that can add height under the
     // transcript: the reply, a capture acknowledgement, the topic
-    // suggestions, a proposed plan, or a follow-up question. The scroll
+    // suggestions, a changeset card, or a follow-up question. The scroll
     // container is read and written in one go, which is what the mixed phase
     // is for.
     afterRenderEffect({
@@ -361,7 +362,8 @@ export class AssistantComponent {
         this.assistant.entries();
         this.assistant.sending();
         this.assistant.suggestions();
-        this.assistant.pendingPlan();
+        this.assistant.pendingReview();
+        this.assistant.changesetErrors();
         this.assistant.pendingAnchor();
         this.expandedSourceGroups();
         this.observeScrollGeometry(
@@ -531,11 +533,8 @@ export class AssistantComponent {
           : `Failed · ${artifact.message}`;
       case 'proposal':
         return `Proposed · ${artifact.proposal.label} — ${artifact.proposal.reason}`;
-      case 'destructive-result':
-        return `${artifact.outcome === 'applied' ? 'Applied'
-          : artifact.outcome === 'refused' ? 'Not applied'
-          : artifact.outcome === 'superseded' ? 'Superseded'
-          : 'Failed'} · ${artifact.summary}`;
+      case 'changeset':
+        return '';
       case 'evidence':
         return this.evidenceLabel(artifact.evidence);
     }

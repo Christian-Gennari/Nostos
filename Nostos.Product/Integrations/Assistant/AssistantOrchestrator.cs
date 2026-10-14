@@ -21,9 +21,11 @@ namespace Nostos.Backend.Integrations.Assistant;
 /// <item>Trust classes are enforced here as well as in the registry.
 /// <see cref="AssistantTrustClass.Capture"/> and normal
 /// <see cref="AssistantTrustClass.Act"/> work execute inside the tool loop,
-/// <see cref="AssistantTrustClass.Suggest"/> never mutates, and only destructive
-/// <see cref="AssistantTrustClass.PlanAndAct"/> work is collected into a
-/// server-held plan for explicit approval.</item>
+/// <see cref="AssistantTrustClass.Suggest"/> never mutates, and library
+/// organisation (<see cref="AssistantTrustClass.Stage"/>) only stages into the
+/// turn's changeset. When the model is done, the change policy judges the whole
+/// changeset by what it would do: it applies atomically with undo, or waits
+/// for the user's review. One request is one changeset, whatever its size.</item>
 /// <item>The source-location follow-up is deterministic: when a capture has no
 /// nearby anchor and the format cannot supply one, the bridge asks (physical
 /// book → a page; externally played audiobook → a timestamp) instead of
@@ -33,7 +35,8 @@ namespace Nostos.Backend.Integrations.Assistant;
 public sealed class AssistantOrchestrator(
     AssistantCapabilityRegistry registry,
     ILlmProvider llm,
-    AssistantPlanStore plans,
+    AssistantChangesetCoordinator changesets,
+    ILibraryChangesetService libraryChanges,
     AssistantContinuationStore continuations,
     ILibraryService library,
     AssistantOptions options,
@@ -44,7 +47,6 @@ public sealed class AssistantOrchestrator(
         usageAccounting ?? NoOpAiUsageAccountingService.Instance;
     private readonly AssistantConversationBuilder _conversation =
         new(registry, new AssistantContextPacker(options));
-    private readonly AssistantPlanExecutor _planExecutor = new(registry, plans);
     private readonly AssistantCapturePolicy _capturePolicy = new(library);
     private readonly AssistantCaptureIntentGuard _captureIntentGuard = new(library);
 
@@ -100,7 +102,6 @@ public sealed class AssistantOrchestrator(
     public const string PartiallyCompletedReply =
         "I made the changes listed below, but reached this turn's execution limit before I could finish the rest. Send another message to continue.";
 
-    public const string ApprovalRequiredReply = "I've prepared a plan for your approval.";
 
     /// <summary>
     /// The one question a capture asks when the app cannot know the book: no book
@@ -130,6 +131,24 @@ public sealed class AssistantOrchestrator(
 
     private const string TopicProposalCapability = "topics_propose_links";
 
+    /// <summary>
+    /// Reads that return text the user did not write in this conversation:
+    /// imported book text, notes (which include imported highlights), and book
+    /// descriptions from metadata providers. Any of them can carry instructions.
+    /// </summary>
+    private static readonly HashSet<string> UntrustedContentCapabilities = new(StringComparer.Ordinal)
+    {
+        BookTextCapability,
+        KnowledgeSearchCapability,
+        KnowledgeReadCapability,
+        "knowledge_overview",
+        NotesListForBookCapability,
+        NotesSearchCapability,
+        "notes_list_unlinked",
+        "notes_read_for_review",
+        "library_get_book",
+    };
+
     // ------------------------------------------------------------------
     // A turn
     // ------------------------------------------------------------------
@@ -137,7 +156,7 @@ public sealed class AssistantOrchestrator(
     /// <summary>
     /// Runs one assistant turn: build the conversation and tools, loop over the
     /// model's tool calls, and return prose plus any suggestions / follow-up
-    /// question / pending plan.
+    /// question / library changeset.
     /// </summary>
     public Task<AssistantTurnResponse> HandleTurnAsync(
         AssistantTurnRequest request,
@@ -171,7 +190,7 @@ public sealed class AssistantOrchestrator(
                 Acknowledgement: null,
                 AnchorPrompt: null,
                 Suggestions: [],
-                PendingPlan: null,
+                Changeset: null,
                 CapturedNoteId: null,
                 ExecutedCapabilities: [],
                 Sources: [],
@@ -227,7 +246,11 @@ public sealed class AssistantOrchestrator(
         var successfulCapabilities = new HashSet<string>(StringComparer.Ordinal);
         var sourceReferences = new List<AssistantSourceReferenceDto>();
         var evidenceReferences = new List<AssistantEvidenceReferenceDto>();
-        var planSteps = new List<AssistantPlanStep>();
+        var draft = new AssistantChangesetDraft(libraryChanges, library);
+        // Set once this turn reads text the user did not write into it: book
+        // text, notes, or a book's description. Changes worked out from such
+        // text always wait for the user's review (prompt-injection guard).
+        var readUntrustedContent = false;
         AssistantAnchorPromptDto? anchorPrompt = null;
         string? acknowledgement = null;
         string? finalContent = null;
@@ -355,34 +378,6 @@ public sealed class AssistantOrchestrator(
                 break;
             }
 
-            // Approval is a boundary for the whole model response, not just one
-            // entry in its tool-call list. Calls in the same completion cannot
-            // depend on each other's results, so once any PlanAndAct proposal is
-            // present there is no legitimate reason to execute ordinary actions
-            // beside it before the user has approved the destructive plan.
-            var approvalCalls = completion.ToolCalls
-                .Select(call => new
-                {
-                    Call = call,
-                    Capability = capabilityByName.GetValueOrDefault(call.Name),
-                })
-                .Where(item => item.Capability?.Trust == AssistantTrustClass.PlanAndAct)
-                .ToList();
-
-            if (approvalCalls.Count > 0)
-            {
-                foreach (var item in approvalCalls)
-                {
-                    planSteps.Add(new AssistantPlanStep(
-                        item.Capability!.Name,
-                        item.Capability.Summary,
-                        item.Call.ArgumentsJson));
-                }
-
-                stopReason = AssistantTurnStopReason.ApprovalRequired;
-                break;
-            }
-
             messages.Add(LlmMessage.Assistant(
                 completion.Content,
                 completion.ToolCalls,
@@ -487,7 +482,8 @@ public sealed class AssistantOrchestrator(
                 // noise cannot change the identity.
                 var toolContext = new AssistantToolContext(
                     ClientId: conversationKey,
-                    IdempotencyKey: AssistantMutationIdentity.Key(turnId, capability.Name, args));
+                    IdempotencyKey: AssistantMutationIdentity.Key(turnId, capability.Name, args),
+                    Changeset: draft);
 
                 if (AssistantTurnActivities.ForCapability(capability) is { } turnActivity
                     && activity is not null)
@@ -607,6 +603,7 @@ public sealed class AssistantOrchestrator(
                     && capability.Trust == AssistantTrustClass.Suggest)
                 {
                     retrieval.ObserveResult(capability.Name, args, result.Data);
+                    readUntrustedContent |= UntrustedContentCapabilities.Contains(capability.Name);
                 }
 
                 if (result.Success && capability.Trust == AssistantTrustClass.Suggest)
@@ -715,17 +712,31 @@ public sealed class AssistantOrchestrator(
 
         }
 
-        // A PlanAndAct call is only a proposal until the user approves it. A
-        // second proposal supersedes the first: one pending plan per conversation.
-        AssistantPendingPlanDto? pendingPlan = null;
-        if (planSteps.Count > 0 && stopReason != AssistantTurnStopReason.Cancelled)
+        // The turn's library changes, judged as one changeset. A stopped turn
+        // applies nothing it staged; a turn cut short by a guard can only ever
+        // offer its changes for review, never apply them unseen.
+        // A retried delivery of a turn whose changes already applied reports
+        // them again, whether or not the model repeated its tool calls.
+        var changeOutcome = AssistantChangesetOutcome.None;
+        if (stopReason != AssistantTurnStopReason.Cancelled)
         {
-            // Describe the server-held proposal, not model narration that might
-            // incorrectly imply the PlanAndAct work has already run.
-            var summary = string.Join("; ", planSteps.Select(step => step.Summary));
-
-            var stored = plans.Create(conversationKey, turnId, summary, planSteps);
-            pendingPlan = ToPendingPlanDto(stored);
+            // The server cannot tell whether a model stopped by a guard had
+            // finished staging, so its changes are only ever offered for review.
+            var incomplete = stopReason is
+                AssistantTurnStopReason.SafetyCeiling or
+                AssistantTurnStopReason.RepeatedToolLoop;
+            using var applyLease = draft.IsEmpty ? null : execution?.TryBeginMutation();
+            if (!draft.IsEmpty && execution is not null && applyLease is null)
+            {
+                stopReason = AssistantTurnStopReason.Cancelled;
+            }
+            else
+            {
+                changeOutcome = await changesets.FinishTurnAsync(
+                    conversationKey, turnId, draft, readUntrustedContent, incomplete, ct);
+                if (changeOutcome.Applied)
+                    mutationCompleted = true;
+            }
         }
 
         var ceilingOutcome = CeilingOutcome.None;
@@ -763,6 +774,11 @@ public sealed class AssistantOrchestrator(
             terminalError = retrieval.TerminalFailure(request.Message);
         }
 
+        // A review card states that the turn stopped early, so the stop is not
+        // also reported as a failure beside it.
+        if (changeOutcome.AwaitingReview)
+            terminalError = null;
+
         // Server-known boundaries outrank model narration. A provider can attach
         // prose such as "Saved" or "Done" to a tool call even when Nostos knows
         // it still needs input/approval or stopped at an execution guard.
@@ -779,9 +795,14 @@ public sealed class AssistantOrchestrator(
         {
             reply = anchorPrompt.Question;
         }
-        else if (pendingPlan is not null)
+        else if (changeOutcome.AwaitingReview)
         {
-            reply = ApprovalRequiredReply;
+            reply = AssistantChangesetCoordinator.ReviewReply;
+        }
+        else if (changeOutcome.Error is { } changeError)
+        {
+            terminalError = changeError;
+            reply = changeError.Message;
         }
         else if (stoppedByExecutionGuard && acknowledgement is null)
         {
@@ -834,9 +855,9 @@ public sealed class AssistantOrchestrator(
         await CompleteUsageAsync(usageLease, finalMetrics);
 
         logger.LogDebug(
-            "Assistant turn handled: {Suggestions} suggestion(s), plan {HasPlan}, anchor prompt {HasPrompt}.",
+            "Assistant turn handled: {Suggestions} suggestion(s), changeset {Changeset}, anchor prompt {HasPrompt}.",
             suggestions.Count,
-            pendingPlan is not null,
+            changeOutcome.Changeset?.Status ?? "none",
             anchorPrompt is not null);
 
         var resolvedBook = retrieval.ResolvedBook;
@@ -846,7 +867,7 @@ public sealed class AssistantOrchestrator(
             acknowledgement,
             anchorPrompt,
             suggestions,
-            pendingPlan,
+            changeOutcome.Changeset,
             capturedNoteId,
             executedCapabilities,
             sourceReferences,
@@ -1008,7 +1029,7 @@ public sealed class AssistantOrchestrator(
                 Acknowledgement: null,
                 AnchorPrompt: nextPrompt,
                 Suggestions: [],
-                PendingPlan: null,
+                Changeset: null,
                 CapturedNoteId: null,
                 ExecutedCapabilities: [],
                 Sources: [],
@@ -1089,7 +1110,7 @@ public sealed class AssistantOrchestrator(
                 capture.QuoteFidelity),
             AnchorPrompt: null,
             Suggestions: [],
-            PendingPlan: null,
+            Changeset: null,
             CapturedNoteId: ReadNoteId(result.Data),
             ExecutedCapabilities: [],
             Sources: [],
@@ -1109,27 +1130,11 @@ public sealed class AssistantOrchestrator(
             Acknowledgement: null,
             AnchorPrompt: null,
             Suggestions: [],
-            PendingPlan: null,
+            Changeset: null,
             CapturedNoteId: null,
             ExecutedCapabilities: [],
             Sources: [],
             Error: new AssistantTurnErrorDto(code, message));
-
-    // ------------------------------------------------------------------
-    // Approval — executes exactly the stored plan, once
-    // ------------------------------------------------------------------
-
-    /// <summary>
-    /// Executes exactly the stored plan whose id and token are presented. A
-    /// missing token, an unknown id, a superseded id, or a mismatched token is
-    /// refused by the store before any capability is reached, so a refused
-    /// approval mutates nothing.
-    /// </summary>
-    public Task<AssistantPlanApproveResponse> ApproveAsync(
-        string? planId,
-        string? approvalToken,
-        CancellationToken ct = default) =>
-        _planExecutor.ApproveAsync(planId, approvalToken, ct);
 
     // ------------------------------------------------------------------
     // Suggestions (non-mutating)
@@ -1234,15 +1239,6 @@ public sealed class AssistantOrchestrator(
     // ------------------------------------------------------------------
     // Small JSON helpers
     // ------------------------------------------------------------------
-
-    private static AssistantPendingPlanDto ToPendingPlanDto(StoredAssistantPlan stored) =>
-        new(
-            stored.PlanId,
-            stored.Summary,
-            stored.Steps
-                .Select(step => new AssistantPlanStepDto(step.Capability, step.Summary, step.ArgumentsJson))
-                .ToList(),
-            stored.ApprovalToken);
 
     private static string? ReadString(JsonElement obj, string name) =>
         obj.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String

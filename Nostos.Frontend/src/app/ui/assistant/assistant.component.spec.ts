@@ -8,6 +8,7 @@ import { AssistantComponent } from './assistant.component';
 import {
   ASSISTANT_PENDING_DELAY_MS,
   ASSISTANT_SESSION_STORAGE_KEY,
+  AssistantChangesetDto,
   AssistantEntry,
   AssistantEvidenceReferenceDto,
   AssistantService,
@@ -99,8 +100,39 @@ function turn(overrides: Partial<AssistantTurnResponse> = {}): AssistantTurnResp
     acknowledgement: null,
     anchorPrompt: null,
     suggestions: [],
-    pendingPlan: null,
+    changeset: null,
     capturedNoteId: null,
+    ...overrides,
+  };
+}
+
+function reviewChangeset(overrides: Partial<AssistantChangesetDto> = {}): AssistantChangesetDto {
+  return {
+    changesetId: 'cs-9',
+    status: 'review',
+    steps: [
+      { index: 0, summary: 'Delete collection “Fiction”', included: true, dependsOn: [] },
+      { index: 1, summary: 'Create collection “Science fiction”', included: true, dependsOn: [] },
+      { index: 2, summary: 'Add “Dune” to “Science fiction”', included: true, dependsOn: [1] },
+    ],
+    diff: {
+      collections: [
+        { id: 'c1', kind: 'deleted', name: 'Fiction', previousName: null, parentName: null, previousParentName: null, parentChanged: false, bookCount: 2 },
+        { id: 'c2', kind: 'created', name: 'Science fiction', previousName: null, parentName: null, previousParentName: null, parentChanged: false, bookCount: 1 },
+      ],
+      memberships: [
+        { bookId: 'b1', title: 'Dune', author: 'Frank Herbert', added: ['Science fiction'], removed: ['Fiction'] },
+      ],
+      bookEdits: [],
+      counts: {
+        collectionsCreated: 2, collectionsDeleted: 3, collectionsUpdated: 0, booksTouched: 5,
+        membershipsAdded: 5, membershipsRemoved: 5, booksLosingMembership: 5, bookEdits: 0,
+      },
+    },
+    diffHash: 'hash-9',
+    actionToken: 'tok-9',
+    reviewReasons: ['Deletes 3 collections that hold 5 books between them.'],
+    canUndo: false,
     ...overrides,
   };
 }
@@ -1390,66 +1422,99 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
 
     const request = http.expectOne('/api/assistant/turn/stream');
     expect(request.request.body.message).toContain('Mountains');
-    request.flush(turn({ reply: 'Linked the note to Mountains.', pendingPlan: null }));
+    request.flush(turn({ reply: 'Linked the note to Mountains.', changeset: null }));
     fixture.detectChanges();
 
-    expect(assistant.pendingPlan()).toBeNull();
-    expect(fixture.nativeElement.querySelector('[data-testid="assistant-plan"]')).toBeNull();
+    expect(assistant.pendingReview()).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="assistant-changeset"]')).toBeNull();
   });
 
-  it('uses the plan surface only as a lightweight destructive confirmation fallback', () => {
+  it('shows a review card in the turn that proposed it and applies it from the card', () => {
     assistant.open();
-    assistant.pendingPlan.set({
-      planId: 'plan-delete',
-      summary: 'Delete the obsolete collection. Its books will stay in the library.',
-      steps: [
-        {
-          capability: 'library_delete_collection',
-          summary: 'Delete the obsolete collection',
-          argumentsJson: '{}',
-        },
-      ],
-      approvalToken: 'token-delete',
+    assistant.updateDraft('Delete everything and regroup by theme.');
+    assistant.submit();
+    http.expectOne('/api/assistant/turn/stream').flush(turn({
+      reply: "Here's what I'd change. Nothing changes until you apply it.",
+      changeset: reviewChangeset(),
+    }));
+    fixture.detectChanges();
+
+    const card = fixture.nativeElement.querySelector('[data-testid="assistant-changeset"]') as HTMLElement;
+    expect(card).toBeTruthy();
+    expect(card.getAttribute('data-status')).toBe('review');
+    expect(card.textContent).toContain('Review before applying');
+    expect(card.textContent).toContain('This will delete 3 collections, create 2 collections and refile 1 book.');
+    expect(card.textContent).toContain('Deletes 3 collections that hold 5 books between them.');
+    expect(card.textContent).toContain('Or reply “yes” or “no”.');
+    expect(card.querySelectorAll('[data-testid="assistant-changeset-step-toggle"]').length).toBe(3);
+
+    const apply = card.querySelector('[data-testid="assistant-changeset-apply"]') as HTMLButtonElement;
+    expect(apply.classList.contains('nostos-button--primary')).toBe(true);
+    apply.click();
+    fixture.detectChanges();
+
+    const request = http.expectOne('/api/assistant/changesets/cs-9/apply');
+    expect(request.request.body).toEqual({ actionToken: 'tok-9', excluded: [], diffHash: 'hash-9' });
+    request.flush({
+      success: true, errorCode: null, errorMessage: null, conflicts: [],
+      changeset: reviewChangeset({ status: 'applied', canUndo: true }),
     });
     fixture.detectChanges();
 
-    const plan = fixture.nativeElement.querySelector('[data-testid="assistant-plan"]');
-    expect(plan).toBeTruthy();
-    expect(plan.textContent).toContain('Confirmation required');
-    expect(plan.textContent).toContain('Confirm change');
-    expect(plan.textContent).toContain('reply “yes” or “go ahead”');
+    const applied = fixture.nativeElement.querySelector('[data-testid="assistant-changeset"]') as HTMLElement;
+    expect(applied.getAttribute('data-status')).toBe('applied');
+    expect(applied.textContent).toContain('I deleted 3 collections, created 2 collections and refiled 1 book.');
+    expect(applied.querySelector('[data-testid="assistant-changeset-undo"]')).toBeTruthy();
+    expect(applied.querySelector('[data-testid="assistant-changeset-apply"]')).toBeNull();
+  });
 
-    const approve = plan.querySelector(
-      '[data-testid="assistant-plan-approve"]',
-    ) as HTMLButtonElement;
-    expect(approve.classList.contains('nostos-button')).toBe(true);
-    expect(approve.classList.contains('nostos-button--primary')).toBe(true);
-    approve.click();
+  it('unticking a step asks the server what the rest would do and greys out its dependants', () => {
+    assistant.open();
+    assistant.updateDraft('Regroup.');
+    assistant.submit();
+    http.expectOne('/api/assistant/turn/stream').flush(turn({ changeset: reviewChangeset() }));
     fixture.detectChanges();
 
-    const approval = http.expectOne('/api/assistant/plan/approve');
-    expect(approval.request.body).toEqual({
-      planId: 'plan-delete',
-      approvalToken: 'token-delete',
-    });
-    approval.flush({
-      success: true,
-      errorCode: null,
-      errorMessage: null,
-      steps: [
-        {
-          capability: 'library_delete_collection',
-          success: true,
-          errorCode: null,
-          errorMessage: null,
-          data: { reply: 'Deleted the obsolete collection.' },
-        },
-      ],
+    const toggles = fixture.nativeElement.querySelectorAll(
+      '[data-testid="assistant-changeset-step-toggle"]',
+    ) as NodeListOf<HTMLInputElement>;
+    toggles[1].click();
+    fixture.detectChanges();
+
+    const preview = http.expectOne('/api/assistant/changesets/cs-9/preview');
+    expect(preview.request.body).toEqual({ actionToken: 'tok-9', excluded: [1] });
+    const steps = reviewChangeset().steps.map((step) => ({ ...step, included: step.index === 0 }));
+    preview.flush({
+      success: true, errorCode: null, errorMessage: null, conflicts: [],
+      changeset: reviewChangeset({ steps }),
     });
     fixture.detectChanges();
 
-    expect(assistant.pendingPlan()).toBeNull();
-    expect(fixture.nativeElement.querySelector('[data-testid="assistant-plan"]')).toBeNull();
+    const after = fixture.nativeElement.querySelectorAll(
+      '[data-testid="assistant-changeset-step-toggle"]',
+    ) as NodeListOf<HTMLInputElement>;
+    expect([...after].map((toggle) => toggle.checked)).toEqual([true, false, false]);
+    expect(after[2].disabled).toBe(true);
+    expect(fixture.nativeElement.textContent).toContain('1 of 3 steps');
+  });
+
+  it('opens every change in the details list', () => {
+    assistant.open();
+    assistant.updateDraft('Regroup.');
+    assistant.submit();
+    http.expectOne('/api/assistant/turn/stream').flush(turn({ changeset: reviewChangeset() }));
+    fixture.detectChanges();
+
+    (fixture.nativeElement.querySelector('[data-testid="assistant-changeset-details-toggle"]') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    const details = fixture.nativeElement.querySelector('[data-testid="assistant-changeset-details"]') as HTMLElement;
+    expect(details.textContent).toContain('Delete “Fiction”');
+    expect(details.textContent).toContain('held 2 books');
+    expect(details.textContent).toContain('New “Science fiction”');
+    expect(details.textContent).toContain('Dune');
+    expect(details.textContent).toContain('+ Science fiction');
+    expect(details.textContent).toContain('− Fiction');
   });
 
   it('leaves the note unlinked when the user dismisses the suggestions', () => {

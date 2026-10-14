@@ -18,7 +18,7 @@ public static class AssistantEndpoints
     public const string TurnRoute = "/api/assistant/turn";
     public const string StreamTurnRoute = "/api/assistant/turn/stream";
     public const string CancelTurnRoute = "/api/assistant/turn/cancel";
-    public const string ApproveRoute = "/api/assistant/plan/approve";
+    public const string ChangesetRoute = "/api/assistant/changesets/{changesetId}";
 
     private static readonly JsonSerializerOptions StreamJson =
         new(JsonSerializerDefaults.Web);
@@ -30,7 +30,22 @@ public static class AssistantEndpoints
         group.MapPost("/turn", TurnAsync);
         group.MapPost("/turn/stream", StreamTurnAsync);
         group.MapPost("/turn/cancel", CancelTurn);
-        group.MapPost("/plan/approve", ApproveAsync);
+        // Changeset actions touch only the library, never the model, so they
+        // stay available when the AI provider is not: a review can still be
+        // applied or discarded and an applied change can still be undone.
+        var changesets = group.MapGroup("/changesets/{changesetId}");
+        changesets.MapPost("/preview", (string changesetId, AssistantChangesetPreviewRequest request,
+            AssistantChangesetCoordinator coordinator, CancellationToken ct) =>
+            ActionResultAsync(coordinator.PreviewAsync(changesetId, request, ct)));
+        changesets.MapPost("/apply", (string changesetId, AssistantChangesetApplyRequest request,
+            AssistantChangesetCoordinator coordinator, CancellationToken ct) =>
+            ActionResultAsync(coordinator.ApplyAsync(changesetId, request, ct)));
+        changesets.MapPost("/discard", (string changesetId, AssistantChangesetTokenRequest request,
+            AssistantChangesetCoordinator coordinator) =>
+            ActionResult(coordinator.Discard(changesetId, request)));
+        changesets.MapPost("/undo", (string changesetId, AssistantChangesetTokenRequest request,
+            AssistantChangesetCoordinator coordinator, CancellationToken ct) =>
+            ActionResultAsync(coordinator.UndoAsync(changesetId, request, ct)));
         return routes;
     }
 
@@ -208,23 +223,21 @@ public static class AssistantEndpoints
             accepted ? "cancel_requested" : "not_active"));
     }
 
-    private static async Task<IResult> ApproveAsync(
-        AssistantPlanApproveRequest request,
-        AssistantOrchestrator orchestrator,
-        IAiProviderConfigResolver config,
-        IAiAccessPolicy access,
-        CancellationToken ct)
-    {
-        var unavailable = await UnavailableAsync(config, access, ct);
-        if (unavailable is not null) return unavailable;
+    private static async Task<IResult> ActionResultAsync(Task<AssistantChangesetActionResponse> action) =>
+        ActionResult(await action);
 
-        var response = await orchestrator.ApproveAsync(request.PlanId, request.ApprovalToken, ct);
-        if (response.Success)
-            return Results.Ok(response);
-
-        var code = response.ErrorCode ?? AssistantErrorCodes.NotFound;
-        return Failure(code, StatusForApproval(code), response.ErrorMessage ?? "The plan was refused.");
-    }
+    /// <summary>
+    /// Failures are data in the body. Only an unknown changeset and a wrong
+    /// token change the status, so a client never mistakes them for a refusal
+    /// it can resolve by retrying.
+    /// </summary>
+    private static IResult ActionResult(AssistantChangesetActionResponse response) =>
+        response.ErrorCode switch
+        {
+            AssistantErrorCodes.ChangesetNotFound => Results.NotFound(response),
+            AssistantErrorCodes.ChangesetTokenMismatch => Results.Json(response, statusCode: StatusCodes.Status403Forbidden),
+            _ => Results.Ok(response),
+        };
 
     private static async Task<AssistantTurnFailureDto?> UnavailableFailureAsync(
         IAiProviderConfigResolver config,
@@ -328,13 +341,6 @@ public static class AssistantEndpoints
         LlmErrorCodes.Timeout => StatusCodes.Status504GatewayTimeout,
         LlmErrorCodes.Permission => StatusCodes.Status502BadGateway,
         _ => StatusCodes.Status502BadGateway,
-    };
-
-    private static int StatusForApproval(string code) => code switch
-    {
-        AssistantErrorCodes.NotFound => StatusCodes.Status404NotFound,
-        AssistantErrorCodes.ApprovalPlanMismatch => StatusCodes.Status409Conflict,
-        _ => StatusCodes.Status400BadRequest,
     };
 
     private static IResult Failure(string code, int statusCode, string detail) =>
