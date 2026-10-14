@@ -13,6 +13,8 @@ using Nostos.Backend.Services.BookText;
 using Nostos.Product.BookText;
 using Nostos.Product.Http;
 using Nostos.Shared.Dtos;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.PixelFormats;
 using Xunit;
 
 namespace Nostos.Backend.Tests.Endpoints;
@@ -170,6 +172,59 @@ public sealed class LibraryEndpointTests : IClassFixture<LibraryEndpointFactory>
         var response = await Client.PostAsync($"/api/books/{book.Id}/cover", oversized);
 
         response.StatusCode.Should().Be(HttpStatusCode.RequestEntityTooLarge);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("/thumbnail?width=320")]
+    public async Task Replaced_cover_is_served_to_a_browser_holding_the_old_one(string suffix)
+    {
+        // The cover URL never changes, so a browser that cached the old cover
+        // must revalidate and receive the replacement, not keep the old copy.
+        var created = await Client.PostAsJsonAsync("/api/books", new
+        {
+            type = "ebook",
+            title = $"Replaced Cover {Guid.NewGuid():N}",
+        });
+        var book = (await created.Content.ReadFromJsonAsync<BookDto>())!;
+        var coverUrl = $"/api/books/{book.Id}/cover{suffix}";
+
+        (await UploadCoverAsync(book.Id, Color.Red)).StatusCode.Should().Be(HttpStatusCode.OK);
+        var first = await Client.GetAsync(coverUrl);
+        first.StatusCode.Should().Be(HttpStatusCode.OK);
+        first.Headers.CacheControl!.NoCache.Should().BeTrue();
+        first.Headers.CacheControl.MaxAge.Should().BeNull();
+        var oldTag = first.Headers.ETag!;
+        var oldBytes = await first.Content.ReadAsByteArrayAsync();
+
+        (await UploadCoverAsync(book.Id, Color.Blue)).StatusCode.Should().Be(HttpStatusCode.OK);
+        using var revalidate = new HttpRequestMessage(HttpMethod.Get, coverUrl);
+        revalidate.Headers.IfNoneMatch.Add(oldTag);
+        var second = await Client.SendAsync(revalidate);
+
+        second.StatusCode.Should().Be(HttpStatusCode.OK);
+        second.Headers.ETag.Should().NotBe(oldTag);
+        (await second.Content.ReadAsByteArrayAsync()).Should().NotEqual(oldBytes);
+
+        // An unchanged cover still answers the conditional request with a 304.
+        using var unchanged = new HttpRequestMessage(HttpMethod.Get, coverUrl);
+        unchanged.Headers.IfNoneMatch.Add(second.Headers.ETag!);
+        (await Client.SendAsync(unchanged)).StatusCode.Should().Be(HttpStatusCode.NotModified);
+    }
+
+    private async Task<HttpResponseMessage> UploadCoverAsync(Guid bookId, Color colour)
+    {
+        using var png = new MemoryStream();
+        using (var image = new Image<Rgba32>(10, 10, colour.ToPixel<Rgba32>()))
+        {
+            image.SaveAsPng(png);
+        }
+
+        using var form = new MultipartFormDataContent();
+        var file = new ByteArrayContent(png.ToArray());
+        file.Headers.ContentType = new MediaTypeHeaderValue("image/png");
+        form.Add(file, "file", "cover.png");
+        return await Client.PostAsync($"/api/books/{bookId}/cover", form);
     }
 
     [Fact]
