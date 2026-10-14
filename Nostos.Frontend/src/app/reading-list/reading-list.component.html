@@ -225,7 +225,7 @@
                   @if (entry.why) {
                     <p class="entry-why">{{ entry.why }}</p>
                   } @else {
-                    <button type="button" class="entry-add-why" (click)="openEdit(entry)">
+                    <button type="button" appButton variant="link" class="entry-add-why" (click)="openEdit(entry)">
                       <nostos-icon name="plus" [size]="12"></nostos-icon>
                       <span>Add a reason</span>
                     </button>

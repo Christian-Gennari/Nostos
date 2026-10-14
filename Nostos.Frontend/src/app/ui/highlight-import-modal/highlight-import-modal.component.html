@@ -346,8 +346,8 @@
           }
         </span>
         <span class="highlight-review-actions">
-          <button type="button" class="highlight-link" (click)="openPicker(row)">Change</button>
-          <button type="button" class="highlight-link" (click)="skip(row)">Leave out</button>
+          <button type="button" appButton variant="link" class="highlight-link" (click)="openPicker(row)">Change</button>
+          <button type="button" appButton variant="link" class="highlight-link" (click)="skip(row)">Leave out</button>
         </span>
       </div>
     } @else if (row.suggestion; as suggestion) {
@@ -422,10 +422,10 @@
           }
         </ul>
         <div class="highlight-picker-footer">
-          <button type="button" class="highlight-link" (click)="addToLibrary(row)">
+          <button type="button" appButton variant="link" class="highlight-link" (click)="addToLibrary(row)">
             Add as a new book instead
           </button>
-          <button type="button" class="highlight-link" (click)="closePicker()">Cancel</button>
+          <button type="button" appButton variant="link" class="highlight-link" (click)="closePicker()">Cancel</button>
         </div>
       </div>
     }

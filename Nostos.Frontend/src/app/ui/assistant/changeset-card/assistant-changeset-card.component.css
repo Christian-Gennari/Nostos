@@ -95,25 +95,10 @@
 
 .changeset__details-toggle {
   align-self: flex-start;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--color-text-muted);
-  font: inherit;
   font-size: 0.75rem;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  cursor: pointer;
 }
 
-.changeset__details-toggle:hover {
-  color: var(--color-text-main);
-}
 
-.changeset__details-toggle:focus-visible {
-  outline: 2px solid var(--border-focus);
-  outline-offset: 2px;
-}
 
 .changeset__details {
   display: flex;

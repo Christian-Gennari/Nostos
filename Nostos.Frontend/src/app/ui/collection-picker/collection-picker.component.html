@@ -2,7 +2,7 @@
   <div class="picker-head">
     <span class="form-label">{{ label() }}</span>
     @if (hasSelection()) {
-      <button type="button" class="picker-clear" (click)="clear()">Clear all</button>
+      <button type="button" appButton variant="link" class="picker-clear" (click)="clear()">Clear all</button>
     }
   </div>
 

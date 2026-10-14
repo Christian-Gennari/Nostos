@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { Collection } from '../../core/dtos/collection.dtos';
 import { buildFlatTree } from '../flat-tree/flat-tree.helper';
 import { NostosIconComponent } from '../icon/nostos-icon.component';
+import { ButtonComponent } from '../button/button.component';
 
 /**
  * Multi-select control for a book's collection membership.
@@ -20,7 +21,7 @@ import { NostosIconComponent } from '../icon/nostos-icon.component';
 @Component({
   selector: 'app-collection-picker',
   standalone: true,
-  imports: [CommonModule, NostosIconComponent],
+  imports: [CommonModule, NostosIconComponent, ButtonComponent],
   templateUrl: './collection-picker.component.html',
   styleUrl: './collection-picker.component.css',
 })

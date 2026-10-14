@@ -96,34 +96,41 @@
       <div class="node-actions" (click)="$event.stopPropagation()">
         @if (node.parentId !== null) {
           <button
+            appIconButton
+            size="xxs"
+            icon="arrow-u-up-left"
+            [glyphSize]="13"
             class="action-mini"
             type="button"
             (click)="moveToRoot(node, $event)"
             title="Move to Root"
             aria-label="Move to root"
-          >
-            <nostos-icon name="arrow-u-up-left" [size]="13"></nostos-icon>
-          </button>
+          ></button>
         }
 
         <button
+          appIconButton
+          size="xxs"
+          icon="pencil-simple"
+          [glyphSize]="13"
           class="action-mini"
           type="button"
           (click)="nodeRenamed.emit(node.originalData)"
           title="Rename"
           aria-label="Rename"
-        >
-          <nostos-icon name="pencil-simple" [size]="13"></nostos-icon>
-        </button>
+        ></button>
         <button
+          appIconButton
+          size="xxs"
+          tone="danger"
+          icon="trash"
+          [glyphSize]="13"
           class="action-mini danger"
           type="button"
           (click)="nodeDeleted.emit(node.id)"
           title="Delete"
           aria-label="Delete"
-        >
-          <nostos-icon name="trash" [size]="13"></nostos-icon>
-        </button>
+        ></button>
       </div>
     </div>
   }

@@ -9,8 +9,12 @@ import { LoadingIndicatorComponent } from '../loading-indicator/loading-indicato
  * `overlay` is the frosted control for buttons that sit ON artwork (the book
  * cover's hover actions). It shares its material with appIconButton's overlay
  * disc, so a text action and an icon action over one image read as one family.
+ *
+ * `link` is an inline text action with no box — "Read full synopsis", "Show
+ * details", "Manage editions" — aligned flush with the text around it. Before it
+ * existed each surface hand-rolled one (five copies, half of them underlined).
  */
-export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'overlay';
+export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'overlay' | 'link';
 export type ButtonSize = 'sm' | 'md' | 'lg';
 
 /**
@@ -46,6 +50,7 @@ export type ButtonSize = 'sm' | 'md' | 'lg';
     '[class.nostos-button--ghost]': "variant() === 'ghost'",
     '[class.nostos-button--danger]': "variant() === 'danger'",
     '[class.nostos-button--overlay]': "variant() === 'overlay'",
+    '[class.nostos-button--link]': "variant() === 'link'",
     '[class.nostos-button--sm]': "size() === 'sm'",
     '[class.nostos-button--lg]': "size() === 'lg'",
     '[attr.aria-busy]': "busy() ? 'true' : null",
@@ -155,8 +160,31 @@ export type ButtonSize = 'sm' | 'md' | 'lg';
         background: var(--bg-surface);
       }
 
+      /* Link: no box, no rung, flush with the text around it. The underline
+         arrives on hover so a column of them does not read as body links. */
+      :host(.nostos-button--link) {
+        min-height: 0;
+        padding: 0;
+        gap: 0.35rem;
+        border: none;
+        border-radius: var(--radius-sm);
+        background: none;
+        color: var(--color-text-muted);
+        font-size: 0.8rem;
+        text-underline-offset: 3px;
+      }
+
+      :host(.nostos-button--link:hover:not(:disabled)) {
+        color: var(--color-text-main);
+        text-decoration: underline;
+      }
+
       :host(:active:not(:disabled)) {
         transform: scale(0.98);
+      }
+
+      :host(.nostos-button--link:active:not(:disabled)) {
+        transform: none;
       }
 
       /* The height rungs sit inside :where(), so they weigh no more than the

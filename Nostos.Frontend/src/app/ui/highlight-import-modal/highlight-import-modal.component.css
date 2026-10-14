@@ -385,22 +385,6 @@ summary.highlight-section-header:focus-visible {
   color: var(--color-text-light);
 }
 
-.highlight-link {
-  padding: 0;
-  border: 0;
-  background: none;
-  font: inherit;
-  font-size: 0.78rem;
-  color: var(--color-text-muted);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  cursor: pointer;
-}
-
-.highlight-link:hover {
-  color: var(--color-text-main);
-}
-
 .highlight-link:focus-visible,
 .highlight-picker-option:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring);

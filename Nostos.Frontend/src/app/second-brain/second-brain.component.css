@@ -655,15 +655,8 @@
 
 /* Keep the utility glyphs quiet while giving each one a useful hit area. */
 .row-action {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: 0;
+  /* appIconButton xs owns the box; the row owns the radius and the inks. */
   border-radius: var(--radius-md);
-  background: transparent;
   color: var(--color-text-muted);
   cursor: pointer;
   flex-shrink: 0;
@@ -727,7 +720,8 @@
     min-height: 44px;
   }
 
-  .row-action {
+  /* `button.` out-weighs appIconButton's own xs rung. */
+  button.row-action {
     width: 44px;
     height: 44px;
   }
