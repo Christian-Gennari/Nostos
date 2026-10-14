@@ -12,21 +12,34 @@
   pointer-events: none;
 }
 
-.read-aloud-bar,
-.read-aloud-notice {
+/* One floating surface, in the audiobook player's language: a filled round
+   play button in the middle, the voice and the speed as quiet chips either
+   side, hairlines between the groups. */
+.read-aloud-bar {
   pointer-events: auto;
   display: flex;
   align-items: center;
+  gap: 0.25rem;
+  padding: 0.3rem 0.35rem 0.3rem 0.4rem;
   border: 1px solid var(--border-color);
+  border-radius: var(--radius-pill);
   background: var(--bg-surface);
   color: var(--color-text-main);
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-md);
 }
 
-.read-aloud-bar {
-  gap: 0.25rem;
-  padding: 0.25rem;
-  border-radius: var(--radius-pill);
+.read-aloud-transport {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+}
+
+.read-aloud-divider {
+  flex: 0 0 auto;
+  width: 1px;
+  height: 22px;
+  margin: 0 0.15rem;
+  background: var(--border-light);
 }
 
 /* Reading controls are used without looking: each is a full touch target at
@@ -37,57 +50,166 @@
 }
 
 .read-aloud-toggle {
-  background-color: var(--primary-fill);
-  color: var(--on-primary);
-  border-color: var(--primary-fill);
-}
-
-.read-aloud-rate {
   all: unset;
   box-sizing: border-box;
-  min-width: 44px;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-round);
+  background: var(--primary-fill);
+  color: var(--on-primary);
+  cursor: pointer;
+  transition: transform var(--motion-fast) var(--ease-out);
+}
+
+.read-aloud-toggle:hover {
+  transform: scale(1.05);
+}
+
+.read-aloud-toggle:active {
+  transform: scale(1);
+}
+
+/* The next sentence is being fetched: a ring turns around the button until
+   sound starts. */
+.read-aloud-toggle.is-buffering::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border: 2px solid transparent;
+  border-top-color: var(--color-text-muted);
+  border-radius: var(--radius-round);
+  animation: read-aloud-buffering 0.9s linear infinite;
+}
+
+@keyframes read-aloud-buffering {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.read-aloud-chip {
+  all: unset;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
   min-height: 44px;
-  padding: 0 0.5rem;
+  padding: 0 0.7rem;
   border-radius: var(--radius-pill);
-  text-align: center;
-  font-size: 0.85rem;
-  font-weight: var(--fw-semibold);
-  font-variant-numeric: tabular-nums;
   color: var(--color-text-main);
+  font-size: 0.85rem;
+  font-weight: var(--fw-medium);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
   cursor: pointer;
 }
 
-.read-aloud-rate:hover {
+.read-aloud-chip:hover,
+.read-aloud-chip[aria-expanded='true'] {
   background-color: var(--bg-hover);
 }
 
-.read-aloud-rate:focus-visible {
+.read-aloud-chip nostos-icon {
+  color: var(--color-text-muted);
+}
+
+.read-aloud-chip-label {
+  max-width: 7rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.read-aloud-rate {
+  min-width: 52px;
+  padding: 0 0.55rem;
+}
+
+.read-aloud-toggle:focus-visible,
+.read-aloud-chip:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: 2px;
 }
 
 .read-aloud-notice {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
   gap: 0.5rem;
   padding: 0.35rem 0.4rem 0.35rem 0.75rem;
+  border: 1px solid var(--border-color);
   border-radius: var(--radius-action);
+  background: var(--bg-surface);
+  color: var(--color-text-main);
+  box-shadow: var(--shadow-sm);
   font-size: 0.8rem;
   line-height: 1.35;
 }
 
-/* The next sentence is being fetched: the button breathes until sound starts. */
-.read-aloud-toggle.is-buffering {
-  animation: read-aloud-buffering 1.1s ease-in-out infinite;
-}
+/* A phone has room for the controls, not for a voice name as well. */
+@media (max-width: 400px) {
+  .read-aloud-chip-label,
+  .read-aloud-caret {
+    display: none;
+  }
 
-@keyframes read-aloud-buffering {
-  50% {
-    opacity: 0.45;
+  .read-aloud-voice {
+    padding: 0;
+    min-width: 44px;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .read-aloud-toggle.is-buffering {
+  .read-aloud-toggle,
+  .read-aloud-toggle:hover {
+    transition: none;
+    transform: none;
+  }
+
+  .read-aloud-toggle.is-buffering::after {
     animation: none;
+    border-color: var(--color-text-muted);
     opacity: 0.6;
   }
+}
+
+/* The menus open in the overlay, outside this component, so these rules are
+   global. A choice list keeps every label in one column: the check sits in a
+   slot that unchecked items leave empty. */
+::ng-deep .read-aloud-menu .nostos-menu-item:not(.is-selected) {
+  padding-left: calc(0.65rem + 16px + 0.6rem);
+}
+
+::ng-deep .read-aloud-menu .nostos-menu-item.is-selected nostos-icon {
+  color: var(--color-text-main);
+}
+
+::ng-deep .read-aloud-menu .nostos-menu-item.is-selected .nostos-menu-item__label {
+  font-weight: var(--fw-medium);
+}
+
+::ng-deep .read-aloud-menu-heading {
+  padding: 0.45rem 0.65rem 0.25rem;
+  color: var(--color-text-light);
+  font-size: 0.72rem;
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+::ng-deep .read-aloud-menu-note {
+  max-width: 17rem;
+  padding: 0.35rem 0.65rem 0.45rem;
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+  line-height: 1.4;
+  white-space: normal;
+}
+
+::ng-deep .read-aloud-menu--narrow {
+  min-width: 7rem;
 }

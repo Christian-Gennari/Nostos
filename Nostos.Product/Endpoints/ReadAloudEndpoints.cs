@@ -39,11 +39,17 @@ public static class ReadAloudEndpoints
     {
         var provider = services.GetService<IReadAloudProvider>();
         if (provider is null)
-            return Results.Ok(Unavailable(managed: false));
+            return Results.Ok(Unavailable(managed: false, ReadAloudErrorCodes.Disabled));
 
+        // The reader shows why the natural voice is off, so the reason is the
+        // same stable code the speech route would fail with.
         var availability = await provider.GetAvailabilityAsync(ct);
-        if (!availability.Available || !await access.IsAllowedAsync(ct))
-            return Results.Ok(Unavailable(availability.Managed));
+        if (!availability.Enabled)
+            return Results.Ok(Unavailable(availability.Managed, ReadAloudErrorCodes.Disabled));
+        if (!availability.Configured)
+            return Results.Ok(Unavailable(availability.Managed, ReadAloudErrorCodes.NotConfigured));
+        if (!await access.IsAllowedAsync(ct))
+            return Results.Ok(Unavailable(availability.Managed, ReadAloudErrorCodes.AccessDenied));
 
         var voices = ReadAloudVoiceSelection.ForLanguage(provider.Voices, language);
         return Results.Ok(new ReadAloudStatusResponse(
@@ -51,7 +57,8 @@ public static class ReadAloudEndpoints
             Managed: availability.Managed,
             DefaultVoice: voices.Count > 0 ? voices[0].Id : null,
             Voices: voices,
-            MaxCharacters: availability.MaxCharacters));
+            MaxCharacters: availability.MaxCharacters,
+            Reason: voices.Count > 0 ? null : ReadAloudErrorCodes.UnsupportedLanguage));
     }
 
     private static async Task<IResult> SpeechAsync(
@@ -174,8 +181,14 @@ public static class ReadAloudEndpoints
         return Results.Bytes(audio.Audio, audio.ContentType);
     }
 
-    private static ReadAloudStatusResponse Unavailable(bool managed) =>
-        new(Available: false, Managed: managed, DefaultVoice: null, Voices: [], MaxCharacters: DefaultMaxCharacters);
+    private static ReadAloudStatusResponse Unavailable(bool managed, string reason) =>
+        new(
+            Available: false,
+            Managed: managed,
+            DefaultVoice: null,
+            Voices: [],
+            MaxCharacters: DefaultMaxCharacters,
+            Reason: reason);
 
     private static int StatusFor(string code) => code switch
     {
@@ -199,12 +212,14 @@ public static class ReadAloudEndpoints
     /// <summary>
     /// What the reader needs to decide between the server voice and the
     /// device's. <paramref name="Voices"/> is already filtered to the asked
-    /// language, best match first.
+    /// language. <paramref name="Reason"/> is a <see cref="ReadAloudErrorCodes"/>
+    /// value saying why the voice is not available, and null when it is.
     /// </summary>
     public sealed record ReadAloudStatusResponse(
         bool Available,
         bool Managed,
         string? DefaultVoice,
         IReadOnlyList<ReadAloudVoice> Voices,
-        int MaxCharacters);
+        int MaxCharacters,
+        string? Reason = null);
 }

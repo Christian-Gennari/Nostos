@@ -1,46 +1,68 @@
 @if (controller.active()) {
 <div class="read-aloud-bar" role="group" aria-label="Read aloud" data-testid="read-aloud-bar">
   <button
-    appIconButton
-    icon="skip-back"
-    [glyphSize]="20"
-    (click)="controller.previous()"
-    title="Previous sentence"
-    aria-label="Previous sentence"
-  ></button>
-  <button
-    appIconButton
-    class="read-aloud-toggle"
-    [class.is-buffering]="controller.buffering()"
-    [attr.aria-busy]="controller.buffering()"
-    [icon]="controller.playing() ? 'pause' : 'play'"
-    weight="fill"
-    [glyphSize]="20"
-    (click)="controller.toggle()"
-    [title]="toggleLabel()"
-    [attr.aria-label]="toggleLabel()"
-    data-testid="read-aloud-toggle"
-  ></button>
-  <button
-    appIconButton
-    icon="skip-forward"
-    [glyphSize]="20"
-    (click)="controller.next()"
-    title="Next sentence"
-    aria-label="Next sentence"
-  ></button>
+    type="button"
+    class="read-aloud-chip read-aloud-voice"
+    [nostosMenuTriggerFor]="voiceMenu"
+    [attr.aria-label]="'Voice: ' + voiceLabel() + '. Change voice'"
+    title="Voice"
+    data-testid="read-aloud-voice"
+  >
+    <nostos-icon name="user-sound" [size]="16"></nostos-icon>
+    <span class="read-aloud-chip-label">{{ voiceLabel() }}</span>
+    <nostos-icon name="caret-up" [size]="12" class="read-aloud-caret"></nostos-icon>
+  </button>
+
+  <span class="read-aloud-divider" aria-hidden="true"></span>
+
+  <div class="read-aloud-transport">
+    <button
+      appIconButton
+      icon="skip-back"
+      weight="fill"
+      [glyphSize]="18"
+      (click)="controller.previous()"
+      title="Previous sentence"
+      aria-label="Previous sentence"
+    ></button>
+    <button
+      type="button"
+      class="read-aloud-toggle"
+      [class.is-buffering]="controller.buffering()"
+      [attr.aria-busy]="controller.buffering()"
+      (click)="controller.toggle()"
+      [title]="toggleLabel()"
+      [attr.aria-label]="toggleLabel()"
+      data-testid="read-aloud-toggle"
+    >
+      <nostos-icon [name]="controller.playing() ? 'pause' : 'play'" weight="fill" [size]="20"></nostos-icon>
+    </button>
+    <button
+      appIconButton
+      icon="skip-forward"
+      weight="fill"
+      [glyphSize]="18"
+      (click)="controller.next()"
+      title="Next sentence"
+      aria-label="Next sentence"
+    ></button>
+  </div>
+
+  <span class="read-aloud-divider" aria-hidden="true"></span>
+
   <button
     type="button"
-    class="read-aloud-rate"
-    (click)="controller.cycleRate()"
+    class="read-aloud-chip read-aloud-rate"
+    [nostosMenuTriggerFor]="rateMenu"
     title="Reading speed"
     [attr.aria-label]="'Reading speed ' + rateLabel() + '. Change speed'"
     data-testid="read-aloud-rate"
   >{{ rateLabel() }}</button>
+
   <button
     appIconButton
     icon="x"
-    [glyphSize]="20"
+    [glyphSize]="18"
     (click)="controller.stop()"
     title="Stop reading"
     aria-label="Stop reading"
@@ -48,6 +70,55 @@
   ></button>
 </div>
 }
+
+<ng-template #voiceMenu>
+  <nostos-menu aria-label="Voice" class="read-aloud-menu" data-testid="read-aloud-voice-menu">
+    @if (voices().length > 0) {
+      <div class="read-aloud-menu-heading" role="presentation">Natural voices</div>
+      @for (voice of voices(); track voice.id) {
+        <button
+          nostosMenuItem
+          [icon]="selectedVoice() === voice.id ? 'check' : null"
+          [class.is-selected]="selectedVoice() === voice.id"
+          [attr.aria-checked]="selectedVoice() === voice.id"
+          [attr.lang]="voice.language"
+          (triggered)="voiceChange.emit(voice.id)"
+        >{{ label(voice) }}</button>
+      }
+      @if (managed()) {
+        <div class="read-aloud-menu-note" role="presentation">Natural voices use your AI allowance.</div>
+      }
+      <hr nostosMenuSeparator />
+    }
+    <button
+      nostosMenuItem
+      [icon]="selectedVoice() === 'device' ? 'check' : null"
+      [class.is-selected]="selectedVoice() === 'device'"
+      [attr.aria-checked]="selectedVoice() === 'device'"
+      hint="Free, and works without a connection"
+      (triggered)="voiceChange.emit('device')"
+    >This device’s voice</button>
+    @if (voiceNote(); as note) {
+      <hr nostosMenuSeparator />
+      <div class="read-aloud-menu-note" role="note" data-testid="read-aloud-voice-note">{{ note }}</div>
+    }
+  </nostos-menu>
+</ng-template>
+
+<ng-template #rateMenu>
+  <nostos-menu aria-label="Reading speed" class="read-aloud-menu read-aloud-menu--narrow">
+    @for (rate of rates; track rate) {
+      <button
+        nostosMenuItem
+        [icon]="controller.rate() === rate ? 'check' : null"
+        [class.is-selected]="controller.rate() === rate"
+        [attr.aria-checked]="controller.rate() === rate"
+        (triggered)="controller.setRate(rate)"
+      >{{ formatRate(rate) }}</button>
+    }
+  </nostos-menu>
+</ng-template>
+
 @if (controller.notice(); as notice) {
 <div class="read-aloud-notice" role="status" aria-live="polite" data-testid="read-aloud-notice">
   <span>{{ notice }}</span>

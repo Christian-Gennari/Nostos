@@ -541,7 +541,13 @@
        PDF reader's bottom clearance is measured against. -->
   <!-- Read aloud's transport. A child of the layout, not of the page, so it
        stacks against the pager it sits beside or above. -->
-  <app-read-aloud-bar />
+  <app-read-aloud-bar
+    [voices]="readAloudServerVoices()"
+    [selectedVoice]="readAloudSelectedVoice()"
+    [managed]="!!readAloudServer()?.managed"
+    [voiceNote]="readAloudVoiceNote()"
+    (voiceChange)="setReadAloudVoice($event)"
+  />
 
   @if (!loadError() && fileType() && fileType() !== 'audio') {
   <header
@@ -671,33 +677,6 @@
       <span class="typo-hint" id="reader-appearance-hint">Applies throughout Nostos</span>
     </div>
 
-    @if (readAloudServerVoices().length > 0) {
-    <div class="typo-row" data-testid="read-aloud-voice">
-      <span class="typo-label" id="read-aloud-voice">Read aloud voice</span>
-      <div class="typo-opts typo-opts--wrap" role="group" aria-labelledby="read-aloud-voice">
-        @for (voice of readAloudServerVoices(); track voice.id) {
-        <button
-          type="button"
-          class="typo-opt"
-          [class.active]="readAloudSelectedVoice() === voice.id"
-          [attr.aria-pressed]="readAloudSelectedVoice() === voice.id"
-          [attr.lang]="voice.language"
-          (click)="setReadAloudVoice(voice.id)"
-        >{{ voice.name }}</button>
-        }
-        <button
-          type="button"
-          class="typo-opt"
-          [class.active]="readAloudSelectedVoice() === 'device'"
-          [attr.aria-pressed]="readAloudSelectedVoice() === 'device'"
-          (click)="setReadAloudVoice('device')"
-        >Device</button>
-      </div>
-      @if (readAloudServer()?.managed) {
-      <span class="typo-hint">Natural voices use your AI allowance. This device’s voice is free.</span>
-      }
-    </div>
-    }
     @if (fileType() === 'pdf') {
     <!-- Fixed layout: how the pages advance, the render scale, and the fits it
          can snap to. Zoom used to be two header buttons; the modes and presets

@@ -204,6 +204,7 @@ test.describe('read aloud (EPUB)', () => {
     // A new speed applies to the sentence being spoken, and is shown.
     const rate = page.getByTestId('read-aloud-rate');
     await rate.click();
+    await page.getByRole('menuitem', { name: '1.25×' }).click();
     await expect(rate).toHaveText('1.25×');
     await expect.poll(() => page.evaluate(() => (window as any).__spoken.at(-1).rate)).toBe(1.25);
 
@@ -336,39 +337,69 @@ test.describe('read aloud (EPUB), server voice', () => {
   });
 
   for (const theme of ['light', 'dark'] as const) {
-    test(`${theme}: the voice is chosen in View settings and remembered`, async ({ page }) => {
+    test(`${theme}: the voice is chosen from the bar and remembered`, async ({ page }) => {
       const calls = await stubServerVoice(page, { managed: true });
       await openBook(page, theme, `${run}-voices-${theme}`);
-
-      await openViewSettings(page);
-      const row = page.getByTestId('read-aloud-voice');
-      await expect(row).toBeVisible();
-      await expect(row.getByRole('button', { name: 'Emma' })).toHaveAttribute('aria-pressed', 'true');
-      await expect(row).toContainText('Natural voices use your AI allowance');
-      await capture(page, `read-aloud-voices-1280-${theme}`);
-
-      await row.getByRole('button', { name: 'George' }).click();
-      await expect(row.getByRole('button', { name: 'George' })).toHaveAttribute('aria-pressed', 'true');
-      expect(await page.evaluate(() => localStorage.getItem('nostos.readAloud.voice'))).toBe('bm_george');
-
-      await page.getByTestId('typo-toggle').click();
+      await setSpeechDelay(page, 60_000);
       await startReading(page);
       await expect.poll(() => calls.length).toBeGreaterThan(0);
-      expect(calls[0].voice).toBe('bm_george');
+      expect(calls[0].voice).toBe('bf_emma');
+
+      const voice = page.getByTestId('read-aloud-voice');
+      await expect(voice).toContainText('Emma');
+      await voice.click();
+      const menu = page.getByTestId('read-aloud-voice-menu');
+      await expect(menu).toBeVisible();
+      await expect(menu.getByRole('menuitem', { name: 'Emma' })).toHaveAttribute('aria-checked', 'true');
+      await expect(menu).toContainText('Natural voices use your AI allowance');
+      await capture(page, `read-aloud-voice-menu-1280-${theme}`);
+
+      await menu.getByRole('menuitem', { name: 'George' }).click();
+      await expect(voice).toContainText('George');
+      expect(await page.evaluate(() => localStorage.getItem('nostos.readAloud.voice'))).toBe('bm_george');
+      await expect.poll(() => calls.at(-1)?.voice).toBe('bm_george');
     });
   }
 
-  test('choosing Device reads with the device voice and asks the server for nothing', async ({ page }) => {
+  test('choosing the device voice reads with it and asks the server for nothing more', async ({ page }) => {
     const calls = await stubServerVoice(page);
     await openBook(page, 'light', `${run}-device`);
-
-    await openViewSettings(page);
-    await page.getByTestId('read-aloud-voice').getByRole('button', { name: 'Device' }).click();
-    await page.getByTestId('typo-toggle').click();
+    await setSpeechDelay(page, 60_000);
     await startReading(page);
+    await expect.poll(() => calls.length).toBeGreaterThan(0);
+
+    await page.getByTestId('read-aloud-voice').click();
+    await page.getByTestId('read-aloud-voice-menu').getByRole('menuitem', { name: /This device/ }).click();
+    await expect(page.getByTestId('read-aloud-voice')).toContainText('Device');
+    const asked = calls.length;
 
     await expect.poll(async () => (await spoken(page)).length).toBeGreaterThan(0);
-    expect(calls).toEqual([]);
+    await page.waitForTimeout(500);
+    expect(calls.length).toBe(asked);
+  });
+
+  test('says why there is no natural voice when the plan does not include it', async ({ page }) => {
+    await page.route('**/api/read-aloud/status*', (route) =>
+      route.fulfill({
+        json: {
+          available: false,
+          managed: true,
+          defaultVoice: null,
+          voices: [],
+          maxCharacters: 1200,
+          reason: 'read_aloud_access_denied',
+        },
+      }),
+    );
+    await openBook(page, 'light', `${run}-not-included`);
+    await setSpeechDelay(page, 60_000);
+    await startReading(page);
+
+    await page.getByTestId('read-aloud-voice').click();
+    await expect(page.getByTestId('read-aloud-voice-note')).toHaveText(
+      'Natural voices are not included in your plan.',
+    );
+    await capture(page, 'read-aloud-voice-menu-unavailable-1280-light');
   });
 
   test('an exhausted allowance falls back to the device voice and says why', async ({ page }) => {
