@@ -280,7 +280,10 @@ for (const f of files) {
    audio reader's phone pass: the waiting/error overlay is the app's own
    `--surface-image-ground` ground, and the error ink is `--color-danger` without
    the `#b91c1c` fallback the old `.audio-load-error` carried. */
-const LITERAL_COLOUR_BUDGET = 60;
+/* Lowered 60 -> 46 by the overlay-surface pass: the Book Detail cover actions
+   were hand-built white/red pills with rgba() and #fff/#111 literals, and are now
+   appButton/appIconButton on the --cover-disc-* overlay material. */
+const LITERAL_COLOUR_BUDGET = 46;
 
 {
   const ALLOW = [

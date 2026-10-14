@@ -211,28 +211,32 @@
                  overlay can never land on top of them. -->
             <div class="list-row-status" (click)="$event.stopPropagation()">
               <button
+                type="button"
+                appIconButton
+                size="xs"
                 class="finished-btn-list"
+                icon="check-circle"
+                [weight]="book.finishedAt ? 'fill' : 'regular'"
+                [pressed]="!!book.finishedAt"
                 [class.active]="book.finishedAt"
                 (click)="toggleFinished(book, $event)"
+                [attr.aria-label]="book.finishedAt ? 'Mark as unread' : 'Mark as read'"
                 [title]="book.finishedAt ? 'Mark as Unread' : 'Mark as Read'"
-              >
-                <nostos-icon
-                  name="check-circle"
-                  [size]="16"
-                  [class.filled-check]="book.finishedAt"></nostos-icon>
-              </button>
+              ></button>
 
               <button
+                type="button"
+                appIconButton
+                size="xs"
                 class="fav-btn-list"
+                icon="heart"
+                [weight]="book.isFavorite ? 'fill' : 'regular'"
+                [pressed]="!!book.isFavorite"
                 [class.active]="book.isFavorite"
                 (click)="toggleFavorite(book, $event)"
+                aria-label="Favorite"
                 title="Toggle Favorite"
-              >
-                <nostos-icon
-                  name="heart"
-                  [size]="16"
-                  [class.filled-heart]="book.isFavorite"></nostos-icon>
-              </button>
+              ></button>
             </div>
           </div>
 
@@ -404,42 +408,58 @@
             }
 
             <button
+              type="button"
+              appIconButton
+              surface="overlay"
               class="finished-btn-grid"
+              icon="check-circle"
+              [glyphSize]="18"
+              [weight]="book.finishedAt ? 'fill' : 'regular'"
+              [pressed]="!!book.finishedAt"
               [class.active]="book.finishedAt"
               (click)="toggleFinished(book, $event)"
+              [attr.aria-label]="book.finishedAt ? 'Mark as unread' : 'Mark as read'"
               [title]="book.finishedAt ? 'Mark as Unread' : 'Mark as Read'"
-            >
-              <nostos-icon
-                name="check-circle"
-                [size]="18"
-                [class.filled-check]="book.finishedAt"></nostos-icon>
-            </button>
+            ></button>
 
             <button
+              type="button"
+              appIconButton
+              surface="overlay"
               class="fav-btn-grid"
+              icon="heart"
+              [glyphSize]="18"
+              [weight]="book.isFavorite ? 'fill' : 'regular'"
+              [pressed]="!!book.isFavorite"
               [class.active]="book.isFavorite"
               (click)="toggleFavorite(book, $event)"
+              aria-label="Favorite"
               title="Toggle Favorite"
-            >
-              <nostos-icon name="heart" [size]="18" [class.filled-heart]="book.isFavorite"></nostos-icon>
-            </button>
+            ></button>
 
             <div class="actions-overlay">
               <button
+                type="button"
+                appIconButton
+                surface="overlay"
                 class="action-circle"
+                icon="pencil-simple"
                 (click)="openEditModal(book); $event.stopPropagation()"
+                aria-label="Edit"
                 title="Edit"
-              >
-                <nostos-icon name="pencil-simple" [size]="16"></nostos-icon>
-              </button>
+              ></button>
 
               <button
+                type="button"
+                appIconButton
+                surface="overlay"
+                tone="danger"
                 class="action-circle delete"
+                icon="trash"
                 (click)="openDeleteModal(book, $event)"
+                aria-label="Delete"
                 title="Delete"
-              >
-                <nostos-icon name="trash" [size]="16"></nostos-icon>
-              </button>
+              ></button>
             </div>
           </div>
 

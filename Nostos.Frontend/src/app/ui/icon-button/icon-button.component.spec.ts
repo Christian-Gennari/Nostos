@@ -188,4 +188,22 @@ describe('IconButtonComponent', () => {
     expect(b.classList.contains('zen-toggle')).toBe(true);
     expect(b.classList.contains('icon-btn')).toBe(true);
   });
+
+  it('puts the overlay surface on the host only when asked, with the pressed state as aria', async () => {
+    @Component({
+      standalone: true,
+      imports: [IconButtonComponent],
+      template: `
+        <button appIconButton icon="heart" surface="overlay" [pressed]="true" aria-label="Favorite"></button>
+        <button appIconButton icon="trash" aria-label="Delete"></button>
+      `,
+    })
+    class OverlayHost {}
+    const f = TestBed.createComponent(OverlayHost);
+    await f.whenStable();
+    const [overlay, plain] = Array.from(f.nativeElement.querySelectorAll('button')) as HTMLButtonElement[];
+    expect(overlay.classList.contains('icon-btn--overlay')).toBe(true);
+    expect(overlay.getAttribute('aria-pressed')).toBe('true');
+    expect(plain.classList.contains('icon-btn--overlay')).toBe(false);
+  });
 });

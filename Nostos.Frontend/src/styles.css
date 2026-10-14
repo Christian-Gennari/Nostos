@@ -136,9 +136,6 @@
      groove. Not `color-mix`ed from the text ink, because the two themes want
      OPPOSITE directions from one declaration. */
   --control-thumb-highlight: 0 0 0 rgba(0, 0, 0, 0);
-  /* Discs that sit ON cover artwork take the cover-disc ink, not the brand ink:
-     this is chrome floating over an image, not an action on the page. */
-  --action-circle-ink: var(--color-primary);
   /* The primary action's inverted pill on dark: see the dark block. */
   --cta-surface: var(--primary-fill);
   --cta-ink: var(--on-primary);
@@ -288,9 +285,12 @@
      theme — they were hardcoded rgba(255,255,255,.85) and stayed white on dark,
      which is why the corners looked unrelated to the edit/delete discs beside
      them in the middle of the card. */
-  --cover-disc-bg: rgba(255, 255, 255, 0.85);
-  --cover-disc-ink: #94979E;
+  /* 0.92 / #6B6F78: at 0.85 / #94979E the disc read as a grey smudge over the
+     hover scrim and its glyph sat at 2.9:1. The ink now clears 5.0:1 on white. */
+  --cover-disc-bg: rgba(255, 255, 255, 0.92);
+  --cover-disc-ink: #6B6F78;
   --cover-disc-border: transparent;
+  --cover-disc-shadow: 0 1px 3px rgba(0, 0, 0, 0.14);
 
   /* ── Overlays ── */
   --overlay-heavy: rgba(0, 0, 0, 0.7);
@@ -833,10 +833,6 @@
      edge. Same value the dock's raised item reads, expressed as light. */
   --control-thumb-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.07);
 
-  /* The discs are chrome on artwork, so they take the disc ink; the brand ink is
-     the mid green here, which made the middle discs green while the corner discs
-     read slate — one card showing two icon colours. */
-  --action-circle-ink: var(--cover-disc-ink);
   /* A dark brand fill cannot carry a primary action on a dark ground, and a light
      accent used as a *surface* goes washed out. The silver pill is the one
      inverted surface in the app, so the primary action is also the single
@@ -942,6 +938,7 @@
   --cover-disc-bg: rgba(24, 26, 32, 0.90);
   --cover-disc-ink: #9ba3b0;
   --cover-disc-border: rgba(255, 255, 255, 0.10);
+  --cover-disc-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
 
   /* ── Overlays / glass ── */
   --overlay-heavy: rgba(0, 0, 0, 0.80);
@@ -1230,16 +1227,6 @@
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: -2px;
 }
-
-/* Cover-art action discs — token-ised as `--action-circle-ink`. On dark,
-   --color-primary is the dim GREEN ink, so the middle (edit/delete) discs read
-   green while the corner (read/favourite) discs read slate — one card showing two
-   icon colours. The discs are chrome, so on dark all four take the disc ink.
-   Light is deliberately left alone: its stronger brand ink on a white disc reads
-   as the primary action and clears 12.5:1.
-   NOTE: this had to live in the global sheet while it was an override, because
-   Angular's emulated encapsulation strips a `:root[...]` ancestor from a component
-   rule. As a token it can be read by the component rule like any other value. */
 
 :root {
   /* ── Font Weights ── */

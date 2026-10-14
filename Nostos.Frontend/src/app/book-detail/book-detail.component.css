@@ -460,12 +460,14 @@
   position: absolute;
   inset: 0;
   display: flex;
-  flex-direction: column;
-  align-items: center;
+  flex-direction: row;
+  align-items: flex-end;
   justify-content: center;
   gap: 0.5rem;
   padding: 1rem;
-  background: linear-gradient(to top, rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0.15));
+  /* A floor for the buttons, not a wash over the art: the actions now sit on
+     the bottom edge, so only that edge needs darkening. */
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.45), rgba(0, 0, 0, 0) 55%);
   opacity: 0;
   /* `visibility`, not just `opacity`. An element with opacity < 1 is promoted to
      its own composited layer EVEN WHEN INVISIBLE, so at rest this dark gradient
@@ -509,39 +511,8 @@
     transition: none;
   }
 }
-.cover-overlay-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.4rem;
-  width: 100%;
-  padding: 0.5rem 0.85rem;
-  border: 1px solid rgba(255, 255, 255, 0.5);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.92);
-  color: #111;
-  font-family: inherit;
-  font-size: 0.82rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition:
-    background 0.15s ease,
-    transform 0.15s ease;
-}
-.cover-overlay-btn:hover {
-  background: #fff;
-  transform: translateY(-1px);
-}
-.cover-overlay-btn.danger {
-  /* Was a hardcoded rgba(211,47,47,...) + #fff, so it ignored the theme. Uses the
-     pinned danger fill, which carries porcelain text in BOTH themes. */
-  background: var(--danger-solid);
-  border-color: color-mix(in srgb, var(--danger-solid) 88%, transparent);
-  color: var(--on-primary);
-}
-.cover-overlay-btn.danger:hover {
-  background: var(--danger-solid-hover);
-}
+/* The buttons themselves are appButton / appIconButton on their overlay
+   surface — the same frosted material as the Library card's discs. */
 /* Touch devices can't hover, so the actions stay reachable — but as two small
    circular icon buttons in the cover's bottom corner, with no dark wash over the
    artwork. Overlaying full-width pills hid most of the cover on a phone, which is
@@ -561,15 +532,11 @@
     padding: 0.5rem;
     background: none;
   }
+  /* The text action collapses to a disc the same size as the remove disc. */
   .cover-overlay-btn {
-    width: 32px;
-    height: 32px;
+    width: var(--control-h-md);
     padding: 0;
     gap: 0;
-    border-radius: 50%;
-    background: rgba(255, 255, 255, 0.9);
-    border-color: rgba(255, 255, 255, 0.55);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
   }
   .cover-overlay-btn span {
     display: none;

@@ -531,26 +531,11 @@ app-sidebar-collections.no-transition {
   padding: 0 0.75rem;
 }
 
+/* The box, radius and focus ring come from appIconButton (size xs). Only the
+   row-specific ink and the reveal-on-hover live here. */
 .fav-btn-list,
 .finished-btn-list {
-  background: none;
-  border: none;
-  padding: 0;
-  width: 26px;
-  height: 26px;
-  border-radius: var(--radius-lg);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--cover-disc-ink);
-  /* Only the two properties that actually change, never `all`: the row's
-     hover walks this whole subtree, and a blanket transition invalidates
-     every animatable property on every button. */
-  transition:
-    opacity 0.15s ease,
-    color 0.15s ease,
-    background 0.15s ease;
+  color: var(--color-text-muted);
 }
 
 /* At rest only the active state is drawn; the inactive toggle waits for the
@@ -1004,30 +989,21 @@ app-sidebar-collections.no-transition {
   box-shadow: var(--cover-shadow);
 }
 
-/* Buttons (Grid) */
+/* Buttons (Grid). The disc itself — shape, frosted ground, hairline, hover —
+   is appIconButton's overlay surface; the card owns only where the discs sit,
+   when they appear, and the selected inks. */
 .fav-btn-grid,
 .finished-btn-grid {
   position: absolute;
   top: 8px;
-  background: var(--cover-disc-bg);
-  backdrop-filter: blur(4px);
-  border: 1px solid var(--cover-disc-border);
-  border-radius: 50%;
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
   z-index: 2;
-  color: var(--cover-disc-ink);
   opacity: 0;
-  transition: color 0.2s ease, transform 0.2s ease;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .book-card:hover .fav-btn-grid,
 .book-card:hover .finished-btn-grid,
+.book-card:focus-within .fav-btn-grid,
+.book-card:focus-within .finished-btn-grid,
 .fav-btn-grid.active,
 .finished-btn-grid.active {
   opacity: 1;
@@ -1036,30 +1012,17 @@ app-sidebar-collections.no-transition {
 .fav-btn-grid {
   right: 8px;
 }
-.fav-btn-grid.active {
-  color: var(--color-danger-vivid);
-  background: var(--bg-surface);
-}
+.fav-btn-grid.active,
 .fav-btn-grid:hover {
-  transform: scale(1.1);
   color: var(--color-danger-vivid);
 }
 
 .finished-btn-grid {
   left: 8px;
 }
-.finished-btn-grid.active {
-  color: var(--color-success);
-  background: var(--bg-surface);
-}
+.finished-btn-grid.active,
 .finished-btn-grid:hover {
-  transform: scale(1.1);
   color: var(--color-success);
-}
-
-.filled-heart,
-.filled-check {
-  fill: currentColor;
 }
 
 .actions-overlay {
@@ -1078,46 +1041,20 @@ app-sidebar-collections.no-transition {
   z-index: 1;
 }
 
-.book-card:hover .actions-overlay {
+.book-card:hover .actions-overlay,
+.book-card:focus-within .actions-overlay {
   opacity: 1;
 }
 
+/* Edit/delete: the same overlay disc as the corners, so a hovered card shows
+   one shape and one ink. Only the entrance lift is the card's own. */
 .action-circle {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background: var(--bg-surface);
-  /* A hairline: on dark the disc is only 1.0-1.6 from the scrim it sits on, so
-     without it the disc dissolves into the darkened cover. */
-  border: 1px solid var(--cover-disc-border);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  /* `--action-circle-ink`: the discs sit ON cover artwork, so they are chrome and
-     take the disc ink on dark (the brand ink there is the dim green, which made
-     the middle discs green while the corner discs read slate). */
-  color: var(--action-circle-ink);
-  transform: translateY(10px);
-  /* STILL `all`: converting this to an explicit property list is the transition
-     batch's job. Converting it here moved the painted transition duration from
-     0.2s to 0.22s (different `transitionProperty` sets cluster differently), and
-     an unrelated change is not allowed to move pixels. */
-  transition: transform 0.2s ease, background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;}
+  transform: translateY(6px);
+}
 
-.book-card:hover .action-circle {
+.book-card:hover .action-circle,
+.book-card:focus-within .action-circle {
   transform: translateY(0);
-}
-.action-circle:hover {
-  background: var(--primary-fill);
-  color: var(--on-primary);
-}
-/* The destructive hover is the deep wine FILL, not --color-danger: that token is
-   a red meant to be read as ink, so using it as a fill put porcelain text on it
-   at 2.58:1 on dark. */
-.action-circle.delete:hover {
-  background: var(--danger-solid);
-  color: var(--on-primary);
 }
 
 .meta-title {

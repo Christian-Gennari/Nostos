@@ -152,6 +152,19 @@
           ></button>
         </div>
       </div>
+
+      <div class="catalogue-example">
+        <span class="catalogue-label">Overlay surface (on artwork)</span>
+        <div class="catalogue-row catalogue-artwork">
+          <button appIconButton surface="overlay" icon="check-circle" aria-label="Mark as read"></button>
+          <button appIconButton surface="overlay" icon="heart" weight="fill" [pressed]="true" aria-label="Favorite"></button>
+          <button appIconButton surface="overlay" tone="danger" icon="trash" aria-label="Delete"></button>
+          <button appButton variant="overlay" type="button">
+            <nostos-icon name="image" [size]="15" />
+            <span>Change cover</span>
+          </button>
+        </div>
+      </div>
     </div>
   </section>
 
