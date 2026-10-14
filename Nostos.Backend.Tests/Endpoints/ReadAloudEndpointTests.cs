@@ -40,6 +40,7 @@ public sealed class ReadAloudEndpointTests
         status.Managed.Should().BeFalse();
         status.DefaultVoice.Should().Be("bf_emma");
         status.Voices.Should().NotBeEmpty().And.OnlyContain(voice => voice.Language == "en-GB");
+        status.Reason.Should().BeNull();
     }
 
     [Theory]
@@ -57,6 +58,7 @@ public sealed class ReadAloudEndpointTests
         status!.Available.Should().BeFalse();
         status.DefaultVoice.Should().BeNull();
         status.Voices.Should().BeEmpty();
+        status.Reason.Should().Be(ReadAloudErrorCodes.UnsupportedLanguage);
     }
 
     [Fact]
@@ -69,6 +71,7 @@ public sealed class ReadAloudEndpointTests
         var status = await client.GetFromJsonAsync<ReadAloudEndpoints.ReadAloudStatusResponse>(
             $"{ReadAloudEndpoints.StatusRoute}?language=en");
         status!.Available.Should().BeFalse();
+        status.Reason.Should().Be(ReadAloudErrorCodes.Disabled);
 
         var response = await PostAsync(client, "It is a truth universally acknowledged.", language: "en");
         response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
@@ -86,6 +89,23 @@ public sealed class ReadAloudEndpointTests
             $"{ReadAloudEndpoints.StatusRoute}?language=en");
 
         status!.Available.Should().BeFalse();
+        status.Reason.Should().Be(ReadAloudErrorCodes.AccessDenied);
+    }
+
+    [Theory]
+    [InlineData(false, true, ReadAloudErrorCodes.Disabled)]
+    [InlineData(true, false, ReadAloudErrorCodes.NotConfigured)]
+    public async Task Status_says_why_an_unusable_provider_is_unavailable(bool enabled, bool configured, string reason)
+    {
+        using var factory = new LibraryEndpointFactory();
+        using var host = CreateHost(factory, new FakeReadAloudProvider { Enabled = enabled, Configured = configured });
+        using var client = host.CreateClient();
+
+        var status = await client.GetFromJsonAsync<ReadAloudEndpoints.ReadAloudStatusResponse>(
+            $"{ReadAloudEndpoints.StatusRoute}?language=en");
+
+        status!.Available.Should().BeFalse();
+        status.Reason.Should().Be(reason);
     }
 
     // ------------------------------------------------------------------

@@ -18,6 +18,8 @@ export interface ReadAloudStatus {
   /** Voices for the asked language, best match first. */
   voices: ReadAloudServerVoice[];
   maxCharacters: number;
+  /** Why the natural voice is not available, as the server's stable code; null when it is. */
+  reason?: string | null;
 }
 
 export const READ_ALOUD_UNAVAILABLE: ReadAloudStatus = {

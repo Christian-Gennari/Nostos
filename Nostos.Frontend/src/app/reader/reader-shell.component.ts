@@ -91,6 +91,23 @@ function readStoredReadAloudVoice(): string | null {
   }
 }
 
+/** Why no natural voice is offered for the open book, before reading starts. */
+function readAloudUnavailableNote(reason: string | null, managed: boolean): string {
+  switch (reason) {
+    case 'read_aloud_access_denied':
+      return 'Natural voices are not included in your plan.';
+    case 'read_aloud_unsupported_language':
+      return 'No natural voice reads this book’s language yet.';
+    case 'read_aloud_not_configured':
+    case 'read_aloud_disabled':
+      return managed
+        ? 'The natural voice is not available right now.'
+        : 'No speech server is connected. Add one in Settings → AI connections.';
+    default:
+      return 'The natural voice is not available right now.';
+  }
+}
+
 /** Why the server voice gave way to the device's, in the person's terms. */
 function readAloudFallbackNotice(code: string | null): string {
   switch (code) {
@@ -396,10 +413,17 @@ export class ReaderShell implements OnInit, OnDestroy {
     const choice = this.readAloudVoiceChoice();
     return server.voices.some((voice) => voice.id === choice) ? choice : server.defaultVoice;
   });
-  /** What the voice row shows as selected. */
+  /** What the voice menu shows as selected. */
   readonly readAloudSelectedVoice = computed(() =>
     this.readAloudVoiceChoice() === 'device' ? 'device' : (this.readAloudServerVoiceId() ?? 'device'),
   );
+
+  /** Why the natural voice is not offered for this book, in the person's terms; null when it is. */
+  readonly readAloudVoiceNote = computed<string | null>(() => {
+    const server = this.readAloudServer();
+    if (!server || server.available) return null;
+    return readAloudUnavailableNote(server.reason ?? null, server.managed);
+  });
 
   async toggleReadAloud(): Promise<void> {
     if (this.readAloud.active()) {
@@ -590,7 +614,6 @@ export class ReaderShell implements OnInit, OnDestroy {
       this.tocOpen.set(false);
       this.notesOpen.set(false);
       this.typoOpen.set(true);
-      if (this.readAloudOffered()) void this.loadReadAloudServer();
       this.focusOverlay('.typo-panel button');
       return;
     }

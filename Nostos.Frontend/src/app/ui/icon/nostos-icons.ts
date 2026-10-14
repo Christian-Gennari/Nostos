@@ -166,6 +166,7 @@ import trash from '@phosphor-icons/core/regular/trash.svg';
 import tray from '@phosphor-icons/core/regular/tray.svg';
 import uploadSimple from '@phosphor-icons/core/regular/upload-simple.svg';
 import userCircle from '@phosphor-icons/core/regular/user-circle.svg';
+import userSound from '@phosphor-icons/core/regular/user-sound.svg';
 import warningCircle from '@phosphor-icons/core/regular/warning-circle.svg';
 import warning from '@phosphor-icons/core/regular/warning.svg';
 import waveform from '@phosphor-icons/core/regular/waveform.svg';
@@ -286,6 +287,7 @@ export const NOSTOS_ICONS = {
   'tray': { regular: tray, light: trayLight, },
   'upload-simple': { regular: uploadSimple, light: uploadSimpleLight, },
   'user-circle': { regular: userCircle, },
+  'user-sound': { regular: userSound, },
   'warning': { regular: warning, },
   'warning-circle': { regular: warningCircle, },
   'waveform': { regular: waveform, },
