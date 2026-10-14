@@ -108,6 +108,37 @@ public sealed class AcquisitionServiceTests
     }
 
     [Fact]
+    public async Task LongExternalId_StandardEbooksSlug_StillAcquires()
+    {
+        // Regression: the idempotency key used to spell out provider, external
+        // id and asset, and this real Standard Ebooks slug pushed it past the
+        // library's 128-character limit, failing the import.
+        using var h = AcquisitionHarness.Create();
+
+        const string externalId = "fyodor-dostoevsky/the-brothers-karamazov/constance-garnett";
+        var fakeProvider = new FakeContentProvider("standard-ebooks", "Standard Ebooks");
+        fakeProvider.PlanResult = CreateEbookPlan(
+            providerId: "standard-ebooks",
+            externalId: externalId,
+            assetId: "epub-compatible",
+            title: "The Brothers Karamazov",
+            author: "Fyodor Dostoevsky");
+
+        var service = h.CreateService(new ProviderRegistry(new[] { fakeProvider }));
+
+        var result = await service.AcquireAsync(
+            new AcquisitionRequest(ProviderId: "standard-ebooks", ExternalId: externalId, AssetId: "epub-compatible"),
+            null,
+            CancellationToken.None);
+
+        result.Outcome.Should().Be(AcquisitionOutcome.Acquired);
+        result.Book!.HasFile.Should().BeTrue();
+        await using var db = await h.ContextFactory.CreateDbContextAsync();
+        (await db.BookAcquisitions.SingleAsync(a => a.BookId == result.BookId!.Value))
+            .ExternalId.Should().Be(externalId);
+    }
+
+    [Fact]
     public async Task AlreadyAcquired_RunTwice_SecondReturnsAlreadyAcquired_AndDownloadsOnlyOnce()
     {
         using var h = AcquisitionHarness.Create();
