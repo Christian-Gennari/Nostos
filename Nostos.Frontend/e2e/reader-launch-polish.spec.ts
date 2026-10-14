@@ -178,3 +178,37 @@ test('320px touch selection keeps Copy, Ask Nostos, Cancel, Note, and Highlight 
     await context.close();
   }
 });
+
+test('320px note field keeps Copy, Cancel, and Save note inside the viewport for a long passage', async ({ browser }) => {
+  const context = await browser.newContext({
+    viewport: { width: 320, height: 740 }, isMobile: true, hasTouch: true,
+    serviceWorkers: 'block',
+  });
+  const page = await context.newPage();
+  try {
+    await page.goto(`${loadFixture().baseUrl}/read/${bookId}`);
+    const frame = page.frameLocator('#epub-viewer iframe');
+    await frame.locator('p').first().waitFor({ timeout: 45_000 });
+    // A whole paragraph: the one-line quote is far wider than the phone.
+    await frame.locator('p').first().evaluate((paragraph) => {
+      const doc = paragraph.ownerDocument;
+      const range = doc.createRange();
+      range.selectNodeContents(paragraph);
+      const selection = doc.getSelection()!;
+      selection.removeAllRanges();
+      selection.addRange(range);
+      doc.dispatchEvent(new Event('touchend'));
+    });
+    await page.getByTestId('selection-add-note').click();
+    await page.getByTestId('selection-note-input').fill('Succinctly put');
+    for (const id of ['selection-copy', 'selection-cancel', 'selection-save-note', 'selection-note-input']) {
+      const box = await page.getByTestId(id).boundingBox();
+      expect(box!.x).toBeGreaterThanOrEqual(0);
+      expect(box!.x + box!.width, `${id} inside the viewport`).toBeLessThanOrEqual(320);
+    }
+    const quote = await page.locator('[data-testid=selection-bar] .selected-text').boundingBox();
+    expect(quote!.x + quote!.width).toBeLessThanOrEqual(320);
+  } finally {
+    await context.close();
+  }
+});

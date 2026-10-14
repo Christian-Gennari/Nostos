@@ -635,8 +635,12 @@
   flex-wrap: wrap;
 }
 
+/* Stacked, the column must not wrap: a wrapping column is a multi-line flex
+   container, whose line is as wide as its widest item, so the nowrap quote
+   (663px of passage at 412px) stretched the actions and Save note with it. */
 .highlight-confirmation.has-note .confirmation-content {
   flex-direction: column;
+  flex-wrap: nowrap;
   align-items: stretch;
 }
 
