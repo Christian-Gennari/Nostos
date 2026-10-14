@@ -145,9 +145,12 @@ export interface SegmentedOption<T extends SegmentedValue = SegmentedValue> {
         opacity: 0.5;
       }
 
+      /* On touch the TRACK is the 44px rung: each option fills it less the
+         3px inset. Growing the options themselves to 44px made every row
+         6px taller and pushed the reader's phone panel past its budget. */
       @media (pointer: coarse), (hover: none) {
         .seg-opt {
-          min-height: var(--control-h-touch);
+          min-height: calc(var(--control-h-touch) - 6px);
         }
       }
     `,
