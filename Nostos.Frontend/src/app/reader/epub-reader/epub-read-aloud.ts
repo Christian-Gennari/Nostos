@@ -5,7 +5,7 @@ import {
   splitReadAloudSentences,
 } from '../read-aloud/read-aloud-sentences';
 import {
-  normalizedEpubResourceText,
+  normalizedEpubResourceProse,
   rangeForNormalizedResourceSpan,
 } from './epub-grounded-source';
 import { VisibleEpubContent, firstVisibleEpubText } from './epub-visible-excerpt';
@@ -120,7 +120,11 @@ export class EpubReadAloud implements ReaderReadAloud {
       const cfi = content && range ? content.cfiFromRange(range) : null;
 
       if (content && range && typeof cfi === 'string' && cfi.length > 0) {
-        if (turnPage && this.host.isRangeVisible(startOf(range), content) === false) {
+        if (
+          turnPage &&
+          !isOutOfFlow(range) &&
+          this.host.isRangeVisible(startOf(range), content) === false
+        ) {
           await this.host.displayCfi(cfi);
         }
         if (this.running) this.host.showMark(cfi);
@@ -169,7 +173,7 @@ export class EpubReadAloud implements ReaderReadAloud {
   private loadSection(content: ReadAloudEpubContent, index?: number): void {
     this.sectionIndex = index ?? this.currentSectionOf(content);
     this.spans = splitReadAloudSentences(
-      normalizedEpubResourceText(content.document),
+      normalizedEpubResourceProse(content.document),
       this.host.language(),
     );
   }
@@ -210,6 +214,29 @@ export class EpubReadAloud implements ReaderReadAloud {
 
     return low;
   }
+}
+
+/**
+ * True when the range starts inside a float or a positioned box. The browser
+ * places such a box where it fits, often pages after the text that follows it
+ * in the file: an illustration and its caption pushed past the next paragraphs.
+ * It is read in file order, but never turned to, or the page would jump ahead
+ * to it and straight back for the text after it.
+ */
+function isOutOfFlow(range: Range): boolean {
+  const start = range.startContainer;
+  const view = start.ownerDocument?.defaultView;
+  if (!view) return false;
+
+  let element = start.nodeType === 1 ? (start as Element) : start.parentElement;
+  while (element && element !== element.ownerDocument.body) {
+    const style = view.getComputedStyle(element);
+    const float = style.getPropertyValue('float');
+    if (float && float !== 'none') return true;
+    if (style.position === 'absolute' || style.position === 'fixed') return true;
+    element = element.parentElement;
+  }
+  return false;
 }
 
 /**

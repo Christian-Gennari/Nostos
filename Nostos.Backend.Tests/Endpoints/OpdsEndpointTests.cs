@@ -605,7 +605,11 @@ public sealed class OpdsPaginationTests : IClassFixture<OpdsPaginationFactory>
     [Fact]
     public async Task First_page_advertises_the_collection_bounds_and_no_previous_link()
     {
-        await SeedAsync("Bounds Book", DateTime.UtcNow);
+        // Enough books for a second page on its own: the class fixture is
+        // shared, but this test must not depend on another test having seeded
+        // first (run alone, one book is a single page with no paging links).
+        for (var i = 0; i <= OpdsPaginationFactory.PageSize; i++)
+            await SeedAsync($"Bounds Book {i}", DateTime.UtcNow.AddSeconds(-i));
 
         var doc = await GetFeedAsync("/opds/");
         var links = doc.Root!.Elements(Atom + "link").ToList();

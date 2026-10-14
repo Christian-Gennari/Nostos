@@ -103,6 +103,21 @@ export function normalizedEpubResourceText(document: Document): string {
 }
 
 /**
+ * {@link normalizedEpubResourceText} with the newlines kept from the file's
+ * own line wrapping turned into spaces, so a newline separates blocks only.
+ * A wrap inside a paragraph renders as a space; read aloud would otherwise
+ * stop at every line of a hard-wrapped book. Same length, so every offset
+ * means the same place in both.
+ */
+export function normalizedEpubResourceProse(document: Document): string {
+  return epubTextBlocks(document)
+    .map((block) => normalizeEpubSourceText(block.textContent ?? ''))
+    .filter(Boolean)
+    .map((block) => block.replace(/\n/g, ' '))
+    .join('\n');
+}
+
+/**
  * Resolve an offset in one normalized block back to its raw DOM text position.
  */
 export function rangeAtNormalizedElementOffset(

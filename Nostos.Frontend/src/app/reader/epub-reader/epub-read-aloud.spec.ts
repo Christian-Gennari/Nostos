@@ -132,6 +132,51 @@ describe('EpubReadAloud', () => {
     expect(unmeasured.calls.displayedCfis).toEqual([]);
   });
 
+  it('reads a hard-wrapped paragraph in whole sentences, and marks each one', async () => {
+    const { readAloud, calls } = setup([
+      section(
+        0,
+        '<p>Elizabeth was glad to be taken to her\nimmediately; and Jane was delighted at her entrance.\nElizabeth silently attended\nher.</p>',
+      ),
+    ]);
+
+    await expect(readAloud.begin()).resolves.toEqual({
+      text: 'Elizabeth was glad to be taken to her immediately; and Jane was delighted at her entrance.',
+    });
+    await expect(readAloud.step(1)).resolves.toEqual({ text: 'Elizabeth silently attended her.' });
+    expect(calls.marks.at(-1)).toBe('cfi(0:Elizabeth silently attended\nher.)');
+  });
+
+  it('reads a floated caption where it stands, without turning to it', async () => {
+    // A document with a window, so styles are computed.
+    const frame = document.createElement('iframe');
+    document.body.appendChild(frame);
+    const doc = frame.contentDocument!;
+    doc.body.innerHTML =
+      '<p>Elizabeth silently attended her.</p>' +
+      '<div style="float: left"><p>The Apothecary came.</p></div>' +
+      '<p>When breakfast was over, they were joined by the sisters.</p>';
+    const content: ReadAloudEpubContent = {
+      document: doc,
+      sectionIndex: 0,
+      cfiFromRange: (range: Range) => `cfi(0:${range.toString()})`,
+    };
+
+    try {
+      const { readAloud, calls } = setup([content], { visible: false });
+      await readAloud.begin();
+
+      await expect(readAloud.step(1)).resolves.toEqual({ text: 'The Apothecary came.' });
+      expect(calls.displayedCfis).toEqual([]);
+      expect(calls.marks.at(-1)).toBe('cfi(0:The Apothecary came.)');
+
+      await readAloud.step(1);
+      expect(calls.displayedCfis).toEqual(['cfi(0:When breakfast was over, they were joined by the sisters.)']);
+    } finally {
+      frame.remove();
+    }
+  });
+
   it('clears the mark and forgets the cursor when reading ends', async () => {
     const { readAloud, calls } = setup([section(0, CHAPTER_ONE)]);
     await readAloud.begin();

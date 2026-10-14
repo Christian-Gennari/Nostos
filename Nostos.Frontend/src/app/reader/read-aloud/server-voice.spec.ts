@@ -85,6 +85,22 @@ describe('ServerVoice', () => {
     expect(requested).toHaveLength(21);
   });
 
+  it('fetches again after forgetting, so a new voice is heard from the next sentence', async () => {
+    const { voice, requested } = setup();
+
+    voice.prepare(['One.', 'Two.']);
+    void voice.speak('One.', { language: 'en', rate: 1 });
+    await settled();
+    expect(requested).toEqual(['One.', 'Two.']);
+
+    voice.cancel();
+    voice.forget();
+    void voice.speak('One.', { language: 'en', rate: 1 });
+    voice.prepare(['Two.']);
+    await settled();
+    expect(requested).toEqual(['One.', 'Two.', 'One.', 'Two.']);
+  });
+
   it('reports a refused request with the server’s code, and asks again next time', async () => {
     let fail = true;
     const { voice, requested } = setup((text) =>
