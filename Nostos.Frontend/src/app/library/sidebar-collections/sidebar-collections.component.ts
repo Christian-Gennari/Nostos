@@ -30,11 +30,12 @@ import { NostosIconComponent } from '../../ui/icon/nostos-icon.component';
 import { ReadingListService } from '../../core/services/reading-list.service';
 import { LibraryChangesService } from '../../core/services/library-changes.service';
 import { RouterLink } from '@angular/router';
+import { InputDirective } from '../../ui/form-control/form-control.directive';
 
 @Component({
   standalone: true,
   selector: 'app-sidebar-collections',
-  imports: [
+  imports: [InputDirective, 
     CommonModule,
     FormsModule,
     RouterLink,

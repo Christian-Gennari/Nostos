@@ -10,6 +10,7 @@
       [attr.aria-selected]="activeId() === node.id"
       [class.active]="activeId() === node.id"
       [class.nested]="node.level > 0"
+      [class.is-renaming]="editingId() === node.id"
       [style.--depth]="node.level"
       (click)="handleSelect(node)"
       cdkDrag
@@ -71,6 +72,8 @@
       @if (editingId() === node.id) {
         <input
           #renameInput
+          appInput
+          controlSize="compact"
           class="inline-rename-input"
           type="text"
           [value]="node.name"

@@ -14,6 +14,7 @@ import { DragDropModule, CdkDragMove } from '@angular/cdk/drag-drop';
 import { buildFlatTree, FlatTreeNode, TreeItem } from './flat-tree.helper';
 import { NostosIconComponent } from '../icon/nostos-icon.component';
 import { IconButtonComponent } from '../icon-button/icon-button.component';
+import { InputDirective } from '../form-control/form-control.directive';
 
 export interface DropIndicator {
   nodeId: string;
@@ -22,7 +23,7 @@ export interface DropIndicator {
 
 @Component({
   selector: 'app-flat-tree',
-  imports: [IconButtonComponent, DragDropModule, NostosIconComponent],
+  imports: [IconButtonComponent, InputDirective, DragDropModule, NostosIconComponent],
   templateUrl: './flat-tree.component.html',
   styleUrls: ['./flat-tree.component.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
