@@ -196,7 +196,10 @@ export function readerThemeSwitchSpecs(viewportName: 'desktop' | 'mobile') {
 
   if (viewportName === 'mobile') {
     // 360px is the narrowest width with a label column; below it rows stack.
-    for (const [width, maxHeight] of [[360, 470], [320, 620]] as const) {
+    // 480 at 360px: the budget was set at 470 before the phone panel gained its
+    // "Read aloud" row (shown on very narrow screens instead of the header
+    // button), which measured 478px on a 780px-tall viewport.
+    for (const [width, maxHeight] of [[360, 480], [320, 620]] as const) {
       test(`View settings stays compact and unclipped at ${width}px`, async ({ page }) => {
         await page.setViewportSize({ width, height: 780 });
         for (const id of [epubId, pdfId]) {
