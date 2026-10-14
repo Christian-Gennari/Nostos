@@ -86,6 +86,37 @@ export class PdfAnnotationManager {
   }
 
 
+  /**
+   * Draws (or, with no rectangles, removes) the mark for the sentence being
+   * read aloud. It has a layer of its own so that repainting the saved
+   * highlights never erases it, and nothing about it is stored.
+   */
+  paintReadAloudMark(textLayerDiv: HTMLElement, rects: HighlightRect[]): void {
+    let layer = textLayerDiv.querySelector('.read-aloud-mark-layer') as HTMLElement | null;
+    if (rects.length === 0) {
+      layer?.remove();
+      return;
+    }
+
+    if (!layer) {
+      layer = document.createElement('div');
+      layer.className = 'read-aloud-mark-layer';
+      textLayerDiv.appendChild(layer);
+    } else {
+      layer.innerHTML = '';
+    }
+
+    for (const rect of rects) {
+      const box = document.createElement('div');
+      box.className = 'read-aloud-mark-box';
+      box.style.left = `${rect.left * 100}%`;
+      box.style.top = `${rect.top * 100}%`;
+      box.style.width = `${rect.width * 100}%`;
+      box.style.height = `${rect.height * 100}%`;
+      layer.appendChild(box);
+    }
+  }
+
   captureHighlight(keepSelection = false): PdfHighlightCapture | null {
     const selection = window.getSelection();
     if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {

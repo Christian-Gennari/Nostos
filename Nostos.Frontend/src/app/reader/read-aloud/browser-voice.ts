@@ -96,6 +96,21 @@ export class BrowserVoice implements ReadAloudVoice {
     return !!scope.speechSynthesis && typeof scope.SpeechSynthesisUtterance === 'function';
   }
 
+  /**
+   * Says nothing, once, inside the tap that starts reading. Some phones only
+   * let a page speak if the first request comes straight from a tap, and the
+   * first real sentence is asked for a moment later.
+   */
+  prime(): void {
+    try {
+      const silent = this.createUtterance('') as UtteranceLike & { volume?: number };
+      silent.volume = 0;
+      this.synth?.speak(silent);
+    } catch {
+      // Speaking is attempted anyway.
+    }
+  }
+
   speak(text: string, options: ReadAloudSpeakOptions): Promise<ReadAloudOutcome> {
     this.cancel();
     const synth = this.synth;

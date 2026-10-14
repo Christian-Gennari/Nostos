@@ -45,6 +45,7 @@ class TopicInputStub implements ControlValueAccessor {
 class PdfReaderStub {
   bookId = input.required<string>();
   initialLocation = input<string | null>(null);
+  language = input<string | null>(null);
   sidebarVisible = input(false);
   highlightColour = input<unknown>(null);
   sidebarVisibleChange = output<boolean>();

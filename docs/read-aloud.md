@@ -1,8 +1,8 @@
 # Read aloud
 
-Nostos can read an EPUB to you from the page it is open on. It marks the
-sentence being spoken, turns the page by itself and carries on into the next
-chapter.
+Nostos can read an EPUB or a PDF to you from the page it is open on. It marks
+the sentence being spoken, turns the page by itself and carries on into the
+next chapter.
 
 Open a book, tap the page to bring up the toolbar, and press the speaker button.
 A small bar appears with previous sentence, play/pause, next sentence, speed and
@@ -125,10 +125,24 @@ pauses between sentences.
 Rendered sentences are cached on the server, so going back a page or reading a
 chapter again costs nothing the second time.
 
+## PDFs
+
+A PDF has no sentences, only positioned pieces of text, so Nostos rebuilds
+them. It leaves out page numbers and running headers in the margins, rejoins a
+word hyphenated at the end of a line, skips raised note numbers, and says a
+sentence that runs over a page break in one go.
+
+- A scanned PDF with no text layer has nothing to read, and the speaker button
+  is not shown for it.
+- A PDF does not say what language it is in. Nostos uses the language recorded
+  for the book in your library, so set it there if the wrong voice reads.
+- Pages with several columns, tables or formulas are read in the order the PDF
+  stores them, which is not always the order you would read them in.
+
 ## Limits
 
-- EPUB only for now.
-- The natural voice needs the book's language in its metadata.
+- The natural voice needs to know the book's language: from the EPUB's own
+  metadata, or from the book's language in your library for a PDF.
 - Changing speed is instant: it changes playback, not the rendering.
 - With the device voice, most phones stop reading when the screen locks. That
   is a limit of the browser's speech engine, which is why Nostos keeps the

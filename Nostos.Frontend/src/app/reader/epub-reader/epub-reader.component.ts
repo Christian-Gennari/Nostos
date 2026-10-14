@@ -64,6 +64,7 @@ import {
   type EpubSpineSource,
 } from './epub-grounded-source';
 import { EpubReadAloud, type ReadAloudEpubContent } from './epub-read-aloud';
+import { languageTagFromCatalogue } from '../read-aloud/read-aloud-language';
 import { registerNostosReaderThemes, selectNostosReaderTheme } from './epub-reader-theme';
 import {
   DEFAULT_TYPOGRAPHY,
@@ -1345,11 +1346,15 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     return rect;
   }
 
-  /** The language the EPUB declares for itself, e.g. "en" or "it-IT". */
+  /**
+   * The language the EPUB declares for itself, e.g. "en" or "it-IT". A file
+   * that declares none falls back to the language recorded for the book in the
+   * library.
+   */
   private bookLanguage(): string | null {
     const metadata = (this.epubBook as any)?.packaging?.metadata;
     const language = typeof metadata?.language === 'string' ? metadata.language.trim() : '';
-    return language || null;
+    return language || languageTagFromCatalogue(this.book()?.language);
   }
 
   /**

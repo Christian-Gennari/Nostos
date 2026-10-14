@@ -60,6 +60,11 @@ async function installSpeechStandIn(page: Page, theme: 'light' | 'dark'): Promis
     const synth = {
       current: null as any,
       speak(utterance: any) {
+        // The silent request that unlocks speech inside the starting tap.
+        if (!utterance.text) {
+          utterance.onend?.();
+          return;
+        }
         scope.__spoken.push({ text: utterance.text, lang: utterance.lang, rate: utterance.rate });
         this.current = utterance;
         utterance.__timer = setTimeout(() => {
@@ -384,4 +389,172 @@ test.describe('read aloud (EPUB), server voice', () => {
     expect(calls.length).toBeGreaterThan(0);
     await capture(page, 'read-aloud-fallback-1280-light');
   });
+});
+
+/**
+ * PDF. The document is built here, so the page text is known exactly: a
+ * running header and a page number in the margins, a word hyphenated at a line
+ * end, and a sentence that runs over the page break.
+ */
+const PDF_HEADER = 'PRIDE AND PREJUDICE';
+const PDF_PAGES = [
+  [
+    'It is a truth universally acknowledged, that a',
+    'single man in possession of a good fortune, must',
+    'be in want of a wife. However little known the',
+    'feelings of such a man may be on his first enter-',
+    'ing a neighbourhood, this truth is so well fixed',
+    'in the minds of the surrounding families, that he',
+    'is considered as the rightful property of some',
+  ],
+  ['one or other of their daughters. Mr. Bennet made', 'no answer to this at all.'],
+  ['This was invitation enough for his lady.'],
+];
+const PDF_SENTENCES = [
+  'It is a truth universally acknowledged, that a single man in possession of a good fortune, must be in want of a wife.',
+  'However little known the feelings of such a man may be on his first entering a neighbourhood, this truth is so well fixed in the minds of the surrounding families, that he is considered as the rightful property of some one or other of their daughters.',
+  'Mr. Bennet made no answer to this at all.',
+  'This was invitation enough for his lady.',
+];
+
+function bookPdf(pages: string[][], header: string): Buffer {
+  const objects: Array<string | null> = ['<< /Type /Catalog /Pages 2 0 R >>', null];
+  const kids: number[] = [];
+  const fontObject = 3 + pages.length * 2;
+
+  pages.forEach((lines, index) => {
+    const pageObject = objects.length + 1;
+    kids.push(pageObject);
+    objects.push(
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 420 595] /Contents ${pageObject + 1} 0 R /Resources << /Font << /F1 ${fontObject} 0 R >> >> >>`,
+    );
+    const body = [
+      `BT /F1 9 Tf 150 572 Td (${header}) Tj ET`,
+      `BT /F1 13 Tf 18 TL 50 500 Td ${lines.map((line) => `(${line}) Tj T*`).join(' ')} ET`,
+      `BT /F1 9 Tf 205 22 Td (${index + 1}) Tj ET`,
+    ].join('\n');
+    objects.push(`<< /Length ${body.length} >>\nstream\n${body}\nendstream`);
+  });
+
+  objects.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
+  objects[1] = `<< /Type /Pages /Kids [${kids.map((n) => `${n} 0 R`).join(' ')}] /Count ${kids.length} >>`;
+
+  let out = '%PDF-1.4\n';
+  const offsets: number[] = [];
+  objects.forEach((body, index) => {
+    offsets.push(out.length);
+    out += `${index + 1} 0 obj\n${body}\nendobj\n`;
+  });
+  const xref = out.length;
+  out += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (const offset of offsets) out += `${String(offset).padStart(10, '0')} 00000 n \n`;
+  out += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return Buffer.from(out, 'latin1');
+}
+
+async function seedPdf(baseUrl: string, title: string): Promise<string> {
+  const created = await apiPost<any>(baseUrl, '/api/books/', { type: 'ebook', title, author: 'Jane Austen' });
+  const bookId = created?.book?.id ?? created?.bookId ?? created?.id;
+  if (!bookId) throw new Error(`No book id in create response: ${JSON.stringify(created)}`);
+
+  const form = new FormData();
+  form.append('file', new Blob([bookPdf(PDF_PAGES, PDF_HEADER)], { type: 'application/pdf' }), 'read-aloud.pdf');
+  const response = await fetch(`${baseUrl}/api/books/${bookId}/file`, { method: 'POST', body: form });
+  if (!response.ok) throw new Error(`file upload -> ${response.status}: ${await response.text()}`);
+  return bookId as string;
+}
+
+/** Brings up the chrome of the PDF reader and starts reading, as one retried step. */
+async function startReadingPdf(page: Page): Promise<void> {
+  await expect(async () => {
+    if (!(await page.getByTestId('typo-toggle').isVisible().catch(() => false))) {
+      await page.locator('.pdf-container').click({ position: { x: 30, y: 300 } });
+    }
+    await page.getByTestId('read-aloud-start').click({ timeout: 2_000 });
+  }).toPass({ timeout: 30_000 });
+}
+
+async function openPdf(page: Page, theme: 'light' | 'dark'): Promise<void> {
+  const { baseUrl } = loadFixture();
+  await installSpeechStandIn(page, theme);
+  const bookId = await seedPdf(baseUrl, 'Pride and Prejudice');
+  await page.goto(`${baseUrl}/read/${bookId}`, { waitUntil: 'domcontentloaded' });
+  await page.locator('#viewerContainer canvas').first().waitFor({ timeout: 60_000 });
+  await page.locator('.textLayer').first().waitFor({ timeout: 60_000 });
+}
+
+test.describe('read aloud (PDF)', () => {
+  test.use({ serviceWorkers: 'block' });
+
+  for (const theme of ['light', 'dark'] as const) {
+    test(`${theme}: reads the page text as sentences and turns the pages`, async ({ page }) => {
+      await openPdf(page, theme);
+      await setSpeechDelay(page, 60_000);
+      await startReadingPdf(page);
+
+      await expect(page.getByTestId('read-aloud-bar')).toBeVisible();
+      await expect.poll(async () => (await spoken(page)).length).toBe(1);
+      // The header in the top margin is not read; the first sentence is.
+      expect((await spoken(page))[0]).toBe(PDF_SENTENCES[0]);
+
+      // The mark sits on the words: three lines of the first paragraph.
+      const boxes = page.locator('.page[data-page-number="1"] .read-aloud-mark-box');
+      await expect(boxes).toHaveCount(3);
+      const firstLine = (await page
+        .locator('.page[data-page-number="1"] .textLayer span')
+        .filter({ hasText: 'It is a truth' })
+        .first()
+        .boundingBox())!;
+      const firstBox = (await boxes.first().boundingBox())!;
+      expect(Math.abs(firstBox.x - firstLine.x)).toBeLessThan(6);
+      expect(Math.abs(firstBox.y - firstLine.y)).toBeLessThan(10);
+      await capture(page, `read-aloud-pdf-1280-${theme}`);
+
+      // Read on to the end: the hyphenated word is rejoined, the sentence that
+      // runs over the page break is said whole and once, and the pages turn.
+      await setSpeechDelay(page, 80);
+      await page.getByRole('button', { name: 'Next sentence' }).click();
+      await expect(page.getByTestId('read-aloud-bar')).toHaveCount(0, { timeout: 30_000 });
+
+      const said = await spoken(page);
+      expect([...new Set(said)]).toEqual(PDF_SENTENCES);
+      expect(said.join(' ')).not.toContain(PDF_HEADER);
+      await expect(page.locator('.read-aloud-mark-box')).toHaveCount(0);
+      await expect(page.locator('.page-input')).toHaveValue('3');
+    });
+  }
+
+  test('carries on from the page the person turns to', async ({ page }) => {
+    await openPdf(page, 'light');
+    await setSpeechDelay(page, 60_000);
+    await startReadingPdf(page);
+    await expect.poll(async () => (await spoken(page)).length).toBe(1);
+
+    await page.getByRole('button', { name: 'Next page' }).click();
+    await page.getByRole('button', { name: 'Next page' }).click();
+
+    await expect.poll(async () => (await spoken(page)).at(-1), { timeout: 15_000 }).toBe(PDF_SENTENCES[3]);
+    await expect(page.locator('.page[data-page-number="3"] .read-aloud-mark-box')).toHaveCount(1);
+  });
+});
+
+test.describe('read aloud (PDF), phone width', () => {
+  test.use({ serviceWorkers: 'block', viewport: { width: 390, height: 844 }, hasTouch: true });
+
+  for (const theme of ['light', 'dark'] as const) {
+    test(`${theme}: marks the sentence and keeps the transport in reach`, async ({ page }) => {
+      await openPdf(page, theme);
+      await setSpeechDelay(page, 60_000);
+      await startReadingPdf(page);
+
+      await expect(page.getByTestId('read-aloud-bar')).toBeVisible();
+      await expect(page.locator('.read-aloud-mark-box').first()).toBeVisible();
+      await capture(page, `read-aloud-pdf-390-${theme}`);
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
+        ),
+      ).toBe(false);
+    });
+  }
 });

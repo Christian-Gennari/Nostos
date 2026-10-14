@@ -355,9 +355,16 @@ export class ReaderShell implements OnInit, OnDestroy {
   readonly readAloud = inject(ReadAloudController);
   private readonly browserVoice = BrowserVoice.isSupported() ? new BrowserVoice() : null;
 
-  /** The open book's text can be read and this device has a voice for it. */
+  /**
+   * The open book's text can be read and this device has a voice for it. A
+   * scanned PDF has pictures of pages and no text, so there is nothing to read.
+   */
   readonly readAloudOffered = computed(
-    () => !this.loadError() && this.readAloud.available() && this.browserVoice !== null,
+    () =>
+      !this.loadError() &&
+      this.readAloud.available() &&
+      this.browserVoice !== null &&
+      !(this.fileType() === 'pdf' && this.pdfReader?.textCapability() === 'unavailable'),
   );
   /** At 320px the header has no room for it, so it joins the View settings panel. */
   readonly showPanelReadAloud = computed(() => this.readAloudOffered() && this.veryNarrow());
@@ -403,6 +410,7 @@ export class ReaderShell implements OnInit, OnDestroy {
     // Inside the tap: a phone only lets audio start from one, and asking the
     // server which voices it has would come too late.
     this.serverVoice.prime();
+    this.browserVoice?.prime();
     this.applyReadAloudVoices(await this.loadReadAloudServer());
     await this.readAloud.start();
   }
