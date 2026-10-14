@@ -661,8 +661,13 @@
     </button>
     }
 
+    <!-- Grouped by what a setting changes: the app, the page, the text. Each
+         group has a titled section with a hairline above it, so a row reads as
+         belonging to its group rather than to one flat list. -->
+    <section class="typo-group" aria-labelledby="typo-group-appearance">
+    <h3 class="typo-group-title" id="typo-group-appearance">Appearance</h3>
     <div class="typo-row" data-testid="reader-appearance">
-      <span class="typo-label" id="reader-appearance">App appearance</span>
+      <span class="typo-label" id="reader-appearance">Theme</span>
       <nostos-segmented
         class="typo-opts"
         fill
@@ -674,8 +679,25 @@
       />
       <span class="typo-hint" id="reader-appearance-hint">Applies throughout Nostos</span>
     </div>
+    <!-- The PDF's page pixels, so it lives with the app theme it follows. -->
+    @if (fileType() === 'pdf' && pdfReader?.isDark()) {
+    <div class="typo-row">
+      <span class="typo-label" id="pdf-colours">Page colours</span>
+      <nostos-segmented
+        class="typo-opts"
+        fill
+        aria-labelledby="pdf-colours"
+        [options]="pageColourOptions"
+        [value]="pdfReader?.pageInverted() ? 'inverted' : 'printed'"
+        (valueChange)="pdfReader?.setPageInverted($event === 'inverted')"
+      />
+    </div>
+    }
+    </section>
 
     @if (fileType() === 'pdf') {
+    <section class="typo-group" aria-labelledby="typo-group-page">
+    <h3 class="typo-group-title" id="typo-group-page">Page</h3>
     <!-- Fixed layout: how the pages advance, the render scale, and the fits it
          can snap to. Zoom used to be two header buttons; the modes and presets
          had nowhere to live at all. -->
@@ -757,20 +779,23 @@
         (valueChange)="setZoomPreset($event)"
       />
     </div>
-    @if (pdfReader?.isDark()) {
-    <div class="typo-row">
-      <span class="typo-label" id="pdf-colours">Page colours</span>
-      <nostos-segmented
-        class="typo-opts"
-        fill
-        aria-labelledby="pdf-colours"
-        [options]="pageColourOptions"
-        [value]="pdfReader?.pageInverted() ? 'inverted' : 'printed'"
-        (valueChange)="pdfReader?.setPageInverted($event === 'inverted')"
-      />
-    </div>
-    }
+    </section>
     } @if (epubReader) {
+    <section class="typo-group" aria-labelledby="typo-group-text">
+    <div class="typo-group-head">
+      <h3 class="typo-group-title" id="typo-group-text">Text</h3>
+      <!-- Reset sits on the group it resets: it only ever touched these rows. -->
+      <button
+        appButton
+        type="button"
+        variant="ghost"
+        size="sm"
+        class="typo-reset"
+        aria-label="Reset text settings"
+        title="Reset text settings"
+        (click)="epubReader.resetTypography()"
+      >Reset</button>
+    </div>
     <div class="typo-row typo-row-stacked">
       <span class="typo-label" id="typo-typeface">Typeface</span>
       <nostos-segmented
@@ -828,14 +853,7 @@
         (valueChange)="epubReader.setTypography({ margin: $event })"
       />
     </div>
-    <button
-      appButton
-      type="button"
-      variant="ghost"
-      size="sm"
-      class="typo-reset"
-      (click)="epubReader.resetTypography()"
-    >Reset</button>
+    </section>
     }
 
     @if (showPanelFeedback()) {

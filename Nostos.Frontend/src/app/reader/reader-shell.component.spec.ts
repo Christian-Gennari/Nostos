@@ -1257,7 +1257,7 @@ describe('ReaderShell toolbar contract', () => {
         const panel = await openPanelFor(fileName);
 
         const firstLabel = panel.querySelector('.typo-label')?.textContent?.trim();
-        expect(firstLabel).toBe('App appearance');
+        expect(firstLabel).toBe('Theme');
         expect(panel.textContent).toContain('Applies throughout Nostos');
         expect(appearanceButtons().map((el) => el.textContent?.trim())).toEqual(['Light', 'Dark']);
       });
