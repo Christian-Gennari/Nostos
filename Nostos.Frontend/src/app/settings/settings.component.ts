@@ -757,19 +757,6 @@ export class SettingsComponent implements OnInit, OnDestroy {
     }
   });
 
-  readonly managedAiRefillCopy = computed(() => {
-    switch (this.managedAiUsage()?.refill.state) {
-      case 'active':
-        return 'Purchased AI refill capacity is available after your included allowance is used.';
-      case 'low':
-        return 'Your purchased AI refill capacity is running low.';
-      case 'empty':
-        return 'You do not currently have purchased AI refill capacity.';
-      default:
-        return 'AI refills are not currently offered for this account.';
-    }
-  });
-
   status = signal<BackupStatus>({
     isEnabled: false,
     provider: 'Local',
