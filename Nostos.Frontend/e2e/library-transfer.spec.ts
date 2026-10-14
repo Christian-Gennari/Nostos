@@ -770,7 +770,7 @@ test(`scenario d4: reload after all parts resumes completion without selecting t
       await page.reload();
       await expect(page.getByTestId('import-checking')).toBeVisible({ timeout: 60_000 });
       await expect(page.getByTestId('import-checking').getByRole('progressbar')).not.toHaveAttribute('aria-valuenow');
-      const fill = page.getByTestId('import-checking').locator('.transfer-progress-fill');
+      const fill = page.getByTestId('import-checking').locator('.nostos-progress__fill');
       expect(await fill.evaluate(element => element.getBoundingClientRect().width)).toBeGreaterThan(0);
       reportProcessing = true;
       await expect(page.getByTestId('import-checking').getByRole('progressbar')).toHaveAttribute('aria-valuenow', '25');

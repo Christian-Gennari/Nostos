@@ -17,13 +17,13 @@ import {
 } from '../models/library-transfer.models';
 import { MigrationActivationPhase } from '../models/migration-http.dtos';
 import { activationPhaseMessage } from '../library-transfer.copy';
-import { NostosIconComponent } from '../../ui/icon/nostos-icon.component';
+import { LoadingIndicatorComponent } from '../../ui/loading-indicator/loading-indicator.component';
 
 @Component({
   selector: 'app-library-activation-overlay',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [A11yModule, NostosIconComponent],
+  imports: [LoadingIndicatorComponent, A11yModule],
   templateUrl: './library-activation-overlay.component.html',
   styleUrl: './library-activation-overlay.component.css',
 })

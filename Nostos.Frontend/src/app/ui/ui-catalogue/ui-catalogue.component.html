@@ -443,7 +443,7 @@
     <div class="catalogue-section-heading">
       <div>
         <p class="catalogue-kicker">Primitive</p>
-        <h2 id="catalogue-loading">Loading indicator</h2>
+        <h2 id="catalogue-loading">Loading and progress</h2>
       </div>
       <p>A quiet indeterminate wait signal. Product surfaces keep ownership of reserved space and copy.</p>
     </div>
@@ -456,6 +456,29 @@
           <nostos-loading-indicator label="Medium loading example" size="md" [decorative]="true" />
           <nostos-loading-indicator label="Large loading example" size="lg" [decorative]="true" />
           <nostos-loading-indicator label="Extra large loading example" size="xl" [decorative]="true" />
+        </div>
+      </div>
+
+      <div class="catalogue-example">
+        <span class="catalogue-label">Busy button</span>
+        <div class="catalogue-row">
+          <button appButton variant="primary" type="button" [busy]="true">Saving…</button>
+          <button appButton variant="secondary" size="sm" type="button" [busy]="true">
+            <nostos-icon name="arrows-clockwise" [size]="14" />
+            Backing up…
+          </button>
+        </div>
+      </div>
+
+      <div class="catalogue-example">
+        <span class="catalogue-label">Progress</span>
+        <div class="catalogue-stack">
+          <nostos-progress [value]="42" label="Determinate progress example" />
+          <nostos-progress size="md" [value]="null" label="Indeterminate progress example" />
+          <nostos-progress size="md" [value]="64" paused label="Paused progress example" />
+          <div class="catalogue-artwork">
+            <nostos-progress size="md" surface="overlay" [value]="58" label="Progress on artwork example" />
+          </div>
         </div>
       </div>
     </div>

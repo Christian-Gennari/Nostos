@@ -4,11 +4,12 @@ import { Router } from '@angular/router';
 import { ButtonComponent } from '../ui/button/button.component';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
 import { CloudEntryService } from '../core/services/cloud-entry.service';
+import { LoadingIndicatorComponent } from '../ui/loading-indicator/loading-indicator.component';
 
 @Component({
   selector: 'app-cloud-entry',
   standalone: true,
-  imports: [ButtonComponent, NostosIconComponent, DatePipe],
+  imports: [LoadingIndicatorComponent, ButtonComponent, NostosIconComponent, DatePipe],
   templateUrl: './cloud-entry.component.html',
   styleUrl: './cloud-entry.component.css',
 })

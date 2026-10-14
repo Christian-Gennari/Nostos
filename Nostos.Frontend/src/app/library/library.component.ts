@@ -42,6 +42,7 @@ import { LoadingIndicatorComponent } from '../ui/loading-indicator/loading-indic
 import { ViewToggleComponent, type ViewToggleOption } from '../ui/view-toggle/view-toggle.component';
 import { NOSTOS_CONCEPTS } from '../ui/icon/nostos-concepts';
 import type { NostosIconName } from '../ui/icon/nostos-icons';
+import { ProgressComponent } from '../ui/progress/progress.component';
 
 function statusFilterLabel(value: string | null | undefined): string | null {
   switch ((value ?? '').toLowerCase()) {
@@ -108,6 +109,7 @@ interface WorkFormatGlyph {
   selector: 'app-library',
   standalone: true,
   imports: [
+    ProgressComponent,
     CommonModule,
     RouterLink,
     NostosIconComponent,

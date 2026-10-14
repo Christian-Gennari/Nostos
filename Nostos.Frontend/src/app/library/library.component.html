@@ -174,9 +174,7 @@
                 [attr.aria-valuenow]="bookProgress(book)?.percent ?? 0"
                 [attr.aria-label]="bookProgressLabel(book)"
               >
-                <div class="list-progress-track">
-                  <i [style.width.%]="bookProgress(book)?.percent ?? 0"></i>
-                </div>
+                <nostos-progress class="list-progress-track" decorative [value]="bookProgress(book)?.percent ?? 0" />
                 <span class="list-progress-caption">
                   {{ bookStageLabel(book) }}
                   @if (bookProgress(book); as progress) {
@@ -358,9 +356,7 @@
                   <span class="cover-progress-percent">{{ progress.percent }}%</span>
                   }
                 </div>
-                <div class="cover-progress-track">
-                  <i [style.width.%]="bookProgress(book)?.percent ?? 0"></i>
-                </div>
+                <nostos-progress class="cover-progress-track" decorative size="md" surface="overlay" [value]="bookProgress(book)?.percent ?? 0" />
               </div>
             } @else if (book.status === 3) {
               <div class="import-status-overlay is-failed-overlay">

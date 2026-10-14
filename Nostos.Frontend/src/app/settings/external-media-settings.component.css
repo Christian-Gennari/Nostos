@@ -102,21 +102,8 @@
   color: var(--color-danger);
 }
 
-.spin {
-  animation: external-media-spin 0.9s linear infinite;
-}
 
-@keyframes external-media-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
 
-@media (prefers-reduced-motion: reduce) {
-  .spin {
-    animation-duration: 2.4s;
-  }
-}
 
 /* --- Review dialog ------------------------------------------------------- */
 

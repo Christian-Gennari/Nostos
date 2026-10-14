@@ -2,7 +2,7 @@
  * Copyright (C) 2026 Christian Gennari
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
-import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
+import { booleanAttribute, ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
 
 import { NostosIconComponent } from '../icon/nostos-icon.component';
 import { NOSTOS_ICON_SIZE } from '../icon/nostos-icons';
@@ -66,7 +66,7 @@ export type LoadingIndicatorSize = keyof typeof NOSTOS_ICON_SIZE;
 export class LoadingIndicatorComponent {
   readonly label = input('Loading');
   readonly size = input<LoadingIndicatorSize>('lg');
-  readonly decorative = input(false);
+  readonly decorative = input(false, { transform: booleanAttribute });
 
   protected readonly iconSize = computed(() => NOSTOS_ICON_SIZE[this.size()]);
 }

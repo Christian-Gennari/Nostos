@@ -83,7 +83,6 @@
         (click)="startScan()"
       >
         @if (scanning()) {
-          <nostos-icon name="circle-notch" [size]="16" class="spin"></nostos-icon>
           Scanning…
         } @else {
           <nostos-icon name="scan" [size]="16"></nostos-icon>
@@ -336,7 +335,7 @@
         @case ('importing') {
           @if (importState(); as progress) {
             <div class="external-progress" role="status" aria-live="polite" data-testid="external-media-progress">
-              <nostos-icon name="circle-notch" [size]="22" class="spin"></nostos-icon>
+              <nostos-loading-indicator decorative size="xl" />
               <p class="external-progress-title">
                 Importing {{ progress.completed }} of {{ progress.total }}
               </p>

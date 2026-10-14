@@ -781,34 +781,7 @@ app-sidebar-collections.no-transition {
   color: var(--on-primary);
 }
 
-/* The bar has to read as a bar, not as a rule under the text: a distinct dark
-   track against the white fill, at the weight of a bar rather than a hairline.
-   (Measured against the app's own bars — the add-book modal's source progress and
-   the settings bars are both 4px with a visible track and an accent fill on a
-   light ground; on the cover's dark scrim the roles swap but the contrast does
-   not.) */
-.cover-progress-track {
-  height: 6px;
-  border-radius: var(--radius-pill);
-  background: var(--overlay-medium);
-  overflow: hidden;
-}
-
-.list-progress-track {
-  height: 4px;
-  border-radius: var(--radius-pill);
-  background: var(--bg-hover);
-  overflow: hidden;
-}
-
-.cover-progress-track i,
-.list-progress-track i {
-  display: block;
-  height: 100%;
-  border-radius: var(--radius-pill);
-  background: var(--on-primary);
-  transition: width var(--transition-fast);
-}
+/* The bars are nostos-progress: overlay surface on the cover, plain in the row. */
 
 /* The list row carries its progress inline under the title, inside the row's own
    height — the row that finishes is the same row, with no shift. */
@@ -823,11 +796,6 @@ app-sidebar-collections.no-transition {
 .list-progress-track {
   flex: 1;
   min-width: 0;
-  background: var(--bg-hover);
-}
-
-.list-progress-track i {
-  background: var(--primary-fill);
 }
 
 .list-progress-caption {
@@ -1495,14 +1463,6 @@ app-sidebar-collections.no-transition {
 
   .cover-progress-percent {
     font-size: 14px;
-  }
-
-  .cover-progress-track {
-    height: 6px;
-  }
-
-  .list-progress-track {
-    height: 5px;
   }
 
   .list-progress {

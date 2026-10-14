@@ -120,21 +120,8 @@
   margin-top: 0.6rem;
 }
 
-.spin {
-  animation: highlight-import-spin 0.9s linear infinite;
-}
 
-@keyframes highlight-import-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
 
-@media (prefers-reduced-motion: reduce) {
-  .spin {
-    animation-duration: 2.4s;
-  }
-}
 
 /* --- Result ------------------------------------------------------------- */
 

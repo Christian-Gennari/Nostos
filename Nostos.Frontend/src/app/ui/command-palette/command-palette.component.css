@@ -48,20 +48,9 @@
 }
 
 .palette-loading {
-  width: 0.9rem;
-  height: 0.9rem;
   flex-shrink: 0;
-  border-radius: 50%;
-  border: 2px solid var(--border-color);
-  border-top-color: var(--color-text-light);
-  animation: palette-spin 0.8s linear infinite;
 }
 
-@keyframes palette-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
 
 .palette-results {
   overflow-y: auto;
