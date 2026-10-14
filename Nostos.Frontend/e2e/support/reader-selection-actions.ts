@@ -21,6 +21,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { apiPost, loadFixture, newRunId } from './fixture';
+import { epubMarkCount } from './epub-marks';
 
 const EPUB_BYTES = readFileSync(path.join(__dirname, '..', 'assets', 'tiny.epub'));
 const EVIDENCE_DIR = path.join(__dirname, '..', 'visual-evidence');
@@ -432,13 +433,12 @@ export function mobileSelectionSpecs() {
     const selected = await selectWords(page);
     await expect(bar).toBeVisible();
     // A pen dot only picks the colour; nothing is saved until Highlight.
-    const pendingFill = () =>
-      page.locator('.epubjs-hl-pending').first().evaluate((el) => getComputedStyle(el).fill);
-    const defaultFill = await pendingFill();
+    // The offer is painted in the default pen (sage) first.
+    await expect.poll(() => epubMarkCount(page, 'pen-sage')).toBe(1);
     await page.locator('[data-testid="selection-pen-rose"]').tap();
-    // The offered passage is redrawn in the pen just picked.
-    await expect.poll(pendingFill).not.toBe(defaultFill);
-    await expect(page.locator('.epubjs-hl-pending')).toHaveCount(1);
+    // The offered passage is redrawn in the pen just picked, once.
+    await expect.poll(() => epubMarkCount(page, 'pen-rose')).toBe(1);
+    expect(await epubMarkCount(page, 'pen-sage')).toBe(0);
     await page.waitForTimeout(400);
     await expect(bar).toBeVisible();
     expect(await notes(baseUrl, bookId)).toHaveLength(0);
