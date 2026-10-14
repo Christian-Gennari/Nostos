@@ -536,8 +536,14 @@
               <span class="label-text">Show reading assistant</span>
               @if (assistantAvailable()) {
                 <span class="label-desc">Show the dock capsule for capturing thoughts while reading.</span>
-              } @else {
+              } @else if (managedAi() || !canConfigureAiProvider()) {
                 <span class="label-desc">{{ assistantUnavailableCopy() }}</span>
+              } @else {
+                <span class="label-desc" data-testid="assistant-setup-hint">
+                  Connect an AI provider in
+                  <a class="label-link" href="/settings?section=connections" (click)="$event.preventDefault(); setSettingsSection('connections')">AI connections</a>
+                  to turn this on.
+                </span>
               }
             </div>
             @if (assistantAvailable()) {
