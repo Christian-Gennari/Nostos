@@ -93,6 +93,34 @@ internal sealed class LibraryMutationExecutor(IDbContextFactory<NostosDbContext>
         }
     }
 
+    /// <summary>
+    /// Runs several canonical commands as one unit under the same gate as every
+    /// other library write: one context, one transaction, then commit or roll
+    /// back as <paramref name="work"/> decides. A preview is the same work rolled
+    /// back, so it is validated by exactly the code an apply would run. Any
+    /// exception rolls back. The revision advances at most once, on commit.
+    /// </summary>
+    public async Task<T> RunInTransactionAsync<T>(
+        Func<NostosDbContext, CancellationToken, Task<(bool Commit, T Value)>> work,
+        CancellationToken ct)
+    {
+        await CommandGate.WaitAsync(ct);
+        try
+        {
+            await using var db = await _contexts.CreateDbContextAsync(ct);
+            await using var transaction = await db.Database.BeginTransactionAsync(ct);
+            var (commit, value) = await work(db, ct);
+            if (commit)
+                await transaction.CommitAsync(ct);
+            else
+                await transaction.RollbackAsync(ct);
+            return value;
+        }
+        finally
+        {
+            CommandGate.Release();
+        }
+    }
 
     private static LibraryCommandResultDto Failure(
         string code,
