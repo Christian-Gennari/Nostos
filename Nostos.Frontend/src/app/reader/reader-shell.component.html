@@ -663,17 +663,15 @@
 
     <div class="typo-row" data-testid="reader-appearance">
       <span class="typo-label" id="reader-appearance">App appearance</span>
-      <div class="typo-opts" role="group" aria-labelledby="reader-appearance" aria-describedby="reader-appearance-hint">
-        @for (t of appThemes; track t.value) {
-        <button
-          type="button"
-          class="typo-opt"
-          [class.active]="appTheme() === t.value"
-          [attr.aria-pressed]="appTheme() === t.value"
-          (click)="setAppTheme(t.value)"
-        >{{ t.label }}</button>
-        }
-      </div>
+      <nostos-segmented
+        class="typo-opts"
+        fill
+        aria-labelledby="reader-appearance"
+        aria-describedby="reader-appearance-hint"
+        [options]="appThemes"
+        [value]="appTheme()"
+        (valueChange)="setAppTheme($event)"
+      />
       <span class="typo-hint" id="reader-appearance-hint">Applies throughout Nostos</span>
     </div>
 
@@ -683,22 +681,21 @@
          had nowhere to live at all. -->
     <div class="typo-row">
       <span class="typo-label" id="pdf-mode">Reading mode</span>
-      <div class="typo-opts" role="group" aria-labelledby="pdf-mode">
-        @for (m of pdfReadingModes(); track m.value) {
-        <button
-          type="button"
-          class="typo-opt"
-          [class.active]="isScrollMode(m.value)"
-          [attr.aria-pressed]="isScrollMode(m.value)"
-          (click)="setScrollMode(m.value)"
-        >{{ m.label }}</button>
-        }
-      </div>
+      <nostos-segmented
+        class="typo-opts"
+        fill
+        aria-labelledby="pdf-mode"
+        [options]="pdfReadingModes()"
+        [value]="pdfScrollMode()"
+        (valueChange)="setScrollMode($event)"
+      />
     </div>
     <div class="typo-row">
       <span class="typo-label" id="pdf-zoom">Zoom</span>
       <div class="typo-steps" role="group" aria-labelledby="pdf-zoom">
         <button
+          appButton
+          size="sm"
           type="button"
           class="typo-step"
           (click)="zoomOut()"
@@ -707,6 +704,8 @@
         >A−</button>
         <span class="typo-step-value">{{ pdfZoomLabel() }}</span>
         <button
+          appButton
+          size="sm"
           type="button"
           class="typo-step"
           (click)="zoomIn()"
@@ -719,6 +718,8 @@
       <span class="typo-label" id="pdf-rotation">Rotation</span>
       <div class="typo-steps" role="group" aria-labelledby="pdf-rotation">
         <button
+          appButton
+          size="sm"
           type="button"
           class="typo-step"
           (click)="pdfReader?.rotateCounterclockwise()"
@@ -726,6 +727,8 @@
           title="Rotate left"
         >Left</button>
         <button
+          appButton
+          size="sm"
           type="button"
           class="typo-step"
           (click)="pdfReader?.resetRotation()"
@@ -733,6 +736,8 @@
           title="Reset rotation"
         >Reset</button>
         <button
+          appButton
+          size="sm"
           type="button"
           class="typo-step"
           (click)="pdfReader?.rotateClockwise()"
@@ -743,58 +748,46 @@
     </div>
     <div class="typo-row typo-row-stacked">
       <span class="typo-label" id="pdf-fit">Page fit</span>
-      <div class="typo-opts" role="group" aria-labelledby="pdf-fit">
-        @for (p of pdfZoomPresets(); track p.value) {
-        <button
-          type="button"
-          class="typo-opt"
-          [class.active]="isZoomPreset(p.value)"
-          [attr.aria-pressed]="isZoomPreset(p.value)"
-          (click)="setZoomPreset(p.value)"
-        >{{ p.label }}</button>
-        }
-      </div>
+      <nostos-segmented
+        class="typo-opts"
+        fill
+        aria-labelledby="pdf-fit"
+        [options]="pdfZoomPresets()"
+        [value]="pdfZoomPreset()"
+        (valueChange)="setZoomPreset($event)"
+      />
     </div>
     @if (pdfReader?.isDark()) {
     <div class="typo-row">
       <span class="typo-label" id="pdf-colours">Page colours</span>
-      <div class="typo-opts" role="group" aria-labelledby="pdf-colours">
-        <button
-          type="button"
-          class="typo-opt"
-          [class.active]="pdfReader?.pageInverted()"
-          [attr.aria-pressed]="pdfReader?.pageInverted() ?? false"
-          (click)="pdfReader?.setPageInverted(true)"
-        >Inverted</button>
-        <button
-          type="button"
-          class="typo-opt"
-          [class.active]="!pdfReader?.pageInverted()"
-          [attr.aria-pressed]="!(pdfReader?.pageInverted() ?? false)"
-          (click)="pdfReader?.setPageInverted(false)"
-        >As printed</button>
-      </div>
+      <nostos-segmented
+        class="typo-opts"
+        fill
+        aria-labelledby="pdf-colours"
+        [options]="pageColourOptions"
+        [value]="pdfReader?.pageInverted() ? 'inverted' : 'printed'"
+        (valueChange)="pdfReader?.setPageInverted($event === 'inverted')"
+      />
     </div>
     }
     } @if (epubReader) {
     <div class="typo-row typo-row-stacked">
       <span class="typo-label" id="typo-typeface">Typeface</span>
-      <div class="typo-opts" role="group" aria-labelledby="typo-typeface">
-        @for (f of epubReader.fontOptions; track f.value) {
-        <button
-          type="button"
-          class="typo-opt"
-          [class.active]="epubReader.typography().fontFamily === f.value"
-          [attr.aria-pressed]="epubReader.typography().fontFamily === f.value"
-          (click)="epubReader.setTypography({ fontFamily: f.value })"
-        >{{ f.label }}</button>
-        }
-      </div>
+      <nostos-segmented
+        class="typo-opts"
+        fill
+        aria-labelledby="typo-typeface"
+        [options]="epubReader.fontOptions"
+        [value]="epubReader.typography().fontFamily"
+        (valueChange)="epubReader.setTypography({ fontFamily: $event })"
+      />
     </div>
     <div class="typo-row">
       <span class="typo-label" id="typo-size">Text size</span>
       <div class="typo-steps" role="group" aria-labelledby="typo-size">
         <button
+          appButton
+          size="sm"
           type="button"
           class="typo-step"
           (click)="epubReader.zoomOut()"
@@ -803,6 +796,8 @@
         >A−</button>
         <span class="typo-step-value">{{ epubReader.fontSizePercent() }}%</span>
         <button
+          appButton
+          size="sm"
           type="button"
           class="typo-step"
           (click)="epubReader.zoomIn()"
@@ -813,31 +808,25 @@
     </div>
     <div class="typo-row">
       <span class="typo-label" id="typo-line">Line height</span>
-      <div class="typo-opts" role="group" aria-labelledby="typo-line">
-        @for (lh of epubReader.lineOptions; track lh) {
-        <button
-          type="button"
-          class="typo-opt"
-          [class.active]="epubReader.typography().lineHeight === lh"
-          [attr.aria-pressed]="epubReader.typography().lineHeight === lh"
-          (click)="epubReader.setTypography({ lineHeight: lh })"
-        >{{ lh.toFixed(1) }}</button>
-        }
-      </div>
+      <nostos-segmented
+        class="typo-opts"
+        fill
+        aria-labelledby="typo-line"
+        [options]="lineHeightOptions"
+        [value]="epubReader.typography().lineHeight"
+        (valueChange)="epubReader.setTypography({ lineHeight: $event })"
+      />
     </div>
     <div class="typo-row">
       <span class="typo-label" id="typo-margins">Margins</span>
-      <div class="typo-opts" role="group" aria-labelledby="typo-margins">
-        @for (m of epubReader.marginOptions; track m.value) {
-        <button
-          type="button"
-          class="typo-opt"
-          [class.active]="epubReader.typography().margin === m.value"
-          [attr.aria-pressed]="epubReader.typography().margin === m.value"
-          (click)="epubReader.setTypography({ margin: m.value })"
-        >{{ m.label }}</button>
-        }
-      </div>
+      <nostos-segmented
+        class="typo-opts"
+        fill
+        aria-labelledby="typo-margins"
+        [options]="epubReader.marginOptions"
+        [value]="epubReader.typography().margin"
+        (valueChange)="epubReader.setTypography({ margin: $event })"
+      />
     </div>
     <button
       appButton

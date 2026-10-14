@@ -164,33 +164,28 @@
             <div class="playback-section">
               <span class="playback-section-label" id="playback-speed-label">Speed</span>
               <div class="rate-steps" role="group" aria-labelledby="playback-speed-label">
-                <button class="rate-step" type="button" (click)="nudgeRate(-0.05)" aria-label="Slower" data-testid="audio-rate-down">−</button>
+                <button appButton size="sm" class="rate-step" type="button" (click)="nudgeRate(-0.05)" aria-label="Slower" data-testid="audio-rate-down">−</button>
                 <span class="rate-readout">{{ formatRate(currentRate()) }}</span>
-                <button class="rate-step" type="button" (click)="nudgeRate(0.05)" aria-label="Faster" data-testid="audio-rate-up">+</button>
+                <button appButton size="sm" class="rate-step" type="button" (click)="nudgeRate(0.05)" aria-label="Faster" data-testid="audio-rate-up">+</button>
               </div>
-              <div class="rate-options" role="listbox" aria-label="Playback speed">
-                @for (rate of availableRates; track rate) {
-                  <button
-                    class="rate-option"
-                    type="button"
-                    role="option"
-                    [attr.aria-selected]="rate === currentRate()"
-                    (click)="selectRate(rate)"
-                  >
-                    {{ formatRate(rate) }}
-                  </button>
-                }
-              </div>
+              <nostos-segmented
+                class="rate-options"
+                fill
+                aria-label="Playback speed"
+                [options]="rateOptions"
+                [value]="currentRate()"
+                (valueChange)="selectRate($event)"
+              />
             </div>
 
             <div class="playback-section">
               <span class="playback-section-label" id="playback-sleep-label">Sleep timer</span>
-              <div class="sleep-options" role="listbox" aria-labelledby="playback-sleep-label">
+              <div class="sleep-options" role="group" aria-labelledby="playback-sleep-label">
                 <button
+                  appChip
                   class="sleep-option"
                   type="button"
-                  role="option"
-                  [attr.aria-selected]="!sleepArmed()"
+                  [attr.aria-pressed]="!sleepArmed()"
                   (click)="selectSleepTimer(null)"
                 >
                   Off
@@ -199,10 +194,10 @@
                      carries chapter starts; otherwise there is nothing to stop at. -->
                 @if (hasChapters()) {
                   <button
+                    appChip
                     class="sleep-option"
                     type="button"
-                    role="option"
-                    [attr.aria-selected]="sleepAtChapterEnd()"
+                    [attr.aria-pressed]="sleepAtChapterEnd()"
                     data-testid="audio-sleep-chapter-end"
                     (click)="selectSleepAtChapterEnd()"
                   >
@@ -211,10 +206,10 @@
                 }
                 @for (minutes of sleepPresets; track minutes) {
                   <button
+                    appChip
                     class="sleep-option"
                     type="button"
-                    role="option"
-                    [attr.aria-selected]="sleepTimerMinutes() === minutes"
+                    [attr.aria-pressed]="sleepTimerMinutes() === minutes"
                     (click)="selectSleepTimer(minutes)"
                   >
                     {{ minutes }} min

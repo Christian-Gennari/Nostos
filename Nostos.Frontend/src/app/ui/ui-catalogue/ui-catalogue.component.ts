@@ -17,6 +17,7 @@ import { InputDirective, TextareaDirective } from '../form-control/form-control.
 import { DropdownComponent, type DropdownOption } from '../dropdown/dropdown.component';
 import { FormFieldComponent } from '../form-field/form-field.component';
 import { IconButtonComponent } from '../icon-button/icon-button.component';
+import { SegmentedComponent } from '../segmented/segmented.component';
 import { ModalShell } from '../modal-shell/modal-shell.component';
 import { LoadingIndicatorComponent } from '../loading-indicator/loading-indicator.component';
 import { SwitchComponent } from '../switch/switch.component';
@@ -43,6 +44,7 @@ import { ViewToggleComponent, type ViewToggleOption } from '../view-toggle/view-
     DialogActionsComponent,
     FormFieldComponent,
     IconButtonComponent,
+    SegmentedComponent,
     InputDirective,
     ModalShell,
     LoadingIndicatorComponent,
@@ -64,6 +66,8 @@ export class UiCatalogueComponent {
   readonly selectedTab = signal<'primitives' | 'patterns'>('primitives');
   /** Deliberately a plain string: the component is not generic, so the demo does not
       pretend to narrow the value it receives. */
+  readonly selectedSegment = signal(1.6);
+  readonly segmentedOptions = [1.4, 1.6, 1.8, 2.0].map((value) => ({ value, label: value.toFixed(1) }));
   readonly selectedView = signal('list');
   readonly viewToggleOptions = [
     { value: 'list', icon: 'list-bullets', label: 'List view' },

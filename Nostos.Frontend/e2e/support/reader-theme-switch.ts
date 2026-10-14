@@ -93,7 +93,7 @@ async function expectCompactPanel(page: Page, maxHeight = 470) {
   expect(box.height, 'panel height').toBeLessThanOrEqual(maxHeight);
   const clipped = await panel.evaluate((el) => {
     const outer = el.getBoundingClientRect();
-    return [...el.querySelectorAll<HTMLElement>('.typo-opt, .typo-step, .typo-step-value, .typo-label')]
+    return [...el.querySelectorAll<HTMLElement>('.seg-opt, .typo-step, .typo-step-value, .typo-label')]
       .filter((c) => {
         const r = c.getBoundingClientRect();
         return c.scrollWidth > c.clientWidth + 1 || r.left < outer.left || r.right > outer.right;
@@ -105,9 +105,9 @@ async function expectCompactPanel(page: Page, maxHeight = 470) {
 }
 
 async function chooseTheme(page: Page, label: 'Light' | 'Dark') {
-  await page.locator('[data-testid="reader-appearance"] .typo-opt', { hasText: label }).click();
-  await expect(page.locator('[data-testid="reader-appearance"] .typo-opt', { hasText: label }))
-    .toHaveAttribute('aria-pressed', 'true');
+  await page.locator('[data-testid="reader-appearance"] .seg-opt', { hasText: label }).click();
+  await expect(page.locator('[data-testid="reader-appearance"] .seg-opt', { hasText: label }))
+    .toHaveAttribute('aria-checked', 'true');
 }
 
 async function htmlTheme(page: Page) {

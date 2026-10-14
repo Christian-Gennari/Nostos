@@ -451,7 +451,7 @@
         <p class="catalogue-kicker">Pattern</p>
         <h2 id="catalogue-segmented">Segmented visual recipe</h2>
       </div>
-      <p>The visual recipe is shared; tabs keep it, and the view toggle is a component.</p>
+      <p>One track and thumb. Tabs keep the recipe; a single-choice setting is nostos-segmented (a radio group); a view switch is the view toggle.</p>
     </div>
 
     <div class="catalogue-grid">
@@ -479,6 +479,16 @@
             Patterns
           </button>
         </div>
+      </div>
+
+      <div class="catalogue-example">
+        <span class="catalogue-label">Segmented (component, single choice)</span>
+        <nostos-segmented
+          aria-label="Catalogue line height example"
+          [options]="segmentedOptions"
+          [value]="selectedSegment()"
+          (valueChange)="selectedSegment.set($event)"
+        />
       </div>
 
       <div class="catalogue-example">

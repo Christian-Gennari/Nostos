@@ -729,38 +729,14 @@
                 </button>
               </div>
 
-              <div class="source-filters" role="group" aria-label="Material type">
-                <button
-                  type="button"
-                  class="source-filter"
-                  [class.active]="sourceKind() === 'all'"
-                  [attr.aria-pressed]="sourceKind() === 'all'"
-                  [disabled]="!!runningAcquisition()"
-                  (click)="setSourceKind('all')"
-                >
-                  All
-                </button>
-                <button
-                  type="button"
-                  class="source-filter"
-                  [class.active]="sourceKind() === 'ebook'"
-                  [attr.aria-pressed]="sourceKind() === 'ebook'"
-                  [disabled]="!!runningAcquisition()"
-                  (click)="setSourceKind('ebook')"
-                >
-                  E-books
-                </button>
-                <button
-                  type="button"
-                  class="source-filter"
-                  [class.active]="sourceKind() === 'audiobook'"
-                  [attr.aria-pressed]="sourceKind() === 'audiobook'"
-                  [disabled]="!!runningAcquisition()"
-                  (click)="setSourceKind('audiobook')"
-                >
-                  Audiobooks
-                </button>
-              </div>
+              <nostos-segmented
+                class="source-filters"
+                aria-label="Material type"
+                [options]="sourceKinds"
+                [value]="sourceKind()"
+                [disabled]="!!runningAcquisition()"
+                (valueChange)="setSourceKind($event)"
+              />
 
               <span class="source-hint">
                 Searches public catalogues. Nothing is added to your library until you import it.
