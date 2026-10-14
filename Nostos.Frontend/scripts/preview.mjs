@@ -68,7 +68,8 @@ const CLOUD_FIXTURES = {
     accountState: 'Active',
     account: { id: 'preview', displayName: 'Reader', email: 'reader@example.test' },
   },
-  '/api/cloud/onboarding': {
+  // The app requests this with a trailing slash; the lookup is exact.
+  '/api/cloud/onboarding/': {
     state: 'ready',
     subscriptionStatus: 'Active',
     ready: true,
