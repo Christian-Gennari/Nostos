@@ -599,16 +599,14 @@
         </div>
 
         <div class="card-body">
-          @if (managedAiUsageFailed()) {
-            <div class="setting-row">
-              <div class="setting-label">
+          <!-- One row: the allowance state stays visible here, everything
+               about refills (balance, purchase) lives on the account site. -->
+          <div class="setting-row" data-testid="managed-ai-usage-row">
+            <div class="setting-label">
+              @if (managedAiUsageFailed()) {
                 <span class="label-text">Could not load usage</span>
                 <span class="label-desc">Nostos could not read your managed AI allowance. Reload Settings to try again.</span>
-              </div>
-            </div>
-          } @else if (managedAiUsage(); as usage) {
-            <div class="setting-row">
-              <div class="setting-label">
+              } @else if (managedAiUsage(); as usage) {
                 <span class="label-text">Included allowance</span>
                 <span class="label-desc">
                   {{ managedAiUsageCopy() }}
@@ -616,32 +614,12 @@
                     Renews {{ usage.renewsAtUtc | date: 'MMM d' }}.
                   }
                 </span>
-              </div>
-            </div>
-
-            @if (usage.refill.state !== 'not_offered') {
-              <div class="setting-row">
-                <div class="setting-label">
-                  <span class="label-text">AI refill balance</span>
-                  <span class="label-desc">{{ managedAiRefillCopy() }}</span>
-                </div>
-              </div>
-            }
-          } @else {
-            <div class="setting-row">
-              <div class="setting-label">
+              } @else {
                 <span class="label-text">Loading usage…</span>
                 <span class="label-desc">Checking your current Ask Nostos allowance.</span>
-              </div>
+              }
             </div>
-          }
-
-          @if (cloudAccountManagementUrl(); as accountUrl) {
-            <div class="setting-row" data-testid="managed-ai-refill-handoff">
-              <div class="setting-label">
-                <span class="label-text">AI refills</span>
-                <span class="label-desc">Purchase and manage refill capacity on your Nostos account page.</span>
-              </div>
+            @if (cloudAccountManagementUrl(); as accountUrl) {
               <a
                 appButton
                 variant="secondary"
@@ -650,10 +628,10 @@
                 rel="noopener noreferrer"
                 data-testid="managed-ai-refill-link"
               >
-                Manage refills ↗
+                Manage on nostos.page ↗
               </a>
-            </div>
-          }
+            }
+          </div>
         </div>
       </section>
       }

@@ -1204,8 +1204,11 @@ describe('SettingsComponent backup-only surface', () => {
     expect(card).not.toBeNull();
     expect(text).toContain('Your included Ask Nostos allowance is nearly used.');
     expect(text).toContain('Renews Oct 1.');
-    expect(text).toContain('You do not currently have purchased AI refill capacity.');
-    expect(text).toContain('Manage refills');
+    expect(text).not.toContain('AI refill balance');
+    expect(text).not.toContain('refill capacity');
+    expect(card.querySelectorAll('.setting-row').length).toBe(1);
+    expect(card.querySelectorAll('a[href]').length).toBe(1);
+    expect(refillLink.textContent).toContain('Manage on nostos.page');
     expect(text).not.toContain('Add refill');
     expect(text).not.toContain('Paddle');
     expect(card.querySelector('[data-testid="ai-refill-pack"]')).toBeNull();
