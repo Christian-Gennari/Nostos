@@ -14,6 +14,12 @@ namespace Nostos.Backend.Endpoints;
 
 public static class BooksEndpoints
 {
+    // Covers are replaceable at a fixed URL, so the browser must revalidate
+    // them on every use: a max-age let it keep showing the previous cover
+    // for a day after a replace. The ETag is derived from the stored file,
+    // so an unchanged cover still costs only a 304.
+    private const string CoverCacheControl = "private, no-cache";
+
     public static IEndpointRouteBuilder MapBooksEndpoints(
         this IEndpointRouteBuilder routes,
         NostosProductEndpointPolicies? policies = null)
@@ -581,7 +587,7 @@ public static class BooksEndpoints
                     (_, token) => storage.OpenBookCoverThumbnailAsync(id, safeWidth, token),
                     attachment: false,
                     enableRanges: false,
-                    cacheControl: "public, max-age=86400, stale-while-revalidate=2592000",
+                    cacheControl: CoverCacheControl,
                     ct);
             }
         );
@@ -601,7 +607,7 @@ public static class BooksEndpoints
                     (_, token) => storage.OpenBookCoverAsync(id, token),
                     attachment: false,
                     enableRanges: false,
-                    cacheControl: "public, max-age=86400, stale-while-revalidate=2592000",
+                    cacheControl: CoverCacheControl,
                     ct)
         );
 
