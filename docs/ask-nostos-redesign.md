@@ -1,6 +1,6 @@
 # Ask Nostos — redesign
 
-Status: **proposed** · Owner: maintainer · Date: 2026-10-14
+Status: **implemented** (see §11) · Owner: maintainer · Date: 2026-10-14
 
 Ask Nostos should do the library and reading work that is tedious by hand, and
 do it predictably. This document replaces the turn-by-turn approval model with
@@ -381,3 +381,45 @@ Each step is its own PR, and each is useful on its own.
 | Undo retention | 7 days / 50 changesets | Long enough to notice a bad reorganisation, small enough to stay cheap. |
 | Live updates | SSE + signals store | Matches the existing import stream and needs no new dependency. |
 | Typed "yes" | Kept, bound to the single open review | Voice and keyboard users need it, and the binding keeps it safe. |
+
+## 11. As built
+
+The plan shipped in four PRs, merged in this order:
+
+| PR | Delivery-plan steps | What it does |
+| --- | --- | --- |
+| #957 | 1 | `GET /api/library/changes` streams the library revision; Library, sidebar and Book detail re-read in place, holding while an inline edit or Edit Book is open. |
+| #958 | 2 | Removes the capture-wording setting and its endpoint; captures are always verbatim. |
+| #959 | 3, 4 | `ILibraryChangesetService`: preview (rolled back), apply (one transaction, bound to a diff hash), revert (row by row, conflicts kept). |
+| #960 | 5–8 | Staged library tools, `AssistantChangePolicy` with the taint rule, the coordinator and routes, the changeset card, the prompt and budgets. |
+
+Where the build differs from the plan above, and why:
+
+- **No `LibraryMutations` refactor was needed (§4.1).** The library service
+  already ran every mutation as a `…CoreAsync(db, request)` body inside the
+  executor's transaction; the executor only gained `RunInTransactionAsync`.
+- **Changesets and undo records live in memory, not in new tables (§7).** A
+  review lasts an hour and an undo a day. Tables would have needed a portable
+  archive classification and a Cloud PostgreSQL migration for what is a
+  convenience, not history. After a server restart, the card says the changes
+  are no longer available.
+- **No shared `LibraryStore` yet (§4.3).** Pages react to a change *signal*
+  and re-read what they show. That removed the reload problem without moving
+  every page onto a new store.
+- **No undo history in Settings (§5).** Undo lives on the card in the
+  conversation, where the change was made.
+- **A turn cut short by a limit is always offered for review.** The server
+  cannot tell whether the model had finished staging, so it never applies
+  such a turn unseen.
+- **Steps are left out per step, not per diff line (§5).** A step is what the
+  user approves, and leaving one out leaves out the steps that depend on it.
+- **Guards kept (§6).** `AssistantCompletionClaimGuard`,
+  `AssistantCaptureIntentGuard` and `AssistantIdentityGuard` guard captures,
+  searches and identity, which changesets do not cover; only the plan store
+  and executor were removed.
+- **Cloud.** Its `MaxToolIterations` stays 6 in its own configuration until
+  raised with the pin.
+
+User-facing behaviour and the HTTP contract are documented in
+`docs/ask-nostos-library-changes.md`.
+
